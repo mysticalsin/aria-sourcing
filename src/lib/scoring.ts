@@ -36,6 +36,47 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
 /** Default batch size for Source next batch when callers omit an explicit count. */
 export const DEFAULT_SOURCE_BATCH_TOP_K = 10;
 
+/** Quality shortlist band: never pad below 5 requested, never take more than 20. */
+export const SHORTLIST_TOP_K_MIN = 5;
+export const SHORTLIST_TOP_K_MAX = 20;
+
+/** Clamp a requested shortlist size into the 5–20 quality band. */
+export function clampShortlistTopK(topK: number = DEFAULT_SOURCE_BATCH_TOP_K): number {
+  const n = Number.isFinite(topK) ? Math.floor(topK) : DEFAULT_SOURCE_BATCH_TOP_K;
+  return clamp(n, SHORTLIST_TOP_K_MIN, SHORTLIST_TOP_K_MAX);
+}
+
+/** Macro regions that are not concrete place names for city-level geo boosts. */
+const MACRO_GEO_REGIONS = new Set([
+  "eu",
+  "emea",
+  "eea",
+  "apac",
+  "latam",
+  "remote",
+  "global",
+  "international",
+  "europe",
+  "european",
+  "americas",
+  "asia",
+  "worldwide",
+]);
+
+/** Concrete city/country targets from the JD (need-driven; not hardcoded to one city). */
+function jdTargetPlaces(jd: JobAnalysis): string[] {
+  const places: string[] = [];
+  for (const raw of [jd.location ?? "", ...(jd.regions ?? [])]) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const city = trimmed.split(",")[0]!.trim();
+    if (city.length < 3) continue;
+    if (MACRO_GEO_REGIONS.has(city.toLowerCase())) continue;
+    if (!places.some((p) => p.toLowerCase() === city.toLowerCase())) places.push(city);
+  }
+  return places;
+}
+
 const TITLE_FLOOR_WITHOUT_MUST = 68;
 const SYNTHETIC_SCORE_FACTOR = 0.92;
 const WEAK_RESUME_SKILLS_FACTOR = 0.78;
@@ -261,7 +302,7 @@ function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale:
     if (titleOverlap >= 0.6 && allowStrongTitleFloor) score = Math.max(score, 86);
     if (titleOverlap >= 0.9 && allowStrongTitleFloor) score = Math.max(score, 92);
   }
-  // GitHub: require denser must-have evidence — a lone "Calypso" string in a bio
+  // GitHub: require denser must-have evidence — a lone product/skill string in a bio
   // must not clear the contact floor.
   if (c.sourcePlatform === "GitHub" && c.provenance !== "synthetic") {
     if (reqHit >= 3) score = Math.max(score, 90);
@@ -453,10 +494,11 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
   const europeFocus = jobAnalysisIsEuropeFocused(jd);
   const europeHit = candidateMatchesEurope(c);
   const farFromEurope = europeFocus && candidateIsFarFromEurope(c);
-  const montrealTarget =
-    jd.regions.some((r) => /montreal|montréal/i.test(r)) ||
-    /montreal|montréal/i.test(jd.location ?? "");
-  const montrealHit = /montreal|montréal/i.test(c.location);
+  const targetPlaces = jdTargetPlaces(jd);
+  const targetPlaceHit =
+    Boolean(c.location) &&
+    targetPlaces.some((place) => locationMatchesRegion(c.location, place));
+  const targetPlaceLabel = targetPlaces[0] ?? jd.location ?? "target geo";
 
   let geoScore: number;
   let geoRationale: string;
@@ -472,11 +514,11 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
       Boolean(c.location) &&
       jd.regions.some((region) => locationMatchesRegion(c.location, region));
     if (europeFocus) {
-      if (timezoneAligned || europeHit || regionAligned) {
-        geoScore = timezoneAligned ? 97 : europeHit ? 94 : 90;
+      if (timezoneAligned || europeHit || regionAligned || targetPlaceHit) {
+        geoScore = timezoneAligned ? 97 : europeHit || targetPlaceHit ? 94 : 90;
         geoRationale = timezoneAligned
           ? `Remote Europe/EMEA role: timezone ${c.timezone} overlaps CET/UK hours`
-          : europeHit
+          : europeHit || targetPlaceHit
             ? `Remote Europe/EMEA role: Europe-based candidate (${c.location || c.timezone})`
             : `Remote Europe/EMEA role: location ${c.location} matches a target region`;
       } else if (farFromEurope) {
@@ -488,19 +530,20 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
       }
     } else {
       geoScore =
-        timezoneAligned ? 96 : regionAligned ? 90 : montrealTarget && montrealHit ? 92 : 80;
+        timezoneAligned ? 96 : regionAligned ? 90 : targetPlaceHit ? 92 : 80;
       geoRationale = timezoneAligned
         ? `Remote role: timezone ${c.timezone} overlaps working hours`
         : regionAligned
           ? `Remote role: location ${c.location} matches a target region`
-          : montrealTarget && montrealHit
-            ? `Remote role: Montreal signal present (${c.location})`
+          : targetPlaceHit
+            ? `Remote role: ${targetPlaceLabel} signal present (${c.location})`
             : "Remote role: working-hours overlap not confirmed";
     }
   } else {
     const inRegion =
       jd.regions.some((region) => locationMatchesRegion(c.location, region)) ||
-      (jd.location ? locationMatchesRegion(c.location, jd.location) : false);
+      (jd.location ? locationMatchesRegion(c.location, jd.location) : false) ||
+      targetPlaceHit;
     if (europeFocus) {
       if (inRegion || europeHit) {
         geoScore = inRegion ? 94 : 90;
@@ -515,11 +558,11 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
         geoRationale = `Based in ${c.location || "unknown"}, Europe/EMEA catchment not confirmed`;
       }
     } else {
-      geoScore = inRegion ? 92 : montrealTarget && montrealHit ? 90 : 48;
+      geoScore = inRegion ? 92 : targetPlaceHit ? 90 : 48;
       geoRationale = inRegion
         ? `Based in ${c.location}, within ${jd.locationType} range`
-        : montrealTarget && montrealHit
-          ? `Montreal signal present (${c.location}) for target geography`
+        : targetPlaceHit
+          ? `${targetPlaceLabel} signal present (${c.location}) for target geography`
           : `Based in ${c.location || "unknown"}, outside ${jd.locationType} catchment`;
     }
   }
@@ -780,13 +823,14 @@ export function rankScoredCandidates<T extends RankableCandidate>(
 /**
  * Select the best `topK` after quality ranking.
  * **Volume is not the limiter** — always score/rank the full set, then take top-K.
+ * Requested K is clamped into the **5–20** quality shortlist band.
  */
 export function selectTopKByMatchScore<T extends RankableCandidate>(
   candidates: T[],
   topK: number = DEFAULT_SOURCE_BATCH_TOP_K,
   jd?: JobAnalysis,
 ): T[] {
-  const k = Number.isFinite(topK) ? Math.max(0, Math.floor(topK)) : DEFAULT_SOURCE_BATCH_TOP_K;
+  const k = clampShortlistTopK(topK);
   return rankScoredCandidates(candidates, jd).slice(0, k);
 }
 

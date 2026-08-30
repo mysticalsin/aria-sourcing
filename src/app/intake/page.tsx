@@ -25,6 +25,7 @@ import {
   SAMPLE_INTAKE_JD,
   SAMPLE_MANTU_EMAIL,
   SAMPLE_CALYPSO_BA_NEED,
+  SAMPLE_TS_EUROPE_NEED,
   isNeedEmail,
   type ParsedIntake,
 } from "@/lib/mock-ai";
@@ -170,6 +171,16 @@ export default function IntakePage() {
     toast({
       title: "Calypso BA need loaded",
       description: "Senior Calypso BA — AMACAN / BNPP CIB Canada / Montreal (must-haves: Calypso, BA, MySQL).",
+      variant: "info",
+    });
+  }
+
+  function loadTsEurope() {
+    setEmail(SAMPLE_TS_EUROPE_NEED);
+    setJd("");
+    toast({
+      title: "TypeScript Europe need loaded",
+      description: "Senior TypeScript Engineer — Meridian Cloud / Berlin / Europe remote (must-haves: TypeScript, Node.js, PostgreSQL).",
       variant: "info",
     });
   }
@@ -461,6 +472,16 @@ export default function IntakePage() {
                     disabled={parsing}
                   >
                     Calypso BA (AMACAN)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<FileText aria-hidden />}
+                    onClick={loadTsEurope}
+                    disabled={parsing}
+                  >
+                    TS Engineer (Europe)
                   </Button>
                   <Button
                     type="button"

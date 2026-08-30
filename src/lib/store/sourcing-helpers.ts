@@ -1,7 +1,7 @@
 import { computeCoverage } from "../enrichment/merge";
 import type { SourceResult } from "../sourcing/candidate-mappers";
 import { dedupeCandidates } from "../rules";
-import { rankScoredCandidates, scoreCandidate } from "../scoring";
+import { scoreCandidate, selectTopKByMatchScore, SHORTLIST_TOP_K_MAX } from "../scoring";
 import { meetsSourcingQualityBar, SOURCING_QUALITY_FLOOR } from "../sourcing/candidate-fit";
 import type { ApifyProfile } from "../sourcing/apify";
 import type { SillageProfile } from "../sourcing/sillage";
@@ -165,7 +165,7 @@ export function mapSillageCandidates(
   });
   const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
   return {
-    accepted: rankScoredCandidates(quality.length > 0 ? quality : scored, jd),
+    accepted: selectTopKByMatchScore(quality.length > 0 ? quality : scored, SHORTLIST_TOP_K_MAX, jd),
     skipped: [
       ...skipped,
       ...scored
@@ -276,7 +276,7 @@ export function mapApifyCandidates(
   });
   const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
   return {
-    accepted: rankScoredCandidates(quality.length > 0 ? quality : scored, jd),
+    accepted: selectTopKByMatchScore(quality.length > 0 ? quality : scored, SHORTLIST_TOP_K_MAX, jd),
     skipped: [
       ...skipped,
       ...scored

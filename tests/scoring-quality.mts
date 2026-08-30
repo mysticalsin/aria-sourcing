@@ -6,6 +6,9 @@ import {
   DEFAULT_SCORING_WEIGHTS,
   scoreCandidate,
   selectTopKByMatchScore,
+  clampShortlistTopK,
+  SHORTLIST_TOP_K_MIN,
+  SHORTLIST_TOP_K_MAX,
   jobAnalysisIsEuropeFocused,
   candidateMatchesEurope,
   candidateIsFarFromEurope,
@@ -13,6 +16,7 @@ import {
 } from "../src/lib/scoring";
 import { SOURCING_QUALITY_FLOOR } from "../src/lib/sourcing/candidate-fit";
 import { SAMPLE_CALYPSO_BA_NEED } from "../src/lib/fixtures/calypso-ba-need";
+import { SAMPLE_TS_EUROPE_NEED } from "../src/lib/fixtures/senior-ts-europe-need";
 import { buildSourcingStrategy, parseEmailAndJD } from "../src/lib/mock-ai";
 import { dedupeCandidates } from "../src/lib/rules";
 import { getContactStatus } from "../src/lib/contact-status";
@@ -303,7 +307,165 @@ const rankedCalypso = selectTopKByMatchScore(
   calypsoJd,
 );
 ok("top-K prefers best Calypso BA first", rankedCalypso[0]?.id === "cand-best");
-ok("top-K length respects K", rankedCalypso.length === 2);
+ok(
+  "top-K request of 2 clamps up to shortlist min (returns all available ≤5)",
+  rankedCalypso.length === 3 && clampShortlistTopK(2) === SHORTLIST_TOP_K_MIN,
+);
+ok("top-K clamps 50 down to max 20", clampShortlistTopK(50) === SHORTLIST_TOP_K_MAX);
+ok(
+  "Calypso strategy GitHub domain anchor comes from need (Calypso), not a hardcoded path-only string",
+  buildSourcingStrategy(calypsoJd).githubQueries.some((q) =>
+    /Calypso/i.test(q.query) && /MySQL|SQL/i.test(q.query),
+  ),
+);
+
+/* ---- Non-Calypso need: Senior TypeScript Engineer (Berlin / Europe) ------ */
+const tsParsed = parseEmailAndJD({ email: SAMPLE_TS_EUROPE_NEED });
+const tsJd: JobAnalysis = {
+  ...tsParsed.jobAnalysis,
+  locationType: tsParsed.jobAnalysis.locationType || "Remote",
+  location: tsParsed.jobAnalysis.location || "Berlin",
+  regions: tsParsed.jobAnalysis.regions.length
+    ? tsParsed.jobAnalysis.regions
+    : ["Berlin", "EU"],
+  timezone: tsParsed.jobAnalysis.timezone || "CET",
+  minYearsExperience: tsParsed.jobAnalysis.minYearsExperience ?? 5,
+  maxYearsExperience: tsParsed.jobAnalysis.maxYearsExperience ?? 10,
+  requiredLanguages: tsParsed.jobAnalysis.requiredLanguages ?? ["English"],
+};
+
+ok("TS Europe fixture parses TypeScript must-have", tsJd.requiredSkills.some((s) => /typescript/i.test(s)));
+ok("TS Europe fixture parses Node.js must-have", tsJd.requiredSkills.some((s) => /node/i.test(s)));
+ok("TS Europe fixture parses PostgreSQL must-have", tsJd.requiredSkills.some((s) => /postgres/i.test(s)));
+ok("TS Europe requires English", (tsJd.requiredLanguages ?? []).some((l) => /english/i.test(l)));
+ok("TS Europe seniority band is 5–10", tsJd.minYearsExperience === 5 && tsJd.maxYearsExperience === 10);
+ok(
+  "TS Europe Berlin/EU geo",
+  /berlin/i.test(tsJd.location ?? "") || tsJd.regions.some((r) => /berlin|eu|europe/i.test(r)),
+);
+ok("TS Europe JD is Europe-focused", jobAnalysisIsEuropeFocused(tsJd));
+ok("TS Europe timezone is CET", /CET/i.test(tsJd.timezone ?? ""));
+
+const tsStrategy = buildSourcingStrategy(tsJd);
+ok(
+  "TS Europe strategy uses need Boolean (TypeScript/Node), not Calypso",
+  /TypeScript|Node/i.test(tsStrategy.linkedinBoolean) && !/Calypso/i.test(tsStrategy.linkedinBoolean),
+);
+ok(
+  "TS Europe GitHub queries do not inject Calypso",
+  tsStrategy.githubQueries.every((q) => !/Calypso/i.test(q.query)),
+);
+ok(
+  "TS Europe GitHub queries include TypeScript or Node from need skills",
+  tsStrategy.githubQueries.some((q) => /TypeScript|Node|PostgreSQL|Postgres/i.test(q.query)),
+);
+ok(
+  "TS Europe geoTargets include Europe concrete places or Berlin",
+  tsStrategy.geoTargets.some((g) => /Berlin|Germany|United Kingdom|France|Europe|EU/i.test(g)),
+);
+
+function tsCand(partial: Partial<Candidate> & Pick<Candidate, "id" | "name">): Candidate {
+  return {
+    ...seedCand,
+    campaignId: "camp-ts-europe",
+    email: `${partial.id}@example.test`,
+    avatarInitials: "XX",
+    currentTitle: "",
+    currentCompany: "",
+    location: "",
+    timezone: "",
+    linkedinUrl: "",
+    githubUrl: "",
+    sourcePlatform: "Manual",
+    sourceQuery: "resume-bank",
+    matchScore: 0,
+    matchBreakdown: [],
+    techStack: [],
+    yearsExperience: null,
+    companyStageExperience: [],
+    industryExperience: [],
+    recentActivity: "",
+    stage: "Sourced",
+    lastContactedAt: null,
+    outreachHistory: [],
+    replyHistory: [],
+    booking: null,
+    complianceFlags: {
+      doNotContact: false,
+      suppressed: false,
+      unsubscribed: false,
+      gdprExportRequested: false,
+      anonymized: false,
+      suppressedUntil: null,
+    },
+    createdAt: "2026-01-01T00:00:00.000Z",
+    provenance: "manual",
+    ...partial,
+  };
+}
+
+const tsBest = tsCand({
+  id: "ts-best",
+  name: "Nora Backend",
+  currentTitle: "Senior TypeScript Engineer",
+  currentCompany: "Meridian Cloud",
+  techStack: ["TypeScript", "Node.js", "PostgreSQL", "React", "Kubernetes"],
+  yearsExperience: 7,
+  languages: ["English", "German"],
+  location: "Berlin, Germany",
+  timezone: "CET",
+  profileText:
+    "Senior TypeScript/Node engineer with PostgreSQL, GraphQL, AWS/K8s production services. Open to Work.",
+  recentActivity: "Shipped TypeScript services this week — Open to Work",
+});
+
+const tsWeak = tsCand({
+  id: "ts-weak",
+  name: "Generic Title",
+  currentTitle: "Software Person",
+  techStack: ["Excel"],
+  yearsExperience: 12,
+  location: "Berlin, Germany",
+  languages: ["English"],
+  profileText: "Results-driven professional seeking new opportunities in tech.",
+});
+
+const tsUsMismatch = tsCand({
+  id: "ts-us",
+  name: "US Remote",
+  currentTitle: "Senior TypeScript Engineer",
+  techStack: ["TypeScript", "Node.js", "PostgreSQL"],
+  yearsExperience: 7,
+  languages: ["English"],
+  location: "San Francisco, CA",
+  timezone: "PST",
+  profileText: "TypeScript Node.js PostgreSQL backend engineer.",
+  recentActivity: "Shipped TypeScript APIs this month",
+});
+
+const tsBestScore = scoreCandidate(tsBest, tsJd).score;
+const tsWeakScore = scoreCandidate(tsWeak, tsJd).score;
+const tsUsScore = scoreCandidate(tsUsMismatch, tsJd).score;
+
+ok("strong TS Europe fit clears quality floor", tsBestScore >= SOURCING_QUALITY_FLOOR);
+ok("weak generic profile rejected vs strong TS fit", tsWeakScore + 15 < tsBestScore);
+ok("weak TS profile below quality floor or well under best", tsWeakScore < SOURCING_QUALITY_FLOOR || tsWeakScore + 20 < tsBestScore);
+ok(
+  `Europe need prefers Berlin over US (EU=${tsBestScore} US=${tsUsScore})`,
+  tsBestScore > tsUsScore,
+);
+
+const rankedTs = selectTopKByMatchScore(
+  [
+    { ...tsWeak, matchScore: tsWeakScore },
+    { ...tsUsMismatch, matchScore: tsUsScore },
+    { ...tsBest, matchScore: tsBestScore },
+  ],
+  10,
+  tsJd,
+);
+ok("TS top-K prefers best Europe fit first", rankedTs[0]?.id === "ts-best");
+ok("TS top-K length respects clamped K (≤10 available)", rankedTs.length === 3);
 
 /* ---- Contact tracking: do not re-source contacted identities ------------- */
 const contactedExisting = calypsoCand({
@@ -329,6 +491,37 @@ ok(
 const contactInfo = getContactStatus(contactedExisting);
 ok("contact status is in_window after recent send", contactInfo.status === "in_window");
 ok("contact status blocks resourcing", contactInfo.blockResourcing === true);
+
+/* Contact dedupe is global — works for non-Calypso identities too */
+const tsContacted = tsCand({
+  id: "ts-contacted",
+  name: "TS Touched",
+  email: "ts-touched@example.test",
+  linkedinUrl: "https://www.linkedin.com/in/ts-touched",
+  lastContactedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+  stage: "Contacted",
+  complianceFlags: {
+    doNotContact: true,
+    suppressed: false,
+    unsubscribed: false,
+    gdprExportRequested: false,
+    anonymized: false,
+    suppressedUntil: null,
+  },
+});
+const tsIncoming = tsCand({
+  id: "ts-incoming-dup",
+  name: "TS Clone",
+  email: "ts-touched@example.test",
+  linkedinUrl: "https://www.linkedin.com/in/ts-touched",
+});
+const tsDeduped = dedupeCandidates([tsIncoming], [tsContacted], { excludedCompanies: [] });
+ok("non-Calypso contacted/DNC identity skipped on re-source", tsDeduped.accepted.length === 0);
+ok(
+  "non-Calypso DNC skip reason is contacted block",
+  tsDeduped.skipped.some((s) => /already contacted|do not re-source/i.test(s.reason)),
+);
+ok("DNC contact status blocks resourcing", getContactStatus(tsContacted).blockResourcing === true);
 
 
 console.log(`RESULT scoring-quality: ${pass} passed, ${fail} failed`);

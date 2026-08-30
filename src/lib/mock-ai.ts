@@ -6,7 +6,6 @@ import {
 } from "./scoring";
 import { meetsSourcingQualityBar, SOURCING_QUALITY_FLOOR } from "./sourcing/candidate-fit";
 import { dedupeCandidates } from "./rules";
-import { SAMPLE_CALYPSO_BA_NEED } from "./fixtures/calypso-ba-need";
 import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
@@ -232,8 +231,9 @@ export function isMantuNeedEmail(text: string): boolean {
   );
 }
 
-/** Re-export canonical Calypso BA fixture for intake UI / tests. */
-export { SAMPLE_CALYPSO_BA_NEED };
+/** Re-export canonical need fixtures for intake UI / tests. */
+export { SAMPLE_CALYPSO_BA_NEED } from "./fixtures/calypso-ba-need";
+export { SAMPLE_TS_EUROPE_NEED } from "./fixtures/senior-ts-europe-need";
 
 function splitSkillList(raw: string): string[] {
   return raw
@@ -336,7 +336,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
   );
-  // Prefer explicit must-haves; never let weak dict hits dilute Calypso/BA/MySQL.
+  // Prefer explicit must-haves; never let weak dictionary hits dilute labeled Skill(Must).
   const requiredSkills = Array.from(
     new Set([...(mustSkills.length ? mustSkills : lineSkills), ...(mustSkills.length ? [] : dictSkills)]),
   ).slice(0, 12);
@@ -364,12 +364,30 @@ export function parseMantuNeed(text: string): ParsedIntake {
   // Location → region + timezone (best-effort). Prefer City: over Location:.
   const cityRaw = field("City") || locationRaw;
   const loc = titleCase(cityRaw || "");
+  const tzFromText =
+    text.match(/\b(CET|CEST|WET|WEST|BST|GMT|UTC|EST|EDT|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
   const tz =
-    text.match(/\b(CET|CEST|WET|WEST|BST|GMT|UTC|EST|EDT|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ??
-    (/montreal|montréal|toronto|canada/i.test(loc) ? "EST" : "");
+    tzFromText ||
+    (/montreal|montréal|toronto|ottawa|vancouver|canada/i.test(loc)
+      ? "EST"
+      : /berlin|munich|frankfurt|hamburg|paris|lyon|amsterdam|rotterdam|madrid|barcelona|rome|milan|warsaw|prague|vienna|brussels|stockholm|copenhagen|helsinki|oslo|zurich|geneva|dublin|europe|emea/i.test(
+            loc,
+          )
+        ? "CET"
+        : /london|manchester|edinburgh|glasgow|uk|united kingdom/i.test(loc)
+          ? "GMT"
+          : "");
   const regions = loc ? [loc] : [];
   if (/montreal|montréal/i.test(loc) && !regions.some((r) => /canada/i.test(r))) {
     regions.push("Canada");
+  }
+  if (
+    /berlin|munich|frankfurt|hamburg|paris|lyon|amsterdam|madrid|barcelona|rome|milan|warsaw|prague|vienna|brussels|stockholm|copenhagen|helsinki|oslo|zurich|geneva|dublin|london/i.test(
+      loc,
+    ) &&
+    !regions.some((r) => /^(eu|europe|emea)$/i.test(r))
+  ) {
+    regions.push("EU");
   }
   if (
     regions.length === 0 &&
@@ -385,14 +403,16 @@ export function parseMantuNeed(text: string): ParsedIntake {
   if (startRaw) {
     const eu = startRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (eu) {
-      // Prefer dd/mm/yyyy when day > 12, else try both — 05/10/2026 → Oct 5 for this need.
+      // Prefer dd/mm/yyyy when day > 12; otherwise prefer EU order for EU/Canada VSS briefs.
       const a = parseInt(eu[1]!, 10);
       const b = parseInt(eu[2]!, 10);
       const y = parseInt(eu[3]!, 10);
       const asEu = new Date(Date.UTC(y, b - 1, a)); // dd/mm
       const asUs = new Date(Date.UTC(y, a - 1, b)); // mm/dd
-      const pick =
-        a > 12 ? asEu : b > 12 ? asUs : /montreal|canada|europe|paris|london|bnpp|amacan/i.test(text) ? asEu : asUs;
+      const preferEu =
+        a > 12 ||
+        /montreal|canada|europe|emea|paris|london|berlin|amsterdam|\beu\b|bnpp|amacan|meridian/i.test(text);
+      const pick = a > 12 ? asEu : b > 12 ? asUs : preferEu ? asEu : asUs;
       if (!isNaN(pick.getTime())) targetStartDate = pick.toISOString();
     } else {
       const d = new Date(startRaw);
@@ -404,9 +424,9 @@ export function parseMantuNeed(text: string): ParsedIntake {
     field("Title") ||
     text.match(/profiles?\s*:\s*(.+)/i)?.[1]?.trim() ||
     title;
-  const resolvedTitle = /calypso/i.test(titleFromField)
-    ? titleFromField.replace(/^IS&D\s*-\s*/i, "").trim() || titleFromField
-    : title || titleFromField;
+  // Prefer explicit Title:; strip IS&D profile-family prefixes for any need.
+  const cleanedTitle = titleFromField.replace(/^IS&D\s*-\s*/i, "").trim() || titleFromField;
+  const resolvedTitle = cleanedTitle || title;
 
   const missionMatch = text.match(/profile synthesis\s*:?\s*([\s\S]*?)(?:\n\s*candidate search|\n\s*additional information|$)/i);
   const missionDescription = (missionMatch?.[1] ?? "").trim().slice(0, 12_000);
@@ -418,7 +438,9 @@ export function parseMantuNeed(text: string): ParsedIntake {
     text,
   )
     ? ["Bank & Finance", "Capital Markets", "CIB"]
-    : [];
+    : /technology|saas|software|platform|cloud/i.test(text)
+      ? ["Technology", "SaaS"]
+      : [];
 
   const jobAnalysis: JobAnalysis = {
     title: resolvedTitle || title,
@@ -816,7 +838,7 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     europeHints.length > 0
       ? europeHints.slice(0, 4)
       : jd.regions.filter((r) => !NON_LOCATION_REGIONS.has(r));
-  // Prefer the need's explicit Boolean when present (Calypso BA / VSS briefs).
+  // Prefer the need's explicit Boolean when present (any VSS / structured brief).
   const linkedinBoolean =
     jd.searchBoolean?.trim() ||
     `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
@@ -825,18 +847,43 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
       .map((r) => `"${r}"`)
       .join(" OR ")}) NOT "recruiter"`;
 
-  // GitHub queries: for non-code BA/Calypso roles, still emit skill-anchored searches
-  // but avoid treating "Business Analysis" as a programming language.
-  const githubSkill = topSkills.find((s) =>
-    /mysql|sql|python|java|typescript|javascript|go|rust|c\+\+/i.test(s),
-  );
+  // GitHub queries: anchor on THIS need's code skills + optional product/domain
+  // must-have (never a single hardcoded product name).
+  const CODE_SKILL_RE =
+    /^(mysql|sql|postgres(?:ql)?|python|java|typescript|javascript|go|golang|rust|c\+\+|node\.?js|react|kotlin|scala)$/i;
+  const githubSkill = topSkills.find((s) => CODE_SKILL_RE.test(s.trim()));
+  const domainAnchor =
+    topSkills.find((s) => !CODE_SKILL_RE.test(s.trim())) ||
+    jd.title
+      .split(/[^a-z0-9+.#]+/i)
+      .map((t) => t.trim())
+      .find(
+        (t) =>
+          t.length > 2 &&
+          !/^(senior|lead|staff|principal|junior|engineer|developer|analyst|consultant|business|software|backend|frontend)$/i.test(
+            t,
+          ),
+      ) ||
+    "";
+  const githubSkillToken =
+    githubSkill && /mysql/i.test(githubSkill)
+      ? "MySQL"
+      : githubSkill && /node\.?js/i.test(githubSkill)
+        ? "Node.js"
+        : githubSkill && /postgres/i.test(githubSkill)
+          ? "PostgreSQL"
+          : githubSkill;
   const githubQueries: GithubQuery[] = githubSkill
     ? [
-        {
-          label: `${githubSkill} + Calypso domain`,
-          query: `${githubSkill.toLowerCase() === "mysql" ? "MySQL" : githubSkill} Calypso${locationQualifier} followers:>20`,
-          estimatedResults: 40,
-        },
+        ...(domainAnchor && !CODE_SKILL_RE.test(domainAnchor)
+          ? [
+              {
+                label: `${githubSkillToken} + ${domainAnchor} domain`,
+                query: `${githubSkillToken} ${domainAnchor}${locationQualifier} followers:>20`,
+                estimatedResults: 40,
+              },
+            ]
+          : []),
         ...topSkills.slice(0, 2).map((skill, i) => ({
           label: `${skill} contributors`,
           query: `"${skill}"${locationQualifier} followers:>20 ${i === 0 ? "repos:>5" : "repos:>3"}`,
@@ -947,6 +994,7 @@ export function sourceCandidates(
 
   // Score the FULL set, then take top-K by quality rank — never first-N from
   // synthetic/API order. Volume is not the limiter; match quality is.
+  // Shortlist K is clamped 5–20 inside selectTopKByMatchScore.
   const scored = accepted.map((c) => {
     const { score, breakdown } = scoreCandidate(c, jd, weights);
     return { ...c, matchScore: score, matchBreakdown: breakdown };
@@ -954,7 +1002,7 @@ export function sourceCandidates(
   const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
   const ranked = selectTopKByMatchScore(
     quality.length > 0 ? quality : scored,
-    Math.min(count, 20),
+    count,
     jd,
   );
 
