@@ -1,3 +1,4 @@
+import { resolveMicrosoftOAuthAuthority } from "@/lib/email-connections";
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
 import { renderEmailWithUnsubscribe, type RenderedUnsubscribeEmail } from "@/lib/email-unsubscribe";
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
@@ -10,6 +11,8 @@ export interface OAuthSendRequest {
   to: string;
   subject: string;
   body: string;
+  /** Optional branded HTML (e.g. Mantu wrapper). Plain `body` remains the text part. */
+  htmlBody?: string;
   /** Server-generated opaque recipient link; required for any live delivery. */
   unsubscribeUrl?: string;
   /** Immutable per-attempt identity stamped on the ledger claim before the
@@ -45,7 +48,10 @@ export async function sendViaGmailApi(req: OAuthSendRequest, connection: EmailCo
     return { status: "error", deliveryState: "not-sent", provider, detail: "Unable to refresh Gmail access token." };
   }
 
-  const mime = buildMimeMessage(req, renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl));
+  const mime = buildMimeMessage(
+    req,
+    renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl, { htmlBody: req.htmlBody }),
+  );
   const raw = Buffer.from(mime).toString("base64url");
 
   try {
@@ -85,7 +91,10 @@ export async function sendViaMicrosoftGraph(
 
   // Graph's JSON message shape only permits x-* custom headers. Send a raw MIME
   // message so standard List-Unsubscribe headers survive the provider boundary.
-  const mime = buildMimeMessage(req, renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl));
+  const mime = buildMimeMessage(
+    req,
+    renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl, { htmlBody: req.htmlBody }),
+  );
   try {
     const res = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
       method: "POST",
@@ -101,6 +110,69 @@ export async function sendViaMicrosoftGraph(
     return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Microsoft Graph." };
   } catch {
     return { status: "error", deliveryState: "unknown", provider, detail: "Microsoft Graph transport failure: delivery state unknown." };
+  }
+}
+
+/**
+ * Admin Graph self-mail probe (JSON me/sendMail) — no List-Unsubscribe.
+ * Used to prove Outlook Inbox → Graph push → hiring_need ingest without forging webhooks.
+ */
+export async function sendGraphJsonMail(
+  connection: EmailConnection,
+  opts: { to: string; subject: string; body: string },
+): Promise<OAuthSendOutcome> {
+  const provider = connection.provider;
+  if (provider !== "Microsoft Graph") {
+    return { status: "error", deliveryState: "not-sent", provider, detail: "sendGraphJsonMail requires Microsoft Graph." };
+  }
+  const to = opts.to.trim();
+  const subject = opts.subject.trim();
+  const body = opts.body.trim();
+  if (!to || !subject || !body) {
+    return { status: "error", deliveryState: "not-sent", provider, detail: "to/subject/body required." };
+  }
+  const token = await ensureAccessToken(connection);
+  if (!token) {
+    return { status: "error", deliveryState: "not-sent", provider, detail: "Unable to refresh Microsoft access token." };
+  }
+  try {
+    const res = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: "Text", content: body },
+          toRecipients: [{ emailAddress: { address: to } }],
+        },
+        saveToSentItems: true,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error("Microsoft Graph JSON sendMail error", {
+        status: res.status,
+        body: redactSecrets(redactEmail(txt.slice(0, 500))),
+      });
+      return {
+        status: "error",
+        deliveryState: classifyFailedHttpDeliveryState(res.status),
+        provider,
+        detail: `Microsoft Graph sendMail error ${res.status}.`,
+      };
+    }
+    return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Microsoft Graph JSON sendMail." };
+  } catch {
+    return {
+      status: "error",
+      deliveryState: "unknown",
+      provider,
+      detail: "Microsoft Graph JSON sendMail transport failure: delivery state unknown.",
+    };
   }
 }
 
@@ -202,16 +274,19 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
   if (!clientId || !clientSecret || !connection.refreshToken) return null;
 
+  const authority = resolveMicrosoftOAuthAuthority();
+  if (!authority) return null;
+
   let res: Response;
   try {
     res = await postFormWithRetry(
-      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      `${authority}/token`,
       new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         refresh_token: connection.refreshToken,
         grant_type: "refresh_token",
-        scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite offline_access",
+        scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite offline_access",
       }),
     );
   } catch {
@@ -221,6 +296,7 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
     access_token?: string;
     expires_in?: number;
     refresh_token?: string;
+    scope?: string;
     error?: string;
     error_description?: string;
   };
@@ -232,6 +308,10 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
     ? new Date(Date.now() + json.expires_in * 1000).toISOString()
     : null;
   if (json.refresh_token) connection.refreshToken = json.refresh_token;
+  // Persist granted scope so OnlineMeetings / Calendar readiness stays honest after refresh.
+  if (typeof json.scope === "string" && json.scope.trim()) {
+    connection.scope = json.scope.trim();
+  }
   return json.access_token;
 }
 

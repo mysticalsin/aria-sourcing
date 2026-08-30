@@ -15,13 +15,15 @@ import {
 import { useActions, useApiKeys, useRole, useSettings } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { getHermesStatus, type HermesRuntimeStatus } from "@/lib/ai/hermes-runtime";
+import { demoLoginEnabled } from "@/lib/supabase/config";
 import { Bot, Plug, ShieldCheck, Activity } from "lucide-react";
 
 /**
  * Aria runtime panel (admin-gated via manage_providers).
  * Connects the live NousResearch hermes-agent runtime for real LLM-backed
  * outreach drafting. The approval gate is unchanged — live drafts still require
- * human approval before any send. Falls back to the mock when off / misconfigured.
+ * human approval before any send. Demo tenants may fall back to mock drafting;
+ * live enterprise tenants fail closed without a live runtime.
  */
 export function HermesRuntimePanel() {
   const role = useRole();
@@ -83,7 +85,7 @@ export function HermesRuntimePanel() {
       } else {
         toast({
           title: "Aria runtime unavailable",
-          description: json.reason ?? "No response. Outreach will use the mock.",
+          description: json.reason ?? "No response. Live tenants fail closed — drafts/critics will not mock-send.",
           variant: "error",
         });
       }
@@ -119,8 +121,9 @@ export function HermesRuntimePanel() {
             <div className="min-w-0">
               <p className="text-sm font-semibold text-ink">Live mode</p>
               <p className="mt-0.5 text-xs text-muted">
-                Route outreach drafting through the live Aria agent. Off uses the built-in mock.
-                Either way, drafts still require human approval before any send.
+                {demoLoginEnabled
+                  ? "Route outreach drafting through the live Aria agent. Off uses the built-in mock. Either way, drafts still require human approval before any send."
+                  : "Route outreach drafting through the live Aria agent. Live tenants require a configured runtime — mock drafting is disabled. Drafts still require human approval before any send."}
               </p>
             </div>
           </div>
@@ -225,9 +228,17 @@ export function HermesRuntimePanel() {
 
         <div className="flex items-center gap-2">
           <Badge tone={settings.hermesLiveMode ? "success" : "neutral"} size="sm" dot>
-            {settings.hermesLiveMode ? "Live drafting on" : "Mock drafting"}
+            {settings.hermesLiveMode
+              ? "Live drafting on"
+              : demoLoginEnabled
+                ? "Mock drafting"
+                : "Live drafting required"}
           </Badge>
-          <span className="text-xs text-muted">Misconfiguration falls back to the mock automatically.</span>
+          <span className="text-xs text-muted">
+            {demoLoginEnabled
+              ? "Misconfiguration falls back to the mock automatically."
+              : "Misconfiguration fails closed — no silent mock drafts on live tenants."}
+          </span>
         </div>
       </CardContent>
     </Card>

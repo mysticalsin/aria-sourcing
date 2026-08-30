@@ -95,11 +95,14 @@ export function CommandSearch() {
         out.push({ id: `nav-${n.href}`, label: n.label, hint: n.description, group: "Pages", run: () => router.push(n.href) });
     });
     campaigns.forEach((c) => {
-      if (!q || c.title.toLowerCase().includes(q) || c.department.toLowerCase().includes(q))
+      if (!c?.id) return;
+      const title = typeof c.title === "string" ? c.title : "";
+      const department = typeof c.department === "string" ? c.department : "";
+      if (!q || title.toLowerCase().includes(q) || department.toLowerCase().includes(q))
         out.push({
           id: `camp-${c.id}`,
-          label: c.title,
-          hint: `${c.department} · ${c.status}`,
+          label: title || c.id,
+          hint: `${department || "—"} · ${c.status ?? "Unknown"}`,
           group: "Campaigns",
           run: () => {
             setActiveCampaign(c.id);
@@ -108,13 +111,18 @@ export function CommandSearch() {
         });
     });
     candidates
-      .filter((c) => q && (c.name.toLowerCase().includes(q) || c.currentCompany.toLowerCase().includes(q)))
+      .filter(
+        (c) =>
+          !!c &&
+          q &&
+          ((c.name ?? "").toLowerCase().includes(q) || (c.currentCompany ?? "").toLowerCase().includes(q)),
+      )
       .slice(0, 6)
       .forEach((c) =>
         out.push({
           id: `cand-${c.id}`,
           label: c.name,
-          hint: `${c.currentTitle} · ${c.currentCompany}`,
+          hint: `${c.currentTitle ?? ""} · ${c.currentCompany ?? ""}`,
           group: "Candidates",
           run: () => router.push(`/candidates?focus=${c.id}`),
         }),
@@ -217,11 +225,11 @@ export function CommandSearch() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="group flex h-10 w-full max-w-md items-center gap-2.5 rounded-full border border-ink/12 bg-surface px-4 text-sm text-muted transition hover:border-ink/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+        className="group flex h-10 w-full min-w-0 max-w-md items-center gap-2.5 rounded-full border border-ink/12 bg-surface px-4 text-sm text-muted transition hover:border-ink/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
         aria-label="Open command search"
       >
         <Search className="h-4 w-4" />
-        <span className="flex-1 text-left">Search candidates, campaigns, pages…</span>
+        <span className="min-w-0 flex-1 truncate text-left">Search candidates, campaigns, pages…</span>
         <kbd className="hidden sm:inline-flex items-center rounded-md border border-ink/15 bg-paper px-1.5 py-0.5 text-[0.625rem] font-bold text-muted">
           ⌘K
         </kbd>

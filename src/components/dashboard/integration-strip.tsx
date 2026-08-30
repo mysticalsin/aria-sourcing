@@ -62,7 +62,7 @@ export function IntegrationStrip() {
           role="list"
           aria-label="Integration status"
         >
-          {integrations.map((integration) => {
+          {integrations.filter((i) => i.real).map((integration) => {
             const tone = toneForHealth(integration.status);
             return (
               <span

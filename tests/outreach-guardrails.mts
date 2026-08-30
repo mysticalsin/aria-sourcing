@@ -68,6 +68,23 @@ ok(
   approvalScopeHash({ candidateId: "cand-1", channel: "WhatsApp", recipient: "33612345678" }) !==
     approvalScopeHash({ candidateId: "cand-2", channel: "WhatsApp", recipient: "33612345678" }),
 );
+ok(
+  "email approval scope uses toLowerCase (matches SQL lower / 0079 bind)",
+  approvalScopeHash({
+    candidateId: "cand-1",
+    channel: "Email",
+    recipient: "Ada.Lovelace@Example.COM",
+  }) ===
+    approvalScopeHash({
+      candidateId: "cand-1",
+      channel: "Email",
+      recipient: "ada.lovelace@example.com",
+    }),
+);
+ok(
+  "approvalScopeHash source does not call toLocaleLowerCase",
+  !/toLocaleLowerCase\s*\(/.test(readFileSync("src/lib/outreach-content.ts", "utf8")),
+);
 
 /* ===========================================================================
    2. Suppression / do-not-contact guardrail (real exported matcher).
@@ -131,8 +148,11 @@ const revokeRoute = readFileSync(new URL("../src/app/api/outreach/revoke/route.t
 const approvalLifecycleMigration = readFileSync(new URL("../supabase/migrations/0011_outreach_approval_lifecycle.sql", import.meta.url), "utf8");
 const approvalRaceMigrationPath = new URL("../supabase/migrations/0013_outreach_approval_race_safety.sql", import.meta.url);
 const approvalRaceMigration = existsSync(approvalRaceMigrationPath) ? readFileSync(approvalRaceMigrationPath, "utf8") : "";
-ok("send route reads approval provenance", /select\("body_hash, approval_scope_hash, approval_source"\)/.test(sendRoute));
-ok("send route rejects approval provenance other than human", /approval\.approval_source\s*!==\s*"human"/.test(sendRoute));
+ok("send route reads approval provenance", /select\("body_hash, approval_scope_hash, approval_source/.test(sendRoute));
+ok(
+  "send route authorizes human or autopilot/template approvals",
+  /approvalAuthorized/.test(sendRoute) && /autopilot_critics/.test(sendRoute),
+);
 ok("send route verifies the approval scope", /approval\.approval_scope_hash\s*!==\s*approvedScopeHash/.test(sendRoute));
 ok("send route never calls the WhatsApp adapter directly", !/await sendWhatsApp\(/.test(sendRoute));
 ok("send route routes WhatsApp through the durable outbox", /whatsapp-delivery-queued/.test(sendRoute));

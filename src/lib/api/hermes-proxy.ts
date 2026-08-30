@@ -9,6 +9,62 @@ import { isAllowedHermesUrl } from "./url";
 
 export const HERMES_PROXY_TIMEOUT_MS = 30_000;
 
+/** Upstream caps session keys at 256 chars and rejects control characters. */
+const SESSION_KEY_MAX_LEN = 256;
+const SESSION_KEY_FORBIDDEN = /[\r\n\x00]/;
+const WORKSPACE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * H6 profile multiplexing: one Hermes profile per MSourcing workspace when
+ * `gateway.multiplex_profiles` is enabled upstream. Dedicated MSourcing install
+ * recommended — do not share with Mina without H4 owner sign-off.
+ */
+export function resolveHermesProfilePrefix(workspaceId: string): string {
+  const trimmed = workspaceId.trim();
+  if (!WORKSPACE_UUID.test(trimmed)) return "default";
+  return `ws-${trimmed}`;
+}
+
+/**
+ * Per-candidate session memory scope (H6). Independent of chat session id.
+ * Format: workspaceId:campaignId:candidateId
+ */
+export function buildHermesSessionKey(input: {
+  workspaceId: string;
+  campaignId?: string;
+  candidateId?: string;
+}): string | undefined {
+  const ws = input.workspaceId.trim();
+  const camp = input.campaignId?.trim();
+  const cand = input.candidateId?.trim();
+  if (!ws || !camp || !cand) return undefined;
+  const key = `${ws}:${camp}:${cand}`;
+  if (key.length > SESSION_KEY_MAX_LEN || SESSION_KEY_FORBIDDEN.test(key)) return undefined;
+  return key;
+}
+
+/** Prefix gateway paths with `/p/{profile}` when multiplexing is active. */
+export function buildHermesUpstreamPath(upstreamPath: string, profilePrefix: string): string {
+  const normalized = upstreamPath.startsWith("/") ? upstreamPath : `/${upstreamPath}`;
+  if (!profilePrefix || profilePrefix === "default") return normalized;
+  return `/p/${profilePrefix}${normalized}`;
+}
+
+export function hermesUpstreamHeaders(input: {
+  bearerToken?: string;
+  sessionKey?: string;
+  extra?: Record<string, string>;
+}): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(input.extra ?? {}),
+  };
+  if (input.bearerToken) headers.Authorization = `Bearer ${input.bearerToken}`;
+  if (input.sessionKey) headers["X-Hermes-Session-Key"] = input.sessionKey;
+  return headers;
+}
+
 export function logHermesProxy(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
   const entry = { time: new Date().toISOString(), source: "hermes-proxy", level, message, ...(meta ?? {}) };
   if (level === "error") {
@@ -120,6 +176,8 @@ export const HERMES_PROXY_ALLOW_LIST: readonly { path: string; base: HermesProxy
   { path: "api/skills", base: "web" },
   { path: "api/curator", base: "web" },
   { path: "api/files", base: "web" },
+  // Hermes runtime cron scheduler (H7 read-only mirror for MSourcing settings).
+  { path: "api/cron/jobs", base: "web" },
 ];
 
 /**

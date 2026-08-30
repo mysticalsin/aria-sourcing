@@ -17,7 +17,6 @@ import {
   Meter,
   Progress,
   Select,
-  SkeletonCard,
   Tabs,
   TabPanel,
   Textarea,
@@ -25,8 +24,11 @@ import {
   useToast,
   type TabItem,
 } from "@/components/ui";
+import { motion } from "framer-motion";
 import { HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { staggerContainer } from "@/lib/dashboard-motion";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { ScoreDistribution } from "@/components/charts/score-distribution";
@@ -36,7 +38,6 @@ import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog
 import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
 import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
 import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
-import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
@@ -47,7 +48,7 @@ import { BookingCalendar } from "@/components/calendar/booking-calendar";
 import { InterviewerPanel } from "@/components/calendar/interviewer-panel";
 import { WeeklyReportCard } from "@/components/reports/weekly-report-card";
 import { SkillUpdateCard } from "@/components/reports/skill-update-card";
-import { bookingCalendarSummary } from "@/lib/booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle, bookingNeedsCalendar } from "@/lib/booking-status";
 import {
   useActions,
   useBookings,
@@ -106,6 +107,7 @@ import {
   CalendarCheck,
   CalendarPlus,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Compass,
   Copy,
@@ -353,6 +355,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
+  const reducedMotion = usePrefersReducedMotion();
 
   const [tab, setTab] = React.useState("overview");
   const [selected, setSelected] = React.useState<Candidate | null>(null);
@@ -406,11 +409,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   if (!hydrated) {
     return (
-      <div className="space-y-6">
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
-      </div>
+      <EmptyState
+        title="Loading campaign…"
+        description="Campaign detail appears after workspace hydrate — no placeholder panels."
+      />
     );
   }
 
@@ -439,7 +441,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const scores = candidates.map((cand) => cand.matchScore);
   const campaignReplies = allReplies.filter((r) => r.campaignId === c.id);
   const campaignBookings = allBookings.filter((b) => b.campaignId === c.id);
-  const interestedAwaiting = candidates.filter((cand) => cand.stage === "Interested" && !cand.booking);
+  const interestedAwaiting = candidates.filter(
+    (cand) =>
+      cand.stage === "Interested"
+      && (!cand.booking || bookingNeedsCalendar(cand.booking)),
+  );
 
   const needsApproval = outreach
     .filter((mm) => mm.status === "Needs Approval")
@@ -447,8 +453,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const pendingManual = outreach
     .filter((mm) => mm.status === "Pending Manual Send")
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const pendingSend = outreach
+    .filter((mm) => mm.status === "Approved")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const otherOutreach = outreach
-    .filter((mm) => mm.status !== "Needs Approval" && mm.status !== "Pending Manual Send")
+    .filter(
+      (mm) =>
+        mm.status !== "Needs Approval"
+        && mm.status !== "Pending Manual Send"
+        && mm.status !== "Approved",
+    )
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const sortedReplies = [...campaignReplies].sort((a, b) => {
@@ -745,10 +759,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.createBookingFor(cand.id);
     setBookingCandidateId(null);
     if (res.ok) {
+      const needsCalendar = bookingNeedsCalendar(res.booking);
       toast({
-        title: `Interview booked: ${cand.name}`,
+        title: bookingInterviewTitle(res.booking, cand.name),
         description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
-        variant: "success",
+        variant: needsCalendar ? "warning" : "success",
       });
     } else {
       toast({ title: "Could not book interview", description: res.error, variant: "error" });
@@ -816,7 +831,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     { label: "Contacted", value: formatNumber(m.contacted), hint: "Outreach delivered", icon: <Send />, tone: "tangerine" },
     { label: "Reply rate", value: formatPercent(m.replyRate), hint: "Replies per contact", icon: <MessageSquare />, tone: "aqua" },
     { label: "Interested", value: formatNumber(m.interested), hint: "Positive intent", icon: <Sparkles />, tone: "tangerine" },
-    { label: "Booked", value: formatNumber(m.booked), hint: "Interviews scheduled", icon: <CalendarCheck />, tone: "violet" },
+    { label: "Booked", value: formatNumber(m.booked), hint: "With Teams/calendar link", icon: <CalendarCheck />, tone: "violet" },
     { label: "Avg match", value: m.avgMatchScore, hint: "Mean fit score", icon: <Target />, tone: scoreTone(m.avgMatchScore) },
   ];
 
@@ -922,7 +937,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApifyButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
@@ -970,27 +984,47 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       </Card>
 
       {feedbackReceipts.length > 0 && (
-        <Card className="mb-6" aria-label="Sourcing lesson feedback">
-          <CardHeader>
-            <Eyebrow>Private role learning</Eyebrow>
-            <CardTitle className="mt-1">Were these real searches useful?</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-3">
-            <p className="text-sm text-muted">
-              Feedback stores aggregate query outcomes only. It never sends candidate profiles to Graphify,
-              and no lesson can go live without a separate admin review.
+        <details
+          className="group mb-6 rounded-2xl border border-line/80 bg-surface shadow-sm"
+          aria-label="Sourcing lesson feedback"
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
+            <div className="min-w-0 flex items-center gap-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-soft text-violet">
+                <GraduationCap className="h-4 w-4" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <Eyebrow>Private role learning</Eyebrow>
+                <p className="truncate text-sm font-semibold text-ink">
+                  Were these real searches useful?
+                  <span className="ml-2 font-normal text-muted">
+                    ({feedbackReceipts.length} batch{feedbackReceipts.length === 1 ? "" : "es"})
+                  </span>
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted">
+              <span className="group-open:hidden">Open</span>
+              <span className="hidden group-open:inline">Close</span>
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
+            </span>
+          </summary>
+          <div className="space-y-3 border-t border-line/60 px-4 pb-4 pt-3 sm:px-5">
+            <p className="text-xs leading-relaxed text-muted">
+              Aggregate query outcomes only — never candidate profiles. Lessons stay private until admin review.
             </p>
             {feedbackReceipts.map((receipt) => {
               const submitting = feedbackSubmitting.has(receipt.receiptId);
               return (
                 <div
                   key={receipt.receiptId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-canvas/40 px-3 py-2.5"
                 >
                   <p className="text-sm font-medium text-ink">
-                    {receipt.platform}: {receipt.candidateCount} real candidate{receipt.candidateCount === 1 ? "" : "s"}
+                    {receipt.platform}: {receipt.candidateCount} real candidate
+                    {receipt.candidateCount === 1 ? "" : "s"}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     <Button
                       size="sm"
                       variant="secondary"
@@ -1019,8 +1053,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               );
             })}
-          </CardBody>
-        </Card>
+          </div>
+        </details>
       )}
 
       {runOpen && (
@@ -1040,11 +1074,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         <div className="space-y-6">
           <StagePipeline metrics={m} />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <motion.div
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+            variants={staggerContainer}
+            initial={reducedMotion ? false : "hidden"}
+            animate="show"
+          >
             {overviewMetrics.map((mc) => (
               <MetricCard key={mc.label} label={mc.label} value={mc.value} hint={mc.hint} icon={mc.icon} tone={mc.tone} />
             ))}
-          </div>
+          </motion.div>
 
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
@@ -1470,6 +1509,20 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                       </Badge>
                     </div>
                     {pendingManual.map((msg) => (
+                      <OutreachMessageCard key={msg.id} message={msg} />
+                    ))}
+                  </section>
+                )}
+                {pendingSend.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Send className="h-4 w-4 text-tangerine" aria-hidden />
+                      <Eyebrow>Approved — awaiting send</Eyebrow>
+                      <Badge tone="tangerine" size="sm">
+                        {pendingSend.length}
+                      </Badge>
+                    </div>
+                    {pendingSend.map((msg) => (
                       <OutreachMessageCard key={msg.id} message={msg} />
                     ))}
                   </section>

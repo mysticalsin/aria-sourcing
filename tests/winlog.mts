@@ -10,7 +10,7 @@ import {
   normalizeHermesState,
   WIN_RECORD_LIMIT,
 } from "../src/lib/store";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type { Booking, Campaign, Candidate, HermesState, OutreachMessage, WinRecord } from "../src/lib/types";
 import { escapeMarkdownTableCell } from "../src/lib/utils";
 
@@ -32,7 +32,7 @@ const dryRunAt = "2026-07-10T09:00:00.000Z";
 const lastRealAt = "2026-07-10T10:00:00.000Z";
 const bookingCreatedAt = "2026-07-10T12:00:00.000Z";
 
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const campaign: Campaign = {
   ...seed.campaigns[0],
   id: campaignId,

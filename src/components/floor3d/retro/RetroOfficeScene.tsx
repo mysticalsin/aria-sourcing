@@ -307,7 +307,7 @@ function AgentActivityLabels({
 
   return (
     <>
-      <FloorLabelBillboard groupRef={activeGroupRef} label={activeLabel} accent={ACTIVE_ACCENT} tag="LIVE" />
+      <FloorLabelBillboard groupRef={activeGroupRef} label={activeLabel} accent={ACTIVE_ACCENT} tag="ACTIVE" />
       <FloorLabelBillboard groupRef={selectedGroupRef} label={selectedLabel} accent={SELECTED_ACCENT} tag="SELECTED" />
     </>
   );

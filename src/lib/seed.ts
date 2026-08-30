@@ -8,6 +8,7 @@ import {
   sourceCandidates,
   buildSourcingStrategy,
 } from "./mock-ai";
+import { bookingInterviewTitle } from "./booking-status";
 import { DEFAULT_SCORING_WEIGHTS } from "./scoring";
 import { firstInterviewElapsedHours } from "./metrics";
 import { slaDueFor } from "./rules";
@@ -61,7 +62,9 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // connected/lastSync state after the default seed became honest.
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
-export const STATE_VERSION = 17;
+// STATE_VERSION 19 — purge historical demo candidates/outreach/replies/bookings;
+// fresh workspaces start Ready-to-source with zero candidates (E2E clean slate).
+export const STATE_VERSION = 19;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -143,7 +146,7 @@ export function defaultSettings(): SystemSettings {
     humanApprovalGate: true,
     dryRunMode: true,
     webResearch: true,
-    minScoreToContact: 70,
+    minScoreToContact: 80,
     starRatingThresholds: { topGun: 88, a: 80, b: 65, c: 50 },
     slaMinutes: 15,
     operatorName: "Jordan Bryce",
@@ -168,7 +171,7 @@ export function defaultSettings(): SystemSettings {
     defaultLanguage: "en",
     soundEnabled: false,
     guardrails: defaultGuardrails(),
-    notifications: { slack: true, telegram: false, email: true },
+    notifications: { slack: false, telegram: false, email: true },
     llmProviders: defaultLlmProviders(),
     savedModels: defaultSavedModels(),
     tools: defaultTools(),
@@ -186,6 +189,7 @@ export function defaultSettings(): SystemSettings {
     hermesApiKeyId: "",
     memoryCapacity: 200,
     hermesWebUrl: "",
+    heyreach: undefined,
   };
 }
 
@@ -648,8 +652,8 @@ function seedTania(candidates: Candidate[], campaigns: Campaign[]): ChatboxSubmi
     camp.jobAd = {
       content:
         `# ${camp.title}\n\n${camp.department} · ${camp.jobAnalysis.locationType} · ${camp.jobAnalysis.regions.join(", ")}\n\n` +
-        `We're hiring a ${camp.title.toLowerCase()} to join ${camp.hiringManager}'s team. ` +
-        `You'll work on high-impact problems with a senior, supportive group.\n\n` +
+        `Mantu Group is hiring a ${camp.title.toLowerCase()} to join ${camp.hiringManager}'s team. ` +
+        `You'll work on high-impact client problems with a senior, supportive consulting group.\n\n` +
         `**Must have:** ${camp.jobAnalysis.requiredSkills.slice(0, 4).join(", ")}.\n` +
         `**Nice to have:** ${camp.jobAnalysis.niceToHaveSkills.slice(0, 3).join(", ")}.`,
       screeningQuestions: screeningQuestionsFor(camp.jobAnalysis),
@@ -721,7 +725,7 @@ function buildChatboxSubmissions(campaigns: Campaign[]): ChatboxSubmission[] {
   });
 }
 
-export function buildSeedState(): HermesState {
+export function buildHistoricalDemoSeedState(): HermesState {
   const settings = defaultSettings();
   const now = Date.now();
 
@@ -794,20 +798,20 @@ export function buildSeedState(): HermesState {
         };
         outreach.push(msg);
       } else {
-        // Sent (dry-run) history
+        // Dry-run history — Approved without simulated send (aligns with stampSimulatedSend).
         const tone = i % 3 === 0 ? "Technical" : i % 3 === 1 ? "Executive" : "Casual Professional";
         const channel = i % 4 === 0 ? "LinkedIn" : "Email";
         const gen = generateOutreach(cand, campaign, tone, channel, 1);
-        const sentAt = isoDaysBefore(10 - specIndex * 2 - (i % 4));
+        const approvedAt = isoDaysBefore(10 - specIndex * 2 - (i % 4));
         const msg: OutreachMessage = {
           id: genId("msg"), candidateId: cand.id, campaignId: campaign.id, channel,
           subject: gen.subject, body: gen.body, tone, personalizationEvidence: gen.personalizationEvidence,
-          status: "Scheduled", sequenceStep: 1, scheduledFor: sentAt, sentAt,
+          status: "Approved", sequenceStep: 1, scheduledFor: null, sentAt: null,
           approvedBy: settings.operatorName, dryRun: true, createdAt: isoDaysBefore(11 - specIndex * 2 - (i % 4)),
         };
         outreach.push(msg);
-        cand.lastContactedAt = sentAt;
-        cand.outreachHistory.push({ messageId: msg.id, channel, subject: gen.subject, status: "Scheduled", at: sentAt });
+        cand.lastContactedAt = approvedAt;
+        cand.outreachHistory.push({ messageId: msg.id, channel, subject: gen.subject, status: "Approved", at: approvedAt });
       }
 
       // Replies
@@ -839,11 +843,24 @@ export function buildSeedState(): HermesState {
         const isPast = stage === "Interviewed";
         const start = new Date(now + (isPast ? -1 : 1 + (i % 3)) * 86_400_000 + 14 * 3_600_000);
         const booking = createBooking(cand, campaign, interviewer, start);
-        booking.status = isPast ? "Completed" : "Confirmed";
+        // Demo seed has no live Graph seat — never stamp Confirmed without a meeting URL.
+        booking.status = isPast ? "Completed" : "Proposed";
         bookings.push(booking);
         cand.booking = booking;
         campaignActivities.push(
-          act("booking", `Interview booked: ${cand.name}`, `${interviewer.name} (${interviewer.role}). Teams link generated.`, booking.status, campaign.id, { type: "booking", id: booking.id }, booking.createdAt),
+          act(
+            "booking",
+            bookingInterviewTitle(booking, cand.name),
+            `${interviewer.name} (${interviewer.role}). ${
+              booking.teamsLink || booking.calLink
+                ? "Teams/calendar link present."
+                : "Local slot only — needs calendar / confirmLive for Teams."
+            }`,
+            booking.status,
+            campaign.id,
+            { type: "booking", id: booking.id },
+            booking.createdAt,
+          ),
         );
       }
 
@@ -862,10 +879,11 @@ export function buildSeedState(): HermesState {
       allCandidates.push(cand);
     });
 
-    // Compute metrics from final stages
+    // Compute metrics from final stages — do not fabricate daily send counters
+    // (dry-run Approved history is not a real send).
     campaign.metrics = computeMetrics(accepted);
-    campaign.metrics.emailsSentToday = specIndex === 0 ? 6 : specIndex === 1 ? 3 : 1;
-    campaign.metrics.linkedinSentToday = specIndex === 0 ? 2 : 1;
+    campaign.metrics.emailsSentToday = 0;
+    campaign.metrics.linkedinSentToday = 0;
     // Real elapsed time from campaign creation to the first scheduled interview
     // (never fabricated — shares firstInterviewElapsedHours with the live
     // computation in store.ts, see metrics.ts).
@@ -889,12 +907,17 @@ export function buildSeedState(): HermesState {
 
   activities.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
-  // Authoritative outreach ledger: every already-contacted candidate is recorded
-  // against a seat (round-robin), so the fleet de-dupe reflects real history.
+  // Authoritative outreach ledger: already-contacted candidates. Dry-run
+  // Approved-only rows use claimed (not sent) so fleet de-dupe does not look like delivery.
   for (const cand of allCandidates) {
     if (!cand.lastContactedAt) continue;
     const seat = seats[ledgerSeatRR % seats.length];
     ledgerSeatRR += 1;
+    const lastOutreach = outreach.find((m) => m.candidateId === cand.id && m.approvedBy);
+    const ledgerStatus =
+      lastOutreach && lastOutreach.dryRun === true && !lastOutreach.sentAt
+        ? ("claimed" as const)
+        : ("sent" as const);
     ledger.push({
       id: genId("led"),
       candidateId: cand.id,
@@ -902,8 +925,8 @@ export function buildSeedState(): HermesState {
       seatId: seat.id,
       campaignId: cand.campaignId,
       channel: cand.outreachHistory[0]?.channel ?? "Email",
-      status: cand.stage === "Not Interested" ? "sent" : "sent",
-      reason: null,
+      status: ledgerStatus,
+      reason: ledgerStatus === "claimed" ? "Dry-run approval — nothing sent." : null,
       at: cand.lastContactedAt,
     });
   }
@@ -974,3 +997,152 @@ function computeMetrics(cands: Candidate[]): CampaignMetrics {
 
 /* Re-export for any consumer that wants to regenerate emails on demand. */
 export { interviewerPrepEmail, candidateConfirmationEmail };
+
+function emptyMetrics(): CampaignMetrics {
+  return {
+    sourced: 0,
+    contacted: 0,
+    replied: 0,
+    interested: 0,
+    booked: 0,
+    interviewed: 0,
+    offer: 0,
+    hired: 0,
+    notInterested: 0,
+    replyRate: 0,
+    avgMatchScore: 0,
+    timeToFirstInterviewHours: null,
+    emailsSentToday: 0,
+    linkedinSentToday: 0,
+  };
+}
+
+/** E2E-ready job analysis (matches e2e-workflow-test.sh intake). */
+export function e2eReadyJob(): JobAnalysis {
+  return {
+    title: "Senior TypeScript Engineer",
+    department: "Engineering",
+    seniority: "Senior",
+    employmentType: "Full-time",
+    locationType: "Hybrid",
+    regions: ["London", "UK"],
+    timezone: "Europe/London",
+    salaryMin: 90000,
+    salaryMax: 120000,
+    currency: "GBP",
+    equity: false,
+    requiredSkills: ["TypeScript", "React", "Node.js", "GraphQL", "PostgreSQL"],
+    niceToHaveSkills: ["Next.js", "AWS"],
+    minYearsExperience: 5,
+    maxYearsExperience: 12,
+    education: "No formal requirement",
+    industryExperience: ["SaaS", "Consulting"],
+    companyStageTarget: ["Series B"],
+    teamSize: "Platform team of 10",
+    reportingTo: "Engineering Manager",
+    urgency: "Urgent",
+    validationWarnings: [],
+    language: "en",
+  };
+}
+
+function buildReadyCampaign(
+  id: string,
+  job: JobAnalysis,
+  hiringManager: string,
+  hiringManagerEmail: string,
+): Campaign {
+  return {
+    id,
+    title: job.title,
+    department: job.department,
+    urgency: job.urgency,
+    status: "Sourcing",
+    hiringManager,
+    hiringManagerEmail,
+    createdAt: isoDaysBefore(1),
+    targetStartDate: new Date(SEED_NOW.getTime() + 40 * 86_400_000).toISOString(),
+    jobAnalysis: job,
+    sourcingStrategy: buildSourcingStrategy(job),
+    scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },
+    metrics: emptyMetrics(),
+    skillUpdates: [],
+    activities: [
+      act(
+        "campaign",
+        "Campaign ready for sourcing",
+        `${job.title} — brief reviewed, awaiting first batch.`,
+        "Ready",
+        id,
+        { type: "campaign", id },
+        isoHoursBefore(2),
+      ),
+    ],
+  };
+}
+
+/**
+ * Default seed — clean slate with zero historical candidates.
+ * Campaigns are in Sourcing (brief reviewed); webhook + agent fill the pipeline.
+ */
+export function buildSeedState(): HermesState {
+  const settings = defaultSettings();
+  const campaigns = [
+    buildReadyCampaign(
+      "camp-e2e",
+      e2eReadyJob(),
+      "Priya Nair",
+      "priya.nair@acme.io",
+    ),
+    buildReadyCampaign(
+      "camp_seed_backend",
+      backendJob(),
+      "Daniela Brandt",
+      "daniela.brandt@northwind.example",
+    ),
+    buildReadyCampaign(
+      "camp_seed_frontend",
+      frontendJob(),
+      "Marcus Lindqvist",
+      "marcus.lindqvist@brightloop.example",
+    ),
+  ];
+
+  return {
+    version: STATE_VERSION,
+    campaigns,
+    candidates: [],
+    outreach: [],
+    replies: [],
+    bookings: [],
+    wins: [],
+    interviewers: seedInterviewers(),
+    reports: [],
+    integrations: defaultIntegrations(),
+    activities: campaigns.flatMap((c) => c.activities),
+    settings,
+    seats: seedSeats(),
+    suppression: seedSuppression(),
+    ledger: [],
+    chatboxSubmissions: [],
+    skills: defaultSkills(),
+    apiKeys: [
+      {
+        id: genId("key"),
+        name: "Anthropic (primary)",
+        provider: "Anthropic",
+        last4: "a1b2",
+        status: "valid",
+        lastTestedAt: isoHoursBefore(5),
+        createdBy: "Jordan Bryce",
+        createdAt: isoDaysBefore(12),
+      },
+    ],
+    currentRole: "admin",
+    chats: [],
+    memory: [],
+    schedules: [],
+    activeCampaignId: campaigns[0]?.id ?? null,
+    ingestedMessageIds: [],
+  };
+}

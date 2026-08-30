@@ -1,6 +1,7 @@
 import { defaultIntegrations, testConnection } from "../src/lib/integrations";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 function ok(name: string, cond: boolean) {
   if (cond) {
     pass++;
@@ -16,6 +17,7 @@ const realCards = integrations.filter((integration) => integration.real === true
 const github = integrations.find((integration) => integration.id === "int_github");
 const apify = integrations.find((integration) => integration.id === "int_apify");
 const linkedinRsc = integrations.find((integration) => integration.id === "int_linkedin_rsc");
+const heyreach = integrations.find((integration) => integration.id === "int_heyreach");
 
 ok("has roadmap placeholder integrations to audit", placeholders.length > 0);
 ok(
@@ -26,31 +28,66 @@ ok(
   "every real:false integration has null lastSync",
   placeholders.every((integration) => integration.lastSync === null),
 );
+ok("real:true cards still exist", realCards.length > 0);
 ok(
-  "real:true cards still exist",
-  realCards.length > 0,
+  "GitHub real card starts honestly unconfigured (no fake connected)",
+  github?.real === true && github.status === "not_configured" && github.lastSync === null,
 );
 ok(
-  "GitHub real card remains connected",
-  github?.real === true && github.status === "connected" && typeof github.lastSync === "string",
+  "no real card seeds a fake connected+mock lastSync",
+  realCards.every(
+    (i) =>
+      i.status !== "connected" ||
+      i.id === "int_supabase" /* runtime-derived */ ||
+      false,
+  ),
 );
 ok(
   "real:false connection tests fail closed",
   placeholders.every((integration) => testConnection(integration).ok === false),
 );
 ok(
-  "Apify LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
-  apify?.real === true && apify.status === "connected" && typeof apify.lastSync === "string",
+  "mock-mode real cards fail closed on Test (never ready/lastSync)",
+  realCards.every((integration) => {
+    const result = testConnection({ ...integration, status: "connected", mode: "mock" });
+    return result.ok === false && /mock adapter/i.test(result.message);
+  }),
 );
 ok(
-  "Apify card's description names the third-party vendor and disclaims first-party LinkedIn automation",
-  /apify/i.test(apify?.description ?? "") &&
-    /third-party/i.test(apify?.description ?? "") &&
-    /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? ""),
+  "live-mode cards without a dedicated probe fail closed (stored ≠ validated)",
+  realCards.every((integration) => {
+    const result = testConnection({ ...integration, status: "connected", mode: "live" });
+    return result.ok === false && /no live probe/i.test(result.message);
+  }),
 );
 ok(
-  "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",
-  linkedinRsc?.real === false && linkedinRsc.status !== "connected",
+  "LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
+  apify?.real === true && apify.status === "not_configured",
+);
+ok(
+  "LinkedIn profile search card uses neutral operator-facing name",
+  apify?.name === "LinkedIn profile search",
+);
+ok(
+  "LinkedIn profile search points operators at Apify vault / Access & Keys",
+  /apify/i.test(apify?.description ?? "") && apify?.setupHref === "/settings?tab=access",
+);
+ok(
+  "Official LinkedIn messaging card is real and starts unconfigured",
+  linkedinRsc?.real === true && linkedinRsc.status === "not_configured",
+);
+ok(
+  "LinkedIn messaging card mentions OpenID Connect / Sign in",
+  /openid|sign in with linkedin/i.test(linkedinRsc?.description ?? ""),
+);
+ok(
+  "HeyReach MCP card is real and starts unconfigured",
+  heyreach?.real === true && heyreach.status === "not_configured",
+);
+ok(
+  "HeyReach MCP card points to integrations setup",
+  heyreach?.setupHref === "/settings?tab=integrations#linkedin-outreach-stack" &&
+    /heyreach mcp/i.test(heyreach?.name ?? ""),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

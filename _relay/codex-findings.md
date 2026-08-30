@@ -1065,3 +1065,145 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
 **Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
 **Status:** open; browser-agent capability remains NO-GO
+
+## 2026-08-27 — Enable webhook hidden when sub active + seat mock
+**Severity:** correctness
+**File:** src/components/settings/email-connections-panel.tsx:389
+**Issue:** Enable webhook only renders when `!c.graphSubscription?.active`. If Graph subscription is active but `seat.mode` is still mock (partial OAuth / promote failure / demote), the repair path that calls `ensure_graph_webhook` → `promoteMicrosoftGraphSeatLive` is unreachable; E2E step 6b then fails closed on exactly this state.
+**Repro/evidence:** Panel condition `!c.graphSubscription?.active`; ensureGraphWebhook at connections/route.ts:441-480 still promotes when sub is unchanged+ready; e2e-workflow-test.sh:1070 fails "webhook active but seat.mode is not live".
+**Suggested fix:** Show Enable webhook when Graph connection lacks active sub OR matching seat.mode !== "live".
+**Status:** fixed (6dacd05c6c6ac50a249b8a481bda39248eca4ad0)
+
+## 2026-08-27 — Outlook OAuth callback creates subscription instead of ensure
+**Severity:** correctness
+**File:** src/app/auth/microsoft/callback/route.ts:203-204
+**Issue:** Callback always `createGraphMailSubscription` (POST). Reconnect / repair when Graph already has an Inbox subscription for the app fails closed before `mode=live` promote; Enable-webhook path correctly uses `ensureGraphMailSubscription`.
+**Repro/evidence:** callback imports create; connections ensureGraphWebhook uses ensure; Graph rejects duplicate resource subscriptions without delete-first.
+**Suggested fix:** Replace create with `ensureGraphMailSubscription` before promote (same as Enable webhook).
+**Status:** fixed (6dacd05c6c6ac50a249b8a481bda39248eca4ad0)
+
+## 2026-08-27 — e2e_uuid lacks openssl fallback (uuidgen gap mostly fixed)
+**Severity:** test-gap
+**File:** e2e-workflow-test.sh:143-151
+**Issue:** Tip dfa70ec E2E used bare `uuidgen` (log: command not found → Idempotency-Key empty → sourcing-agent 400). HEAD `31a5d21` adds `e2e_uuid` with python3 fallback, but preflight only requires curl/jq/openssl — if both uuidgen and python3 are missing, key is still empty.
+**Repro/evidence:** `/tmp/e2e-tip-dfa70ec.log:52` uuidgen missing; HEAD has e2e_uuid; openssl already required at line 141.
+**Suggested fix:** Fall back to `printf '%s' "$(openssl rand -hex 16)" | sed 's/^\(........\)\(....\)\(....\)\(....\)\(............\)$/\1-\2-\3-\4-\5/'`.
+**Status:** fixed (6dacd05c6c6ac50a249b8a481bda39248eca4ad0)
+
+## 2026-08-27 — requisition_parse rpc_http_404 is apply_workspace_patch digest search_path
+**Severity:** correctness
+**File:** supabase/migrations/0063_loop_append_outreach.sql:14
+**Issue:** 0063 rewrote apply_workspace_patch with search_path omitting `extensions`. Live pgcrypto digest lives in extensions (public install is a no-op when already present elsewhere), so digest(text, unknown) raises 42883; PostgREST maps that to HTTP 404; loop worker records handler:requisition_parse:rpc_http_404 and never append_campaign.
+**Repro/evidence:** curl apply_workspace_patch with valid append_campaign → HTTP 404 code=42883 "function digest(text, unknown) does not exist"; invalid patch_kind returns 200 invalid_request (digest not reached). E2E webhook queues requisition_parse but campaign never materializes.
+**Suggested fix:** Migration 0068 restores extensions on search_path + schema-qualified digest with sha256::text cast + md5 fallback; worker classifyRpcHttpFailure surfaces digest_unresolved.
+**Status:** fixed (9da085d + bba23f6 on enterprise-autopilot; live Fly mig **0068** applied on `e469126` — service-role `append_campaign` returns `not_found` not 42883; synthetic webhook→campaign `camp-req-620deff9` materialized 2026-08-27)
+
+## 2026-08-27 — requisition_parse complete_aria_job 22023 from graphStage enqueue
+**Severity:** correctness
+**File:** scripts/sourcing-loop-worker.mjs:successorJob / handleRequisitionParse
+**Issue:** After 0068 restored digest, `requisition_parse` still failed closed with `handler:requisition_parse:rpc_http_400:22023`. Campaign blob was written via `apply_workspace_patch` (separate RPC) but `complete_aria_job` rolled back job success because `campaign_create` enqueue payload included `graphStage`, which `aria_job_payload_contract_ok` rejects (allowed keys: requisitionId, campaignId only). Same bug on shortlist_build / calendar_book successors.
+**Repro/evidence:** Live tick 2026-08-27T22:47:21Z claimed=1 completed=0 failureCodes=`handler:requisition_parse:rpc_http_400:22023`; campaign `camp-req-620deff9` present with 0 candidates (no campaign_create→sourcing_batch chain).
+**Suggested fix:** Strip `graphStage` in `successorJob` (keep on result objects only); resume when ingest status is `campaign_created` so retries enqueue `campaign_create` without `record_requisition_parse`.
+**Status:** fixed (this shift; requires Fly redeploy of tip beyond `e469126`)
+
+## 2026-08-29 — microsoftOAuth true without tenant while authorize 500s
+**Severity:** correctness
+**File:** src/lib/email-connections.ts:107-114
+**Issue:** `emailProviderReadiness.microsoftOAuth` was true with only CLIENT_ID/SECRET/REDIRECT_URI. Production authorize/callback require `resolveMicrosoftOAuthAuthority()` (MICROSOFT_TENANT_ID or GOTRUE_EXTERNAL_AZURE_URL); without tenant Connect Outlook returns 500 while E2E step 2d would PASS microsoftOAuth.
+**Repro/evidence:** Fly can have REDIRECT present + partial CLIENT_* without TENANT; `resolveMicrosoftOAuthAuthority({NODE_ENV:production})===null` but old readiness still true.
+**Suggested fix:** Gate microsoftOAuth on `resolveMicrosoftOAuthAuthority(env)` as well.
+**Status:** fixed (this shift — cursor/m365-oauth-tenant-readiness-570c)
+
+## 2026-08-29 — Graph-min tenant-from-URL hard-errored as partial Entra
+**Severity:** correctness
+**File:** scripts/fly-apply-owner-microsoft-secrets.sh:136-162
+**Issue:** A real `GOTRUE_EXTERNAL_AZURE_URL` used only to derive `MICROSOFT_TENANT_ID` (with PLACEHOLDER Entra CLIENT_ID/SECRET) set `entra_any=1` + `entra_all=0` and exited ERROR — blocking Graph-only reopen that docs allow via “tenant or Azure URL”.
+**Repro/evidence:** Drop-zone with real Graph CLIENT/SECRET, `MICROSOFT_TENANT_ID=PLACEHOLDER_*`, real tenant URL, PLACEHOLDER Entra ID/SECRET → `owner_ms_has_drop_file` PASS then apply ERROR partial Entra.
+**Suggested fix:** Skip Entra when CLIENT_ID+SECRET are both PLACEHOLDER/empty; URL alone may still derive tenant.
+**Status:** fixed (this shift — cursor/graph-minimum-reopen-fixes-bca0)
+
+## 2026-08-29 — fly-apply preferred stale production-readiness over /tmp drop-zone
+**Severity:** correctness
+**File:** scripts/fly-apply-owner-microsoft-secrets.sh:50-53
+**Issue:** Apply sourced `/tmp/owner-microsoft.env` then `production-readiness/.owner-microsoft.env`, so a stale gitignored copy overwrote the VM drop-zone the watcher/probe treat as primary.
+**Repro/evidence:** Valid Graph-min `/tmp` + PLACEHOLDER `production-readiness/.owner-microsoft.env` → detect credentials present, apply fails on PLACEHOLDER Graph fields.
+**Suggested fix:** Load production-readiness first, `/tmp` last (drop-zone wins).
+**Status:** fixed (this shift — cursor/graph-minimum-reopen-fixes-bca0)
+
+## 2026-08-29 — fly-enterprise-activate treated Entra/LLM as Graph PASS blockers
+**Severity:** spec-mismatch
+**File:** scripts/fly-enterprise-activate.sh:53-74
+**Issue:** Checklist `note_blocker` on missing `GOTRUE_EXTERNAL_AZURE_*` and Fly-env LLM keys (and auth-dead LLM), so Graph-minimum reopen + Hermes/vault still exited activation incomplete. Also omitted `MICROSOFT_TENANT_ID` from required Graph list.
+**Repro/evidence:** Decisions: Entra/LLM WARN-only for Graph E2E PASS; `print-fly-secrets-checklist` ends with `fly-enterprise-activate.sh`.
+**Suggested fix:** Entra/LLM → WARN; require `MICROSOFT_TENANT_ID` with other Graph secrets.
+**Status:** fixed (this shift — cursor/graph-minimum-reopen-fixes-bca0)
+
+## 2026-08-29 — Synthetic Graph client_id false-ready after apply
+**Severity:** correctness
+**File:** scripts/lib/owner-microsoft-credentials.sh; src/lib/email-connections.ts; scripts/fly-apply-owner-microsoft-secrets.sh
+**Issue:** Env exports with monotonous demo UUID `11111111-1111-4111-8111-111111111111` passed PLACEHOLDER checks, were applied to Fly, and made `microsoftOAuth=true` while authorize redirected with a non-real client_id (Connect Outlook would fail at Microsoft).
+**Repro/evidence:** After `probe-m365-unblock.sh --apply`, authed `GET /auth/microsoft?seat_id=…` Location contained `client_id=11111111-1111-4111-8111-111111111111`.
+**Suggested fix:** Treat monotonous fixture UUIDs as placeholder in apply + readiness; refuse authorize; unset fake Fly secrets.
+**Status:** fixed (29bd05b)
+
+## 2026-08-29 — E2E PASS gap audit (post-Owner-hardening)
+**Severity:** spec-mismatch
+**File:** (audit) Connect Outlook / verify-m365 / post-m365 / Settings / synthetic gates / e2e 6b
+**Issue:** Adversarial pass over remaining RESULT: PASS blockers after Owner preflight + consent SKIP + shared lock + Settings Owners hint. Live Fly: `graph_secrets_missing=3` (CLIENT_ID/SECRET/TENANT only); `encryptionReady=true`; microsoftOAuth=false; 6 mock Microsoft Graph seats ready for Connect.
+**Repro/evidence:** See audit body below. Authorize already requests Calendars.ReadWrite + OnlineMeetings.ReadWrite (`src/app/auth/microsoft/route.ts:89-91`); callback auto-wires route + `ensureGraphMailSubscription` + promote (`callback/route.ts:204-265`); synthetic/PLACEHOLDER/monotonous UUID refused in readiness+authorize+callback+apply; verify-m365 + e2e 6b require live seat + webhook + both scopes + Teams joinUrl.
+**Suggested fix:** None required for PASS — only Entra Owner dropzone + real secrets + Connect Outlook.
+**Status:** open (ops: Entra admin Owners Add Tony → apply → Connect Outlook); code PASS path clear
+
+### Non-blocking honesty nits (do not claim PASS; optional polish)
+1. **outlook-needs-panel omits Owners** — `src/components/intake/outlook-needs-panel.tsx:278-286` title/copy says only "OAuth env missing"; Settings panels already say Owners → Add twalteur@amaris.com. Mislead only.
+2. **fleet seat-card toast omits Owners** — `src/components/fleet/seat-card.tsx:170-174` generic "OAuth env missing". Mislead only.
+3. **encryptionReady ≠ secretEncryptionEnabled** — `email-connections.ts:141` is `length > 0`; callback uses `encryptionRequiredButMissing()` → `secretEncryptionEnabled()` (valid base64-32). Junk key could enable Connect UI then fail callback. Live Fly encryptionReady=true and LinkedIn live seat present — not a current PASS blocker.
+4. **post-m365 LIVE_SEAT omits status=active** — `post-m365-secrets-golive.sh:168-170` vs `verify-m365-ready.sh:155-160`; oauth wait can leave ENC=false if MS_OAUTH true (`:148-151`). Verify still fail-closes; no false PASS.
+
+## 2026-08-29 — Autopilot sequences always "not armed" (service_role table SELECT)
+**Severity:** correctness
+**File:** src/lib/rei-autopilot-dispatch.ts (loadAutopilotContext)
+**Issue:** Autopilot read `sourcing_loop_controls` via PostgREST table SELECT. `service_role` has EXECUTE on `get_sourcing_loop_controls` only — table SELECT is revoked (42501). Live Fly with kill_switch=false + sequences_enabled=true still returned `sequences_not_armed` for every Autopilot dispatch/sweep.
+**Repro/evidence:** Planted critics-green Needs Approval draft; `get_sourcing_loop_controls` showed sequences armed; cron sweep returned `reason:sequences_not_armed`. Direct `GET /sourcing_loop_controls` as service_role → 403 permission denied.
+**Suggested fix:** Use `rpc("get_sourcing_loop_controls")` exclusively.
+**Status:** fixed (9426d76)
+
+## 2026-08-29 — Autopilot sweep hides RPC / recipient failures as empty
+**Severity:** correctness
+**File:** src/lib/workspace-loop-slices.ts; src/app/api/cron/autopilot-send-outreach/route.ts
+**Issue:** Sweep RPC errors and `targetFromMessage` nulls collapsed to `{ok:true,sent:0,results:[]}`.
+**Repro/evidence:** Audit plant recipe; ready drafts with missing candidate/recipient looked identical to empty outreach.
+**Suggested fix:** 503 on sweep read failure; push `candidate_missing` / `no_recipient` into results.
+**Status:** fixed (9426d76)
+
+## 2026-08-29 — Worker sweep discards send outcomes
+**Severity:** test-gap
+**File:** scripts/sourcing-loop-worker.mjs (sweepAutopilotReadyDrafts)
+**Issue:** Worker cancelled cron body; tick only reported `autopilotSweep=ok` + workspace count.
+**Repro/evidence:** Live tick ok while cron sent:0; no skip reasons in heartbeat.
+**Suggested fix:** readBoundedJson; surface sent/skipped/errors/reasons; degrade on errors>0.
+**Status:** fixed (9426d76)
+
+## 2026-08-29 — LinkedIn Autopilot skip reason collapses config gaps
+**Severity:** spec-mismatch
+**File:** src/lib/rei-autopilot-send.ts; src/lib/rei-autopilot-dispatch.ts; src/lib/heyreach-delivery.ts
+**Issue:** Missing campaign vs seat vs key all mapped to `linkedin_assisted_manual_only`.
+**Repro/evidence:** Vault HeyReach key without settings.heyreach.campaignId.
+**Suggested fix:** Split diagnostic flags; keep fail-closed AND for dispatch.
+**Status:** fixed (9426d76)
+
+## 2026-08-29 — approvalScopeHash locale vs SQL lower
+**Severity:** correctness
+**File:** src/lib/outreach-content.ts
+**Issue:** `toLocaleLowerCase()` could diverge from SQL `lower()` / 0079 bind.
+**Repro/evidence:** Non-ASCII locale recipient casing.
+**Suggested fix:** Use invariant `toLowerCase()`.
+**Status:** fixed (9426d76)
+
+## 2026-08-30 — dispatch-outbound sequences SELECT blocked wire forever
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts:loopSendControlsPermit; scripts/sourcing-loop-worker.mjs; ignite/confirm/whatsapp-inbound
+**Issue:** Same class as Autopilot sequences bug: service_role table SELECT on `sourcing_loop_controls` is revoked. After Autopilot enqueue, `dispatchDue` silently skipped every row (left `queued`). Worker shortlist/arming also failed closed.
+**Repro/evidence:** Live sequences armed via RPC; Autopilot mint/enqueue would still leave messages queued because dispatcher permit returned false on 42501.
+**Suggested fix:** Shared `loadSourcingLoopControls` → `get_sourcing_loop_controls`; durable-block with `sequences-not-armed`; surface dispatchDue stats on Autopilot result.
+**Status:** fixed (736f832)

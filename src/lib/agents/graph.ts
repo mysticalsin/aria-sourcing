@@ -31,7 +31,7 @@ import type { AgentExecutionPolicy } from "@/lib/agents/runtime-policy";
 export type AgentNode = "planner" | "sourcer" | "screener" | "outreach" | "reporter" | "done";
 
 export const MAX_STEPS = 24;
-export const DEFAULT_MIN_SCORE = 70; // mirrors MIN_SCORE_FLOOR in rules.ts
+export const DEFAULT_MIN_SCORE = 80; // mirrors MIN_SCORE_FLOOR in rules.ts
 
 // ---------------------------------------------------------------------------
 // Plan schema — same shape deer-flow validates server-side, minus locales.

@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
+import { loadSourcingLoopControls } from "@/lib/sourcing-loop-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -38,33 +39,22 @@ export async function POST(req: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ ok: false, reason: "No service client." }, { status: 503 });
 
-  const { data: controls, error: controlsError } = await supabase
-    .from("sourcing_loop_controls")
-    .select("workspace_id, kill_switch, intake_enabled")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-
+  const loaded = await loadSourcingLoopControls(supabase, workspaceId);
   if (
-    controlsError ||
-    !controls ||
-    controls.kill_switch !== false ||
-    controls.intake_enabled !== true
+    !loaded.ok ||
+    loaded.row.kill_switch !== false ||
+    loaded.row.intake_enabled !== true
   ) {
     return NextResponse.json({ ok: false }, { status: 403 });
   }
 
-  const result = await supabase.rpc("enqueue_aria_job", {
-    p_workspace_id: workspaceId,
-    p_kind: "email_sync",
-    p_idempotency_key: `ignite:email_sync:${workspaceId}:${todayKey()}`,
-    p_payload: {},
-    p_run_at: new Date().toISOString(),
-    p_priority: 50,
+  // Hiring-need intake is webhook → requisition_parse (no empty email_sync).
+  // Ignite only verifies the loop is armed for this workspace.
+  return NextResponse.json({
+    ok: true,
+    armed: true,
+    intake: "webhook",
+    detail: "Sourcing loop armed. Hiring needs arrive via Outlook Graph webhook → requisition_parse.",
+    day: todayKey(),
   });
-  const body = result.data as { status?: string; id?: string; replay?: boolean } | null;
-  if (result.error || body?.status !== "enqueued") {
-    return NextResponse.json({ ok: false }, { status: 503 });
-  }
-
-  return NextResponse.json({ ok: true, id: body.id, replay: body.replay === true });
 }

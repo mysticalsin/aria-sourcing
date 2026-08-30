@@ -2,9 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
 import { AGENT_SEAT_SELECT } from "@/lib/fleet-seats";
+import { assertMicrosoftGraphSeatLiveReady } from "@/lib/microsoft-seat-live";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
-import { getServerSupabase } from "@/lib/supabase/server";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { INTEGRATION_MODES, SEAT_PROVIDERS, type Role } from "@/lib/types";
 import { safeLog } from "@/lib/log-redact";
@@ -89,6 +90,19 @@ export async function POST(req: NextRequest) {
 
   if (!actor.supabase) return NextResponse.json({ ok: true, demo: true });
 
+  // Microsoft Graph seats cannot be created already-live — OAuth callback /
+  // ensure_graph_webhook promote only after inbound route + Graph subscription.
+  if (seat.mode === "live" && seat.provider === "Microsoft Graph") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Microsoft Graph seats start in mock. Connect Outlook so inbound route + Graph webhook promote the seat to live.",
+      },
+      { status: 409 },
+    );
+  }
+
   const { data, error } = await actor.supabase
     .from("agent_seats")
     .insert({
@@ -128,6 +142,52 @@ export async function PATCH(req: NextRequest) {
 
   if (!actor.supabase) return NextResponse.json({ ok: true, demo: true });
 
+  if (mode === "live") {
+    const { data: existing, error: existingErr } = await actor.supabase
+      .from("agent_seats")
+      .select("id, provider, workspace_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (existingErr || !existing || existing.workspace_id !== actor.workspaceId) {
+      return NextResponse.json({ ok: false, error: "Seat not found in your workspace." }, { status: 403 });
+    }
+    if (existing.provider === "Microsoft Graph") {
+      const svc = getServiceSupabase();
+      if (!svc) {
+        return NextResponse.json({ ok: false, error: "Service client unavailable." }, { status: 500 });
+      }
+      const ready = await assertMicrosoftGraphSeatLiveReady(svc, {
+        workspaceId: actor.workspaceId,
+        seatId: id,
+        provider: "Microsoft Graph",
+      });
+      if (!ready.ok) {
+        return NextResponse.json({ ok: false, error: ready.reason }, { status: 409 });
+      }
+    } else if (existing.provider === "Gmail API") {
+      const svc = getServiceSupabase();
+      if (!svc) {
+        return NextResponse.json({ ok: false, error: "Service client unavailable." }, { status: 500 });
+      }
+      const { data: conn, error: connErr } = await svc
+        .from("email_connections")
+        .select("id, refresh_token")
+        .eq("seat_id", id)
+        .eq("workspace_id", actor.workspaceId)
+        .eq("provider", "Gmail API")
+        .maybeSingle();
+      if (connErr) {
+        return NextResponse.json({ ok: false, error: "Failed to look up Gmail connection." }, { status: 500 });
+      }
+      if (!conn?.id || !conn.refresh_token) {
+        return NextResponse.json(
+          { ok: false, error: "Connect Gmail (OAuth) before setting this seat live." },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   const patch: Record<string, string> = {};
   if (operatorEmail !== undefined) patch.operator_email = operatorEmail;
   if (mode !== undefined) patch.mode = mode;
@@ -136,6 +196,7 @@ export async function PATCH(req: NextRequest) {
     .from("agent_seats")
     .update(patch)
     .eq("id", id)
+    .eq("workspace_id", actor.workspaceId)
     .select(AGENT_SEAT_SELECT)
     .maybeSingle();
 

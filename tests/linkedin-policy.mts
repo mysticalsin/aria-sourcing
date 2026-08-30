@@ -1,7 +1,7 @@
 /* ============================================================================
    tests/linkedin-policy.mts
    Area: LinkedIn policy — ensures skills / prompts cannot bypass the
-   assisted-manual rule or instruct LinkedIn automation.
+   assisted-manual rule or instruct LinkedIn session automation.
    ========================================================================== */
 
 import { readFileSync } from "fs";
@@ -10,7 +10,10 @@ import * as linkedInPolicy from "../src/lib/linkedin-policy";
 const { checkLinkedInPolicy } = linkedInPolicy;
 type OutboundPolicy = { ok: boolean; reason?: string };
 const getOutboundChannelPolicy = (linkedInPolicy as unknown as {
-  getOutboundChannelPolicy?: (channel: string) => OutboundPolicy;
+  getOutboundChannelPolicy?: (
+    channel: string,
+    opts?: { heyReachConfigured?: boolean; linkedInVendorConfigured?: boolean },
+  ) => OutboundPolicy;
 }).getOutboundChannelPolicy;
 
 let pass = 0,
@@ -48,17 +51,26 @@ ok("allows assisted-manual wording", checkLinkedInPolicy("Operator copies the Li
 ok("outbound policy exposes a delivery decision", typeof getOutboundChannelPolicy === "function");
 if (getOutboundChannelPolicy) {
   const linkedInDelivery = getOutboundChannelPolicy("LinkedIn");
-  ok("LinkedIn automated delivery is rejected", linkedInDelivery.ok === false);
-  ok("LinkedIn rejection requires manual delivery", /manual/i.test(linkedInDelivery.reason ?? ""));
+  ok("LinkedIn without vendor/HeyReach is rejected", linkedInDelivery.ok === false);
+  ok("LinkedIn rejection mentions manual or HeyReach", /manual|HeyReach/i.test(linkedInDelivery.reason ?? ""));
+  ok(
+    "LinkedIn allowed when HeyReach configured",
+    getOutboundChannelPolicy("LinkedIn", { heyReachConfigured: true }).ok === true,
+  );
+  ok(
+    "LinkedIn allowed when vendor configured",
+    getOutboundChannelPolicy("LinkedIn", { linkedInVendorConfigured: true }).ok === true,
+  );
   ok("Email delivery is not rejected by the LinkedIn policy", getOutboundChannelPolicy("Email").ok === true);
 }
 
 const sendRoute = readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8");
 ok("outreach route imports outbound channel policy", /getOutboundChannelPolicy/.test(sendRoute));
 ok(
-  "outreach route returns manual-required before a provider path for LinkedIn",
-  /getOutboundChannelPolicy\((?:payload\.channel|channel)\)[\s\S]*status:\s*"manual-required"/.test(sendRoute),
+  "outreach route returns manual-required when policy blocks LinkedIn",
+  /getOutboundChannelPolicy\([\s\S]*status:\s*"manual-required"/.test(sendRoute),
 );
+ok("outreach route wires HeyReach readiness into policy", /heyReachDeliveryReadyFromEnv/.test(sendRoute));
 
 console.log(`RESULT linkedin-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

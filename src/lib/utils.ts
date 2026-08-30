@@ -42,6 +42,46 @@ export function genId(prefix: string): string {
   return `${prefix}_${t}${c}`;
 }
 
+/**
+ * Stable outreach message id so draft_generate retries mint/enqueue the same
+ * row (dedupe includes message_id). Browser/manual drafts still use genId.
+ */
+export function stableOutreachMessageId(parts: {
+  workspaceId: string;
+  campaignId: string;
+  candidateId: string;
+  channel: string;
+  sequenceStep?: number;
+  /** first_touch | inbound_classify | … */
+  trigger?: string;
+}): string {
+  const step = Number.isFinite(parts.sequenceStep) ? Math.max(1, Math.floor(parts.sequenceStep ?? 1)) : 1;
+  const trigger = (parts.trigger ?? "first_touch").trim() || "first_touch";
+  const material = [
+    parts.workspaceId.trim(),
+    parts.campaignId.trim(),
+    parts.candidateId.trim(),
+    parts.channel.trim(),
+    String(step),
+    trigger,
+  ].join("\n");
+  // FNV-1a 32-bit — deterministic, no crypto import in shared utils.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < material.length; i++) {
+    hash ^= material.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const hex = (hash >>> 0).toString(16).padStart(8, "0");
+  let hash2 = 0x811c9dc5;
+  const material2 = `${material}\nstable-v1`;
+  for (let i = 0; i < material2.length; i++) {
+    hash2 ^= material2.charCodeAt(i);
+    hash2 = Math.imul(hash2, 0x01000193);
+  }
+  const hex2 = (hash2 >>> 0).toString(16).padStart(8, "0");
+  return `msg_${hex}${hex2}`;
+}
+
 export function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

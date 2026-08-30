@@ -24,7 +24,7 @@ import {
   summarizeCampaignLaunch,
   type LaunchRoleResult,
 } from "@/lib/store/campaign-launch";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { Radio, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
 /* ============================================================================
@@ -109,6 +109,14 @@ export default function LaunchPage() {
     if (launchSeqRef.current !== seq) return null;
     setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: true }]);
 
+    if (supabaseEnabled) {
+      const synced = await actions.flushWorkspaceSave();
+      if (!synced) {
+        setLaneSourcing(campaign.id, false);
+        return { created: true, sourcingComplete: false };
+      }
+    }
+
     let sourcedCount = 0;
     for (let wave = 0; wave < SOURCING_WAVES; wave++) {
       if (launchSeqRef.current !== seq) return null;
@@ -144,15 +152,31 @@ export default function LaunchPage() {
     setLanes([]);
 
     const parsedRoles = await Promise.all(
-      roleBlocks.map((block) => parseIntakeLive(settings, { email: block })),
+      roleBlocks.map(async (block) => {
+        try {
+          return await parseIntakeLive(settings, { email: block });
+        } catch {
+          return null;
+        }
+      }),
     );
     if (launchSeqRef.current !== seq) return;
+    if (parsedRoles.some((p) => p == null)) {
+      setLaunching(false);
+      toast({
+        title: "Live parse required",
+        description:
+          "Live JD parse requires a working cloud LLM. Configure a live provider in Settings → AI, then retry.",
+        variant: "warning",
+      });
+      return;
+    }
     const incomplete = parsedRoles.flatMap((parsed, index) => {
-      const readiness = evaluateNeedReadiness(parsed.jobAnalysis);
+      const readiness = evaluateNeedReadiness(parsed!.jobAnalysis);
       return readiness.ready
         ? []
         : [{
-            label: parsed.jobAnalysis.title || `Role ${index + 1}`,
+            label: parsed!.jobAnalysis.title || `Role ${index + 1}`,
             issues: readiness.issues.map((issue) => issue.message),
           }];
     });
@@ -169,7 +193,7 @@ export default function LaunchPage() {
       return;
     }
 
-    const results = await Promise.all(parsedRoles.map((parsed) => launchRole(seq, parsed)));
+    const results = await Promise.all(parsedRoles.map((parsed) => launchRole(seq, parsed!)));
 
     if (launchSeqRef.current === seq) {
       setLaunching(false);
@@ -239,16 +263,18 @@ export default function LaunchPage() {
                 aria-label="Multi-role brief, roles separated by a line of ---"
               />
               <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Sparkles aria-hidden />}
-                  onClick={loadSample}
-                  disabled={launching}
-                >
-                  Load sample brief (6 roles)
-                </Button>
+                {demoLoginEnabled ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Sparkles aria-hidden />}
+                    onClick={loadSample}
+                    disabled={launching}
+                  >
+                    Load sample brief (6 roles)
+                  </Button>
+                ) : null}
                 <span className="text-xs text-muted">
                   {blocks.length} role block{blocks.length === 1 ? "" : "s"} detected
                 </span>
@@ -288,21 +314,9 @@ export default function LaunchPage() {
 
 function LaunchFallback() {
   return (
-    <div className="space-y-6" aria-hidden>
-      <div className="card-surface space-y-4 p-6">
-        <div className="skeleton h-4 w-1/3 rounded-xl" />
-        <div className="skeleton h-64 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-1/3 rounded-full" />
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="card-surface space-y-3 p-6">
-            <div className="skeleton h-4 w-1/2 rounded-xl" />
-            <div className="skeleton h-10 w-1/3 rounded-xl" />
-            <div className="skeleton h-3 w-2/3 rounded-lg" />
-          </div>
-        ))}
-      </div>
-    </div>
+    <EmptyState
+      title="Loading launch…"
+      description="War room lanes appear after workspace hydrate — no placeholder cards."
+    />
   );
 }

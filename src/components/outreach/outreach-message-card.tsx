@@ -15,7 +15,15 @@ import {
   Eyebrow,
   useToast,
 } from "@/components/ui";
-import { useActions, useCandidate, useCampaign, useSettings } from "@/lib/store";
+import { useActions, useCandidate, useCampaign, useSettings, useSeats, useIntegrations } from "@/lib/store";
+import { checkOutreachApproval } from "@/lib/rules";
+import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import { isRealSendFact } from "@/lib/metrics";
+import {
+  effectiveDryRunMode,
+  listConnectedMailboxes,
+} from "@/lib/outreach-send-mode";
+import type { CandidateLawfulBasis } from "@/lib/types";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
 import {
   initialsFrom,
@@ -74,6 +82,8 @@ export function OutreachMessageCard({
   const candidate = useCandidate(message.candidateId);
   const campaign = useCampaign(message.campaignId);
   const settings = useSettings();
+  const seats = useSeats();
+  const integrations = useIntegrations();
   const a = useActions();
   const { toast } = useToast();
 
@@ -90,11 +100,17 @@ export function OutreachMessageCard({
   const ChannelIcon = message.channel === "Email" ? Mail : Linkedin;
   const hasEvidence = message.personalizationEvidence.length > 0;
   const actionable = message.status === "Needs Approval" || message.status === "Draft";
+  const qualityReadyAwaitingApprove =
+    message.status === "Needs Approval"
+    && message.qualityStatus === "ready"
+    && message.qualityCriticsUsed === true;
   const pendingManual = message.status === "Pending Manual Send";
   const settled = message.status === "Scheduled" || message.status === "Approved";
   const rejected = message.status === "Rejected";
-  // Live-approved email awaiting the deliberate, gated send (the real delivery step).
-  const approvedPendingSend = message.status === "Approved";
+  // Live-approved mailbox channel awaiting deliberate send — never LinkedIn
+  // (LinkedIn stays Pending Manual Send even under dry-run approve).
+  const approvedPendingSend =
+    message.status === "Approved" && message.channel !== "LinkedIn";
 
   const subjectId = `outreach-subject-${message.id}`;
   const bodyId = `outreach-body-${message.id}`;
@@ -106,6 +122,26 @@ export function OutreachMessageCard({
   const [regenerating, setRegenerating] = React.useState(false);
   const [approving, setApproving] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
+  const [showBasisPrompt, setShowBasisPrompt] = React.useState(false);
+
+  const connectedMailboxes = React.useMemo(
+    () => listConnectedMailboxes(seats, integrations),
+    [seats, integrations],
+  );
+  const previewOnly = effectiveDryRunMode(settings.dryRunMode, seats, integrations);
+
+  const preflight = React.useMemo(() => {
+    if (!candidate || !campaign || !actionable) return null;
+    return checkOutreachApproval({
+      candidate,
+      message: { ...message, subject, body },
+      settings,
+      emailsSentToday: campaign.metrics.emailsSentToday,
+      linkedinSentToday: campaign.metrics.linkedinSentToday,
+    });
+  }, [candidate, campaign, actionable, message, subject, body, settings]);
+
+  const missingLawfulBasis = Boolean(candidate && !recordedCandidateLawfulBasis(candidate));
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const tone = e.target.value as OutreachTone;
@@ -134,15 +170,23 @@ export function OutreachMessageCard({
     const res = await a.approveOutreach(message.id);
     setApproving(false);
     if (!res.allowed) {
+      const lawfulBlocked = res.blockers.some((b) => /lawful basis/i.test(b));
       toast({
-        title: "Approval blocked",
+        title: "Approval held — human gate",
         description: res.blockers.join(" "),
         variant: "error",
       });
+      if (lawfulBlocked) setShowBasisPrompt(true);
       return;
     }
     if (res.dryRun) {
-      toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      toast({
+        title: "Approved under dry-run",
+        description:
+          res.warnings.join(" ") ||
+          "Nothing was contacted. Dry-run keeps every approval as a rehearsal until you turn it off.",
+        variant: "success",
+      });
       return;
     }
     toast({
@@ -150,6 +194,21 @@ export function OutreachMessageCard({
       description: res.warnings.length
         ? res.warnings.join(" ")
         : "Goes live once the agent seat is connected and its sending domain is verified.",
+      variant: "success",
+    });
+  }
+
+  function handleRecordBasis(basis: CandidateLawfulBasis) {
+    if (!candidate) return;
+    const result = a.recordCandidateLawfulBasis(candidate.id, basis);
+    if (!result.ok) {
+      toast({ title: "Could not record lawful basis", description: result.error, variant: "error" });
+      return;
+    }
+    setShowBasisPrompt(false);
+    toast({
+      title: "Lawful basis recorded",
+      description: "You can Approve again — nothing sends without that second click.",
       variant: "success",
     });
   }
@@ -204,16 +263,22 @@ export function OutreachMessageCard({
   }
 
   function handleConfirmManualSend() {
-    const res = a.confirmManualSend(message.id);
-    if (!res.ok) {
-      toast({ title: "Could not confirm", description: res.error, variant: "error" });
-      return;
-    }
-    toast({
-      title: "LinkedIn send confirmed",
-      description: "Ledger updated. The candidate is marked as contacted.",
-      variant: "success",
-    });
+    void (async () => {
+      const res = await a.confirmManualSend(message.id);
+      if (!res.ok) {
+        toast({ title: "Could not confirm", description: res.error, variant: "error" });
+        return;
+      }
+      if (res.dryRun) {
+        toast({ title: "Public demo only", description: res.error, variant: "info" });
+        return;
+      }
+      toast({
+        title: "LinkedIn send confirmed",
+        description: "Ledger updated. The candidate is marked as contacted.",
+        variant: "success",
+      });
+    })();
   }
 
   async function handleSend() {
@@ -279,6 +344,33 @@ export function OutreachMessageCard({
               <ChannelIcon className="h-3 w-3" aria-hidden /> {message.channel}
             </Badge>
             <Badge tone={toneForOutreachStatus(message.status)}>{message.status}</Badge>
+            <Badge tone={previewOnly ? "electric" : "danger"} size="sm" dot>
+              {previewOnly ? "Dry-run / preview" : "Live send mode"}
+            </Badge>
+            {message.qualityStatus ? (
+              <Badge
+                tone={
+                  qualityReadyAwaitingApprove
+                    ? "warning"
+                    : message.qualityStatus === "ready" && message.qualityCriticsUsed === true
+                      ? "success"
+                      : message.qualityStatus === "blocked"
+                        ? "danger"
+                        : "warning"
+                }
+                size="sm"
+              >
+                {qualityReadyAwaitingApprove
+                  ? `Quality ${message.qualityScore ?? "—"}/100 · multi-agent · awaiting approve`
+                  : message.qualityStatus === "ready" && message.qualityCriticsUsed === true
+                    ? `Quality ${message.qualityScore ?? "—"}/100 · multi-agent`
+                    : message.qualityStatus === "blocked"
+                      ? `Quality blocked ${message.qualityScore ?? "—"}/100`
+                      : `Quality needs review ${message.qualityScore ?? "—"}/100${
+                          message.qualityCriticsUsed ? " · multi-agent" : " · deterministic"
+                        }`}
+              </Badge>
+            ) : null}
             {(actionable || pendingManual) && (
               <Badge tone={agingTone(message.createdAt)} size="sm">
                 <Clock className="h-3 w-3" aria-hidden /> {waitingLabel(message.createdAt)}
@@ -309,6 +401,11 @@ export function OutreachMessageCard({
               No personalization attached. Approval will be blocked until evidence is present. Regenerate to fix.
             </div>
           )}
+          {message.qualityReasons && message.qualityReasons.length > 0 ? (
+            <p className="text-xs text-muted">
+              Quality notes: {message.qualityReasons.slice(0, 4).join(" · ")}
+            </p>
+          ) : null}
         </div>
 
         {/* Tone control */}
@@ -398,16 +495,23 @@ export function OutreachMessageCard({
             <div className="min-w-0 flex-1">
               <p className="font-semibold">
                 {message.dryRun
-                  ? "Approved / Queued for send"
+                  ? "Approved under dry-run — nothing contacted"
                   : approvedPendingSend
                     ? "Approved, ready to send"
-                    : "Approved / Sent"}
+                    : isRealSendFact(message)
+                      ? "Approved / Sent"
+                      : "Queued / awaiting delivery"}
               </p>
               <p className="mt-0.5 text-success/80">
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
                 {message.scheduledFor ? ` · ${formatTimeAgo(message.scheduledFor)}` : ""}
-                {message.dryRun ? " · Nothing sent live." : ""}
+                {message.dryRun
+                  ? " · Dry-run is on: this is a rehearsal queue, not a live send."
+                  : ""}
                 {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
+                {!message.dryRun && !approvedPendingSend && !isRealSendFact(message)
+                  ? " · Scheduled in queue — not a completed live delivery yet."
+                  : ""}
               </p>
             </div>
             {approvedPendingSend && (
@@ -427,6 +531,73 @@ export function OutreachMessageCard({
             {settings.rateLimits.followUpGapDays}d of silence
           </span>
         </div>
+
+        {/* Human approval gate — show blockers before the click so Approve never looks dead */}
+        {actionable && preflight && !preflight.allowed && (
+          <div className="space-y-2 rounded-2xl bg-warning-soft px-3.5 py-3 text-sm text-[hsl(32_90%_28%)] ring-1 ring-inset ring-warning/25">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-semibold">Held for human review</p>
+                {(missingLawfulBasis || showBasisPrompt) && (
+                  <p className="text-[hsl(32_90%_28%)]/90">
+                    GDPR hold: record a lawful basis for this candidate, then click Approve again.
+                    Autopilot ON + Sequences armed may auto-queue critics-green drafts; otherwise
+                    approval is a separate click before Send.
+                  </p>
+                )}
+                <ul className="list-disc space-y-0.5 pl-4 text-[hsl(32_90%_28%)]/90">
+                  {preflight.blockers.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            {(missingLawfulBasis || showBasisPrompt) && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleRecordBasis("legitimate_interest")}
+                >
+                  Record legitimate interest
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleRecordBasis("consent")}
+                >
+                  Record consent
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {actionable && (
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-ink/[0.03] px-3.5 py-2.5 text-xs text-muted ring-1 ring-inset ring-ink/5">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              Send mode:{" "}
+              <span className="font-semibold text-ink">
+                {previewOnly ? "Dry-run / preview" : "Live"}
+              </span>
+              {" · "}
+              {connectedMailboxes.length === 0 ? (
+                <>
+                  No mailbox connected —{" "}
+                  <Link href="/settings?tab=integrations" className="font-semibold text-ink underline-offset-2 hover:underline">
+                    connect in Integrations
+                  </Link>
+                </>
+              ) : (
+                <>Mailbox: {connectedMailboxes.map((p) => `${p.label} (${p.detail})`).join(", ")}</>
+              )}
+            </span>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">

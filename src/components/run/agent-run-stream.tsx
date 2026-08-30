@@ -24,7 +24,7 @@ interface DraftedPair {
  * One materializing card per just-drafted candidate: the fit score counts up
  * next to the real radar (reusing FitRadar exactly as the sourcing feed
  * does), and the drafted body types out cosmetically over the ALREADY
- * committed `message.body` — generateOutreachFor already wrote this message
+ * committed `message.body` — generateOutreachLive already wrote this message
  * into the approval queue before this card ever renders, so nothing here is
  * computed, re-scored, or sent. `onRevealed` fires once per card the instant
  * it mounts (mirrors SourcedCandidateCard's per-card bus ping) purely to
@@ -180,7 +180,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     const result = await executePrimaryAgentSourcing({
       campaignId,
       campaignTitle: campaign.jobAnalysis.title,
-      count: 6,
+      count: 10,
       demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
       idempotencyMemory: pendingRunIdempotencyKeys.current,
       retryStorage,
@@ -203,14 +203,34 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     const pairs: DraftedPair[] = [];
     for (const candidate of sourced) {
       try {
-        const msg = actions.generateOutreachFor(candidate.id);
-        if (msg) pairs.push({ candidate, message: msg });
+        const msg = await actions.generateOutreachLive(candidate.id);
+        if (msg) {
+          pairs.push({ candidate, message: msg });
+          continue;
+        }
+        if (!supabaseEnabled || demoLoginEnabled) {
+          const fallback = actions.generateOutreachFor(candidate.id);
+          if (fallback) pairs.push({ candidate, message: fallback });
+        }
       } catch {
         // Degrade gracefully — a single failed draft never aborts the run.
+        if (!supabaseEnabled || demoLoginEnabled) {
+          try {
+            const fallback = actions.generateOutreachFor(candidate.id);
+            if (fallback) pairs.push({ candidate, message: fallback });
+          } catch {
+            // ignore
+          }
+        }
       }
     }
 
     if (pairs.length === 0) {
+      if (sourced.length > 0 && supabaseEnabled && !demoLoginEnabled) {
+        setErrorMessage("Candidates were sourced, but live outreach drafting failed. Configure Aria or a cloud outreach provider.");
+        setPhase("error");
+        return;
+      }
       setPhase("empty");
       return;
     }

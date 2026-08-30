@@ -29,6 +29,12 @@ const declared = new Set([
   ...Object.keys(packageJson.peerDependencies ?? {}),
   ...Object.keys(packageJson.optionalDependencies ?? {}),
 ]);
+// `@types/foo` (and `@types/scope__name`) declare ambient types for `foo` / `@scope/name`.
+for (const name of [...declared]) {
+  if (!name.startsWith("@types/")) continue;
+  const bare = name.slice("@types/".length);
+  declared.add(bare.includes("__") ? `@${bare.replace("__", "/")}` : bare);
+}
 
 const builtins = new Set(builtinModules);
 

@@ -77,12 +77,31 @@ function plainToHtml(body: string): string {
     .join("");
 }
 
-/** Add a visible footer plus machine-readable one-click unsubscribe headers. */
-export function renderEmailWithUnsubscribe(body: string, unsubscribeUrl: string): RenderedUnsubscribeEmail {
+/**
+ * Add a visible footer plus machine-readable one-click unsubscribe headers.
+ * When `htmlBody` is provided (e.g. Mantu-branded wrapper), append the footer
+ * into that document instead of rebuilding generic plain→HTML.
+ */
+export function renderEmailWithUnsubscribe(
+  body: string,
+  unsubscribeUrl: string,
+  opts?: { htmlBody?: string },
+): RenderedUnsubscribeEmail {
   const escapedUrl = escapeHtml(unsubscribeUrl);
+  const footerHtml =
+    `<hr/><p style="font-size:12px;color:#555">To stop receiving recruiting emails from us, <a href="${escapedUrl}">unsubscribe</a>.</p>`;
+  let html: string;
+  if (opts?.htmlBody?.trim()) {
+    const branded = opts.htmlBody.trim();
+    html = /<\/body>/i.test(branded)
+      ? branded.replace(/<\/body>/i, `${footerHtml}</body>`)
+      : `${branded}${footerHtml}`;
+  } else {
+    html = `${plainToHtml(body)}${footerHtml}`;
+  }
   return {
     text: `${body}\n\nTo stop receiving recruiting emails from us, unsubscribe: ${unsubscribeUrl}`,
-    html: `${plainToHtml(body)}<hr/><p style="font-size:12px;color:#555">To stop receiving recruiting emails from us, <a href="${escapedUrl}">unsubscribe</a>.</p>`,
+    html,
     headers: {
       "List-Unsubscribe": `<${unsubscribeUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

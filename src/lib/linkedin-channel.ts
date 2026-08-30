@@ -1,24 +1,17 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
+import {
+  deliverLinkedInViaHeyReach,
+  heyReachDeliveryReadyFromEnv,
+  resolveHeyReachConfigForWorkspace,
+} from "@/lib/heyreach-delivery";
+import type {
+  LinkedInDeliveryOutcome,
+  LinkedInDeliveryRequest,
+} from "@/lib/linkedin-delivery-types";
 
-export type LinkedInBackendKind = "assisted-manual" | "vendor-api";
+export type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/linkedin-delivery-types";
 
-export interface LinkedInDeliveryRequest {
-  workspaceId: string;
-  messageId: string;
-  candidateId: string;
-  profileUrl: string;
-  subject: string;
-  body: string;
-  attemptId: string;
-}
-
-export interface LinkedInDeliveryOutcome {
-  status: "sent" | "dry-run" | "error";
-  deliveryState: "accepted" | "not-sent" | "unknown";
-  provider: string;
-  detail: string;
-  id?: string;
-}
+export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "heyreach";
 
 export interface LinkedInAdapter {
   kind: LinkedInBackendKind;
@@ -127,15 +120,36 @@ const vendorApiAdapter: LinkedInAdapter = {
   },
 };
 
+const heyReachAdapter: LinkedInAdapter = {
+  kind: "heyreach",
+  provider: "HeyReach",
+  configured: () => heyReachDeliveryReadyFromEnv(),
+  async deliver(req) {
+    const config = await resolveHeyReachConfigForWorkspace(req.workspaceId);
+    if (!config?.campaignId) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "HeyReach",
+        detail:
+          "HeyReach is not configured. Add API key + campaign id in Settings → LinkedIn stack (or set HEYREACH_* env).",
+      };
+    }
+    return deliverLinkedInViaHeyReach(req, config);
+  },
+};
+
 const adapters: Record<LinkedInBackendKind, LinkedInAdapter> = {
   "assisted-manual": assistedManualAdapter,
   "vendor-api": vendorApiAdapter,
+  heyreach: heyReachAdapter,
 };
 
 export function linkedInBackendForProvider(provider: string | null | undefined): LinkedInBackendKind | null {
   const normalized = normalizeProvider(provider);
   if (normalized === "linkedin assisted manual" || normalized === "linkedin assisted-manual") return "assisted-manual";
   if (normalized === "linkedin vendor api" || normalized === "linkedin vendor-api") return "vendor-api";
+  if (normalized === "heyreach") return "heyreach";
   return null;
 }
 

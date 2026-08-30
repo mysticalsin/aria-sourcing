@@ -8,12 +8,15 @@ import type {
 } from "./types";
 import type { Tone } from "./utils";
 import { recordedCandidateLawfulBasis } from "./candidate-lawful-basis";
+import { recordedCandidateFitEndorsement } from "./candidate-fit-endorsement";
+import { outreachQualityGate } from "./outreach-quality-pipeline";
 
 /* ============================================================================
    Business rules — the guardrails Aria enforces before acting.
    ========================================================================== */
 
-export const MIN_SCORE_FLOOR = 70;
+/** Contact / sourcing quality floor — only 80%+ matches proceed without endorsement. */
+export const MIN_SCORE_FLOOR = 80;
 export const DEDUPE_WINDOW_DAYS = 90;
 
 /* ---- Rule 2 + 3 + 4: outreach approval gate ------------------------------ */
@@ -55,11 +58,17 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   const warnings: string[] = [];
   const checks: ApprovalCheck[] = [];
 
-  // Rule 2 — score before contacting
+  // Rule 2 — score before contacting (operator fit endorsement may warn-through)
   if (candidate.matchScore < settings.minScoreToContact) {
-    const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
-    blockers.push(detail);
-    checks.push({ rule: "Match score", status: "block", detail });
+    if (recordedCandidateFitEndorsement(candidate)) {
+      const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor; operator endorsed role fit for outreach.`;
+      warnings.push(detail);
+      checks.push({ rule: "Match score", status: "warn", detail });
+    } else {
+      const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
+      blockers.push(detail);
+      checks.push({ rule: "Match score", status: "block", detail });
+    }
   } else {
     checks.push({
       rule: "Match score",
@@ -209,6 +218,48 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
       status: "pass",
       detail: message.sequenceStep > 1 ? "Follow-up in an existing sequence." : "No prior contact on record.",
     });
+  }
+
+  // Multi-agent quality validation — blocked drafts never reach approval.
+  // Stored needs_review is a warning (human may still approve); never claim
+  // "Quality ready" while ignoring a prior needs_review receipt.
+  const qualityGate = outreachQualityGate({
+    subject: message.subject,
+    body: message.body,
+    channel: message.channel,
+  });
+  if (message.qualityStatus === "blocked") {
+    const detail = "Draft is quality-blocked and cannot be approved.";
+    blockers.push(detail);
+    checks.push({ rule: "Quality validation", status: "block", detail });
+  } else if (qualityGate.blockers.length > 0) {
+    const detail = qualityGate.blockers[0]!;
+    blockers.push(detail);
+    checks.push({ rule: "Quality validation", status: "block", detail });
+  } else if (message.qualityStatus === "needs_review") {
+    const detail =
+      "Quality needs review — multi-agent or pipeline flagged this draft before approval.";
+    warnings.push(detail);
+    checks.push({ rule: "Quality validation", status: "warn", detail });
+  } else if (qualityGate.warnings.length > 0) {
+    const detail = qualityGate.warnings[0]!;
+    warnings.push(detail);
+    checks.push({ rule: "Quality validation", status: "warn", detail });
+  } else if (message.qualityCriticsUsed === true) {
+    checks.push({
+      rule: "Quality validation",
+      status: "pass",
+      detail: `Quality ready (${qualityGate.verdict.aggregateScore}/100). multi-agent critics recorded.`,
+    });
+  } else {
+    // Never claim "Quality ready" for deterministic-only drafts — live approve
+    // still requires critics_required / multi-agent receipt on the server.
+    const detail =
+      message.qualityCriticsUsed === false
+        ? `Deterministic quality score ${qualityGate.verdict.aggregateScore}/100 — multi-agent critics not recorded yet.`
+        : `Quality score ${qualityGate.verdict.aggregateScore}/100 — multi-agent critics receipt missing.`;
+    warnings.push(detail);
+    checks.push({ rule: "Quality validation", status: "warn", detail });
   }
 
   return { allowed: blockers.length === 0, blockers, warnings, checks };

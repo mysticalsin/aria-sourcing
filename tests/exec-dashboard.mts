@@ -94,7 +94,7 @@ function outreach(
   };
 }
 
-function booking(id: string, candidateId: string): Booking {
+function booking(id: string, candidateId: string, withMeeting = false): Booking {
   return {
     id,
     candidateId,
@@ -106,9 +106,11 @@ function booking(id: string, candidateId: string): Booking {
     timezone: "CET",
     interviewer: "Interviewer",
     interviewerEmail: "interviewer@example.com",
-    teamsLink: "",
+    teamsLink: withMeeting
+      ? "https://teams.microsoft.com/l/meetup-join/19%3ameeting_exec"
+      : "",
     calLink: "",
-    status: "Confirmed",
+    status: withMeeting ? "Confirmed" : "Proposed",
     agenda: [],
     createdAt: "2026-07-10T12:00:00.000Z",
   };
@@ -209,7 +211,7 @@ const state = {
       receivedAt: "2026-07-10T11:00:00.000Z",
     },
   ],
-  bookings: [booking("booking-real", "real-completed"), booking("booking-dry", "dry-run-contact")],
+  bookings: [booking("booking-real", "real-completed", true), booking("booking-dry", "dry-run-contact")],
   activities: [
     {
       id: "act-1",

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
 import { safeLog } from "@/lib/log-redact";
 import { dedupeHash } from "@/lib/gate";
 import { isWhatsAppOptOut } from "@/lib/whatsapp-policy";
@@ -7,6 +8,12 @@ import {
   candidateDisclosureContextForCampaignLike,
   detectInjection,
 } from "@/lib/agent-disclosure-policy";
+import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
+import { dispatchDue } from "@/lib/dispatch-outbound";
+import {
+  loadSourcingLoopControls,
+  sequencesArmedFromControls,
+} from "@/lib/sourcing-loop-controls";
 import {
   CLOUD_ENDPOINT,
   DEFAULT_MODEL,
@@ -57,6 +64,27 @@ function envProvider(): { slug: AiProviderSlug; key: string } | null {
     if (key && CLOUD_ENDPOINT[slug]) return { slug, key };
   }
   return null;
+}
+
+async function loadWorkspaceAutopilotArmed(
+  supabase: SupabaseClient,
+  workspaceId: string,
+): Promise<{ entitled: boolean; entitledId: string; sequencesArmed: boolean }> {
+  const entitled = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("autopilot_enabled", true)
+    .in("role", ["admin", "member"])
+    .limit(1)
+    .maybeSingle();
+  const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+  if (!entitledId) {
+    return { entitled: false, entitledId: "", sequencesArmed: false };
+  }
+  const controls = await loadSourcingLoopControls(supabase, workspaceId);
+  const sequencesArmed = controls.ok && sequencesArmedFromControls(controls.row);
+  return { entitled: true, entitledId, sequencesArmed };
 }
 
 async function settleInbound(
@@ -252,11 +280,114 @@ export async function processStoredWhatsAppInbound(
     const salaryMax = typeof brief.salaryMax === "number" ? brief.salaryMax : null;
     const forbidden = [brief.department, brief.teamSize, brief.reportingTo, brief.currency]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-    const decision = decideAutopilot(draft, guardrails, { salaryMin, salaryMax, forbidden });
+    const arm = await loadWorkspaceAutopilotArmed(supabase, workspaceId);
+    // Spec guardrails historically lock autopilot:false + canary>0. When the
+    // workspace Autopilot arm is on, trust entitlement for eligibility and keep
+    // disclosure / injection / human-likeness gate checks from decideAutopilot.
+    const effectiveGuardrails: SpecGuardrails =
+      arm.entitled && arm.sequencesArmed
+        ? { ...guardrails, autopilot: true, canary_remaining: 0 }
+        : guardrails;
+    const decision = decideAutopilot(draft, effectiveGuardrails, { salaryMin, salaryMax, forbidden }, {
+      autopilotEnabled: arm.entitled && arm.sequencesArmed,
+    });
     if (detectInjection(body).flagged && !decision.reasons.includes("injection-suspected")) {
       decision.reasons.push("injection-suspected");
     }
     const reviewDraftDedupeHash = dedupeHash(conversationCandidateId, "WhatsApp", decision.text);
+
+    // Autopilot ON + Sequences + clean decision + live critics → mint + queue.
+    // Otherwise store blocked for the Replies human-review surface.
+    const mayAutoQueue =
+      decision.action === "auto_approve_eligible" &&
+      arm.entitled &&
+      arm.sequencesArmed &&
+      arm.entitledId &&
+      !decision.reasons.includes("injection-suspected");
+
+    if (mayAutoQueue) {
+      const { validateOutreachQualityLive } = await import("@/lib/outreach-quality-pipeline-live");
+      const liveVerdict = await validateOutreachQualityLive({
+        subject: "",
+        body: decision.text,
+        channel: "WhatsApp",
+        workspaceId,
+      });
+      if (liveVerdict.llmCriticsUsed === true && liveVerdict.status === "ready") {
+      const outboundId = randomUUID();
+      const subject = "";
+      const bodyHash = approvalHash(subject, decision.text);
+      const scopeHash = approvalScopeHash({
+        candidateId: conversationCandidateId,
+        channel: "WhatsApp",
+        recipient,
+      });
+      if (scopeHash) {
+        const minted = await supabase.rpc("mint_autopilot_critics_approval", {
+          p_workspace_id: workspaceId,
+          p_message_id: outboundId,
+          p_body_hash: bodyHash,
+          p_approval_scope_hash: scopeHash,
+          p_entitled_approver_id: arm.entitledId,
+        });
+        const mintStatus =
+          minted.data && typeof minted.data === "object" && "status" in minted.data
+            ? String((minted.data as { status: string }).status)
+            : "";
+        if (!minted.error && mintStatus === "ok") {
+          const { error: outboundErr } = await supabase.from("messages_outbound").insert({
+            id: outboundId,
+            workspace_id: workspaceId,
+            owner_id: convo.owner_id,
+            inbound_message_id: input.inboundId,
+            conversation_id: conversationId,
+            spec_id: spec.id,
+            candidate_id: conversationCandidateId,
+            seat_id: spec.seat_id,
+            channel: "WhatsApp",
+            to_address: recipient,
+            recipient_e164: recipient,
+            type: "candidate_reply",
+            subject,
+            body: decision.text,
+            status: "queued",
+            gate_result: { pass: true, reasons: decision.reasons },
+            dedupe_hash: reviewDraftDedupeHash,
+            scheduled_at: new Date().toISOString(),
+            approval_message_id: outboundId,
+          });
+          if (!outboundErr) {
+            try {
+              await dispatchDue(supabase, 1, outboundId);
+            } catch (err) {
+              safeLog("whatsapp inbound: autopilot dispatch error", {
+                message: err instanceof Error ? err.message : "unknown",
+              });
+            }
+            return complete("processed");
+          }
+          if (outboundErr.code === "23505") {
+            const { data: existingDraft, error: existingDraftErr } = await supabase
+              .from("messages_outbound")
+              .select("inbound_message_id")
+              .eq("workspace_id", workspaceId)
+              .eq("inbound_message_id", input.inboundId)
+              .maybeSingle();
+            if (existingDraftErr) return retry("review-draft-conflict-lookup-failed");
+            if (existingDraft?.inbound_message_id === input.inboundId) {
+              return complete("processed");
+            }
+            return complete("triage", "review-draft-dedupe-conflict");
+          }
+          safeLog("whatsapp inbound: autopilot queue insert failed", {
+            message: outboundErr.message,
+            code: outboundErr.code,
+          });
+        }
+      }
+      }
+    }
+
     const { error: outboundErr } = await supabase.from("messages_outbound").insert({
       workspace_id: workspaceId,
       owner_id: convo.owner_id,

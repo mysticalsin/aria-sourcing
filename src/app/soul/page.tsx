@@ -5,20 +5,21 @@ import { useHydrated } from "@/lib/store";
 import { PersonaEditor } from "@/components/soul/persona-editor";
 import { HermesConfigPanel } from "@/components/soul/hermes-config-panel";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { SkeletonCard } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 
 export default function SoulPage() {
   const hydrated = useHydrated();
 
-  const fallback = (
-    <div className="space-y-4">
-      <SkeletonCard />
-      <SkeletonCard />
-    </div>
-  );
-
   return (
-    <HydrationGate hydrated={hydrated} fallback={fallback}>
+    <HydrationGate
+      hydrated={hydrated}
+      fallback={
+        <EmptyState
+          title="Loading soul…"
+          description="Personas and Aria config appear after workspace hydrate — no placeholder panels."
+        />
+      }
+    >
       <PageHeader
         eyebrow="System"
         title="Soul"

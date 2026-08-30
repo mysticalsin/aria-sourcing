@@ -11,7 +11,11 @@ import {
   formatPercent,
   formatTimeAgo,
 } from "@/lib/utils";
-import type { ClassifiedReply, ReplyIntent } from "@/lib/types";
+import type { ClassifiedReply } from "@/lib/types";
+import {
+  HOT_REPLY_INTENTS,
+  REPLY_INTENT_LABELS,
+} from "@/lib/reply-intents";
 import {
   Clock,
   CheckCheck,
@@ -21,19 +25,8 @@ import {
   Eye,
   EyeOff,
   Send,
+  ChevronDown,
 } from "lucide-react";
-
-const INTENT_LABELS: Record<ReplyIntent, string> = {
-  INTERESTED: "Interested",
-  QUALIFIED_INTEREST: "Qualified interest",
-  NOT_INTERESTED: "Not interested",
-  REFERRAL: "Referral",
-  OOO: "Out of office",
-  UNCLEAR: "Unclear",
-  NEGATIVE: "Negative",
-};
-
-const HOT_INTENTS: ReplyIntent[] = ["INTERESTED", "QUALIFIED_INTEREST"];
 
 export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
   const candidate = useCandidate(reply.candidateId);
@@ -52,8 +45,9 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
 
   // Live SLA tick — only after mount to avoid hydration drift.
   const [now, setNow] = React.useState<number | null>(null);
-  const isHot = HOT_INTENTS.includes(reply.intent);
+  const isHot = HOT_REPLY_INTENTS.includes(reply.intent);
   const showSla = Boolean(reply.slaDueAt) && isHot && !reply.handled;
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (!showSla) return;
@@ -120,7 +114,7 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={toneForIntent(reply.intent)} dot>
-            {INTENT_LABELS[reply.intent]}
+            {REPLY_INTENT_LABELS[reply.intent]}
           </Badge>
           <Badge tone="neutral" size="sm">
             {formatPercent(reply.confidence)} confidence
@@ -171,6 +165,36 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
         <span className="font-semibold text-ink-soft">Suggested: </span>
         {reply.suggestedAction}
       </p>
+
+      {(reply.reasoning?.trim() || reply.draftResponse?.trim()) && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((v) => !v)}
+            className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
+            aria-expanded={detailsOpen}
+          >
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", detailsOpen && "rotate-180")} aria-hidden />
+            {detailsOpen ? "Hide reasoning & draft" : "Show reasoning & draft"}
+          </button>
+          {detailsOpen && (
+            <div className="mt-2 space-y-2 rounded-2xl bg-canvas/80 px-3.5 py-3 text-xs leading-relaxed text-ink-soft">
+              {reply.reasoning?.trim() ? (
+                <p>
+                  <span className="font-semibold text-ink">Reasoning: </span>
+                  {reply.reasoning}
+                </p>
+              ) : null}
+              {reply.draftResponse?.trim() ? (
+                <p>
+                  <span className="font-semibold text-ink">Draft: </span>
+                  {reply.draftResponse}
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
 
       {reply.intent === "NEGATIVE" && (
         <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3">

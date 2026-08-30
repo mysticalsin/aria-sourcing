@@ -144,6 +144,27 @@ export function WhatsAppTemplatePicker() {
         return;
       }
 
+      if (result.status === "reconciliation-required") {
+        const detail =
+          result.detail
+          ?? "Provider may have accepted the template, but Aria could not confirm the record. Do not retry — reconcile manually.";
+        setOutcome(detail);
+        setHumanApproval(false);
+        toast({
+          title: "Reconciliation required",
+          description: detail,
+          variant: "warning",
+        });
+        return;
+      }
+
+      if (result.status === "error" || result.status === "skipped") {
+        const detail = result.detail ?? `WhatsApp template ${result.status}.`;
+        setOutcome(detail);
+        toast({ title: "Template dispatch blocked", description: detail, variant: "error" });
+        return;
+      }
+
       const status = result.status === "sent" ? "Sent through the guarded WhatsApp dispatcher." : "Queued for policy-checked delivery.";
       setOutcome(status);
       setHumanApproval(false);

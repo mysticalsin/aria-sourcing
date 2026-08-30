@@ -1,0 +1,5 @@
+{
+  "topCandidateShortlistSize": 10,
+  "defaultSourcingBatchSize": 15,
+  "defaultShortlistMinScore": 70
+}

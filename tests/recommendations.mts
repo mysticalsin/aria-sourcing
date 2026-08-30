@@ -4,7 +4,7 @@
  * and that fully-clear state produces an empty queue.
  */
 import { deriveRecommendations } from "../src/lib/recommendations";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type { Candidate, Campaign, ClassifiedReply, OutreachMessage, HermesState } from "../src/lib/types";
 
 let pass = 0,
@@ -19,7 +19,7 @@ function ok(name: string, cond: boolean, extra?: unknown) {
 }
 
 const NOW = new Date("2026-07-01T12:00:00Z").getTime();
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const candidateTemplate: Candidate = seed.candidates[0];
 const replyTemplate: ClassifiedReply = seed.replies[0] ?? {
   id: "r0",
@@ -193,16 +193,63 @@ ok("no items anywhere -> empty queue", deriveRecommendations(emptyState(), NOW).
   ok("rollup sits below the individually-shown items of its kind", recs[recs.length - 1]?.id.endsWith(":rollup") ?? false, recs);
 }
 
-/* ---- handled replies / already-booked candidates / non-actionable statuses don't surface --- */
+/* ---- handled replies / calendar-complete bookings / non-actionable statuses don't surface --- */
 {
   const s = emptyState();
   s.replies = [reply({ id: "handled", candidateId: "c1", campaignId: "camp1", intent: "INTERESTED", handled: true })];
+  const seedBooking = seed.bookings[0];
+  if (!seedBooking) throw new Error("seed bookings required for recommendations fixture");
+  const completeBooking = {
+    ...seedBooking,
+    teamsLink: "https://teams.microsoft.com/l/meetup-join/complete",
+    calLink: "https://outlook.office.com/calendar/complete",
+  };
   s.candidates = [
-    candidate({ id: "already-booked", campaignId: "camp1", stage: "Interested", booking: seed.bookings[0] ?? null }),
+    candidate({
+      id: "already-booked",
+      campaignId: "camp1",
+      stage: "Interested",
+      booking: completeBooking,
+    }),
   ];
-  s.outreach = [outreachMsg({ id: "already-approved", candidateId: "c1", campaignId: "camp1", status: "Approved" })];
+  // Sent (not Approved): Approved live messages correctly surface as send_outreach.
+  s.outreach = [
+    outreachMsg({
+      id: "already-sent",
+      candidateId: "c1",
+      campaignId: "camp1",
+      status: "Sent",
+      dryRun: false,
+      sentAt: new Date(NOW).toISOString(),
+    }),
+  ];
   const recs = deriveRecommendations(s, NOW);
-  ok("handled reply, already-booked candidate, and approved message all stay out of the queue", recs.length === 0, recs);
+  ok(
+    "handled reply, calendar-complete booking, and Sent message stay out of the queue",
+    recs.length === 0,
+    recs,
+  );
+}
+
+{
+  // Incomplete booking (no teams/cal link) must still recommend book_interview.
+  const s = emptyState();
+  const seedBooking = seed.bookings[0];
+  if (!seedBooking) throw new Error("seed bookings required for recommendations fixture");
+  const incomplete = {
+    ...seedBooking,
+    teamsLink: "",
+    calLink: "",
+  };
+  s.candidates = [
+    candidate({ id: "needs-cal", campaignId: "camp1", stage: "Interested", matchScore: 80, booking: incomplete }),
+  ];
+  const recs = deriveRecommendations(s, NOW);
+  ok(
+    "Interested with booking missing teamsLink/calLink still gets book_interview",
+    recs.some((r) => r.kind === "book_interview" && r.id === "book_interview:needs-cal"),
+    recs,
+  );
 }
 
 /* ---- stalled drafts: old unapproved messages escalate, fresh ones don't --- */

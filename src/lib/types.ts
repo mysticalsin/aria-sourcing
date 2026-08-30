@@ -179,6 +179,18 @@ export type IntegrationHealth = (typeof INTEGRATION_HEALTH)[number];
 
 /* ---- Job analysis -------------------------------------------------------- */
 
+/** Structured locale + market context for LLM outreach (60-language path). */
+export interface LocaleContext {
+  primaryLanguage: string;
+  secondaryLanguages?: string[];
+  marketCountry?: string;
+  workCity?: string;
+  clientSector?: string;
+  formality?: "formal" | "consulting" | "casual";
+  /** Disclosure-safe compensation hints for prompts only — never sent to candidates verbatim. */
+  compensationNorms?: string;
+}
+
 export interface JobAnalysis {
   title: string;
   department: string;
@@ -205,10 +217,17 @@ export interface JobAnalysis {
   urgency: Urgency;
   /** Detected language of the need (ISO code, e.g. "en", "fr"). */
   language?: string;
+  /** Locale + market context for multilingual outreach and reply drafts. */
+  localeContext?: LocaleContext;
   /** ISO date explicitly stated in the inbound brief (e.g. "Start date: 7/13/2026").
    *  Null when the brief doesn't state one — createCampaign then falls back to a
    *  default target. Absent covers analyses predating this field. */
   expectedStartDate?: string | null;
+  /** Mission Description / Profile Synthesis body from a VSS Recruitment Need.
+   *  Preserved for sourcing substance; optional for analyses predating this field. */
+  missionDescription?: string;
+  /** LinkedIn boolean / X-ray string when the brief supplies one (VSS Candidate Search Support). */
+  linkedinBoolean?: string;
   validationWarnings: ValidationWarning[];
 }
 
@@ -391,6 +410,38 @@ export interface Candidate {
   industryExperience: string[];
   recentActivity: string;
   stage: CandidateStage;
+  /**
+   * Loop-proposed first interview (Teams/Outlook). Set by calendar_book after
+   * propose-calendar-book dry-run. Cleared when a Booking is created. Absent =
+   * no autonomous proposal yet.
+   */
+  interviewProposal?: {
+    startTime: string;
+    endTime: string;
+    agenda: string[];
+    claimId: string | null;
+    proposeStatus: string;
+    channel: string;
+    meetingKind?: "pre_call" | "first_interview";
+    proposedAt: string;
+    /** Present after loop confirm-calendar-book creates a live Teams meeting. */
+    teamsLink?: string;
+  } | null;
+  /**
+   * Loop-proposed pre-call screen (15–20 min). Same shape as interviewProposal;
+   * kept separate so first-interview proposals are not overwritten.
+   */
+  preCallProposal?: {
+    startTime: string;
+    endTime: string;
+    agenda: string[];
+    claimId: string | null;
+    proposeStatus: string;
+    channel: string;
+    meetingKind?: "pre_call" | "first_interview";
+    proposedAt: string;
+    teamsLink?: string;
+  } | null;
   /** Historical high-water-mark funnel rank (see STAGE_RANK in metrics.ts) —
    *  the furthest the candidate ever progressed, even if `stage` later moved
    *  to a terminal/negative state (Rejected, Suppressed). Absent = derive
@@ -417,6 +468,10 @@ export interface Candidate {
   lawfulBasis?: CandidateLawfulBasis;
   lawfulBasisRecordedAt?: string;
   lawfulBasisSource?: "operator_selection";
+  /** Operator reviewed a below-floor live lead and endorsed role fit for outreach.
+   *  Does not change matchScore; the approval gate accepts it with a warning. */
+  fitEndorsedAt?: string;
+  fitEndorsedSource?: "operator_selection";
   /** Free-text recruiter notes, newest first. Absent/empty = none yet. */
   notes?: CandidateNote[];
   /** Why this candidate was rejected — captured alongside the "Rejected" stage.
@@ -621,6 +676,19 @@ export interface OutreachMessage {
   /** Carried over from a ClassifiedReply when this draft was created as a reply
    *  (see draftReplyResponse in store.ts), so a live send can thread correctly. */
   inboxThreadId?: string;
+  /** Multi-agent quality pipeline verdict (empathy + compliance + human-likeness). */
+  qualityStatus?: "ready" | "needs_review" | "blocked";
+  qualityScore?: number;
+  /** True when live LLM peer critics contributed (autonomous dry-run path). */
+  qualityCriticsUsed?: boolean;
+  /** Flattened critic reasons for operator review on dry-run drafts. */
+  qualityReasons?: string[];
+  /** Mantu-branded HTML wrapper for Email channel (optional). */
+  htmlBody?: string;
+  /** Override default candidate recipient (interviewer prep emails). */
+  recipientOverride?: string;
+  /** Marks template-bound interview correspondence drafts. */
+  prepPurpose?: "interviewer" | "candidate_confirmation";
 }
 
 /* ---- Replies ------------------------------------------------------------- */
@@ -639,6 +707,8 @@ export interface ClassifiedReply {
   handled: boolean;
   slaDueAt: string | null;
   receivedAt: string;
+  /** Live model vs keyword fallback — loop worker / E2E prove classifier=model. */
+  classifier?: "model" | "deterministic_fallback";
   /** Inbound-email metadata (set when auto-ingested from a mailbox; absent for manual entry). */
   fromAddress?: string;
   messageId?: string;
@@ -1003,6 +1073,9 @@ export interface SystemSettings {
    *  and which agent is locked to each DustTask. Optional — absent means Dust is
    *  not configured for this workspace. */
   dust?: DustSettings;
+  /** HeyReach LinkedIn delivery: vault apiKeyId + campaign id (non-secret).
+   *  Complements optional Fly env HEYREACH_* — Settings can configure without CLI. */
+  heyreach?: HeyReachSettings;
 }
 
 /* ---- Outreach fleet (multi-seat coordination + anti-ban guardrails) ------- */
@@ -1016,6 +1089,7 @@ export const SEAT_PROVIDERS = [
   "Twilio SMS",
   "LinkedIn Assisted Manual",
   "LinkedIn Vendor API",
+  "HeyReach",
 ] as const;
 export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 
@@ -1051,7 +1125,8 @@ export interface AgentSeat {
   provider: SeatProvider;
   status: SeatStatus;
   mode: IntegrationMode; // mock (default) | live
-  domainVerified: boolean; // SPF/DKIM/DMARC — required before live sends
+  /** SPF/DMARC/DKIM for API-key senders. Live Microsoft Graph OAuth seats skip vanity DNS. */
+  domainVerified: boolean;
   dailyLimit: number; // conservative cap at/below the provider's official limit
   warmup: boolean;
   warmupStartCap: number;
@@ -1070,7 +1145,7 @@ export interface AgentSeat {
   color?: string;
   /** Language this agent writes outreach in (ISO code). */
   language?: string;
-  /** Connected email account label (official API). Empty = not connected. */
+  /** Mailbox account label. For Graph/Gmail, Live send requires mode=live (OAuth); a pasted label alone is not a live mailbox. */
   connectedAccount: string;
   createdAt: string;
   /** LlmProvider.id assigned to this agent (overrides workspace default). */
@@ -1166,6 +1241,8 @@ export const API_KEY_PROVIDERS = [
   "OpenRouter",
   "Mistral",
   "Kimi (Moonshot)",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Resend",
   "SendGrid",
   "Aria Agent",
@@ -1175,6 +1252,7 @@ export const API_KEY_PROVIDERS = [
   "Seamless",
   "Apify",
   "Tavily",
+  "HeyReach",
   "Databricks",
   "Custom",
 ] as const;
@@ -1191,6 +1269,8 @@ export const LLM_PROVIDERS = [
   "Groq",
   "Mistral",
   "Kimi",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Local/Custom",
 ] as const;
 export type LlmProviderKind = (typeof LLM_PROVIDERS)[number];
@@ -1244,6 +1324,9 @@ export interface ToolDef {
 
 export type McpServerStatus = "untested" | "connected" | "error";
 
+export const MCP_AUTH_STYLES = ["bearer", "query", "x-api-key"] as const;
+export type McpAuthStyle = (typeof MCP_AUTH_STYLES)[number];
+
 export const AUTH_QUERY_PARAMS = ["tavilyApiKey"] as const;
 export type AuthQueryParam = (typeof AUTH_QUERY_PARAMS)[number];
 
@@ -1256,7 +1339,7 @@ export interface McpServerConfig {
   /** The MCP server's HTTP(S) endpoint (streamable-HTTP / SSE transport). */
   url: string;
   /** How the resolved vault secret is sent to the MCP server. Defaults to bearer. */
-  authStyle?: "bearer" | "query";
+  authStyle?: McpAuthStyle;
   /** Closed-list query parameter for query-auth MCP servers. */
   authQueryParam?: AuthQueryParam;
   /** References an ApiKey.id; the raw secret never lives here. */
@@ -1268,6 +1351,8 @@ export interface McpServerConfig {
   toolCount?: number;
   /** Names of those tools (for display), captured on the last successful test. */
   toolNames?: string[];
+  /** Known integration preset — used for HeyReach funnel wiring in Settings. */
+  preset?: "heyreach";
 }
 
 /** Recruiting tasks that can be delegated to a locked Dust agent. A Record (not an
@@ -1321,6 +1406,19 @@ export interface DatabricksSettings {
   clientId?: string;
   apiKeyId: string;
   needsQuery: string;
+}
+
+/** Non-secret HeyReach delivery config in workspace settings. The API key itself
+ *  lives in the api_keys vault (provider "HeyReach"), referenced by apiKeyId. */
+export interface HeyReachSettings {
+  /** References an ApiKey.id (provider "HeyReach" or Custom). */
+  apiKeyId?: string;
+  /** HeyReach campaign id used by AddLeadsToCampaign for LinkedIn sequences. */
+  campaignId?: string;
+  /** Optional LinkedIn sender account id inside HeyReach. */
+  accountId?: string;
+  /** True after a successful save + CheckApiKey (or when operator marks ready). */
+  connected?: boolean;
 }
 
 /** Stored metadata only — the secret value never lives in client state. */

@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
+import { outreachQualityGate } from "@/lib/outreach-quality-pipeline";
+import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -99,6 +101,53 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const qualityGate = outreachQualityGate({ subject, body, channel });
+  if (qualityGate.blockers.length > 0) {
+    return NextResponse.json(
+      { ok: false, error: qualityGate.blockers[0] },
+      { status: 422 },
+    );
+  }
+  // Live critics: production / non-demo tenants require all three LLM peers
+  // (same fail-closed posture as generate-outreach-draft). Demo may fall back
+  // to the deterministic gate already applied above.
+  // Human approval resolves needs_review — only hard-block blocked drafts here.
+  const liveVerdict = await validateOutreachQualityLive({
+    subject,
+    body,
+    channel,
+    // Public demo must not touch service-role vault; production uses workspace keys.
+    workspaceId:
+      demoLoginEnabled || publicDemoSideEffectsDisabled()
+        ? undefined
+        : typeof wid === "string"
+          ? wid
+          : undefined,
+  });
+  if (!liveVerdict.llmCriticsUsed) {
+    if (!demoLoginEnabled) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Live multi-agent LLM quality critics required for outreach approval.",
+          status: "critics_required",
+        },
+        { status: 503 },
+      );
+    }
+    if (liveVerdict.status === "blocked") {
+      const reason =
+        liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+        ?? "Outreach blocked by quality critics.";
+      return NextResponse.json({ ok: false, error: reason }, { status: 422 });
+    }
+  } else if (liveVerdict.status === "blocked") {
+    const reason =
+      liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+      ?? "Outreach blocked by live quality critics.";
+    return NextResponse.json({ ok: false, error: reason }, { status: 422 });
+  }
+
   if (publicDemoSideEffectsDisabled()) {
     return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
@@ -115,5 +164,10 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ ok: false, error: "Failed to record approval." }, { status: 500 });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    qualityCriticsUsed: liveVerdict.llmCriticsUsed === true,
+    criticStageCount: liveVerdict.stages.length,
+    qualityStatus: liveVerdict.status,
+  });
 }

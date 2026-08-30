@@ -5,7 +5,7 @@ import {
 } from "../src/lib/manual-suppression";
 import { readFileSync } from "node:fs";
 import { allocateBatch, suppressionMatch } from "../src/lib/fleet";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type { SuppressionEntry } from "../src/lib/types";
 
 let pass = 0;
@@ -35,7 +35,7 @@ const phoneSuppression: SuppressionEntry = {
   createdAt: new Date().toISOString(),
   expiresAt: null,
 };
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const candidate = { ...seed.candidates[0], phone: "+1 (416) 555-0123" };
 ok(
   "formatted E.164 candidate matches canonical phone suppression",

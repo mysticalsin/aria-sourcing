@@ -33,6 +33,21 @@ test("hostile, missing, lookalike, and downgraded origins fail closed", () => {
   }
 });
 
+test("Fly bind origin is not trusted; public tenant Origin is", () => {
+  assert.equal(
+    classifySameOriginJsonRequest(
+      request("http://0.0.0.0:3000", "application/json", "http://0.0.0.0:3000"),
+    ),
+    "cross_origin_request",
+  );
+  assert.equal(
+    classifySameOriginJsonRequest(
+      request("https://aria-mantu-app.fly.dev", "application/json", "http://0.0.0.0:3000"),
+    ),
+    "ok",
+  );
+});
+
 test("JSON-shaped bodies under simple or missing media types are rejected", () => {
   for (const contentType of [null, "text/plain", "application/x-www-form-urlencoded", "multipart/form-data"]) {
     assert.equal(

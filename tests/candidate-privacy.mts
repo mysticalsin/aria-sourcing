@@ -9,7 +9,7 @@ import {
   preserveCandidateErasureTombstones,
   redactCandidateLinkedActivities,
 } from "../src/lib/candidate-privacy";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalCandidate, historicalSeedState } from "./seed-fixtures.mts";
 import type { Activity, Candidate, ChatThread } from "../src/lib/types";
 
 const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
@@ -19,7 +19,7 @@ const drawerSource = readFileSync(
 );
 
 function sensitiveCandidate(): Candidate {
-  const candidate = structuredClone(buildSeedState().candidates[0]);
+  const candidate = structuredClone(historicalCandidate());
   return {
     ...candidate,
     id: "33333333-3333-4333-8333-333333333333",
@@ -78,7 +78,7 @@ test("candidate anonymization removes direct identifiers, authority, content, an
 });
 
 test("candidate erasure tombstones remain immutable across later local mutations", () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const candidate = state.candidates[0];
   const tombstone = anonymizeCandidateRecord(candidate);
   const current = {
@@ -148,7 +148,7 @@ test("candidate-linked activities are redacted without changing unrelated audit 
 });
 
 test("state anonymization removes structured candidate PII across linked collections", () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const candidate = sensitiveCandidate();
   const candidateId = candidate.id;
   const campaignId = state.campaigns[0].id;
@@ -297,7 +297,7 @@ test("state anonymization removes structured candidate PII across linked collect
 });
 
 test("legacy campaign-linked intake activities are redacted by exact identity tokens", () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const candidate = sensitiveCandidate();
   candidate.campaignId = state.campaigns[0].id;
   state.candidates = [candidate, ...state.candidates];
@@ -322,7 +322,7 @@ test("legacy campaign-linked intake activities are redacted by exact identity to
 });
 
 test("identity matching preserves unrelated activity words that merely contain a candidate name", () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const candidate = sensitiveCandidate();
   candidate.campaignId = state.campaigns[0].id;
   candidate.name = "Ian";
@@ -351,7 +351,7 @@ test("identity matching preserves unrelated activity words that merely contain a
 });
 
 test("short names redact only exact campaign-scoped legacy activity tokens", () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const candidate = sensitiveCandidate();
   candidate.campaignId = state.campaigns[0].id;
   candidate.name = "Al";
@@ -387,7 +387,7 @@ test("short names redact only exact campaign-scoped legacy activity tokens", () 
 });
 
 test("structured chats redact exact candidate identities without corrupting unrelated conversation", () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const candidate = sensitiveCandidate();
   candidate.campaignId = state.campaigns[0].id;
   candidate.name = "Ian";
@@ -431,7 +431,7 @@ test("structured chats redact exact candidate identities without corrupting unre
 
 test("manual, GitHub, and chatbox intake canaries do not survive full-state anonymization", () => {
   for (const source of ["Manual", "GitHub", "Applicant"] as const) {
-    const state = buildSeedState();
+    const state = historicalSeedState();
     const candidate = sensitiveCandidate();
     candidate.campaignId = state.campaigns[0].id;
     candidate.sourcePlatform = source === "Applicant" ? "Manual" : source;

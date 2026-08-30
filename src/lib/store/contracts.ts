@@ -361,7 +361,7 @@ export interface HermesActions {
    *  mock. Status is still set by the human approval gate — never auto-sent. */
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
   approveOutreach: (messageId: string) => Promise<ApprovalResult>;
-  confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
+  confirmManualSend: (messageId: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
   /** The deliberate gated send for a live-approved email — calls the server send route. */
   sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
   rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -398,7 +398,7 @@ export interface HermesActions {
     candidateId: string,
     opts?: { startTime?: string; interviewerName?: string },
   ) => Promise<
-    | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
+    | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string; prepQueued?: boolean }
     | { ok: false; error: string }
   >;
   updateBooking: (
@@ -456,6 +456,8 @@ export interface HermesActions {
 
   // settings + integrations
   updateSettings: (patch: Partial<SystemSettings>) => void;
+  /** Authoritative workspace_state write for settings patches (await before toasting). */
+  updateSettingsPersisted: (patch: Partial<SystemSettings>) => Promise<boolean>;
   updateIntegration: (id: string, patch: Partial<IntegrationStatus>) => void;
   toggleIntegrationMode: (id: string) => void;
   testIntegration: (id: string) => Promise<ConnectionTestResult>;
@@ -489,13 +491,37 @@ export interface HermesActions {
 
   // confidentiality
   recordPiiReveal: (candidateId: string) => void;
+  /** Operator records consent or legitimate interest on the consent passport.
+   *  Required before outreach approval for both manual and provider-sourced leads. */
+  recordCandidateLawfulBasis: (
+    candidateId: string,
+    basis: CandidateLawfulBasis,
+  ) => { ok: true } | { ok: false; error: string };
+  /** Record legitimate interest (or consent) for every non-anonymized candidate
+   *  in a campaign that still lacks a recorded lawful basis. Never auto-sends. */
+  recordCampaignLawfulBasis: (
+    campaignId: string,
+    basis: CandidateLawfulBasis,
+  ) => { ok: true; recorded: number; skipped: number } | { ok: false; error: string };
+  /** Operator endorses role fit for a below-floor live lead so Approve can proceed
+   *  with a match-score warning (does not rewrite matchScore). */
+  endorseCandidateFit: (
+    candidateId: string,
+  ) => { ok: true } | { ok: false; error: string };
 
   // API keys + access control
   saveApiKey: (input: {
     name: string;
     provider: ApiKeyProvider;
     value: string;
-  }) => Promise<{ ok: boolean; key?: ApiKey; demo?: boolean; error?: string }>;
+  }) => Promise<{
+    ok: boolean;
+    key?: ApiKey;
+    demo?: boolean;
+    valid?: boolean;
+    detail?: string;
+    error?: string;
+  }>;
   testApiKey: (id: string) => Promise<{ ok: boolean; valid: boolean; detail: string }>;
   removeApiKey: (id: string) => Promise<{ ok: boolean; error?: string }>;
   setCurrentRole: (role: Role) => void;
@@ -561,6 +587,8 @@ export interface HermesActions {
   // misc
   logActivity: (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) => void;
   resetDemo: () => void;
+  /** Live mode: flush debounced workspace state to Supabase before server reads. */
+  flushWorkspaceSave: () => Promise<boolean>;
 
   // chat
   createChatThread: (seatId: string) => ChatThread;
@@ -590,6 +618,9 @@ export interface HermesContextValue {
   workspaceStatus: WorkspaceStatus;
   retryWorkspace: () => Promise<void>;
   retrySave: () => Promise<void>;
+  /** Immediately persist the current workspace snapshot (live mode). Call before
+   *  server-authoritative actions that read campaign state from Supabase. */
+  flushWorkspaceSave: () => Promise<boolean>;
   actions: HermesActions;
   /** Computed once per state change (not per consumer) — the TopBar bell and
    *  the dashboard AttentionPanel both read this instead of independently

@@ -7,7 +7,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { EmailConnection, Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { createGoogleCalendarEvent, createGraphCalendarEvent, type CalendarEventInput } from "@/lib/calendar";
+import { createGoogleCalendarEvent, createGraphCalendarEvent, isTeamsMeetingJoinUrl, type CalendarEventInput } from "@/lib/calendar";
 import { claimCalendarBooking, reconcileCalendarBooking } from "@/lib/calendar-authority";
 import { safeLog } from "@/lib/log-redact";
 import { decryptSecret, encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
@@ -164,7 +164,11 @@ export async function POST(req: NextRequest) {
     // A retry with the same requestId. Never call the provider again — return
     // the previously recorded outcome instead.
     if (claim.bookingStatus === "confirmed") {
-      return NextResponse.json({ status: "created", link: null, eventId: claim.externalEventId });
+      return NextResponse.json({
+        status: "created",
+        link: claim.meetingUrl,
+        eventId: claim.externalEventId,
+      });
     }
     if (claim.bookingStatus === "claimed") {
       // The prior attempt under this exact requestId is still unreconciled
@@ -195,19 +199,49 @@ export async function POST(req: NextRequest) {
         : await createGraphCalendarEvent(ev, connection);
 
     if (outcome.ok) {
-      await reconcileCalendarBooking(svc, {
+      // Graph must return a Teams join URL before we confirm the booking ledger.
+      if (
+        provider === "Microsoft Graph"
+        && (!outcome.link || !isTeamsMeetingJoinUrl(outcome.link))
+      ) {
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "calendar-reconciliation-required",
+            bookingId: claim.id,
+            eventId: outcome.eventId ?? null,
+            detail: "Graph event may exist but Teams join URL is missing. Do not retry until reconciled.",
+          },
+          { status: 502 },
+        );
+      }
+      const reconciled = await reconcileCalendarBooking(svc, {
         workspaceId: wid,
         id: claim.id,
         status: "confirmed",
         externalEventId: outcome.eventId ?? null,
+        meetingUrl: outcome.link ?? null,
         detail: outcome.detail,
       });
+      if (reconciled.status !== "reconciled" || reconciled.bookingStatus !== "confirmed") {
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "calendar-reconciliation-required",
+            bookingId: claim.id,
+            detail: "Calendar event may exist, but durable booking reconciliation failed. Do not retry.",
+          },
+          { status: 502 },
+        );
+      }
       // Persist a refreshed token if it changed. Fail closed: never write a refreshed
       // token in cleartext when production requires encryption at rest but no key is
       // configured — skip the persist (the event itself was already created and
       // reconciled above) rather than silently degrade the stored credential.
       if (
-        (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
+        (origAccessToken !== connection.accessToken
+          || conn.expires_at !== connection.expiresAt
+          || (connection.scope ?? "") !== (conn.scope ?? "")) &&
         !encryptionRequiredButMissing()
       ) {
         try {
@@ -216,6 +250,7 @@ export async function POST(req: NextRequest) {
             .update({
               access_token: encryptSecret(connection.accessToken),
               expires_at: connection.expiresAt,
+              scope: connection.scope ?? conn.scope,
               updated_at: new Date().toISOString(),
             })
             .eq("id", connection.id);

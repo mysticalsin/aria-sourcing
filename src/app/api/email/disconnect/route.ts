@@ -113,6 +113,27 @@ export async function POST(req: NextRequest) {
   // row from being deleted. The token is consumed here only — never logged.
   let revoked = false;
 
+  // Deactivate inbound routes before deleting the connection row.
+  const { error: routeDeactErr } = await svc.rpc("deactivate_inbound_mailbox_route_for_connection", {
+    p_connection_id: conn.id,
+    p_workspace_id: wid,
+  });
+  if (routeDeactErr) {
+    console.warn("[email-disconnect] inbound route deactivate failed", {
+      connectionId: conn.id,
+      code: routeDeactErr.code,
+    });
+  }
+
+  if (conn.provider === "Microsoft Graph") {
+    try {
+      const { deleteGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
+      await deleteGraphMailSubscription({ workspaceId: wid, connectionId: conn.id });
+    } catch {
+      console.warn("[email-disconnect] graph subscription delete failed", { connectionId: conn.id });
+    }
+  }
+
   if (conn.provider === "Gmail API" && conn.refresh_token) {
     try {
       const body = new URLSearchParams({ token: decryptSecret(conn.refresh_token) });
@@ -156,12 +177,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Failed to remove email connection." }, { status: 500 });
   }
 
-  // ── 12. Clear the seat's connected_account mirror ─────────────────────────
-  // Service-role write — mirrors the exact inverse of what the OAuth callback
-  // does when it sets connected_account = accountEmail.
+  // ── 12. Clear the seat's connected_account mirror + demote from live ───────
+  // Service-role write — inverse of OAuth callback. Without a mailbox / Graph
+  // webhook, mode=live would let confirmLive Teams books lie about readiness.
   const { error: seatErr } = await svc
     .from("agent_seats")
-    .update({ connected_account: null })
+    .update({ connected_account: null, mode: "mock" })
     .eq("id", seatId);
   if (seatErr) {
     // Non-fatal: the email_connections row is already gone; log and continue.

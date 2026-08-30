@@ -1,10 +1,27 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, CalendarCheck, Download, EyeOff, Mail, MousePointerClick, Reply, Target, Timer, Trophy, Users } from "lucide-react";
+import { motion } from "framer-motion";
+import {
+  Download,
+  EyeOff,
+  Trophy,
+} from "lucide-react";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
 import { TrendSpark } from "@/components/charts/trend-spark";
-import { Badge, Button, Card, CardContent, CardTitle, EmptyState, Eyebrow, SkeletonCard, useToast } from "@/components/ui";
+import { HiringChoropleth } from "@/components/charts/hiring-choropleth";
+import { MetricGauge } from "@/components/charts/metric-gauge";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardTitle,
+  EmptyState,
+  Eyebrow,
+  useToast,
+} from "@/components/ui";
 import {
   useActivities,
   useBookings,
@@ -17,10 +34,19 @@ import {
   useSettings,
   useWins,
 } from "@/lib/store";
-import { deriveExecDashboard, execCanExport, execWinCandidateLabel, type ExecDashboardModel, type ExecFunnelRow } from "@/lib/exec-dashboard";
+import {
+  deriveExecDashboard,
+  execCanExport,
+  execWinCandidateLabel,
+  type ExecDashboardModel,
+  type ExecFunnelRow,
+} from "@/lib/exec-dashboard";
+import { deriveHiringGeography } from "@/lib/hiring-geography";
+import { cumulativeSeries, fadeUp, staggerContainer, staggerFast } from "@/lib/dashboard-motion";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { downloadText, formatDateTime, formatNumber, formatPercent, formatTimeAgo, type Tone } from "@/lib/utils";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { downloadText, formatDateTime, formatNumber, formatPercent, formatTimeAgo } from "@/lib/utils";
 
 function formatHours(hours: number | null): string {
   return hours == null ? "Not tracked yet" : `${formatNumber(hours)}h`;
@@ -62,193 +88,220 @@ function execMarkdown(model: ExecDashboardModel): string {
   return `${lines.join("\n")}\n`;
 }
 
-function KpiTile({
-  icon,
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint: string;
-  tone: Tone;
-}) {
+function OpenRateTile() {
   return (
-    <Card className="h-full">
-      <CardContent className="flex h-full flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/[0.04] text-ink-soft">
-            {icon}
-          </div>
-          <Badge tone={tone} size="sm" dot>
-            Canonical
-          </Badge>
-        </div>
-        <div>
-          <p className="text-2xl font-extrabold tabular-nums text-ink">{value}</p>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">{label}</p>
-        </div>
-        <p className="text-sm text-muted">{hint}</p>
-      </CardContent>
-    </Card>
+    <MetricCard
+      label="Open rate"
+      value="Not tracked yet"
+      secondaryLabel="No email-open events exist in the current event model."
+      tone="neutral"
+    />
   );
 }
 
-function OpenRateTile() {
+function FunnelStageBar({
+  label,
+  value,
+  max,
+  toneVar,
+  delay,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  toneVar: string;
+  delay: number;
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  const pct = Math.round((value / Math.max(max, 1)) * 100);
   return (
-    <Card className="h-full">
-      <CardContent className="flex h-full flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/[0.04] text-ink-soft">
-            <MousePointerClick className="h-5 w-5" aria-hidden />
-          </div>
-          <Badge tone="neutral" size="sm">
-            Gap
-          </Badge>
-        </div>
-        <div>
-          <p className="text-2xl font-extrabold text-ink">Not tracked yet</p>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Open rate</p>
-        </div>
-        <p className="text-sm text-muted">No email-open events exist in the current event model.</p>
-      </CardContent>
-    </Card>
+    <div className="min-w-0">
+      <div className="mb-1 flex items-center justify-between gap-1">
+        <span className="truncate text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted">
+          {label}
+        </span>
+        <span className="text-xs font-extrabold tabular-nums text-ink">{formatNumber(value)}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-ink/[0.06]">
+        <motion.div
+          className="h-full rounded-full"
+          style={{ backgroundColor: `hsl(var(${toneVar}))` }}
+          initial={reducedMotion ? false : { width: 0 }}
+          animate={{ width: `${Math.max(pct, value > 0 ? 8 : 0)}%` }}
+          transition={
+            reducedMotion
+              ? { duration: 0 }
+              : { duration: 0.75, delay, ease: [0.22, 1, 0.36, 1] }
+          }
+        />
+      </div>
+    </div>
   );
 }
 
 function FunnelRows({ title, rows }: { title: string; rows: ExecFunnelRow[] }) {
+  const reducedMotion = usePrefersReducedMotion();
   return (
-    <Card className="h-full">
-      <CardContent>
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <Eyebrow>{title}</Eyebrow>
-            <CardTitle className="mt-1 text-base">Real-send funnel</CardTitle>
+    <motion.div variants={fadeUp} className="h-full">
+      <Card className="h-full">
+        <CardContent>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <Eyebrow>{title}</Eyebrow>
+              <CardTitle className="mt-1 text-base">Real-send funnel</CardTitle>
+            </div>
+            <Badge tone="electric" size="sm">
+              {formatNumber(rows.length)}
+            </Badge>
           </div>
-          <Badge tone="electric" size="sm">
-            {formatNumber(rows.length)}
-          </Badge>
-        </div>
-        {rows.length === 0 ? (
-          <p className="text-sm text-muted">No funnel data yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {rows.map((row) => (
-              <div key={row.id} className="rounded-2xl border border-line bg-surface/70 p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-ink">{row.label}</p>
-                    <p className="text-xs text-muted">
-                      Avg match {formatNumber(row.avgMatchScore)}
-                      {row.timeToFirstInterviewHours != null ? ` · ${formatNumber(row.timeToFirstInterviewHours)}h TTFI` : ""}
-                    </p>
-                  </div>
-                  <Badge tone="success" size="sm">
-                    {formatPercent(row.facts.replyRate)}
-                  </Badge>
-                </div>
-                <div className="mt-3 grid grid-cols-5 gap-2 text-center">
-                  <MiniStat label="Sourced" value={row.facts.sourced} />
-                  <MiniStat label="Sent" value={row.facts.contacted} />
-                  <MiniStat label="Replies" value={row.facts.repliedCount} />
-                  <MiniStat label="Positive" value={row.facts.positiveReplies} />
-                  <MiniStat label="Booked" value={row.facts.booked} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="min-w-0 rounded-xl bg-ink/[0.035] px-2 py-2">
-      <p className="truncate text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted">{label}</p>
-      <p className="text-sm font-extrabold tabular-nums text-ink">{formatNumber(value)}</p>
-    </div>
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted">No funnel data yet.</p>
+          ) : (
+            <motion.div
+              className="space-y-3"
+              variants={staggerFast}
+              initial={reducedMotion ? false : "hidden"}
+              animate="show"
+            >
+              {rows.map((row) => {
+                const max = Math.max(
+                  row.facts.sourced,
+                  row.facts.contacted,
+                  row.facts.repliedCount,
+                  row.facts.positiveReplies,
+                  row.facts.booked,
+                  1,
+                );
+                return (
+                  <motion.div
+                    key={row.id}
+                    variants={fadeUp}
+                    className="rounded-2xl border border-line bg-gradient-to-br from-surface to-ink/[0.02] p-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-ink">{row.label}</p>
+                        <p className="text-xs text-muted">
+                          Avg match {formatNumber(row.avgMatchScore)}
+                          {row.timeToFirstInterviewHours != null
+                            ? ` · ${formatNumber(row.timeToFirstInterviewHours)}h TTFI`
+                            : ""}
+                        </p>
+                      </div>
+                      <Badge tone="success" size="sm">
+                        {formatPercent(row.facts.replyRate)}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-5">
+                      <FunnelStageBar label="Sourced" value={row.facts.sourced} max={max} toneVar="--muted" delay={0} />
+                      <FunnelStageBar label="Sent" value={row.facts.contacted} max={max} toneVar="--tangerine" delay={0.05} />
+                      <FunnelStageBar label="Replies" value={row.facts.repliedCount} max={max} toneVar="--aqua" delay={0.1} />
+                      <FunnelStageBar label="Positive" value={row.facts.positiveReplies} max={max} toneVar="--electric" delay={0.15} />
+                      <FunnelStageBar label="Booked" value={row.facts.booked} max={max} toneVar="--success" delay={0.2} />
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 
 function TrendPanel({ model }: { model: ExecDashboardModel }) {
+  const reducedMotion = usePrefersReducedMotion();
   return (
-    <Card>
-      <CardContent>
-        <div className="mb-4">
-          <Eyebrow>Trends</Eyebrow>
-          <CardTitle className="mt-1 text-base">Real activity history</CardTitle>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Spark label="Sourced" data={model.trends.sourced} tone="electric" />
-          <Spark label="Contacted" data={model.trends.contacted} tone="tangerine" />
-          <Spark label="Replies" data={model.trends.replied} tone="aqua" />
-          <Spark label="Booked" data={model.trends.booked} tone="success" />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Spark({ label, data, tone }: { label: string; data: number[]; tone: Tone }) {
-  return (
-    <div className="rounded-2xl border border-line bg-surface/70 p-3">
-      <p className="mb-2 text-sm font-bold text-ink">{label}</p>
-      <TrendSpark data={data} tone={tone} />
-    </div>
+    <motion.div variants={fadeUp}>
+      <Card>
+        <CardContent>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <Eyebrow>Trends</Eyebrow>
+              <CardTitle className="mt-1 text-base">Real activity history</CardTitle>
+            </div>
+            <p className="text-xs text-muted">Hover a series for point detail</p>
+          </div>
+          <motion.div
+            className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+            variants={staggerContainer}
+            initial={reducedMotion ? false : "hidden"}
+            animate="show"
+          >
+            <TrendSpark label="Sourced" data={model.trends.sourced} tone="electric" height={88} showSummary />
+            <TrendSpark label="Contacted" data={model.trends.contacted} tone="tangerine" height={88} showSummary />
+            <TrendSpark label="Replies" data={model.trends.replied} tone="aqua" height={88} showSummary />
+            <TrendSpark label="Booked" data={model.trends.booked} tone="success" height={88} showSummary />
+          </motion.div>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 
 function WinsFeed({ model, role }: { model: ExecDashboardModel; role: ReturnType<typeof useRole> }) {
+  const reducedMotion = usePrefersReducedMotion();
   return (
-    <Card>
-      <CardContent>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <Eyebrow>Wins feed</Eyebrow>
-            <CardTitle className="mt-1 text-base">Recent booked wins</CardTitle>
+    <motion.div variants={fadeUp}>
+      <Card>
+        <CardContent>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <Eyebrow>Wins feed</Eyebrow>
+              <CardTitle className="mt-1 text-base">Recent booked wins</CardTitle>
+            </div>
+            <Badge tone="neutral" size="sm">
+              {ROLE_LABEL[role]}
+            </Badge>
           </div>
-          <Badge tone="neutral" size="sm">
-            {ROLE_LABEL[role]}
-          </Badge>
-        </div>
-        {model.recentWins.length === 0 ? (
-          <EmptyState
-            icon={<Trophy className="h-7 w-7" aria-hidden />}
-            title="No wins recorded yet"
-            description="The next accepted meeting will add a structured win record here."
-          />
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {model.recentWins.map((win) => (
-              <div key={win.id} className="rounded-2xl border border-line bg-surface/70 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-ink">
-                      {execWinCandidateLabel(win, role)}
-                    </p>
-                    <p className="truncate text-xs text-muted">{win.roleTitle}</p>
+          {model.recentWins.length === 0 ? (
+            <EmptyState
+              icon={<Trophy className="h-7 w-7" aria-hidden />}
+              title="No wins recorded yet"
+              description="The next accepted meeting will add a structured win record here."
+            />
+          ) : (
+            <motion.div
+              className="grid gap-3 lg:grid-cols-2"
+              variants={staggerFast}
+              initial={reducedMotion ? false : "hidden"}
+              animate="show"
+            >
+              {model.recentWins.map((win) => (
+                <motion.div
+                  key={win.id}
+                  variants={fadeUp}
+                  whileHover={reducedMotion ? undefined : { y: -2 }}
+                  className="rounded-2xl border border-line bg-gradient-to-br from-surface to-success/[0.04] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">
+                        {execWinCandidateLabel(win, role)}
+                      </p>
+                      <p className="truncate text-xs text-muted">{win.roleTitle}</p>
+                    </div>
+                    <Badge tone="electric" size="sm">
+                      {win.sourcePlatform}
+                    </Badge>
                   </div>
-                  <Badge tone="electric" size="sm">
-                    {win.sourcePlatform}
-                  </Badge>
-                </div>
-                <p className="mt-2 text-sm text-ink-soft">{win.campaignTitle}</p>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-                  <span>{win.outreachChannel ?? "Unknown"} touch</span>
-                  <span>{formatNumber(win.touchCount)} touch{win.touchCount === 1 ? "" : "es"}</span>
-                  <span>{formatDuration(win.timeToBookMs)}</span>
-                  <span>{formatTimeAgo(win.at)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                  <p className="mt-2 text-sm text-ink-soft">{win.campaignTitle}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+                    <span>{win.outreachChannel ?? "Unknown"} touch</span>
+                    <span>
+                      {formatNumber(win.touchCount)} touch{win.touchCount === 1 ? "" : "es"}
+                    </span>
+                    <span>{formatDuration(win.timeToBookMs)}</span>
+                    <span>{formatTimeAgo(win.at)}</span>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 
@@ -265,6 +318,7 @@ export default function ExecPage() {
   const wins = useWins();
   const { toast } = useToast();
   const demoMode = !supabaseEnabled || settings.dryRunMode;
+  const reducedMotion = usePrefersReducedMotion();
 
   const model = React.useMemo(
     () =>
@@ -273,6 +327,43 @@ export default function ExecPage() {
         demoMode,
       ),
     [campaigns, candidates, outreach, replies, bookings, activities, settings, wins, demoMode],
+  );
+
+  const scoreSeries = React.useMemo(() => {
+    const scopedIds = new Set(
+      // Prefer in-scope sourced candidates already reflected in exec KPIs.
+      candidates
+        .filter((c) => c.matchScore > 0)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((c) => c.id),
+    );
+    const sorted = candidates
+      .filter((c) => scopedIds.has(c.id) && c.matchScore > 0)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (sorted.length < 2) return [];
+    const buckets = 8;
+    const size = Math.max(1, Math.ceil(sorted.length / buckets));
+    const out: number[] = [];
+    for (let i = 0; i < sorted.length; i += size) {
+      const slice = sorted.slice(i, i + size);
+      out.push(Math.round(slice.reduce((s, c) => s + c.matchScore, 0) / slice.length));
+    }
+    return out;
+  }, [candidates]);
+
+  const replyRateSeries = React.useMemo(() => {
+    let sent = 0;
+    let answered = 0;
+    return model.trends.contacted.map((c, i) => {
+      sent += c;
+      answered += model.trends.replied[i] ?? 0;
+      return sent > 0 ? Math.round((answered / sent) * 1000) / 10 : 0;
+    });
+  }, [model.trends.contacted, model.trends.replied]);
+
+  const geography = React.useMemo(
+    () => deriveHiringGeography(candidates, outreach),
+    [candidates, outreach],
   );
 
   function exportDashboard() {
@@ -307,68 +398,119 @@ export default function ExecPage() {
         }
       />
 
-      <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
-        <div className="space-y-6">
+      <HydrationGate
+        hydrated={hydrated}
+        fallback={
+          <EmptyState
+            title="Loading exec dashboard…"
+            description="KPIs and funnel metrics appear after workspace hydrate — no placeholder charts."
+          />
+        }
+      >
+        <motion.div
+          className="space-y-6"
+          variants={staggerContainer}
+          initial={reducedMotion ? false : "hidden"}
+          animate="show"
+        >
           {model.demoMode ? (
-            <div className="rounded-2xl border border-tangerine/25 bg-tangerine-soft px-4 py-3 text-sm font-semibold text-tangerine">
+            <motion.div
+              variants={fadeUp}
+              className="rounded-2xl border border-tangerine/25 bg-tangerine-soft px-4 py-3 text-sm font-semibold text-tangerine"
+            >
               Demo data - synthetic
-            </div>
+            </motion.div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiTile
-              icon={<Users className="h-5 w-5" aria-hidden />}
+          <motion.div
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+            variants={staggerContainer}
+          >
+            <MetricCard
               label="Candidates sourced"
               value={formatNumber(model.kpis.candidatesSourced)}
-              hint="Live mode excludes synthetic candidate records."
+              secondaryLabel="Total"
               tone="electric"
+              series={cumulativeSeries(model.trends.sourced)}
             />
-            <KpiTile
-              icon={<Mail className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Contacted"
               value={formatNumber(model.kpis.contacted)}
-              hint="Completed real sends only."
+              secondaryLabel="Real sends"
               tone="tangerine"
+              series={cumulativeSeries(model.trends.contacted)}
             />
-            <KpiTile
-              icon={<Reply className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Reply rate"
               value={formatPercent(model.kpis.replyRate)}
-              hint="Replies tied to contacted candidates."
+              secondaryLabel="Of contacted"
               tone="aqua"
+              series={replyRateSeries}
             />
-            <KpiTile
-              icon={<Target className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Positive-reply rate"
               value={formatPercent(model.facts.positiveReplyRate)}
-              hint="Interested or qualified-interest replies."
+              secondaryLabel="Interested+"
               tone="success"
+              series={cumulativeSeries(model.trends.replied)}
             />
-            <KpiTile
-              icon={<CalendarCheck className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Meetings booked"
               value={formatNumber(model.kpis.interviewsBooked)}
-              hint="Bookings tied to real contacted candidates."
+              secondaryLabel="Total"
               tone="violet"
+              series={cumulativeSeries(model.trends.booked)}
             />
-            <KpiTile
-              icon={<Timer className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Time to first interview"
               value={formatHours(model.kpis.timeToFirstInterviewHours)}
-              hint="Canonical campaign timing from metrics.ts."
+              secondaryLabel="Canonical TTFI"
               tone="neutral"
             />
-            <KpiTile
-              icon={<BarChart3 className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Avg match score"
               value={formatNumber(model.kpis.avgMatchScore)}
-              hint="Average across in-scope sourced candidates."
+              secondaryLabel="Avg"
               tone="electric"
+              series={scoreSeries}
             />
             <OpenRateTile />
-          </div>
+          </motion.div>
 
           <TrendPanel model={model} />
+
+          <motion.div variants={fadeUp} className="grid gap-6 xl:grid-cols-3">
+            <Card className="xl:col-span-2">
+              <CardContent>
+                <HiringChoropleth model={geography} height={420} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex h-full flex-col gap-4">
+                <div>
+                  <Eyebrow>Quality gauges</Eyebrow>
+                  <CardTitle className="mt-1 text-base">Pool health</CardTitle>
+                  <p className="mt-1 text-sm text-muted">
+                    Match quality and international coverage at a glance.
+                  </p>
+                </div>
+                <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                  <MetricGauge
+                    value={model.kpis.avgMatchScore}
+                    centerValue={model.kpis.avgMatchScore}
+                    label="Avg match"
+                    formatCenter={(n) => String(Math.round(n))}
+                  />
+                  <MetricGauge
+                    value={Math.min(100, geography.countriesRepresented * 8)}
+                    centerValue={geography.countriesRepresented}
+                    label="Countries"
+                    formatCenter={(n) => String(Math.round(n))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <FunnelRows title="By platform" rows={model.platformFunnels} />
@@ -376,14 +518,17 @@ export default function ExecPage() {
           </div>
 
           {!exportAllowed ? (
-            <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface/70 px-4 py-3 text-sm text-muted">
+            <motion.div
+              variants={fadeUp}
+              className="flex items-center gap-2 rounded-2xl border border-line bg-surface/70 px-4 py-3 text-sm text-muted"
+            >
               <EyeOff className="h-4 w-4" aria-hidden />
               Viewer mode redacts win candidates to first name and role. Export is admin-only.
-            </div>
+            </motion.div>
           ) : null}
 
           <WinsFeed model={model} role={role} />
-        </div>
+        </motion.div>
       </HydrationGate>
     </div>
   );

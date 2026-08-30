@@ -14,6 +14,7 @@ const readinessInput = {
   expectedLedgerSha256,
   agentFrameworksRequired: true,
   hermesRuntimeMisconfigured: false,
+  llmKeysPresent: true,
 };
 
 let passed = 0;
@@ -130,15 +131,27 @@ ok(
   "a correctly configured or absent Hermes runtime does not fail readiness",
   healthy.ok && healthy.components.hermesRuntime,
 );
+ok(
+  "llmKeysPresent is informational and does not gate ok",
+  healthy.ok && healthy.components.llmKeysPresent === true,
+);
+const llmKeysAbsent = await evaluateReadiness(
+  { ...readinessInput, llmKeysPresent: false },
+  healthyProbes(),
+);
+ok(
+  "missing LLM keys still report ready (auth may be dead separately)",
+  llmKeysAbsent.ok && llmKeysAbsent.components.llmKeysPresent === false,
+);
 
 const readinessRoute = readFileSync(
   new URL("../src/app/api/ready/route.ts", import.meta.url),
   "utf8",
 );
 ok(
-  "production readiness cannot opt out of DeerFlow and Flowise with an environment flag",
-  /process\.env\.NODE_ENV === "production"\s*\|\|\s*process\.env\.AGENT_FRAMEWORKS_REQUIRED === "true"/.test(readinessRoute) &&
-    !/frameworkRequirement !== "false"/.test(readinessRoute),
+  "production readiness requires frameworks by default but allows AGENT_FRAMEWORKS_REQUIRED=false opt-out",
+  /AGENT_FRAMEWORKS_REQUIRED === "true"/.test(readinessRoute) &&
+    /AGENT_FRAMEWORKS_REQUIRED !== "false"/.test(readinessRoute),
 );
 
 const missingIdentity = await evaluateReadiness(
@@ -150,6 +163,7 @@ const missingIdentity = await evaluateReadiness(
     expectedLedgerSha256: "",
     agentFrameworksRequired: true,
     hermesRuntimeMisconfigured: false,
+    llmKeysPresent: false,
   },
   healthyProbes(),
 );

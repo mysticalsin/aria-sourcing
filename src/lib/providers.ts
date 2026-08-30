@@ -22,6 +22,8 @@ export function validateApiKeyFormat(provider: string, value: string): { valid: 
     Anthropic: /^sk-ant-[A-Za-z0-9_-]{20,}$/,
     OpenAI: /^sk-[A-Za-z0-9_-]{20,}$/,
     "Kimi (Moonshot)": /^sk-[A-Za-z0-9_-]{20,}$/,
+    DeepSeek: /^sk-[A-Za-z0-9_-]{16,}$/,
+    "NVIDIA NIM": /^nvapi-[A-Za-z0-9_-]{16,}$/,
     Resend: /^re_[A-Za-z0-9_-]{10,}$/,
     SendGrid: /^SG\.[A-Za-z0-9_.-]{20,}$/,
     Sillage: /^sk_live_[A-Za-z0-9]{16,}$/,
@@ -58,6 +60,8 @@ export interface SendRequest {
   to: string;
   subject: string;
   body: string;
+  /** Optional branded HTML (e.g. Mantu wrapper). Plain `body` remains the text part. */
+  htmlBody?: string;
   /** Server-generated opaque recipient link; required for any live delivery. */
   unsubscribeUrl?: string;
   /** Immutable per-attempt identity stamped on the ledger claim before the
@@ -91,7 +95,9 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       detail: "No compliant unsubscribe link is configured for this email.",
     };
   }
-  const rendered = renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl);
+  const rendered = renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl, {
+    htmlBody: req.htmlBody,
+  });
   const headers: Record<string, string> = {
     ...rendered.headers,
     ...(req.attemptId ? { "X-Aria-Send-Attempt": req.attemptId } : {}),

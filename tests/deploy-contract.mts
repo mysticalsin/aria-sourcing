@@ -1377,6 +1377,12 @@ ok(
   "deployed acceptance stops unless the authenticated profile is admin",
   /ROLE[^\n]*admin[\s\S]{0,300}die\s+"Authenticated profile is not an admin/.test(deployedE2eSource),
 );
+ok(
+  "deployed E2E binds exact Fly hosts (no lookalike suffix wildcards)",
+  !/aria-mantu-app\.fly\.dev\*/.test(deployedE2eSource) &&
+    /validate_fly_e2e_url/.test(deployedE2eSource) &&
+    /aria-mantu-app\.fly\.dev\|aria-mantu-kong\.fly\.dev/.test(deployedE2eSource),
+);
 
 console.log(`RESULT deploy-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

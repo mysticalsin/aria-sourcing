@@ -140,5 +140,54 @@ ok(
     /public\.correlate_inbound_email\(uuid,text\)'\s*,\s*'service_role'/i.test(priv),
 );
 
+const webhookRoute = existsSync("src/app/api/webhooks/email-inbound/route.ts")
+  ? readFileSync("src/app/api/webhooks/email-inbound/route.ts", "utf8")
+  : "";
+const inboundIngest = existsSync("src/lib/inbound-email-ingest.ts")
+  ? readFileSync("src/lib/inbound-email-ingest.ts", "utf8")
+  : "";
+const graphWebhook = existsSync("src/app/api/webhooks/microsoft-graph/route.ts")
+  ? readFileSync("src/app/api/webhooks/microsoft-graph/route.ts", "utf8")
+  : "";
+ok(
+  "email-inbound webhook routes replies and hiring needs (event-driven, no polling)",
+  /ingestNormalizedInboundEmail/i.test(webhookRoute) &&
+    /routeInboundEmail/i.test(inboundIngest) &&
+    /enqueue_aria_job/i.test(inboundIngest) &&
+    /requisition_parse|inbound_classify|jobDecision\.kind/i.test(inboundIngest),
+);
+ok(
+  "email-inbound webhook skips classify enqueue on duplicate redelivery",
+  /duplicate/i.test(webhookRoute) && /duplicate/i.test(inboundIngest),
+);
+ok(
+  "Microsoft Graph mail webhook validates clientState and ingests without polling",
+  /validationToken/i.test(graphWebhook) &&
+    /verifyGraphClientState/i.test(graphWebhook) &&
+    /ingestNormalizedInboundEmail/i.test(graphWebhook) &&
+    /fetchGraphMessageForIngest/i.test(graphWebhook) &&
+    /token_unavailable/i.test(graphWebhook) &&
+    /connection_missing/i.test(graphWebhook) &&
+    /never invents a hiring-need enqueue/i.test(graphWebhook),
+);
+
+const graphSubs = existsSync("src/lib/email-graph-subscriptions.ts")
+  ? readFileSync("src/lib/email-graph-subscriptions.ts", "utf8")
+  : "";
+ok(
+  "Graph message ingest prefers text body and normalizes HTML for hiring-need fields",
+  /outlook\.body-content-type="text"/i.test(graphSubs) &&
+    /normalizeGraphMessageBody/i.test(graphSubs) &&
+    /decodeBasicHtmlEntities|&nbsp;/i.test(graphSubs) &&
+    /declaredHtml/.test(graphSubs) &&
+    /replace\(\/<\\s\*br/.test(graphSubs) &&
+    /GraphMessageFetchResult/.test(graphSubs) &&
+    /token_unavailable/.test(graphSubs),
+);
+ok(
+  "inbound ingest requires durable enqueue status (not transport-only success)",
+  /already_enqueued/i.test(inboundIngest) && /Job enqueue rejected/i.test(inboundIngest),
+);
+
 console.log(`RESULT email-inbound-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

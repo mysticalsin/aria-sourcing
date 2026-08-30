@@ -29,8 +29,10 @@ import {
 } from "@/lib/mock-ai";
 import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
+import { OutlookNeedsPanel } from "@/components/intake/outlook-needs-panel";
+import type { OutlookNeedMessage } from "@/lib/outlook-needs";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import {
   copyToClipboard,
   formatPercent,
@@ -84,6 +86,25 @@ const SEVERITY_ICON: Record<ValidationWarning["severity"], React.ReactNode> = {
   info: <Info className="h-4 w-4" aria-hidden />,
 };
 
+/** Live tenants refuse heuristic parse — surface a clear operator toast. */
+async function runParseIntakeLive(
+  settings: Parameters<typeof parseIntakeLive>[0],
+  input: Parameters<typeof parseIntakeLive>[1],
+  onError: (message: string) => void,
+): Promise<Awaited<ReturnType<typeof parseIntakeLive>> | null> {
+  try {
+    return await parseIntakeLive(settings, input);
+  } catch (err) {
+    const code = err instanceof Error ? err.message : "live_intake_failed";
+    onError(
+      code.startsWith("live_intake_")
+        ? "Live JD parse requires a working cloud LLM. Configure a live provider in Settings → AI, then retry."
+        : "Live JD parse failed. Configure a live LLM provider and retry.",
+    );
+    return null;
+  }
+}
+
 export default function IntakePage() {
   const hydrated = useHydrated();
   const router = useRouter();
@@ -102,12 +123,32 @@ export default function IntakePage() {
   const [skillDraft, setSkillDraft] = useState("");
   const [dustPending, setDustPending] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [selectedNeedId, setSelectedNeedId] = useState<string | null>(null);
+  const [inboxPollAllowed, setInboxPollAllowed] = useState(false);
   // Guards against a slow Dust reply from an earlier parse landing on top of a
   // newer one if the user re-parses before the first call resolves.
   const parseSeqRef = React.useRef(0);
   // Same guard, for the live LLM parse itself — a slower earlier parse can't
   // clobber a faster, more recent one if the user re-parses quickly.
   const liveParseSeqRef = React.useRef(0);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/email/connections", { credentials: "include" });
+        const json = (await res.json().catch(() => null)) as {
+          providers?: { inboxPollAllowed?: boolean };
+        } | null;
+        if (!cancelled) setInboxPollAllowed(json?.providers?.inboxPollAllowed === true);
+      } catch {
+        if (!cancelled) setInboxPollAllowed(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function patchJob(patch: Partial<JobAnalysis>) {
     setJob((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -163,10 +204,8 @@ export default function IntakePage() {
     });
   }
 
-  /** Scans the connected mailbox for hiring-need emails and loads the newest
-   * one into the form. A bundled sample is available only in explicit demo
-   * mode; a live tenant never substitutes sample data for an empty inbox. */
-  async function scanInbox() {
+  /** Break-glass mailbox poll. Production intake is signed inbound webhook (HMAC); Graph push when M365 is connected. */
+  async function emergencySyncInbox() {
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
 
@@ -180,8 +219,20 @@ export default function IntakePage() {
       });
       const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
+        status?: string;
+        error?: string;
         messages?: (InboundMessage & { seatId: string })[];
       } | null;
+      if (res.status === 403 && json?.status === "inbox_poll_disabled") {
+        if (liveParseSeqRef.current !== seq) return;
+        setParsing(false);
+        toast({
+          title: "Inbox polling disabled",
+          description: json.error ?? "Hiring needs arrive via signed inbound webhook (or Graph when connected). Inbox list-sync is off.",
+          variant: "warning",
+        });
+        return;
+      }
       if (res.ok && json?.ok) {
         const needs = (json.messages ?? [])
           .filter((m) => isNeedEmail(m.subject ?? "", m.body ?? ""))
@@ -202,16 +253,32 @@ export default function IntakePage() {
       setParsing(false);
       toast({
         title: "No hiring need found",
-        description: "The connected mailbox returned no hiring-need email. Nothing was created or substituted.",
+        description:
+          "Emergency sync found no hiring-need email. Prefer signed inbound webhook intake; nothing was created or substituted.",
         variant: "warning",
       });
       return;
     }
-    if (!incoming) incoming = SAMPLE_MANTU_EMAIL;
+    if (!incoming) {
+      if (!demoLoginEnabled) {
+        setParsing(false);
+        toast({
+          title: "No hiring need found",
+          description: "Sample substitution is disabled on this tenant. Paste a brief or wait for signed inbound webhook intake.",
+          variant: "warning",
+        });
+        return;
+      }
+      incoming = SAMPLE_MANTU_EMAIL;
+    }
 
     setEmail(incoming);
     setJd("");
-    const result = await parseIntakeLive(settings, { email: incoming });
+    const result = await runParseIntakeLive(settings, { email: incoming }, (description) => {
+      setParsing(false);
+      toast({ title: "Live parse required", description, variant: "warning" });
+    });
+    if (!result) return;
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
@@ -236,6 +303,34 @@ export default function IntakePage() {
     });
   }
 
+  /** Load an Outlook need into the form and immediately parse with the intake LLM. */
+  async function handleOutlookNeed(intakeEmail: string, need: OutlookNeedMessage) {
+    const seq = ++liveParseSeqRef.current;
+    setSelectedNeedId(need.messageId);
+    setEmail(intakeEmail);
+    setJd("");
+    setParsing(true);
+    const result = await runParseIntakeLive(settings, { email: intakeEmail }, (description) => {
+      setParsing(false);
+      toast({ title: "Live parse required", description, variant: "warning" });
+    });
+    if (!result) return;
+    if (liveParseSeqRef.current !== seq) return;
+    setParsing(false);
+    setParsed(result);
+    setJob(result.jobAnalysis);
+    setSenderName(result.sender.name);
+    setSenderEmail(result.sender.email);
+    maybeRunDustJdAnalysis("", intakeEmail);
+    toast({
+      title: result.providerWarning ? "Need loaded for review" : "Outlook need parsed",
+      description:
+        result.providerWarning ??
+        `${result.jobAnalysis.title} · review the brief, then create the campaign to start sourcing.`,
+      variant: result.providerWarning ? "warning" : "success",
+    });
+  }
+
   /** Routes through the live LLM when a cloud provider is configured for chat.
    * Provider failures return a visible warning and an evidence-only parse. */
   async function handleParse() {
@@ -249,7 +344,15 @@ export default function IntakePage() {
     }
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
-    const result = await parseIntakeLive(settings, { email, jd: jd.trim() ? jd : undefined });
+    const result = await runParseIntakeLive(
+      settings,
+      { email, jd: jd.trim() ? jd : undefined },
+      (description) => {
+        setParsing(false);
+        toast({ title: "Live parse required", description, variant: "warning" });
+      },
+    );
+    if (!result) return;
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
@@ -346,32 +449,42 @@ export default function IntakePage() {
       });
       return;
     }
-    // Sourcing starts immediately — first batch on the strategy's lead platform.
-    // Fire-and-forget: the campaign page renders candidates as they land, and a
-    // failure surfaces as a toast without blocking campaign creation.
-    void actions.sourceNextBatch(campaign.id).then((res) => {
-      if (res.ok) {
-        const n = res.accepted.length;
-        toast({
-          title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
-          description: n > 0
-            ? `Added ${n} real candidate${n === 1 ? "" : "s"} for ${campaign.title}.`
-            : `The first real search for ${campaign.title} completed without a matching result.`,
-          variant: n > 0 ? "success" : "info",
-        });
-      } else {
-        toast({
-          title: "Sourcing couldn't start",
-          description: `${res.error} Retry with “Source next batch” on the campaign page.`,
-          variant: "warning",
-        });
-      }
-    });
     toast({
       title: "Campaign created",
       description: `${campaign.title} is ready. The first real sourcing search is starting.`,
       variant: "success",
     });
+
+    if (supabaseEnabled) {
+      const synced = await actions.flushWorkspaceSave();
+      if (!synced) {
+        toast({
+          title: "Workspace sync failed",
+          description:
+            "The campaign was created locally but could not sync to your team workspace before sourcing. Use “Retry save” in the banner, then “Source next batch” on the campaign page.",
+          variant: "error",
+        });
+        router.push(`/campaigns/${campaign.id}`);
+        return;
+      }
+    }
+    const res = await actions.sourceNextBatch(campaign.id);
+    if (res.ok) {
+      const n = res.accepted.length;
+      toast({
+        title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
+        description: n > 0
+          ? `Added ${n} real candidate${n === 1 ? "" : "s"} for ${campaign.title}.`
+          : `The first real search for ${campaign.title} completed without a matching result.`,
+        variant: n > 0 ? "success" : "info",
+      });
+    } else {
+      toast({
+        title: "Sourcing couldn't start",
+        description: `${res.error} Retry with “Source next batch” on the campaign page.`,
+        variant: "warning",
+      });
+    }
     router.push(`/campaigns/${campaign.id}`);
   }
 
@@ -392,8 +505,8 @@ export default function IntakePage() {
     <div>
       <PageHeader
         eyebrow="Intake"
-        title="Email + JD intake"
-        description="Paste a hiring request and Aria parses it into a structured, editable brief, then spins up an autonomous sourcing campaign."
+        title="Open needs → sourcing"
+        description="Hiring needs arrive via signed inbound webhook (HMAC) — Graph push when Outlook is connected — or paste a brief. No inbox polling. Aria parses into an editable role and starts a real sourcing campaign."
         actions={
           <Badge tone="aqua" dot>
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
@@ -403,6 +516,16 @@ export default function IntakePage() {
       />
 
       <HydrationGate hydrated={hydrated} fallback={<IntakeFallback />}>
+        <div className="mb-6">
+          <OutlookNeedsPanel
+            onSelectNeed={(intakeEmail, need) => {
+              void handleOutlookNeed(intakeEmail, need);
+            }}
+            selectedMessageId={selectedNeedId}
+            busy={parsing}
+          />
+        </div>
+
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* LEFT — inbound brief form */}
           <Card className="animate-fade-in lg:sticky lg:top-6 lg:self-start">
@@ -441,37 +564,43 @@ export default function IntakePage() {
 
               <div className="space-y-3 border-t border-line pt-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    leftIcon={<Sparkles aria-hidden />}
-                    onClick={loadSample}
-                    disabled={parsing}
-                  >
-                    Sample backend role
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    leftIcon={<FileText aria-hidden />}
-                    onClick={loadMantu}
-                    disabled={parsing}
-                  >
-                    Load Mantu need
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="subtle"
-                    size="sm"
-                    leftIcon={<Inbox aria-hidden />}
-                    onClick={scanInbox}
-                    loading={parsing}
-                    disabled={parsing}
-                  >
-                    Scan inbox
-                  </Button>
+                  {demoLoginEnabled ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<Sparkles aria-hidden />}
+                        onClick={loadSample}
+                        disabled={parsing}
+                      >
+                        Sample backend role
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<FileText aria-hidden />}
+                        onClick={loadMantu}
+                        disabled={parsing}
+                      >
+                        Load Mantu need
+                      </Button>
+                    </>
+                  ) : null}
+                  {inboxPollAllowed ? (
+                    <Button
+                      type="button"
+                      variant="subtle"
+                      size="sm"
+                      leftIcon={<Inbox aria-hidden />}
+                      onClick={emergencySyncInbox}
+                      loading={parsing}
+                      disabled={parsing}
+                    >
+                      Emergency sync
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     leftIcon={<ScanText aria-hidden />}
@@ -484,11 +613,18 @@ export default function IntakePage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted">
-                  Inbound emails can also POST to{" "}
+                  Production intake is signed inbound webhook push to{" "}
                   <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
-                    /api/intake
+                    /api/webhooks/email-inbound
                   </code>
-                  {". "}A Microsoft Graph / n8n webhook scans the JD email and returns a structured brief.
+                  {" "}(HMAC). Graph push to{" "}
+                  <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
+                    /api/webhooks/microsoft-graph
+                  </code>
+                  {" "}when Outlook is connected.{" "}
+                  {inboxPollAllowed
+                    ? "Emergency sync polls only as break-glass."
+                    : "Inbox polling is disabled (ARIA_ALLOW_INBOX_SYNC)."}
                 </p>
               </div>
             </CardBody>
@@ -500,7 +636,11 @@ export default function IntakePage() {
               className="lg:min-h-[420px]"
               icon={<ScanText className="h-6 w-6" aria-hidden />}
               title="Awaiting a brief"
-              description="Parse an email (or load the sample) and the structured, editable analysis (confidence scores, validation, and a clarification draft) appears here."
+              description={
+                demoLoginEnabled
+                  ? "Parse an email (or load the sample) and the structured, editable analysis (confidence scores, validation, and a clarification draft) appears here."
+                  : "Paste a hiring need email or open an Outlook need from the panel. Structured analysis appears here after parsing."
+              }
             />
           ) : (
             <div className="space-y-6 animate-fade-in">
@@ -549,8 +689,8 @@ export default function IntakePage() {
                     </Field>
                   </div>
 
-                  {/* Role + department */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Role + department + openings */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <Field label="Role title" htmlFor="job-title">
                       <Input
                         id="job-title"
@@ -563,6 +703,35 @@ export default function IntakePage() {
                         id="job-dept"
                         value={job.department}
                         onChange={(e) => patchJob({ department: e.target.value })}
+                      />
+                    </Field>
+                    <Field
+                      label="Openings / headcount"
+                      htmlFor="job-openings"
+                      hint="How many people to hire for this need."
+                    >
+                      <Input
+                        id="job-openings"
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        value={(() => {
+                          const m = job.teamSize.match(/\b(\d{1,3})\b/);
+                          return m ? m[1] : "";
+                        })()}
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          if (!raw) {
+                            patchJob({ teamSize: "" });
+                            return;
+                          }
+                          const n = Number(raw);
+                          if (!Number.isFinite(n) || n < 1) return;
+                          const hc = Math.min(999, Math.floor(n));
+                          patchJob({
+                            teamSize: `${hc} opening${hc === 1 ? "" : "s"}`,
+                          });
+                        }}
                       />
                     </Field>
                   </div>
@@ -925,20 +1094,9 @@ export default function IntakePage() {
 
 function IntakeFallback() {
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" aria-hidden>
-      <div className="card-surface space-y-4 p-6">
-        <div className="skeleton h-4 w-1/3 rounded-xl" />
-        <div className="skeleton h-48 w-full rounded-2xl" />
-        <div className="skeleton h-36 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-1/2 rounded-full" />
-      </div>
-      <div className="card-surface space-y-4 p-6">
-        <div className="skeleton h-4 w-1/3 rounded-xl" />
-        <div className="skeleton h-11 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-full rounded-2xl" />
-        <div className="skeleton h-40 w-full rounded-2xl" />
-      </div>
-    </div>
+    <EmptyState
+      title="Loading intake…"
+      description="Hiring-need parser appears after workspace hydrate — no placeholder panels."
+    />
   );
 }

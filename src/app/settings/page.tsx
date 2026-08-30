@@ -14,19 +14,27 @@ import {
   Button,
   Badge,
   EmptyState,
-  SkeletonCard,
   useToast,
   useConfirm,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
+import { EmailConnectionsPanel } from "@/components/settings/email-connections-panel";
+import { LinkedInOutreachStack } from "@/components/settings/linkedin-outreach-stack";
+import { Microsoft365Stack } from "@/components/settings/microsoft365-stack";
+import { IntegrationsHealthStrip } from "@/components/settings/integration-connection-primitives";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
+import { RecruitmentLlmPanel } from "@/components/settings/recruitment-llm-panel";
+import { SetupGuidePanel } from "@/components/settings/setup-guide-panel";
+import { ObservabilityPanel } from "@/components/settings/observability-panel";
+import { ReplyAutopilotPanel } from "@/components/settings/reply-autopilot-panel";
+import { LoopSwitchboardPanel } from "@/components/settings/loop-switchboard-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
@@ -34,10 +42,11 @@ import { DatabricksPanel } from "@/components/settings/databricks-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
-import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
+import { useHydrated, useSettings, useIntegrations, useSeats, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { integrationHealthSummary } from "@/lib/integrations";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { realIntegrationSummary, mailboxIntegrationPatchesFromConnections } from "@/lib/integrations";
+import { hasConnectedMailbox } from "@/lib/outreach-send-mode";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
   ShieldCheck,
@@ -57,16 +66,34 @@ import {
   BrainCircuit,
   Wrench,
   Info,
+  Rocket,
+  Activity,
 } from "lucide-react";
 
 /* ---- tabbed navigation -------------------------------------------------- */
 
-const SettingsTabContext = React.createContext("integrations");
+const SettingsTabContext = React.createContext("setup");
+
+const VALID_TABS = new Set([
+  "setup",
+  "integrations",
+  "ai",
+  "fleet",
+  "observe",
+  "compliance",
+  "voice",
+  "access",
+  "workspace",
+]);
 
 /** Maps each numbered section to the tab it lives under. */
 const N_TO_TAB: Record<string, string> = {
+  "00": "setup",
+  "20": "observe",
+  "21": "observe",
+  "21a": "observe",
   "04": "integrations",
-  "14": "ai", "15": "ai", "16": "ai", "17": "ai", "19": "ai",
+  "14": "ai", "15": "ai", "15a": "ai", "16": "ai", "17": "ai", "19": "ai",
   "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
   "02": "compliance", "05": "compliance", "07": "compliance",
   "08": "voice", "13": "voice",
@@ -75,9 +102,11 @@ const N_TO_TAB: Record<string, string> = {
 };
 
 const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
+  { id: "setup", label: "Get started", icon: <Rocket className="h-4 w-4" /> },
   { id: "integrations", label: "Integrations", icon: <Plug2 className="h-4 w-4" /> },
   { id: "ai", label: "AI & Models", icon: <Cpu className="h-4 w-4" /> },
   { id: "fleet", label: "Fleet & Automation", icon: <Clock className="h-4 w-4" /> },
+  { id: "observe", label: "Observability", icon: <Activity className="h-4 w-4" /> },
   { id: "compliance", label: "Approval & Compliance", icon: <ShieldCheck className="h-4 w-4" /> },
   { id: "voice", label: "Brand Voice", icon: <Sparkles className="h-4 w-4" /> },
   { id: "access", label: "Access & Keys", icon: <Lock className="h-4 w-4" /> },
@@ -203,34 +232,167 @@ export default function SettingsPage() {
     [storedIntegrations],
   );
   const actions = useActions();
+  const seats = useSeats();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [activeTab, setActiveTab] = React.useState("integrations");
+  const [activeTab, setActiveTab] = React.useState("setup");
   const canResetSyntheticDemo = !supabaseEnabled;
+
+  const goTab = React.useCallback((id: string) => {
+    if (!VALID_TABS.has(id)) return;
+    setActiveTab(id);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", id);
+      window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}`);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab && VALID_TABS.has(tab)) setActiveTab(tab);
     const oauth = params.get("oauth");
     const message = params.get("message");
+    // Fail-closed: never toast success from URL alone — confirm a live connection row exists.
     if (oauth === "success") {
-      toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      const linkedInHint = /linkedin/i.test(message ?? "");
+      goTab("integrations");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
+      void (async () => {
+        try {
+          if (linkedInHint) {
+            const res = await fetch("/api/linkedin/connections", { credentials: "include" });
+            const json = (await res.json().catch(() => null)) as {
+              oauthConnections?: Array<{ displayName?: string | null; email?: string | null }>;
+              seats?: Array<{ mode?: string; connectedAccount?: string | null }>;
+            } | null;
+            const oauth = json?.oauthConnections?.find(
+              (c) => Boolean(c.displayName?.trim() || c.email?.trim()),
+            );
+            const liveSeat = json?.seats?.find(
+              (s) => s.mode === "live" && Boolean(s.connectedAccount?.trim()),
+            );
+            if (oauth || liveSeat) {
+              toast({
+                title: "LinkedIn connected",
+                description:
+                  message?.trim() ||
+                  (oauth
+                    ? `LinkedIn connected as ${oauth.displayName || oauth.email}`
+                    : `LinkedIn seat live: ${liveSeat?.connectedAccount}`),
+                variant: "success",
+              });
+              return;
+            }
+          } else {
+            const res = await fetch("/api/email/connections", { credentials: "include" });
+            const json = (await res.json().catch(() => null)) as {
+              connections?: Array<{
+                accountEmail?: string;
+                seatMode?: string | null;
+                provider?: string;
+              }>;
+            } | null;
+            const live = (json?.connections ?? []).find(
+              (c) =>
+                Boolean(c.accountEmail?.trim()) &&
+                (c.seatMode === "live" ||
+                  c.provider === "SendGrid" ||
+                  c.provider === "Resend"),
+            );
+            if (live) {
+              toast({
+                title: "Mailbox connected",
+                description: message?.trim() || `Connected ${live.accountEmail}`,
+                variant: "success",
+              });
+              return;
+            }
+          }
+          toast({
+            title: linkedInHint ? "LinkedIn not confirmed" : "Mailbox not confirmed",
+            description:
+              "OAuth callback finished but no live connection is visible yet. Refresh Integrations or reconnect.",
+            variant: "warning",
+          });
+        } catch {
+          toast({
+            title: "Could not confirm OAuth",
+            description: "Refresh Settings → Integrations to verify the connection.",
+            variant: "warning",
+          });
+        }
+      })();
     } else if (oauth === "error") {
-      toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      const linkedIn = /linkedin/i.test(message ?? "");
+      toast({
+        title: linkedIn ? "LinkedIn connection failed" : "Mailbox connection failed",
+        description: message ?? "",
+        variant: "error",
+      });
+      goTab("integrations");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     }
-  }, [toast]);
+  }, [toast, goTab]);
 
-  const summary = integrationHealthSummary(integrations);
+  // Keep Outlook / Teams / Gmail cards honest with live OAuth connections (no dual-truth mock cards).
+  React.useEffect(() => {
+    if (!supabaseEnabled) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/email/connections", {
+          method: "GET",
+          credentials: "include",
+        });
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          connections?: Array<{ provider: string; accountEmail: string; hasRefreshToken?: boolean }>;
+          seats?: Array<{
+            provider: string;
+            mode?: string;
+            status?: string;
+            connectedAccount?: string | null;
+          }>;
+        } | null;
+        if (cancelled || !json || json.ok === false) return;
+        for (const { id, patch } of mailboxIntegrationPatchesFromConnections(json)) {
+          actions.updateIntegration(id, patch);
+        }
+      } catch {
+        // Non-fatal — cards stay on last stored status.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, activeTab]);
+
+  const summary = realIntegrationSummary(integrations);
+  const roadmapIntegrations = React.useMemo(
+    () => integrations.filter((i) => !i.real),
+    [integrations],
+  );
+  const liveIntegrations = React.useMemo(
+    () => integrations.filter((i) => i.real),
+    [integrations],
+  );
 
   function savedToast() {
     toast({ title: "Settings saved", variant: "success" });
   }
 
   function setToggle(patch: Partial<SystemSettings>, label: string, on: boolean) {
+    if (patch.dryRunMode === false && !hasConnectedMailbox(seats, integrations)) {
+      toast({
+        title: "Connect a mailbox first",
+        description: "Live send mode needs a connected Outlook/Gmail mailbox. HeyReach/LinkedIn alone stay dry-run. Staying in dry-run / preview.",
+        variant: "warning",
+      });
+      return;
+    }
     actions.updateSettings(patch);
     toast({
       title: `${label} ${on ? "enabled" : "disabled"}`,
@@ -244,11 +406,13 @@ export default function SettingsPage() {
 
   function patchNotify(key: keyof SystemSettings["notifications"], value: boolean) {
     actions.updateSettings({ notifications: { ...settings.notifications, [key]: value } });
+    const channel =
+      key === "slack" ? "Slack" : key === "telegram" ? "Telegram" : "Email";
     toast({
-      title: `${key === "slack" ? "Slack" : key === "telegram" ? "Telegram" : "Email"} alerts ${
-        value ? "enabled" : "disabled"
-      }`,
-      variant: value ? "success" : "info",
+      title: value
+        ? `${channel} preference saved — delivery needs a webhook/channel config`
+        : `${channel} alerts disabled`,
+      variant: "info",
     });
   }
 
@@ -286,7 +450,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Control"
         title="Settings"
-        description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Aria runs against lives here."
+        description="Plug-and-play setup, recruitment LLMs, Outlook, observability, and the guardrails Aria runs against."
         actions={
           canResetSyntheticDemo ? (
             <Button
@@ -304,11 +468,10 @@ export default function SettingsPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
+          <EmptyState
+            title="Loading settings…"
+            description="Workspace integrations and seats load here once hydrated — no placeholder connection cards."
+          />
         }
       >
         <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
@@ -328,7 +491,7 @@ export default function SettingsPage() {
                   id={`settings-tab-${t.id}`}
                   aria-selected={activeTab === t.id}
                   aria-controls="settings-panel"
-                  onClick={() => setActiveTab(t.id)}
+                  onClick={() => goTab(t.id)}
                   className={cn(
                     "inline-flex shrink-0 snap-start items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 lg:w-full",
                     activeTab === t.id
@@ -351,6 +514,46 @@ export default function SettingsPage() {
               aria-labelledby={`settings-tab-${activeTab}`}
               tabIndex={0}
             >
+          {/* 00 — Plug and play */}
+          <Section
+            n="00"
+            eyebrow="Start here"
+            title="Get started"
+            description="Connect Outlook (Graph webhook), pick the recruitment LLM, then let inbound needs land in sourcing — no inbox polling."
+          >
+            <SetupGuidePanel onGoAi={() => goTab("ai")} />
+          </Section>
+
+          {/* 20 — Observability */}
+          <Section
+            n="20"
+            eyebrow="Pulse"
+            title="Observability"
+            description="See what the fleet is doing — event mix, activity log, and links to Floor / replay."
+          >
+            <ObservabilityPanel />
+          </Section>
+
+          {/* 21 — Reply autopilot */}
+          <Section
+            n="21"
+            eyebrow="Replies"
+            title="Candidate answers (webhook)"
+            description="Event-driven classify: no idle inbox polling, no token burn waiting for silence."
+          >
+            <ReplyAutopilotPanel />
+          </Section>
+
+          {/* 21a — Loop switchboard */}
+          <Section
+            n="21a"
+            eyebrow="Loop"
+            title="Sourcing loop switchboard"
+            description="Arm intake, sourcing, and sequences for this workspace. Fail-closed until an admin turns the board on."
+          >
+            <LoopSwitchboardPanel />
+          </Section>
+
           {/* 01 — System identity */}
           <Section
             n="01"
@@ -416,8 +619,8 @@ export default function SettingsPage() {
                     id="dryRunMode"
                     icon={<Lock className="h-4 w-4" />}
                     label="Dry-run mode"
-                    description="Simulate sends only: nothing leaves the system. The safe default for this build."
-                    checked={settings.dryRunMode}
+                    description="Simulate sends only: nothing leaves the system. Forced on until an Outlook/Gmail (or SendGrid/Resend) mailbox is connected — LinkedIn alone stays dry-run."
+                    checked={settings.dryRunMode || !hasConnectedMailbox(seats, integrations)}
                     onCheckedChange={(v) => setToggle({ dryRunMode: v }, "Dry-run mode", v)}
                   />
                 </div>
@@ -426,17 +629,17 @@ export default function SettingsPage() {
                   <Field
                     label="Minimum score to contact"
                     htmlFor="minScoreToContact"
-                    hint="Candidates below this match score are never contacted (0–100)."
+                    hint="Only 80%+ matches may be contacted. Raise higher for a stricter bar (80–100)."
                   >
                     <Input
                       id="minScoreToContact"
                       type="number"
-                      min={0}
+                      min={80}
                       max={100}
                       value={settings.minScoreToContact}
                       onChange={(e) =>
                         actions.updateSettings({
-                          minScoreToContact: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                          minScoreToContact: Math.min(100, Math.max(80, Number(e.target.value) || 80)),
                         })
                       }
                       onBlur={savedToast}
@@ -545,45 +748,50 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
+            description="Real connections only: email OAuth, LinkedIn identity + HeyReach outreach stack, then Apify and the rest. No fake skeletons."
           >
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="success" size="sm" dot>
-                {summary.connected} connected
-              </Badge>
-              {summary.degraded > 0 && (
-                <Badge tone="warning" size="sm" dot>
-                  {summary.degraded} degraded
-                </Badge>
-              )}
-              {summary.error > 0 && (
-                <Badge tone="danger" size="sm" dot>
-                  {summary.error} error
-                </Badge>
-              )}
-              {summary.notConfigured > 0 && (
-                <Badge tone="neutral" size="sm" dot>
-                  {summary.notConfigured} not configured
-                </Badge>
-              )}
-              <span className="text-xs text-muted">of {summary.total} total · mock is the safe default</span>
-            </div>
+            <Microsoft365Stack />
+            <EmailConnectionsPanel />
+            <LinkedInOutreachStack />
+            <IntegrationsHealthStrip
+              connected={summary.connected}
+              degraded={summary.degraded}
+              error={summary.error}
+              notConfigured={summary.notConfigured}
+              total={summary.total}
+            />
 
-            {integrations.length === 0 ? (
+            {liveIntegrations.length === 0 ? (
               <EmptyState
                 icon={<Plug2 className="h-7 w-7" />}
-                title="No integrations configured"
-                description="Integrations appear here once Aria is provisioned with its tool connections."
+                title="No live integrations"
+                description="Connect email or LinkedIn above to get started."
               />
             ) : (
-              <>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  {integrations.map((i) => (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {liveIntegrations.map((i) => (
+                  <IntegrationCard key={i.id} integration={i} />
+                ))}
+              </div>
+            )}
+
+            <DatabricksPanel />
+
+            {demoLoginEnabled && roadmapIntegrations.length > 0 && (
+              <details className="rounded-2xl border border-dashed border-line p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-ink">
+                  Roadmap placeholders ({roadmapIntegrations.length}) — not wired
+                </summary>
+                <p className="mt-2 text-xs text-muted">
+                  These cards are product backlog only. They cannot connect and never report a fake
+                  “connected” state.
+                </p>
+                <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {roadmapIntegrations.map((i) => (
                     <IntegrationCard key={i.id} integration={i} />
                   ))}
                 </div>
-                <DatabricksPanel />
-              </>
+              </details>
             )}
           </Section>
 
@@ -611,7 +819,7 @@ export default function SettingsPage() {
                     id="notify-slack"
                     icon={<Slack className="h-4 w-4" />}
                     label="Slack"
-                    description="Post approvals and hot replies to your Slack workspace."
+                    description="Preference only — post approvals and hot replies when a Slack webhook is configured (not wired yet)."
                     checked={settings.notifications.slack}
                     onCheckedChange={(v) => patchNotify("slack", v)}
                   />
@@ -619,7 +827,7 @@ export default function SettingsPage() {
                     id="notify-telegram"
                     icon={<Send className="h-4 w-4" />}
                     label="Telegram"
-                    description="Send urgent escalations to your Telegram channel."
+                    description="Preference only — urgent escalations when a Telegram channel is configured (not wired yet)."
                     checked={settings.notifications.telegram}
                     onCheckedChange={(v) => patchNotify("telegram", v)}
                   />
@@ -627,7 +835,7 @@ export default function SettingsPage() {
                     id="notify-email"
                     icon={<Mail className="h-4 w-4" />}
                     label="Email"
-                    description="Daily digest and immediate alerts to the operator inbox."
+                    description="Daily digest and immediate alerts to the operator inbox (uses connected mailbox when live)."
                     checked={settings.notifications.email}
                     onCheckedChange={(v) => patchNotify("email", v)}
                   />
@@ -941,10 +1149,20 @@ export default function SettingsPage() {
           <Section
             n="14"
             eyebrow="AI backbone"
-            title="LLM providers"
-            description="Connect the language model backends the sourcing fleet runs on. Each provider links to a saved API key (secrets never leave the server). Admin only."
+            title="LLM providers & keys"
+            description="Paste an API key once. We encrypt it at rest, verify it live with the provider, and never show the secret again — only ••••last4. Admins also see a live Fly env probe (Kimi/Anthropic/OpenAI/DeepSeek): keys can be present while auth-dead — rotate via owner dropzone; llmKeysPresent on /api/ready is not live auth."
           >
             <ProvidersPanel />
+          </Section>
+
+          {/* 15a — Recruitment LLM picker */}
+          <Section
+            n="15a"
+            eyebrow="Recruitment"
+            title="Which LLM runs recruitment"
+            description="One dropdown per job: sourcing, intake parse, outreach, reply classification. Plug-and-play — no config files."
+          >
+            <RecruitmentLlmPanel />
           </Section>
 
           {/* 15 — Models */}
@@ -980,7 +1198,11 @@ export default function SettingsPage() {
             n="17"
             eyebrow="Runtime"
             title="Aria agent runtime"
-            description="Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Falls back to the built-in mock when off or misconfigured. Admin only."
+            description={
+              demoLoginEnabled
+                ? "Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Demo mode may fall back to built-in mock. Admin only."
+                : "Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Live LLM is required — no mock fallback on production tenants. Admin only."
+            }
           >
             <HermesRuntimePanel />
           </Section>

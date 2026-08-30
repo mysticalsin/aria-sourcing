@@ -52,44 +52,59 @@
     "test:authority-regression": "node scripts/run-test-manifest.mjs --group authority-regression"
   },
   "dependencies": {
+    "@langchain/core": "^0.3.80",
+    "@langchain/langgraph": "^0.2.74",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.108.2",
+    "@visx/event": "^4.0.0",
+    "@visx/geo": "^4.0.0",
+    "@visx/responsive": "^4.0.0",
+    "@visx/zoom": "^4.0.0",
     "clsx": "^2.1.1",
+    "d3-geo": "^3.1.1",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.456.0",
     "next": "^16.2.6",
     "playwright-core": "^1.61.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-use-measure": "^2.1.7",
     "recharts": "^2.13.3",
     "server-only": "0.0.1",
     "tailwind-merge": "^2.5.4",
     "three": "^0.169.0",
     "three-stdlib": "^2.36.1",
+    "topojson-client": "^3.1.0",
     "troika-three-text": "^0.52.4",
+    "world-atlas": "^2.0.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.0",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^20.17.6",
     "@types/react": "^19.2.3",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.169.0",
+    "@types/topojson-client": "^3.1.5",
+    "@types/topojson-specification": "^1.0.5",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.2.6",
-    "js-yaml": "4.3.0",
+    "js-yaml": "4.3.2",
     "playwright": "^1.61.1",
-    "postcss": "^8.4.49",
+    "postcss": "8.5.26",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.22.4",
     "typescript": "^5.6.3"
   },
   "overrides": {
-    "next": {
-      "postcss": "8.5.16"
-    }
+    "postcss": "8.5.26",
+    "js-yaml": "4.3.2",
+    "nanoid": "3.3.18",
+    "langsmith": "0.9.0",
+    "uuid": "11.1.1"
   }
 }

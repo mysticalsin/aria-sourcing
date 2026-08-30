@@ -1,4 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  microsoftCredentialLooksSynthetic,
+  resolveMicrosoftOAuthAuthority,
+  resolveMicrosoftRedirectUri,
+} from "@/lib/email-connections";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
@@ -16,7 +21,7 @@ export const dynamic = "force-dynamic";
  *
  * Required env:
  *   MICROSOFT_CLIENT_ID
- *   MICROSOFT_REDIRECT_URI (defaults to http://localhost:3000/auth/microsoft/callback)
+ *   MICROSOFT_REDIRECT_URI (required in production; localhost default only for local NODE_ENV≠production)
  */
 export async function GET(req: NextRequest) {
   // Only an authenticated admin may initiate an OAuth seat connection.
@@ -26,6 +31,13 @@ export async function GET(req: NextRequest) {
   const clientId = process.env.MICROSOFT_CLIENT_ID;
   if (!clientId) {
     return NextResponse.json({ ok: false, error: "Microsoft OAuth is not configured." }, { status: 500 });
+  }
+  // Fail closed on monotonous demo UUIDs / PLACEHOLDER tokens (false-ready apply).
+  if (microsoftCredentialLooksSynthetic(clientId)) {
+    return NextResponse.json(
+      { ok: false, error: "Microsoft OAuth client id looks synthetic/placeholder — refuse authorize." },
+      { status: 500 },
+    );
   }
 
   const searchParams = new URL(req.url).searchParams;
@@ -38,7 +50,29 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "dry-run", error: PUBLIC_DEMO_DRY_RUN_DETAIL }, { status: 403 });
   }
 
-  const redirectUri = process.env.MICROSOFT_REDIRECT_URI ?? "http://localhost:3000/auth/microsoft/callback";
+  const redirectUri = resolveMicrosoftRedirectUri();
+  if (!redirectUri) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "MICROSOFT_REDIRECT_URI must be set to the public https callback (e.g. https://aria-mantu-app.fly.dev/auth/microsoft/callback).",
+      },
+      { status: 500 },
+    );
+  }
+
+  const authority = resolveMicrosoftOAuthAuthority();
+  if (!authority) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "MICROSOFT_TENANT_ID (or GOTRUE_EXTERNAL_AZURE_URL with tenant GUID) is required for single-tenant Graph OAuth — /common/ breaks AzureADMyOrg apps (AADSTS50194).",
+      },
+      { status: 500 },
+    );
+  }
 
   // CSRF: random nonce echoed in `state` and bound to an HttpOnly cookie, verified
   // in the callback. PKCE (S256): a high-entropy verifier kept server-side (cookie)
@@ -48,13 +82,13 @@ export async function GET(req: NextRequest) {
   const codeChallenge = await pkceChallenge(codeVerifier);
   const state = Buffer.from(JSON.stringify({ seatId, provider: "Microsoft Graph", nonce })).toString("base64url");
 
-  const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
+  const authUrl = new URL(`${authority}/authorize`);
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set(
     "scope",
-    "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/User.Read offline_access",
+    "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite https://graph.microsoft.com/User.Read offline_access",
   );
   authUrl.searchParams.set("response_mode", "query");
   authUrl.searchParams.set("state", state);

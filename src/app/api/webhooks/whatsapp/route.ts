@@ -21,9 +21,11 @@ export const dynamic = "force-dynamic";
  * POST: signature-verified message delivery. Each text message is stored in
  * messages_inbound (idempotent on provider message id), threaded to the
  * candidate via the latest outbound to that phone, answered by the reply
- * composer, and routed by decideAutopilot():
- *   - every generated draft → messages_outbound status 'blocked', visible in
- *     the Replies queue for a named human to review and explicitly send.
+ * composer, and routed by decideAutopilot() with workspace entitlement:
+ *   - Autopilot OFF / not Sequences-armed / unsafe → messages_outbound
+ *     status 'blocked' for named human review in Replies.
+ *   - Autopilot ON + Sequences armed + auto_approve_eligible → mint
+ *     autopilot_critics, queue, and dispatchDue (claim still re-checks policy).
  *
  * A verified event is acknowledged only after durable storage is available.
  * Individual processing failures are logged and retained for cron recovery;

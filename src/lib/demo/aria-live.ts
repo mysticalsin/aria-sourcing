@@ -45,6 +45,7 @@
    completely external one (the user closes the tab mid-run).
    ========================================================================== */
 
+import { bookingNeedsCalendar } from "@/lib/booking-status";
 import { pickResponderIndex } from "@/lib/floor3d";
 import type { HermesActions } from "@/lib/store";
 import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
@@ -286,7 +287,7 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
     return;
   }
   kpis.approved = 1;
-  setChapter("approving", "Outreach approved, scheduled (dry-run, nothing sent).", candidate.name);
+  setChapter("approving", "Outreach approved (dry-run, nothing sent).", candidate.name);
   await sleep(1400);
   if (restoring) return;
 
@@ -311,8 +312,15 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
     fail(`Couldn't book an interview: ${bookingRes.error}`);
     return;
   }
-  kpis.booked = 1;
-  setChapter("booking", `Interview booked with ${bookingRes.booking.interviewer}.`, candidate.name);
+  const needsCalendar = bookingNeedsCalendar(bookingRes.booking);
+  kpis.booked = needsCalendar ? 0 : 1;
+  setChapter(
+    "booking",
+    needsCalendar
+      ? `Slot saved with ${bookingRes.booking.interviewer || "no interviewer"} — Needs calendar for Teams.`
+      : `Interview booked with ${bookingRes.booking.interviewer}.`,
+    candidate.name,
+  );
   await sleep(1600);
   if (restoring) return;
 

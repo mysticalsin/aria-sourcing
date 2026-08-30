@@ -75,7 +75,10 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
   const isLive = integration.mode === "live";
   const connected = integration.status === "connected";
-  const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
+  const isGraphOAuthCard =
+    integration.id === "int_outlook" || integration.id === "int_graph_teams" || integration.id === "int_gmail";
+  const isMailbox =
+    !isGraphOAuthCard && (integration.category === "Inbox" || integration.category === "Comms");
 
   function handleCloseModal() {
     setConfigureOpen(false);
@@ -83,6 +86,28 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     setSmtpEmail("");
     setSmtpPassword("");
     setSmtpHost("");
+  }
+
+  function scrollToEmailConnections() {
+    const el =
+      document.getElementById("microsoft365-stack") ||
+      document.getElementById("email-connections-panel");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.focus({ preventScroll: true });
+    }
+  }
+
+  function handleConfigureClick() {
+    if (isGraphOAuthCard) {
+      if (typeof window !== "undefined" && window.location.pathname === "/settings") {
+        scrollToEmailConnections();
+        return;
+      }
+      router.push("/settings?tab=integrations#microsoft365-stack");
+      return;
+    }
+    setConfigureOpen(true);
   }
 
   async function handleTest() {
@@ -96,6 +121,25 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     });
   }
 
+  function scrollToLinkedInStack() {
+    const el = document.getElementById("linkedin-outreach-stack");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.focus({ preventScroll: true });
+    }
+  }
+
+  function handleSetupGuide() {
+    const href = integration.setupHref ?? "";
+    if (href.includes("#linkedin-outreach-stack")) {
+      if (typeof window !== "undefined" && window.location.pathname === "/settings") {
+        scrollToLinkedInStack();
+        return;
+      }
+    }
+    router.push(href);
+  }
+
   function handleToggleMode() {
     const nextMode = isLive ? "mock" : "live";
     actions.toggleIntegrationMode(integration.id);
@@ -103,7 +147,11 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
       title: `${integration.name} → ${nextMode === "live" ? "Live" : "Mock"} mode`,
       description:
         nextMode === "live"
-          ? "Live mode active: outreach routes through these credentials once the sending domain is verified."
+          ? isGraphOAuthCard
+            ? "Label only until Connect Outlook/Gmail proves mode=live — this toggle does not send mail or create Teams meetings."
+            : connected
+              ? "Live label set — outbound still requires a verified mailbox path and Approve → Send; this card alone is not send-ready."
+              : "Live label only — connect and verify credentials before treating this adapter as production-ready."
           : "Mock mode is the safe default. No real calls are made.",
       variant: nextMode === "live" ? "warning" : "info",
     });
@@ -111,22 +159,43 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
   async function handleConnect() {
     if (!apiKey.trim()) {
-      toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "error" });
+      toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "warning" });
       return;
     }
     setSaving(true);
     try {
-      await actions.saveApiKey({ name: `${integration.name} connection`, provider: "Custom", value: apiKey.trim() });
+      const provider =
+        integration.id === "int_apify"
+          ? "Apify"
+          : integration.id === "int_sendgrid"
+            ? "SendGrid"
+            : "Custom";
+      const saved = await actions.saveApiKey({
+        name: `${integration.name} connection`,
+        provider,
+        value: apiKey.trim(),
+      });
+      if (!saved.ok) {
+        toast({ title: "Couldn't connect", description: saved.error, variant: "error" });
+        return;
+      }
       actions.updateIntegration(integration.id, {
-        status: "connected",
+        status: saved.valid === false ? "error" : "degraded",
+        mode: "mock",
         connectedAccount: account.trim() || undefined,
-        lastSync: new Date().toISOString(),
-        errors: [],
+        lastSync: null,
+        errors: saved.valid === false ? [saved.detail ?? "Key verification failed"] : [],
       });
       toast({
-        title: `${integration.name} connected`,
-        description: "Credentials stored server-side. Flip Live mode on the card when you're ready.",
-        variant: "success",
+        title:
+          saved.valid === false
+            ? `${integration.name}: key saved but invalid`
+            : `${integration.name}: key saved`,
+        description:
+          saved.valid === false
+            ? saved.detail
+            : "Credentials encrypted server-side. Live send stays off until you flip Live after a real seat is ready.",
+        variant: saved.valid === false ? "error" : "success",
       });
       setApiKey("");
       setAccount("");
@@ -151,15 +220,18 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
         value: `smtp:${JSON.stringify({ host: smtpHost.trim(), email: smtpEmail.trim(), password: smtpPassword.trim() })}`,
       });
       actions.updateIntegration(integration.id, {
-        status: "connected",
+        status: "degraded",
+        mode: "mock",
         connectedAccount: smtpEmail.trim(),
-        lastSync: new Date().toISOString(),
-        errors: [],
+        lastSync: null,
+        errors: [
+          "SMTP credentials stored. Verify delivery (or use Outlook/Gmail OAuth) before flipping Live.",
+        ],
       });
       toast({
-        title: `${integration.name} connected`,
-        description: `Linked ${smtpEmail.trim()} via SMTP / IMAP. Flip Live mode when ready.`,
-        variant: "success",
+        title: `${integration.name}: credentials stored`,
+        description: `Saved ${smtpEmail.trim()} for SMTP. Live send stays off until you verify and flip Live mode.`,
+        variant: "info",
       });
       handleCloseModal();
     } catch {
@@ -232,8 +304,8 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             </Badge>
             <span className="text-xs text-muted">
               {integration.lastSync
-                ? `Synced ${formatTimeAgo(integration.lastSync)}`
-                : "Never synced"}
+                ? `Validated ${formatTimeAgo(integration.lastSync)}`
+                : "Never validated"}
             </span>
           </div>
 
@@ -252,7 +324,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           )}
 
           <div className="mt-auto space-y-3 pt-1">
-            {integration.real && (
+            {/* Outlook / Teams / Gmail live mode is driven by OAuth connection
+                hydrate — not a flip switch that can fake Live without Graph. */}
+            {integration.real && !isGraphOAuthCard && (
               <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
                 <div>
                   <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
@@ -270,21 +344,37 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 />
               </div>
             )}
+            {integration.real && isGraphOAuthCard && (
+              <p className="rounded-2xl bg-canvas px-3 py-2.5 text-xs text-muted">
+                {isLive
+                  ? "Live via connected mailbox OAuth — disconnect to return to mock."
+                  : "Connect Outlook / Gmail with OAuth to go live. Mode is not toggled here."}
+              </p>
+            )}
 
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                leftIcon={<Plug className="h-4 w-4" />}
-                onClick={() => setConfigureOpen(true)}
-              >
-                Configure
-              </Button>
-              {/* Only GitHub has a real, live connection check (testIntegration in
-                  store.ts pings /api/source). Other real cards point to their actual
-                  setup surface instead of running the no-op mock testConnection(). */}
-              {integration.real && integration.id === "int_github" && (
+              {integration.real ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  leftIcon={<Plug className="h-4 w-4" />}
+                  onClick={handleConfigureClick}
+                >
+                  {isGraphOAuthCard ? "Connect Outlook" : "Configure"}
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" className="flex-1" disabled>
+                  Not available
+                </Button>
+              )}
+              {integration.real &&
+                (integration.id === "int_github" ||
+                  integration.id === "int_outlook" ||
+                  integration.id === "int_graph_teams" ||
+                  integration.id === "int_gmail" ||
+                  integration.id === "int_linkedin_rsc" ||
+                  integration.id === "int_heyreach") && (
                 <Button
                   variant="subtle"
                   size="sm"
@@ -296,15 +386,35 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   Test connection
                 </Button>
               )}
-              {integration.real && integration.id !== "int_github" && integration.setupHref && (
+              {integration.real &&
+                integration.id !== "int_github" &&
+                integration.id !== "int_outlook" &&
+                integration.id !== "int_graph_teams" &&
+                integration.id !== "int_gmail" &&
+                integration.id !== "int_linkedin_rsc" &&
+                integration.id !== "int_heyreach" &&
+                integration.setupHref && (
                 <Button
                   variant="subtle"
                   size="sm"
                   className="flex-1"
                   leftIcon={<Wrench className="h-4 w-4" />}
-                  onClick={() => router.push(integration.setupHref!)}
+                  onClick={handleSetupGuide}
                 >
                   Setup guide
+                </Button>
+              )}
+              {integration.real &&
+                (integration.id === "int_linkedin_rsc" || integration.id === "int_heyreach") &&
+                integration.setupHref && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  className="flex-1"
+                  leftIcon={<Wrench className="h-4 w-4" />}
+                  onClick={handleSetupGuide}
+                >
+                  Open stack
                 </Button>
               )}
             </div>
@@ -352,7 +462,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   <p className="truncate text-sm font-semibold">{integration.connectedAccount}</p>
                 )}
                 <p className="text-sm">
-                  Connected{integration.lastSync ? ` · last synced ${formatTimeAgo(integration.lastSync)}` : ""}.
+                  Connected{integration.lastSync ? ` · last validated ${formatTimeAgo(integration.lastSync)}` : " · status from OAuth hydrate (not a mailbox sync)"}.
                   {" "}Update the credential below, or disconnect.
                 </p>
               </div>
@@ -482,9 +592,8 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           <div className="flex items-start gap-2.5 rounded-2xl bg-aqua-soft px-3.5 py-3 text-aqua">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <p className="text-xs">
-              After connecting, flip <strong>Live mode</strong> on the card and hit{" "}
-              <strong>Test connection</strong>. This build stays dry-run. Nothing real (outreach,
-              money, candidate data) leaves until you go live.
+              Credentials are encrypted server-side. Flip <strong>Live mode</strong> only when the
+              provider is ready for real traffic — mock stays the safe default until then.
             </p>
           </div>
         </div>

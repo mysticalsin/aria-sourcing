@@ -6,7 +6,7 @@ import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } f
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
-import { AUTH_QUERY_PARAMS } from "@/lib/types";
+import { AUTH_QUERY_PARAMS, MCP_AUTH_STYLES, type McpAuthStyle } from "@/lib/types";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { applyMcpAuth, connectAndListTools, remoteMcpDiscoveryEnabled } from "@/lib/mcp-client";
@@ -31,7 +31,7 @@ const McpTestSchema = z
         message: "MCP server URL must be HTTPS and contain no credentials, query, or fragment.",
       }),
     apiKeyId: z.string().uuid().optional(),
-    authStyle: z.enum(["bearer", "query"]).optional(),
+    authStyle: z.enum(MCP_AUTH_STYLES).optional(),
     authQueryParam: z.enum(AUTH_QUERY_PARAMS).optional(),
   })
   .superRefine((server, ctx) => {
@@ -95,10 +95,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Only HTTPS MCP endpoints are supported." });
   }
 
-  // Credentialed third-party discovery is intentionally unavailable in
-  // production. Check before resolving the vault id so a denied probe touches
-  // neither secret material nor the remote server.
-  if (!remoteMcpDiscoveryEnabled()) {
+  // Credentialed third-party discovery: non-production needs the explicit
+  // opt-in; production needs an enabled allowlist row for this exact URL.
+  const nonProdDiscovery = remoteMcpDiscoveryEnabled();
+  let productionAllowlisted = false;
+
+  if (supabaseEnabled && process.env.NODE_ENV === "production") {
+    const supabase = await getServerSupabase();
+    if (!supabase) {
+      return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
+    }
+    const { data: workspaceId } = await supabase.rpc("current_workspace_id");
+    if (typeof workspaceId === "string" && typeof supabase.from === "function") {
+      const listed = await supabase
+        .from("mcp_server_allowlist")
+        .select("tool_manifest_sha256")
+        .eq("workspace_id", workspaceId)
+        .eq("base_url", url)
+        .eq("enabled", true)
+        .maybeSingle();
+      productionAllowlisted =
+        !listed.error &&
+        typeof listed.data?.tool_manifest_sha256 === "string" &&
+        /^[0-9a-f]{64}$/.test(listed.data.tool_manifest_sha256);
+    }
+  }
+
+  if (!nonProdDiscovery && !productionAllowlisted) {
     return NextResponse.json({ ok: false, error: "Remote MCP discovery is disabled." }, { status: 403 });
   }
 
@@ -107,7 +130,7 @@ export async function POST(req: NextRequest) {
   if (apiKeyId) {
     token = await resolveVaultSecret(apiKeyId);
   }
-  let auth: { url: string; token: string };
+  let auth: { url: string; token: string; authStyle: McpAuthStyle };
   try {
     auth = applyMcpAuth(url, token, { authStyle, authQueryParam });
   } catch {
@@ -116,7 +139,10 @@ export async function POST(req: NextRequest) {
 
   // initialize + tools/list via the MCP client, so the test reports the real tools.
   try {
-    const result = await connectAndListTools(auth.url, auth.token);
+    const result = await connectAndListTools(auth.url, auth.token, {
+      allowlisted: productionAllowlisted,
+      authStyle: auth.authStyle,
+    });
     if (result.ok) {
       return NextResponse.json({
         ok: true,

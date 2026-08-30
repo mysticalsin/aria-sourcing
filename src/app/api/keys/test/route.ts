@@ -4,12 +4,14 @@ import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supab
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateApiKeyFormat } from "@/lib/providers";
+import { isLiveLlmKeyProvider, testLlmApiKey } from "@/lib/ai/key-probe";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { testSillageConnection } from "@/lib/sourcing/sillage";
 import { checkApolloAuth } from "@/lib/sourcing/apollo";
 import { checkSeamlessAuth } from "@/lib/sourcing/seamless";
 import { testApifyConnection } from "@/lib/sourcing/apify";
+import { checkHeyReachApiKey } from "@/lib/heyreach-delivery";
 import { clearProviderProbe } from "@/lib/sourcing/provider-egress";
 
 const ApiKeyTestSchema = z.object({
@@ -38,12 +40,6 @@ function classifySillageTest(
   return { valid: true, detail: live.detail || live.title || `Sillage responded (HTTP ${live.status}).` };
 }
 
-/**
- * Live Apollo auth check (GET /v1/auth/health, free of charge) with a
- * format-only fallback on network/timeout error — checkApolloAuth already
- * returns the {valid, detail} shape this route needs, so no separate
- * classifier is required the way Sillage's status-code fan-out needs one.
- */
 async function testApolloKey(value: string): Promise<{ valid: boolean; detail: string }> {
   try {
     return await checkApolloAuth(clearProviderProbe("Apollo"), value);
@@ -52,11 +48,6 @@ async function testApolloKey(value: string): Promise<{ valid: boolean; detail: s
   }
 }
 
-/**
- * Live Seamless auth check (GET /contacts, documented free of research
- * credits) with a format-only fallback on network/timeout error — same shape
- * as testApolloKey.
- */
 async function testSeamlessKey(value: string): Promise<{ valid: boolean; detail: string }> {
   try {
     return await checkSeamlessAuth(clearProviderProbe("Seamless"), value);
@@ -65,13 +56,6 @@ async function testSeamlessKey(value: string): Promise<{ valid: boolean; detail:
   }
 }
 
-/**
- * Live Apify auth check (GET /v2/users/me, free of charge) with a format-only
- * fallback on network/timeout error — mirrors testApolloKey's try/catch shape.
- * testApifyConnection never throws (its request wrapper swallows transport
- * errors as status 0), so that case is also routed to the format-only
- * fallback here rather than only on a thrown exception.
- */
 async function testApifyKey(value: string): Promise<{ valid: boolean; detail: string }> {
   try {
     const live = await testApifyConnection(clearProviderProbe("Apify"), value);
@@ -87,20 +71,38 @@ async function testApifyKey(value: string): Promise<{ valid: boolean; detail: st
   }
 }
 
+async function resolveKeyTest(
+  provider: string,
+  value: string,
+): Promise<{ valid: boolean; detail: string }> {
+  if (provider === "Sillage") {
+    const live = await testSillageConnection(clearProviderProbe("Sillage"), value);
+    return classifySillageTest(live, () => validateApiKeyFormat(provider, value));
+  }
+  if (provider === "Apollo") return testApolloKey(value);
+  if (provider === "Seamless") return testSeamlessKey(value);
+  if (provider === "Apify") return testApifyKey(value);
+  if (provider === "HeyReach") {
+    const ok = await checkHeyReachApiKey(value);
+    return ok
+      ? { valid: true, detail: "HeyReach API key accepted (CheckApiKey)." }
+      : { valid: false, detail: "HeyReach rejected this API key (CheckApiKey)." };
+  }
+  if (isLiveLlmKeyProvider(provider)) return testLlmApiKey(provider, value);
+  return validateApiKeyFormat(provider, value);
+}
+
 /**
  * Test an API key. Either test a value passed directly (just-entered), or test a
  * stored key by id — the secret is read server-side via the service-role client
  * (workspace-scoped), validated, and the row's status is updated. Never returns
- * the secret.
+ * the secret. LLM vault providers (Anthropic/OpenAI/Groq/xAI/Mistral/Kimi) and
+ * sourcing connectors get a live upstream auth probe; others stay format-only.
  */
 export async function POST(req: NextRequest) {
-  // Fail closed in production (middleware doesn't cover /api/*).
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
 
-  // Auth-first: when a real backend is configured, require admin BEFORE any work
-  // or response. The just-entered "value" format check previously returned to
-  // unauthenticated callers — it now sits behind this gate.
   let session: Awaited<ReturnType<typeof getServerSupabase>> = null;
   if (supabaseEnabled) {
     session = await getServerSupabase();
@@ -109,7 +111,6 @@ export async function POST(req: NextRequest) {
     if (!admin.ok) return admin.response;
   }
 
-  // Throttle: key testing drives provider/LLM cost — abuse-prone. Tight limit.
   const limit = checkRateLimit(rateLimitKey(req, "keys-test"), { windowMs: 60_000, max: 10 });
   if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
 
@@ -117,32 +118,13 @@ export async function POST(req: NextRequest) {
   if (!validated.ok) return validated.response;
   const { provider, value, id } = validated.data;
 
-  // Direct value test (e.g. on the entry form) — now behind the auth gate above.
   if (value) {
-    if ((provider ?? "") === "Sillage") {
-      const live = await testSillageConnection(clearProviderProbe("Sillage"), value);
-      const result = classifySillageTest(live, () => validateApiKeyFormat(provider ?? "", value));
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    if ((provider ?? "") === "Apollo") {
-      const result = await testApolloKey(value);
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    if ((provider ?? "") === "Seamless") {
-      const result = await testSeamlessKey(value);
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    if ((provider ?? "") === "Apify") {
-      const result = await testApifyKey(value);
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    const fmt = validateApiKeyFormat(provider ?? "", value);
-    return NextResponse.json({ ok: true, valid: fmt.valid, detail: fmt.detail });
+    const result = await resolveKeyTest(provider ?? "", value);
+    return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
   }
 
   if (!id) return NextResponse.json({ ok: false, error: "Provide a key value or id." }, { status: 400 });
 
-  // Stored-key test by id.
   if (!supabaseEnabled) {
     return NextResponse.json({ ok: true, valid: true, detail: "Simulated test (demo mode)." });
   }
@@ -162,18 +144,7 @@ export async function POST(req: NextRequest) {
   if (row.workspace_id !== wid) return NextResponse.json({ ok: false, error: "Forbidden." }, { status: 403 });
 
   const secret = decryptSecret(row.secret);
-  let fmt: { valid: boolean; detail: string };
-  if (row.provider === "Sillage") {
-    fmt = classifySillageTest(await testSillageConnection(clearProviderProbe("Sillage"), secret), () => validateApiKeyFormat(row.provider, secret));
-  } else if (row.provider === "Apollo") {
-    fmt = await testApolloKey(secret);
-  } else if (row.provider === "Seamless") {
-    fmt = await testSeamlessKey(secret);
-  } else if (row.provider === "Apify") {
-    fmt = await testApifyKey(secret);
-  } else {
-    fmt = validateApiKeyFormat(row.provider, secret);
-  }
+  const fmt = await resolveKeyTest(row.provider, secret);
   await svc
     .from("api_keys")
     .update({ status: fmt.valid ? "valid" : "invalid", last_tested_at: new Date().toISOString() })

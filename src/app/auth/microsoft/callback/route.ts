@@ -1,8 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  microsoftCredentialLooksSynthetic,
+  resolveMicrosoftOAuthAuthority,
+  resolveMicrosoftRedirectUri,
+} from "@/lib/email-connections";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { publicOrigin } from "@/lib/public-origin";
+import {
+  assertMicrosoftGraphSeatLiveReady,
+  promoteMicrosoftGraphSeatLive,
+} from "@/lib/microsoft-seat-live";
 
 /**
  * Microsoft OAuth callback for Microsoft Graph seat connection.
@@ -16,6 +26,11 @@ export async function GET(req: NextRequest) {
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     return redirectError(req, "Microsoft OAuth is not configured.");
+  }
+  // Defense in depth: refuse token exchange on monotonous demo UUIDs / PLACEHOLDER
+  // (authorize + readiness already reject; callback must not persist if they regress).
+  if (microsoftCredentialLooksSynthetic(clientId) || microsoftCredentialLooksSynthetic(clientSecret)) {
+    return redirectError(req, "Microsoft OAuth credentials look synthetic/placeholder — refuse callback.");
   }
 
   const searchParams = new URL(req.url).searchParams;
@@ -74,12 +89,26 @@ export async function GET(req: NextRequest) {
     return redirectError(req, PUBLIC_DEMO_DRY_RUN_DETAIL);
   }
 
-  const redirectUri = process.env.MICROSOFT_REDIRECT_URI ?? "http://localhost:3000/auth/microsoft/callback";
+  const redirectUri = resolveMicrosoftRedirectUri();
+  if (!redirectUri) {
+    return redirectError(
+      req,
+      "MICROSOFT_REDIRECT_URI must be set to the public https callback (e.g. https://aria-mantu-app.fly.dev/auth/microsoft/callback).",
+    );
+  }
+
+  const authority = resolveMicrosoftOAuthAuthority();
+  if (!authority) {
+    return redirectError(
+      req,
+      "MICROSOFT_TENANT_ID (or GOTRUE_EXTERNAL_AZURE_URL with tenant GUID) is required for Graph token exchange.",
+    );
+  }
 
   // Exchange code for tokens (PKCE verifier proves possession; 10s timeout).
   let tokenRes: Response;
   try {
-    tokenRes = await fetchWithTimeout("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+    tokenRes = await fetchWithTimeout(`${authority}/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -133,30 +162,106 @@ export async function GET(req: NextRequest) {
     : null;
 
   // Upsert connection.
-  const { error: upsertError } = await svc.from("email_connections").upsert(
-    {
-      workspace_id: wid,
-      seat_id: seatId,
-      provider: "Microsoft Graph",
-      account_email: accountEmail,
-      access_token: encryptSecret(tokenJson.access_token),
-      refresh_token: tokenJson.refresh_token ? encryptSecret(tokenJson.refresh_token) : null,
-      expires_at: expiresAt,
-      scope: tokenJson.scope ?? "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read offline_access",
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "workspace_id, seat_id" },
-  );
-  if (upsertError) {
-    console.error("[microsoft/callback] email_connections upsert failed:", upsertError.message, upsertError.code);
+  const { data: upserted, error: upsertError } = await svc
+    .from("email_connections")
+    .upsert(
+      {
+        workspace_id: wid,
+        seat_id: seatId,
+        provider: "Microsoft Graph",
+        account_email: accountEmail,
+        access_token: encryptSecret(tokenJson.access_token),
+        refresh_token: tokenJson.refresh_token ? encryptSecret(tokenJson.refresh_token) : null,
+        expires_at: expiresAt,
+        scope: (tokenJson.scope ?? "").trim(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "workspace_id, seat_id" },
+    )
+    .select("id")
+    .single();
+  if (upsertError || !upserted?.id) {
+    console.error("[microsoft/callback] email_connections upsert failed:", upsertError?.message, upsertError?.code);
     return redirectError(req, "Failed to save email connection.");
   }
 
-  // Mirror connected account on the seat.
-  const { error: updateError } = await svc.from("agent_seats").update({ connected_account: accountEmail }).eq("id", seatId);
-  if (updateError) {
-    console.error("[microsoft/callback] agent_seats update failed:", updateError.message, updateError.code);
-    return redirectError(req, "Failed to update seat connection.");
+  // Mirror connected account on the seat first, but keep mode non-live until
+  // inbound route + Graph webhook subscription succeed (avoids Connected/live lie).
+  {
+    const { error: accountErr } = await svc
+      .from("agent_seats")
+      .update({ connected_account: accountEmail, status: "active" })
+      .eq("id", seatId);
+    if (accountErr) {
+      console.error("[microsoft/callback] agent_seats account update failed:", accountErr.message, accountErr.code);
+      return redirectError(req, "Failed to update seat connection.");
+    }
+  }
+
+  // Register inbound webhook routing so Graph/HMAC ingest can resolve this mailbox.
+  // Fail closed: a connected token without a durable route yields 404 "No route for mailbox"
+  // on every notification — never claim webhook-ready without the route.
+  const { data: routeResult, error: routeErr } = await svc.rpc("upsert_inbound_mailbox_route", {
+    p_mailbox: accountEmail.toLowerCase(),
+    p_connection_id: upserted.id,
+    p_purpose: "reply",
+    p_workspace_id: wid,
+  });
+  if (routeErr || !(routeResult as { ok?: boolean } | null)?.ok) {
+    const reason =
+      routeErr?.message ?? (routeResult as { reason?: string } | null)?.reason ?? "unknown";
+    console.error("[microsoft/callback] inbound route upsert failed:", reason);
+    return redirectError(
+      req,
+      `Connected ${accountEmail} but inbound mailbox route failed (${reason}). Reconnect or use Enable webhook / register_inbound in Settings.`,
+    );
+  }
+
+  // Ensure Graph change-notification subscription (webhook push, no inbox polling).
+  // Use ensure (not create-only): reconnect when Graph already has an Inbox sub must
+  // not fail closed before mode=live promote — same path as Settings → Enable webhook.
+  try {
+    const { ensureGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
+    const sub = await ensureGraphMailSubscription({ workspaceId: wid, connectionId: upserted.id });
+    if (!sub.ok) {
+      console.error("[microsoft/callback] graph subscription:", sub.reason);
+      return redirectError(
+        req,
+        `Connected ${accountEmail} but Graph webhook failed (${sub.reason}). Reconnect Outlook or use Enable webhook in Settings.`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      "[microsoft/callback] graph subscription error:",
+      err instanceof Error ? err.message : "unknown",
+    );
+    return redirectError(
+      req,
+      `Connected ${accountEmail} but Graph webhook setup failed. Reconnect Outlook or use Enable webhook in Settings.`,
+    );
+  }
+
+  // Promote seat to live only after inbound route + Graph webhook are durable —
+  // and Calendars/OnlineMeetings scopes are present (same gate as fleet / Enable webhook).
+  {
+    const ready = await assertMicrosoftGraphSeatLiveReady(svc, {
+      workspaceId: String(wid),
+      seatId,
+      provider: "Microsoft Graph",
+    });
+    if (!ready.ok) {
+      return redirectError(req, `Connected ${accountEmail} with webhook, but ${ready.reason}`);
+    }
+    if (!ready.skipped) {
+      const promoted = await promoteMicrosoftGraphSeatLive(svc, {
+        seatId,
+        accountEmail,
+      });
+      if (!promoted.ok) {
+        console.error("[microsoft/callback] agent_seats live promote failed:", promoted.reason);
+        return redirectError(req, "Graph webhook ready but failed to promote seat to live. Reconnect Outlook.");
+      }
+    }
   }
 
   return redirectSuccess(req, `Connected ${accountEmail}`);
@@ -193,14 +298,16 @@ function clearOAuthCookies(res: NextResponse): void {
 
 function redirectError(req: NextRequest, message: string) {
   const encoded = encodeURIComponent(message);
-  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=error&message=${encoded}`, req.url));
+  const origin = publicOrigin(req.headers);
+  const res = NextResponse.redirect(new URL(`/settings?tab=integrations&oauth=error&message=${encoded}`, origin));
   clearOAuthCookies(res);
   return res;
 }
 
 function redirectSuccess(req: NextRequest, message: string) {
   const encoded = encodeURIComponent(message);
-  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=success&message=${encoded}`, req.url));
+  const origin = publicOrigin(req.headers);
+  const res = NextResponse.redirect(new URL(`/settings?tab=integrations&oauth=success&message=${encoded}`, origin));
   clearOAuthCookies(res);
   return res;
 }

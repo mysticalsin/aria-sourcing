@@ -5,21 +5,21 @@ import { useHydrated } from "@/lib/store";
 import { FileBrowser } from "@/components/curator/file-browser";
 import { CuratorStatus } from "@/components/curator/curator-status";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { SkeletonCard } from "@/components/ui";
-import { FolderSearch } from "lucide-react";
+import { EmptyState } from "@/components/ui";
 
 export default function CuratorPage() {
   const hydrated = useHydrated();
 
-  const fallback = (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <SkeletonCard />
-      <SkeletonCard />
-    </div>
-  );
-
   return (
-    <HydrationGate hydrated={hydrated} fallback={fallback}>
+    <HydrationGate
+      hydrated={hydrated}
+      fallback={
+        <EmptyState
+          title="Loading curator…"
+          description="Files and curator status appear after workspace hydrate — no placeholder panels."
+        />
+      }
+    >
       <PageHeader
         eyebrow="System"
         title="Files & Curator"

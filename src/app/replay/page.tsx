@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Rewind, Users } from "lucide-react";
-import { Badge, Eyebrow, EmptyState, SkeletonCard } from "@/components/ui";
+import { Badge, Eyebrow, EmptyState } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { RunTimeline } from "@/components/replay/run-timeline";
 import {
@@ -107,7 +107,15 @@ export default function ReplayPage() {
         title="Autopilot Replay"
         description="Drag the playhead to scrub the agents' whole day. Candidates reveal themselves as they were sourced, scored, drafted, approved, replied to and booked, while the floor re-enacts it in lockstep. Read-only: nothing here sends or mutates anything."
       />
-      <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
+      <HydrationGate
+        hydrated={hydrated}
+        fallback={
+          <EmptyState
+            title="Loading replay…"
+            description="Autopilot timeline appears after workspace hydrate — no placeholder stage."
+          />
+        }
+      >
         {stream.length === 0 ? (
           <EmptyState
             icon={<Rewind className="h-7 w-7" aria-hidden />}

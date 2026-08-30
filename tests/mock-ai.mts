@@ -4,7 +4,7 @@ import {
   classifyReply,
   SAMPLE_INTAKE_EMAIL,
 } from "../src/lib/mock-ai";
-import { buildSeedState } from "../src/lib/seed";
+import { buildHistoricalDemoSeedState } from "../src/lib/seed";
 
 let pass = 0,
   fail = 0;
@@ -25,8 +25,8 @@ const parsed = parseEmailAndJD({ email: SAMPLE_INTAKE_EMAIL });
 
 ok("parse: department is Platform", parsed.jobAnalysis.department === "Platform");
 ok(
-  "parse: employmentType stays unspecified when the brief does not state it",
-  parsed.jobAnalysis.employmentType === "Unspecified",
+  "parse: employmentType is Full-time when the brief states it",
+  parsed.jobAnalysis.employmentType === "Full-time",
 );
 ok("parse: requiredSkills includes Go", parsed.jobAnalysis.requiredSkills.includes("Go"));
 ok(
@@ -50,7 +50,7 @@ try {
 /* ------------------------------------------------------------------ */
 /* 2. generateOutreach(candidate, campaign, 'Casual Professional')     */
 /* ------------------------------------------------------------------ */
-const state = buildSeedState();
+const state = buildHistoricalDemoSeedState();
 const campaign = state.campaigns[0];
 const candidate =
   state.candidates.find((c) => c.campaignId === campaign.id) ?? state.candidates[0];
@@ -99,13 +99,13 @@ const noEvidenceCandidate = {
   recentActivity: "",
 };
 const genericSubjects: Record<string, string> = {
-  en: `${campaign.jobAnalysis.title} opportunity`,
-  fr: `Opportunité de ${campaign.jobAnalysis.title}`,
-  es: `Oportunidad de ${campaign.jobAnalysis.title}`,
-  de: `Position als ${campaign.jobAnalysis.title}`,
-  pt: `Oportunidade para ${campaign.jobAnalysis.title}`,
-  it: `Opportunità come ${campaign.jobAnalysis.title}`,
-  nl: `Vacature voor ${campaign.jobAnalysis.title}`,
+  en: `${campaign.jobAnalysis.title} opportunity at Mantu`,
+  fr: `Opportunité de ${campaign.jobAnalysis.title} chez Mantu`,
+  es: `Oportunidad de ${campaign.jobAnalysis.title} en Mantu`,
+  de: `Position als ${campaign.jobAnalysis.title} bei Mantu`,
+  pt: `Oportunidade para ${campaign.jobAnalysis.title} na Mantu`,
+  it: `Opportunità come ${campaign.jobAnalysis.title} in Mantu`,
+  nl: `Vacature voor ${campaign.jobAnalysis.title} bij Mantu`,
 };
 
 for (const [language, expectedSubject] of Object.entries(genericSubjects)) {

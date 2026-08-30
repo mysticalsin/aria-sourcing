@@ -122,11 +122,32 @@ const CLEAN_REPLY = "Good question! The team works in TypeScript and Go, mostly 
   ok("decide: canary queues", d.action === "queue" && d.reasons.includes("canary"));
 }
 {
-  // Clean copy is still a draft: an external reply always needs a named human
-  // to review and explicitly send it.
+  // Clean copy without per-user entitlement still queues for human review.
   const d = decideAutopilot(CLEAN_REPLY, { autopilot: true, canary_remaining: 0 });
   ok("decide: clean reply queues for human review", d.action === "queue" && d.reasons.includes("human-review-required"));
   ok("decide: clean queued text is non-empty", d.text.length > 20);
+  ok("decide: missing entitlement is explicit", d.reasons.includes("user-entitlement-off"));
+}
+{
+  // Entitled user + clean guardrails → auto_approve_eligible (caller may mint approval).
+  const d = decideAutopilot(
+    CLEAN_REPLY,
+    { autopilot: true, canary_remaining: 0 },
+    undefined,
+    { autopilotEnabled: true },
+  );
+  ok("decide: entitled clean reply is auto-approve eligible", d.action === "auto_approve_eligible");
+  ok("decide: entitled path records eligibility reason", d.reasons.includes("auto-approve-eligible"));
+}
+{
+  // Entitlement never overrides salary disclosure.
+  const d = decideAutopilot(
+    "The salary is 95 000 € plus bonus, guaranteed.",
+    { autopilot: true, canary_remaining: 0 },
+    undefined,
+    { autopilotEnabled: true },
+  );
+  ok("decide: salary still queues even when entitled", d.action === "queue");
 }
 {
   // salary commitment → queue
@@ -183,8 +204,11 @@ const webhookRoute = readFileSync(new URL("../src/app/api/webhooks/whatsapp/rout
 const inboundProcessor = readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8");
 ok("webhook never synthesizes an outreach approval", !/from\("outreach_approvals"\)\.insert/.test(webhookRoute));
 ok(
-  "webhook stores generated WhatsApp replies as human-review blocked",
-  /processStoredWhatsAppInbound/.test(webhookRoute) && /status:\s*"blocked"/.test(inboundProcessor),
+  "webhook stores WhatsApp replies as blocked for human review (default) or queues when Autopilot armed",
+  /processStoredWhatsAppInbound/.test(webhookRoute) &&
+    /status:\s*"blocked"/.test(inboundProcessor) &&
+    /mint_autopilot_critics_approval/.test(inboundProcessor) &&
+    /auto_approve_eligible/.test(inboundProcessor),
 );
 ok("webhook resolves workspace from the registered WhatsApp sender", /from\("whatsapp_senders"\)/.test(webhookRoute));
 const optOutIndex = inboundProcessor.indexOf("isWhatsAppOptOut(body)");

@@ -24,8 +24,14 @@ import {
   seatHealthStatus,
   PROVIDER_LIMIT_NOTE,
 } from "@/lib/fleet";
-import type { AgentSeat, SeatProvider, ToolId } from "@/lib/types";
+import type { AgentSeat, ToolId } from "@/lib/types";
 import { ROBOT_PALETTE } from "@/lib/floor3d";
+import {
+  ConnectedIdentityBanner,
+  StatusPill,
+  SystemReadiness,
+  type ReadinessItem,
+} from "@/components/settings/integration-connection-primitives";
 import { cn, type Tone } from "@/lib/utils";
 import { AgentPromptEditor } from "./agent-prompt-editor";
 import {
@@ -37,23 +43,10 @@ import {
   FlaskConical,
   Pencil,
   ChevronDown,
-  Clock,
-  Flame,
   ShieldCheck,
   BrainCircuit,
   Palette,
 } from "lucide-react";
-
-const PROVIDER_TONE: Record<SeatProvider, Tone> = {
-  "Microsoft Graph": "electric",
-  "Gmail API": "tangerine",
-  SendGrid: "aqua",
-  Resend: "violet",
-  "WhatsApp Cloud": "aqua",
-  "Twilio SMS": "violet",
-  "LinkedIn Assisted Manual": "tangerine",
-  "LinkedIn Vendor API": "electric",
-};
 
 const STATUS_TONE: Record<AgentSeat["status"], Tone> = {
   active: "success",
@@ -145,18 +138,18 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     }
     const result = await actions.connectSeatAccount(seat.id, email);
     if (!result.ok) {
-      toast({ title: "Mailbox not connected", description: result.error, variant: "error" });
+      toast({ title: "Mailbox label not saved", description: result.error, variant: "error" });
       return;
     }
     setConnectOpen(false);
     toast({
-      title: "Mailbox connected",
-      description: `${email} linked. Verify the domain before going live.`,
-      variant: "success",
+      title: "Operator mailbox label saved",
+      description: `${email} recorded for display/dry-run only — not OAuth. Use Connect Microsoft/Google for live sends.`,
+      variant: "info",
     });
   }
 
-  function startOAuth() {
+  async function startOAuth() {
     if (!supabaseEnabled) {
       toast({
         title: "OAuth requires live mode",
@@ -165,7 +158,35 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       });
       return;
     }
-    const path = seat.provider === "Gmail API" ? "/auth/google" : "/auth/microsoft";
+    const isGmail = seat.provider === "Gmail API";
+    try {
+      const res = await fetch("/api/email/connections", { credentials: "same-origin" });
+      const json = (await res.json().catch(() => null)) as {
+        providers?: { gmailOAuth?: boolean; microsoftOAuth?: boolean; encryptionReady?: boolean };
+      } | null;
+      const providers = json?.providers;
+      const oauthOk = isGmail ? providers?.gmailOAuth === true : providers?.microsoftOAuth === true;
+      if (!providers?.encryptionReady || !oauthOk) {
+        toast({
+          title: isGmail ? "Gmail OAuth not configured" : "Outlook OAuth not configured",
+          description: !providers?.encryptionReady
+            ? "Token encryption missing (DATA_ENCRYPTION_KEY). Connect stays disabled until secrets land."
+            : isGmail
+              ? "Google OAuth env missing on this deployment. Open Settings → Integrations after secrets land."
+              : "Microsoft Graph OAuth env missing — Entra admin must register ARIA Mantu Graph (Fly), Owners → Add twalteur@amaris.com, Grant admin consent, then set secrets. Open Settings → Integrations.",
+          variant: "error",
+        });
+        return;
+      }
+    } catch {
+      toast({
+        title: "Could not verify OAuth readiness",
+        description: "Retry from Settings → Integrations.",
+        variant: "error",
+      });
+      return;
+    }
+    const path = isGmail ? "/auth/google" : "/auth/microsoft";
     window.location.href = `${path}?seat_id=${encodeURIComponent(seat.id)}`;
   }
 
@@ -200,7 +221,11 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
         return;
       }
       if (result.verified) {
-        toast({ title: "Domain verified", description: "SPF/DMARC/DKIM checks passed", variant: "success" });
+        toast({
+          title: "Domain verified",
+          description: "At least one sender-policy record found (SPF, DMARC, or DKIM).",
+          variant: "success",
+        });
       } else {
         toast({
           title: "Domain not verified",
@@ -213,6 +238,70 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     }
   }
 
+  const graphMailboxReady =
+    seat.provider === "Microsoft Graph" && seat.mode === "live" && Boolean(seat.connectedAccount);
+
+  const readinessItems: ReadinessItem[] = [
+    {
+      id: "mailbox",
+      label: isOAuthProvider
+        ? seat.mode === "live" && seat.connectedAccount
+          ? "Mailbox connected (OAuth live)"
+          : "Mailbox OAuth (mode=live)"
+        : "Operator mailbox label",
+      ok: isOAuthProvider
+        ? seat.mode === "live" && Boolean(seat.connectedAccount)
+        : Boolean(seat.connectedAccount),
+      hint: isOAuthProvider
+        ? "Connect via OAuth in Settings → Integrations (manual labels do not unlock Live)."
+        : "API-key providers may record a sending address; verify domain before live.",
+    },
+    {
+      id: "domain",
+      label: graphMailboxReady
+        ? "Mailbox OAuth (Graph send-as)"
+        : "Sender domain (SPF, DMARC, or DKIM)",
+      ok: graphMailboxReady
+        ? true
+        : Boolean(seat.connectedAccount && seat.domainVerified),
+      hint: graphMailboxReady
+        ? "Graph sends as the connected mailbox — no vanity-domain DNS check."
+        : "Verify finds at least one of SPF, DMARC, or default-selector DKIM.",
+    },
+    {
+      id: "live",
+      label: "Live mode enabled",
+      ok: isLive,
+      optional: !seat.domainVerified,
+    },
+  ];
+
+  const oauthLive = isOAuthProvider && seat.mode === "live" && Boolean(seat.connectedAccount);
+  const operatorLabelOnly = isOAuthProvider && Boolean(seat.connectedAccount) && seat.mode !== "live";
+  const apiKeyMailbox = !isOAuthProvider && Boolean(seat.connectedAccount);
+  const mailboxVerified = graphMailboxReady || seat.domainVerified;
+
+  const headerStatus =
+    isLive && mailboxVerified
+      ? "Live · mailbox"
+      : isLive
+        ? "Live · domain pending"
+        : oauthLive || apiKeyMailbox
+          ? "Dry-run · connected"
+          : operatorLabelOnly
+            ? "Dry-run · label only"
+            : "Dry-run · needs mailbox";
+
+  const headerTone: Tone = health.shouldPause
+    ? "danger"
+    : isLive && mailboxVerified
+      ? "success"
+      : oauthLive || apiKeyMailbox
+        ? "electric"
+        : operatorLabelOnly
+          ? "warning"
+          : "neutral";
+
   return (
     <>
       <Card className="flex h-full flex-col animate-fade-in">
@@ -221,77 +310,71 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <Eyebrow>{seat.provider}</Eyebrow>
-              <h3 className="truncate text-base font-bold text-ink">{seat.name}</h3>
+              <h3 className="truncate text-base font-bold tracking-tight text-ink">{seat.name}</h3>
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-1.5">
-              <Badge tone={isLive ? "tangerine" : "aqua"} size="sm" dot>
-                {isLive ? "Live" : "Dry-run"}
-              </Badge>
-              <Badge tone={STATUS_TONE[seat.status]} size="sm">
-                {seat.status === "active" ? "Active" : seat.status === "paused" ? "Paused" : "Disabled"}
-              </Badge>
-            </div>
+            <StatusPill label={headerStatus} tone={headerTone} pulse={health.shouldPause} />
           </div>
 
-          {/* Connected mailbox */}
-          <div className="rounded-2xl bg-canvas px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              {seat.connectedAccount ? (
-                <MailCheck className="h-4 w-4 shrink-0 text-success" aria-hidden />
-              ) : (
-                <Mail className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ink">
-                  {seat.connectedAccount || "Not connected"}
-                </p>
-                <p className="truncate text-xs text-muted">
-                  {seat.connectedAccount
-                    ? seat.domainVerified
-                      ? "Domain verified (SPF/DKIM/DMARC)"
-                      : "Domain not verified yet"
-                    : "Connect an authorized mailbox to send"}
-                </p>
-              </div>
-              <Badge tone={PROVIDER_TONE[seat.provider]} size="sm" className="ml-auto">
-                {seat.provider}
-              </Badge>
-            </div>
-            {seat.connectedAccount && !seat.domainVerified && canManageLlm && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 w-full"
-                leftIcon={<ShieldCheck className="h-4 w-4" />}
-                loading={verifyingDomain}
-                onClick={handleVerifyDomain}
-              >
-                Verify domain
-              </Button>
-            )}
-          </div>
+          <SystemReadiness items={readinessItems} />
 
-          {/* Quota */}
+          {oauthLive || apiKeyMailbox ? (
+            <ConnectedIdentityBanner
+              displayName={seat.connectedAccount}
+              secondary={
+                graphMailboxReady || seat.domainVerified
+                  ? seat.provider === "Microsoft Graph"
+                    ? "Outlook connected · Approve→Send uses this mailbox (auto-send only when Autopilot + Sequences armed)"
+                    : "Domain verified · ready for live sends"
+                  : "Domain not verified — verify before going live"
+              }
+              icon={<MailCheck className="h-5 w-5" aria-hidden />}
+              action={
+                !graphMailboxReady && !seat.domainVerified && canManageLlm ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<ShieldCheck className="h-4 w-4" />}
+                    loading={verifyingDomain}
+                    onClick={handleVerifyDomain}
+                  >
+                    Verify
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : operatorLabelOnly ? (
+            <div className="rounded-2xl bg-warning-soft px-3.5 py-3 text-warning ring-1 ring-inset ring-warning/25">
+              <p className="text-xs font-semibold">Operator mailbox label (not OAuth)</p>
+              <p className="text-sm font-medium">{seat.connectedAccount}</p>
+              <p className="mt-1 text-xs opacity-90">
+                Connect Microsoft/Google OAuth before claiming a live mailbox or Live send.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-line/80 bg-canvas/50 px-4 py-3">
+              <p className="text-sm font-medium text-ink">No mailbox linked</p>
+              <p className="mt-1 text-xs text-muted">Connect Gmail, Outlook, or another provider to send.</p>
+            </div>
+          )}
+
+          {/* Quota + schedule */}
           <Meter label="Sent today" used={seat.sentToday} limit={cap} />
           <p className="-mt-2 text-xs text-muted">
-            {remaining} of today&apos;s {cap} remaining{" "}
-            {isPaused || isDisabled ? "· paused, not sending" : ""}
+            {remaining} remaining · {stage.full ? "Fully warmed" : `Warm-up day ${stage.day}`} ·{" "}
+            {formatDays(seat.sendWindow.days)} {formatHour(seat.sendWindow.startHour)}–
+            {formatHour(seat.sendWindow.endHour)}
+            {isPaused || isDisabled ? " · paused" : ""}
           </p>
 
-          {/* Status chips */}
           <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={health.tone} dot title={health.detail}>
-              {health.shouldPause ? "Auto-paused" : health.label}
+            <Badge tone={STATUS_TONE[seat.status]} size="sm">
+              {seat.status === "active" ? "Active" : seat.status === "paused" ? "Paused" : "Disabled"}
             </Badge>
-            <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.05] px-2.5 py-1 text-xs font-medium text-ink-soft">
-              <Flame className="h-3.5 w-3.5 text-tangerine" aria-hidden />
-              {stage.full ? "Fully warmed" : `Warm-up · day ${stage.day} · cap ${stage.cap}`}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.05] px-2.5 py-1 text-xs font-medium text-ink-soft">
-              <Clock className="h-3.5 w-3.5 text-electric" aria-hidden />
-              {formatDays(seat.sendWindow.days)} {formatHour(seat.sendWindow.startHour)}–
-              {formatHour(seat.sendWindow.endHour)} {seat.sendWindow.timezone}
-            </span>
+            {health.shouldPause ? (
+              <Badge tone={health.tone} dot size="sm">
+                {health.label}
+              </Badge>
+            ) : null}
           </div>
 
           {health.shouldPause && (
@@ -368,7 +451,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
               aria-expanded={llmOpen}
               onClick={() => setLlmOpen((v) => !v)}
             >
-              LLM config
+              Advanced · LLM & tools
             </Button>
           </div>
 
@@ -546,8 +629,18 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       >
         <div className="space-y-4">
           {seat.connectedAccount && (
-            <div className="rounded-2xl bg-success-soft px-3.5 py-3 text-success">
-              <p className="text-xs font-semibold">Connected account</p>
+            <div
+              className={
+                isOAuthProvider && seat.mode !== "live"
+                  ? "rounded-2xl bg-warning-soft px-3.5 py-3 text-warning"
+                  : "rounded-2xl bg-success-soft px-3.5 py-3 text-success"
+              }
+            >
+              <p className="text-xs font-semibold">
+                {isOAuthProvider && seat.mode !== "live"
+                  ? "Operator mailbox label (not OAuth live)"
+                  : "Connected account"}
+              </p>
               <p className="text-sm font-medium">{seat.connectedAccount}</p>
             </div>
           )}
@@ -568,7 +661,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
               <Field
                 label="Mailbox address (demo/manual)"
                 htmlFor={accountEmailId}
-                hint="Used for display and dry-run. Real sends use the OAuth-connected account."
+                hint="Operator label for display/dry-run only — does not complete Graph/Gmail OAuth or unlock Live send."
               >
                 <Input
                   id={accountEmailId}

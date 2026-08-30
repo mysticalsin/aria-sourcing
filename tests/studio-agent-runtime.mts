@@ -8,6 +8,7 @@ import {
   resolveStudioCampaign,
   settleStudioRunIdempotencyKey,
 } from "../src/lib/agents/studio-runner";
+import { historicalCandidate } from "./seed-fixtures.mts";
 import { buildSeedState } from "../src/lib/seed";
 import type { Candidate } from "../src/lib/types";
 
@@ -67,8 +68,7 @@ const input = {
 };
 
 function candidateFixture(id: string): Candidate {
-  const candidate = buildSeedState().candidates[0];
-  if (!candidate) throw new Error("The seed state must include a candidate fixture.");
+  const candidate = historicalCandidate();
   return { ...candidate, id, campaignId: input.campaignId };
 }
 
@@ -413,12 +413,13 @@ await test("primary Run Aria executes one approved framework before using its pe
   assert.equal(stored.size, 0);
 });
 
-await test("missing or framework-disabled primary authority performs zero sourcing", async () => {
+await test("missing framework falls through to live reviewed sourcing (not Talent Pool)", async () => {
   for (const specs of [
     [],
     [{ ...approvedSpec, runtime_eligible: false, runtime_reason: "Framework runtime is disabled." }],
   ]) {
     let sourced = 0;
+    const acceptedCandidate = candidateFixture("direct-live-candidate");
     const result = await executePrimaryAgentSourcing({
       campaignId: "campaign-a",
       campaignTitle: "Staff Backend Engineer",
@@ -427,13 +428,26 @@ await test("missing or framework-disabled primary authority performs zero sourci
       idempotencyMemory: new Map(),
       retryStorage: null,
       fetcher: async () => responseAt({ ok: true, specs }),
-      sourceNextBatch: async () => {
+      sourceNextBatch: async (_campaignId, options) => {
         sourced += 1;
-        throw new Error("must not source");
+        assert.equal(options.platform, undefined);
+        assert.equal(options.agentFramework, undefined);
+        assert.equal(options.count, 6);
+        return {
+          ok: true,
+          source: "github",
+          accepted: [acceptedCandidate],
+          skipped: [],
+        };
       },
     });
-    assert.equal(result.ok, false);
-    assert.equal(sourced, 0);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.mode, "direct");
+      assert.equal(result.source, "github");
+      assert.equal(result.candidates.length, 1);
+    }
+    assert.equal(sourced, 1);
   }
 });
 
@@ -470,13 +484,16 @@ await test("synthetic Talent Pool sourcing is reachable only with explicit demo 
     idempotencyMemory: new Map(),
     retryStorage: null,
     fetcher: async () => responseAt({ ok: true, specs: [] }),
-    sourceNextBatch: async () => {
+    sourceNextBatch: async (_campaignId, options) => {
       unauthorizedSourceCalls += 1;
-      return { ok: true, source: "mock", accepted: [], skipped: [] };
+      // Live direct path — never Talent Pool without demoAuthorized.
+      assert.equal(options.platform, undefined);
+      return { ok: true, source: "github", accepted: [], skipped: [] };
     },
   });
-  assert.equal(unauthorized.ok, false);
-  assert.equal(unauthorizedSourceCalls, 0);
+  assert.equal(unauthorized.ok, true);
+  if (unauthorized.ok) assert.equal(unauthorized.mode, "direct");
+  assert.equal(unauthorizedSourceCalls, 1);
 });
 
 console.log(`RESULT studio-agent-runtime: ${pass} passed, 0 failed`);

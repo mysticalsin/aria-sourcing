@@ -16,10 +16,10 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
-import { bookingCalendarSummary } from "@/lib/booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle } from "@/lib/booking-status";
 import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
-import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
+import { experimentalPaidSourcingEnabled, demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import {
   downloadText,
   formatTimeAgo,
@@ -309,9 +309,32 @@ function TaniaPanel({ c }: { c: Candidate }) {
       variant: outcome === "reject" ? "warning" : "success",
     });
   };
-  const schedule = (kind: InterviewKind) => {
+  const schedule = async (kind: InterviewKind) => {
+    // First interview must go through Outlook/Teams booking — never invent Booked + fake reminders.
+    if (kind === "Intw1") {
+      const res = await actions.createBookingFor(c.id);
+      if (res.ok) {
+        const synced = Boolean(res.booking.calendarSync);
+        toast({
+          title: bookingInterviewTitle(res.booking, c.name),
+          description: `Intw1 with ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
+          variant: synced ? "success" : "warning",
+        });
+      } else {
+        toast({
+          title: "Could not book Intw1",
+          description: res.error,
+          variant: "error",
+        });
+      }
+      return;
+    }
     actions.addInterview(c.id, kind, "Hiring Manager", null);
-    toast({ title: `${kind} scheduled`, description: "Reminder cadence T-24h / T-1h queued.", variant: "success" });
+    toast({
+      title: `${kind} noted`,
+      description: "Round recorded locally. Book the calendar slot from Calendar / Book interview when ready.",
+      variant: "info",
+    });
   };
   const setOutcome = (interviewId: string, kind: InterviewKind, outcome: InterviewOutcome) => {
     actions.updateInterview(c.id, interviewId, { outcome });
@@ -765,14 +788,20 @@ export function CandidateDrawer({
       return;
     }
     setGenerating(true);
-    let msg: ReturnType<typeof actions.generateOutreachFor> = null;
+    let msg: Awaited<ReturnType<typeof actions.generateOutreachLive>> = null;
     try {
       msg = await actions.generateOutreachLive(c.id);
     } catch {
-      // A live-runtime hiccup (network error, thrown rejection) should never block
-      // drafting — fall back to the template path so the human still gets a draft.
-      msg = actions.generateOutreachFor(c.id);
-      toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
+      if (supabaseEnabled && !demoLoginEnabled) {
+        toast({
+          title: "Live draft failed",
+          description: "Enterprise tenants require a live Aria draft. Check runtime/provider settings and retry.",
+          variant: "error",
+        });
+      } else {
+        msg = actions.generateOutreachFor(c.id);
+        toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
+      }
     }
     setGenerating(false);
     if (msg) {
@@ -781,8 +810,14 @@ export function CandidateDrawer({
         description: `${c.name}: review in the outreach queue.`,
         variant: "success",
       });
-    } else {
+    } else if (!(supabaseEnabled && !demoLoginEnabled)) {
       toast({ title: "Could not generate outreach", variant: "error" });
+    } else {
+      toast({
+        title: "Live draft required",
+        description: "No mock template draft on live tenants.",
+        variant: "error",
+      });
     }
   };
 
@@ -855,10 +890,11 @@ export function CandidateDrawer({
   const handleBook = async () => {
     const res = await actions.createBookingFor(c.id);
     if (res.ok) {
+      const synced = Boolean(res.booking.calendarSync);
       toast({
-        title: "Interview booked",
+        title: bookingInterviewTitle(res.booking, c.name),
         description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
-        variant: "success",
+        variant: synced ? "success" : "warning",
       });
     } else {
       toast({ title: "Could not book interview", description: res.error, variant: "error" });
@@ -1337,6 +1373,24 @@ export function CandidateDrawer({
           {c.provenance === "manual" && (
             <Badge tone="warning" size="sm" title="Operator-entered profile">
               Manual
+            </Badge>
+          )}
+          {c.provenance === "live" && (
+            <Badge
+              tone="success"
+              size="sm"
+              title="Returned by live provider/API (sourcing-agent, Apollo, …)"
+            >
+              Live
+            </Badge>
+          )}
+          {supabaseEnabled && !demoLoginEnabled && !c.provenance && (
+            <Badge
+              tone="warning"
+              size="sm"
+              title="Live tenant record with no provenance stamp — verify source before outreach"
+            >
+              Unknown provenance
             </Badge>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">

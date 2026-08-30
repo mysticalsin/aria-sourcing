@@ -69,6 +69,18 @@ try {
   }
 
   {
+    environment.set({ NODE_ENV: "production", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
+    let requests = 0;
+    const result = await callMcpTool("https://mcp.example.test/mcp", "secret", "read_fixture", {}, {
+      fetchImpl: rpcFetch(() => {
+        requests += 1;
+      }),
+      allowlisted: true,
+    });
+    ok("production remote MCP execution is allowed only with allowlisted=true", result.ok && requests === 3);
+  }
+
+  {
     environment.set({ NODE_ENV: "development", ARIA_ENABLE_REMOTE_MCP_EXECUTION: undefined });
     let requests = 0;
     const result = await callMcpTool("https://mcp.example.test/mcp", "secret", "read_fixture", {}, {
@@ -110,6 +122,21 @@ try {
       }),
     });
     ok("production MCP discovery is denied before any remote call", !result.ok && requests === 0);
+  }
+
+  {
+    environment.set({ NODE_ENV: "production", ARIA_ENABLE_REMOTE_MCP_EXECUTION: undefined });
+    let requests = 0;
+    const result = await connectAndListTools("https://mcp.example.test/mcp", "secret", {
+      fetchImpl: rpcFetch(() => {
+        requests += 1;
+      }),
+      allowlisted: true,
+    });
+    ok(
+      "production MCP discovery is allowed only with allowlisted=true",
+      result.ok && result.tools?.length === 1 && requests === 3,
+    );
   }
 
   {

@@ -27,3 +27,20 @@ export async function resolveStoredTavilyKey(
   const key = decryptSecret(row.secret);
   return key || null;
 }
+
+/** Service-role read of a workspace's stored Tavily key (loop/cron paths). */
+export async function resolveStoredTavilyKeyForWorkspace(workspaceId: string): Promise<string | null> {
+  const serviceClient = getServiceSupabase();
+  if (!serviceClient) return null;
+  const { data: row } = await serviceClient
+    .from("api_keys")
+    .select("secret")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "Tavily")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!row?.secret || typeof row.secret !== "string") return null;
+  const key = decryptSecret(row.secret);
+  return key || null;
+}

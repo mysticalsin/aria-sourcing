@@ -12,8 +12,10 @@ import {
   ledgerHasActiveContact,
   recentlyContacted,
   defaultFleetSettings,
+  seatMailboxLiveReady,
+  seatNeedsDomainVerify,
 } from "../src/lib/fleet";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import { SEED_NOW } from "../src/lib/utils";
 import type { AgentSeat, Candidate, SuppressionEntry } from "../src/lib/types";
 
@@ -28,7 +30,7 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const state = buildSeedState();
+const state = historicalSeedState();
 const NOW = SEED_NOW.getTime(); // deterministic clock that matches the seed's relative dates
 const fs = defaultFleetSettings();
 
@@ -96,6 +98,32 @@ const watcher = cloneSeat(seat("seat_maya"));
 watcher.health.bounceRate = 0.04;
 const watcherHealth = seatHealthStatus(watcher, fs);
 ok("watch-band bounce warns, no pause", watcherHealth.shouldPause === false && watcherHealth.tone === "warning");
+
+/* ---- seatMailboxLiveReady / seatNeedsDomainVerify ------------------------- */
+const graphLive = cloneSeat(seat("seat_maya"));
+graphLive.provider = "Microsoft Graph";
+graphLive.mode = "live";
+graphLive.connectedAccount = "acct@mantu.com";
+graphLive.domainVerified = false;
+ok("Graph OAuth live seat is live-ready without domain verify", seatMailboxLiveReady(graphLive) === true);
+ok("Graph OAuth live seat skips domain verify requirement", seatNeedsDomainVerify(graphLive) === false);
+
+const apiKeyLive = cloneSeat(seat("seat_maya"));
+apiKeyLive.provider = "Resend";
+apiKeyLive.mode = "live";
+apiKeyLive.connectedAccount = "key-1";
+apiKeyLive.domainVerified = false;
+ok("API-key live seat needs domain verify", seatNeedsDomainVerify(apiKeyLive) === true);
+ok("API-key live seat not live-ready until domain verified", seatMailboxLiveReady(apiKeyLive) === false);
+apiKeyLive.domainVerified = true;
+ok("API-key live seat live-ready after domain verify", seatMailboxLiveReady(apiKeyLive) === true);
+
+const linkedInLive = cloneSeat(seat("seat_maya"));
+linkedInLive.provider = "LinkedIn Assisted Manual";
+linkedInLive.mode = "live";
+linkedInLive.connectedAccount = "li-op";
+linkedInLive.domainVerified = true;
+ok("LinkedIn live seat is NOT mailbox live-ready", seatMailboxLiveReady(linkedInLive) === false);
 
 /* ---- suppressionMatch: email + domain + expiry --------------------------- */
 const supp = state.suppression;

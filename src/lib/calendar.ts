@@ -38,6 +38,21 @@ function attendeeEmails(ev: CalendarEventInput): string[] {
   return out;
 }
 
+/** Accept only real Teams join URLs — never Outlook calendar webLink. */
+export function isTeamsMeetingJoinUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === "teams.microsoft.com"
+      || host.endsWith(".teams.microsoft.com")
+      || host === "teams.live.com"
+      || host.endsWith(".teams.live.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function agendaText(ev: CalendarEventInput): string {
   return ev.agenda.length ? `Agenda:\n- ${ev.agenda.join("\n- ")}` : "Interview";
 }
@@ -93,11 +108,49 @@ export async function createGoogleCalendarEvent(
   }
 }
 
+/** Best-effort delete of a Graph calendar event created without a Teams joinUrl. */
+async function deleteGraphCalendarEvent(eventId: string, token: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    // 204 No Content is success; 404 means already gone — both free the slot.
+    return res.ok || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
 /** Create the event on the connection owner's Microsoft 365 calendar. */
 export async function createGraphCalendarEvent(
   ev: CalendarEventInput,
   connection: EmailConnection,
 ): Promise<CalendarEventOutcome> {
+  const scope = (connection.scope ?? "").trim().toLowerCase();
+  // Empty/missing scope is fail-closed: never assume Calendars/OnlineMeetings
+  // were granted (blank previously skipped both checks and reached Graph).
+  if (!scope || !/calendars\.readwrite/.test(scope)) {
+    return {
+      ok: false,
+      provider: "Microsoft Graph",
+      deliveryState: "not-sent",
+      detail: "Microsoft Graph connection lacks Calendars.ReadWrite — reconnect Outlook with calendar scope.",
+    };
+  }
+  if (!/onlinemeetings\.readwrite/.test(scope)) {
+    return {
+      ok: false,
+      provider: "Microsoft Graph",
+      deliveryState: "not-sent",
+      detail: "Microsoft Graph connection lacks OnlineMeetings.ReadWrite — reconnect Outlook for Teams joinUrl.",
+    };
+  }
+
   const token = await getAccessTokenForReading(connection);
   // A missing/unrefreshable token is proven pre-transport: no request ever
   // reached Graph, so this is always safe to retry.
@@ -112,6 +165,8 @@ export async function createGraphCalendarEvent(
       emailAddress: { address },
       type: "required",
     })),
+    isOnlineMeeting: true,
+    onlineMeetingProvider: "teamsForBusiness",
   };
   try {
     const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
@@ -128,12 +183,58 @@ export async function createGraphCalendarEvent(
         detail: `Graph calendar ${res.status}`,
       };
     }
-    const event = (await res.json().catch(() => ({}))) as { id?: string; webLink?: string };
+    const event = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      webLink?: string;
+      onlineMeeting?: { joinUrl?: string };
+    };
+    let joinUrl = event.onlineMeeting?.joinUrl ?? null;
+    // Graph sometimes omits onlineMeeting on create; re-fetch once for Teams joinUrl.
+    if (!joinUrl && event.id) {
+      try {
+        const fetched = await fetch(
+          `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(event.id)}?$select=id,webLink,onlineMeeting`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(10_000),
+          },
+        );
+        if (fetched.ok) {
+          const full = (await fetched.json().catch(() => ({}))) as {
+            onlineMeeting?: { joinUrl?: string };
+          };
+          joinUrl = full.onlineMeeting?.joinUrl ?? null;
+        }
+      } catch {
+        // Fall through to missing-joinUrl handling below.
+      }
+    }
+    // Never promote Outlook webLink as a Teams meeting URL.
+    if (!joinUrl || !isTeamsMeetingJoinUrl(joinUrl)) {
+      if (event.id) {
+        const rolledBack = await deleteGraphCalendarEvent(event.id, token);
+        if (rolledBack) {
+          return {
+            ok: false,
+            provider: "Microsoft Graph",
+            deliveryState: "not-sent",
+            detail: "Teams join URL missing after Graph create; orphan event deleted — safe to retry.",
+          };
+        }
+      }
+      return {
+        ok: false,
+        provider: "Microsoft Graph",
+        eventId: event.id,
+        deliveryState: "unknown",
+        detail: "Teams join URL missing after Graph create; reconcile manually before retry.",
+      };
+    }
     return {
       ok: true,
       provider: "Microsoft Graph",
       eventId: event.id,
-      link: event.webLink,
+      link: joinUrl,
       deliveryState: "accepted",
       detail: "Event created.",
     };

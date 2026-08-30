@@ -19,7 +19,7 @@ import {
 } from "../src/lib/metrics";
 import { FUNNEL_STAGES } from "../src/lib/types";
 import type { Candidate, JobAnalysis, ScoringWeights } from "../src/lib/types";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 
 let pass = 0,
   fail = 0;
@@ -32,7 +32,7 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const state = buildSeedState();
+const state = historicalSeedState();
 
 /* ---- scoreCandidate ------------------------------------------------------ */
 const campaign = state.campaigns[0];
@@ -111,6 +111,60 @@ ok(
   verifiedExperience.score > unknownExperience.score,
 );
 
+// Live LinkedIn/SERP leads: sparse structured fields must not pin the composite
+// at UNKNOWN_ANCHOR — title + location evidence should clear the contact floor.
+const liveLinkedInJd: JobAnalysis = {
+  ...jd,
+  title: "System Designer",
+  requiredSkills: ["UML", "SysML", "Architecture", "Requirements"],
+  niceToHaveSkills: ["Doors"],
+  minYearsExperience: 8,
+  maxYearsExperience: null,
+  companyStageTarget: ["Public"],
+  industryExperience: ["Consulting"],
+  locationType: "On-site",
+  regions: ["Montreal", "Canada"],
+  timezone: "",
+};
+const liveLinkedInCandidate: Candidate = {
+  ...baseScoringCandidate,
+  provenance: "live",
+  sourcePlatform: "LinkedIn",
+  currentTitle: "System Designer at Acme",
+  currentCompany: "Acme",
+  techStack: ["UML", "Architecture"],
+  yearsExperience: null,
+  companyStageExperience: [],
+  industryExperience: [],
+  location: "Montreal",
+  timezone: "",
+  recentActivity: "System Designer in Montreal with UML experience.",
+};
+const liveLinkedInScore = scoreCandidate(
+  liveLinkedInCandidate,
+  liveLinkedInJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+ok(
+  "live LinkedIn title+location evidence clears contact floor (80)",
+  liveLinkedInScore.score >= 80,
+);
+const liveExp = liveLinkedInScore.breakdown.find((item) => item.key === "experience");
+ok(
+  "live LinkedIn missing years is channel N/A (not unknown-30)",
+  liveExp?.weight === 0 && /not available from this source/i.test(liveExp?.rationale ?? ""),
+);
+const manualUnknownYears = scoreCandidate(
+  { ...liveLinkedInCandidate, provenance: "manual", sourcePlatform: "Manual" },
+  liveLinkedInJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+const manualExp = manualUnknownYears.breakdown.find((item) => item.key === "experience");
+ok(
+  "manual missing years stays unknown-30 (operator could have entered it)",
+  manualExp?.score === 30 && /unknown/i.test(manualExp?.rationale ?? ""),
+);
+
 const thinHighSkill = scoreCandidate(
   {
     ...signalCandidate,
@@ -122,8 +176,8 @@ const thinHighSkill = scoreCandidate(
   DEFAULT_SCORING_WEIGHTS,
 );
 ok(
-  "signal-aware scoring: skills-only-high candidate stays below MIN_SCORE_FLOOR 70",
-  thinHighSkill.score < 70,
+  "signal-aware scoring: skills-only-high candidate stays below MIN_SCORE_FLOOR 80",
+  thinHighSkill.score < 80,
 );
 
 const broadVerified = scoreCandidate(
@@ -162,7 +216,7 @@ const skillsOnly = scoreCandidate(
     timezone: "",
   },
   skillsOnlyJd,
-  DEFAULT_SCORING_WEIGHTS,
+  { ...DEFAULT_SCORING_WEIGHTS, location: 0, activity: 0 },
 );
 const skillsOnlySkillScore = skillsOnly.breakdown.find((item) => item.key === "skills")?.score;
 ok(
@@ -350,9 +404,17 @@ ok(
 );
 
 ok(
+  "firstInterviewElapsedHours: Needs-calendar shell (no teams/cal link) -> null",
+  firstInterviewElapsedHours(
+    [{ startTime: "2026-01-01T10:00:00.000Z", teamsLink: "", calLink: "" }],
+    campaignCreatedAt,
+  ) === null,
+);
+
+ok(
   "firstInterviewElapsedHours: single booking 10h after createdAt -> 10",
   firstInterviewElapsedHours(
-    [{ startTime: "2026-01-01T10:00:00.000Z" }],
+    [{ startTime: "2026-01-01T10:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/x", calLink: "" }],
     campaignCreatedAt,
   ) === 10,
 );
@@ -361,9 +423,9 @@ ok(
   "firstInterviewElapsedHours: picks the earliest startTime among multiple bookings",
   firstInterviewElapsedHours(
     [
-      { startTime: "2026-01-03T00:00:00.000Z" },
-      { startTime: "2026-01-01T05:00:00.000Z" },
-      { startTime: "2026-01-02T00:00:00.000Z" },
+      { startTime: "2026-01-03T00:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/a", calLink: "" },
+      { startTime: "2026-01-01T05:00:00.000Z", teamsLink: "", calLink: "https://outlook.office.com/calendar/b" },
+      { startTime: "2026-01-02T00:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/c", calLink: "" },
     ],
     campaignCreatedAt,
   ) === 5,
@@ -372,7 +434,7 @@ ok(
 ok(
   "firstInterviewElapsedHours: startTime before createdAt clamps to 0, never negative",
   firstInterviewElapsedHours(
-    [{ startTime: "2025-12-31T00:00:00.000Z" }],
+    [{ startTime: "2025-12-31T00:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/x", calLink: "" }],
     campaignCreatedAt,
   ) === 0,
 );

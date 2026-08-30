@@ -66,6 +66,7 @@ export type SourcingActivityDraft = Omit<Activity, "id" | "createdAt"> & {
 export interface SourcingActionDependencies {
   commit: (update: (state: HermesState) => HermesState) => boolean;
   commitPersisted: (update: (state: HermesState) => HermesState) => Promise<boolean>;
+  flushWorkspaceSave: () => Promise<boolean>;
   currentState: () => HermesState | null;
   sourcingMutationAllowed: () => boolean;
   workspaceEffectAllowed: () => boolean;
@@ -667,6 +668,7 @@ function manualIntakeUnavailable(status: CampaignStatus): string {
 
 export function createSourcingActions({
   commitPersisted,
+  flushWorkspaceSave,
   currentState,
   sourcingMutationAllowed,
   workspaceEffectAllowed,
@@ -685,12 +687,28 @@ export function createSourcingActions({
     initialFingerprint: string,
     agentFramework?: { runId: string; capabilityToken: string; query: string },
   ): Promise<SourceNextBatchResult> => {
-    const reviewed = await requestReviewedSourcing(
+    let reviewed = await requestReviewedSourcing(
       workspaceFetch,
       campaignId,
       count,
       agentFramework,
     );
+    for (
+      let persistAttempt = 0;
+      !reviewed.ok &&
+      reviewed.error === "Campaign not found." &&
+      persistAttempt < 4;
+      persistAttempt++
+    ) {
+      if (!(await flushWorkspaceSave())) break;
+      await new Promise((resolve) => setTimeout(resolve, 150 * (persistAttempt + 1)));
+      reviewed = await requestReviewedSourcing(
+        workspaceFetch,
+        campaignId,
+        count,
+        agentFramework,
+      );
+    }
     if (!reviewed.ok) {
       return { ok: false, error: reviewed.error, source: "unavailable" };
     }
@@ -860,7 +878,6 @@ export function createSourcingActions({
     if (!evaluateNeedReadiness(initialCampaign.jobAnalysis).ready) {
       return invalidRequest("Complete and review the campaign brief before sourcing.");
     }
-    const initialFingerprint = sourcingAgentCampaignFingerprint(initialCampaign);
 
     const demoSourcing = syntheticSourcingAllowed();
     const requestedPlatform = opts?.platform ?? (
@@ -871,8 +888,8 @@ export function createSourcingActions({
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
     }
-    const count = opts?.count ?? 6;
-    const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;
+    const count = opts?.count ?? 10;
+    const maxCount = MAX_SOURCE_COUNT;
     if (!Number.isInteger(count) || count < 1 || count > maxCount) {
       return invalidRequest(
         `Source count must be an integer between 1 and ${maxCount}.`,
@@ -898,13 +915,28 @@ export function createSourcingActions({
     }
 
     if (!demoSourcing) {
+      if (!(await flushWorkspaceSave())) {
+        return {
+          ok: false,
+          error: "Workspace could not sync before sourcing. Retry save, then source again.",
+          source: "unavailable",
+        };
+      }
+      const savedState = currentState();
+      const savedCampaign = savedState?.campaigns.find((item) => item.id === campaignId);
+      if (!savedCampaign || !evaluateNeedReadiness(savedCampaign.jobAnalysis).ready) {
+        return invalidRequest("Complete and review the campaign brief before sourcing.");
+      }
+      const authorityFingerprint = sourcingAgentCampaignFingerprint(savedCampaign);
       return await sourceReviewedCampaignBatch(
         campaignId,
         count,
-        initialFingerprint,
+        authorityFingerprint,
         opts?.agentFramework,
       );
     }
+
+    const initialFingerprint = sourcingAgentCampaignFingerprint(initialCampaign);
 
     let source: "github" | "web" | "mock" = "mock";
     let rawGithubUsers: GithubUser[] | null = null;

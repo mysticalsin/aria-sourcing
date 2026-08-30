@@ -18,6 +18,7 @@ import type {
 } from "@/lib/types";
 import { cn, formatDateTime, formatTimeAgo, toneForBookingStatus, toneForIntent, toneForOutreachStatus, toneForStage } from "@/lib/utils";
 import type { Tone } from "@/lib/utils";
+import { isRealSendFact } from "@/lib/metrics";
 import { AuditPack } from "@/components/sessions/audit-pack";
 import type { ReplayStep, ReplayStepKind } from "@/components/sessions/replay-model";
 import {
@@ -332,7 +333,11 @@ function EvidenceRail({ step, candidate }: { step: ReplayStep; candidate: Candid
               Approved by <span className="font-semibold text-ink-soft">{step.message.approvedBy}</span>
             </p>
           )}
-          {step.message?.sentAt && <p className="text-xs text-muted">Sent {formatDateTime(step.message.sentAt)}</p>}
+          {step.message && isRealSendFact(step.message) ? (
+            <p className="text-xs text-muted">Sent {formatDateTime(step.message.sentAt!)}</p>
+          ) : step.message?.sentAt && step.message.dryRun === true ? (
+            <p className="text-xs text-muted">Dry-run stamp {formatDateTime(step.message.sentAt)} — nothing contacted</p>
+          ) : null}
         </div>
       );
 

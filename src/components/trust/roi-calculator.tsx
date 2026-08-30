@@ -26,7 +26,9 @@ import {
 } from "recharts";
 import { Calculator, Sparkles, Info } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle, Eyebrow, Drawer, EmptyState, Button } from "@/components/ui";
-import { useCandidates, useOutreach, useBookings } from "@/lib/store";
+import { useCandidates, useOutreach, useBookings, useWorkspaceStatus } from "@/lib/store";
+import { bookingNeedsCalendar } from "@/lib/booking-status";
+import { isRealSendFact } from "@/lib/metrics";
 import { formatCurrency, formatNumber, round } from "@/lib/utils";
 
 interface Assumption {
@@ -74,9 +76,10 @@ function spanDaysFrom(dates: string[]): number {
 }
 
 export function RoiCalculator() {
-  const candidates = useCandidates();
-  const outreach = useOutreach();
+  const candidatesAll = useCandidates();
+  const outreachAll = useOutreach();
   const bookings = useBookings();
+  const workspaceStatus = useWorkspaceStatus();
 
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
@@ -87,11 +90,33 @@ export function RoiCalculator() {
   const [hoursPerBooking, setHoursPerBooking] = React.useState(1.5);
   const [monthlyCost, setMonthlyCost] = React.useState(1500);
 
+  // Prefer live/operator-sourced activity when present; exclude synthetic seed noise.
+  const liveCandidates = React.useMemo(
+    () => candidatesAll.filter((c) => c.provenance !== "synthetic"),
+    [candidatesAll],
+  );
+  const usingLiveFacts = liveCandidates.length > 0;
+  const candidates = usingLiveFacts ? liveCandidates : candidatesAll;
+  const liveCandidateIds = React.useMemo(() => new Set(candidates.map((c) => c.id)), [candidates]);
+  const outreach = React.useMemo(
+    () =>
+      usingLiveFacts
+        ? outreachAll.filter((m) => liveCandidateIds.has(m.candidateId))
+        : outreachAll,
+    [outreachAll, usingLiveFacts, liveCandidateIds],
+  );
+
   // ---- Real, auditable counts ---------------------------------------------
   const sourcedCount = candidates.length;
   const draftedCount = outreach.length;
-  const sentCount = React.useMemo(() => outreach.filter((m) => m.status === "Scheduled").length, [outreach]);
-  const bookedCount = bookings.length;
+  const sentCount = React.useMemo(
+    () => outreach.filter((m) => isRealSendFact(m)).length,
+    [outreach],
+  );
+  const bookedCount = React.useMemo(
+    () => bookings.filter((b) => !bookingNeedsCalendar(b)).length,
+    [bookings],
+  );
 
   const spanDays = React.useMemo(
     () =>
@@ -122,11 +147,18 @@ export function RoiCalculator() {
   const annualSaving = dailyRate * 365;
   const annualCost = monthlyCost * 12;
   const multiple = annualCost > 0 ? annualSaving / annualCost : 0;
+  const showMultiple = multiple >= 1 || usingLiveFacts;
+  const illustrativeLoss = !usingLiveFacts && multiple < 1;
 
-  const chartData = [
-    { name: "Your assumed annual cost", value: Math.round(annualCost) },
-    { name: "Computed annual saving", value: Math.round(annualSaving) },
-  ];
+  const chartData = illustrativeLoss
+    ? [
+        { name: "Hours saved (this activity)", value: Math.round(totalHoursSaved * 10) / 10 },
+        { name: "Drafts produced", value: draftedCount },
+      ]
+    : [
+        { name: "Your assumed annual cost", value: Math.round(annualCost) },
+        { name: "Computed annual saving", value: Math.round(annualSaving) },
+      ];
 
   if (sourcedCount === 0 && draftedCount === 0 && bookedCount === 0) {
     return (
@@ -157,8 +189,9 @@ export function RoiCalculator() {
           <Eyebrow className="mb-1 block">ROI calculator</Eyebrow>
           <CardTitle>Recruiter hours saved, priced by you</CardTitle>
           <p className="mt-1 max-w-xl text-sm text-muted">
-            Drag any assumption below. The multiple and annual saving recompute live. Every figure is an
-            editable assumption multiplied by a real, auditable count from this workspace.
+            {usingLiveFacts
+              ? "Drag any assumption below. Figures use live workspace activity (synthetic seed rows excluded)."
+              : "Illustrative preview from demo activity. Source a real campaign to replace this with live counts."}
           </p>
         </div>
         <Button
@@ -173,6 +206,33 @@ export function RoiCalculator() {
       </CardHeader>
       <CardBody className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_1.1fr]">
         <div className="space-y-5">
+          {illustrativeLoss ? (
+            <div className="rounded-2xl bg-ink/[0.03] px-4 py-5 ring-1 ring-inset ring-ink/5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Activity so far</p>
+              <p className="mt-1 text-4xl font-bold tracking-tight text-ink">
+                {round(totalHoursSaved, 1)}h
+              </p>
+              <p className="mt-2 text-sm text-muted">
+                Recruiter hours implied by {sourcedCount} sourced + {draftedCount} drafts
+                {bookedCount > 0 ? ` + ${bookedCount} bookings` : ""}. A payback multiple needs more
+                live activity — we don&apos;t lead with a synthetic loss.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-ink/[0.03] px-4 py-5 ring-1 ring-inset ring-ink/5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                {showMultiple ? "Computed multiple" : "Annual saving"}
+              </p>
+              <p className="mt-1 text-4xl font-bold tracking-tight text-ink">
+                {showMultiple ? `${round(multiple, 1)}×` : formatCurrency(Math.round(annualSaving))}
+              </p>
+              <p className="mt-2 text-sm text-muted">
+                {formatCurrency(Math.round(annualSaving))} annualized saving vs{" "}
+                {formatCurrency(Math.round(annualCost))} assumed cost
+                {workspaceStatus.mode === "live" ? " · live workspace activity" : ""}.
+              </p>
+            </div>
+          )}
           <AssumptionSlider
             a={{
               key: "hourlyCost",
@@ -244,20 +304,36 @@ export function RoiCalculator() {
           <div className="rounded-3xl border border-line bg-surface/60 p-6 text-center">
             <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted">
               <Sparkles className="h-3.5 w-3.5 text-tangerine" aria-hidden />
-              Computed multiple
+              {illustrativeLoss ? "Hours saved" : showMultiple ? "Computed multiple" : "Annual saving"}
             </div>
-            <p className="mt-2 text-5xl font-extrabold tabular-nums text-ink">{round(multiple, 1)}×</p>
+            <p className="mt-2 text-5xl font-extrabold tabular-nums text-ink">
+              {illustrativeLoss
+                ? `${round(totalHoursSaved, 1)}h`
+                : showMultiple
+                  ? `${round(multiple, 1)}×`
+                  : formatCurrency(Math.round(annualSaving))}
+            </p>
             <p className="mt-2 text-sm text-muted">
-              {formatCurrency(Math.round(annualSaving))} annualized saving vs. {formatCurrency(Math.round(annualCost))}{" "}
-              assumed annual cost
+              {illustrativeLoss
+                ? `${sourcedCount} sourced · ${draftedCount} drafts — multiple shown once activity supports payback.`
+                : `${formatCurrency(Math.round(annualSaving))} annualized saving vs. ${formatCurrency(Math.round(annualCost))} assumed annual cost`}
             </p>
             <p className="mt-1 text-xs text-muted">
-              Annualized from {formatCurrency(Math.round(totalDollarSaved))} saved across {spanDays} day
-              {spanDays === 1 ? "" : "s"} of observed activity in this workspace.
+              {usingLiveFacts
+                ? `Live activity across ${spanDays} day${spanDays === 1 ? "" : "s"} (synthetic seed excluded).`
+                : `Illustrative demo activity across ${spanDays} day${spanDays === 1 ? "" : "s"}.`}
             </p>
           </div>
 
-          <div style={{ width: "100%", height: 160 }} role="img" aria-label={`Assumed annual cost ${formatCurrency(Math.round(annualCost))} versus computed annual saving ${formatCurrency(Math.round(annualSaving))}`}>
+          <div
+            style={{ width: "100%", height: 160 }}
+            role="img"
+            aria-label={
+              illustrativeLoss
+                ? `Hours saved ${round(totalHoursSaved, 1)} and drafts ${draftedCount}`
+                : `Assumed annual cost ${formatCurrency(Math.round(annualCost))} versus computed annual saving ${formatCurrency(Math.round(annualSaving))}`
+            }
+          >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 layout="vertical"

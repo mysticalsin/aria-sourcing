@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Badge, Card, CardContent, EmptyState, Eyebrow, Input, SkeletonCard } from "@/components/ui";
+import { Badge, Card, CardContent, EmptyState, Eyebrow, Input } from "@/components/ui";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
 import { useActivities, useBookings, useCandidates, useChats, useHydrated, useSeats } from "@/lib/store";
 import { DecisionReplay } from "@/components/sessions/decision-replay";
@@ -74,7 +74,15 @@ export default function SessionsPage() {
   }, [candidates, needle]);
 
   return (
-    <HydrationGate hydrated={hydrated} fallback={<div className="space-y-4"><SkeletonCard /><SkeletonCard /></div>}>
+    <HydrationGate
+      hydrated={hydrated}
+      fallback={
+        <EmptyState
+          title="Loading sessions…"
+          description="Conversations and activity appear after workspace hydrate — no placeholder panels."
+        />
+      }
+    >
       <PageHeader
         eyebrow="System"
         title="Sessions"

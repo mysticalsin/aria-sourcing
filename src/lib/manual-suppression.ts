@@ -1,6 +1,6 @@
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 
-export type EnforcedSuppressionType = "email" | "domain" | "phone";
+export type EnforcedSuppressionType = "email" | "domain" | "phone" | "linkedin";
 
 export function suppressionDeleteConfirmed(row: unknown): row is { id: string } {
   return Boolean(row && typeof row === "object" && typeof (row as { id?: unknown }).id === "string");
@@ -9,6 +9,14 @@ export function suppressionDeleteConfirmed(row: unknown): row is { id: string } 
 export function normalizeSuppressionValue(type: EnforcedSuppressionType, rawValue: string): string | null {
   const raw = rawValue.trim();
   if (type === "phone") return normalizeWhatsAppAddress(raw);
+  if (type === "linkedin") {
+    const value = raw.toLowerCase();
+    if (!value) return null;
+    if (/linkedin\.com\/(in|pub)\//i.test(value)) return value.replace(/\/$/, "");
+    // Allow bare vanity handles stored as profile path fragments
+    if (/^[a-z0-9][a-z0-9\-_]{1,100}$/i.test(value)) return value;
+    return null;
+  }
   const value = raw.toLowerCase();
   if (type === "email") {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;

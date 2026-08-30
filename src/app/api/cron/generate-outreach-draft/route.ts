@@ -1,0 +1,357 @@
+import { timingSafeEqual } from "node:crypto";
+
+import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+
+import { buildOutreachPrompt, parseHermesOutreach } from "@/lib/ai/hermes";
+import { resolveLoopLlm } from "@/lib/ai/loop-llm";
+import { runRecruitingGraph } from "@/lib/langchain/recruiting-graph";
+import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
+import { generateOutreach, newOutreachMessage } from "@/lib/mock-ai";
+import { humanizeText } from "@/lib/humanizer";
+import { validateOutreachQuality } from "@/lib/outreach-quality-pipeline";
+import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
+import { getServiceSupabase } from "@/lib/supabase/server";
+import type { OutreachChannel, SystemSettings } from "@/lib/types";
+import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
+import { resolveOutreachLanguage } from "@/lib/outreach-language";
+import { preferredOutreachChannel } from "@/lib/outreach-channel";
+import { stableOutreachMessageId } from "@/lib/utils";
+import {
+  loadCampaignForLoop,
+  loadCandidateForLoop,
+  loadSkillsForLoop,
+} from "@/lib/workspace-loop-slices";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const BodySchema = z.object({
+  workspaceId: z.string().uuid(),
+  campaignId: z.string().min(1).max(100),
+  candidateId: z.string().min(1).max(100),
+  channel: z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]).optional(),
+  /** Loop trigger — inbound_classify → reply follow-up (step 2), else first-touch. */
+  trigger: z.string().min(1).max(80).optional(),
+  intent: z.string().min(1).max(80).optional(),
+});
+
+function authorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET ?? "";
+  const presented = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const presentedBuf = Buffer.from(presented);
+  const expectedBuf = Buffer.from(expected);
+  return (
+    secret !== "" &&
+    presentedBuf.length === expectedBuf.length &&
+    timingSafeEqual(presentedBuf, expectedBuf)
+  );
+}
+
+export async function POST(req: NextRequest) {
+  if (req.headers.get("cookie") || req.headers.get("origin")) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  if (!authorized(req)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+
+  const parsed = BodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, status: "invalid_request" }, { status: 400 });
+  }
+
+  const svc = getServiceSupabase();
+  if (!svc) {
+    return NextResponse.json({ ok: false, status: "service_unavailable" }, { status: 503 });
+  }
+
+  const [campaign, candidate, skills] = await Promise.all([
+    loadCampaignForLoop(svc, parsed.data.workspaceId, parsed.data.campaignId),
+    loadCandidateForLoop(svc, parsed.data.workspaceId, parsed.data.candidateId),
+    loadSkillsForLoop(svc, parsed.data.workspaceId),
+  ]);
+  if (!campaign || !candidate) {
+    return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
+  }
+
+  const channel: OutreachChannel =
+    parsed.data.channel ?? preferredOutreachChannel(candidate);
+  const trigger = parsed.data.trigger?.trim() || "first_touch";
+  const intent = parsed.data.intent?.trim() || "";
+  const replyFollowUp =
+    trigger === "inbound_classify" &&
+    (intent === "INTERESTED" || intent === "QUALIFIED_INTEREST");
+  const sequenceStep = replyFollowUp ? 2 : 1;
+  // Prefer a reachable channel — never invent Email drafts for LinkedIn-only profiles
+  // (Approve would dead-end on "no email"). LinkedIn drafts need a profile URL;
+  // with Autopilot + HeyReach/vendor they may durable-queue; otherwise assisted-manual.
+  if (channel === "Email" && !candidate.email.trim()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "contact_channel_unavailable",
+        detail: "No email on file — enrich the candidate or draft LinkedIn when a profile URL exists.",
+        channel,
+      },
+      { status: 422 },
+    );
+  }
+  if (channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "contact_channel_unavailable",
+        detail: "No LinkedIn profile URL on file — enrich or use Email when an address exists.",
+        channel,
+      },
+      { status: 422 },
+    );
+  }
+  if ((channel === "WhatsApp" || channel === "SMS") && !(candidate.phone ?? "").trim()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "contact_channel_unavailable",
+        detail: "No phone on file — enrich the candidate or draft Email/LinkedIn when contact exists.",
+        channel,
+      },
+      { status: 422 },
+    );
+  }
+  const voice = mantuOutreachVoice();
+  const mockGenerated = generateOutreach(
+    candidate,
+    campaign,
+    "Casual Professional",
+    channel,
+    sequenceStep,
+    voice,
+  );
+
+  let generated = mockGenerated;
+  let modelUsed = false;
+  const lang = resolveOutreachLanguage({ candidate, campaign });
+  const localeHint = campaign.jobAnalysis.localeContext
+    ? `\nLocale context: market=${campaign.jobAnalysis.localeContext.marketCountry ?? "n/a"}, city=${campaign.jobAnalysis.localeContext.workCity ?? "n/a"}, formality=${campaign.jobAnalysis.localeContext.formality ?? "consulting"}.`
+    : "";
+  const prompt = buildOutreachPrompt({
+    candidateName: candidate.name,
+    candidateTitle: candidate.currentTitle,
+    candidateCompany: candidate.currentCompany,
+    techStack: candidate.techStack,
+    recentActivity: candidate.recentActivity,
+    yearsExperience: candidate.yearsExperience,
+    roleTitle: campaign.jobAnalysis.title,
+    locationType: campaign.jobAnalysis.locationType,
+    regions: campaign.jobAnalysis.regions,
+    requiredSkills: campaign.jobAnalysis.requiredSkills,
+    roleContext: candidateDisclosureContextForCampaignLike(campaign) + localeHint,
+    tone: "Casual Professional",
+    channel,
+    language: lang,
+    localeContext: campaign.jobAnalysis.localeContext,
+    persona: voice.persona,
+    signature: voice.signature,
+    sequenceStep,
+    intent: intent || undefined,
+  });
+  const live = await resolveLoopLlm({
+    task: "outreach",
+    prompt,
+    workspaceId: parsed.data.workspaceId,
+    campaignId: parsed.data.campaignId,
+    candidateId: parsed.data.candidateId,
+    maxTokens: 1024,
+    skills: skills ?? null,
+  });
+  if (live.ok) {
+    const parsedLive = parseHermesOutreach(live.text, channel, mockGenerated.subject);
+    if (parsedLive) {
+      generated = {
+        ...mockGenerated,
+        subject: humanizeText(parsedLive.subject),
+        body: humanizeText(parsedLive.body),
+      };
+      modelUsed = true;
+    }
+  }
+
+  // Draft cron runs the draft→quality→approval subgraph only. Never claim
+  // interview_scheduled here — booking requires calendar confirmLive + bookingId.
+  const graphResult = await runRecruitingGraph({
+    intent: "draft_quality",
+    workspaceId: parsed.data.workspaceId,
+    campaignId: campaign.id,
+    candidateIds: [candidate.id],
+    shortlistIds: [candidate.id],
+    preferLiveCritics: true,
+    drafts: {
+      [candidate.id]: {
+        subject: generated.subject,
+        body: generated.body,
+        channel,
+      },
+    },
+  });
+  if (graphResult.stage === "interview_scheduled") {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "graph_stage_invalid",
+        detail: "Draft cron must not report interview_scheduled without a booking id.",
+        graphStage: graphResult.stage,
+      },
+      { status: 500 },
+    );
+  }
+
+  if (graphResult.stage === "draft_failed") {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "draft_failed",
+        detail: "LangGraph draft_quality requires non-empty outreach drafts.",
+        graphStage: graphResult.stage,
+      },
+      { status: 422 },
+    );
+  }
+
+  // Autonomous loop drafts must not silently ship mock-ai copy as success.
+  if (!modelUsed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "llm_required",
+        detail: "Live LLM draft required for autonomous outreach.",
+        graphStage: graphResult.stage,
+      },
+      { status: 503 },
+    );
+  }
+
+  // Prefer graph live critics when they already succeeded — avoids a second
+  // full three-peer burst that starves Anthropic after Kimi 401. Re-run live
+  // only when peers were incomplete; a stale graph "blocked" / approval_blocked must not
+  // override a cleared second pass (LLM peers are nondeterministic).
+  const graphQuality = graphResult.quality?.[candidate.id];
+  const reuseGraphCritics =
+    graphQuality?.llmCriticsUsed === true && graphQuality.status !== "blocked";
+  const effective = reuseGraphCritics
+    ? graphQuality
+    : await validateOutreachQualityLive({
+        subject: generated.subject,
+        body: generated.body,
+        channel,
+        workspaceId: parsed.data.workspaceId,
+      });
+  // Keep a local deterministic verdict only as a fail-closed floor if live somehow
+  // omitted the base (should not happen — live always runs validateOutreachQuality).
+  const deterministicFloor = validateOutreachQuality({
+    subject: generated.subject,
+    body: generated.body,
+    channel,
+  });
+  const floorBlocked =
+    deterministicFloor.status === "blocked" && effective.status !== "blocked"
+      ? {
+          ...effective,
+          status: "blocked" as const,
+          stages: [...effective.stages, ...deterministicFloor.stages],
+        }
+      : effective;
+  const verdict = floorBlocked;
+
+  if (verdict.status === "blocked") {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "quality_blocked",
+        quality: verdict,
+        stage: graphResult.stage,
+        llmCriticsUsed: verdict.llmCriticsUsed === true,
+      },
+      { status: 422 },
+    );
+  }
+
+  // Autonomous drafts require live multi-agent critics — deterministic-only is not enough.
+  if (verdict.llmCriticsUsed !== true) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "critics_required",
+        detail: "Live multi-agent LLM quality critics required for autonomous outreach.",
+        quality: verdict,
+        graphStage: graphResult.stage,
+      },
+      { status: 503 },
+    );
+  }
+
+  // Successful live re-validation may follow quality_critics_incomplete or a
+  // stale graph approval_blocked (first peer pass harsh/flaky). Worker only
+  // accepts approval stages.
+  const graphStage =
+    graphResult.stage === "quality_critics_incomplete" ||
+    graphResult.stage === "quality_validated" ||
+    graphResult.stage === "approval_blocked"
+      ? "queued_for_approval"
+      : graphResult.stage;
+
+  const settings: Pick<SystemSettings, "dryRunMode"> = { dryRunMode: true };
+  const stableId = stableOutreachMessageId({
+    workspaceId: parsed.data.workspaceId,
+    campaignId: parsed.data.campaignId,
+    candidateId: parsed.data.candidateId,
+    channel,
+    sequenceStep,
+    trigger,
+  });
+  const outreach = newOutreachMessage(
+    candidate,
+    campaign,
+    {
+      ...generated,
+      subject: verdict.text.subject,
+      body: verdict.text.body,
+    },
+    "Casual Professional",
+    settings as SystemSettings,
+    sequenceStep,
+    { id: stableId },
+  );
+  outreach.status = "Needs Approval";
+  outreach.qualityStatus = verdict.status;
+  outreach.qualityScore = verdict.aggregateScore;
+  outreach.qualityCriticsUsed = verdict.llmCriticsUsed === true;
+  outreach.qualityReasons = verdict.stages
+    .flatMap((s) => s.reasons)
+    .filter(Boolean)
+    .slice(0, 12);
+  if (channel === "Email") {
+    outreach.htmlBody = mantuEmailHtmlWrapper(verdict.text.body);
+  }
+
+  const recipient =
+    channel === "WhatsApp" || channel === "SMS"
+      ? candidate.phone ?? ""
+      : channel === "LinkedIn"
+        ? candidate.linkedinUrl ?? ""
+        : candidate.email ?? "";
+
+  return NextResponse.json({
+    ok: true,
+    campaignId: campaign.id,
+    candidateId: candidate.id,
+    channel,
+    recipient,
+    quality: verdict,
+    outreach,
+    modelUsed,
+    graphStage,
+    llmCriticsUsed: verdict.llmCriticsUsed === true,
+  });
+}

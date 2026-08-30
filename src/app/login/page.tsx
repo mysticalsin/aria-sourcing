@@ -90,7 +90,10 @@ function LoginInner() {
       provider: "azure",
       options: { scopes: "openid email profile offline_access", redirectTo },
     });
-    if (err) setLoading(false);
+    if (err) {
+      setAuthError(err.message || "Microsoft sign-in failed.");
+      setLoading(false);
+    }
   };
 
   // One-click demo sign-in: admin/admin is resolved SERVER-SIDE. This path is
@@ -162,7 +165,7 @@ function LoginInner() {
         : "Enter the console";
 
   return (
-    <div className="login-hero relative flex h-screen w-screen flex-col overflow-hidden bg-[#010101] text-white">
+    <div className="login-hero relative flex h-screen w-full flex-col overflow-hidden bg-[#010101] text-white">
       {/* Background video */}
       <video
         ref={videoRef}
@@ -220,6 +223,12 @@ function LoginInner() {
         >
           {ctaText}
         </motion.button>
+
+        {supabaseEnabled && !azureLoginEnabled && !demoLoginEnabled ? (
+          <p className="mt-4 max-w-sm text-xs font-light text-white/45">
+            Microsoft sign-in is not configured on this deployment. Use email, or complete GoTrue Azure env to enable Entra SSO.
+          </p>
+        ) : null}
 
         {(supabaseEnabled || demoLoginEnabled) && (
           <div className="mt-5 w-full max-w-xs">
@@ -334,7 +343,7 @@ function LoginInner() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="h-screen w-screen bg-[#010101]" />}>
+    <Suspense fallback={<div className="h-screen w-full bg-[#010101]" />}>
       <LoginInner />
     </Suspense>
   );

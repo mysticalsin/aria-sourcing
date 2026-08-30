@@ -3,7 +3,7 @@
 // A remote tool's semantics are untrusted and are never assumed to be read-only
 // merely because this client uses a constrained transport.
 
-import type { AuthQueryParam } from "./types";
+import type { AuthQueryParam, McpAuthStyle } from "./types";
 import { fetchPublicUrl, type PublicFetchInit } from "@/lib/api/public-fetch";
 import { redactSecrets } from "@/lib/log-redact";
 import { validateMcpBaseUrl } from "@/lib/mcp-auth-params";
@@ -21,23 +21,37 @@ type McpExecutionEnvironment = {
   ARIA_ENABLE_REMOTE_MCP_EXECUTION?: string;
 };
 
+export type McpAllowlistContext = {
+  /** True only after a DB allowlist row matched workspace + URL + manifest hash. */
+  allowlisted?: boolean;
+};
+
 /**
- * Third-party MCP execution is a development/test-only capability. Production
- * always denies execution and discovery, including when the opt-in variable is
- * accidentally or deliberately set.
+ * Third-party MCP execution is fail-closed by default.
+ * - Non-production: requires ARIA_ENABLE_REMOTE_MCP_EXECUTION=true.
+ * - Production: requires an admin-managed per-tenant allowlist match
+ *   (opts.allowlisted === true). The env flag alone never opens production.
  */
-export function remoteMcpExecutionEnabled(env: McpExecutionEnvironment = process.env): boolean {
+export function remoteMcpExecutionEnabled(
+  env: McpExecutionEnvironment = process.env,
+  opts: McpAllowlistContext = {},
+): boolean {
   const localRuntime = env.NODE_ENV === "development" || env.NODE_ENV === "test";
-  return localRuntime && env.ARIA_ENABLE_REMOTE_MCP_EXECUTION === "true";
+  if (localRuntime && env.ARIA_ENABLE_REMOTE_MCP_EXECUTION === "true") return true;
+  if (env.NODE_ENV === "production" && opts.allowlisted === true) return true;
+  return false;
 }
 
 /**
  * Discovery has the same fail-closed boundary as execution because an MCP
  * handshake can disclose vault credentials and make attacker-controlled remote
- * calls before any tool is selected. Keep one explicit nonproduction opt-in.
+ * calls before any tool is selected.
  */
-export function remoteMcpDiscoveryEnabled(env: McpExecutionEnvironment = process.env): boolean {
-  return remoteMcpExecutionEnabled(env);
+export function remoteMcpDiscoveryEnabled(
+  env: McpExecutionEnvironment = process.env,
+  opts: McpAllowlistContext = {},
+): boolean {
+  return remoteMcpExecutionEnabled(env, opts);
 }
 
 export function isProviderSafeMcpToolName(name: unknown): name is string {
@@ -63,19 +77,21 @@ interface JsonRpcResponse {
 export function applyMcpAuth(
   baseUrl: string,
   secret: string,
-  opts?: { authStyle?: "bearer" | "query"; authQueryParam?: AuthQueryParam },
-): { url: string; token: string } {
+  opts?: { authStyle?: McpAuthStyle; authQueryParam?: AuthQueryParam },
+): { url: string; token: string; authStyle: McpAuthStyle } {
   const authStyle = opts?.authStyle ?? "bearer";
   const baseUrlGuard = validateMcpBaseUrl(baseUrl);
   if (!baseUrlGuard.ok) throw new Error(baseUrlGuard.error);
-  if (authStyle === "bearer") return { url: baseUrl, token: secret };
+  if (authStyle === "bearer" || authStyle === "x-api-key") {
+    return { url: baseUrl, token: secret, authStyle };
+  }
 
   const authQueryParam = opts?.authQueryParam;
   if (!authQueryParam) throw new Error("MCP query auth requires an authQueryParam.");
 
   const url = new URL(baseUrl);
   url.searchParams.append(authQueryParam, secret);
-  return { url: url.toString(), token: "" };
+  return { url: url.toString(), token: "", authStyle: "query" };
 }
 
 function hostFor(url: string): string {
@@ -219,12 +235,16 @@ async function post(
   sessionId?: string,
   fetchImpl: McpFetch = fetchPublicUrl,
   signal?: AbortSignal,
+  authStyle: McpAuthStyle = "bearer",
 ): Promise<PostResult> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (token) {
+    if (authStyle === "x-api-key") headers["X-API-Key"] = token;
+    else if (authStyle === "bearer") headers.Authorization = `Bearer ${token}`;
+  }
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   const res = await fetchImpl(url, {
     method: "POST",
@@ -253,21 +273,35 @@ export interface McpConnectResult {
 export async function connectAndListTools(
   url: string,
   token: string,
-  options: { fetchImpl?: McpFetch; signal?: AbortSignal } = {},
+  options: {
+    fetchImpl?: McpFetch;
+    signal?: AbortSignal;
+    allowlisted?: boolean;
+    authStyle?: McpAuthStyle;
+  } = {},
 ): Promise<McpConnectResult> {
-  if (!remoteMcpDiscoveryEnabled()) {
+  if (!remoteMcpDiscoveryEnabled(process.env, { allowlisted: options.allowlisted === true })) {
     return { ok: false, error: "Remote MCP discovery is disabled." };
   }
   const host = hostFor(url);
+  const authStyle = options.authStyle ?? "bearer";
   const credentials = credentialValues(url, token);
   let init: PostResult;
   try {
-    init = await post(url, token, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "aria-sourcing", version: "1.0" } },
-    }, undefined, options.fetchImpl, options.signal);
+    init = await post(
+      url,
+      token,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "aria-sourcing", version: "1.0" } },
+      },
+      undefined,
+      options.fetchImpl,
+      options.signal,
+      authStyle,
+    );
   } catch {
     return { ok: false, error: `MCP connection failed (${host}).` };
   }
@@ -291,6 +325,7 @@ export async function connectAndListTools(
       session,
       options.fetchImpl,
       options.signal,
+      authStyle,
     );
   } catch {
     /* ignore: not all servers need this */
@@ -306,6 +341,7 @@ export async function connectAndListTools(
       session,
       options.fetchImpl,
       options.signal,
+      authStyle,
     );
     const candidates = list.json?.result?.tools;
     if (Array.isArray(candidates)) {
@@ -337,24 +373,38 @@ export async function callMcpTool(
   token: string,
   toolName: string,
   args: Record<string, unknown>,
-  options: { fetchImpl?: McpFetch; signal?: AbortSignal } = {},
+  options: {
+    fetchImpl?: McpFetch;
+    signal?: AbortSignal;
+    allowlisted?: boolean;
+    authStyle?: McpAuthStyle;
+  } = {},
 ): Promise<{ ok: boolean; content?: unknown; error?: string }> {
-  if (!remoteMcpExecutionEnabled()) {
+  if (!remoteMcpExecutionEnabled(process.env, { allowlisted: options.allowlisted === true })) {
     return { ok: false, error: "Remote MCP tool execution is disabled." };
   }
   if (!isProviderSafeMcpToolName(toolName)) {
     return { ok: false, error: "Remote MCP tool name is invalid." };
   }
   const host = hostFor(url);
+  const authStyle = options.authStyle ?? "bearer";
   const credentials = credentialValues(url, token);
   let init: PostResult;
   try {
-    init = await post(url, token, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "aria-sourcing", version: "1.0" } },
-    }, undefined, options.fetchImpl, options.signal);
+    init = await post(
+      url,
+      token,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "aria-sourcing", version: "1.0" } },
+      },
+      undefined,
+      options.fetchImpl,
+      options.signal,
+      authStyle,
+    );
   } catch {
     return { ok: false, error: `MCP connection failed (${host}).` };
   }
@@ -371,6 +421,7 @@ export async function callMcpTool(
       session,
       options.fetchImpl,
       options.signal,
+      authStyle,
     );
   } catch {
     /* ignore */
@@ -384,6 +435,7 @@ export async function callMcpTool(
       session,
       options.fetchImpl,
       options.signal,
+      authStyle,
     );
   } catch {
     return { ok: false, error: `MCP tool call failed (${host}).` };

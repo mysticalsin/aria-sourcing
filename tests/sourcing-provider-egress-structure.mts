@@ -22,6 +22,10 @@ const providerProbeAllowlist = [
     justification: "Uses probe clearances only for fixed GitHub rate-limit and authenticated-user credential checks.",
   },
   {
+    path: "src/app/api/keys/route.ts",
+    justification: "Uses probe clearances only for fixed provider API-key authentication checks during key creation.",
+  },
+  {
     path: "src/app/api/keys/test/route.ts",
     justification: "Uses probe clearances only for fixed provider API-key authentication checks.",
   },
@@ -135,12 +139,14 @@ test("provider probe clearance is confined to fixed-endpoint credential checks",
     [
       providerEgressPath,
       "src/app/api/source/route.ts",
+      "src/app/api/keys/route.ts",
       "src/app/api/keys/test/route.ts",
     ],
   );
   assert.match(providerProbeAllowlist[0].justification, /Defines the probe clearance helper/);
   assert.match(providerProbeAllowlist[1].justification, /fixed GitHub rate-limit and authenticated-user credential checks/);
-  assert.match(providerProbeAllowlist[2].justification, /fixed provider API-key authentication checks/);
+  assert.match(providerProbeAllowlist[2].justification, /fixed provider API-key authentication checks during key creation/);
+  assert.match(providerProbeAllowlist[3].justification, /fixed provider API-key authentication checks/);
 
   const allowed = new Set<string>(providerProbeAllowlist.map((entry) => entry.path));
   const probeReferences = walk("src")

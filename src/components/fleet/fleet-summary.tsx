@@ -1,8 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { motion } from "framer-motion";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { staggerContainer } from "@/lib/dashboard-motion";
 import { useFleetSummary } from "@/lib/store";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { formatNumber, formatPercent } from "@/lib/utils";
 import { Bot, Radio, Send, Gauge, PauseOctagon, MailWarning, AlertOctagon } from "lucide-react";
 
@@ -11,9 +14,15 @@ import { Bot, Radio, Send, Gauge, PauseOctagon, MailWarning, AlertOctagon } from
  */
 export function FleetSummary() {
   const s = useFleetSummary();
+  const reducedMotion = usePrefersReducedMotion();
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+    <motion.div
+      className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
+      variants={staggerContainer}
+      initial={reducedMotion ? false : "hidden"}
+      animate="show"
+    >
       <MetricCard
         label="Active agents"
         value={`${s.activeSeats}`}
@@ -63,6 +72,6 @@ export function FleetSummary() {
         icon={<AlertOctagon />}
         tone={s.avgComplaintRate > 0.001 ? "danger" : "success"}
       />
-    </div>
+    </motion.div>
   );
 }

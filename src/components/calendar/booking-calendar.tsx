@@ -15,6 +15,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { Badge, Button, EmptyState, Field, Input, useToast } from "@/components/ui";
+import { bookingNeedsCalendar } from "@/lib/booking-status";
 import { useActions } from "@/lib/store";
 import type { Booking, BookingStatus } from "@/lib/types";
 import { cn, formatTime, formatDate, formatDateTime, ianaForAbbrev, toneForBookingStatus } from "@/lib/utils";
@@ -67,17 +68,17 @@ function LinkButton({
   children: React.ReactNode;
   tone: "teams" | "cal";
 }) {
-  // No real meeting URL until a live calendar integration is connected — show a
-  // clear disabled state instead of a fabricated link that 404s.
+  // No Teams/Outlook URL until Graph confirmLive succeeds — show a clear
+  // disabled state instead of a fabricated link that 404s.
   if (!href) {
     return (
       <span
         aria-disabled="true"
-        title="Meeting link is generated once the calendar integration goes live"
+        title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting (Cal.com roadmap-only)"
         className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
       >
         {icon}
-        {children} · on live send
+        {children} · needs calendar
       </span>
     );
   }
@@ -176,6 +177,11 @@ function BookingRow({ booking }: { booking: Booking }) {
             <Badge tone={toneForBookingStatus(booking.status)} size="sm" dot>
               {booking.status}
             </Badge>
+            {bookingNeedsCalendar(booking) ? (
+              <Badge tone="warning" size="sm" dot>
+                Needs calendar
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-0.5 truncate text-sm text-ink-soft">{booking.role}</p>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
@@ -202,12 +208,26 @@ function BookingRow({ booking }: { booking: Booking }) {
         </div>
 
         <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
-          <LinkButton href={booking.teamsLink} tone="teams" icon={<Video className="h-3.5 w-3.5" aria-hidden />}>
-            Teams
-          </LinkButton>
-          <LinkButton href={booking.calLink} tone="cal" icon={<CalendarPlus className="h-3.5 w-3.5" aria-hidden />}>
-            Cal.com
-          </LinkButton>
+          {booking.teamsLink ? (
+            <LinkButton href={booking.teamsLink} tone="teams" icon={<Video className="h-3.5 w-3.5" aria-hidden />}>
+              Teams
+            </LinkButton>
+          ) : null}
+          {booking.calLink ? (
+            <LinkButton href={booking.calLink} tone="cal" icon={<CalendarPlus className="h-3.5 w-3.5" aria-hidden />}>
+              Calendar
+            </LinkButton>
+          ) : null}
+          {!booking.teamsLink && !booking.calLink ? (
+            <span
+              aria-disabled="true"
+              title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting (Cal.com roadmap-only)"
+              className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
+            >
+              <Video className="h-3.5 w-3.5" aria-hidden />
+              Teams · needs calendar
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -218,6 +238,12 @@ function BookingRow({ booking }: { booking: Booking }) {
             variant="outline"
             size="sm"
             leftIcon={<CheckCircle2 className="h-3.5 w-3.5" aria-hidden />}
+            disabled={bookingNeedsCalendar(booking)}
+            title={
+              bookingNeedsCalendar(booking)
+                ? "Needs calendar — connect Microsoft Graph and book with confirmLive before marking Completed"
+                : undefined
+            }
             onClick={() => setOutcome("Completed")}
           >
             Completed

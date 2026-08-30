@@ -4,6 +4,11 @@ import {
   evaluateHermesProxyOperation,
   evaluateHermesWorkspaceBinding,
 } from "../src/lib/api/hermes-runtime-isolation";
+import {
+  buildHermesSessionKey,
+  buildHermesUpstreamPath,
+  resolveHermesProfilePrefix,
+} from "../src/lib/api/hermes-proxy";
 import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 mock.module("server-only", { namedExports: {} });
@@ -20,6 +25,29 @@ function ok(name: string, condition: boolean) {
 
 const workspaceA = "11111111-1111-4111-8111-111111111111";
 const workspaceB = "22222222-2222-4222-8222-222222222222";
+
+ok(
+  "profile prefix is stable per workspace uuid",
+  resolveHermesProfilePrefix(workspaceA) === `ws-${workspaceA}`,
+);
+ok(
+  "cross-workspace profile prefixes differ",
+  resolveHermesProfilePrefix(workspaceA) !== resolveHermesProfilePrefix(workspaceB),
+);
+ok(
+  "session key scopes workspace:campaign:candidate",
+  buildHermesSessionKey({ workspaceId: workspaceA, campaignId: "camp-1", candidateId: "cand-1" })
+    === `${workspaceA}:camp-1:cand-1`,
+);
+ok(
+  "upstream path adds profile prefix for multiplexing",
+  buildHermesUpstreamPath("/v1/chat/completions", `ws-${workspaceA}`)
+    === `/p/ws-${workspaceA}/v1/chat/completions`,
+);
+ok(
+  "session key omitted without full candidate scope",
+  buildHermesSessionKey({ workspaceId: workspaceA, campaignId: "camp-1" }) === undefined,
+);
 
 ok(
   "production runtime fails closed without a workspace binding",
@@ -124,6 +152,7 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
 mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   namedExports: {
     resolveVaultSecret: async (keyId?: string) => keyId ? vaultSecret : "",
+    resolveStoredLlmKeyForWorkspace: async () => null,
   },
 });
 
@@ -193,18 +222,32 @@ try {
   const unboundChat = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello" }));
   ok("typed Hermes chat also fails closed when unbound", unboundChat.status === 503 && upstreamCalls === 2);
 
+  // Loop tasks must still reach cloud env/vault when Hermes is unbound on Fly.
+  const unboundOutreach = await chatPost(
+    chatRequest({ provider: "hermes", task: "outreach", prompt: "Draft a short LinkedIn note." }),
+  );
+  const unboundOutreachJson = (await unboundOutreach.json()) as { ok?: boolean; text?: string; reason?: string };
+  ok(
+    "unbound Hermes outreach failovers to cloud for loop tasks",
+    unboundOutreach.status === 200
+      && unboundOutreachJson.ok === true
+      && typeof unboundOutreachJson.text === "string"
+      && unboundOutreachJson.text.length > 0
+      && upstreamCalls === 3,
+  );
+
   envScope.set({ HERMES_RUNTIME_WORKSPACE_ID: workspaceA });
   vaultSecret = "";
   const invalidChatKey = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello", hermesApiKeyId: invalidKeyId }));
-  ok("typed Hermes chat rejects invalid key without env fallback", invalidChatKey.status === 403 && upstreamCalls === 2);
+  ok("typed Hermes chat rejects invalid key without env fallback", invalidChatKey.status === 403 && upstreamCalls === 3);
 
   const boundedChat = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello" }));
-  ok("bound typed Hermes chat reaches its runtime", boundedChat.status === 200 && upstreamCalls === 3);
+  ok("bound typed Hermes chat reaches its runtime", boundedChat.status === 200 && upstreamCalls === 4);
   ok("bound typed Hermes chat may use the configured env credential", lastAuthorization === "Bearer test-global-runtime-key");
 
   envScope.set({ HERMES_RUNTIME_WORKSPACE_ID: undefined });
   const cloudChat = await chatPost(chatRequest({ provider: "openai", model: "gpt-4o-mini", prompt: "Hello" }));
-  ok("cloud-provider chat remains independent of Hermes binding", cloudChat.status === 200 && upstreamCalls === 4);
+  ok("cloud-provider chat remains independent of Hermes binding", cloudChat.status === 200 && upstreamCalls === 5);
 } finally {
   globalThis.fetch = originalFetch;
   envScope.restore();

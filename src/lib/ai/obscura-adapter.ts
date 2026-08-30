@@ -11,7 +11,7 @@
 // second process to talk to over a loopback HTTP API, so this exports plain
 // functions instead.
 
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import { randomUUID } from "node:crypto";
 
 const OBSCURA_HTTP_URL = process.env.OBSCURA_URL || "http://127.0.0.1:9222";
@@ -40,17 +40,23 @@ const sessions = new Map<string, ObscuraSession>();
 let browserPromise: Promise<Browser> | null = null;
 let sweeperHandle: ReturnType<typeof setInterval> | null = null;
 
-/** Fresh connection to the sidecar (memoized); resets on disconnect so the next call retries. */
+/**
+ * Load playwright-core only when a browser session is opened. Sourcing and chat
+ * routes import the tool-loop → browser-tools → this module; a top-level
+ * playwright import crashes the production standalone image (incomplete
+ * playwright-core package) and turns those APIs into text/plain 500s.
+ */
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = chromium
-      .connectOverCDP(OBSCURA_WS_URL)
-      .then((browser) => {
-        browser.once("disconnected", () => {
-          browserPromise = null;
-        });
-        return browser;
-      })
+    browserPromise = import("playwright-core")
+      .then(({ chromium }) =>
+        chromium.connectOverCDP(OBSCURA_WS_URL).then((browser) => {
+          browser.once("disconnected", () => {
+            browserPromise = null;
+          });
+          return browser;
+        }),
+      )
       .catch((err) => {
         browserPromise = null;
         throw err;

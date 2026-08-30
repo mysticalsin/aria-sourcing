@@ -1,0 +1,17 @@
+{
+  "email_sync": ["inbound_classify"],
+  "inbound_classify": ["draft_generate", "pre_call_propose"],
+  "requisition_parse": ["campaign_create"],
+  "campaign_create": ["sourcing_batch"],
+  "sourcing_batch": ["shortlist_build"],
+  "provider_poll": ["shortlist_build"],
+  "enrich_candidate": ["shortlist_build"],
+  "shortlist_build": ["draft_generate"],
+  "draft_generate": ["pre_call_propose"],
+  "pre_call_propose": ["first_interview_book"],
+  "first_interview_book": ["interview_prep_send"],
+  "interview_prep_send": [],
+  "calendar_book": [],
+  "delivery_reconcile": ["outcome_feedback"],
+  "outcome_feedback": []
+}

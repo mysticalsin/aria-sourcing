@@ -17,6 +17,7 @@ import {
 } from "../src/lib/confidential";
 import { recordedCandidateLawfulBasis } from "../src/lib/candidate-lawful-basis";
 import { buildSeedState, defaultSettings } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type { Candidate, OutreachMessage, SystemSettings } from "../src/lib/types";
 
 let pass = 0,
@@ -112,9 +113,9 @@ function approvalCtx(over: Partial<ApprovalContext> = {}): ApprovalContext {
 /* checkOutreachApproval                                                       */
 /* ========================================================================== */
 
-// settings.minScoreToContact defaults to 70.
+// settings.minScoreToContact defaults to 80.
 const settings: SystemSettings = defaultSettings();
-ok("settings minScoreToContact is the 70 floor", settings.minScoreToContact === 70);
+ok("settings minScoreToContact is the 80 floor", settings.minScoreToContact === 80);
 ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
 
 // 1) Blocks when matchScore < minScoreToContact.
@@ -124,6 +125,24 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   ok("low score: not allowed", r.allowed === false);
   ok("low score: blocker mentions floor/below", r.blockers.some((b) => /below|floor|score/i.test(b)));
   ok("low score: at least one blocker", r.blockers.length >= 1);
+}
+
+// 1b) Operator fit endorsement warn-through for below-floor live leads.
+{
+  const ctx = approvalCtx({
+    candidate: makeCandidate({
+      matchScore: settings.minScoreToContact - 20,
+      fitEndorsedAt: "2026-07-13T06:00:00.000Z",
+      fitEndorsedSource: "operator_selection",
+    }),
+  });
+  const r = checkOutreachApproval(ctx);
+  ok("endorsed low score: allowed", r.allowed === true);
+  ok(
+    "endorsed low score: warning mentions endorsement",
+    r.warnings.some((w) => /endorsed|below/i.test(w)),
+  );
+  ok("endorsed low score: no score blocker", !r.blockers.some((b) => /below|floor/i.test(b)));
 }
 
 // 2) Blocks when personalizationEvidence is empty.
@@ -293,6 +312,92 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   ok("provider candidate with recorded lawful basis: allowed", recorded.allowed === true);
 }
 
+{
+  const blocked = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        subject: "Compensation",
+        body: "We offer a salary of £120k for this role. I hope this finds you well.",
+      },
+    }),
+  );
+  ok("quality-blocked outreach cannot be approved", blocked.allowed === false);
+  ok(
+    "quality-blocked outreach reports a quality blocker",
+    blocked.blockers.some((detail) => detail.includes("Quality pipeline blocked")),
+  );
+}
+
+{
+  const needsReview = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        qualityStatus: "needs_review",
+        qualityCriticsUsed: true,
+        subject: "Your TypeScript work",
+        body:
+          "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
+          "Mantu Group is hiring a Senior Engineer in London and your background stood out. " +
+          "Would you be open to a short intro chat next week?",
+      },
+    }),
+  );
+  ok("needs_review outreach remains approvable by a human", needsReview.allowed === true);
+  ok(
+    "needs_review outreach warns instead of claiming Quality ready",
+    needsReview.warnings.some((detail) => /Quality needs review/i.test(detail))
+      && !needsReview.checks.some((c) => c.rule === "Quality validation" && c.status === "pass"),
+  );
+}
+
+{
+  const deterministicOnly = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        qualityStatus: "passed",
+        qualityCriticsUsed: false,
+        subject: "Your TypeScript work",
+        body:
+          "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
+          "Mantu Group is hiring a Senior Engineer in London and your background stood out. " +
+          "Would you be open to a short intro chat next week?",
+      },
+    }),
+  );
+  ok(
+    "deterministic-only quality warns instead of claiming Quality ready",
+    deterministicOnly.allowed === true
+      && deterministicOnly.warnings.some((detail) => /multi-agent critics not recorded/i.test(detail))
+      && !deterministicOnly.checks?.some(
+        (c) => c.rule === "Quality validation" && c.status === "pass" && /Quality ready/i.test(c.detail),
+      ),
+  );
+
+  const multiAgentReady = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        qualityStatus: "passed",
+        qualityCriticsUsed: true,
+        subject: "Your TypeScript work",
+        body:
+          "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
+          "Mantu Group is hiring a Senior Engineer in London and your background stood out. " +
+          "Would you be open to a short intro chat next week?",
+      },
+    }),
+  );
+  ok(
+    "multi-agent critics recorded claims Quality ready",
+    multiAgentReady.checks?.some(
+      (c) => c.rule === "Quality validation" && c.status === "pass" && /Quality ready/i.test(c.detail),
+    ) === true,
+  );
+}
+
 // no-throw guard on the approval gate
 try {
   checkOutreachApproval(approvalCtx());
@@ -396,7 +501,7 @@ try {
 
 // Same behavior on a real seed candidate.
 {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const seedCand = state.candidates[0];
   ok("seed: there is at least one candidate", !!seedCand);
   if (seedCand) {

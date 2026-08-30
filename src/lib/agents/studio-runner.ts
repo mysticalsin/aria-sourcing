@@ -76,7 +76,7 @@ export type CampaignAgentFrameworkResolution =
 export type PrimaryAgentSourcingResult =
   | {
       ok: true;
-      mode: "framework" | "demo";
+      mode: "framework" | "direct" | "demo";
       candidates: Candidate[];
       skipped: number;
       source: "github" | "web" | "mock";
@@ -358,9 +358,11 @@ export async function executeStudioAgentRun(input: {
 }
 
 /** The only sourcing entry point used by the primary Run Aria surface.
- * Live workspaces must first resolve and execute one approved Flowise/DeerFlow
- * binding. Synthetic sourcing is reachable only when the caller has already
- * established an explicitly allowed demo deployment. */
+ * Prefer an approved Flowise/DeerFlow binding when one matches the campaign.
+ * On live tenants without a framework workflow (e.g. Fly with
+ * AGENT_FRAMEWORKS_REQUIRED=false), fall through to reviewed campaign sourcing
+ * via sourceNextBatch — never invent Talent Pool / mock candidates.
+ * Synthetic Talent Pool is reachable only with explicit demoAuthorized. */
 export async function executePrimaryAgentSourcing(input: {
   campaignId: string;
   campaignTitle: string;
@@ -414,48 +416,79 @@ export async function executePrimaryAgentSourcing(input: {
     campaignTitle: input.campaignTitle,
     fetcher: input.fetcher,
   });
-  if (!selected.ok) return selected;
+  if (selected.ok) {
+    const scope = {
+      specId: selected.spec.id,
+      workflowVersionId: selected.spec.workflowVersionId,
+      campaignId: input.campaignId,
+    };
+    let idempotencyKey: string;
+    try {
+      idempotencyKey = acquireStudioRunIdempotencyKey(
+        scope,
+        input.idempotencyMemory,
+        input.retryStorage,
+        input.createUuid,
+      );
+    } catch {
+      return { ok: false, error: "The agent run could not create a safe retry key." };
+    }
 
-  const scope = {
-    specId: selected.spec.id,
-    workflowVersionId: selected.spec.workflowVersionId,
-    campaignId: input.campaignId,
-  };
-  let idempotencyKey: string;
-  try {
-    idempotencyKey = acquireStudioRunIdempotencyKey(
+    const result = await executeStudioAgentRun({
+      specId: selected.spec.id,
+      workflowVersionId: selected.spec.workflowVersionId,
+      campaignId: input.campaignId,
+      count: input.count,
+      idempotencyKey,
+      fetcher: input.fetcher,
+      sourceNextBatch: input.sourceNextBatch,
+    });
+    settleStudioRunIdempotencyKey(
       scope,
+      result,
       input.idempotencyMemory,
       input.retryStorage,
-      input.createUuid,
     );
-  } catch {
-    return { ok: false, error: "The agent run could not create a safe retry key." };
+    if (!result.ok) return result;
+
+    return {
+      ok: true,
+      mode: "framework",
+      candidates: result.candidates,
+      skipped: result.skipped,
+      source: result.source,
+      reports: result.reports,
+    };
   }
 
-  const result = await executeStudioAgentRun({
-    specId: selected.spec.id,
-    workflowVersionId: selected.spec.workflowVersionId,
-    campaignId: input.campaignId,
-    count: input.count,
-    idempotencyKey,
-    fetcher: input.fetcher,
-    sourceNextBatch: input.sourceNextBatch,
-  });
-  settleStudioRunIdempotencyKey(
-    scope,
-    result,
-    input.idempotencyMemory,
-    input.retryStorage,
-  );
-  if (!result.ok) return result;
-
+  // No approved framework workflow — still run live reviewed sourcing (GitHub/web).
+  let sourced: SourceNextBatchResult;
+  try {
+    sourced = await input.sourceNextBatch(input.campaignId, {
+      count: input.count,
+    });
+  } catch {
+    return {
+      ok: false,
+      error: "Live candidate sourcing failed before results were saved.",
+    };
+  }
+  if (!sourced.ok) {
+    return {
+      ok: false,
+      error: sourced.error,
+      ...(sourced.retryable ? { retryable: sourced.retryable } : {}),
+    };
+  }
   return {
     ok: true,
-    mode: "framework",
-    candidates: result.candidates,
-    skipped: result.skipped,
-    source: result.source,
-    reports: result.reports,
+    mode: "direct",
+    candidates: sourced.accepted,
+    skipped: sourced.skipped.length,
+    source: sourced.source,
+    reports: [
+      "No approved agent framework workflow for this campaign — used live reviewed sourcing.",
+      `Framework note: ${selected.error}`,
+    ],
   };
 }

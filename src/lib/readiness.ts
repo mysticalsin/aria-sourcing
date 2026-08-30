@@ -29,6 +29,8 @@ export type ReadinessInput = {
    * configured correctly.
    */
   hermesRuntimeMisconfigured: boolean;
+  /** True when any cloud LLM API key env is non-empty (presence only — not live auth). */
+  llmKeysPresent: boolean;
 };
 
 async function booleanProbe(probe: () => Promise<boolean>) {
@@ -70,6 +72,7 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     migration.count === input.expectedMigrationCount &&
     migration.ledgerSha256 === input.expectedLedgerSha256;
   const hermesRuntime = !input.hermesRuntimeMisconfigured;
+  const llmKeysPresent = input.llmKeysPresent;
   const ok =
     metadata && database && auth && queue && agentFrameworks && migrationMatches && hermesRuntime;
 
@@ -86,6 +89,8 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
       hermesRuntime,
       migration: migrationMatches,
       releaseIdentity: metadata,
+      // Informational only — never gates ok. Live auth may still be dead (401).
+      llmKeysPresent,
     },
   } as const;
 }

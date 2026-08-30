@@ -10,6 +10,7 @@ import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -66,7 +67,7 @@ function requestBoundary(req: NextRequest, correlationId: string): NextResponse 
     return failure("INVALID_REQUEST", 415, correlationId);
   }
   const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) {
     return failure("CROSS_ORIGIN_REQUEST", 403, correlationId);
   }
   return null;

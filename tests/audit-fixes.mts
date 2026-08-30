@@ -9,6 +9,7 @@
  *  F-1      classify falls back to mock classifyReply when hermesAvailable returns false
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import { hermesAvailable } from "../src/lib/ai/hermes.js";
 import { classifyReply } from "../src/lib/mock-ai.js";
 import type { HermesState, LlmProvider, SavedModel, AgentSeat } from "../src/lib/types.js";
@@ -29,7 +30,7 @@ function ok(name: string, cond: boolean) {
    D-1 / D-2  Migration fills all required fields from a v6-shaped blob
    ========================================================================== */
 
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const defs = defaultSettings();
 
 // Construct a blob that looks like an old version: missing fields added post-v6.

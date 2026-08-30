@@ -111,6 +111,12 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
             error: null,
           };
         }
+        if (name === "read_workspace_campaign_for_loop") {
+          return { data: { status: "ok", campaign: policyCampaign }, error: null };
+        }
+        if (name === "read_workspace_candidate_identities_for_loop") {
+          return { data: { status: "ok", candidates: [] }, error: null };
+        }
         if (name === "read_workspace_state_for_loop") {
           return { data: { status: "ok", state: { campaigns: [policyCampaign], candidates: [] } }, error: null };
         }
@@ -151,7 +157,9 @@ const startRoute = await import("../src/app/api/source/apify/start/route.ts");
 const statusRoute = await import("../src/app/api/source/apify/status/route.ts");
 const pollRoute = await import("../src/app/api/cron/poll-provider-run/route.ts");
 
-const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.id, searchQuery: "language:Go" }) =>
+const APIFY_BOUND_QUERY = "Senior TypeScript Engineer";
+
+const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.id, searchQuery: APIFY_BOUND_QUERY }) =>
   new NextRequest("http://localhost/api/source/apify/start", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -259,7 +267,7 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
   ok("start: persists and enqueues the provider run server-side", serviceRpcCalls.some((call) => call.name === "begin_provider_run") && serviceRpcCalls.some((call) => call.name === "attach_provider_run") && serviceRpcCalls.some((call) => call.name === "enqueue_aria_job"));
   ok("start: never echoes the stored token in the response", JSON.stringify(startJson).includes("TEST_PLACEHOLDER") === false);
   const startInput = lastStartInput as ApifyProfileSearchInput | null;
-  ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === "language:Go");
+  ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === APIFY_BOUND_QUERY);
 
   statusCalls = 0;
   itemsCalls = 0;
@@ -326,7 +334,7 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
   startCalls = 0;
   const allowedRes = await startRoute.POST(startReq({
     campaignId: policyCampaign.id,
-    searchQuery: "language:Go",
+    searchQuery: APIFY_BOUND_QUERY,
     lastNames: ["Young"],
   }));
   const allowedJson = await allowedRes.json();
@@ -338,7 +346,7 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
   startCalls = 0;
   const refusedRes = await startRoute.POST(startReq({
     campaignId: policyCampaign.id,
-    searchQuery: "language:Go",
+    searchQuery: APIFY_BOUND_QUERY,
     schools: ["Stanford University"],
   }));
   const refusedJson = await refusedRes.json();

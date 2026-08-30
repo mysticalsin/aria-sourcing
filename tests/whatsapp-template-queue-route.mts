@@ -23,6 +23,14 @@ ok("queue route resolves only an active sender and Meta-approved template", /wha
 ok("queue route derives canonical audit content instead of accepting a body", /buildApprovedWhatsAppTemplateAudit/.test(route) && /APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT/.test(route) && !/body:\s*z\.string/.test(route));
 ok("queue route records the server-derived approval before queuing", /rpc\("record_outreach_approval"/.test(route) && /approvalHash\(/.test(route) && /approvalScopeHash\(/.test(route));
 ok(
+  "queue route enforces live multi-agent critics like approve (fail-closed on production)",
+  /validateOutreachQualityLive/.test(route)
+    && /outreachQualityGate/.test(route)
+    && /critics_required/.test(route)
+    && /demoLoginEnabled/.test(route)
+    && route.indexOf("validateOutreachQualityLive") < route.indexOf('rpc("record_outreach_approval"'),
+);
+ok(
   "queue route delegates the exact approved_template outbox write to database authority",
   /rpc\("enqueue_whatsapp_outbound"/.test(route) &&
     /p_type:\s*"approved_template"/.test(route) &&

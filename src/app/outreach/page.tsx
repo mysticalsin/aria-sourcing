@@ -12,7 +12,6 @@ import {
   Select,
   EmptyState,
   Progress,
-  SkeletonCard,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
@@ -31,10 +30,15 @@ import {
   useSettings,
   useFollowUpsDue,
   useCandidate,
+  useCandidates,
+  useSeats,
+  useIntegrations,
   useActions,
 } from "@/lib/store";
 import type { FollowUpDueItem } from "@/lib/recommendations";
 import type { Candidate, OutreachMessage } from "@/lib/types";
+import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import { effectiveDryRunMode, listConnectedMailboxes } from "@/lib/outreach-send-mode";
 import { cn, pluralize } from "@/lib/utils";
 import {
   Inbox,
@@ -179,6 +183,9 @@ function OutreachView() {
   const allOutreach = useOutreach();
   const activeCampaign = useActiveCampaign();
   const settings = useSettings();
+  const seats = useSeats();
+  const integrations = useIntegrations();
+  const allCandidates = useCandidates();
   const followUpsDue = useFollowUpsDue();
   const actions = useActions();
   const { toast } = useToast();
@@ -189,12 +196,16 @@ function OutreachView() {
   const [sentOpen, setSentOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [approvingAll, setApprovingAll] = React.useState(false);
+  const [recordingBasis, setRecordingBasis] = React.useState(false);
   const [draftingAllDue, setDraftingAllDue] = React.useState(false);
   const [draftAllProgress, setDraftAllProgress] = React.useState({ done: 0, total: 0 });
   // Which pending draft (if any) has its glass-box guardrail detail expanded.
   // Collapsed by default so the queue doesn't render every candidate's radar
   // + claim map at once; the panel is one click away for every draft.
   const [glassBoxId, setGlassBoxId] = React.useState<string | null>(null);
+
+  const previewOnly = effectiveDryRunMode(settings.dryRunMode, seats, integrations);
+  const connectedMailboxes = listConnectedMailboxes(seats, integrations);
 
   function toggleGlassBox(messageId: string) {
     setGlassBoxId((prev) => (prev === messageId ? null : messageId));
@@ -210,12 +221,19 @@ function OutreachView() {
     .filter((m) => m.status === "Pending Manual Send")
     .filter((m) => matches(m.campaignId));
   const scheduledFiltered = allOutreach
-    .filter((m) => m.status === "Scheduled")
+    .filter((m) => m.status === "Scheduled" || m.status === "Approved")
     .filter((m) => matches(m.campaignId));
   const followUpsDueFiltered = followUpsDue.filter((f) => matches(f.campaignId));
 
   const selectedInView = pendingFiltered.filter((m) => selectedIds.has(m.id));
   const allPendingSelected = pendingFiltered.length > 0 && selectedInView.length === pendingFiltered.length;
+
+  const missingBasisCount = allCandidates.filter(
+    (c) =>
+      (campaignFilter === "all" ? true : c.campaignId === campaignFilter) &&
+      !c.complianceFlags.anonymized &&
+      !recordedCandidateLawfulBasis(c),
+  ).length;
 
   function toggleSelect(messageId: string) {
     setSelectedIds((prev) => {
@@ -276,6 +294,43 @@ function OutreachView() {
       });
     } finally {
       setApprovingAll(false);
+    }
+  }
+
+  function handleBulkLegitimateInterest() {
+    if (recordingBasis) return;
+    const targetCampaignId =
+      campaignFilter !== "all"
+        ? campaignFilter
+        : activeCampaign?.id ?? pendingFiltered[0]?.campaignId ?? "";
+    if (!targetCampaignId) {
+      toast({
+        title: "Pick a campaign",
+        description: "Filter to one campaign (or set an active campaign) before recording bulk legitimate interest.",
+        variant: "warning",
+      });
+      return;
+    }
+    setRecordingBasis(true);
+    try {
+      const res = actions.recordCampaignLawfulBasis(targetCampaignId, "legitimate_interest");
+      if (!res.ok) {
+        toast({ title: "Could not record lawful basis", description: res.error, variant: "error" });
+        return;
+      }
+      toast({
+        title:
+          res.recorded > 0
+            ? `Legitimate interest recorded for ${res.recorded}`
+            : "No candidates needed a lawful basis",
+        description:
+          res.recorded > 0
+            ? `${res.skipped} already recorded or skipped. Approve remains a separate click — nothing auto-sends.`
+            : "Every candidate in this campaign already has a recorded basis, or none are eligible.",
+        variant: "success",
+      });
+    } finally {
+      setRecordingBasis(false);
     }
   }
 
@@ -352,15 +407,10 @@ function OutreachView() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="space-y-6 lg:col-span-2">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-            <div className="space-y-6">
-              <SkeletonCard />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading outreach…"
+            description="Approval queue and drafts appear after workspace hydrate — no placeholder message cards."
+          />
         }
       >
         <div className="space-y-6">
@@ -396,6 +446,18 @@ function OutreachView() {
                       />
                       Select all
                     </label>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      leftIcon={<ShieldCheck className="h-3.5 w-3.5" aria-hidden />}
+                      onClick={handleBulkLegitimateInterest}
+                      loading={recordingBasis}
+                      disabled={recordingBasis || missingBasisCount === 0}
+                    >
+                      {missingBasisCount > 0
+                        ? `Record legitimate interest (${missingBasisCount})`
+                        : "Lawful basis ok"}
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -545,9 +607,9 @@ function OutreachView() {
                     <Send className="h-4 w-4" />
                   </span>
                   <span>
-                    <span className="block text-sm font-bold text-ink">Scheduled</span>
+                    <span className="block text-sm font-bold text-ink">Approved / queued</span>
                     <span className="block text-xs text-muted">
-                      Approved &amp; queued for send
+                      Approved &amp; awaiting send (or scheduled)
                     </span>
                   </span>
                 </span>
@@ -568,7 +630,7 @@ function OutreachView() {
               {sentOpen &&
                 (scheduledFiltered.length === 0 ? (
                   <p className="px-1 text-sm text-muted">
-                    Nothing scheduled yet. Approved messages will appear here.
+                    Nothing approved yet. Approved messages awaiting send will appear here.
                   </p>
                 ) : (
                   <div className="space-y-5 animate-fade-in">
@@ -633,9 +695,21 @@ function OutreachView() {
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted">Send mode</span>
-                    <Badge tone={settings.dryRunMode ? "electric" : "danger"} size="sm" dot>
-                      {settings.dryRunMode ? "Dry-run" : "Live"}
+                    <Badge tone={previewOnly ? "electric" : "danger"} size="sm" dot>
+                      {previewOnly ? "Dry-run / preview" : "Live"}
                     </Badge>
+                  </div>
+                  <div className="text-xs text-muted">
+                    {connectedMailboxes.length === 0 ? (
+                      <>
+                        No mailbox connected —{" "}
+                        <Link href="/settings?tab=integrations" className="font-semibold text-ink underline-offset-2 hover:underline">
+                          open Integrations
+                        </Link>
+                      </>
+                    ) : (
+                      <>Connected: {connectedMailboxes.map((p) => p.label).join(", ")}</>
+                    )}
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted">Min score to contact</span>
@@ -647,8 +721,9 @@ function OutreachView() {
 
                 <p className="flex items-start gap-1.5 border-t border-line pt-4 text-xs text-muted">
                   <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                  Approving queues the message for send. It goes live only when the seat is connected
-                  and its domain verified. Personalization is required before any message can be approved.
+                  {previewOnly
+                    ? "Approve stays in dry-run / preview until a mailbox is connected (Outlook, Gmail, SendGrid, or Resend). LinkedIn alone never unlocks Live. GDPR holds still require a recorded lawful basis — then Approve again."
+                    : "Approving queues the message for send. It goes live only when the seat is connected and its domain verified. Personalization and lawful basis are required before approval."}
                 </p>
               </CardContent>
             </Card>
@@ -664,15 +739,10 @@ export default function OutreachPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
-          <div className="space-y-6">
-            <SkeletonCard />
-          </div>
-        </div>
+        <EmptyState
+          title="Loading outreach…"
+          description="Approval queue and drafts appear after workspace hydrate — no placeholder message cards."
+        />
       }
     >
       <OutreachView />

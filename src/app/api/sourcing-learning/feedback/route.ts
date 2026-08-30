@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { tryStageWikiLessonFromFeedback } from "@/lib/agent-wiki";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -13,6 +14,7 @@ import {
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,7 +120,7 @@ export async function POST(req: NextRequest) {
       return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
     }
     const origin = req.headers.get("origin");
-    if (!origin || origin !== req.nextUrl.origin) {
+    if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) {
       return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin feedback is not allowed.");
     }
     const idempotencyKey = req.headers.get("idempotency-key")?.trim() ?? "";
@@ -166,6 +168,11 @@ export async function POST(req: NextRequest) {
       requestId: idempotencyKey,
     });
     if (result.status === "recorded") {
+      // Self-improving wiki: stage a proposed lesson under var/ (never auto-canonical).
+      tryStageWikiLessonFromFeedback({
+        receiptId: validated.data.receiptId,
+        verdict: validated.data.verdict,
+      });
       return noStore(
         {
           ok: true,

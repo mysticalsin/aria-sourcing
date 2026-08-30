@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { FUNNEL_STAGES } from "./types";
 import { round } from "./utils";
+import { bookingNeedsCalendar } from "./booking-status";
 
 /* Effective funnel rank for any candidate stage. Terminal/negative stages map
    to the furthest pipeline point they actually reached. */
@@ -55,17 +56,16 @@ export function withStage(
   };
 }
 
-/* Elapsed hours from `createdAt` to the earliest `startTime` among the given
-   bookings — each booking's *scheduled* interview time, not the moment the
-   booking record itself was created. This is the single, canonical
-   time-to-first-interview computation shared by store.ts (live campaigns)
-   and seed.ts (seeded demo campaigns) so both report the same KPI meaning.
-   Returns null when there are no bookings yet. */
+/* Elapsed hours from `createdAt` to the earliest *calendar-proven* interview
+   `startTime` (needs teamsLink or calLink). Local Proposed slots without a
+   meeting URL must not move Time-to-first-interview. Returns null when there
+   are no calendar-complete bookings yet. */
 export function firstInterviewElapsedHours(
-  bookings: Pick<Booking, "startTime">[],
+  bookings: Pick<Booking, "startTime" | "teamsLink" | "calLink">[],
   createdAt: string,
 ): number | null {
-  const firstStartTime = bookings.reduce<string | null>(
+  const proven = bookings.filter((b) => !bookingNeedsCalendar(b));
+  const firstStartTime = proven.reduce<string | null>(
     (min, b) => (min === null || b.startTime < min ? b.startTime : min),
     null,
   );
@@ -172,7 +172,9 @@ export function realFunnelFacts(
   const bookings = state.bookings.filter(
     (booking) =>
       inCampaign(booking.campaignId) &&
-      contactedCandidateIds.has(booking.candidateId),
+      contactedCandidateIds.has(booking.candidateId) &&
+      // KPI "booked" requires a real meeting/calendar URL — local slots are not interviews.
+      Boolean(booking.teamsLink || booking.calLink),
   );
 
   const contacted = contactedCandidateIds.size;
@@ -299,7 +301,9 @@ export function globalKpis(
   const interested = cands.filter(
     (c) => effectiveStageRank(c) >= 3 && c.stage !== "Not Interested",
   ).length;
-  const awaitingBooking = cands.filter((c) => c.stage === "Interested" && !c.booking).length;
+  const awaitingBooking = cands.filter(
+    (c) => c.stage === "Interested" && (!c.booking || bookingNeedsCalendar(c.booking)),
+  ).length;
   const scores = cands.map((c) => c.matchScore).filter(Boolean);
   const avg = scores.length ? round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
   // Mean time-to-first-interview across ACTIVE campaigns only.
@@ -321,7 +325,9 @@ export function globalKpis(
     pendingApprovals: state.outreach.filter(
       (m) =>
         candidateIds.has(m.candidateId) &&
-        (m.status === "Needs Approval" || m.status === "Pending Manual Send"),
+        (m.status === "Needs Approval"
+          || m.status === "Pending Manual Send"
+          || (m.status === "Approved" && m.dryRun !== true)),
     ).length,
     hotReplies: state.replies.filter(
       (r) =>

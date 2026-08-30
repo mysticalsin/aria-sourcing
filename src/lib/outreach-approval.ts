@@ -10,12 +10,25 @@ export interface OutreachApprovalRequest {
 }
 
 export type OutreachApprovalPersistence =
-  | { ok: true; dryRun: boolean; detail?: string }
+  | {
+      ok: true;
+      dryRun: boolean;
+      detail?: string;
+      qualityCriticsUsed?: boolean;
+      qualityStatus?: "ready" | "needs_review" | "blocked";
+    }
   | { ok: false; error: string };
 
 type ApprovalFetch = typeof fetch;
 
 const APPROVAL_NOT_RECORDED = "Approval was not recorded. The draft remains pending.";
+
+function qualityStatusFromPayload(
+  value: unknown,
+): "ready" | "needs_review" | "blocked" | undefined {
+  if (value === "ready" || value === "needs_review" || value === "blocked") return value;
+  return undefined;
+}
 
 /**
  * Persist the exact copy a human approved before the client changes local
@@ -37,12 +50,35 @@ export async function recordOutreachApproval(
       status?: unknown;
       persisted?: unknown;
       detail?: unknown;
+      error?: unknown;
+      qualityCriticsUsed?: unknown;
+      qualityStatus?: unknown;
     } | null;
     if (!response.ok || payload?.ok !== true) {
-      return { ok: false, error: APPROVAL_NOT_RECORDED };
+      const serverError = typeof payload?.error === "string" ? payload.error.trim() : "";
+      // Surface critics_required / policy blockers instead of a generic toast.
+      if (payload?.status === "critics_required" || /critics|multi-agent|LLM quality/i.test(serverError)) {
+        return {
+          ok: false,
+          error:
+            serverError
+            || "Live multi-agent LLM quality critics required for outreach approval.",
+        };
+      }
+      if (serverError && response.status >= 400 && response.status < 500) {
+        return { ok: false, error: serverError };
+      }
+      return { ok: false, error: serverError || APPROVAL_NOT_RECORDED };
     }
     const dryRun = payload.status === "dry-run" && payload.persisted === false;
-    return { ok: true, dryRun, detail: dryRun && typeof payload.detail === "string" ? payload.detail : undefined };
+    return {
+      ok: true,
+      dryRun,
+      detail: dryRun && typeof payload.detail === "string" ? payload.detail : undefined,
+      qualityCriticsUsed:
+        typeof payload.qualityCriticsUsed === "boolean" ? payload.qualityCriticsUsed : undefined,
+      qualityStatus: qualityStatusFromPayload(payload.qualityStatus),
+    };
   } catch {
     return { ok: false, error: APPROVAL_NOT_RECORDED };
   }

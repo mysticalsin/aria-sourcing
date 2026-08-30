@@ -12,6 +12,10 @@ function isPublicPath(path: string): boolean {
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
     path.startsWith("/careers") ||
+    path.startsWith("/hub") ||
+    path.startsWith("/product") ||
+    path.startsWith("/pricing") ||
+    path.startsWith("/docs") ||
     path.startsWith("/unsubscribe")
   );
 }
@@ -23,6 +27,7 @@ function isPublicServiceApi(path: string): boolean {
     path === "/api/health" ||
     path === "/api/auth/demo-login" ||
     path.startsWith("/api/careers") ||
+    path.startsWith("/api/hub") ||
     path.startsWith("/api/unsubscribe/") ||
     path.startsWith("/api/webhooks/") ||
     path.startsWith("/api/cron/")

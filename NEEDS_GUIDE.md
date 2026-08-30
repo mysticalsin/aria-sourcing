@@ -11,9 +11,10 @@ Verified end-to-end on 2026-07-06 against the local Docker stack.
 | How | Where | What happens |
 |---|---|---|
 | **Paste it** | `/intake` → paste the need email → **Parse JD** → **Create campaign** | Campaign is created **and the first real sourcing batch runs automatically**. |
-| **Email it** | Send the need email to a connected mailbox → `/intake` → **Scan inbox** | Aria pulls the mailbox, finds the newest need email, parses it. You review, click **Create campaign**, sourcing starts. |
+| **Email it (enterprise)** | Send the need to a connected Outlook mailbox with Graph webhook active | Microsoft Graph pushes Inbox creates to `/api/webhooks/microsoft-graph` → `requisition_parse` (no inbox polling). Review on `/intake`, **Create campaign**, sourcing starts. |
+| **Email it (manual)** | Connected mailbox → `/intake` → **Emergency sync** / **Scan inbox** | Break-glass pull when webhook is down. Prefer Graph push in production. |
 | **Hand it a person** | Campaign page → Candidates tab → **Add candidate** | Two modes: a **GitHub username** (fetches the real public profile via the GitHub API) or a **manual entry** (name, title, skills, LinkedIn/profile URL, email). Either way the person lands as a scored candidate in the campaign — no search, no outreach drafted. |
-| **Webhook** | `POST /api/intake` with `{ email }` or `{ from, subject, body }` | Returns the structured brief as JSON (parse-only — campaign creation stays human-gated in the app). |
+| **Webhook** | `POST /api/intake` or signed `POST /api/webhooks/email-inbound` | Parse-only JSON (`/api/intake`) or durable ingest + job enqueue (`email-inbound` HMAC adapter). |
 
 Every path keeps the human-approval gate: **no candidate is ever contacted without your explicit sign-off** on the outreach.
 
@@ -85,19 +86,20 @@ Requirements (all three, live/Supabase mode only):
 
 Put the env vars in `.env.local` (Docker passes it through) or the Vercel dashboard, then restart.
 
-### Day-to-day flow
+### Day-to-day flow (webhook-first)
 
-1. Send (or forward) the need email to the connected mailbox — the Mantu *"need is now ACTIVE"* format is recognized automatically; generic emails are recognized when the subject looks like a hiring request (e.g. contains "job description", "new role/position/need/vacancy/opening", "hiring request", "backfill", "open position").
-2. Open **Intake** → click **Scan inbox**.
-   - Aria syncs the mailbox (last 14 days, capped at 50 messages), picks the **newest need email**, loads and parses it. The toast tells you if more need emails are waiting.
-   - If nothing qualifies (or no mailbox is connected), it says so and loads the bundled sample instead — you'll never mistake demo data for a real scan.
-3. Review the brief → **Create campaign** → sourcing starts automatically (same as §2).
+1. Connect Outlook in Settings and confirm **Graph mail subscription** is active (Microsoft 365 stack step 4). Optionally set `EMAIL_INBOUND_WEBHOOK_SECRET` for the HMAC adapter.
+2. Send (or forward) the need email to the connected mailbox — the Mantu *"need is now ACTIVE"* format is recognized automatically; generic emails are recognized when the subject looks like a hiring request (e.g. contains "job description", "new role/position/need/vacancy/opening", "hiring request", "backfill", "open position").
+3. Graph pushes Inbox creates to `/api/webhooks/microsoft-graph` → ingest enqueues `requisition_parse`. Open **Intake** to review the brief (no Scan required when the webhook is healthy).
+4. Review the brief → **Create campaign** → sourcing starts automatically (same as §2).
 
-Synced emails that are candidate **replies** (not needs) belong on the **Replies** page — its own **Sync inbox** button classifies them by intent (interested / not interested / OOO / referral …).
+**Break-glass:** If the Graph subscription is down, open **Intake** → **Emergency sync** / **Scan inbox** for a one-shot pull. Prefer repairing the webhook over relying on Scan.
+
+Synced emails that are candidate **replies** (not needs) belong on the **Replies** page — webhook classify handles them when Graph/HMAC delivery is live.
 
 ### What is (deliberately) not automated
 
-There is **no background poller**: nothing reads your mailbox or spends API credits unless a signed-in user clicks Scan/Sync. Schedules configured in Settings persist as intent but need a backend cron runner (not wired) to fire on their own. So "email → sourcing" is: **send the email, open Intake, click Scan inbox, click Create campaign** — two clicks, everything else is automatic, and parsing/creation never contacts anyone by itself.
+There is **no idle inbox poller**: the loop worker never burns tokens scanning mailboxes. Enterprise intake is **webhook push** (Graph or signed `email-inbound`). Scan/Sync remains a human break-glass. Campaign creation and outreach send stay human-gated.
 
 ---
 

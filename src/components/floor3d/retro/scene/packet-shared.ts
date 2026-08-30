@@ -74,7 +74,8 @@ export function describeEvent(e: AgentEvent, seatName?: string | null): string {
     case "reply":
       return `Reply received${e.candidateName ? ` from ${e.candidateName}` : ""}${who}`;
     case "book":
-      return `Interview booked${e.candidateName ? ` with ${e.candidateName}` : ""}${who}`;
+      // AgentEvent has no meeting URL — never claim a live booked interview from the ticker alone.
+      return `Interview slot${e.candidateName ? ` for ${e.candidateName}` : ""}${who}`;
     default:
       return "Agent activity";
   }

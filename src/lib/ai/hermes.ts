@@ -1,4 +1,5 @@
-import type { OutreachChannel, SystemSettings } from "@/lib/types";
+import type { OutreachChannel, SystemSettings, LocaleContext } from "@/lib/types";
+import { sanitizeOutreachActivitySignal } from "@/lib/outreach-activity-signal";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -28,6 +29,8 @@ export interface HermesResult {
   ok: boolean;
   text?: string;
   reason?: string;
+  /** When true, callers should keep the deterministic template draft. */
+  useTemplateFallback?: boolean;
 }
 
 /**
@@ -81,13 +84,40 @@ export function buildOutreachPrompt(opts: {
   tone: string;
   channel: string;
   language: string;
+  localeContext?: LocaleContext;
   persona?: string;
   signature?: string;
+  /** 1 = first-touch; 2+ = follow-up after positive reply. */
+  sequenceStep?: number;
+  intent?: string;
 }): string {
+  const localeLines = opts.localeContext
+    ? [
+        `Primary language: ${opts.localeContext.primaryLanguage}.`,
+        opts.localeContext.secondaryLanguages?.length
+          ? `Also acceptable: ${opts.localeContext.secondaryLanguages.join(", ")}.`
+          : "",
+        opts.localeContext.marketCountry ? `Market country: ${opts.localeContext.marketCountry}.` : "",
+        opts.localeContext.workCity ? `Work city: ${opts.localeContext.workCity}.` : "",
+        opts.localeContext.clientSector ? `Client sector: ${opts.localeContext.clientSector}.` : "",
+        opts.localeContext.formality ? `Formality: ${opts.localeContext.formality}.` : "",
+        // Never inject compensationNorms into candidate-bound outreach prompts —
+        // that steers drafts into disclosure-comp-blocked (€ / salary / rate / band).
+      ].filter(Boolean)
+    : [];
+  const step = opts.sequenceStep && opts.sequenceStep > 1 ? opts.sequenceStep : 1;
+  const draftKind =
+    step > 1
+      ? `follow-up (sequence step ${step}${opts.intent ? `, intent ${opts.intent}` : ""})`
+      : "first-touch";
   const lines = [
-    `Draft a first-touch ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
+    `Draft a ${draftKind} ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
+    step > 1
+      ? "The candidate already replied positively — thank them briefly, propose a short intro call, do not re-pitch the role from scratch."
+      : "",
     `Tone: ${opts.tone}.`,
     opts.persona ? `Voice / persona: ${opts.persona}` : "",
+    ...localeLines,
     "",
     "Candidate:",
     `- Name: ${opts.candidateName}`,
@@ -99,9 +129,10 @@ export function buildOutreachPrompt(opts: {
       : `- Experience: ${opts.yearsExperience} years`,
     `- Tech stack: ${opts.techStack.join(", ") || "n/a"}`,
     `- Recent activity: ${
-      opts.recentActivity && !/no activity signal/i.test(opts.recentActivity)
-        ? opts.recentActivity
-        : "n/a"
+      (() => {
+        const activity = sanitizeOutreachActivitySignal(opts.recentActivity);
+        return activity || "n/a";
+      })()
     }`,
     "",
     "Role:",
@@ -112,7 +143,7 @@ export function buildOutreachPrompt(opts: {
         `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
       ].join("\n"),
     "",
-    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler.",
+    "Rules: Write like a sharp human recruiter texting a peer — warm, specific, never salesy. Lead with the candidate's specific recent work (project/repo name, architecture detail, or stack — never raw scraped counts like public repos, followers, or stars). Never open with GitHub-activity boilerplate (\"your GitHub activity\", \"votre activité GitHub\", \"Active GitHub profile\") — that reads as scraped profile disclosure; name a concrete project/stack detail instead. Never open with an employer/company-name compliment alone (e.g. \"your work at Acme\") — that reads as a researched database insert; pair any company mention with a concrete tech/project detail, or lead with stack/recent work instead. One genuine reason you're reaching out; a soft, low-pressure ask (coffee / 15-min chat). Name Mantu Group in the body once, naturally. Under 120 words (LinkedIn under 80). Ban AI tells: no \"I hope this finds you well\", \"leverage\", \"synergy\", \"excited to connect\", \"impressive profile\", em-dash stacks, or bullet lists. Never mention salary, compensation, pay, rate, budget, band, package, salaire, fourchette, or any currency symbol (€/$/£) — a recruiter can discuss ranges later if asked. Never disclose that you are an AI or automated system.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",
     "",
     "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",

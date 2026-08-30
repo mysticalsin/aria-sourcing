@@ -11,6 +11,10 @@ primary_region = "cdg"
   API_EXTERNAL_URL              = "https://aria-mantu-kong.fly.dev"   # was http://localhost:54321
   GOTRUE_SITE_URL               = "https://aria-mantu-app.fly.dev"    # was http://localhost:3000
   GOTRUE_URI_ALLOW_LIST         = "https://aria-mantu-app.fly.dev/**" # was "*"
+  # IMPORTANT: GOTRUE_SITE_URL and API_EXTERNAL_URL must NOT be Fly secrets.
+  # Secrets override [env] values. If redirects go to 0.0.0.0:3000, check:
+  # fly secrets list -a aria-mantu-auth
+  # If either appears, unset it: fly secrets unset GOTRUE_SITE_URL -a aria-mantu-auth
   GOTRUE_DB_DRIVER              = "postgres"
   GOTRUE_PASSWORD_MIN_LENGTH    = "5"                           # owner-set floor (default 6); short admin password by request
   GOTRUE_DISABLE_SIGNUP         = "true"                        # single-admin tenant (was "false"); see runbook step 11
@@ -20,6 +24,15 @@ primary_region = "cdg"
   GOTRUE_JWT_EXP                = "3600"
   GOTRUE_EXTERNAL_EMAIL_ENABLED = "true"
   GOTRUE_MAILER_AUTOCONFIRM     = "true"                        # ok for single-admin; flip false + SMTP for multi-user
+  # --- Entra / Azure SSO (optional; enable with secrets + app flag) ---
+  # Set via `fly secrets set` on aria-mantu-auth (never commit secrets):
+  #   GOTRUE_EXTERNAL_AZURE_ENABLED=true
+  #   GOTRUE_EXTERNAL_AZURE_CLIENT_ID=<entra-app-client-id>
+  #   GOTRUE_EXTERNAL_AZURE_SECRET=<entra-app-client-secret>
+  #   GOTRUE_EXTERNAL_AZURE_URL=https://login.microsoftonline.com/<tenant-id>/v2.0
+  # Then on aria-mantu-app: NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true (build arg + secret).
+  # Redirect URI in Entra must be Kong GoTrue callback:
+  #   https://aria-mantu-kong.fly.dev/auth/v1/callback
   # Secrets (fly secrets set): GOTRUE_JWT_SECRET (=FLY_JWT_SECRET),
   #   GOTRUE_DB_DATABASE_URL = postgres://supabase_auth_admin:<FLY_AUTH_DB_PASSWORD>@aria-mantu-db.internal:5432/postgres
 

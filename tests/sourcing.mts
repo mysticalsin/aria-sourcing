@@ -26,6 +26,10 @@ function ok(name: string, cond: boolean) {
 const s = buildSeedState();
 const campaign = s.campaigns[0];
 const W = campaign.scoringWeights;
+/** Bio/query shape that clears the 80% sourcing floor under camp-e2e (TypeScript, London). */
+const STRONG_GITHUB_BIO =
+  "Senior TypeScript React Node.js GraphQL PostgreSQL engineer — shipped this week in London";
+const STRONG_GITHUB_QUERY = "language:typescript location:london";
 
 const mapperModulePath = new URL("../src/lib/sourcing/candidate-mappers.ts", import.meta.url);
 ok("live candidate mappers have a neutral sourcing module", existsSync(mapperModulePath));
@@ -65,20 +69,20 @@ const alice = mk({
   name: "Alice Dev",
   email: "alice@corp.io",
   company: "@zzz-unique-co", // absurd company name so it cannot be in any exclude list
-  location: "London",
-  bio: "TypeScript and React engineer",
+  location: "London, UK",
+  bio: STRONG_GITHUB_BIO,
   publicRepos: 42,
   followers: 120,
   createdAt: "2018-01-01T00:00:00Z",
   topLanguage: "TypeScript",
 });
-const r = mapGithubCandidates([alice], campaign, "language:typescript", [], W);
+const r = mapGithubCandidates([alice], campaign, STRONG_GITHUB_QUERY, [], W);
 const a = r.accepted[0];
 ok("maps the user", r.accepted.length === 1);
 ok("real github url kept", a?.githubUrl === "https://github.com/alice");
 ok("real email kept", a?.email === "alice@corp.io");
 ok("company strips leading @", a?.currentCompany === "zzz-unique-co");
-ok("location kept", a?.location === "London");
+ok("location kept", a?.location === "London, UK");
 ok("techStack includes the query language", !!a?.techStack.includes("TypeScript"));
 ok("candidate is scored", typeof a?.matchScore === "number" && a.matchScore >= 0);
 ok("sourcePlatform is GitHub", a?.sourcePlatform === "GitHub");
@@ -90,17 +94,17 @@ const apolloProfile: ApolloSearchProfile = {
   targetId: "22222222-2222-4222-8222-222222222222",
   candidateId: "apollo-candidate",
   name: "Apollo Candidate",
-  title: "Platform Engineer",
+  title: "Senior TypeScript Engineer",
   company: "Example Corp",
   linkedinUrl: "https://www.linkedin.com/in/apollo-candidate",
-  city: "Toronto",
-  state: "Ontario",
-  country: "Canada",
-  headline: "Platform Engineer",
+  city: "London",
+  state: "",
+  country: "UK",
+  headline: "Senior TypeScript Engineer · React · Node.js · GraphQL · PostgreSQL",
   seniority: "senior",
   departments: ["engineering"],
 };
-const apolloMapped = mapApolloCandidates([apolloProfile], campaign, "titles:Platform Engineer", [], W);
+const apolloMapped = mapApolloCandidates([apolloProfile], campaign, "titles:Senior TypeScript Engineer", [], W);
 ok(
   "Apollo mapper preserves only the opaque enrichment authority",
   apolloMapped.accepted[0]?.sourceAuthorityId === apolloProfile.targetId &&
@@ -108,22 +112,22 @@ ok(
 );
 
 // --- Name fallback + honest blank email ------------------------------------
-const bob = mk({ login: "bob", htmlUrl: "https://github.com/bob" });
-const rb = mapGithubCandidates([bob], campaign, "q", [], W);
+const bob = mk({ login: "bob", htmlUrl: "https://github.com/bob", bio: STRONG_GITHUB_BIO, location: "London, UK" });
+const rb = mapGithubCandidates([bob], campaign, STRONG_GITHUB_QUERY, [], W);
 ok("name falls back to login when GitHub name is null", rb.accepted[0]?.name === "bob");
 ok("blank email stays blank (no fabricated address)", rb.accepted[0]?.email === "");
 
 // --- The dedupe fix: blank emails are NOT collapsed together ----------------
-const u1 = mk({ login: "noemail1", htmlUrl: "https://github.com/noemail1" });
-const u2 = mk({ login: "noemail2", htmlUrl: "https://github.com/noemail2" });
-const rd = mapGithubCandidates([u1, u2], campaign, "q", [], W);
+const u1 = mk({ login: "noemail1", htmlUrl: "https://github.com/noemail1", bio: STRONG_GITHUB_BIO, location: "London, UK" });
+const u2 = mk({ login: "noemail2", htmlUrl: "https://github.com/noemail2", bio: STRONG_GITHUB_BIO, location: "London, UK" });
+const rd = mapGithubCandidates([u1, u2], campaign, STRONG_GITHUB_QUERY, [], W);
 ok("two email-less users both accepted (deduped by URL, not blank email)", rd.accepted.length === 2);
 
 // Same github URL is still a real duplicate.
 const rdup = mapGithubCandidates(
-  [u1, mk({ login: "noemail1", htmlUrl: "https://github.com/noemail1" })],
+  [u1, mk({ login: "noemail1", htmlUrl: "https://github.com/noemail1", bio: STRONG_GITHUB_BIO, location: "London, UK" })],
   campaign,
-  "q",
+  STRONG_GITHUB_QUERY,
   [],
   W,
 );
@@ -229,18 +233,18 @@ ok(
 );
 ok(
   "buildWebQuery scopes Dribbble to its domain",
-  buildWebQuery("Dribbble", "Product Designer") === "site:dribbble.com Product Designer",
+  buildWebQuery("Dribbble", "Senior TypeScript Engineer") === "site:dribbble.com Senior TypeScript Engineer",
 );
 
 // --- web-leads: extractLead never fabricates, falls back honestly -------
 const liHit: SearchHit = {
-  title: "Jane Doe - Senior Product Designer - Acme Corp | LinkedIn",
+  title: "Jane Doe - Senior TypeScript Engineer - Acme Corp | LinkedIn",
   url: "https://www.linkedin.com/in/jane-doe-4471",
-  snippet: "Experience in Figma, design systems, and user research.",
+  snippet: "TypeScript, React, Node.js, GraphQL, PostgreSQL — active this week in London.",
 };
 const liLead = extractLead(liHit, "LinkedIn");
 ok("LinkedIn lead: name parsed", liLead.name === "Jane Doe");
-ok("LinkedIn lead: title parsed", liLead.title === "Senior Product Designer");
+ok("LinkedIn lead: title parsed", liLead.title === "Senior TypeScript Engineer");
 ok("LinkedIn lead: company parsed", liLead.company === "Acme Corp");
 ok("LinkedIn lead: url kept verbatim", liLead.url === liHit.url);
 
@@ -265,10 +269,29 @@ ok("Dribbble suffix stripped from name", dribbbleLead.name === "Sam Rivera");
 
 // --- mapWebSearchCandidates: honest mapping + dedupe by sourceUrl -------
 const leads = [
-  { name: "Sam Rivera", title: "Product Designer", company: "Acme Corp", url: "https://dribbble.com/samrivera", snippet: "Figma, design systems" },
-  { name: "Sam Rivera", title: "Product Designer", company: "Acme Corp", url: "https://dribbble.com/samrivera", snippet: "Figma, design systems" },
+  {
+    name: "Sam Rivera",
+    title: "Senior TypeScript Engineer",
+    company: "Acme Corp",
+    url: "https://dribbble.com/samrivera",
+    snippet: "TypeScript React Node.js GraphQL PostgreSQL — active this week in London",
+  },
+  {
+    name: "Sam Rivera",
+    title: "Senior TypeScript Engineer",
+    company: "Acme Corp",
+    url: "https://dribbble.com/samrivera",
+    snippet: "TypeScript React Node.js GraphQL PostgreSQL — active this week in London",
+  },
 ];
-const webResult = mapWebSearchCandidates(leads, campaign, "site:dribbble.com Product Designer", "Dribbble", [], W);
+const webResult = mapWebSearchCandidates(
+  leads,
+  campaign,
+  "site:dribbble.com Senior TypeScript Engineer",
+  "Dribbble",
+  [],
+  W,
+);
 ok("web lead accepted once", webResult.accepted.length === 1);
 ok("duplicate web lead (same profile URL) deduped", webResult.skipped.length === 1);
 const w = webResult.accepted[0];
@@ -280,9 +303,15 @@ ok("candidate is scored", typeof w?.matchScore === "number");
 
 // LinkedIn leads populate linkedinUrl instead of sourceUrl, reusing existing dedupe.
 const liResult = mapWebSearchCandidates(
-  [{ name: "Jane Doe", title: "Senior Product Designer", company: "Acme Corp", url: "https://www.linkedin.com/in/jane-doe-4471", snippet: "" }],
+  [{
+    name: "Jane Doe",
+    title: "Senior TypeScript Engineer",
+    company: "Acme Corp",
+    url: "https://www.linkedin.com/in/jane-doe-4471",
+    snippet: "TypeScript React Node.js GraphQL PostgreSQL London — active this week",
+  }],
   campaign,
-  "site:linkedin.com/in Senior Product Designer",
+  "site:linkedin.com/in Senior TypeScript Engineer",
   "LinkedIn",
   [],
   W,
@@ -291,13 +320,17 @@ ok("LinkedIn lead sets linkedinUrl", liResult.accepted[0]?.linkedinUrl === "http
 ok("LinkedIn lead leaves sourceUrl unset", liResult.accepted[0]?.sourceUrl === undefined);
 
 // --- dedupeCandidates: sourceUrl is a dedupe key (Dribbble/Behance/SO) ---
-const existingWithSourceUrl = [{ ...webResult.accepted[0]!, id: "existing_1" }];
-const dupeAttempt = dedupeCandidates(
-  [{ ...webResult.accepted[0]!, id: "new_1", email: "" }],
-  existingWithSourceUrl,
-  { excludedCompanies: [] },
-);
-ok("second batch dedupes an already-seen sourceUrl", dupeAttempt.accepted.length === 0 && dupeAttempt.skipped.length === 1);
+if (!webResult.accepted[0]) {
+  ok("web lead fixture available for dedupe test", false);
+} else {
+  const existingWithSourceUrl = [{ ...webResult.accepted[0], id: "existing_1" }];
+  const dupeAttempt = dedupeCandidates(
+    [{ ...webResult.accepted[0], id: "new_1", email: "" }],
+    existingWithSourceUrl,
+    { excludedCompanies: [] },
+  );
+  ok("second batch dedupes an already-seen sourceUrl", dupeAttempt.accepted.length === 0 && dupeAttempt.skipped.length === 1);
+}
 
 console.log(`RESULT sourcing: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

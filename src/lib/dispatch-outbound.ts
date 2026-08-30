@@ -37,6 +37,11 @@ import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclos
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import { resolveHeyReachConfigForWorkspace } from "@/lib/heyreach-delivery";
+import {
+  loadSourcingLoopControls,
+  sequencesArmedFromControls,
+} from "@/lib/sourcing-loop-controls";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -68,17 +73,13 @@ export interface DispatchStats {
 type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
 
 async function loopSendControlsPermit(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("sourcing_loop_controls")
-    .select("kill_switch, sequences_enabled")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  if (error) {
-    safeLog("dispatch-outbound: loop controls lookup error", { message: error.message });
+  // Table SELECT is revoked for service_role — use the granted RPC only.
+  const loaded = await loadSourcingLoopControls(supabase, workspaceId);
+  if (!loaded.ok) {
+    safeLog("dispatch-outbound: loop controls lookup error", { message: loaded.detail });
     return false;
   }
-  const controls = record(data);
-  return controls?.kill_switch === false && controls.sequences_enabled === true;
+  return sequencesArmedFromControls(loaded.row);
 }
 
 /**
@@ -148,7 +149,26 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   for (const msg of due ?? []) {
     stats.processed++;
-    if (!(await loopSendControlsPermit(supabase, msg.workspace_id))) continue;
+    if (!(await loopSendControlsPermit(supabase, msg.workspace_id))) {
+      // Fail closed with a durable block — never leave the row queued forever
+      // when controls are disarmed or unreadable (revoked SELECT used to no-op).
+      const { data: blockedRow, error: blockErr } = await supabase
+        .from("messages_outbound")
+        .update({
+          status: "blocked",
+          gate_result: { pass: false, reasons: ["sequences-not-armed"] },
+        })
+        .eq("id", msg.id)
+        .eq("status", "queued")
+        .select("id")
+        .maybeSingle();
+      if (blockErr) {
+        safeLog("dispatch-outbound: sequences-not-armed block failed", { message: blockErr.message });
+      } else if (blockedRow) {
+        stats.blocked++;
+      }
+      continue;
+    }
     let deliveryAttemptId: string | null = null;
     const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown, countAs?: DispatchOutcomeCounter) => {
       const reopenReview =
@@ -256,18 +276,38 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       const approvalMessageId = msg.approval_message_id ?? msg.id;
       const { data: approval } = await supabase
         .from("outreach_approvals")
-        .select("body_hash, approval_source, revoked_at")
+        .select("body_hash, approval_source, revoked_at, approved_by, template_id")
         .eq("workspace_id", msg.workspace_id)
         .eq("message_id", approvalMessageId)
         .maybeSingle();
-      if (!approval || approval.revoked_at || approval.body_hash !== bodyHash || approval.approval_source !== "human") {
+      const approvalSource =
+        approval && typeof approval.approval_source === "string" ? approval.approval_source : null;
+      let approvalOk = false;
+      if (approval && !approval.revoked_at && approval.body_hash === bodyHash && approvalSource) {
+        if (approvalSource === "human") {
+          approvalOk = true;
+        } else if (
+          approvalSource === "template_bound" ||
+          approvalSource === "autopilot_critics"
+        ) {
+          const authorized = await supabase.rpc("outbound_approval_authorizes_send", {
+            p_workspace_id: msg.workspace_id,
+            p_approval_source: approvalSource,
+            p_approved_by: approval.approved_by,
+            p_template_id: approval.template_id,
+            p_revoked_at: approval.revoked_at,
+          });
+          approvalOk = authorized.error == null && authorized.data === true;
+        }
+      }
+      if (!approvalOk) {
         const reason = !approval
           ? "no-approval"
           : approval.revoked_at
             ? "approval-revoked"
             : approval.body_hash !== bodyHash
             ? "approval-hash-mismatch"
-            : "approval-not-human";
+            : "approval-not-authorized";
         await finish("blocked", { pass: false, reasons: [reason] });
         continue;
       }
@@ -319,7 +359,13 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
           continue;
         }
-        if (!adapter.configured()) {
+        if (adapter.kind === "heyreach") {
+          const cfg = await resolveHeyReachConfigForWorkspace(msg.workspace_id);
+          if (!cfg) {
+            await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
+            continue;
+          }
+        } else if (!adapter.configured()) {
           await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
           continue;
         }

@@ -81,6 +81,8 @@ const releaseEvidenceArtifactDigestOutput = releaseEvidenceArchiveId
 const appDeployLine = deploy.split("\n").find((line) => /fly deploy --config fly\.app\.toml/.test(line)) ?? "";
 const reviewedAlternateDeploySurfaces = [
   "deploy-fly-2.sh",
+  "scripts/fly-deploy-now.sh",
+  "scripts/fly-remint-app-only.sh",
   "scripts/prod-apply-swarm-fixes.sh",
   "scripts/prod-deploy-app.sh",
   "scripts/prod-swarm-rollout.sh",
@@ -88,6 +90,7 @@ const reviewedAlternateDeploySurfaces = [
 const reviewedAlternateDeploySources = new Map(
   reviewedAlternateDeploySurfaces.map((path) => [path, existsSync(path) ? readFileSync(path, "utf8") : ""]),
 );
+const gitlabCiSource = existsSync(".gitlab-ci.yml") ? readFileSync(".gitlab-ci.yml", "utf8") : "";
 const productionReleaseGuard = existsSync("scripts/lib/prod-release-guard.sh")
   ? readFileSync("scripts/lib/prod-release-guard.sh", "utf8")
   : "";
@@ -99,13 +102,34 @@ const canonicalProductionDeploySurfaces = new Set([
   ".github/workflows/deploy-aria-mantu.yml",
   ...reviewedAlternateDeploySurfaces,
 ]);
+/** Print-only helpers that mention flyctl secrets/deploy in templates but never mutate. */
+const documentationOnlyReleaseSurfaces = new Set([
+  "scripts/print-fly-secrets-checklist.sh",
+  "scripts/print-fly-deploy-confirm.sh",
+  "scripts/print-fly-e2e-env.sh",
+  "scripts/fly-enterprise-activate.sh",
+  "scripts/fly-golive-mantu-e2e.sh",
+]);
+/** Owner-exported credential appliers — mutate Fly secrets only, never invent values, never deploy. */
+const ownerCredentialApplySurfaces = new Set([
+  "scripts/fly-apply-owner-microsoft-secrets.sh",
+  "scripts/fly-apply-owner-llm-secrets.sh",
+]);
 const executableReleaseSurfaces = trackedFiles.filter(
   (path) => path === ".gitlab-ci.yml" || path.endsWith(".sh") || path.startsWith(".github/workflows/"),
 );
 const alternateProductionDeployPattern =
   /ARIA_DEPLOY_BUNDLE|fly\.io\/install\.sh|(?:^|\s)(?:bash\s+)?(?:\.\/)?deploy-fly\.sh\b|(?:^|\s)(?:fly|flyctl)\s+(?:deploy|machine\s+(?:run|destroy)|secrets\s+(?:set|import)|ips\s+allocate|volumes?\s+(?:destroy|update)|apps\s+destroy)\b/m;
 const unsafeAlternateDeploySurfaces = executableReleaseSurfaces.filter((path) => {
-  if (canonicalProductionDeploySurfaces.has(path) || !existsSync(path)) return false;
+  if (path === ".gitlab-ci.yml") return false; // reviewed separately as manual-only fallback
+  if (
+    canonicalProductionDeploySurfaces.has(path)
+    || documentationOnlyReleaseSurfaces.has(path)
+    || ownerCredentialApplySurfaces.has(path)
+    || !existsSync(path)
+  ) {
+    return false;
+  }
   return alternateProductionDeployPattern.test(readFileSync(path, "utf8"));
 });
 const dockerIgnorePatterns = new Set(
@@ -367,6 +391,12 @@ if (unsafeAlternateDeploySurfaces.length > 0) {
   console.error("Unsafe alternate production deploy surfaces:", unsafeAlternateDeploySurfaces.join(", "));
 }
 ok(
+  "production release guard fails closed without a usable TTY confirm prompt",
+  productionReleaseGuard.includes("[ -t 0 ]") &&
+    productionReleaseGuard.includes("> /dev/tty 2>/dev/null") &&
+    productionReleaseGuard.includes("ARIA_PROD_DEPLOY_CONFIRM must equal"),
+);
+ok(
   "only reviewed release-authorized surfaces can mutate Fly production",
   unsafeAlternateDeploySurfaces.length === 0 &&
     reviewedAlternateDeploySurfaces.every((path) => canonicalProductionDeploySurfaces.has(path)) &&
@@ -388,6 +418,14 @@ ok(
         (firstCredentialIndex < 0 || guardIndex < firstCredentialIndex)
       );
     }),
+);
+ok(
+  "GitLab CI deploy fallback is manual-only and restores an opaque secret bundle",
+  gitlabCiSource.length > 0 &&
+    /when:\s*manual/.test(gitlabCiSource) &&
+    /ARIA_DEPLOY_BUNDLE/.test(gitlabCiSource) &&
+    /bash deploy-fly\.sh/.test(gitlabCiSource) &&
+    !/when:\s*always|when:\s*on_success|when:\s*on_failure/.test(gitlabCiSource),
 );
 ok(
   "alternate-deploy detector rejects wrappers around the canonical mutation script",

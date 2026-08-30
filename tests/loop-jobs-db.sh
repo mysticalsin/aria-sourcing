@@ -430,7 +430,8 @@ begin
   foreach declared_kind in array array[
     'email_sync', 'inbound_classify', 'requisition_parse', 'campaign_create',
     'sourcing_batch', 'provider_poll', 'enrich_candidate', 'shortlist_build',
-    'draft_generate', 'delivery_reconcile', 'outcome_feedback'
+    'draft_generate', 'calendar_book', 'pre_call_propose', 'first_interview_book', 'interview_prep_send',
+    'delivery_reconcile', 'outcome_feedback'
   ]
   loop
     declared_payload := case declared_kind
@@ -443,6 +444,10 @@ begin
       when 'enrich_candidate' then '{"campaignId":"camp-1","candidateId":"cand-1","targetId":"target-1"}'::jsonb
       when 'shortlist_build' then '{"campaignId":"camp-1","batchId":"batch-1","providerRunId":"81111111-1111-4111-8111-111111111111"}'::jsonb
       when 'draft_generate' then '{"campaignId":"camp-1","candidateId":"cand-1","approvedBy":"c1000000-0000-4000-8000-000000000001","approvalSource":"human"}'::jsonb
+      when 'calendar_book' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"draft_generate"}'::jsonb
+      when 'pre_call_propose' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"inbound_classify"}'::jsonb
+      when 'first_interview_book' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"pre_call_propose"}'::jsonb
+      when 'interview_prep_send' then '{"campaignId":"camp-1","candidateId":"cand-1","bookingId":"book-1","trigger":"create_booking"}'::jsonb
       when 'delivery_reconcile' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
       when 'outcome_feedback' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
       else '{}'::jsonb
@@ -1257,7 +1262,7 @@ concurrent_claim() {
       payload_one='{"campaignId":"race-campaign-1","batchId":"race-batch-1","providerRunId":"81111111-1111-4111-8111-111111111111"}'
       payload_two='{"campaignId":"race-campaign-2","batchId":"race-batch-2","providerRunId":"81111111-1111-4111-8111-111111111112"}'
       ;;
-    draft_generate | delivery_reconcile | outcome_feedback)
+    draft_generate | calendar_book | delivery_reconcile | outcome_feedback)
       payload_one='{"campaignId":"race-campaign-1","candidateId":"race-candidate-1"}'
       payload_two='{"campaignId":"race-campaign-2","candidateId":"race-candidate-2"}'
       ;;
@@ -1354,7 +1359,7 @@ RACE_CHALLENGER
 # it and the race found no job to contend for.
 for kind in \
   email_sync inbound_classify requisition_parse campaign_create sourcing_batch provider_poll \
-  enrich_candidate shortlist_build draft_generate delivery_reconcile outcome_feedback
+  enrich_candidate shortlist_build draft_generate calendar_book delivery_reconcile outcome_feedback
 do
   concurrent_claim "$kind"
 done

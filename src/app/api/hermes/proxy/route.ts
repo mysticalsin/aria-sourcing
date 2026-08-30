@@ -11,6 +11,10 @@ import {
   isAllowedHermesPath,
   isSafeRelativeBrowsePath,
   HERMES_PROXY_TIMEOUT_MS,
+  buildHermesUpstreamPath,
+  resolveHermesProfilePrefix,
+  buildHermesSessionKey,
+  hermesUpstreamHeaders,
 } from "@/lib/api/hermes-proxy";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
@@ -40,6 +44,8 @@ import {
 const ProxyQuerySchema = z.object({
   upstreamPath: z.string().min(1).max(200),
   hermesApiKeyId: z.string().uuid().optional(),
+  campaignId: z.string().min(1).max(100).optional(),
+  candidateId: z.string().min(1).max(100).optional(),
 });
 
 /** Reject upstream request bodies larger than this before forwarding (DoS guard). */
@@ -122,6 +128,8 @@ async function handler(req: NextRequest) {
   const queryCheck = ProxyQuerySchema.safeParse({
     upstreamPath: searchParams.get("upstreamPath") ?? undefined,
     hermesApiKeyId: searchParams.get("hermesApiKeyId") ?? undefined,
+    campaignId: searchParams.get("campaignId") ?? undefined,
+    candidateId: searchParams.get("candidateId") ?? undefined,
   });
   if (!queryCheck.success) {
     return NextResponse.json({ ok: false, reason: "Invalid query parameters." }, { status: 400 });
@@ -161,12 +169,23 @@ async function handler(req: NextRequest) {
   if (!bearerToken.ok) {
     return NextResponse.json({ ok: false, reason: bearerToken.reason }, { status: 403 });
   }
-  const headers: Record<string, string> = {};
-  const contentType = req.headers.get("content-type");
-  if (contentType) headers["Content-Type"] = contentType;
-  if (bearerToken.token) headers["Authorization"] = `Bearer ${bearerToken.token}`;
+  const profilePrefix = workspaceId ? resolveHermesProfilePrefix(workspaceId) : "default";
+  const sessionKey =
+    workspaceId && queryCheck.data.campaignId && queryCheck.data.candidateId
+      ? buildHermesSessionKey({
+          workspaceId,
+          campaignId: queryCheck.data.campaignId,
+          candidateId: queryCheck.data.candidateId,
+        })
+      : undefined;
+  const headers = hermesUpstreamHeaders({
+    bearerToken: bearerToken.token || undefined,
+    sessionKey,
+    extra: req.headers.get("content-type") ? { "Content-Type": req.headers.get("content-type")! } : undefined,
+  });
 
-  const upstreamUrl = new URL(`${baseUrlResult.baseUrl}/${pathCheck.upstreamPath}`);
+  const upstreamPathWithProfile = buildHermesUpstreamPath(`/${pathCheck.upstreamPath}`, profilePrefix);
+  const upstreamUrl = new URL(`${baseUrlResult.baseUrl}${upstreamPathWithProfile}`);
   // Forward only an explicit safe-param allowlist — never blindly relay client-supplied
   // query keys to the upstream runtime (parameter injection).
   for (const key of ["page", "limit", "cursor", "q", "level"]) {

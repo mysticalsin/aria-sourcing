@@ -16,16 +16,23 @@ primary_region = "cdg"
   dockerfile = "Dockerfile.prod"
   [build.args]
     NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
+    NEXT_PUBLIC_SITE_URL             = "https://aria-mantu-app.fly.dev"    # browser Origin for CSRF checks
     NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
     NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
-    NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
+    NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # fly-deploy-now.sh flips to true when GoTrue Azure secrets are complete
     # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
 
 [env]
   NODE_ENV                      = "production"
   PORT                          = "3000"
-  HOSTNAME                      = "0.0.0.0"
+  # Fly 6PN is IPv6. Bind :: so process-group DNS (web.process.*.internal) works
+  # for the loop worker; 0.0.0.0 is IPv4-only and yields ECONNREFUSED over 6PN.
+  HOSTNAME                      = "::"
+  NEXT_PUBLIC_SITE_URL          = "https://aria-mantu-app.fly.dev"
   NEXT_TELEMETRY_DISABLED       = "1"
+  # DeerFlow/Flowise sidecars are not deployed on Fly for the Mantu recruiting
+  # loop. Opt out so /api/ready can go green after tip migrate + identity refresh.
+  AGENT_FRAMEWORKS_REQUIRED     = "false"
   # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
   # Inert until a seat goes live (also needs a provider key + verified domain); safe to set now:
@@ -33,6 +40,8 @@ primary_region = "cdg"
   # Loop worker → web process, over 6PN (process-group DNS). Used only by the
   # "loop" process for its minute-level outbound drain; harmless elsewhere.
   ARIA_WEB_INTERNAL_URL         = "http://web.process.aria-mantu-app.internal:3000"
+  # Optional Fly secret (loop process): ARIA_LOOP_WORKSPACE_IDS=<uuid>[,uuid…]
+  # enables autopilot ready-draft sweep each tick (same list as ignite scheduler).
   # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
   #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
   # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.

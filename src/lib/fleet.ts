@@ -11,6 +11,7 @@ import type {
 import { normalizeSuppressionValue } from "./manual-suppression";
 import type { Tone } from "./utils";
 import { clamp } from "./utils";
+import { isMailboxSeatProvider } from "./outreach-send-mode";
 
 /* ============================================================================
    FLEET GUARDRAIL ENGINE
@@ -42,11 +43,12 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   "Microsoft Graph": "Microsoft 365 caps ~10k recipients/day; keep cold sends ≤ 40/day/mailbox warmed.",
   "Gmail API": "Workspace ~2k sends/day; keep cold sends ≤ 40/day/mailbox warmed.",
   SendGrid: "Respect plan limits; warm dedicated IPs gradually.",
-  Resend: "Respect plan limits; verify domain (SPF/DKIM/DMARC) before sending.",
+  Resend: "Respect plan limits; verify sender domain (SPF, DMARC, or DKIM) before sending.",
   "WhatsApp Cloud": "Cold WhatsApp needs a pre-approved Meta template; keep volume low and honor opt-out.",
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
   "LinkedIn Assisted Manual": "Assisted-manual only: draft, profile deep-link, human copy/paste/send, then record outcome.",
   "LinkedIn Vendor API": "Licensed vendor API only; fails closed until credentials and a signed provider contract exist.",
+  HeyReach: "Official HeyReach API — add key + campaign id in Settings → LinkedIn stack; autopilot queues LinkedIn after critics.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */
@@ -114,10 +116,18 @@ export function seatHealthStatus(seat: AgentSeat, settings: FleetSettings): Seat
   return { tone: "success", label: "Healthy", shouldPause: false, detail: "Deliverability within safe limits." };
 }
 
-/** Live sending requires verified domain + explicit live mode (else dry-run). */
+/** Live sending requires verified domain + explicit live mode (else dry-run).
+ *  Microsoft Graph seats that completed Connect Outlook (mode=live + connected
+ *  account) are mailbox-ready — Graph sendMail does not use vanity-domain SPF. */
 export function seatCanSendLive(seat: AgentSeat): { ok: boolean; reason: string } {
   if (seat.mode !== "live") return { ok: false, reason: "Seat in dry-run (mock) mode" };
-  if (!seat.domainVerified) return { ok: false, reason: "Domain not verified (SPF/DKIM/DMARC)" };
+  const isGraph = seat.provider === "Microsoft Graph";
+  if (isGraph && seat.connectedAccount) {
+    return { ok: true, reason: "" };
+  }
+  if (!seat.domainVerified) {
+    return { ok: false, reason: "Sender domain not verified (need SPF, DMARC, or DKIM)" };
+  }
   return { ok: true, reason: "" };
 }
 
@@ -277,6 +287,21 @@ export interface FleetSummary {
   avgComplaintRate: number;
 }
 
+/** Live mailbox ready: only mailbox providers; Graph OAuth skips vanity DNS; API-key needs domainVerified. */
+export function seatMailboxLiveReady(seat: AgentSeat): boolean {
+  if (!isMailboxSeatProvider(seat.provider)) return false;
+  if (seat.mode !== "live" || !seat.connectedAccount) return false;
+  if (seat.provider === "Microsoft Graph") return true;
+  return Boolean(seat.domainVerified);
+}
+
+/** Vanity-domain verify applies to API-key senders, not live Graph OAuth mailboxes. */
+export function seatNeedsDomainVerify(seat: AgentSeat): boolean {
+  if (!seat.connectedAccount) return false;
+  if (seat.provider === "Microsoft Graph" && seat.mode === "live") return false;
+  return !seat.domainVerified;
+}
+
 export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = Date.now()): FleetSummary {
   const active = seats.filter((s) => s.status === "active");
   const capacity = active.reduce((a, s) => a + effectiveDailyCap(s, now), 0);
@@ -289,7 +314,7 @@ export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = 
   return {
     seats: seats.length,
     activeSeats: active.length,
-    liveSeats: seats.filter((s) => s.mode === "live" && s.domainVerified).length,
+    liveSeats: seats.filter((s) => seatMailboxLiveReady(s)).length,
     sentToday: sent,
     capacityToday: capacity,
     remainingToday: remaining,

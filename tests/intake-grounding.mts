@@ -38,16 +38,24 @@ test("generic intake preserves unknown role facts instead of filling synthetic d
 
 test("missing cloud provider returns the same evidence-grounded incomplete need", async () => {
   const settings = buildSeedState().settings;
-  const parsed = await parseIntakeLive(
-    {
-      ...settings,
-      llmProviders: [],
-      savedModels: [],
-      defaultModels: {},
-      hermesLiveMode: false,
-    },
-    { email: minimalNeed },
-  );
+  const bare = {
+    ...settings,
+    llmProviders: [],
+    savedModels: [],
+    defaultModels: {},
+    hermesLiveMode: false,
+  };
+  // Live/enterprise tenants (supabase enabled, demo login off) must not invent a
+  // successful heuristic intake when no cloud parser is configured.
+  const liveTenant =
+    Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL) &&
+    Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) &&
+    process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN !== "true";
+  if (liveTenant) {
+    await assert.rejects(() => parseIntakeLive(bare, { email: minimalNeed }), /live_intake_llm_required/);
+    return;
+  }
+  const parsed = await parseIntakeLive(bare, { email: minimalNeed });
 
   assert.deepEqual(parsed.jobAnalysis.requiredSkills, []);
   assert.deepEqual(parsed.jobAnalysis.companyStageTarget, []);

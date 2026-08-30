@@ -17,8 +17,14 @@ import {
 } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { resolveAiProvider } from "./provider";
 import { hermesAvailable, hermesGenerate } from "./hermes";
+
+/** Live/enterprise tenants must not treat heuristic regex parse as a successful cloud intake. */
+function refuseHeuristicIntakeOnLiveTenant(): boolean {
+  return supabaseEnabled && !demoLoginEnabled;
+}
 
 /* ============================================================================
    Live intake / JD parsing — client helper.
@@ -86,50 +92,55 @@ interface LiveIntakeFields {
   teamSize?: string;
   reportingTo?: string;
   language?: string;
+  missionDescription?: string;
+  linkedinBoolean?: string;
 }
 
 /** Self-contained JSON-extraction prompt — carries its own output-format
  *  instructions, so it doesn't depend on a task-specific system prompt. */
 export function buildIntakeParsePrompt(text: string): string {
   return [
-    "Extract a structured hiring brief from the recruiter email / job description below.",
+    "Extract a structured hiring brief from the recruiter email / job description / Mantu VSS Recruitment Need below.",
+    "If the text has VSS labels (Main Manager, Skill (Must), Mission Description, Profile Synthesis, Boolean, etc.), map them explicitly — do not drop managers, recruiters, client, company, priority, contract, start date, headcount, remote, or mission body.",
     "Reply with JSON only — no prose, no markdown fences, no commentary — matching exactly this shape " +
       '(use null for an unknown number, "" for an unknown string, [] for an unknown list; never invent ' +
       "specifics — names, numbers, companies — that aren't stated in the text):",
     JSON.stringify(
       {
-        senderName: "string",
+        senderName: "string (Main Manager preferred)",
         senderEmail: "string",
         intent: "New Role | Backfill | Urgent Hire | Exploratory",
         urgency: "ASAP | Critical | Urgent | This Week | Standard",
         title: "string",
-        department: "string",
+        department: "string (Client or Company Employed by)",
         seniority: "Junior | Mid | Senior | Staff | Principal | Lead | Director",
-    employmentType: "Full-time | Contract | Part-time",
-    locationType: "Remote | Hybrid | On-site",
-        regions: ["string"],
+        employmentType: "Full-time | Contract | Part-time",
+        locationType: "Remote | Hybrid | On-site",
+        regions: ["string (City)"],
         timezone: "string",
         salaryMin: "number|null",
         salaryMax: "number|null",
         currency: "string",
         equity: "boolean",
-        requiredSkills: ["string"],
-        niceToHaveSkills: ["string"],
+        requiredSkills: ["string (Skill Must)"],
+        niceToHaveSkills: ["string (Skill Nice to have)"],
         minYearsExperience: "number|null",
         maxYearsExperience: "number|null",
-        education: "string",
-        industryExperience: ["string"],
+        education: "string (Target School)",
+        industryExperience: ["string (Client Sector)"],
         companyStageTarget: ["Seed | Series A | Series B | Series C+ | Public | Enterprise"],
-        teamSize: "string",
-        reportingTo: "string",
+        teamSize: "string (Number of people)",
+        reportingTo: "string (Main Manager)",
         language: "ISO 639-1 code, e.g. en",
+        missionDescription: "string (Mission Description / Profile Synthesis body)",
+        linkedinBoolean: "string (Boolean field when present)",
       },
       null,
       2,
     ),
     "",
     "TEXT:",
-    text.slice(0, 12_000),
+    text.slice(0, 40_000),
   ].join("\n");
 }
 
@@ -178,6 +189,8 @@ export function parseHermesIntakeJson(text: string): LiveIntakeFields | null {
     teamSize: pickString(o.teamSize),
     reportingTo: pickString(o.reportingTo),
     language: pickString(o.language),
+    missionDescription: pickString(o.missionDescription),
+    linkedinBoolean: pickString(o.linkedinBoolean),
   };
 }
 
@@ -212,7 +225,8 @@ export function groundLiveIntakeFields(
       ? fields.seniority
       : undefined;
   const employmentType = fields.employmentType &&
-    ((fields.employmentType === "Contract" && /\bcontract|contractor|freelance|day rate\b/i.test(source)) ||
+    ((fields.employmentType === "Contract" &&
+      /\bcontract|contractor|freelance|consulting|day rate\b/i.test(source)) ||
       (fields.employmentType === "Part-time" && /\bpart[- ]time\b/i.test(source)) ||
       (fields.employmentType === "Full-time" && /\bfull[- ]time\b|\bpermanent\b/i.test(source)))
       ? fields.employmentType
@@ -259,9 +273,36 @@ export function groundLiveIntakeFields(
     education: supported(fields.education),
     industryExperience: supportedList(fields.industryExperience),
     companyStageTarget,
-    teamSize: supported(fields.teamSize),
+    teamSize: (() => {
+      if (!fields.teamSize) return undefined;
+      if (claimAppearsInSource(fields.teamSize, source)) return fields.teamSize;
+      // "3 openings" when the brief only says "Need 3 Java consultants"
+      const n = fields.teamSize.match(/\b(\d{1,3})\b/)?.[1];
+      if (!n || !numberAppearsInSource(Number(n), source)) return undefined;
+      const headcountContext = new RegExp(
+        `\\b(?:headcount|openings?|positions?|nb\\s*people|number of people)\\b|\\b${n}\\s+(?:[\\w.+#/-]+\\s+){0,3}?(?:people|consultants?|engineers?|developers?|hires?|positions?|openings?)\\b`,
+        "i",
+      );
+      return headcountContext.test(source) ? fields.teamSize : undefined;
+    })(),
     reportingTo: supported(fields.reportingTo),
     language: supported(fields.language),
+    missionDescription: (() => {
+      const m = fields.missionDescription?.trim();
+      if (!m) return undefined;
+      if (claimAppearsInSource(m.slice(0, 80), source)) return m;
+      const tokens = m.split(/\s+/).filter((w) => w.length > 5).slice(0, 6);
+      const hits = tokens.filter((tok) => sourceLower.includes(tok.toLowerCase())).length;
+      return hits >= Math.min(3, tokens.length) ? m : undefined;
+    })(),
+    linkedinBoolean: (() => {
+      const b = fields.linkedinBoolean?.trim();
+      if (!b) return undefined;
+      if (claimAppearsInSource(b, source)) return b;
+      // Boolean strings often differ only by quoting — require a distinctive token
+      const token = b.match(/[A-Za-z][A-Za-z0-9+#. -]{3,}/)?.[0];
+      return token && sourceLower.includes(token.toLowerCase()) ? b : undefined;
+    })(),
   };
 }
 
@@ -308,8 +349,14 @@ export async function parseIntakeLive(
 ): Promise<ParsedIntake> {
   const mock = parseEmailAndJD(input);
 
+  // Intake / JD parse uses the chat (intake) task from Settings → Recruitment brain.
+  // Operators pick that model in the plug-and-play LLM panel; sourcing stays separate
+  // because it requires tool-calling.
   const aiCfg = resolveAiProvider(settings, "chat");
   if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_required");
+    }
     return {
       ...mock,
       providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
@@ -334,12 +381,18 @@ export async function parseIntakeLive(
   try {
     result = await hermesGenerate(genInput);
   } catch {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_unreachable");
+    }
     return {
       ...mock,
       providerWarning: "The cloud parser could not be reached. Only facts present in the submitted brief were extracted.",
     };
   }
   if (!result.ok || !result.text) {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_incomplete");
+    }
     return {
       ...mock,
       providerWarning: "The cloud parser did not complete. Only facts present in the submitted brief were extracted.",
@@ -348,6 +401,9 @@ export async function parseIntakeLive(
 
   const parsedFields = parseHermesIntakeJson(result.text);
   if (!parsedFields) {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_invalid");
+    }
     return {
       ...mock,
       providerWarning: "The cloud parser returned an invalid result. Only facts present in the submitted brief were extracted.",
@@ -380,6 +436,10 @@ export async function parseIntakeLive(
     reportingTo: fields.reportingTo ?? mock.jobAnalysis.reportingTo,
     urgency: fields.urgency ?? mock.jobAnalysis.urgency,
     language: fields.language ?? mock.jobAnalysis.language,
+    expectedStartDate: mock.jobAnalysis.expectedStartDate,
+    location: mock.jobAnalysis.location,
+    missionDescription: fields.missionDescription ?? mock.jobAnalysis.missionDescription,
+    linkedinBoolean: fields.linkedinBoolean ?? mock.jobAnalysis.linkedinBoolean,
   };
   const validationWarnings = deriveValidationWarnings(jobFields);
   const jobAnalysis: JobAnalysis = { ...jobFields, validationWarnings };
@@ -405,5 +465,6 @@ export async function parseIntakeLive(
       seniority: fields.seniority ? 0.9 : mock.confidence.seniority,
     },
     extractionMode: "cloud",
+    mantuNeed: mock.mantuNeed,
   };
 }

@@ -5,19 +5,27 @@ import { domainVerified } from "@/lib/domain-verification";
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import type { Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
+import { outreachQualityGate } from "@/lib/outreach-quality-pipeline";
+import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { isMailboxSeatProvider } from "@/lib/outreach-send-mode";
+import {
+  heyReachDeliveryReadyFromEnv,
+  heyReachDeliveryReadyForWorkspace,
+} from "@/lib/heyreach-delivery";
+import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -25,6 +33,7 @@ const OutreachSendSchema = z.object({
   candidateId: z.string().min(1).max(120),
   candidateEmail: z.string().email().max(255).optional(),
   to: z.string().email().max(255).optional(),
+  profileUrl: z.string().max(500).optional(),
   campaignId: z.string().min(1).max(120),
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),
@@ -69,15 +78,25 @@ export async function POST(req: NextRequest) {
   const payload = validated.data;
   const channel = payload.channel ?? "Email";
 
-  // LinkedIn is always an assisted-manual channel unless a separately approved
-  // official integration is implemented. Reject before any provider, approval,
-  // claim, or email fallback can make this look like a deliverable send.
-  const channelPolicy = getOutboundChannelPolicy(channel);
-  if (!channelPolicy.ok) {
-    return NextResponse.json(
-      { status: "manual-required", detail: channelPolicy.reason },
-      { status: 409 },
-    );
+  // LinkedIn is assisted-manual unless HeyReach / vendor API is configured
+  // (Fly env and/or Settings → LinkedIn stack vault + campaign id).
+  const linkedInVendorConfigured = Boolean(
+    process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY,
+  );
+  let heyReachConfigured = heyReachDeliveryReadyFromEnv();
+  const earlyChannelPolicy = getOutboundChannelPolicy(channel, {
+    heyReachConfigured,
+    linkedInVendorConfigured,
+  });
+  if (!earlyChannelPolicy.ok) {
+    // Defer LinkedIn fail until after workspace auth when confirmLive — Settings
+    // may hold the vault key + campaign id even without Fly secrets.
+    if (channel !== "LinkedIn" || !payload.confirmLive) {
+      return NextResponse.json(
+        { status: "manual-required", detail: earlyChannelPolicy.reason },
+        { status: 409 },
+      );
+    }
   }
   if (channel === "SMS") {
     return NextResponse.json(
@@ -134,6 +153,21 @@ export async function POST(req: NextRequest) {
   if (!approvalWid) {
     return NextResponse.json({ status: "error", detail: "Workspace not found." }, { status: 400 });
   }
+
+  if (channel === "LinkedIn" && !earlyChannelPolicy.ok) {
+    heyReachConfigured = await heyReachDeliveryReadyForWorkspace(String(approvalWid));
+    const channelPolicy = getOutboundChannelPolicy("LinkedIn", {
+      heyReachConfigured,
+      linkedInVendorConfigured,
+    });
+    if (!channelPolicy.ok) {
+      return NextResponse.json(
+        { status: "manual-required", detail: channelPolicy.reason },
+        { status: 409 },
+      );
+    }
+  }
+
   const { data: workspaceState } = await supabase
     .from("workspace_state")
     .select("state")
@@ -152,17 +186,27 @@ export async function POST(req: NextRequest) {
     );
   }
   const approvedContentHash = approvalHash(subject, body);
+  const linkedInRecipient =
+    channel === "LinkedIn"
+      ? (normalizeLinkedInProfileUrl(payload.profileUrl ?? "") ??
+          (payload.profileUrl ?? "").trim()).toLowerCase()
+      : "";
   const approvedScopeHash = approvalScopeHash({
     candidateId,
     channel,
-    recipient: channel === "WhatsApp" ? payload.phone ?? "" : candidateEmail,
+    recipient:
+      channel === "WhatsApp"
+        ? payload.phone ?? ""
+        : channel === "LinkedIn"
+          ? linkedInRecipient
+          : candidateEmail,
   });
   if (!approvedScopeHash) {
     return NextResponse.json({ status: "error", detail: "Invalid approved recipient." }, { status: 400 });
   }
   const { data: approval } = await supabase
     .from("outreach_approvals")
-    .select("body_hash, approval_scope_hash, approval_source")
+    .select("body_hash, approval_scope_hash, approval_source, approved_by, template_id, revoked_at")
     .eq("workspace_id", approvalWid)
     .eq("message_id", payload.messageId)
     .is("revoked_at", null)
@@ -170,11 +214,39 @@ export async function POST(req: NextRequest) {
   if (
     !approval ||
     approval.body_hash !== approvedContentHash ||
-    approval.approval_scope_hash !== approvedScopeHash ||
-    approval.approval_source !== "human"
+    approval.approval_scope_hash !== approvedScopeHash
   ) {
     return NextResponse.json(
-      { status: "error", detail: "Message lacks a current human approval (or changed since approval)." },
+      { status: "error", detail: "Message lacks a current approval (or changed since approval)." },
+      { status: 403 },
+    );
+  }
+  const source = String(approval.approval_source ?? "");
+  let approvalAuthorized = source === "human";
+  if (!approvalAuthorized && (source === "autopilot_critics" || source === "template_bound")) {
+    const { data: authorized } = await supabase.rpc("outbound_approval_authorizes_send", {
+      p_workspace_id: approvalWid,
+      p_approval_source: source,
+      p_approved_by: approval.approved_by,
+      p_template_id: approval.template_id,
+      p_revoked_at: approval.revoked_at,
+    });
+    // RPC is service_role-only on older migrations — fall back to profile check.
+    if (authorized === true) {
+      approvalAuthorized = true;
+    } else if (approval.approved_by) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("autopilot_enabled")
+        .eq("id", approval.approved_by)
+        .eq("workspace_id", approvalWid)
+        .maybeSingle();
+      approvalAuthorized = profile?.autopilot_enabled === true;
+    }
+  }
+  if (!approvalAuthorized) {
+    return NextResponse.json(
+      { status: "error", detail: "Message lacks a current human or autopilot approval (or changed since approval)." },
       { status: 403 },
     );
   }
@@ -183,6 +255,51 @@ export async function POST(req: NextRequest) {
   // status narration, AI self-disclosure, leaked tool/JSON markup, unfilled
   // placeholders — never reaches a candidate, approved or not. Block-only:
   // the approved text is never mutated here, so the approval hash stays valid.
+  const qualityGate = outreachQualityGate({ subject, body, channel });
+  if (qualityGate.blockers.length > 0) {
+    return NextResponse.json(
+      { status: "error", detail: qualityGate.blockers[0] },
+      { status: 422 },
+    );
+  }
+  // Live critics: production / non-demo tenants require all three LLM peers
+  // (same fail-closed posture as generate-outreach-draft). Demo may fall back
+  // to the deterministic gate already applied above.
+  // After a valid human approval, needs_review is resolved — only block blocked.
+  const liveVerdict = await validateOutreachQualityLive({
+    subject,
+    body,
+    channel,
+    workspaceId:
+      demoLoginEnabled || publicDemoSideEffectsDisabled()
+        ? undefined
+        : typeof approvalWid === "string"
+          ? approvalWid
+          : undefined,
+  });
+  if (!liveVerdict.llmCriticsUsed) {
+    if (!demoLoginEnabled) {
+      return NextResponse.json(
+        {
+          status: "error",
+          detail: "Live multi-agent LLM quality critics required for outreach send.",
+          code: "critics_required",
+        },
+        { status: 503 },
+      );
+    }
+    if (liveVerdict.status === "blocked") {
+      const reason =
+        liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+        ?? "Outreach blocked by quality critics.";
+      return NextResponse.json({ status: "error", detail: reason }, { status: 422 });
+    }
+  } else if (liveVerdict.status === "blocked") {
+    const reason =
+      liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+      ?? "Outreach blocked by live quality critics.";
+    return NextResponse.json({ status: "error", detail: reason }, { status: 422 });
+  }
   const gate = gateOutbound(body);
   if (!gate.pass) {
     return NextResponse.json(
@@ -310,6 +427,98 @@ export async function POST(req: NextRequest) {
     }, { status: 202 });
   }
 
+  // LinkedIn via HeyReach / vendor — durable outbox, never email fallthrough.
+  if (channel === "LinkedIn") {
+    if (!seatId) {
+      return NextResponse.json({ status: "error", detail: "Missing seatId." }, { status: 400 });
+    }
+    const profile =
+      normalizeLinkedInProfileUrl(payload.profileUrl ?? "") ??
+      (payload.profileUrl ?? "").trim();
+    if (!profile || !/linkedin\.com\//i.test(profile)) {
+      return NextResponse.json(
+        { status: "skipped", detail: "No LinkedIn profile URL on file for this candidate." },
+      );
+    }
+    const { data: liSeat } = await supabase
+      .from("agent_seats")
+      .select("id, provider, status, mode")
+      .eq("id", seatId)
+      .maybeSingle();
+    if (!liSeat) {
+      return NextResponse.json({ status: "error", detail: "Seat not found in your workspace." }, { status: 403 });
+    }
+    if (liSeat.status !== "active") {
+      return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
+    }
+    if (liSeat.mode !== "live") {
+      return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
+    }
+    const provider = String(liSeat.provider ?? "");
+    if (
+      provider !== "HeyReach" &&
+      provider !== "LinkedIn Vendor API" &&
+      provider !== "LinkedIn Assisted Manual"
+    ) {
+      return NextResponse.json({
+        status: "skipped",
+        detail: "Selected seat cannot send LinkedIn. Use a HeyReach or LinkedIn Vendor seat.",
+      });
+    }
+    if (provider === "LinkedIn Assisted Manual") {
+      return NextResponse.json(
+        {
+          status: "manual-required",
+          detail: "Assisted-manual LinkedIn seat — copy/paste the draft, then Confirm Manual Send.",
+        },
+        { status: 409 },
+      );
+    }
+    if (publicDemoSideEffectsDisabled()) {
+      return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+    }
+    const dispatcher = getServiceSupabase();
+    if (!dispatcher) {
+      return NextResponse.json({ status: "error", detail: "Service client unavailable." }, { status: 503 });
+    }
+    const { data: queuedData, error: queueErr } = await dispatcher.rpc("enqueue_linkedin_outbound_service", {
+      p_workspace_id: approvalWid,
+      p_message_id: payload.messageId,
+      p_candidate_id: candidateId,
+      p_campaign_id: campaignId,
+      p_seat_id: seatId,
+      p_profile_url: profile.toLowerCase(),
+      p_subject: subject,
+      p_body: body,
+    });
+    const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
+    if (queueErr || (queued?.ok !== true && queued?.reason !== "duplicate") || !queued?.id) {
+      safeLog("linkedin outbox queue error", {
+        message: queueErr?.message ?? queued?.reason ?? "no result",
+      });
+      return NextResponse.json(
+        { status: "error", detail: "Could not queue the LinkedIn message. Apply migration 0076." },
+        { status: 500 },
+      );
+    }
+    try {
+      await dispatchDue(dispatcher, 1, queued.id);
+    } catch (err) {
+      safeLog("linkedin immediate dispatch error", {
+        message: err instanceof Error ? err.message : "unknown",
+      });
+    }
+    return NextResponse.json(
+      {
+        status: "queued",
+        delivery: "linkedin-delivery-queued",
+        messageId: queued.id,
+        detail: "Queued for policy-checked LinkedIn delivery via HeyReach/vendor.",
+      },
+      { status: 202 },
+    );
+  }
+
   // 3. Seat must belong to the caller's workspace (RLS) and be live. Domain
   // verification is deliberately NOT gated here — the real DNS check-and-persist
   // happens in step 5 below, which is the only place `domain_verified` is ever
@@ -328,6 +537,13 @@ export async function POST(req: NextRequest) {
   if (seat.mode !== "live") {
     return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
   }
+  // Email path only — LinkedIn/WhatsApp/SMS seats must never claim Graph mail send.
+  if (!isMailboxSeatProvider(String(seat.provider ?? ""))) {
+    return NextResponse.json({
+      status: "skipped",
+      detail: "Selected seat cannot send Email. Use a live Outlook, Gmail, SendGrid, or Resend mailbox.",
+    });
+  }
 
   if (publicDemoSideEffectsDisabled()) {
     return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
@@ -335,15 +551,46 @@ export async function POST(req: NextRequest) {
 
   // Domain verification happens before the irreversible claim. A dry-run
   // decision must never leave a claimed ledger row that blocks later outreach.
+  // Microsoft Graph OAuth seats send as the connected mailbox (me/sendMail) —
+  // DNS SPF on the operator label is not required once mode=live after Connect Outlook.
   if (!seat.domain_verified) {
-    const verified = await domainVerified(seat.operator_email.split("@")[1] ?? "");
-    if (verified) {
-      await supabase.from("agent_seats").update({ domain_verified: true }).eq("id", seatId);
-      seat.domain_verified = true;
+    const isGraph = String(seat.provider ?? "") === "Microsoft Graph";
+    if (isGraph && seat.mode === "live") {
+      const { error: healErr } = await supabase
+        .from("agent_seats")
+        .update({ domain_verified: true })
+        .eq("id", seatId);
+      if (healErr) {
+        safeLog("outreach send Graph domain_verified heal failed", {
+          message: healErr.message,
+          code: healErr.code,
+        });
+      } else {
+        seat.domain_verified = true;
+      }
+    } else {
+      const verified = await domainVerified(seat.operator_email.split("@")[1] ?? "");
+      if (verified) {
+        const { error: healErr } = await supabase
+          .from("agent_seats")
+          .update({ domain_verified: true })
+          .eq("id", seatId);
+        if (healErr) {
+          safeLog("outreach send domain_verified heal failed", {
+            message: healErr.message,
+            code: healErr.code,
+          });
+        } else {
+          seat.domain_verified = true;
+        }
+      }
     }
   }
   if (!seat.domain_verified) {
-    return NextResponse.json({ status: "dry-run", detail: "Domain not verified (SPF/DKIM/DMARC), dry-run." });
+    return NextResponse.json({
+      status: "dry-run",
+      detail: "Sender domain not verified (need SPF, DMARC, or DKIM), dry-run.",
+    });
   }
 
   // 4. Synchronous, policy-checked send — the interactive "Send" button delivers

@@ -168,14 +168,17 @@ export function TopBar() {
 
   // Same derived, ranked queue the dashboard's Priority queue panel renders --
   // top 3 here so the bell and the panel can never show conflicting priorities.
-  const notifications = recommendations.slice(0, 3).map((rec) => ({ label: rec.title, href: rec.href }));
+  const notifications = recommendations
+    .filter((rec): rec is NonNullable<typeof rec> => !!rec && typeof rec.title === "string")
+    .slice(0, 3)
+    .map((rec) => ({ label: rec.title, href: rec.href }));
   const canRunSyntheticDemo = hydrated && !supabaseEnabled;
   const canResetSyntheticDemo = !supabaseEnabled;
 
   return (
     <>
     <header className="sticky top-0 z-40 topbar-glass">
-      <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
+      <div className="flex h-16 min-w-0 items-center gap-2 px-4 sm:gap-3 sm:px-6">
         {/* Mobile / tablet nav trigger — exposes the full nav below lg. */}
         <button
           ref={mobileNavTriggerRef}
@@ -192,7 +195,7 @@ export function TopBar() {
           <HermesWordmark compact />
         </Link>
 
-        <div className="hidden flex-1 sm:block">
+        <div className="hidden min-w-0 flex-1 sm:block">
           <CommandSearch />
         </div>
 

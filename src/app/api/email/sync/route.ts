@@ -18,6 +18,7 @@ import {
   type InboundMessage,
 } from "@/lib/email-sync";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { isInboxPollAllowed } from "@/lib/email-connections";
 
 /** Maximum messages returned across ALL connections in a single sync. */
 const TOTAL_MESSAGE_CAP = 50;
@@ -85,6 +86,18 @@ export async function POST(req: NextRequest) {
 
   if (publicDemoSideEffectsDisabled()) {
     return NextResponse.json({ ok: true, status: "dry-run", messages: [], errors: [], detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  }
+
+  if (!isInboxPollAllowed()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "inbox_poll_disabled",
+        error:
+          "Inbox polling is disabled. Hiring needs arrive via Microsoft Graph webhook push. Set ARIA_ALLOW_INBOX_SYNC=1 only as explicit operator break-glass.",
+      },
+      { status: 403 },
+    );
   }
 
   // ── 5. Load email connections (service-role — bypasses RLS for secrets) ────

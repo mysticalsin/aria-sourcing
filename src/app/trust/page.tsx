@@ -1,11 +1,11 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
-import { Badge, SkeletonCard } from "@/components/ui";
+import { Badge, EmptyState } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { RoiCalculator } from "@/components/trust/roi-calculator";
 import { CompliancePosture } from "@/components/trust/compliance-posture";
-import { useHydrated } from "@/lib/store";
+import { useHydrated, useWorkspaceStatus } from "@/lib/store";
 
 /* ============================================================================
    4.3 Trust & ROI Proof Center — the page a buyer signs on.
@@ -20,6 +20,8 @@ import { useHydrated } from "@/lib/store";
 
 export default function TrustPage() {
   const hydrated = useHydrated();
+  const status = useWorkspaceStatus();
+  const liveMode = status.mode === "live";
 
   return (
     <div className="animate-fade-in">
@@ -28,23 +30,20 @@ export default function TrustPage() {
         title="Trust & ROI Proof Center"
         description="A falsifiable ROI case and a real compliance posture: every number below is either an auditable count from this workspace or an assumption you can edit yourself."
         actions={
-          <Badge tone="warning" size="md" dot>
-            Illustrative, computed on synthetic demo data
+          <Badge tone={liveMode ? "success" : "warning"} size="md" dot>
+            {liveMode
+              ? "Computed from workspace activity"
+              : "Illustrative — replace with live campaign activity"}
           </Badge>
         }
       />
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard className="h-[420px]" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <SkeletonCard className="h-44" />
-              <SkeletonCard className="h-44" />
-              <SkeletonCard className="h-44" />
-              <SkeletonCard className="h-44" />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading trust…"
+            description="ROI and compliance panels appear after workspace hydrate — no placeholder cards."
+          />
         }
       >
         <div className="flex flex-col gap-8">

@@ -1,6 +1,11 @@
 import { dedupeCandidates } from "@/lib/rules";
 import { scoreCandidate } from "@/lib/scoring";
 import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
+import {
+  candidateMatchesRoleTitle,
+  meetsSourcingQualityBar,
+  SOURCING_QUALITY_FLOOR,
+} from "@/lib/sourcing/candidate-fit";
 import type { GithubUser } from "@/lib/sourcing/github-identity";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
@@ -29,18 +34,42 @@ export function mapGithubCandidates(
 ): SourceResult {
   const jd = campaign.jobAnalysis;
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const queryLanguages = Array.from(
+    query.matchAll(/\blanguage:([^\s]+)/gi),
+    (match) => match[1]!.replace(/["']/g, "").trim(),
+  ).filter(Boolean);
   const raw: Candidate[] = users.map((user) => {
     const name = (user.name && user.name.trim()) || user.login;
     const bio = (user.bio ?? "").trim();
     const bioLower = bio.toLowerCase();
     const matched = allSkills.filter((skill) => bioLower.includes(skill.toLowerCase()));
-    const techStack = Array.from(new Set([...(user.topLanguage ? [user.topLanguage] : []), ...matched]));
+    const techStack = Array.from(
+      new Set(
+        [
+          ...(user.topLanguage ? [user.topLanguage] : []),
+          ...queryLanguages,
+          ...matched,
+        ].filter(Boolean),
+      ),
+    );
+    // Keep raw counts AND "GitHub profile/activity" boilerplate out of
+    // recentActivity — live empathy critics reject both as scraping tells.
+    // Prefer stack/language when available; else neutral open-source phrasing.
+    const activityParts = [
+      bio || null,
+      user.topLanguage
+        ? `Recent ${user.topLanguage} open-source work`
+        : user.publicRepos > 0 || user.followers > 0
+          ? "recent open-source work"
+          : null,
+    ].filter(Boolean);
     return {
       id: genId("cand"),
       campaignId: campaign.id,
       name,
       email: user.email ?? "",
       avatarInitials: initialsFrom(name),
+      // Never promote GitHub bio into currentTitle — operators must not see a fabricated job title.
       currentTitle: "",
       currentCompany: (user.company ?? "").replace(/^@/, "").trim(),
       location: user.location ?? "",
@@ -55,7 +84,8 @@ export function mapGithubCandidates(
       yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
-      recentActivity: `${user.publicRepos} public repos, ${user.followers} followers`,
+      // Bio belongs in recentActivity so skills/activity scoring can clear the 80% floor.
+      recentActivity: activityParts.join(" · "),
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],
@@ -207,7 +237,30 @@ export function mapWebSearchCandidates(
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
   const raw: Candidate[] = leads.map((lead) => {
     const haystack = `${lead.title} ${lead.snippet}`.toLowerCase();
-    const techStack = allSkills.filter((skill) => haystack.includes(skill.toLowerCase()));
+    const techStack = allSkills.filter((skill) => {
+      const needle = skill.toLowerCase().trim();
+      if (!needle) return false;
+      if (haystack.includes(needle)) return true;
+      const tokens = needle
+        .split(/[^a-z0-9+.#]+/i)
+        .filter((t) => t.length > 2 && !["and", "the", "for", "with", "software", "systems"].includes(t));
+      if (tokens.length === 0) return false;
+      const hits = tokens.filter((token) => haystack.includes(token)).length;
+      return hits >= Math.max(1, Math.ceil(tokens.length * 0.6));
+    });
+    const location =
+      jd.regions.find((region) => {
+        const r = region.toLowerCase().trim();
+        return r.length > 1 && haystack.includes(r);
+      }) ??
+      (/montr[eé]al/i.test(haystack)
+        ? "Montreal"
+        : /\bquebec\b|\bqu[eé]bec\b/i.test(haystack)
+          ? "Quebec"
+          : /\bcanada\b/i.test(haystack)
+            ? "Canada"
+            : "");
+    const industryExperience = inferIndustryFromText(haystack, jd.industryExperience);
     return {
       id: genId("cand"),
       campaignId: campaign.id,
@@ -216,7 +269,7 @@ export function mapWebSearchCandidates(
       avatarInitials: initialsFrom(lead.name),
       currentTitle: lead.title,
       currentCompany: lead.company,
-      location: "",
+      location,
       timezone: "",
       linkedinUrl: platform === "LinkedIn" ? lead.url : "",
       githubUrl: "",
@@ -228,7 +281,7 @@ export function mapWebSearchCandidates(
       techStack,
       yearsExperience: null,
       companyStageExperience: [],
-      industryExperience: [],
+      industryExperience,
       recentActivity: lead.snippet || `Found via ${platform} search.`,
       stage: "Sourced",
       lastContactedAt: null,
@@ -248,7 +301,37 @@ export function mapWebSearchCandidates(
     };
   });
 
-  return scoreAndDedupe(raw, campaign, existing, weights);
+  const roleTitle = jd.title.trim();
+  const titleMatched = raw.filter((candidate) => candidateMatchesRoleTitle(candidate, roleTitle));
+  const titleSkipped = raw
+    .filter((candidate) => !candidateMatchesRoleTitle(candidate, roleTitle))
+    .map((candidate) => ({
+      name: candidate.name,
+      reason: `Title "${candidate.currentTitle}" does not match role "${roleTitle}".`,
+    }));
+
+  const scored = scoreAndDedupe(titleMatched, campaign, existing, weights);
+  return {
+    accepted: scored.accepted,
+    skipped: [...titleSkipped, ...scored.skipped],
+  };
+}
+
+/** Map JD industry targets onto SERP text when structured fields are absent. */
+function inferIndustryFromText(haystack: string, targets: string[]): string[] {
+  if (targets.length === 0) return [];
+  return targets.filter((target) => {
+    const needle = target.toLowerCase().trim();
+    if (!needle) return false;
+    if (haystack.includes(needle)) return true;
+    if (/healthtech|health\s*tech|healthcare|medical device|pharma|fda|iso\s*13485/i.test(haystack)) {
+      return /health|medical|pharma|life sciences/i.test(target);
+    }
+    if (/fintech|finance|financial|trading|murex|capital markets|bank/i.test(haystack)) {
+      return /fin|banking|capital|trading/i.test(target);
+    }
+    return false;
+  });
 }
 
 function scoreAndDedupe(
@@ -260,9 +343,20 @@ function scoreAndDedupe(
   const { accepted, skipped } = dedupeCandidates(raw, existing, {
     excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
   });
-  const scored = accepted.map((candidate) => {
-    const { score, breakdown } = scoreCandidate(candidate, campaign.jobAnalysis, weights);
-    return { ...candidate, matchScore: score, matchBreakdown: breakdown };
-  });
-  return { accepted: scored, skipped };
+  const scored = accepted
+    .map((candidate) => {
+      const { score, breakdown } = scoreCandidate(candidate, campaign.jobAnalysis, weights);
+      return { ...candidate, matchScore: score, matchBreakdown: breakdown };
+    })
+    .sort((a, b) => b.matchScore - a.matchScore);
+  const qualityAccepted = scored.filter((candidate) =>
+    meetsSourcingQualityBar(candidate, SOURCING_QUALITY_FLOOR),
+  );
+  const qualitySkipped = scored
+    .filter((candidate) => !meetsSourcingQualityBar(candidate, SOURCING_QUALITY_FLOOR))
+    .map((candidate) => ({
+      name: candidate.name,
+      reason: `Match score ${candidate.matchScore} is below the ${SOURCING_QUALITY_FLOOR}% sourcing quality floor.`,
+    }));
+  return { accepted: qualityAccepted, skipped: [...qualitySkipped, ...skipped] };
 }

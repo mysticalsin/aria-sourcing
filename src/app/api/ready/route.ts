@@ -21,8 +21,12 @@ const expectedMigrationCount = /^[1-9][0-9]*$/.test(expectedMigrationCountRaw)
   ? Number(expectedMigrationCountRaw)
   : Number.NaN;
 const expectedLedgerSha256 = process.env.ARIA_EXPECTED_LEDGER_SHA ?? "";
-const agentFrameworksRequired = process.env.NODE_ENV === "production" ||
-  process.env.AGENT_FRAMEWORKS_REQUIRED === "true";
+// Explicit AGENT_FRAMEWORKS_REQUIRED=false opts out of the production default.
+// Fly Mantu recruiting does not deploy DeerFlow/Flowise sidecars; without this
+// opt-out /api/ready can never become ok after tip migrate.
+const agentFrameworksRequired =
+  process.env.AGENT_FRAMEWORKS_REQUIRED === "true"
+  || (process.env.NODE_ENV === "production" && process.env.AGENT_FRAMEWORKS_REQUIRED !== "false");
 
 export async function GET(req: Request) {
   // Unauthenticated deep-readiness probe: 3 DB queries + adapter network
@@ -48,6 +52,12 @@ export async function GET(req: Request) {
         // from a cached module-load reading would keep reporting the old verdict
         // after the config was corrected.
         hermesRuntimeMisconfigured: hermesRuntimeMisconfigured(process.env.HERMES_API_URL),
+        llmKeysPresent: Boolean(
+          process.env.KIMI_API_KEY?.trim()
+          || process.env.ANTHROPIC_API_KEY?.trim()
+          || process.env.OPENAI_API_KEY?.trim()
+          || process.env.DEEPSEEK_API_KEY?.trim(),
+        ),
       },
       {
         database: async () => {

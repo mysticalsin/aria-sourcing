@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildSeedState } from "../src/lib/seed";
+import { buildHistoricalDemoSeedState } from "../src/lib/seed";
 import {
   createBookingReportActions,
   type BookingReportActionDependencies,
@@ -60,8 +60,11 @@ test("booking and report actions are React-free and wired through one stable fac
   assert.equal((storeSource.match(/const setSkillUpdateStatus = useCallback/g) ?? []).length, 0);
   assert.doesNotMatch(candidateDrawerSource, /Teams \+ Cal\.com links generated/);
   assert.doesNotMatch(campaignPageSource, /Teams \+ Cal\.com links generated/);
-  assert.match(calendarPageSource, /preview\?\.booking\.calendarSync/);
+  assert.match(calendarPageSource, /bookingNeedsCalendar\(preview\.booking\)/);
+  assert.match(calendarPageSource, /bookingInterviewTitle/);
   assert.match(calendarPageSource, /bookingCalendarSummary\(preview\.booking\)/);
+  assert.match(campaignPageSource, /bookingInterviewTitle/);
+  assert.match(bookingReportActionsSource, /bookingInterviewTitle\(booking,/);
 });
 
 test("booking and report callers handle rejected mutations before success", () => {
@@ -80,7 +83,7 @@ test("a learning decision is one validated commit and every caller handles rejec
 type ActivityDraft = Parameters<BookingReportActionDependencies["makeActivity"]>[0];
 
 function bookingFixture(): HermesState {
-  const state = structuredClone(buildSeedState());
+  const state = structuredClone(buildHistoricalDemoSeedState());
   const campaign = state.campaigns[0];
   assert.ok(campaign, "seed campaign is required");
   const candidate = state.candidates.find((item) => item.campaignId === campaign.id);
@@ -258,10 +261,19 @@ test("runtime booking creation emits only after an accepted state transition", a
     result.ok ? result.booking.id : null,
   );
   assert.equal(accepted.events.length, 1);
+  assert.equal(
+    accepted.state.candidates.find((item) => item.id === acceptedIds.candidate.id)?.stage,
+    "Interested",
+    "local slot without meeting URL must not promote stage to Booked",
+  );
   assert.doesNotMatch(accepted.activityDrafts.at(-1)?.notes ?? "", /links generated/i);
   assert.match(
     accepted.activityDrafts.at(-1)?.notes ?? "",
-    /Meeting link pending calendar provider confirmation\./,
+    /Stage stays Interested — Needs calendar before Booked\./,
+  );
+  assert.match(
+    accepted.activityDrafts.at(-1)?.notes ?? "",
+    /Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting/,
   );
 
   const duplicate = await accepted.actions.createBookingFor(acceptedIds.candidate.id);
@@ -506,6 +518,66 @@ test("runtime live calendar success reaches the stored booking and both email pr
   assert.match(result.confirmationEmail, /https:\/\/calendar\.example\.test\/event/);
 });
 
+test("live calendar refuses Booked without a Graph/Gmail seat", async () => {
+  const state = bookingFixture();
+  state.seats = state.seats.map((seat) => ({ ...seat, status: "paused", mode: "dry-run" }));
+  const harness = createHarness({ state, liveCalendarEnabled: true });
+  const { candidate } = fixtureIds(harness.state);
+  const result = await harness.actions.createBookingFor(candidate.id);
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? "" : result.error, /Connect a live Gmail or Microsoft Graph calendar seat/i);
+  assert.equal(harness.commitCalls, 0);
+});
+
+test("Graph booking requires a Teams join URL before committing Booked", async () => {
+  const missing = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: { status: "created", eventId: "evt-graph-1", link: null },
+  });
+  const missingIds = fixtureIds(missing.state);
+  const missingResult = await missing.actions.createBookingFor(missingIds.candidate.id);
+  assert.equal(missingResult.ok, false);
+  assert.match(missingResult.ok ? "" : missingResult.error, /Teams join URL/i);
+  assert.equal(missing.commitCalls, 0);
+
+  const webLink = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: {
+      status: "created",
+      eventId: "evt-graph-2",
+      link: "https://outlook.office.com/calendar/item/abc",
+    },
+  });
+  const webIds = fixtureIds(webLink.state);
+  const webResult = await webLink.actions.createBookingFor(webIds.candidate.id);
+  assert.equal(webResult.ok, false);
+  assert.match(webResult.ok ? "" : webResult.error, /Teams join URL/i);
+
+  const okHarness = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: {
+      status: "created",
+      eventId: "evt-graph-3",
+      link: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ok",
+    },
+  });
+  const okIds = fixtureIds(okHarness.state);
+  const okResult = await okHarness.actions.createBookingFor(okIds.candidate.id);
+  assert.equal(okResult.ok, true);
+  if (!okResult.ok) return;
+  assert.equal(
+    okResult.booking.teamsLink,
+    "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ok",
+  );
+  assert.equal(
+    okHarness.state.candidates.find((item) => item.id === okIds.candidate.id)?.stage,
+    "Booked",
+  );
+});
+
 test("runtime calendar creation retains provider authority when no link is returned", async () => {
   const harness = createHarness({
     state: liveCalendarState(),
@@ -524,7 +596,7 @@ test("runtime calendar creation retains provider authority when no link is retur
   });
   assert.match(
     harness.activityDrafts.at(-1)?.notes ?? "",
-    /Calendar event confirmed; meeting link unavailable\./,
+    /Calendar event confirmed; meeting link unavailable/,
   );
   const next = futureBookingRange(31);
   const moved = harness.actions.updateBooking(result.booking.id, next);
@@ -545,7 +617,7 @@ test("runtime calendar response failures never commit or emit a booking", async 
     {
       name: "skipped",
       options: { fetchBody: { status: "skipped", detail: "Calendar scope missing." } },
-      error: /outcome is unknown.*reconciliation.*do not retry/i,
+      error: /Calendar scope missing/i,
     },
     {
       name: "dry-run",
@@ -630,16 +702,43 @@ test("runtime booking updates validate the patch and synchronize embedded bookin
     endTime: new Date(pastStart.getTime() + 30 * 60_000).toISOString(),
   });
   assert.equal(past.ok, false);
-  const completed = created.actions.updateBooking(result.booking.id, { status: "Completed" });
-  assert.equal(completed.ok, true);
-  const storedCandidate = created.state.candidates.find((item) => item.id === candidate.id);
-  assert.equal(storedCandidate?.booking?.status, "Completed");
-  assert.equal(storedCandidate?.stage, "Interviewed");
-  assert.equal(created.activityDrafts.at(-1)?.linkedEntityId, result.booking.id);
-  assert.match(created.activityDrafts.at(-1)?.title ?? "", /Interview marked Completed/);
-  assert.equal(created.recomputeCalls, 2);
+
+  // Incomplete calendar (no teams/cal link) must not promote to Interviewed.
+  const completedShell = created.actions.updateBooking(result.booking.id, { status: "Completed" });
+  assert.equal(completedShell.ok, true);
+  assert.equal(
+    created.state.candidates.find((item) => item.id === candidate.id)?.stage,
+    "Interested",
+  );
   assert.equal(
     created.actions.updateBooking(result.booking.id, { status: "Confirmed" }).ok,
+    false,
+  );
+
+  // Calendar-complete booking may promote → Interviewed on Completed.
+  const withLinks = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: {
+      status: "created",
+      eventId: "evt-completed-proof",
+      link: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_completed",
+    },
+  });
+  const linkedIds = fixtureIds(withLinks.state);
+  const linked = await withLinks.actions.createBookingFor(linkedIds.candidate.id);
+  assert.equal(linked.ok, true);
+  if (!linked.ok) return;
+  assert.ok(linked.booking.teamsLink);
+  const completed = withLinks.actions.updateBooking(linked.booking.id, { status: "Completed" });
+  assert.equal(completed.ok, true);
+  const storedCandidate = withLinks.state.candidates.find((item) => item.id === linkedIds.candidate.id);
+  assert.equal(storedCandidate?.booking?.status, "Completed");
+  assert.equal(storedCandidate?.stage, "Interviewed");
+  assert.equal(withLinks.activityDrafts.at(-1)?.linkedEntityId, linked.booking.id);
+  assert.match(withLinks.activityDrafts.at(-1)?.title ?? "", /Interview marked Completed/);
+  assert.equal(
+    withLinks.actions.updateBooking(linked.booking.id, { status: "Confirmed" }).ok,
     false,
   );
 });

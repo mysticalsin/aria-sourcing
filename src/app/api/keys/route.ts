@@ -1,12 +1,20 @@
+import { randomUUID } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
 import { last4Of, validateApiKeyFormat } from "@/lib/providers";
+import { isLiveLlmKeyProvider, testLlmApiKey } from "@/lib/ai/key-probe";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
+import { testSillageConnection } from "@/lib/sourcing/sillage";
+import { checkApolloAuth } from "@/lib/sourcing/apollo";
+import { checkSeamlessAuth } from "@/lib/sourcing/seamless";
+import { testApifyConnection } from "@/lib/sourcing/apify";
+import { checkHeyReachApiKey } from "@/lib/heyreach-delivery";
+import { clearProviderProbe } from "@/lib/sourcing/provider-egress";
 
 const ApiKeyCreateSchema = z.object({
   name: z.string().min(1).max(120),
@@ -14,10 +22,83 @@ const ApiKeyCreateSchema = z.object({
   value: z.string().min(1).max(1000),
 });
 
+function classifySillageTest(
+  live: Awaited<ReturnType<typeof testSillageConnection>>,
+  fallbackFormat: () => { valid: boolean; detail: string },
+): { valid: boolean; detail: string } {
+  if (live.ok) return { valid: true, detail: `Sillage key accepted (HTTP ${live.status}).` };
+  if (live.status === 401) return { valid: false, detail: live.detail || live.title || "Sillage rejected this key (401)." };
+  if (live.status === 0) {
+    const fmt = fallbackFormat();
+    return { valid: fmt.valid, detail: `${fmt.detail} Sillage was unreachable, format check only.` };
+  }
+  return { valid: true, detail: live.detail || live.title || `Sillage responded (HTTP ${live.status}).` };
+}
+
+/**
+ * Encrypt-then-verify for a newly pasted secret. Mirrors /api/keys/test probes
+ * so add-key is end-to-end in one round trip. Never logs `value`.
+ */
+async function verifyNewKey(
+  provider: string,
+  value: string,
+): Promise<{ valid: boolean; detail: string }> {
+  if (provider === "Sillage") {
+    if (!experimentalPaidSourcingEnabled) {
+      return { valid: false, detail: "Sillage is disabled on this deployment." };
+    }
+    const live = await testSillageConnection(clearProviderProbe("Sillage"), value);
+    return classifySillageTest(live, () => validateApiKeyFormat(provider, value));
+  }
+  if (provider === "Apollo") {
+    try {
+      return await checkApolloAuth(clearProviderProbe("Apollo"), value);
+    } catch {
+      return validateApiKeyFormat(provider, value);
+    }
+  }
+  if (provider === "Seamless") {
+    if (!experimentalPaidSourcingEnabled) {
+      return { valid: false, detail: "Seamless is disabled on this deployment." };
+    }
+    try {
+      return await checkSeamlessAuth(clearProviderProbe("Seamless"), value);
+    } catch {
+      return validateApiKeyFormat(provider, value);
+    }
+  }
+  if (provider === "Apify") {
+    try {
+      const live = await testApifyConnection(clearProviderProbe("Apify"), value);
+      if (live.ok) return { valid: true, detail: `Apify key accepted (HTTP ${live.status}).` };
+      if (live.status === 401) {
+        return { valid: false, detail: live.detail || live.title || "Apify rejected this key (401)." };
+      }
+      if (live.status === 0) {
+        const fmt = validateApiKeyFormat("Apify", value);
+        return { valid: fmt.valid, detail: `${fmt.detail} Apify was unreachable, format check only.` };
+      }
+      return { valid: false, detail: live.detail || live.title || `Apify returned an unexpected HTTP ${live.status}.` };
+    } catch {
+      return validateApiKeyFormat(provider, value);
+    }
+  }
+  if (isLiveLlmKeyProvider(provider)) return testLlmApiKey(provider, value);
+  if (provider === "HeyReach") {
+    const ok = await checkHeyReachApiKey(value);
+    return ok
+      ? { valid: true, detail: "HeyReach API key accepted (CheckApiKey)." }
+      : { valid: false, detail: "HeyReach rejected this API key (CheckApiKey)." };
+  }
+  return validateApiKeyFormat(provider, value);
+}
+
 /**
  * API key storage. Secrets are written to the `api_keys` table (admin-only via
- * RLS) and NEVER returned to the browser. In DEMO mode nothing persists
- * server-side — the response carries only metadata (last4) for the session.
+ * RLS) and NEVER returned to the browser. After encrypt/store we probe the
+ * provider end-to-end and return only last4 + verification status.
+ * In DEMO mode nothing persists server-side — we still probe with the plaintext
+ * once, then discard it and return metadata for the session.
  */
 export async function POST(req: NextRequest) {
   // Fail closed in production (middleware doesn't cover /api/*).
@@ -49,15 +130,21 @@ export async function POST(req: NextRequest) {
   const { name, provider, value } = validated.data;
 
   const last4 = last4Of(value);
-  const fmt = validateApiKeyFormat(provider, value);
+  const format = validateApiKeyFormat(provider, value);
+  // Probe while we still hold plaintext (never returned to the client).
+  const probe = await verifyNewKey(provider, value);
+  const status = probe.valid ? "valid" : "invalid";
 
   if (!supabaseEnabled) {
     return NextResponse.json({
       ok: true,
       demo: true,
+      id: randomUUID(),
       last4,
-      formatValid: fmt.valid,
-      detail: "Saved for this session (demo). Configure Supabase to persist server-side.",
+      formatValid: format.valid,
+      valid: probe.valid,
+      status,
+      detail: probe.detail,
     });
   }
 
@@ -79,14 +166,31 @@ export async function POST(req: NextRequest) {
   // which Postgres then denies wholesale as "permission denied for table".
   const { data, error } = await supabase
     .from("api_keys")
-    .insert({ workspace_id: wid, name, provider, secret: encryptSecret(value), last4, created_by: createdBy })
+    .insert({
+      workspace_id: wid,
+      name,
+      provider,
+      secret: encryptSecret(value),
+      last4,
+      created_by: createdBy,
+      status,
+      last_tested_at: new Date().toISOString(),
+    })
     .select("id");
   if (error) {
     // Log the DB detail server-side (redacted); never echo Postgres/RLS internals to the client.
     safeLog("api_keys insert error", { message: error.message, code: error.code });
     return NextResponse.json({ ok: false, error: "Couldn't save the key. Try again." }, { status: 403 });
   }
-  return NextResponse.json({ ok: true, id: data[0].id, last4, formatValid: fmt.valid });
+  return NextResponse.json({
+    ok: true,
+    id: data[0].id,
+    last4,
+    formatValid: format.valid,
+    valid: probe.valid,
+    status,
+    detail: probe.detail,
+  });
 }
 
 export async function DELETE(req: NextRequest) {

@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useHydrated, useSeats, useChats, useActions, useSettings } from "@/lib/store";
 import { ChatList } from "@/components/chat/chat-list";
 import { ChatThreadView } from "@/components/chat/chat-thread-view";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { SkeletonCard, Card, CardContent, Eyebrow, Badge, Button } from "@/components/ui";
+import { EmptyState, Card, CardContent, Eyebrow, Badge, Button } from "@/components/ui";
 import { getHermesSessions, hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import { MessageSquare, Server } from "lucide-react";
 
@@ -72,10 +73,10 @@ export default function ChatPage() {
   }
 
   const fallback = (
-    <div className="space-y-4">
-      <SkeletonCard />
-      <SkeletonCard />
-    </div>
+    <EmptyState
+      title="Loading chat…"
+      description="Agent threads appear after workspace hydrate — no placeholder panes."
+    />
   );
 
   return (
@@ -177,7 +178,11 @@ export default function ChatPage() {
                   );
                 })}
                 <p className="pt-1 text-[10px] text-muted">
-                  Local thread preview. Enable Aria live mode in Settings to mirror runtime sessions here.
+                  Local thread preview.{" "}
+                  <Link href="/settings?tab=ai" className="font-semibold text-ink underline-offset-2 hover:underline">
+                    Enable Aria live mode in Settings → AI &amp; Models
+                  </Link>
+                  .
                 </p>
               </>
             )}

@@ -10,6 +10,7 @@
  *  - browser settings never bypass named human review for a generated message
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import { hermesAvailable, parseHermesOutreach, buildOutreachPrompt } from "../src/lib/ai/hermes.js";
 import { newOutreachMessage } from "../src/lib/mock-ai.js";
 import { API_KEY_PROVIDERS } from "../src/lib/types.js";
@@ -30,7 +31,7 @@ function ok(name: string, cond: boolean) {
 
 /* ---- 1. Settings shape + defaults --------------------------------------- */
 
-const seed = buildSeedState();
+const seed = historicalSeedState();
 ok("seed version is current", seed.version === STATE_VERSION);
 ok("hermesLiveMode defaults false", seed.settings.hermesLiveMode === false);
 ok("hermesApiUrl defaults empty string", seed.settings.hermesApiUrl === "");
@@ -116,6 +117,38 @@ const prompt = buildOutreachPrompt({
 ok("prompt mentions the candidate", prompt.includes("Maya Okafor"));
 ok("prompt mentions the role", prompt.includes("Principal Platform Engineer"));
 ok("prompt requests Subject: format", prompt.includes("Subject:"));
+ok(
+  "prompt bans employer-name-only openers",
+  /employer\/company-name compliment alone|researched database insert/i.test(prompt),
+);
+ok(
+  "prompt omits compensation norms even when locale has them",
+  !/Compensation norms:/i.test(
+    buildOutreachPrompt({
+      candidateName: "Maya Okafor",
+      candidateTitle: "Staff Engineer",
+      candidateCompany: "Brightloop",
+      techStack: ["Go"],
+      recentActivity: "Shipped a migration tool",
+      yearsExperience: 9,
+      roleTitle: "Principal Platform Engineer",
+      locationType: "Remote",
+      regions: ["EU"],
+      requiredSkills: ["Go"],
+      tone: "Casual Professional",
+      channel: "Email",
+      language: "en",
+      localeContext: {
+        primaryLanguage: "en",
+        compensationNorms: "EU contractor day-rate norms — never echo into draft",
+      },
+    }),
+  ),
+);
+ok(
+  "prompt forbids currency/salary topic words in rules",
+  /Never mention salary, compensation, pay, rate, budget/i.test(prompt),
+);
 
 /* ---- 7. Approval-authority invariant on a live-drafted-shaped message ---- */
 

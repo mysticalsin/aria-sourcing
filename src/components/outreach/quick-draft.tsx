@@ -12,6 +12,7 @@ import {
 } from "@/lib/types";
 import { Sparkles, ShieldCheck } from "lucide-react";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 
 export function QuickDraft() {
   const candidates = useCandidates();
@@ -63,14 +64,27 @@ export function QuickDraft() {
     }
     setLoading(true);
     setResult(null);
-    let msg: OutreachMessage | null;
+    let msg: OutreachMessage | null = null;
     try {
       msg = await actions.generateOutreachLive(candidateId, tone, channel);
     } catch {
-      // A live-runtime hiccup should never block drafting — fall back to the
-      // template path so the human still gets a draft to review.
-      msg = actions.generateOutreachFor(candidateId, tone, channel);
-      toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
+      if (supabaseEnabled && !demoLoginEnabled) {
+        toast({
+          title: "Live draft failed",
+          description: "Enterprise tenants require a live Aria draft. Check runtime/provider settings and retry.",
+          variant: "error",
+        });
+      } else {
+        msg = actions.generateOutreachFor(candidateId, tone, channel);
+        toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
+      }
+    }
+    if (!msg && supabaseEnabled && !demoLoginEnabled) {
+      toast({
+        title: "Live draft required",
+        description: "No mock template draft on live tenants. Configure Aria or a cloud outreach provider.",
+        variant: "error",
+      });
     }
     setResult(msg);
     setLoading(false);

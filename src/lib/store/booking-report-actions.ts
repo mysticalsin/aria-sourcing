@@ -4,7 +4,9 @@ import {
   generateWeeklyReport,
   interviewerPrepEmail,
 } from "../mock-ai";
-import { bookingCalendarSummary } from "../booking-status";
+import { mantuFirstInterviewAgenda } from "../mantu-brand";
+import { isTeamsMeetingJoinUrl } from "../calendar";
+import { bookingCalendarSummary, bookingInterviewTitle, bookingNeedsCalendar } from "../booking-status";
 import { withStage } from "../metrics";
 import {
   applyLearning,
@@ -57,6 +59,12 @@ export interface BookingReportActionDependencies {
     candidateName: string;
     campaignId: string;
   }) => void;
+  enqueueInterviewPrep?: (input: {
+    bookingId: string;
+    candidateId: string;
+    campaignId: string;
+    providerEventCreated: boolean;
+  }) => Promise<{ queued: boolean }>;
 }
 
 function learningSummary(
@@ -107,7 +115,16 @@ function bookingStatusTransitionAllowed(
   from: Booking["status"],
   to: Booking["status"],
 ): boolean {
-  if (from === "Proposed") return to === "Confirmed" || to === "Cancelled";
+  // Local Proposed slots (no Teams URL yet) may still complete/no-show offline,
+  // or promote to Confirmed once a calendar link exists.
+  if (from === "Proposed") {
+    return (
+      to === "Confirmed" ||
+      to === "Cancelled" ||
+      to === "Completed" ||
+      to === "No Show"
+    );
+  }
   if (from === "Confirmed") {
     return to === "Completed" || to === "Cancelled" || to === "No Show";
   }
@@ -227,6 +244,7 @@ export function createBookingReportActions({
   withActivity,
   recomputeMetrics,
   emitBooking,
+  enqueueInterviewPrep,
 }: BookingReportActionDependencies): BookingReportActions {
   const createBookingFor: BookingReportActions["createBookingFor"] = async (
     candidateId,
@@ -251,7 +269,16 @@ export function createBookingReportActions({
       opts,
     );
     if ("error" in slot) return { ok: false, error: slot.error };
-    const booking = createBooking(candidate, campaign, slot.interviewer, slot.start);
+    const proposalAgenda = candidate.interviewProposal?.agenda?.filter(
+      (item) => typeof item === "string" && item.trim().length > 0,
+    );
+    const agenda =
+      proposalAgenda && proposalAgenda.length > 0
+        ? proposalAgenda
+        : mantuFirstInterviewAgenda(campaign.title);
+    const booking = createBooking(candidate, campaign, slot.interviewer, slot.start, {
+      agenda,
+    });
     const fingerprint = bookingCommandFingerprint(
       candidate,
       campaign,
@@ -259,14 +286,28 @@ export function createBookingReportActions({
       booking,
     );
 
-    const seat = state.seats.find(
-      (item) =>
-        item.status === "active" &&
-        item.mode === "live" &&
-        (item.provider === "Gmail API" || item.provider === "Microsoft Graph"),
-    );
+    // Prefer Microsoft Graph for Mantu Teams meetings; fall back to Gmail calendar only.
+    const seat =
+      state.seats.find(
+        (item) =>
+          item.status === "active" &&
+          item.mode === "live" &&
+          item.provider === "Microsoft Graph",
+      ) ??
+      state.seats.find(
+        (item) =>
+          item.status === "active" &&
+          item.mode === "live" &&
+          item.provider === "Gmail API",
+      );
     let providerEventCreated = false;
-    if (liveCalendarEnabled && seat) {
+    if (liveCalendarEnabled) {
+      if (!seat) {
+        return {
+          ok: false,
+          error: "Connect a live Gmail or Microsoft Graph calendar seat before confirming a booking.",
+        };
+      }
       try {
         const response = await workspaceFetch("/api/calendar/event", {
           method: "POST",
@@ -312,7 +353,9 @@ export function createBookingReportActions({
           return {
             ok: false,
             error:
-              "Calendar request outcome is unknown. Reconciliation is required; do not retry.",
+              typeof body.detail === "string" && body.detail.trim()
+                ? body.detail
+                : "Calendar booking was skipped. Fix the connection or scope, then retry.",
           };
         }
         if (body?.status === "dry-run") {
@@ -345,7 +388,16 @@ export function createBookingReportActions({
               "Calendar event may exist, but no provider receipt was returned. Reconciliation is required; do not retry.",
           };
         }
-        if (body.link != null) {
+        if (seat.provider === "Microsoft Graph") {
+          if (typeof body.link !== "string" || !isTeamsMeetingJoinUrl(body.link)) {
+            return {
+              ok: false,
+              error:
+                "Teams join URL missing after Graph create. Reconciliation is required; do not retry.",
+            };
+          }
+          booking.teamsLink = body.link;
+        } else if (body.link != null) {
           if (typeof body.link !== "string") {
             return {
               ok: false,
@@ -371,6 +423,10 @@ export function createBookingReportActions({
           provider: seat.provider === "Gmail API" ? "Gmail API" : "Microsoft Graph",
           eventId,
         };
+        // Only Confirmed when a join/calendar URL exists — sync alone stays Proposed.
+        if (booking.teamsLink || booking.calLink) {
+          booking.status = "Confirmed";
+        }
       } catch {
         return {
           ok: false,
@@ -406,9 +462,15 @@ export function createBookingReportActions({
       const liveCampaign = liveCandidate && current.campaigns.find((item) => item.id === liveCandidate.campaignId);
       if (!liveCandidate || !liveCampaign) return current;
       applied = true;
+      const calendarConfirmed = !bookingNeedsCalendar(booking);
       const candidates = current.candidates.map((item) =>
         item.id === candidateId
-          ? { ...item, ...withStage(item, "Booked"), booking }
+          ? {
+              ...item,
+              ...(calendarConfirmed ? withStage(item, "Booked") : {}),
+              booking,
+              interviewProposal: null,
+            }
           : item,
       );
       const bookedCandidate = candidates.find((item) => item.id === candidateId) ?? liveCandidate;
@@ -417,15 +479,21 @@ export function createBookingReportActions({
         bookings: [booking, ...current.bookings],
         candidates,
       };
-      next = appendWinRecord(next, bookedCandidate, liveCampaign, booking);
+      if (calendarConfirmed) {
+        next = appendWinRecord(next, bookedCandidate, liveCampaign, booking);
+      }
       next = recomputeMetrics(next, liveCampaign.id);
       return withActivity(
         next,
         makeActivity({
           type: "booking",
-          title: `Interview booked: ${liveCandidate.name}`,
-          notes: `${booking.interviewer || "No interviewer assigned yet"}. ${bookingCalendarSummary(booking)} Stage → Booked.`,
-          outcome: "Confirmed",
+          title: bookingInterviewTitle(booking, liveCandidate.name),
+          notes: `${booking.interviewer || "No interviewer assigned yet"}. ${bookingCalendarSummary(booking)} ${
+            calendarConfirmed
+              ? "Stage → Booked."
+              : "Stage stays Interested — Needs calendar before Booked."
+          }`,
+          outcome: bookingNeedsCalendar(booking) ? "Needs calendar" : "Confirmed",
           campaignId: liveCampaign.id,
           linkedEntityType: "booking",
           linkedEntityId: booking.id,
@@ -445,7 +513,21 @@ export function createBookingReportActions({
     const prepEmail = interviewerPrepEmail(booking, candidate);
     const confirmationEmail = candidateConfirmationEmail(booking);
     emitBooking({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
-    return { ok: true, booking, prepEmail, confirmationEmail };
+    let prepQueued = false;
+    if (providerEventCreated && enqueueInterviewPrep) {
+      try {
+        const enq = await enqueueInterviewPrep({
+          bookingId: booking.id,
+          candidateId: candidate.id,
+          campaignId: campaign.id,
+          providerEventCreated: true,
+        });
+        prepQueued = enq.queued;
+      } catch {
+        prepQueued = false;
+      }
+    }
+    return { ok: true, booking, prepEmail, confirmationEmail, prepQueued };
   };
 
   const updateBooking: BookingReportActions["updateBooking"] = (id, patch) => {
@@ -518,7 +600,16 @@ export function createBookingReportActions({
       };
       if (safePatch.status === "Completed") {
         const candidate = next.candidates.find((item) => item.id === liveBooking.candidateId);
-        if (candidate?.stage === "Booked") {
+        const liveAfter = next.bookings.find((item) => item.id === id) ?? {
+          ...liveBooking,
+          ...safePatch,
+        };
+        const mayInterview =
+          candidate &&
+          !bookingNeedsCalendar(liveAfter) &&
+          (candidate.stage === "Booked" ||
+            (candidate.stage === "Interested" && candidate.booking?.id === liveBooking.id));
+        if (mayInterview) {
           next = {
             ...next,
             candidates: next.candidates.map((item) =>

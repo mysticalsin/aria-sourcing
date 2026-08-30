@@ -10,7 +10,6 @@ import {
   CardTitle,
   EmptyState,
   Eyebrow,
-  SkeletonCard,
   Table,
   TBody,
   TD,
@@ -113,7 +112,15 @@ export default function WinlogPage() {
           </Button>
         }
       />
-      <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
+      <HydrationGate
+        hydrated={hydrated}
+        fallback={
+          <EmptyState
+            title="Loading winlog…"
+            description="Booked-win records appear after workspace hydrate — no placeholder table."
+          />
+        }
+      >
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardContent>

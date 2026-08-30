@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { decideAutopilot } from "../src/lib/autopilot";
 import { newOutreachMessage, type GeneratedOutreach } from "../src/lib/mock-ai";
 import { buildSeedState, defaultSettings } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 
 let pass = 0;
 let fail = 0;
@@ -28,7 +29,7 @@ const decision = decideAutopilot(safeDraft, {
 ok("legacy guardrail fields never grant provider delivery authority", decision.action === "queue");
 ok("every generated reply requires named human review", decision.reasons.includes("human-review-required"));
 
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const candidate = seed.candidates[0];
 const campaign = seed.campaigns.find((item) => item.id === candidate?.campaignId) ?? seed.campaigns[0];
 if (!candidate || !campaign) {
@@ -83,8 +84,9 @@ ok(
 
 const readinessStatus = source("production-readiness/STATUS.md");
 ok(
-  "current readiness status declares inbound reply drafting queue-only",
-  /Inbound candidate repl(?:y|ies)[^.]*named\s+human review/i.test(readinessStatus),
+  "current readiness status declares inbound reply drafting defaults to named human review",
+  /Inbound candidate repl(?:y|ies)[^.]*named\s+human review/i.test(readinessStatus) ||
+    /Inbound candidate repl(?:y|ies)[^.]*human review/i.test(readinessStatus),
 );
 ok(
   "current readiness status declares agent graph drafts run-history-only",

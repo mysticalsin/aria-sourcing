@@ -12,7 +12,6 @@ import {
   Button,
   Badge,
   EmptyState,
-  SkeletonCard,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
@@ -103,10 +102,10 @@ export default function ReportsPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
+          <EmptyState
+            title="Loading reports…"
+            description="Weekly reports appear after workspace hydrate — no placeholder cards."
+          />
         }
       >
         {campaigns.length === 0 ? (

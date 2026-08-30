@@ -17,10 +17,12 @@
 import type { HermesState, OutreachMessage } from "./types";
 import type { Tone } from "./utils";
 import { daysSince } from "./rules";
+import { bookingNeedsCalendar } from "./booking-status";
 
 export type RecommendationKind =
   | "hot_reply"
   | "approve_outreach"
+  | "send_outreach"
   | "book_interview"
   | "follow_up_due"
   | "stalled_draft"
@@ -46,6 +48,7 @@ const STAGE_LEVERAGE: Record<RecommendationKind, number> = {
   follow_up_due: 2,
   source_campaign: 3,
   approve_outreach: 5,
+  send_outreach: 5,
   stalled_draft: 6,
   book_interview: 8,
 };
@@ -53,6 +56,7 @@ const STAGE_LEVERAGE: Record<RecommendationKind, number> = {
 const ROLLUP_LABEL: Record<RecommendationKind, string> = {
   hot_reply: "replies to answer",
   approve_outreach: "drafts to approve",
+  send_outreach: "approved messages to send",
   book_interview: "candidates to book",
   follow_up_due: "follow-ups due",
   stalled_draft: "stalled drafts",
@@ -62,6 +66,7 @@ const ROLLUP_LABEL: Record<RecommendationKind, string> = {
 const KIND_TONE: Record<RecommendationKind, Tone> = {
   hot_reply: "tangerine",
   approve_outreach: "warning",
+  send_outreach: "danger",
   book_interview: "violet",
   follow_up_due: "aqua",
   stalled_draft: "danger",
@@ -71,6 +76,7 @@ const KIND_TONE: Record<RecommendationKind, Tone> = {
 const KIND_HREF: Record<RecommendationKind, string> = {
   hot_reply: "/replies",
   approve_outreach: "/outreach",
+  send_outreach: "/outreach",
   book_interview: "/calendar",
   follow_up_due: "/outreach",
   stalled_draft: "/outreach",
@@ -232,8 +238,24 @@ export function deriveRecommendations(state: HermesState, now: number = Date.now
     });
   }
 
+  for (const m of state.outreach) {
+    if (m.status !== "Approved" || m.dryRun === true) continue;
+    const cand = candidateById.get(m.candidateId);
+    const matchScore = cand?.matchScore ?? 0;
+    items.push({
+      kind: "send_outreach",
+      entityId: m.id,
+      title: cand ? `Send approved outreach to ${cand.name}` : "Send an approved outreach message",
+      slaDueAt: null,
+      matchScore,
+      priorityScore: matchScore + STAGE_LEVERAGE.send_outreach,
+    });
+  }
+
   for (const c of state.candidates) {
-    if (c.stage !== "Interested" || c.booking) continue;
+    if (c.stage !== "Interested") continue;
+    // Incomplete bookings (event without teamsLink/calLink) still need book_interview.
+    if (c.booking && !bookingNeedsCalendar(c.booking)) continue;
     items.push({
       kind: "book_interview",
       entityId: c.id,

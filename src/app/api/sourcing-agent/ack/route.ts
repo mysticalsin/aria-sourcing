@@ -10,6 +10,7 @@ import { ackAgentFrameworkSourcingEffect } from "@/lib/sourcing/learning-authori
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
   if (contentType.split(";", 1)[0]?.trim() !== "application/json") return fail(415, "INVALID_REQUEST");
   const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) return fail(403, "CROSS_ORIGIN_REQUEST");
+  if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) return fail(403, "CROSS_ORIGIN_REQUEST");
   const validated = await validateBody(req, AckSchema, { maxBytes: 1_000 });
   if (!validated.ok) return fail(validated.response.status, "INVALID_REQUEST");
 

@@ -19,13 +19,26 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_outlook",
       name: "Email Inbox / Outlook",
       category: "Inbox",
-      description: "Ingest inbound job requests and replies via Microsoft Graph mail.",
-      status: "connected",
+      description:
+        "Connect Microsoft 365 via OAuth. Hiring needs arrive via Graph webhook push (no inbox polling); replies route to classify.",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(0.4),
+      lastSync: null,
       errors: [],
       real: true,
-      setupHref: "/fleet",
+      setupHref: "/settings?tab=integrations#microsoft365-stack",
+    },
+    {
+      id: "int_gmail",
+      name: "Gmail",
+      category: "Inbox",
+      description: "Connect a Gmail / Google Workspace mailbox via OAuth for send + read.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [],
+      real: true,
+      setupHref: "/settings?tab=integrations#email-connections-panel",
     },
     {
       id: "int_resume_matcher",
@@ -43,34 +56,50 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "GitHub Sourcing",
       category: "Sourcing",
       description: "Search public profiles & repositories within platform rate limits.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(0.8),
+      lastSync: null,
       errors: [],
       real: true,
     },
     {
       id: "int_apify",
-      name: "Apify (LinkedIn profile search)",
+      name: "LinkedIn profile search",
       category: "Sourcing",
       description:
-        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation.",
-      status: "connected",
-      mode: "mock",
-      lastSync: isoHoursBefore(0.6),
-      errors: [],
-      real: true,
-    },
-    {
-      id: "int_linkedin_rsc",
-      name: "LinkedIn Recruiter System Connect",
-      category: "Sourcing",
-      description: "Official LinkedIn ATS integration for automated profile import and InMail. Requires a LinkedIn partnership agreement.",
+        "Public LinkedIn profiles via Apify (harvestapi actor). Add an Apify API key under Access & Keys — no LinkedIn password, no session bots.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
-      errors: ["Not connected. Apply for RSC at LinkedIn Talent Solutions, then enter OAuth credentials."],
-      real: false,
+      errors: [],
+      real: true,
+      setupHref: "/settings?tab=access",
+    },
+    {
+      id: "int_heyreach",
+      name: "HeyReach MCP",
+      category: "Comms",
+      description:
+        "Official HeyReach MCP for LinkedIn outreach sequences — connect on Settings → Integrations above LinkedIn OIDC identity.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [],
+      real: true,
+      setupHref: "/settings?tab=integrations#linkedin-outreach-stack",
+    },
+    {
+      id: "int_linkedin_rsc",
+      name: "LinkedIn messaging",
+      category: "Comms",
+      description:
+        "Sign in with LinkedIn (OpenID Connect) above, then draft → human paste-send. Official RSC/InMail needs a LinkedIn partnership; set LINKEDIN_VENDOR_* for contracted automation.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [],
+      real: true,
+      setupHref: "/settings?tab=integrations#linkedin-outreach-stack",
     },
     {
       id: "int_twenty",
@@ -156,7 +185,8 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_calcom",
       name: "Cal.com",
       category: "Calendar",
-      description: "Generate scheduling links and capture interview bookings.",
+      description:
+        "Roadmap only — no live adapter. Interview books use Microsoft Graph Teams (confirmLive) when Outlook is connected; do not Configure/Live this card.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
@@ -167,13 +197,13 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_graph_teams",
       name: "Microsoft Graph / Teams",
       category: "Calendar",
-      description: "Create calendar events and Teams meeting links for interviews.",
-      status: "connected",
+      description: "Create calendar events and Teams meeting links for interviews (via Outlook OAuth above).",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(0.5),
+      lastSync: null,
       errors: [],
       real: true,
-      setupHref: "/fleet",
+      setupHref: "/settings?tab=integrations#microsoft365-stack",
     },
     {
       id: "int_enrichment",
@@ -191,11 +221,12 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "SendGrid / Resend",
       category: "Comms",
       description: "Transactional email delivery. Dry-run by default (nothing is sent).",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(1),
+      lastSync: null,
       errors: [],
       real: true,
+      setupHref: "/settings?tab=access",
     },
     {
       id: "int_notify",
@@ -212,16 +243,133 @@ export function defaultIntegrations(): IntegrationStatus[] {
 }
 
 /** Configuration catalogue for a new live tenant. Seed connection timestamps
- * are demo fixtures, so every adapter starts explicitly unconfigured. Real
- * adapters remain labelled live to expose their actual setup surfaces. */
+ * are demo fixtures, so every adapter starts explicitly unconfigured and mock.
+ * Hydrate / Connect Outlook (or a validated key) is what flips mode to live —
+ * never badge Live from `real: true` alone. */
 export function defaultLiveIntegrations(): IntegrationStatus[] {
   return defaultIntegrations().map((integration) => ({
     ...integration,
     status: "not_configured",
-    mode: integration.real ? "live" : "mock",
+    mode: "mock",
     lastSync: null,
     connectedAccount: undefined,
   }));
+}
+
+/** Live mailbox/calendar card patches from GET /api/email/connections. */
+export type EmailConnectionsHydratePayload = {
+  connections?: Array<{
+    provider: string;
+    accountEmail: string;
+    hasRefreshToken?: boolean;
+    scope?: string;
+    inboundRoute?: { active?: boolean } | null;
+    graphSubscription?: { active?: boolean; status?: string } | null;
+  }>;
+  seats?: Array<{
+    provider: string;
+    mode?: string;
+    status?: string;
+    connectedAccount?: string | null;
+  }>;
+};
+
+export function mailboxIntegrationPatchesFromConnections(
+  payload: EmailConnectionsHydratePayload,
+): Array<{ id: string; patch: Partial<IntegrationStatus> }> {
+  const connections = payload.connections ?? [];
+  const seats = payload.seats ?? [];
+
+  const hasOnlineMeetings = (scope: string | undefined) =>
+    /OnlineMeetings\.ReadWrite/i.test(scope ?? "");
+
+  const patchFor = (
+    id: string,
+    provider: string,
+    requireLiveSeat: boolean,
+    requireOnlineMeetings = false,
+  ): { id: string; patch: Partial<IntegrationStatus> } => {
+    const conn = connections.find(
+      (c) => c.provider === provider && Boolean(c.accountEmail?.trim()) && c.hasRefreshToken !== false,
+    );
+    const liveSeat = seats.some(
+      (s) =>
+        s.provider === provider &&
+        s.mode === "live" &&
+        (s.status === "active" || !s.status) &&
+        Boolean(s.connectedAccount?.trim()),
+    );
+    if (!conn) {
+      return {
+        id,
+        patch: {
+          status: "not_configured",
+          mode: "mock",
+          connectedAccount: undefined,
+          lastSync: null,
+          errors: [],
+        },
+      };
+    }
+    if (provider === "Microsoft Graph" && conn.graphSubscription?.active !== true) {
+      return {
+        id,
+        patch: {
+          status: "degraded",
+          mode: "mock",
+          connectedAccount: conn.accountEmail,
+          // Hydrate is status refresh only — never stamp lastSync as a real sync.
+          lastSync: null,
+          errors: [
+            "Mailbox token present but Graph webhook subscription is not active — Enable webhook or reconnect Outlook.",
+          ],
+        },
+      };
+    }
+    if (requireOnlineMeetings && !hasOnlineMeetings(conn.scope)) {
+      return {
+        id,
+        patch: {
+          status: "degraded",
+          mode: "mock",
+          connectedAccount: conn.accountEmail,
+          lastSync: null,
+          errors: [
+            "OnlineMeetings.ReadWrite missing — reconnect Outlook and grant Teams meeting permissions.",
+          ],
+        },
+      };
+    }
+    if (requireLiveSeat && !liveSeat) {
+      return {
+        id,
+        patch: {
+          status: "degraded",
+          mode: "mock",
+          connectedAccount: conn.accountEmail,
+          lastSync: null,
+          errors: ["Mailbox connected but seat is not live — reconnect Outlook after tip deploy."],
+        },
+      };
+    }
+    return {
+      id,
+      patch: {
+        status: "connected",
+        mode: liveSeat ? "live" : "mock",
+        connectedAccount: conn.accountEmail,
+        lastSync: null,
+        errors: [],
+      },
+    };
+  };
+
+  return [
+    // Outlook + Teams cards require a live seat; Teams also needs OnlineMeetings.
+    patchFor("int_outlook", "Microsoft Graph", true),
+    patchFor("int_graph_teams", "Microsoft Graph", true, true),
+    patchFor("int_gmail", "Gmail API", false),
+  ];
 }
 
 export interface ConnectionTestResult {
@@ -254,15 +402,15 @@ export function testConnection(integration: IntegrationStatus): ConnectionTestRe
   }
   if (integration.mode === "mock") {
     return {
-      ok: true,
+      ok: false,
       latencyMs: 0,
-      message: `${integration.name}: mock adapter. Sample data only, no live call. Switch to Live to validate real credentials.`,
+      message: `${integration.name}: mock adapter — sample data only, no live call. Switch to Live and connect credentials before treating this as ready.`,
     };
   }
   return {
-    ok: true,
+    ok: false,
     latencyMs: 0,
-    message: `${integration.name}: live credentials stored, and will be validated on the next sync.`,
+    message: `${integration.name}: credentials may be stored, but this card has no live probe — use Connect / sync to validate before treating as ready.`,
   };
 }
 

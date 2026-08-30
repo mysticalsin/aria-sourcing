@@ -12,7 +12,6 @@ import {
   Eyebrow,
   EmptyState,
   Meter,
-  SkeletonCard,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { AgentDesk } from "@/components/floor/agent-desk";
@@ -25,6 +24,7 @@ import {
   useSeats,
   useCampaigns,
   useCandidates,
+  useOutreach,
   useLedger,
   useSuppression,
   useSettings,
@@ -62,6 +62,7 @@ export default function FloorPage() {
   const seats = useSeats();
   const campaigns = useCampaigns();
   const candidates = useCandidates();
+  const outreach = useOutreach();
   const ledger = useLedger();
   const suppression = useSuppression();
   const settings = useSettings();
@@ -140,7 +141,8 @@ export default function FloorPage() {
     return () => clearInterval(id);
   }, []);
 
-  const stateLike = { campaigns, candidates, ledger, suppression, seats, settings } as unknown as HermesState;
+  // Include outreach — agentActivity / floorRollup read pending drafts from it.
+  const stateLike = { campaigns, candidates, outreach, ledger, suppression, seats, settings } as unknown as HermesState;
   const rollup = floorRollup(seats, stateLike);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
 
@@ -495,7 +497,17 @@ function AgentDetailDrawer({
         </div>
 
         <dl className="grid grid-cols-2 gap-3 text-sm">
-          <Meta icon={<Mail className="h-4 w-4" />} label="Mailbox" value={seat.connectedAccount || seat.operatorEmail} />
+          <Meta
+            icon={<Mail className="h-4 w-4" />}
+            label="Mailbox"
+            value={
+              seat.provider === "Microsoft Graph" || seat.provider === "Gmail API"
+                ? seat.mode === "live" && seat.connectedAccount
+                  ? seat.connectedAccount
+                  : "Not connected"
+                : seat.connectedAccount || seat.operatorEmail || "Not connected"
+            }
+          />
           <Meta icon={<Building2 className="h-4 w-4" />} label="Provider" value={seat.provider} />
           <Meta icon={<Languages className="h-4 w-4" />} label="Language" value={languageLabel(seat.language ?? "en")} />
           <Meta icon={<Clock className="h-4 w-4" />} label="Send window" value={`${seat.sendWindow.startHour}:00–${seat.sendWindow.endHour}:00 ${seat.sendWindow.timezone}`} />
@@ -550,10 +562,9 @@ function Meta({ icon, label, value }: { icon: React.ReactNode; label: string; va
 
 function FloorFallback() {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-hidden>
-      {Array.from({ length: 8 }).map((_, i) => (
-        <SkeletonCard key={i} />
-      ))}
-    </div>
+    <EmptyState
+      title="Loading floor…"
+      description="Agent desks appear after workspace hydrate — no placeholder seats."
+    />
   );
 }

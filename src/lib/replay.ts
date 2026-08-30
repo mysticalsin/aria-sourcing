@@ -1,5 +1,7 @@
 import type { HermesState, OutreachLedgerEntry } from "./types";
 import { colorForAgent, type OfficeAgent } from "./floor3d";
+import { bookingInterviewTitle } from "./booking-status";
+import { isRealSendFact } from "./metrics";
 
 /* ============================================================================
    Autopilot Replay (DVR) — a purely derived read model. Nothing here is
@@ -116,10 +118,8 @@ export function buildEventStream(state: ReplaySourceState): ReplayEvent[] {
     });
   }
 
-  // Fallback "contacted" event for candidates marked contacted (lastContactedAt
-  // set) but with no OutreachMessage on record — covers seed/legacy data that
-  // predates the outreach array. Skipped whenever a real draft/approve pair
-  // already exists below, so nothing is double-counted.
+  // Fallback contact claim for candidates with lastContactedAt but no outreach
+  // row — seed/legacy only. Never label as a live send without isRealSendFact.
   const candidatesWithOutreach = new Set(state.outreach.map((m) => m.candidateId));
   for (const c of state.candidates) {
     if (c.lastContactedAt && !candidatesWithOutreach.has(c.id)) {
@@ -128,7 +128,7 @@ export function buildEventStream(state: ReplaySourceState): ReplayEvent[] {
         kind: "approve",
         candidateId: c.id,
         seatId: candidateSeat.get(c.id),
-        label: `${c.name} contacted`,
+        label: `${c.name} contact claimed (no outreach receipt)`,
       });
     }
   }
@@ -146,14 +146,17 @@ export function buildEventStream(state: ReplaySourceState): ReplayEvent[] {
     });
     if (m.status === "Approved" || m.status === "Pending Manual Send" || m.status === "Scheduled") {
       const approvedAt = Math.max(toMs(m.sentAt ?? m.scheduledFor, draftAt + 1), draftAt + 1);
+      const realSend = isRealSendFact(m);
       events.push({
         at: approvedAt,
         kind: "approve",
         candidateId: m.candidateId,
         seatId,
-        label: m.sentAt
+        label: realSend
           ? `${m.channel} sent to ${name}: ${m.subject}`
-          : `${m.channel} approved for ${name}: ${m.subject}`,
+          : m.dryRun === true && m.sentAt
+            ? `${m.channel} approved (dry-run) for ${name}: ${m.subject}`
+            : `${m.channel} approved for ${name}: ${m.subject}`,
       });
     }
   }
@@ -175,7 +178,7 @@ export function buildEventStream(state: ReplaySourceState): ReplayEvent[] {
       kind: "book",
       candidateId: b.candidateId,
       seatId: candidateSeat.get(b.candidateId),
-      label: `Interview booked: ${b.candidateName} with ${b.interviewer}`,
+      label: `${bookingInterviewTitle(b, b.candidateName)}${b.interviewer ? ` with ${b.interviewer}` : ""}`,
     });
   }
 

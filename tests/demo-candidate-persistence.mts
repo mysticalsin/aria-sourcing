@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildSeedState } from "../src/lib/seed";
+import { buildHistoricalDemoSeedState, buildSeedState } from "../src/lib/seed";
 import { demoStateAllowsCandidatePersistence } from "../src/lib/store/demo-persistence";
 import { loadState } from "../src/lib/store/migrations";
 import type { Candidate, HermesState } from "../src/lib/types";
@@ -12,7 +12,7 @@ const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url)
 function candidateWithProvenance(
   provenance: Candidate["provenance"],
 ): Candidate {
-  const seed = buildSeedState().candidates[0];
+  const seed = buildHistoricalDemoSeedState().candidates[0];
   assert.ok(seed);
   return {
     ...seed,

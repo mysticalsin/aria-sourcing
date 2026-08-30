@@ -37,6 +37,18 @@ const ValidationWarningSchema = z
   })
   .strict();
 
+const LocaleContextSchema = z
+  .object({
+    primaryLanguage: bounded(20),
+    secondaryLanguages: boundedArray(20, 20).optional(),
+    marketCountry: bounded(200).optional(),
+    workCity: bounded(200).optional(),
+    clientSector: bounded(200).optional(),
+    formality: z.enum(["formal", "consulting", "casual"]).optional(),
+    compensationNorms: bounded(500).optional(),
+  })
+  .strict();
+
 const JobAnalysisSchema = z
   .object({
     title: bounded(200),
@@ -62,7 +74,10 @@ const JobAnalysisSchema = z
     reportingTo: bounded(200),
     urgency: z.enum(URGENCY_LEVELS),
     language: bounded(20).optional(),
+    localeContext: LocaleContextSchema.optional(),
     expectedStartDate: bounded(100).nullable().optional(),
+    missionDescription: bounded(12_000).optional(),
+    linkedinBoolean: bounded(2_000).optional(),
     validationWarnings: z.array(ValidationWarningSchema).max(100),
   })
   .strict();
@@ -86,6 +101,26 @@ const CampaignProjectionSchema = z.object({
   scoringWeights: ScoringWeightsSchema,
   sourcingStrategy: z.object({
     excludedCompanies: boundedArray(500, 200),
+    primaryPlatforms: z
+      .array(
+        z.enum([
+          "GitHub",
+          "LinkedIn",
+          "Stack Overflow",
+          "Dribbble",
+          "Behance",
+          "Sillage",
+          "Apollo",
+          "Seamless",
+          "Manual",
+          "Apify",
+          "Referral",
+          "Talent Pool",
+        ]),
+      )
+      .min(1)
+      .max(8),
+    linkedinBoolean: bounded(2_000),
     githubQueries: z
       .array(
         z
@@ -114,7 +149,7 @@ const DedupeIdentitySchema = z
 export const SourcingAgentRequestSchema = z
   .object({
     campaignId: bounded(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
-    count: z.number().int().min(1).max(8).default(5),
+    count: z.number().int().min(1).max(20).default(10),
     agentFrameworkRunId: z.string().uuid().optional(),
     agentFrameworkCapabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
     agentFrameworkQuery: z.string().trim().min(3).max(256).optional(),
@@ -168,7 +203,7 @@ export type SourcingAgentCampaign = CandidateMappingCampaign &
   Pick<Campaign, "status"> & {
     sourcingStrategy: Pick<
       Campaign["sourcingStrategy"],
-      "excludedCompanies" | "githubQueries"
+      "excludedCompanies" | "githubQueries" | "primaryPlatforms" | "linkedinBoolean"
     >;
   };
 
@@ -180,17 +215,50 @@ export type SourcingAgentWorkspace = {
   fingerprint: string;
 };
 
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
+}
+
+/**
+ * Sourcing authority slice of job analysis — excludes validationWarnings because
+ * those are derived metadata that can drift between client parse and server save
+ * without changing the brief the operator approved for search.
+ */
+function jobAnalysisForAuthority(
+  jobAnalysis: z.infer<typeof JobAnalysisSchema>,
+): Omit<z.infer<typeof JobAnalysisSchema>, "validationWarnings"> {
+  const { validationWarnings: _ignored, ...authority } = jobAnalysis;
+  return authority;
+}
+
+/**
+ * Authority fingerprint shared by the sourcing-agent route and the browser
+ * commit path. Always canonicalizes through CampaignProjectionSchema and a
+ * key-sorted JSON encoding so client-held Campaign objects (key order / stray
+ * undefineds) match the server projection of workspace_state.
+ */
 export function sourcingAgentCampaignFingerprint(
-  campaign: SourcingAgentCampaign,
+  campaign: SourcingAgentCampaign | Record<string, unknown>,
 ): string {
-  return JSON.stringify({
-    id: campaign.id,
-    status: campaign.status,
-    jobAnalysis: campaign.jobAnalysis,
-    scoringWeights: campaign.scoringWeights,
+  const projected = CampaignProjectionSchema.safeParse(campaign);
+  const value = projected.success
+    ? projected.data
+    : (campaign as SourcingAgentCampaign);
+  return stableJson({
+    id: value.id,
+    status: value.status,
+    jobAnalysis: jobAnalysisForAuthority(value.jobAnalysis as z.infer<typeof JobAnalysisSchema>),
+    scoringWeights: value.scoringWeights,
     sourcingStrategy: {
-      excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-      githubQueries: campaign.sourcingStrategy.githubQueries,
+      excludedCompanies: value.sourcingStrategy.excludedCompanies,
+      primaryPlatforms: value.sourcingStrategy.primaryPlatforms,
+      linkedinBoolean: value.sourcingStrategy.linkedinBoolean,
+      githubQueries: value.sourcingStrategy.githubQueries,
     },
   });
 }
@@ -267,6 +335,8 @@ export function projectSourcingAgentWorkspace(
     scoringWeights: projected.scoringWeights,
     sourcingStrategy: {
       excludedCompanies: [...projected.sourcingStrategy.excludedCompanies],
+      primaryPlatforms: [...projected.sourcingStrategy.primaryPlatforms],
+      linkedinBoolean: projected.sourcingStrategy.linkedinBoolean,
       githubQueries: projected.sourcingStrategy.githubQueries.map((query) => ({ ...query })),
     },
   };
@@ -297,6 +367,8 @@ export const SourcingAgentCandidateDtoSchema = z
   .object({
     id: bounded(100),
     campaignId: bounded(100),
+    /** Every candidate returned by live search is stamped live — never synthetic. */
+    provenance: z.literal("live"),
     name: bounded(200).min(1),
     currentTitle: bounded(200),
     currentCompany: bounded(200),
@@ -339,7 +411,7 @@ const SourcingAgentSuccessResponseSchema = z
     mode: z.enum(["cloud", "deterministic"]),
     campaignId: bounded(100),
     campaignFingerprint: bounded(100_000).min(1),
-    candidates: z.array(SourcingAgentCandidateDtoSchema).max(8),
+    candidates: z.array(SourcingAgentCandidateDtoSchema).max(20),
     totalFound: z.number().int().min(0).max(100_000),
     requestId: bounded(100).regex(/^[A-Za-z0-9._:-]{1,100}$/),
     idempotencyKey: z.string().uuid(),

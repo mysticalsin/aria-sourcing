@@ -29,6 +29,7 @@ import {
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
     return noStoreJson({ ok: false, code: "invalid_request", requestId: correlationId }, 415);
   }
   const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) {
     return noStoreJson({ ok: false, code: "cross_origin_request", requestId: correlationId }, 403);
   }
   if (!supabaseEnabled) {
@@ -235,7 +236,7 @@ export async function POST(req: NextRequest) {
     idempotencyKey,
     reviewedGithubQueries: governedGithubQueries,
     need: frameworkNeed.data,
-    sourcingCount: validated.data.count ?? 5,
+    sourcingCount: validated.data.count ?? 10,
     loadMemoryContext: (scope, runId) => loadAgentFrameworkMemoryContext(service, scope, runId),
     revalidateAuthority: async () => {
       const [{ data: latestRole }, { data: latestWorkspaceId }, latest, latestSpec] = await Promise.all([
@@ -271,7 +272,7 @@ export async function POST(req: NextRequest) {
     command: {
       kind: "source_reviewed_campaign",
       campaignId: campaign.id,
-      count: validated.data.count ?? 5,
+      count: validated.data.count ?? 10,
       query: result.sourceQuery,
       capabilityToken: result.sourcingCapabilityToken,
     },

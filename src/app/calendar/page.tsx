@@ -12,13 +12,12 @@ import {
   EmptyState,
   Modal,
   useToast,
-  SkeletonCard,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { BookingCalendar } from "@/components/calendar/booking-calendar";
 import { InterviewerPanel } from "@/components/calendar/interviewer-panel";
 import { useHydrated, useBookings, useCandidates, useActions } from "@/lib/store";
-import { bookingCalendarSummary } from "@/lib/booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle, bookingNeedsCalendar } from "@/lib/booking-status";
 import type { Booking, Candidate } from "@/lib/types";
 import {
   cn,
@@ -44,6 +43,7 @@ type BookingPreview = {
   booking: Booking;
   prepEmail: string;
   confirmationEmail: string;
+  prepQueued?: boolean;
 };
 
 function EmailBlock({
@@ -52,12 +52,14 @@ function EmailBlock({
   subtitle,
   body,
   onCopy,
+  previewOnly = false,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle: string;
   body: string;
   onCopy: () => void;
+  previewOnly?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -74,14 +76,20 @@ function EmailBlock({
             <p className="text-xs text-muted">{subtitle}</p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          leftIcon={<Copy className="h-3.5 w-3.5" aria-hidden />}
-          onClick={onCopy}
-        >
-          Copy
-        </Button>
+        {previewOnly ? (
+          <Badge tone="warning" size="sm">
+            Preview only
+          </Badge>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<Copy className="h-3.5 w-3.5" aria-hidden />}
+            onClick={onCopy}
+          >
+            Copy
+          </Button>
+        )}
       </div>
       <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-2xl border border-line bg-canvas p-4 font-sans text-sm leading-relaxed text-ink-soft">
         {body}
@@ -98,7 +106,12 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
 
   async function handleBook(candidate: Candidate) {
     setBooking(candidate.id);
-    const res = await a.createBookingFor(candidate.id);
+    const res = await a.createBookingFor(candidate.id, {
+      startTime:
+        candidate.interviewProposal?.startTime
+        || candidate.preCallProposal?.startTime
+        || undefined,
+    });
     setBooking(null);
     if (!res.ok) {
       toast({
@@ -108,11 +121,23 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
       });
       return;
     }
-    setPreview(res);
+    setPreview({
+      booking: res.booking,
+      prepEmail: res.prepEmail,
+      confirmationEmail: res.confirmationEmail,
+      prepQueued: res.prepQueued,
+    });
+    const prepQueued = res.ok && res.prepQueued === true;
     toast({
-      title: `Interview booked: ${candidate.name}`,
-      description: "Added to the schedule. The meeting link is issued when the calendar integration goes live.",
-      variant: "success",
+      title: bookingInterviewTitle(res.booking, candidate.name),
+      description: prepQueued
+        ? "Interview prep drafts queued in Outreach — approve before anything sends."
+        : !bookingNeedsCalendar(res.booking)
+          ? "Teams/Outlook event created and added to the schedule."
+          : res.booking.calendarSync
+            ? "Calendar event saved without a meeting link. Re-book with confirmLive after OnlineMeetings scope."
+            : "Slot saved locally. Connect Microsoft Graph and use confirmLive to issue a Teams link — not a live booked interview.",
+      variant: bookingNeedsCalendar(res.booking) ? "warning" : "success",
     });
   }
 
@@ -169,10 +194,24 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                     <p className="truncate text-xs text-muted">
                       {c.currentTitle} @ {c.currentCompany}
                     </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[0.6875rem] text-muted">
-                      <MapPin className="h-3 w-3" aria-hidden />
-                      {c.location} · {c.timezone}
-                    </p>
+                    {c.interviewProposal?.startTime || c.preCallProposal?.startTime ? (
+                      <p className="mt-0.5 text-[0.6875rem] font-medium text-tangerine">
+                        {c.preCallProposal?.startTime && !c.interviewProposal?.startTime
+                          ? "Pre-call proposed "
+                          : "Proposed "}
+                        {formatDateTime(
+                          (c.interviewProposal?.startTime || c.preCallProposal?.startTime) as string,
+                        )}
+                        {(c.interviewProposal?.proposeStatus || c.preCallProposal?.proposeStatus)
+                          ? ` · ${c.interviewProposal?.proposeStatus || c.preCallProposal?.proposeStatus}`
+                          : ""}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 flex items-center gap-1 text-[0.6875rem] text-muted">
+                        <MapPin className="h-3 w-3" aria-hidden />
+                        {c.location} · {c.timezone}
+                      </p>
+                    )}
                   </div>
                   <Button
                     variant="secondary"
@@ -182,7 +221,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                     onClick={() => handleBook(c)}
                     className="shrink-0"
                   >
-                    Book
+                    {c.interviewProposal?.startTime || c.preCallProposal?.startTime ? "Confirm slot" : "Book"}
                   </Button>
                 </li>
               ))}
@@ -194,11 +233,19 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
       <Modal
         open={preview !== null}
         onClose={() => setPreview(null)}
-        title={preview ? `Interview booked: ${preview.booking.candidateName}` : "Interview booked"}
+        title={
+          preview
+            ? bookingInterviewTitle(preview.booking, preview.booking.candidateName)
+            : "Interview booking"
+        }
         description={
-          preview?.booking.calendarSync
-            ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
-            : "Dry-run scheduled. Prep and confirmation emails are drafted below. Nothing is sent automatically."
+          preview && preview.prepQueued
+            ? "Prep and confirmation drafts are queued in Outreach — approve before send. Copy is preview-only."
+            : preview && !bookingNeedsCalendar(preview.booking)
+              ? preview.prepQueued === false
+                ? "Live calendar event created, but prep drafts failed to queue — review emails below and draft manually in Outreach. Copy is preview-only."
+                : "Live calendar event created. Prep and confirmation go through Outreach — copy is preview-only."
+              : "Needs calendar — no Teams/Outlook event was created. Connect a live Graph seat and use Confirm slot / confirmLive. Prep emails below are preview-only; this is not a booked interview."
         }
         footer={
           <Button variant="primary" size="sm" onClick={() => setPreview(null)}>
@@ -214,8 +261,14 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                   <UserRound className="h-4 w-4 text-ink-soft" aria-hidden />
                   {preview.booking.interviewer}
                 </p>
-                <Badge tone="success" size="sm" dot>
-                  {preview.booking.status}
+                <Badge
+                  tone={bookingNeedsCalendar(preview.booking) ? "warning" : "success"}
+                  size="sm"
+                  dot
+                >
+                  {bookingNeedsCalendar(preview.booking)
+                    ? "Needs calendar"
+                    : preview.booking.status}
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-ink-soft">{preview.booking.role}</p>
@@ -244,7 +297,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                         className="inline-flex h-8 items-center gap-1.5 rounded-full bg-violet-soft px-3 text-xs font-semibold text-violet ring-1 ring-inset ring-violet/20 transition hover:bg-violet/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
                       >
                         <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
-                        Cal.com
+                        Open calendar
                       </a>
                     )}
                   </>
@@ -254,17 +307,37 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                   </p>
                 ) : (
                   <p className="text-xs text-muted">
-                    Meeting links are issued when the calendar integration goes live.
+                    Needs calendar — connect Microsoft Graph and book with confirmLive to create
+                    an online meeting when Outlook is live. Cal.com is roadmap-only. This is not a
+                    live Teams interview yet.
                   </p>
                 )}
               </div>
             </div>
+
+            {preview.prepQueued ? (
+              <div className="rounded-2xl border border-tangerine/30 bg-tangerine-soft px-4 py-3 text-sm text-ink-soft">
+                <p className="font-semibold text-ink">Queued in Outreach</p>
+                <p className="mt-1 text-xs">
+                  Interview prep drafts were enqueued for human approval — do not copy/paste send from here.
+                </p>
+              </div>
+            ) : !bookingNeedsCalendar(preview.booking) ? (
+              <div className="rounded-2xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-ink-soft">
+                <p className="font-semibold text-ink">Prep not queued</p>
+                <p className="mt-1 text-xs">
+                  Live calendar event exists but Outreach prep drafts did not enqueue — draft and approve in
+                  Outreach; do not copy/paste send from here.
+                </p>
+              </div>
+            ) : null}
 
             <EmailBlock
               icon={<UserRound className="h-3.5 w-3.5" aria-hidden />}
               title="Interviewer prep"
               subtitle={`To ${preview.booking.interviewer}`}
               body={preview.prepEmail}
+              previewOnly={preview.prepQueued || !bookingNeedsCalendar(preview.booking)}
               onCopy={() => copy(preview.prepEmail, "Prep email")}
             />
             <EmailBlock
@@ -272,6 +345,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
               title="Candidate confirmation"
               subtitle={`To ${preview.booking.candidateName}`}
               body={preview.confirmationEmail}
+              previewOnly={preview.prepQueued || !bookingNeedsCalendar(preview.booking)}
               onCopy={() => copy(preview.confirmationEmail, "Confirmation email")}
             />
           </div>
@@ -289,25 +363,32 @@ export default function CalendarPage() {
   const ready = candidates.filter(
     (c) =>
       c.stage === "Interested" &&
-      !c.booking &&
+      (!c.booking || bookingNeedsCalendar(c.booking)) &&
       !c.complianceFlags.suppressed &&
       !c.complianceFlags.doNotContact,
   );
+  const bookedInterviews = bookings.filter((b) => !bookingNeedsCalendar(b));
+  const needsCalendarCount = bookings.filter((b) => bookingNeedsCalendar(b)).length;
 
   return (
     <>
       <PageHeader
         eyebrow="Scheduling"
         title="Interview calendar"
-        description="Confirmed and proposed interviews as an agenda, plus interested candidates ready to book. Teams / calendar links are attached once a live calendar integration is connected."
+        description="Confirmed interviews and loop-proposed slots for interested candidates. Without a live Graph seat, rows stay Needs calendar — never treat local slots as booked Teams interviews."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="violet" dot>
-              {pluralize(bookings.length, "interview")}
+              {pluralize(bookedInterviews.length, "interview")}
             </Badge>
             <Badge tone="tangerine" dot>
               {ready.length} ready
             </Badge>
+            {needsCalendarCount > 0 ? (
+              <Badge tone="warning" dot>
+                {needsCalendarCount} needs calendar
+              </Badge>
+            ) : null}
           </div>
         }
       />
@@ -315,15 +396,10 @@ export default function CalendarPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <SkeletonCard />
-            </div>
-            <div className="space-y-6">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading calendar…"
+            description="Workspace state is still hydrating. Confirmed Teams interviews appear here once ready — no placeholder agenda."
+          />
         }
       >
         <div className="grid gap-6 lg:grid-cols-3">
@@ -354,8 +430,9 @@ export default function CalendarPage() {
             <InterviewerPanel />
             <p className="flex items-start gap-1.5 px-1 text-xs text-muted">
               <Sparkles className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-tangerine")} aria-hidden />
-              Booking a slot moves the candidate to Booked and drafts both emails. Everything stays a
-              dry-run until you send.
+              Booking with confirmLive creates a real Outlook/Teams event only when a live Graph
+              seat is connected. Local slots without sync show Needs calendar — never treat them as
+              booked interviews. Outreach still needs approve/send.
             </p>
           </div>
         </div>

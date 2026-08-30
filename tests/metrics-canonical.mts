@@ -117,7 +117,7 @@ function ledger(
   };
 }
 
-function booking(id: string, candidateId: string): Booking {
+function booking(id: string, candidateId: string, withMeeting = false): Booking {
   return {
     id,
     candidateId,
@@ -129,9 +129,11 @@ function booking(id: string, candidateId: string): Booking {
     timezone: "CET",
     interviewer: "Interviewer",
     interviewerEmail: "interviewer@example.com",
-    teamsLink: "",
+    teamsLink: withMeeting
+      ? "https://teams.microsoft.com/l/meetup-join/19%3ameeting_canonical"
+      : "",
     calLink: "",
-    status: "Confirmed",
+    status: withMeeting ? "Confirmed" : "Proposed",
     agenda: [],
     createdAt: sentAt,
   };
@@ -195,7 +197,7 @@ const state = {
     },
   ] as HermesState["replies"],
   bookings: [
-    booking("booking-real", "real-completed"),
+    booking("booking-real", "real-completed", true),
     booking("booking-demo", "demo-dryrun"),
     booking("booking-synthetic", "synthetic-real"),
   ],

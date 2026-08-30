@@ -139,18 +139,26 @@ try {
   const { createGoogleCalendarEvent, createGraphCalendarEvent } = await import("../src/lib/calendar");
 
   function connection(over: Partial<EmailConnection> = {}): EmailConnection {
+    const provider = over.provider ?? "Gmail API";
+    const defaultScope =
+      provider === "Microsoft Graph"
+        ? "https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite offline_access"
+        : "calendar.events";
     return {
       id: "conn-1",
       seatId: "seat-1",
-      provider: "Gmail API",
+      provider,
       accountEmail: "recruiter@example.test",
       accessToken: "access-token",
       refreshToken: null,
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-      scope: "calendar.events",
+      scope: defaultScope,
       connectedAt: "",
       updatedAt: "",
       ...over,
+      // Keep provider/scope coherent when callers override only provider.
+      provider,
+      scope: over.scope ?? defaultScope,
     };
   }
   const ev = {
@@ -196,6 +204,31 @@ try {
   const graphNoToken = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph", accessToken: "", expiresAt: null, refreshToken: null }));
   ok("Graph: missing access token is a proven pre-transport not-sent", graphNoToken.ok === false && graphNoToken.deliveryState === "not-sent");
 
+  const graphNoCalScope = await createGraphCalendarEvent(
+    ev,
+    connection({ provider: "Microsoft Graph", scope: "https://graph.microsoft.com/Mail.Send offline_access" }),
+  );
+  ok(
+    "Graph: missing Calendars.ReadWrite is a proven pre-transport not-sent",
+    graphNoCalScope.ok === false &&
+      graphNoCalScope.deliveryState === "not-sent" &&
+      /Calendars\.ReadWrite/.test(graphNoCalScope.detail ?? ""),
+  );
+
+  const graphNoTeamsScope = await createGraphCalendarEvent(
+    ev,
+    connection({
+      provider: "Microsoft Graph",
+      scope: "https://graph.microsoft.com/Calendars.ReadWrite offline_access",
+    }),
+  );
+  ok(
+    "Graph: missing OnlineMeetings.ReadWrite is a proven pre-transport not-sent",
+    graphNoTeamsScope.ok === false &&
+      graphNoTeamsScope.deliveryState === "not-sent" &&
+      /OnlineMeetings\.ReadWrite/.test(graphNoTeamsScope.detail ?? ""),
+  );
+
   globalThis.fetch = throwingFetch;
   const graphThrew = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
   ok("Graph: fetch throw is an unknown/ambiguous outcome", graphThrew.ok === false && graphThrew.deliveryState === "unknown");
@@ -204,11 +237,51 @@ try {
   const graphServerErr = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
   ok("Graph: upstream 502 is an unknown/ambiguous outcome", graphServerErr.ok === false && graphServerErr.deliveryState === "unknown");
 
-  globalThis.fetch = fetchWith(200, { id: "evt-2", webLink: "https://calendar.example.test/evt-2" });
+  const graphEmptyScope = await createGraphCalendarEvent(
+    ev,
+    connection({ provider: "Microsoft Graph", scope: "" }),
+  );
+  ok(
+    "Graph: empty/missing scope is a proven pre-transport not-sent",
+    graphEmptyScope.ok === false &&
+      graphEmptyScope.deliveryState === "not-sent" &&
+      /Calendars\.ReadWrite/.test(graphEmptyScope.detail ?? ""),
+  );
+
+  globalThis.fetch = fetchWith(200, { id: "evt-2", webLink: "https://outlook.office.com/calendar/item/evt-2" });
+  const graphWebLinkOnly = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
+  ok(
+    "Graph: webLink-only create is not accepted as a Teams booking",
+    graphWebLinkOnly.ok === false &&
+      graphWebLinkOnly.deliveryState === "not-sent" &&
+      /orphan event deleted|safe to retry/i.test(graphWebLinkOnly.detail ?? ""),
+  );
+
+  // DELETE of the orphan fails → stay unknown (do not free the ledger slot).
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "DELETE") return jsonResponse(500, { error: "delete-failed" });
+    return jsonResponse(200, { id: "evt-orphan", webLink: "https://outlook.office.com/calendar/item/evt-orphan" });
+  }) as typeof fetch;
+  const graphWebLinkDeleteFail = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
+  ok(
+    "Graph: webLink-only with failed orphan delete stays unknown",
+    graphWebLinkDeleteFail.ok === false &&
+      graphWebLinkDeleteFail.deliveryState === "unknown" &&
+      graphWebLinkDeleteFail.eventId === "evt-orphan",
+  );
+
+  globalThis.fetch = fetchWith(200, {
+    id: "evt-2",
+    onlineMeeting: { joinUrl: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_e2e" },
+  });
   const graphCreated = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
   ok(
-    "Graph: acceptance is 'accepted' with the provider's event id and link",
-    graphCreated.ok === true && graphCreated.deliveryState === "accepted" && graphCreated.eventId === "evt-2",
+    "Graph: acceptance requires Teams joinUrl",
+    graphCreated.ok === true &&
+      graphCreated.deliveryState === "accepted" &&
+      graphCreated.eventId === "evt-2" &&
+      graphCreated.link === "https://teams.microsoft.com/l/meetup-join/19%3ameeting_e2e",
   );
 
   /* =========================================================================
@@ -228,7 +301,7 @@ try {
   };
 
   nextResponse = {
-    data: { status: "claimed", id: "booking-1", booking_status: "claimed", external_event_id: null, replay: false },
+    data: { status: "claimed", id: "booking-1", booking_status: "claimed", external_event_id: null, meeting_url: null, replay: false },
     error: null,
   };
   const freshClaim = await claimCalendarBooking(fakeService, {
@@ -291,6 +364,7 @@ try {
     id: "booking-1",
     status: "confirmed",
     externalEventId: "evt-1",
+    meetingUrl: "https://teams.example/join/1",
     detail: "Event created.",
   });
   const reconcileRpc = lastRpc as { name: string; args: Record<string, unknown> } | null;
@@ -305,6 +379,7 @@ try {
           p_status: "confirmed",
           p_external_event_id: "evt-1",
           p_detail: "Event created.",
+          p_meeting_url: "https://teams.example/join/1",
         }),
   );
   ok(
@@ -346,6 +421,7 @@ try {
     provider: string;
     status: "claimed" | "confirmed" | "failed" | "released";
     externalEventId: string | null;
+    meetingUrl: string | null;
     detail: string | null;
   };
 
@@ -383,6 +459,7 @@ try {
                 id: existing.id,
                 booking_status: existing.status,
                 external_event_id: existing.externalEventId,
+                meeting_url: existing.meetingUrl,
                 replay: true,
               },
               error: null,
@@ -402,9 +479,20 @@ try {
             provider,
             status: "claimed",
             externalEventId: null,
+            meetingUrl: null,
             detail: null,
           });
-          return { data: { status: "claimed", id, booking_status: "claimed", external_event_id: null, replay: false }, error: null };
+          return {
+            data: {
+              status: "claimed",
+              id,
+              booking_status: "claimed",
+              external_event_id: null,
+              meeting_url: null,
+              replay: false,
+            },
+            error: null,
+          };
         }
         if (name === "reconcile_calendar_booking") {
           const id = String(args.p_id);
@@ -412,9 +500,18 @@ try {
           if (!row || row.status !== "claimed") return { data: { status: "not_found" }, error: null };
           row.status = args.p_status as BookingRow["status"];
           if (typeof args.p_external_event_id === "string") row.externalEventId = args.p_external_event_id;
+          if (typeof args.p_meeting_url === "string") row.meetingUrl = args.p_meeting_url;
           row.detail = typeof args.p_detail === "string" ? args.p_detail : null;
           events.push(`reconcile:${row.status}`);
-          return { data: { status: "reconciled", id: row.id, booking_status: row.status }, error: null };
+          return {
+            data: {
+              status: "reconciled",
+              id: row.id,
+              booking_status: row.status,
+              meeting_url: row.meetingUrl,
+            },
+            error: null,
+          };
         }
         return { data: null, error: null };
       },

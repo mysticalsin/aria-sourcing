@@ -9,7 +9,6 @@ import {
   Badge,
   Button,
   EmptyState,
-  SkeletonCard,
   Tabs,
   useToast,
 } from "@/components/ui";
@@ -298,13 +297,10 @@ export default function SkillsPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <div className="grid gap-5 lg:grid-cols-2">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading skills…"
+            description="Skill cards and learning sessions appear after workspace hydrate — no placeholder panels."
+          />
         }
       >
         <div className="space-y-8">

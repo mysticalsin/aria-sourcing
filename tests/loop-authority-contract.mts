@@ -56,6 +56,148 @@ ok(
     !/allowed_keys := array\[[^\]]*'replyText'/i.test(dataProtection) &&
     !/allowed_keys := array\[[^\]]*'candidates'/i.test(dataProtection),
 );
+const mig62 = read("supabase/migrations/0062_requisition_parse_inbound_id.sql");
+ok(
+  "0062 allows inboundId on requisition_parse payloads",
+  mig62.length > 0 &&
+    /when 'requisition_parse' then allowed_keys := array\['inboundId', 'requisitionId', 'campaignId'\]/i.test(mig62),
+);
+ok(
+  "0063 allows append_outreach workspace patches for loop drafts",
+  (() => {
+    const mig63 = read("supabase/migrations/0063_loop_append_outreach.sql");
+    return (
+      mig63.length > 0 &&
+      /append_outreach/.test(mig63) &&
+      /when 'append_outreach' then 'outreach'/i.test(mig63)
+    );
+  })(),
+);
+ok(
+  "0068 restores digest resolution for apply_workspace_patch (0063 search_path regression)",
+  (() => {
+    const mig68 = read("supabase/migrations/0068_apply_workspace_patch_digest_path.sql");
+    return (
+      mig68.length > 0 &&
+      noTxn(mig68) &&
+      /set search_path = pg_catalog, public, extensions, pg_temp/i.test(mig68) &&
+      /public\.digest\(convert_to\(payload, 'UTF8'\), 'sha256'::text\)/i.test(mig68) &&
+      /extensions\.digest\(convert_to\(payload, 'UTF8'\), 'sha256'::text\)/i.test(mig68) &&
+      /append_outreach/.test(mig68) &&
+      /md5\(payload\) \|\| md5\(reverse\(payload\)\)/i.test(mig68)
+    );
+  })(),
+);
+ok(
+  "0069 allows pre_call_propose + first_interview_book loop payloads (Mantu interview pipeline)",
+  (() => {
+    const mig69 = read("supabase/migrations/0069_pre_call_first_interview_loop_kinds.sql");
+    return (
+      mig69.length > 0 &&
+      noTxn(mig69) &&
+      /when 'pre_call_propose' then allowed_keys := array\['campaignId', 'candidateId', 'intent', 'trigger', 'approvedBy'\]/i.test(mig69) &&
+      /when 'first_interview_book' then allowed_keys := array\['campaignId', 'candidateId', 'intent', 'trigger', 'approvedBy'\]/i.test(mig69)
+    );
+  })(),
+);
+ok(
+  "0070 fixes sourcing_loop_stage_enabled (real intake_enabled columns; enqueue kinds)",
+  (() => {
+    const mig70 = read("supabase/migrations/0070_fix_sourcing_loop_stage_enabled.sql");
+    return (
+      mig70.length > 0 &&
+      noTxn(mig70) &&
+      /controls\.intake_enabled/i.test(mig70) &&
+      !/controls\.requisition_parse_enabled/i.test(mig70) &&
+      /'pre_call_propose', 'first_interview_book'/i.test(mig70)
+    );
+  })(),
+);
+ok(
+  "0071 allows interview_prep_send loop payloads (post-booking prep drafts)",
+  (() => {
+    const mig71 = read("supabase/migrations/0071_interview_prep_send_loop_kind.sql");
+    return (
+      mig71.length > 0 &&
+      noTxn(mig71) &&
+      /when 'interview_prep_send' then allowed_keys := array\['campaignId', 'candidateId', 'bookingId', 'trigger'\]/i.test(mig71) &&
+      /'interview_prep_send'/i.test(mig71)
+    );
+  })(),
+);
+ok(
+  "0072 allows append_booking so Calendar Agenda sees loop Teams books",
+  (() => {
+    const mig72 = read("supabase/migrations/0072_loop_append_booking.sql");
+    return (
+      mig72.length > 0 &&
+      noTxn(mig72) &&
+      /append_booking/.test(mig72) &&
+      /when 'append_booking' then 'bookings'/.test(mig72)
+    );
+  })(),
+);
+ok(
+  "0073 registers HMAC inbound mailbox routes without OAuth connection",
+  (() => {
+    const mig73 = read("supabase/migrations/0073_hmac_inbound_mailbox_route.sql");
+    return (
+      mig73.length > 0 &&
+      noTxn(mig73) &&
+      /upsert_hmac_inbound_mailbox_route/.test(mig73) &&
+      /connection_id, purpose, active/.test(mig73) &&
+      /null, purpose, true/.test(mig73)
+    );
+  })(),
+);
+ok(
+  "0074 loop workspace revision omits full state; campaign/candidate slice RPCs",
+  (() => {
+    const mig74 = read("supabase/migrations/0074_workspace_loop_revision_only.sql");
+    const worker = read("scripts/sourcing-loop-worker.mjs");
+    return (
+      mig74.length > 0 &&
+      noTxn(mig74) &&
+      /read_workspace_campaign_for_loop/.test(mig74) &&
+      /read_workspace_candidates_for_loop/.test(mig74) &&
+      /'updated_at', ws\.updated_at/.test(mig74) &&
+      !/state', ws\.state/.test(mig74) &&
+      /read_workspace_campaign_for_loop/.test(worker) &&
+      /read_workspace_candidates_for_loop/.test(worker)
+    );
+  })(),
+);
+ok(
+  "0078 adds outreach/booking slices + merge_outreach_message for Autopilot post-0074",
+  (() => {
+    const mig78 = read("supabase/migrations/0078_loop_outreach_slices_and_merge.sql");
+    return (
+      mig78.length > 0 &&
+      noTxn(mig78) &&
+      /read_workspace_booking_for_loop/.test(mig78) &&
+      /cand->'booking'->>'id' = p_booking_id/.test(mig78) &&
+      /read_workspace_heyreach_settings_for_loop/.test(mig78) &&
+      /read_workspace_outreach_for_loop/.test(mig78) &&
+      /read_workspace_skills_for_loop/.test(mig78) &&
+      /'merge_outreach_message'/.test(mig78) &&
+      /\{outreach\}/.test(mig78)
+    );
+  })(),
+);
+ok(
+  "0079 Autopilot enqueue binds approval body_hash + scope (Email/WA/LinkedIn)",
+  (() => {
+    const mig79 = read("supabase/migrations/0079_autopilot_enqueue_approval_hash_bind.sql");
+    return (
+      mig79.length > 0 &&
+      noTxn(mig79) &&
+      (mig79.match(/reason', 'approval-mismatch'/g) ?? []).length === 3 &&
+      /enqueue_email_outbound_service/.test(mig79) &&
+      /enqueue_whatsapp_outbound_service/.test(mig79) &&
+      /enqueue_linkedin_outbound_service/.test(mig79)
+    );
+  })(),
+);
 ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
@@ -150,6 +292,20 @@ ok(
     /public\.record_sequence_step_sent\(uuid,uuid\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.promote_due_sequence_steps\(uuid,integer\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.list_workspace_requisitions\(integer,integer\)'\s*,\s*'authenticated'/i.test(priv),
+);
+
+// ── recruiting-graph-stage HTTP contract (interest → pre-call → interview) ──
+ok(
+  "recruiting-graph-stage route accepts pre_call_only + interview_only checkpoint intents",
+  (() => {
+    const route = read("src/app/api/cron/recruiting-graph-stage/route.ts");
+    return (
+      route.length > 0 &&
+      /"pre_call_only"/.test(route) &&
+      /"interview_only"/.test(route) &&
+      /intent: z\.enum\(\[[\s\S]*"pre_call_only"[\s\S]*"interview_only"/.test(route)
+    );
+  })(),
 );
 
 console.log(`RESULT loop-authority-contract: ${pass} passed, ${fail} failed`);

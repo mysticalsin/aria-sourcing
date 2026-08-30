@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildSeedState } from "../src/lib/seed";
+import { buildHistoricalDemoSeedState, buildSeedState } from "../src/lib/seed";
 import {
   createCampaignActions,
   type CampaignActionDependencies,
@@ -44,7 +44,15 @@ test("campaign action boundary is React-free and memoized from stable dependenci
   const runtimeImports = campaignActionsSource
     .split("\n")
     .filter((line) => /^import\s+(?!type\b)/.test(line));
-  assert.deepEqual(runtimeImports, ["import {", 'import { evaluateNeedReadiness } from "../needs/readiness";']);
+  assert.deepEqual(runtimeImports, [
+    "import {",
+    'import { evaluateNeedReadiness } from "../needs/readiness";',
+    "import {",
+  ]);
+  assert.match(
+    campaignActionsSource,
+    /from ["']\.\.\/sourcing\/github-query-language["']/,
+  );
   assert.match(
     campaignActionsSource,
     /CAMPAIGN_STATUSES,[\s\S]*COMPANY_STAGES,[\s\S]*SENIORITY_LEVELS,[\s\S]*URGENCY_LEVELS,[\s\S]*from "\.\.\/types";/,
@@ -389,7 +397,7 @@ test("updateCampaign merges a supported status patch without re-scoring", () => 
 });
 
 test("updateCampaign re-scores only matching candidates after a scoring edit", () => {
-  const harness = createHarness();
+  const harness = createHarness(buildHistoricalDemoSeedState());
   const campaignId = harness.state.campaigns[0].id;
   const affectedCount = harness.state.candidates.filter(
     (candidate) => candidate.campaignId === campaignId,
@@ -615,7 +623,7 @@ test("campaign mutations fail closed for a viewer while selection remains availa
 });
 
 test("updateCampaign scores against the merged job analysis", () => {
-  const harness = createHarness();
+  const harness = createHarness(buildHistoricalDemoSeedState());
   const campaign = harness.state.campaigns[0];
   const updatedAnalysis: JobAnalysis = {
     ...campaign.jobAnalysis,
@@ -632,7 +640,7 @@ test("updateCampaign scores against the merged job analysis", () => {
 });
 
 test("updateCampaign records a singular re-score activity for one candidate", () => {
-  const initialState = buildSeedState();
+  const initialState = buildHistoricalDemoSeedState();
   const campaignId = initialState.campaigns[0].id;
   const matching = initialState.candidates.find(
     (candidate) => candidate.campaignId === campaignId,
@@ -689,7 +697,6 @@ test("regenerateQueries appends the derived query and records sourcing activity"
     previousQueryCount % campaign.jobAnalysis.requiredSkills.length
   ];
   assert.ok(expectedSkill);
-  const expectedLanguage = expectedSkill.replace(/\s+/g, "");
   const expectedRegion = campaign.jobAnalysis.regions[0] ?? "EU";
   const expectedResults = 80 + Math.round((campaign.metrics.sourced + 1) * 3.5);
 
@@ -700,10 +707,10 @@ test("regenerateQueries appends the derived query and records sourcing activity"
   const appended = updated?.sourcingStrategy.githubQueries.at(-1);
   assert.equal(updated?.sourcingStrategy.githubQueries.length, previousQueryCount + 1);
   assert.equal(appended?.label, `Adjacent: ${expectedSkill} maintainers`);
-  assert.equal(
-    appended?.query,
-    `language:${expectedLanguage} sort:updated location:"${expectedRegion}" forks:>5`,
-  );
+  // User-search only — no forks:/sort: repo qualifiers; language mapped from skill.
+  assert.match(appended?.query ?? "", /language:TypeScript|language:JavaScript/);
+  assert.doesNotMatch(appended?.query ?? "", /\b(?:forks|stars|sort):/);
+  assert.match(appended?.query ?? "", new RegExp(`location:"${expectedRegion}"`));
   assert.equal(appended?.estimatedResults, expectedResults);
   assert.equal(harness.activityDrafts[0]?.title, "Generated additional query");
   assert.equal(harness.activityDrafts[0]?.notes, appended?.query);
@@ -741,7 +748,8 @@ test("regenerateQueries reuses only explicit role facts and preserves unrelated 
   const explicitSkill = campaign.jobAnalysis.requiredSkills[0];
   assert.ok(explicitSkill);
   assert.equal(appended?.label, `Adjacent: ${explicitSkill} maintainers`);
-  assert.equal(appended?.query, `language:${explicitSkill.replace(/\s+/g, "")} sort:updated forks:>5`);
+  assert.match(appended?.query ?? "", /language:TypeScript|language:JavaScript|followers:>20/);
+  assert.doesNotMatch(appended?.query ?? "", /\b(?:forks|stars|sort):/);
   assert.equal(appended?.estimatedResults, 84);
   assert.equal(
     harness.state.campaigns.find((item) => item.id === unrelated.id)?.sourcingStrategy

@@ -4,6 +4,7 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { Badge, Card, CardBody, CardHeader, CardTitle, Eyebrow } from "@/components/ui";
 import { useCampaigns, useOutreach } from "@/lib/store";
+import { isRealSendFact } from "@/lib/metrics";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import type { Campaign } from "@/lib/types";
 
@@ -55,7 +56,7 @@ export function WarRoomBoard({ lanes, className }: WarRoomBoardProps) {
   const campaignIdSet = React.useMemo(() => new Set(lanes.map((l) => l.campaignId)), [lanes]);
 
   const totalSourced = resolved.reduce((sum, { campaign }) => sum + campaign.metrics.sourced, 0);
-  const totalSent = outreach.filter((m) => campaignIdSet.has(m.campaignId) && m.sentAt).length;
+  const totalSent = outreach.filter((m) => campaignIdSet.has(m.campaignId) && isRealSendFact(m)).length;
   const anySourcing = lanes.some((l) => l.sourcing);
   const displaySourced = useCountUp(totalSourced, { durationMs: 700 });
 
@@ -69,11 +70,14 @@ export function WarRoomBoard({ lanes, className }: WarRoomBoardProps) {
             <Eyebrow>War room</Eyebrow>
             <CardTitle className="mt-1">
               {Math.round(displaySourced)} sourced across {resolved.length} role
-              {resolved.length === 1 ? "" : "s"}, {totalSent} sent, awaiting approval
+              {resolved.length === 1 ? "" : "s"}
+              {totalSent > 0
+                ? `, ${totalSent} real send${totalSent === 1 ? "" : "s"}`
+                : ", awaiting approval (no real sends yet)"}
             </CardTitle>
           </div>
           <Badge tone={anySourcing ? "electric" : "success"} dot className="shrink-0">
-            {anySourcing ? "Sourcing live" : "All lanes ready"}
+            {anySourcing ? "Sourcing in progress" : "All lanes ready"}
           </Badge>
         </CardHeader>
       </Card>

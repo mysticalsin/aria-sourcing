@@ -19,6 +19,12 @@ import { can } from "@/lib/rbac";
 import { dedupeCandidates } from "@/lib/rules";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import {
+  SOURCING_QUALITY_FLOOR,
+  meetsSourcingQualityBar,
+} from "@/lib/sourcing/candidate-fit";
+import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
+import {
   beginSourcingRun,
   beginAgentFrameworkSourcingRun,
   completeSourcingRun,
@@ -45,6 +51,7 @@ import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Candidate, Role } from "@/lib/types";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -219,7 +226,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
   }
   const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) {
     return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin sourcing is not allowed.");
   }
 
@@ -267,7 +274,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     return fail(400, "INVALID_REQUEST", "A valid idempotency key is required.");
   }
   const { campaignId } = validated.data;
-  const count = validated.data.count ?? 5;
+  const count = validated.data.count ?? 10;
   const initial = await readWorkspace(session, workspaceId, campaignId);
   if (initial.status === "campaign_not_found") {
     return fail(404, "CAMPAIGN_NOT_FOUND", "Campaign not found.");
@@ -287,6 +294,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const configuredQueries = initial.value.campaign.sourcingStrategy.githubQueries
     .map((query) => query.query.trim())
     .filter(Boolean);
+  const linkedInBoolean = initial.value.campaign.sourcingStrategy.linkedinBoolean.trim();
   const frameworkAuthorization = validated.data.agentFrameworkRunId &&
     validated.data.agentFrameworkCapabilityToken &&
     validated.data.agentFrameworkQuery
@@ -301,8 +309,17 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
   const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
   const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
-  if (deterministic && configuredQueries.length === 0) {
-    return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
+  const primaryPlatform = initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ?? "GitHub";
+  const linkedInFirst =
+    primaryPlatform === "LinkedIn" ||
+    primaryPlatform === "Talent Pool" ||
+    primaryPlatform === "Referral" ||
+    primaryPlatform === "Dribbble" ||
+    primaryPlatform === "Behance";
+  if (deterministic && !frameworkAuthorization) {
+    if (linkedInFirst ? !linkedInBoolean && configuredQueries.length === 0 : configuredQueries.length === 0) {
+      return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
+    }
   }
   const roleBasis: SourcingRoleBasis = sourcingRoleBasisForCampaign(initial.value.campaign);
   if (roleBasis.skills.length === 0) {
@@ -487,7 +504,12 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
     }
-    const tavilyKey = deterministic ? null : await resolveStoredTavilyKey(session);
+    const githubToken = process.env.GITHUB_TOKEN ?? "";
+    // Prefer a stored vault key; fall back to the deployment env so LinkedIn-first
+    // roles can still run a real site-scoped web search when no vault row exists.
+    const storedTavily = await resolveStoredTavilyKey(session);
+    const tavilyKey = storedTavily || process.env.TAVILY_API_KEY || null;
+    const linkedInProfileToken = await resolveStoredApifyKey(session);
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -530,15 +552,16 @@ async function handlePost(req: NextRequest, correlationId: string) {
       }
     }
 
-    const githubToken = process.env.GITHUB_TOKEN ?? "";
     const runner = makeSourcingToolRunner(
       initial.value.campaign,
       initial.value.existing,
       initial.value.campaign.scoringWeights,
       githubToken,
-      tavilyKey ?? undefined,
-      undefined,
-      async () => (await currentAuthority()).ok,
+      {
+        tavilyKey: tavilyKey ?? undefined,
+        linkedInProfileToken,
+        beforeExternalCall: async () => (await currentAuthority()).ok,
+      },
     );
     const servers: ResolvedMcpServer[] = [
       {
@@ -550,48 +573,43 @@ async function handlePost(req: NextRequest, correlationId: string) {
     ];
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
-      const searchSignal = AbortSignal.timeout(45_000);
-      const queries = frameworkAuthorization
-        ? [frameworkAuthorization.query]
-        : [
-            ...promotedLessons
-              .filter((lesson) => lesson.platform === "GitHub")
-              .map((lesson) => lesson.query),
-            ...configuredQueries,
-          ]
-            .filter((query, index, all) => all.indexOf(query) === index)
-            .slice(0, 3);
-      let successfulQuery = false;
-      for (const query of queries) {
-        const remaining = count - runner.getFound().length;
-        if (remaining <= 0) break;
-        const result = await runner.run(
-          "search_candidates",
-          { platform: "GitHub", query, count: remaining },
-          searchSignal,
+      const searchSignal = AbortSignal.timeout(120_000);
+      const forcedQueries = frameworkAuthorization
+        ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
+        : undefined;
+      const multi = await runMultiProviderSourcing({
+        campaign: initial.value.campaign,
+        existing: initial.value.existing,
+        weights: initial.value.campaign.scoringWeights,
+        count,
+        githubToken,
+        tavilyKey: tavilyKey ?? undefined,
+        linkedInProfileToken,
+        signal: searchSignal,
+        beforeExternalCall: async () => (await currentAuthority()).ok,
+        forcedQueries,
+      });
+      const afterQuery = await readWorkspace(session, workspaceId, campaignId);
+      if (
+        afterQuery.status !== "ok" ||
+        !campaignAllowsSourcing(afterQuery.value.campaign) ||
+        afterQuery.value.fingerprint !== initial.value.fingerprint ||
+        afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
+      ) {
+        return await failClaimed(
+          409,
+          "CAMPAIGN_CHANGED",
+          "Campaign authority changed during the operation.",
         );
-        successfulQuery = successfulQuery || result.ok;
-        const afterQuery = await readWorkspace(session, workspaceId, campaignId);
-        if (
-          afterQuery.status !== "ok" ||
-          !campaignAllowsSourcing(afterQuery.value.campaign) ||
-          afterQuery.value.fingerprint !== initial.value.fingerprint ||
-          afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
-        ) {
-          return await failClaimed(
-            409,
-            "CAMPAIGN_CHANGED",
-            "Campaign authority changed during the operation.",
-          );
-        }
       }
-      if (!successfulQuery) {
+      if (!multi.executions.some((execution) => execution.ok)) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_UPSTREAM_FAILED",
           "Real candidate search did not complete.",
         );
       }
+      runner.seedFromOrchestrator(multi);
     } else {
       if (!cloudSlug || !toolModel || !vaultKey) {
         return await failClaimed(
@@ -661,14 +679,18 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
     const found = dedupeCandidates(runner.getFound(), latest.value.existing, {
       excludedCompanies: latest.value.campaign.sourcingStrategy.excludedCompanies,
-    }).accepted;
-    const byId = new Map(found.map((candidate) => [candidate.id, candidate]));
-    const selected = deterministic
-      ? found.slice(0, count).map((candidate) => ({ candidate, draft: null }))
-      : (drafts ?? []).map((draft) => ({
-          candidate: byId.get(draft.candidateId) ?? null,
-          draft,
-        }));
+    }).accepted
+      .filter((candidate) => meetsSourcingQualityBar(candidate, SOURCING_QUALITY_FLOOR))
+      .sort((a, b) => b.matchScore - a.matchScore);
+    // Always select from quality-sorted live hits up to `count`. Attach LLM drafts when
+    // present — never shrink the shortlist to draft count alone (cloud mode used to).
+    const draftByCandidateId = new Map(
+      (drafts ?? []).map((draft) => [draft.candidateId, draft] as const),
+    );
+    const selected = found.slice(0, count).map((candidate) => ({
+      candidate,
+      draft: draftByCandidateId.get(candidate.id) ?? null,
+    }));
     const candidates = selected
       .map(({ candidate, draft }) => {
         if (!candidate) return null;
@@ -694,6 +716,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         return {
           id: candidate.id,
           campaignId,
+          provenance: "live" as const,
           name: candidate.name,
           currentTitle: candidate.currentTitle,
           currentCompany: candidate.currentCompany,

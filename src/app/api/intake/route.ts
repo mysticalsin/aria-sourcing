@@ -1,17 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { parseEmailAndJD, isMantuNeedEmail } from "@/lib/mock-ai";
+import { parseInboundNeedLive } from "@/lib/requisition-intake-live";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const IntakeSchema = z.object({
-  email: z.string().max(20_000).optional(),
-  jd: z.string().max(20_000).optional(),
+  email: z.string().max(80_000).optional(),
+  jd: z.string().max(80_000).optional(),
   from: z.string().max(500).optional(),
   subject: z.string().max(500).optional(),
-  body: z.string().max(20_000).optional(),
+  body: z.string().max(80_000).optional(),
 });
 
 /**
@@ -26,8 +28,9 @@ const IntakeSchema = z.object({
  *   { "email": "<raw email text>", "jd": "<optional JD text>" }
  *   { "from": "...", "subject": "...", "body": "<email body>" }
  *
- * Auth: required when Supabase is configured; open in demo mode (it only parses
- * text the caller supplies — no data access).
+ * Auth: required when Supabase is configured; open in demo mode (heuristic parse
+ * only — no data access). Production tenants fail closed with 503 llm_required
+ * when no live LLM is configured, matching the autonomous parse cron contract.
  */
 export async function GET() {
   return NextResponse.json({
@@ -73,14 +76,93 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Provide `email` (or `from`/`subject`/`body`)." }, { status: 400 });
   }
 
+  const intakeText = jd?.trim() ? `${email}\n\n---\n\n${jd.trim()}` : email;
+
+  // Production tenants must not silently accept heuristic stand-ins — same contract
+  // as /api/cron/parse-inbound-need. Demo mode (no Supabase) keeps the open heuristic.
+  if (supabaseEnabled) {
+    const supabase = await getServerSupabase();
+    // Public demo must not touch service-role vault; skip workspaceId so
+    // serverGenerateText stays env-only on demo paths.
+    const skipVault = demoLoginEnabled || publicDemoSideEffectsDisabled();
+    const { data: wid } = skipVault
+      ? { data: null }
+      : ((await supabase?.rpc("current_workspace_id")) ?? { data: null });
+    const result = await parseInboundNeedLive(intakeText, {
+      workspaceId: typeof wid === "string" ? wid : undefined,
+    });
+    if (!result.modelUsed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          status: "llm_required",
+          detail: "Live LLM parse required for production intake.",
+          modelUsed: false,
+          modelReason: "modelReason" in result ? result.modelReason : undefined,
+        },
+        { status: 503 },
+      );
+    }
+    const parsed = result.parsed;
+    const need = parsed.mantuNeed;
+    return NextResponse.json({
+      ok: true,
+      format: isMantuNeedEmail(intakeText)
+        ? need?.format === "vss"
+          ? "mantu-vss"
+          : "mantu-need"
+        : "generic",
+      parsed,
+      modelUsed: true,
+      modelProvider: "modelProvider" in result ? result.modelProvider : undefined,
+      suggestedMeta: {
+        hiringManager: need?.mainManager || parsed.sender.name,
+        hiringManagerEmail: parsed.sender.email,
+        mainRecruiter: need?.mainRecruiter || "",
+        secondaryManagers: need?.secondaryManagers ?? [],
+        secondaryRecruiters: need?.secondaryRecruiters ?? [],
+        client: need?.client || "",
+        companyEmployedBy: need?.companyEmployedBy || "",
+        companyBillingTo: need?.companyBillingTo || "",
+        priority: need?.priority || "",
+        contractType: need?.contractType || "",
+        startDate: need?.startDate || "",
+        headcount: need?.numberOfPeople || "",
+        remote: need?.remote || "",
+        status: need?.status || "",
+        category: need?.category || "",
+        reason: need?.reason || "",
+      },
+    });
+  }
+
   const parsed = parseEmailAndJD({ email, jd });
+  const need = parsed.mantuNeed;
   return NextResponse.json({
     ok: true,
-    format: isMantuNeedEmail(email) ? "mantu-need" : "generic",
+    format: isMantuNeedEmail(email)
+      ? need?.format === "vss"
+        ? "mantu-vss"
+        : "mantu-need"
+      : "generic",
     parsed,
     suggestedMeta: {
-      hiringManager: parsed.sender.name,
+      hiringManager: need?.mainManager || parsed.sender.name,
       hiringManagerEmail: parsed.sender.email,
+      mainRecruiter: need?.mainRecruiter || "",
+      secondaryManagers: need?.secondaryManagers ?? [],
+      secondaryRecruiters: need?.secondaryRecruiters ?? [],
+      client: need?.client || "",
+      companyEmployedBy: need?.companyEmployedBy || "",
+      companyBillingTo: need?.companyBillingTo || "",
+      priority: need?.priority || "",
+      contractType: need?.contractType || "",
+      startDate: need?.startDate || "",
+      headcount: need?.numberOfPeople || "",
+      remote: need?.remote || "",
+      status: need?.status || "",
+      category: need?.category || "",
+      reason: need?.reason || "",
     },
   });
 }

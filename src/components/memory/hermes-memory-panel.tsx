@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Card, CardContent, Eyebrow, Badge, SkeletonCard } from "@/components/ui";
+import { Card, CardContent, Eyebrow, Badge, EmptyState } from "@/components/ui";
 import { useSettings, useSeats, useMemory } from "@/lib/store";
 import { getHermesMemory, hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import { Server } from "lucide-react";
@@ -76,7 +76,10 @@ export function HermesMemoryPanel() {
           <Badge tone="success" size="sm" dot>Live</Badge>
         </div>
         {loading ? (
-          <SkeletonCard />
+          <EmptyState
+            title="Loading memory…"
+            description="Runtime memory loads from Aria — no placeholder entries."
+          />
         ) : !entries || entries.length === 0 ? (
           <p className="text-xs text-muted">No entries returned from hermes-agent /api/memory.</p>
         ) : (
