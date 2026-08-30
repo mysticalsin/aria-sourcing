@@ -1,7 +1,7 @@
 import { defaultIntegrations } from "../integrations";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
-import type { HermesState } from "../types";
+import type { Campaign, HermesState, JobAnalysis } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
@@ -11,6 +11,82 @@ function withoutLegacyIntegrationAuthority(settings: HermesState["settings"]): H
   delete cleaned.databricks;
   delete cleaned.dust;
   return cleaned;
+}
+
+/**
+ * Shell chrome (⌘K + Aria Command) maps every campaign on mount. Sparse holes
+ * or proof campaigns missing `jobAnalysis`/`title` previously threw into
+ * global-error and took the whole app down. Repair in place; drop garbage.
+ */
+function placeholderJobAnalysis(title: string, department: string): JobAnalysis {
+  return {
+    title,
+    department,
+    seniority: "Unspecified",
+    employmentType: "Full-time",
+    locationType: "Unspecified",
+    regions: [],
+    timezone: "",
+    salaryMin: null,
+    salaryMax: null,
+    currency: "USD",
+    equity: false,
+    requiredSkills: [],
+    niceToHaveSkills: [],
+    minYearsExperience: null,
+    maxYearsExperience: null,
+    education: "",
+    industryExperience: [],
+    companyStageTarget: [],
+    teamSize: "",
+    reportingTo: "",
+    urgency: "Standard",
+    validationWarnings: [
+      {
+        field: "jobAnalysis",
+        severity: "warning",
+        message: "Campaign arrived without a complete job analysis; filled safe defaults.",
+      },
+    ],
+  };
+}
+
+function repairCampaigns(raw: unknown): Campaign[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Campaign[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const c = item as Campaign;
+    if (typeof c.id !== "string" || !c.id.trim()) continue;
+    const title =
+      typeof c.title === "string" && c.title.trim() ? c.title.trim() : c.id;
+    const department = typeof c.department === "string" ? c.department : "";
+    const jd = c.jobAnalysis && typeof c.jobAnalysis === "object" ? c.jobAnalysis : null;
+    const jobAnalysis: JobAnalysis = jd
+      ? {
+          ...placeholderJobAnalysis(title, department),
+          ...jd,
+          title:
+            typeof jd.title === "string" && jd.title.trim() ? jd.title.trim() : title,
+          department:
+            typeof jd.department === "string" ? jd.department : department,
+          regions: Array.isArray(jd.regions) ? jd.regions : [],
+          industryExperience: Array.isArray(jd.industryExperience)
+            ? jd.industryExperience
+            : [],
+          requiredSkills: Array.isArray(jd.requiredSkills) ? jd.requiredSkills : [],
+          niceToHaveSkills: Array.isArray(jd.niceToHaveSkills) ? jd.niceToHaveSkills : [],
+          companyStageTarget: Array.isArray(jd.companyStageTarget)
+            ? jd.companyStageTarget
+            : [],
+          validationWarnings: Array.isArray(jd.validationWarnings)
+            ? jd.validationWarnings
+            : [],
+        }
+      : placeholderJobAnalysis(title, department);
+    out.push({ ...c, title, department, jobAnalysis });
+  }
+  return out;
 }
 
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
@@ -30,7 +106,9 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   return {
     ...(clean ?? parsed),
     version: STATE_VERSION,
-    campaigns: preCleanSlate ? clean!.campaigns : (parsed.campaigns ?? []),
+    campaigns: preCleanSlate
+      ? clean!.campaigns
+      : repairCampaigns(parsed.campaigns),
     candidates: preCleanSlate
       ? []
       : (parsed.candidates ?? []).map((c) => ({
@@ -126,6 +204,7 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
   return {
     ...parsed,
     wins: parsed.wins ?? [],
+    campaigns: repairCampaigns(parsed.campaigns),
     settings: {
       ...settings,
       // Quality bar: never contact / accept below 80% unless operator raises further.

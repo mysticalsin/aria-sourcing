@@ -95,11 +95,14 @@ export function CommandSearch() {
         out.push({ id: `nav-${n.href}`, label: n.label, hint: n.description, group: "Pages", run: () => router.push(n.href) });
     });
     campaigns.forEach((c) => {
-      if (!q || c.title.toLowerCase().includes(q) || c.department.toLowerCase().includes(q))
+      if (!c?.id) return;
+      const title = typeof c.title === "string" ? c.title : "";
+      const department = typeof c.department === "string" ? c.department : "";
+      if (!q || title.toLowerCase().includes(q) || department.toLowerCase().includes(q))
         out.push({
           id: `camp-${c.id}`,
-          label: c.title,
-          hint: `${c.department} · ${c.status}`,
+          label: title || c.id,
+          hint: `${department || "—"} · ${c.status ?? "Unknown"}`,
           group: "Campaigns",
           run: () => {
             setActiveCampaign(c.id);
@@ -108,13 +111,18 @@ export function CommandSearch() {
         });
     });
     candidates
-      .filter((c) => q && (c.name.toLowerCase().includes(q) || c.currentCompany.toLowerCase().includes(q)))
+      .filter(
+        (c) =>
+          !!c &&
+          q &&
+          ((c.name ?? "").toLowerCase().includes(q) || (c.currentCompany ?? "").toLowerCase().includes(q)),
+      )
       .slice(0, 6)
       .forEach((c) =>
         out.push({
           id: `cand-${c.id}`,
           label: c.name,
-          hint: `${c.currentTitle} · ${c.currentCompany}`,
+          hint: `${c.currentTitle ?? ""} · ${c.currentCompany ?? ""}`,
           group: "Candidates",
           run: () => router.push(`/candidates?focus=${c.id}`),
         }),

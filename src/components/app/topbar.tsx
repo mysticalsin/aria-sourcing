@@ -168,7 +168,10 @@ export function TopBar() {
 
   // Same derived, ranked queue the dashboard's Priority queue panel renders --
   // top 3 here so the bell and the panel can never show conflicting priorities.
-  const notifications = recommendations.slice(0, 3).map((rec) => ({ label: rec.title, href: rec.href }));
+  const notifications = recommendations
+    .filter((rec): rec is NonNullable<typeof rec> => !!rec && typeof rec.title === "string")
+    .slice(0, 3)
+    .map((rec) => ({ label: rec.title, href: rec.href }));
   const canRunSyntheticDemo = hydrated && !supabaseEnabled;
   const canResetSyntheticDemo = !supabaseEnabled;
 

@@ -1,33 +1,32 @@
 ---
 project: MSourcing / ARIA
-shift: 421
+shift: 422
 agent: cursor-cloud
-updated: 2026-08-30T00:20Z
-status: wire-path-fixed-awaiting-channels
+updated: 2026-08-30T00:55Z
+status: fixing-global-error-malformed-campaign
 ---
 
-# Handoff — Shift 421
+# Handoff — Shift 422
 
 ## Current state
 
 - **Branch:** `cursor/rei-autopilot-send-b91d` (PR #40)
-- **Code tip:** removes remaining service_role `sourcing_loop_controls` SELECT hard blockers (dispatch-outbound wire, worker shortlist/arm, ignite, confirm-calendar, whatsapp-inbound) via shared `loadSourcingLoopControls`
-- **Autopilot also surfaces `dispatchDue` stats** (queued ≠ wire sent)
-- **External still HOLD:** Graph mock seats; HeyReach 0 LI accounts / 0 campaigns / empty settings.heyreach
-- **Fly image:** may lag until tip remint+deploy
+- **Incident:** Fly prod showed `global-error` — `Cannot read properties of undefined (reading 'title')`
+- **Root cause:** Always-mounted Aria Command console maps campaigns through `campaignToAriaContext`, which read `jobAnalysis.title` unguarded. Workspace had malformed proof campaign `camp:unispike:proof` (null title / missing jobAnalysis).
+- **Fix:** harden `campaignToAriaContext`; repair campaigns in `normalizeHermesState` / migrate; fail-soft ⌘K + topbar notifications
+- **Fly tip before this fix:** `736f832…` — deploy needed after commit
 
 ## Done this shift
 
-1. Fixed post-enqueue wire hard blocker (dispatch-outbound)
-2. Fixed organic shortlist Autopilot arming in worker
-3. Shared controls helper; durable `sequences-not-armed` block instead of silent skip
-4. Tests: dispatch 108, worker 46, autopilot-dispatch 23, heyreach-mcp 37, typecheck green
+1. Reproduced critical load error in browser + console stack
+2. Identified `campaignToAriaContext` / `AriaCommandConsole` useMemo as crash site
+3. Code fix + tests `aria-command`, `campaign-repair`
 
 ## Blockers (owner / external)
 
-1. Graph dropzones → live mailbox for email `sent>0`
-2. HeyReach portal LI account + campaign `{message}` → Settings campaignId + live HeyReach seat
-3. GHA Actions budget (CI phantoms)
+1. Graph dropzones still empty → email auto-send HOLD
+2. HeyReach 0 LI accounts / campaigns
+3. Must deploy this tip to clear prod global-error
 
 ## Next steps
 
@@ -35,17 +34,17 @@ status: wire-path-fixed-awaiting-channels
 SHA=$(git rev-parse HEAD)
 printf 'ARIA_RELEASE_SHA=%s\nARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:%s:aria-mantu-bootstrap,aria-mantu-app\n' "$SHA" "$SHA" > /tmp/owner-deploy-confirm.env
 source /tmp/owner-deploy-confirm.env && bash scripts/fly-deploy-now.sh
-# After Graph or HeyReach ready → sweep planted draft → expect sent>=1
+# Then verify https://aria-mantu-app.fly.dev/floor loads without global-error
 ```
 
 ## Decisions made (don't relitigate)
 
-- Never table-SELECT `sourcing_loop_controls` from service_role — always `get_sourcing_loop_controls`
-- Autopilot fail-closed; HOLD Graph dropzones empty
-- Goal complete only on auto-send receipt (`sent>0` / provider acceptance)
+- Never table-SELECT `sourcing_loop_controls` from service_role
+- Shell must fail-soft on malformed campaigns (never take down global-error)
+- Goal complete only on auto-send receipt (`sent>0`)
 - Workspace `0d179005-e8e2-4b99-8b9a-b67453348005`
 
 ## Watch out
 
-- Cron `sent` count still includes durable `queued`; check result.dispatch / status `sent` for wire
-- HeyReach CreateCampaign impossible with 0 LI accounts
+- Clearing `aria-workspace-bootstrap-v1` localStorage forces re-hydrate through repair
+- Cron `sent` still includes durable `queued`

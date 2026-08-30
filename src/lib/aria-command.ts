@@ -46,11 +46,19 @@ export interface AriaCampaignCtx {
  *  the primary, cleanest label. Exported so both the console and the command
  *  palette build the same context the same way. */
 export function campaignToAriaContext(c: Campaign): AriaCampaignCtx {
+  // Fail-soft: remote/cached blobs can omit `jobAnalysis` (or title). This
+  // projection runs from always-mounted shell chrome (Aria Command console);
+  // throwing here takes down the whole app via global-error.
+  const title = typeof c?.title === "string" ? c.title : "";
+  const jd = c?.jobAnalysis;
+  const jdTitle = typeof jd?.title === "string" ? jd.title : title;
+  const industry = Array.isArray(jd?.industryExperience) ? jd.industryExperience : [];
+  const regions = Array.isArray(jd?.regions) ? jd.regions : [];
   return {
-    id: c.id,
-    role: [c.jobAnalysis.title, ...(c.jobAnalysis.industryExperience ?? [])].filter(Boolean).join(" "),
-    title: c.title,
-    location: (c.jobAnalysis.regions ?? []).join(", "),
+    id: typeof c?.id === "string" ? c.id : "",
+    role: [jdTitle, ...industry].filter(Boolean).join(" "),
+    title,
+    location: regions.join(", "),
   };
 }
 
