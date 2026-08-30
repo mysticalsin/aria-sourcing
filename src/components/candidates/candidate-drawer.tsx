@@ -16,6 +16,7 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
+import { getContactStatus } from "@/lib/contact-status";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
@@ -1626,11 +1627,26 @@ export function CandidateDrawer({
         {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
 
         <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted">Current:</span>
             <Badge tone={toneForStage(c.stage)} size="sm" dot>
               {c.stage}
             </Badge>
+            {(() => {
+              const contact = getContactStatus(c);
+              if (contact.status === "never") return null;
+              const tone =
+                contact.status === "do_not_contact" || contact.status === "suppressed"
+                  ? "danger"
+                  : contact.status === "in_window"
+                    ? "warning"
+                    : "aqua";
+              return (
+                <Badge tone={tone} size="sm" title={contact.lastContactedAt ?? contact.label}>
+                  {contact.label}
+                </Badge>
+              );
+            })()}
           </div>
           <div className="flex flex-wrap gap-2">
             {STAGE_ACTIONS.map((stage) => (
