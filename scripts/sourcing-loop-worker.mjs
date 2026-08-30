@@ -747,13 +747,15 @@ async function workspaceAutopilotArmed(client, workspaceId) {
     if (!entitledId) {
       return { armed: false, entitledId: "", sequencesArmed: false };
     }
-    const controls = await client
-      .from("sourcing_loop_controls")
-      .select("kill_switch, sequences_enabled")
-      .eq("workspace_id", workspaceId)
-      .maybeSingle();
+    const controls = await client.rpc("get_sourcing_loop_controls", {
+      p_workspace_id: workspaceId,
+    });
+    if (controls.error) {
+      return { armed: false, entitledId: "", sequencesArmed: false };
+    }
+    const row = Array.isArray(controls.data) ? controls.data[0] : controls.data;
     const sequencesArmed =
-      controls.data?.kill_switch === false && controls.data?.sequences_enabled === true;
+      row?.kill_switch === false && row?.sequences_enabled === true;
     return { armed: sequencesArmed, entitledId, sequencesArmed };
   } catch {
     return { armed: false, entitledId: "", sequencesArmed: false };
@@ -1452,16 +1454,17 @@ async function handleShortlistBuild(job, context) {
   let autopilotAttempted = false;
   let minScore = DEFAULT_SHORTLIST_MIN_SCORE;
   try {
-    const controls = await context.client
-      .from("sourcing_loop_controls")
-      .select("auto_shortlist_min_score, kill_switch, sourcing_enabled")
-      .eq("workspace_id", job.workspace_id)
-      .maybeSingle();
-    const configured = Number(controls.data?.auto_shortlist_min_score ?? DEFAULT_SHORTLIST_MIN_SCORE);
+    const controlsRpc = await context.client.rpc("get_sourcing_loop_controls", {
+      p_workspace_id: job.workspace_id,
+    });
+    const controlsRow = Array.isArray(controlsRpc.data)
+      ? controlsRpc.data[0]
+      : controlsRpc.data;
+    const configured = Number(controlsRow?.auto_shortlist_min_score ?? DEFAULT_SHORTLIST_MIN_SCORE);
     if (Number.isFinite(configured)) {
       minScore = Math.max(0, Math.min(100, configured));
     }
-    const loopLive = controls.data?.kill_switch === false && controls.data?.sourcing_enabled === true;
+    const loopLive = controlsRow?.kill_switch === false && controlsRow?.sourcing_enabled === true;
     if (loopLive && Number.isFinite(minScore)) {
       const entitled = await context.client
         .from("profiles")

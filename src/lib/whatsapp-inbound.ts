@@ -11,6 +11,10 @@ import {
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import {
+  loadSourcingLoopControls,
+  sequencesArmedFromControls,
+} from "@/lib/sourcing-loop-controls";
+import {
   CLOUD_ENDPOINT,
   DEFAULT_MODEL,
   PROVIDER_ENV,
@@ -78,13 +82,8 @@ async function loadWorkspaceAutopilotArmed(
   if (!entitledId) {
     return { entitled: false, entitledId: "", sequencesArmed: false };
   }
-  const controls = await supabase
-    .from("sourcing_loop_controls")
-    .select("kill_switch, sequences_enabled")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  const sequencesArmed =
-    controls.data?.kill_switch === false && controls.data?.sequences_enabled === true;
+  const controls = await loadSourcingLoopControls(supabase, workspaceId);
+  const sequencesArmed = controls.ok && sequencesArmedFromControls(controls.row);
   return { entitled: true, entitledId, sequencesArmed };
 }
 

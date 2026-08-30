@@ -1199,3 +1199,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Non-ASCII locale recipient casing.
 **Suggested fix:** Use invariant `toLowerCase()`.
 **Status:** fixed (9426d76)
+
+## 2026-08-30 — dispatch-outbound sequences SELECT blocked wire forever
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts:loopSendControlsPermit; scripts/sourcing-loop-worker.mjs; ignite/confirm/whatsapp-inbound
+**Issue:** Same class as Autopilot sequences bug: service_role table SELECT on `sourcing_loop_controls` is revoked. After Autopilot enqueue, `dispatchDue` silently skipped every row (left `queued`). Worker shortlist/arming also failed closed.
+**Repro/evidence:** Live sequences armed via RPC; Autopilot mint/enqueue would still leave messages queued because dispatcher permit returned false on 42501.
+**Suggested fix:** Shared `loadSourcingLoopControls` → `get_sourcing_loop_controls`; durable-block with `sequences-not-armed`; surface dispatchDue stats on Autopilot result.
+**Status:** fixed (this shift)

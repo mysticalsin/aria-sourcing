@@ -11,6 +11,10 @@ import { safeLog } from "@/lib/log-redact";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { EmailConnection } from "@/lib/types";
 import { loadCampaignForLoop, loadCandidateForLoop } from "@/lib/workspace-loop-slices";
+import {
+  loadSourcingLoopControls,
+  sequencesArmedFromControls,
+} from "@/lib/sourcing-loop-controls";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -82,12 +86,8 @@ export async function POST(req: NextRequest) {
   if (!entitled.data?.id) {
     return NextResponse.json({ ok: false, status: "autopilot_disarmed" }, { status: 409 });
   }
-  const controls = await svc
-    .from("sourcing_loop_controls")
-    .select("kill_switch, sequences_enabled")
-    .eq("workspace_id", parsed.data.workspaceId)
-    .maybeSingle();
-  if (controls.data?.kill_switch !== false || controls.data?.sequences_enabled !== true) {
+  const controls = await loadSourcingLoopControls(svc, parsed.data.workspaceId);
+  if (!controls.ok || !sequencesArmedFromControls(controls.row)) {
     return NextResponse.json({ ok: false, status: "autopilot_disarmed" }, { status: 409 });
   }
 

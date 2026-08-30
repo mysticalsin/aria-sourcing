@@ -42,6 +42,10 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
     getServiceSupabase: () => ({
       from: (table: string) => fakeQuery(table),
       rpc: async (name: string, args: Record<string, unknown>) => {
+        if (name === "get_sourcing_loop_controls") {
+          const row = controls.find((c) => c.workspace_id === args.p_workspace_id) ?? null;
+          return { data: row ? [row] : [], error: null };
+        }
         if (name !== "enqueue_aria_job") throw new Error(`unexpected rpc ${name}`);
         const existing = ariaJobs.find(
           (row) =>

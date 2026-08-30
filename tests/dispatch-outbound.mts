@@ -108,6 +108,13 @@ function makeFakeDb(seed: {
     from: (name: string) => query(name),
     rpc: (fn: string, args: Row) => {
       rpcCalls.push({ fn, args });
+      if (fn === "get_sourcing_loop_controls") {
+        const row =
+          (seed.controls ?? [{ workspace_id: "ws-1", kill_switch: false, sequences_enabled: true }]).find(
+            (c) => !args.p_workspace_id || c.workspace_id === args.p_workspace_id,
+          ) ?? seed.controls?.[0] ?? { workspace_id: "ws-1", kill_switch: false, sequences_enabled: true };
+        return Promise.resolve({ data: [row], error: null });
+      }
       if (fn === "record_whatsapp_provider_acceptance") {
         const acceptance = seed.acceptance ?? { allowed: true, reason: "recorded" };
         if (acceptance.allowed === true && !seed.acceptanceError) {
@@ -269,7 +276,7 @@ const LOOP_SENDS_ENABLED: Row = {
   const db = makeFakeDb({ outbound: [baseMsg()], approvals: [], seats: [LIVE_SEAT], controls: [LOOP_SENDS_ENABLED], claim: { allowed: true } });
   const stats = await dispatchDue(db.client, 10);
   ok("no-approval: blocked", stats.blocked === 1 && stats.sent === 0);
-  ok("no-approval: claim never ran", db.rpcCalls.length === 0);
+  ok("no-approval: claim never ran", !db.rpcCalls.some((c) => c.fn.startsWith("claim_")));
   ok("no-approval: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("no-approval"));
 }
 
@@ -286,7 +293,7 @@ const LOOP_SENDS_ENABLED: Row = {
   });
   const stats = await dispatchDue(db.client, 10);
   ok("hash-mismatch: blocked", stats.blocked === 1);
-  ok("hash-mismatch: claim never ran", db.rpcCalls.length === 0);
+  ok("hash-mismatch: claim never ran", !db.rpcCalls.some((c) => c.fn.startsWith("claim_")));
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +310,7 @@ const LOOP_SENDS_ENABLED: Row = {
   });
   const stats = await dispatchDue(db.client, 10);
   ok("gate: AI-tell blocked at wire even when approved", stats.blocked === 1);
-  ok("gate: claim never ran", db.rpcCalls.length === 0);
+  ok("gate: claim never ran", !db.rpcCalls.some((c) => c.fn.startsWith("claim_")));
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +346,8 @@ const LOOP_SENDS_ENABLED: Row = {
       const stats = await dispatchDue(db.client, 10);
       ok(`loop controls ${name}: no transport call`, transportCalls === 0);
       ok(`loop controls ${name}: no dispatch claim`, !db.rpcCalls.some((call) => call.fn === "claim_whatsapp_outbound"));
-      ok(`loop controls ${name}: drains no terminal state`, stats.sent === 0 && stats.blocked === 0 && stats.failed === 0);
+      ok(`loop controls ${name}: durable-blocks when disarmed`, stats.sent === 0 && stats.blocked === 1 && stats.failed === 0);
+      ok(`loop controls ${name}: sequences-not-armed reason`, JSON.stringify(db.updates.at(-1)?.patch).includes("sequences-not-armed"));
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -361,7 +369,7 @@ const LOOP_SENDS_ENABLED: Row = {
   });
   const stats = await dispatchDue(db.client, 10);
   ok("WhatsApp consent: missing opt-in blocks", stats.blocked === 1);
-  ok("WhatsApp consent: missing opt-in never claims", db.rpcCalls.length === 0);
+  ok("WhatsApp consent: missing opt-in never claims", !db.rpcCalls.some((c) => c.fn.startsWith("claim_") || c.fn.startsWith("record_") || c.fn === "finalize_whatsapp_provider_failure"));
   ok("WhatsApp consent: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("missing-opt-in"));
 }
 
@@ -490,7 +498,7 @@ const LOOP_SENDS_ENABLED: Row = {
     claim: { allowed: true },
   });
   const stats = await dispatchDue(db.client, 10);
-  ok("template mutation: changed parameters block before claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+  ok("template mutation: changed parameters block before claim", stats.blocked === 1 && !db.rpcCalls.some((c) => c.fn.startsWith("claim_") || c.fn.startsWith("record_") || c.fn === "finalize_whatsapp_provider_failure"));
   ok("template mutation: audit mismatch is retained", JSON.stringify(db.updates.at(-1)?.patch).includes("template-audit-mismatch"));
 }
 
@@ -531,7 +539,7 @@ const LOOP_SENDS_ENABLED: Row = {
     claim: { allowed: true },
   });
   const stats = await dispatchDue(db.client, 10);
-  ok("direct template insert: arbitrary body cannot reach the claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+  ok("direct template insert: arbitrary body cannot reach the claim", stats.blocked === 1 && !db.rpcCalls.some((c) => c.fn.startsWith("claim_") || c.fn.startsWith("record_") || c.fn === "finalize_whatsapp_provider_failure"));
 }
 
 // ---------------------------------------------------------------------------
@@ -549,7 +557,7 @@ const LOOP_SENDS_ENABLED: Row = {
   });
   const stats = await dispatchDue(db.client, 10);
   ok("WhatsApp gate cache: cache write is attempted", db.cacheWrites.length === 1);
-  ok("WhatsApp gate cache: storage error blocks before claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+  ok("WhatsApp gate cache: storage error blocks before claim", stats.blocked === 1 && !db.rpcCalls.some((c) => c.fn.startsWith("claim_") || c.fn.startsWith("record_") || c.fn === "finalize_whatsapp_provider_failure"));
   ok("WhatsApp gate cache: failure reason is retained", JSON.stringify(db.updates.at(-1)?.patch).includes("gate-cache-write-failed"));
 }
 
@@ -566,7 +574,7 @@ const LOOP_SENDS_ENABLED: Row = {
     const db = makeFakeDb({ outbound: [baseMsg()], approvals: [...approvals.map((a) => ({ ...a }))], seats: [seat], claim: { allowed: true } });
     const stats = await dispatchDue(db.client, 10);
     ok(`seat-guard (${seat.mode}/${seat.status}/${seat.provider}): blocked`, stats.blocked === 1);
-    ok(`seat-guard (${seat.mode}/${seat.status}/${seat.provider}): no claim`, db.rpcCalls.length === 0);
+    ok(`seat-guard (${seat.mode}/${seat.status}/${seat.provider}): no claim`, !db.rpcCalls.some((c) => c.fn.startsWith("claim_") || c.fn.startsWith("record_") || c.fn === "finalize_whatsapp_provider_failure"));
   }
 }
 
@@ -650,7 +658,7 @@ const LOOP_SENDS_ENABLED: Row = {
   });
   const stats = await dispatchDue(db.client, 10);
   ok("legacy approval: blocked", stats.blocked === 1 && stats.sent === 0);
-  ok("legacy approval: claim never ran", db.rpcCalls.length === 0);
+  ok("legacy approval: claim never ran", !db.rpcCalls.some((c) => c.fn.startsWith("claim_")));
   ok("legacy approval: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-not-authorized"));
 }
 
@@ -722,7 +730,10 @@ const LOOP_SENDS_ENABLED: Row = {
   });
   const stats = await dispatchDue(db.client, 10);
   ok("LinkedIn assisted-manual: sent is recorded", stats.sent === 1 && stats.failed === 0 && stats.blocked === 0);
-  ok("LinkedIn assisted-manual: claim and outcome RPCs both run", db.rpcCalls.map((call) => call.fn).join("|") === "claim_linkedin_outbound_queued|record_linkedin_delivery_outcome");
+  ok("LinkedIn assisted-manual: claim and outcome RPCs both run", (() => {
+    const fns = db.rpcCalls.map((call) => call.fn).filter((fn) => fn !== "get_sourcing_loop_controls");
+    return fns.join("|") === "claim_linkedin_outbound_queued|record_linkedin_delivery_outcome";
+  })());
   ok("LinkedIn assisted-manual: shared ledger reaches sent", db.ledgers[0]?.status === "sent");
 }
 
@@ -793,8 +804,8 @@ const LOOP_SENDS_ENABLED: Row = {
   const stats = await dispatchDue(db.client, 10);
   ok("dry-run creds: marked unconfigured, not failed or sent", stats.unconfigured === 1 && stats.failed === 0 && stats.sent === 0);
   ok("dry-run creds: claim ran once", db.rpcCalls.filter((call) => call.fn === "claim_whatsapp_outbound").length === 1);
-  ok("dry-run creds: claim is the service-only WhatsApp RPC", db.rpcCalls[0]?.fn === "claim_whatsapp_outbound");
-  ok("dry-run creds: claim is scoped to the queued message", db.rpcCalls[0]?.args.p_message_id === "m-1");
+  ok("dry-run creds: claim is the service-only WhatsApp RPC", db.rpcCalls.some((c) => c.fn === "claim_whatsapp_outbound"));
+  ok("dry-run creds: claim is scoped to the queued message", db.rpcCalls.some((c) => c.fn === "claim_whatsapp_outbound" && c.args.p_message_id === "m-1"));
   ok("dry-run creds: gate verdict recorded in cache", db.cacheWrites.length === 1 && db.cacheWrites[0]?.verdict === "pass");
 }
 
@@ -917,7 +928,7 @@ const LOOP_SENDS_ENABLED: Row = {
     claim: { allowed: true },
   });
   const stats = await dispatchDue(db.client, 10);
-  ok("revoked approval: blocks before claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+  ok("revoked approval: blocks before claim", stats.blocked === 1 && !db.rpcCalls.some((c) => c.fn.startsWith("claim_") || c.fn.startsWith("record_") || c.fn === "finalize_whatsapp_provider_failure"));
   ok("revoked approval: records a specific reason", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-revoked"));
 }
 
@@ -1137,7 +1148,7 @@ const LOOP_SENDS_ENABLED: Row = {
   try {
     const stats = await dispatchDue(db.client, 10);
     ok("SMS policy: dispatcher blocks until the consent policy exists", stats.blocked === 1);
-    ok("SMS policy: dispatcher never claims", db.rpcCalls.length === 0);
+    ok("SMS policy: dispatcher never claims", !db.rpcCalls.some((c) => c.fn.startsWith("claim_") || c.fn.startsWith("record_") || c.fn === "finalize_whatsapp_provider_failure"));
     ok("SMS policy: dispatcher never calls Twilio", providerCalls === 0);
     ok("SMS policy: reason is explicit", JSON.stringify(db.updates.at(-1)?.patch).includes("sms-disabled-pending-consent-policy"));
   } finally {

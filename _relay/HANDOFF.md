@@ -1,54 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 420
+shift: 421
 agent: cursor-cloud
-updated: 2026-08-29T23:58Z
-status: hold-channels-proven
+updated: 2026-08-30T00:20Z
+status: wire-path-fixed-awaiting-channels
 ---
 
-# Handoff — Shift 419
+# Handoff — Shift 421
 
 ## Current state
 
-- **Branch tip live:** `3d4c952` on Fly · `/api/ready` ok · migration **0079** · build match true
-- **Autopilot path proven:** planted draft sweep → `skipped:1` reason **`no_live_mailbox`** (was wrongly `sequences_not_armed` before 9426d76)
-- **HeyReach reason split proven live:** LinkedIn inline → `heyreach_campaign_required` (vault key, empty campaignId)
-- **Channels still HOLD:** Graph seats mock; no live mailbox; HeyReach needs campaignId + LI account + live seat for `sent>0`
+- **Branch:** `cursor/rei-autopilot-send-b91d` (PR #40)
+- **Code tip:** removes remaining service_role `sourcing_loop_controls` SELECT hard blockers (dispatch-outbound wire, worker shortlist/arm, ignite, confirm-calendar, whatsapp-inbound) via shared `loadSourcingLoopControls`
+- **Autopilot also surfaces `dispatchDue` stats** (queued ≠ wire sent)
+- **External still HOLD:** Graph mock seats; HeyReach 0 LI accounts / 0 campaigns / empty settings.heyreach
+- **Fly image:** may lag until tip remint+deploy
 
 ## Done this shift
 
-1. Fixed Autopilot controls read (`get_sourcing_loop_controls`)
-2. Sweep observability + worker outcomes + HeyReach reason split + approvalScopeHash lower
-3. Deployed tip; live proof of correct skip reasons
-4. PR #40 updated
+1. Fixed post-enqueue wire hard blocker (dispatch-outbound)
+2. Fixed organic shortlist Autopilot arming in worker
+3. Shared controls helper; durable `sequences-not-armed` block instead of silent skip
+4. Tests: dispatch 108, worker 46, autopilot-dispatch 23, heyreach-mcp 37, typecheck green
 
 ## Blockers (owner / external)
 
-1. **GitHub Actions budget exhausted** — CI/CodeQL jobs on tip `50101c8` did not start (`Actions budget is preventing further use`). Not a code regression; local Autopilot suites green + Fly tip proven.
-2. Graph dropzones → Connect Outlook live seat → email Autopilot `sent>0`
-3. HeyReach portal: LI account + campaign `{message}` → Settings Save campaignId + live HeyReach seat
+1. Graph dropzones → live mailbox for email `sent>0`
+2. HeyReach portal LI account + campaign `{message}` → Settings campaignId + live HeyReach seat
+3. GHA Actions budget (CI phantoms)
 
 ## Next steps
 
 ```bash
-# After Graph OR HeyReach delivery-ready, re-sweep planted draft (or plant fresh):
-curl -fsS -X POST https://aria-mantu-app.fly.dev/api/cron/autopilot-send-outreach \
-  -H "Authorization: Bearer $(cat /tmp/aria-e2e-cron-secret)" \
-  -H "Content-Type: application/json" \
-  -d '{"workspaceId":"0d179005-e8e2-4b99-8b9a-b67453348005","sweep":true}' | jq .
-# Expect sent>=1 + merge_outreach_message Scheduled — then goal may complete
+SHA=$(git rev-parse HEAD)
+printf 'ARIA_RELEASE_SHA=%s\nARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:%s:aria-mantu-bootstrap,aria-mantu-app\n' "$SHA" "$SHA" > /tmp/owner-deploy-confirm.env
+source /tmp/owner-deploy-confirm.env && bash scripts/fly-deploy-now.sh
+# After Graph or HeyReach ready → sweep planted draft → expect sent>=1
 ```
 
 ## Decisions made (don't relitigate)
 
-- Never reintroduce full `state` on `read_workspace_state_for_loop`
-- Autopilot fail-closed: ready + critics + Sequences + entitlement
-- Autopilot must use `get_sourcing_loop_controls` RPC (never table SELECT)
-- HOLD when Microsoft dropzones empty — no Entra chase
-- Goal complete only on auto-send receipt (`sent>0`), not skip-reason proof alone
+- Never table-SELECT `sourcing_loop_controls` from service_role — always `get_sourcing_loop_controls`
+- Autopilot fail-closed; HOLD Graph dropzones empty
+- Goal complete only on auto-send receipt (`sent>0` / provider acceptance)
 - Workspace `0d179005-e8e2-4b99-8b9a-b67453348005`
 
 ## Watch out
 
-- Quiet HOLD if only empty Graph dropzone check — reply HOLD and stop
-- Planted msg `msg-autopilot-proof-20260829234930` still Needs Approval until channel ready or cleaned up
+- Cron `sent` count still includes durable `queued`; check result.dispatch / status `sent` for wire
+- HeyReach CreateCampaign impossible with 0 LI accounts

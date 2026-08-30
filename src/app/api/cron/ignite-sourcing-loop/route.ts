@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
+import { loadSourcingLoopControls } from "@/lib/sourcing-loop-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -38,17 +39,11 @@ export async function POST(req: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ ok: false, reason: "No service client." }, { status: 503 });
 
-  const { data: controls, error: controlsError } = await supabase
-    .from("sourcing_loop_controls")
-    .select("workspace_id, kill_switch, intake_enabled")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-
+  const loaded = await loadSourcingLoopControls(supabase, workspaceId);
   if (
-    controlsError ||
-    !controls ||
-    controls.kill_switch !== false ||
-    controls.intake_enabled !== true
+    !loaded.ok ||
+    loaded.row.kill_switch !== false ||
+    loaded.row.intake_enabled !== true
   ) {
     return NextResponse.json({ ok: false }, { status: 403 });
   }

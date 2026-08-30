@@ -38,6 +38,10 @@ import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
 import { resolveHeyReachConfigForWorkspace } from "@/lib/heyreach-delivery";
+import {
+  loadSourcingLoopControls,
+  sequencesArmedFromControls,
+} from "@/lib/sourcing-loop-controls";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -69,17 +73,13 @@ export interface DispatchStats {
 type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
 
 async function loopSendControlsPermit(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("sourcing_loop_controls")
-    .select("kill_switch, sequences_enabled")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  if (error) {
-    safeLog("dispatch-outbound: loop controls lookup error", { message: error.message });
+  // Table SELECT is revoked for service_role — use the granted RPC only.
+  const loaded = await loadSourcingLoopControls(supabase, workspaceId);
+  if (!loaded.ok) {
+    safeLog("dispatch-outbound: loop controls lookup error", { message: loaded.detail });
     return false;
   }
-  const controls = record(data);
-  return controls?.kill_switch === false && controls.sequences_enabled === true;
+  return sequencesArmedFromControls(loaded.row);
 }
 
 /**
@@ -149,7 +149,26 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   for (const msg of due ?? []) {
     stats.processed++;
-    if (!(await loopSendControlsPermit(supabase, msg.workspace_id))) continue;
+    if (!(await loopSendControlsPermit(supabase, msg.workspace_id))) {
+      // Fail closed with a durable block — never leave the row queued forever
+      // when controls are disarmed or unreadable (revoked SELECT used to no-op).
+      const { data: blockedRow, error: blockErr } = await supabase
+        .from("messages_outbound")
+        .update({
+          status: "blocked",
+          gate_result: { pass: false, reasons: ["sequences-not-armed"] },
+        })
+        .eq("id", msg.id)
+        .eq("status", "queued")
+        .select("id")
+        .maybeSingle();
+      if (blockErr) {
+        safeLog("dispatch-outbound: sequences-not-armed block failed", { message: blockErr.message });
+      } else if (blockedRow) {
+        stats.blocked++;
+      }
+      continue;
+    }
     let deliveryAttemptId: string | null = null;
     const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown, countAs?: DispatchOutcomeCounter) => {
       const reopenReview =

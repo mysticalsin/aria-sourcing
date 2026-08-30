@@ -11,6 +11,10 @@ import {
 } from "@/lib/heyreach-delivery";
 import { isMailboxSeatProvider } from "@/lib/outreach-send-mode";
 import { dispatchDue } from "@/lib/dispatch-outbound";
+import {
+  loadSourcingLoopControls,
+  sequencesArmedFromControls,
+} from "@/lib/sourcing-loop-controls";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
 import { safeLog } from "@/lib/log-redact";
@@ -30,7 +34,13 @@ export type AutopilotDispatchInput = {
 };
 
 export type AutopilotDispatchResult =
-  | { status: "sent" | "queued" | "dry-run"; detail: string; channel: ReiOutboundChannel }
+  | {
+      status: "sent" | "queued" | "dry-run";
+      detail: string;
+      channel: ReiOutboundChannel;
+      /** Wire-dispatch counters from dispatchDue (post-enqueue). */
+      dispatch?: { sent: number; blocked: number; failed: number; unconfigured: number };
+    }
   | { status: "skipped"; detail: string; reason: string }
   | { status: "error"; detail: string };
 
@@ -61,17 +71,8 @@ export function mailboxSeatReadyForAutopilot(seat: SeatRow): boolean {
 }
 
 async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
-  const controls = await svc.rpc("get_sourcing_loop_controls", {
-    p_workspace_id: workspaceId,
-  });
-  // RPC returns setof rows (array). Table SELECT is revoked from service_role.
-  const controlRow = Array.isArray(controls.data)
-    ? (controls.data[0] as { kill_switch?: boolean; sequences_enabled?: boolean } | undefined)
-    : (controls.data as { kill_switch?: boolean; sequences_enabled?: boolean } | null);
-  const sequencesArmed =
-    !controls.error &&
-    controlRow?.kill_switch === false &&
-    controlRow?.sequences_enabled === true;
+  const controls = await loadSourcingLoopControls(svc, workspaceId);
+  const sequencesArmed = controls.ok && sequencesArmedFromControls(controls.row);
 
   const entitled = await svc
     .from("profiles")
@@ -183,6 +184,31 @@ async function mintApproval(
   return { ok: true };
 }
 
+function afterQueuedDispatch(
+  channel: ReiOutboundChannel,
+  detail: string,
+  stats: Awaited<ReturnType<typeof dispatchDue>>,
+): AutopilotDispatchResult {
+  const dispatch = {
+    sent: stats.sent,
+    blocked: stats.blocked,
+    failed: stats.failed,
+    unconfigured: stats.unconfigured,
+  };
+  if (stats.sent > 0) {
+    return { status: "sent", detail: `${detail} Wire sent.`, channel, dispatch };
+  }
+  if (stats.blocked > 0 || stats.failed > 0 || stats.unconfigured > 0) {
+    return {
+      status: "queued",
+      detail: `${detail} Wire did not send (blocked=${stats.blocked} failed=${stats.failed} unconfigured=${stats.unconfigured}).`,
+      channel,
+      dispatch,
+    };
+  }
+  return { status: "queued", detail, channel, dispatch };
+}
+
 async function dispatchEmail(
   svc: ServiceClient,
   input: AutopilotDispatchInput,
@@ -208,12 +234,12 @@ async function dispatchEmail(
     return { status: "error", detail: queued.error.message };
   }
   if (queuedObj?.reason === "duplicate" && queuedObj.id) {
-    await dispatchDue(svc, 1, queuedObj.id);
-    return {
-      status: "queued",
-      detail: "Email already queued — dispatcher re-checked.",
-      channel: "Email",
-    };
+    const stats = await dispatchDue(svc, 1, queuedObj.id);
+    return afterQueuedDispatch(
+      "Email",
+      "Email already queued — dispatcher re-checked.",
+      stats,
+    );
   }
   if (queuedObj?.ok !== true || !queuedObj.id) {
     return {
@@ -222,12 +248,8 @@ async function dispatchEmail(
       reason: queuedObj?.reason ?? "enqueue_failed",
     };
   }
-  await dispatchDue(svc, 1, queuedObj.id);
-  return {
-    status: "queued",
-    detail: "Email queued for policy-checked dispatch.",
-    channel: "Email",
-  };
+  const stats = await dispatchDue(svc, 1, queuedObj.id);
+  return afterQueuedDispatch("Email", "Email queued for policy-checked dispatch.", stats);
 }
 
 async function dispatchWhatsApp(
@@ -280,15 +302,14 @@ async function dispatchWhatsApp(
       reason: queuedObj?.reason ?? "enqueue_failed",
     };
   }
-  await dispatchDue(svc, 1, queuedObj.id);
-  return {
-    status: "queued",
-    detail:
-      shape.kind === "approved_template"
-        ? "WhatsApp approved template queued for policy-checked delivery."
-        : "WhatsApp reply queued for policy-checked delivery.",
-    channel: "WhatsApp",
-  };
+  const stats = await dispatchDue(svc, 1, queuedObj.id);
+  return afterQueuedDispatch(
+    "WhatsApp",
+    shape.kind === "approved_template"
+      ? "WhatsApp approved template queued for policy-checked delivery."
+      : "WhatsApp reply queued for policy-checked delivery.",
+    stats,
+  );
 }
 
 async function dispatchLinkedIn(
@@ -315,12 +336,8 @@ async function dispatchLinkedIn(
   });
   const queuedObj = queued.data as { ok?: boolean; id?: string; reason?: string } | null;
   if (!queued.error && (queuedObj?.ok === true || queuedObj?.reason === "duplicate") && queuedObj.id) {
-    await dispatchDue(svc, 1, queuedObj.id);
-    return {
-      status: "queued",
-      detail: "LinkedIn queued for HeyReach/vendor dispatch.",
-      channel: "LinkedIn",
-    };
+    const stats = await dispatchDue(svc, 1, queuedObj.id);
+    return afterQueuedDispatch("LinkedIn", "LinkedIn queued for HeyReach/vendor dispatch.", stats);
   }
   return {
     status: "skipped",

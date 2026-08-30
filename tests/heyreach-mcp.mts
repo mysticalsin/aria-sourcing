@@ -140,8 +140,23 @@ ok(
 
 ok(
   "autopilot loads sequences via get_sourcing_loop_controls (not revoked table SELECT)",
-  /get_sourcing_loop_controls/.test(readFileSync("src/lib/rei-autopilot-dispatch.ts", "utf8"))
+  /get_sourcing_loop_controls|loadSourcingLoopControls/.test(
+    readFileSync("src/lib/rei-autopilot-dispatch.ts", "utf8"),
+  )
     && !/\.from\("sourcing_loop_controls"\)/.test(readFileSync("src/lib/rei-autopilot-dispatch.ts", "utf8")),
+);
+ok(
+  "dispatch-outbound uses get_sourcing_loop_controls (wire path)",
+  /loadSourcingLoopControls|get_sourcing_loop_controls/.test(
+    readFileSync("src/lib/dispatch-outbound.ts", "utf8"),
+  )
+    && !/\.from\("sourcing_loop_controls"\)/.test(readFileSync("src/lib/dispatch-outbound.ts", "utf8")),
+);
+ok(
+  "worker shortlist + arming use get_sourcing_loop_controls",
+  (readFileSync("scripts/sourcing-loop-worker.mjs", "utf8").match(/get_sourcing_loop_controls/g) ?? [])
+    .length >= 2
+    && !/\.from\("sourcing_loop_controls"\)/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8")),
 );
 
 console.log(`RESULT heyreach-mcp: ${pass} passed, ${fail} failed`);

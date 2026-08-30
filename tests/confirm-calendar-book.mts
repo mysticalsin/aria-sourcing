@@ -87,6 +87,12 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
   namedExports: {
     getServiceSupabase: () => ({
       rpc: async (name: string, args?: Record<string, unknown>) => {
+        if (name === "get_sourcing_loop_controls") {
+          return {
+            data: [{ kill_switch: false, sequences_enabled: true }],
+            error: null,
+          };
+        }
         if (name === "read_workspace_campaign_for_loop") {
           return {
             data: {

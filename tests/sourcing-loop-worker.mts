@@ -54,6 +54,28 @@ function rpcClient(handler: (name: string, args: Record<string, unknown>) => unk
     client: {
       async rpc(name: string, args: Record<string, unknown>) {
         calls.push({ name, args });
+        // Default armed controls — tests that need disarmed override via stub/handler.
+        if (name === "get_sourcing_loop_controls") {
+          try {
+            return handler(name, args) as { data: unknown; error: { code: string } | null };
+          } catch (err) {
+            if (err instanceof Error && /unexpected rpc/.test(err.message)) {
+              return {
+                data: [
+                  {
+                    kill_switch: false,
+                    sequences_enabled: true,
+                    sourcing_enabled: true,
+                    intake_enabled: true,
+                    auto_shortlist_min_score: 70,
+                  },
+                ],
+                error: null,
+              };
+            }
+            throw err;
+          }
+        }
         return handler(name, args) as { data: unknown; error: { code: string } | null };
       },
       from(_table?: string) {
@@ -79,14 +101,19 @@ function rpcClient(handler: (name: string, args: Record<string, unknown>) => unk
   };
 }
 
-/** Stub profiles + sourcing_loop_controls for workspaceAutopilotArmed(). */
+/** Stub profiles + get_sourcing_loop_controls for workspaceAutopilotArmed(). */
 function stubWorkspaceAutopilotArmed(
-  client: { from: (table?: string) => unknown },
+  client: {
+    from: (table?: string) => unknown;
+    rpc?: (name: string, args?: Record<string, unknown>) => unknown;
+  },
   opts: { entitled?: boolean; sequencesArmed?: boolean; entitledId?: string } = {},
 ) {
   const entitled = opts.entitled !== false;
   const sequencesArmed = opts.sequencesArmed !== false;
   const entitledId = opts.entitledId ?? "user-autopilot-1";
+  const priorFrom = client.from.bind(client);
+  const priorRpc = typeof client.rpc === "function" ? client.rpc.bind(client) : null;
   client.from = (table?: string) => {
     const chain = {
       select() {
@@ -105,19 +132,35 @@ function stubWorkspaceAutopilotArmed(
         if (table === "profiles") {
           return { data: entitled ? { id: entitledId } : null, error: null };
         }
-        if (table === "sourcing_loop_controls") {
-          return {
-            data: {
-              kill_switch: !sequencesArmed,
-              sequences_enabled: sequencesArmed,
-            },
-            error: null,
-          };
+        if (typeof priorFrom === "function") {
+          try {
+            const prior = priorFrom(table) as { maybeSingle?: () => Promise<unknown> };
+            if (prior && typeof prior.maybeSingle === "function") return prior.maybeSingle();
+          } catch {
+            /* fall through */
+          }
         }
         return { data: null, error: null };
       },
     };
     return chain;
+  };
+  client.rpc = async (name: string, args?: Record<string, unknown>) => {
+    if (name === "get_sourcing_loop_controls") {
+      return {
+        data: [
+          {
+            kill_switch: !sequencesArmed,
+            sequences_enabled: sequencesArmed,
+            sourcing_enabled: true,
+            auto_shortlist_min_score: 70,
+          },
+        ],
+        error: null,
+      };
+    }
+    if (priorRpc) return priorRpc(name, args);
+    return { data: null, error: { message: `unexpected rpc ${name}` } };
   };
 }
 
@@ -810,6 +853,12 @@ test("inbound_classify uses classify-inbound-reply cron vault path when modelCli
   const patches: Array<Record<string, unknown>> = [];
   const cronCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
   const { client } = rpcClient((name, args) => {
+    if (name === "get_sourcing_loop_controls") {
+      return {
+        data: [{ kill_switch: false, sequences_enabled: true, sourcing_enabled: true }],
+        error: null,
+      };
+    }
     if (name === "read_inbound_message_for_loop") {
       return {
         data: {
@@ -2449,6 +2498,12 @@ test("sourcing_batch via route → shortlist autopilot top-N → draft_generate 
   const shortlistCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const { client: shortlistClient } = rpcClient((name, args) => {
     shortlistCalls.push({ name, args });
+    if (name === "get_sourcing_loop_controls") {
+      return {
+        data: [{ auto_shortlist_min_score: 70, kill_switch: false, sourcing_enabled: true }],
+        error: null,
+      };
+    }
     if (name === "read_workspace_candidates_for_loop") {
       return {
         data: {
@@ -2478,12 +2533,6 @@ test("sourcing_batch via route → shortlist autopilot top-N → draft_generate 
         return this;
       },
       async maybeSingle() {
-        if (fromTable === "sourcing_loop_controls") {
-          return {
-            data: { auto_shortlist_min_score: 70, kill_switch: false, sourcing_enabled: true },
-            error: null,
-          };
-        }
         if (fromTable === "profiles") {
           return { data: { id: "user-autopilot-chain" }, error: null };
         }
