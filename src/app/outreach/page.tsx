@@ -61,7 +61,7 @@ import {
  *  personalizationEvidence unchanged. */
 function personalizationFallbackHook(candidate: Candidate | undefined): string {
   if (!candidate) return "Matched against the role's requirements";
-  const topSkill = candidate.techStack[0];
+  const topSkill = Array.isArray(candidate.techStack) ? candidate.techStack[0] : undefined;
   if (topSkill) return `${topSkill} background fits this role`;
   if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
   if (candidate.yearsExperience == null) return "Matched against the role requirements";
@@ -71,7 +71,10 @@ function personalizationFallbackHook(candidate: Candidate | undefined): string {
 /** The single strongest "why this person" line for a compact queue-row chip:
  *  the first non-blank real evidence entry, else the fallback hook above. */
 function whyThisPersonHook(message: OutreachMessage, candidate: Candidate | undefined): string {
-  const real = message.personalizationEvidence.find((e) => e.trim().length > 0);
+  const evidence = Array.isArray(message.personalizationEvidence)
+    ? message.personalizationEvidence
+    : [];
+  const real = evidence.find((e) => e.trim().length > 0);
   return real ?? personalizationFallbackHook(candidate);
 }
 

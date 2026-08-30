@@ -106,5 +106,36 @@ check("normalizeHermesState fills missing complianceFlags so /candidates cannot 
   );
 });
 
+check("normalizeHermesState fills missing personalizationEvidence so /outreach cannot throw", () => {
+  const base = buildSeedState();
+  const polluted = {
+    ...base,
+    version: STATE_VERSION,
+    outreach: [
+      null,
+      {
+        id: "msg:sparse:evidence",
+        candidateId: "cand:1",
+        campaignId: "camp:1",
+        channel: "Email",
+        subject: "Hi",
+        body: "Hello",
+        // personalizationEvidence intentionally omitted
+        status: "Needs Approval",
+      },
+    ],
+  } as unknown as HermesState;
+
+  const normalized = normalizeHermesState(polluted);
+  assert.equal(normalized.outreach.some((m) => !m), false);
+  const sparse = normalized.outreach.find((m) => m.id === "msg:sparse:evidence");
+  assert.ok(sparse);
+  assert.ok(Array.isArray(sparse.personalizationEvidence));
+  assert.equal(sparse.personalizationEvidence.length, 0);
+  // Mimic WhyThisPersonChip / OutreachMessageCard reads that previously threw
+  assert.equal(sparse.personalizationEvidence.find(() => true), undefined);
+  assert.equal(sparse.personalizationEvidence.length > 0, false);
+});
+
 console.log(`RESULT campaign-repair: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

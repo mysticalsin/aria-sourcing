@@ -11,6 +11,7 @@ import type {
   ComplianceFlags,
   HermesState,
   JobAnalysis,
+  OutreachMessage,
   Urgency,
 } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
@@ -255,6 +256,42 @@ function repairCandidates(raw: unknown): Candidate[] {
   return out;
 }
 
+/**
+ * Sparse remote outreach drafts often omit `personalizationEvidence`.
+ * /outreach WhyThisPersonChip and OutreachMessageCard call `.find`/`.length`
+ * and previously threw into error.tsx ("Something broke").
+ */
+function repairOutreach(raw: unknown): OutreachMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OutreachMessage[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const m = item as OutreachMessage;
+    if (typeof m.id !== "string" || !m.id.trim()) continue;
+    if (typeof m.candidateId !== "string" || !m.candidateId.trim()) continue;
+    if (typeof m.campaignId !== "string" || !m.campaignId.trim()) continue;
+    out.push({
+      ...m,
+      channel: m.channel ?? "Email",
+      subject: typeof m.subject === "string" ? m.subject : "",
+      body: typeof m.body === "string" ? m.body : "",
+      tone: m.tone ?? "Casual Professional",
+      personalizationEvidence: Array.isArray(m.personalizationEvidence)
+        ? m.personalizationEvidence.filter((e): e is string => typeof e === "string")
+        : [],
+      status: m.status ?? "Draft",
+      sequenceStep:
+        typeof m.sequenceStep === "number" && Number.isFinite(m.sequenceStep) ? m.sequenceStep : 1,
+      scheduledFor: m.scheduledFor ?? null,
+      sentAt: m.sentAt ?? null,
+      approvedBy: m.approvedBy ?? null,
+      dryRun: m.dryRun === true,
+      createdAt: typeof m.createdAt === "string" ? m.createdAt : new Date(0).toISOString(),
+    });
+  }
+  return out;
+}
+
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
 export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   const defs = defaultSettings();
@@ -283,7 +320,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
           starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
         })),
     chatboxSubmissions: preCleanSlate ? [] : (parsed.chatboxSubmissions ?? []),
-    outreach: preCleanSlate ? [] : (parsed.outreach ?? []),
+    outreach: preCleanSlate ? [] : repairOutreach(parsed.outreach),
     replies: preCleanSlate ? [] : (parsed.replies ?? []),
     bookings: preCleanSlate ? [] : (parsed.bookings ?? []),
     wins: preCleanSlate ? [] : (parsed.wins ?? []),
@@ -377,6 +414,7 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
       leadSource: c.leadSource ?? deriveLeadSource(c),
       starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
     })),
+    outreach: repairOutreach(parsed.outreach),
     settings: {
       ...settings,
       // Quality bar: never contact / accept below 80% unless operator raises further.

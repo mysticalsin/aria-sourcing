@@ -98,7 +98,7 @@ export function OutreachMessageCard({
 
   const dirty = subject !== message.subject || body !== message.body;
   const ChannelIcon = message.channel === "Email" ? Mail : Linkedin;
-  const hasEvidence = message.personalizationEvidence.length > 0;
+  const hasEvidence = (message.personalizationEvidence ?? []).length > 0;
   const actionable = message.status === "Needs Approval" || message.status === "Draft";
   const qualityReadyAwaitingApprove =
     message.status === "Needs Approval"
@@ -386,7 +386,7 @@ export function OutreachMessageCard({
           </Eyebrow>
           {hasEvidence ? (
             <div className="flex flex-wrap gap-1.5">
-              {message.personalizationEvidence.map((ev, i) => (
+              {(message.personalizationEvidence ?? []).map((ev, i) => (
                 <span
                   key={i}
                   className="inline-flex items-center rounded-full bg-aqua-soft px-2.5 py-1 text-xs font-medium text-aqua ring-1 ring-inset ring-aqua/20"

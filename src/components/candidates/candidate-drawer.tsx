@@ -261,7 +261,7 @@ function personalizationFallbackHook(candidate: Candidate): string {
  *  queue uses (see OutreachMessageCard). Falls back to a single derived hook
  *  when the draft's real evidence is empty, so the section is never blank. */
 function WhyThisPerson({ candidate, message }: { candidate: Candidate; message: OutreachMessage }) {
-  const real = message.personalizationEvidence.filter((e) => e.trim().length > 0);
+  const real = (message.personalizationEvidence ?? []).filter((e) => e.trim().length > 0);
   const chips = real.length > 0 ? real : [personalizationFallbackHook(candidate)];
   return (
     <Section title="Why this person" icon={<Sparkles className="h-4 w-4" />}>

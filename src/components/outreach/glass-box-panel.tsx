@@ -298,7 +298,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
             <FitRadar matchBreakdown={candidate.matchBreakdown} label={candidate.name} size={180} />
           </div>
           <ClaimSignalMap
-            evidence={message.personalizationEvidence}
+            evidence={message.personalizationEvidence ?? []}
             candidate={candidate}
             matchBreakdown={candidate.matchBreakdown}
           />
