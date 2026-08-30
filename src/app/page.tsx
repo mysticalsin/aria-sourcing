@@ -26,6 +26,10 @@ import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
 import {
+  commandCenterMode,
+  resolveCommandCenterNextStep,
+} from "@/lib/command-center-firstrun";
+import {
   useActions,
   useActiveCampaign,
   useActivities,
@@ -33,6 +37,8 @@ import {
   useCandidates,
   useDashboardKpis,
   useHydrated,
+  usePendingApprovals,
+  useReplies,
 } from "@/lib/store";
 import { funnelForCandidates } from "@/lib/metrics";
 import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/lib/utils";
@@ -66,7 +72,26 @@ export default function DashboardPage() {
   const campaigns = useCampaigns();
   const candidates = useCandidates();
   const activities = useActivities();
+  const pendingApprovals = usePendingApprovals();
+  const replies = useReplies();
   const activeCampaign = useActiveCampaign();
+
+  const unrepliedCount = React.useMemo(
+    () => replies.filter((r) => !r.handled).length,
+    [replies],
+  );
+  const nextStep = React.useMemo(
+    () =>
+      resolveCommandCenterNextStep({
+        campaignCount: campaigns.length,
+        activeCampaignTitle: activeCampaign?.title ?? null,
+        pendingApprovalCount: pendingApprovals.length,
+        unrepliedCount,
+      }),
+    [campaigns.length, activeCampaign?.title, pendingApprovals.length, unrepliedCount],
+  );
+  const ccMode = commandCenterMode({ campaignCount: campaigns.length });
+  const isFirstRun = ccMode === "first_run";
 
   const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   const funnel = React.useMemo(() => funnelForCandidates(candidates), [candidates]);
@@ -188,156 +213,177 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <HeroPanel />
+      <HeroPanel mode={ccMode} nextStep={nextStep} />
 
       <HydrationGate hydrated={hydrated} fallback={<DashboardFallback />}>
-        {/* Command bar — every action navigates or runs */}
-        <Card className="p-5 animate-fade-in">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <Eyebrow>Command center</Eyebrow>
-              <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
-                <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
-                {activeCampaign
-                  ? `Acting on ${activeCampaign.title}`
-                  : "No active campaign yet. Start with an intake."}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>
-                New intake
-              </Button>
-              <Button
-                variant="secondary"
-                leftIcon={<Radar aria-hidden />}
-                onClick={handleSourceBatch}
-              >
-                Source next batch
-              </Button>
+        {isFirstRun ? (
+          <Card className="p-5 animate-fade-in" data-testid="cc-first-run-body">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <Eyebrow>Your next step</Eyebrow>
+                <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
+                  <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
+                  {nextStep.reason}
+                </p>
+              </div>
               <Button
                 variant="primary"
-                leftIcon={<PlayCircle aria-hidden />}
-                onClick={handleOpenRun}
+                leftIcon={<FilePlus2 aria-hidden />}
+                onClick={() => router.push(nextStep.href)}
               >
-                Run Aria
-              </Button>
-              <Button
-                variant="outline"
-                leftIcon={<GitBranch aria-hidden />}
-                onClick={() => router.push("/outreach")}
-              >
-                Review outreach
-              </Button>
-              <Button
-                variant="subtle"
-                leftIcon={<FileText aria-hidden />}
-                onClick={handleGenerateReport}
-              >
-                Generate weekly report
+                {nextStep.cta}
               </Button>
             </div>
-          </div>
-        </Card>
-
-        {runOpen && activeCampaign && (
-          <AgentRunStream
-            key={runToken}
-            campaignId={activeCampaign.id}
-            autoStart
-            onClose={() => setRunOpen(false)}
-            className="animate-fade-in"
-          />
-        )}
-
-        {/* KPI grid */}
-        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {kpiCards.map((k) => (
-            <MetricCard
-              key={k.label}
-              label={k.label}
-              value={k.value}
-              hint={k.hint}
-              icon={k.icon}
-              tone={k.tone}
-            />
-          ))}
-        </section>
-
-        <IntegrationStrip />
-
-        {/* Main two-column layout */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Left: funnel + campaigns */}
-          <div className="space-y-6 lg:col-span-2">
-            <Card className="animate-fade-in">
-              <CardHeader>
-                <Eyebrow>Pipeline</Eyebrow>
-                <CardTitle className="mt-1">Conversion funnel</CardTitle>
-              </CardHeader>
-              <CardBody className="pt-0">
-                <FunnelChart data={funnel} height={300} />
-              </CardBody>
+          </Card>
+        ) : (
+          <>
+            {/* Command bar — every action navigates or runs */}
+            <Card className="p-5 animate-fade-in" data-testid="cc-returning-body">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <Eyebrow>Command center</Eyebrow>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
+                    <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
+                    {nextStep.reason}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>
+                    New intake
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    leftIcon={<Radar aria-hidden />}
+                    onClick={handleSourceBatch}
+                  >
+                    Source next batch
+                  </Button>
+                  <Button
+                    variant="primary"
+                    leftIcon={<PlayCircle aria-hidden />}
+                    onClick={handleOpenRun}
+                  >
+                    Run Aria
+                  </Button>
+                  <Button
+                    variant="outline"
+                    leftIcon={<GitBranch aria-hidden />}
+                    onClick={() => router.push("/outreach")}
+                  >
+                    Review outreach
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    leftIcon={<FileText aria-hidden />}
+                    onClick={handleGenerateReport}
+                  >
+                    Generate weekly report
+                  </Button>
+                </div>
+              </div>
             </Card>
 
-            <section>
-              <div className="mb-4 flex items-end justify-between gap-3">
-                <div>
-                  <Eyebrow>In motion</Eyebrow>
-                  <h2 className="display mt-1 text-2xl text-ink">Active campaigns</h2>
-                </div>
-                <Link
-                  href="/campaigns"
-                  className="text-sm font-semibold text-electric hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
-                >
-                  View all
-                </Link>
+            {runOpen && activeCampaign && (
+              <AgentRunStream
+                key={runToken}
+                campaignId={activeCampaign.id}
+                autoStart
+                onClose={() => setRunOpen(false)}
+                className="animate-fade-in"
+              />
+            )}
+
+            {/* KPI grid */}
+            <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+              {kpiCards.map((k) => (
+                <MetricCard
+                  key={k.label}
+                  label={k.label}
+                  value={k.value}
+                  hint={k.hint}
+                  icon={k.icon}
+                  tone={k.tone}
+                />
+              ))}
+            </section>
+
+            <IntegrationStrip />
+
+            {/* Main two-column layout */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              {/* Left: funnel + campaigns */}
+              <div className="space-y-6 lg:col-span-2">
+                <Card className="animate-fade-in">
+                  <CardHeader>
+                    <Eyebrow>Pipeline</Eyebrow>
+                    <CardTitle className="mt-1">Conversion funnel</CardTitle>
+                  </CardHeader>
+                  <CardBody className="pt-0">
+                    <FunnelChart data={funnel} height={300} />
+                  </CardBody>
+                </Card>
+
+                <section>
+                  <div className="mb-4 flex items-end justify-between gap-3">
+                    <div>
+                      <Eyebrow>In motion</Eyebrow>
+                      <h2 className="display mt-1 text-2xl text-ink">Active campaigns</h2>
+                    </div>
+                    <Link
+                      href="/campaigns"
+                      className="text-sm font-semibold text-electric hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+                    >
+                      View all
+                    </Link>
+                  </div>
+
+                  {activeCampaigns.length === 0 ? (
+                    <EmptyState
+                      icon={<Megaphone className="h-6 w-6" aria-hidden />}
+                      title="No active campaigns"
+                      description="Paste a job brief to open your next sourcing campaign."
+                      action={
+                        <Button
+                          leftIcon={<FilePlus2 aria-hidden />}
+                          onClick={() => router.push("/intake")}
+                        >
+                          Paste a job brief
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {activeCampaigns.map((campaign) => (
+                        <CampaignCard key={campaign.id} campaign={campaign} />
+                      ))}
+                    </div>
+                  )}
+                </section>
               </div>
 
-              {activeCampaigns.length === 0 ? (
-                <EmptyState
-                  icon={<Megaphone className="h-6 w-6" aria-hidden />}
-                  title="No active campaigns"
-                  description="Parse a hiring brief to spin up your first autonomous sourcing campaign."
-                  action={
-                    <Button
-                      leftIcon={<FilePlus2 aria-hidden />}
-                      onClick={() => router.push("/intake")}
-                    >
-                      New intake
-                    </Button>
-                  }
-                />
-              ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {activeCampaigns.map((campaign) => (
-                    <CampaignCard key={campaign.id} campaign={campaign} />
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
+              {/* Right: attention + TAnIA summary + activity */}
+              <div className="space-y-6">
+                <AttentionPanel />
 
-          {/* Right: attention + TAnIA summary + activity */}
-          <div className="space-y-6">
-            <AttentionPanel />
+                <TaniaSummary />
 
-            <TaniaSummary />
-
-            <Card className="animate-fade-in">
-              <CardHeader>
-                <Eyebrow>Audit trail</Eyebrow>
-                <CardTitle className="mt-1">Recent activity</CardTitle>
-              </CardHeader>
-              <CardBody className="pt-0">
-                <ActivityTimeline
-                  activities={activities}
-                  limit={10}
-                  emptyHint="Source candidates, draft outreach, or parse a brief to start the trail."
-                />
-              </CardBody>
-            </Card>
-          </div>
-        </div>
+                <Card className="animate-fade-in">
+                  <CardHeader>
+                    <Eyebrow>Audit trail</Eyebrow>
+                    <CardTitle className="mt-1">Recent activity</CardTitle>
+                  </CardHeader>
+                  <CardBody className="pt-0">
+                    <ActivityTimeline
+                      activities={activities}
+                      limit={10}
+                      emptyHint="Source candidates, draft outreach, or parse a brief to start the trail."
+                    />
+                  </CardBody>
+                </Card>
+              </div>
+            </div>
+          </>
+        )}
       </HydrationGate>
     </div>
   );
