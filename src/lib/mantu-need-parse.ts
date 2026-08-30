@@ -213,12 +213,49 @@ const FIELD_ALIASES: Record<string, string[]> = {
   skillsNice: ["skill (nice to have)", "skills (nice to have)", "nice to have skills", "nice-to-have"],
   languagesMust: ["language (must)", "languages (must)", "languages"],
   languagesNice: ["language (nice to have)", "languages (nice to have)"],
-  levelOfExperience: ["level of experience", "experience level", "seniority"],
+  levelOfExperience: [
+    "level of experience (in years)",
+    "level of experience",
+    "experience level",
+    "seniority",
+  ],
   targetSchool: ["target school", "target schools"],
   idealProfileId: ["ideal profile id", "ideal profile"],
   linkedinProfile: ["linkedin profile", "linkedin"],
   booleanSearch: ["boolean", "linkedin boolean", "boolean search"],
 };
+
+/** Section headers + every VSS field label — used to stop Label\\nvalue capture
+ *  when the "value" is actually the next empty field's label (Tony paste shape). */
+const VSS_STOP_LABELS: string[] = Array.from(
+  new Set([
+    ...Object.values(FIELD_ALIASES).flat(),
+    "summary",
+    "recruitment need purpose",
+    "project information",
+    "candidate requirement",
+    "candidate search support",
+    "additional information of the candidate",
+    "additional information of the need",
+    "mission description",
+    "profile synthesis",
+    "profile requirement",
+    "profiles",
+    "deadline shoot",
+    "deadline qm",
+    "number of people",
+  ]),
+);
+
+function looksLikeVssFieldLabel(line: string): boolean {
+  const t = line.trim().toLowerCase().replace(/[:：]\s*$/, "");
+  if (!t || t.length > 80) return false;
+  if (VSS_STOP_LABELS.includes(t)) return true;
+  // "Skill (Must)", "Language (Nice to have)", etc.
+  return VSS_STOP_LABELS.some(
+    (label) => t === label || t.startsWith(`${label} (`),
+  );
+}
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -228,7 +265,55 @@ function splitList(raw: string): string[] {
   return raw
     .split(/\n|;|\||(?<!\d),(?!\d)/)
     .map((s) => s.replace(/^[-•*]\s*/, "").trim())
-    .filter((s) => s && !/^(n\/?a|none|-|—)$/i.test(s));
+    .filter((s) => s && !/^(n\/?a|none|-|—)$/i.test(s))
+    .filter((s) => !looksLikeVssFieldLabel(s));
+}
+
+/** Expand space-separated skill blobs ("Linux Python Oracle") while keeping
+ *  multi-word phrases that contain separators or hyphens. */
+function splitSkills(raw: string): string[] {
+  const GENERIC = new Set([
+    "server",
+    "servers",
+    "client",
+    "support",
+    "application",
+    "applications",
+    "system",
+    "systems",
+    "software",
+    "framework",
+    "frameworks",
+  ]);
+  // Prose bullets ("Strong understanding of financial markets…") must not be
+  // tokenized — only compact skill lists without English glue words.
+  const PROSE =
+    /\b(of|the|and|a|an|with|in|on|for|to|or|including|understanding|experience|working|knowledge|specifically|prior|good|strong|mandatory|directly|traders?)\b/i;
+  const parts = splitList(raw);
+  const out: string[] = [];
+  for (const part of parts) {
+    const toks = part.split(/\s+/).filter(Boolean);
+    const compactList =
+      !/[,;.]/.test(part) &&
+      toks.length >= 3 &&
+      toks.length <= 16 &&
+      !PROSE.test(part) &&
+      toks.every((t) => t.length <= 24);
+    if (compactList) {
+      for (const tok of toks) {
+        if (
+          tok.length > 1 &&
+          !looksLikeVssFieldLabel(tok) &&
+          !GENERIC.has(tok.toLowerCase())
+        ) {
+          out.push(tok);
+        }
+      }
+    } else if (part) {
+      out.push(part);
+    }
+  }
+  return Array.from(new Set(out));
 }
 
 /** Extract a single labeled field — supports `Label: value` and `Label\nvalue`. */
@@ -239,15 +324,25 @@ export function extractLabeledField(text: string, labels: string[]): string {
       "im",
     );
     const m1 = text.match(reLine);
-    if (m1?.[1]?.trim()) return m1[1].trim();
+    if (m1?.[1]?.trim()) {
+      const v = m1[1].trim();
+      return looksLikeVssFieldLabel(v) ? "" : v;
+    }
 
     const reBlock = new RegExp(
-      `^\\s*${escapeRegExp(label)}\\s*[:：]?\\s*\\n+\\s*(.+?)\\s*(?=\\n\\s*[A-Za-z][^\\n]{0,60}\\s*[:：]|\\n\\n|$)`,
+      `^\\s*${escapeRegExp(label)}\\s*[:：]?\\s*\\n+\\s*(.+?)\\s*(?=\\n\\s*[A-Za-z][^\\n]{0,80}\\s*[:：]?\\s*$|\\n\\n|$)`,
       "im",
     );
     const m2 = text.match(reBlock);
-    if (m2?.[1]?.trim() && !/^(summary|recruitment need|project information|candidate)/i.test(m2[1])) {
-      return m2[1].trim();
+    if (m2?.[1]?.trim()) {
+      const v = m2[1].trim();
+      if (
+        looksLikeVssFieldLabel(v) ||
+        /^(summary|recruitment need|project information|candidate)/i.test(v)
+      ) {
+        return "";
+      }
+      return v;
     }
   }
   return "";
@@ -314,6 +409,7 @@ export function parseVssRecruitmentNeed(raw: string): MantuNeedMeta {
         .split(/\n/)
         .map((l) => l.replace(/^[-•*]\s*/, "").replace(/^MANDATORY:\s*/i, "").trim())
         .filter((l) => l.length > 2 && l.length < 200)
+        .filter((l) => !looksLikeVssFieldLabel(l))
     : [];
 
   const languagesMust = splitList(field("languagesMust"));
@@ -323,14 +419,17 @@ export function parseVssRecruitmentNeed(raw: string): MantuNeedMeta {
   const secondaryRecruiters = splitList(field("secondaryRecruiters"));
 
   const skillsMust = Array.from(
-    new Set([...splitList(skillsMustRaw), ...skillsFromBullets.map((s) => s.split(/[,;]/)[0]!.trim()).filter(Boolean)]),
+    new Set([
+      ...splitSkills(skillsMustRaw),
+      ...skillsFromBullets.map((s) => s.split(/[,;]/)[0]!.trim()).filter(Boolean),
+    ]),
   );
   // Prefer short skill tokens from an explicit Skills: line when present
   const skillsLine = extractLabeledField(text, ["skills"]);
   if (skillsLine && skillsMust.length === 0) {
-    skillsMust.push(...splitList(skillsLine));
+    skillsMust.push(...splitSkills(skillsLine));
   } else if (skillsLine) {
-    for (const s of splitList(skillsLine)) {
+    for (const s of splitSkills(skillsLine)) {
       if (!skillsMust.some((x) => x.toLowerCase() === s.toLowerCase())) skillsMust.push(s);
     }
   }
@@ -367,7 +466,7 @@ export function parseVssRecruitmentNeed(raw: string): MantuNeedMeta {
     projectDuration: field("projectDuration"),
     profiles: field("profiles"),
     skillsMust: skillsMust.slice(0, 24),
-    skillsNice: splitList(skillsNiceRaw).slice(0, 16),
+    skillsNice: splitSkills(skillsNiceRaw).slice(0, 16),
     languagesMust,
     languagesNice,
     levelOfExperience: field("levelOfExperience"),
@@ -381,6 +480,11 @@ export function parseVssRecruitmentNeed(raw: string): MantuNeedMeta {
 }
 
 export function urgencyFromMantuPriority(priority: string, text: string): Urgency {
+  // "Urgent but not Critical" must not collapse to Critical via the /critical/ hit.
+  if (/not\s+critical/i.test(priority)) {
+    if (/urgent/i.test(priority)) return "Urgent";
+    return "Standard";
+  }
   if (/critical/i.test(priority) || /\b1\b/.test(priority) || /high importance|importance:\s*high/i.test(text)) {
     return "Critical";
   }
@@ -391,12 +495,19 @@ export function urgencyFromMantuPriority(priority: string, text: string): Urgenc
 
 export function locationTypeFromRemote(remote: string, text: string, hasCity: boolean): JobAnalysis["locationType"] {
   const hay = `${remote}\n${text}`;
-  if (/full\s*remote|fully\s*remote|\bremote\b/i.test(remote) && !/hybrid|on-?site/i.test(remote)) {
+  // Partial / possible remote is hybrid (desk + remote days), not full Remote.
+  if (/partial(?:ly)?\s+remote|possible\s+partial(?:ly)?\s+remote|hybrid/i.test(remote)) {
+    return "Hybrid";
+  }
+  if (/full\s*remote|fully\s*remote/i.test(remote)) {
+    return "Remote";
+  }
+  if (/\bremote\b/i.test(remote) && !/hybrid|on-?site|partial/i.test(remote)) {
     return "Remote";
   }
   if (/hybrid/i.test(hay)) return "Hybrid";
   if (/on-?site|in office|in-person/i.test(hay)) return "On-site";
-  if (/remote/i.test(hay) && !/hybrid/i.test(hay)) return "Remote";
+  if (/remote/i.test(hay) && !/hybrid|partial/i.test(hay)) return "Remote";
   return hasCity ? "On-site" : "Unspecified";
 }
 
@@ -414,7 +525,8 @@ export function seniorityFromLevel(level: string, title: string, minYears: numbe
   if (/lead/i.test(level) || /\blead\b/i.test(title)) return "Lead";
   if (/director|head of/i.test(level) || /director|head of/i.test(title)) return "Director";
   if (/junior|graduate|entry/i.test(level) || /junior|graduate|entry/i.test(title)) return "Junior";
-  if (/\bmid\b|intermediate/i.test(level) || /\bmid\b|intermediate/i.test(title)) return "Mid";
+  // VSS often says "Middle - From 4 to 6 years" (not only "Mid").
+  if (/\bmid(?:dle)?\b|intermediate/i.test(level) || /\bmid(?:dle)?\b|intermediate/i.test(title)) return "Mid";
   if (/\bsenior\b/i.test(level) || /\bsenior\b/i.test(title)) return "Senior";
   if (minYears != null) {
     if (minYears >= 5) return "Senior";

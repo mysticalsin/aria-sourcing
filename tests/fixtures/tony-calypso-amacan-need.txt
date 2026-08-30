@@ -1,0 +1,110 @@
+Summary
+Type
+Consulting
+Category
+Active
+Priority
+Urgent but not Critical
+Reason
+Opening Position
+Company Employed by
+AMACAN
+City
+Montreal
+Client
+BNPP CIB - Canada
+Company Billing To
+AMACAN
+Status
+Running
+Recruitment Need Purpose
+Title
+Calypso Application Support
+Status
+Running
+Reason
+Opening Position
+Priority
+Urgent but not Critical
+Main Manager
+MARGIOTTA Lisa
+Secondary Managers
+SOUSA ALVES Sara
+Main Recruiter
+MUNERA ALZATE Jacobo
+Secondary Recruiters
+Contract Type
+Undetermined Duration Contract (CDI, CTI...etc)
+Freelancer
+Start Date
+05/10/2026
+Number of people
+1
+City
+Montreal
+Project Information
+Company Employed by
+AMACAN
+Remote
+Possible partially remote
+Client
+BNPP CIB - Canada
+Client Sector
+Bank & Finance
+Project Type
+Expertise
+Project Duration
+12 Month
+Deadline Shoot
+Deadline QM
+Candidate requirement
+Profiles
+IS&D - Applicative Support
+Skill (Must)
+Linux Python Shell Oracle Grafana Dynatrace Linux Server
+Skill (Nice to have)
+Language (Must)
+English - Fluent
+Language (Nice to have)
+Level of Experience (in years)
+Middle - From 4 to 6 years
+Mission Description
+APS
+
+Profile Synthesis: Calypso Application Support
+
+1. Core Purpose & Scope
+
+Function: Providing production support for the Calypso settlement system within Capital Markets.
+Focus Areas: Supporting the Trade Life Cycle, specifically Settlements, Securities and Prime Brokerage.
+Environment: High-pressure, global, 24/7 production environments requiring collaboration across multiple time zones (Europe, India, Americas).
+2. Profile Segregation
+
+Junior:
+Focus: Incident routing, functional queries, and basic troubleshooting.
+Core Task: Acting as a Single Point of Contact (SPOC) to resolve or escalate technical/functional issues.
+Key Requirement: Basic knowledge of Capital Markets products and strong motivation for support.
+Senior:
+Focus: Platform stability, complex problem management, and mentoring junior staff.
+Core Task: Proactive monitoring, driving "Production Excellence," and contributing to AI/automation initiatives.
+Key Requirement: 7–8 years of deep domain expertise and advanced technical troubleshooting.
+Profile Requirement
+3. Technical & Functional Skillsets
+
+Functional: Deep understanding of Back Office functions (Settlement, Accounting, Position Management, STP) and market products (Securities, Bonds, Warrants).
+Technical (Senior Level):
+OS/DB: Linux/Unix, Oracle, Sybase, MSSQL.
+Monitoring: Geneos, Dynatrace, Grafana, Opensearch.
+Automation/Scripting: Python, Shell scripting, Autosys.
+Frameworks: ITIL (ServiceNow, Jira).
+4. Soft Skills & Operational Requirements
+
+Communication: Ability to interact directly with high-stakes stakeholders like Traders and Sales.
+Adaptability: High stress resistance and flexibility to work in rotation shifts or bank holidays.
+Mindset: Proactive, result-oriented, and focused on automation to minimize manual errors.
+Additional information of the Candidate
+Additional information of the Need
+Candidate search support
+Target School
+Ideal profile Id
+LinkedIn Profile

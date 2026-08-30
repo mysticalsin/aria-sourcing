@@ -85,9 +85,11 @@ export function extractMinYearsExperience(text: string): number | null {
   const patterns = [
     /\bminimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years?\b/i,
     /\bat\s+least\s+(\d{1,2})\s*\+?\s*years?\b/i,
+    /\bfrom\s+(\d{1,2})\s+to\s+\d{1,2}\s+years?\b/i,
     /\b(\d{1,2})\s*\+\s*years?\b/i,
     /\b(\d{1,2})\s*years?\s*\+/i,
-    /\b(\d{1,2})\s*-\s*\d{1,2}\s*years?\b/i,
+    // Support ASCII hyphen and en-dash ranges ("4-6 years", "7–8 years").
+    /\b(\d{1,2})\s*[–-]\s*\d{1,2}\s*years?\b/i,
     /\b(\d{1,2})\+?\s*years?\s+(?:of\s+)?(?:relevant\s+)?experience\b/i,
     /\b(\d{1,2})\s*(?:years?|yrs)\b/i,
   ];
@@ -97,6 +99,17 @@ export function extractMinYearsExperience(text: string): number | null {
       const years = parseInt(match, 10);
       if (Number.isFinite(years) && years >= 0 && years <= 50) return years;
     }
+  }
+  return null;
+}
+
+export function extractMaxYearsExperience(text: string): number | null {
+  const range =
+    text.match(/\bfrom\s+\d{1,2}\s+to\s+(\d{1,2})\s+years?\b/i) ??
+    text.match(/\b\d{1,2}\s*[–-]\s*(\d{1,2})\s*years?\b/i);
+  if (range?.[1]) {
+    const years = parseInt(range[1], 10);
+    if (Number.isFinite(years) && years >= 0 && years <= 50) return years;
   }
   return null;
 }
@@ -349,8 +362,14 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(normalized),
   );
+  // When VSS already lists Skill (Must), do not let dictionary scans of the
+  // mission prose invent extras (e.g. "Sales" from "Traders and Sales").
   const requiredSkills = Array.from(
-    new Set([...meta.skillsMust, ...profileSkills, ...dictSkills]),
+    new Set(
+      meta.skillsMust.length >= 3
+        ? [...meta.skillsMust, ...profileSkills]
+        : [...meta.skillsMust, ...profileSkills, ...dictSkills],
+    ),
   ).slice(0, 12);
 
   const niceToHaveSkills = Array.from(
@@ -361,7 +380,14 @@ export function parseMantuNeed(text: string): ParsedIntake {
   ).slice(0, 10);
 
   const experienceHay = `${meta.levelOfExperience}\n${meta.missionDescription}\n${normalized}`;
-  const minYearsExperience = extractMinYearsExperience(experienceHay);
+  // Prefer the explicit Level of Experience field so mission prose ("7–8 years"
+  // under a Senior sub-profile) cannot override "Middle - From 4 to 6 years".
+  const minYearsExperience =
+    extractMinYearsExperience(meta.levelOfExperience) ??
+    extractMinYearsExperience(experienceHay);
+  const maxYearsExperience =
+    extractMaxYearsExperience(meta.levelOfExperience) ??
+    extractMaxYearsExperience(experienceHay);
 
   let seniority: Seniority = seniorityFromLevel(meta.levelOfExperience, meta.title, minYearsExperience);
   if (seniority === "Unspecified") {
@@ -437,7 +463,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
     requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
-    maxYearsExperience: null,
+    maxYearsExperience,
     education: meta.targetSchool,
     industryExperience,
     companyStageTarget: /\bpublic\b/i.test(normalized)

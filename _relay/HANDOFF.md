@@ -1,49 +1,49 @@
 ---
 project: MSourcing / ARIA
-shift: 422
+shift: 423
 agent: cursor-cloud
-updated: 2026-08-30T00:55Z
-status: global-error-fixed-deployed
+updated: 2026-08-30T01:50Z
+status: calypso-amacan-e2e-green
 ---
 
-# Handoff — Shift 422
+# Handoff — Shift 423
 
 ## Current state
 
 - **Branch:** `cursor/rei-autopilot-send-b91d` (PR #40)
-- **Incident fixed:** Fly prod `global-error` — `Cannot read properties of undefined (reading 'title')`
-- **Root cause:** Always-mounted Aria Command console → `campaignToAriaContext` read `jobAnalysis.title` unguarded; malformed `camp:unispike:proof`
-- **Fly tip now:** `97c9c9542346dd7039dc84686818b38cc3a24b8f` · `/api/ready` ok · login shell verified (no “Something broke”)
-- Deployed chunk contains fail-soft `typeof` mapper (`function ou`)
+- **Shell crash fix** still on Fly tip `97c9c95` (deploy parser tip after this commit)
+- **VSS parser:** fixed Tony line-oriented AMACAN/BNPP Calypso need (empty-field label leak, Urgent-but-not-Critical, Middle 4–6y, partial remote → Hybrid, skill token split)
+- **Local E2E:** demo login → intake paste → Parse JD → Create campaign → **10 candidates** for `Calypso Application Support` (camp_1788054308646_…)
 
 ## Done this shift
 
-1. Reproduced critical load error + console stack
-2. Fixed mapper + hydrate repair + ⌘K/topbar fail-soft
-3. Tests `aria-command`, `campaign-repair`; typecheck green
-4. Deployed + verified login/floor redirect without global-error
+1. Fixed VSS Label\\nvalue extraction + urgency/seniority/remote/years/skills
+2. Fixture `tests/fixtures/tony-calypso-amacan-need.txt` + 13 new mantu-intake asserts (115 pass)
+3. Local UI E2E with Tony need proven end-to-end
 
 ## Blockers (owner / external)
 
-1. Graph dropzones still empty → email auto-send HOLD
+1. Graph dropzones empty → email auto-send HOLD
 2. HeyReach 0 LI accounts / campaigns
-3. Authenticated floor re-check needs real Supabase creds (demo login off in prod)
+3. Prod demo login off — authenticated prod floor needs real Supabase creds
 
 ## Next steps
 
 ```bash
-# After owner signs in once: confirm /floor paints Command Center (repair runs on hydrate)
-# Autopilot sent>0 still needs Graph mailbox or HeyReach campaign+seat
+SHA=$(git rev-parse HEAD)
+printf 'ARIA_RELEASE_SHA=%s\nARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:%s:aria-mantu-bootstrap,aria-mantu-app\n' "$SHA" "$SHA" > /tmp/owner-deploy-confirm.env
+source /tmp/owner-deploy-confirm.env && bash scripts/fly-deploy-now.sh
 ```
 
 ## Decisions made (don't relitigate)
 
-- Never table-SELECT `sourcing_loop_controls` from service_role
-- Shell must fail-soft on malformed campaigns (never take down global-error)
-- Goal complete only on auto-send receipt (`sent>0`)
-- Workspace `0d179005-e8e2-4b99-8b9a-b67453348005`
+- Shell fail-soft on malformed campaigns
+- "Urgent but not Critical" → Urgent (not Critical)
+- Partial remote → Hybrid
+- Prefer Level of Experience field over mission prose for years
+- Goal complete only on auto-send `sent>0`
 
 ## Watch out
 
-- Clearing `aria-workspace-bootstrap-v1` localStorage forces re-hydrate through repair
-- Cron `sent` still includes durable `queued`
+- Disk was full from `/opt/cursor/recording-staging` (~223GB) — cleared to restart Next
+- localhost (not 127.0.0.1) for local Next allowedDevOrigins

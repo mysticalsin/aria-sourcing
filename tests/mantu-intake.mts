@@ -256,5 +256,28 @@ ok("HTML VSS title", fromHtml.jobAnalysis.title === "Calypso Application Support
 ok("HTML VSS manager", /dupont/i.test(fromHtml.mantuNeed?.mainManager ?? ""));
 ok("HTML VSS skills", fromHtml.jobAnalysis.requiredSkills.some((s) => /calypso/i.test(s)));
 
+/* ---- Tony AMACAN / BNPP CIB line-oriented VSS paste (Montreal Calypso) ---- */
+const tonyAmacan = readFileSync(new URL("./fixtures/tony-calypso-amacan-need.txt", import.meta.url), "utf8");
+ok("detects Tony AMACAN VSS", isVssRecruitmentNeed(tonyAmacan));
+const tony = parseEmailAndJD({ email: tonyAmacan });
+const tonyMeta = tony.mantuNeed!;
+ok("Tony AMACAN title", tony.jobAnalysis.title === "Calypso Application Support");
+ok("Tony AMACAN Urgent but not Critical → Urgent", tony.urgency === "Urgent" && /not critical/i.test(tonyMeta.priority));
+ok("Tony AMACAN Mid 4-6 years", tony.jobAnalysis.seniority === "Mid" && tony.jobAnalysis.minYearsExperience === 4 && tony.jobAnalysis.maxYearsExperience === 6);
+ok("Tony AMACAN Hybrid partial remote", tony.jobAnalysis.locationType === "Hybrid" && /partial/i.test(tonyMeta.remote));
+ok("Tony AMACAN Montreal", /montreal/i.test(tonyMeta.city) && tony.jobAnalysis.regions.some((r) => /montreal/i.test(r)));
+ok("Tony AMACAN manager Margiotta", /margiotta/i.test(tonyMeta.mainManager));
+ok("Tony AMACAN recruiter Munera", /munera/i.test(tonyMeta.mainRecruiter));
+ok("Tony AMACAN empty secondary recruiters (no label leak)", tonyMeta.secondaryRecruiters.length === 0);
+ok("Tony AMACAN empty freelancer (no label leak)", !tonyMeta.freelancer.trim());
+ok(
+  "Tony AMACAN skills split",
+  ["Calypso", "Linux", "Python", "Oracle", "Grafana", "Dynatrace"].every((s) =>
+    tony.jobAnalysis.requiredSkills.some((x) => x.toLowerCase() === s.toLowerCase()),
+  ),
+);
+ok("Tony AMACAN no Sales false positive", !tony.jobAnalysis.requiredSkills.some((s) => /^sales$/i.test(s)));
+ok("Tony AMACAN client BNPP", /bnpp/i.test(tonyMeta.client));
+
 console.log(`RESULT mantu-intake: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
