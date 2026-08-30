@@ -38,3 +38,11 @@ const batch = selectTopKByMatchScore(scored, count, jd); // NOT bank.slice(0, co
 ```
 
 Tie-breakers: matchScore ↓ → must-have hit count ↓ → years present → live>manual>synthetic → id.
+
+
+## Land status
+
+- Branch pushed: `cursor/scoring-quality-upgrade-b91d`
+- Base: `integration/sourcing-enrichment-on-main`
+- Open PR: https://github.com/mysticalsin/aria-sourcing/pull/new/cursor/scoring-quality-upgrade-b91d
+- `gh pr create` blocked (integration token lacks `createPullRequest`); open via link above or ManagePullRequest from parent.
