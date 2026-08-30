@@ -1,5 +1,5 @@
 import { dedupeCandidates } from "@/lib/rules";
-import { scoreCandidate } from "@/lib/scoring";
+import { scoreCandidate, selectTopKByMatchScore, rankScoredCandidates } from "@/lib/scoring";
 import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
 import {
   candidateMatchesRoleTitle,
@@ -339,24 +339,35 @@ function scoreAndDedupe(
   campaign: CandidateMappingCampaign,
   existing: CandidateDedupeIdentity[],
   weights: ScoringWeights,
+  topK?: number,
 ): SourceResult {
   const { accepted, skipped } = dedupeCandidates(raw, existing, {
     excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
   });
-  const scored = accepted
-    .map((candidate) => {
-      const { score, breakdown } = scoreCandidate(candidate, campaign.jobAnalysis, weights);
-      return { ...candidate, matchScore: score, matchBreakdown: breakdown };
-    })
-    .sort((a, b) => b.matchScore - a.matchScore);
-  const qualityAccepted = scored.filter((candidate) =>
+  const scored = accepted.map((candidate) => {
+    const { score, breakdown } = scoreCandidate(candidate, campaign.jobAnalysis, weights);
+    return { ...candidate, matchScore: score, matchBreakdown: breakdown };
+  });
+  const ranked = rankScoredCandidates(scored, campaign.jobAnalysis);
+  const qualityAccepted = ranked.filter((candidate) =>
     meetsSourcingQualityBar(candidate, SOURCING_QUALITY_FLOOR),
   );
-  const qualitySkipped = scored
+  const qualitySkipped = ranked
     .filter((candidate) => !meetsSourcingQualityBar(candidate, SOURCING_QUALITY_FLOOR))
     .map((candidate) => ({
       name: candidate.name,
       reason: `Match score ${candidate.matchScore} is below the ${SOURCING_QUALITY_FLOOR}% sourcing quality floor.`,
     }));
-  return { accepted: qualityAccepted, skipped: [...qualitySkipped, ...skipped] };
+  const capped =
+    topK != null && Number.isFinite(topK) && topK >= 0
+      ? selectTopKByMatchScore(qualityAccepted, topK, campaign.jobAnalysis)
+      : qualityAccepted;
+  const capSkipped =
+    capped.length < qualityAccepted.length
+      ? qualityAccepted.slice(capped.length).map((candidate) => ({
+          name: candidate.name,
+          reason: `Ranked below top-${capped.length} quality cap (score ${candidate.matchScore}).`,
+        }))
+      : [];
+  return { accepted: capped, skipped: [...qualitySkipped, ...capSkipped, ...skipped] };
 }

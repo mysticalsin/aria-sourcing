@@ -207,6 +207,10 @@ export interface JobAnalysis {
   equity: boolean;
   requiredSkills: string[];
   niceToHaveSkills: string[];
+  /** Spoken languages required by the role (e.g. ["English"]). Additive —
+   *  SMART/VSS mappers should fill from Language (Must); scoring only uses
+   *  this explicit list (not localeContext brief language). */
+  requiredLanguages?: string[];
   minYearsExperience: number | null;
   maxYearsExperience: number | null;
   education: string;
@@ -403,6 +407,18 @@ export interface Candidate {
   education?: string[];
   /** Enriched spoken/written languages. Absent until enriched. */
   languages?: string[];
+  /**
+   * Free-text resume / SMART OCR / Cvtheque body used for JD-fit scoring.
+   * Additive optional — SMART mapper should populate when available. Scoring
+   * never invents this field; empty means "use structured fields only".
+   */
+  profileText?: string;
+  /**
+   * Structured domain tags (e.g. CIB, settlements, MOA, Calypso) extracted
+   * upstream from resume/OCR. Prefer SMART mapper fill; scoring also infers
+   * from profileText when tags are absent.
+   */
+  domainTags?: string[];
   /** Verified professional experience in years. Null means not provided and
    *  must never be rendered or scored as zero years. */
   yearsExperience: number | null;

@@ -5,6 +5,7 @@ import {
   meetsSourcingQualityBar,
   SOURCING_QUALITY_FLOOR,
 } from "@/lib/sourcing/candidate-fit";
+import { selectTopKByMatchScore } from "@/lib/scoring";
 import { ensureWebQueryScope, extractLead, type WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
@@ -49,11 +50,13 @@ function makeWebProvider(
         ctx.weights,
       );
       const roleTitle = ctx.campaign.jobAnalysis.title.trim();
-      const filtered = result.accepted
-        .filter((c) => candidateMatchesRoleTitle(c, roleTitle))
-        .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
-        .sort((a, b) => b.matchScore - a.matchScore)
-        .slice(0, count);
+      const filtered = selectTopKByMatchScore(
+        result.accepted
+          .filter((c) => candidateMatchesRoleTitle(c, roleTitle))
+          .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR)),
+        count,
+        ctx.campaign.jobAnalysis,
+      );
       return {
         ok: true,
         accepted: filtered,

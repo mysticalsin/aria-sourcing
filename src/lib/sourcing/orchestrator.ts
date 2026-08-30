@@ -9,6 +9,7 @@ import {
 import type { CandidateMappingCampaign } from "@/lib/sourcing/candidate-mappers";
 import type { Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import type { WebFetch } from "@/lib/ai/web-tools";
+import { selectTopKByMatchScore } from "@/lib/scoring";
 import {
   buildGithubUserQueriesForSkills,
   githubLanguageForSkill,
@@ -302,10 +303,11 @@ export async function runMultiProviderSourcing(
   const deduped = dedupeCandidates(merged, input.existing, {
     excludedCompanies: input.campaign.sourcingStrategy.excludedCompanies,
   });
-  const accepted = deduped.accepted
-    .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
-    .sort((a, b) => b.matchScore - a.matchScore)
-    .slice(0, count);
+  const accepted = selectTopKByMatchScore(
+    deduped.accepted.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR)),
+    count,
+    input.campaign.jobAnalysis,
+  );
 
   return {
     accepted,

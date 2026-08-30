@@ -25,6 +25,7 @@ import {
   meetsSourcingQualityBar,
   SOURCING_QUALITY_FLOOR,
 } from "@/lib/sourcing/candidate-fit";
+import { selectTopKByMatchScore } from "@/lib/scoring";
 import { searchGithubUsers } from "@/lib/sourcing/github";
 import { runWebTool } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
@@ -196,11 +197,13 @@ export function makeSourcingToolRunner(
         executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
         return { ok: false, error: lastError ?? "LinkedIn search failed." };
       }
-      accepted = mergePreferringRicher(batches)
-        .filter((c) => candidateMatchesRoleTitle(c, campaign.jobAnalysis.title.trim()))
-        .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
-        .sort((a, b) => b.matchScore - a.matchScore)
-        .slice(0, count);
+      accepted = selectTopKByMatchScore(
+        mergePreferringRicher(batches)
+          .filter((c) => candidateMatchesRoleTitle(c, campaign.jobAnalysis.title.trim()))
+          .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR)),
+        count,
+        campaign.jobAnalysis,
+      );
     } else if (isWebSearchPlatform(platform)) {
       const scopedQuery = ensureWebQueryScope(platform, query);
       const search = await runWebTool("web_search", { query: scopedQuery }, {
@@ -216,11 +219,13 @@ export function makeSourcingToolRunner(
       const leads = hits.map((h) => extractLead(h, platform));
       const result = mapWebSearchCandidates(leads, campaign, scopedQuery, platform, alreadySeen, weights);
       const roleTitle = campaign.jobAnalysis.title.trim();
-      const filtered = result.accepted
-        .filter((c) => candidateMatchesRoleTitle(c, roleTitle))
-        .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
-        .sort((a, b) => b.matchScore - a.matchScore)
-        .slice(0, count);
+      const filtered = selectTopKByMatchScore(
+        result.accepted
+          .filter((c) => candidateMatchesRoleTitle(c, roleTitle))
+          .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR)),
+        count,
+        campaign.jobAnalysis,
+      );
       accepted = filtered;
       skippedCount = result.skipped.length + (result.accepted.length - filtered.length);
     } else {

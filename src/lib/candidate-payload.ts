@@ -147,6 +147,10 @@ export function candidateFromPayload(raw: unknown): Candidate | null {
     experience: stringArray(raw.experience),
     education: stringArray(raw.education),
     languages: stringArray(raw.languages),
+    profileText: stringValue(raw.profileText) || undefined,
+    domainTags: stringArray(raw.domainTags).length
+      ? stringArray(raw.domainTags)
+      : undefined,
     yearsExperience: numberOrNull(raw.yearsExperience),
     companyStageExperience: companyStageArray(raw.companyStageExperience),
     industryExperience: stringArray(raw.industryExperience),

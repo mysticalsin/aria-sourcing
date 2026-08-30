@@ -2,7 +2,7 @@ import { redactEmail, redactSecrets } from "../log-redact";
 import { sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
-import { scoreCandidate } from "../scoring";
+import { rankScoredCandidates, scoreCandidate, selectTopKByMatchScore } from "../scoring";
 import { evaluateNeedReadiness } from "../needs/readiness";
 import {
   mapApolloCandidates,
@@ -772,9 +772,20 @@ export function createSourcingActions({
           matchBreakdown: score.breakdown,
         };
       });
-      result = dedupeCandidates(scored, previous.candidates, {
+      const ranked = selectTopKByMatchScore(scored, count, campaign.jobAnalysis);
+      const belowCap = scored
+        .filter((c) => !ranked.some((r) => r.id === c.id))
+        .map((c) => ({
+          name: c.name,
+          reason: `Ranked below top-${count} quality cap (score ${c.matchScore}).`,
+        }));
+      result = dedupeCandidates(ranked, previous.candidates, {
         excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       });
+      result = {
+        accepted: rankScoredCandidates(result.accepted, campaign.jobAnalysis),
+        skipped: [...result.skipped, ...belowCap],
+      };
       let next: HermesState = {
         ...previous,
         candidates: [...result.accepted, ...previous.candidates],

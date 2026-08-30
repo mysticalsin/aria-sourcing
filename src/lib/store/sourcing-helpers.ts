@@ -1,7 +1,7 @@
 import { computeCoverage } from "../enrichment/merge";
 import type { SourceResult } from "../sourcing/candidate-mappers";
 import { dedupeCandidates, type CandidateDedupeIdentity } from "../rules";
-import { scoreCandidate } from "../scoring";
+import { rankScoredCandidates, scoreCandidate } from "../scoring";
 import type { ApifyProfile } from "../sourcing/apify";
 import type { SillageProfile } from "../sourcing/sillage";
 import type { WebSearchPlatform } from "../sourcing/web-leads";
@@ -162,7 +162,7 @@ export function mapSillageCandidates(
     const { score, breakdown } = scoreCandidate(c, jd, weights);
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
-  return { accepted: scored, skipped };
+  return { accepted: rankScoredCandidates(scored, jd), skipped };
 }
 
 /**
@@ -272,5 +272,5 @@ export function mapApifyCandidates(
     const { score, breakdown } = scoreCandidate(c, jd, weights);
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
-  return { accepted: scored, skipped };
+  return { accepted: rankScoredCandidates(scored, jd), skipped };
 }

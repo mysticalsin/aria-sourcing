@@ -1,4 +1,4 @@
-import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
+import { DEFAULT_SCORING_WEIGHTS, scoreCandidate, selectTopKByMatchScore } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "./mantu-brand";
@@ -462,6 +462,9 @@ export function parseMantuNeed(text: string): ParsedIntake {
     equity: /equity|options|esop/i.test(normalized),
     requiredSkills,
     niceToHaveSkills,
+    requiredLanguages: meta.languagesMust.length
+      ? meta.languagesMust.map((l) => l.replace(/\s*-\s*.*$/, "").trim()).filter(Boolean)
+      : undefined,
     minYearsExperience,
     maxYearsExperience,
     education: meta.targetSchool,
@@ -1100,13 +1103,15 @@ export function sourceCandidates(
     excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
   });
 
-  // Score + trim to requested count
-  const scored = accepted.slice(0, count).map((c) => {
+  // Score the FULL set, then take top-K by quality rank — never first-N from
+  // synthetic/API order. Volume is not the limiter; match quality is.
+  const scored = accepted.map((c) => {
     const { score, breakdown } = scoreCandidate(c, jd, weights);
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
+  const ranked = selectTopKByMatchScore(scored, count, jd);
 
-  return { accepted: scored, skipped };
+  return { accepted: ranked, skipped };
 }
 
 function synthCandidate(

@@ -6,13 +6,47 @@ import type {
 } from "./types";
 import { clamp, round } from "./utils";
 
+/**
+ * Default dimension weights. Skills dominate so must-have JD fit drives the
+ * composite. Volume is never the limiter — score the full set, then
+ * `selectTopKByMatchScore` (quality rank), not first-N from API order.
+ */
 export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
-  skills: 34,
-  experience: 22,
-  companyStage: 12,
-  industry: 12,
-  location: 10,
-  activity: 10,
+  skills: 40,
+  experience: 20,
+  companyStage: 8,
+  industry: 14,
+  location: 12,
+  activity: 6,
+};
+
+/** Default batch size for Source next batch when callers omit an explicit count. */
+export const DEFAULT_SOURCE_BATCH_TOP_K = 10;
+
+const TITLE_FLOOR_WITHOUT_MUST = 68;
+const SYNTHETIC_SCORE_FACTOR = 0.92;
+const WEAK_RESUME_SKILLS_FACTOR = 0.78;
+
+const DOMAIN_SIGNAL_PATTERNS: { tag: string; re: RegExp }[] = [
+  { tag: "Calypso", re: /\bcalypso\b/i },
+  { tag: "CIB", re: /\bcib\b|corporate\s+investment\s+bank/i },
+  { tag: "settlements", re: /\bsettlements?\b|trade\s+settlement/i },
+  { tag: "back office", re: /\bback[\s-]?office\b/i },
+  { tag: "MOA", re: /\bmoa\b|middle[\s-]?office/i },
+  { tag: "FO", re: /\bfront[\s-]?office\b/i },
+  { tag: "derivatives", re: /\bderivatives?\b|rates\s+and\s+credit/i },
+  { tag: "trade lifecycle", re: /\btrade\s+lifecycle\b/i },
+  { tag: "capital markets", re: /\bcapital\s+markets?\b/i },
+  { tag: "Business Analysis", re: /\bbusiness\s+analys(?:is|t)s?\b/i },
+];
+
+const LANGUAGE_NAME_BY_CODE: Record<string, string[]> = {
+  en: ["english", "anglais", "en"],
+  fr: ["french", "français", "francais", "fr"],
+  de: ["german", "deutsch", "de"],
+  es: ["spanish", "español", "espanol", "es"],
+  ar: ["arabic", "arabe", "ar"],
+  ja: ["japanese", "ja"],
 };
 
 const DIMENSION_LABELS: Record<keyof ScoringWeights, string> = {
@@ -81,6 +115,95 @@ function locationMatchesRegion(location: string, region: string): boolean {
   return locCity.length > 2 && regCity.length > 2 && locCity === regCity;
 }
 
+
+/** Build the free-text corpus used for skill/domain/language matching. */
+export function buildCandidateCorpus(c: Candidate): string {
+  return [
+    c.techStack.join(" "),
+    c.currentTitle,
+    c.currentCompany,
+    c.recentActivity,
+    c.profileText ?? "",
+    ...(c.experience ?? []),
+    ...(c.education ?? []),
+    ...(c.languages ?? []),
+    ...(c.domainTags ?? []),
+    ...(c.notes ?? []).map((n) => n.text),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function extractDomainTagsFromText(text: string): string[] {
+  if (!text.trim()) return [];
+  const hits: string[] = [];
+  for (const { tag, re } of DOMAIN_SIGNAL_PATTERNS) {
+    if (re.test(text) && !hits.some((h) => h.toLowerCase() === tag.toLowerCase())) {
+      hits.push(tag);
+    }
+  }
+  return hits;
+}
+
+function jdDomainTargets(jd: JobAnalysis): string[] {
+  const fromMission = extractDomainTagsFromText(
+    [jd.missionDescription ?? "", jd.title, jd.education, ...(jd.requiredSkills ?? [])].join(" "),
+  );
+  const out: string[] = [];
+  for (const tag of [...jd.industryExperience, ...fromMission]) {
+    if (!out.some((h) => h.toLowerCase() === tag.toLowerCase())) out.push(tag);
+  }
+  return out;
+}
+
+function candidateDomainTags(c: Candidate, corpus: string): string[] {
+  const out: string[] = [];
+  for (const tag of [...(c.domainTags ?? []), ...extractDomainTagsFromText(corpus)]) {
+    if (!out.some((h) => h.toLowerCase() === tag.toLowerCase())) out.push(tag);
+  }
+  return out;
+}
+
+/** Languages the role requires. Only explicit `requiredLanguages` count. */
+export function jdRequiredLanguages(jd: JobAnalysis): string[] {
+  if (jd.requiredLanguages && jd.requiredLanguages.length > 0) {
+    return jd.requiredLanguages.map((l) => l.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function languageMentioned(lang: string, corpus: string, languages: string[] | undefined): boolean {
+  const needle = lang.toLowerCase().trim();
+  if (!needle) return false;
+  if ((languages ?? []).some((l) => l.toLowerCase().includes(needle) || needle.includes(l.toLowerCase()))) {
+    return true;
+  }
+  const codeEntry = Object.entries(LANGUAGE_NAME_BY_CODE).find(
+    ([code, names]) => code === needle || names.includes(needle),
+  );
+  const aliases = codeEntry ? [codeEntry[0], ...codeEntry[1]] : [needle];
+  const hay = corpus.toLowerCase();
+  return aliases.some((alias) => {
+    if (alias.length < 2) return false;
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(hay);
+  });
+}
+
+function isWeakOrGenericResume(c: Candidate, corpus: string, reqHit: number): boolean {
+  const trimmed = corpus.replace(/\s+/g, " ").trim();
+  if (trimmed.length < 40 && c.techStack.length <= 1 && reqHit <= 1) return true;
+  if (
+    /seeking (new )?opportunit|open to work|professional with experience|results[\s-]driven|motivated individual/i.test(
+      trimmed,
+    ) &&
+    reqHit <= 1
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /* ---- Individual dimension scorers (all return 0-100) --------------------- */
 
 function titleOverlapRatio(candidateTitle: string, roleTitle: string): number {
@@ -104,39 +227,57 @@ function titleOverlapRatio(candidateTitle: string, roleTitle: string): number {
 function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const req = jd.requiredSkills;
   const nice = jd.niceToHaveSkills;
-  // LinkedIn/web leads often leave techStack sparse — also match against title,
-  // company, and activity snippet so public-profile text can authorize contact.
-  const corpus = [c.techStack.join(" "), c.currentTitle, c.currentCompany, c.recentActivity]
-    .filter(Boolean)
-    .join(" ");
-  const reqHit = req.filter((skill) => skillMentionedInText(skill, corpus)).length;
-  const niceHit = nice.filter((skill) => skillMentionedInText(skill, corpus)).length;
+  const corpus = buildCandidateCorpus(c);
+  const reqHits = req.filter((skill) => skillMentionedInText(skill, corpus));
+  const niceHits = nice.filter((skill) => skillMentionedInText(skill, corpus));
+  const reqHit = reqHits.length;
+  const niceHit = niceHits.length;
   const reqRatio = req.length ? reqHit / req.length : 0.7;
   const niceRatio = nice.length ? niceHit / nice.length : 0;
-  let score = clamp(reqRatio * 82 + niceRatio * 18, 0, 100);
+  // Must-haves dominate (92/8). Missing most required skills cannot clear via nice-to-haves.
+  let score = clamp(reqRatio * 92 + niceRatio * 8, 0, 100);
+  if (req.length > 0 && reqHit === 0) score = Math.min(score, 28);
+  else if (req.length > 0 && reqRatio < 0.5) score = Math.min(score, 55);
+
   const titleOverlap = titleOverlapRatio(c.currentTitle, jd.title);
-  // Public headlines often encode role fit more than a sparse tech list.
-  if (titleOverlap >= 0.5 && reqHit >= 1) score = Math.max(score, 82);
-  if (titleOverlap >= 0.6) score = Math.max(score, 86);
-  if (titleOverlap >= 0.9 && reqHit >= 1) score = Math.max(score, 92);
-  // GitHub profiles omit job titles by design; language:/skill evidence in
-  // techStack + bio must still be able to clear the 80% contact floor.
-  if (c.sourcePlatform === "GitHub" && reqHit >= 1) {
+  const allowStrongTitleFloor = reqHit >= Math.max(1, Math.ceil((req.length || 1) * 0.4));
+  if (c.provenance !== "synthetic") {
+    if (titleOverlap >= 0.5 && allowStrongTitleFloor) score = Math.max(score, 82);
+    else if (titleOverlap >= 0.5 && reqHit >= 1) score = Math.max(score, TITLE_FLOOR_WITHOUT_MUST);
+    if (titleOverlap >= 0.6 && allowStrongTitleFloor) score = Math.max(score, 86);
+    if (titleOverlap >= 0.9 && allowStrongTitleFloor) score = Math.max(score, 92);
+  }
+  if (c.sourcePlatform === "GitHub" && c.provenance !== "synthetic" && reqHit >= 1) {
     score = Math.max(score, 82);
     if (reqHit >= 2) score = Math.max(score, 86);
     if (reqHit >= 3) score = Math.max(score, 90);
   }
+
+  if (isWeakOrGenericResume(c, corpus, reqHit)) {
+    score = round(score * WEAK_RESUME_SKILLS_FACTOR);
+  }
+
+  const missingMust = req.filter((s) => !reqHits.includes(s));
+  const mustPart =
+    req.length === 0
+      ? "no must-have list on JD"
+      : `${reqHit}/${req.length} must-have (${reqHits.slice(0, 4).join(", ") || "none"}${
+          reqHits.length > 4 ? "…" : ""
+        })`;
+  const missPart =
+    missingMust.length > 0
+      ? `; missing must-have: ${missingMust.slice(0, 3).join(", ")}${missingMust.length > 3 ? "…" : ""}`
+      : "";
+  const nicePart = `${niceHit}/${nice.length || "—"} nice-to-have`;
+  const titlePart = titleOverlap >= 0.5 ? `; title aligns with ${jd.title}` : "";
+
   return {
     score,
-    rationale: `${reqHit}/${req.length || "—"} required, ${niceHit}/${
-      nice.length || "—"
-    } nice-to-have skills present${
-      titleOverlap >= 0.5 ? `; title aligns with ${jd.title}` : ""
-    }.`,
+    rationale: `${mustPart}; ${nicePart}${missPart}${titlePart}.`,
   };
 }
 
-function skillMentionedInText(skill: string, corpus: string): boolean {
+export function skillMentionedInText(skill: string, corpus: string): boolean {
   const hay = corpus.toLowerCase();
   const needle = skill.toLowerCase().trim();
   if (!needle || !hay) return false;
@@ -163,7 +304,7 @@ function skillMentionedInText(skill: string, corpus: string): boolean {
 function scoreExperience(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const yrs = c.yearsExperience;
   if (yrs == null) {
-    return { score: 50, rationale: "Experience not provided." };
+    return { score: 50, rationale: "Experience not provided — years never fabricated." };
   }
   const min = jd.minYearsExperience;
   const max = jd.maxYearsExperience;
@@ -181,8 +322,15 @@ function scoreExperience(c: Candidate, jd: JobAnalysis): { score: number; ration
     score = clamp(90 - over * 7, 55, 90);
     rationale = `${yrs} yrs, ${over} above the ${max}-yr ceiling (possible over-level).`;
   } else {
-    score = 94;
-    rationale = `${yrs} yrs lands inside the target band.`;
+    const bandMin = min ?? yrs;
+    const bandMax = max ?? min ?? yrs;
+    const mid = (bandMin + bandMax) / 2;
+    const dist = Math.abs(yrs - mid);
+    const span = Math.max(1, bandMax - bandMin);
+    score = clamp(98 - (dist / span) * 10, 88, 98);
+    rationale = `${yrs} yrs lands inside the target band${
+      min != null && max != null ? ` (${min}–${max})` : min != null ? ` (≥${min})` : ""
+    }.`;
   }
   return { score, rationale };
 }
@@ -205,25 +353,89 @@ function scoreCompanyStage(c: Candidate, jd: JobAnalysis): { score: number; rati
 
 function scoreIndustry(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const target = jd.industryExperience;
-  if (target.length === 0) return { score: 72, rationale: "No industry preference set." };
-  if (c.industryExperience.length === 0) {
-    return { score: 50, rationale: "Industry experience not provided." };
+  const domainTargets = jdDomainTargets(jd);
+  const corpus = buildCandidateCorpus(c);
+  const candDomains = candidateDomainTags(c, corpus);
+  const domainHit = domainTargets.filter((t) =>
+    candDomains.some((d) => d.toLowerCase() === t.toLowerCase()) ||
+    skillMentionedInText(t, corpus),
+  );
+
+  if (target.length === 0 && domainTargets.length === 0) {
+    return { score: 72, rationale: "No industry/domain preference set." };
   }
-  const hit = overlapCount(c.industryExperience, target);
-  const score = clamp(45 + (hit / target.length) * 55, 35, 100);
+
+  const structuredHit =
+    target.length === 0 || c.industryExperience.length === 0
+      ? 0
+      : overlapCount(c.industryExperience, target);
+  const structuredRatio = target.length ? structuredHit / target.length : 0;
+  const domainRatio = domainTargets.length ? domainHit.length / domainTargets.length : 0;
+
+  let score: number;
+  if (target.length === 0) {
+    score = clamp(42 + domainRatio * 58, 35, 100);
+  } else if (c.industryExperience.length === 0 && domainHit.length === 0) {
+    score = 50;
+  } else {
+    score = clamp(40 + structuredRatio * 35 + domainRatio * 25, 35, 100);
+  }
+
+  const parts: string[] = [];
+  if (structuredHit > 0) {
+    parts.push(`Shares ${structuredHit} target industry vertical${structuredHit === 1 ? "" : "s"}`);
+  } else if (target.length > 0 && c.industryExperience.length > 0) {
+    parts.push("Adjacent industries only");
+  } else if (target.length > 0 && c.industryExperience.length === 0) {
+    parts.push("Industry experience not provided");
+  }
+  if (domainHit.length > 0) {
+    parts.push(
+      `domain signals: ${domainHit.slice(0, 4).join(", ")}${domainHit.length > 4 ? "…" : ""}`,
+    );
+  } else if (domainTargets.length > 0) {
+    parts.push(`no domain hits among ${domainTargets.slice(0, 3).join(", ")}`);
+  }
+
   return {
     score,
-    rationale: hit
-      ? `Shares ${hit} target industry vertical${hit === 1 ? "" : "s"}.`
-      : `Adjacent industries only.`,
+    rationale: `${parts.join("; ") || "No industry/domain evidence"}.`,
   };
 }
 
 function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
-  if (!c.location.trim() && !c.timezone.trim()) {
+  const requiredLangs = jdRequiredLanguages(jd);
+  const corpus = buildCandidateCorpus(c);
+  let langScore: number | null = null;
+  let langRationale = "";
+  if (requiredLangs.length > 0) {
+    const langHits = requiredLangs.filter((lang) =>
+      languageMentioned(lang, corpus, c.languages),
+    );
+    const langRatio = langHits.length / requiredLangs.length;
+    if (langHits.length === 0 && !(c.languages?.length) && corpus.trim().length < 80) {
+      langScore = 55;
+      langRationale = `Language (${requiredLangs.join(", ")}) unverified on thin profile`;
+    } else if (langHits.length === 0) {
+      langScore = 38;
+      langRationale = `Missing required language fluency: ${requiredLangs.join(", ")}`;
+    } else {
+      langScore = clamp(70 + langRatio * 30, 70, 100);
+      langRationale = `Language fluency: ${langHits.join(", ")} (${langHits.length}/${requiredLangs.length} required)`;
+    }
+  }
+
+  const hasGeo = Boolean(c.location.trim() || c.timezone.trim());
+  if (!hasGeo && langScore == null) {
     return { score: 50, rationale: "Location and timezone not provided." };
   }
-  if (jd.locationType === "Remote") {
+
+  let geoScore: number;
+  let geoRationale: string;
+  if (!hasGeo) {
+    geoScore = 50;
+    geoRationale = "Location not provided";
+  } else if (jd.locationType === "Remote") {
     const timezoneAligned =
       Boolean(c.timezone) &&
       Boolean(jd.timezone) &&
@@ -231,23 +443,39 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
     const regionAligned =
       Boolean(c.location) &&
       jd.regions.some((region) => locationMatchesRegion(c.location, region));
-    const score = timezoneAligned ? 96 : regionAligned ? 90 : 80;
-    return {
-      score,
-      rationale: timezoneAligned
-        ? `Remote role: timezone ${c.timezone} overlaps working hours.`
-        : regionAligned
-          ? `Remote role: location ${c.location} matches a target region.`
-          : "Remote role: working-hours overlap not confirmed.",
-    };
+    const montrealTarget = jd.regions.some((r) => /montreal|montréal/i.test(r)) ||
+      /montreal|montréal/i.test(jd.location ?? "");
+    const montrealHit = /montreal|montréal/i.test(c.location);
+    geoScore = timezoneAligned ? 96 : regionAligned ? 90 : montrealTarget && montrealHit ? 92 : 80;
+    geoRationale = timezoneAligned
+      ? `Remote role: timezone ${c.timezone} overlaps working hours`
+      : regionAligned
+        ? `Remote role: location ${c.location} matches a target region`
+        : montrealTarget && montrealHit
+          ? `Remote role: Montreal signal present (${c.location})`
+          : "Remote role: working-hours overlap not confirmed";
+  } else {
+    const inRegion =
+      jd.regions.some((region) => locationMatchesRegion(c.location, region)) ||
+      (jd.location ? locationMatchesRegion(c.location, jd.location) : false);
+    const montrealTarget = jd.regions.some((r) => /montreal|montréal/i.test(r)) ||
+      /montreal|montréal/i.test(jd.location ?? "");
+    const montrealHit = /montreal|montréal/i.test(c.location);
+    geoScore = inRegion ? 92 : montrealTarget && montrealHit ? 90 : 48;
+    geoRationale = inRegion
+      ? `Based in ${c.location}, within ${jd.locationType} range`
+      : montrealTarget && montrealHit
+        ? `Montreal signal present (${c.location}) for target geography`
+        : `Based in ${c.location || "unknown"}, outside ${jd.locationType} catchment`;
   }
-  const inRegion = jd.regions.some((region) => locationMatchesRegion(c.location, region));
-  const score = inRegion ? 92 : 48;
+
+  if (langScore == null) {
+    return { score: geoScore, rationale: `${geoRationale}.` };
+  }
+  const score = round(geoScore * 0.55 + langScore * 0.45);
   return {
-    score,
-    rationale: inRegion
-      ? `Based in ${c.location}, within ${jd.locationType} range.`
-      : `Based in ${c.location}, outside ${jd.locationType} catchment.`,
+    score: clamp(score, 0, 100),
+    rationale: `${geoRationale}; ${langRationale}.`,
   };
 }
 
@@ -279,10 +507,17 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
   // Treat those gaps as channel-unavailable (N/A) rather than unverified-unknown,
   // so title/location/skill evidence can still clear the contact floor.
   const liveSparse = candidate.provenance === "live";
+  const corpus = buildCandidateCorpus(candidate);
   const skillsEvidence =
     candidate.techStack.length > 0 ||
     reqHitFromCorpus(candidate, jd) > 0 ||
-    titleOverlapRatio(candidate.currentTitle, jd.title) >= 0.5;
+    titleOverlapRatio(candidate.currentTitle, jd.title) >= 0.5 ||
+    Boolean(candidate.profileText?.trim());
+  const industryEvidence =
+    candidate.industryExperience.length > 0 ||
+    candidateDomainTags(candidate, corpus).length > 0 ||
+    (jdDomainTargets(jd).length > 0 &&
+      jdDomainTargets(jd).some((t) => skillMentionedInText(t, corpus)));
 
   return {
     skills: {
@@ -329,17 +564,17 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
     industry: {
       ...industry,
       state:
-        jd.industryExperience.length === 0
+        jd.industryExperience.length === 0 && jdDomainTargets(jd).length === 0
           ? "not_applicable"
-          : candidate.industryExperience.length > 0
+          : industryEvidence
             ? "scored"
             : liveSparse
               ? "not_applicable"
               : "unknown",
       rationale:
-        jd.industryExperience.length === 0
+        jd.industryExperience.length === 0 && jdDomainTargets(jd).length === 0
           ? "Not requested by this role."
-          : candidate.industryExperience.length > 0
+          : industryEvidence
             ? industry.rationale
             : liveSparse
               ? "Not available from this source."
@@ -348,13 +583,17 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
     location: {
       ...location,
       state:
-        candidate.location.trim() || candidate.timezone.trim()
+        candidate.location.trim() ||
+        candidate.timezone.trim() ||
+        jdRequiredLanguages(jd).length > 0
           ? "scored"
           : liveSparse
             ? "not_applicable"
             : "unknown",
       rationale:
-        candidate.location.trim() || candidate.timezone.trim()
+        candidate.location.trim() ||
+        candidate.timezone.trim() ||
+        jdRequiredLanguages(jd).length > 0
           ? location.rationale
           : liveSparse
             ? "Not available from this source."
@@ -369,15 +608,13 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
 }
 
 function reqHitFromCorpus(candidate: Candidate, jd: JobAnalysis): number {
-  const corpus = [
-    candidate.techStack.join(" "),
-    candidate.currentTitle,
-    candidate.currentCompany,
-    candidate.recentActivity,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const corpus = buildCandidateCorpus(candidate);
   return jd.requiredSkills.filter((skill) => skillMentionedInText(skill, corpus)).length;
+}
+
+/** Must-have skill hit count — used as a ranking tie-breaker. */
+export function requiredSkillHitCount(candidate: Candidate, jd: JobAnalysis): number {
+  return reqHitFromCorpus(candidate, jd);
 }
 
 /* ---- Composite ----------------------------------------------------------- */
@@ -412,9 +649,90 @@ export function scoreCandidate(
       rationale: dim.rationale,
     };
   });
-  const composite = breakdown.reduce((sum, item) => sum + item.contribution, 0);
+  let composite = breakdown.reduce((sum, item) => sum + item.contribution, 0);
+
+  if (candidate.provenance === "synthetic") {
+    // Dampen scored dimensions (display + contribution) so a skills-only
+    // composite still equals the skills dimension score.
+    for (const item of breakdown) {
+      if (item.weight > 0) {
+        item.score = round(clamp(item.score * SYNTHETIC_SCORE_FACTOR, 0, 100));
+        item.contribution = round(item.score * item.weight, 1);
+      }
+    }
+    composite = breakdown.reduce((sum, item) => sum + item.contribution, 0);
+    const skillsItem = breakdown.find((b) => b.key === "skills");
+    if (skillsItem) {
+      skillsItem.rationale = `${skillsItem.rationale.replace(/\.$/, "")}; synthetic provenance dampened.`;
+    }
+  }
 
   return { score: round(clamp(composite, 0, 100)), breakdown };
+}
+
+
+export type RankableCandidate = Pick<
+  Candidate,
+  | "id"
+  | "name"
+  | "matchScore"
+  | "techStack"
+  | "yearsExperience"
+  | "provenance"
+  | "profileText"
+  | "domainTags"
+  | "languages"
+  | "recentActivity"
+  | "currentTitle"
+  | "currentCompany"
+  | "notes"
+  | "experience"
+  | "education"
+>;
+
+/**
+ * Stable ordering: highest matchScore first, then denser must-have evidence,
+ * verified years, live provenance, then id. Never trust API order.
+ */
+export function compareCandidatesByScore(
+  a: RankableCandidate,
+  b: RankableCandidate,
+  jd?: JobAnalysis,
+): number {
+  if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+  if (jd) {
+    const aHits = requiredSkillHitCount(a as Candidate, jd);
+    const bHits = requiredSkillHitCount(b as Candidate, jd);
+    if (bHits !== aHits) return bHits - aHits;
+  }
+  const aYears = a.yearsExperience != null ? 1 : 0;
+  const bYears = b.yearsExperience != null ? 1 : 0;
+  if (bYears !== aYears) return bYears - aYears;
+  const provenanceRank = (prov: RankableCandidate["provenance"]) =>
+    prov === "live" ? 3 : prov === "manual" ? 2 : prov === "synthetic" ? 0 : 1;
+  const pDiff = provenanceRank(b.provenance) - provenanceRank(a.provenance);
+  if (pDiff !== 0) return pDiff;
+  return a.id.localeCompare(b.id);
+}
+
+export function rankScoredCandidates<T extends RankableCandidate>(
+  candidates: T[],
+  jd?: JobAnalysis,
+): T[] {
+  return [...candidates].sort((a, b) => compareCandidatesByScore(a, b, jd));
+}
+
+/**
+ * Select the best `topK` after quality ranking.
+ * **Volume is not the limiter** — always score/rank the full set, then take top-K.
+ */
+export function selectTopKByMatchScore<T extends RankableCandidate>(
+  candidates: T[],
+  topK: number = DEFAULT_SOURCE_BATCH_TOP_K,
+  jd?: JobAnalysis,
+): T[] {
+  const k = Number.isFinite(topK) ? Math.max(0, Math.floor(topK)) : DEFAULT_SOURCE_BATCH_TOP_K;
+  return rankScoredCandidates(candidates, jd).slice(0, k);
 }
 
 /** Distribution buckets for a match-score histogram. */

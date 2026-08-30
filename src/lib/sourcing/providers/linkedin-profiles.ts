@@ -13,6 +13,7 @@ import {
   meetsSourcingQualityBar,
   SOURCING_QUALITY_FLOOR,
 } from "@/lib/sourcing/candidate-fit";
+import { selectTopKByMatchScore } from "@/lib/scoring";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import type { Campaign } from "@/lib/types";
 import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
@@ -141,11 +142,13 @@ export const linkedinProfilesProvider: SourcingProvider = {
       displayPlatform: "LinkedIn",
     });
     const roleTitle = jd.title.trim();
-    const filtered = mapped.accepted
-      .filter((c) => candidateMatchesRoleTitle(c, roleTitle))
-      .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
-      .sort((a, b) => b.matchScore - a.matchScore)
-      .slice(0, count);
+    const filtered = selectTopKByMatchScore(
+      mapped.accepted
+        .filter((c) => candidateMatchesRoleTitle(c, roleTitle))
+        .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR)),
+      count,
+      jd,
+    );
 
     return {
       ok: true,
