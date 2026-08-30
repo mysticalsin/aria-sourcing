@@ -1,7 +1,9 @@
 import { defaultIntegrations } from "../integrations";
+import { buildSourcingStrategy, emptyMetrics } from "../mock-ai";
+import { DEFAULT_SCORING_WEIGHTS } from "../scoring";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
-import type { Campaign, HermesState, JobAnalysis } from "../types";
+import type { Campaign, CampaignMetrics, CampaignStatus, HermesState, JobAnalysis, Urgency } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
@@ -51,6 +53,47 @@ function placeholderJobAnalysis(title: string, department: string): JobAnalysis 
   };
 }
 
+function repairMetrics(raw: unknown): CampaignMetrics {
+  const base = emptyMetrics();
+  if (!raw || typeof raw !== "object") return base;
+  const m = raw as Partial<CampaignMetrics>;
+  const num = (v: unknown, fallback: number) =>
+    typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  return {
+    sourced: num(m.sourced, base.sourced),
+    contacted: num(m.contacted, base.contacted),
+    replied: num(m.replied, base.replied),
+    interested: num(m.interested, base.interested),
+    booked: num(m.booked, base.booked),
+    interviewed: num(m.interviewed, base.interviewed),
+    offer: num(m.offer, base.offer),
+    hired: num(m.hired, base.hired),
+    notInterested: num(m.notInterested, base.notInterested),
+    replyRate: num(m.replyRate, base.replyRate),
+    avgMatchScore: num(m.avgMatchScore, base.avgMatchScore),
+    timeToFirstInterviewHours:
+      typeof m.timeToFirstInterviewHours === "number" && Number.isFinite(m.timeToFirstInterviewHours)
+        ? m.timeToFirstInterviewHours
+        : m.timeToFirstInterviewHours === null
+          ? null
+          : base.timeToFirstInterviewHours,
+    emailsSentToday: num(m.emailsSentToday, base.emailsSentToday),
+    linkedinSentToday: num(m.linkedinSentToday, base.linkedinSentToday),
+  };
+}
+
+const VALID_STATUS = new Set<CampaignStatus>([
+  "Intake",
+  "Sourcing",
+  "Outreach",
+  "Interviewing",
+  "Closing",
+  "Filled",
+  "Paused",
+]);
+
+const VALID_URGENCY = new Set<Urgency>(["Standard", "Urgent", "Critical"]);
+
 function repairCampaigns(raw: unknown): Campaign[] {
   if (!Array.isArray(raw)) return [];
   const out: Campaign[] = [];
@@ -84,7 +127,36 @@ function repairCampaigns(raw: unknown): Campaign[] {
             : [],
         }
       : placeholderJobAnalysis(title, department);
-    out.push({ ...c, title, department, jobAnalysis });
+    // Sparse remote/proof campaigns often omit metrics — CampaignCard + rules
+    // read m.sourced etc. and previously threw into error.tsx ("Something broke").
+    const metrics = repairMetrics(c.metrics);
+    const status = VALID_STATUS.has(c.status) ? c.status : "Sourcing";
+    const urgency = VALID_URGENCY.has(c.urgency) ? c.urgency : jobAnalysis.urgency;
+    const scoringWeights =
+      c.scoringWeights && typeof c.scoringWeights === "object"
+        ? { ...DEFAULT_SCORING_WEIGHTS, ...c.scoringWeights }
+        : { ...DEFAULT_SCORING_WEIGHTS };
+    const sourcingStrategy =
+      c.sourcingStrategy && typeof c.sourcingStrategy === "object"
+        ? c.sourcingStrategy
+        : buildSourcingStrategy(jobAnalysis);
+    out.push({
+      ...c,
+      title,
+      department,
+      jobAnalysis,
+      metrics,
+      status,
+      urgency,
+      scoringWeights,
+      sourcingStrategy,
+      hiringManager: typeof c.hiringManager === "string" ? c.hiringManager : "",
+      hiringManagerEmail: typeof c.hiringManagerEmail === "string" ? c.hiringManagerEmail : "",
+      createdAt: typeof c.createdAt === "string" ? c.createdAt : new Date(0).toISOString(),
+      targetStartDate: typeof c.targetStartDate === "string" ? c.targetStartDate : "",
+      skillUpdates: Array.isArray(c.skillUpdates) ? c.skillUpdates : [],
+      activities: Array.isArray(c.activities) ? c.activities : [],
+    });
   }
   return out;
 }

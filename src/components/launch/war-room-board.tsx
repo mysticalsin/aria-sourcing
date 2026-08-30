@@ -55,7 +55,7 @@ export function WarRoomBoard({ lanes, className }: WarRoomBoardProps) {
   );
   const campaignIdSet = React.useMemo(() => new Set(lanes.map((l) => l.campaignId)), [lanes]);
 
-  const totalSourced = resolved.reduce((sum, { campaign }) => sum + campaign.metrics.sourced, 0);
+  const totalSourced = resolved.reduce((sum, { campaign }) => sum + (campaign.metrics?.sourced ?? 0), 0);
   const totalSent = outreach.filter((m) => campaignIdSet.has(m.campaignId) && isRealSendFact(m)).length;
   const anySourcing = lanes.some((l) => l.sourcing);
   const displaySourced = useCountUp(totalSourced, { durationMs: 700 });
@@ -108,8 +108,9 @@ function LaneCard({
   index: number;
   reducedMotion: boolean;
 }) {
-  const displaySourced = useCountUp(campaign.metrics.sourced, { durationMs: 700 });
-  const skills = campaign.jobAnalysis.requiredSkills.slice(0, 3).join(", ");
+  const sourced = campaign.metrics?.sourced ?? 0;
+  const displaySourced = useCountUp(sourced, { durationMs: 700 });
+  const skills = (campaign.jobAnalysis?.requiredSkills ?? []).slice(0, 3).join(", ");
 
   return (
     <motion.div
@@ -134,14 +135,15 @@ function LaneCard({
           <div className="flex items-baseline gap-2">
             <span
               className="text-4xl font-extrabold tabular-nums text-ink"
-              aria-label={`${campaign.metrics.sourced} sourced`}
+              aria-label={`${sourced} sourced`}
             >
               {Math.round(displaySourced)}
             </span>
             <span className="text-sm text-muted">sourced</span>
           </div>
           <p className="mt-1.5 truncate text-xs text-muted" title={skills}>
-            {campaign.jobAnalysis.seniority} · {campaign.jobAnalysis.locationType}
+            {campaign.jobAnalysis?.seniority ?? "Unspecified"} ·{" "}
+            {campaign.jobAnalysis?.locationType ?? "Unspecified"}
             {skills ? ` · ${skills}` : ""}
           </p>
         </CardBody>
