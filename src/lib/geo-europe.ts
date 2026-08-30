@@ -17,7 +17,7 @@ const AMERICAS_TZ_RE =
   /\b(?:EST|EDT|PST|PDT|CST|CDT|MST|MDT|AKST|HST|BRT|ART|America\/[A-Za-z_]+|US\/[A-Za-z_]+)\b/i;
 
 const AMERICAS_PLACE_RE =
-  /\b(?:united\s+states|\busa\b|\bu\.s\.a\.?\b|\bus\b|canada|mexico|brazil|argentina|chile|colombia|peru|toronto|montreal|montr[eé]al|vancouver|ottawa|calgary|new\s+york|san\s+francisco|seattle|chicago|austin|boston|los\s+angeles|miami|denver|atlanta|dallas|sao\s+paulo|s[aã]o\s+paulo|buenos\s+aires|mexico\s+city|latam|americas?)\b/i;
+  /\b(?:united\s+states|\busa\b|\bu\.s\.a\.?\b|\bus\b|canada|mexico|brazil|argentina|chile|colombia|peru|toronto|montreal|montr[eé]al|vancouver|ottawa|calgary|new\s+york|san\s+francisco|seattle|chicago|austin|boston|los\s+angeles|miami|denver|atlanta|dallas|portland|eugene|sao\s+paulo|s[aã]o\s+paulo|buenos\s+aires|mexico\s+city|latam|americas?|oregon|california|washington|texas|florida|illinois|massachusetts|colorado|georgia|arizona|nevada|ohio|michigan|pennsylvania|virginia|north\s+carolina|new\s+jersey)\b/i;
 
 /** Asia-Pacific zones far from European business hours. */
 const ASIA_PACIFIC_TZ_RE =

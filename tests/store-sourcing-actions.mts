@@ -1127,8 +1127,10 @@ test("unknown experience never becomes a false score, prompt fact, or UI consent
     { ...campaign.jobAnalysis, regions: ["EU"], timezone: "CET" },
     campaign.scoringWeights,
   ).breakdown.find((item) => item.key === "location");
-  assert.equal(falseEuMatch?.score, 80);
+  // "Eugene" must not false-positive as EU; Oregon is Americas → dampen on Europe JD.
+  assert.ok((falseEuMatch?.score ?? 100) <= 40);
   assert.doesNotMatch(falseEuMatch?.rationale ?? "", /matches a target region/i);
+  assert.match(falseEuMatch?.rationale ?? "", /outside European working hours/i);
 });
 
 test("manual intake requires an operator-selected lawful basis and generic drafts stay grammatical", async () => {
