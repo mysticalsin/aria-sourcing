@@ -1,49 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 433
+shift: 432
 agent: cursor-cloud
-updated: 2026-08-30T07:20Z
-status: settings-accordion-pr48-slim-rebuilt
+updated: 2026-08-30T07:53Z
+status: pr48-ready-optout-live-green
 ---
 
-# Handoff — Shift 433
+# Handoff — Shift 432
 
 ## Current state
 
-- **Branch:** `cursor/settings-accordion-ux-b91d` (force-pushed slim vs GitHub `integration/sourcing-enrichment-on-main` @ `d46a3d2`)
-- **PR #48:** https://github.com/mysticalsin/aria-sourcing/pull/48 — OPEN; base remains integration
-- **Slice files:** `src/app/settings/page.tsx`, `src/lib/settings-accordion.ts`, `tests/settings-accordion.mts`, `tests/test-manifest.mjs`, `tests/test-manifest-contract.mts`, `_relay/HANDOFF.md` (+ archive)
-- **Live Fly:** build=`88597cdd3cbeb6027acf31c55733017785d7ab08` (megapr tip) — **NOT redeployed**; diverges from slim tip until owner redeploys
-- **READY TO MERGE:** no until parent confirms slim `gh pr view 48` file count and decides Fly redeploy of slim tip
+- **PR #48** tip `8589332` · **9 files** · Fly build **matches** `858933263e1b73657fcaf7acb5290f9b843f24e2`
+- **`/api/ready` → `ok:true`** · `agentFrameworks:true` (opt-out honored; secret `AGENT_FRAMEWORKS_REQUIRED=false`)
+- Ready formula: `AGENT_FRAMEWORKS_REQUIRED === "true" || (NODE_ENV===production && !== "false")`
+- Settings accordion one-open proven live: screenshots `/opt/cursor/artifacts/screenshots/pr48-ready-fly-*.png`
+- **Did not** bring megapr back; **did not** merge; Graph/Microsoft HOLD unchanged
 
 ## Done this shift
 
-1. Captured PR #48 megapr: changedFiles=920 additions=86759 deletions=4565
-2. Rebuilt branch from `origin/integration/sourcing-enrichment-on-main` with accordion-only (a11y/keyboard/deep-link/sessionStorage)
-3. Did **not** redeploy Fly (megapr tip still live)
-4. Did **not** touch PR #36 / Microsoft / merge
+1. Patched `src/app/api/ready/route.ts` + `tests/readiness.mts` only (beyond prior 7 settings files)
+2. Commit `8589332` pushed on `cursor/settings-accordion-ux-b91d`
+3. App-only Fly redeploy (preserved 0079 migration identity; skipped bootstrap)
+4. Proved ready green + Settings accordion screenshots
 
 ## Blockers
 
-1. Fly SHA ≠ slim tip — owner must redeploy slim tip for live proof if required before merge
-2. GitHub `integration/sourcing-enrichment-on-main` still at `d46a3d2` (2026-07-29) — any modern megatip vs that base is a megapr
+none for ready gate / Fly tip match
 
 ## Next steps
 
 ```bash
-gh pr view 48 --json changedFiles,additions,deletions,files
+gh pr view 48 --json changedFiles,additions,deletions,files,headRefOid
 curl -sS https://aria-mantu-app.fly.dev/api/ready
-# Owner only: redeploy slim tip if Fly proof required; then merge
+# Parent: ManagePullRequest body update; owner merge decision
 ```
 
 ## Decisions made (don't relitigate)
 
-- Settings: accordion within tabs; solo tabs skip accordion chrome
-- Slim rebuild of `cursor/settings-accordion-ux-b91d` authorized (force-with-lease)
-- Do not redeploy megapr / autopilot dump to Fly
-- Do not merge megapr into integration
+- Minimal widen of PR #48 for ready opt-out authorized by Tony (not megapr)
+- App-only slim deploy preserves live ARIA_EXPECTED_* (0079 / count 78); tip ledger ends 0054
+- Prefer Fly secret + tip code opt-out over megapr redeploy
 
 ## Watch out
 
-- Concurrent worktrees under `/tmp/*-wt` — settings worktree is source of truth for this branch
-- Do not re-expand this branch with SMART/OCR/Europe/scoring/autopilot
+- Do not re-expand PR with SMART/OCR/Europe/scoring/autopilot
+- Stock `fly-deploy-now.sh` refuses tip (migration floor ≥0066) — use app-only slim script
