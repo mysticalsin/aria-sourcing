@@ -154,6 +154,7 @@ import type {
   WinRecord,
   WeeklyReport,
 } from "./types";
+import { cloudflareWorkersAiChatUrl } from "@/lib/integrations/cloudflare-workers-ai";
 import { genId, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { demoLoginEnabled, supabaseEnabled } from "./supabase/config";
@@ -6315,6 +6316,146 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
+  /* ---- Cloudflare Workers AI (agent LLM) -------------------------------- */
+
+  const testCloudflareConnection = useCallback(
+    async (accountId: string, apiToken: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before testing Cloudflare." };
+      }
+      try {
+        const res = await workspaceFetch("/api/integrations/cloudflare/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountId, apiToken }),
+        });
+        const json = (await res.json().catch(() => ({ ok: false, error: "Bad response from Cloudflare." }))) as {
+          ok?: boolean;
+          models?: string[];
+          error?: string;
+        };
+        if (json.ok) return { ok: true as const, models: json.models ?? [] };
+        return { ok: false as const, error: json.error ?? "Could not connect to Cloudflare." };
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
+      }
+    },
+    [workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const connectCloudflare = useCallback(
+    async (accountId: string, apiToken: string, defaultModel: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before connecting Cloudflare." };
+      }
+      const test = await testCloudflareConnection(accountId, apiToken);
+      if (!test.ok) return { ok: false as const, error: test.error };
+      const saved = await saveApiKey({ name: "Cloudflare Workers AI", provider: "Cloudflare", value: apiToken });
+      if (!saved.ok || !saved.key) {
+        return { ok: false as const, error: saved.error ?? "Could not save the Cloudflare API token." };
+      }
+      const apiKeyId = saved.key.id;
+      const verified = await testApiKey(apiKeyId);
+      if (!verified.ok || !verified.valid) {
+        return { ok: false as const, error: verified.detail || "Could not verify the stored Cloudflare token." };
+      }
+      const model = defaultModel.trim() || test.models?.[0] || "@cf/meta/llama-3.1-8b-instruct";
+      let configured: { ok?: boolean; error?: string };
+      try {
+        const response = await workspaceFetch("/api/integrations/cloudflare/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accountId,
+            apiKeyId,
+            defaultModel: model,
+            models: test.models ?? [model],
+          }),
+        });
+        configured = (await response.json().catch(() => ({ ok: false, error: "Bad response from the server." }))) as {
+          ok?: boolean;
+          error?: string;
+        };
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : "Network error." };
+      }
+      if (!configured.ok) {
+        return { ok: false as const, error: configured.error ?? "Could not save the Cloudflare configuration." };
+      }
+      commit((prev) => {
+        const providers = [...(prev.settings.llmProviders ?? [])];
+        const idx = providers.findIndex((p) => p.kind === "Cloudflare Workers AI");
+        const baseUrl = cloudflareWorkersAiChatUrl(accountId);
+        const entry: LlmProvider = {
+          id: idx >= 0 ? providers[idx]!.id : genId("prov"),
+          kind: "Cloudflare Workers AI",
+          label: "Cloudflare Workers AI",
+          baseUrl,
+          apiKeyId,
+          enabled: true,
+          isDefault: providers.every((p) => !p.isDefault),
+        };
+        if (idx >= 0) providers[idx] = { ...providers[idx]!, ...entry };
+        else providers.push(entry);
+        return withActivity(
+          { ...prev, settings: { ...prev.settings, llmProviders: providers } },
+          makeActivity({
+            type: "system",
+            title: "Cloudflare Workers AI connected",
+            notes: `Account ${accountId.slice(0, 8)}… · default model ${model}`,
+            outcome: "Connected",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        );
+      });
+      return { ok: true as const };
+    },
+    [testCloudflareConnection, saveApiKey, testApiKey, commit, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const disconnectCloudflare = useCallback(async () => {
+    if (!workspaceEffectAllowed()) {
+      return { ok: false as const, error: "Workspace unavailable. Retry before disconnecting Cloudflare." };
+    }
+    try {
+      const response = await workspaceFetch("/api/integrations/cloudflare/config", { method: "DELETE" });
+      const body = (await response.json().catch(() => ({ ok: false, error: "Bad response from the server." }))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!body.ok) return { ok: false as const, error: body.error ?? "Could not disconnect Cloudflare." };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Network error." };
+    }
+    commit((prev) =>
+      withActivity(
+        {
+          ...prev,
+          settings: {
+            ...prev.settings,
+            llmProviders: (prev.settings.llmProviders ?? []).map((p) =>
+              p.kind === "Cloudflare Workers AI" ? { ...p, enabled: false, apiKeyId: undefined } : p,
+            ),
+          },
+        },
+        makeActivity({
+          type: "system",
+          title: "Cloudflare disconnected",
+          notes: "Workers AI unlinked. Remove the vault key from Access & Keys if no longer needed.",
+          outcome: "Disconnected",
+          campaignId: null,
+          linkedEntityType: null,
+          linkedEntityId: null,
+        }),
+        null,
+      ),
+    );
+    return { ok: true as const };
+  }, [commit, workspaceEffectAllowed, workspaceFetch]);
+
   /** Run one locked Dust agent turn. The server resolves workspace, credential,
    * and task lock from normalized authority; this call sends only task + text. */
   const runDustTask = useCallback(async (task: DustTask, message: string) => {
@@ -7028,6 +7169,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateDustAgentLock,
       disconnectDust,
       runDustTask,
+      testCloudflareConnection,
+      connectCloudflare,
+      disconnectCloudflare,
       addModel,
       updateModel,
       removeModel,
@@ -7074,6 +7218,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addProvider, updateProvider, removeProvider, setDefaultProvider,
       addMcpServer, updateMcpServer, removeMcpServer, testMcpServer,
       testDustConnection, connectDust, updateDustAgentLock, disconnectDust, runDustTask,
+      testCloudflareConnection, connectCloudflare, disconnectCloudflare,
       addModel, updateModel, removeModel, setModelDefaultForTask,
       toggleTool,
       assignAgentProvider, assignAgentModel, assignAgentTools,

@@ -74,6 +74,8 @@ function modelsUrl(slug: AiProviderSlug): string {
       return `${deepseekBase()}/models`;
     case "nvidia":
       return `${nvidiaNimBase()}/models`;
+    case "cloudflare":
+      return "";
   }
 }
 

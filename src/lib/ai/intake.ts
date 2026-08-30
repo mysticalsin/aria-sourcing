@@ -353,33 +353,48 @@ export async function parseIntakeLive(
   // Operators pick that model in the plug-and-play LLM panel; sourcing stays separate
   // because it requires tool-calling.
   const aiCfg = resolveAiProvider(settings, "chat");
-  if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
-    if (refuseHeuristicIntakeOnLiveTenant()) {
-      throw new Error("live_intake_llm_required");
-    }
-    return {
-      ...mock,
-      providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
-    };
-  }
-
   const prompt = buildIntakeParsePrompt(`${input.email}\n${input.jd ?? ""}`);
 
-  let genInput: Parameters<typeof hermesGenerate>[0];
+  let genInput: Parameters<typeof hermesGenerate>[0] | null = null;
   if (aiCfg) {
     genInput = { task: "chat", prompt, provider: aiCfg.provider, model: aiCfg.model, apiKeyId: aiCfg.apiKeyId };
-  } else {
+  } else if (settings.hermesLiveMode && hermesAvailable(settings)) {
     const chatModelId = settings.defaultModels?.chat;
     genInput = { task: "chat", prompt, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId };
     if (chatModelId) {
       const modelName = (settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName;
       if (modelName) genInput.model = modelName;
     }
+  } else if (refuseHeuristicIntakeOnLiveTenant()) {
+    // Live tenants with no Settings provider: use free Cloudflare Workers AI gateway.
+    genInput = {
+      task: "chat",
+      prompt,
+      provider: "cloudflare",
+      model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    };
+  } else {
+    return {
+      ...mock,
+      providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
+    };
   }
 
   let result: Awaited<ReturnType<typeof hermesGenerate>>;
   try {
     result = await hermesGenerate(genInput);
+    if (
+      (!result.ok || !result.text) &&
+      refuseHeuristicIntakeOnLiveTenant() &&
+      genInput.provider !== "cloudflare"
+    ) {
+      result = await hermesGenerate({
+        task: "chat",
+        prompt,
+        provider: "cloudflare",
+        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      });
+    }
   } catch {
     if (refuseHeuristicIntakeOnLiveTenant()) {
       throw new Error("live_intake_llm_unreachable");
@@ -391,7 +406,7 @@ export async function parseIntakeLive(
   }
   if (!result.ok || !result.text) {
     if (refuseHeuristicIntakeOnLiveTenant()) {
-      throw new Error("live_intake_llm_incomplete");
+      throw new Error(genInput.provider === "cloudflare" ? "live_intake_llm_required" : "live_intake_llm_incomplete");
     }
     return {
       ...mock,

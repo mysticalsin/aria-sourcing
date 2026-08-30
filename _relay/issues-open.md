@@ -5,7 +5,8 @@ No secrets.
 
 | ID | Severity | Area | Issue | Status | Owner |
 |---|---|---|---|---|---|
-| CI-BUDGET | info | CI | GitHub Actions budget exhausted — **not a Fly production gate** | open | Tony (optional) |
+| CI-BUDGET | blocker (PR UX) | CI | GitHub Actions budget exhausted — jobs never start (`steps:[]`, annotation: budget preventing further use). Local `tsc`+`npm test` remains authority. Blocks green checks on PR #37 / #36 until Tony restores Actions minutes. | open | Tony |
+| VERCEL-RATE | info | Vercel | Preview deploy rate-limited (~24h). Fly-only prod; `vercel.json` ignoreCommand skips non-vercel-demo when not rate-limited. | open | Tony (wait / Pro) |
 | CI-DUP | med | CI | Feature-branch push+PR was double-running CI/CodeQL; narrowed push triggers + concurrency cancel (2026-08-25) | fixed (pending budget to verify) | eng |
 | UX-OUTLOOK | done (code) | Intake | Outlook pull-open-needs panel + setup guide; needs live Graph mailbox | open (enablement) | admin |
 | UX-LLM | done (code) | Settings | Recruitment LLM picker (sourcing/intake/outreach/classification) | fixed | eng |

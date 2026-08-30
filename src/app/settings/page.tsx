@@ -38,6 +38,7 @@ import { LoopSwitchboardPanel } from "@/components/settings/loop-switchboard-pan
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
+import { CloudflareAgentPanel } from "@/components/settings/cloudflare-agent-panel";
 import { DatabricksPanel } from "@/components/settings/databricks-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
@@ -93,7 +94,7 @@ const N_TO_TAB: Record<string, string> = {
   "21": "observe",
   "21a": "observe",
   "04": "integrations",
-  "14": "ai", "15": "ai", "15a": "ai", "16": "ai", "17": "ai", "19": "ai",
+  "14": "ai", "15": "ai", "15a": "ai", "16": "ai", "17": "ai", "19": "ai", "19a": "ai",
   "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
   "02": "compliance", "05": "compliance", "07": "compliance",
   "08": "voice", "13": "voice",
@@ -1215,6 +1216,16 @@ export default function SettingsPage() {
             description="Connect a Dust (dust.tt) workspace and lock which of your own agents runs each recruiting task, starting with JD analysis on intake. Admin only."
           >
             <DustAgentPanel />
+          </Section>
+
+          {/* 19a — Cloudflare Workers AI */}
+          <Section
+            n="19a"
+            eyebrow="Agent platform"
+            title="Cloudflare Workers AI"
+            description="Connect your Cloudflare account to run chat, outreach drafting, and agent tool loops on Workers AI models. Admin only."
+          >
+            <CloudflareAgentPanel />
           </Section>
 
           {/* 18 — Schedules */}

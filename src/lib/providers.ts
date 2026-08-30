@@ -30,6 +30,7 @@ export function validateApiKeyFormat(provider: string, value: string): { valid: 
     Apify: /^apify_api_[A-Za-z0-9]{20,}$/,
     Tavily: /^tvly-[A-Za-z0-9_-]{8,}$/,
     Databricks: /^(?:dapi[A-Za-z0-9]{16,}|[A-Za-z0-9_./+=:-]{12,})$/,
+    Cloudflare: /^[A-Za-z0-9_-]{20,}$/,
   };
   const re = rule[provider];
   if (!re) return { valid: v.length >= 8, detail: v.length >= 8 ? "Accepted (custom)." : "Too short." };

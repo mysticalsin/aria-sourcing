@@ -19,7 +19,8 @@ export type AiProviderSlug =
   | "mistral"
   | "kimi"
   | "deepseek"
-  | "nvidia";
+  | "nvidia"
+  | "cloudflare";
 
 /** Maps LlmProviderKind → AiProviderSlug. Absent = not directly callable. */
 export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
@@ -31,6 +32,7 @@ export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
   Kimi: "kimi",
   DeepSeek: "deepseek",
   "NVIDIA NIM": "nvidia",
+  "Cloudflare Workers AI": "cloudflare",
   // Google, OpenRouter, and "Local/Custom" intentionally absent —
   // they require different auth schemes or a user-supplied base URL.
 };
@@ -49,6 +51,7 @@ export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
   // Hosted NIM catalog id. Prefer models that still require auth on chat
   // (public GET /models does not). Override via SavedModel / NVIDIA_NIM_BASE_URL.
   nvidia: "nvidia/llama-3.1-nemotron-70b-instruct",
+  cloudflare: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 };
 
 export interface AiResolved {
@@ -161,6 +164,7 @@ export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   kimi: `${KIMI_BASE}/chat/completions`,
   deepseek: `${DEEPSEEK_BASE}/chat/completions`,
   nvidia: `${NVIDIA_NIM_BASE}/chat/completions`,
+  cloudflare: "https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai/v1/chat/completions",
 };
 
 export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
@@ -172,6 +176,7 @@ export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
   kimi: "KIMI_API_KEY",
   deepseek: "DEEPSEEK_API_KEY",
   nvidia: "NVIDIA_API_KEY",
+  cloudflare: "CLOUDFLARE_API_TOKEN",
 };
 
 /** Canonical api_keys.provider value for each callable cloud provider. The
@@ -186,6 +191,7 @@ export const VAULT_PROVIDER: Record<AiProviderSlug, string> = {
   kimi: "Kimi (Moonshot)",
   deepseek: "DeepSeek",
   nvidia: "NVIDIA NIM",
+  cloudflare: "Cloudflare",
 };
 
 /**
@@ -203,6 +209,7 @@ export function buildCloudRequest(
   /** Output ceiling. Defaults to 2048 — enough headroom for JSON drafts, CV
    *  analysis and screening-question generation that 1024 silently truncated. */
   maxTokens = 2048,
+  options?: { baseUrl?: string },
 ): { url: string; headers: Record<string, string>; body: string } {
   if (provider === "anthropic") {
     return {
@@ -222,7 +229,7 @@ export function buildCloudRequest(
   }
 
   return {
-    url: CLOUD_ENDPOINT[provider],
+    url: options?.baseUrl?.trim() || CLOUD_ENDPOINT[provider],
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${key}`,

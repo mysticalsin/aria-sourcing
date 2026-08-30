@@ -1254,6 +1254,7 @@ export const API_KEY_PROVIDERS = [
   "Tavily",
   "HeyReach",
   "Databricks",
+  "Cloudflare",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -1271,6 +1272,7 @@ export const LLM_PROVIDERS = [
   "Kimi",
   "DeepSeek",
   "NVIDIA NIM",
+  "Cloudflare Workers AI",
   "Local/Custom",
 ] as const;
 export type LlmProviderKind = (typeof LLM_PROVIDERS)[number];
@@ -1397,6 +1399,14 @@ export interface DustSettings {
    *  re-entering the API key on every Settings visit — same convention as
    *  `McpServerConfig.toolNames`. Non-secret. */
   agents?: DustAgentSummary[];
+}
+
+export interface CloudflareSettings {
+  accountId: string;
+  apiKeyId?: string;
+  defaultModel: string;
+  connected: boolean;
+  models?: string[];
 }
 
 export interface DatabricksSettings {

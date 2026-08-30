@@ -66,6 +66,7 @@ const PROVIDER_COLOR: Record<LlmProviderKind, string> = {
   Kimi: "bg-indigo-100 text-indigo-700",
   DeepSeek: "bg-cyan-100 text-cyan-800",
   "NVIDIA NIM": "bg-lime-100 text-lime-800",
+  "Cloudflare Workers AI": "bg-amber-100 text-amber-800",
   "Local/Custom": "bg-neutral-100 text-neutral-600",
 };
 
@@ -78,12 +79,14 @@ const STATUS_TONE: Record<ApiKey["status"], Tone> = {
 /** Map LLM provider kind → vault api_keys.provider label. */
 export function vaultProviderForKind(kind: LlmProviderKind): ApiKeyProvider {
   if (kind === "Kimi") return "Kimi (Moonshot)";
+  if (kind === "Cloudflare Workers AI") return "Cloudflare";
   if (kind === "Local/Custom") return "Custom";
   return kind as ApiKeyProvider;
 }
 
 function kindFromVaultProvider(provider: ApiKeyProvider): LlmProviderKind | null {
   if (provider === "Kimi (Moonshot)") return "Kimi";
+  if (provider === "Cloudflare") return "Cloudflare Workers AI";
   if (provider === "Custom") return "Local/Custom";
   if ((LLM_PROVIDERS as readonly string[]).includes(provider)) {
     return provider as LlmProviderKind;
@@ -108,6 +111,7 @@ const LIVE_VERIFY_PROVIDERS: ApiKeyProvider[] = [
   "Kimi (Moonshot)",
   "DeepSeek",
   "NVIDIA NIM",
+  "Cloudflare",
 ];
 
 const LLM_VAULT_PROVIDERS: ApiKeyProvider[] = [
