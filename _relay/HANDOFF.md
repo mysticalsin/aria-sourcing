@@ -1,52 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 436
+shift: 438
 agent: cursor-cloud
-updated: 2026-08-30T11:22Z
-status: post-merge-e2e-green
+updated: 2026-08-30T17:30Z
+status: branch-pushed-pr-blocked-403
 ---
 
-# Handoff — Shift 436
+# Handoff — Shift 438
 
 ## Current state
 
-- **PR #51 MERGED** → merge commit `d9e8cd0862e4d8f1803478e772be57b7368ad0a3`
-- **integration** tip = **main** tip = `d9e8cd0` (FF-synced)
-- **Fly** `aria-mantu-app` build **matches** tip · `/api/ready` → `ok:true` · migration `0079_autopilot_enqueue_approval_hash_bind.sql`
-- No other open Aria READY PRs (only #14 dependabot + #3 draft on vercel-demo — left alone)
-- Whole-workflow authenticated E2E **PASS** on live Fly
+- **FF tip:** `main` @ `1847c79` (integration ancestor). Fly production still `d9e8cd0`.
+- **This shift branch:** `cursor/sourcing-quality-contact-track-b91d` @ tip (push OK).
+- **PR create blocked:** `gh pr create` → 403 (`Resource not accessible by integration`). Parent/human must open PR → `main`.
+- Gate green locally: `npm run typecheck && npm run typecheck:tests && npm test`.
 
 ## Done this shift
 
-1. Confirmed/merged PR #51 (Europe scoring-quality + US-state dampening)
-2. FF-synced `main` → integration tip `d9e8cd0`
-3. Deployed Fly slim (preserve 0079 migration identity); ready build = tip
-4. Local `npx tsx tests/scoring-quality.mts` → 23 passed (EU>US/Asia)
-5. Authenticated E2E click-through all product paths; screenshots + JSON report
+1. Horizontal overflow: `overflow-x: clip` on html/body; skip-link no longer `left:-9999px`; app-shell `min-w-0` / `max-w-[100vw]` / `overflow-x-clip`. Unit `tests/layout-overflow.mts`. Fly Settings measured 28px sideways scroll before; CSS inject stopped `scrollX` (proof artifacts under `/opt/cursor/artifacts/`).
+2. Calypso BA need fixture `src/lib/fixtures/calypso-ba-need.ts` (AMACAN / BNPP CIB / Montreal / partial remote / 2026-10-05). Intake button “Calypso BA (AMACAN)”. Parser extracts Skill(Must)/Language(Must)/7–10y/boolean.
+3. Scoring quality ported onto Europe tip: must-have 92/8, domain signals, language, Montreal, weak/GitHub string dampening, `selectTopKByMatchScore`, floor 80 via `candidate-fit.ts`.
+4. Contact tracking: `getContactStatus` + dedupe skips already-contacted / DNC; badges on candidates table + drawer.
 
 ## Blockers
 
-- None for product workflow
-- Graph / Microsoft / HeyReach HOLD unchanged (not chased)
-- Meta WhatsApp templates empty on Outreach (expected under HOLD)
+- Cannot open PR (403). Parent: `gh pr create --base main --head cursor/sourcing-quality-contact-track-b91d`.
+- Fly deploy of this tip still needed for live after-proof (local Turbopack panicked).
+- Graph/Microsoft/HeyReach = HOLD.
 
 ## Next steps
 
 ```bash
-curl -sS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-# Optional: owner Graph/HeyReach reconnect when ready
+gh pr create --base main --head cursor/sourcing-quality-contact-track-b91d \
+  --title "fix(sourcing): Calypso BA quality bar, contact tracking, overflow clip"
+# After merge → Fly deploy; re-run sourcing E2E with SAMPLE_CALYPSO_BA_NEED
+curl -s https://aria-mantu-app.fly.dev/api/ready
 ```
 
 ## Decisions made (don't relitigate)
 
-- #49 closed permanently; #51 was the Europe successor — now merged
-- Keep focused Europe/EMEA geo+scoring slice — no megapr #36 reopen
-- Slim Fly deploy preserves live 0079 migration identity (tip tree ledger ends 0054)
-- Ignore Vercel/GHA budget noise
+- main is FF tip over integration for this work.
+- Do not restore deleted orchestrator/providers megapr; surgical scoring port only.
+- Do not chase Entra/Graph.
+- Contacted skip reason preferred over generic Duplicate when identity was already contacted.
 
 ## Watch out
 
-- Manifest freezes already bumped in #51 (app 152 / all 205 / parity 207)
-- `store-sourcing-actions` falseEuMatch expects Americas dampen ≤40
-- E2E screenshots: `/opt/cursor/artifacts/screenshots/e2e-workflow-*.png`
-- Report: `/opt/cursor/artifacts/e2e-workflow-report.json`
+- Cherry-picking full `scoring-quality-upgrade-b91d` still conflicts (orchestrator deleted on main).
+- `test-manifest-contract` freezes must be refreshed when adding suites.
