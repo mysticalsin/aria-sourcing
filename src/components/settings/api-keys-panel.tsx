@@ -19,10 +19,13 @@ const SELECTABLE_API_KEY_PROVIDERS = experimentalPaidSourcingEnabled
 // rely on the generic placeholder below; the LinkedIn profile search connector
 // token shape is distinctive enough to call out explicitly.
 const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
+  SMART:
+    "SMART resume-DB API bearer token (server-only; never shown again)",
   Apify:
     "LinkedIn profile search connector token (from your search-provider console), format apify_api_…",
 };
 const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
+  SMART: "SMART bearer token (encrypted server-side)",
   Apify: "apify_api_…  (stored server-side, never shown again)",
   DeepSeek: "sk-…  (encrypted; never shown again)",
   "NVIDIA NIM": "nvapi-…  (encrypted; never shown again)",
@@ -30,6 +33,7 @@ const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
 };
 
 const KEY_PROVIDER_LABELS: Partial<Record<ApiKeyProvider, string>> = {
+  SMART: "SMART (resume DB)",
   Apify: "LinkedIn profile search",
   "Kimi (Moonshot)": "Kimi (Moonshot)",
   "NVIDIA NIM": "NVIDIA NIM",

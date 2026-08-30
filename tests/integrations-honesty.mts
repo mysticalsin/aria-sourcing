@@ -90,5 +90,16 @@ ok(
     /heyreach mcp/i.test(heyreach?.name ?? ""),
 );
 
+
+const smart = integrations.find((integration) => integration.id === "int_smart_ats");
+ok(
+  "SMART resume DB is a truthfully real card, not a roadmap placeholder",
+  smart?.real === true && smart.status === "not_configured",
+);
+ok(
+  "SMART card points operators at Access & Keys vault",
+  /resume|cvtheque|ocr/i.test(smart?.description ?? "") && smart?.setupHref === "/settings?tab=access",
+);
+
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

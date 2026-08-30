@@ -115,14 +115,16 @@ export function defaultIntegrations(): IntegrationStatus[] {
     },
     {
       id: "int_smart_ats",
-      name: "SMART (ATS)",
-      category: "CRM",
-      description: "Bidirectional ATS of record: needs, lead + candidate records (all sources), Cvtheque, pipeline, offer tracking, hire registration, source-of-hire capture.",
+      name: "SMART (resume DB)",
+      category: "Sourcing",
+      description:
+        "Internal Cvtheque / resume DB with OCR'd resume text — match JD/role, pull ranked fits, write back shortlist refs. Configure base URL + vault key under Access & Keys (no secrets in the browser).",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
       errors: [],
-      real: false,
+      real: true,
+      setupHref: "/settings?tab=access",
     },
     {
       id: "int_knight_m",

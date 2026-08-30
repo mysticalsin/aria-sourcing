@@ -1,6 +1,7 @@
 import type { SourcePlatform } from "@/lib/types";
 import { githubProvider } from "./github";
 import { linkedinProfilesProvider } from "./linkedin-profiles";
+import { smartProvider } from "./smart";
 import {
   behanceProvider,
   dribbbleProvider,
@@ -10,6 +11,7 @@ import {
 import type { ProviderContext, SourcingProvider, SourcingProviderId } from "./types";
 
 const ALL_PROVIDERS: SourcingProvider[] = [
+  smartProvider,
   linkedinProfilesProvider,
   githubProvider,
   linkedinWebProvider,
@@ -28,7 +30,6 @@ export function listProviders(): SourcingProvider[] {
   return [...ALL_PROVIDERS];
 }
 
-/** Providers available for this workspace/request (missing connector keys drop out). */
 export async function availableProviders(ctx: ProviderContext): Promise<SourcingProvider[]> {
   const out: SourcingProvider[] = [];
   for (const provider of ALL_PROVIDERS) {
@@ -37,10 +38,6 @@ export async function availableProviders(ctx: ProviderContext): Promise<Sourcing
   return out;
 }
 
-/**
- * Pick which backends to run for a campaign based on primary platforms.
- * LinkedIn always includes profile search (when keyed) + web SERP.
- */
 export function providersForCampaign(
   available: SourcingProvider[],
   primaryPlatforms: SourcePlatform[],
@@ -50,16 +47,29 @@ export function providersForCampaign(
   const pick = (...ids: SourcingProviderId[]) =>
     ids.map((id) => byId.get(id)).filter((p): p is SourcingProvider => Boolean(p));
 
-  if (primary === "Dribbble") return pick("dribbble", "linkedin_profiles", "linkedin_web", "behance");
-  if (primary === "Behance") return pick("behance", "linkedin_profiles", "linkedin_web", "dribbble");
+  const withSmart = (rest: SourcingProvider[]) => {
+    const smart = byId.get("smart");
+    if (!smart) return rest;
+    if (rest.some((p) => p.id === "smart")) return rest;
+    return [smart, ...rest];
+  };
+
+  if (primary === "SMART" || primary === "Talent Pool") {
+    return withSmart(pick("smart", "linkedin_profiles", "linkedin_web", "github"));
+  }
+  if (primary === "Dribbble") {
+    return withSmart(pick("dribbble", "linkedin_profiles", "linkedin_web", "behance"));
+  }
+  if (primary === "Behance") {
+    return withSmart(pick("behance", "linkedin_profiles", "linkedin_web", "dribbble"));
+  }
   if (primary === "Stack Overflow") {
-    return pick("stackoverflow", "linkedin_profiles", "linkedin_web", "github");
+    return withSmart(pick("stackoverflow", "linkedin_profiles", "linkedin_web", "github"));
   }
   if (primary === "GitHub") {
-    return pick("github", "linkedin_profiles", "linkedin_web");
+    return withSmart(pick("github", "linkedin_profiles", "linkedin_web"));
   }
-  // LinkedIn / Talent Pool / Referral / default → professional networks first
-  return pick("linkedin_profiles", "linkedin_web", "github");
+  return withSmart(pick("linkedin_profiles", "linkedin_web", "github"));
 }
 
 export type { ProviderContext, SourcingProvider, SourcingProviderId } from "./types";

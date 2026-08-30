@@ -167,9 +167,11 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
       const provider =
         integration.id === "int_apify"
           ? "Apify"
-          : integration.id === "int_sendgrid"
-            ? "SendGrid"
-            : "Custom";
+          : integration.id === "int_smart_ats"
+            ? "SMART"
+            : integration.id === "int_sendgrid"
+              ? "SendGrid"
+              : "Custom";
       const saved = await actions.saveApiKey({
         name: `${integration.name} connection`,
         provider,

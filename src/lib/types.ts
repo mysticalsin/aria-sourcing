@@ -151,6 +151,7 @@ export const SOURCE_PLATFORMS = [
   "Apify",
   "Referral",
   "Talent Pool",
+  "SMART",
 ] as const;
 export type SourcePlatform = (typeof SOURCE_PLATFORMS)[number];
 
@@ -1267,6 +1268,7 @@ export const API_KEY_PROVIDERS = [
   "Apollo",
   "Seamless",
   "Apify",
+  "SMART",
   "Tavily",
   "HeyReach",
   "Databricks",

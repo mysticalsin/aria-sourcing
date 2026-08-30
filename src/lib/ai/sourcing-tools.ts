@@ -49,7 +49,7 @@ export const SOURCING_TOOL_DEFS: McpTool[] = [
       properties: {
         platform: {
           type: "string",
-          enum: ["GitHub", "LinkedIn", "Stack Overflow", "Dribbble", "Behance"],
+          enum: ["GitHub", "LinkedIn", "Stack Overflow", "Dribbble", "Behance", "SMART"],
           description: "Which platform to search.",
         },
         query: {
@@ -96,6 +96,8 @@ export interface MakeSourcingToolRunnerOptions {
   beforeExternalCall?: () => Promise<boolean>;
   /** Decrypted LinkedIn profile search connector token (vendor under the hood). */
   linkedInProfileToken?: string | null;
+  /** Decrypted SMART resume-DB API key (or env fallback). */
+  smartApiKey?: string | null;
 }
 
 /**
@@ -133,6 +135,7 @@ export function makeSourcingToolRunner(
     githubToken,
     tavilyKey: opts.tavilyKey,
     linkedInProfileToken: opts.linkedInProfileToken,
+    smartApiKey: opts.smartApiKey,
     webFetchImpl: opts.webFetchImpl,
     beforeExternalCall: opts.beforeExternalCall,
   });
@@ -228,6 +231,25 @@ export function makeSourcingToolRunner(
       );
       accepted = filtered;
       skippedCount = result.skipped.length + (result.accepted.length - filtered.length);
+    } else if (platform === "SMART") {
+      const { smartProvider } = await import("@/lib/sourcing/providers/smart");
+      if (!(await smartProvider.isAvailable(ctx))) {
+        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+        return {
+          ok: false,
+          error: "SMART resume DB is not configured (need SMART_API_BASE_URL + key, or SMART_FORCE_MOCK).",
+        };
+      }
+      const smartResult = await smartProvider.search({ query, count, ctx });
+      if (!smartResult.ok) {
+        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+        return { ok: false, error: smartResult.error ?? "SMART search failed." };
+      }
+      accepted = smartResult.accepted
+        .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
+        .sort((a, b) => b.matchScore - a.matchScore)
+        .slice(0, count);
+      skippedCount = smartResult.skipped.length + (smartResult.accepted.length - accepted.length);
     } else {
       return {
         ok: false,

@@ -40,6 +40,7 @@ export interface MultiProviderSourcingInput {
   githubToken: string;
   tavilyKey?: string;
   linkedInProfileToken?: string | null;
+  smartApiKey?: string | null;
   webFetchImpl?: WebFetch;
   signal?: AbortSignal;
   beforeExternalCall?: () => Promise<boolean>;
@@ -140,6 +141,12 @@ function queriesForProvider(
     if (matched.length) return matched;
   }
   if (provider.id === "github") return githubQueriesFor(campaign);
+  if (provider.id === "smart") {
+    const title = campaign.jobAnalysis.title.trim();
+    const skills = campaign.jobAnalysis.requiredSkills.slice(0, 4).join(" ");
+    const q = [title, skills].filter(Boolean).join(" ").trim().slice(0, 256);
+    return q ? [q] : linkedInQueriesFor(campaign).slice(0, 1);
+  }
   if (
     provider.id === "linkedin_profiles" ||
     provider.id === "linkedin_web" ||
@@ -167,6 +174,7 @@ export async function runMultiProviderSourcing(
     githubToken: input.githubToken,
     tavilyKey: input.tavilyKey,
     linkedInProfileToken: input.linkedInProfileToken,
+    smartApiKey: input.smartApiKey,
     webFetchImpl: input.webFetchImpl,
     signal: input.signal,
     beforeExternalCall: input.beforeExternalCall,

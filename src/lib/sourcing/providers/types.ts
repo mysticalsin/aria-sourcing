@@ -10,7 +10,8 @@ export type SourcingProviderId =
   | "linkedin_web"
   | "stackoverflow"
   | "dribbble"
-  | "behance";
+  | "behance"
+  | "smart";
 
 export interface ProviderContext {
   campaign: CandidateMappingCampaign & {
@@ -26,6 +27,8 @@ export interface ProviderContext {
   tavilyKey?: string;
   /** Decrypted LinkedIn-profile-search connector token (Apify under the hood). */
   linkedInProfileToken?: string | null;
+  /** Decrypted SMART resume-DB API key (or env fallback). */
+  smartApiKey?: string | null;
   webFetchImpl?: WebFetch;
   signal?: AbortSignal;
   beforeExternalCall?: () => Promise<boolean>;

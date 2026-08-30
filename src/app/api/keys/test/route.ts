@@ -11,6 +11,7 @@ import { testSillageConnection } from "@/lib/sourcing/sillage";
 import { checkApolloAuth } from "@/lib/sourcing/apollo";
 import { checkSeamlessAuth } from "@/lib/sourcing/seamless";
 import { testApifyConnection } from "@/lib/sourcing/apify";
+import { testSmartConnection } from "@/lib/sourcing/smart";
 import { checkHeyReachApiKey } from "@/lib/heyreach-delivery";
 import { clearProviderProbe } from "@/lib/sourcing/provider-egress";
 
@@ -81,6 +82,25 @@ async function resolveKeyTest(
   }
   if (provider === "Apollo") return testApolloKey(value);
   if (provider === "Seamless") return testSeamlessKey(value);
+  if (provider === "SMART") {
+    try {
+      const live = await testSmartConnection(clearProviderProbe("SMART"), value);
+      if (live.ok) return { valid: true, detail: `SMART key accepted (HTTP ${live.status}, mode=${live.mode}).` };
+      if (live.status === 401) {
+        return { valid: false, detail: live.detail || live.title || "SMART rejected this key (401)." };
+      }
+      if (live.status === 503 || live.status === 0) {
+        const fmt = validateApiKeyFormat("SMART", value);
+        return {
+          valid: fmt.valid,
+          detail: `${fmt.detail} SMART live probe unavailable (${live.detail || live.title}). Format check only.`,
+        };
+      }
+      return { valid: false, detail: live.detail || live.title || `SMART returned HTTP ${live.status}.` };
+    } catch {
+      return validateApiKeyFormat(provider, value);
+    }
+  }
   if (provider === "Apify") return testApifyKey(value);
   if (provider === "HeyReach") {
     const ok = await checkHeyReachApiKey(value);

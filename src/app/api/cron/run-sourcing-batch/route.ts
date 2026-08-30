@@ -7,6 +7,7 @@ import { DEFAULT_SOURCING_BATCH_SIZE, TOP_CANDIDATE_SHORTLIST_SIZE } from "@/lib
 import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { resolveStoredApifyKeyForWorkspace } from "@/lib/sourcing/apify";
 import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
+import { resolveStoredSmartKeyForWorkspace } from "@/lib/sourcing/smart";
 import { resolveStoredTavilyKeyForWorkspace } from "@/lib/sourcing/tavily";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { ScoringWeights } from "@/lib/types";
@@ -87,9 +88,10 @@ export async function POST(req: NextRequest) {
       ? identityBody.candidates
       : [];
 
-  const [linkedInProfileToken, workspaceTavilyKey] = await Promise.all([
+  const [linkedInProfileToken, workspaceTavilyKey, smartApiKey] = await Promise.all([
     resolveStoredApifyKeyForWorkspace(parsed.data.workspaceId),
     resolveStoredTavilyKeyForWorkspace(parsed.data.workspaceId),
+    resolveStoredSmartKeyForWorkspace(parsed.data.workspaceId),
   ]);
 
   const result = await runMultiProviderSourcing({
@@ -100,6 +102,7 @@ export async function POST(req: NextRequest) {
     githubToken: process.env.GITHUB_TOKEN ?? "",
     tavilyKey: workspaceTavilyKey ?? process.env.TAVILY_API_KEY,
     linkedInProfileToken,
+    smartApiKey,
   });
 
   const accepted = [...result.accepted]

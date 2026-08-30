@@ -116,6 +116,7 @@ const CampaignProjectionSchema = z.object({
           "Apify",
           "Referral",
           "Talent Pool",
+          "SMART",
         ]),
       )
       .min(1)

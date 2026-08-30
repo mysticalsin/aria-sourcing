@@ -57,6 +57,7 @@ behavior (no login gate, implicit admin) in production. The one sanctioned excep
 | Apollo | `Apollo` | Free `mixed_people/search`, then a paid `people/match` for email/phone | Workspace-stored Apollo key | `src/lib/sourcing/apollo.ts`, receipt-ledgered via `src/lib/sourcing/source-authority.ts` |
 | Seamless.AI | `Seamless` | Free search + async paid research/poll | Workspace-stored key | **Production-disabled by design** (see below) |
 | Sillage | `Sillage` | Company-domain account mapping, async | Workspace-stored key | **Production-disabled by design** (see below) |
+| SMART | `SMART` | Internal Cvtheque / OCR resume match (`/v1/resumes/match`) + shortlist writeback | `SMART_API_BASE_URL` + workspace/env key | Fail-closed without keys; `SMART_FORCE_MOCK=true` for mock |
 
 All provider keys except `GITHUB_TOKEN` and the Tavily env fallback are entered via
 **Settings → API Keys**, encrypted at rest, and never sent to the browser

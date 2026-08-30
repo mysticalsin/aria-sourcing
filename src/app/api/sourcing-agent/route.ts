@@ -24,6 +24,7 @@ import {
 } from "@/lib/sourcing/candidate-fit";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
+import { resolveStoredSmartKey } from "@/lib/sourcing/smart";
 import {
   beginSourcingRun,
   beginAgentFrameworkSourcingRun,
@@ -510,6 +511,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     const storedTavily = await resolveStoredTavilyKey(session);
     const tavilyKey = storedTavily || process.env.TAVILY_API_KEY || null;
     const linkedInProfileToken = await resolveStoredApifyKey(session);
+    const smartApiKey = await resolveStoredSmartKey(session);
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -560,6 +562,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
       {
         tavilyKey: tavilyKey ?? undefined,
         linkedInProfileToken,
+        smartApiKey,
         beforeExternalCall: async () => (await currentAuthority()).ok,
       },
     );
@@ -585,6 +588,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         githubToken,
         tavilyKey: tavilyKey ?? undefined,
         linkedInProfileToken,
+        smartApiKey,
         signal: searchSignal,
         beforeExternalCall: async () => (await currentAuthority()).ok,
         forcedQueries,
