@@ -3,6 +3,7 @@ import {
   scoreCandidate,
   selectTopKByMatchScore,
   europeSourcingLocationHints,
+  jobAnalysisIsEuropeFocused,
 } from "./scoring";
 import { eligibleForShortlist, SOURCING_QUALITY_FLOOR } from "./sourcing/candidate-fit";
 import { passesHardGates } from "./sourcing/hard-gates";
@@ -997,26 +998,40 @@ function synthCandidate(
   const name = `${first} ${last}`;
   const stage = pick(jd.companyStageTarget.length ? jd.companyStageTarget : (["Series B"] as CompanyStage[]), rng);
   const company = forceCompany ?? pick(profile.companies, rng);
-  const loc = pick(LOCATIONS, rng);
+  const europeFocus = jobAnalysisIsEuropeFocused(jd);
+  const europeLocs = LOCATIONS.filter((l) => l.region === "EU" || l.region === "UK");
+  const targetCity = (jd.location ?? "").trim();
+  const loc = targetCity
+    ? { city: targetCity, tz: jd.timezone || (europeFocus ? "CET" : "EST"), region: europeFocus ? "EU" : "Local" }
+    : europeFocus
+      ? pick(europeLocs.length ? europeLocs : LOCATIONS, rng)
+      : pick(LOCATIONS, rng);
   const handle = `${first}${last}`.toLowerCase();
 
-  // Skills: most required + some nice; tech "extras" only for code roles so a
-  // finance/sales candidate isn't handed Kubernetes.
-  const reqTake = Math.max(2, Math.ceil(jd.requiredSkills.length * (0.55 + rng() * 0.4)));
+  // Always include every must-have so synthetic demos clear hard gates; nice/extras fill.
   const extras = profile.queryStyle === "github" ? pickN(EXTRA_SKILLS, 2 + Math.floor(rng() * 3), rng) : [];
   const techStack = Array.from(
     new Set([
-      ...pickN(jd.requiredSkills, reqTake, rng),
-      ...pickN(jd.niceToHaveSkills, Math.floor(rng() * 2), rng),
+      ...jd.requiredSkills,
+      ...pickN(jd.niceToHaveSkills, Math.min(2, jd.niceToHaveSkills.length), rng),
       ...extras,
     ]),
   );
 
+  const minY = jd.minYearsExperience;
+  const maxY = jd.maxYearsExperience;
   const baseYears =
-    jd.minYearsExperience != null ? jd.minYearsExperience : jd.seniority === "Senior" ? 6 : 4;
-  const yearsExperience = clamp(Math.round(baseYears + (rng() * 6 - 2)), 1, 22);
+    minY != null ? minY : jd.seniority === "Senior" ? 6 : 4;
+  let yearsExperience = Math.round(baseYears + (rng() * 4 - 1));
+  if (minY != null) yearsExperience = Math.max(minY, yearsExperience);
+  if (maxY != null) yearsExperience = Math.min(maxY, yearsExperience);
+  yearsExperience = clamp(yearsExperience, 1, 22);
 
   const currentTitle = pick(profile.titles, rng);
+  const openToWork = jd.preferOpenToWork !== false && rng() > 0.35;
+  const activity = openToWork
+    ? `Open to Work — ${pick(ACTIVITY_LINES, rng)}`
+    : pick(ACTIVITY_LINES, rng);
 
   return {
     id: genId("cand"),
@@ -1044,7 +1059,9 @@ function synthCandidate(
     yearsExperience,
     companyStageExperience: Array.from(new Set([stage, pick(jd.companyStageTarget.length ? jd.companyStageTarget : [stage], rng)])),
     industryExperience: pickN(jd.industryExperience.length ? jd.industryExperience : INDUSTRIES, 1 + Math.floor(rng() * 2), rng),
-    recentActivity: pick(ACTIVITY_LINES, rng),
+    recentActivity: activity,
+    languages: jd.requiredLanguages?.length ? [...jd.requiredLanguages] : undefined,
+    openToWork: openToWork || undefined,
     stage: "Sourced",
     lastContactedAt: null,
     outreachHistory: [],
