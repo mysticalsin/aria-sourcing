@@ -24,6 +24,7 @@ import {
   useSeats,
   useCampaigns,
   useCandidates,
+  useOutreach,
   useLedger,
   useSuppression,
   useSettings,
@@ -61,6 +62,7 @@ export default function FloorPage() {
   const seats = useSeats();
   const campaigns = useCampaigns();
   const candidates = useCandidates();
+  const outreach = useOutreach();
   const ledger = useLedger();
   const suppression = useSuppression();
   const settings = useSettings();
@@ -139,7 +141,8 @@ export default function FloorPage() {
     return () => clearInterval(id);
   }, []);
 
-  const stateLike = { campaigns, candidates, ledger, suppression, seats, settings } as unknown as HermesState;
+  // Include outreach — agentActivity / floorRollup read pending drafts from it.
+  const stateLike = { campaigns, candidates, outreach, ledger, suppression, seats, settings } as unknown as HermesState;
   const rollup = floorRollup(seats, stateLike);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
 

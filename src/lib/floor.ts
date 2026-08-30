@@ -37,8 +37,21 @@ function hash(s: string): number {
   return s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
 }
 
+/** Floor helpers accept a full HermesState or the narrow "stateLike" slice
+ *  /floor assembles from selector hooks. Missing arrays must not crash the page. */
+function arr<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.now()): AgentActivity {
-  const contacted = state.ledger.filter(
+  const ledger = arr(state.ledger);
+  const campaignsAll = arr(state.campaigns);
+  const outreach = arr(state.outreach);
+  const candidates = arr(state.candidates);
+  const settings = state.settings;
+  const confidentialityMode = settings?.confidentialityMode === true;
+
+  const contacted = ledger.filter(
     (l) => l.seatId === seat.id && (l.status === "sent" || l.status === "claimed"),
   ).length;
 
@@ -54,17 +67,17 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
 
   if (seat.status === "disabled") return make("idle", "Offline", "Agent disabled");
   if (seat.status === "paused") return make("paused", "Paused", "Paused by operator");
-  if (seatHealthStatus(seat, state.settings.fleet).shouldPause)
+  if (settings?.fleet && seatHealthStatus(seat, settings.fleet).shouldPause)
     return make("paused", "Auto-paused", "Deliverability guardrail tripped");
 
   const ws = warmupStage(seat, now);
   if (!ws.full) return make("warming", "Warming up", `Day ${ws.day} · cap ${ws.cap}/day`, null, true);
 
-  const campaigns = state.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
+  const campaigns = campaignsAll.filter((c) => !["Filled", "Paused"].includes(c.status));
   if (campaigns.length === 0) return make("idle", "Standing by", "No active campaigns");
 
   const maskName = (name: string, stage: string): string =>
-    state.settings.confidentialityMode && !hasOutreachPurpose(stage as never)
+    confidentialityMode && !hasOutreachPurpose(stage as never)
       ? applyConfidentiality({ name } as never, { confidentialityMode: true, reveal: false }).name
       : name;
 
@@ -72,7 +85,7 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   const h = hash(seat.id);
 
   // Real pending outreach awaiting human approval or explicit send.
-  const pendingOutreach = state.outreach.filter(
+  const pendingOutreach = outreach.filter(
     (m) =>
       campaignIds.has(m.campaignId)
       && (
@@ -85,7 +98,7 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   if (pendingOutreach.length > 0) {
     const msg = pendingOutreach[h % pendingOutreach.length]!;
     const campaign = campaigns.find((c) => c.id === msg.campaignId) ?? campaigns[0]!;
-    const focus = state.candidates.find((c) => c.id === msg.candidateId);
+    const focus = candidates.find((c) => c.id === msg.candidateId);
     return make(
       "outreach",
       msg.status === "Pending Manual Send"
@@ -100,7 +113,7 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   }
 
   // Interested candidates that still need a Teams/calendar URL (needs calendar).
-  const needsBook = state.candidates.filter(
+  const needsBook = candidates.filter(
     (c) =>
       campaignIds.has(c.campaignId)
       && c.stage === "Interested"
@@ -119,13 +132,15 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   }
 
   // Sourced pool awaiting contact for an active campaign.
-  const sourced = state.candidates.filter(
+  const sourced = candidates.filter(
     (c) => campaignIds.has(c.campaignId) && c.stage === "Sourced",
   );
   if (sourced.length > 0) {
     const focus = sourced[h % sourced.length]!;
     const campaign = campaigns.find((c) => c.id === focus.campaignId) ?? campaigns[0]!;
-    const role = roleProfile(campaign.jobAnalysis).label.toLowerCase();
+    const role = campaign.jobAnalysis
+      ? roleProfile(campaign.jobAnalysis).label.toLowerCase()
+      : "talent";
     return make(
       "sourcing",
       `Sourcing ${role}`,

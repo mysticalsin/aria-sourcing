@@ -68,5 +68,41 @@ ok("rollup buckets within total", roll.working + roll.warming + roll.paused <= r
 ok("contactedToday = sum of sentToday", roll.contactedToday === s.seats.reduce((a, x) => a + x.sentToday, 0));
 ok("at least one paused (lucas)", roll.paused >= 1);
 
+// Regression: /floor historically assembled a narrow stateLike WITHOUT outreach.
+// Missing arrays must fail-soft (idle), not throw TypeError on .filter.
+const partialLike = {
+  campaigns: s.campaigns,
+  candidates: s.candidates,
+  ledger: s.ledger,
+  seats: s.seats,
+  settings: s.settings,
+  // outreach intentionally omitted
+} as unknown as typeof s;
+let partialOk = false;
+try {
+  const a = agentActivity(seat("seat_maya"), partialLike, NOW);
+  const r = floorRollup(s.seats, partialLike, NOW);
+  partialOk = typeof a.state === "string" && typeof r.total === "number";
+} catch {
+  partialOk = false;
+}
+ok("partial stateLike without outreach does not throw", partialOk);
+
+const emptyLike = {
+  campaigns: undefined,
+  candidates: undefined,
+  outreach: undefined,
+  ledger: undefined,
+  settings: undefined,
+} as unknown as typeof s;
+let emptyOk = false;
+try {
+  const a = agentActivity(seat("seat_maya"), emptyLike, NOW);
+  emptyOk = a.state === "idle" || a.state === "warming" || a.state === "paused";
+} catch {
+  emptyOk = false;
+}
+ok("undefined state slices fail-soft to idle/warming/paused", emptyOk);
+
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
