@@ -17,7 +17,13 @@ import {
 } from "@/lib/mcp-client";
 import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
-import { BUILTIN_BROWSER_URL, runBrowserTool } from "@/lib/ai/browser-tools";
+
+// Keep the browser sentinel here — do NOT statically import browser-tools /
+// playwright-core. Production Fly images (Next standalone) omit
+// playwright-core/browsers.json; a static import crashes the whole module
+// graph (including /api/sourcing-agent) and the client surfaces
+// "The sourcing agent returned an invalid response." for the HTML error page.
+export const BUILTIN_BROWSER_URL = "builtin:browser-research";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 export const MAX_TOTAL_TOOL_DEFINITIONS = 32;
@@ -186,7 +192,20 @@ async function execTool(
 ): Promise<ToolExecutionResult> {
   if (server.run) return server.run(name, args, signal);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey, signal });
-  if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
+  if (server.url === BUILTIN_BROWSER_URL) {
+    try {
+      const { runBrowserTool } = await import("@/lib/ai/browser-tools");
+      return await runBrowserTool(name, args);
+    } catch (err) {
+      return {
+        ok: false,
+        error:
+          err instanceof Error
+            ? `Browser research unavailable: ${err.message}`
+            : "Browser research unavailable.",
+      };
+    }
+  }
   return callMcpTool(server.url, server.token, name, args, { signal });
 }
 

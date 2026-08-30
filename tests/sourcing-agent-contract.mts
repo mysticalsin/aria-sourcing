@@ -186,3 +186,64 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
 });
+
+test("tool-loop must not statically import playwright or browser-tools (Fly crash → HTML → invalid response)", () => {
+  const toolLoop = readFileSync(new URL("../src/lib/ai/tool-loop.ts", import.meta.url), "utf8");
+  const sourcingRoute = readFileSync(
+    new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url),
+    "utf8",
+  );
+  // Static import of browser-tools pulls playwright-core into the sourcing-agent
+  // module graph. On Fly standalone images browsers.json is missing → Next returns
+  // an HTML error page → client: "The sourcing agent returned an invalid response."
+  assert.doesNotMatch(toolLoop, /^import\s+.*from\s+["']@\/lib\/ai\/browser-tools["']/m);
+  assert.doesNotMatch(toolLoop, /^import\s+.*playwright-core/m);
+  assert.match(toolLoop, /await import\(["']@\/lib\/ai\/browser-tools["']\)/);
+  assert.match(toolLoop, /export const BUILTIN_BROWSER_URL = "builtin:browser-research"/);
+  assert.match(sourcingRoute, /from ["']@\/lib\/ai\/tool-loop["']/);
+  assert.doesNotMatch(sourcingRoute, /from ["']@\/lib\/ai\/browser-tools["']/);
+  assert.doesNotMatch(sourcingRoute, /playwright/);
+  assert.match(sourcingRoute, /soft-filter to schema-valid DTOs/);
+});
+
+test("requestReviewedSourcing maps non-JSON agent responses to the stable invalid-response error", async () => {
+  const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client");
+  const htmlFetch: typeof fetch = async () =>
+    new Response("<html>Internal Server Error</html>", {
+      status: 500,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  const result = await requestReviewedSourcing(htmlFetch, campaignId, 3);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error, "The sourcing agent returned an invalid response.");
+
+  const emptyCandidatesOk: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        mode: "deterministic",
+        campaignId,
+        campaignFingerprint: "fp",
+        candidates: [],
+        totalFound: 0,
+        requestId: "req-1",
+        idempotencyKey: "11111111-1111-4111-8111-111111111111",
+        sourcingRunId: "22222222-2222-4222-8222-222222222222",
+        appliedLessonIds: [],
+        feedbackReceipts: [
+          {
+            receiptId: "33333333-3333-4333-8333-333333333333",
+            platform: "GitHub",
+            candidateCount: 0,
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  const soft = await requestReviewedSourcing(emptyCandidatesOk, campaignId, 3);
+  assert.equal(soft.ok, true);
+  if (!soft.ok) return;
+  assert.equal(soft.value.candidates.length, 0);
+  assert.equal(soft.value.totalFound, 0);
+});

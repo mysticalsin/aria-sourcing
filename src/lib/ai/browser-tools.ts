@@ -17,7 +17,9 @@ import {
   type ObscuraSession,
 } from "@/lib/ai/obscura-adapter";
 
-/** Sentinel "server url" that marks the built-in browser tools inside the tool-loop. */
+/** Sentinel "server url" that marks the built-in browser tools inside the tool-loop.
+ *  Kept in sync with `BUILTIN_BROWSER_URL` in tool-loop.ts (tool-loop owns the
+ *  canonical export so sourcing can load without importing playwright). */
 export const BUILTIN_BROWSER_URL = "builtin:browser-research";
 
 const USER_AGENT = "ARIAResearchBot/1.0";

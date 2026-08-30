@@ -97,7 +97,12 @@ export async function requestReviewedSourcing(
   }
 
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
+  const isJson = contentType.split(";", 1)[0]?.trim() === "application/json";
+  // Non-JSON (HTML error page from a crashed route module, proxy page, etc.)
+  // must not throw — surface a stable client error. Prefer JSON error envelopes
+  // when the content-type is correct.
+  if (!isJson) {
+    await response.body?.cancel().catch(() => undefined);
     return { ok: false, error: "The sourcing agent returned an invalid response." };
   }
   const body = (await response.json().catch(() => null)) as unknown;

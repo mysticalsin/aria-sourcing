@@ -713,13 +713,17 @@ async function handlePost(req: NextRequest, correlationId: string) {
       })
       .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
       .slice(0, count);
-    const projected = parseSourcingAgentCandidates(candidates, campaignId, count);
+    // Prefer all-or-nothing parse; soft-filter to schema-valid DTOs so a single
+    // malformed lead cannot turn a successful search into a non-JSON / invalid
+    // envelope for the workspace client.
+    let projected = parseSourcingAgentCandidates(candidates, campaignId, count);
     if (!projected) {
-      return await failClaimed(
-        502,
-        "SOURCING_AGENT_RESPONSE_INVALID",
-        "The sourcing-agent result was invalid.",
-      );
+      const kept: NonNullable<ReturnType<typeof parseSourcingAgentCandidates>> = [];
+      for (const candidate of candidates) {
+        const one = parseSourcingAgentCandidates([candidate], campaignId, 1);
+        if (one?.[0]) kept.push(one[0]);
+      }
+      projected = kept.slice(0, count);
     }
 
     const executed = new Set(
