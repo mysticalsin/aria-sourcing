@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 422
 agent: cursor-cloud
 updated: 2026-08-30T00:55Z
-status: fixing-global-error-malformed-campaign
+status: global-error-fixed-deployed
 ---
 
 # Handoff — Shift 422
@@ -11,30 +11,29 @@ status: fixing-global-error-malformed-campaign
 ## Current state
 
 - **Branch:** `cursor/rei-autopilot-send-b91d` (PR #40)
-- **Incident:** Fly prod showed `global-error` — `Cannot read properties of undefined (reading 'title')`
-- **Root cause:** Always-mounted Aria Command console maps campaigns through `campaignToAriaContext`, which read `jobAnalysis.title` unguarded. Workspace had malformed proof campaign `camp:unispike:proof` (null title / missing jobAnalysis).
-- **Fix:** harden `campaignToAriaContext`; repair campaigns in `normalizeHermesState` / migrate; fail-soft ⌘K + topbar notifications
-- **Fly tip before this fix:** `736f832…` — deploy needed after commit
+- **Incident fixed:** Fly prod `global-error` — `Cannot read properties of undefined (reading 'title')`
+- **Root cause:** Always-mounted Aria Command console → `campaignToAriaContext` read `jobAnalysis.title` unguarded; malformed `camp:unispike:proof`
+- **Fly tip now:** `97c9c9542346dd7039dc84686818b38cc3a24b8f` · `/api/ready` ok · login shell verified (no “Something broke”)
+- Deployed chunk contains fail-soft `typeof` mapper (`function ou`)
 
 ## Done this shift
 
-1. Reproduced critical load error in browser + console stack
-2. Identified `campaignToAriaContext` / `AriaCommandConsole` useMemo as crash site
-3. Code fix + tests `aria-command`, `campaign-repair`
+1. Reproduced critical load error + console stack
+2. Fixed mapper + hydrate repair + ⌘K/topbar fail-soft
+3. Tests `aria-command`, `campaign-repair`; typecheck green
+4. Deployed + verified login/floor redirect without global-error
 
 ## Blockers (owner / external)
 
 1. Graph dropzones still empty → email auto-send HOLD
 2. HeyReach 0 LI accounts / campaigns
-3. Must deploy this tip to clear prod global-error
+3. Authenticated floor re-check needs real Supabase creds (demo login off in prod)
 
 ## Next steps
 
 ```bash
-SHA=$(git rev-parse HEAD)
-printf 'ARIA_RELEASE_SHA=%s\nARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:%s:aria-mantu-bootstrap,aria-mantu-app\n' "$SHA" "$SHA" > /tmp/owner-deploy-confirm.env
-source /tmp/owner-deploy-confirm.env && bash scripts/fly-deploy-now.sh
-# Then verify https://aria-mantu-app.fly.dev/floor loads without global-error
+# After owner signs in once: confirm /floor paints Command Center (repair runs on hydrate)
+# Autopilot sent>0 still needs Graph mailbox or HeyReach campaign+seat
 ```
 
 ## Decisions made (don't relitigate)
