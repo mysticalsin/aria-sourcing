@@ -14,11 +14,19 @@ import {
   candidateIsFarFromEurope,
   europeSourcingLocationHints,
 } from "../src/lib/scoring";
-import { SOURCING_QUALITY_FLOOR } from "../src/lib/sourcing/candidate-fit";
-import { SAMPLE_CALYPSO_BA_NEED } from "../src/lib/fixtures/calypso-ba-need";
-import { SAMPLE_TS_EUROPE_NEED } from "../src/lib/fixtures/senior-ts-europe-need";
+import { SOURCING_QUALITY_FLOOR, eligibleForShortlist } from "../src/lib/sourcing/candidate-fit";
+import { evaluateHardGates, passesHardGates } from "../src/lib/sourcing/hard-gates";
+import { buildBooleanSearchQuery, synthesizeBooleanSearch } from "../src/lib/sourcing/query-builder";
+import {
+  SAMPLE_CALYPSO_BA_NEED,
+  CALYPSO_BA_CONSULTING_RECRUITMENT_JSON,
+} from "../src/lib/fixtures/calypso-ba-need";
+import {
+  SAMPLE_TS_EUROPE_NEED,
+  TS_EUROPE_CONSULTING_RECRUITMENT_JSON,
+} from "../src/lib/fixtures/senior-ts-europe-need";
 import { buildSourcingStrategy, parseEmailAndJD } from "../src/lib/mock-ai";
-import { dedupeCandidates } from "../src/lib/rules";
+import { dedupeCandidates, normalizeLinkedInIdentity } from "../src/lib/rules";
 import { getContactStatus } from "../src/lib/contact-status";
 import { buildSeedState } from "../src/lib/seed";
 import { candidatesForCampaign } from "../src/lib/metrics";
@@ -190,6 +198,7 @@ const calypsoJd: JobAnalysis = {
   maxYearsExperience: calypsoParsed.jobAnalysis.maxYearsExperience ?? 10,
   requiredLanguages:
     calypsoParsed.jobAnalysis.requiredLanguages ?? ["English"],
+  preferOpenToWork: true,
 };
 
 ok("Calypso BA fixture parses must-have Calypso", calypsoJd.requiredSkills.some((s) => /calypso/i.test(s)));
@@ -262,6 +271,7 @@ const bestFit = calypsoCand({
   profileText:
     "Senior Calypso BA with 8y in CIB settlements, MySQL reconciliation, UAT/NRT, Mumbai offshore coordination, Open to Work.",
   recentActivity: "Open to Work — Calypso BA settlements T+1",
+  openToWork: true,
 });
 
 const weakGithub = calypsoCand({
@@ -288,14 +298,63 @@ const noMust = calypsoCand({
   profileText: "Results-driven professional seeking new opportunities.",
 });
 
-const bestScore = scoreCandidate(bestFit, calypsoJd).score;
+const juniorYears = calypsoCand({
+  id: "cand-junior",
+  name: "Too Junior",
+  currentTitle: "Calypso Business Analyst",
+  techStack: ["Calypso", "Business Analysis", "MySQL"],
+  yearsExperience: 3,
+  languages: ["English"],
+  location: "Montreal, QC",
+  profileText: "Calypso BA MySQL Business Analysis",
+});
+
+const bestScored = scoreCandidate(bestFit, calypsoJd);
+const bestScore = bestScored.score;
+const bestEvidence = bestScored.evidence;
 const weakScore = scoreCandidate(weakGithub, calypsoJd).score;
 const noMustScore = scoreCandidate(noMust, calypsoJd).score;
+const juniorScored = scoreCandidate(juniorYears, calypsoJd);
 
 ok("strong Calypso BA clears quality floor", bestScore >= SOURCING_QUALITY_FLOOR);
 ok("weak GitHub Calypso string is below floor", weakScore < SOURCING_QUALITY_FLOOR);
 ok("no-must-have profile is well below strong fit", noMustScore + 15 < bestScore);
 ok("weak GitHub below strong fit", weakScore + 20 < bestScore);
+ok("best fit hard gates pass", passesHardGates(bestFit, calypsoJd));
+ok("weak GitHub fails hard gates (missing must-haves)", !passesHardGates(weakGithub, calypsoJd));
+ok("no-must fails hard gates", !passesHardGates(noMust, calypsoJd));
+ok("junior years outside band hard-rejected", !passesHardGates(juniorYears, calypsoJd));
+ok(
+  "junior hard-gate reason names seniority",
+  /seniority|years/i.test(juniorScored.evidence.hardGateReasons.join(" ")),
+);
+ok("best fit evidence lists Calypso must-have hit", bestEvidence.mustHaveHits.some((s) => /calypso/i.test(s)));
+ok("best fit evidence has no must-have misses", bestEvidence.mustHaveMisses.length === 0);
+ok("best fit Open to Work evidence", bestEvidence.openToWork === true);
+ok(
+  "Open to Work boosts composite vs identical without signal",
+  bestScore >
+    scoreCandidate(
+      {
+        ...bestFit,
+        openToWork: false,
+        recentActivity: "Calypso BA settlements T+1",
+        profileText: "Senior Calypso BA with 8y in CIB settlements, MySQL reconciliation.",
+      },
+      calypsoJd,
+    ).score,
+);
+ok(
+  "no-must not eligible for shortlist",
+  !eligibleForShortlist(
+    {
+      ...noMust,
+      matchScore: noMustScore,
+      matchEvidence: scoreCandidate(noMust, calypsoJd).evidence,
+    },
+    calypsoJd,
+  ).ok,
+);
 
 const rankedCalypso = selectTopKByMatchScore(
   [
@@ -319,6 +378,57 @@ ok(
   ),
 );
 
+/* ---- JSON consulting_recruitment brief ingest ---------------------------- */
+const calypsoJsonParsed = parseEmailAndJD({
+  email: JSON.stringify(CALYPSO_BA_CONSULTING_RECRUITMENT_JSON),
+});
+ok(
+  "consulting_recruitment JSON parses Calypso title",
+  /calypso/i.test(calypsoJsonParsed.jobAnalysis.title),
+);
+ok(
+  "consulting_recruitment JSON maps mandatory_requirements → requiredSkills",
+  calypsoJsonParsed.jobAnalysis.requiredSkills.some((s) => /calypso/i.test(s)) &&
+    calypsoJsonParsed.jobAnalysis.requiredSkills.some((s) => /mysql/i.test(s)),
+);
+ok(
+  "consulting_recruitment JSON maps boolean_search",
+  /Calypso/i.test(calypsoJsonParsed.jobAnalysis.searchBoolean ?? ""),
+);
+ok(
+  "consulting_recruitment JSON maps screening_criteria",
+  (calypsoJsonParsed.jobAnalysis.screeningCriteria?.length ?? 0) >= 3,
+);
+ok(
+  "consulting_recruitment JSON Montreal + English",
+  /montreal/i.test(calypsoJsonParsed.jobAnalysis.location ?? "") &&
+    (calypsoJsonParsed.jobAnalysis.requiredLanguages ?? []).some((l) => /english/i.test(l)),
+);
+ok(
+  "query builder prefers explicit boolean_search",
+  buildBooleanSearchQuery(calypsoJsonParsed.jobAnalysis) ===
+    (calypsoJsonParsed.jobAnalysis.searchBoolean ?? ""),
+);
+
+const tsJsonParsed = parseEmailAndJD({
+  email: JSON.stringify(TS_EUROPE_CONSULTING_RECRUITMENT_JSON),
+});
+ok(
+  "TS Europe consulting_recruitment JSON parses TypeScript must-have",
+  tsJsonParsed.jobAnalysis.requiredSkills.some((s) => /typescript/i.test(s)),
+);
+ok(
+  "TS Europe JSON boolean drives strategy (not Calypso)",
+  /TypeScript|Node/i.test(buildSourcingStrategy(tsJsonParsed.jobAnalysis).linkedinBoolean) &&
+    !/Calypso/i.test(buildSourcingStrategy(tsJsonParsed.jobAnalysis).linkedinBoolean),
+);
+const synth = synthesizeBooleanSearch({
+  ...tsJsonParsed.jobAnalysis,
+  searchBoolean: null,
+});
+ok("synthesized boolean includes TypeScript must-have", /TypeScript/i.test(synth));
+ok("synthesized boolean includes geo or title", /Berlin|Germany|TypeScript Engineer|Software Engineer/i.test(synth));
+
 /* ---- Non-Calypso need: Senior TypeScript Engineer (Berlin / Europe) ------ */
 const tsParsed = parseEmailAndJD({ email: SAMPLE_TS_EUROPE_NEED });
 const tsJd: JobAnalysis = {
@@ -332,6 +442,7 @@ const tsJd: JobAnalysis = {
   minYearsExperience: tsParsed.jobAnalysis.minYearsExperience ?? 5,
   maxYearsExperience: tsParsed.jobAnalysis.maxYearsExperience ?? 10,
   requiredLanguages: tsParsed.jobAnalysis.requiredLanguages ?? ["English"],
+  preferOpenToWork: true,
 };
 
 ok("TS Europe fixture parses TypeScript must-have", tsJd.requiredSkills.some((s) => /typescript/i.test(s)));
@@ -446,6 +557,7 @@ const tsUsMismatch = tsCand({
 const tsBestScore = scoreCandidate(tsBest, tsJd).score;
 const tsWeakScore = scoreCandidate(tsWeak, tsJd).score;
 const tsUsScore = scoreCandidate(tsUsMismatch, tsJd).score;
+const tsUsGates = evaluateHardGates(tsUsMismatch, tsJd);
 
 ok("strong TS Europe fit clears quality floor", tsBestScore >= SOURCING_QUALITY_FLOOR);
 ok("weak generic profile rejected vs strong TS fit", tsWeakScore + 15 < tsBestScore);
@@ -454,6 +566,10 @@ ok(
   `Europe need prefers Berlin over US (EU=${tsBestScore} US=${tsUsScore})`,
   tsBestScore > tsUsScore,
 );
+ok("US candidate hard-rejected on Europe need (impossible geo)", !tsUsGates.pass);
+ok("US hard-gate reason names geo", /geo/i.test(tsUsGates.reasons.join(" ")));
+ok("TS best passes hard gates", passesHardGates(tsBest, tsJd));
+ok("TS weak fails hard gates (missing must-haves)", !passesHardGates(tsWeak, tsJd));
 
 const rankedTs = selectTopKByMatchScore(
   [
@@ -523,6 +639,58 @@ ok(
 );
 ok("DNC contact status blocks resourcing", getContactStatus(tsContacted).blockResourcing === true);
 
+/* Cross-provider identity dedupe */
+ok(
+  "LinkedIn URL normalization collapses www/trailing slash",
+  normalizeLinkedInIdentity("https://www.linkedin.com/in/AminaBest/") ===
+    normalizeLinkedInIdentity("https://linkedin.com/in/aminabest"),
+);
+const existingApify = calypsoCand({
+  id: "cand-apify",
+  name: "Cross Provider",
+  email: "",
+  linkedinUrl: "https://www.linkedin.com/in/cross-prov",
+  currentCompany: "BNPP",
+  externalIds: { Apify: "ext-123" },
+  sourceExternalId: "ext-123",
+  lastContactedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+  stage: "Contacted",
+});
+const incomingSillage = calypsoCand({
+  id: "cand-sillage",
+  name: "Cross Provider",
+  email: "",
+  linkedinUrl: "https://linkedin.com/in/cross-prov/",
+  currentCompany: "BNPP",
+  sourcePlatform: "Sillage",
+  externalIds: { Sillage: "other" },
+});
+const crossDeduped = dedupeCandidates([incomingSillage], [existingApify], { excludedCompanies: [] });
+ok("cross-provider LinkedIn identity skipped after contact", crossDeduped.accepted.length === 0);
+
+const nameCompanyExisting = calypsoCand({
+  id: "cand-nc-exist",
+  name: "Jordan Lee",
+  email: "",
+  linkedinUrl: "",
+  githubUrl: "",
+  currentCompany: "Acme Capital",
+  lastContactedAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+  stage: "Contacted",
+});
+const nameCompanyIncoming = calypsoCand({
+  id: "cand-nc-in",
+  name: "Jordan Lee",
+  email: "",
+  linkedinUrl: "",
+  githubUrl: "",
+  currentCompany: "Acme Capital",
+  sourcePlatform: "GitHub",
+});
+const ncDeduped = dedupeCandidates([nameCompanyIncoming], [nameCompanyExisting], {
+  excludedCompanies: [],
+});
+ok("name+company fingerprint blocks re-source after contact", ncDeduped.accepted.length === 0);
 
 console.log(`RESULT scoring-quality: ${pass} passed, ${fail} failed`);
 for (const c of ranked) {

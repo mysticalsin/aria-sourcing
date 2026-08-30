@@ -111,3 +111,28 @@ export const CALYPSO_BA_NEED_JSON = {
   shortlistMin: 5,
   qualityFloor: 80,
 } as const;
+
+/** Normalized consulting_recruitment envelope (Calypso / AMACAN shape). */
+export const CALYPSO_BA_CONSULTING_RECRUITMENT_JSON = {
+  consulting_recruitment: {
+    id: CALYPSO_BA_NEED_JSON.id,
+    title: CALYPSO_BA_NEED_JSON.title,
+    client: CALYPSO_BA_NEED_JSON.client,
+    employer: CALYPSO_BA_NEED_JSON.employer,
+    city: CALYPSO_BA_NEED_JSON.city,
+    remote: CALYPSO_BA_NEED_JSON.remote,
+    startDate: CALYPSO_BA_NEED_JSON.startDate,
+    seniority: CALYPSO_BA_NEED_JSON.seniority,
+    minYearsExperience: CALYPSO_BA_NEED_JSON.minYearsExperience,
+    maxYearsExperience: CALYPSO_BA_NEED_JSON.maxYearsExperience,
+    mandatory_requirements: [...CALYPSO_BA_MUST_SKILLS],
+    requiredSkills: [...CALYPSO_BA_MUST_SKILLS],
+    niceToHaveSkills: [...CALYPSO_BA_NICE_SKILLS],
+    requiredLanguages: ["English"],
+    screening_criteria: [...CALYPSO_BA_SCREEN_HARD],
+    boolean_search: CALYPSO_BA_BOOLEAN,
+    industryExperience: [...CALYPSO_BA_NEED_JSON.industryExperience],
+    preferOpenToWork: true,
+    qualityFloor: 80,
+  },
+} as const;

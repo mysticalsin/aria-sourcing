@@ -4,7 +4,10 @@ import {
   selectTopKByMatchScore,
   europeSourcingLocationHints,
 } from "./scoring";
-import { meetsSourcingQualityBar, SOURCING_QUALITY_FLOOR } from "./sourcing/candidate-fit";
+import { eligibleForShortlist, SOURCING_QUALITY_FLOOR } from "./sourcing/candidate-fit";
+import { passesHardGates } from "./sourcing/hard-gates";
+import { buildBooleanSearchQuery, buildGithubSearchQueries } from "./sourcing/query-builder";
+import { looksLikeBriefJson, parseBriefJsonText } from "./needs/brief-json";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
@@ -588,6 +591,33 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const text = `${input.email}\n${input.jd ?? ""}`.slice(0, MAX_PARSE_CHARS);
   const lower = text.toLowerCase();
 
+  // Normalized consulting_recruitment / flat need JSON → JobAnalysis directly.
+  const jsonCandidate = text.trim();
+  if (looksLikeBriefJson(jsonCandidate)) {
+    const fromJson = parseBriefJsonText(jsonCandidate);
+    if (fromJson) {
+      const hasCritical = fromJson.validationWarnings.some((w) => w.severity === "critical");
+      return {
+        sender: { name: "", email: "" },
+        intent: "New Role",
+        urgency: fromJson.urgency,
+        jobAnalysis: fromJson,
+        validationWarnings: fromJson.validationWarnings,
+        clarificationDraft: hasCritical
+          ? buildClarificationEmail("there", fromJson, fromJson.validationWarnings)
+          : null,
+        confidence: {
+          title: fromJson.title ? 0.95 : 0.4,
+          salary: 0.3,
+          skills: fromJson.requiredSkills.length ? 0.95 : 0.5,
+          location: fromJson.location ? 0.92 : 0.5,
+          seniority: 0.85,
+        },
+        extractionMode: "evidence",
+      };
+    }
+  }
+
   // Structured Mantu/Amaris "need is now ACTIVE" email → dedicated parser.
   if (isMantuNeedEmail(text)) return parseMantuNeed(text);
 
@@ -821,82 +851,14 @@ Aria Sourcing`;
 // self-reported profile location — it only works with real place names ("Germany",
 // "London"). Continent/remote-status codes like "EU"/"APAC"/"Remote" essentially
 // never appear verbatim in a profile, so including them zeroes out an otherwise
-// good query. Only apply the qualifier for a region that's an actual place.
-const NON_LOCATION_REGIONS = new Set(["EU", "EMEA", "EEA", "APAC", "LATAM", "Remote", "Global"]);
+// good query. Query builder (buildGithubSearchQueries) applies that filter.
 
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const europeHints = europeSourcingLocationHints(jd);
-  const region = jd.regions[0];
-  const concreteRegion =
-    region && !NON_LOCATION_REGIONS.has(region) ? region : europeHints[0] ?? "";
-  const locationQualifier = concreteRegion ? ` location:${concreteRegion}` : "";
-  // Note: only user-search qualifiers are valid here (language:, location:,
-  // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
-  // out the whole query on /search/users.
-  const linkedinGeoTerms =
-    europeHints.length > 0
-      ? europeHints.slice(0, 4)
-      : jd.regions.filter((r) => !NON_LOCATION_REGIONS.has(r));
-  // Prefer the need's explicit Boolean when present (any VSS / structured brief).
-  const linkedinBoolean =
-    jd.searchBoolean?.trim() ||
-    `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
-      .map((s) => `"${s}"`)
-      .join(" OR ")}) AND (${(linkedinGeoTerms.length ? linkedinGeoTerms : jd.regions)
-      .map((r) => `"${r}"`)
-      .join(" OR ")}) NOT "recruiter"`;
-
-  // GitHub queries: anchor on THIS need's code skills + optional product/domain
-  // must-have (never a single hardcoded product name).
-  const CODE_SKILL_RE =
-    /^(mysql|sql|postgres(?:ql)?|python|java|typescript|javascript|go|golang|rust|c\+\+|node\.?js|react|kotlin|scala)$/i;
-  const githubSkill = topSkills.find((s) => CODE_SKILL_RE.test(s.trim()));
-  const domainAnchor =
-    topSkills.find((s) => !CODE_SKILL_RE.test(s.trim())) ||
-    jd.title
-      .split(/[^a-z0-9+.#]+/i)
-      .map((t) => t.trim())
-      .find(
-        (t) =>
-          t.length > 2 &&
-          !/^(senior|lead|staff|principal|junior|engineer|developer|analyst|consultant|business|software|backend|frontend)$/i.test(
-            t,
-          ),
-      ) ||
-    "";
-  const githubSkillToken =
-    githubSkill && /mysql/i.test(githubSkill)
-      ? "MySQL"
-      : githubSkill && /node\.?js/i.test(githubSkill)
-        ? "Node.js"
-        : githubSkill && /postgres/i.test(githubSkill)
-          ? "PostgreSQL"
-          : githubSkill;
-  const githubQueries: GithubQuery[] = githubSkill
-    ? [
-        ...(domainAnchor && !CODE_SKILL_RE.test(domainAnchor)
-          ? [
-              {
-                label: `${githubSkillToken} + ${domainAnchor} domain`,
-                query: `${githubSkillToken} ${domainAnchor}${locationQualifier} followers:>20`,
-                estimatedResults: 40,
-              },
-            ]
-          : []),
-        ...topSkills.slice(0, 2).map((skill, i) => ({
-          label: `${skill} contributors`,
-          query: `"${skill}"${locationQualifier} followers:>20 ${i === 0 ? "repos:>5" : "repos:>3"}`,
-          estimatedResults: 60 + i * 30,
-        })),
-      ]
-    : topSkills.slice(0, 3).map((skill, i) => ({
-        label: `${skill} contributors`,
-        query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-          i === 0 ? "repos:>10" : "repos:>5"
-        }`,
-        estimatedResults: 120 + i * 60,
-      }));
+  // Prefer the need's explicit Boolean; else synthesize from must-haves + titles + geo.
+  const linkedinBoolean = buildBooleanSearchQuery(jd);
+  const githubQueries: GithubQuery[] = buildGithubSearchQueries(jd);
 
   const profile = roleProfile(jd);
   return {
@@ -993,20 +955,32 @@ export function sourceCandidates(
   });
 
   // Score the FULL set, then take top-K by quality rank — never first-N from
-  // synthetic/API order. Volume is not the limiter; match quality is.
-  // Shortlist K is clamped 5–20 inside selectTopKByMatchScore.
+  // synthetic/API order. Hard gates always exclude; quality floor preferred.
   const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
+    const { score, breakdown, evidence } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown, matchEvidence: evidence };
   });
-  const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
+  const gateOk = scored.filter((c) => passesHardGates(c, jd));
+  const quality = gateOk.filter((c) => eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok);
+  const gateSkipped = scored
+    .filter((c) => !passesHardGates(c, jd))
+    .map((c) => ({
+      name: c.name,
+      reason: c.matchEvidence?.hardGateReasons.join("; ") || "Failed mandatory hard gates",
+    }));
+  const floorSkipped = gateOk
+    .filter((c) => !eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok)
+    .map((c) => ({
+      name: c.name,
+      reason: `Match score ${c.matchScore} below ${SOURCING_QUALITY_FLOOR}% quality floor`,
+    }));
   const ranked = selectTopKByMatchScore(
-    quality.length > 0 ? quality : scored,
+    quality.length > 0 ? quality : gateOk.length > 0 ? gateOk : [],
     count,
     jd,
   );
 
-  return { accepted: ranked, skipped };
+  return { accepted: ranked, skipped: [...skipped, ...gateSkipped, ...floorSkipped] };
 }
 
 function synthCandidate(

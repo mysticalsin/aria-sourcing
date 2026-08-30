@@ -229,7 +229,64 @@ export type CandidateDedupeIdentity = Pick<
   Candidate,
   "email" | "linkedinUrl" | "githubUrl" | "sourceUrl" | "lastContactedAt"
 > &
-  Partial<Pick<Candidate, "complianceFlags" | "stage" | "recontactAt">>;
+  Partial<
+    Pick<
+      Candidate,
+      "complianceFlags" | "stage" | "recontactAt" | "name" | "currentCompany" | "externalIds" | "sourceExternalId"
+    >
+  >;
+
+/** Normalize LinkedIn profile URLs so www / trailing slash / query don't fork identity. */
+export function normalizeLinkedInIdentity(url: string): string {
+  const raw = (url ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  const m = raw.match(/linkedin\.com\/in\/([a-z0-9_-]+)/i);
+  if (m?.[1]) return `li:${m[1]}`;
+  return raw.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "").split("?")[0]!;
+}
+
+/** Normalize GitHub profile URLs / handles. */
+export function normalizeGithubIdentity(url: string): string {
+  const raw = (url ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  const m = raw.match(/github\.com\/([a-z0-9_-]+)/i);
+  if (m?.[1]) return `gh:${m[1]}`;
+  return raw.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "").split("?")[0]!;
+}
+
+/** Cross-provider name+company fingerprint when URL/email are absent. */
+export function identityNameCompanyKey(name: string, company: string): string {
+  const n = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const c = company
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!n || n.length < 3 || !c || c.length < 2) return "";
+  return `nc:${n}|${c}`;
+}
+
+/** Collect opaque external ids (Apify / Sillage / Apollo / …) for cross-provider dedupe. */
+function externalIdKeys(
+  c: Pick<Candidate, "externalIds" | "sourceExternalId" | "sourcePlatform"> | CandidateDedupeIdentity,
+): string[] {
+  const keys: string[] = [];
+  const ids = "externalIds" in c ? c.externalIds : undefined;
+  if (ids) {
+    for (const [platform, id] of Object.entries(ids)) {
+      if (id && String(id).trim()) keys.push(`ext:${platform}:${String(id).trim().toLowerCase()}`);
+    }
+  }
+  const legacy = "sourceExternalId" in c ? c.sourceExternalId : undefined;
+  if (legacy && String(legacy).trim()) keys.push(`ext:legacy:${String(legacy).trim().toLowerCase()}`);
+  return keys;
+}
 
 /** Pool identity blocked from re-source / first-touch re-contact. */
 function identityBlocksResourcing(c: CandidateDedupeIdentity): boolean {
@@ -254,9 +311,19 @@ export function dedupeCandidates(
   const skipped: { name: string; reason: string }[] = [];
 
   const seenEmail = new Set(existing.map((c) => c.email.toLowerCase()).filter(Boolean));
-  const seenLinkedin = new Set(existing.map((c) => c.linkedinUrl.toLowerCase()).filter(Boolean));
-  const seenGithub = new Set(existing.map((c) => c.githubUrl.toLowerCase()).filter(Boolean));
+  const seenLinkedin = new Set(
+    existing.map((c) => normalizeLinkedInIdentity(c.linkedinUrl)).filter(Boolean),
+  );
+  const seenGithub = new Set(
+    existing.map((c) => normalizeGithubIdentity(c.githubUrl)).filter(Boolean),
+  );
   const seenSourceUrl = new Set(existing.map((c) => (c.sourceUrl ?? "").toLowerCase()).filter(Boolean));
+  const seenExternal = new Set(existing.flatMap((c) => externalIdKeys(c)));
+  const seenNameCompany = new Set(
+    existing
+      .map((c) => identityNameCompanyKey(c.name ?? "", c.currentCompany ?? ""))
+      .filter(Boolean),
+  );
   const excluded = new Set(opts.excludedCompanies.map((c) => c.toLowerCase()));
 
   const contactedByEmail = new Map(
@@ -266,25 +333,37 @@ export function dedupeCandidates(
   );
   const contactedByLinkedin = new Map(
     existing
-      .filter((c) => c.linkedinUrl && identityBlocksResourcing(c))
-      .map((c) => [c.linkedinUrl.toLowerCase(), c] as const),
+      .filter((c) => normalizeLinkedInIdentity(c.linkedinUrl) && identityBlocksResourcing(c))
+      .map((c) => [normalizeLinkedInIdentity(c.linkedinUrl), c] as const),
   );
   const contactedByGithub = new Map(
     existing
-      .filter((c) => c.githubUrl && identityBlocksResourcing(c))
-      .map((c) => [c.githubUrl.toLowerCase(), c] as const),
+      .filter((c) => normalizeGithubIdentity(c.githubUrl) && identityBlocksResourcing(c))
+      .map((c) => [normalizeGithubIdentity(c.githubUrl), c] as const),
+  );
+  const contactedByExternal = new Map<string, CandidateDedupeIdentity>();
+  for (const c of existing) {
+    if (!identityBlocksResourcing(c)) continue;
+    for (const key of externalIdKeys(c)) contactedByExternal.set(key, c);
+  }
+  const contactedByNameCompany = new Map(
+    existing
+      .filter((c) => identityNameCompanyKey(c.name ?? "", c.currentCompany ?? "") && identityBlocksResourcing(c))
+      .map((c) => [identityNameCompanyKey(c.name ?? "", c.currentCompany ?? ""), c] as const),
   );
 
   for (const cand of incoming) {
     const email = cand.email.toLowerCase();
-    const li = cand.linkedinUrl.toLowerCase();
-    const gh = cand.githubUrl.toLowerCase();
+    const li = normalizeLinkedInIdentity(cand.linkedinUrl);
+    const gh = normalizeGithubIdentity(cand.githubUrl);
     const su = (cand.sourceUrl ?? "").toLowerCase();
     const company = cand.currentCompany.toLowerCase();
+    const nc = identityNameCompanyKey(cand.name, cand.currentCompany);
+    const extKeys = externalIdKeys(cand);
 
     // Only treat a non-blank email as a dedupe key. Real sourced profiles (e.g.
     // GitHub) often have no public email; those are deduped by linkedin/github/
-    // source URL below, not collapsed together as "same blank email".
+    // source URL / external id / name+company below.
     if (email && contactedByEmail.has(email)) {
       skipped.push({ name: cand.name, reason: "Already contacted (do not re-source)" });
       continue;
@@ -294,6 +373,14 @@ export function dedupeCandidates(
       continue;
     }
     if (gh && contactedByGithub.has(gh)) {
+      skipped.push({ name: cand.name, reason: "Already contacted (do not re-source)" });
+      continue;
+    }
+    if (extKeys.some((k) => contactedByExternal.has(k))) {
+      skipped.push({ name: cand.name, reason: "Already contacted (do not re-source)" });
+      continue;
+    }
+    if (nc && contactedByNameCompany.has(nc)) {
       skipped.push({ name: cand.name, reason: "Already contacted (do not re-source)" });
       continue;
     }
@@ -311,6 +398,14 @@ export function dedupeCandidates(
     }
     if (su && seenSourceUrl.has(su)) {
       skipped.push({ name: cand.name, reason: "Duplicate source profile" });
+      continue;
+    }
+    if (extKeys.some((k) => seenExternal.has(k))) {
+      skipped.push({ name: cand.name, reason: "Duplicate cross-provider identity" });
+      continue;
+    }
+    if (nc && seenNameCompany.has(nc)) {
+      skipped.push({ name: cand.name, reason: "Duplicate name+company identity" });
       continue;
     }
     if (excluded.has(company)) {
@@ -335,6 +430,8 @@ export function dedupeCandidates(
     if (li) seenLinkedin.add(li);
     if (gh) seenGithub.add(gh);
     if (su) seenSourceUrl.add(su);
+    if (nc) seenNameCompany.add(nc);
+    for (const k of extKeys) seenExternal.add(k);
   }
 
   return { accepted, skipped };

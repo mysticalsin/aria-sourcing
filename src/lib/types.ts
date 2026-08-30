@@ -218,7 +218,25 @@ export interface JobAnalysis {
   expectedStartDate?: string | null;
   /** LinkedIn/GitHub/SMART boolean when the need states one. */
   searchBoolean?: string | null;
+  /** Structured screening / hard criteria from consulting_recruitment JSON. */
+  screeningCriteria?: string[];
+  /** Prefer candidates with Open to Work / actively looking signals. */
+  preferOpenToWork?: boolean;
   validationWarnings: ValidationWarning[];
+}
+
+/** Structured must-have / language / geo evidence for shortlist rationales. */
+export interface MatchEvidence {
+  mustHaveHits: string[];
+  mustHaveMisses: string[];
+  languageHits: string[];
+  languageMisses: string[];
+  geoPass: boolean;
+  seniorityPass: boolean | null;
+  openToWork: boolean;
+  hardGatePass: boolean;
+  hardGateReasons: string[];
+  summary: string;
 }
 
 export interface ValidationWarning {
@@ -383,6 +401,10 @@ export interface Candidate {
   sourceQuery: string;
   matchScore: number;
   matchBreakdown: MatchBreakdownItem[];
+  /** Structured must-have / language / geo hit-miss rationale for UI. */
+  matchEvidence?: MatchEvidence;
+  /** Provider Open to Work flag when present (Apify / LinkedIn enrichers). */
+  openToWork?: boolean;
   techStack: string[];
   /** Enriched work-history lines, formatted "Title @ Company (dates)", newest
    *  first. Provider free-text (Apify/dev_fusion) — displayed to recruiters but

@@ -29,6 +29,7 @@ import {
   isNeedEmail,
   type ParsedIntake,
 } from "@/lib/mock-ai";
+import { CALYPSO_BA_CONSULTING_RECRUITMENT_JSON } from "@/lib/fixtures/calypso-ba-need";
 import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
@@ -181,6 +182,16 @@ export default function IntakePage() {
     toast({
       title: "TypeScript Europe need loaded",
       description: "Senior TypeScript Engineer — Meridian Cloud / Berlin / Europe remote (must-haves: TypeScript, Node.js, PostgreSQL).",
+      variant: "info",
+    });
+  }
+
+  function loadCalypsoJson() {
+    setEmail(JSON.stringify(CALYPSO_BA_CONSULTING_RECRUITMENT_JSON, null, 2));
+    setJd("");
+    toast({
+      title: "Calypso JSON brief loaded",
+      description: "consulting_recruitment envelope — mandatory_requirements + boolean_search drive matching.",
       variant: "info",
     });
   }
@@ -472,6 +483,16 @@ export default function IntakePage() {
                     disabled={parsing}
                   >
                     Calypso BA (AMACAN)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<FileText aria-hidden />}
+                    onClick={loadCalypsoJson}
+                    disabled={parsing}
+                  >
+                    Calypso JSON brief
                   </Button>
                   <Button
                     type="button"

@@ -15,6 +15,7 @@ import {
 import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
+import { MatchEvidencePanel } from "@/components/candidates/match-evidence-panel";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { getContactStatus } from "@/lib/contact-status";
 import { bookingCalendarSummary } from "@/lib/booking-status";
@@ -1614,6 +1615,11 @@ export function CandidateDrawer({
             </div>
             <ScoreBreakdown breakdown={c.matchBreakdown} />
           </div>
+          {c.matchEvidence ? (
+            <div className="mt-4">
+              <MatchEvidencePanel evidence={c.matchEvidence} />
+            </div>
+          ) : null}
         </Section>
 
         {/* Why this person — personalization evidence behind the latest

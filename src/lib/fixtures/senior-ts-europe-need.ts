@@ -90,3 +90,18 @@ export const TS_EUROPE_NEED_JSON = {
   shortlistMin: 5,
   qualityFloor: 80,
 } as const;
+
+/** Normalized consulting_recruitment envelope for the TS Europe need. */
+export const TS_EUROPE_CONSULTING_RECRUITMENT_JSON = {
+  consulting_recruitment: {
+    ...TS_EUROPE_NEED_JSON,
+    mandatory_requirements: [...TS_EUROPE_MUST_SKILLS],
+    screening_criteria: [
+      "TypeScript production services",
+      "Node.js backend",
+      "PostgreSQL data layer",
+      "CET working-hours overlap",
+    ],
+    boolean_search: TS_EUROPE_BOOLEAN,
+  },
+} as const;

@@ -1,5 +1,7 @@
 import { dedupeCandidates } from "@/lib/rules";
-import { scoreCandidate } from "@/lib/scoring";
+import { scoreCandidate, selectTopKByMatchScore, SHORTLIST_TOP_K_MAX } from "@/lib/scoring";
+import { eligibleForShortlist, SOURCING_QUALITY_FLOOR } from "@/lib/sourcing/candidate-fit";
+import { passesHardGates } from "@/lib/sourcing/hard-gates";
 import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
 import type { GithubUser } from "@/lib/sourcing/github-identity";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
@@ -257,12 +259,32 @@ function scoreAndDedupe(
   existing: CandidateDedupeIdentity[],
   weights: ScoringWeights,
 ): SourceResult {
+  const jd = campaign.jobAnalysis;
   const { accepted, skipped } = dedupeCandidates(raw, existing, {
     excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
   });
   const scored = accepted.map((candidate) => {
-    const { score, breakdown } = scoreCandidate(candidate, campaign.jobAnalysis, weights);
-    return { ...candidate, matchScore: score, matchBreakdown: breakdown };
+    const { score, breakdown, evidence } = scoreCandidate(candidate, jd, weights);
+    return { ...candidate, matchScore: score, matchBreakdown: breakdown, matchEvidence: evidence };
   });
-  return { accepted: scored, skipped };
+  const gateOk = scored.filter((c) => passesHardGates(c, jd));
+  const quality = gateOk.filter((c) => eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok);
+  return {
+    accepted: selectTopKByMatchScore(quality.length > 0 ? quality : gateOk, SHORTLIST_TOP_K_MAX, jd),
+    skipped: [
+      ...skipped,
+      ...scored
+        .filter((c) => !passesHardGates(c, jd))
+        .map((c) => ({
+          name: c.name,
+          reason: c.matchEvidence?.hardGateReasons.join("; ") || "Failed mandatory hard gates",
+        })),
+      ...gateOk
+        .filter((c) => !eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok)
+        .map((c) => ({
+          name: c.name,
+          reason: `Match score ${c.matchScore} below ${SOURCING_QUALITY_FLOOR}% quality floor`,
+        })),
+    ],
+  };
 }

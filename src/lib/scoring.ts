@@ -2,6 +2,7 @@ import type {
   Candidate,
   JobAnalysis,
   MatchBreakdownItem,
+  MatchEvidence,
   ScoringWeights,
 } from "./types";
 import { clamp, round } from "./utils";
@@ -11,6 +12,10 @@ import {
   jobAnalysisIsEuropeFocused,
   locationMatchesEuropeMacro,
 } from "./geo-europe";
+import {
+  candidateOpenToWorkSignal,
+  evaluateHardGates,
+} from "./sourcing/hard-gates";
 
 export {
   candidateIsFarFromEurope,
@@ -717,9 +722,14 @@ export function requiredSkillHitCount(candidate: Candidate, jd: JobAnalysis): nu
 
 /* ---- Composite ----------------------------------------------------------- */
 
+/** Open to Work / actively looking composite boost (capped). */
+const OPEN_TO_WORK_BOOST = 4;
+const OPEN_TO_WORK_PREFER_BOOST = 6;
+
 export interface ScoreResult {
   score: number;
   breakdown: MatchBreakdownItem[];
+  evidence: MatchEvidence;
 }
 
 export function scoreCandidate(
@@ -765,7 +775,23 @@ export function scoreCandidate(
     }
   }
 
-  return { score: round(clamp(composite, 0, 100)), breakdown };
+  const openToWork = candidateOpenToWorkSignal(candidate);
+  if (openToWork) {
+    const boost = jd.preferOpenToWork ? OPEN_TO_WORK_PREFER_BOOST : OPEN_TO_WORK_BOOST;
+    composite = Math.min(100, composite + boost);
+    const activityItem = breakdown.find((b) => b.key === "activity");
+    if (activityItem) {
+      activityItem.rationale = `${activityItem.rationale.replace(/\.$/, "")}; Open to Work / actively looking (+${boost}).`;
+    }
+  }
+
+  const { evidence } = evaluateHardGates(candidate, jd);
+  evidence.openToWork = openToWork;
+  if (evidence.hardGatePass && openToWork && !/Open to Work/i.test(evidence.summary)) {
+    evidence.summary = `${evidence.summary.replace(/\.$/, "")}; Open to Work.`;
+  }
+
+  return { score: round(clamp(composite, 0, 100)), breakdown, evidence };
 }
 
 

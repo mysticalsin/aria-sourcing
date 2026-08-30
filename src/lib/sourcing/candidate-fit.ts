@@ -1,4 +1,5 @@
-import type { Candidate } from "@/lib/types";
+import { evaluateHardGates } from "@/lib/sourcing/hard-gates";
+import type { Candidate, JobAnalysis } from "@/lib/types";
 
 const TITLE_STOP = new Set(["senior", "lead", "staff", "principal", "junior", "the", "and", "for"]);
 
@@ -101,4 +102,23 @@ export function meetsSourcingQualityBar(
   floor: number = SOURCING_QUALITY_FLOOR,
 ): boolean {
   return Number.isFinite(candidate.matchScore) && candidate.matchScore >= floor;
+}
+
+/**
+ * Shortlist eligibility: hard gates (must-haves / language / geo / seniority)
+ * plus quality floor. Soft dampening alone cannot enter top-K.
+ */
+export function eligibleForShortlist(
+  candidate: Candidate,
+  jd: JobAnalysis,
+  floor: number = SOURCING_QUALITY_FLOOR,
+): { ok: boolean; reason?: string } {
+  const gates = evaluateHardGates(candidate, jd);
+  if (!gates.pass) {
+    return { ok: false, reason: gates.reasons.join("; ") };
+  }
+  if (!meetsSourcingQualityBar(candidate, floor)) {
+    return { ok: false, reason: `Match score ${candidate.matchScore} below ${floor}% quality floor` };
+  }
+  return { ok: true };
 }

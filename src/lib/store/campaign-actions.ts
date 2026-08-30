@@ -179,6 +179,21 @@ function sanitizeJobAnalysis(value: unknown): JobAnalysis | null {
   if (value.expectedStartDate !== undefined) {
     sanitized.expectedStartDate = value.expectedStartDate;
   }
+  if (Array.isArray(value.requiredLanguages) && value.requiredLanguages.every((x) => typeof x === "string")) {
+    sanitized.requiredLanguages = value.requiredLanguages.map((s) => s.trim()).filter(Boolean);
+  }
+  if (typeof value.missionDescription === "string") {
+    sanitized.missionDescription = value.missionDescription;
+  }
+  if (value.searchBoolean === null || typeof value.searchBoolean === "string") {
+    sanitized.searchBoolean = value.searchBoolean;
+  }
+  if (Array.isArray(value.screeningCriteria) && value.screeningCriteria.every((x) => typeof x === "string")) {
+    sanitized.screeningCriteria = value.screeningCriteria.map((s) => s.trim()).filter(Boolean);
+  }
+  if (typeof value.preferOpenToWork === "boolean") {
+    sanitized.preferOpenToWork = value.preferOpenToWork;
+  }
   return evaluateNeedReadiness(sanitized).ready ? sanitized : null;
 }
 

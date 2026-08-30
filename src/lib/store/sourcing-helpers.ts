@@ -2,7 +2,8 @@ import { computeCoverage } from "../enrichment/merge";
 import type { SourceResult } from "../sourcing/candidate-mappers";
 import { dedupeCandidates } from "../rules";
 import { scoreCandidate, selectTopKByMatchScore, SHORTLIST_TOP_K_MAX } from "../scoring";
-import { meetsSourcingQualityBar, SOURCING_QUALITY_FLOOR } from "../sourcing/candidate-fit";
+import { eligibleForShortlist, SOURCING_QUALITY_FLOOR } from "../sourcing/candidate-fit";
+import { passesHardGates } from "../sourcing/hard-gates";
 import type { ApifyProfile } from "../sourcing/apify";
 import type { SillageProfile } from "../sourcing/sillage";
 import type { WebSearchPlatform } from "../sourcing/web-leads";
@@ -160,16 +161,23 @@ export function mapSillageCandidates(
     excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
   });
   const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
+    const { score, breakdown, evidence } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown, matchEvidence: evidence };
   });
-  const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
+  const gateOk = scored.filter((c) => passesHardGates(c, jd));
+  const quality = gateOk.filter((c) => eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok);
   return {
-    accepted: selectTopKByMatchScore(quality.length > 0 ? quality : scored, SHORTLIST_TOP_K_MAX, jd),
+    accepted: selectTopKByMatchScore(quality.length > 0 ? quality : gateOk, SHORTLIST_TOP_K_MAX, jd),
     skipped: [
       ...skipped,
       ...scored
-        .filter((c) => !meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
+        .filter((c) => !passesHardGates(c, jd))
+        .map((c) => ({
+          name: c.name,
+          reason: c.matchEvidence?.hardGateReasons.join("; ") || "Failed mandatory hard gates",
+        })),
+      ...gateOk
+        .filter((c) => !eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok)
         .map((c) => ({
           name: c.name,
           reason: `Match score ${c.matchScore} below ${SOURCING_QUALITY_FLOOR}% quality floor`,
@@ -245,6 +253,7 @@ export function mapApifyCandidates(
       },
       createdAt: at,
       provenance: "live",
+      openToWork: p.openToWork === true ? true : undefined,
       notes: [
         {
           id: genId("note"),
@@ -271,16 +280,23 @@ export function mapApifyCandidates(
     excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
   });
   const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
+    const { score, breakdown, evidence } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown, matchEvidence: evidence };
   });
-  const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
+  const gateOk = scored.filter((c) => passesHardGates(c, jd));
+  const quality = gateOk.filter((c) => eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok);
   return {
-    accepted: selectTopKByMatchScore(quality.length > 0 ? quality : scored, SHORTLIST_TOP_K_MAX, jd),
+    accepted: selectTopKByMatchScore(quality.length > 0 ? quality : gateOk, SHORTLIST_TOP_K_MAX, jd),
     skipped: [
       ...skipped,
       ...scored
-        .filter((c) => !meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
+        .filter((c) => !passesHardGates(c, jd))
+        .map((c) => ({
+          name: c.name,
+          reason: c.matchEvidence?.hardGateReasons.join("; ") || "Failed mandatory hard gates",
+        })),
+      ...gateOk
+        .filter((c) => !eligibleForShortlist(c, jd, SOURCING_QUALITY_FLOOR).ok)
         .map((c) => ({
           name: c.name,
           reason: `Match score ${c.matchScore} below ${SOURCING_QUALITY_FLOOR}% quality floor`,
