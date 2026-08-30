@@ -146,6 +146,8 @@ export interface HermesActions {
     meta: { hiringManager: string; hiringManagerEmail: string },
   ) => Campaign | null;
   updateCampaign: (id: string, patch: CampaignUpdate) => boolean;
+  /** Remove a campaign and cascade-linked candidates/outreach/replies/bookings. */
+  deleteCampaign: (id: string) => boolean;
   regenerateQueries: (id: string) => boolean;
 
   // sourcing

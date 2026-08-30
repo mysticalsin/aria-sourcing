@@ -85,13 +85,21 @@ function ChecklistRow({
  *  specific candidate signal. */
 function classifyEvidence(evidence: string, candidate: Candidate): MatchBreakdownItem["key"] | null {
   const text = evidence.toLowerCase();
+  // Fail-soft: sparse remote candidates may omit array fields before hydrate repair.
+  const techStack = Array.isArray(candidate.techStack) ? candidate.techStack : [];
+  const stages = Array.isArray(candidate.companyStageExperience)
+    ? candidate.companyStageExperience
+    : [];
+  const industries = Array.isArray(candidate.industryExperience)
+    ? candidate.industryExperience
+    : [];
 
-  if (candidate.techStack.some((skill) => skill.trim() && text.includes(skill.toLowerCase())))
+  if (techStack.some((skill) => skill.trim() && text.includes(skill.toLowerCase())))
     return "skills";
 
   if (/\byrs?\b|\byears?\b/.test(text)) return "experience";
 
-  const activityText = candidate.recentActivity.toLowerCase().replace(/\.$/, "");
+  const activityText = (candidate.recentActivity ?? "").toLowerCase().replace(/\.$/, "");
   if (activityText && text.includes(activityText)) return "activity";
   if (
     /this week|days ago|active|shipped|merged|launched|speaking|this month|recently|published|maintains|contribut|last year|inactive|dormant|quiet/.test(
@@ -100,16 +108,18 @@ function classifyEvidence(evidence: string, candidate: Candidate): MatchBreakdow
   )
     return "activity";
 
-  if (candidate.companyStageExperience.some((stage) => text.includes(stage.toLowerCase())))
-    return "companyStage";
+  if (stages.some((stage) => text.includes(stage.toLowerCase()))) return "companyStage";
   if (/stage compan/.test(text)) return "companyStage";
 
-  if (candidate.industryExperience.some((ind) => ind.trim() && text.includes(ind.toLowerCase())))
-    return "industry";
+  if (industries.some((ind) => ind.trim() && text.includes(ind.toLowerCase()))) return "industry";
 
-  if (candidate.location.trim() && text.includes(candidate.location.toLowerCase())) return "location";
+  if ((candidate.location ?? "").trim() && text.includes(candidate.location.toLowerCase()))
+    return "location";
 
-  if (candidate.currentCompany.trim() && text.includes(candidate.currentCompany.toLowerCase()))
+  if (
+    (candidate.currentCompany ?? "").trim() &&
+    text.includes(candidate.currentCompany.toLowerCase())
+  )
     return "companyStage";
 
   return null;

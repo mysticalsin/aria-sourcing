@@ -406,7 +406,8 @@ export default function SettingsPage() {
   }
 
   function patchNotify(key: keyof SystemSettings["notifications"], value: boolean) {
-    actions.updateSettings({ notifications: { ...settings.notifications, [key]: value } });
+    const base = settings.notifications ?? { slack: false, telegram: false, email: true };
+    actions.updateSettings({ notifications: { ...base, [key]: value } });
     const channel =
       key === "slack" ? "Slack" : key === "telegram" ? "Telegram" : "Email";
     toast({
@@ -821,7 +822,7 @@ export default function SettingsPage() {
                     icon={<Slack className="h-4 w-4" />}
                     label="Slack"
                     description="Preference only — post approvals and hot replies when a Slack webhook is configured (not wired yet)."
-                    checked={settings.notifications.slack}
+                    checked={settings.notifications?.slack === true}
                     onCheckedChange={(v) => patchNotify("slack", v)}
                   />
                   <ToggleRow
@@ -829,7 +830,7 @@ export default function SettingsPage() {
                     icon={<Send className="h-4 w-4" />}
                     label="Telegram"
                     description="Preference only — urgent escalations when a Telegram channel is configured (not wired yet)."
-                    checked={settings.notifications.telegram}
+                    checked={settings.notifications?.telegram === true}
                     onCheckedChange={(v) => patchNotify("telegram", v)}
                   />
                   <ToggleRow
@@ -837,7 +838,7 @@ export default function SettingsPage() {
                     icon={<Mail className="h-4 w-4" />}
                     label="Email"
                     description="Daily digest and immediate alerts to the operator inbox (uses connected mailbox when live)."
-                    checked={settings.notifications.email}
+                    checked={settings.notifications?.email !== false}
                     onCheckedChange={(v) => patchNotify("email", v)}
                   />
                 </div>

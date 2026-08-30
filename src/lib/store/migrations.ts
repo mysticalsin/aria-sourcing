@@ -4,15 +4,26 @@ import { DEFAULT_SCORING_WEIGHTS } from "../scoring";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
 import type {
+  Booking,
+  BookingStatus,
   Campaign,
   CampaignMetrics,
   CampaignStatus,
   Candidate,
+  ClassifiedReply,
   ComplianceFlags,
   HermesState,
   JobAnalysis,
+  OutreachChannel,
   OutreachMessage,
+  ReplyIntent,
+  SystemSettings,
   Urgency,
+} from "../types";
+import {
+  BOOKING_STATUSES,
+  OUTREACH_CHANNELS,
+  REPLY_INTENTS,
 } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
@@ -209,6 +220,11 @@ function repairComplianceFlags(raw: unknown): ComplianceFlags {
   };
 }
 
+function stringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((e): e is string => typeof e === "string");
+}
+
 function repairCandidates(raw: unknown): Candidate[] {
   if (!Array.isArray(raw)) return [];
   const out: Candidate[] = [];
@@ -250,6 +266,10 @@ function repairCandidates(raw: unknown): Candidate[] {
       booking: c.booking && typeof c.booking === "object" ? c.booking : null,
       notes: Array.isArray(c.notes) ? c.notes : [],
       complianceFlags: repairComplianceFlags(c.complianceFlags),
+      experience: stringArray(c.experience),
+      education: stringArray(c.education),
+      languages: stringArray(c.languages),
+      interviews: Array.isArray(c.interviews) ? c.interviews : [],
       createdAt: typeof c.createdAt === "string" ? c.createdAt : new Date(0).toISOString(),
     });
   }
@@ -276,9 +296,12 @@ function repairOutreach(raw: unknown): OutreachMessage[] {
       subject: typeof m.subject === "string" ? m.subject : "",
       body: typeof m.body === "string" ? m.body : "",
       tone: m.tone ?? "Casual Professional",
-      personalizationEvidence: Array.isArray(m.personalizationEvidence)
-        ? m.personalizationEvidence.filter((e): e is string => typeof e === "string")
-        : [],
+      personalizationEvidence: stringArray(m.personalizationEvidence),
+      qualityReasons: Array.isArray(m.qualityReasons)
+        ? stringArray(m.qualityReasons)
+        : m.qualityReasons === undefined
+          ? undefined
+          : [],
       status: m.status ?? "Draft",
       sequenceStep:
         typeof m.sequenceStep === "number" && Number.isFinite(m.sequenceStep) ? m.sequenceStep : 1,
@@ -290,6 +313,169 @@ function repairOutreach(raw: unknown): OutreachMessage[] {
     });
   }
   return out;
+}
+
+const VALID_REPLY_INTENT = new Set<string>(REPLY_INTENTS);
+const VALID_OUTREACH_CHANNEL = new Set<string>(OUTREACH_CHANNELS);
+const VALID_BOOKING_STATUS = new Set<string>(BOOKING_STATUSES);
+
+/**
+ * Sparse remote replies can omit string fields or land as holes in the array.
+ * /replies maps over the list and reads `.intent` / `.body` — fill safe defaults.
+ */
+function repairReplies(raw: unknown): ClassifiedReply[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ClassifiedReply[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as ClassifiedReply;
+    if (typeof r.id !== "string" || !r.id.trim()) continue;
+    if (typeof r.candidateId !== "string" || !r.candidateId.trim()) continue;
+    if (typeof r.campaignId !== "string" || !r.campaignId.trim()) continue;
+    const intent = VALID_REPLY_INTENT.has(r.intent) ? r.intent : ("UNCLEAR" as ReplyIntent);
+    const channel = VALID_OUTREACH_CHANNEL.has(r.channel)
+      ? r.channel
+      : ("Email" as OutreachChannel);
+    out.push({
+      ...r,
+      channel,
+      body: typeof r.body === "string" ? r.body : "",
+      intent,
+      confidence:
+        typeof r.confidence === "number" && Number.isFinite(r.confidence) ? r.confidence : 0,
+      reasoning: typeof r.reasoning === "string" ? r.reasoning : "",
+      suggestedAction: typeof r.suggestedAction === "string" ? r.suggestedAction : "",
+      draftResponse: typeof r.draftResponse === "string" ? r.draftResponse : "",
+      handled: r.handled === true,
+      slaDueAt: typeof r.slaDueAt === "string" ? r.slaDueAt : null,
+      receivedAt: typeof r.receivedAt === "string" ? r.receivedAt : new Date(0).toISOString(),
+    });
+  }
+  return out;
+}
+
+/**
+ * Sparse bookings often omit `agenda` (string[]). BookingCalendar and prep
+ * emails call `.slice`/`.map` and previously threw into error.tsx.
+ */
+function repairBookings(raw: unknown): Booking[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Booking[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const b = item as Booking;
+    if (typeof b.id !== "string" || !b.id.trim()) continue;
+    if (typeof b.candidateId !== "string" || !b.candidateId.trim()) continue;
+    if (typeof b.campaignId !== "string" || !b.campaignId.trim()) continue;
+    const status = VALID_BOOKING_STATUS.has(b.status)
+      ? b.status
+      : ("Proposed" as BookingStatus);
+    out.push({
+      ...b,
+      candidateName: typeof b.candidateName === "string" ? b.candidateName : "",
+      role: typeof b.role === "string" ? b.role : "",
+      startTime: typeof b.startTime === "string" ? b.startTime : new Date(0).toISOString(),
+      endTime: typeof b.endTime === "string" ? b.endTime : new Date(0).toISOString(),
+      timezone: typeof b.timezone === "string" ? b.timezone : "UTC",
+      interviewer: typeof b.interviewer === "string" ? b.interviewer : "",
+      interviewerEmail: typeof b.interviewerEmail === "string" ? b.interviewerEmail : "",
+      teamsLink: typeof b.teamsLink === "string" ? b.teamsLink : "",
+      calLink: typeof b.calLink === "string" ? b.calLink : "",
+      status,
+      agenda: stringArray(b.agenda),
+      createdAt: typeof b.createdAt === "string" ? b.createdAt : new Date(0).toISOString(),
+    });
+  }
+  return out;
+}
+
+function asObjectArray(raw: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (item): item is Record<string, unknown> =>
+      !!item && typeof item === "object" && !Array.isArray(item),
+  );
+}
+
+/**
+ * Settings toggles and arrays are read unbound on /settings (notifications.*,
+ * tools.map, mcpServers.map, llmProviders). Sparse remote settings must never
+ * throw — merge onto defaults.
+ */
+function repairSettings(raw: unknown): SystemSettings {
+  const defs = defaultSettings();
+  if (!raw || typeof raw !== "object") return defs;
+  const s = raw as Partial<SystemSettings> & Record<string, unknown>;
+  const notificationsRaw =
+    s.notifications && typeof s.notifications === "object"
+      ? (s.notifications as Partial<SystemSettings["notifications"]>)
+      : null;
+  const guardrailsRaw =
+    s.guardrails && typeof s.guardrails === "object"
+      ? (s.guardrails as Partial<SystemSettings["guardrails"]>)
+      : null;
+  const base = withoutLegacyIntegrationAuthority({
+    ...defs,
+    ...(s as SystemSettings),
+  });
+  return {
+    ...base,
+    humanApprovalGate: s.humanApprovalGate !== false,
+    dryRunMode: s.dryRunMode !== false,
+    minScoreToContact: Math.max(
+      80,
+      typeof s.minScoreToContact === "number" && Number.isFinite(s.minScoreToContact)
+        ? s.minScoreToContact
+        : defs.minScoreToContact,
+    ),
+    slaMinutes:
+      typeof s.slaMinutes === "number" && Number.isFinite(s.slaMinutes)
+        ? s.slaMinutes
+        : defs.slaMinutes,
+    operatorName: typeof s.operatorName === "string" ? s.operatorName : defs.operatorName,
+    systemIdentity:
+      typeof s.systemIdentity === "string" ? s.systemIdentity : defs.systemIdentity,
+    rateLimits:
+      s.rateLimits && typeof s.rateLimits === "object"
+        ? { ...defs.rateLimits, ...s.rateLimits }
+        : defs.rateLimits,
+    compliance:
+      s.compliance && typeof s.compliance === "object"
+        ? { ...defs.compliance, ...s.compliance }
+        : defs.compliance,
+    fleet: s.fleet && typeof s.fleet === "object" ? { ...defs.fleet, ...s.fleet } : defs.fleet,
+    confidentialityMode: s.confidentialityMode === true,
+    defaultLanguage:
+      typeof s.defaultLanguage === "string" ? s.defaultLanguage : defs.defaultLanguage,
+    soundEnabled: s.soundEnabled === true,
+    guardrails: {
+      ...defs.guardrails,
+      ...(guardrailsRaw ?? {}),
+      ariaPrompt:
+        typeof guardrailsRaw?.ariaPrompt === "string"
+          ? guardrailsRaw.ariaPrompt
+          : defs.guardrails.ariaPrompt,
+      rules: Array.isArray(guardrailsRaw?.rules) ? guardrailsRaw!.rules : defs.guardrails.rules,
+    },
+    notifications: {
+      slack: notificationsRaw?.slack === true,
+      telegram: notificationsRaw?.telegram === true,
+      email: notificationsRaw?.email !== false,
+    },
+    llmProviders: Array.isArray(s.llmProviders) ? s.llmProviders : defs.llmProviders,
+    savedModels: Array.isArray(s.savedModels) ? s.savedModels : defs.savedModels,
+    tools: Array.isArray(s.tools) ? s.tools : defs.tools,
+    mcpServers: Array.isArray(s.mcpServers) ? s.mcpServers : defs.mcpServers,
+    webResearch: s.webResearch ?? defs.webResearch,
+    defaultModels: s.defaultModels ?? defs.defaultModels,
+    hermesLiveMode: s.hermesLiveMode === true,
+    hermesApiUrl: typeof s.hermesApiUrl === "string" ? s.hermesApiUrl : defs.hermesApiUrl,
+    hermesApiKeyId:
+      typeof s.hermesApiKeyId === "string" ? s.hermesApiKeyId : defs.hermesApiKeyId,
+    hermesWebUrl: typeof s.hermesWebUrl === "string" ? s.hermesWebUrl : defs.hermesWebUrl ?? "",
+    heyreach: s.heyreach ?? defs.heyreach,
+    starRatingThresholds: s.starRatingThresholds ?? defs.starRatingThresholds,
+  };
 }
 
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
@@ -306,6 +492,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   const FAKE_CONNECTED_IDS = new Set(["int_github", "int_apify", "int_graph_teams", "int_sendgrid"]);
   const clean = preCleanSlate ? buildSeedState() : null;
+  const settingsSource = parsed.settings ?? defs;
   return {
     ...(clean ?? parsed),
     version: STATE_VERSION,
@@ -319,15 +506,23 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
           leadSource: c.leadSource ?? deriveLeadSource(c),
           starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
         })),
-    chatboxSubmissions: preCleanSlate ? [] : (parsed.chatboxSubmissions ?? []),
+    chatboxSubmissions: preCleanSlate
+      ? []
+      : (asObjectArray(parsed.chatboxSubmissions) as unknown as HermesState["chatboxSubmissions"]),
     outreach: preCleanSlate ? [] : repairOutreach(parsed.outreach),
-    replies: preCleanSlate ? [] : (parsed.replies ?? []),
-    bookings: preCleanSlate ? [] : (parsed.bookings ?? []),
-    wins: preCleanSlate ? [] : (parsed.wins ?? []),
-    reports: preCleanSlate ? [] : (parsed.reports ?? []),
-    activities: preCleanSlate ? clean!.activities : (parsed.activities ?? []),
-    ledger: preCleanSlate ? [] : (parsed.ledger ?? []),
-    ingestedMessageIds: preCleanSlate ? [] : (parsed.ingestedMessageIds ?? []),
+    replies: preCleanSlate ? [] : repairReplies(parsed.replies),
+    bookings: preCleanSlate ? [] : repairBookings(parsed.bookings),
+    wins: preCleanSlate ? [] : (asObjectArray(parsed.wins) as unknown as HermesState["wins"]),
+    reports: preCleanSlate ? [] : (asObjectArray(parsed.reports) as unknown as HermesState["reports"]),
+    activities: preCleanSlate
+      ? clean!.activities
+      : (asObjectArray(parsed.activities) as unknown as HermesState["activities"]),
+    ledger: preCleanSlate ? [] : (asObjectArray(parsed.ledger) as unknown as HermesState["ledger"]),
+    ingestedMessageIds: preCleanSlate
+      ? []
+      : Array.isArray(parsed.ingestedMessageIds)
+        ? parsed.ingestedMessageIds.filter((id): id is string => typeof id === "string")
+        : [],
     activeCampaignId: preCleanSlate ? clean!.activeCampaignId : (parsed.activeCampaignId ?? null),
     // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
     // the current seed. Roadmap placeholders (`real: false`) also lose any older
@@ -354,60 +549,52 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
             return { ...i, real: true };
           })
         : defaultIntegrations(),
-    apiKeys: parsed.apiKeys ?? [],
+    apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : [],
     currentRole: parsed.currentRole ?? "admin",
-    skills: parsed.skills ?? [],
-    suppression: parsed.suppression ?? [],
-    // Inbound-email dedup ledger — initialise on upgrade so re-sync after an
-    // upgrade can't double-create replies for already-ingested messages.
-    // STATE_VERSION 9 — per-agent chat threads.
-    chats: parsed.chats ?? [],
-    // STATE_VERSION 10 — per-agent memory.
-    memory: parsed.memory ?? [],
-    // STATE_VERSION 11 — schedules.
-    schedules: parsed.schedules ?? [],
-    // STATE_VERSION 14 — registered interviewer roster, replacing the hardcoded
-    // mock-ai INTERVIEWERS list. Falls back to that same seed roster (not an
-    // empty array) so a returning visitor's existing bookings keep matching a
-    // real name in the round-robin instead of silently losing their interviewers.
-    interviewers: parsed.interviewers ?? seedInterviewers(),
-    settings: {
-      ...withoutLegacyIntegrationAuthority(parsed.settings),
-      llmProviders: preKimi ? defs.llmProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
-      savedModels: preKimi ? defs.savedModels : (parsed.settings.savedModels ?? defs.savedModels),
-      tools: parsed.settings.tools ?? defs.tools,
-      mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
-      webResearch: parsed.settings.webResearch ?? defs.webResearch,
-      defaultModels: preKimi ? defs.defaultModels : (parsed.settings.defaultModels ?? defs.defaultModels),
-      // STATE_VERSION 8 — live Aria runtime config.
-      hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
-      hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,
-      hermesApiKeyId: parsed.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
-      // D-2: guardrails and notifications fills.
-      guardrails: parsed.settings.guardrails ?? defs.guardrails,
-      notifications: parsed.settings.notifications ?? defs.notifications,
-      // STATE_VERSION 13 — Mantu Star Rating thresholds.
-      starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
-      // STATE_VERSION 11 — Aria management API URL.
-      hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
-      heyreach: parsed.settings.heyreach ?? defs.heyreach,
-    },
-    seats: (parsed.seats ?? []).map((seat) => ({
+    skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+    suppression: Array.isArray(parsed.suppression) ? parsed.suppression : [],
+    chats: Array.isArray(parsed.chats) ? parsed.chats : [],
+    memory: Array.isArray(parsed.memory) ? parsed.memory : [],
+    schedules: Array.isArray(parsed.schedules) ? parsed.schedules : [],
+    interviewers:
+      Array.isArray(parsed.interviewers) && parsed.interviewers.length > 0
+        ? parsed.interviewers
+        : seedInterviewers(),
+    settings: repairSettings({
+      ...settingsSource,
+      llmProviders: preKimi ? defs.llmProviders : (settingsSource.llmProviders ?? defs.llmProviders),
+      savedModels: preKimi ? defs.savedModels : (settingsSource.savedModels ?? defs.savedModels),
+      tools: settingsSource.tools ?? defs.tools,
+      mcpServers: settingsSource.mcpServers ?? defs.mcpServers,
+      webResearch: settingsSource.webResearch ?? defs.webResearch,
+      defaultModels: preKimi
+        ? defs.defaultModels
+        : (settingsSource.defaultModels ?? defs.defaultModels),
+      hermesLiveMode: settingsSource.hermesLiveMode ?? defs.hermesLiveMode,
+      hermesApiUrl: settingsSource.hermesApiUrl ?? defs.hermesApiUrl,
+      hermesApiKeyId: settingsSource.hermesApiKeyId ?? defs.hermesApiKeyId,
+      guardrails: settingsSource.guardrails ?? defs.guardrails,
+      notifications: settingsSource.notifications ?? defs.notifications,
+      starRatingThresholds: settingsSource.starRatingThresholds ?? defs.starRatingThresholds,
+      hermesWebUrl: settingsSource.hermesWebUrl ?? defs.hermesWebUrl ?? "",
+      heyreach: settingsSource.heyreach ?? defs.heyreach,
+    }),
+    seats: (Array.isArray(parsed.seats) ? parsed.seats : []).map((seat) => ({
       ...seat,
       providerId: seat.providerId,
       modelId: seat.modelId,
-      toolIds: seat.toolIds,
+      toolIds: Array.isArray(seat.toolIds) ? seat.toolIds : [],
     })),
   };
 }
 
 export function normalizeHermesState(parsed: HermesState): HermesState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
-  const settings = withoutLegacyIntegrationAuthority(parsed.settings);
+  const settings = repairSettings(parsed.settings);
   const starT = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   return {
     ...parsed,
-    wins: parsed.wins ?? [],
+    wins: Array.isArray(parsed.wins) ? (asObjectArray(parsed.wins) as unknown as HermesState["wins"]) : [],
     campaigns: repairCampaigns(parsed.campaigns),
     candidates: repairCandidates(parsed.candidates).map((c) => ({
       ...c,
@@ -415,6 +602,32 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
       starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
     })),
     outreach: repairOutreach(parsed.outreach),
+    replies: repairReplies(parsed.replies),
+    bookings: repairBookings(parsed.bookings),
+    activities: Array.isArray(parsed.activities)
+      ? (asObjectArray(parsed.activities) as unknown as HermesState["activities"])
+      : [],
+    ledger: Array.isArray(parsed.ledger)
+      ? (asObjectArray(parsed.ledger) as unknown as HermesState["ledger"])
+      : [],
+    reports: Array.isArray(parsed.reports)
+      ? (asObjectArray(parsed.reports) as unknown as HermesState["reports"])
+      : [],
+    chatboxSubmissions: Array.isArray(parsed.chatboxSubmissions)
+      ? (asObjectArray(parsed.chatboxSubmissions) as unknown as HermesState["chatboxSubmissions"])
+      : [],
+    skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+    suppression: Array.isArray(parsed.suppression) ? parsed.suppression : [],
+    chats: Array.isArray(parsed.chats) ? parsed.chats : [],
+    memory: Array.isArray(parsed.memory) ? parsed.memory : [],
+    schedules: Array.isArray(parsed.schedules) ? parsed.schedules : [],
+    apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : [],
+    seats: Array.isArray(parsed.seats) ? parsed.seats : [],
+    interviewers:
+      Array.isArray(parsed.interviewers) && parsed.interviewers.length > 0
+        ? parsed.interviewers
+        : seedInterviewers(),
+    integrations: Array.isArray(parsed.integrations) ? parsed.integrations : defaultIntegrations(),
     settings: {
       ...settings,
       // Quality bar: never contact / accept below 80% unless operator raises further.

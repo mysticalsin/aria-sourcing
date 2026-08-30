@@ -234,7 +234,7 @@ function OutreachView() {
   const missingBasisCount = allCandidates.filter(
     (c) =>
       (campaignFilter === "all" ? true : c.campaignId === campaignFilter) &&
-      !c.complianceFlags.anonymized &&
+      !(c.complianceFlags?.anonymized) &&
       !recordedCandidateLawfulBasis(c),
   ).length;
 

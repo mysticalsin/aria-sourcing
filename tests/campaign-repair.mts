@@ -137,5 +137,109 @@ check("normalizeHermesState fills missing personalizationEvidence so /outreach c
   assert.equal(sparse.personalizationEvidence.length > 0, false);
 });
 
+
+check("normalizeHermesState repairs sparse replies so /replies cannot throw", () => {
+  const base = buildSeedState();
+  const polluted = {
+    ...base,
+    version: STATE_VERSION,
+    replies: [
+      null,
+      {
+        id: "reply:sparse",
+        candidateId: "cand:1",
+        campaignId: "camp:1",
+      },
+    ],
+  } as unknown as HermesState;
+
+  const normalized = normalizeHermesState(polluted);
+  assert.equal(normalized.replies.some((r) => !r), false);
+  const sparse = normalized.replies.find((r) => r.id === "reply:sparse");
+  assert.ok(sparse);
+  assert.equal(typeof sparse.body, "string");
+  assert.equal(sparse.intent, "UNCLEAR");
+  assert.equal(typeof sparse.confidence, "number");
+  assert.equal(sparse.handled, false);
+});
+
+check("normalizeHermesState repairs sparse bookings agenda so calendar cannot throw", () => {
+  const base = buildSeedState();
+  const polluted = {
+    ...base,
+    version: STATE_VERSION,
+    bookings: [
+      null,
+      {
+        id: "book:sparse",
+        candidateId: "cand:1",
+        campaignId: "camp:1",
+        startTime: "2026-09-01T10:00:00.000Z",
+        endTime: "2026-09-01T10:30:00.000Z",
+      },
+    ],
+  } as unknown as HermesState;
+
+  const normalized = normalizeHermesState(polluted);
+  assert.equal(normalized.bookings.some((b) => !b), false);
+  const sparse = normalized.bookings.find((b) => b.id === "book:sparse");
+  assert.ok(sparse);
+  assert.ok(Array.isArray(sparse.agenda));
+  assert.equal(sparse.agenda.slice(0, 3).length, 0);
+});
+
+check("normalizeHermesState repairs sparse settings notifications/tools arrays", () => {
+  const base = buildSeedState();
+  const polluted = {
+    ...base,
+    version: STATE_VERSION,
+    settings: {
+      ...base.settings,
+      notifications: undefined,
+      tools: null,
+      mcpServers: null,
+      llmProviders: null,
+      savedModels: null,
+      guardrails: null,
+    },
+  } as unknown as HermesState;
+
+  const normalized = normalizeHermesState(polluted);
+  assert.ok(normalized.settings.notifications);
+  assert.equal(typeof normalized.settings.notifications.slack, "boolean");
+  assert.equal(typeof normalized.settings.notifications.email, "boolean");
+  assert.ok(Array.isArray(normalized.settings.tools));
+  assert.ok(Array.isArray(normalized.settings.mcpServers));
+  assert.ok(Array.isArray(normalized.settings.llmProviders));
+  assert.ok(Array.isArray(normalized.settings.savedModels));
+  assert.ok(normalized.settings.guardrails);
+  assert.ok(Array.isArray(normalized.settings.guardrails.rules));
+});
+
+check("normalizeHermesState repairs candidate experience/education arrays", () => {
+  const base = buildSeedState();
+  const polluted = {
+    ...base,
+    version: STATE_VERSION,
+    candidates: [
+      {
+        id: "cand:sparse:arrays",
+        campaignId: "camp:1",
+        name: "Sparse Arrays",
+      },
+    ],
+  } as unknown as HermesState;
+
+  const normalized = normalizeHermesState(polluted);
+  const sparse = normalized.candidates.find((c) => c.id === "cand:sparse:arrays");
+  assert.ok(sparse);
+  assert.ok(Array.isArray(sparse.experience));
+  assert.ok(Array.isArray(sparse.education));
+  assert.ok(Array.isArray(sparse.languages));
+  assert.ok(Array.isArray(sparse.outreachHistory));
+  assert.ok(Array.isArray(sparse.replyHistory));
+  assert.equal(sparse.outreachHistory.length, 0);
+});
+
 console.log(`RESULT campaign-repair: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

@@ -29,6 +29,7 @@ export type CampaignActions = Pick<
   | "setActiveCampaign"
   | "createCampaignFromAnalysis"
   | "updateCampaign"
+  | "deleteCampaign"
   | "regenerateQueries"
 >;
 
@@ -465,10 +466,46 @@ export function createCampaignActions({
     return applied && generated;
   };
 
+  const deleteCampaign: CampaignActions["deleteCampaign"] = (id) => {
+    if (!campaignMutationAllowed()) return false;
+    if (!currentState()?.campaigns.some((campaign) => campaign.id === id)) {
+      return false;
+    }
+    return commit((state) => {
+      const title =
+        state.campaigns.find((campaign) => campaign.id === id)?.title ?? id;
+      const next: HermesState = {
+        ...state,
+        campaigns: state.campaigns.filter((campaign) => campaign.id !== id),
+        candidates: state.candidates.filter((c) => c.campaignId !== id),
+        outreach: state.outreach.filter((m) => m.campaignId !== id),
+        replies: state.replies.filter((r) => r.campaignId !== id),
+        bookings: state.bookings.filter((b) => b.campaignId !== id),
+        wins: (state.wins ?? []).filter((w) => w.campaignId !== id),
+        activeCampaignId:
+          state.activeCampaignId === id ? null : state.activeCampaignId,
+      };
+      return withActivity(
+        next,
+        makeActivity({
+          type: "campaign",
+          title: "Campaign deleted",
+          notes: `Removed “${title}” and linked pipeline records.`,
+          outcome: "Deleted",
+          campaignId: null,
+          linkedEntityType: "campaign",
+          linkedEntityId: id,
+        }),
+        null,
+      );
+    });
+  };
+
   return {
     setActiveCampaign,
     createCampaignFromAnalysis,
     updateCampaign,
+    deleteCampaign,
     regenerateQueries,
   };
 }

@@ -104,8 +104,8 @@ function LinkButton({
 function BookingRow({ booking }: { booking: Booking }) {
   const actions = useActions();
   const { toast } = useToast();
-  const previewAgenda = booking.agenda.slice(0, 3);
-  const extra = booking.agenda.length - previewAgenda.length;
+  const previewAgenda = Array.isArray(booking.agenda) ? booking.agenda.slice(0, 3) : [];
+  const extra = (Array.isArray(booking.agenda) ? booking.agenda.length : 0) - previewAgenda.length;
   const isTerminal = TERMINAL_STATUSES.has(booking.status);
 
   const [rescheduling, setRescheduling] = React.useState(false);

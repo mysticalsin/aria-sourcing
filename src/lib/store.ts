@@ -1081,6 +1081,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     setActiveCampaign,
     createCampaignFromAnalysis,
     updateCampaign,
+    deleteCampaign,
     regenerateQueries,
   } = useMemo(
     () =>
@@ -7066,6 +7067,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       setActiveCampaign,
       createCampaignFromAnalysis,
       updateCampaign,
+      deleteCampaign,
       regenerateQueries,
       sourceNextBatch,
       addCandidateFromGithub,
@@ -7199,7 +7201,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       removeInterviewer,
     }),
     [
-      setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
+      setActiveCampaign, createCampaignFromAnalysis, updateCampaign, deleteCampaign, regenerateQueries,
       sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,

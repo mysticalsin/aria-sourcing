@@ -65,6 +65,8 @@ export interface FitRadarProps {
 export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
   const reducedMotion = usePrefersReducedMotion();
   const [drawn, setDrawn] = React.useState(false);
+  // Fail-soft: sparse candidates may omit matchBreakdown before hydrate repair.
+  const breakdown = Array.isArray(matchBreakdown) ? matchBreakdown : [];
 
   React.useEffect(() => {
     if (reducedMotion) {
@@ -76,9 +78,9 @@ export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
     return () => cancelAnimationFrame(raf);
     // Re-key the draw-in whenever the underlying breakdown changes so
     // switching candidates re-plays the reveal instead of snapping silently.
-  }, [reducedMotion, matchBreakdown]);
+  }, [reducedMotion, breakdown]);
 
-  const n = matchBreakdown.length;
+  const n = breakdown.length;
 
   if (n === 0) {
     return (
@@ -99,17 +101,17 @@ export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
   const startAngle = -Math.PI / 2;
   const step = (Math.PI * 2) / n;
 
-  const dataPoints = matchBreakdown.map((item, i) =>
+  const dataPoints = breakdown.map((item, i) =>
     axisPoint(cx, cy, (clamp(item.score, 0, 100) / 100) * maxR, startAngle + i * step),
   );
   const dataPath = polygonPath(dataPoints);
 
-  const totalWeight = matchBreakdown.reduce((s, it) => s + it.weight, 0) || 1;
-  const overallScore = matchBreakdown.reduce((s, it) => s + it.score * it.weight, 0) / totalWeight;
+  const totalWeight = breakdown.reduce((s, it) => s + it.weight, 0) || 1;
+  const overallScore = breakdown.reduce((s, it) => s + it.score * it.weight, 0) / totalWeight;
   const tone = scoreTone(overallScore);
   const color = `hsl(var(${TONE_VAR[tone]}))`;
 
-  const summary = matchBreakdown.map((it) => `${it.label} ${round(it.score)}`).join(", ");
+  const summary = breakdown.map((it) => `${it.label} ${round(it.score)}`).join(", ");
   const noTransition = "none";
 
   return (
@@ -131,7 +133,7 @@ export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
             strokeWidth={1}
           />
         ))}
-        {matchBreakdown.map((item, i) => {
+        {breakdown.map((item, i) => {
           const p = axisPoint(cx, cy, maxR, startAngle + i * step);
           return (
             <line
@@ -177,7 +179,7 @@ export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
           />
         ))}
       </svg>
-      {matchBreakdown.map((item, i) => {
+      {breakdown.map((item, i) => {
         const p = axisPoint(cx, cy, labelR, startAngle + i * step);
         return (
           <div

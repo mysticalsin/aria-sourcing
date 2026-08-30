@@ -18,15 +18,32 @@ const TONE_VAR: Record<Tone, string> = {
   danger: "--danger",
 };
 
-export function MiniFunnel({ metrics }: { metrics: CampaignMetrics }) {
+export function MiniFunnel({ metrics }: { metrics: CampaignMetrics | null | undefined }) {
   const reducedMotion = usePrefersReducedMotion();
+  // Fail-soft: sparse remote campaigns can omit metrics before hydrate repair.
+  const m = metrics ?? {
+    sourced: 0,
+    contacted: 0,
+    replied: 0,
+    interested: 0,
+    booked: 0,
+    interviewed: 0,
+    offer: 0,
+    hired: 0,
+    notInterested: 0,
+    replyRate: 0,
+    avgMatchScore: 0,
+    timeToFirstInterviewHours: null,
+    emailsSentToday: 0,
+    linkedinSentToday: 0,
+  };
   const rows: { label: string; value: number; tone: Tone }[] = [
-    { label: "Sourced", value: metrics.sourced, tone: "neutral" },
-    { label: "Contacted", value: metrics.contacted, tone: "electric" },
-    { label: "Replied", value: metrics.replied, tone: "aqua" },
-    { label: "Booked", value: metrics.booked, tone: "violet" },
+    { label: "Sourced", value: m.sourced, tone: "neutral" },
+    { label: "Contacted", value: m.contacted, tone: "electric" },
+    { label: "Replied", value: m.replied, tone: "aqua" },
+    { label: "Booked", value: m.booked, tone: "violet" },
   ];
-  const max = Math.max(metrics.sourced, 1);
+  const max = Math.max(m.sourced, 1);
 
   return (
     <motion.div
