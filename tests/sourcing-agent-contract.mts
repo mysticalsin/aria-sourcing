@@ -247,3 +247,40 @@ test("requestReviewedSourcing maps non-JSON agent responses to the stable invali
   assert.equal(soft.value.candidates.length, 0);
   assert.equal(soft.value.totalFound, 0);
 });
+
+test("live Calypso-shaped campaigns still project when JobAnalysis has extras and queries lack label", () => {
+  const liveShaped = {
+    campaigns: [
+      {
+        ...campaign,
+        jobAnalysis: {
+          ...campaign.jobAnalysis,
+          linkedinBoolean: "(Calypso)",
+          localeContext: "Europe/Paris",
+          missionDescription: "BA for BNPP Calypso book",
+        },
+        sourcingStrategy: {
+          ...campaign.sourcingStrategy,
+          githubQueries: [
+            { id: "gq_1", query: "Calypso", rationale: "product signal", estimatedResults: 8 },
+            { label: "Calypso Montreal", query: "Calypso location:Montreal", estimatedResults: 40 },
+          ],
+        },
+      },
+    ],
+    candidates: [],
+    settings: { llmProviders: [], savedModels: [], defaultModels: {} },
+  };
+  const projected = projectSourcingAgentWorkspace(liveShaped, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(projected.value.campaign.jobAnalysis.title, campaign.jobAnalysis.title);
+  assert.equal(
+    "linkedinBoolean" in projected.value.campaign.jobAnalysis,
+    false,
+  );
+  assert.deepEqual(
+    projected.value.campaign.sourcingStrategy.githubQueries.map((q) => q.label),
+    ["Calypso", "Calypso Montreal"],
+  );
+});

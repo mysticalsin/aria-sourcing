@@ -64,8 +64,10 @@ const JobAnalysisSchema = z
     language: bounded(20).optional(),
     expectedStartDate: bounded(100).nullable().optional(),
     validationWarnings: z.array(ValidationWarningSchema).max(100),
-  })
-  .strict();
+  });
+  // Intentionally NOT .strict(): live workspace JobAnalysis may carry optional
+  // enrichment fields (localeContext, missionDescription, linkedinBoolean, …).
+  // Projection must strip unknowns and still authorize sourcing.
 
 const ScoringWeightsSchema = z
   .object({
@@ -90,11 +92,22 @@ const CampaignProjectionSchema = z.object({
       .array(
         z
           .object({
-            label: bounded(200),
+            label: bounded(200).optional(),
             query: bounded(500).min(1),
-            estimatedResults: z.number().finite().nonnegative(),
+            estimatedResults: z.number().finite().nonnegative().optional(),
           })
-          .strict(),
+          // Live queries may carry id/rationale; strip and normalize for the agent.
+          .passthrough()
+          .transform((query) => ({
+            label:
+              (typeof query.label === "string" && query.label.trim()) ||
+              query.query.slice(0, 200),
+            query: query.query,
+            estimatedResults:
+              typeof query.estimatedResults === "number" && Number.isFinite(query.estimatedResults)
+                ? query.estimatedResults
+                : 0,
+          })),
       )
       .max(100),
   }),
