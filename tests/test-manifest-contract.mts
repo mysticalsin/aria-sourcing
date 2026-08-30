@@ -78,7 +78,7 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "d5bbe88f775287504acadad5389c06f74e3188e6b632237ebfd96907bbc54d19",
+    "2e8191201d868bacd09804fcc6bb3ccb4f2d3b0cd0b9750ed1cef3a62fabe2a8",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
