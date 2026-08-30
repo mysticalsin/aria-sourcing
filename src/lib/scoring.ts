@@ -5,6 +5,19 @@ import type {
   ScoringWeights,
 } from "./types";
 import { clamp, round } from "./utils";
+import {
+  candidateIsFarFromEurope,
+  candidateMatchesEurope,
+  jobAnalysisIsEuropeFocused,
+  locationMatchesEuropeMacro,
+} from "./geo-europe";
+
+export {
+  candidateIsFarFromEurope,
+  candidateMatchesEurope,
+  europeSourcingLocationHints,
+  jobAnalysisIsEuropeFocused,
+} from "./geo-europe";
 
 export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   skills: 34,
@@ -65,9 +78,11 @@ function overlapCount(a: string[], b: string[]): number {
 
 function locationMatchesRegion(location: string, region: string): boolean {
   if (region.trim().toLowerCase() === "global") return true;
-  const escaped = region
-    .trim()
-    .toLowerCase()
+  const loc = location.trim().toLowerCase();
+  const reg = region.trim().toLowerCase();
+  if (!loc || !reg) return false;
+  if (locationMatchesEuropeMacro(loc, reg)) return true;
+  const escaped = reg
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     .replace(/\s+/g, "\\s+");
   return Boolean(escaped) && new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(location);
@@ -154,6 +169,10 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
   if (!c.location.trim() && !c.timezone.trim()) {
     return { score: 50, rationale: "Location and timezone not provided." };
   }
+  const europeFocus = jobAnalysisIsEuropeFocused(jd);
+  const europeHit = candidateMatchesEurope(c);
+  const farFromEurope = europeFocus && candidateIsFarFromEurope(c);
+
   if (jd.locationType === "Remote") {
     const timezoneAligned =
       Boolean(c.timezone) &&
@@ -162,6 +181,29 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
     const regionAligned =
       Boolean(c.location) &&
       jd.regions.some((region) => locationMatchesRegion(c.location, region));
+    // Europe/EMEA focus: remote-ok must still prefer EU timezones.
+    if (europeFocus) {
+      if (timezoneAligned || europeHit || regionAligned) {
+        return {
+          score: timezoneAligned ? 97 : europeHit ? 94 : 90,
+          rationale: timezoneAligned
+            ? `Remote Europe/EMEA role: timezone ${c.timezone} overlaps CET/UK hours.`
+            : europeHit
+              ? `Remote Europe/EMEA role: Europe-based candidate (${c.location || c.timezone}).`
+              : `Remote Europe/EMEA role: location ${c.location} matches a target region.`,
+        };
+      }
+      if (farFromEurope) {
+        return {
+          score: 32,
+          rationale: `Remote Europe/EMEA role: ${c.location || c.timezone} is outside European working hours.`,
+        };
+      }
+      return {
+        score: 58,
+        rationale: "Remote Europe/EMEA role: European timezone/location not confirmed.",
+      };
+    }
     const score = timezoneAligned ? 96 : regionAligned ? 90 : 80;
     return {
       score,
@@ -172,7 +214,29 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
           : "Remote role: working-hours overlap not confirmed.",
     };
   }
-  const inRegion = jd.regions.some((region) => locationMatchesRegion(c.location, region));
+  const inRegion =
+    jd.regions.some((region) => locationMatchesRegion(c.location, region)) ||
+    (jd.location ? locationMatchesRegion(c.location, jd.location) : false);
+  if (europeFocus) {
+    if (inRegion || europeHit) {
+      return {
+        score: inRegion ? 94 : 90,
+        rationale: inRegion
+          ? `Based in ${c.location}, within Europe/EMEA ${jd.locationType} range.`
+          : `Europe signal present (${c.location || c.timezone}) for Europe-focused role.`,
+      };
+    }
+    if (farFromEurope) {
+      return {
+        score: 28,
+        rationale: `Based in ${c.location || c.timezone}, outside Europe/EMEA catchment.`,
+      };
+    }
+    return {
+      score: 48,
+      rationale: `Based in ${c.location || "unknown"}, Europe/EMEA catchment not confirmed.`,
+    };
+  }
   const score = inRegion ? 92 : 48;
   return {
     score,

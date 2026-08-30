@@ -1,4 +1,4 @@
-import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
+import { DEFAULT_SCORING_WEIGHTS, scoreCandidate, europeSourcingLocationHints } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
@@ -280,8 +280,16 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   // Location → region + timezone (best-effort)
   const loc = titleCase(locationRaw || "");
-  const tz = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
+  const tz = text.match(/\b(CET|CEST|WET|WEST|BST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
   const regions = loc ? [loc] : [];
+  if (
+    regions.length === 0 &&
+    (/\b(?:CET|CEST|WET|WEST|BST)\b/i.test(tz) ||
+      /\b(?:Europe|EMEA|EU)\b/i.test(text) ||
+      (loc && /\b(?:Berlin|Paris|London|Amsterdam|Madrid|Warsaw|Dublin|Munich)\b/i.test(loc)))
+  ) {
+    regions.push("EU");
+  }
 
   // Start date m/d/yyyy → ISO. Null when the need email doesn't state one —
   // createCampaign applies its own default rather than baking a guess in here.
@@ -490,15 +498,41 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   else if (/\bhybrid\b/i.test(text)) locationType = "Hybrid";
   else if (/on-?site|in office|in-person/i.test(text)) locationType = "On-site";
 
-  // Regions
+  // Regions — include EMEA / major EU markets so Europe-focused JDs tag correctly.
   const regions: string[] = [];
-  for (const r of ["EU", "US", "UK", "APAC", "LATAM", "Europe", "Germany", "Canada", "Remote"]) {
-    if (new RegExp(`\\b${r}\\b`, "i").test(text)) regions.push(r === "Europe" ? "EU" : r);
+  for (const r of [
+    "EU",
+    "US",
+    "UK",
+    "APAC",
+    "LATAM",
+    "EMEA",
+    "Europe",
+    "Germany",
+    "France",
+    "Netherlands",
+    "Spain",
+    "Italy",
+    "Canada",
+    "Remote",
+  ]) {
+    if (new RegExp(`\\b${r}\\b`, "i").test(text)) {
+      regions.push(r === "Europe" ? "EU" : r);
+    }
   }
   // Timezone
-  const tzMatch = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
+  const tzMatch = text.match(/\b(CET|CEST|WET|WEST|BST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
 
   const location = extractLocation(text);
+  // CET/CEST (or Europe location) without an explicit region still implies EU focus.
+  if (
+    regions.length === 0 &&
+    (/\b(?:CET|CEST|WET|WEST|BST)\b/i.test(tzMatch) ||
+      /\b(?:Europe|EMEA|EU)\b/i.test(text) ||
+      (location && /\b(?:Berlin|Paris|London|Amsterdam|Madrid|Warsaw|Dublin|Munich)\b/i.test(location)))
+  ) {
+    regions.push("EU");
+  }
 
   // Salary
   const salaryNums = [...text.matchAll(/[€$£]?\s?(\d{2,3})\s?k\b/gi)].map((m) => parseInt(m[1], 10) * 1000);
@@ -640,12 +674,15 @@ Aria Sourcing`;
 // "London"). Continent/remote-status codes like "EU"/"APAC"/"Remote" essentially
 // never appear verbatim in a profile, so including them zeroes out an otherwise
 // good query. Only apply the qualifier for a region that's an actual place.
-const NON_LOCATION_REGIONS = new Set(["EU", "APAC", "LATAM", "Remote", "Global"]);
+const NON_LOCATION_REGIONS = new Set(["EU", "EMEA", "EEA", "APAC", "LATAM", "Remote", "Global"]);
 
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
+  const europeHints = europeSourcingLocationHints(jd);
   const region = jd.regions[0];
-  const locationQualifier = region && !NON_LOCATION_REGIONS.has(region) ? ` location:${region}` : "";
+  const concreteRegion =
+    region && !NON_LOCATION_REGIONS.has(region) ? region : europeHints[0] ?? "";
+  const locationQualifier = concreteRegion ? ` location:${concreteRegion}` : "";
   // Note: only user-search qualifiers are valid here (language:, location:,
   // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
   // out the whole query on /search/users.
@@ -657,9 +694,15 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     estimatedResults: 120 + i * 60,
   }));
 
+  const linkedinGeoTerms =
+    europeHints.length > 0
+      ? europeHints.slice(0, 4)
+      : jd.regions.filter((r) => !NON_LOCATION_REGIONS.has(r));
   const linkedinBoolean = `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
     .map((s) => `"${s}"`)
-    .join(" OR ")}) AND (${jd.regions.map((r) => `"${r}"`).join(" OR ")}) NOT "recruiter"`;
+    .join(" OR ")}) AND (${(linkedinGeoTerms.length ? linkedinGeoTerms : jd.regions)
+    .map((r) => `"${r}"`)
+    .join(" OR ")}) NOT "recruiter"`;
 
   const profile = roleProfile(jd);
   return {
@@ -670,7 +713,7 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     githubQueries,
     linkedinBoolean,
     stackOverflowTags: topSkills.map((s) => s.toLowerCase().replace(/\s+/g, "-")),
-    geoTargets: jd.regions,
+    geoTargets: europeHints.length > 0 ? europeHints : jd.regions,
     excludedCompanies: ["Granite Industries", "Eastfield Group"],
     targetCompanyStages: jd.companyStageTarget,
   };

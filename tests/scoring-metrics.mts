@@ -6,7 +6,12 @@ import {
   scoreCandidate,
   scoreDistribution,
   DEFAULT_SCORING_WEIGHTS,
+  jobAnalysisIsEuropeFocused,
+  candidateMatchesEurope,
+  candidateIsFarFromEurope,
+  europeSourcingLocationHints,
 } from "../src/lib/scoring";
+import { buildSourcingStrategy, parseEmailAndJD } from "../src/lib/mock-ai";
 import {
   computeCampaignMetrics,
   funnelForCandidates,
@@ -150,8 +155,10 @@ const skillsOnlyJd: JobAnalysis = {
   maxYearsExperience: null,
   companyStageTarget: [],
   industryExperience: [],
-  regions: ["EU"],
-  timezone: "CET",
+  // Non-matching, non-Europe region so remote mid-band stays 80 and can
+  // coincide with the skills score in the assertion below.
+  regions: ["APAC"],
+  timezone: "",
 };
 const skillsOnly = scoreCandidate(
   {
@@ -376,6 +383,119 @@ ok(
     campaignCreatedAt,
   ) === 0,
 );
+
+/* ---- Europe / EMEA timezone preference (remote-ok still prefers Europe) ---- */
+
+const europeJd: JobAnalysis = {
+  ...jd,
+  locationType: "Remote",
+  location: "Europe",
+  regions: ["EU", "EMEA", "Remote"],
+  timezone: "CET",
+  requiredSkills: ["TypeScript", "Node"],
+  niceToHaveSkills: ["Postgres"],
+  minYearsExperience: 5,
+  maxYearsExperience: 12,
+  companyStageTarget: [],
+  industryExperience: [],
+};
+
+ok("Europe JD detected as Europe-focused", jobAnalysisIsEuropeFocused(europeJd));
+ok(
+  "remote-ok international Europe JD still Europe-focused",
+  jobAnalysisIsEuropeFocused({
+    ...europeJd,
+    location: "International remote",
+    regions: ["Remote", "EU"],
+  }),
+);
+
+const europeBase = {
+  ...baseScoringCandidate,
+  currentTitle: "Senior Backend Engineer",
+  techStack: ["TypeScript", "Node", "Postgres"],
+  yearsExperience: 8,
+  companyStageExperience: [] as Candidate["companyStageExperience"],
+  industryExperience: [] as string[],
+  recentActivity: "Shipped this week",
+};
+
+const euPeer: Candidate = {
+  ...europeBase,
+  id: "cand-eu",
+  name: "Elena Europe",
+  location: "Berlin, Germany",
+  timezone: "CET",
+};
+const usPeer: Candidate = {
+  ...europeBase,
+  id: "cand-us",
+  name: "Alex America",
+  location: "New York, NY",
+  timezone: "EST",
+};
+const asiaPeer: Candidate = {
+  ...europeBase,
+  id: "cand-asia",
+  name: "Priya Asia",
+  location: "Singapore",
+  timezone: "SGT",
+};
+
+ok("EU candidate matches Europe", candidateMatchesEurope(euPeer));
+ok("US candidate is far from Europe", candidateIsFarFromEurope(usPeer));
+ok("Asia candidate is far from Europe", candidateIsFarFromEurope(asiaPeer));
+
+const europeScored = [euPeer, usPeer, asiaPeer].map((c) => {
+  const { score, breakdown } = scoreCandidate(c, europeJd, DEFAULT_SCORING_WEIGHTS);
+  return { id: c.id, score, breakdown };
+});
+const europeById = Object.fromEntries(europeScored.map((c) => [c.id, c]));
+ok(
+  `EU candidate outranks US peer (EU=${europeById["cand-eu"]!.score} US=${europeById["cand-us"]!.score})`,
+  europeById["cand-eu"]!.score > europeById["cand-us"]!.score,
+);
+ok(
+  `EU candidate outranks Asia peer (EU=${europeById["cand-eu"]!.score} Asia=${europeById["cand-asia"]!.score})`,
+  europeById["cand-eu"]!.score > europeById["cand-asia"]!.score,
+);
+const euLoc = europeById["cand-eu"]!.breakdown.find((b) => b.key === "location");
+const usLoc = europeById["cand-us"]!.breakdown.find((b) => b.key === "location");
+ok(
+  "Europe location rationale names Europe/EMEA",
+  /Europe|EMEA|CET/i.test(euLoc?.rationale ?? ""),
+);
+ok(
+  "US dampened on Europe JD (location score gap >= 40)",
+  (euLoc?.score ?? 0) - (usLoc?.score ?? 100) >= 40,
+);
+
+const europeHints = europeSourcingLocationHints(europeJd);
+ok(
+  "Europe sourcing hints include concrete countries",
+  europeHints.includes("Germany") && europeHints.includes("United Kingdom"),
+);
+const europeStrategy = buildSourcingStrategy(europeJd);
+ok(
+  "GitHub queries use concrete Europe location qualifier",
+  europeStrategy.githubQueries.some((q) =>
+    /location:(Germany|United Kingdom|France|Netherlands|Spain)/i.test(q.query),
+  ),
+);
+ok(
+  "geoTargets prefer concrete Europe hints over bare EU",
+  europeStrategy.geoTargets.some((g) => /Germany|United Kingdom|France/i.test(g)),
+);
+ok(
+  "LinkedIn boolean uses concrete Europe geos not bare EU-only",
+  /Germany|United Kingdom|France|Netherlands|Spain/i.test(europeStrategy.linkedinBoolean),
+);
+
+const europeParsed = parseEmailAndJD({
+  email: "Hiring a Senior Backend Engineer, fully remote across the EU (CET). Europe/EMEA focus.",
+});
+ok("mock JD parse tags EU for Europe/CET text", europeParsed.jobAnalysis.regions.includes("EU"));
+ok("mock JD parse captures CET timezone", europeParsed.jobAnalysis.timezone === "CET");
 
 /* ---- summary ------------------------------------------------------------- */
 console.log(`RESULT scoring: ${pass} passed, ${fail} failed`);
