@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 434
 agent: cursor-cloud
-updated: 2026-08-30T10:45Z
+updated: 2026-08-30T10:55Z
 status: post-merge-fly-green-qa-pass
 ---
 
@@ -10,7 +10,7 @@ status: post-merge-fly-green-qa-pass
 
 ## Current state
 
-- **integration** tip `3407a6a8c494fb19df7a9fe7e69b7e0ea6c4fe1e` == **main** tip (FF-synced)
+- **integration** tip `309c1797cb1a3480f0e8b312941523dec43d6a19` == **main** tip (FF-synced)
 - **Fly** `aria-mantu-app` build **matches** tip · `/api/ready` → `ok:true` · migration `0079_autopilot_enqueue_approval_hash_bind.sql`
 - **PR #48 MERGED** merge `eaf898f` (settings accordion + ready opt-out; head `f0b5760`)
 - **PR #50 MERGED** merge `ee09e21` (Command Center first-run; head after rebase `05db8b3`)
