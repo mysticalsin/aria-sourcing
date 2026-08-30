@@ -31,9 +31,9 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production") {
-      console.error(error);
-    }
+    // Always log — production Fly logs need the digest/message to diagnose
+    // "Something broke" without a demo login. Never render message to the UI.
+    console.error("[aria:error-boundary]", error.digest ?? "", error.message);
   }, [error]);
 
   return (
