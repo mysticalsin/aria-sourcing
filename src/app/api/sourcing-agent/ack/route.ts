@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { validateBody } from "@/lib/api/validate";
+import { requestSameOrigin } from "@/lib/api/same-origin-json";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import { ackAgentFrameworkSourcingEffect } from "@/lib/sourcing/learning-authority";
@@ -39,8 +40,7 @@ export async function POST(req: NextRequest) {
   if (prodFailClosed() || !supabaseEnabled) return fail(503, "SOURCING_AGENT_UNAVAILABLE");
   const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
   if (contentType.split(";", 1)[0]?.trim() !== "application/json") return fail(415, "INVALID_REQUEST");
-  const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) return fail(403, "CROSS_ORIGIN_REQUEST");
+  if (!requestSameOrigin(req)) return fail(403, "CROSS_ORIGIN_REQUEST");
   const validated = await validateBody(req, AckSchema, { maxBytes: 1_000 });
   if (!validated.ok) return fail(validated.response.status, "INVALID_REQUEST");
 

@@ -2,12 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { classifySameOriginJsonRequest } from "../src/lib/api/same-origin-json";
+import {
+  classifySameOriginJsonRequest,
+  requestSameOrigin,
+} from "../src/lib/api/same-origin-json";
 
-function request(origin: string | null, contentType: string | null, requestOrigin = "https://aria.example") {
+function request(
+  origin: string | null,
+  contentType: string | null,
+  requestOrigin = "https://aria.example",
+  extraHeaders: Record<string, string> = {},
+) {
   const headers = new Headers();
   if (origin !== null) headers.set("Origin", origin);
   if (contentType !== null) headers.set("Content-Type", contentType);
+  for (const [key, value] of Object.entries(extraHeaders)) headers.set(key, value);
   return { headers, nextUrl: { origin: requestOrigin } };
 }
 
@@ -39,6 +48,49 @@ test("JSON-shaped bodies under simple or missing media types are rejected", () =
       classifySameOriginJsonRequest(request("https://aria.example", contentType)),
       "unsupported_media_type",
     );
+  }
+});
+
+test("Fly HOSTNAME=0.0.0.0 nextUrl still accepts the public browser Origin via Host/forwarded", () => {
+  // Production bind address leaks into nextUrl.origin; browsers still send the public host.
+  const brokenNextUrl = "https://0.0.0.0:3000";
+  const publicOrigin = "https://aria-mantu-app.fly.dev";
+  assert.equal(
+    requestSameOrigin(
+      request(publicOrigin, "application/json", brokenNextUrl, {
+        Host: "aria-mantu-app.fly.dev",
+        "X-Forwarded-Host": "aria-mantu-app.fly.dev",
+        "X-Forwarded-Proto": "https",
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    classifySameOriginJsonRequest(
+      request(publicOrigin, "application/json", brokenNextUrl, {
+        Host: "aria-mantu-app.fly.dev",
+      }),
+    ),
+    "ok",
+  );
+  assert.equal(
+    requestSameOrigin(
+      request("https://evil.example", "application/json", brokenNextUrl, {
+        Host: "aria-mantu-app.fly.dev",
+      }),
+    ),
+    false,
+  );
+});
+
+test("sourcing-agent routes use requestSameOrigin (not raw nextUrl.origin equality)", () => {
+  const agent = readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8");
+  const ack = readFileSync(new URL("../src/app/api/sourcing-agent/ack/route.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../src/app/api/source/route.ts", import.meta.url), "utf8");
+  for (const body of [agent, ack, source]) {
+    assert.match(body, /requestSameOrigin/);
+    assert.doesNotMatch(body, /origin !== req\.nextUrl\.origin/);
+    assert.doesNotMatch(body, /origin === req\.nextUrl\.origin/);
   }
 });
 

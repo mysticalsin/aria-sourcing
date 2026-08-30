@@ -4,6 +4,7 @@ import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
+import { requestSameOrigin } from "@/lib/api/same-origin-json";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
@@ -67,8 +68,7 @@ function publicDemoSourceDenied(req: NextRequest): Response | null {
 
 function liveOriginDenied(req: NextRequest): Response | null {
   if (!supabaseEnabled) return null;
-  const origin = req.headers.get("origin");
-  if (origin === req.nextUrl.origin) return null;
+  if (requestSameOrigin(req)) return null;
   return NextResponse.json(
     { ok: false, code: "CROSS_ORIGIN_REQUEST", error: "Cross-origin sourcing is not allowed." },
     { status: 403 },
