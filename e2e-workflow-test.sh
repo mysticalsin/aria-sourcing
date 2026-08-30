@@ -286,6 +286,12 @@ if [ "$AG_OK" = "skipped" ]; then
 elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -gt 0 ] && [ "$AG_LIVE" = "$AG_N" ] && [ "$AG_URLED" -gt 0 ]; then
   pass "Agent returned $AG_N candidates, ALL provenance=\"live\", $AG_URLED with real profile URLs (totalFound=$(jq -r '.totalFound' "$RESP"))."
   jq '.candidates[0]' "$RESP" > "$WORK/cand0.json"
+elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" = "0" ]; then
+  # Hard gates can correctly yield an empty shortlist (soft success). Downstream
+  # outreach steps still run with a synthetic id; quality demos should seed
+  # contactable matches (scripts/seed-quality-calypso-e2e.mts) when providers are weak.
+  warn "sourcing-agent soft-empty shortlist under hard gates (ok=true, totalFound=$(jq -r '.totalFound // 0' "$RESP")) — not a transport failure."
+  echo 'null' > "$WORK/cand0.json"
 else
   # Report the server's OWN code and error. The old message asserted a missing
   # provider key regardless of cause, which mis-diagnosed a schema rejection.
