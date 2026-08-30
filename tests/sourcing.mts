@@ -66,20 +66,20 @@ const alice = mk({
   email: "alice@corp.io",
   company: "@zzz-unique-co", // absurd company name so it cannot be in any exclude list
   location: "London",
-  bio: "TypeScript and React engineer",
+  bio: "Go Kubernetes PostgreSQL gRPC Distributed Systems engineer",
   publicRepos: 42,
   followers: 120,
   createdAt: "2018-01-01T00:00:00Z",
-  topLanguage: "TypeScript",
+  topLanguage: "Go",
 });
-const r = mapGithubCandidates([alice], campaign, "language:typescript", [], W);
+const r = mapGithubCandidates([alice], campaign, "language:go", [], W);
 const a = r.accepted[0];
 ok("maps the user", r.accepted.length === 1);
 ok("real github url kept", a?.githubUrl === "https://github.com/alice");
 ok("real email kept", a?.email === "alice@corp.io");
 ok("company strips leading @", a?.currentCompany === "zzz-unique-co");
 ok("location kept", a?.location === "London");
-ok("techStack includes the query language", !!a?.techStack.includes("TypeScript"));
+ok("techStack includes the query language", !!a?.techStack.includes("Go"));
 ok("candidate is scored", typeof a?.matchScore === "number" && a.matchScore >= 0);
 ok("sourcePlatform is GitHub", a?.sourcePlatform === "GitHub");
 ok("stage is Sourced", a?.stage === "Sourced");
@@ -93,10 +93,10 @@ const apolloProfile: ApolloSearchProfile = {
   title: "Platform Engineer",
   company: "Example Corp",
   linkedinUrl: "https://www.linkedin.com/in/apollo-candidate",
-  city: "Toronto",
-  state: "Ontario",
-  country: "Canada",
-  headline: "Platform Engineer",
+  city: "Berlin",
+  state: "",
+  country: "Germany",
+  headline: "Platform Engineer — Go, Kubernetes, PostgreSQL, gRPC, Distributed Systems",
   seniority: "senior",
   departments: ["engineering"],
 };
@@ -108,14 +108,33 @@ ok(
 );
 
 // --- Name fallback + honest blank email ------------------------------------
-const bob = mk({ login: "bob", htmlUrl: "https://github.com/bob" });
+const FIT_BIO = "Go Kubernetes PostgreSQL gRPC Distributed Systems";
+const bob = mk({
+  login: "bob",
+  htmlUrl: "https://github.com/bob",
+  bio: FIT_BIO,
+  location: "Berlin",
+  topLanguage: "Go",
+});
 const rb = mapGithubCandidates([bob], campaign, "q", [], W);
 ok("name falls back to login when GitHub name is null", rb.accepted[0]?.name === "bob");
 ok("blank email stays blank (no fabricated address)", rb.accepted[0]?.email === "");
 
 // --- The dedupe fix: blank emails are NOT collapsed together ----------------
-const u1 = mk({ login: "noemail1", htmlUrl: "https://github.com/noemail1" });
-const u2 = mk({ login: "noemail2", htmlUrl: "https://github.com/noemail2" });
+const u1 = mk({
+  login: "noemail1",
+  htmlUrl: "https://github.com/noemail1",
+  bio: FIT_BIO,
+  location: "Berlin",
+  topLanguage: "Go",
+});
+const u2 = mk({
+  login: "noemail2",
+  htmlUrl: "https://github.com/noemail2",
+  bio: FIT_BIO,
+  location: "Berlin",
+  topLanguage: "Go",
+});
 const rd = mapGithubCandidates([u1, u2], campaign, "q", [], W);
 ok("two email-less users both accepted (deduped by URL, not blank email)", rd.accepted.length === 2);
 
@@ -265,10 +284,22 @@ ok("Dribbble suffix stripped from name", dribbbleLead.name === "Sam Rivera");
 
 // --- mapWebSearchCandidates: honest mapping + dedupe by sourceUrl -------
 const leads = [
-  { name: "Sam Rivera", title: "Product Designer", company: "Acme Corp", url: "https://dribbble.com/samrivera", snippet: "Figma, design systems" },
-  { name: "Sam Rivera", title: "Product Designer", company: "Acme Corp", url: "https://dribbble.com/samrivera", snippet: "Figma, design systems" },
+  {
+    name: "Sam Rivera",
+    title: "Senior Backend Engineer",
+    company: "Acme Corp",
+    url: "https://dribbble.com/samrivera",
+    snippet: "Go Kubernetes PostgreSQL gRPC Distributed Systems in Berlin",
+  },
+  {
+    name: "Sam Rivera",
+    title: "Senior Backend Engineer",
+    company: "Acme Corp",
+    url: "https://dribbble.com/samrivera",
+    snippet: "Go Kubernetes PostgreSQL gRPC Distributed Systems in Berlin",
+  },
 ];
-const webResult = mapWebSearchCandidates(leads, campaign, "site:dribbble.com Product Designer", "Dribbble", [], W);
+const webResult = mapWebSearchCandidates(leads, campaign, "site:dribbble.com Backend Engineer", "Dribbble", [], W);
 ok("web lead accepted once", webResult.accepted.length === 1);
 ok("duplicate web lead (same profile URL) deduped", webResult.skipped.length === 1);
 const w = webResult.accepted[0];
@@ -280,9 +311,17 @@ ok("candidate is scored", typeof w?.matchScore === "number");
 
 // LinkedIn leads populate linkedinUrl instead of sourceUrl, reusing existing dedupe.
 const liResult = mapWebSearchCandidates(
-  [{ name: "Jane Doe", title: "Senior Product Designer", company: "Acme Corp", url: "https://www.linkedin.com/in/jane-doe-4471", snippet: "" }],
+  [
+    {
+      name: "Jane Doe",
+      title: "Senior Backend Engineer",
+      company: "Acme Corp",
+      url: "https://www.linkedin.com/in/jane-doe-4471",
+      snippet: "Go Kubernetes PostgreSQL gRPC Distributed Systems Berlin",
+    },
+  ],
   campaign,
-  "site:linkedin.com/in Senior Product Designer",
+  "site:linkedin.com/in Senior Backend Engineer",
   "LinkedIn",
   [],
   W,

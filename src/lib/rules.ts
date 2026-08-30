@@ -357,8 +357,8 @@ export function dedupeCandidates(
     const li = normalizeLinkedInIdentity(cand.linkedinUrl);
     const gh = normalizeGithubIdentity(cand.githubUrl);
     const su = (cand.sourceUrl ?? "").toLowerCase();
-    const company = cand.currentCompany.toLowerCase();
-    const nc = identityNameCompanyKey(cand.name, cand.currentCompany);
+    const company = (cand.currentCompany ?? "").toLowerCase();
+    const nc = identityNameCompanyKey(cand.name ?? "", cand.currentCompany ?? "");
     const extKeys = externalIdKeys(cand);
 
     // Only treat a non-blank email as a dedupe key. Real sourced profiles (e.g.
