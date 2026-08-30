@@ -10,9 +10,9 @@ status: main-fly-synced-candidates-fix-landed
 
 ## Current state
 
-- **main = integration = Fly tip:** `602bad7275ead7c68db26da838b4ce274b94cbbf`
+- **main = integration = Fly tip:** `7d09d09f571740933997423b2d080cedd9fa7823`
 - **PR #42 MERGED** (candidates `complianceFlags` repair) — landed via FF into integration then main
-- **Fly:** `/api/ready` build `602bad7…`, healthy, migration `0079_…`
+- **Fly:** `/api/ready` build `7d09d09…`, healthy, migration `0079_…`
 - **Post-merge live E2E:** all routes PASS after hard refresh; sourcing CTA runs without error boundary
 - **Open PRs left:** #14 Dependabot brace-expansion; #3 draft flyctl workflow (`vercel-demo` lineage) — not on this tip
 
