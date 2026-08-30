@@ -329,15 +329,15 @@ try {
     firstName: "Test",
     lastName: "Candidate",
     headline: "Senior Go Engineer at Acme Corp",
-    about: "Distributed systems engineer working on Kubernetes and gRPC platforms.",
+    about: "Distributed systems engineer working on Kubernetes, gRPC, and PostgreSQL platforms.",
     location: { text: "Paris, France", countryCode: "FR" },
     connectionsCount: 500,
     followerCount: 1200,
     currentPosition: [{ title: "Senior Go Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
     experience: [{ title: "Senior Go Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
     education: [{ schoolName: "EPITA", degree: "MSc Computer Science", dateRange: "2012 - 2017" }],
-    topSkills: ["Go", "Kubernetes"],
-    skills: ["Go", "Kubernetes", "gRPC", "Distributed Systems"],
+    topSkills: ["Go", "Kubernetes", "PostgreSQL"],
+    skills: ["Go", "Kubernetes", "gRPC", "Distributed Systems", "PostgreSQL"],
     languages: ["English", "French"],
     openToWork: false,
     hiring: false,
@@ -375,6 +375,8 @@ try {
   ok("re-sourcing the same profile is deduped by linkedinUrl", second.accepted.length === 0 && second.skipped.length === 1);
 
   // --- honest blank email/name fallback for a Short-mode-shaped sparse profile
+  // Skills/about still clear hard gates so the mapper acceptance path is exercised;
+  // identity fields stay blank to prove we never fabricate name/email/company.
   const sparse: ApifyProfile = {
     ...profile,
     id: "sparse1",
@@ -383,12 +385,13 @@ try {
     firstName: "",
     lastName: "",
     headline: "",
-    about: "",
+    about: "Go Kubernetes PostgreSQL gRPC Distributed Systems engineer based in Paris",
     currentPosition: [],
-    topSkills: [],
-    skills: [],
+    topSkills: ["Go", "Kubernetes", "PostgreSQL"],
+    skills: ["Go", "Kubernetes", "PostgreSQL", "gRPC", "Distributed Systems"],
     languages: [],
     email: null,
+    location: { text: "Paris, France", countryCode: "FR" },
   };
   const sparseResult = mapApifyCandidates([sparse], campaign, "q", [], W);
   const sc = sparseResult.accepted[0];
