@@ -1,47 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 432
+shift: 433
 agent: cursor-cloud
-updated: 2026-08-30T07:53Z
-status: pr48-ready-optout-live-green
+updated: 2026-08-30T10:26Z
+status: pr48-merged-pr50-rebasing
 ---
 
-# Handoff — Shift 432
+# Handoff — Shift 433
 
 ## Current state
 
-- **PR #48** tip `8589332` · **9 files** · Fly build **matches** `858933263e1b73657fcaf7acb5290f9b843f24e2`
-- **`/api/ready` → `ok:true`** · `agentFrameworks:true` (opt-out honored; secret `AGENT_FRAMEWORKS_REQUIRED=false`)
-- Ready formula: `AGENT_FRAMEWORKS_REQUIRED === "true" || (NODE_ENV===production && !== "false")`
-- Settings accordion one-open proven live: screenshots `/opt/cursor/artifacts/screenshots/pr48-ready-fly-*.png`
-- **Did not** bring megapr back; **did not** merge; Graph/Microsoft HOLD unchanged
+- **PR #48 MERGED** → `eaf898f` on `integration/sourcing-enrichment-on-main` (head tip `f0b5760`)
+- **Fly** already on `f0b5760` · `/api/ready` → `ok:true`
+- **PR #50** undrafted; rebasing onto `eaf898f` (manifest digests recomputed for accordion + firstrun suites)
+- **PR #49** CLOSED — not merging
+- GHA/Vercel budget phantoms ignored (Fly-only)
 
 ## Done this shift
 
-1. Patched `src/app/api/ready/route.ts` + `tests/readiness.mts` only (beyond prior 7 settings files)
-2. Commit `8589332` pushed on `cursor/settings-accordion-ux-b91d`
-3. App-only Fly redeploy (preserved 0079 migration identity; skipped bootstrap)
-4. Proved ready green + Settings accordion screenshots
+1. Merged PR #48 via `gh pr merge 48 --merge`
+2. `gh pr ready 50`; rebase onto post-#48 integration in progress
 
 ## Blockers
 
-none for ready gate / Fly tip match
+none for merge path (local gate still required before merge #50)
 
 ## Next steps
 
 ```bash
-gh pr view 48 --json changedFiles,additions,deletions,files,headRefOid
+# finish rebase, push --force-with-lease, local gate, gh pr merge 50 --merge
+# FF main to integration; deploy tip if ≠ Fly; QA
 curl -sS https://aria-mantu-app.fly.dev/api/ready
-# Parent: ManagePullRequest body update; owner merge decision
 ```
 
 ## Decisions made (don't relitigate)
 
-- Minimal widen of PR #48 for ready opt-out authorized by Tony (not megapr)
-- App-only slim deploy preserves live ARIA_EXPECTED_* (0079 / count 78); tip ledger ends 0054
-- Prefer Fly secret + tip code opt-out over megapr redeploy
+- Fly-only production; ignore GHA/Vercel budget reds for merge
+- No megapr reintroduction; Graph/Microsoft HOLD
+- Prefer FF-sync `main` to `integration/sourcing-enrichment-on-main` after merges
 
 ## Watch out
 
-- Do not re-expand PR with SMART/OCR/Europe/scoring/autopilot
-- Stock `fly-deploy-now.sh` refuses tip (migration floor ≥0066) — use app-only slim script
+- Manifest contract digests must include BOTH `settings-accordion` and `command-center-firstrun` after rebase
+- Do not merge OCR / Europe megapr dumps
