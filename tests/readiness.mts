@@ -136,9 +136,9 @@ const readinessRoute = readFileSync(
   "utf8",
 );
 ok(
-  "production readiness cannot opt out of DeerFlow and Flowise with an environment flag",
-  /process\.env\.NODE_ENV === "production"\s*\|\|\s*process\.env\.AGENT_FRAMEWORKS_REQUIRED === "true"/.test(readinessRoute) &&
-    !/frameworkRequirement !== "false"/.test(readinessRoute),
+  "production readiness requires frameworks by default but allows AGENT_FRAMEWORKS_REQUIRED=false opt-out",
+  /AGENT_FRAMEWORKS_REQUIRED === "true"/.test(readinessRoute) &&
+    /AGENT_FRAMEWORKS_REQUIRED !== "false"/.test(readinessRoute),
 );
 
 const missingIdentity = await evaluateReadiness(

@@ -57,22 +57,46 @@ import {
   BrainCircuit,
   Wrench,
   Info,
+  ChevronDown,
 } from "lucide-react";
+import {
+  SETTINGS_N_TO_TAB,
+  readSettingsOpenSectionSession,
+  resolveSettingsOpenSection,
+  settingsHeaderId,
+  settingsNeighborSection,
+  settingsPanelId,
+  settingsSectionId,
+  settingsSectionsForTab,
+  settingsTabFromHash,
+  writeSettingsOpenSectionSession,
+} from "@/lib/settings-accordion";
 
 /* ---- tabbed navigation -------------------------------------------------- */
 
 const SettingsTabContext = React.createContext("integrations");
 
-/** Maps each numbered section to the tab it lives under. */
-const N_TO_TAB: Record<string, string> = {
-  "04": "integrations",
-  "14": "ai", "15": "ai", "16": "ai", "17": "ai", "19": "ai",
-  "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
-  "02": "compliance", "05": "compliance", "07": "compliance",
-  "08": "voice", "13": "voice",
-  "11": "access", "12": "access",
-  "01": "workspace", "10": "workspace",
+type AccordionCtx = {
+  openSection: string | null;
+  setOpenSection: (n: string) => void;
+  focusSectionHeader: (n: string) => void;
 };
+
+const SettingsAccordionContext = React.createContext<AccordionCtx>({
+  openSection: null,
+  setOpenSection: () => {},
+  focusSectionHeader: () => {},
+});
+
+const VALID_TABS = new Set([
+  "integrations",
+  "ai",
+  "fleet",
+  "compliance",
+  "voice",
+  "access",
+  "workspace",
+]);
 
 const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "integrations", label: "Integrations", icon: <Plug2 className="h-4 w-4" /> },
@@ -100,19 +124,125 @@ function Section({
   children: React.ReactNode;
 }) {
   const activeTab = React.useContext(SettingsTabContext);
-  if (N_TO_TAB[n] && N_TO_TAB[n] !== activeTab) return null;
-  return (
-    <section className="grid gap-5 border-t border-line py-10 first:border-t-0 first:pt-0 lg:grid-cols-[240px_1fr] lg:gap-10">
-      <div className="flex items-start gap-3 lg:flex-col lg:gap-2">
-        <SectionNumeral n={n} />
-        <div className="min-w-0">
-          <Eyebrow>{eyebrow}</Eyebrow>
-          <h2 className="display text-xl text-ink">{title}</h2>
-          <p className="mt-1.5 max-w-xs text-sm text-muted">{description}</p>
+  const { openSection, setOpenSection, focusSectionHeader } =
+    React.useContext(SettingsAccordionContext);
+  if (SETTINGS_N_TO_TAB[n] && SETTINGS_N_TO_TAB[n] !== activeTab) return null;
+
+  const siblings = settingsSectionsForTab(activeTab);
+  const isSolo = siblings.length <= 1;
+  const isOpen = isSolo || openSection === n;
+  const panelId = settingsPanelId(n);
+  const headerId = settingsHeaderId(n);
+
+  const onAccordionKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    let direction: "next" | "prev" | "first" | "last" | null = null;
+    if (e.key === "ArrowDown") direction = "next";
+    else if (e.key === "ArrowUp") direction = "prev";
+    else if (e.key === "Home") direction = "first";
+    else if (e.key === "End") direction = "last";
+    if (!direction) return;
+    e.preventDefault();
+    const target = settingsNeighborSection(activeTab, n, direction);
+    if (!target) return;
+    setOpenSection(target);
+    focusSectionHeader(target);
+  };
+
+  // Solo tabs: dense always-open panel (no accordion chrome).
+  if (isSolo) {
+    return (
+      <section
+        id={settingsSectionId(n)}
+        className="scroll-mt-20 border-t border-line py-4 first:border-t-0 first:pt-0"
+      >
+        <div className="mb-3 flex items-start gap-3">
+          <SectionNumeral n={n} />
+          <div className="min-w-0">
+            <Eyebrow>{eyebrow}</Eyebrow>
+            <h2 className="display text-lg text-ink sm:text-xl">{title}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>
+          </div>
         </div>
-      </div>
-      <div className="space-y-4">{children}</div>
+        <div className="space-y-3">{children}</div>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      id={settingsSectionId(n)}
+      className="scroll-mt-20 border-t border-line first:border-t-0"
+    >
+      <h2 className="m-0">
+        <button
+          type="button"
+          id={headerId}
+          aria-expanded={isOpen}
+          aria-controls={panelId}
+          onClick={() => setOpenSection(n)}
+          onKeyDown={onAccordionKeyDown}
+          className={cn(
+            "flex w-full items-center gap-3 py-2.5 text-left transition-colors",
+            "hover:bg-ink/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric",
+            isOpen ? "bg-ink/[0.02]" : "",
+          )}
+        >
+          <SectionNumeral n={n} />
+          <div className="min-w-0 flex-1">
+            <Eyebrow>{eyebrow}</Eyebrow>
+            <span className="display block text-base text-ink sm:text-lg">{title}</span>
+            <span
+              className={cn(
+                "mt-0.5 line-clamp-1 block text-xs text-muted",
+                isOpen && "invisible",
+              )}
+              aria-hidden={isOpen}
+            >
+              {description}
+            </span>
+          </div>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-muted transition-transform duration-150",
+              isOpen && "rotate-180",
+            )}
+            aria-hidden
+          />
+        </button>
+      </h2>
+      <AccordionPanel id={panelId} headerId={headerId} isOpen={isOpen}>
+        <p className="text-sm text-muted">{description}</p>
+        {children}
+      </AccordionPanel>
     </section>
+  );
+}
+
+function AccordionPanel({
+  id,
+  headerId,
+  isOpen,
+  children,
+}: {
+  id: string;
+  headerId: string;
+  isOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [mounted, setMounted] = React.useState(isOpen);
+  React.useEffect(() => {
+    if (isOpen) setMounted(true);
+  }, [isOpen]);
+  return (
+    <div
+      id={id}
+      role="region"
+      aria-labelledby={headerId}
+      hidden={!isOpen}
+      className="space-y-3 pb-4 pt-1"
+    >
+      {mounted ? children : null}
+    </div>
   );
 }
 
@@ -206,23 +336,161 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = React.useState("integrations");
+  const [openSection, setOpenSectionState] = React.useState<string | null>(() =>
+    resolveSettingsOpenSection({ tab: "integrations" }),
+  );
+  const pendingScrollHashRef = React.useRef<string | null>(null);
+  const scrollGenerationRef = React.useRef(0);
   const canResetSyntheticDemo = !supabaseEnabled;
+
+  const queueHashScroll = React.useCallback((hash: string | null | undefined) => {
+    const cleaned = hash?.replace(/^#/, "").trim() || null;
+    pendingScrollHashRef.current = cleaned;
+    scrollGenerationRef.current += 1;
+  }, []);
+
+  const focusSectionHeader = React.useCallback((n: string) => {
+    if (typeof document === "undefined") return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(settingsHeaderId(n))?.focus();
+    });
+  }, []);
+
+  const setOpenSection = React.useCallback((n: string) => {
+    setOpenSectionState(n);
+    const tab = SETTINGS_N_TO_TAB[n];
+    if (tab) writeSettingsOpenSectionSession(tab, n);
+  }, []);
+
+  const goTab = React.useCallback(
+    (id: string, opts?: { hash?: string | null }) => {
+      if (!VALID_TABS.has(id)) return;
+      const hash = opts?.hash?.replace(/^#/, "") || null;
+      const nextOpen = resolveSettingsOpenSection({
+        tab: id,
+        hash,
+        currentOpen: null,
+        sessionOpen: hash ? null : readSettingsOpenSectionSession(id),
+      });
+      setActiveTab(id);
+      setOpenSectionState(nextOpen);
+      if (nextOpen) writeSettingsOpenSectionSession(id, nextOpen);
+      if (hash) queueHashScroll(hash);
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", id);
+        window.history.replaceState(
+          {},
+          "",
+          hash
+            ? `${url.pathname}?${url.searchParams.toString()}#${hash}`
+            : `${url.pathname}?${url.searchParams.toString()}`,
+        );
+      }
+    },
+    [queueHashScroll],
+  );
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab");
+    const hash = window.location.hash.replace(/^#/, "");
+    const resolvedTab =
+      (tabParam && VALID_TABS.has(tabParam) ? tabParam : null) ??
+      settingsTabFromHash(hash) ??
+      "integrations";
+    const nextOpen = resolveSettingsOpenSection({
+      tab: resolvedTab,
+      hash: hash || null,
+      currentOpen: null,
+      sessionOpen: hash ? null : readSettingsOpenSectionSession(resolvedTab),
+    });
+    setActiveTab(resolvedTab);
+    setOpenSectionState(nextOpen);
+    if (nextOpen) writeSettingsOpenSectionSession(resolvedTab, nextOpen);
+    if (hash) queueHashScroll(hash);
+
+    if ((!tabParam || !VALID_TABS.has(tabParam)) && settingsTabFromHash(hash)) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", resolvedTab);
+      window.history.replaceState(
+        {},
+        "",
+        `${url.pathname}?${url.searchParams.toString()}${hash ? `#${hash}` : ""}`,
+      );
+    }
+
     const oauth = params.get("oauth");
     const message = params.get("message");
     if (oauth === "success") {
       toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      goTab("integrations", { hash: "email-connections-panel" });
     } else if (oauth === "error") {
       toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      goTab("integrations");
     }
-  }, [toast]);
+  }, [toast, goTab, queueHashScroll]);
+
+  React.useEffect(() => {
+    const hash = pendingScrollHashRef.current;
+    if (!hash || typeof document === "undefined") return;
+    const generation = scrollGenerationRef.current;
+    let cancelled = false;
+    let attempts = 0;
+    const tryScroll = () => {
+      if (cancelled || generation !== scrollGenerationRef.current) return;
+      const el = document.getElementById(hash);
+      if (el) {
+        pendingScrollHashRef.current = null;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      attempts += 1;
+      if (attempts < 20) {
+        window.requestAnimationFrame(tryScroll);
+      }
+    };
+    window.requestAnimationFrame(tryScroll);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, openSection, hydrated]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onHashChange() {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return;
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      const tabFromHash = settingsTabFromHash(hash);
+      const tab =
+        tabFromHash ??
+        (tabParam && VALID_TABS.has(tabParam) ? tabParam : null) ??
+        activeTab;
+      const nextOpen = resolveSettingsOpenSection({
+        tab,
+        hash,
+        currentOpen: null,
+      });
+      setActiveTab(tab);
+      setOpenSectionState(nextOpen);
+      if (nextOpen) writeSettingsOpenSectionSession(tab, nextOpen);
+      if (tabParam !== tab) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", tab);
+        window.history.replaceState(
+          {},
+          "",
+          `${url.pathname}?${url.searchParams.toString()}#${hash}`,
+        );
+      }
+      queueHashScroll(hash);
+    }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [activeTab, queueHashScroll]);
 
   const summary = integrationHealthSummary(integrations);
 
@@ -328,7 +596,7 @@ export default function SettingsPage() {
                   id={`settings-tab-${t.id}`}
                   aria-selected={activeTab === t.id}
                   aria-controls="settings-panel"
-                  onClick={() => setActiveTab(t.id)}
+                  onClick={() => goTab(t.id)}
                   className={cn(
                     "inline-flex shrink-0 snap-start items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 lg:w-full",
                     activeTab === t.id
@@ -344,6 +612,9 @@ export default function SettingsPage() {
           </div>
 
           <SettingsTabContext.Provider value={activeTab}>
+            <SettingsAccordionContext.Provider
+              value={{ openSection, setOpenSection, focusSectionHeader }}
+            >
             <div
               className="min-w-0"
               id="settings-panel"
@@ -1008,6 +1279,7 @@ export default function SettingsPage() {
             </div>
           </Section>
             </div>
+            </SettingsAccordionContext.Provider>
           </SettingsTabContext.Provider>
         </div>
       </HydrationGate>
