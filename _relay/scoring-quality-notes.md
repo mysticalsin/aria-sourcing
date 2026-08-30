@@ -10,6 +10,7 @@
 3. **Seniority band** — years scored only when `yearsExperience` is provided (never fabricated). Mid-band (e.g. 7–10) preferred over bare minimum.
 4. **Language** — only when `JobAnalysis.requiredLanguages` is set (VSS Language Must → mock-ai fills this). Blended into location dimension.
 5. **Montreal / remote** — geo match + Montreal signal when JD targets Montreal.
+5b. **Europe / EMEA** — when JD signals Europe/EMEA/UK/EU/CET (incl. remote-ok), boost Europe-based candidates and dampen Americas/Asia far zones in `scoreLocation`. Provider filters get `europeSourcingLocationHints` (Germany/UK/France/…). Helpers in `src/lib/geo-europe.ts`.
 6. **Weak/generic resumes** — dampened; **synthetic** provenance ×0.92 (no demo inflation).
 7. **Ranking** — `rankScoredCandidates` / `selectTopKByMatchScore`: score **full** set → sort by quality → top-K. Volume is not the limiter.
 

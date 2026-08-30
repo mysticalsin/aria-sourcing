@@ -13,7 +13,7 @@ import {
   meetsSourcingQualityBar,
   SOURCING_QUALITY_FLOOR,
 } from "@/lib/sourcing/candidate-fit";
-import { selectTopKByMatchScore } from "@/lib/scoring";
+import { selectTopKByMatchScore, europeSourcingLocationHints } from "@/lib/scoring";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import type { Campaign } from "@/lib/types";
 import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
@@ -64,10 +64,20 @@ export const linkedinProfilesProvider: SourcingProvider = {
     if (!clearance.ok) return { ok: false, accepted: [], skipped: [], error: clearance.error };
 
     const jd = ctx.campaign.jobAnalysis;
+    const europeHints = europeSourcingLocationHints(jd);
+    const locationFilters = [
+      ...europeHints,
+      ...jd.regions.filter((r) => r.trim() && !/^(eu|eea|emea|europe|remote|global|international)$/i.test(r.trim())),
+    ]
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const dedupedLocations = Array.from(
+      new Map(locationFilters.map((l) => [l.toLowerCase(), l])).values(),
+    ).slice(0, 5);
     const input: ApifyProfileSearchInput = {
       searchQuery: query,
       currentJobTitles: jd.title.trim() ? [jd.title.trim()] : undefined,
-      locations: jd.regions.filter(Boolean).slice(0, 3),
+      locations: dedupedLocations.length > 0 ? dedupedLocations : jd.regions.filter(Boolean).slice(0, 3),
       maxItems: Math.min(Math.max(count * 2, 10), 50),
       profileScraperMode: "Short",
     };

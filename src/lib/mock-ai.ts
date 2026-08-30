@@ -1,4 +1,4 @@
-import { DEFAULT_SCORING_WEIGHTS, scoreCandidate, selectTopKByMatchScore } from "./scoring";
+import { DEFAULT_SCORING_WEIGHTS, scoreCandidate, selectTopKByMatchScore, europeSourcingLocationHints } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "./mantu-brand";
@@ -668,15 +668,40 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   else if (/\bhybrid\b/i.test(text)) locationType = "Hybrid";
   else if (/on-?site|in office|in-person/i.test(text)) locationType = "On-site";
 
-  // Regions
+  // Regions — include EMEA / major EU markets so Europe-focused JDs tag correctly.
   const regions: string[] = [];
-  for (const r of ["EU", "US", "UK", "APAC", "LATAM", "Europe", "Germany", "Canada", "Remote"]) {
-    if (new RegExp(`\\b${r}\\b`, "i").test(text)) regions.push(r === "Europe" ? "EU" : r);
+  for (const r of [
+    "EU",
+    "US",
+    "UK",
+    "APAC",
+    "LATAM",
+    "EMEA",
+    "Europe",
+    "Germany",
+    "France",
+    "Netherlands",
+    "Spain",
+    "Italy",
+    "Canada",
+    "Remote",
+  ]) {
+    if (new RegExp(`\\b${r}\\b`, "i").test(text)) {
+      regions.push(r === "Europe" ? "EU" : r);
+    }
   }
   // Timezone
-  const tzMatch = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
-
+  const tzMatch = text.match(/\b(CET|CEST|WET|WEST|BST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
   const location = extractLocation(text);
+  // CET/CEST (or Europe location) without an explicit region still implies EU focus.
+  if (
+    regions.length === 0 &&
+    (/\b(?:CET|CEST|WET|WEST|BST)\b/i.test(tzMatch) ||
+      /\b(?:Europe|EMEA|EU)\b/i.test(text) ||
+      (location && /\b(?:Berlin|Paris|London|Amsterdam|Madrid|Warsaw|Dublin|Munich)\b/i.test(location)))
+  ) {
+    regions.push("EU");
+  }
 
   // Salary / day rate (e.g. 650 EUR/day, €650/day, Rate: 650 EUR)
   const salaryNums = [...text.matchAll(/[€$£]?\s?(\d{2,3})\s?k\b/gi)].map((m) => parseInt(m[1], 10) * 1000);
@@ -851,7 +876,7 @@ Aria Sourcing`;
 // "London"). Continent/remote-status codes like "EU"/"APAC"/"Remote" essentially
 // never appear verbatim in a profile, so including them zeroes out an otherwise
 // good query. Only apply the qualifier for a region that's an actual place.
-const NON_LOCATION_REGIONS = new Set(["EU", "APAC", "LATAM", "Remote", "Global"]);
+const NON_LOCATION_REGIONS = new Set(["EU", "EMEA", "EEA", "APAC", "LATAM", "Remote", "Global"]);
 
 /** Extract role-relevant phrases from Mantu "Profile description:" / VSS mission blocks. */
 function extractProfileDescriptionSkills(text: string): string[] {
@@ -885,7 +910,10 @@ function extractProfileDescriptionSkills(text: string): string[] {
 /** Keyword query for site:linkedin.com web search (Tavily/DDG). */
 export function buildLinkedInKeywords(jd: JobAnalysis): string {
   const title = jd.title.trim();
-  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const region =
+    jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ??
+    europeSourcingLocationHints(jd)[0] ??
+    "";
   const industry = jd.industryExperience[0]?.trim() ?? "";
   const skillKeywords = jd.requiredSkills.slice(0, 3).map((skill) => {
     const lower = skill.toLowerCase();
@@ -952,7 +980,11 @@ export function roleTitleSearchAliases(title: string): string[] {
 export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 12): string[] {
   const title = jd.title.trim();
   if (!title) return [];
-  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const europeHints = europeSourcingLocationHints(jd);
+  const region =
+    jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ??
+    europeHints[0] ??
+    "";
   const industry = jd.industryExperience[0]?.trim() ?? "";
   const seniority = jd.seniority !== "Unspecified" ? jd.seniority : "";
   const skills = jd.requiredSkills.slice(0, 5).map((skill) => {
@@ -968,9 +1000,17 @@ export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 12): string[] 
   });
 
   const titleAliases = roleTitleSearchAliases(title);
+  const montrealFocus =
+    /montreal|montréal/i.test(region) ||
+    jd.regions.some((r) => /montreal|montréal/i.test(r)) ||
+    /montreal|montréal/i.test(jd.location ?? "");
   const geos = Array.from(
     new Set(
-      [region, region && /montreal/i.test(region) ? "Quebec" : "", region ? "Canada" : "", "Montreal"]
+      [
+        region,
+        ...europeHints.slice(0, 3),
+        ...(montrealFocus ? ["Quebec", "Canada", "Montreal"] : []),
+      ]
         .filter(Boolean)
         .map((g) => String(g)),
     ),

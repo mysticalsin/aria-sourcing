@@ -9,7 +9,7 @@ import {
 import type { CandidateMappingCampaign } from "@/lib/sourcing/candidate-mappers";
 import type { Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import type { WebFetch } from "@/lib/ai/web-tools";
-import { selectTopKByMatchScore } from "@/lib/scoring";
+import { selectTopKByMatchScore, europeSourcingLocationHints } from "@/lib/scoring";
 import {
   buildGithubUserQueriesForSkills,
   githubLanguageForSkill,
@@ -71,8 +71,10 @@ function githubQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): str
     .map((q) => sanitizeGithubUserSearchQuery(q.query.trim(), skills))
     .filter(Boolean);
   if (configured.length > 0) return configured.slice(0, 6);
+  const europeHints = europeSourcingLocationHints(campaign.jobAnalysis);
+  const regionHint = europeHints[0] ?? campaign.jobAnalysis.regions[0] ?? null;
   const built = buildGithubUserQueriesForSkills(skills.slice(0, 4), {
-    region: campaign.jobAnalysis.regions[0] ?? null,
+    region: regionHint,
     max: 3,
   }).map((q) => q.query);
   if (built.length === 0) return [];
@@ -92,9 +94,14 @@ function githubQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): str
   if (titleToken && languages[0]) {
     queries.push(`${titleToken} language:${languages[0]} followers:>10`);
   }
-  const region = campaign.jobAnalysis.regions[0]?.trim();
+  const region = regionHint?.trim();
   if (region && languages[0] && !/^global$/i.test(region)) {
     queries.push(`language:${languages[0]} location:${region.split(",")[0]!.trim()} followers:>10`);
+  }
+  for (const hint of europeHints.slice(0, 2)) {
+    if (languages[0] && hint.toLowerCase() !== region?.toLowerCase()) {
+      queries.push(`language:${languages[0]} location:${hint.split(",")[0]!.trim()} followers:>10`);
+    }
   }
   return Array.from(new Set(queries)).slice(0, 8);
 }
@@ -104,10 +111,11 @@ function linkedInQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): s
   if (deep.length > 0) return deep;
   const raw = campaign.sourcingStrategy.linkedinBoolean?.trim() ?? "";
   if (raw) return [raw.slice(0, 256)];
+  const europeGeo = europeSourcingLocationHints(campaign.jobAnalysis).slice(0, 1);
   const fallback = [
     campaign.jobAnalysis.title,
     ...campaign.jobAnalysis.requiredSkills.slice(0, 3),
-    ...campaign.jobAnalysis.regions.slice(0, 1),
+    ...(europeGeo.length ? europeGeo : campaign.jobAnalysis.regions.slice(0, 1)),
   ]
     .filter(Boolean)
     .join(" ")

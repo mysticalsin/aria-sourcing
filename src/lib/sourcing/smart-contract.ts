@@ -240,13 +240,31 @@ export function scoreMockAgainstQuery(hit: SmartResumeHit, req: SmartMatchReques
     score += (hitCount / nice.length) * 10;
   }
   if (titleTok.some((t) => hay.includes(t))) score += 10;
-  const region = req.regions?.[0]?.toLowerCase();
-  if (
-    region &&
-    region !== "global" &&
-    hit.location.toLowerCase().includes(region.split(",")[0]!.trim())
-  ) {
-    score += 5;
+  const regions = (req.regions ?? []).map((r) => r.toLowerCase()).filter(Boolean);
+  const europeFocus = regions.some((r) =>
+    /^(eu|eea|emea|europe|uk|gb|germany|france|netherlands|spain|italy)$/i.test(r.trim()),
+  );
+  const loc = hit.location.toLowerCase();
+  const europeLoc =
+    /\b(?:europe|eu|uk|germany|france|netherlands|spain|italy|berlin|paris|london|amsterdam|madrid|warsaw|dublin|munich)\b/i.test(
+      loc,
+    );
+  const farLoc =
+    /\b(?:united states|usa|canada|brazil|india|singapore|japan|toronto|montreal|new york|san francisco|bangalore|mumbai|tokyo|sydney)\b/i.test(
+      loc,
+    );
+  if (europeFocus) {
+    if (europeLoc) score += 12;
+    else if (farLoc) score -= 10;
+  } else {
+    const region = regions[0];
+    if (
+      region &&
+      region !== "global" &&
+      loc.includes(region.split(",")[0]!.trim())
+    ) {
+      score += 5;
+    }
   }
   return Math.max(0, Math.min(100, Math.round(score)));
 }

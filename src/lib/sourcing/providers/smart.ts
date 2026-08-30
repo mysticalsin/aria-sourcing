@@ -10,6 +10,7 @@ import {
 } from "@/lib/sourcing/smart";
 import { mapSmartCandidates } from "@/lib/sourcing/smart-map";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
+import { europeSourcingLocationHints, jobAnalysisIsEuropeFocused } from "@/lib/scoring";
 import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
 
 export const smartProvider: SourcingProvider = {
@@ -40,13 +41,17 @@ export const smartProvider: SourcingProvider = {
 
     const jd = ctx.campaign.jobAnalysis;
     const rankWindow = Math.min(Math.max(count * 3, SMART_DEFAULT_RANK_WINDOW), 100);
+    const europeHints = europeSourcingLocationHints(jd);
+    const regionHints = jobAnalysisIsEuropeFocused(jd)
+      ? Array.from(new Set(["EU", "EMEA", ...europeHints, ...jd.regions])).slice(0, 8)
+      : jd.regions;
     const searched = await searchSmartResumes(
       clearance.clearance,
       {
         title: jd.title,
         requiredSkills: jd.requiredSkills,
         niceToHaveSkills: jd.niceToHaveSkills,
-        regions: jd.regions,
+        regions: regionHints,
         keywords: query,
         limit: rankWindow,
       },

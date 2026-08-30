@@ -5,6 +5,19 @@ import type {
   ScoringWeights,
 } from "./types";
 import { clamp, round } from "./utils";
+import {
+  candidateIsFarFromEurope,
+  candidateMatchesEurope,
+  jobAnalysisIsEuropeFocused,
+  locationMatchesEuropeMacro,
+} from "./geo-europe";
+
+export {
+  candidateIsFarFromEurope,
+  candidateMatchesEurope,
+  europeSourcingLocationHints,
+  jobAnalysisIsEuropeFocused,
+} from "./geo-europe";
 
 /**
  * Default dimension weights. Skills dominate so must-have JD fit drives the
@@ -103,6 +116,7 @@ function locationMatchesRegion(location: string, region: string): boolean {
   const loc = location.trim().toLowerCase();
   const reg = region.trim().toLowerCase();
   if (!loc || !reg) return false;
+  if (locationMatchesEuropeMacro(loc, reg)) return true;
   const escaped = reg
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     .replace(/\s+/g, "\\s+");
@@ -432,6 +446,14 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
 
   let geoScore: number;
   let geoRationale: string;
+  const europeFocus = jobAnalysisIsEuropeFocused(jd);
+  const europeHit = candidateMatchesEurope(c);
+  const farFromEurope = europeFocus && candidateIsFarFromEurope(c);
+  const montrealTarget =
+    jd.regions.some((r) => /montreal|montréal/i.test(r)) ||
+    /montreal|montréal/i.test(jd.location ?? "");
+  const montrealHit = /montreal|montréal/i.test(c.location);
+
   if (!hasGeo) {
     geoScore = 50;
     geoRationale = "Location not provided";
@@ -443,30 +465,65 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
     const regionAligned =
       Boolean(c.location) &&
       jd.regions.some((region) => locationMatchesRegion(c.location, region));
-    const montrealTarget = jd.regions.some((r) => /montreal|montréal/i.test(r)) ||
-      /montreal|montréal/i.test(jd.location ?? "");
-    const montrealHit = /montreal|montréal/i.test(c.location);
-    geoScore = timezoneAligned ? 96 : regionAligned ? 90 : montrealTarget && montrealHit ? 92 : 80;
-    geoRationale = timezoneAligned
-      ? `Remote role: timezone ${c.timezone} overlaps working hours`
-      : regionAligned
-        ? `Remote role: location ${c.location} matches a target region`
-        : montrealTarget && montrealHit
-          ? `Remote role: Montreal signal present (${c.location})`
-          : "Remote role: working-hours overlap not confirmed";
+    // Europe/EMEA focus: remote-ok / international must still prefer EU timezones.
+    // Far Americas/Asia get a hard dampen so geo moves ranking, not soft noise.
+    if (europeFocus) {
+      if (timezoneAligned || europeHit || regionAligned) {
+        geoScore = timezoneAligned ? 97 : europeHit ? 94 : 90;
+        geoRationale = timezoneAligned
+          ? `Remote Europe/EMEA role: timezone ${c.timezone} overlaps CET/UK hours`
+          : europeHit
+            ? `Remote Europe/EMEA role: Europe-based candidate (${c.location || c.timezone})`
+            : `Remote Europe/EMEA role: location ${c.location} matches a target region`;
+      } else if (farFromEurope) {
+        geoScore = 32;
+        geoRationale = `Remote Europe/EMEA role: ${c.location || c.timezone} is outside European working hours`;
+      } else {
+        geoScore = 58;
+        geoRationale =
+          "Remote Europe/EMEA role: European timezone/location not confirmed";
+      }
+    } else {
+      geoScore = timezoneAligned
+        ? 96
+        : regionAligned
+          ? 90
+          : montrealTarget && montrealHit
+            ? 92
+            : 80;
+      geoRationale = timezoneAligned
+        ? `Remote role: timezone ${c.timezone} overlaps working hours`
+        : regionAligned
+          ? `Remote role: location ${c.location} matches a target region`
+          : montrealTarget && montrealHit
+            ? `Remote role: Montreal signal present (${c.location})`
+            : "Remote role: working-hours overlap not confirmed";
+    }
   } else {
     const inRegion =
       jd.regions.some((region) => locationMatchesRegion(c.location, region)) ||
       (jd.location ? locationMatchesRegion(c.location, jd.location) : false);
-    const montrealTarget = jd.regions.some((r) => /montreal|montréal/i.test(r)) ||
-      /montreal|montréal/i.test(jd.location ?? "");
-    const montrealHit = /montreal|montréal/i.test(c.location);
-    geoScore = inRegion ? 92 : montrealTarget && montrealHit ? 90 : 48;
-    geoRationale = inRegion
-      ? `Based in ${c.location}, within ${jd.locationType} range`
-      : montrealTarget && montrealHit
-        ? `Montreal signal present (${c.location}) for target geography`
-        : `Based in ${c.location || "unknown"}, outside ${jd.locationType} catchment`;
+    if (europeFocus) {
+      if (inRegion || europeHit) {
+        geoScore = inRegion ? 94 : 90;
+        geoRationale = inRegion
+          ? `Based in ${c.location}, within Europe/EMEA ${jd.locationType} range`
+          : `Europe signal present (${c.location || c.timezone}) for Europe-focused role`;
+      } else if (farFromEurope) {
+        geoScore = 28;
+        geoRationale = `Based in ${c.location || c.timezone}, outside Europe/EMEA catchment`;
+      } else {
+        geoScore = 48;
+        geoRationale = `Based in ${c.location || "unknown"}, Europe/EMEA catchment not confirmed`;
+      }
+    } else {
+      geoScore = inRegion ? 92 : montrealTarget && montrealHit ? 90 : 48;
+      geoRationale = inRegion
+        ? `Based in ${c.location}, within ${jd.locationType} range`
+        : montrealTarget && montrealHit
+          ? `Montreal signal present (${c.location}) for target geography`
+          : `Based in ${c.location || "unknown"}, outside ${jd.locationType} catchment`;
+    }
   }
 
   if (langScore == null) {

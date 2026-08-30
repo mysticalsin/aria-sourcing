@@ -6,6 +6,9 @@ import {
   scoreCandidate,
   selectTopKByMatchScore,
   rankScoredCandidates,
+  jobAnalysisIsEuropeFocused,
+  candidateMatchesEurope,
+  candidateIsFarFromEurope,
 } from "../src/lib/scoring";
 import { SOURCING_QUALITY_FLOOR } from "../src/lib/sourcing/candidate-fit";
 import { SAMPLE_VSS_CALYPSO_BA } from "../src/lib/mantu-need-parse";
@@ -228,8 +231,110 @@ ok(
   ),
 );
 
+
+/* ---- Europe / EMEA timezone preference (remote-ok still prefers Europe) ---- */
+
+const europeJd: JobAnalysis = {
+  ...jd,
+  locationType: "Remote",
+  location: "Europe",
+  regions: ["EU", "EMEA", "Remote"],
+  timezone: "CET",
+  requiredLanguages: undefined,
+};
+
+ok("Europe JD detected as Europe-focused", jobAnalysisIsEuropeFocused(europeJd));
+ok(
+  "remote-ok international Europe JD still Europe-focused",
+  jobAnalysisIsEuropeFocused({
+    ...europeJd,
+    location: "International remote",
+    regions: ["Remote", "EU"],
+  }),
+);
+
+const euPeer = baseCand({
+  id: "cand-eu",
+  name: "Elena Europe",
+  currentTitle: "Senior Calypso Business Analyst",
+  currentCompany: "BNP Paribas CIB",
+  techStack: ["Calypso", "Business Analysis", "Derivatives", "Trade Lifecycle", "SQL"],
+  yearsExperience: 8,
+  languages: ["English"],
+  location: "Berlin, Germany",
+  timezone: "CET",
+  domainTags: ["Calypso", "CIB", "settlements"],
+  profileText:
+    "Senior Calypso BA in capital markets. Derivatives and trade lifecycle. Based in Berlin (CET).",
+  provenance: "live",
+});
+
+const usPeer = baseCand({
+  id: "cand-us",
+  name: "Alex America",
+  currentTitle: "Senior Calypso Business Analyst",
+  currentCompany: "JPMorgan CIB",
+  techStack: ["Calypso", "Business Analysis", "Derivatives", "Trade Lifecycle", "SQL"],
+  yearsExperience: 8,
+  languages: ["English"],
+  location: "New York, NY",
+  timezone: "EST",
+  domainTags: ["Calypso", "CIB", "settlements"],
+  profileText:
+    "Senior Calypso BA in capital markets. Derivatives and trade lifecycle. Based in New York (EST).",
+  provenance: "live",
+});
+
+const asiaPeer = baseCand({
+  id: "cand-asia",
+  name: "Priya Asia",
+  currentTitle: "Senior Calypso Business Analyst",
+  currentCompany: "DBS Capital Markets",
+  techStack: ["Calypso", "Business Analysis", "Derivatives", "Trade Lifecycle", "SQL"],
+  yearsExperience: 8,
+  languages: ["English"],
+  location: "Singapore",
+  timezone: "SGT",
+  domainTags: ["Calypso", "CIB", "settlements"],
+  profileText:
+    "Senior Calypso BA in capital markets. Derivatives and trade lifecycle. Based in Singapore (SGT).",
+  provenance: "live",
+});
+
+ok("EU candidate matches Europe", candidateMatchesEurope(euPeer));
+ok("US candidate is far from Europe", candidateIsFarFromEurope(usPeer));
+ok("Asia candidate is far from Europe", candidateIsFarFromEurope(asiaPeer));
+
+const europeScored = [euPeer, usPeer, asiaPeer].map((c) => {
+  const { score, breakdown } = scoreCandidate(c, europeJd, DEFAULT_SCORING_WEIGHTS);
+  return { ...c, matchScore: score, matchBreakdown: breakdown };
+});
+const euById = Object.fromEntries(europeScored.map((c) => [c.id, c]));
+ok(
+  `EU candidate outranks US peer with similar skills (EU=${euById["cand-eu"]!.matchScore} US=${euById["cand-us"]!.matchScore})`,
+  euById["cand-eu"]!.matchScore > euById["cand-us"]!.matchScore,
+);
+ok(
+  `EU candidate outranks Asia peer with similar skills (EU=${euById["cand-eu"]!.matchScore} Asia=${euById["cand-asia"]!.matchScore})`,
+  euById["cand-eu"]!.matchScore > euById["cand-asia"]!.matchScore,
+);
+const euLoc = euById["cand-eu"]!.matchBreakdown.find((b) => b.key === "location");
+const usLoc = euById["cand-us"]!.matchBreakdown.find((b) => b.key === "location");
+ok(
+  "Europe location rationale names Europe/EMEA",
+  /Europe|EMEA|CET/i.test(euLoc?.rationale ?? ""),
+);
+ok(
+  "US dampened on Europe JD (location score gap >= 40)",
+  (euLoc?.score ?? 0) - (usLoc?.score ?? 100) >= 40,
+);
+
+const europeRanked = selectTopKByMatchScore(europeScored, 3, europeJd);
+ok("Europe top-K[0] is EU candidate", europeRanked[0]!.id === "cand-eu");
+
 console.log(`RESULT scoring-quality: ${pass} passed, ${fail} failed`);
 if (fail > 0) {
   for (const c of ranked) console.log(`  ${c.id} score=${c.matchScore}`);
+  for (const c of europeRanked) console.log(`  europe ${c.id} score=${c.matchScore}`);
   process.exitCode = 1;
 }
