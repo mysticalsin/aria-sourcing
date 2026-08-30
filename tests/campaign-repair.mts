@@ -45,5 +45,30 @@ check("normalizeHermesState drops campaign holes and repairs missing jobAnalysis
   assert.ok(ctxs.every((c) => typeof c.id === "string"));
 });
 
+check("normalizeHermesState fills missing metrics so CampaignCard cannot throw", () => {
+  const base = buildSeedState();
+  const polluted = {
+    ...base,
+    version: STATE_VERSION,
+    campaigns: [
+      {
+        id: "camp:sparse:metrics",
+        title: "Sparse Metrics Role",
+        // metrics intentionally omitted
+      },
+    ],
+  } as unknown as HermesState;
+
+  const normalized = normalizeHermesState(polluted);
+  const sparse = normalized.campaigns.find((c) => c.id === "camp:sparse:metrics");
+  assert.ok(sparse);
+  assert.ok(sparse.metrics);
+  assert.equal(typeof sparse.metrics.sourced, "number");
+  assert.equal(sparse.metrics.sourced, 0);
+  assert.equal(sparse.metrics.contacted, 0);
+  // Mimic CampaignCard reads that previously threw TypeError
+  assert.equal(sparse.metrics.sourced + sparse.metrics.contacted, 0);
+});
+
 console.log(`RESULT campaign-repair: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

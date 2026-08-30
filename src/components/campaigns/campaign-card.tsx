@@ -21,7 +21,23 @@ const STATUS_TONE: Record<CampaignStatus, Tone> = {
 
 export function CampaignCard({ campaign }: { campaign: Campaign }) {
   const { setActiveCampaign } = useActions();
-  const m = campaign.metrics;
+  // Fail-soft: sparse remote campaigns can omit metrics before hydrate repair.
+  const m = campaign.metrics ?? {
+    sourced: 0,
+    contacted: 0,
+    replied: 0,
+    interested: 0,
+    booked: 0,
+    interviewed: 0,
+    offer: 0,
+    hired: 0,
+    notInterested: 0,
+    replyRate: 0,
+    avgMatchScore: 0,
+    timeToFirstInterviewHours: null,
+    emailsSentToday: 0,
+    linkedinSentToday: 0,
+  };
   const health = campaignHealth(campaign);
   const nextAction = nextActionForCampaign(campaign);
 

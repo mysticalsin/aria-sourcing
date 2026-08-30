@@ -366,7 +366,22 @@ export interface CampaignHealth {
 }
 
 export function campaignHealth(c: Campaign): CampaignHealth {
-  const m = c.metrics;
+  const m = c.metrics ?? {
+    sourced: 0,
+    contacted: 0,
+    replied: 0,
+    interested: 0,
+    booked: 0,
+    interviewed: 0,
+    offer: 0,
+    hired: 0,
+    notInterested: 0,
+    replyRate: 0,
+    avgMatchScore: 0,
+    timeToFirstInterviewHours: null,
+    emailsSentToday: 0,
+    linkedinSentToday: 0,
+  };
   if (c.status === "Paused")
     return { tone: "warning", label: "Paused", detail: "Resume to continue sourcing and outreach." };
   if (c.status === "Filled") return { tone: "success", label: "Filled", detail: "Role closed." };
@@ -381,7 +396,22 @@ export function campaignHealth(c: Campaign): CampaignHealth {
 }
 
 export function nextActionForCampaign(c: Campaign): string {
-  const m = c.metrics;
+  const m = c.metrics ?? {
+    sourced: 0,
+    contacted: 0,
+    replied: 0,
+    interested: 0,
+    booked: 0,
+    interviewed: 0,
+    offer: 0,
+    hired: 0,
+    notInterested: 0,
+    replyRate: 0,
+    avgMatchScore: 0,
+    timeToFirstInterviewHours: null,
+    emailsSentToday: 0,
+    linkedinSentToday: 0,
+  };
   if (c.status === "Paused") return "Resume campaign to continue";
   if (m.sourced === 0) return "Source first batch";
   if (m.sourced > m.contacted) return `Review ${m.sourced - m.contacted} drafts`;
