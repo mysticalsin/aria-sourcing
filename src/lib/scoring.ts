@@ -778,10 +778,19 @@ export function scoreCandidate(
   const openToWork = candidateOpenToWorkSignal(candidate);
   if (openToWork) {
     const boost = jd.preferOpenToWork ? OPEN_TO_WORK_PREFER_BOOST : OPEN_TO_WORK_BOOST;
-    composite = Math.min(100, composite + boost);
     const activityItem = breakdown.find((b) => b.key === "activity");
-    if (activityItem) {
-      activityItem.rationale = `${activityItem.rationale.replace(/\.$/, "")}; Open to Work / actively looking (+${boost}).`;
+    const target =
+      activityItem && activityItem.weight > 0
+        ? activityItem
+        : breakdown.find((b) => b.key === "skills" && b.weight > 0) ??
+          breakdown.find((b) => b.weight > 0);
+    if (target) {
+      // Fold the boost into a scored dimension so Σ contributions === composite.
+      const bumped = Math.min(100, target.score + boost / Math.max(target.weight, 0.01));
+      target.score = round(clamp(bumped, 0, 100));
+      target.contribution = round(target.score * target.weight, 1);
+      target.rationale = `${target.rationale.replace(/\.$/, "")}; Open to Work / actively looking (+${boost}).`;
+      composite = breakdown.reduce((sum, item) => sum + item.contribution, 0);
     }
   }
 
