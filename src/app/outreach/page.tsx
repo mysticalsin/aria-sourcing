@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
+import { OutreachAccountsPanel } from "@/components/outreach/outreach-accounts-panel";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
 import { WhatsAppTemplatePicker } from "@/components/outreach/whatsapp-template-picker";
@@ -417,6 +418,7 @@ function OutreachView() {
         }
       >
         <div className="space-y-6">
+        <OutreachAccountsPanel />
         <QuickDraft />
         <WhatsAppTemplatePicker />
         <div className="grid gap-6 lg:grid-cols-3">
@@ -705,13 +707,21 @@ function OutreachView() {
                   <div className="text-xs text-muted">
                     {connectedMailboxes.length === 0 ? (
                       <>
-                        No mailbox connected —{" "}
-                        <Link href="/settings?tab=integrations" className="font-semibold text-ink underline-offset-2 hover:underline">
-                          open Integrations
+                        No mailbox connected — emails stay preview-only.{" "}
+                        <Link
+                          href="/settings?tab=integrations#email-connections-panel"
+                          className="font-semibold text-ink underline-offset-2 hover:underline"
+                        >
+                          Connect Outlook
                         </Link>
                       </>
                     ) : (
-                      <>Connected: {connectedMailboxes.map((p) => p.label).join(", ")}</>
+                      <>
+                        Send from{" "}
+                        <span className="font-semibold text-ink">
+                          {connectedMailboxes.map((p) => p.detail || p.label).join(" · ")}
+                        </span>
+                      </>
                     )}
                   </div>
                   <div className="flex items-center justify-between text-sm">

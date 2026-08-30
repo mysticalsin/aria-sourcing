@@ -61,6 +61,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: null,
       errors: [],
       real: true,
+      setupHref: "/settings?tab=integrations#integrations-catalog",
     },
     {
       id: "int_apify",

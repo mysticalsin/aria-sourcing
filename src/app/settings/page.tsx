@@ -254,6 +254,13 @@ export default function SettingsPage() {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
     if (tab && VALID_TABS.has(tab)) setActiveTab(tab);
+    // Deep-link: /settings?tab=integrations#email-connections-panel
+    const hash = window.location.hash.replace(/^#/, "");
+    if (hash) {
+      window.setTimeout(() => {
+        document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+    }
     const oauth = params.get("oauth");
     const message = params.get("message");
     // Fail-closed: never toast success from URL alone — confirm a live connection row exists.
@@ -750,8 +757,23 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="Real connections only: email OAuth, LinkedIn identity + HeyReach outreach stack, then Apify and the rest. No fake skeletons."
+            description="Connect the accounts Aria uses to source and send. Start with Outlook (email) and LinkedIn, then add GitHub / Apify keys for sourcing. The Outreach page shows the same checklist."
           >
+            <div className="mb-4 rounded-2xl border border-line bg-canvas/50 px-4 py-3 text-sm text-ink-soft">
+              <p className="font-semibold text-ink">Quick path</p>
+              <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-xs text-muted">
+                <li>Connect Outlook below — that is the mailbox approved emails send from.</li>
+                <li>Connect LinkedIn (identity + optional HeyReach) for LinkedIn drafts.</li>
+                <li>Add Apify / GitHub under Access &amp; Keys or the cards below to source profiles.</li>
+              </ol>
+              <p className="mt-2 text-xs">
+                Prefer the simpler checklist? Open{" "}
+                <a href="/outreach" className="font-semibold text-electric underline-offset-2 hover:underline">
+                  Outreach → Accounts
+                </a>
+                .
+              </p>
+            </div>
             <Microsoft365Stack />
             <EmailConnectionsPanel />
             <LinkedInOutreachStack />
@@ -770,7 +792,7 @@ export default function SettingsPage() {
                 description="Connect email or LinkedIn above to get started."
               />
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div id="integrations-catalog" className="grid scroll-mt-24 gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {liveIntegrations.map((i) => (
                   <IntegrationCard key={i.id} integration={i} />
                 ))}
