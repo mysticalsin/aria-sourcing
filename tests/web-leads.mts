@@ -30,13 +30,13 @@ ok("buildWebQuery keeps the base query text", linkedInQuery === "site:linkedin.c
 ok("ensureWebQueryScope does not double-prefix an already scoped query", ensureWebQueryScope("LinkedIn", linkedInQuery) === linkedInQuery);
 
 const hit: SearchHit = {
-  title: "Ari Candidate - Senior React Engineer - Example Labs | LinkedIn",
+  title: "Ari Candidate - Senior Backend Engineer - Example Labs | LinkedIn",
   url: "https://www.linkedin.com/in/ari-candidate",
-  snippet: "Senior React Engineer working with TypeScript, Next.js, accessibility, and design systems.",
+  snippet: "Senior Backend Engineer working with Go, Kubernetes, PostgreSQL, gRPC, and Distributed Systems.",
 };
 const lead = extractLead(hit, "LinkedIn") as ReturnType<typeof extractLead> & Record<string, unknown>;
 ok("extractLead keeps the public LinkedIn profile url as the handle", lead.url === "https://www.linkedin.com/in/ari-candidate");
-ok("extractLead populates title from SERP title text", lead.title === "Senior React Engineer");
+ok("extractLead populates title from SERP title text", lead.title === "Senior Backend Engineer");
 ok("extractLead populates name from SERP title text", lead.name === "Ari Candidate");
 ok("extractLead does not fabricate email", !("email" in lead));
 ok("extractLead does not fabricate location", !("location" in lead));
