@@ -54,7 +54,9 @@ const cron = await import("node:fs").then((fs) =>
 );
 ok(
   "autopilot sweep uses outreachDispatchRecipient",
-  /outreachDispatchRecipient/.test(cron) && /if \(!recipient\) return null/.test(cron),
+  /outreachDispatchRecipient/.test(cron)
+    && /if \(!recipient\)/.test(cron)
+    && /reason:\s*"no_recipient"/.test(cron),
 );
 const dispatch = await import("node:fs").then((fs) =>
   fs.readFileSync("src/lib/rei-autopilot-dispatch.ts", "utf8"),

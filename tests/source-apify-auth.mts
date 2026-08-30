@@ -111,6 +111,12 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
             error: null,
           };
         }
+        if (name === "read_workspace_campaign_for_loop") {
+          return { data: { status: "ok", campaign: policyCampaign }, error: null };
+        }
+        if (name === "read_workspace_candidate_identities_for_loop") {
+          return { data: { status: "ok", candidates: [] }, error: null };
+        }
         if (name === "read_workspace_state_for_loop") {
           return { data: { status: "ok", state: { campaigns: [policyCampaign], candidates: [] } }, error: null };
         }
