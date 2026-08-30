@@ -1,7 +1,8 @@
 import { computeCoverage } from "../enrichment/merge";
 import type { SourceResult } from "../sourcing/candidate-mappers";
 import { dedupeCandidates } from "../rules";
-import { scoreCandidate } from "../scoring";
+import { rankScoredCandidates, scoreCandidate } from "../scoring";
+import { meetsSourcingQualityBar, SOURCING_QUALITY_FLOOR } from "../sourcing/candidate-fit";
 import type { ApifyProfile } from "../sourcing/apify";
 import type { SillageProfile } from "../sourcing/sillage";
 import type { WebSearchPlatform } from "../sourcing/web-leads";
@@ -162,7 +163,19 @@ export function mapSillageCandidates(
     const { score, breakdown } = scoreCandidate(c, jd, weights);
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
-  return { accepted: scored, skipped };
+  const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
+  return {
+    accepted: rankScoredCandidates(quality.length > 0 ? quality : scored, jd),
+    skipped: [
+      ...skipped,
+      ...scored
+        .filter((c) => !meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
+        .map((c) => ({
+          name: c.name,
+          reason: `Match score ${c.matchScore} below ${SOURCING_QUALITY_FLOOR}% quality floor`,
+        })),
+    ],
+  };
 }
 
 /**
@@ -261,5 +274,17 @@ export function mapApifyCandidates(
     const { score, breakdown } = scoreCandidate(c, jd, weights);
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
-  return { accepted: scored, skipped };
+  const quality = scored.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR));
+  return {
+    accepted: rankScoredCandidates(quality.length > 0 ? quality : scored, jd),
+    skipped: [
+      ...skipped,
+      ...scored
+        .filter((c) => !meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
+        .map((c) => ({
+          name: c.name,
+          reason: `Match score ${c.matchScore} below ${SOURCING_QUALITY_FLOOR}% quality floor`,
+        })),
+    ],
+  };
 }

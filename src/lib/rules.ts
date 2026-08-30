@@ -228,7 +228,22 @@ export interface DedupeResult {
 export type CandidateDedupeIdentity = Pick<
   Candidate,
   "email" | "linkedinUrl" | "githubUrl" | "sourceUrl" | "lastContactedAt"
->;
+> &
+  Partial<Pick<Candidate, "complianceFlags" | "stage" | "recontactAt">>;
+
+/** Pool identity blocked from re-source / first-touch re-contact. */
+function identityBlocksResourcing(c: CandidateDedupeIdentity): boolean {
+  if (c.complianceFlags?.doNotContact || c.complianceFlags?.suppressed || c.complianceFlags?.unsubscribed) {
+    return true;
+  }
+  if (c.stage === "Not Interested") return true;
+  if (c.recontactAt) {
+    const until = new Date(c.recontactAt).getTime();
+    if (Number.isFinite(until) && until > Date.now()) return true;
+  }
+  if (c.lastContactedAt && daysSince(c.lastContactedAt) < DEDUPE_WINDOW_DAYS) return true;
+  return false;
+}
 
 export function dedupeCandidates(
   incoming: Candidate[],
@@ -238,11 +253,27 @@ export function dedupeCandidates(
   const accepted: Candidate[] = [];
   const skipped: { name: string; reason: string }[] = [];
 
-  const seenEmail = new Set(existing.map((c) => c.email.toLowerCase()));
+  const seenEmail = new Set(existing.map((c) => c.email.toLowerCase()).filter(Boolean));
   const seenLinkedin = new Set(existing.map((c) => c.linkedinUrl.toLowerCase()).filter(Boolean));
   const seenGithub = new Set(existing.map((c) => c.githubUrl.toLowerCase()).filter(Boolean));
   const seenSourceUrl = new Set(existing.map((c) => (c.sourceUrl ?? "").toLowerCase()).filter(Boolean));
   const excluded = new Set(opts.excludedCompanies.map((c) => c.toLowerCase()));
+
+  const contactedByEmail = new Map(
+    existing
+      .filter((c) => c.email && identityBlocksResourcing(c))
+      .map((c) => [c.email.toLowerCase(), c] as const),
+  );
+  const contactedByLinkedin = new Map(
+    existing
+      .filter((c) => c.linkedinUrl && identityBlocksResourcing(c))
+      .map((c) => [c.linkedinUrl.toLowerCase(), c] as const),
+  );
+  const contactedByGithub = new Map(
+    existing
+      .filter((c) => c.githubUrl && identityBlocksResourcing(c))
+      .map((c) => [c.githubUrl.toLowerCase(), c] as const),
+  );
 
   for (const cand of incoming) {
     const email = cand.email.toLowerCase();
@@ -254,6 +285,18 @@ export function dedupeCandidates(
     // Only treat a non-blank email as a dedupe key. Real sourced profiles (e.g.
     // GitHub) often have no public email; those are deduped by linkedin/github/
     // source URL below, not collapsed together as "same blank email".
+    if (email && contactedByEmail.has(email)) {
+      skipped.push({ name: cand.name, reason: "Already contacted (do not re-source)" });
+      continue;
+    }
+    if (li && contactedByLinkedin.has(li)) {
+      skipped.push({ name: cand.name, reason: "Already contacted (do not re-source)" });
+      continue;
+    }
+    if (gh && contactedByGithub.has(gh)) {
+      skipped.push({ name: cand.name, reason: "Already contacted (do not re-source)" });
+      continue;
+    }
     if (email && seenEmail.has(email)) {
       skipped.push({ name: cand.name, reason: "Duplicate email" });
       continue;
@@ -280,6 +323,10 @@ export function dedupeCandidates(
     }
     if (cand.lastContactedAt && daysSince(cand.lastContactedAt) < DEDUPE_WINDOW_DAYS) {
       skipped.push({ name: cand.name, reason: `Contacted < ${DEDUPE_WINDOW_DAYS}d ago` });
+      continue;
+    }
+    if (identityBlocksResourcing(cand)) {
+      skipped.push({ name: cand.name, reason: "Do not re-contact" });
       continue;
     }
 

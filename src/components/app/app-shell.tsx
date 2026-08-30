@@ -38,15 +38,15 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
 
   return (
     <ConfirmProvider>
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen min-w-0 max-w-[100vw] overflow-x-clip">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
         <TopBar />
-        <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10">
-          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
+        <main id="main-content" className="min-w-0 flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+          <div className="mx-auto w-full min-w-0 max-w-[1400px]">{children}</div>
         </main>
       </div>
 

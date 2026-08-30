@@ -195,6 +195,10 @@ export interface JobAnalysis {
   equity: boolean;
   requiredSkills: string[];
   niceToHaveSkills: string[];
+  /** Spoken languages required by the role (e.g. ["English"]). Additive —
+   *  VSS Language (Must) / SMART mappers should fill; scoring only uses this
+   *  explicit list (not localeContext brief language). */
+  requiredLanguages?: string[];
   minYearsExperience: number | null;
   maxYearsExperience: number | null;
   education: string;
@@ -205,10 +209,15 @@ export interface JobAnalysis {
   urgency: Urgency;
   /** Detected language of the need (ISO code, e.g. "en", "fr"). */
   language?: string;
+  /** Free-text Mission Description / Profile Synthesis body used for domain
+   *  signal extraction (Calypso, settlements, CIB, etc.). */
+  missionDescription?: string;
   /** ISO date explicitly stated in the inbound brief (e.g. "Start date: 7/13/2026").
    *  Null when the brief doesn't state one — createCampaign then falls back to a
    *  default target. Absent covers analyses predating this field. */
   expectedStartDate?: string | null;
+  /** LinkedIn/GitHub/SMART boolean when the need states one. */
+  searchBoolean?: string | null;
   validationWarnings: ValidationWarning[];
 }
 
@@ -384,6 +393,18 @@ export interface Candidate {
   education?: string[];
   /** Enriched spoken/written languages. Absent until enriched. */
   languages?: string[];
+  /**
+   * Free-text resume / SMART OCR / Cvtheque body used for JD-fit scoring.
+   * Additive optional — SMART mapper should populate when available. Scoring
+   * never invents this field; empty means "use structured fields only".
+   */
+  profileText?: string;
+  /**
+   * Structured domain tags (e.g. CIB, settlements, MOA, Calypso) extracted
+   * upstream from resume/OCR. Prefer SMART mapper fill; scoring also infers
+   * from profileText when tags are absent.
+   */
+  domainTags?: string[];
   /** Verified professional experience in years. Null means not provided and
    *  must never be rendered or scored as zero years. */
   yearsExperience: number | null;

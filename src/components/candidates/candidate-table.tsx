@@ -24,6 +24,7 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
 import { SourceBadge, StarBadge } from "@/components/tania/badges";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
+import { getContactStatus } from "@/lib/contact-status";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
 import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
 
@@ -233,9 +234,34 @@ export function CandidateTable({
                 </div>
               </TD>
               <TD>
-                <Badge tone={toneForStage(c.stage)} size="sm" dot>
-                  {c.stage}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone={toneForStage(c.stage)} size="sm" dot>
+                    {c.stage}
+                  </Badge>
+                  {(() => {
+                    const contact = getContactStatus(c);
+                    if (contact.status === "never") return null;
+                    const tone =
+                      contact.status === "do_not_contact" || contact.status === "suppressed"
+                        ? "danger"
+                        : contact.status === "in_window"
+                          ? "warning"
+                          : "aqua";
+                    return (
+                      <Badge
+                        tone={tone}
+                        size="sm"
+                        title={
+                          contact.lastContactedAt
+                            ? `Last contacted ${contact.lastContactedAt}`
+                            : contact.label
+                        }
+                      >
+                        {contact.label}
+                      </Badge>
+                    );
+                  })()}
+                </div>
               </TD>
               <TD>
                 <span className="whitespace-nowrap text-sm text-muted tabular-nums">

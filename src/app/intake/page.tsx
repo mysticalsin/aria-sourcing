@@ -24,6 +24,7 @@ import {
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
   SAMPLE_MANTU_EMAIL,
+  SAMPLE_CALYPSO_BA_NEED,
   isNeedEmail,
   type ParsedIntake,
 } from "@/lib/mock-ai";
@@ -159,6 +160,16 @@ export default function IntakePage() {
     toast({
       title: "Mantu need loaded",
       description: "A real Mantu/Amaris “need is now ACTIVE” email is ready to parse.",
+      variant: "info",
+    });
+  }
+
+  function loadCalypsoBa() {
+    setEmail(SAMPLE_CALYPSO_BA_NEED);
+    setJd("");
+    toast({
+      title: "Calypso BA need loaded",
+      description: "Senior Calypso BA — AMACAN / BNPP CIB Canada / Montreal (must-haves: Calypso, BA, MySQL).",
       variant: "info",
     });
   }
@@ -441,6 +452,16 @@ export default function IntakePage() {
 
               <div className="space-y-3 border-t border-line pt-4">
                 <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<FileText aria-hidden />}
+                    onClick={loadCalypsoBa}
+                    disabled={parsing}
+                  >
+                    Calypso BA (AMACAN)
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"

@@ -62,6 +62,10 @@ html {
   scroll-behavior: smooth;
   /* Base paper color lives on html so body can be transparent for the fixed gradient pseudo */
   background-color: hsl(var(--paper));
+  /* Prevent page-level horizontal scroll from absolute off-screen chrome (skip-link)
+     or wide tables leaking past the shell. Nested overflow-x-auto regions still scroll. */
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 body {
@@ -73,6 +77,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 /* Subtle purple ambient mesh — position: fixed avoids full-page repaint on scroll */
@@ -94,20 +100,34 @@ body::before {
   border-radius: 4px;
 }
 
-/* Skip-to-content link */
+/* Skip-to-content link — use clip, not left:-9999px (which expands document width). */
 .skip-link {
   position: absolute;
-  left: -9999px;
-  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
   z-index: 100;
+}
+.skip-link:focus {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  margin: 0;
   padding: 0.75rem 1.25rem;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
   background: hsl(var(--ink));
   color: hsl(var(--paper));
   border-radius: 0 0 12px 0;
   font-weight: 600;
-}
-.skip-link:focus {
-  left: 0;
 }
 
 /* Eyebrow label — uppercase, tracked, small */

@@ -5,12 +5,17 @@
 import {
   DEFAULT_SCORING_WEIGHTS,
   scoreCandidate,
+  selectTopKByMatchScore,
   jobAnalysisIsEuropeFocused,
   candidateMatchesEurope,
   candidateIsFarFromEurope,
   europeSourcingLocationHints,
 } from "../src/lib/scoring";
+import { SOURCING_QUALITY_FLOOR } from "../src/lib/sourcing/candidate-fit";
+import { SAMPLE_CALYPSO_BA_NEED } from "../src/lib/fixtures/calypso-ba-need";
 import { buildSourcingStrategy, parseEmailAndJD } from "../src/lib/mock-ai";
+import { dedupeCandidates } from "../src/lib/rules";
+import { getContactStatus } from "../src/lib/contact-status";
 import { buildSeedState } from "../src/lib/seed";
 import { candidatesForCampaign } from "../src/lib/metrics";
 import type { Candidate, JobAnalysis } from "../src/lib/types";
@@ -165,6 +170,166 @@ ok(
   "parsed Europe JD is Europe-focused",
   jobAnalysisIsEuropeFocused(parsed.jobAnalysis),
 );
+
+
+/* ---- Calypso BA must-have discrimination (AMACAN / BNPP Montreal) -------- */
+const calypsoParsed = parseEmailAndJD({ email: SAMPLE_CALYPSO_BA_NEED });
+const calypsoJd: JobAnalysis = {
+  ...calypsoParsed.jobAnalysis,
+  locationType: calypsoParsed.jobAnalysis.locationType || "Hybrid",
+  location: calypsoParsed.jobAnalysis.location || "Montreal",
+  regions: calypsoParsed.jobAnalysis.regions.length
+    ? calypsoParsed.jobAnalysis.regions
+    : ["Montreal", "Canada"],
+  timezone: calypsoParsed.jobAnalysis.timezone || "EST",
+  minYearsExperience: calypsoParsed.jobAnalysis.minYearsExperience ?? 7,
+  maxYearsExperience: calypsoParsed.jobAnalysis.maxYearsExperience ?? 10,
+  requiredLanguages:
+    calypsoParsed.jobAnalysis.requiredLanguages ?? ["English"],
+};
+
+ok("Calypso BA fixture parses must-have Calypso", calypsoJd.requiredSkills.some((s) => /calypso/i.test(s)));
+ok(
+  "Calypso BA fixture parses Business Analysis must-have",
+  calypsoJd.requiredSkills.some((s) => /business analysis/i.test(s)),
+);
+ok("Calypso BA fixture parses MySQL must-have", calypsoJd.requiredSkills.some((s) => /mysql/i.test(s)));
+ok("Calypso BA requires English fluency", (calypsoJd.requiredLanguages ?? []).some((l) => /english/i.test(l)));
+ok("Calypso BA seniority band is 7–10", calypsoJd.minYearsExperience === 7 && calypsoJd.maxYearsExperience === 10);
+ok("Calypso BA Montreal geo", /montreal/i.test(calypsoJd.location ?? "") || calypsoJd.regions.some((r) => /montreal/i.test(r)));
+ok("quality floor stays at 80", SOURCING_QUALITY_FLOOR === 80);
+ok("default skills weight dominates (>= 40)", DEFAULT_SCORING_WEIGHTS.skills >= 40);
+ok(
+  "sourcing strategy uses provided Boolean",
+  /Calypso/i.test(buildSourcingStrategy(calypsoJd).linkedinBoolean),
+);
+
+function calypsoCand(partial: Partial<Candidate> & Pick<Candidate, "id" | "name">): Candidate {
+  return {
+    ...seedCand,
+    campaignId: "camp-calypso-ba",
+    email: `${partial.id}@example.test`,
+    avatarInitials: "XX",
+    currentTitle: "",
+    currentCompany: "",
+    location: "",
+    timezone: "",
+    linkedinUrl: "",
+    githubUrl: "",
+    sourcePlatform: "Manual",
+    sourceQuery: "resume-bank",
+    matchScore: 0,
+    matchBreakdown: [],
+    techStack: [],
+    yearsExperience: null,
+    companyStageExperience: [],
+    industryExperience: [],
+    recentActivity: "",
+    stage: "Sourced",
+    lastContactedAt: null,
+    outreachHistory: [],
+    replyHistory: [],
+    booking: null,
+    complianceFlags: {
+      doNotContact: false,
+      suppressed: false,
+      unsubscribed: false,
+      gdprExportRequested: false,
+      anonymized: false,
+      suppressedUntil: null,
+    },
+    createdAt: "2026-01-01T00:00:00.000Z",
+    provenance: "manual",
+    ...partial,
+  };
+}
+
+const bestFit = calypsoCand({
+  id: "cand-best",
+  name: "Amina Best",
+  currentTitle: "Senior Calypso Business Analyst",
+  currentCompany: "BNPP CIB",
+  techStack: ["Calypso", "Business Analysis", "MySQL", "Settlements", "SQL"],
+  yearsExperience: 8,
+  languages: ["English", "French"],
+  location: "Montreal, QC",
+  timezone: "EST",
+  domainTags: ["Calypso", "CIB", "settlements", "MOA"],
+  profileText:
+    "Senior Calypso BA with 8y in CIB settlements, MySQL reconciliation, UAT/NRT, Mumbai offshore coordination, Open to Work.",
+  recentActivity: "Open to Work — Calypso BA settlements T+1",
+});
+
+const weakGithub = calypsoCand({
+  id: "cand-weak-gh",
+  name: "Weak Github",
+  currentTitle: "Developer",
+  sourcePlatform: "GitHub",
+  techStack: ["Calypso"],
+  profileText: "Calypso",
+  yearsExperience: null,
+  location: "Remote",
+  provenance: "live",
+  recentActivity: "1 public repo mention Calypso",
+});
+
+const noMust = calypsoCand({
+  id: "cand-no-must",
+  name: "Generic Recruiter",
+  currentTitle: "Talent Partner",
+  techStack: ["Excel", "Salesforce"],
+  yearsExperience: 10,
+  location: "Montreal, QC",
+  languages: ["English"],
+  profileText: "Results-driven professional seeking new opportunities.",
+});
+
+const bestScore = scoreCandidate(bestFit, calypsoJd).score;
+const weakScore = scoreCandidate(weakGithub, calypsoJd).score;
+const noMustScore = scoreCandidate(noMust, calypsoJd).score;
+
+ok("strong Calypso BA clears quality floor", bestScore >= SOURCING_QUALITY_FLOOR);
+ok("weak GitHub Calypso string is below floor", weakScore < SOURCING_QUALITY_FLOOR);
+ok("no-must-have profile is well below strong fit", noMustScore + 15 < bestScore);
+ok("weak GitHub below strong fit", weakScore + 20 < bestScore);
+
+const rankedCalypso = selectTopKByMatchScore(
+  [
+    { ...noMust, matchScore: noMustScore },
+    { ...weakGithub, matchScore: weakScore },
+    { ...bestFit, matchScore: bestScore },
+  ],
+  2,
+  calypsoJd,
+);
+ok("top-K prefers best Calypso BA first", rankedCalypso[0]?.id === "cand-best");
+ok("top-K length respects K", rankedCalypso.length === 2);
+
+/* ---- Contact tracking: do not re-source contacted identities ------------- */
+const contactedExisting = calypsoCand({
+  id: "cand-contacted",
+  name: "Already Touched",
+  email: "touched@example.test",
+  linkedinUrl: "https://www.linkedin.com/in/touched",
+  lastContactedAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+  stage: "Contacted",
+});
+const incomingDup = calypsoCand({
+  id: "cand-incoming",
+  name: "Clone Touched",
+  email: "touched@example.test",
+  linkedinUrl: "https://www.linkedin.com/in/touched",
+});
+const deduped = dedupeCandidates([incomingDup], [contactedExisting], { excludedCompanies: [] });
+ok("contacted identity skipped on re-source", deduped.accepted.length === 0);
+ok(
+  "skip reason mentions contacted",
+  deduped.skipped.some((s) => /already contacted|do not re-contact|contacted/i.test(s.reason)),
+);
+const contactInfo = getContactStatus(contactedExisting);
+ok("contact status is in_window after recent send", contactInfo.status === "in_window");
+ok("contact status blocks resourcing", contactInfo.blockResourcing === true);
+
 
 console.log(`RESULT scoring-quality: ${pass} passed, ${fail} failed`);
 for (const c of ranked) {
