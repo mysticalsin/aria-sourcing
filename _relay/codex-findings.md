@@ -1206,4 +1206,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Same class as Autopilot sequences bug: service_role table SELECT on `sourcing_loop_controls` is revoked. After Autopilot enqueue, `dispatchDue` silently skipped every row (left `queued`). Worker shortlist/arming also failed closed.
 **Repro/evidence:** Live sequences armed via RPC; Autopilot mint/enqueue would still leave messages queued because dispatcher permit returned false on 42501.
 **Suggested fix:** Shared `loadSourcingLoopControls` → `get_sourcing_loop_controls`; durable-block with `sequences-not-armed`; surface dispatchDue stats on Autopilot result.
-**Status:** fixed (this shift)
+**Status:** fixed (736f832)
