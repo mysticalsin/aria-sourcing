@@ -1,49 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 426
+shift: 427
 agent: cursor-cloud
-updated: 2026-08-30T04:40Z
-status: candidates-compliance-fix-live
+updated: 2026-08-30T04:45Z
+status: main-fly-synced-candidates-fix-landed
 ---
 
-# Handoff — Shift 426
+# Handoff — Shift 427
 
 ## Current state
 
-- **Live Fly tip:** `3d678886efd9d3e4732fb4427ed477b9b8dc2d10` (`/api/ready` ok) — candidate `complianceFlags` repair
-- **PR:** [#42](https://github.com/mysticalsin/aria-sourcing/pull/42) `cursor/candidate-compliance-repair-b91d` → `integration/sourcing-enrichment-on-main` (ready for review)
-- **Prior tip on main:** `e527604` (campaign metrics repair #41) — Fly advanced ahead of main via owner deploy of PR tip
-- **Live E2E:** `/candidates` renders 26 candidates after hard refresh; home/campaigns/floor/intake/campaign detail PASS; sourcing CTA starts without error boundary
-- **GHA:** Actions budget may block CI — ignore phantoms
+- **main = integration = Fly tip:** `602bad7275ead7c68db26da838b4ce274b94cbbf`
+- **PR #42 MERGED** (candidates `complianceFlags` repair) — landed via FF into integration then main
+- **Fly:** `/api/ready` build `602bad7…`, healthy, migration `0079_…`
+- **Post-merge live E2E:** all routes PASS after hard refresh; sourcing CTA runs without error boundary
+- **Open PRs left:** #14 Dependabot brace-expansion; #3 draft flyctl workflow (`vercel-demo` lineage) — not on this tip
 
 ## Done this shift
 
-1. Root-caused `/candidates` "Something broke" as `TypeError … doNotContact` on sparse candidates missing `complianceFlags`
-2. Added `repairCandidates`/`repairComplianceFlags` in `normalizeHermesState` + migrate; fail-soft UI/rules
-3. Regression in `tests/campaign-repair.mts` (3 pass); typecheck + npm test green
-4. Reminted deploy confirm; `fly-deploy-now` shipped tip; physical E2E on Fly PASS
+1. FF-merged `cursor/candidate-compliance-repair-b91d` → `integration/sourcing-enrichment-on-main` → `main`
+2. Reminted deploy confirm for `602bad7`; `fly-deploy-now` succeeded
+3. Physical E2E on Fly: home/campaigns/candidates/floor/intake/campaign detail + Source next batch — no "Something broke"
 
 ## Blockers (owner)
 
-1. Merge #42 into integration (then FF main) so git tip matches Fly tip `3d67888`
-2. Graph/HeyReach dropzones empty → no live auto-send `sent>0` (HOLD)
-3. Hard-refresh after deploys (cached JS briefly showed old error boundary)
+1. Graph/HeyReach dropzones empty → no live auto-send `sent>0` (HOLD if dropzones missing)
+2. GHA Actions budget → CI red phantoms on historical runs
 
 ## Next steps
 
 ```bash
-# Owner: merge PR #42, FF main to tip, remint confirm if redeploying from main
-gh pr merge 42 --merge  # or UI
-git fetch origin && git checkout main && git merge --ff-only origin/integration/sourcing-enrichment-on-main
+# Tip already live. Optional: close stale #3/#14 if undesired.
+curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build}'
+# Hard-refresh browser after any future deploy
 ```
 
 ## Decisions made (don't relitigate)
 
-- Shell fail-soft + repair for sparse campaigns (`metrics`) and candidates (`complianceFlags`)
-- Fly may temporarily lead main when owner deploys reviewed PR tip SHA
-- Goal complete only on auto-send `sent>0` (separate from shell crash fixes)
+- Shell repair for sparse `campaign.metrics` (#41) and `candidate.complianceFlags` (#42)
+- main/integration stay FF-synced; Fly deploys reviewed tip SHA
+- Goal complete only on auto-send `sent>0`
 
 ## Watch out
 
-- Stale deploy confirm SHA fails `fly-deploy-now`
-- Do not chase Entra when `/tmp/owner-azure-app-id` / microsoft / llm dropzones missing → HOLD
+- Hard-refresh after deploys (cached JS can flash old error boundary)
+- Stale `/tmp/owner-deploy-confirm.env` SHA fails fly-deploy-now
