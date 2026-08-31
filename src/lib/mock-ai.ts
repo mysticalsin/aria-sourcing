@@ -754,16 +754,17 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   // Note: only user-search qualifiers are valid here (language:, location:,
   // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
   // out the whole query on /search/users. Platforms (Calypso) are not languages.
-  const githubLangs = topSkills.filter((skill) =>
-    GITHUB_SEARCH_LANGUAGES.has(skill.toLowerCase().replace(/\s+/g, "")),
-  );
-  const githubQueries: GithubQuery[] = githubLangs.slice(0, 3).map((skill, i) => ({
-    label: `${skill} contributors`,
-    query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-      i === 0 ? "repos:>10" : "repos:>5"
-    }`,
-    estimatedResults: 120 + i * 60,
-  }));
+  const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => {
+    const token = skill.replace(/\s+/g, "");
+    const language = GITHUB_SEARCH_LANGUAGES.has(token.toLowerCase());
+    return {
+      label: `${skill} contributors`,
+      query: `${language ? `language:${token}` : token}${locationQualifier} followers:>40 ${
+        i === 0 ? "repos:>10" : "repos:>5"
+      }`,
+      estimatedResults: 120 + i * 60,
+    };
+  });
 
   const linkedinGeoTerms =
     europeHints.length > 0

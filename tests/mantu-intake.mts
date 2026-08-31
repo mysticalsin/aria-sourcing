@@ -93,6 +93,11 @@ ok(
   "GitHub queries do not use language:Calypso",
   strategy.githubQueries.every((q) => !/language:Calypso/i.test(q.query)),
 );
+ok(
+  "GitHub still emits a keyword query for non-language must-haves",
+  strategy.githubQueries.length >= 2 &&
+    strategy.githubQueries.some((q) => /language:Python/i.test(q.query)),
+);
 ok("LinkedIn boolean is not an empty AND ()", !/AND\s*\(\s*\)/.test(strategy.linkedinBoolean));
 ok("LinkedIn boolean includes a must-have skill", /Linux|Python|Oracle|Calypso/i.test(strategy.linkedinBoolean));
 

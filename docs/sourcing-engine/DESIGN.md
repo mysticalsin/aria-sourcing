@@ -198,8 +198,13 @@ Must prove, with a recorded command + `exit_code` + path (not a self-report):
 **Floor is 60.** The undeployed PR #53 80 floor is out of scope and must not
 be adopted. Outreach contact floor (`MIN_SCORE_FLOOR` 70) stays separate.
 
+**Production after land is Fly** (`https://aria-mantu-app.fly.dev/`). The
+Vercel demo is not the bar. Empty cloud parse, clustered synthetic scores,
+`language:Calypso`, and empty LinkedIn `AND ()` are fails on Fly.
+
 ## Out of scope
 
 - UI chrome, Command Center, Polo, outreach send, WhatsApp, billing.
 - Weakening the floor for a "quick" path.
 - Invented live candidates.
+- Vercel-only work. One PR.
