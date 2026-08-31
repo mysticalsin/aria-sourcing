@@ -514,9 +514,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.sourceNextBatch(c.id);
     setSourcing(false);
     if (!res.ok) {
+      const missingPlugin = res.code === "MISSING_PLUGIN";
       toast({
-        title: res.source === "paused" ? "Campaign is paused" : "Sourcing failed",
-        description: res.error,
+        title: res.source === "paused"
+          ? "Campaign is paused"
+          : missingPlugin
+            ? "LinkedIn profile search required"
+            : "Sourcing failed",
+        description: missingPlugin
+          ? `${res.error} → Settings → Access & Keys (API keys / Apify).`
+          : res.error,
         variant: "error",
       });
       return;

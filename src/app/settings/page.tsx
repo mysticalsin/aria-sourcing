@@ -1185,7 +1185,7 @@ export default function SettingsPage() {
             title="API keys"
             description="Add a provider key and test it. Secrets are stored server-side and never shown again (admins only)."
           >
-            <ApiKeysPanel />
+            <div id="api-keys-panel"><ApiKeysPanel /></div>
           </Section>
 
           {/* 12 — Access & roles */}

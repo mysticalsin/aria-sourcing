@@ -10,6 +10,8 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   CAMPAIGN_NOT_READY: "Complete and review the campaign brief before sourcing.",
   CAMPAIGN_INPUT_UNSAFE: "Review unsafe instructions in the campaign brief before sourcing.",
   CAMPAIGN_CHANGED: "Campaign authority changed. Retry from the current campaign.",
+  MISSING_PLUGIN:
+    "Connect LinkedIn and Apify in Settings. GitHub Sourcing cannot fill this role, even when toggled Live.",
   INSUFFICIENT_PERMISSIONS: "Sourcing authority is no longer available.",
   SOURCING_AGENT_RATE_LIMITED: "The sourcing-agent rate limit was reached. Try again later.",
   SOURCING_AGENT_REPLAY_BLOCKED: "This sourcing request was already claimed. Start a new sourcing run.",
@@ -20,7 +22,7 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
 
 export type ReviewedSourcingRequestResult =
   | { ok: true; value: SourcingAgentSuccessResponse }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: string; settingsHref?: string };
 
 export async function acknowledgeReviewedSourcing(
   workspaceFetch: typeof fetch,
@@ -107,16 +109,25 @@ export async function requestReviewedSourcing(
   }
   const body = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
-    const code =
+    const record =
       body !== null && typeof body === "object" && !Array.isArray(body)
-        ? (body as Record<string, unknown>).code
+        ? (body as Record<string, unknown>)
         : null;
+    const code = typeof record?.code === "string" ? record.code : null;
+    const settingsHref =
+      typeof record?.settingsHref === "string" ? record.settingsHref : undefined;
+    const serverError =
+      typeof record?.error === "string" && record.error.trim() ? record.error.trim() : null;
     return {
       ok: false,
       error:
-        typeof code === "string" && SAFE_SOURCING_ERRORS[code]
-          ? SAFE_SOURCING_ERRORS[code]
-          : "The sourcing agent is unavailable.",
+        code === "MISSING_PLUGIN" && serverError
+          ? serverError
+          : typeof code === "string" && SAFE_SOURCING_ERRORS[code]
+            ? SAFE_SOURCING_ERRORS[code]
+            : "The sourcing agent is unavailable.",
+      ...(code ? { code } : {}),
+      ...(settingsHref ? { settingsHref } : {}),
     };
   }
 

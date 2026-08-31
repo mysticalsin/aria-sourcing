@@ -458,14 +458,18 @@ export async function enrichProfilesByUrl(
  * `secret` is withheld from `authenticated` by column grant, same pattern
  * /api/email/sync uses for email_connections). Returns null when nothing is
  * stored — never accepts a raw key from the caller.
+ *
+ * Deployment fallback: when no workspace vault row exists, honor `APIFY_TOKEN`
+ * from the process environment (Fly secret). Settings → API Keys remains the
+ * preferred path; env is for ops bootstrapping only.
  */
 export async function resolveStoredApifyKey(
   session: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>,
 ): Promise<string | null> {
   const svc = getServiceSupabase();
-  if (!svc) return null;
+  if (!svc) return envApifyToken();
   const { data: wid } = await session.rpc("current_workspace_id");
-  if (!wid) return null;
+  if (!wid) return envApifyToken();
   const { data: row } = await svc
     .from("api_keys")
     .select("secret")
@@ -474,13 +478,13 @@ export async function resolveStoredApifyKey(
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!row?.secret || typeof row.secret !== "string") return null;
-  return decryptSecret(row.secret);
+  if (!row?.secret || typeof row.secret !== "string") return envApifyToken();
+  return decryptSecret(row.secret) || envApifyToken();
 }
 
 export async function resolveStoredApifyKeyForWorkspace(workspaceId: string): Promise<string | null> {
   const svc = getServiceSupabase();
-  if (!svc) return null;
+  if (!svc) return envApifyToken();
   const { data: row } = await svc
     .from("api_keys")
     .select("secret")
@@ -489,6 +493,11 @@ export async function resolveStoredApifyKeyForWorkspace(workspaceId: string): Pr
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!row?.secret || typeof row.secret !== "string") return null;
-  return decryptSecret(row.secret);
+  if (!row?.secret || typeof row.secret !== "string") return envApifyToken();
+  return decryptSecret(row.secret) || envApifyToken();
+}
+
+function envApifyToken(): string | null {
+  const token = process.env.APIFY_TOKEN?.trim() ?? "";
+  return token.length > 0 ? token : null;
 }

@@ -692,7 +692,14 @@ export function createSourcingActions({
       agentFramework,
     );
     if (!reviewed.ok) {
-      return { ok: false, error: reviewed.error, source: "unavailable" };
+      return {
+        ok: false,
+        error: reviewed.error,
+        source: "unavailable",
+        ...(reviewed.code === "MISSING_PLUGIN"
+          ? { code: "MISSING_PLUGIN" as const, settingsHref: reviewed.settingsHref }
+          : {}),
+      };
     }
     if (!workspaceEffectAllowed()) {
       return {

@@ -97,7 +97,12 @@ export async function POST(req: NextRequest) {
   // persists secrets — saveApiKey discards the value after computing last4).
   const apiKey = session ? await resolveStoredApifyKey(session) : null;
   if (!apiKey) {
-    return NextResponse.json({ ok: false, error: "Connect an Apify key in Settings first." });
+    return NextResponse.json({
+      ok: false,
+      code: "MISSING_PLUGIN",
+      error: "Connect LinkedIn and Apify in Settings. GitHub Sourcing cannot fill this role, even when toggled Live.",
+      settingsHref: "/settings?tab=access#api-keys-panel",
+    });
   }
 
   if (!session) return NextResponse.json({ ok: false, error: "Campaign authority is unavailable." }, { status: 503 });

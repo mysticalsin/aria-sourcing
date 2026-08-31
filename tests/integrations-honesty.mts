@@ -39,14 +39,17 @@ ok(
   placeholders.every((integration) => testConnection(integration).ok === false),
 );
 ok(
-  "Apify LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
+  "LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
   apify?.real === true && apify.status === "connected" && typeof apify.lastSync === "string",
 );
 ok(
-  "Apify card's description names the third-party vendor and disclaims first-party LinkedIn automation",
-  /apify/i.test(apify?.description ?? "") &&
+  "LinkedIn profile search card uses neutral connector copy and disclaims first-party LinkedIn automation",
+  /linkedin profile/i.test(apify?.name ?? "") &&
     /third-party/i.test(apify?.description ?? "") &&
-    /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? ""),
+    /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? "") &&
+    /source next batch/i.test(apify?.description ?? "") &&
+    typeof apify?.setupHref === "string" &&
+    /api-keys-panel/.test(apify.setupHref),
 );
 ok(
   "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",

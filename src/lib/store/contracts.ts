@@ -83,6 +83,8 @@ export type SourceNextBatchResult =
       error: string;
       source: SourceNextBatchErrorSource;
       retryable?: "agent_framework_reconcile";
+      code?: "MISSING_PLUGIN";
+      settingsHref?: string;
     };
 
 export type CandidateIntakeResult =

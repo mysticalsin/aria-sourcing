@@ -143,3 +143,43 @@ export function buildGithubSearchQueries(
     estimatedResults: 120 + i * 60,
   }));
 }
+
+/**
+ * Deep LinkedIn / web search variants — boolean + title aliases + skills + geo —
+ * so Source next batch can fan out and keep only hard-gate / quality-floor fits.
+ */
+export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 12): string[] {
+  const variants: string[] = [];
+  const boolean = buildBooleanSearchQuery(jd).trim();
+  if (boolean) variants.push(boolean.slice(0, 256));
+
+  const titles = roleTitleMatchAliases(jd.title).slice(0, 6);
+  const skills = (jd.requiredSkills ?? []).slice(0, 4);
+  const geos = geoTerms(jd);
+  const seniority = jd.seniority !== "Unspecified" ? jd.seniority : "";
+
+  for (const alias of titles) {
+    for (const geo of geos.slice(0, 2)) {
+      variants.push([seniority, alias, geo].filter(Boolean).join(" "));
+      if (skills[0]) variants.push([alias, skills[0], geo].filter(Boolean).join(" "));
+    }
+    if (skills[0]) variants.push([alias, skills[0], geos[0] ?? ""].filter(Boolean).join(" "));
+  }
+  if (skills[1] && titles[0]) {
+    variants.push([titles[0], skills[1], geos[0] ?? ""].filter(Boolean).join(" "));
+  }
+  const keyword = [jd.title, ...skills.slice(0, 3), ...geos.slice(0, 1)]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (keyword) variants.push(keyword.slice(0, 256));
+
+  return Array.from(
+    new Set(
+      variants
+        .map((q) => q.replace(/\s+/g, " ").trim().slice(0, 256))
+        .filter((q) => q.length >= 3),
+    ),
+  ).slice(0, max);
+}

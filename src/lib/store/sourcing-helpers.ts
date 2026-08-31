@@ -195,13 +195,23 @@ export function mapSillageCandidates(
  * note recording that provenance and that lawful-basis/consent review under
  * GDPR is the recruiter's responsibility before outreach.
  */
+export type MapApifyOptions = {
+  /**
+   * Operator-facing platform stamp. Default LinkedIn so unified sourcing never
+   * surfaces the vendor name; pass "Apify" only for legacy test fixtures.
+   */
+  displayPlatform?: Extract<SourcePlatform, "LinkedIn" | "Apify">;
+};
+
 export function mapApifyCandidates(
   profiles: ApifyProfile[],
   campaign: Campaign,
   query: string,
   existing: Candidate[],
   weights: ScoringWeights = campaign.scoringWeights,
+  opts: MapApifyOptions = {},
 ): SourceResult {
+  const displayPlatform = opts.displayPlatform ?? "LinkedIn";
   const jd = campaign.jobAnalysis;
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
   const raw: Candidate[] = profiles.map((p) => {
@@ -227,7 +237,7 @@ export function mapApifyCandidates(
       githubUrl: "",
       sourceExternalId: externalId,
       externalIds: externalId ? { Apify: externalId } : undefined,
-      sourcePlatform: "Apify",
+      sourcePlatform: displayPlatform,
       sourceQuery: query,
       matchScore: 0,
       matchBreakdown: [],
@@ -237,7 +247,7 @@ export function mapApifyCandidates(
       yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
-      recentActivity: headline || about.slice(0, 140) || "Sourced via Apify LinkedIn profile search.",
+      recentActivity: headline || about.slice(0, 140) || "Sourced via LinkedIn profile search.",
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],
@@ -258,7 +268,7 @@ export function mapApifyCandidates(
         {
           id: genId("note"),
           text:
-            "Sourced via Apify (harvestapi/linkedin-profile-search) — third-party public LinkedIn profile data. " +
+            "Sourced via LinkedIn profile search — third-party public LinkedIn profile data. " +
             "Lawful-basis/consent review under GDPR is the recruiter's responsibility before outreach.",
           at,
         },

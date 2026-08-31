@@ -43,6 +43,14 @@ import {
   type SourcingAgentCampaign,
 } from "@/lib/sourcing/sourcing-agent-contract";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
+import {
+  isLinkedInFirstPlatform,
+  LINKEDIN_PROFILE_SEARCH_SETTINGS_HREF,
+  MISSING_PLUGIN_CODE,
+  MISSING_PLUGIN_MESSAGE,
+} from "@/lib/sourcing/missing-plugin";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Candidate, Role } from "@/lib/types";
@@ -80,6 +88,7 @@ type ErrorCode =
   | "CAMPAIGN_NOT_READY"
   | "CAMPAIGN_INPUT_UNSAFE"
   | "CAMPAIGN_CHANGED"
+  | "MISSING_PLUGIN"
   | "SOURCING_AGENT_RATE_LIMITED"
   | "SOURCING_AGENT_REPLAY_BLOCKED"
   | "SOURCING_AGENT_NOT_CONFIGURED"
@@ -111,9 +120,16 @@ function errorResponse(
   error: string,
   correlationId: string,
   retryAfter?: number,
+  extra?: { settingsHref?: string },
 ): NextResponse {
   const response = noStoreJson(
-    { ok: false, code, error, requestId: correlationId },
+    {
+      ok: false,
+      code,
+      error,
+      requestId: correlationId,
+      ...(extra?.settingsHref ? { settingsHref: extra.settingsHref } : {}),
+    },
     status,
   );
   if (retryAfter !== undefined) response.headers.set("Retry-After", String(retryAfter));
@@ -210,7 +226,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
     code: ErrorCode,
     error: string,
     retryAfter?: number,
-  ) => errorResponse(status, code, error, correlationId, retryAfter);
+    extra?: { settingsHref?: string },
+  ) => errorResponse(status, code, error, correlationId, retryAfter, extra);
 
   if (prodFailClosed() || !supabaseEnabled) {
     return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Live sourcing authority is unavailable.");
@@ -301,7 +318,25 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
   const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
   const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
-  if (deterministic && configuredQueries.length === 0) {
+  const primaryPlatform = initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ?? "GitHub";
+  const linkedInFirst = isLinkedInFirstPlatform(primaryPlatform);
+
+  // Fail closed before claiming a run: LinkedIn-first roles need the profile
+  // search connector. GitHub Live alone cannot fill Calypso BA / consulting needs.
+  if (linkedInFirst && !frameworkAuthorization) {
+    const linkedInProfileTokenEarly = await resolveStoredApifyKey(session);
+    if (!linkedInProfileTokenEarly?.trim()) {
+      return fail(
+        409,
+        MISSING_PLUGIN_CODE,
+        MISSING_PLUGIN_MESSAGE,
+        undefined,
+        { settingsHref: LINKEDIN_PROFILE_SEARCH_SETTINGS_HREF },
+      );
+    }
+  }
+
+  if (deterministic && !frameworkAuthorization && !linkedInFirst && configuredQueries.length === 0) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
   }
   const roleBasis: SourcingRoleBasis = sourcingRoleBasisForCampaign(initial.value.campaign);
@@ -487,7 +522,12 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
     }
-    const tavilyKey = deterministic ? null : await resolveStoredTavilyKey(session);
+    const githubToken = process.env.GITHUB_TOKEN ?? "";
+    // Prefer a stored vault key; fall back to the deployment env so LinkedIn-first
+    // roles can still run a real site-scoped web search when no vault row exists.
+    const storedTavily = await resolveStoredTavilyKey(session);
+    const tavilyKey = storedTavily || process.env.TAVILY_API_KEY || null;
+    const linkedInProfileToken = await resolveStoredApifyKey(session);
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -530,15 +570,16 @@ async function handlePost(req: NextRequest, correlationId: string) {
       }
     }
 
-    const githubToken = process.env.GITHUB_TOKEN ?? "";
     const runner = makeSourcingToolRunner(
       initial.value.campaign,
       initial.value.existing,
       initial.value.campaign.scoringWeights,
       githubToken,
-      tavilyKey ?? undefined,
-      undefined,
-      async () => (await currentAuthority()).ok,
+      {
+        tavilyKey: tavilyKey ?? undefined,
+        linkedInProfileToken,
+        beforeExternalCall: async () => (await currentAuthority()).ok,
+      },
     );
     const servers: ResolvedMcpServer[] = [
       {
@@ -550,48 +591,43 @@ async function handlePost(req: NextRequest, correlationId: string) {
     ];
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
-      const searchSignal = AbortSignal.timeout(45_000);
-      const queries = frameworkAuthorization
-        ? [frameworkAuthorization.query]
-        : [
-            ...promotedLessons
-              .filter((lesson) => lesson.platform === "GitHub")
-              .map((lesson) => lesson.query),
-            ...configuredQueries,
-          ]
-            .filter((query, index, all) => all.indexOf(query) === index)
-            .slice(0, 3);
-      let successfulQuery = false;
-      for (const query of queries) {
-        const remaining = count - runner.getFound().length;
-        if (remaining <= 0) break;
-        const result = await runner.run(
-          "search_candidates",
-          { platform: "GitHub", query, count: remaining },
-          searchSignal,
+      const searchSignal = AbortSignal.timeout(120_000);
+      const forcedQueries = frameworkAuthorization
+        ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
+        : undefined;
+      const multi = await runMultiProviderSourcing({
+        campaign: initial.value.campaign,
+        existing: initial.value.existing,
+        weights: initial.value.campaign.scoringWeights,
+        count,
+        githubToken,
+        tavilyKey: tavilyKey ?? undefined,
+        linkedInProfileToken,
+        signal: searchSignal,
+        beforeExternalCall: async () => (await currentAuthority()).ok,
+        forcedQueries,
+      });
+      const afterQuery = await readWorkspace(session, workspaceId, campaignId);
+      if (
+        afterQuery.status !== "ok" ||
+        !campaignAllowsSourcing(afterQuery.value.campaign) ||
+        afterQuery.value.fingerprint !== initial.value.fingerprint ||
+        afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
+      ) {
+        return await failClaimed(
+          409,
+          "CAMPAIGN_CHANGED",
+          "Campaign authority changed during the operation.",
         );
-        successfulQuery = successfulQuery || result.ok;
-        const afterQuery = await readWorkspace(session, workspaceId, campaignId);
-        if (
-          afterQuery.status !== "ok" ||
-          !campaignAllowsSourcing(afterQuery.value.campaign) ||
-          afterQuery.value.fingerprint !== initial.value.fingerprint ||
-          afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
-        ) {
-          return await failClaimed(
-            409,
-            "CAMPAIGN_CHANGED",
-            "Campaign authority changed during the operation.",
-          );
-        }
       }
-      if (!successfulQuery) {
+      if (!multi.executions.some((execution) => execution.ok)) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_UPSTREAM_FAILED",
           "Real candidate search did not complete.",
         );
       }
+      runner.seedFromOrchestrator(multi);
     } else {
       if (!cloudSlug || !toolModel || !vaultKey) {
         return await failClaimed(

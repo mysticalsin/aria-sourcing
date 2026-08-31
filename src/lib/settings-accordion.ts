@@ -55,6 +55,7 @@ export const SETTINGS_HASH_TO_SECTION: Record<string, string> = {
   "email-connections-panel": "04",
   "linkedin-outreach-stack": "04",
   "integrations-catalog": "04",
+  "api-keys-panel": "11",
 };
 
 const SESSION_KEY = "aria.settings.openSection";
