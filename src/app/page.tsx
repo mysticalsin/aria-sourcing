@@ -185,9 +185,21 @@ export default function DashboardPage() {
       });
       return;
     }
+    if (missingPeoplePlugins) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: missingPeoplePlugins,
+        variant: "error",
+      });
+      return;
+    }
     const result = await actions.sourceNextBatch(activeCampaign.id);
     if (!result.ok) {
-      const failLoud = peoplePluginFailLoudUi(result.error);
+      const failLoud = peoplePluginFailLoudUi(
+        result.error,
+        activeCampaign.jobAnalysis,
+        integrations,
+      );
       toast({
         title: failLoud
           ? failLoud.title

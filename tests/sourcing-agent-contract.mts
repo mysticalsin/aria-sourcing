@@ -163,9 +163,8 @@ test("campaign UI presents a completed zero-match search as information, not sou
 
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
   const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client.ts");
-  const { MISSING_PEOPLE_PLUGINS_TOAST, remapPeopleFirstSourcingError } = await import(
-    "../src/lib/sourcing/people-plugins.ts"
-  );
+  const { MISSING_PEOPLE_PLUGINS_TOAST, remapPeopleFirstSourcingError, peoplePluginFailLoudUi } =
+    await import("../src/lib/sourcing/people-plugins.ts");
   const missing = MISSING_PEOPLE_PLUGINS_TOAST;
   const mapped = await requestReviewedSourcing(
     async () =>
@@ -221,6 +220,28 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     ),
     missing,
   );
+  const staleConnected = [
+    {
+      ...liveUnconfigured[1],
+      status: "connected" as const,
+    },
+  ];
+  assert.equal(
+    remapPeopleFirstSourcingError(
+      "The sourcing agent returned an invalid response.",
+      financeJob,
+      staleConnected,
+    ),
+    missing,
+  );
+  const toast = peoplePluginFailLoudUi(
+    "The sourcing agent returned an invalid response.",
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(toast?.title, "Connect LinkedIn and Apify");
+  assert.match(String(toast?.description), /MISSING_PLUGIN/);
+  assert.doesNotMatch(String(toast?.description), /invalid response/i);
   assert.match(missing, /Connect LinkedIn and Apify/);
 
   const legacyCode = await requestReviewedSourcing(

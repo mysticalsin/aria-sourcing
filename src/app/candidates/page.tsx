@@ -307,7 +307,11 @@ function CandidatesView() {
     const res = await actions.sourceNextBatch(activeCampaign.id);
     setSourcing(false);
     if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(res.error);
+      const failLoud = peoplePluginFailLoudUi(
+        res.error,
+        activeCampaign.jobAnalysis,
+        integrations,
+      );
       toast({
         title: failLoud
           ? failLoud.title

@@ -40,12 +40,11 @@ export function missingPeoplePluginsToast(
 export function remapPeopleFirstSourcingError(
   error: string,
   job: JobAnalysis,
-  integrations: readonly IntegrationStatus[],
+  _integrations?: readonly IntegrationStatus[],
 ): string {
-  const missing = missingPeoplePluginsToast(job, integrations);
-  if (!missing) return error;
+  if (!isPeopleFirstRole(job)) return error;
   if (error.includes("MISSING_PLUGIN") || GENERIC_SOURCING_FAILURE.test(error)) {
-    return missing;
+    return MISSING_PEOPLE_PLUGINS_TOAST;
   }
   return error;
 }
@@ -61,11 +60,21 @@ export function isGithubOnlyEmptyBatch(input: {
   );
 }
 
-export function peoplePluginFailLoudUi(error: string): { title: string; description: string } | null {
-  if (!error.includes("MISSING_PLUGIN") && !/Connect LinkedIn and Apify/i.test(error)) return null;
+export function peoplePluginFailLoudUi(
+  error: string,
+  job?: JobAnalysis,
+  integrations?: readonly IntegrationStatus[],
+): { title: string; description: string } | null {
+  const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations) : error;
+  if (
+    !remapped.includes("MISSING_PLUGIN") &&
+    !/Connect LinkedIn and Apify/i.test(remapped)
+  ) {
+    return null;
+  }
   return {
     title: "Connect LinkedIn and Apify",
-    description: error.includes("MISSING_PLUGIN") ? error : MISSING_PEOPLE_PLUGINS_TOAST,
+    description: remapped.includes("MISSING_PLUGIN") ? remapped : MISSING_PEOPLE_PLUGINS_TOAST,
   };
 }
 

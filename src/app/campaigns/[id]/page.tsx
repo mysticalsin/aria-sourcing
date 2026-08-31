@@ -525,7 +525,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.sourceNextBatch(c.id);
     setSourcing(false);
     if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(res.error);
+      const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations);
       toast({
         title: failLoud
           ? failLoud.title

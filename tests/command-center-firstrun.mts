@@ -85,7 +85,13 @@ const commandCenterPage = readFileSync(new URL("../src/app/page.tsx", import.met
 const sourceStart = commandCenterPage.indexOf("async function handleSourceBatch()");
 const sourceAction = commandCenterPage.slice(sourceStart, commandCenterPage.indexOf("function handleGenerateReport"));
 check("Command Center Source next batch names LinkedIn and Apify", /Connect LinkedIn and Apify/.test(sourceAction));
-check("Command Center Source next batch surfaces MISSING_PLUGIN", /MISSING_PLUGIN|peoplePluginFailLoudUi|emptyPeopleFirstShortlistError/.test(sourceAction));
+check("Command Center Source next batch surfaces MISSING_PLUGIN", /MISSING_PLUGIN|peoplePluginFailLoudUi|emptyPeopleFirstShortlistError|missingPeoplePlugins/.test(sourceAction));
+check(
+  "Command Center toasts MISSING_PLUGIN before calling the agent",
+  /if \(missingPeoplePlugins\)/.test(sourceAction) &&
+    sourceAction.indexOf("if (missingPeoplePlugins)") < sourceAction.indexOf("sourceNextBatch"),
+);
+check("Command Center remaps invalid-response on people-first", /peoplePluginFailLoudUi\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
 check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
 check("Command Center shows MISSING_PLUGIN alert before click", /cc-missing-plugin/.test(commandCenterPage));
 
