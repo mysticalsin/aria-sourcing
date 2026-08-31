@@ -11,8 +11,9 @@ status: pr-open
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** against `main` (not merged)
-- Tip before this shift: `4cc8a5d` (Fly v165 walk failed Calypso Application Support bar)
-- This shift fixes that walk: Skill (Must) tokenize on persist/display; Source next batch is LinkedIn+Apify-first for people-first roles; missing keys fail `MISSING_PLUGIN`; Load Mantu loads Calypso Application Support, not Murex
+- Tip: **`8c7c049`** on `cursor/sourcing-engine-94b1` (PR #54). Fly v165 / `4cc8a5d` walk failed; this tip is the fix
+- Skill (Must) tokenized on persist/display; people-first Source next batch is LinkedIn+Apify; missing keys fail `MISSING_PLUGIN`; Load Mantu is Calypso Application Support, not Murex
+- Follow-up walks (GitHub 0×3, unkeyed LinkedIn/Apify, Murex overwrite) are absorbed in this tip — do not open a second PR/agent
 - Historic CI still red as on main. Quality is the gate. Do not chase historic
 - This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not merge
 
@@ -24,7 +25,7 @@ status: pr-open
 4. No Tavily and no Apify on a people-first role → `SOURCING_AGENT_NOT_CONFIGURED` / `MISSING_PLUGIN` (connect LinkedIn and/or Apify). Does not search GitHub
 5. Live LinkedIn/Apify rows go through `applyLiveEngineGate`: name-only fail, finance floor 60 / cap 20 / per-row CV citations
 6. Load Mantu need loads `SAMPLE_CALYPSO_APP_SUPPORT_NEED`. Will not overwrite an already-loaded Calypso Application Support brief with Crédit Agricole Murex. Murex is a separate “Load Murex sample” button
-7. Tests extended in existing suites. `tsc --noEmit` green on this change
+7. Tests extended in existing suites. `./node_modules/.bin/tsc --noEmit && npm test` green on `8c7c049`
 
 ## Blockers
 
