@@ -8,7 +8,9 @@ export function ariaBuildSha(): string {
  * `ARIA_RELEASE_SHA` secret (PR 53 stamped 7fe6702 after an image rollback)
  * must not outrank a 40-character SHA baked into the image.
  */
-export function ariaReleaseIdentitySha(env: NodeJS.ProcessEnv = process.env): string {
+export function ariaReleaseIdentitySha(
+  env: Record<string, string | undefined> = process.env,
+): string {
   const baked = (env.NEXT_PUBLIC_ARIA_GIT_SHA ?? "").replace(/[^0-9a-f]/gi, "").toLowerCase();
   if (/^[0-9a-f]{40}$/.test(baked)) return baked;
   const stamped = (env.ARIA_RELEASE_SHA ?? "").replace(/[^0-9a-f]/gi, "").toLowerCase();
