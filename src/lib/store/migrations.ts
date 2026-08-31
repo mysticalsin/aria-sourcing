@@ -1,5 +1,6 @@
 import { defaultIntegrations } from "../integrations";
 import { repairGithubQueries } from "../sourcing/github-search-language";
+import { repairLinkedinBoolean } from "../sourcing/linkedin-boolean";
 import { tokenizeMustHaveSkills } from "../sourcing/vss-need";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
@@ -19,6 +20,7 @@ function repairCampaignSkillQueries(campaign: Campaign): Campaign {
     sourcingStrategy: {
       ...campaign.sourcingStrategy,
       githubQueries: repairGithubQueries(jobAnalysis, campaign.sourcingStrategy.githubQueries),
+      linkedinBoolean: repairLinkedinBoolean(jobAnalysis, campaign.sourcingStrategy.linkedinBoolean),
     },
   };
 }

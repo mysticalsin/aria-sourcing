@@ -132,8 +132,9 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
 (Calypso is a skill, never `language:Calypso` or a concatenated
 `language:LinuxPython…` token). GitHub queries use the same Skill (Must)
 tokens as chips — `language:Python` / `language:Shell` or topic terms, never
-one glued word. A stale persisted blob is repaired on hydrate and on the
-Strategy tab.
+one glued word. LinkedIn boolean uses the same tokens as `"Linux" OR "Python"`,
+never one quoted Skill (Must) phrase. A stale persisted blob is repaired on
+hydrate and on the Strategy tab.
 
 - **LinkedIn is a primary source** (resumes, experience, skill-word search).
   Aria is **not** LinkedIn-only: Apify plus other keyed sources (GitHub,
@@ -271,9 +272,9 @@ be adopted. Outreach contact floor (`MIN_SCORE_FLOOR` 70) stays separate.
 
 **Production after land is Fly** (`https://aria-mantu-app.fly.dev/`). The
 Vercel demo is not the bar. Empty cloud parse, clustered synthetic scores,
-`language:Calypso`, unsplit Skill (Must), and empty LinkedIn `AND ()` are
-fails on Fly. The UI shows a baked git SHA (`aria <sha>`) so Fly-show can
-prove which release is running.
+`language:Calypso`, unsplit Skill (Must), a quoted LinkedIn Skill (Must)
+phrase, and empty LinkedIn `AND ()` are fails on Fly. The UI shows a baked
+git SHA (`aria <sha>`) so Fly-show can prove which release is running.
 
 ## Out of scope
 

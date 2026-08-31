@@ -9,6 +9,7 @@ import { evaluateNeedReadiness } from "../src/lib/needs/readiness";
 import { roleFamily, roleProfile } from "../src/lib/roles";
 import { splitGluedSkillBlob, tokenizeMustHaveSkills } from "../src/lib/sourcing/vss-need";
 import { githubSkillQueryToken, repairGithubQueries } from "../src/lib/sourcing/github-search-language";
+import { repairLinkedinBoolean } from "../src/lib/sourcing/linkedin-boolean";
 import { plannedSourcingSearches } from "../src/lib/sourcing/multi-source-plan";
 
 const TONY_AMACAN = readFileSync(
@@ -131,6 +132,12 @@ ok(
 ok("LinkedIn boolean is not an empty AND ()", !/AND\s*\(\s*\)/.test(strategy.linkedinBoolean));
 ok("LinkedIn boolean includes a must-have skill", /Linux|Python|Oracle|Calypso/i.test(strategy.linkedinBoolean));
 ok(
+  "LinkedIn boolean does not quote the Skill (Must) line as one phrase",
+  !/"Linux Python Shell Oracle Grafana Dynatrace Linux Server"/i.test(strategy.linkedinBoolean) &&
+    /"Linux"/.test(strategy.linkedinBoolean) &&
+    /"Python"/.test(strategy.linkedinBoolean),
+);
+ok(
   "two-word skill names stay one chip",
   tokenizeMustHaveSkills(["Distributed Systems", "Design Systems"]).join("|") ===
     "Distributed Systems|Design Systems",
@@ -189,6 +196,28 @@ ok(
     ],
   ).some((q) => /language:Python/i.test(q.query)),
 );
+const staleLinkedin =
+  '("Calypso Application Support") AND ("Linux Python Shell Oracle Grafana Dynatrace Linux Server") NOT "recruiter"';
+const repairedLinkedin = repairLinkedinBoolean(app.jobAnalysis, staleLinkedin);
+ok(
+  "stale LinkedIn boolean splits the quoted Skill (Must) phrase into tokens",
+  !/"Linux Python Shell Oracle Grafana Dynatrace Linux Server"/i.test(repairedLinkedin) &&
+    /"Linux" OR "Python" OR "Shell"/.test(repairedLinkedin) &&
+    /"Linux Server"/.test(repairedLinkedin),
+);
+ok(
+  "LinkedIn repair does not split the job title into skill tokens",
+  /"Calypso Application Support"/.test(repairedLinkedin),
+);
+ok(
+  "buildSourcingStrategy tokenizes an unsplit Skill (Must) line in the boolean",
+  !/"Linux Python Shell Oracle Grafana Dynatrace Linux Server"/i.test(
+    buildSourcingStrategy({
+      ...app.jobAnalysis,
+      requiredSkills: ["Linux Python Shell Oracle Grafana Dynatrace Linux Server"],
+    }).linkedinBoolean,
+  ),
+);
 ok("App Support is a finance/trading-platform need, not GitHub-first software", roleFamily(app.jobAnalysis) === "finance");
 ok(
   "App Support sources LinkedIn and Apify, not GitHub-only",
@@ -245,6 +274,10 @@ const campaignPage = readFileSync(
 ok(
   "Strategy tab renders repaired GitHub queries, not the raw glued blob",
   /repairGithubQueries/.test(campaignPage) && /githubQueries\.map/.test(campaignPage),
+);
+ok(
+  "Strategy tab renders a repaired LinkedIn boolean, not the raw quoted skill phrase",
+  /repairLinkedinBoolean/.test(campaignPage) && /linkedinBoolean/.test(campaignPage),
 );
 
 console.log(`RESULT mantu-intake: ${pass} passed, ${fail} failed`);

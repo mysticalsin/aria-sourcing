@@ -72,6 +72,7 @@ import {
   visiblePeopleFirstLearningReceipts,
 } from "@/lib/sourcing/people-plugins";
 import { repairGithubQueries } from "@/lib/sourcing/github-search-language";
+import { repairLinkedinBoolean } from "@/lib/sourcing/linkedin-boolean";
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import { deriveValidationWarnings } from "@/lib/ai/intake";
 import type {
@@ -455,6 +456,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   });
   const strategy = c.sourcingStrategy;
   const githubQueries = repairGithubQueries(jd, strategy.githubQueries);
+  const linkedinBoolean = repairLinkedinBoolean(jd, strategy.linkedinBoolean);
   const visibleFeedbackReceipts = visiblePeopleFirstLearningReceipts(
     feedbackReceipts,
     c.jobAnalysis,
@@ -1361,13 +1363,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   variant="ghost"
                   size="sm"
                   leftIcon={<Copy className="h-3.5 w-3.5" />}
-                  onClick={() => copy(strategy.linkedinBoolean, "Boolean string")}
+                  onClick={() => copy(linkedinBoolean, "Boolean string")}
                 >
                   Copy
                 </Button>
               </div>
               <p className="break-words rounded-2xl bg-ink/[0.03] px-3 py-2 font-mono text-xs text-ink-soft">
-                {strategy.linkedinBoolean || "No boolean string generated."}
+                {linkedinBoolean || "No boolean string generated."}
               </p>
             </CardBody>
           </Card>
