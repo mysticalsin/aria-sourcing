@@ -44,6 +44,7 @@ import {
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { plannedSourcingSearches } from "@/lib/sourcing/multi-source-plan";
+import { roleProfile } from "@/lib/roles";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Candidate, Role } from "@/lib/types";
@@ -305,7 +306,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
     return fail(409, "CAMPAIGN_CHANGED", "The framework query is no longer approved for this campaign.");
   }
   const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
-  const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
+  const peopleFirst = roleProfile(initial.value.campaign.jobAnalysis).queryStyle === "linkedin";
+  const deterministic = Boolean(frameworkAuthorization) || !cloudConfig || peopleFirst;
   if (deterministic && (frameworkAuthorization ? configuredQueries.length === 0 : multiSourcePlan.length === 0)) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
   }
@@ -316,7 +318,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
   let cloudSlug: AiProviderSlug | null = null;
   let toolModel: string | null = null;
-  if (!frameworkAuthorization && cloudConfig) {
+  if (!frameworkAuthorization && cloudConfig && !peopleFirst) {
     cloudSlug = cloudConfig.provider as AiProviderSlug;
     toolModel = cloudConfig.model || DEFAULT_MODEL[cloudSlug];
     if (!cloudConfig.apiKeyId) {
@@ -482,7 +484,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     const beforeSecrets = await failIfAuthorityChanged();
     if (beforeSecrets) return await beforeSecrets;
     let vaultKey: string | null = null;
-    if (cloudConfig && cloudSlug) {
+    if (!deterministic && cloudConfig && cloudSlug) {
       vaultKey = await resolveVaultSecret(cloudConfig.apiKeyId, VAULT_PROVIDER[cloudSlug]);
       if (!vaultKey) {
         return await failClaimed(
@@ -494,6 +496,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
     const tavilyKey = await resolveStoredTavilyKey(session);
     const apifyToken = await resolveStoredApifyKey(session);
+    if (peopleFirst && !frameworkAuthorization && !tavilyKey && !apifyToken) {
+      return await failClaimed(
+        503,
+        "SOURCING_AGENT_NOT_CONFIGURED",
+        "MISSING_PLUGIN: Connect LinkedIn and/or Apify in Settings before sourcing this role. GitHub language search cannot fill a trading-platform shortlist.",
+      );
+    }
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 

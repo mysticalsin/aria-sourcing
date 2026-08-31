@@ -287,7 +287,8 @@ export function deriveValidationWarnings(
   const warnings: ValidationWarning[] = [...evaluateNeedReadiness(job).issues];
   if (job.salaryMin == null && job.salaryMax == null)
     warnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
-  if (job.requiredSkills.length > 0 && job.requiredSkills.length < 3)
+  const skillCount = tokenizeMustHaveSkills(job.requiredSkills).length;
+  if (skillCount > 0 && skillCount < 3)
     warnings.push({
       field: "requiredSkills",
       severity: "warning",
@@ -309,7 +310,7 @@ export function coalesceRequiredSkills(
   return live.length ? live : heur;
 }
 
-function evidenceIntake(mock: ParsedIntake): ParsedIntake {
+export function evidenceIntake(mock: ParsedIntake): ParsedIntake {
   const requiredSkills = tokenizeMustHaveSkills(mock.jobAnalysis.requiredSkills);
   const niceToHaveSkills = tokenizeMustHaveSkills(mock.jobAnalysis.niceToHaveSkills);
   const jobAnalysis = {

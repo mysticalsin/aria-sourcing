@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { parseEmailAndJD, isMantuNeedEmail } from "@/lib/mock-ai";
+import { evidenceIntake } from "@/lib/ai/intake";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Provide `email` (or `from`/`subject`/`body`)." }, { status: 400 });
   }
 
-  const parsed = parseEmailAndJD({ email, jd });
+  const parsed = evidenceIntake(parseEmailAndJD({ email, jd }));
   return NextResponse.json({
     ok: true,
     format: isMantuNeedEmail(`${email}\n${jd ?? ""}`) ? "mantu-need" : "generic",

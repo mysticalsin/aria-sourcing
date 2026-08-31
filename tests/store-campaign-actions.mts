@@ -87,6 +87,10 @@ test("campaign callers handle rejected creation, updates, queries, and sourcing"
     (campaignPageSource.match(/if \(!actions\.regenerateQueries/g) ?? []).length,
     1,
   );
+  assert.match(campaignPageSource, /tokenizeMustHaveSkills/);
+  assert.match(campaignPageSource, /parseSkillList[\s\S]*tokenizeMustHaveSkills\(raw\)/);
+  assert.match(intakePageSource, /SAMPLE_CALYPSO_APP_SUPPORT_NEED/);
+  assert.match(intakePageSource, /Calypso Application Support stays loaded/);
 });
 
 test("campaign launch summary requires every requested role to complete", () => {

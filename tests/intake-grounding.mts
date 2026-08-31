@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   coalesceRequiredSkills,
+  deriveValidationWarnings,
   groundLiveIntakeFields,
   parseHermesIntakeJson,
   parseIntakeLive,
@@ -185,6 +186,13 @@ test("Parse JD path keeps Middle 4-6, Montreal, and no cloud-miss banner on VSS"
   assert.ok(
     !parsed.jobAnalysis.requiredSkills.some((s) => /Linux Python Shell/i.test(s)),
     "must-haves stay tokenized",
+  );
+  assert.ok(
+    !deriveValidationWarnings({
+      ...parsed.jobAnalysis,
+      requiredSkills: ["Linux Python Shell Oracle Grafana Dynatrace Linux Server"],
+    }).some((w) => /fewer than 3/i.test(w.message)),
+    "one Skill (Must) line is not fewer than 3 required skills after tokenize",
   );
 });
 

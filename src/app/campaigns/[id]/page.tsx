@@ -64,6 +64,8 @@ import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
+import { deriveValidationWarnings } from "@/lib/ai/intake";
 import type {
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
@@ -202,10 +204,7 @@ function yearsLabel(min: number | null, max: number | null): string {
 }
 
 function parseSkillList(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return tokenizeMustHaveSkills(raw);
 }
 
 /**
@@ -433,6 +432,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const liveSourcingAllowed = campaignAllowsLiveSourcing(c.status);
   const m = c.metrics;
   const jd = c.jobAnalysis;
+  const requiredSkillChips = tokenizeMustHaveSkills(jd.requiredSkills);
+  const niceSkillChips = tokenizeMustHaveSkills(jd.niceToHaveSkills);
+  const liveJdWarnings = deriveValidationWarnings({
+    ...jd,
+    requiredSkills: requiredSkillChips,
+  });
   const strategy = c.sourcingStrategy;
   const health = campaignHealth(c);
   const nextAction = nextActionForCampaign(c);
@@ -775,7 +780,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSaveJd = (patch: Partial<JobAnalysis>) => {
     const candidateCount = candidates.length;
-    if (!actions.updateCampaign(c.id, { jobAnalysis: { ...c.jobAnalysis, ...patch } })) {
+    const nextJd: JobAnalysis = {
+      ...c.jobAnalysis,
+      ...patch,
+      requiredSkills: tokenizeMustHaveSkills(patch.requiredSkills ?? c.jobAnalysis.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(patch.niceToHaveSkills ?? c.jobAnalysis.niceToHaveSkills),
+    };
+    nextJd.validationWarnings = deriveValidationWarnings(nextJd);
+    if (!actions.updateCampaign(c.id, { jobAnalysis: nextJd })) {
       toast({ title: "Requirements not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
       return;
     }
@@ -1069,11 +1081,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   </Badge>
                   <p className="text-sm text-ink-soft">{health.detail}</p>
                 </div>
-                {jd.validationWarnings.length === 0 ? (
+                {liveJdWarnings.length === 0 ? (
                   <p className="text-sm text-muted">No outstanding validation warnings on this role.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {jd.validationWarnings.map((w, i) => (
+                    {liveJdWarnings.map((w, i) => (
                       <li key={`${w.field}-${i}`} className="rounded-2xl border border-line p-3">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wide text-muted">{w.field}</span>
@@ -1142,11 +1154,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <CardTitle className="mt-1">Validation</CardTitle>
             </CardHeader>
             <CardBody>
-              {jd.validationWarnings.length === 0 ? (
+              {liveJdWarnings.length === 0 ? (
                 <p className="text-sm text-muted">Clean parse. No assumptions flagged for review.</p>
               ) : (
                 <ul className="space-y-2">
-                  {jd.validationWarnings.map((w, i) => (
+                  {liveJdWarnings.map((w, i) => (
                     <li key={`${w.field}-${i}`} className="rounded-2xl border border-line p-3">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-semibold uppercase tracking-wide text-muted">{w.field}</span>
@@ -1166,11 +1178,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <CardBody className="grid gap-6 sm:grid-cols-2">
               <div className="space-y-2.5">
                 <Eyebrow>Required skills</Eyebrow>
-                <Chips items={jd.requiredSkills} label="Required skills" />
+                <Chips items={requiredSkillChips} label="Required skills" />
               </div>
               <div className="space-y-2.5">
                 <Eyebrow>Nice to have</Eyebrow>
-                <Chips items={jd.niceToHaveSkills} label="Nice to have skills" />
+                <Chips items={niceSkillChips} label="Nice to have skills" />
               </div>
               <div className="space-y-2.5">
                 <Eyebrow>Industry experience</Eyebrow>

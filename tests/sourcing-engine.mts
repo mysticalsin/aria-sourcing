@@ -25,6 +25,7 @@ import {
 import { buildTextLayerPdf, extractPdfText } from "../src/lib/sourcing/ocr";
 import { parseVssNeeds } from "../src/lib/sourcing/vss-need";
 import { sourceEngineFixtureCandidates } from "../src/lib/sourcing/engine-candidates";
+import { applyLiveEngineGate } from "../src/lib/sourcing/live-shortlist";
 import { vssToJobAnalysis } from "../src/lib/sourcing/vss-need";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -267,6 +268,74 @@ if (noNameLeak.ok) {
   };
   const scored = scoreEvidence(noNameLeak.need, sneaky);
   ok("Calypso as a name is stripped even if it appears in CV text as the person", scored.reason === "name_only" || scored.score < SHORTLIST_FLOOR);
+  const job = vssToJobAnalysis(parseVssNeeds(TONY_AMACAN)[0]!);
+  const blank = {
+    email: "",
+    avatarInitials: "CM",
+    currentTitle: "Marketer",
+    currentCompany: "Brand Co",
+    location: "",
+    timezone: "",
+    linkedinUrl: "",
+    githubUrl: "",
+    sourcePlatform: "LinkedIn" as const,
+    sourceQuery: "Calypso",
+    matchScore: 80,
+    matchBreakdown: [],
+    yearsExperience: 10,
+    companyStageExperience: [] as const,
+    industryExperience: [],
+    stage: "Sourced" as const,
+    lastContactedAt: null,
+    outreachHistory: [],
+    replyHistory: [],
+    booking: null,
+    complianceFlags: {
+      doNotContact: false,
+      suppressed: false,
+      unsubscribed: false,
+      gdprExportRequested: false,
+      anonymized: false,
+      suppressedUntil: null,
+    },
+    createdAt: new Date().toISOString(),
+    provenance: "live" as const,
+  };
+  const gatedOut = applyLiveEngineGate(
+    [{
+      ...blank,
+      id: "name-only-live",
+      campaignId: "camp-calypso",
+      name: "Calypso Martinez",
+      techStack: ["Calypso"],
+      recentActivity: "Calypso Martinez is a marketer.",
+      experience: ["Calypso Martinez is a marketer. Brand campaigns only."],
+    }],
+    job,
+  );
+  ok("live gate drops name-only Calypso Martinez", gatedOut.length === 0);
+  const gatedIn = applyLiveEngineGate(
+    [{
+      ...blank,
+      id: "elena-live",
+      campaignId: "camp-calypso",
+      avatarInitials: "EV",
+      name: "Elena Varga",
+      currentTitle: "Calypso Application Support",
+      currentCompany: "BNPP CIB",
+      techStack: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      recentActivity: "Applicative Support. Calypso settlement, Capital Markets, Montreal.",
+      experience: [
+        "Production support for the Calypso settlement system. Trade Life Cycle, Settlements, Securities, Prime Brokerage.",
+      ],
+    }],
+    job,
+  );
+  ok("live gate keeps a skill-matched person at or above the 60 floor", gatedIn.length === 1 && gatedIn[0]!.matchScore >= SHORTLIST_FLOOR);
+  ok(
+    "live gate attaches a per-row CV citation",
+    Boolean(gatedIn[0]?.matchBreakdown.some((item) => item.key === "experience" && /CV:/i.test(item.rationale))),
+  );
 }
 
 if (parsedJd.ok) {

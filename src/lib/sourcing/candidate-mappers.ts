@@ -7,6 +7,7 @@ import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { genId, initialsFrom } from "@/lib/utils";
+import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 
 export interface SourceResult {
   accepted: Candidate[];
@@ -28,7 +29,7 @@ export function mapGithubCandidates(
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const allSkills = tokenizeMustHaveSkills([...jd.requiredSkills, ...jd.niceToHaveSkills]);
   const raw: Candidate[] = users.map((user) => {
     const name = (user.name && user.name.trim()) || user.login;
     const bio = (user.bio ?? "").trim();
@@ -85,7 +86,7 @@ export function mapApolloCandidates(
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const allSkills = tokenizeMustHaveSkills([...jd.requiredSkills, ...jd.niceToHaveSkills]);
   const raw: Candidate[] = people.map((person) => {
     const headline = (person.headline || person.title || "").toLowerCase();
     const matched = allSkills.filter((skill) => headline.includes(skill.toLowerCase()));
@@ -144,7 +145,7 @@ export function mapSeamlessCandidates(
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const allSkills = tokenizeMustHaveSkills([...jd.requiredSkills, ...jd.niceToHaveSkills]);
   const raw: Candidate[] = contacts.map((contact) => {
     const headline = (contact.title || "").toLowerCase();
     const matched = allSkills.filter((skill) => headline.includes(skill.toLowerCase()));
@@ -204,7 +205,7 @@ export function mapWebSearchCandidates(
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const allSkills = tokenizeMustHaveSkills([...jd.requiredSkills, ...jd.niceToHaveSkills]);
   const raw: Candidate[] = leads.map((lead) => {
     const haystack = `${lead.title} ${lead.snippet}`.toLowerCase();
     const techStack = allSkills.filter((skill) => haystack.includes(skill.toLowerCase()));

@@ -153,11 +153,18 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
 - **Fixture / demo path** may prove the matcher (need in → scored shortlist
   out) without network I/O.
 - **Live path** uses configured providers (Apollo / Sillage / Seamless / Apify
-  / LinkedIn / GitHub) when their keys exist. Deterministic Source next batch
-  runs the persisted LinkedIn boolean and Apify harvestapi search first, then
-  only real-language GitHub queries. It does not GitHub-only a Calypso need.
-- Live path with no usable provider key is **fail-closed**: no shortlist, no
-  invented people, machine code `PROVIDER_NOT_CONFIGURED`.
+  / LinkedIn / GitHub) when their keys exist. Source next batch for
+  LinkedIn-first roles (finance / trading-platform / application support)
+  always executes the persisted LinkedIn boolean and Apify harvestapi search,
+  even when a cloud model is configured. It does not GitHub-only a Calypso
+  need and does not add GitHub steps unless the role's platforms include
+  GitHub. A cloud model may draft outreach after those searches; it cannot
+  replace them with `language:` blobs.
+- Live path with no usable LinkedIn (Tavily) or Apify key on a people-first
+  role is **fail-closed**: `SOURCING_AGENT_NOT_CONFIGURED` /
+  `MISSING_PLUGIN` — connect LinkedIn and/or Apify in Settings. No silent
+  GitHub 0×N receipts, no invented people. Machine code
+  `PROVIDER_NOT_CONFIGURED` still applies when every live provider is absent.
 - If a required sensor is missing, the operator gets three real paths — not a
   silent mock:
 

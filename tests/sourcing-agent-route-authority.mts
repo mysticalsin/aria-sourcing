@@ -89,6 +89,8 @@ let resolvedVaultKeyId = "";
 let resolvedVaultProvider = "";
 let requestedCloudProvider = "";
 let requestedCloudModel = "";
+let storedTavilyKey: string | null = null;
+let storedApifyKey: string | null = null;
 
 const query: Record<string, unknown> = {};
 Object.assign(query, {
@@ -150,10 +152,10 @@ mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   },
 });
 mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
-  namedExports: { resolveStoredTavilyKey: async () => null },
+  namedExports: { resolveStoredTavilyKey: async () => storedTavilyKey },
 });
 mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
-  namedExports: { resolveStoredApifyKey: async () => null },
+  namedExports: { resolveStoredApifyKey: async () => storedApifyKey },
 });
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
@@ -378,6 +380,8 @@ function reset() {
   resolvedVaultProvider = "";
   requestedCloudProvider = "";
   requestedCloudModel = "";
+  storedTavilyKey = null;
+  storedApifyKey = null;
 }
 
 test("active campaign is loaded from authoritative workspace state before and after provider I/O", async () => {
@@ -988,4 +992,60 @@ test("framework kill-switch revocation blocks an already claimed real search", a
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
   assert.deepEqual(failedRunCodes, ["CAMPAIGN_CHANGED"]);
+});
+
+function financeCampaign(): Campaign {
+  return {
+    ...structuredClone(baseCampaign),
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+    sourcingStrategy: {
+      ...baseCampaign.sourcingStrategy,
+      linkedinBoolean: '("Calypso Application Support") AND ("Linux" OR "Python") NOT "recruiter"',
+      githubQueries: [
+        { label: "junk platform", query: "language:Calypso followers:>40", estimatedResults: 0 },
+        { label: "real language", query: "language:Python followers:>40 repos:>10", estimatedResults: 80 },
+      ],
+    },
+  };
+}
+
+test("people-first role without LinkedIn/Apify keys fails loud and does not search GitHub", async () => {
+  reset();
+  cloudConfigured = true;
+  campaign = financeCampaign();
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "SOURCING_AGENT_NOT_CONFIGURED");
+  assert.match(String(body.error), /MISSING_PLUGIN/);
+  assert.equal(runnerCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+});
+
+test("people-first role with a cloud model still searches LinkedIn and Apify, not GitHub", async () => {
+  reset();
+  cloudConfigured = true;
+  storedTavilyKey = "tvly-test";
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "deterministic");
+  assert.equal(runnerQueries[0]?.platform, "LinkedIn");
+  assert.ok(runnerQueries.some((step) => step.platform === "Apify"));
+  assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
 });

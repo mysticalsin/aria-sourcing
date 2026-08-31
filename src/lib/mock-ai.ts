@@ -207,6 +207,89 @@ Key required skills
 
 Skills: Murex, Finance, Pricing, Pricing Analysis`;
 
+/** Primary Mantu walk need — Calypso Application Support (AMACAN / BNPP CIB). */
+export const SAMPLE_CALYPSO_APP_SUPPORT_NEED = `From: MUNERA ALZATE Jacobo <jacobo.munera@amaris.com>
+Subject: Need is now ACTIVE — Calypso Application Support (AMACAN / Montreal)
+
+Summary
+Type
+Consulting
+Category
+Active
+Priority
+Urgent but not Critical
+Reason
+Opening Position
+Company Employed by
+AMACAN
+City
+Montreal
+Client
+BNPP CIB - Canada
+Company Billing To
+AMACAN
+Status
+Running
+Recruitment Need Purpose
+Title
+Calypso Application Support
+Status
+Running
+Reason
+Opening Position
+Priority
+Urgent but not Critical
+Main Manager
+MARGIOTTA Lisa
+Secondary Managers
+SOUSA ALVES Sara
+Main Recruiter
+MUNERA ALZATE Jacobo
+Secondary Recruiters
+Contract Type
+Undetermined Duration Contract (CDI, CTI...etc)
+Freelancer
+Start Date
+05/10/2026
+Number of people
+1
+City
+Montreal
+Project Information
+Company Employed by
+AMACAN
+Remote
+Possible partially remote
+Client
+BNPP CIB - Canada
+Client Sector
+Bank & Finance
+Project Type
+Expertise
+Project Duration
+12 Month
+Candidate requirement
+Profiles
+IS&D - Applicative Support
+Skill (Must)
+Linux Python Shell Oracle Grafana Dynatrace Linux Server
+Skill (Nice to have)
+Language (Must)
+English - Fluent
+Language (Nice to have)
+Level of Experience (in years)
+Middle - From 4 to 6 years
+Mission Description
+APS
+
+Profile Synthesis: Calypso Application Support
+
+1. Core Purpose & Scope
+
+Function: Providing production support for the Calypso settlement system within Capital Markets.
+Focus Areas: Supporting the Trade Life Cycle, specifically Settlements, Securities and Prime Brokerage.
+`;
+
 export interface ParsedIntake {
   sender: { name: string; email: string };
   intent: IntakeIntent;
@@ -314,13 +397,11 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   // Skills — the explicit "Skills:" line is authoritative; augment from bullets.
   const skillsLine = field("Skills");
-  const lineSkills = skillsLine
-    ? skillsLine.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
-    : [];
+  const lineSkills = tokenizeMustHaveSkills(skillsLine);
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
   );
-  const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
+  const requiredSkills = tokenizeMustHaveSkills([...lineSkills, ...dictSkills]).slice(0, 8);
 
   const minYears = text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1];
   const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
@@ -645,8 +726,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     salaryMax,
     currency,
     equity,
-    requiredSkills,
-    niceToHaveSkills,
+    requiredSkills: tokenizeMustHaveSkills(requiredSkills),
+    niceToHaveSkills: tokenizeMustHaveSkills(niceToHaveSkills),
     minYearsExperience,
     maxYearsExperience,
     education: /phd|master|bachelor|degree/i.test(text)

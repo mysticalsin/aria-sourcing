@@ -16,6 +16,7 @@ import {
   type ScoredRow,
   type SourcingNeed,
 } from "@/lib/sourcing/engine";
+import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import type { Campaign, Candidate, JobAnalysis, MatchBreakdownItem } from "@/lib/types";
 
 const ENGINE_NEED_RE =
@@ -26,8 +27,8 @@ export function jobUsesEngineFixture(job: JobAnalysis): boolean {
 }
 
 export function sourcingNeedFromJob(job: JobAnalysis): SourcingNeed {
-  const required = job.requiredSkills.map((s) => s.trim()).filter(Boolean);
-  const nice = job.niceToHaveSkills.map((s) => s.trim()).filter(Boolean);
+  const required = tokenizeMustHaveSkills(job.requiredSkills);
+  const nice = tokenizeMustHaveSkills(job.niceToHaveSkills);
   const hay = `${job.title}\n${required.join(" ")}\n${job.industryExperience.join(" ")}`.toLowerCase();
   const phrases = [
     "production support",

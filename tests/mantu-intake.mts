@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseEmailAndJD, isMantuNeedEmail, SAMPLE_MANTU_EMAIL, buildSourcingStrategy, createCampaign } from "../src/lib/mock-ai";
+import { parseEmailAndJD, isMantuNeedEmail, SAMPLE_MANTU_EMAIL, SAMPLE_CALYPSO_APP_SUPPORT_NEED, buildSourcingStrategy, createCampaign } from "../src/lib/mock-ai";
+import { deriveValidationWarnings } from "../src/lib/ai/intake";
 import { SAMPLE_VSS_CALYPSO_BA_MONTREAL } from "../src/lib/fixtures/trading-platform-need";
 import { evaluateNeedReadiness } from "../src/lib/needs/readiness";
 import { roleFamily, roleProfile } from "../src/lib/roles";
@@ -178,6 +179,21 @@ ok(
   multi
     .filter((step) => step.platform === "GitHub")
     .every((step) => !/language:Calypso|language:LinuxPython/i.test(step.query)),
+);
+ok("finance / App Support plan has no GitHub steps", multi.every((step) => step.platform !== "GitHub"));
+ok(
+  "Load Mantu sample is Calypso Application Support, not Crédit Agricole Murex",
+  /calypso application support/i.test(SAMPLE_CALYPSO_APP_SUPPORT_NEED) &&
+    /skill\s*\(\s*must\s*\)/i.test(SAMPLE_CALYPSO_APP_SUPPORT_NEED) &&
+    !/cr[eé]dit agricole/i.test(SAMPLE_CALYPSO_APP_SUPPORT_NEED),
+);
+const blobWarnings = deriveValidationWarnings({
+  ...app.jobAnalysis,
+  requiredSkills: ["Linux Python Shell Oracle Grafana Dynatrace Linux Server"],
+});
+ok(
+  "validation does not treat a space-separated Skill (Must) line as fewer than 3 skills",
+  !blobWarnings.some((w) => /fewer than 3/i.test(w.message)),
 );
 
 console.log(`RESULT mantu-intake: ${pass} passed, ${fail} failed`);

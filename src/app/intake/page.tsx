@@ -23,10 +23,12 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import {
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
+  SAMPLE_CALYPSO_APP_SUPPORT_NEED,
   SAMPLE_MANTU_EMAIL,
   isNeedEmail,
   type ParsedIntake,
 } from "@/lib/mock-ai";
+import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
@@ -153,12 +155,42 @@ export default function IntakePage() {
     });
   }
 
+  function isCalypsoAppSupportBrief(text: string): boolean {
+    return /calypso application support/i.test(text) || /calypso application support/i.test(job?.title ?? "");
+  }
+
   function loadMantu() {
-    setEmail(SAMPLE_MANTU_EMAIL);
+    if (isCalypsoAppSupportBrief(email) || isCalypsoAppSupportBrief(jd)) {
+      toast({
+        title: "Calypso Application Support stays loaded",
+        description: "Load Mantu will not replace this need with the Murex sample.",
+        variant: "info",
+      });
+      return;
+    }
+    setEmail(SAMPLE_CALYPSO_APP_SUPPORT_NEED);
     setJd("");
     toast({
       title: "Mantu need loaded",
-      description: "A real Mantu/Amaris “need is now ACTIVE” email is ready to parse.",
+      description: "Calypso Application Support (AMACAN / BNPP CIB) is ready to parse.",
+      variant: "info",
+    });
+  }
+
+  function loadMurex() {
+    if (isCalypsoAppSupportBrief(email) || isCalypsoAppSupportBrief(jd)) {
+      toast({
+        title: "Calypso Application Support stays loaded",
+        description: "The Murex sample will not overwrite this need.",
+        variant: "warning",
+      });
+      return;
+    }
+    setEmail(SAMPLE_MANTU_EMAIL);
+    setJd("");
+    toast({
+      title: "Murex sample loaded",
+      description: "Crédit Agricole Murex Support is ready to parse. This is not the Calypso Application Support bar.",
       variant: "info",
     });
   }
@@ -207,7 +239,7 @@ export default function IntakePage() {
       });
       return;
     }
-    if (!incoming) incoming = SAMPLE_MANTU_EMAIL;
+    if (!incoming) incoming = SAMPLE_CALYPSO_APP_SUPPORT_NEED;
 
     setEmail(incoming);
     setJd("");
@@ -215,7 +247,11 @@ export default function IntakePage() {
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
-    setJob(result.jobAnalysis);
+    setJob({
+      ...result.jobAnalysis,
+      requiredSkills: tokenizeMustHaveSkills(result.jobAnalysis.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(result.jobAnalysis.niceToHaveSkills),
+    });
     setSenderName(result.sender.name);
     setSenderEmail(result.sender.email);
     maybeRunDustJdAnalysis("", incoming);
@@ -231,7 +267,7 @@ export default function IntakePage() {
         ? `${result.jobAnalysis.title} parsed from the newest need email${
             needCount > 1 ? ` (${needCount - 1} older need email${needCount > 2 ? "s" : ""} also in the inbox)` : ""
           }.`
-        : `No need email found in a connected mailbox. Parsed the sample Mantu need instead. (${result.jobAnalysis.title})`,
+        : `No need email found in a connected mailbox. Parsed the sample Calypso Application Support need instead. (${result.jobAnalysis.title})`,
       variant: result.providerWarning ? "warning" : fromInbox ? "success" : "info",
     });
   }
@@ -258,7 +294,11 @@ export default function IntakePage() {
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
-    setJob(result.jobAnalysis);
+    setJob({
+      ...result.jobAnalysis,
+      requiredSkills: tokenizeMustHaveSkills(result.jobAnalysis.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(result.jobAnalysis.niceToHaveSkills),
+    });
     setSenderName(result.sender.name);
     setSenderEmail(result.sender.email);
     maybeRunDustJdAnalysis(jd, email);
@@ -274,11 +314,20 @@ export default function IntakePage() {
   function addSkill() {
     const value = skillDraft.trim();
     if (!value || !job) return;
-    if (job.requiredSkills.some((s) => s.toLowerCase() === value.toLowerCase())) {
+    const added = tokenizeMustHaveSkills(value);
+    if (added.length === 0) {
       setSkillDraft("");
       return;
     }
-    patchJob({ requiredSkills: [...job.requiredSkills, value] });
+    const existing = new Set(job.requiredSkills.map((s) => s.toLowerCase()));
+    const next = [...job.requiredSkills];
+    for (const skill of added) {
+      if (!existing.has(skill.toLowerCase())) {
+        existing.add(skill.toLowerCase());
+        next.push(skill);
+      }
+    }
+    patchJob({ requiredSkills: next });
     setSkillDraft("");
   }
 
@@ -338,7 +387,13 @@ export default function IntakePage() {
       if (!proceed) return;
     }
 
-    const campaign = actions.createCampaignFromAnalysis(job, {
+    const readyJob = {
+      ...job,
+      requiredSkills: tokenizeMustHaveSkills(job.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(job.niceToHaveSkills),
+    };
+    readyJob.validationWarnings = deriveValidationWarnings(readyJob);
+    const campaign = actions.createCampaignFromAnalysis(readyJob, {
       hiringManager: senderName.trim(),
       hiringManagerEmail,
     });
@@ -468,6 +523,15 @@ export default function IntakePage() {
                     disabled={parsing}
                   >
                     Load Mantu need
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadMurex}
+                    disabled={parsing}
+                  >
+                    Load Murex sample
                   </Button>
                   <Button
                     type="button"

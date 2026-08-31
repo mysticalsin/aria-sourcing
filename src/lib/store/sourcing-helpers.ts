@@ -7,6 +7,7 @@ import type { SillageProfile } from "../sourcing/sillage";
 import type { WebSearchPlatform } from "../sourcing/web-leads";
 import type { Campaign, Candidate, CandidateEnrichment, EnrichableField, FieldProvenance, ScoringWeights, SourcePlatform } from "../types";
 import { genId, initialsFrom } from "../utils";
+import { tokenizeMustHaveSkills } from "../sourcing/vss-need";
 
 /**
  * Seed a freshly-sourced candidate's enrichment coverage from whichever
@@ -94,7 +95,7 @@ export function mapSillageCandidates(
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const allSkills = tokenizeMustHaveSkills([...jd.requiredSkills, ...jd.niceToHaveSkills]);
   const raw: Candidate[] = profiles.map((p) => {
     const name = [p.firstName, p.lastName].filter(Boolean).join(" ").trim() || "Unknown";
     const headline = (p.headline ?? "").trim();
@@ -182,7 +183,7 @@ export function mapApifyCandidates(
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const allSkills = tokenizeMustHaveSkills([...jd.requiredSkills, ...jd.niceToHaveSkills]);
   const raw: Candidate[] = profiles.map((p) => {
     const name = [p.firstName, p.lastName].filter(Boolean).join(" ").trim() || "Unknown";
     const headline = p.headline.trim();
@@ -190,6 +191,13 @@ export function mapApifyCandidates(
     const hay = `${headline} ${about} ${p.topSkills.join(" ")} ${p.skills.join(" ")}`.toLowerCase();
     const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
     const currentCompany = p.currentPosition[0]?.companyName ?? "";
+    const experienceLines = [
+      about,
+      ...p.currentPosition.map((pos) => `${pos.title} @ ${pos.companyName} (${pos.dateRange})`.trim()),
+      ...p.experience.map((pos) => `${pos.title} @ ${pos.companyName} (${pos.dateRange})`.trim()),
+      p.topSkills.join(", "),
+      p.skills.join(", "),
+    ].filter((line) => line && line !== " @  ()");
     const externalId = p.publicIdentifier || p.id || undefined;
     const at = new Date().toISOString();
     const base: Candidate = {
@@ -211,6 +219,7 @@ export function mapApifyCandidates(
       matchScore: 0,
       matchBreakdown: [],
       techStack,
+      experience: experienceLines.length ? experienceLines : undefined,
       // Never fabricate tenure from the job's requirement — leave unknown (mirrors
       // candidate-mappers.ts). Real years come from provider enrichment, not the JD.
       yearsExperience: null,

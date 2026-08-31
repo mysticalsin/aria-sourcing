@@ -25,6 +25,7 @@ import {
   mapWebSearchCandidates,
   type CandidateMappingCampaign,
 } from "@/lib/sourcing/candidate-mappers";
+import { applyLiveEngineGate } from "@/lib/sourcing/live-shortlist";
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
     name: "search_candidates",
@@ -187,6 +188,12 @@ export function makeSourcingToolRunner(
         ok: false,
         error: `${platform || "that platform"} has no external search — Referral/Talent Pool candidates come from the app's own pipeline, not a search.`,
       };
+    }
+
+    if (platform === "LinkedIn" || platform === "Apify") {
+      const gated = applyLiveEngineGate(accepted, campaign.jobAnalysis);
+      skippedCount += accepted.length - gated.length;
+      accepted = gated;
     }
 
     found.push(...accepted);

@@ -4,6 +4,7 @@
  * Does not invent a GitHub language: qualifier from a skill.
  */
 
+import { roleProfile } from "@/lib/roles";
 import { GITHUB_SEARCH_LANGUAGES } from "@/lib/sourcing/github-search-language";
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import type { JobAnalysis, SourcePlatform, SourcingStrategy } from "@/lib/types";
@@ -36,9 +37,12 @@ export function plannedSourcingSearches(input: {
   sourcingStrategy: Pick<SourcingStrategy, "githubQueries" | "linkedinBoolean">;
 }): PlannedSearch[] {
   const linkedin = input.sourcingStrategy.linkedinBoolean.trim();
-  const github = input.sourcingStrategy.githubQueries
-    .map((item) => item.query.trim())
-    .filter(usefulGithubQuery);
+  const allowGithub = roleProfile(input.jobAnalysis).platforms.includes("GitHub");
+  const github = allowGithub
+    ? input.sourcingStrategy.githubQueries
+        .map((item) => item.query.trim())
+        .filter(usefulGithubQuery)
+    : [];
   const apify = apifyQueryFromBrief(input.jobAnalysis, linkedin);
   const plan: PlannedSearch[] = [];
   if (linkedin) plan.push({ platform: "LinkedIn", query: linkedin });
