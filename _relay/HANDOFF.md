@@ -11,7 +11,7 @@ status: pr-open
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** against `main` (not merged)
-- Tip: **`8c7c049`** on `cursor/sourcing-engine-94b1` (PR #54). Fly v165 / `4cc8a5d` walk failed; this tip is the fix
+- Tip: **`37891db`** on PR #54. Quality `typecheck:tests` failed on `b8a79d2` (`[] as const` vs `CompanyStage[]`); that fixture is mutable now. Historic jobs still red as on `main` — do not chase.
 - Skill (Must) tokenized on persist/display; people-first Source next batch is LinkedIn+Apify; missing keys fail `MISSING_PLUGIN`; Load Mantu is Calypso Application Support, not Murex
 - Follow-up walks (GitHub 0×3, unkeyed LinkedIn/Apify, Murex overwrite) are absorbed in this tip — do not open a second PR/agent
 - Historic CI still red as on main. Quality is the gate. Do not chase historic
