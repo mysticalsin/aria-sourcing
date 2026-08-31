@@ -44,6 +44,10 @@ primary_region = "cdg"
   auto_stop_machines   = "suspend"
   auto_start_machines  = true
   min_machines_running = 1
+  # LinkedIn/Apify Full+email harvest polls for up to ~150s with no response
+  # bytes yet — default Fly idle_timeout (60s) would kill Source mid-run.
+  [http_service.http_options]
+    idle_timeout = 180
   [http_service.concurrency]
     type       = "requests"
     soft_limit = 200

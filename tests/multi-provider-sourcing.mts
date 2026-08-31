@@ -130,6 +130,17 @@ function cand(partial: {
 }
 
 {
+  const routeSrc = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8"),
+  );
+  ok(
+    "LinkedIn-first with Apify forces multi-provider harvest even when cloud AI is configured",
+    /harvestViaMultiProvider/.test(routeSrc) &&
+      /linkedInFirst && Boolean\(linkedInProfileToken/.test(routeSrc),
+  );
+}
+
+{
   const withoutProfiles = providersForCampaign(
     [linkedinWebProvider, githubProvider],
     ["LinkedIn"],

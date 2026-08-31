@@ -34,7 +34,7 @@ import { DatabricksPanel } from "@/components/settings/databricks-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
-import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
+import { useHydrated, useSettings, useIntegrations, useApiKeys, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -311,26 +311,43 @@ export default function SettingsPage() {
   const hydrated = useHydrated();
   const settings = useSettings();
   const storedIntegrations = useIntegrations();
+  const apiKeys = useApiKeys();
   // The Supabase card's stored status is seed data, frozen at whatever it was
   // when this workspace was first created — it can never reflect a later env
   // change. Override it live from the actual runtime flag every render, same
   // way login/persistence already gate on `supabaseEnabled` elsewhere, so the
   // card can't say "not configured" while the app is demonstrably running on
-  // live Supabase (or the reverse).
+  // live Supabase (or the reverse). Override LinkedIn profile search from vault
+  // apiKeys so a connected Apify key is never shown as "not configured".
   const integrations = React.useMemo(
     () =>
-      storedIntegrations.map((i) =>
-        i.id === "int_supabase"
-          ? {
-              ...i,
-              status: supabaseEnabled ? ("connected" as const) : ("not_configured" as const),
-              mode: supabaseEnabled ? ("live" as const) : ("mock" as const),
-              real: true,
-              errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
-            }
-          : i,
-      ),
-    [storedIntegrations],
+      storedIntegrations.map((i) => {
+        if (i.id === "int_supabase") {
+          return {
+            ...i,
+            status: supabaseEnabled ? ("connected" as const) : ("not_configured" as const),
+            mode: supabaseEnabled ? ("live" as const) : ("mock" as const),
+            real: true,
+            errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
+          };
+        }
+        if (i.id === "int_apify") {
+          const apifyConnected = apiKeys.some((k) => k.provider === "Apify");
+          return {
+            ...i,
+            status: apifyConnected ? ("connected" as const) : ("not_configured" as const),
+            mode: apifyConnected ? ("live" as const) : i.mode,
+            errors: apifyConnected
+              ? []
+              : [
+                  "Connect Apify in Settings → Access & Keys. Source next batch for LinkedIn-first roles requires it.",
+                ],
+            setupHref: i.setupHref ?? "/settings?tab=access#api-keys-panel",
+          };
+        }
+        return i;
+      }),
+    [storedIntegrations, apiKeys],
   );
   const actions = useActions();
   const { toast } = useToast();

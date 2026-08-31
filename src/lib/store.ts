@@ -143,6 +143,7 @@ import type {
 import { genId, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
+import { API_KEY_PROVIDERS } from "./types";
 import {
   loadRemoteAgentSeats,
   loadRemoteState,
@@ -545,8 +546,68 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
+      let vaultKeys: ApiKey[] = [];
+      try {
+        const keysRes = await fetch("/api/keys", { method: "GET", credentials: "include" });
+        if (keysRes.ok) {
+          const keysJson = (await keysRes.json()) as {
+            ok?: boolean;
+            keys?: Array<{
+              id: string;
+              name: string;
+              provider: string;
+              last4: string;
+              createdBy?: string;
+              createdAt?: string;
+              status?: ApiKey["status"];
+              lastTestedAt?: string | null;
+            }>;
+          };
+          if (keysJson.ok && Array.isArray(keysJson.keys)) {
+            const known = new Set<string>(API_KEY_PROVIDERS);
+            vaultKeys = keysJson.keys
+              .filter((k) => k.id && k.provider && k.last4 && known.has(k.provider))
+              .map((k) => ({
+                id: k.id,
+                name: k.name || k.provider,
+                provider: k.provider as ApiKeyProvider,
+                last4: k.last4,
+                status: k.status ?? "untested",
+                lastTestedAt: k.lastTestedAt ?? null,
+                createdBy: k.createdBy || "vault",
+                createdAt: k.createdAt || new Date().toISOString(),
+              }));
+          }
+        }
+      } catch {
+        // Vault metadata is best-effort; Source still resolves secrets server-side.
+      }
+      if (generation !== hydrationGeneration.current) return;
+      const mergedApiKeys =
+        vaultKeys.length > 0
+          ? [
+              ...vaultKeys,
+              ...base.apiKeys.filter((local) => !vaultKeys.some((v) => v.id === local.id)),
+            ]
+          : base.apiKeys;
+      const apifyConnected = mergedApiKeys.some((k) => k.provider === "Apify");
       const liveState = {
         ...base,
+        apiKeys: mergedApiKeys,
+        integrations: base.integrations.map((i) =>
+          i.id === "int_apify"
+            ? {
+                ...i,
+                status: apifyConnected ? ("connected" as const) : ("not_configured" as const),
+                mode: apifyConnected ? ("live" as const) : ("mock" as const),
+                errors: apifyConnected
+                  ? []
+                  : [
+                      "Connect Apify in Settings → Access & Keys. Source next batch for LinkedIn-first roles requires it.",
+                    ],
+              }
+            : i,
+        ),
         seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
       };
       const next = applyAuthoritativeRole(liveState, remote.role);

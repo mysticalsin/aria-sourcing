@@ -19,6 +19,47 @@ const ApiKeyCreateSchema = z.object({
  * RLS) and NEVER returned to the browser. In DEMO mode nothing persists
  * server-side — the response carries only metadata (last4) for the session.
  */
+
+/** Metadata-only list so Settings / Source UI can reflect vault-connected plugins. */
+export async function GET(req: NextRequest) {
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
+
+  const limit = checkRateLimit(rateLimitKey(req, "keys-list"), { windowMs: 60_000, max: 60 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
+  if (!supabaseEnabled) {
+    return NextResponse.json({ ok: true, demo: true, keys: [] as const });
+  }
+
+  const supabase = await getServerSupabase();
+  if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
+  const admin = await requireAdmin(supabase);
+  if (!admin.ok) return admin.response;
+
+  // Never SELECT secret — column is withheld from authenticated by design.
+  const { data, error } = await supabase
+    .from("api_keys")
+    .select("id, name, provider, last4, created_by, created_at")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) {
+    safeLog("api_keys list error", { message: error.message, code: error.code });
+    return NextResponse.json({ ok: false, error: "Couldn't list API keys." }, { status: 403 });
+  }
+  const keys = (data ?? []).map((row) => ({
+    id: String(row.id),
+    name: String(row.name ?? ""),
+    provider: String(row.provider ?? ""),
+    last4: String(row.last4 ?? ""),
+    createdBy: String(row.created_by ?? ""),
+    createdAt: String(row.created_at ?? ""),
+    status: "untested" as const,
+    lastTestedAt: null as string | null,
+  }));
+  return NextResponse.json({ ok: true, keys });
+}
+
 export async function POST(req: NextRequest) {
   // Fail closed in production (middleware doesn't cover /api/*).
   const prodBlock = prodFailClosed();

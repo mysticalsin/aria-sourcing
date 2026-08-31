@@ -18,7 +18,8 @@ import type { Campaign } from "@/lib/types";
 import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
 
 const POLL_MS = 3_000;
-const DEFAULT_BUDGET_MS = 75_000;
+/** Full + email search needs longer than Short discovery; keep under Fly soft timeouts. */
+const DEFAULT_BUDGET_MS = 150_000;
 const TERMINAL = new Set(["SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED", "TIMED_OUT"]);
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -63,12 +64,15 @@ export const linkedinProfilesProvider: SourcingProvider = {
     if (!clearance.ok) return { ok: false, accepted: [], skipped: [], error: clearance.error };
 
     const jd = ctx.campaign.jobAnalysis;
+    // Short mode returns no headline/about/skills/email — scored profiles then
+    // fail the 80% quality floor and Source soft-empties. Full + email search
+    // is required for Calypso BA / LinkedIn-first shortlists that stay contactable.
     const input: ApifyProfileSearchInput = {
       searchQuery: query,
       currentJobTitles: jd.title.trim() ? [jd.title.trim()] : undefined,
       locations: jd.regions.filter(Boolean).slice(0, 3),
-      maxItems: Math.min(Math.max(count * 2, 10), 50),
-      profileScraperMode: "Short",
+      maxItems: Math.min(Math.max(count * 2, 10), 25),
+      profileScraperMode: "Full + email search",
     };
 
     const started = await startProfileSearchRun(clearance.clearance, token, input);

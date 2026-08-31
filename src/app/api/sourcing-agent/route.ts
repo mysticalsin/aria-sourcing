@@ -596,8 +596,14 @@ async function handlePost(req: NextRequest, correlationId: string) {
       },
     ];
     let drafts: ReturnType<typeof parseDrafts> = [];
-    if (deterministic) {
-      const searchSignal = AbortSignal.timeout(120_000);
+    // LinkedIn-first roles must harvest via the multi-provider orchestrator
+    // (Apify profile search), not the cloud tool loop — models often skip
+    // LinkedIn or only hit GitHub and soft-empty under hard gates.
+    const harvestViaMultiProvider =
+      deterministic ||
+      (linkedInFirst && Boolean(linkedInProfileToken?.trim()));
+    if (harvestViaMultiProvider) {
+      const searchSignal = AbortSignal.timeout(linkedInFirst ? 180_000 : 120_000);
       const forcedQueries = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
         : promotedLessons

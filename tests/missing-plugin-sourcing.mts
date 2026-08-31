@@ -93,5 +93,18 @@ function ok(name: string, cond: boolean) {
   ok("linkedin_web displayPlatform is LinkedIn", linkedinWebProvider.displayPlatform === "LinkedIn");
 }
 
+{
+  // Provider source must use Full + email for quality/contactability — Short
+  // yields empty headline/skills and fails the 80% floor.
+  const src = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../src/lib/sourcing/providers/linkedin-profiles.ts", import.meta.url), "utf8"),
+  );
+  ok(
+    "linkedin_profiles harvest uses Full + email search (not Short)",
+    /profileScraperMode:\s*"Full \+ email search"/.test(src) && !/profileScraperMode:\s*"Short"/.test(src),
+  );
+  ok("linkedin_profiles budget allows Full harvest", /DEFAULT_BUDGET_MS\s*=\s*150_000/.test(src));
+}
+
 console.log(`RESULT missing-plugin-sourcing: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
