@@ -24,7 +24,7 @@ primary_region = "cdg"
 [env]
   NODE_ENV                      = "production"
   PORT                          = "3000"
-  HOSTNAME                      = "0.0.0.0"
+  HOSTNAME                      = "::"
   NEXT_TELEMETRY_DISABLED       = "1"
   # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"

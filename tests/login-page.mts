@@ -48,6 +48,13 @@ ok(
   /AriaBuildStamp/.test(login) && /data-testid="aria-build-sha"/.test(readFileSync(new URL("../src/components/app/build-stamp.tsx", import.meta.url), "utf8")),
 );
 ok(
+  "Fly production binds HOSTNAME=:: for IPv6 6PN, not 0.0.0.0-only",
+  /HOSTNAME\s*=\s*"::"/.test(flyApp) &&
+    /HOSTNAME=::/.test(productionDockerfile) &&
+    !/HOSTNAME=0\.0\.0\.0/.test(productionDockerfile) &&
+    !/HOSTNAME\s*=\s*"0\.0\.0\.0"/.test(flyApp),
+);
+ok(
   "production image bakes NEXT_PUBLIC_ARIA_GIT_SHA from the release SHA",
   /ARG NEXT_PUBLIC_ARIA_GIT_SHA/.test(productionDockerfile) &&
     /NEXT_PUBLIC_ARIA_GIT_SHA=\$NEXT_PUBLIC_ARIA_GIT_SHA/.test(productionDockerfile) &&
