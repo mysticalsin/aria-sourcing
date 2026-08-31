@@ -1,59 +1,57 @@
 ---
 project: MSourcing / ARIA
-shift: 442
+shift: 443
 agent: cursor-cloud
-updated: 2026-08-30T22:52Z
-status: pr53-auto-merge-awaiting-tony-approval-fly-tip-quality-seeded
+updated: 2026-08-31T19:50Z
+status: apify-quota-blocks-live-linkedin-harvest-pr53-open
 ---
 
-# Handoff — Shift 442
+# Handoff — Shift 443
 
 ## Current state
 
-- **Branch tip:** `cursor/sourcing-quality-contact-track-b91d` @ `6a582e5` (+ follow-up commits this shift).
-- **PR #53:** OPEN, squash **auto-merge enabled**. Human title preserved.
-- **Merge blocked for agent:** branch protection requires approval from someone other than last pusher + Release gate fails on baseline Trivy supply-chain. Tony must approve (or admin-merge).
-- **Fly `aria-mantu-app`:** `/api/ready` ok — build **`6a582e57bc28e68def3c68a2eef02373a8b591e0`**, migration `0079_autopilot_enqueue_approval_hash_bind.sql`.
-- **Quality candidates (live workspace):** 6 seeded Calypso BA fits (scores 89–92), all email+LinkedIn+phone; 5 never-contacted, 1 contacted badge. Visible on `/candidates` (6/6) and Outreach contactable picker (all 6).
+- **Branch tip:** `cursor/sourcing-quality-contact-track-b91d` @ `7fe6702`.
+- **PR #53:** OPEN — https://github.com/mysticalsin/aria-sourcing/pull/53 — human title preserved.
+- **Fly `aria-mantu-app`:** `/api/ready` ok — build **`7fe6702b202376b69fb2dcab7e9f062273a3980b`**, migration `0079_autopilot_enqueue_approval_hash_bind.sql`.
+- **Vault Apify:** connected (`provider: Apify`, last4 `lRfy`); `/api/keys` GET hydrates UI; `/api/keys/test` → HTTP 200.
+- **No Fly secret `APIFY_TOKEN`** (vault path is preferred; env fallback exists in code).
+- **Live Source (Calypso Application Support):** HTTP **502** `SOURCING_PROVIDER_QUOTA` — Apify free-plan run limit reached (actor returns SUCCEEDED + empty dataset + statusMessage `free user run limit reached`). Not MISSING_PLUGIN; not a false negative on key detection.
 
 ## Done this shift
 
-1. Cherry-picked PR #52 audit highs onto #53 (`next` 16.3.3 + overrides); `npm audit --audit-level=high` → 0.
-2. flyctl Quality: install + skip platform validate without Fly token.
-3. gitleaks ignore fingerprints from #52 → Secret scan green.
-4. `candidate-erasure-db.sh`: `rg` → `grep -E` → Database security green.
-5. CI tip: Quality/Audit/Secret/DB **success**; Supply chain/Release gate **fail** (baseline Trivy — not megapr'd).
-6. Auto-merge squash enabled on #53.
-7. Deployed tip to Fly + set `ARIA_RELEASE_SHA` secret; ready green on tip.
-8. Seeded quality contactable Calypso shortlist (`scripts/seed-quality-calypso-e2e.mts`); UI E2E screenshots under `/opt/cursor/artifacts/screenshots/quality-*.png`.
+1. Multi-provider LinkedIn/Apify path + `MISSING_PLUGIN` fail-closed when vault/env Apify absent.
+2. LinkedIn-first Source forces multi-provider harvest even when cloud AI is configured.
+3. Profile harvest uses `Full + email search`; Fly `idle_timeout=180`.
+4. GET `/api/keys` + workspace hydrate so Settings/Source UI show vault Apify.
+5. Detect Apify free-plan empty SUCCEEDED → `SOURCING_PROVIDER_QUOTA` (not soft-empty).
+6. Deployed tip `7fe6702` to Fly; proved Source returns quota error with settingsHref.
 
 ## Blockers
 
-- **Tony:** approve PR #53 (auto-merge will squash) — agent cannot satisfy "approval from someone other than last pusher".
-- Live `/api/sourcing-agent` still soft-empty (`ok:true`, `totalFound:0`) under Calypso hard gates from GitHub bios — expected until LinkedIn/Apify credentials land. Demo uses seeded quality matches.
-- No `APIFY_TOKEN` on Fly.
+- **Tony must upgrade Apify plan (or wait for free-plan monthly reset)** on account behind vault key last4 `lRfy`. Until then live LinkedIn harvest cannot return candidates.
+- Optional: paste a paid `APIFY_TOKEN` into Settings → Access & Keys (or Fly secret) once upgraded.
+- PR #53 still needs non-pusher approval for merge.
 
 ## Next steps
 
 ```bash
-# Tony
+# Tony — Apify console: upgrade plan / confirm paid actor rental for harvestapi/linkedin-profile-search
+# Then re-test:
+curl -s https://aria-mantu-app.fly.dev/api/ready   # expect build 7fe6702…
+# Source next batch on Calypso campaign → expect totalFound > 0 with LinkedIn+email
 gh pr review 53 --approve
-# auto-merge should land squash onto main
-curl -s https://aria-mantu-app.fly.dev/api/ready   # already tip 6a582e5
-# Optional: set APIFY_TOKEN for live LinkedIn harvest
 ```
 
 ## Decisions made (don't relitigate)
 
-- One PR (#53) only — no second PR / no #36.
+- One PR (#53) only — no second PR.
 - No Microsoft chase.
-- Soft empty shortlist under hard gates is success (warn), not hard fail.
-- Human-edited PR title/body preserved; append-only if editing.
-- Fly production gate > phantom GHA (Trivy supply-chain baseline).
-- Quality contactable demo via seed when live providers fail hard gates.
+- Do not weaken 80% quality floor / hard gates to let GitHub weak matches fill LinkedIn-first roles.
+- Soft-empty under hard gates remains OK for GitHub-first; LinkedIn-first + Apify failure must hard-fail (MISSING_PLUGIN or SOURCING_PROVIDER_QUOTA).
+- Human PR title/body preserved; append-only body edits.
 
 ## Watch out
 
-- Local `supabase/migrations` stops at 0054; live DB is 0079 — always preserve live `ARIA_EXPECTED_*` when redeploying from this tree.
-- Do not reintroduce static `browser-tools` import into `tool-loop`.
-- Secrets override `--env` for `ARIA_RELEASE_SHA`.
+- Preserve live `ARIA_EXPECTED_*` at migration 0079 / count 78 when redeploying.
+- `flyctl` deploy: unset broken `FLY_API_TOKEN` env so config.yml compound token works.
+- Apify free SUCCEEDED+empty looks like a real miss unless statusMessage is read.
