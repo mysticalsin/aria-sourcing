@@ -1,49 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 445
+shift: 446
 agent: cursor-cloud
-updated: 2026-08-31T08:42Z
+updated: 2026-08-31T09:08Z
 status: pr-open
 ---
 
-# Handoff — Shift 445
+# Handoff — Shift 446
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** against `main` (not merged)
-- Tip: **`37891db`** on PR #54. Quality `typecheck:tests` failed on `b8a79d2` (`[] as const` vs `CompanyStage[]`); that fixture is mutable now. Historic jobs still red as on `main` — do not chase.
-- Skill (Must) tokenized on persist/display; people-first Source next batch is LinkedIn+Apify; missing keys fail `MISSING_PLUGIN`; Load Mantu is Calypso Application Support, not Murex
-- Follow-up walks (GitHub 0×3, unkeyed LinkedIn/Apify, Murex overwrite) are absorbed in this tip — do not open a second PR/agent
+- Tip: **`b95f56a`** — fail-loud no longer treats Tavily as LinkedIn. Quality gate green locally: `./node_modules/.bin/tsc --noEmit && npm run typecheck:tests && npm test`
+- Live Fly v166 / `b8a79d2` walked: skill chips + Load Mantu **PASS**; Source next batch still silent (GitHub 0×3, no `MISSING_PLUGIN` toast) because a Tavily key skipped fail-loud
+- This tip is the fix for that walk. Same PR. Do not merge. Do not invent candidates. Do not complete OAuth from the VM
 - Historic CI still red as on main. Quality is the gate. Do not chase historic
-- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not merge
+- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy
 
 ## Done this shift
 
-1. Tokenize Skill (Must) on spaces at intake parse/display, JD Analysis chips, `parseSkillList`, `addSkill`, `/api/intake` (`evidenceIntake`), and `deriveValidationWarnings` (blob is not “fewer than 3 skills”)
-2. `plannedSourcingSearches` omits GitHub unless the role’s platforms include GitHub (finance → LinkedIn + Apify only)
-3. People-first roles (`queryStyle === "linkedin"`) always run the deterministic plan, even when a cloud model is configured. No GitHub 0×3
-4. No Tavily and no Apify on a people-first role → `SOURCING_AGENT_NOT_CONFIGURED` / `MISSING_PLUGIN` (connect LinkedIn and/or Apify). Does not search GitHub
-5. Live LinkedIn/Apify rows go through `applyLiveEngineGate`: name-only fail, finance floor 60 / cap 20 / per-row CV citations
-6. Load Mantu need loads `SAMPLE_CALYPSO_APP_SUPPORT_NEED`. Will not overwrite an already-loaded Calypso Application Support brief with Crédit Agricole Murex. Murex is a separate “Load Murex sample” button
-7. Tests extended in existing suites. `./node_modules/.bin/tsc --noEmit && npm test` green on `8c7c049`
+1. People-first Source next batch fails `503` / `MISSING_PLUGIN` when Apify is unkeyed. Tavily does **not** count as LinkedIn Sourcing
+2. Client toast keeps the `MISSING_PLUGIN` string (no longer remapped to a generic unconfigured message)
+3. Promoted GitHub lessons are skipped on people-first roles (no GitHub 0×3 fall-through)
+4. Tests extended in `tests/sourcing-agent-route-authority.mts` and `tests/sourcing-agent-contract.mts`. No new suite files
+5. `docs/sourcing-engine/DESIGN.md` updated: Tavily is not LinkedIn
 
 ## Blockers
 
-- Protected Fly release must land this branch before Ultron can re-walk v165+
-- LinkedIn OAuth / Apify still fail-closed without workspace keys
+- Protected Fly release must land this tip before Ultron can re-walk Source next batch
+- LinkedIn official partner search is not wired; Apify is the only people source that unblocks the gate
 - No Fly token here
 
 ## Next steps
 
 ```bash
-# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 → aria-mantu-app
+# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 (b95f56a+) → aria-mantu-app
 # Ultron: walk Calypso Application Support on the new SHA
-#   JD Analysis: Skill (Must) is separate chips (Linux, Python, Shell, …)
-#   Source next batch: LinkedIn + Apify when keyed; MISSING_PLUGIN if not
-#   Name-only Calypso Martinez still fails; per-row CV citations on kept rows
-#   Load Mantu need stays Calypso Application Support
+#   Footer SHA matches the new tip
+#   Source next batch with LinkedIn+Apify unkeyed: error toast contains MISSING_PLUGIN
+#   Learning panel must not record GitHub 0×3 as a successful batch
+#   Skill chips and Load Mantu stay as on v166 (already PASS)
 # Do not merge PR 54
 # Do not fake flyctl deploy
+# Do not complete LinkedIn OAuth from a VM
 ```
 
 ## Decisions made (don't relitigate)
@@ -52,6 +51,7 @@ status: pr-open
 - One PR (#54). READY TO MERGE stays no
 - Shortlist floor 60, cap 20, name-only fail, per-row citations
 - LinkedIn is primary, not exclusive; Apify + keyed sources still required
+- Tavily is web search, not LinkedIn Sourcing
 - Outreach dry-run until Tony approves a send. Never auto-send. Never identify as AI
 - HeyReach 0-account HOLD is not a skip — sequences are in-product
 - Quality stays green; do not put FLY_API_TOKEN on Quality
@@ -61,6 +61,8 @@ status: pr-open
 ## Watch out
 
 - Do not invent Fly tokens
+- Do not invent candidates
+- Do not complete OAuth from this VM
 - Do not touch Vercel or Polo or PR #53
 - `campaign-actions.ts` runtime imports stay `import {` + `evaluateNeedReadiness` only
 - Engine must not import `@/lib/utils`
