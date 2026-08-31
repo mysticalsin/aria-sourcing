@@ -130,7 +130,10 @@ coverage.
 Aria searches the web for people who **have the skills**. It is not
 LinkedIn-only and not a GitHub-`language:` hack for product platforms
 (Calypso is a skill, never `language:Calypso` or a concatenated
-`language:LinuxPython…` token).
+`language:LinuxPython…` token). GitHub queries use the same Skill (Must)
+tokens as chips — `language:Python` / `language:Shell` or topic terms, never
+one glued word. A stale persisted blob is repaired on hydrate and on the
+Strategy tab.
 
 - **LinkedIn is a primary source** (resumes, experience, skill-word search).
   Aria is **not** LinkedIn-only: Apify plus other keyed sources (GitHub,

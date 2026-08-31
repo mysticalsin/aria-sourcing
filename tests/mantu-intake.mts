@@ -7,8 +7,8 @@ import { deriveValidationWarnings } from "../src/lib/ai/intake";
 import { SAMPLE_VSS_CALYPSO_BA_MONTREAL } from "../src/lib/fixtures/trading-platform-need";
 import { evaluateNeedReadiness } from "../src/lib/needs/readiness";
 import { roleFamily, roleProfile } from "../src/lib/roles";
-import { tokenizeMustHaveSkills } from "../src/lib/sourcing/vss-need";
-import { githubSkillQueryToken } from "../src/lib/sourcing/github-search-language";
+import { splitGluedSkillBlob, tokenizeMustHaveSkills } from "../src/lib/sourcing/vss-need";
+import { githubSkillQueryToken, repairGithubQueries } from "../src/lib/sourcing/github-search-language";
 import { plannedSourcingSearches } from "../src/lib/sourcing/multi-source-plan";
 
 const TONY_AMACAN = readFileSync(
@@ -151,6 +151,44 @@ ok(
       requiredSkills: ["Linux Python Shell Oracle Grafana Dynatrace Linux Server"],
     }).githubQueries.every((q) => !/language:LinuxPython/i.test(q.query)),
 );
+ok(
+  "glued CamelCase Skill (Must) line splits into the same chips",
+  splitGluedSkillBlob("LinuxPythonShellOracleGrafanaDynatraceLinuxServer").filter((s) =>
+    ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server"].some(
+      (want) => s.toLowerCase() === want.toLowerCase(),
+    ),
+  ).length >= 7,
+);
+ok(
+  "glued blob never becomes language:LinuxPython…",
+  !/language:LinuxPython/i.test(
+    githubSkillQueryToken("LinuxPythonShellOracleGrafanaDynatraceLinuxServer"),
+  ) &&
+    repairGithubQueries(app.jobAnalysis, [
+      {
+        label: "stale",
+        query: "language:LinuxPythonShellOracleGrafanaDynatraceLinuxServer followers:>40",
+        estimatedResults: 0,
+      },
+    ]).every(
+      (q) =>
+        !/language:LinuxPython/i.test(q.query) &&
+        (/language:Python/i.test(q.query) || /language:Shell/i.test(q.query) || !/language:[A-Za-z]{12,}/.test(q.query)),
+    ),
+);
+ok(
+  "repaired GitHub queries use separate skill tokens",
+  repairGithubQueries(
+    { requiredSkills: ["Linux", "Python", "Shell", "Oracle"] },
+    [
+      {
+        label: "stale",
+        query: "language:LinuxPythonShellOracleGrafanaDynatraceLinuxServer",
+        estimatedResults: 0,
+      },
+    ],
+  ).some((q) => /language:Python/i.test(q.query)),
+);
 ok("App Support is a finance/trading-platform need, not GitHub-first software", roleFamily(app.jobAnalysis) === "finance");
 ok(
   "App Support sources LinkedIn and Apify, not GitHub-only",
@@ -199,6 +237,14 @@ const blobWarnings = deriveValidationWarnings({
 ok(
   "validation does not treat a space-separated Skill (Must) line as fewer than 3 skills",
   !blobWarnings.some((w) => /fewer than 3/i.test(w.message)),
+);
+const campaignPage = readFileSync(
+  new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
+  "utf8",
+);
+ok(
+  "Strategy tab renders repaired GitHub queries, not the raw glued blob",
+  /repairGithubQueries/.test(campaignPage) && /githubQueries\.map/.test(campaignPage),
 );
 
 console.log(`RESULT mantu-intake: ${pass} passed, ${fail} failed`);

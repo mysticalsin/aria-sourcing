@@ -296,9 +296,60 @@ function splitSkills(raw: string): string[] {
   return uniqueSkills(
     out.flatMap((skill) => {
       if (/^calypso\s+business\s+analysis$/i.test(skill)) return ["Calypso", "Business Analysis"];
-      return [skill];
+      return splitGluedSkillBlob(skill);
     }),
   );
+}
+
+/**
+ * A Skill (Must) line that lost its spaces ("LinuxPythonShellOracle…") must
+ * still become the same chips as a space-separated line. Longest-atom first
+ * so JavaScript is not Java + Script.
+ */
+const GLUED_SKILL_ATOMS = [
+  "distributed systems",
+  "design systems",
+  "linux server",
+  "business analysis",
+  "javascript",
+  "typescript",
+  "kubernetes",
+  "dynatrace",
+  "grafana",
+  "calypso",
+  "oracle",
+  "python",
+  "shell",
+  "linux",
+  "java",
+  "golang",
+  "kotlin",
+  "scala",
+  "swift",
+  "rust",
+  "ruby",
+  "sql",
+  "go",
+];
+
+export function splitGluedSkillBlob(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed || /\s/.test(trimmed) || trimmed.length < 10) return [trimmed].filter(Boolean);
+  const compact = trimmed.replace(/[\s_\-]+/g, "");
+  const lower = compact.toLowerCase();
+  const atoms = [...GLUED_SKILL_ATOMS].sort((a, b) => b.replace(/\s+/g, "").length - a.replace(/\s+/g, "").length);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lower.length) {
+    const rest = lower.slice(i);
+    const hit = atoms.find((atom) => rest.startsWith(atom.replace(/\s+/g, "")));
+    if (!hit) {
+      return out.length >= 2 ? [...out, compact.slice(i)].filter(Boolean) : [trimmed];
+    }
+    i += hit.replace(/\s+/g, "").length;
+    out.push(hit.replace(/\b\w/g, (ch) => ch.toUpperCase()));
+  }
+  return out.length >= 2 ? out : [trimmed];
 }
 
 /** JobAnalysis / query boundary: never persist an unsplit must-have line. */

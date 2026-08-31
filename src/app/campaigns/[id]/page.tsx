@@ -71,6 +71,7 @@ import {
   peoplePluginFailLoudUi,
   visiblePeopleFirstLearningReceipts,
 } from "@/lib/sourcing/people-plugins";
+import { repairGithubQueries } from "@/lib/sourcing/github-search-language";
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import { deriveValidationWarnings } from "@/lib/ai/intake";
 import type {
@@ -453,6 +454,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     requiredSkills: requiredSkillChips,
   });
   const strategy = c.sourcingStrategy;
+  const githubQueries = repairGithubQueries(jd, strategy.githubQueries);
   const visibleFeedbackReceipts = visiblePeopleFirstLearningReceipts(
     feedbackReceipts,
     c.jobAnalysis,
@@ -1320,7 +1322,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </Card>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            {strategy.githubQueries.map((gq, i) => (
+            {githubQueries.map((gq, i) => (
               <Card key={`${gq.label}-${i}`}>
                 <CardBody className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
