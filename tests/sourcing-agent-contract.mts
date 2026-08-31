@@ -288,5 +288,6 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
   assert.match(batchAction, /Connect LinkedIn and Apify/);
+  assert.match(batchAction, /missingPeoplePluginsToast/);
   assert.match(batchAction, /peoplePluginFailLoudUi|emptyPeopleFirstShortlistError/);
 });

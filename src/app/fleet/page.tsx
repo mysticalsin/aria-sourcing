@@ -30,8 +30,14 @@ import {
   useActions,
   useSettings,
   useRole,
+  useIntegrations,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import {
+  emptyPeopleFirstShortlistError,
+  missingPeoplePluginsToast,
+  peoplePluginFailLoudUi,
+} from "@/lib/sourcing/people-plugins";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
@@ -89,6 +95,7 @@ export default function FleetPage() {
   const campaigns = useCampaigns();
   const activeId = useActiveCampaignId();
   const actions = useActions();
+  const integrations = useIntegrations();
   const { toast } = useToast();
   const maxAgents = useSettings().fleet.maxAgents || 300;
   const role = useRole();
@@ -188,14 +195,48 @@ export default function FleetPage() {
       });
       return;
     }
+    const missingPlugins = missingPeoplePluginsToast(
+      selectedCampaign.jobAnalysis,
+      integrations,
+    );
+    if (missingPlugins) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: missingPlugins,
+        variant: "error",
+      });
+      return;
+    }
 
     setSourcing(true);
     try {
       const result = await actions.sourceNextBatch(campaignId);
       if (!result.ok) {
+        const failLoud = peoplePluginFailLoudUi(
+          result.error,
+          selectedCampaign.jobAnalysis,
+          integrations,
+        );
         toast({
-          title: result.source === "paused" ? "Campaign is paused" : "Sourcing failed",
-          description: result.error,
+          title: failLoud
+            ? failLoud.title
+            : result.source === "paused"
+              ? "Campaign is paused"
+              : "Sourcing failed",
+          description: failLoud?.description ?? result.error,
+          variant: "error",
+        });
+        return;
+      }
+      const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+        selectedCampaign.jobAnalysis,
+        integrations,
+        result,
+      );
+      if (emptyPeopleFirst) {
+        toast({
+          title: "Connect LinkedIn and Apify",
+          description: emptyPeopleFirst,
           variant: "error",
         });
         return;

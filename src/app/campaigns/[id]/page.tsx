@@ -67,6 +67,7 @@ import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import {
   emptyPeopleFirstShortlistError,
+  missingPeoplePluginsToast,
   peoplePluginFailLoudUi,
 } from "@/lib/sourcing/people-plugins";
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
@@ -521,6 +522,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSource = async () => {
     if (sourcing) return;
+    const missingPlugins = missingPeoplePluginsToast(c.jobAnalysis, integrations);
+    if (missingPlugins) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: missingPlugins,
+        variant: "error",
+      });
+      return;
+    }
     setSourcing(true);
     const res = await actions.sourceNextBatch(c.id);
     setSourcing(false);

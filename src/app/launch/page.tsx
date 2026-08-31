@@ -19,7 +19,8 @@ import { parseIntakeLive } from "@/lib/ai/intake";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import type { ParsedIntake } from "@/lib/mock-ai";
 import { SAMPLE_LAUNCH_BRIEF } from "@/lib/launch/sample-brief";
-import { useActions, useHydrated, useSettings } from "@/lib/store";
+import { useActions, useHydrated, useIntegrations, useSettings } from "@/lib/store";
+import { peoplePluginFailLoudUi } from "@/lib/sourcing/people-plugins";
 import {
   summarizeCampaignLaunch,
   type LaunchRoleResult,
@@ -73,6 +74,7 @@ export default function LaunchPage() {
   const hydrated = useHydrated();
   const { toast } = useToast();
   const actions = useActions();
+  const integrations = useIntegrations();
   const settings = useSettings();
 
   const [raw, setRaw] = React.useState("");
@@ -117,6 +119,18 @@ export default function LaunchPage() {
         count: PER_WAVE,
       });
       if (!sourceResult.ok) {
+        const failLoud = peoplePluginFailLoudUi(
+          sourceResult.error,
+          parsed.jobAnalysis,
+          integrations,
+        );
+        if (failLoud) {
+          toast({
+            title: failLoud.title,
+            description: failLoud.description,
+            variant: "error",
+          });
+        }
         setLaneSourcing(campaign.id, false);
         return { created: true, sourcingComplete: false };
       }

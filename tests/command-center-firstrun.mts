@@ -97,6 +97,11 @@ check("Command Center shows MISSING_PLUGIN alert before click", /cc-missing-plug
 const strip = readFileSync(new URL("../src/components/dashboard/integration-strip.tsx", import.meta.url), "utf8");
 check("Command Center strip uses honest Live display", /integrationShowsLive/.test(strip));
 check("Command Center strip does not badge raw integration.mode as Live", !/integration\.mode === "live"/.test(strip));
+const candidatesPage = readFileSync(new URL("../src/app/candidates/page.tsx", import.meta.url), "utf8");
+check(
+  "Candidates Source next batch names LinkedIn and Apify before the agent",
+  /missingPeoplePluginsToast/.test(candidatesPage) && /Connect LinkedIn and Apify/.test(candidatesPage),
+);
 
 console.log(`RESULT command-center-firstrun: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

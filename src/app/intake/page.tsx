@@ -31,7 +31,8 @@ import {
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
-import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
+import { useActions, useCampaigns, useHydrated, useIntegrations, useSettings } from "@/lib/store";
+import { peoplePluginFailLoudUi } from "@/lib/sourcing/people-plugins";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   copyToClipboard,
@@ -94,6 +95,7 @@ export default function IntakePage() {
   const actions = useActions();
   const settings = useSettings();
   const campaigns = useCampaigns();
+  const integrations = useIntegrations();
 
   const [email, setEmail] = useState("");
   const [jd, setJd] = useState("");
@@ -423,10 +425,13 @@ export default function IntakePage() {
           variant: n > 0 ? "success" : "info",
         });
       } else {
+        const failLoud = peoplePluginFailLoudUi(res.error, readyJob, integrations);
         toast({
-          title: "Sourcing couldn't start",
-          description: `${res.error} Retry with “Source next batch” on the campaign page.`,
-          variant: "warning",
+          title: failLoud ? failLoud.title : "Sourcing couldn't start",
+          description: failLoud
+            ? failLoud.description
+            : `${res.error} Retry with “Source next batch” on the campaign page.`,
+          variant: failLoud ? "error" : "warning",
         });
       }
     });

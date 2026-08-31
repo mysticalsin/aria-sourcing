@@ -22,6 +22,7 @@ import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated, useIntegrations } from "@/lib/store";
 import {
   emptyPeopleFirstShortlistError,
+  missingPeoplePluginsToast,
   peoplePluginFailLoudUi,
 } from "@/lib/sourcing/people-plugins";
 import { corpusServerReadEnabled } from "@/lib/supabase/config";
@@ -300,6 +301,18 @@ function CandidatesView() {
         title: "No active campaign",
         description: "Open a campaign (or start a new intake) to source its next batch.",
         variant: "warning",
+      });
+      return;
+    }
+    const missingPlugins = missingPeoplePluginsToast(
+      activeCampaign.jobAnalysis,
+      integrations,
+    );
+    if (missingPlugins) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: missingPlugins,
+        variant: "error",
       });
       return;
     }
