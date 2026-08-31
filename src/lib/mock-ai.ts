@@ -5,6 +5,7 @@ import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
+import { GITHUB_SEARCH_LANGUAGES } from "./sourcing/github-search-language";
 import {
   isVssRecruitmentNeed,
   parseVssNeeds,
@@ -725,24 +726,6 @@ Aria Sourcing`;
 // never appear verbatim in a profile, so including them zeroes out an otherwise
 // good query. Only apply the qualifier for a region that's an actual place.
 const NON_LOCATION_REGIONS = new Set(["EU", "EMEA", "EEA", "APAC", "LATAM", "Remote", "Global"]);
-
-const GITHUB_SEARCH_LANGUAGES = new Set([
-  "python",
-  "shell",
-  "java",
-  "javascript",
-  "typescript",
-  "go",
-  "ruby",
-  "c++",
-  "c",
-  "rust",
-  "php",
-  "scala",
-  "kotlin",
-  "swift",
-  "sql",
-]);
 
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.map((s) => s.trim()).filter(Boolean).slice(0, 4);

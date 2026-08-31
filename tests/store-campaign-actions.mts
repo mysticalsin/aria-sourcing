@@ -7,6 +7,7 @@ import {
   createCampaignActions,
   type CampaignActionDependencies,
 } from "../src/lib/store/campaign-actions";
+import { githubSkillQueryToken } from "../src/lib/sourcing/github-search-language";
 import { summarizeCampaignLaunch } from "../src/lib/store/campaign-launch";
 import type {
   Activity,
@@ -689,7 +690,6 @@ test("regenerateQueries appends the derived query and records sourcing activity"
     previousQueryCount % campaign.jobAnalysis.requiredSkills.length
   ];
   assert.ok(expectedSkill);
-  const expectedLanguage = expectedSkill.replace(/\s+/g, "");
   const expectedRegion = campaign.jobAnalysis.regions[0] ?? "EU";
   const expectedResults = 80 + Math.round((campaign.metrics.sourced + 1) * 3.5);
 
@@ -702,7 +702,7 @@ test("regenerateQueries appends the derived query and records sourcing activity"
   assert.equal(appended?.label, `Adjacent: ${expectedSkill} maintainers`);
   assert.equal(
     appended?.query,
-    `language:${expectedLanguage} sort:updated location:"${expectedRegion}" forks:>5`,
+    `${githubSkillQueryToken(expectedSkill)} sort:updated location:"${expectedRegion}" forks:>5`,
   );
   assert.equal(appended?.estimatedResults, expectedResults);
   assert.equal(harness.activityDrafts[0]?.title, "Generated additional query");
@@ -741,7 +741,10 @@ test("regenerateQueries reuses only explicit role facts and preserves unrelated 
   const explicitSkill = campaign.jobAnalysis.requiredSkills[0];
   assert.ok(explicitSkill);
   assert.equal(appended?.label, `Adjacent: ${explicitSkill} maintainers`);
-  assert.equal(appended?.query, `language:${explicitSkill.replace(/\s+/g, "")} sort:updated forks:>5`);
+  assert.equal(
+    appended?.query,
+    `${githubSkillQueryToken(explicitSkill)} sort:updated forks:>5`,
+  );
   assert.equal(appended?.estimatedResults, 84);
   assert.equal(
     harness.state.campaigns.find((item) => item.id === unrelated.id)?.sourcingStrategy

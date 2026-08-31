@@ -13,7 +13,8 @@ status: pr-open
 - Branch `cursor/sourcing-engine-94b1` → **PR #54** against `main`
 - Product Verifier PASS on `5b40b5e` (citations, engine evidence, unclustered scores, no `@fixture.example` on Talent Pool)
 - Quality on `5b40b5e` failed: `flyctl config validate` → `no access token available` (fixed offline)
-- Quality on `a42003a` failed: module-boundaries cycle `engine.ts` ↔ `vss-need.ts` (type-only). Shared types now live in `need-types.ts`
+- Quality on `a42003a` failed: module-boundaries cycle `engine.ts` ↔ `vss-need.ts` — fixed via `need-types.ts`
+- Quality on `d8d39a5` failed: `regenerateQueries` test still expected `language:gRPC`. Keyword token + `forks:>5`; `language:` only for real GH languages
 - No `FLY_API_TOKEN` / `flyctl auth` on the Quality job
 - Secret scan / dep audit / db-security still match main — do not chase
 - READY TO MERGE stays **no** until Quality is green and Devon Fly-shows
