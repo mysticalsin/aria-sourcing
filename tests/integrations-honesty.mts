@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { defaultIntegrations, defaultLiveIntegrations, testConnection } from "../src/lib/integrations";
-import { integrationShowsLive } from "../src/lib/sourcing/people-plugins";
+import { integrationShowsLive, visiblePeopleFirstLearningReceipts } from "../src/lib/sourcing/people-plugins";
 import type { JobAnalysis } from "../src/lib/types";
 
 let pass = 0, fail = 0;
@@ -108,6 +108,14 @@ const settingsCard = readFileSync(new URL("../src/components/settings/integratio
 ok(
   "Settings GitHub Live switch uses githubLiveAllowed, not raw mode",
   /githubLiveAllowed/.test(settingsCard) && /integrationShowsLive/.test(settingsCard),
+);
+ok(
+  "people-first learning panel hides GitHub 0-row residue while LinkedIn and Apify are unkeyed",
+  visiblePeopleFirstLearningReceipts(
+    [{ platform: "GitHub", candidateCount: 0 }, { platform: "LinkedIn", candidateCount: 1 }],
+    calypsoJob,
+    liveTenant,
+  ).every((receipt) => receipt.platform !== "GitHub"),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

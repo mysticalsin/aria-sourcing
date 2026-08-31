@@ -69,6 +69,7 @@ import {
   isPeopleFirstRole,
   missingPeoplePluginsToast,
   remapPeopleFirstSourcingError,
+  visiblePeopleFirstLearningReceipts,
 } from "./sourcing/people-plugins";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
@@ -1854,9 +1855,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
       if (body?.ok !== true || !Array.isArray(body.receipts)) return null;
       if (body.receipts.length === 0) return [];
-      return parseSourcingFeedbackReceipts(body.receipts);
+      const parsed = parseSourcingFeedbackReceipts(body.receipts);
+      if (!parsed) return null;
+      const latest = current();
+      const campaign = latest.campaigns.find((item) => item.id === campaignId);
+      if (!campaign) return parsed;
+      return visiblePeopleFirstLearningReceipts(
+        parsed,
+        campaign.jobAnalysis,
+        latest.integrations,
+      );
     },
-    [sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+    [current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
   );
 
   const generateOutreachFor = useCallback(

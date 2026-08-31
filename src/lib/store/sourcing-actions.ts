@@ -8,6 +8,7 @@ import {
   missingPeoplePluginsToast,
   remapPeopleFirstSourcingError,
   MISSING_PEOPLE_PLUGINS_TOAST,
+  visiblePeopleFirstLearningReceipts,
 } from "../sourcing/people-plugins";
 import { scoreCandidate } from "../scoring";
 import { effectiveTone } from "../skills";
@@ -881,7 +882,11 @@ export function createSourcingActions({
       source,
       ok: true,
       mode: reviewed.value.mode,
-      feedbackReceipts: reviewed.value.feedbackReceipts,
+      feedbackReceipts: visiblePeopleFirstLearningReceipts(
+        reviewed.value.feedbackReceipts,
+        latestCampaign.jobAnalysis,
+        latest.integrations,
+      ),
     };
   };
 

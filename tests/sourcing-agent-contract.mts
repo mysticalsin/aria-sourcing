@@ -267,6 +267,26 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   assert.equal(legacyCode.ok, false);
   if (legacyCode.ok) return;
   assert.match(legacyCode.error, /MISSING_PLUGIN/);
+
+  const { visiblePeopleFirstLearningReceipts } = await import("../src/lib/sourcing/people-plugins.ts");
+  const githubZero = {
+    receiptId: "00000000-0000-4000-8000-000000000001",
+    platform: "GitHub" as const,
+    candidateCount: 0,
+  };
+  const linkedinHit = {
+    receiptId: "00000000-0000-4000-8000-000000000002",
+    platform: "LinkedIn" as const,
+    candidateCount: 2,
+  };
+  assert.deepEqual(
+    visiblePeopleFirstLearningReceipts([githubZero, linkedinHit], financeJob, liveUnconfigured),
+    [linkedinHit],
+  );
+  assert.deepEqual(
+    visiblePeopleFirstLearningReceipts([githubZero], financeJob, liveUnconfigured),
+    [],
+  );
 });
 
 test("campaign UI keeps durable feedback scoped and merges new run receipts", () => {
@@ -296,4 +316,6 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
   assert.match(batchAction, /Connect LinkedIn and Apify/);
   assert.match(batchAction, /missingPeoplePluginsToast/);
   assert.match(batchAction, /peoplePluginFailLoudUi|emptyPeopleFirstShortlistError/);
+  assert.match(page, /visiblePeopleFirstLearningReceipts/);
+  assert.match(page, /visibleFeedbackReceipts/);
 });

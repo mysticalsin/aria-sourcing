@@ -69,6 +69,7 @@ import {
   emptyPeopleFirstShortlistError,
   missingPeoplePluginsToast,
   peoplePluginFailLoudUi,
+  visiblePeopleFirstLearningReceipts,
 } from "@/lib/sourcing/people-plugins";
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import { deriveValidationWarnings } from "@/lib/ai/intake";
@@ -400,7 +401,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         current.campaignId === id
           ? {
               campaignId: id,
-              receipts: mergeSourcingFeedbackReceipts(current.receipts, receipts),
+              receipts: campaign
+                ? visiblePeopleFirstLearningReceipts(
+                    mergeSourcingFeedbackReceipts(current.receipts, receipts),
+                    campaign.jobAnalysis,
+                    integrations,
+                  )
+                : mergeSourcingFeedbackReceipts(current.receipts, receipts),
             }
           : current,
       );
@@ -408,7 +415,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     return () => {
       cancelled = true;
     };
-  }, [actions, hydrated, id]);
+  }, [actions, campaign, hydrated, id, integrations]);
 
   if (!hydrated) {
     return (
@@ -446,6 +453,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     requiredSkills: requiredSkillChips,
   });
   const strategy = c.sourcingStrategy;
+  const visibleFeedbackReceipts = visiblePeopleFirstLearningReceipts(
+    feedbackReceipts,
+    c.jobAnalysis,
+    integrations,
+  );
   const health = campaignHealth(c);
   const nextAction = nextActionForCampaign(c);
   const scores = candidates.map((cand) => cand.matchScore);
@@ -551,9 +563,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       current.campaignId === c.id
         ? {
             campaignId: c.id,
-            receipts: mergeSourcingFeedbackReceipts(
-              current.receipts,
-              res.feedbackReceipts ?? [],
+            receipts: visiblePeopleFirstLearningReceipts(
+              mergeSourcingFeedbackReceipts(
+                current.receipts,
+                res.feedbackReceipts ?? [],
+              ),
+              c.jobAnalysis,
+              integrations,
             ),
           }
         : current,
@@ -647,9 +663,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       current.campaignId === campaignId
         ? {
             campaignId,
-            receipts: mergeSourcingFeedbackReceipts(
-              current.receipts,
-              res.feedbackReceipts ?? [],
+            receipts: visiblePeopleFirstLearningReceipts(
+              mergeSourcingFeedbackReceipts(
+                current.receipts,
+                res.feedbackReceipts ?? [],
+              ),
+              c.jobAnalysis,
+              integrations,
             ),
           }
         : current,
@@ -1041,7 +1061,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </Card>
 
-      {feedbackReceipts.length > 0 && (
+      {visibleFeedbackReceipts.length > 0 && (
         <Card className="mb-6" aria-label="Sourcing lesson feedback">
           <CardHeader>
             <Eyebrow>Private role learning</Eyebrow>
@@ -1052,7 +1072,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               Feedback stores aggregate query outcomes only. It never sends candidate profiles to Graphify,
               and no lesson can go live without a separate admin review.
             </p>
-            {feedbackReceipts.map((receipt) => {
+            {visibleFeedbackReceipts.map((receipt) => {
               const submitting = feedbackSubmitting.has(receipt.receiptId);
               return (
                 <div

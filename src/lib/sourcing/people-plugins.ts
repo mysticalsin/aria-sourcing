@@ -105,6 +105,27 @@ export function integrationShowsLive(
   return true;
 }
 
+/**
+ * Stale GitHub 0-row learning receipts must not render as a real GitHub run
+ * on a people-first need while LinkedIn and Apify are unkeyed — or at all
+ * when the GitHub row itself is empty.
+ */
+export function visiblePeopleFirstLearningReceipts<
+  T extends { platform: string; candidateCount: number },
+>(
+  receipts: readonly T[],
+  job: JobAnalysis,
+  integrations: readonly IntegrationStatus[],
+): T[] {
+  if (!isPeopleFirstRole(job)) return [...receipts];
+  const peopleKeyed = peopleSourcePluginsConnected(integrations);
+  return receipts.filter((receipt) => {
+    if (receipt.platform !== "GitHub") return true;
+    if (!peopleKeyed) return false;
+    return receipt.candidateCount > 0;
+  });
+}
+
 export function emptyPeopleFirstShortlistError(
   job: JobAnalysis,
   integrations: readonly IntegrationStatus[],

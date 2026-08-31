@@ -173,7 +173,9 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
   does not display Live on a people-first or unloaded need while LinkedIn
   and Apify are unconfigured (Command Center strip and Settings card). A
   GitHub-first software role may still show GitHub Live alone. No
-  silent GitHub 0×N receipts. Machine code
+  silent GitHub 0×N receipts. The learning panel does not keep GitHub
+  0-row residue on a people-first need while LinkedIn and Apify are
+  unkeyed. Machine code
   `PROVIDER_NOT_CONFIGURED` still applies when every live provider is absent.
 - If a required sensor is missing, the operator gets three real paths — not a
   silent mock:
