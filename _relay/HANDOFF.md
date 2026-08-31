@@ -22,7 +22,7 @@ status: pr-open
   - secondNeed = Senior Calypso Business Analyst; combinedNeedCount = 2
 - `npx tsc --noEmit` and `tsc -p tsconfig.tests.json` clean
 - Suites: sourcing-engine 51, mantu-intake 34, source-need-route 8, plus scoring-quality/metrics/intake/mock-ai green
-- Full `npm test` pretest still fails here on `flyctl ENOENT` — environment, not this diff
+- Local `npm test` still needs `flyctl` on the laptop. Quality CI now installs pinned flyctl 0.4.69 so `flyctl config validate` can run. Secret scan / dep audit / db-security still fail on main the same way (not new on this PR).
 
 ## Done this shift
 
