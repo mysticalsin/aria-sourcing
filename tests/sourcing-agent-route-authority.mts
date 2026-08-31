@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
+mock.module("server-only", { namedExports: {} });
+
 import { NextRequest } from "next/server";
 
 import { buildSeedState } from "../src/lib/seed";
@@ -152,6 +154,53 @@ mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
 mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
   namedExports: { resolveStoredTavilyKey: async () => null },
 });
+mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
+  namedExports: {
+    resolveStoredApifyKey: async () => "apify_api_TEST_PLACEHOLDER_0000000000",
+    resolveStoredApifyKeyForWorkspace: async () => "apify_api_TEST_PLACEHOLDER_0000000000",
+  },
+});
+mock.module(moduleUrl("src/lib/sourcing/orchestrator.ts"), {
+  namedExports: {
+    runMultiProviderSourcing: async (input: {
+      forcedQueries?: { platform: string; query: string }[];
+      campaign: { sourcingStrategy: { githubQueries: { query: string }[] } };
+    }) => {
+      runnerCalls += 1;
+      eventOrder.push("runner");
+      mutateDuringRunner?.();
+      if (runnerCandidatesAfterRun.length > 0) {
+        foundCandidates = runnerCandidatesAfterRun;
+      }
+      const queries =
+        input.forcedQueries && input.forcedQueries.length > 0
+          ? input.forcedQueries
+          : [
+              {
+                platform: "GitHub",
+                query:
+                  input.campaign.sourcingStrategy.githubQueries[0]?.query ?? "TypeScript",
+              },
+            ];
+      return {
+        accepted: foundCandidates,
+        skipped: [],
+        executions: queries.map((q) => ({
+          providerId: q.platform === "GitHub" ? "github" : "linkedin_profiles",
+          platform: q.platform,
+          query: q.query,
+          ok: true,
+          candidateCount: foundCandidates.length,
+          skippedCount: 0,
+        })),
+        providersUsed: Array.from(
+          new Set(queries.map((q) => (q.platform === "GitHub" ? "github" : "linkedin_profiles"))),
+        ),
+      };
+    },
+    mergePreferringRicher: (batches: unknown) => batches,
+  },
+});
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
     beginSourcingRun: async () => {
@@ -278,6 +327,24 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         candidateCount: foundCandidates.length,
         skippedCount: 0,
       })),
+      seedFromOrchestrator: (result: {
+        accepted: typeof foundCandidates;
+        executions: Array<{
+          platform: string;
+          query: string;
+          ok: boolean;
+          candidateCount: number;
+          skippedCount: number;
+        }>;
+      }) => {
+        foundCandidates = result.accepted;
+        for (const execution of result.executions) {
+          runnerQueries.push({
+            platform: execution.platform,
+            query: execution.query,
+          });
+        }
+      },
     }),
   },
 });

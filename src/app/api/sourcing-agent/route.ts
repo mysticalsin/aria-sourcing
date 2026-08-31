@@ -600,7 +600,10 @@ async function handlePost(req: NextRequest, correlationId: string) {
       const searchSignal = AbortSignal.timeout(120_000);
       const forcedQueries = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
-        : undefined;
+        : promotedLessons
+            .filter((lesson) => lesson.platform === "GitHub")
+            .map((lesson) => ({ platform: "GitHub" as const, query: lesson.query }))
+            .slice(0, 3);
       const multi = await runMultiProviderSourcing({
         campaign: initial.value.campaign,
         existing: initial.value.existing,
@@ -611,7 +614,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         linkedInProfileToken,
         signal: searchSignal,
         beforeExternalCall: async () => (await currentAuthority()).ok,
-        forcedQueries,
+        forcedQueries: forcedQueries.length > 0 ? forcedQueries : undefined,
       });
       const afterQuery = await readWorkspace(session, workspaceId, campaignId);
       if (
