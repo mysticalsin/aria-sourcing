@@ -1,39 +1,38 @@
 ---
 project: MSourcing / ARIA
-shift: 450
+shift: 451
 agent: cursor-cloud
-updated: 2026-08-31T09:42Z
+updated: 2026-08-31T09:46Z
 status: pr-open
 ---
 
-# Handoff — Shift 450
+# Handoff — Shift 451
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** against `main` (not merged)
-- Tip: **`2d64538`** — GitHub Sourcing does not display Live on a people-first or unloaded need while LinkedIn and Apify are unkeyed. Toast still names those plugins and says connect
-- Live Fly v166 / `b8a79d2` still has the old generic invalid-response + GitHub Live-unconfigured lie. Devon Path B of `2d64538+` on `https://aria-mantu-app.fly.dev/` is the re-walk
+- Tip: **`81f7ac7`** — every Source surface fail-louds `MISSING_PLUGIN` / Connect LinkedIn and Apify for an unkeyed people-first need
+- Live Fly v166 / `b8a79d2` still has the old generic invalid-response + GitHub Live-unconfigured lie. Devon Path B of `81f7ac7+` on `https://aria-mantu-app.fly.dev/` is the re-walk
 - READY TO MERGE stays **no** until that Fly walk PASSes
 - Historic CI still red as on main. Quality is the gate. Do not chase historic
-- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not invent candidates. Did not complete OAuth. Did not touch Vercel
+- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not invent candidates. Did not complete OAuth. Did not touch Vercel. No aria-sourcing-demo.vercel.app
 
 ## Done this shift
 
-1. `githubLiveAllowed` + `integrationShowsLive`: GitHub is not Live when people plugins are unkeyed and the need is people-first **or not loaded** (Settings with no campaign)
-2. Settings Live switch uses the same helper; refuses GitHub Live on that path with `MISSING_PEOPLE_PLUGINS_TOAST`
-3. GitHub-first software roles may still show GitHub Live alone
-4. Prior fail-loud on this branch still holds: toast **Connect LinkedIn and Apify** / `MISSING_PLUGIN`; no silent GitHub zeros; no invalid-response remap on Calypso Source next batch
+1. Campaign, Candidates, Fleet Source next batch toast **Connect LinkedIn and Apify** / `MISSING_PLUGIN` before the agent when plugins are unkeyed
+2. Intake and Launch no longer swallow people-first failures as “Sourcing couldn't start” / silent `sourcingComplete: false`
+3. Prior Live honesty still holds: GitHub is not Live on a Calypso or unloaded need while LinkedIn+Apify are unkeyed (`2d64538`)
 
 ## Blockers
 
-- Protected Fly release must land `2d64538+` before Ultron can re-walk Command Center Source + Settings Live
+- Protected Fly release must land `81f7ac7+` before Ultron can re-walk Command Center Source + Settings Live
 - Official LinkedIn partner search is not wired; Apify is the people source that unblocks the gate
 - No Fly token here
 
 ## Next steps
 
 ```bash
-# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 (2d64538+) → aria-mantu-app
+# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 (81f7ac7+) → aria-mantu-app
 # Ultron: walk Calypso Application Support on the new SHA at https://aria-mantu-app.fly.dev/
 #   Command Center Source next batch, LinkedIn+Apify unkeyed:
 #     toast title Connect LinkedIn and Apify
