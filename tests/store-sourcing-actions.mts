@@ -56,6 +56,10 @@ const sourcingHelpersSource = readFileSync(
 test("sourcing action boundary is React-free and wired through one stable factory", () => {
   assert.doesNotMatch(sourcingActionsSource, /["']use client["']/);
   assert.doesNotMatch(sourcingActionsSource, /from ["']react["']/);
+  assert.doesNotMatch(
+    sourcingActionsSource,
+    /sourceEngineFixtureCandidates|jobUsesEngineFixture|@fixture\.example/,
+  );
   assert.match(
     storeSource,
     /createSourcingActions\([\s\S]*?\),\n\s*\[[\s\S]*?commit,[\s\S]*?sourcingMutationAllowed,[\s\S]*?syntheticSourcingAllowed,[\s\S]*?workspaceEffectAllowed,[\s\S]*?workspaceFetch,[\s\S]*?\],/,

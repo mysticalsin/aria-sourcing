@@ -93,11 +93,19 @@ export interface ScoreBreakdown {
   linkedinHits: string[];
 }
 
+/** Per-row citations. Snippets around hits in the original skill list / CV / LinkedIn text. */
+export interface RowEvidence {
+  skills: string[];
+  cv: string[];
+  linkedin: string[];
+}
+
 export interface ScoredRow {
   id: string;
   name: string;
   score: number;
   breakdown: ScoreBreakdown;
+  evidence: RowEvidence;
   provenance: "fixture" | "live";
   ineligible: boolean;
   reason: RejectReason | null;
@@ -309,6 +317,52 @@ function evidenceHaystack(candidate: CandidateEvidence): string {
   return `${candidate.skills.join(" ")} ${candidate.cvText} ${candidate.linkedinText}`;
 }
 
+function emptyRowEvidence(): RowEvidence {
+  return { skills: [], cv: [], linkedin: [] };
+}
+
+/** Readable citation snippets around each hit in the original (not name-stripped) text. */
+export function citeHits(source: string, needles: string[], limit = 8): string[] {
+  const text = source ?? "";
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const citedNeedles: string[] = [];
+  const ordered = [...needles].sort((a, b) => b.length - a.length);
+  for (const needle of ordered) {
+    if (!needle.trim()) continue;
+    if (citedNeedles.some((used) => used.toLowerCase().includes(needle.toLowerCase()))) continue;
+    const idx = text.toLowerCase().indexOf(needle.toLowerCase());
+    if (idx < 0) continue;
+    const pad = 32;
+    const start = Math.max(0, idx - pad);
+    const end = Math.min(text.length, idx + needle.length + pad);
+    let snippet = text.slice(start, end).replace(/\s+/g, " ").trim();
+    if (!snippet) continue;
+    if (start > 0) snippet = `…${snippet}`;
+    if (end < text.length) snippet = `${snippet}…`;
+    const key = snippet.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    citedNeedles.push(needle);
+    out.push(snippet);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function rowEvidence(
+  candidate: CandidateEvidence,
+  requiredHits: string[],
+  cvHits: string[],
+  linkedinHits: string[],
+): RowEvidence {
+  return {
+    skills: requiredHits.filter((hit) => hit.trim()),
+    cv: citeHits(candidate.cvText, cvHits),
+    linkedin: citeHits(candidate.linkedinText, linkedinHits),
+  };
+}
+
 export function isNameOnlyHit(need: SourcingNeed, candidate: CandidateEvidence): boolean {
   const required = need.requiredSkills;
   const nameSet = new Set(nameTokens(candidate.name));
@@ -342,6 +396,7 @@ export function scoreEvidence(need: SourcingNeed, candidate: CandidateEvidence):
         cvHits: [],
         linkedinHits: [],
       },
+      evidence: emptyRowEvidence(),
       provenance: candidate.provenance,
       ineligible: true,
       reason: "empty",
@@ -362,6 +417,7 @@ export function scoreEvidence(need: SourcingNeed, candidate: CandidateEvidence):
         cvHits: [],
         linkedinHits: [],
       },
+      evidence: emptyRowEvidence(),
       provenance: candidate.provenance,
       ineligible: true,
       reason: "name_only",
@@ -408,6 +464,7 @@ export function scoreEvidence(need: SourcingNeed, candidate: CandidateEvidence):
       cvHits,
       linkedinHits,
     },
+    evidence: rowEvidence(candidate, requiredHits, cvHits, linkedinHits),
     provenance: candidate.provenance,
     ineligible: below,
     reason: below ? "below_floor" : null,

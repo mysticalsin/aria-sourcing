@@ -137,9 +137,20 @@ const nameOnlyScore = parsedJd.ok ? scoreEvidence(parsedJd.need, NAME_ONLY_CANDI
 ok("name-only score is 0", nameOnlyScore?.score === 0);
 ok("name-only cannot pass the 60% floor", (nameOnlyScore?.score ?? 100) < SHORTLIST_FLOOR);
 ok("name-only reason is name_only", nameOnlyScore?.reason === "name_only");
+ok(
+  "name-only evidence citations are empty",
+  (nameOnlyScore?.evidence.cv.length ?? 1) === 0 &&
+    (nameOnlyScore?.evidence.skills.length ?? 1) === 0 &&
+    (nameOnlyScore?.evidence.linkedin.length ?? 1) === 0,
+);
 
 const emptyScore = parsedJd.ok ? scoreEvidence(parsedJd.need, EMPTY_CANDIDATE) : null;
 ok("empty evidence scores 0", emptyScore?.score === 0 && emptyScore.reason === "empty");
+ok(
+  "empty row has empty citation arrays",
+  (emptyScore?.evidence.cv.length ?? 1) === 0 &&
+    (emptyScore?.evidence.skills.length ?? 1) === 0,
+);
 
 const murexScore = parsedJd.ok ? scoreEvidence(parsedJd.need, MUREX_ONLY_CANDIDATE) : null;
 ok("adjacent-only platform does not pass 60", (murexScore?.score ?? 100) < SHORTLIST_FLOOR);
@@ -171,6 +182,33 @@ if (fixtureRun.ok) {
     "no fixture is dressed as live",
     shortlist.every((row) => row.provenance === "fixture"),
   );
+  ok(
+    "every primary shortlist row has evidence citations",
+    shortlist.every(
+      (row) =>
+        Array.isArray(row.evidence?.skills) &&
+        Array.isArray(row.evidence?.cv) &&
+        Array.isArray(row.evidence?.linkedin),
+    ),
+  );
+  ok(
+    "every primary shortlist row cites CV / experience",
+    shortlist.every((row) => (row.evidence?.cv.length ?? 0) > 0),
+  );
+  ok(
+    "every primary shortlist row cites a required skill hit",
+    shortlist.every((row) => (row.evidence?.skills.length ?? 0) > 0),
+  );
+  const scoreSet = new Set(shortlist.map((row) => row.score));
+  ok(
+    "shortlist scores spread from coverage, not two buckets",
+    scoreSet.size >= 8 && scoreSet.size > 2,
+  );
+  const largestBucket = Math.max(
+    0,
+    ...[...scoreSet].map((score) => shortlist.filter((row) => row.score === score).length),
+  );
+  ok("no clustered synthetic score holds most of the shortlist", largestBucket <= 2);
 }
 
 const baRun = runFixtureSourcing({ jd: SAMPLE_VSS_CALYPSO_BA_MONTREAL });
@@ -251,6 +289,16 @@ const evidence = {
   requiredSkills: parsedJd.ok ? parsedJd.need.requiredSkills : [],
   shortlistCount: fixtureRun.ok ? fixtureRun.result.shortlist.length : 0,
   scores: fixtureRun.ok ? fixtureRun.result.shortlist.map((row) => row.score) : [],
+  shortlist: fixtureRun.ok
+    ? fixtureRun.result.shortlist.map((row) => ({
+        id: row.id,
+        name: row.name,
+        score: row.score,
+        breakdown: row.breakdown,
+        evidence: row.evidence,
+        provenance: row.provenance,
+      }))
+    : [],
   nameOnlyScore: nameOnlyScore?.score ?? null,
   nameOnlyPassedFloor: (nameOnlyScore?.score ?? 0) >= SHORTLIST_FLOOR,
   emptyPassedFloor: (emptyScore?.score ?? 0) >= SHORTLIST_FLOOR,

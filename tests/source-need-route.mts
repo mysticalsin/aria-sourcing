@@ -60,7 +60,11 @@ signedDemoSession = true;
 const fixture = await post(request({ jd: TONY_AMACAN, mode: "fixture" }, "aria_demo=signed"));
 const fixtureBody = (await fixture.json()) as {
   ok?: boolean;
-  shortlist?: { score: number; provenance: string }[];
+  shortlist?: {
+    score: number;
+    provenance: string;
+    evidence?: { skills?: string[]; cv?: string[]; linkedin?: string[] };
+  }[];
   rejected?: { reason: string }[];
 };
 ok("signed demo session may run the fixture engine", fixture.status === 200 && fixtureBody.ok === true);
@@ -76,6 +80,20 @@ ok(
 ok(
   "no invented live rows on the fixture path",
   (fixtureBody.shortlist ?? []).every((row) => row.provenance === "fixture"),
+);
+ok(
+  "API shortlist rows carry per-row evidence citations",
+  (fixtureBody.shortlist ?? []).every(
+    (row) =>
+      Array.isArray(row.evidence?.skills) &&
+      Array.isArray(row.evidence?.cv) &&
+      Array.isArray(row.evidence?.linkedin) &&
+      (row.evidence?.cv.length ?? 0) > 0,
+  ),
+);
+ok(
+  "API shortlist scores are not two clustered buckets",
+  new Set((fixtureBody.shortlist ?? []).map((row) => row.score)).size >= 8,
 );
 
 const live = await post(request({ jd: TONY_AMACAN, mode: "live" }, "aria_demo=signed"));

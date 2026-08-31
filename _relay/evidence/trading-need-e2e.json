@@ -13,24 +13,982 @@
     "Dynatrace",
     "Linux Server"
   ],
-  "shortlistCount": 16,
+  "shortlistCount": 15,
   "scores": [
+    84,
     80,
-    80,
-    80,
-    80,
-    80,
-    80,
-    80,
-    80,
-    80,
-    80,
-    80,
-    80,
-    63,
-    63,
-    63,
-    63
+    77,
+    76,
+    73,
+    72,
+    72,
+    70,
+    69,
+    67,
+    65,
+    65,
+    62,
+    60,
+    60
+  ],
+  "shortlist": [
+    {
+      "id": "fixture-app-support-1",
+      "name": "Elena Varga",
+      "score": 84,
+      "breakdown": {
+        "skills": 80,
+        "cv": 100,
+        "linkedin": 70,
+        "composite": 84,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "linkedinHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cv": [
+          "6 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Back Office;…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Back Office; Grafana; Dynatrac…",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Markets; Back Office; Grafana; Dynatrace. 24/7 global desk.",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…"
+        ],
+        "linkedin": [
+          "…Applicative Support · Montreal. production support · Calypso · Trade Life Cycle ·…",
+          "…production support · Calypso · Trade Life Cycle · Prime Brokerage · Capital Mar…",
+          "…· Calypso · Trade Life Cycle · Prime Brokerage · Capital Markets · Back Office…",
+          "…Life Cycle · Prime Brokerage · Capital Markets · Back Office · Grafana · Dynat…",
+          "…rkets · Back Office · Grafana · Dynatrace.",
+          "…Montreal. production support · Calypso · Trade Life Cycle · Prime Brok…",
+          "…Capital Markets · Back Office · Grafana · Dynatrace."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-2",
+      "name": "Marc Dupont",
+      "score": 80,
+      "breakdown": {
+        "skills": 80,
+        "cv": 100,
+        "linkedin": 50,
+        "composite": 80,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "prime brokerage",
+          "capital markets",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cv": [
+          "6 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Back Office;…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Back Office; Grafana. 24/7 glo…",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…",
+          "…; Capital Markets; Back Office; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…Markets · Grafana · Dynatrace · Prime Brokerage.",
+          "…e Support · Montreal. Calypso · Capital Markets · Grafana · Dynatrace · Prime B…",
+          "…o · Capital Markets · Grafana · Dynatrace · Prime Brokerage.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets · Grafana · D…",
+          "…al. Calypso · Capital Markets · Grafana · Dynatrace · Prime Brokerage."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-4",
+      "name": "Jonas Berg",
+      "score": 77,
+      "breakdown": {
+        "skills": 70,
+        "cv": 100,
+        "linkedin": 60,
+        "composite": 77,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "linkedinHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "calypso",
+          "Grafana"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "cv": [
+          "6 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Back Office;…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Back Office; Grafana; Dynatrac…",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Markets; Back Office; Grafana; Dynatrace. 24/7 global desk.",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…"
+        ],
+        "linkedin": [
+          "…Applicative Support · Montreal. production support · Calypso · Trade Life Cycle ·…",
+          "…production support · Calypso · Trade Life Cycle · Prime Brokerage · Capital Mar…",
+          "…· Calypso · Trade Life Cycle · Prime Brokerage · Capital Markets · Back Office…",
+          "…Life Cycle · Prime Brokerage · Capital Markets · Back Office · Grafana.",
+          "…Montreal. production support · Calypso · Trade Life Cycle · Prime Brok…",
+          "…Capital Markets · Back Office · Grafana."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-3",
+      "name": "Priya Raman",
+      "score": 76,
+      "breakdown": {
+        "skills": 80,
+        "cv": 100,
+        "linkedin": 30,
+        "composite": 76,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "capital markets",
+          "calypso",
+          "Grafana"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cv": [
+          "5 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…",
+          "…ime Brokerage; Capital Markets; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · Capital Markets · Grafana.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets · Grafana.",
+          "…al. Calypso · Capital Markets · Grafana."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-5",
+      "name": "Amira Haddad",
+      "score": 73,
+      "breakdown": {
+        "skills": 70,
+        "cv": 100,
+        "linkedin": 40,
+        "composite": 73,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "capital markets",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "cv": [
+          "5 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…",
+          "…ime Brokerage; Capital Markets; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · Capital Markets · Grafana · Dynatrace.",
+          "…o · Capital Markets · Grafana · Dynatrace.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets · Grafana · D…",
+          "…al. Calypso · Capital Markets · Grafana · Dynatrace."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-8",
+      "name": "Owen Clarke",
+      "score": 72,
+      "breakdown": {
+        "skills": 60,
+        "cv": 100,
+        "linkedin": 60,
+        "composite": 72,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "linkedinHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "calypso",
+          "Grafana"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana"
+        ],
+        "cv": [
+          "6 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Back Office;…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Back Office; Grafana; Dynatrac…",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Markets; Back Office; Grafana; Dynatrace. 24/7 global desk.",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…"
+        ],
+        "linkedin": [
+          "…Applicative Support · Montreal. production support · Calypso · Trade Life Cycle ·…",
+          "…production support · Calypso · Trade Life Cycle · Prime Brokerage · Capital Mar…",
+          "…· Calypso · Trade Life Cycle · Prime Brokerage · Capital Markets · Back Office…",
+          "…Life Cycle · Prime Brokerage · Capital Markets · Back Office · Grafana.",
+          "…Montreal. production support · Calypso · Trade Life Cycle · Prime Brok…",
+          "…Capital Markets · Back Office · Grafana."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-7",
+      "name": "Sofia Lindqvist",
+      "score": 72,
+      "breakdown": {
+        "skills": 80,
+        "cv": 80,
+        "linkedin": 40,
+        "composite": 72,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "settlements",
+          "settlement",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "capital markets",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cv": [
+          "5 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Prime Brokerage;…",
+          "…Trade Life Cycle; Settlements; Prime Brokerage; Grafana. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Prime Brokerage; Grafana. 24/7…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…",
+          "…; Settlements; Prime Brokerage; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · Capital Markets · Grafana · Dynatrace.",
+          "…o · Capital Markets · Grafana · Dynatrace.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets · Grafana · D…",
+          "…al. Calypso · Capital Markets · Grafana · Dynatrace."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-11",
+      "name": "Nadia Petrov",
+      "score": 70,
+      "breakdown": {
+        "skills": 60,
+        "cv": 100,
+        "linkedin": 50,
+        "composite": 70,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "prime brokerage",
+          "capital markets",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana"
+        ],
+        "cv": [
+          "5 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…",
+          "…ime Brokerage; Capital Markets; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…Markets · Grafana · Dynatrace · Prime Brokerage.",
+          "…e Support · Montreal. Calypso · Capital Markets · Grafana · Dynatrace · Prime B…",
+          "…o · Capital Markets · Grafana · Dynatrace · Prime Brokerage.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets · Grafana · D…",
+          "…al. Calypso · Capital Markets · Grafana · Dynatrace · Prime Brokerage."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-12",
+      "name": "Ibrahim Kale",
+      "score": 69,
+      "breakdown": {
+        "skills": 50,
+        "cv": 100,
+        "linkedin": 70,
+        "composite": 69,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "linkedinHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "calypso",
+          "Grafana",
+          "Dynatrace"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle"
+        ],
+        "cv": [
+          "6 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Back Office;…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Back Office; Grafana; Dynatrac…",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Markets; Back Office; Grafana; Dynatrace. 24/7 global desk.",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…"
+        ],
+        "linkedin": [
+          "…Applicative Support · Montreal. production support · Calypso · Trade Life Cycle ·…",
+          "…production support · Calypso · Trade Life Cycle · Prime Brokerage · Capital Mar…",
+          "…· Calypso · Trade Life Cycle · Prime Brokerage · Capital Markets · Back Office…",
+          "…Life Cycle · Prime Brokerage · Capital Markets · Back Office · Grafana · Dynat…",
+          "…rkets · Back Office · Grafana · Dynatrace.",
+          "…Montreal. production support · Calypso · Trade Life Cycle · Prime Brok…",
+          "…Capital Markets · Back Office · Grafana · Dynatrace."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-6",
+      "name": "Luca Ferraro",
+      "score": 67,
+      "breakdown": {
+        "skills": 70,
+        "cv": 80,
+        "linkedin": 40,
+        "composite": 67,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "calypso"
+        ],
+        "linkedinHits": [
+          "production support",
+          "prime brokerage",
+          "capital markets",
+          "calypso"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace"
+        ],
+        "cv": [
+          "5 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Prime Brokerage;…",
+          "…Trade Life Cycle; Settlements; Prime Brokerage; Capital Markets. 24/7 global d…",
+          "…; Settlements; Prime Brokerage; Capital Markets. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Prime Brokerage; Capital Marke…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…"
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · production support · Prime Brokerage · Capital Mar…",
+          "…Calypso · production support · Prime Brokerage · Capital Markets · Back Office…",
+          "…ion support · Prime Brokerage · Capital Markets · Back Office.",
+          "…Applicative Support · Montreal. Calypso · production support · Prime Br…"
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-9",
+      "name": "Mei Chen",
+      "score": 65,
+      "breakdown": {
+        "skills": 80,
+        "cv": 70,
+        "linkedin": 20,
+        "composite": 65,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cvHits": [
+          "production support",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "capital markets",
+          "calypso"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cv": [
+          "4 years. Experience: production support; Calypso; Settlements; Capital…",
+          "…support; Calypso; Settlements; Capital Markets; Grafana. 24/7 global desk.",
+          "…e: production support; Calypso; Settlements; Capital Markets; Grafana. 24/7…",
+          "…Experience: production support; Calypso; Settlements; Capital Markets;…",
+          "…; Settlements; Capital Markets; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · Capital Markets.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-14",
+      "name": "Theo Nielsen",
+      "score": 65,
+      "breakdown": {
+        "skills": 50,
+        "cv": 100,
+        "linkedin": 50,
+        "composite": 65,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "securities",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "production support",
+          "prime brokerage",
+          "capital markets",
+          "calypso",
+          "Grafana"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle"
+        ],
+        "cv": [
+          "5 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Securities; Prime…",
+          "…Cycle; Settlements; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7…",
+          "…s; Securities; Prime Brokerage; Capital Markets; Grafana. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Securities; Prime Brokerage; C…",
+          "…Trade Life Cycle; Settlements; Securities; Prime Brokerage; Capital Marke…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…",
+          "…ime Brokerage; Capital Markets; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · production support · Prime Brokerage · Capital Mar…",
+          "…Calypso · production support · Prime Brokerage · Capital Markets · Back Office…",
+          "…ion support · Prime Brokerage · Capital Markets · Back Office · Grafana.",
+          "…Applicative Support · Montreal. Calypso · production support · Prime Br…",
+          "…Capital Markets · Back Office · Grafana."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-15",
+      "name": "Hana Sato",
+      "score": 62,
+      "breakdown": {
+        "skills": 80,
+        "cv": 60,
+        "linkedin": 20,
+        "composite": 62,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cvHits": [
+          "production support",
+          "settlements",
+          "settlement",
+          "calypso",
+          "Grafana"
+        ],
+        "linkedinHits": [
+          "calypso",
+          "Grafana"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana",
+          "Dynatrace",
+          "Linux Server"
+        ],
+        "cv": [
+          "4 years. Experience: production support; Calypso; Settlements; Grafana.…",
+          "…e: production support; Calypso; Settlements; Grafana. 24/7 global desk.",
+          "…Experience: production support; Calypso; Settlements; Grafana. 24/7 glo…",
+          "…support; Calypso; Settlements; Grafana. 24/7 global desk."
+        ],
+        "linkedin": [
+          "…Applicative Support · Montreal. Calypso · Grafana.",
+          "…e Support · Montreal. Calypso · Grafana."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-13",
+      "name": "Clara Weiss",
+      "score": 60,
+      "breakdown": {
+        "skills": 60,
+        "cv": 80,
+        "linkedin": 30,
+        "composite": 60,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "prime brokerage",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "calypso"
+        ],
+        "linkedinHits": [
+          "capital markets",
+          "calypso",
+          "Grafana"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Grafana"
+        ],
+        "cv": [
+          "4 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Prime Brokerage;…",
+          "…Trade Life Cycle; Settlements; Prime Brokerage; Capital Markets. 24/7 global d…",
+          "…; Settlements; Prime Brokerage; Capital Markets. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Prime Brokerage; Capital Marke…",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…"
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · Capital Markets · Grafana.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets · Grafana.",
+          "…al. Calypso · Capital Markets · Grafana."
+        ]
+      },
+      "provenance": "fixture"
+    },
+    {
+      "id": "fixture-app-support-16",
+      "name": "Ravi Mehta",
+      "score": 60,
+      "breakdown": {
+        "skills": 60,
+        "cv": 80,
+        "linkedin": 30,
+        "composite": 60,
+        "requiredHits": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Dynatrace"
+        ],
+        "cvHits": [
+          "production support",
+          "trade life cycle",
+          "capital markets",
+          "settlements",
+          "settlement",
+          "calypso",
+          "Dynatrace"
+        ],
+        "linkedinHits": [
+          "capital markets",
+          "calypso",
+          "Dynatrace"
+        ]
+      },
+      "evidence": {
+        "skills": [
+          "Calypso",
+          "Linux",
+          "Python",
+          "Shell",
+          "Oracle",
+          "Dynatrace"
+        ],
+        "cv": [
+          "5 years. Experience: production support; Calypso; Trade Life Cycle; Set…",
+          "…e: production support; Calypso; Trade Life Cycle; Settlements; Capital Markets;…",
+          "…Trade Life Cycle; Settlements; Capital Markets; Dynatrace. 24/7 global desk.",
+          "…ort; Calypso; Trade Life Cycle; Settlements; Capital Markets; Dynatrace. 24…",
+          "…; Settlements; Capital Markets; Dynatrace. 24/7 global desk.",
+          "…Experience: production support; Calypso; Trade Life Cycle; Settlements;…"
+        ],
+        "linkedin": [
+          "…e Support · Montreal. Calypso · Capital Markets · Dynatrace.",
+          "…al. Calypso · Capital Markets · Dynatrace.",
+          "…Applicative Support · Montreal. Calypso · Capital Markets · Dynatrace."
+        ]
+      },
+      "provenance": "fixture"
+    }
   ],
   "nameOnlyScore": 0,
   "nameOnlyPassedFloor": false,
@@ -38,7 +996,7 @@
   "secondNeed": "Senior Calypso Business Analyst",
   "combinedNeedCount": 2,
   "stdout_tail": [
-    "RESULT sourcing-engine: 58 passed, 0 failed",
+    "RESULT sourcing-engine: 65 passed, 0 failed",
     "EVIDENCE command=tsx tests/sourcing-engine.mts exit_code=0 path=_relay/evidence/trading-need-e2e.json"
   ],
   "stderr_tail": [

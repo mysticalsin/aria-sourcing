@@ -38,6 +38,7 @@ writeFileSync(
       requiredSkills: fromTest.requiredSkills ?? [],
       shortlistCount: fromTest.shortlistCount ?? 0,
       scores: fromTest.scores ?? [],
+      shortlist: fromTest.shortlist ?? [],
       nameOnlyScore: fromTest.nameOnlyScore ?? null,
       nameOnlyPassedFloor: fromTest.nameOnlyPassedFloor ?? null,
       emptyPassedFloor: fromTest.emptyPassedFloor ?? null,

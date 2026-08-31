@@ -40,9 +40,9 @@ least one required skill) is **evidence**. The cloud parser must not replace
 it, shrink the Skill (Must) list, or leave the brief empty. Intake keeps the
 existing paste shape (recruiter email/brief + optional JD, `POST /api/intake`).
 
-On the demo Talent Pool path, these needs use the engine fixture shortlist
-(skills + CV + LinkedIn/other text, floor 60, cap 20, name-only FAIL). Aria
-does not dress that shortlist as live people.
+The fixture pool proves the matcher in tests and `POST /api/source/need?mode=fixture`
+only. Talent Pool and Fly never present lab fixtures (`@fixture.example`) as
+candidates. Aria does not dress a fixture as a live person.
 
 ## Evidence (what a candidate is scored on)
 
@@ -101,8 +101,22 @@ experience signal; years alone are not a win.
 }
 ```
 
+`evidence` is per-row citations, not a campaign blurb:
+
+```
+{ skills: string[], cv: string[], linkedin: string[] }
+```
+
+Each array is readable snippets around that channel's hits in the original
+skill list / CV / LinkedIn (or other) text. Every shortlisted row must carry
+at least one CV citation. Empty and name-only rows have empty arrays.
+
 `provenance` is `fixture` or `live`. Live rows come from a real provider
 response. Aria never invents a live person and never dresses a fixture as live.
+
+Clustered synthetic scores (two buckets, a flat 75, or 12×80 then 4×63) are a
+Fly fail. Shortlist scores must spread from distinct skill / CV / LinkedIn
+coverage.
 
 ## Providers
 

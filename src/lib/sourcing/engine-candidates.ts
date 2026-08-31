@@ -1,6 +1,7 @@
 /**
  * Map engine shortlist rows onto campaign Candidate records.
- * Demo Talent Pool only — provenance stays synthetic. Never dress as live.
+ * Tests and recorded fixture batches only. Talent Pool / Fly must not import
+ * this — lab emails (@fixture.example) are not production candidates.
  */
 
 import {

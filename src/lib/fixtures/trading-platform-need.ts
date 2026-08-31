@@ -73,7 +73,9 @@ Please source against the attached VSS. Recruiter: MUNERA ALZATE Jacobo
 Client: BNPP CIB - Canada
 `;
 
+/** Must-haves on the App Support need. "Linux Server" also hits "Linux" (substring). */
 const APP_SUPPORT_SKILLS = [
+  "Calypso",
   "Linux",
   "Python",
   "Shell",
@@ -81,63 +83,302 @@ const APP_SUPPORT_SKILLS = [
   "Grafana",
   "Dynatrace",
   "Linux Server",
-  "Calypso",
 ];
 
 const BA_SKILLS = ["Calypso", "Business Analysis", "MySQL", "SQL"];
 
-const NAMES = [
-  "Elena Varga",
-  "Marc Dupont",
-  "Priya Raman",
-  "Jonas Berg",
-  "Amira Haddad",
-  "Luca Ferraro",
-  "Sofia Lindqvist",
-  "Owen Clarke",
-  "Mei Chen",
-  "Hugo Moreau",
-  "Nadia Petrov",
-  "Ibrahim Kale",
-  "Clara Weiss",
-  "Theo Nielsen",
-  "Hana Sato",
-  "Ravi Mehta",
-  "Ingrid Holm",
-  "Diego Alvarez",
-  "Leila Hassan",
-  "Sven Bauer",
-  "Camille Fontaine",
-  "Arjun Patel",
+/**
+ * Distinct App Support coverage — not two clone buckets.
+ * Skills / CV phrases / LinkedIn phrases differ so composites spread.
+ * Every CV keeps "production support" + a Calypso citation.
+ */
+const APP_SUPPORT_PROFILES: Array<{
+  name: string;
+  skills: string[];
+  cv: string[];
+  li: string[];
+  years: number;
+}> = [
+  {
+    name: "Elena Varga",
+    skills: APP_SUPPORT_SKILLS,
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+      "Dynatrace",
+    ],
+    li: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+      "Dynatrace",
+    ],
+    years: 6,
+  },
+  {
+    name: "Marc Dupont",
+    skills: APP_SUPPORT_SKILLS,
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+    ],
+    li: ["Calypso", "Capital Markets", "Grafana", "Dynatrace", "Prime Brokerage"],
+    years: 6,
+  },
+  {
+    name: "Priya Raman",
+    skills: APP_SUPPORT_SKILLS,
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Grafana",
+    ],
+    li: ["Calypso", "Capital Markets", "Grafana"],
+    years: 5,
+  },
+  {
+    name: "Jonas Berg",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace"],
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+      "Dynatrace",
+    ],
+    li: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+    ],
+    years: 6,
+  },
+  {
+    name: "Amira Haddad",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace"],
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Grafana",
+    ],
+    li: ["Calypso", "Capital Markets", "Grafana", "Dynatrace"],
+    years: 5,
+  },
+  {
+    name: "Luca Ferraro",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace"],
+    cv: ["production support", "Calypso", "Trade Life Cycle", "Settlements", "Prime Brokerage", "Capital Markets"],
+    li: ["Calypso", "production support", "Prime Brokerage", "Capital Markets", "Back Office"],
+    years: 5,
+  },
+  {
+    name: "Sofia Lindqvist",
+    skills: APP_SUPPORT_SKILLS,
+    cv: ["production support", "Calypso", "Trade Life Cycle", "Settlements", "Prime Brokerage", "Grafana"],
+    li: ["Calypso", "Capital Markets", "Grafana", "Dynatrace"],
+    years: 5,
+  },
+  {
+    name: "Owen Clarke",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana"],
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+      "Dynatrace",
+    ],
+    li: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+    ],
+    years: 6,
+  },
+  {
+    name: "Mei Chen",
+    skills: APP_SUPPORT_SKILLS,
+    cv: ["production support", "Calypso", "Settlements", "Capital Markets", "Grafana"],
+    li: ["Calypso", "Capital Markets"],
+    years: 4,
+  },
+  {
+    name: "Hugo Moreau",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace"],
+    cv: ["production support", "Calypso", "Trade Life Cycle", "Prime Brokerage", "Grafana"],
+    li: ["Calypso", "Capital Markets", "Grafana"],
+    years: 5,
+  },
+  {
+    name: "Nadia Petrov",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana"],
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Grafana",
+    ],
+    li: ["Calypso", "Capital Markets", "Grafana", "Dynatrace", "Prime Brokerage"],
+    years: 5,
+  },
+  {
+    name: "Ibrahim Kale",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle"],
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+      "Dynatrace",
+    ],
+    li: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Back Office",
+      "Grafana",
+      "Dynatrace",
+    ],
+    years: 6,
+  },
+  {
+    name: "Clara Weiss",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana"],
+    cv: ["production support", "Calypso", "Trade Life Cycle", "Settlements", "Prime Brokerage", "Capital Markets"],
+    li: ["Calypso", "Capital Markets", "Grafana"],
+    years: 4,
+  },
+  {
+    name: "Theo Nielsen",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle"],
+    cv: [
+      "production support",
+      "Calypso",
+      "Trade Life Cycle",
+      "Settlements",
+      "Securities",
+      "Prime Brokerage",
+      "Capital Markets",
+      "Grafana",
+    ],
+    li: ["Calypso", "production support", "Prime Brokerage", "Capital Markets", "Back Office", "Grafana"],
+    years: 5,
+  },
+  {
+    name: "Hana Sato",
+    skills: APP_SUPPORT_SKILLS,
+    cv: ["production support", "Calypso", "Settlements", "Grafana"],
+    li: ["Calypso", "Grafana"],
+    years: 4,
+  },
+  {
+    name: "Ravi Mehta",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Dynatrace"],
+    cv: ["production support", "Calypso", "Trade Life Cycle", "Settlements", "Capital Markets", "Dynatrace"],
+    li: ["Calypso", "Capital Markets", "Dynatrace"],
+    years: 5,
+  },
+  {
+    name: "Ingrid Holm",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle"],
+    cv: ["production support", "Calypso", "Trade Life Cycle", "Settlements", "Prime Brokerage", "Capital Markets", "Grafana"],
+    li: ["Calypso", "Capital Markets", "Grafana"],
+    years: 4,
+  },
+  {
+    name: "Diego Alvarez",
+    skills: ["Calypso", "Linux", "Python", "Shell", "Oracle", "Grafana"],
+    cv: ["production support", "Calypso", "Settlements", "Prime Brokerage", "Grafana"],
+    li: ["Calypso", "Grafana"],
+    years: 4,
+  },
 ];
 
-function appSupportConsultant(index: number, strength: "strong" | "solid"): CandidateEvidence {
-  const name = NAMES[index] ?? `Consultant ${index + 1}`;
-  const years = strength === "strong" ? 5 + (index % 2) : 4;
-  const skills =
-    strength === "strong"
-      ? APP_SUPPORT_SKILLS
-      : ["Linux", "Python", "Shell", "Oracle", "Calypso"];
-  const monitors =
-    strength === "strong"
-      ? "Grafana and Dynatrace on Linux Server. Python and Shell automation. Oracle."
-      : "Oracle and Shell on Linux. Learning Grafana.";
+function appSupportConsultant(
+  index: number,
+  profile: (typeof APP_SUPPORT_PROFILES)[number],
+): CandidateEvidence {
+  const cvBody = profile.cv.join("; ");
+  const liBody = profile.li.join(" · ");
   return {
     id: `fixture-app-support-${index + 1}`,
-    name,
-    skills,
-    cvText:
-      `${years} years production support for the Calypso settlement system in Capital Markets. ` +
-      `Trade Life Cycle, Settlements, Securities, Prime Brokerage. 24/7 global. ${monitors}`,
-    linkedinText:
-      `IS&D Applicative Support · Calypso settlement · Capital Markets · Montreal. ${monitors}`,
-    yearsExperience: years,
+    name: profile.name,
+    skills: profile.skills,
+    cvText: `${profile.years} years. Experience: ${cvBody}. 24/7 global desk.`,
+    linkedinText: `IS&D Applicative Support · Montreal. ${liBody}.`,
+    yearsExperience: profile.years,
     provenance: "fixture",
   };
 }
 
+const BA_NAMES = [
+  "Leila Hassan",
+  "Sven Bauer",
+  "Camille Fontaine",
+  "Arjun Patel",
+  "Noor Rahman",
+  "Pia Kowalski",
+];
+
 function baConsultant(index: number): CandidateEvidence {
-  const name = NAMES[16 + (index % 6)] ?? `BA ${index + 1}`;
+  const name = BA_NAMES[index % BA_NAMES.length] ?? `BA ${index + 1}`;
   const years = 7 + (index % 4);
   return {
     id: `fixture-calypso-ba-${index + 1}`,
@@ -186,8 +427,7 @@ export const MUREX_ONLY_CANDIDATE: CandidateEvidence = {
 };
 
 export const TRADING_PLATFORM_POOL: CandidateEvidence[] = [
-  ...Array.from({ length: 12 }, (_, index) => appSupportConsultant(index, "strong")),
-  ...Array.from({ length: 4 }, (_, index) => appSupportConsultant(12 + index, "solid")),
+  ...APP_SUPPORT_PROFILES.map((profile, index) => appSupportConsultant(index, profile)),
   ...Array.from({ length: 6 }, (_, index) => baConsultant(index)),
   NAME_ONLY_CANDIDATE,
   EMPTY_CANDIDATE,
