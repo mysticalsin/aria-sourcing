@@ -994,12 +994,5 @@
   "nameOnlyPassedFloor": false,
   "emptyPassedFloor": false,
   "secondNeed": "Senior Calypso Business Analyst",
-  "combinedNeedCount": 2,
-  "stdout_tail": [
-    "RESULT sourcing-engine: 65 passed, 0 failed",
-    "EVIDENCE command=tsx tests/sourcing-engine.mts exit_code=0 path=_relay/evidence/trading-need-e2e.json"
-  ],
-  "stderr_tail": [
-    ""
-  ]
+  "combinedNeedCount": 2
 }

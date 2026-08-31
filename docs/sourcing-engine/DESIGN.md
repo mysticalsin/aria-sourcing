@@ -132,10 +132,21 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
 (Calypso is a skill, never `language:Calypso` or a concatenated
 `language:LinuxPython…` token).
 
+- **LinkedIn is a primary source** (resumes, experience, skill-word search).
+  Aria is **not** LinkedIn-only: Apify plus other keyed sources (GitHub,
+  Talent Pool, Seamless, Sillage, Apollo) still run. GitHub `language:` is
+  only for real programming languages (Python, Shell, …).
 - **Trading-platform / finance needs** (Calypso, Murex, application support)
-  source **LinkedIn and Apify at minimum**. GitHub, Talent Pool, Seamless,
-  Sillage, and Apollo run when keyed. GitHub `language:` is only for real
-  programming languages (Python, Shell, …).
+  put LinkedIn first, then Apify.
+- **Connect LinkedIn in the product** via official OAuth / Recruiter System
+  Connect / a licensed vendor API. Fail closed without credentials. Do not
+  scrape, do not automate a personal login, do not read a local LinkedIn
+  export folder.
+- **Outreach campaigns are in-product.** The agent builds the sequence and
+  targets the shortlist (HeyReach-style). Messaging stays dry-run until a
+  human approves the first send; never auto-send; never identify as AI in
+  copy (`gateOutbound` blocks AI disclosure). The old HeyReach “0 LI
+  accounts” HOLD is not a skip — campaigns live here now.
 - **Fixture / demo path** may prove the matcher (need in → scored shortlist
   out) without network I/O.
 - **Live path** uses configured providers (Apollo / Sillage / Seamless / Apify
