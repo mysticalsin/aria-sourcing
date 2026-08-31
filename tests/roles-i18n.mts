@@ -26,6 +26,7 @@ ok("Murex/finance need -> finance family", roleFamily(finJd) === "finance");
 const finProfile = roleProfile(finJd);
 ok("finance titles are finance roles", finProfile.titles.some((t) => /murex|front office|risk|consultant|analyst|markets/i.test(t)));
 ok("finance sourced on professional networks first", finProfile.platforms[0] === "LinkedIn");
+ok("finance includes Apify as a second live source", finProfile.platforms.includes("Apify"));
 
 const finCampaign = createCampaign(finJd, { hiringManager: "X", hiringManagerEmail: "x@y.example" });
 const sourced = sourceCandidates(finCampaign, "LinkedIn", 6, []);

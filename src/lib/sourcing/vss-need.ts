@@ -54,6 +54,7 @@ const FIELD_LABELS: Record<string, string[]> = {
     "level of experience (in years)",
     "level of experience",
     "experience level",
+    "experience",
     "seniority",
   ],
 };
@@ -267,24 +268,27 @@ function splitSkills(raw: string): string[] {
   for (const part of parts) {
     const protectedPart = protectPhrases(part);
     const restored = (token: string) =>
-      token.replace(/\{\{P(\d+)\}\}/g, (_, i: string) => protectedPart.phrases[Number(i)] ?? "");
+      token
+        .replace(/\{\{P(\d+)\}\}/g, (_, i: string) => protectedPart.phrases[Number(i)] ?? "")
+        .replace(/[.,]+$/g, "")
+        .trim();
     const toks = protectedPart.text.split(/\s+/).filter(Boolean);
-    const compactList =
-      !/[,;.]/.test(protectedPart.text) &&
-      toks.length >= 3 &&
-      toks.length <= 16 &&
+    // VSS Skill (Must) is a space-separated token list. Always split when the
+    // line is not English prose — one chip "Linux Python Shell …" is zero recall.
+    const shouldTokenize =
+      toks.length >= 2 &&
       !PROSE.test(protectedPart.text) &&
-      toks.every((t) => t.length <= 24 || /\{\{P\d+\}\}/.test(t));
+      toks.every((t) => t.length <= 32 || /\{\{P\d+\}\}/.test(t));
 
-    if (compactList) {
+    if (shouldTokenize) {
       for (const tok of toks) {
-        const skill = restored(tok).trim();
+        const skill = restored(tok);
         if (skill.length > 1 && !GENERIC.has(skill.toLowerCase()) && !isStopLabel(skill)) {
           out.push(skill);
         }
       }
     } else if (part) {
-      out.push(restored(protectedPart.text).replace(/\s+/g, " ").trim());
+      out.push(restored(protectedPart.text).replace(/\s+/g, " "));
     }
   }
 
@@ -294,6 +298,12 @@ function splitSkills(raw: string): string[] {
       return [skill];
     }),
   );
+}
+
+/** JobAnalysis / query boundary: never persist an unsplit must-have line. */
+export function tokenizeMustHaveSkills(input: string | string[] | undefined): string[] {
+  const parts = Array.isArray(input) ? input : input ? [input] : [];
+  return uniqueSkills(parts.flatMap((part) => splitSkills(part))).slice(0, 16);
 }
 
 function experienceSignals(need: Pick<VssNeed, "skillsMust" | "missionDescription" | "title">): string[] {
@@ -378,12 +388,34 @@ export function parseStartDateIso(startRaw: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+function recoverExperienceLine(block: string): string {
+  const labeled = extractField(block, FIELD_LABELS.levelOfExperience ?? []);
+  if (labeled) return labeled;
+  const middle = block.match(
+    /\bMiddle\b[^\n]{0,48}?(\d{1,2})\s*(?:to|[-–])\s*(\d{1,2})\s*years?/i,
+  );
+  return middle?.[0]?.trim() ?? "";
+}
+
+function recoverCity(block: string, labeled: string): string {
+  if (labeled.trim()) return labeled.trim();
+  return block.match(/\bMontr[eé]al\b/i)?.[0] ?? "";
+}
+
+function recoverLanguagesMust(block: string, labeled: string): string[] {
+  if (labeled.trim()) {
+    return labeled.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  }
+  const fluent = block.match(/\b(English|French|Anglais|Fran[cç]ais)\b[^\n]{0,24}(Fluent|Native|Bilingual)/i);
+  return fluent?.[1] ? [fluent[0].trim()] : [];
+}
+
 function parseOneBlock(block: string): VssNeed {
   const field = (key: keyof typeof FIELD_LABELS) => extractField(block, FIELD_LABELS[key] ?? []);
   const title = field("title") || field("profiles");
   const mission = extractMission(block);
   const hay = `${title}\n${mission}\n${block}`;
-  const skillsMust = splitSkills(field("skillsMust"));
+  const skillsMust = tokenizeMustHaveSkills(field("skillsMust"));
   if (/calypso/i.test(hay) && !skillsMust.some((s) => /calypso/i.test(s))) {
     skillsMust.unshift("Calypso");
   }
@@ -394,7 +426,7 @@ function parseOneBlock(block: string): VssNeed {
     mainManager: field("mainManager"),
     mainRecruiter: field("mainRecruiter"),
     companyEmployedBy: field("companyEmployedBy"),
-    city: field("city"),
+    city: recoverCity(block, field("city")),
     client: field("client"),
     contractType: field("contractType"),
     startDate: field("startDate"),
@@ -404,14 +436,12 @@ function parseOneBlock(block: string): VssNeed {
     projectDuration: field("projectDuration"),
     profiles: field("profiles"),
     skillsMust: uniqueSkills(skillsMust).slice(0, 16),
-    skillsNice: splitSkills(field("skillsNice")).slice(0, 12),
-    languagesMust: field("languagesMust")
-      ? field("languagesMust").split(/[,;]/).map((s) => s.trim()).filter(Boolean)
-      : [],
+    skillsNice: tokenizeMustHaveSkills(field("skillsNice")).slice(0, 12),
+    languagesMust: recoverLanguagesMust(block, field("languagesMust")),
     languagesNice: field("languagesNice")
       ? field("languagesNice").split(/[,;]/).map((s) => s.trim()).filter(Boolean)
       : [],
-    levelOfExperience: field("levelOfExperience"),
+    levelOfExperience: recoverExperienceLine(block),
     missionDescription: mission.slice(0, 12_000),
     rawBlock: block,
   };
@@ -461,6 +491,9 @@ export function vssToSourcingNeed(need: VssNeed, source: NeedSource, rawText: st
 
 export function vssToJobAnalysis(need: VssNeed): JobAnalysis {
   const years = yearBandFromLevel(need.levelOfExperience);
+  const fallbackYears = years.min == null ? yearBandFromLevel(need.rawBlock) : years;
+  const minYears = years.min ?? fallbackYears.min;
+  const maxYears = years.max ?? fallbackYears.max;
   const urgency = urgencyFromVssPriority(need.priority);
   const loc = need.city.trim();
   const language = /french|français/i.test(need.languagesMust[0] ?? "")
@@ -471,7 +504,7 @@ export function vssToJobAnalysis(need: VssNeed): JobAnalysis {
   return {
     title: need.title,
     department: need.profiles || need.type || need.client,
-    seniority: seniorityFromVss(need.levelOfExperience, need.title, years.min),
+    seniority: seniorityFromVss(need.levelOfExperience || need.rawBlock, need.title, minYears),
     employmentType: employmentFromVss(need.type, need.contractType),
     locationType: locationTypeFromRemote(need.remote, need.rawBlock),
     ...(loc ? { location: loc } : {}),
@@ -483,10 +516,10 @@ export function vssToJobAnalysis(need: VssNeed): JobAnalysis {
       ? "CAD"
       : "",
     equity: false,
-    requiredSkills: need.skillsMust,
-    niceToHaveSkills: need.skillsNice,
-    minYearsExperience: years.min,
-    maxYearsExperience: years.max,
+    requiredSkills: tokenizeMustHaveSkills(need.skillsMust),
+    niceToHaveSkills: tokenizeMustHaveSkills(need.skillsNice),
+    minYearsExperience: minYears,
+    maxYearsExperience: maxYears,
     education: "",
     industryExperience: /bank|financ|capital market|trading|calypso/i.test(
       `${need.clientSector}\n${need.missionDescription}`,

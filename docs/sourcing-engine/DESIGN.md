@@ -40,6 +40,13 @@ least one required skill) is **evidence**. The cloud parser must not replace
 it, shrink the Skill (Must) list, or leave the brief empty. Intake keeps the
 existing paste shape (recruiter email/brief + optional JD, `POST /api/intake`).
 
+**Skill (Must) is tokenized on spaces** (and commas/semicolons), keeping
+known phrases such as `Linux Server`. One chip
+`Linux Python Shell Oracle Grafana Dynatrace Linux Server` is a parse fail:
+GitHub `language:LinuxPython…` and a LinkedIn AND of that blob have zero
+recall. After tokenize, intake must recover Middle 4–6 years → `Mid` min 4
+max 6, Montreal, Hybrid, and English when the VSS states them.
+
 The fixture pool proves the matcher in tests and `POST /api/source/need?mode=fixture`
 only. Talent Pool and Fly never present lab fixtures (`@fixture.example`) as
 candidates. Aria does not dress a fixture as a live person.
@@ -120,6 +127,15 @@ coverage.
 
 ## Providers
 
+Aria searches the web for people who **have the skills**. It is not
+LinkedIn-only and not a GitHub-`language:` hack for product platforms
+(Calypso is a skill, never `language:Calypso` or a concatenated
+`language:LinuxPython…` token).
+
+- **Trading-platform / finance needs** (Calypso, Murex, application support)
+  source **LinkedIn and Apify at minimum**. GitHub, Talent Pool, Seamless,
+  Sillage, and Apollo run when keyed. GitHub `language:` is only for real
+  programming languages (Python, Shell, …).
 - **Fixture / demo path** may prove the matcher (need in → scored shortlist
   out) without network I/O.
 - **Live path** uses configured providers (Apollo / Sillage / Seamless / Apify
@@ -132,6 +148,9 @@ coverage.
   1. Run the fixture path to prove the matcher.
   2. Add the missing provider key in Settings.
   3. Paste / upload the JD and any CVs Aria already holds (no live search).
+
+Outreach stays **dry-run** until a human approves a send. This contract does
+not authorize live contact.
 
 ## OCR
 
@@ -214,7 +233,9 @@ be adopted. Outreach contact floor (`MIN_SCORE_FLOOR` 70) stays separate.
 
 **Production after land is Fly** (`https://aria-mantu-app.fly.dev/`). The
 Vercel demo is not the bar. Empty cloud parse, clustered synthetic scores,
-`language:Calypso`, and empty LinkedIn `AND ()` are fails on Fly.
+`language:Calypso`, unsplit Skill (Must), and empty LinkedIn `AND ()` are
+fails on Fly. The UI shows a baked git SHA (`aria <sha>`) so Fly-show can
+prove which release is running.
 
 ## Out of scope
 

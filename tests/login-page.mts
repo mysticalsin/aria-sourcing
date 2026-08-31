@@ -44,6 +44,16 @@ ok(
     /NEXT_PUBLIC_ENABLE_AZURE_LOGIN=\$NEXT_PUBLIC_ENABLE_AZURE_LOGIN/.test(productionDockerfile),
 );
 ok(
+  "login shows a baked git SHA so Fly-show can prove the release",
+  /AriaBuildStamp/.test(login) && /data-testid="aria-build-sha"/.test(readFileSync(new URL("../src/components/app/build-stamp.tsx", import.meta.url), "utf8")),
+);
+ok(
+  "production image bakes NEXT_PUBLIC_ARIA_GIT_SHA from the release SHA",
+  /ARG NEXT_PUBLIC_ARIA_GIT_SHA/.test(productionDockerfile) &&
+    /NEXT_PUBLIC_ARIA_GIT_SHA=\$NEXT_PUBLIC_ARIA_GIT_SHA/.test(productionDockerfile) &&
+    /NEXT_PUBLIC_ARIA_GIT_SHA="\$ARIA_RELEASE_SHA"/.test(deployWorkflow),
+);
+ok(
   "email is the primary live login action when Azure is disabled",
   /azureLoginEnabled\s*\?\s*"Sign in with Microsoft"\s*:\s*"Sign in with email"/.test(login),
 );

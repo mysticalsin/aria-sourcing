@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  coalesceRequiredSkills,
   groundLiveIntakeFields,
   parseHermesIntakeJson,
   parseIntakeLive,
@@ -137,6 +138,54 @@ test("complete VSS evidence is not emptied by a missing cloud parser", async () 
   assert.equal(evaluateNeedReadiness(parsed.jobAnalysis).ready, true);
   assert.equal(parsed.providerWarning, undefined);
   assert.equal(parsed.extractionMode, "evidence");
+});
+
+test("cloud one-chip Skill (Must) cannot shrink a split VSS list", () => {
+  const split = [
+    "Linux",
+    "Python",
+    "Shell",
+    "Oracle",
+    "Grafana",
+    "Dynatrace",
+    "Linux Server",
+    "Calypso",
+  ];
+  assert.deepEqual(
+    coalesceRequiredSkills(split, ["Linux Python Shell Oracle Grafana Dynatrace Linux Server"]),
+    split,
+  );
+  assert.ok(
+    coalesceRequiredSkills(["Linux Python Shell Oracle Grafana Dynatrace Linux Server"]).includes("Python"),
+  );
+});
+
+test("Parse JD path keeps Middle 4-6, Montreal, and no cloud-miss banner on VSS", async () => {
+  const settings = buildSeedState().settings;
+  const parsed = await parseIntakeLive(
+    {
+      ...settings,
+      llmProviders: [],
+      savedModels: [],
+      defaultModels: {},
+      hermesLiveMode: true,
+    },
+    { email: TONY_AMACAN },
+  );
+  assert.equal(parsed.jobAnalysis.seniority, "Mid");
+  assert.equal(parsed.jobAnalysis.minYearsExperience, 4);
+  assert.equal(parsed.jobAnalysis.maxYearsExperience, 6);
+  assert.ok(
+    /montreal/i.test(parsed.jobAnalysis.location ?? "") ||
+      parsed.jobAnalysis.regions.some((r) => /montreal/i.test(r)),
+  );
+  assert.equal(parsed.jobAnalysis.language, "en");
+  assert.equal(parsed.providerWarning, undefined);
+  assert.equal(evaluateNeedReadiness(parsed.jobAnalysis).ready, true);
+  assert.ok(
+    !parsed.jobAnalysis.requiredSkills.some((s) => /Linux Python Shell/i.test(s)),
+    "must-haves stay tokenized",
+  );
 });
 
 test("partial remote grounds as Hybrid and CDI/consulting as Contract", () => {

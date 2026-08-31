@@ -5,10 +5,11 @@ import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
-import { GITHUB_SEARCH_LANGUAGES } from "./sourcing/github-search-language";
+import { githubSkillQueryToken } from "./sourcing/github-search-language";
 import {
   isVssRecruitmentNeed,
   parseVssNeeds,
+  tokenizeMustHaveSkills,
   urgencyFromVssPriority,
   vssToJobAnalysis,
 } from "./sourcing/vss-need";
@@ -728,7 +729,7 @@ Aria Sourcing`;
 const NON_LOCATION_REGIONS = new Set(["EU", "EMEA", "EEA", "APAC", "LATAM", "Remote", "Global"]);
 
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
-  const topSkills = jd.requiredSkills.map((s) => s.trim()).filter(Boolean).slice(0, 4);
+  const topSkills = tokenizeMustHaveSkills(jd.requiredSkills).slice(0, 4);
   const europeHints = europeSourcingLocationHints(jd);
   const region = jd.regions[0];
   const concreteRegion =
@@ -738,11 +739,10 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
   // out the whole query on /search/users. Platforms (Calypso) are not languages.
   const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => {
-    const token = skill.replace(/\s+/g, "");
-    const language = GITHUB_SEARCH_LANGUAGES.has(token.toLowerCase());
+    const token = githubSkillQueryToken(skill);
     return {
       label: `${skill} contributors`,
-      query: `${language ? `language:${token}` : token}${locationQualifier} followers:>40 ${
+      query: `${token}${locationQualifier} followers:>40 ${
         i === 0 ? "repos:>10" : "repos:>5"
       }`,
       estimatedResults: 120 + i * 60,
@@ -810,6 +810,11 @@ export function createCampaign(
   meta: { hiringManager: string; hiringManagerEmail: string },
 ): Campaign {
   const id = makeCampaignId(jd.title);
+  const jobAnalysis: JobAnalysis = {
+    ...jd,
+    requiredSkills: tokenizeMustHaveSkills(jd.requiredSkills),
+    niceToHaveSkills: tokenizeMustHaveSkills(jd.niceToHaveSkills),
+  };
   return {
     id,
     title: jd.title,
@@ -819,9 +824,9 @@ export function createCampaign(
     hiringManager: meta.hiringManager,
     hiringManagerEmail: meta.hiringManagerEmail,
     createdAt: new Date().toISOString(),
-    targetStartDate: jd.expectedStartDate ?? isoDaysAfter(45, new Date()),
-    jobAnalysis: jd,
-    sourcingStrategy: buildSourcingStrategy(jd),
+    targetStartDate: jobAnalysis.expectedStartDate ?? isoDaysAfter(45, new Date()),
+    jobAnalysis,
+    sourcingStrategy: buildSourcingStrategy(jobAnalysis),
     scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },
     metrics: emptyMetrics(),
     skillUpdates: [],

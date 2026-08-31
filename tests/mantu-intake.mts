@@ -2,9 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseEmailAndJD, isMantuNeedEmail, SAMPLE_MANTU_EMAIL, buildSourcingStrategy } from "../src/lib/mock-ai";
+import { parseEmailAndJD, isMantuNeedEmail, SAMPLE_MANTU_EMAIL, buildSourcingStrategy, createCampaign } from "../src/lib/mock-ai";
 import { SAMPLE_VSS_CALYPSO_BA_MONTREAL } from "../src/lib/fixtures/trading-platform-need";
 import { evaluateNeedReadiness } from "../src/lib/needs/readiness";
+import { roleFamily, roleProfile } from "../src/lib/roles";
+import { tokenizeMustHaveSkills } from "../src/lib/sourcing/vss-need";
+import { githubSkillQueryToken } from "../src/lib/sourcing/github-search-language";
 
 const TONY_AMACAN = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "fixtures/tony-calypso-amacan-need.txt"),
@@ -65,6 +68,31 @@ ok(
   app.jobAnalysis.requiredSkills.some((s) => s.toLowerCase() === "calypso"),
 );
 ok("VSS city is Montreal", /montreal/i.test(app.jobAnalysis.location ?? "") || app.jobAnalysis.regions.some((r) => /montreal/i.test(r)));
+const unlabeled = parseEmailAndJD({
+  email: [
+    "Recruitment Need Purpose",
+    "Title",
+    "Calypso Application Support",
+    "Skill (Must)",
+    "Linux Python Shell Oracle Grafana Dynatrace Linux Server",
+    "Language (Must)",
+    "English - Fluent",
+    "Remote",
+    "Possible partially remote",
+    "Type",
+    "Consulting",
+    "Middle 4-6 years in Montreal",
+    "Candidate requirement",
+  ].join("\n"),
+});
+ok(
+  "unlabeled Middle 4-6 and Montreal still recover",
+  unlabeled.jobAnalysis.seniority === "Mid" &&
+    unlabeled.jobAnalysis.minYearsExperience === 4 &&
+    unlabeled.jobAnalysis.maxYearsExperience === 6 &&
+    (/montreal/i.test(unlabeled.jobAnalysis.location ?? "") ||
+      unlabeled.jobAnalysis.regions.some((r) => /montreal/i.test(r))),
+);
 ok(
   "VSS intake is ready enough to source (no critical readiness holes)",
   evaluateNeedReadiness(app.jobAnalysis).ready,
@@ -100,6 +128,39 @@ ok(
 );
 ok("LinkedIn boolean is not an empty AND ()", !/AND\s*\(\s*\)/.test(strategy.linkedinBoolean));
 ok("LinkedIn boolean includes a must-have skill", /Linux|Python|Oracle|Calypso/i.test(strategy.linkedinBoolean));
+ok(
+  "unsplit Skill (Must) line tokenizes on spaces",
+  tokenizeMustHaveSkills("Linux Python Shell Oracle Grafana Dynatrace Linux Server").filter((s) =>
+    ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server"].some(
+      (want) => s.toLowerCase() === want.toLowerCase(),
+    ),
+  ).length >= 7,
+);
+ok(
+  "unsplit blob never becomes language:LinuxPython…",
+  !/language:LinuxPython/i.test(githubSkillQueryToken("Linux Python Shell Oracle Grafana Dynatrace Linux Server")) &&
+    buildSourcingStrategy({
+      ...app.jobAnalysis,
+      requiredSkills: ["Linux Python Shell Oracle Grafana Dynatrace Linux Server"],
+    }).githubQueries.every((q) => !/language:LinuxPython/i.test(q.query)),
+);
+ok("App Support is a finance/trading-platform need, not GitHub-first software", roleFamily(app.jobAnalysis) === "finance");
+ok(
+  "App Support sources LinkedIn and Apify, not GitHub-only",
+  roleProfile(app.jobAnalysis).platforms.includes("LinkedIn") &&
+    roleProfile(app.jobAnalysis).platforms.includes("Apify") &&
+    roleProfile(app.jobAnalysis).platforms[0] === "LinkedIn",
+);
+const campFromBlob = createCampaign(
+  { ...app.jobAnalysis, requiredSkills: ["Linux Python Shell Oracle Grafana Dynatrace Linux Server"] },
+  { hiringManager: "X", hiringManagerEmail: "x@y.example" },
+);
+ok(
+  "createCampaign persists split skills, not one chip",
+  ["Linux", "Python", "Shell"].every((skill) =>
+    campFromBlob.jobAnalysis.requiredSkills.some((s) => s.toLowerCase() === skill.toLowerCase()),
+  ) && !campFromBlob.jobAnalysis.requiredSkills.some((s) => /Linux Python Shell/i.test(s)),
+);
 
 console.log(`RESULT mantu-intake: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

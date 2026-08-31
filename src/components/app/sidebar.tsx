@@ -9,6 +9,7 @@ import { HermesWordmark } from "./logo";
 import { useIntegrations, useSettings } from "@/lib/store";
 import { realIntegrationSummary } from "@/lib/integrations";
 import { ShieldCheck, Activity } from "lucide-react";
+import { AriaBuildStamp } from "./build-stamp";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -81,6 +82,7 @@ export function Sidebar() {
             Dry-run mode enabled
           </div>
         )}
+        <AriaBuildStamp className="block px-1 font-mono text-[0.65rem] text-muted" />
       </div>
     </aside>
   );

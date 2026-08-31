@@ -379,11 +379,14 @@ export function createCampaignActions({
       if (!skill) return state;
       const region = campaign.jobAnalysis.regions[0]?.trim().replace(/["\\]/g, "") ?? "";
 
-      const token = skill.replace(/\s+/g, "");
+      const trimmedSkill = skill.trim();
+      const firstToken = trimmedSkill.split(/\s+/)[0] ?? trimmedSkill;
       const githubLang =
+        !/\s/.test(trimmedSkill) &&
         /^(python|shell|java|javascript|typescript|go|ruby|c\+\+|c|rust|php|scala|kotlin|swift|sql)$/i.test(
-          token,
+          trimmedSkill,
         );
+      const token = githubLang ? trimmedSkill : firstToken;
       const extra = {
         label: `Adjacent: ${skill} maintainers`,
         query: `${githubLang ? `language:${token}` : token} sort:updated${region ? ` location:"${region}"` : ""} forks:>5`,

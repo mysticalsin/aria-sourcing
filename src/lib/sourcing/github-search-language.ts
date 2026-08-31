@@ -21,6 +21,14 @@ export const GITHUB_SEARCH_LANGUAGES = new Set([
 ]);
 
 export function githubSkillQueryToken(skill: string): string {
-  const token = skill.replace(/\s+/g, "");
-  return GITHUB_SEARCH_LANGUAGES.has(token.toLowerCase()) ? `language:${token}` : token;
+  const trimmed = skill.trim();
+  if (!trimmed) return "";
+  const compact = trimmed.replace(/\s+/g, "");
+  if (GITHUB_SEARCH_LANGUAGES.has(compact.toLowerCase())) return `language:${compact}`;
+  // Never emit language:LinuxPythonShell… for an unsplit Skill (Must) line.
+  if (/\s/.test(trimmed)) {
+    const first = trimmed.split(/\s+/)[0] ?? trimmed;
+    return GITHUB_SEARCH_LANGUAGES.has(first.toLowerCase()) ? `language:${first}` : first;
+  }
+  return compact;
 }

@@ -226,6 +226,7 @@ jobs:
             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-public-anon-key \
             --build-arg NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN=example.invalid \
             --build-arg NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false \
+            --build-arg NEXT_PUBLIC_ARIA_GIT_SHA="$GITHUB_SHA" \
             .
           docker build --pull --platform linux/amd64 \
             --file docker/db/Dockerfile.fly \

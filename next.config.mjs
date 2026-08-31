@@ -19,6 +19,14 @@ export function resolveNextDistDir(configuredDistDir) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_ARIA_GIT_SHA: String(
+      process.env.NEXT_PUBLIC_ARIA_GIT_SHA || process.env.ARIA_RELEASE_SHA || process.env.GITHUB_SHA || "",
+    )
+      .replace(/[^0-9a-fA-F]/g, "")
+      .toLowerCase()
+      .slice(0, 40),
+  },
   // Emit a self-contained server bundle (.next/standalone/server.js) for the Fly
   // production container (Dockerfile.prod). Vercel ignores it; local dev unaffected.
   output: "standalone",
