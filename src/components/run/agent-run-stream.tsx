@@ -215,7 +215,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       const emptyPeopleFirst = emptyPeopleFirstShortlistError(
         campaign.jobAnalysis,
         integrations,
-        result,
+        { accepted: sourced, source: result.source },
       );
       if (emptyPeopleFirst) {
         setErrorMessage(emptyPeopleFirst);

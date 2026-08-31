@@ -94,7 +94,7 @@ const softwareJob = {
   title: "Senior Backend Engineer",
   department: "Engineering",
   requiredSkills: ["Go", "Kubernetes"],
-  industryExperience: [],
+  industryExperience: ["SaaS"],
 } as JobAnalysis;
 ok(
   "GitHub-first software need may still show GitHub Live without LinkedIn",

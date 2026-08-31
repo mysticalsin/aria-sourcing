@@ -635,7 +635,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.runSourcingAgent(campaignId);
     setAgentRunning(false);
     if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations);
+      const failLoud = peoplePluginFailLoudUi(res.error ?? "", c.jobAnalysis, integrations);
       toast({
         title: failLoud ? failLoud.title : "Sourcing agent didn't run",
         description: failLoud?.description ?? res.error,
