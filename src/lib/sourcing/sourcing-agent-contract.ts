@@ -86,6 +86,7 @@ const CampaignProjectionSchema = z.object({
   scoringWeights: ScoringWeightsSchema,
   sourcingStrategy: z.object({
     excludedCompanies: boundedArray(500, 200),
+    linkedinBoolean: bounded(2_000),
     githubQueries: z
       .array(
         z
@@ -168,7 +169,7 @@ export type SourcingAgentCampaign = CandidateMappingCampaign &
   Pick<Campaign, "status"> & {
     sourcingStrategy: Pick<
       Campaign["sourcingStrategy"],
-      "excludedCompanies" | "githubQueries"
+      "excludedCompanies" | "githubQueries" | "linkedinBoolean"
     >;
   };
 
@@ -191,6 +192,7 @@ export function sourcingAgentCampaignFingerprint(
     sourcingStrategy: {
       excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       githubQueries: campaign.sourcingStrategy.githubQueries,
+      linkedinBoolean: campaign.sourcingStrategy.linkedinBoolean,
     },
   });
 }
@@ -268,6 +270,7 @@ export function projectSourcingAgentWorkspace(
     sourcingStrategy: {
       excludedCompanies: [...projected.sourcingStrategy.excludedCompanies],
       githubQueries: projected.sourcingStrategy.githubQueries.map((query) => ({ ...query })),
+      linkedinBoolean: projected.sourcingStrategy.linkedinBoolean,
     },
   };
   return {
@@ -304,7 +307,7 @@ export const SourcingAgentCandidateDtoSchema = z
     linkedinUrl: bounded(2_048),
     githubUrl: bounded(2_048),
     sourceUrl: bounded(2_048).optional(),
-    sourcePlatform: z.enum(["GitHub", "LinkedIn", "Stack Overflow", "Dribbble", "Behance"]),
+    sourcePlatform: z.enum(["GitHub", "LinkedIn", "Apify", "Stack Overflow", "Dribbble", "Behance"]),
     sourceQuery: bounded(500),
     matchScore: z.number().finite().min(0).max(100),
     matchBreakdown: z.array(MatchBreakdownSchema).max(6),
@@ -324,7 +327,7 @@ export type SourcingAgentCandidateDto = z.infer<
 export const SourcingFeedbackReceiptDtoSchema = z
   .object({
     receiptId: z.string().uuid(),
-    platform: z.enum(["GitHub", "LinkedIn", "Stack Overflow", "Dribbble", "Behance"]),
+    platform: z.enum(["GitHub", "LinkedIn", "Apify", "Stack Overflow", "Dribbble", "Behance"]),
     candidateCount: z.number().int().min(0).max(100),
   })
   .strict();
@@ -382,6 +385,7 @@ function safeHost(value: string, allowed: readonly string[]): boolean {
 const SOURCE_HOSTS: Record<SourcingAgentCandidateDto["sourcePlatform"], readonly string[]> = {
   GitHub: ["github.com"],
   LinkedIn: ["linkedin.com"],
+  Apify: ["linkedin.com"],
   "Stack Overflow": ["stackoverflow.com"],
   Dribbble: ["dribbble.com"],
   Behance: ["behance.net"],

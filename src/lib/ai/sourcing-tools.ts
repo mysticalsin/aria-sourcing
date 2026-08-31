@@ -6,43 +6,42 @@
 // echo back names/scores/URLs correctly in its final text.
 //
 // search_candidates reuses the exact real-sourcing pipeline already shipped:
-// GitHub's Search API (keyless by default) for GitHub, and the compliant
-// web_search tool (site:-scoped) + extractLead for LinkedIn/Stack Overflow/
-// Dribbble/Behance — the SAME mapGithubCandidates/mapWebSearchCandidates that
-// already do real dedupe + real deterministic scoring. The model never invents
-// a candidate or a score; it only chooses which real, already-scored people to
-// draft outreach for.
+// GitHub's Search API (keyless by default) for GitHub, Apify harvestapi for
+// LinkedIn public profiles, and site:-scoped web_search for LinkedIn/SO/
+// Dribbble/Behance. The model never invents a candidate or a score.
 
 import type { McpTool } from "@/lib/mcp-client";
-import type { Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
+import type { Campaign, Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { searchGithubUsers } from "@/lib/sourcing/github";
 import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
+import { runProfileSearchAndWait } from "@/lib/sourcing/apify";
+import { mapApifyCandidates } from "@/lib/store/sourcing-helpers";
 import {
   mapGithubCandidates,
   mapWebSearchCandidates,
   type CandidateMappingCampaign,
 } from "@/lib/sourcing/candidate-mappers";
-
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
     name: "search_candidates",
     description:
       "Search ONE platform for real candidates matching this role, already deduped and scored " +
       "against the job description. Returns real people found via that platform's real search " +
-      "(GitHub's Search API, or a site:-scoped web search for the others) — never fabricated. " +
-      "Call it once per platform worth checking; call it again with a different query on the same " +
-      "platform to broaden a search that returned too few good matches.",
+      "(LinkedIn site-scoped web search, Apify harvestapi, or GitHub Search API) — never fabricated. " +
+      "Call LinkedIn and Apify first for people who have the skills; GitHub only for real " +
+      "programming-language queries. Call it once per platform worth checking; call it again with " +
+      "a different query on the same platform to broaden a search that returned too few good matches.",
     inputSchema: {
       type: "object",
       properties: {
         platform: {
           type: "string",
-          enum: ["GitHub", "LinkedIn", "Stack Overflow", "Dribbble", "Behance"],
-          description: "Which platform to search.",
+          enum: ["GitHub", "LinkedIn", "Apify", "Stack Overflow", "Dribbble", "Behance"],
+          description: "Which platform to search. LinkedIn + Apify first for trading-platform needs.",
         },
         query: {
           type: "string",
@@ -96,6 +95,7 @@ export function makeSourcingToolRunner(
   tavilyKey?: string,
   webFetchImpl?: WebFetch,
   beforeExternalCall?: () => Promise<boolean>,
+  apifyToken?: string,
 ) {
   const found: Candidate[] = [];
   const executions: SourcingQueryExecution[] = [];
@@ -133,6 +133,41 @@ export function makeSourcingToolRunner(
       } catch (err) {
         executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
         return { ok: false, error: err instanceof Error ? err.message : "GitHub search failed." };
+      }
+    } else if (platform === "Apify") {
+      if (!apifyToken) {
+        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+        return { ok: false, error: "Connect an Apify key in Settings first." };
+      }
+      try {
+        const clearance = clearDiscoveryCriteria(platform, { searchQuery: query }, campaign);
+        if (!clearance.ok) return clearance;
+        const profiles = await runProfileSearchAndWait(
+          clearance.clearance,
+          apifyToken,
+          {
+            searchQuery: query,
+            profileScraperMode: "Short",
+            maxItems: count,
+          },
+          { timeoutMs: 20_000, signal },
+        );
+        if (!profiles.ok) {
+          executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+          return { ok: false, error: profiles.title || "Apify search failed." };
+        }
+        const mapped = mapApifyCandidates(
+          profiles.data,
+          campaign as Campaign,
+          query,
+          alreadySeen as Candidate[],
+          weights,
+        );
+        accepted = mapped.accepted;
+        skippedCount = mapped.skipped.length;
+      } catch (err) {
+        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+        return { ok: false, error: err instanceof Error ? err.message : "Apify search failed." };
       }
     } else if (isWebSearchPlatform(platform)) {
       const scopedQuery = ensureWebQueryScope(platform, query);

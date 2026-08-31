@@ -150,7 +150,9 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
 - **Fixture / demo path** may prove the matcher (need in → scored shortlist
   out) without network I/O.
 - **Live path** uses configured providers (Apollo / Sillage / Seamless / Apify
-  / LinkedIn / GitHub) when their keys exist.
+  / LinkedIn / GitHub) when their keys exist. Deterministic Source next batch
+  runs the persisted LinkedIn boolean and Apify harvestapi search first, then
+  only real-language GitHub queries. It does not GitHub-only a Calypso need.
 - Live path with no usable provider key is **fail-closed**: no shortlist, no
   invented people, machine code `PROVIDER_NOT_CONFIGURED`.
 - If a required sensor is missing, the operator gets three real paths — not a

@@ -411,6 +411,40 @@ export async function fetchDatasetItems(
   return { ok: true, status: res.status, data: items.map(mapProfile) };
 }
 
+const TERMINAL_FAIL = new Set(["FAILED", "TIMED-OUT", "ABORTED", "TIMED_OUT"]);
+
+/** Start harvestapi search and wait for profiles. Used by search_candidates. */
+export async function runProfileSearchAndWait(
+  clearance: ProviderClearance,
+  token: string,
+  input: ApifyProfileSearchInput,
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<ApifyResult<ApifyProfile[]>> {
+  const started = await startProfileSearchRun(clearance, token, input);
+  if (!started.ok) return started;
+  const { runId, datasetId } = started.data;
+  if (!runId || !datasetId) {
+    return { ok: false, status: 0, title: "Apify run missing ids", detail: "" };
+  }
+  const deadline = Date.now() + Math.min(Math.max(opts?.timeoutMs ?? 20_000, 4_000), 40_000);
+  while (Date.now() < deadline) {
+    if (opts?.signal?.aborted) {
+      return { ok: false, status: 0, title: "Apify search aborted", detail: "" };
+    }
+    const status = await getRunStatus(clearance, token, runId);
+    if (!status.ok) return status;
+    const state = status.data.status.toUpperCase();
+    if (state === "SUCCEEDED") {
+      return fetchDatasetItems(clearance, token, datasetId, input.maxItems ?? 8);
+    }
+    if (TERMINAL_FAIL.has(state)) {
+      return { ok: false, status: status.status, title: `Apify run ${state}`, detail: "" };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
+  return { ok: false, status: 0, title: "Apify search timed out", detail: "" };
+}
+
 /** Cheap, no-run connectivity check used by the API-key "Test connection" flow. */
 export async function testApifyConnection(clearance: ProviderClearance, token: string): Promise<ApifyResult<unknown>> {
   return apifyRequest(clearance, "/users/me", token, { timeoutMs: 8_000 });

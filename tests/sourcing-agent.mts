@@ -98,6 +98,59 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
 
   const talentPool = await runner.run("search_candidates", { platform: "Talent Pool", query: "x" });
   ok("Talent Pool has no external search — rejected with a clear reason", talentPool.ok === false && !!talentPool.error);
+
+  const apifyMissing = await runner.run("search_candidates", { platform: "Apify", query: campaign.jobAnalysis.requiredSkills[0] ?? "TypeScript" });
+  ok(
+    "Apify without a stored key fails closed",
+    apifyMissing.ok === false && /apify key/i.test(apifyMissing.error ?? ""),
+  );
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes("/actors/harvestapi~linkedin-profile-search/runs") && !url.includes("actor-runs")) {
+      return jsonResponse({ data: { id: "run1", defaultDatasetId: "ds1", status: "RUNNING" } });
+    }
+    if (url.includes("/actor-runs/run1")) {
+      return jsonResponse({ data: { status: "SUCCEEDED" } });
+    }
+    if (url.includes("/datasets/ds1/items")) {
+      return jsonResponse([
+        {
+          firstName: "Ada",
+          lastName: "Lovelace",
+          linkedinUrl: "https://www.linkedin.com/in/ada-lovelace",
+          headline: "Go and Kubernetes engineer",
+          about: "Distributed systems",
+          publicIdentifier: "ada-lovelace",
+          skills: [{ name: "Go" }],
+          topSkills: ["Go", "Kubernetes"],
+        },
+      ]);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+  const runner = makeSourcingToolRunner(
+    campaign,
+    [],
+    W,
+    "",
+    undefined,
+    undefined,
+    undefined,
+    "apify-test-token",
+  );
+  const skill = campaign.jobAnalysis.requiredSkills[0] ?? "Go";
+  const found = await runner.run("search_candidates", { platform: "Apify", query: skill, count: 2 });
+  globalThis.fetch = originalFetch;
+  ok("Apify with a stored key runs harvestapi search", found.ok === true);
+  ok("Apify search hits api.apify.com only", calls.every((url) => url.startsWith("https://api.apify.com/")));
+  ok("Apify maps a real LinkedIn profile", runner.getFound()[0]?.linkedinUrl === "https://www.linkedin.com/in/ada-lovelace");
+  ok("Apify candidate is stamped Apify, not a name-only GitHub row", runner.getFound()[0]?.sourcePlatform === "Apify");
 }
 
 // --- makeSourcingToolRunner: revocation blocks search transport ------------

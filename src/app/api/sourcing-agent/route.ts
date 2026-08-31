@@ -42,6 +42,8 @@ import {
   type SourcingAgentCampaign,
 } from "@/lib/sourcing/sourcing-agent-contract";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { plannedSourcingSearches } from "@/lib/sourcing/multi-source-plan";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Candidate, Role } from "@/lib/types";
@@ -52,6 +54,8 @@ export const dynamic = "force-dynamic";
 const SYSTEM_PROMPT =
   "You are Aria's autonomous sourcing agent. You have a search_candidates tool that returns real, " +
   "already-scored people found through live search. Never invent a candidate, score, company, or URL. " +
+  "Search LinkedIn and Apify first for people who have the required skills; GitHub only for real " +
+  "programming-language queries, never language:Calypso or a concatenated skill blob. " +
   "Search only relevant platforms and stop when enough strong matches exist. Respond with only strict " +
   "JSON: {\"drafts\":[{\"candidateId\":\"<tool result id>\",\"subject\":\"<email subject>\",\"body\":\"<first-touch outreach under 120 words>\"}]}. " +
   "Every candidateId must come from a tool result. Drafts lead with specific verified work, give one " +
@@ -287,6 +291,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const configuredQueries = initial.value.campaign.sourcingStrategy.githubQueries
     .map((query) => query.query.trim())
     .filter(Boolean);
+  const multiSourcePlan = plannedSourcingSearches(initial.value.campaign);
   const frameworkAuthorization = validated.data.agentFrameworkRunId &&
     validated.data.agentFrameworkCapabilityToken &&
     validated.data.agentFrameworkQuery
@@ -301,7 +306,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
   const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
   const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
-  if (deterministic && configuredQueries.length === 0) {
+  if (deterministic && (frameworkAuthorization ? configuredQueries.length === 0 : multiSourcePlan.length === 0)) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
   }
   const roleBasis: SourcingRoleBasis = sourcingRoleBasisForCampaign(initial.value.campaign);
@@ -487,7 +492,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
     }
-    const tavilyKey = deterministic ? null : await resolveStoredTavilyKey(session);
+    const tavilyKey = await resolveStoredTavilyKey(session);
+    const apifyToken = await resolveStoredApifyKey(session);
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -539,6 +545,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
       tavilyKey ?? undefined,
       undefined,
       async () => (await currentAuthority()).ok,
+      apifyToken ?? undefined,
     );
     const servers: ResolvedMcpServer[] = [
       {
@@ -551,23 +558,26 @@ async function handlePost(req: NextRequest, correlationId: string) {
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
       const searchSignal = AbortSignal.timeout(45_000);
-      const queries = frameworkAuthorization
-        ? [frameworkAuthorization.query]
+      const searches = frameworkAuthorization
+        ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
         : [
             ...promotedLessons
-              .filter((lesson) => lesson.platform === "GitHub")
-              .map((lesson) => lesson.query),
-            ...configuredQueries,
+              .filter((lesson) => lesson.platform === "LinkedIn" || lesson.platform === "GitHub")
+              .map((lesson) => ({ platform: lesson.platform, query: lesson.query })),
+            ...multiSourcePlan,
           ]
-            .filter((query, index, all) => all.indexOf(query) === index)
-            .slice(0, 3);
+            .filter(
+              (step, index, all) =>
+                all.findIndex((other) => other.platform === step.platform && other.query === step.query) === index,
+            )
+            .slice(0, 5);
       let successfulQuery = false;
-      for (const query of queries) {
+      for (const step of searches) {
         const remaining = count - runner.getFound().length;
         if (remaining <= 0) break;
         const result = await runner.run(
           "search_candidates",
-          { platform: "GitHub", query, count: remaining },
+          { platform: step.platform, query: step.query, count: remaining },
           searchSignal,
         );
         successfulQuery = successfulQuery || result.ok;
@@ -722,6 +732,9 @@ async function handlePost(req: NextRequest, correlationId: string) {
       );
     }
 
+    const learningReceipts = executions.map((execution) =>
+      execution.platform === "Apify" ? { ...execution, platform: "LinkedIn" as const } : execution,
+    );
     const executed = new Set(
       executions.map((execution) => lessonExecutionKey(execution.platform, execution.query)),
     );
@@ -753,7 +766,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         actorId: user.id,
         frameworkRunId: frameworkAuthorization.runId,
         sourcingRunId: begun.runId,
-        queryReceipts: executions,
+        queryReceipts: learningReceipts,
         resultPayload,
       });
       if (completion.status !== "result_ready" || completion.runId !== begun.runId) {
@@ -772,7 +785,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
       workspaceId,
       actorId: user.id,
       runId: begun.runId,
-      queryReceipts: executions,
+      queryReceipts: learningReceipts,
     });
     if (completion.status !== "completed" || completion.runId !== begun.runId) {
       await recordClaimFailure("RUN_COMPLETION_FAILED");

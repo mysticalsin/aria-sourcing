@@ -161,6 +161,12 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
     requireAdmin: async () => ({ ok: false, response: new Response(null, { status: 403 }) }),
   },
 });
+mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
+  namedExports: { resolveStoredTavilyKey: async () => null },
+});
+mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
+  namedExports: { resolveStoredApifyKey: async () => null },
+});
 mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   namedExports: {
     resolveVaultSecret: async (id?: string, provider?: string) => {

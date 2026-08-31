@@ -152,6 +152,9 @@ mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
 mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
   namedExports: { resolveStoredTavilyKey: async () => null },
 });
+mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
+  namedExports: { resolveStoredApifyKey: async () => null },
+});
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
     beginSourcingRun: async () => {
@@ -698,6 +701,7 @@ test("deterministic mode requires a reviewed persisted query and never invents o
   reset();
   cloudConfigured = false;
   campaign.sourcingStrategy.githubQueries = [];
+  campaign.sourcingStrategy.linkedinBoolean = "";
 
   const response = await post(request());
   const body = await response.json();
@@ -705,6 +709,29 @@ test("deterministic mode requires a reviewed persisted query and never invents o
   assert.equal(response.status, 409);
   assert.equal(body.code, "CAMPAIGN_NOT_READY");
   assert.equal(runnerCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+});
+
+test("deterministic mode searches LinkedIn and Apify from the reviewed plan before GitHub", async () => {
+  reset();
+  cloudConfigured = false;
+  campaign.sourcingStrategy.linkedinBoolean = '("Senior Backend Engineer") AND ("Go" OR "Kubernetes")';
+  campaign.sourcingStrategy.githubQueries = [
+    { label: "junk platform", query: "language:Calypso followers:>40", estimatedResults: 0 },
+    { label: "real language", query: "language:Go followers:>40 repos:>10", estimatedResults: 100 },
+  ];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "deterministic");
+  assert.equal(runnerQueries[0]?.platform, "LinkedIn");
+  assert.equal(runnerQueries[0]?.query, campaign.sourcingStrategy.linkedinBoolean);
+  assert.ok(runnerQueries.some((step) => step.platform === "Apify"));
+  assert.ok(!runnerQueries.some((step) => /language:Calypso/i.test(step.query)));
+  assert.ok(runnerQueries.some((step) => step.platform === "GitHub" && /language:Go/i.test(step.query)));
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
 });
