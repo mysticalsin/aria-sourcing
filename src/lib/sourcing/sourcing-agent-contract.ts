@@ -10,6 +10,7 @@ import {
   LOCATION_TYPES,
   SENIORITY_LEVELS,
   URGENCY_LEVELS,
+  SOURCE_PLATFORMS,
   type Campaign,
   type Candidate,
   type SystemSettings,
@@ -88,6 +89,8 @@ const CampaignProjectionSchema = z.object({
   scoringWeights: ScoringWeightsSchema,
   sourcingStrategy: z.object({
     excludedCompanies: boundedArray(500, 200),
+    primaryPlatforms: z.array(z.enum(SOURCE_PLATFORMS)).min(1).max(8).optional().default(["GitHub"]),
+    linkedinBoolean: bounded(2_000).optional().default(""),
     githubQueries: z
       .array(
         z
@@ -181,7 +184,7 @@ export type SourcingAgentCampaign = CandidateMappingCampaign &
   Pick<Campaign, "status"> & {
     sourcingStrategy: Pick<
       Campaign["sourcingStrategy"],
-      "excludedCompanies" | "githubQueries"
+      "excludedCompanies" | "githubQueries" | "primaryPlatforms" | "linkedinBoolean"
     >;
   };
 
@@ -203,6 +206,8 @@ export function sourcingAgentCampaignFingerprint(
     scoringWeights: campaign.scoringWeights,
     sourcingStrategy: {
       excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+      primaryPlatforms: campaign.sourcingStrategy.primaryPlatforms,
+      linkedinBoolean: campaign.sourcingStrategy.linkedinBoolean,
       githubQueries: campaign.sourcingStrategy.githubQueries,
     },
   });
@@ -280,6 +285,8 @@ export function projectSourcingAgentWorkspace(
     scoringWeights: projected.scoringWeights,
     sourcingStrategy: {
       excludedCompanies: [...projected.sourcingStrategy.excludedCompanies],
+      primaryPlatforms: [...projected.sourcingStrategy.primaryPlatforms],
+      linkedinBoolean: projected.sourcingStrategy.linkedinBoolean,
       githubQueries: projected.sourcingStrategy.githubQueries.map((query) => ({ ...query })),
     },
   };

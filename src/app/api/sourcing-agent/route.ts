@@ -45,6 +45,7 @@ import {
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
+import { roleProfile } from "@/lib/roles";
 import {
   isLinkedInFirstPlatform,
   LINKEDIN_PROFILE_SEARCH_SETTINGS_HREF,
@@ -318,8 +319,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
   const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
   const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
-  const primaryPlatform = initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ?? "GitHub";
-  const linkedInFirst = isLinkedInFirstPlatform(primaryPlatform);
+  const primaryPlatform =
+    initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ??
+    roleProfile(initial.value.campaign.jobAnalysis).platforms[0] ??
+    "GitHub";
+  const linkedInFirst =
+    isLinkedInFirstPlatform(primaryPlatform) ||
+    roleProfile(initial.value.campaign.jobAnalysis).queryStyle === "linkedin";
 
   // Fail closed before claiming a run: LinkedIn-first roles need the profile
   // search connector. GitHub Live alone cannot fill Calypso BA / consulting needs.
