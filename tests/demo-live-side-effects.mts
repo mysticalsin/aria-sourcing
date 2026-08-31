@@ -87,6 +87,10 @@ ok(
   "Microsoft mailbox connect validates seat_id after admin auth and before provider redirect",
   guardBetween("src/app/auth/microsoft/route.ts", "if (!seatId)", "login.microsoftonline.com/common/oauth2"),
 );
+ok(
+  "LinkedIn connect validates seat_id after admin auth and before official OAuth redirect",
+  guardBetween("src/app/auth/linkedin/route.ts", "if (!seatId)", "linkedin.com/oauth/v2/authorization"),
+);
 
 const storeSource = source("src/lib/store.ts");
 const dryRunBranch = storeSource.indexOf("if (persisted.dryRun)");
@@ -348,6 +352,15 @@ const microsoftModule = await import("../src/app/auth/microsoft/route");
 const microsoftGet = ((microsoftModule as any).GET ?? (microsoftModule as any).default?.GET) as (req: NextRequest) => Promise<Response>;
 const missingMicrosoftSeat = await microsoftGet(new NextRequest("http://localhost/auth/microsoft"));
 ok("public demo preserves Microsoft seat_id validation", missingMicrosoftSeat.status === 400);
+
+delete process.env.LINKEDIN_CLIENT_ID;
+const linkedInModule = await import("../src/app/auth/linkedin/route");
+const linkedInGet = ((linkedInModule as any).GET ?? (linkedInModule as any).default?.GET) as (req: NextRequest) => Promise<Response>;
+const unconfiguredLinkedIn = await linkedInGet(new NextRequest(`http://localhost/auth/linkedin?seat_id=${seatId}`));
+ok("LinkedIn OAuth fail-closes without LINKEDIN_CLIENT_ID", unconfiguredLinkedIn.status === 500);
+process.env.LINKEDIN_CLIENT_ID = "linkedin-client";
+const missingLinkedInSeat = await linkedInGet(new NextRequest("http://localhost/auth/linkedin"));
+ok("public demo preserves LinkedIn seat_id validation", missingLinkedInSeat.status === 400);
 
 adminAllowed = false;
 const forbiddenOAuth = await googleGet(new NextRequest(`http://localhost/auth/google?seat_id=${seatId}`));

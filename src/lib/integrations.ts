@@ -65,12 +65,16 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_linkedin_rsc",
       name: "LinkedIn Recruiter System Connect",
       category: "Sourcing",
-      description: "Official LinkedIn ATS integration for automated profile import and InMail. Requires a LinkedIn partnership agreement.",
+      description:
+        "Official LinkedIn connect via OAuth (Fleet → LinkedIn Vendor API seat) or a LinkedIn Talent Solutions RSC partnership. Fail-closed without credentials. Not a scrape.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
-      errors: ["Not connected. Apply for RSC at LinkedIn Talent Solutions, then enter OAuth credentials."],
+      errors: [
+        "Not connected. Use Fleet to start official LinkedIn OAuth, or apply for RSC at LinkedIn Talent Solutions.",
+      ],
       real: false,
+      setupHref: "/fleet",
     },
     {
       id: "int_twenty",

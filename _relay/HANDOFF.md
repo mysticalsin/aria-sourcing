@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 443
 agent: cursor-cloud
-updated: 2026-08-31T07:50Z
+updated: 2026-08-31T08:00Z
 status: pr-open
 ---
 
@@ -24,6 +24,7 @@ status: pr-open
 5. Hermes chat runner gets the stored Apify token
 6. DESIGN.md: deterministic Source next batch is LinkedIn + Apify first, not GitHub-only Calypso
 7. Tests extended in existing suites (`mantu-intake`, `sourcing-agent`, `sourcing-agent-route-authority`, `hermes-cloud-authority`)
+8. Official LinkedIn OAuth start/callback (`/auth/linkedin`) fail-closes without `LINKEDIN_CLIENT_ID`. Fleet LinkedIn Vendor API seat uses Connect LinkedIn. RSC card stays an honest unbuilt placeholder.
 
 ## Blockers
 

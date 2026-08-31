@@ -60,5 +60,18 @@ ok(
   /getOutboundChannelPolicy\((?:payload\.channel|channel)\)[\s\S]*status:\s*"manual-required"/.test(sendRoute),
 );
 
+const linkedInOAuth = readFileSync(new URL("../src/app/auth/linkedin/route.ts", import.meta.url), "utf8");
+ok(
+  "LinkedIn connect is official OAuth and fail-closed without client id",
+  /linkedin\.com\/oauth\/v2\/authorization/.test(linkedInOAuth) &&
+    /LINKEDIN_CLIENT_ID/.test(linkedInOAuth) &&
+    /LinkedIn OAuth is not configured/.test(linkedInOAuth) &&
+    !/puppeteer|playwright|scrape/i.test(linkedInOAuth),
+);
+ok(
+  "LinkedIn OAuth start requires an admin and a seat before redirect",
+  /requireAdmin/.test(linkedInOAuth) && /seat_id/.test(linkedInOAuth),
+);
+
 console.log(`RESULT linkedin-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
