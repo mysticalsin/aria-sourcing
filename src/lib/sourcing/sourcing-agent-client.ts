@@ -4,6 +4,9 @@ import {
   type SourcingAgentSuccessResponse,
 } from "./sourcing-agent-contract";
 
+const MISSING_PLUGIN_TOAST =
+  "MISSING_PLUGIN: Connect LinkedIn and/or Apify in Settings before sourcing this role. GitHub language search cannot fill a trading-platform shortlist.";
+
 const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   CAMPAIGN_NOT_FOUND: "Campaign not found.",
   CAMPAIGN_NOT_ACTIVE: "Campaign is not active for sourcing.",
@@ -13,6 +16,7 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   INSUFFICIENT_PERMISSIONS: "Sourcing authority is no longer available.",
   SOURCING_AGENT_RATE_LIMITED: "The sourcing-agent rate limit was reached. Try again later.",
   SOURCING_AGENT_REPLAY_BLOCKED: "This sourcing request was already claimed. Start a new sourcing run.",
+  MISSING_PLUGIN: MISSING_PLUGIN_TOAST,
   SOURCING_AGENT_NOT_CONFIGURED: "The selected sourcing provider is not configured.",
   SOURCING_AGENT_UPSTREAM_FAILED: "The sourcing agent did not complete.",
   SOURCING_AGENT_RESPONSE_INVALID: "The sourcing agent returned an invalid result.",
@@ -102,10 +106,18 @@ export async function requestReviewedSourcing(
   }
   const body = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
-    const code =
+    const record =
       body !== null && typeof body === "object" && !Array.isArray(body)
-        ? (body as Record<string, unknown>).code
+        ? (body as Record<string, unknown>)
         : null;
+    const code = typeof record?.code === "string" ? record.code : null;
+    const apiError = typeof record?.error === "string" ? record.error : "";
+    if (code === "MISSING_PLUGIN" || apiError.includes("MISSING_PLUGIN")) {
+      return {
+        ok: false,
+        error: apiError.includes("MISSING_PLUGIN") ? apiError : MISSING_PLUGIN_TOAST,
+      };
+    }
     return {
       ok: false,
       error:

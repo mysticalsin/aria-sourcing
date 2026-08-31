@@ -87,6 +87,7 @@ type ErrorCode =
   | "SOURCING_AGENT_RATE_LIMITED"
   | "SOURCING_AGENT_REPLAY_BLOCKED"
   | "SOURCING_AGENT_NOT_CONFIGURED"
+  | "MISSING_PLUGIN"
   | "SOURCING_AGENT_UPSTREAM_FAILED"
   | "SOURCING_AGENT_RESPONSE_INVALID"
   | "SOURCING_AGENT_UNAVAILABLE";
@@ -496,10 +497,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
     const tavilyKey = await resolveStoredTavilyKey(session);
     const apifyToken = await resolveStoredApifyKey(session);
-    if (peopleFirst && !frameworkAuthorization && !tavilyKey && !apifyToken) {
+    // Tavily is web search, not LinkedIn Sourcing. Official partner LinkedIn
+    // search is not wired. A people-first role with no Apify key must fail
+    // loud — do not fall through to GitHub 0×N receipts.
+    if (peopleFirst && !frameworkAuthorization && !apifyToken) {
       return await failClaimed(
         503,
-        "SOURCING_AGENT_NOT_CONFIGURED",
+        "MISSING_PLUGIN",
         "MISSING_PLUGIN: Connect LinkedIn and/or Apify in Settings before sourcing this role. GitHub language search cannot fill a trading-platform shortlist.",
       );
     }
@@ -571,7 +575,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
         : [
             ...promotedLessons
-              .filter((lesson) => lesson.platform === "LinkedIn" || lesson.platform === "GitHub")
+              .filter((lesson) =>
+                peopleFirst
+                  ? lesson.platform === "LinkedIn" || lesson.platform === "Apify"
+                  : lesson.platform === "LinkedIn" || lesson.platform === "GitHub",
+              )
               .map((lesson) => ({ platform: lesson.platform, query: lesson.query })),
             ...multiSourcePlan,
           ]

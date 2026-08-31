@@ -1024,11 +1024,71 @@ test("people-first role without LinkedIn/Apify keys fails loud and does not sear
   const body = await response.json();
 
   assert.equal(response.status, 503);
-  assert.equal(body.code, "SOURCING_AGENT_NOT_CONFIGURED");
+  assert.equal(body.code, "MISSING_PLUGIN");
+  assert.match(String(body.error), /MISSING_PLUGIN/);
+  assert.match(String(body.error), /Connect LinkedIn and\/or Apify/);
+  assert.equal(runnerCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+});
+
+test("people-first role with only a Tavily key still fails loud — Tavily is not LinkedIn", async () => {
+  reset();
+  cloudConfigured = true;
+  storedTavilyKey = "tvly-test";
+  storedApifyKey = null;
+  campaign = financeCampaign();
+  promotedLessons = [{
+    lessonId: "66666666-6666-4666-8666-666666666666",
+    platform: "GitHub",
+    query: "language:Python followers:>40 repos:>10",
+    graphifyClusterRef: "community:0",
+    graphifyClusterRank: 1,
+    evidenceRunCount: 2,
+    evidenceCampaignCount: 2,
+    usefulFeedbackCount: 2,
+    expiresAt: "2026-10-01T00:00:00.000Z",
+    rank: 1,
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "MISSING_PLUGIN");
   assert.match(String(body.error), /MISSING_PLUGIN/);
   assert.equal(runnerCalls, 0);
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
+});
+
+test("people-first role with Apify ignores promoted GitHub lessons", async () => {
+  reset();
+  cloudConfigured = true;
+  storedTavilyKey = "tvly-test";
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  promotedLessons = [{
+    lessonId: "66666666-6666-4666-8666-666666666666",
+    platform: "GitHub",
+    query: "language:Python followers:>40 repos:>10",
+    graphifyClusterRef: "community:0",
+    graphifyClusterRank: 1,
+    evidenceRunCount: 2,
+    evidenceCampaignCount: 2,
+    usefulFeedbackCount: 2,
+    expiresAt: "2026-10-01T00:00:00.000Z",
+    rank: 1,
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "deterministic");
+  assert.ok(runnerQueries.some((step) => step.platform === "LinkedIn"));
+  assert.ok(runnerQueries.some((step) => step.platform === "Apify"));
+  assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
 });
 
 test("people-first role with a cloud model still searches LinkedIn and Apify, not GitHub", async () => {

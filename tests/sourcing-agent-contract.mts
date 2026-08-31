@@ -161,6 +161,43 @@ test("campaign UI presents a completed zero-match search as information, not sou
   assert.match(action, /variant:\s*"info"/);
 });
 
+test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
+  const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client.ts");
+  const missing =
+    "MISSING_PLUGIN: Connect LinkedIn and/or Apify in Settings before sourcing this role. GitHub language search cannot fill a trading-platform shortlist.";
+  const mapped = await requestReviewedSourcing(
+    async () =>
+      new Response(JSON.stringify({ ok: false, code: "MISSING_PLUGIN", error: missing, requestId: "req-1" }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      }),
+    campaignId,
+    5,
+  );
+  assert.equal(mapped.ok, false);
+  if (mapped.ok) return;
+  assert.match(mapped.error, /MISSING_PLUGIN/);
+  assert.match(mapped.error, /Connect LinkedIn and\/or Apify/);
+
+  const legacyCode = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "SOURCING_AGENT_NOT_CONFIGURED",
+          error: missing,
+          requestId: "req-2",
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(legacyCode.ok, false);
+  if (legacyCode.ok) return;
+  assert.match(legacyCode.error, /MISSING_PLUGIN/);
+});
+
 test("campaign UI keeps durable feedback scoped and merges new run receipts", () => {
   const page = readFileSync(
     new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
