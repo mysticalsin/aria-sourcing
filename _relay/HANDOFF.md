@@ -12,8 +12,8 @@ status: pr-open
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54** against `main`
 - Product Verifier PASS on `5b40b5e` (citations, engine evidence, unclustered scores, no `@fixture.example` on Talent Pool)
-- Quality on `5b40b5e` failed: `flyctl config validate` → `no access token available`
-- Fix: offline TOML/schema check in `infra/agent-frameworks/fly/validate-fly-toml.mjs`; Quality no longer installs flyctl; private-no-proxy assertions unchanged
+- Quality on `5b40b5e` failed: `flyctl config validate` → `no access token available` (fixed offline)
+- Quality on `a42003a` failed: module-boundaries cycle `engine.ts` ↔ `vss-need.ts` (type-only). Shared types now live in `need-types.ts`
 - No `FLY_API_TOKEN` / `flyctl auth` on the Quality job
 - Secret scan / dep audit / db-security still match main — do not chase
 - READY TO MERGE stays **no** until Quality is green and Devon Fly-shows
