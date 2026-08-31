@@ -1814,6 +1814,21 @@ test("people-first Source next batch fails loud when LinkedIn and Apify are unco
   }
   assert.equal(harness.fetchCalls, 0);
   assert.equal(harness.persistedCalls, 0);
+
+  const framed = await harness.actions.sourceNextBatch(campaign.id, {
+    count: 6,
+    agentFramework: {
+      runId: "77777777-7777-4777-8777-777777777777",
+      capabilityToken: "s".repeat(43),
+      query: "language:Python followers:>40",
+    },
+  });
+  assert.equal(framed.ok, false);
+  if (!framed.ok) {
+    assert.equal(framed.error, MISSING_PEOPLE_PLUGINS_TOAST);
+    assert.doesNotMatch(framed.error, /invalid response/i);
+  }
+  assert.equal(harness.fetchCalls, 0);
 });
 
 test("people-first GitHub-only empty batch is fail-loud, not a successful search", async () => {

@@ -60,3 +60,24 @@ export function isGithubOnlyEmptyBatch(input: {
     input.feedbackReceipts.every((receipt) => receipt.platform === "GitHub")
   );
 }
+
+export function peoplePluginFailLoudUi(error: string): { title: string; description: string } | null {
+  if (!error.includes("MISSING_PLUGIN") && !/Connect LinkedIn and Apify/i.test(error)) return null;
+  return {
+    title: "Connect LinkedIn and Apify",
+    description: error.includes("MISSING_PLUGIN") ? error : MISSING_PEOPLE_PLUGINS_TOAST,
+  };
+}
+
+/** Command Center must not present a 0-person GitHub batch as a live shortlist. */
+export function emptyPeopleFirstShortlistError(
+  job: JobAnalysis,
+  integrations: readonly IntegrationStatus[],
+  result: { accepted: { length: number }; source?: string },
+): string | null {
+  if (result.accepted.length > 0 || !isPeopleFirstRole(job)) return null;
+  if (result.source === "github" || missingPeoplePluginsToast(job, integrations)) {
+    return MISSING_PEOPLE_PLUGINS_TOAST;
+  }
+  return null;
+}

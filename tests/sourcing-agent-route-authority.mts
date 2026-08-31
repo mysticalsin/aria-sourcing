@@ -1114,3 +1114,25 @@ test("people-first role with a cloud model still searches LinkedIn and Apify, no
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
 });
+
+test("people-first framework run without Apify fails loud and does not search GitHub", async () => {
+  reset();
+  cloudConfigured = true;
+  campaign = financeCampaign();
+  const frameworkRunId = "77777777-7777-4777-8777-777777777777";
+  const reviewedQuery = campaign.sourcingStrategy.githubQueries[1]?.query ?? "language:Python followers:>40 repos:>10";
+
+  const response = await post(request({
+    agentFrameworkRunId: frameworkRunId,
+    agentFrameworkCapabilityToken: "s".repeat(43),
+    agentFrameworkQuery: reviewedQuery,
+  }, "http://localhost", "application/json", frameworkRunId));
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "MISSING_PLUGIN");
+  assert.match(String(body.error), /Connect LinkedIn and Apify/);
+  assert.equal(runnerCalls, 0);
+  assert.equal(beginCalls, 0);
+  assert.equal(frameworkBeginCalls, 0);
+});

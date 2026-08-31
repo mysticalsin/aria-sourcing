@@ -166,7 +166,9 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
   unconfigured is not a people source. The toast names those plugins and
   the connect action — “invalid response” is not fail-loud. Official
   partner LinkedIn search is not wired; do not invent people or complete
-  OAuth from a VM. No silent GitHub 0×N receipts. Machine code
+  OAuth from a VM. Command Center Source next batch / Run Aria must show
+  this fail-loud surface — never “Sourced 0 candidates (live)” for an
+  unkeyed people-first role. No silent GitHub 0×N receipts. Machine code
   `PROVIDER_NOT_CONFIGURED` still applies when every live provider is absent.
 - If a required sensor is missing, the operator gets three real paths — not a
   silent mock:

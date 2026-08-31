@@ -331,7 +331,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const apifyToken = await resolveStoredApifyKey(session);
   // Fail before claiming a run. Tavily is not LinkedIn. GitHub Live-unconfigured
   // is not a people source. Name the plugins and the connect action.
-  if (peopleFirst && !frameworkAuthorization && !apifyToken) {
+  if (peopleFirst && !apifyToken) {
     return fail(503, "MISSING_PLUGIN", MISSING_PEOPLE_PLUGINS_TOAST);
   }
   const configurationFingerprint = createHash("sha256")

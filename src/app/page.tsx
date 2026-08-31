@@ -37,9 +37,15 @@ import {
   useCandidates,
   useDashboardKpis,
   useHydrated,
+  useIntegrations,
   usePendingApprovals,
   useReplies,
 } from "@/lib/store";
+import {
+  emptyPeopleFirstShortlistError,
+  missingPeoplePluginsToast,
+  peoplePluginFailLoudUi,
+} from "@/lib/sourcing/people-plugins";
 import { funnelForCandidates } from "@/lib/metrics";
 import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/lib/utils";
 import {
@@ -75,6 +81,10 @@ export default function DashboardPage() {
   const pendingApprovals = usePendingApprovals();
   const replies = useReplies();
   const activeCampaign = useActiveCampaign();
+  const integrations = useIntegrations();
+  const missingPeoplePlugins = activeCampaign
+    ? missingPeoplePluginsToast(activeCampaign.jobAnalysis, integrations)
+    : null;
 
   const unrepliedCount = React.useMemo(
     () => replies.filter((r) => !r.handled).length,
@@ -177,9 +187,27 @@ export default function DashboardPage() {
     }
     const result = await actions.sourceNextBatch(activeCampaign.id);
     if (!result.ok) {
+      const failLoud = peoplePluginFailLoudUi(result.error);
       toast({
-        title: result.source === "paused" ? "Campaign is paused" : "Sourcing failed",
-        description: result.error,
+        title: failLoud
+          ? failLoud.title
+          : result.source === "paused"
+            ? "Campaign is paused"
+            : "Sourcing failed",
+        description: failLoud?.description ?? result.error,
+        variant: "error",
+      });
+      return;
+    }
+    const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+      activeCampaign.jobAnalysis,
+      integrations,
+      result,
+    );
+    if (emptyPeopleFirst) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: emptyPeopleFirst,
         variant: "error",
       });
       return;
@@ -246,6 +274,15 @@ export default function DashboardPage() {
                     <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
                     {nextStep.reason}
                   </p>
+                  {missingPeoplePlugins ? (
+                    <p
+                      role="alert"
+                      data-testid="cc-missing-plugin"
+                      className="mt-2 text-sm font-semibold text-danger"
+                    >
+                      {missingPeoplePlugins}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>

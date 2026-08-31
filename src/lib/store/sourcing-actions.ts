@@ -973,7 +973,7 @@ export function createSourcingActions({
         initialCampaign.jobAnalysis,
         initialState.integrations,
       );
-      if (missingPlugins && !opts?.agentFramework) {
+      if (missingPlugins) {
         return { ok: false, error: missingPlugins, source: "unavailable" };
       }
       return await sourceReviewedCampaignBatch(

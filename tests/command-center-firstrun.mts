@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   FIRST_RUN_GUIDE_STEPS,
   ONBOARDING_TOUR_STEPS,
@@ -79,6 +80,14 @@ for (const step of ONBOARDING_TOUR_STEPS) {
 for (const step of FIRST_RUN_GUIDE_STEPS) {
   check(`guide step has no enterprise jargon: ${step.id}`, !jargon.test(`${step.title} ${step.body}`));
 }
+
+const commandCenterPage = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+const sourceStart = commandCenterPage.indexOf("async function handleSourceBatch()");
+const sourceAction = commandCenterPage.slice(sourceStart, commandCenterPage.indexOf("function handleGenerateReport"));
+check("Command Center Source next batch names LinkedIn and Apify", /Connect LinkedIn and Apify/.test(sourceAction));
+check("Command Center Source next batch surfaces MISSING_PLUGIN", /MISSING_PLUGIN|peoplePluginFailLoudUi|emptyPeopleFirstShortlistError/.test(sourceAction));
+check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
+check("Command Center shows MISSING_PLUGIN alert before click", /cc-missing-plugin/.test(commandCenterPage));
 
 console.log(`RESULT command-center-firstrun: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

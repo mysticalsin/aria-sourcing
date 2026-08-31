@@ -56,6 +56,7 @@ import {
   useCampaignOutreach,
   useHermes,
   useHydrated,
+  useIntegrations,
   useReplies,
   useReportForCampaign,
   useRole,
@@ -64,6 +65,10 @@ import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import {
+  emptyPeopleFirstShortlistError,
+  peoplePluginFailLoudUi,
+} from "@/lib/sourcing/people-plugins";
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import { deriveValidationWarnings } from "@/lib/ai/intake";
 import type {
@@ -347,6 +352,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const allBookings = useBookings();
   const report = useReportForCampaign(id);
   const actions = useActions();
+  const integrations = useIntegrations();
   const role = useRole();
   const hermesState = useHermes().state;
   const { toast } = useToast();
@@ -519,14 +525,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.sourceNextBatch(c.id);
     setSourcing(false);
     if (!res.ok) {
-      const missingPlugins = typeof res.error === "string" && res.error.includes("MISSING_PLUGIN");
+      const failLoud = peoplePluginFailLoudUi(res.error);
       toast({
-        title: missingPlugins
-          ? "Connect LinkedIn and Apify"
+        title: failLoud
+          ? failLoud.title
           : res.source === "paused"
             ? "Campaign is paused"
             : "Sourcing failed",
-        description: res.error,
+        description: failLoud?.description ?? res.error,
         variant: "error",
       });
       return;
@@ -549,6 +555,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     setSourceBatchKey((k) => k + 1);
     if (res.accepted.length > 0) setTab("candidates");
     const isLive = res.source === "github" || res.source === "web";
+    const emptyPeopleFirst = emptyPeopleFirstShortlistError(c.jobAnalysis, integrations, res);
+    if (emptyPeopleFirst) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: emptyPeopleFirst,
+        variant: "error",
+      });
+      return;
+    }
     if (res.accepted.length === 0) {
       toast({
         title: "No candidates were added",

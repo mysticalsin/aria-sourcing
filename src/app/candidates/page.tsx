@@ -19,7 +19,11 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
-import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
+import { useActions, useActiveCampaign, useCandidates, useHydrated, useIntegrations } from "@/lib/store";
+import {
+  emptyPeopleFirstShortlistError,
+  peoplePluginFailLoudUi,
+} from "@/lib/sourcing/people-plugins";
 import { corpusServerReadEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
@@ -141,6 +145,7 @@ function CandidatesView() {
   const candidates = useCandidates();
   const actions = useActions();
   const activeCampaign = useActiveCampaign();
+  const integrations = useIntegrations();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const focus = searchParams.get("focus");
@@ -302,9 +307,27 @@ function CandidatesView() {
     const res = await actions.sourceNextBatch(activeCampaign.id);
     setSourcing(false);
     if (!res.ok) {
+      const failLoud = peoplePluginFailLoudUi(res.error);
       toast({
-        title: res.source === "paused" ? "Campaign is paused" : "Sourcing failed",
-        description: res.error,
+        title: failLoud
+          ? failLoud.title
+          : res.source === "paused"
+            ? "Campaign is paused"
+            : "Sourcing failed",
+        description: failLoud?.description ?? res.error,
+        variant: "error",
+      });
+      return;
+    }
+    const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+      activeCampaign.jobAnalysis,
+      integrations,
+      res,
+    );
+    if (emptyPeopleFirst) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: emptyPeopleFirst,
         variant: "error",
       });
       return;
