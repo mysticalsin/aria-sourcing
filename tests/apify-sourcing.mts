@@ -350,7 +350,8 @@ try {
   ok("mapApifyCandidates accepts the profile", result.accepted.length === 1);
   ok("name built from first+last", c?.name === "Test Candidate");
   ok("linkedinUrl carried through", c?.linkedinUrl === "https://www.linkedin.com/in/test-candidate-dev");
-  ok("sourcePlatform is Apify", c?.sourcePlatform === "Apify");
+  ok("sourcePlatform is LinkedIn (operator-facing; never Apify)", c?.sourcePlatform === "LinkedIn");
+  ok("Apify external id preserved for enrichment identity", c?.externalIds?.Apify === "test-candidate-dev");
   ok("sourceQuery is the search criteria", c?.sourceQuery === "Senior Go Engineer");
   ok("currentCompany from currentPosition[0]", c?.currentCompany === "Acme Corp");
   ok("currentTitle from headline", c?.currentTitle === "Senior Go Engineer at Acme Corp");
@@ -365,8 +366,11 @@ try {
   // GDPR / third-party provenance is recorded via a candidate note, per the
   // linkedin-policy reconciliation: real vendor data, recruiter owns consent review.
   const note = c?.notes?.[0]?.text ?? "";
-  ok("compliance note records the Apify/third-party provenance", note.includes("Apify") && note.includes("harvestapi"));
+  ok("compliance note records LinkedIn profile search provenance", note.includes("LinkedIn profile search") && note.toLowerCase().includes("third-party"));
   ok("compliance note records the GDPR/lawful-basis responsibility", note.toLowerCase().includes("gdpr") && note.toLowerCase().includes("recruiter"));
+
+  const legacy = mapApifyCandidates([profile], campaign, "q", [], W, { displayPlatform: "Apify" });
+  ok("legacy displayPlatform=Apify still available for fixtures", legacy.accepted[0]?.sourcePlatform === "Apify");
 
   ok("complianceFlags initialized honestly (not pre-suppressed)", c?.complianceFlags.doNotContact === false && c?.complianceFlags.suppressed === false);
 
