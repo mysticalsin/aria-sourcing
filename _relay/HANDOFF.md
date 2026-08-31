@@ -39,6 +39,7 @@ status: pr-open
 ## Blockers
 
 - Live Fly login proof after land is Devon (`https://aria-mantu-app.fly.dev/`, `twalteur@amaris.com`)
+- CI Quality on `5217a84` failed `agent-framework-learning-route` because GitHub queries dropped non-language skills (seed Go/K8s only kept Go). Fixed: `language:` only for real languages; other must-haves stay as keyword queries. Secret scan / dep audit / supply-chain failures on that run are pre-existing, not this matcher.
 - Live provider search still fail-closes without keys (503 + three paths)
 - Image-only PDF / PNG OCR remains fail-closed `OCR_REQUIRED` (no tesseract pulled)
 
