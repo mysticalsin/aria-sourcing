@@ -283,7 +283,7 @@ if (noNameLeak.ok) {
     matchScore: 80,
     matchBreakdown: [],
     yearsExperience: 10,
-    companyStageExperience: [] as const,
+    companyStageExperience: [],
     industryExperience: [],
     stage: "Sourced" as const,
     lastContactedAt: null,
