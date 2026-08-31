@@ -1,52 +1,55 @@
 ---
 project: MSourcing / ARIA
-shift: 436
+shift: 437
 agent: cursor-cloud
-updated: 2026-08-30T11:22Z
-status: post-merge-e2e-green
+updated: 2026-08-31T13:04Z
+status: fly-6pn-web-bind-pr-open
 ---
 
-# Handoff — Shift 436
+# Handoff — Shift 437
 
 ## Current state
 
-- **PR #51 MERGED** → merge commit `d9e8cd0862e4d8f1803478e772be57b7368ad0a3`
-- **integration** tip = **main** tip = `d9e8cd0` (FF-synced)
-- **Fly** `aria-mantu-app` build **matches** tip · `/api/ready` → `ok:true` · migration `0079_autopilot_enqueue_approval_hash_bind.sql`
-- No other open Aria READY PRs (only #14 dependabot + #3 draft on vercel-demo — left alone)
-- Whole-workflow authenticated E2E **PASS** on live Fly
+- **PR #55 OPEN** https://github.com/mysticalsin/aria-sourcing/pull/55
+- Branch `cursor/fly-web-ipv6-6pn-7595` from `main` (`1847c79`)
+- Bind fix commit `2de3a4a`: `HOSTNAME` is `::` in `fly.app.toml` and `Dockerfile.prod`
+- Live Fly still binds IPv4-only until this PR is deployed: loop ticks `dispatch:unreachable` over 6PN
+- Did not touch PR 54 / sourcing-engine. Did not merge.
 
 ## Done this shift
 
-1. Confirmed/merged PR #51 (Europe scoring-quality + US-state dampening)
-2. FF-synced `main` → integration tip `d9e8cd0`
-3. Deployed Fly slim (preserve 0079 migration identity); ready build = tip
-4. Local `npx tsx tests/scoring-quality.mts` → 23 passed (EU>US/Asia)
-5. Authenticated E2E click-through all product paths; screenshots + JSON report
+1. Confirmed live failure mode from the request: `web.process.aria-mantu-app.internal` is IPv6 6PN; web listened on `0.0.0.0`
+2. Set `HOSTNAME="::"` in `fly.app.toml` `[env]` and `Dockerfile.prod` runner ENV
+3. Left image HEALTHCHECK on `127.0.0.1` (Linux dual-stack `::` still serves IPv4-mapped localhost)
+4. Opened PR #55 against `main` with post-deploy verify steps
+5. `npx tsc --noEmit` clean. Tests that read these files: `login-page` 17/17, `infra-release-contract` 134/134. Full `npm test` failed only on pre-existing `flyctl ENOENT` in `infra/agent-frameworks/fly/deployment.test.mjs` (this VM has no flyctl; unrelated toml files)
 
 ## Blockers
 
-- None for product workflow
-- Graph / Microsoft / HeyReach HOLD unchanged (not chased)
-- Meta WhatsApp templates empty on Outreach (expected under HOLD)
+- None for the bind change
+- Live loop drain stays degraded until Fly redeploys this image/env
+- Do not merge from this agent
 
 ## Next steps
 
 ```bash
-curl -sS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-# Optional: owner Graph/HeyReach reconnect when ready
+# After Fly deploy of this PR
+# From the loop machine:
+#   fetch(process.env.ARIA_WEB_INTERNAL_URL + '/api/health')  # must be ok
+# Loop ticks must stop reporting dispatch:unreachable
+curl -fsS https://aria-mantu-app.fly.dev/api/health
 ```
 
 ## Decisions made (don't relitigate)
 
-- #49 closed permanently; #51 was the Europe successor — now merged
-- Keep focused Europe/EMEA geo+scoring slice — no megapr #36 reopen
+- Listen bind is `::`, not `0.0.0.0`. Fly `*.process.*.internal` is IPv6; IPv4-only bind breaks loop-to-web dispatch
+- Keep Dockerfile HEALTHCHECK on `127.0.0.1`
+- One logical change only: web listen bind for 6PN. No LinkedIn/Apify/OAuth/Vercel/PR54 work
+- #49 closed permanently; #51 Europe successor already merged
 - Slim Fly deploy preserves live 0079 migration identity (tip tree ledger ends 0054)
-- Ignore Vercel/GHA budget noise
 
 ## Watch out
 
-- Manifest freezes already bumped in #51 (app 152 / all 205 / parity 207)
-- `store-sourcing-actions` falseEuMatch expects Americas dampen ≤40
-- E2E screenshots: `/opt/cursor/artifacts/screenshots/e2e-workflow-*.png`
-- Report: `/opt/cursor/artifacts/e2e-workflow-report.json`
+- Public `https://aria-mantu-app.fly.dev/api/cron/dispatch-outbound` already works; that does not prove 6PN
+- Kong already dual-listens `0.0.0.0:8000, [::]:8000`; Next.js can only set one HOSTNAME
+- Do not rebase onto sourcing-engine / PR 54
