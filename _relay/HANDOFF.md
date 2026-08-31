@@ -1,52 +1,53 @@
 ---
 project: MSourcing / ARIA
-shift: 436
+shift: 437
 agent: cursor-cloud
-updated: 2026-08-30T11:22Z
-status: post-merge-e2e-green
+updated: 2026-08-31T03:04Z
+status: pr-open
 ---
 
-# Handoff — Shift 436
+# Handoff — Shift 437
 
 ## Current state
 
-- **PR #51 MERGED** → merge commit `d9e8cd0862e4d8f1803478e772be57b7368ad0a3`
-- **integration** tip = **main** tip = `d9e8cd0` (FF-synced)
-- **Fly** `aria-mantu-app` build **matches** tip · `/api/ready` → `ok:true` · migration `0079_autopilot_enqueue_approval_hash_bind.sql`
-- No other open Aria READY PRs (only #14 dependabot + #3 draft on vercel-demo — left alone)
-- Whole-workflow authenticated E2E **PASS** on live Fly
+- Branch `cursor/sourcing-engine-94b1` → **PR #54** against `main` (`1847c79`)
+- Contract: `docs/sourcing-engine/DESIGN.md` (committed first)
+- Engine: `src/lib/sourcing/engine.ts` + OCR `src/lib/sourcing/ocr.ts` + `POST /api/source/need`
+- Polo and PR #53 left untouched
+- Live probe (this shift): Vercel demo `/api/source` unauth **401**; Fly `/api/source` unauth **403 CROSS_ORIGIN_REQUEST** (not the Aug 25 unauth-500 hunch)
+- `npx tsc --noEmit` clean; `tsc -p tsconfig.tests.json` clean
+- Application group green (`node scripts/run-test-manifest.mjs --group application`); new suites 34 + 8 pass
+- Full `npm test` pretest fails here on `flyctl ENOENT` in `infra/agent-frameworks/fly/deployment.test.mjs` — environment, not this diff
 
 ## Done this shift
 
-1. Confirmed/merged PR #51 (Europe scoring-quality + US-state dampening)
-2. FF-synced `main` → integration tip `d9e8cd0`
-3. Deployed Fly slim (preserve 0079 migration identity); ready build = tip
-4. Local `npx tsx tests/scoring-quality.mts` → 23 passed (EU>US/Asia)
-5. Authenticated E2E click-through all product paths; screenshots + JSON report
+1. Framed sourcing-engine contract before code
+2. Implemented need parse (paste / email / text-layer PDF), score (skills 50 / CV 30 / LinkedIn 20), floor 60, cap 20, name-only + empty FAIL
+3. Auth + Walteur fail-closed on `/api/source/need`; live mode does not invent people
+4. Recorded E2E: `command=tsx tests/sourcing-engine.mts` `exit_code=0` `path=_relay/evidence/trading-need-e2e.json`
 
 ## Blockers
 
-- None for product workflow
-- Graph / Microsoft / HeyReach HOLD unchanged (not chased)
-- Meta WhatsApp templates empty on Outreach (expected under HOLD)
+- None for the engine PR
+- Live provider search still goes through existing `/api/source/*` + `liveEvidence` (no invented rows). Missing keys → 503 + three paths
 
 ## Next steps
 
 ```bash
-curl -sS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-# Optional: owner Graph/HeyReach reconnect when ready
+npx tsx scripts/prove-trading-need-e2e.mts
+# Review/merge PR #54: https://github.com/mysticalsin/aria-sourcing/pull/54
+# Do not merge PR #53 from this branch; do not touch Polo
 ```
 
 ## Decisions made (don't relitigate)
 
-- #49 closed permanently; #51 was the Europe successor — now merged
-- Keep focused Europe/EMEA geo+scoring slice — no megapr #36 reopen
-- Slim Fly deploy preserves live 0079 migration identity (tip tree ledger ends 0054)
-- Ignore Vercel/GHA budget noise
+- Product name is Aria. Calypso is a trading-platform **need**, not an app/PR/UI name
+- Shortlist floor 60% is not the outreach contact floor (still 70)
+- Fixture path proves the matcher; live path fail-closes without keys
+- One implementer, one PR (#54). Do not start extras
 
 ## Watch out
 
-- Manifest freezes already bumped in #51 (app 152 / all 205 / parity 207)
-- `store-sourcing-actions` falseEuMatch expects Americas dampen ≤40
-- E2E screenshots: `/opt/cursor/artifacts/screenshots/e2e-workflow-*.png`
-- Report: `/opt/cursor/artifacts/e2e-workflow-report.json`
+- Manifest freeze is now application **154** / all **207** / parity **209**
+- `npm test` pretest still requires `flyctl` on the runner
+- PR #53 (need-agnostic quality, 80 floor, soft-empty) is a different branch — do not mix

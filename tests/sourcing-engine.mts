@@ -59,8 +59,10 @@ const parsedPdf = parseNeed({ pdfBytes: pdf });
 ok("uploaded PDF becomes a need", parsedPdf.ok && parsedPdf.need.source === "upload");
 
 const blankPdf = buildTextLayerPdf("");
-ok("empty-text PDF is OCR_REQUIRED", extractPdfText(blankPdf).ok === false);
-ok("not a PDF is NOT_PDF", extractPdfText(new Uint8Array([1, 2, 3, 4, 5])).code === "NOT_PDF");
+const emptyExtract = extractPdfText(blankPdf);
+ok("empty-text PDF is OCR_REQUIRED", emptyExtract.ok === false && emptyExtract.code === "OCR_REQUIRED");
+const notPdf = extractPdfText(new Uint8Array([1, 2, 3, 4, 5]));
+ok("not a PDF is NOT_PDF", notPdf.ok === false && notPdf.code === "NOT_PDF");
 
 ok("name-only candidate is flagged", parsedJd.ok && isNameOnlyHit(parsedJd.need, NAME_ONLY_CANDIDATE));
 const nameOnlyScore = parsedJd.ok ? scoreEvidence(parsedJd.need, NAME_ONLY_CANDIDATE) : null;
