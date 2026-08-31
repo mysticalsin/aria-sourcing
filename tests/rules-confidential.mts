@@ -211,7 +211,8 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   ok("clean message: zero blockers", r.blockers.length === 0);
 }
 
-// 5b) Manual candidates require an operator-recorded lawful basis.
+// 5b) Manual candidates without a consent passport can still be approved
+// (lawful basis is a soft warning, not a hard block).
 {
   const missing = checkOutreachApproval(
     approvalCtx({
@@ -224,10 +225,15 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
       } as Partial<Candidate>),
     }),
   );
-  ok("manual candidate without lawful basis: not allowed", missing.allowed === false);
+  ok("manual candidate without lawful basis: allowed", missing.allowed === true);
   ok(
-    "manual candidate without lawful basis: blocker is explicit",
-    missing.blockers.some((blocker) => /lawful basis/i.test(blocker)),
+    "manual candidate without lawful basis: no blockers",
+    !missing.blockers.some((blocker) => /lawful basis|consent passport/i.test(blocker)),
+  );
+  ok(
+    "manual candidate without lawful basis: soft warning only",
+    missing.warnings.some((w) => /lawful basis/i.test(w)) &&
+      (missing.checks ?? []).some((c) => c.rule === "Lawful basis" && c.status === "warn"),
   );
 
   const recorded = checkOutreachApproval(
@@ -242,6 +248,10 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
     }),
   );
   ok("manual candidate with recorded lawful basis: allowed", recorded.allowed === true);
+  ok(
+    "manual candidate with recorded lawful basis: check passes",
+    (recorded.checks ?? []).some((c) => c.rule === "Lawful basis" && c.status === "pass"),
+  );
 
   for (const ambiguousTimestamp of ["0", "1", "2026-07-13", "2026-07-13T06:00:00Z"]) {
     const basis = recordedCandidateLawfulBasis(
@@ -260,7 +270,7 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   }
 }
 
-// 5c) Provider-sourced candidates require the same operator-recorded lawful basis.
+// 5c) Provider-sourced candidates: same soft-warn (never hard-block) without lawful basis.
 {
   const missing = checkOutreachApproval(
     approvalCtx({
@@ -273,10 +283,14 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
       } as Partial<Candidate>),
     }),
   );
-  ok("provider candidate without lawful basis: not allowed", missing.allowed === false);
+  ok("provider candidate without lawful basis: allowed", missing.allowed === true);
   ok(
-    "provider candidate without lawful basis: blocker tells operator to record basis",
-    missing.blockers.some((blocker) => /provider-sourced candidate requires an operator-recorded lawful basis/i.test(blocker)),
+    "provider candidate without lawful basis: no hard blockers",
+    !missing.blockers.some((blocker) => /lawful basis|consent passport/i.test(blocker)),
+  );
+  ok(
+    "provider candidate without lawful basis: soft warning only",
+    missing.warnings.some((w) => /lawful basis/i.test(w)),
   );
 
   const recorded = checkOutreachApproval(

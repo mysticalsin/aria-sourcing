@@ -81,13 +81,15 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     });
   }
 
+  // Soft audit only — missing consent-passport / lawful basis must not block
+  // outreach approval (operator decision: record when available, never gate).
   if (!recordedCandidateLawfulBasis(candidate)) {
     const detail =
       candidate.provenance === "manual"
-        ? "A manually entered candidate requires an operator-recorded lawful basis before outreach approval. Record consent or legitimate interest in the candidate consent passport."
-        : "A provider-sourced candidate requires an operator-recorded lawful basis before outreach approval. Record consent or legitimate interest in the candidate consent passport.";
-    blockers.push(detail);
-    checks.push({ rule: "Lawful basis", status: "block", detail });
+        ? "No operator-recorded lawful basis on this manually entered candidate (consent passport). Approval is allowed; record consent or legitimate interest when available."
+        : "No operator-recorded lawful basis on this candidate (consent passport). Approval is allowed; record consent or legitimate interest when available.";
+    warnings.push(detail);
+    checks.push({ rule: "Lawful basis", status: "warn", detail });
   } else {
     checks.push({
       rule: "Lawful basis",
