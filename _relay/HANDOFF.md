@@ -1,45 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 449
+shift: 450
 agent: cursor-cloud
-updated: 2026-08-31T09:33Z
+updated: 2026-08-31T09:42Z
 status: pr-open
 ---
 
-# Handoff — Shift 449
+# Handoff — Shift 450
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** against `main` (not merged)
-- Tip: **`3b2a62a`** — Command Center remaps invalid-response to `MISSING_PLUGIN` on people-first Source next batch. Local gate green
-- Live Fly v166 / `b8a79d2` second click still toasted generic invalid-response (that SHA does not have this tip). Devon Path B of `3b2a62a+` is the re-walk
+- Tip: **`2d64538`** — GitHub Sourcing does not display Live on a people-first or unloaded need while LinkedIn and Apify are unkeyed. Toast still names those plugins and says connect
+- Live Fly v166 / `b8a79d2` still has the old generic invalid-response + GitHub Live-unconfigured lie. Devon Path B of `2d64538+` on `https://aria-mantu-app.fly.dev/` is the re-walk
+- READY TO MERGE stays **no** until that Fly walk PASSes
 - Historic CI still red as on main. Quality is the gate. Do not chase historic
-- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not invent candidates. Did not complete OAuth
+- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not invent candidates. Did not complete OAuth. Did not touch Vercel
 
 ## Done this shift
 
-1. Command Center Source next batch toasts `MISSING_PLUGIN` / Connect LinkedIn and Apify **before** the agent call when those plugins are unkeyed
-2. People-first generic “invalid response” / “invalid result” remaps to `MISSING_PLUGIN` even if an integration card looks connected
-3. Same remap on campaign and candidates Source next batch
-4. Tests extended in `command-center-firstrun` and `sourcing-agent-contract`
+1. `githubLiveAllowed` + `integrationShowsLive`: GitHub is not Live when people plugins are unkeyed and the need is people-first **or not loaded** (Settings with no campaign)
+2. Settings Live switch uses the same helper; refuses GitHub Live on that path with `MISSING_PEOPLE_PLUGINS_TOAST`
+3. GitHub-first software roles may still show GitHub Live alone
+4. Prior fail-loud on this branch still holds: toast **Connect LinkedIn and Apify** / `MISSING_PLUGIN`; no silent GitHub zeros; no invalid-response remap on Calypso Source next batch
 
 ## Blockers
 
-- Protected Fly release must land `3b2a62a+` before Ultron can re-walk Command Center Source
+- Protected Fly release must land `2d64538+` before Ultron can re-walk Command Center Source + Settings Live
 - Official LinkedIn partner search is not wired; Apify is the people source that unblocks the gate
 - No Fly token here
 
 ## Next steps
 
 ```bash
-# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 (3b2a62a+) → aria-mantu-app
-# Ultron: walk Calypso Application Support on the new SHA
+# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 (2d64538+) → aria-mantu-app
+# Ultron: walk Calypso Application Support on the new SHA at https://aria-mantu-app.fly.dev/
 #   Command Center Source next batch, LinkedIn+Apify unkeyed:
-#     toast/code is MISSING_PLUGIN (Connect LinkedIn and Apify)
+#     toast title Connect LinkedIn and Apify
+#     description contains MISSING_PLUGIN
 #     must not say invalid-response
 #     must not be silent GitHub 0×3
-#   Skill chips stay tokenized (already PASS)
+#   Settings: GitHub Sourcing must not badge Live while LinkedIn+Apify are unkeyed
 # Do not merge PR 54
+# Do not touch Vercel
 # Do not fake flyctl deploy
 # Do not complete LinkedIn OAuth from a VM
 ```
@@ -47,7 +50,8 @@ status: pr-open
 ## Decisions made (don't relitigate)
 
 - Product name is Aria. Calypso is a client **need**
-- One PR (#54). READY TO MERGE stays no
+- One PR (#54). READY TO MERGE stays no until Fly walk PASS
+- Fly only: `https://aria-mantu-app.fly.dev/`. No Vercel. No demo deploys
 - Shortlist floor 60, cap 20, name-only fail, per-row citations
 - LinkedIn is primary, not exclusive; Apify + keyed sources still required
 - Tavily is web search, not LinkedIn Sourcing
