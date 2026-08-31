@@ -18,8 +18,8 @@ import {
 import { useActions, useActiveCampaign, useIntegrations } from "@/lib/store";
 import {
   MISSING_PEOPLE_PLUGINS_TOAST,
+  githubLiveAllowed,
   integrationShowsLive,
-  peopleSourcePluginsConnected,
 } from "@/lib/sourcing/people-plugins";
 import type { IntegrationStatus } from "@/lib/types";
 import { toneForHealth, formatTimeAgo, cn } from "@/lib/utils";
@@ -112,7 +112,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     if (
       nextMode === "live" &&
       integration.id === "int_github" &&
-      !peopleSourcePluginsConnected(integrations)
+      !githubLiveAllowed(integrations, activeCampaign?.jobAnalysis)
     ) {
       toast({
         title: "Connect LinkedIn and Apify",

@@ -78,10 +78,22 @@ export function peoplePluginFailLoudUi(
   };
 }
 
-/** Command Center must not present a 0-person GitHub batch as a live shortlist. */
+/**
+ * GitHub may be Live only when it is actually connected. On a people-first
+ * need — or when no need is loaded yet — LinkedIn and Apify must also be
+ * keyed. A GitHub-first software role can still show GitHub Live alone.
+ */
+export function githubLiveAllowed(
+  all: readonly IntegrationStatus[],
+  job?: JobAnalysis | null,
+): boolean {
+  if (peopleSourcePluginsConnected(all)) return true;
+  return Boolean(job && !isPeopleFirstRole(job));
+}
+
 /**
  * Honest Live badge. Unconfigured cards are not Live. GitHub is not Live on a
- * people-first need when LinkedIn and Apify are unconfigured.
+ * people-first (or unknown) need when LinkedIn and Apify are unconfigured.
  */
 export function integrationShowsLive(
   integration: Pick<IntegrationStatus, "id" | "mode" | "status">,
@@ -89,14 +101,7 @@ export function integrationShowsLive(
   job?: JobAnalysis | null,
 ): boolean {
   if (integration.mode !== "live" || integration.status !== "connected") return false;
-  if (
-    integration.id === "int_github" &&
-    job &&
-    isPeopleFirstRole(job) &&
-    !peopleSourcePluginsConnected(all)
-  ) {
-    return false;
-  }
+  if (integration.id === "int_github" && !githubLiveAllowed(all, job)) return false;
   return true;
 }
 

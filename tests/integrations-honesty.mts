@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { defaultIntegrations, defaultLiveIntegrations, testConnection } from "../src/lib/integrations";
 import { integrationShowsLive } from "../src/lib/sourcing/people-plugins";
 import type { JobAnalysis } from "../src/lib/types";
@@ -81,6 +82,32 @@ ok(
     liveTenant,
     calypsoJob,
   ),
+);
+ok(
+  "GitHub does not display Live on Settings when people plugins are unkeyed and no need is loaded",
+  !integrationShowsLive(
+    { id: "int_github", mode: "live", status: "connected" },
+    liveTenant,
+  ),
+);
+const softwareJob = {
+  title: "Senior Backend Engineer",
+  department: "Engineering",
+  requiredSkills: ["Go", "Kubernetes"],
+  industryExperience: [],
+} as JobAnalysis;
+ok(
+  "GitHub-first software need may still show GitHub Live without LinkedIn",
+  integrationShowsLive(
+    { id: "int_github", mode: "live", status: "connected" },
+    liveTenant,
+    softwareJob,
+  ),
+);
+const settingsCard = readFileSync(new URL("../src/components/settings/integration-card.tsx", import.meta.url), "utf8");
+ok(
+  "Settings GitHub Live switch uses githubLiveAllowed, not raw mode",
+  /githubLiveAllowed/.test(settingsCard) && /integrationShowsLive/.test(settingsCard),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);
