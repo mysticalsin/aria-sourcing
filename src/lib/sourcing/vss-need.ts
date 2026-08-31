@@ -14,7 +14,7 @@ import type {
   Seniority,
   Urgency,
 } from "@/lib/types";
-import type { NeedSource, SourcingNeed } from "@/lib/sourcing/engine";
+import type { NeedSource, SourcingNeed } from "@/lib/sourcing/need-types";
 
 const VSS_SIGNALS = [
   /recruitment\s+need\s+purpose/i,

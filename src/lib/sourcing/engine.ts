@@ -8,6 +8,9 @@
 
 import { extractPdfText } from "@/lib/sourcing/ocr";
 import { isVssRecruitmentNeed, parseVssNeeds, vssToSourcingNeed } from "@/lib/sourcing/vss-need";
+import type { NeedSource, SourcingNeed } from "@/lib/sourcing/need-types";
+
+export type { NeedSource, SourcingNeed };
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -57,19 +60,6 @@ export const PLATFORM_SKILLS = [
   "Settlement",
   "Collateral",
 ] as const;
-
-export type NeedSource = "paste" | "email" | "upload";
-
-export interface SourcingNeed {
-  title: string;
-  requiredSkills: string[];
-  niceToHaveSkills: string[];
-  experienceSignals: string[];
-  minYearsExperience: number | null;
-  industry: string[];
-  source: NeedSource;
-  rawText: string;
-}
 
 export interface CandidateEvidence {
   id: string;
