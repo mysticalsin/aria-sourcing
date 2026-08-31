@@ -30,7 +30,7 @@ status: pr-open
 
 - Protected Fly release must land this branch before Ultron can walk multi-source on https://aria-mantu-app.fly.dev/
 - Historic required checks still fail as on main (do not chase)
-- LinkedIn product OAuth / RSC credentials are not on this VM — connect stays fail-closed until Devon/Tony wire official credentials
+- LinkedIn product OAuth is wired (`/auth/linkedin`) and fail-closes without `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` — credentials are not on this VM
 - No Fly token here
 
 ## Next steps
