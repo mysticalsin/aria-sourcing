@@ -11,7 +11,6 @@ import {
   type OutreachMessage,
 } from "@/lib/types";
 import { Sparkles, ShieldCheck } from "lucide-react";
-import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
 
 export function QuickDraft() {
   const candidates = useCandidates();
@@ -25,13 +24,10 @@ export function QuickDraft() {
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState<OutreachMessage | null>(null);
 
-  // Only contactable candidates in the picker
+  // Contactable candidates — do-not-contact / suppressed only.
+  // Missing consent passport / lawful basis is soft-audited at approval, not a picker gate.
   const eligible = candidates.filter(
-    (c) =>
-      !c.complianceFlags.doNotContact &&
-      !c.complianceFlags.suppressed &&
-      (c.provenance !== "manual" ||
-        Boolean(recordedCandidateLawfulBasis(c))),
+    (c) => !c.complianceFlags.doNotContact && !c.complianceFlags.suppressed,
   );
 
   const candidateOptions = [
