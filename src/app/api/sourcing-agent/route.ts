@@ -18,6 +18,7 @@ import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import { dedupeCandidates } from "@/lib/rules";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
+import { MISSING_PEOPLE_PLUGINS_TOAST } from "@/lib/sourcing/people-plugins";
 import {
   beginSourcingRun,
   beginAgentFrameworkSourcingRun,
@@ -326,6 +327,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
       return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "The selected provider has no workspace key.");
     }
   }
+  const tavilyKey = await resolveStoredTavilyKey(session);
+  const apifyToken = await resolveStoredApifyKey(session);
+  // Fail before claiming a run. Tavily is not LinkedIn. GitHub Live-unconfigured
+  // is not a people source. Name the plugins and the connect action.
+  if (peopleFirst && !frameworkAuthorization && !apifyToken) {
+    return fail(503, "MISSING_PLUGIN", MISSING_PEOPLE_PLUGINS_TOAST);
+  }
   const configurationFingerprint = createHash("sha256")
     .update(initial.value.configurationFingerprint)
     .digest("hex");
@@ -495,18 +503,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
     }
-    const tavilyKey = await resolveStoredTavilyKey(session);
-    const apifyToken = await resolveStoredApifyKey(session);
-    // Tavily is web search, not LinkedIn Sourcing. Official partner LinkedIn
-    // search is not wired. A people-first role with no Apify key must fail
-    // loud — do not fall through to GitHub 0×N receipts.
-    if (peopleFirst && !frameworkAuthorization && !apifyToken) {
-      return await failClaimed(
-        503,
-        "MISSING_PLUGIN",
-        "MISSING_PLUGIN: Connect LinkedIn and/or Apify in Settings before sourcing this role. GitHub language search cannot fill a trading-platform shortlist.",
-      );
-    }
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -669,6 +665,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
 
     const executions = runner.getExecutions();
+    if (
+      peopleFirst &&
+      !frameworkAuthorization &&
+      !executions.some((execution) => execution.platform === "LinkedIn" || execution.platform === "Apify")
+    ) {
+      return await failClaimed(503, "MISSING_PLUGIN", MISSING_PEOPLE_PLUGINS_TOAST);
+    }
     if (executions.length === 0 || !executions.some((execution) => execution.ok)) {
       return await failClaimed(
         502,

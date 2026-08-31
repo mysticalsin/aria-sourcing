@@ -161,8 +161,10 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
   GitHub. A cloud model may draft outreach after those searches; it cannot
   replace them with `language:` blobs.
 - Live path with no Apify key on a people-first role is **fail-closed**:
-  `MISSING_PLUGIN` — connect LinkedIn and/or Apify in Settings. A Tavily
-  key is **not** LinkedIn Sourcing and does not satisfy this gate. Official
+  `MISSING_PLUGIN` — **Connect LinkedIn and Apify** in Settings. A Tavily
+  key is **not** LinkedIn Sourcing. GitHub Sourcing toggled Live while
+  unconfigured is not a people source. The toast names those plugins and
+  the connect action — “invalid response” is not fail-loud. Official
   partner LinkedIn search is not wired; do not invent people or complete
   OAuth from a VM. No silent GitHub 0×N receipts. Machine code
   `PROVIDER_NOT_CONFIGURED` still applies when every live provider is absent.

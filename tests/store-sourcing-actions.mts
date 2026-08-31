@@ -10,6 +10,8 @@ import {
 import { scoreCandidate } from "../src/lib/scoring";
 import { buildOutreachPrompt } from "../src/lib/ai/hermes";
 import { generateOutreach } from "../src/lib/mock-ai";
+import { defaultLiveIntegrations } from "../src/lib/integrations";
+import { MISSING_PEOPLE_PLUGINS_TOAST } from "../src/lib/sourcing/people-plugins";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
 
@@ -1776,6 +1778,93 @@ test("a rejected persisted commit never reports or emits sourcing success", asyn
     harness.state.candidates.some((candidate) => candidate.githubUrl === githubUser.htmlUrl),
     false,
   );
+});
+
+test("people-first Source next batch fails loud when LinkedIn and Apify are unconfigured", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_github" ? { ...item, mode: "live" as const, status: "not_configured" as const } : item,
+  );
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations },
+    syntheticSourcingAllowed: false,
+    responseText: "<html>bad gateway</html>",
+    responseStatus: 502,
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, MISSING_PEOPLE_PLUGINS_TOAST);
+    assert.match(result.error, /MISSING_PLUGIN/);
+    assert.match(result.error, /Connect LinkedIn and Apify/);
+    assert.doesNotMatch(result.error, /invalid response/i);
+  }
+  assert.equal(harness.fetchCalls, 0);
+  assert.equal(harness.persistedCalls, 0);
+});
+
+test("people-first GitHub-only empty batch is fail-loud, not a successful search", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify"
+      ? { ...item, status: "connected" as const, mode: "live" as const }
+      : item,
+  );
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations },
+    syntheticSourcingAllowed: false,
+    responseBody: {
+      ok: true,
+      campaignId: campaign.id,
+      campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+      mode: "deterministic",
+      totalFound: 0,
+      requestId: "request-empty-github",
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      sourcingRunId: "22222222-2222-4222-8222-222222222222",
+      appliedLessonIds: [],
+      candidates: [],
+      feedbackReceipts: [
+        { receiptId: "33333333-3333-4333-8333-333333333333", platform: "GitHub", candidateCount: 0 },
+        { receiptId: "44444444-4444-4444-8444-444444444444", platform: "GitHub", candidateCount: 0 },
+        { receiptId: "55555555-5555-4555-8555-555555555555", platform: "GitHub", candidateCount: 0 },
+      ],
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, MISSING_PEOPLE_PLUGINS_TOAST);
+    assert.match(result.error, /Connect LinkedIn and Apify/);
+    assert.doesNotMatch(result.error, /invalid response/i);
+  }
+  assert.equal(harness.persistedCalls, 0);
 });
 
 test("Apollo search commits only exact validated profiles through the sourcing boundary", async () => {

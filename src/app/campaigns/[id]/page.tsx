@@ -519,8 +519,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.sourceNextBatch(c.id);
     setSourcing(false);
     if (!res.ok) {
+      const missingPlugins = typeof res.error === "string" && res.error.includes("MISSING_PLUGIN");
       toast({
-        title: res.source === "paused" ? "Campaign is paused" : "Sourcing failed",
+        title: missingPlugins
+          ? "Connect LinkedIn and Apify"
+          : res.source === "paused"
+            ? "Campaign is paused"
+            : "Sourcing failed",
         description: res.error,
         variant: "error",
       });

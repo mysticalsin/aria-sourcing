@@ -2,6 +2,13 @@ import { redactEmail, redactSecrets } from "../log-redact";
 import { generateOutreach, newOutreachMessage, sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
+import {
+  isGithubOnlyEmptyBatch,
+  isPeopleFirstRole,
+  missingPeoplePluginsToast,
+  remapPeopleFirstSourcingError,
+  MISSING_PEOPLE_PLUGINS_TOAST,
+} from "../sourcing/people-plugins";
 import { scoreCandidate } from "../scoring";
 import { effectiveTone } from "../skills";
 import { evaluateNeedReadiness } from "../needs/readiness";
@@ -696,7 +703,19 @@ export function createSourcingActions({
       agentFramework,
     );
     if (!reviewed.ok) {
-      return { ok: false, error: reviewed.error, source: "unavailable" };
+      const latestForError = currentState();
+      const campaignForError = latestForError?.campaigns.find((item) => item.id === campaignId);
+      return {
+        ok: false,
+        error: latestForError && campaignForError
+          ? remapPeopleFirstSourcingError(
+              reviewed.error,
+              campaignForError.jobAnalysis,
+              latestForError.integrations,
+            )
+          : reviewed.error,
+        source: "unavailable",
+      };
     }
     if (!workspaceEffectAllowed()) {
       return {
@@ -725,6 +744,17 @@ export function createSourcingActions({
       return invalidRequest(
         "Campaign authority changed during sourcing. Review the current brief and retry.",
       );
+    }
+
+    if (
+      isPeopleFirstRole(latestCampaign.jobAnalysis) &&
+      isGithubOnlyEmptyBatch(reviewed.value)
+    ) {
+      return {
+        ok: false,
+        error: MISSING_PEOPLE_PLUGINS_TOAST,
+        source: "unavailable",
+      };
     }
 
     const observedPlatforms = [
@@ -939,6 +969,13 @@ export function createSourcingActions({
     }
 
     if (!demoSourcing) {
+      const missingPlugins = missingPeoplePluginsToast(
+        initialCampaign.jobAnalysis,
+        initialState.integrations,
+      );
+      if (missingPlugins && !opts?.agentFramework) {
+        return { ok: false, error: missingPlugins, source: "unavailable" };
+      }
       return await sourceReviewedCampaignBatch(
         campaignId,
         count,

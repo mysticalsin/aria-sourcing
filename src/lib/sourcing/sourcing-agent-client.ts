@@ -1,11 +1,11 @@
+import { MISSING_PEOPLE_PLUGINS_TOAST } from "./people-plugins";
 import {
   parseSourcingAgentCandidates,
   parseSourcingAgentSuccessResponse,
   type SourcingAgentSuccessResponse,
 } from "./sourcing-agent-contract";
 
-const MISSING_PLUGIN_TOAST =
-  "MISSING_PLUGIN: Connect LinkedIn and/or Apify in Settings before sourcing this role. GitHub language search cannot fill a trading-platform shortlist.";
+const MISSING_PLUGIN_TOAST = MISSING_PEOPLE_PLUGINS_TOAST;
 
 const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   CAMPAIGN_NOT_FOUND: "Campaign not found.",

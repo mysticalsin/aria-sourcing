@@ -163,8 +163,10 @@ test("campaign UI presents a completed zero-match search as information, not sou
 
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
   const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client.ts");
-  const missing =
-    "MISSING_PLUGIN: Connect LinkedIn and/or Apify in Settings before sourcing this role. GitHub language search cannot fill a trading-platform shortlist.";
+  const { MISSING_PEOPLE_PLUGINS_TOAST, remapPeopleFirstSourcingError } = await import(
+    "../src/lib/sourcing/people-plugins.ts"
+  );
+  const missing = MISSING_PEOPLE_PLUGINS_TOAST;
   const mapped = await requestReviewedSourcing(
     async () =>
       new Response(JSON.stringify({ ok: false, code: "MISSING_PLUGIN", error: missing, requestId: "req-1" }), {
@@ -177,7 +179,49 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   assert.equal(mapped.ok, false);
   if (mapped.ok) return;
   assert.match(mapped.error, /MISSING_PLUGIN/);
-  assert.match(mapped.error, /Connect LinkedIn and\/or Apify/);
+  assert.match(mapped.error, /Connect LinkedIn and Apify/);
+  assert.doesNotMatch(mapped.error, /invalid response/i);
+
+  const financeJob = {
+    ...campaign.jobAnalysis,
+    title: "Calypso Application Support",
+    department: "IS&D - Applicative Support",
+    requiredSkills: ["Linux", "Python", "Calypso"],
+    industryExperience: ["Fintech"],
+  };
+  const liveUnconfigured = [
+    {
+      id: "int_github",
+      name: "GitHub Sourcing",
+      category: "Sourcing" as const,
+      description: "",
+      status: "not_configured" as const,
+      mode: "live" as const,
+      lastSync: null,
+      errors: [],
+      real: true,
+    },
+    {
+      id: "int_apify",
+      name: "Apify (LinkedIn profile search)",
+      category: "Sourcing" as const,
+      description: "",
+      status: "not_configured" as const,
+      mode: "live" as const,
+      lastSync: null,
+      errors: [],
+      real: true,
+    },
+  ];
+  assert.equal(
+    remapPeopleFirstSourcingError(
+      "The sourcing agent returned an invalid response.",
+      financeJob,
+      liveUnconfigured,
+    ),
+    missing,
+  );
+  assert.match(missing, /Connect LinkedIn and Apify/);
 
   const legacyCode = await requestReviewedSourcing(
     async () =>
@@ -222,4 +266,6 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     batchAction,
     /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
+  assert.match(batchAction, /Connect LinkedIn and Apify/);
+  assert.match(batchAction, /MISSING_PLUGIN/);
 });
