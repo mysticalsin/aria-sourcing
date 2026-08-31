@@ -169,8 +169,9 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
   OAuth from a VM. Command Center Source next batch / Run Aria must show
   this fail-loud surface — never “Sourced 0 candidates (live)” and never a
   generic “invalid response” toast for an unkeyed people-first role. A
-  people-first agent error remaps to `MISSING_PLUGIN`. No silent GitHub
-  0×N receipts. Machine code
+  people-first agent error remaps to `MISSING_PLUGIN`. GitHub Sourcing
+  does not display Live while LinkedIn and Apify are unconfigured. No
+  silent GitHub 0×N receipts. Machine code
   `PROVIDER_NOT_CONFIGURED` still applies when every live provider is absent.
 - If a required sensor is missing, the operator gets three real paths — not a
   silent mock:

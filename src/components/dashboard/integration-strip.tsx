@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { Eyebrow } from "@/components/ui";
-import { useIntegrations } from "@/lib/store";
+import { useActiveCampaign, useIntegrations } from "@/lib/store";
 import { realIntegrationSummary } from "@/lib/integrations";
+import { integrationShowsLive } from "@/lib/sourcing/people-plugins";
 import { cn, toneForHealth, pluralize, type Tone } from "@/lib/utils";
 import type { IntegrationStatus } from "@/lib/types";
 import { Plug } from "lucide-react";
@@ -28,6 +29,7 @@ const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
 
 export function IntegrationStrip() {
   const integrations = useIntegrations();
+  const activeCampaign = useActiveCampaign();
   const summary = realIntegrationSummary(integrations);
 
   return (
@@ -64,6 +66,11 @@ export function IntegrationStrip() {
         >
           {integrations.map((integration) => {
             const tone = toneForHealth(integration.status);
+            const showsLive = integrationShowsLive(
+              integration,
+              integrations,
+              activeCampaign?.jobAnalysis,
+            );
             return (
               <span
                 key={integration.id}
@@ -76,12 +83,12 @@ export function IntegrationStrip() {
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide",
-                    integration.mode === "live"
+                    showsLive
                       ? "bg-success-soft text-success"
                       : "bg-ink/[0.06] text-ink-soft",
                   )}
                 >
-                  {integration.mode}
+                  {showsLive ? "live" : "mock"}
                 </span>
               </span>
             );

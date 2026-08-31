@@ -94,6 +94,9 @@ check(
 check("Command Center remaps invalid-response on people-first", /peoplePluginFailLoudUi\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
 check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
 check("Command Center shows MISSING_PLUGIN alert before click", /cc-missing-plugin/.test(commandCenterPage));
+const strip = readFileSync(new URL("../src/components/dashboard/integration-strip.tsx", import.meta.url), "utf8");
+check("Command Center strip uses honest Live display", /integrationShowsLive/.test(strip));
+check("Command Center strip does not badge raw integration.mode as Live", !/integration\.mode === "live"/.test(strip));
 
 console.log(`RESULT command-center-firstrun: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

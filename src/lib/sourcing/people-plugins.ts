@@ -79,6 +79,27 @@ export function peoplePluginFailLoudUi(
 }
 
 /** Command Center must not present a 0-person GitHub batch as a live shortlist. */
+/**
+ * Honest Live badge. Unconfigured cards are not Live. GitHub is not Live on a
+ * people-first need when LinkedIn and Apify are unconfigured.
+ */
+export function integrationShowsLive(
+  integration: Pick<IntegrationStatus, "id" | "mode" | "status">,
+  all: readonly IntegrationStatus[],
+  job?: JobAnalysis | null,
+): boolean {
+  if (integration.mode !== "live" || integration.status !== "connected") return false;
+  if (
+    integration.id === "int_github" &&
+    job &&
+    isPeopleFirstRole(job) &&
+    !peopleSourcePluginsConnected(all)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function emptyPeopleFirstShortlistError(
   job: JobAnalysis,
   integrations: readonly IntegrationStatus[],

@@ -1,4 +1,6 @@
-import { defaultIntegrations, testConnection } from "../src/lib/integrations";
+import { defaultIntegrations, defaultLiveIntegrations, testConnection } from "../src/lib/integrations";
+import { integrationShowsLive } from "../src/lib/sourcing/people-plugins";
+import type { JobAnalysis } from "../src/lib/types";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -51,6 +53,34 @@ ok(
 ok(
   "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",
   linkedinRsc?.real === false && linkedinRsc.status !== "connected",
+);
+
+const liveTenant = defaultLiveIntegrations();
+const liveGithub = liveTenant.find((integration) => integration.id === "int_github");
+ok(
+  "live tenant GitHub starts not configured and not Live",
+  liveGithub?.status === "not_configured" && liveGithub.mode !== "live",
+);
+ok(
+  "GitHub Live+unconfigured does not display as Live",
+  !integrationShowsLive(
+    { id: "int_github", mode: "live", status: "not_configured" },
+    liveTenant,
+  ),
+);
+const calypsoJob = {
+  title: "Calypso Application Support",
+  department: "IS&D - Applicative Support",
+  requiredSkills: ["Linux", "Calypso"],
+  industryExperience: ["Fintech"],
+} as JobAnalysis;
+ok(
+  "GitHub does not display Live on a people-first need when LinkedIn and Apify are unkeyed",
+  !integrationShowsLive(
+    { id: "int_github", mode: "live", status: "connected" },
+    liveTenant,
+    calypsoJob,
+  ),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

@@ -15,7 +15,12 @@ import {
   Field,
   useToast,
 } from "@/components/ui";
-import { useActions } from "@/lib/store";
+import { useActions, useActiveCampaign, useIntegrations } from "@/lib/store";
+import {
+  MISSING_PEOPLE_PLUGINS_TOAST,
+  integrationShowsLive,
+  peopleSourcePluginsConnected,
+} from "@/lib/sourcing/people-plugins";
 import type { IntegrationStatus } from "@/lib/types";
 import { toneForHealth, formatTimeAgo, cn } from "@/lib/utils";
 import {
@@ -54,6 +59,8 @@ const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
 
 export function IntegrationCard({ integration }: { integration: IntegrationStatus }) {
   const actions = useActions();
+  const integrations = useIntegrations();
+  const activeCampaign = useActiveCampaign();
   const router = useRouter();
   const { toast } = useToast();
   const [configureOpen, setConfigureOpen] = React.useState(false);
@@ -73,7 +80,11 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
   const apiKeyId = React.useId();
   const accountId = React.useId();
 
-  const isLive = integration.mode === "live";
+  const isLive = integrationShowsLive(
+    integration,
+    integrations,
+    activeCampaign?.jobAnalysis,
+  );
   const connected = integration.status === "connected";
   const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
 
@@ -98,6 +109,18 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
   function handleToggleMode() {
     const nextMode = isLive ? "mock" : "live";
+    if (
+      nextMode === "live" &&
+      integration.id === "int_github" &&
+      !peopleSourcePluginsConnected(integrations)
+    ) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: MISSING_PEOPLE_PLUGINS_TOAST,
+        variant: "error",
+      });
+      return;
+    }
     actions.toggleIntegrationMode(integration.id);
     toast({
       title: `${integration.name} → ${nextMode === "live" ? "Live" : "Mock"} mode`,
