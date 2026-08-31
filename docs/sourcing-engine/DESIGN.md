@@ -142,11 +142,14 @@ LinkedIn-only and not a GitHub-`language:` hack for product platforms
   Connect / a licensed vendor API. Fail closed without credentials. Do not
   scrape, do not automate a personal login, do not read a local LinkedIn
   export folder.
-- **Outreach campaigns are in-product.** The agent builds the sequence and
-  targets the shortlist (HeyReach-style). Messaging stays dry-run until a
-  human approves the first send; never auto-send; never identify as AI in
-  copy (`gateOutbound` blocks AI disclosure). The old HeyReach “0 LI
-  accounts” HOLD is not a skip — campaigns live here now.
+- **Outreach campaigns are in-product.** After Source next batch / Run
+  sourcing agent, Aria drafts first-touch for shortlisted people (score ≥ 60,
+  cap 20) into Needs Approval. That is the HeyReach-style campaign: the
+  agent builds the sequence and targets the shortlist. Messaging stays
+  dry-run until a human approves the first send; never auto-send; never
+  identify as AI in copy (`gateOutbound` blocks AI disclosure). After that
+  first approval, follow-ups stay in-product (`draftFollowUpFor`). The old
+  HeyReach “0 LI accounts” HOLD is not a skip — campaigns live here now.
 - **Fixture / demo path** may prove the matcher (need in → scored shortlist
   out) without network I/O.
 - **Live path** uses configured providers (Apollo / Sillage / Seamless / Apify

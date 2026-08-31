@@ -1741,8 +1741,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             title: `Sourcing agent found ${unique.length} candidates`,
             notes:
               executionMode === "cloud"
-                ? `${messages.length} drafted for human review after a cloud tool-calling pass.`
-                : `${messages.length} drafted for human review after direct GitHub search. No cloud model ran.`,
+                ? `${messages.length} in-product first-touch drafts queued for approval after a cloud tool-calling pass. Dry-run until a human approves a send.`
+                : `${messages.length} in-product first-touch drafts queued for approval after LinkedIn + Apify search. Dry-run until a human approves a send.`,
             outcome: `${unique.length} added, ${messages.length} drafted`,
             campaignId,
             linkedEntityType: "campaign",

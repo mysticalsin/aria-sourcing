@@ -1,8 +1,9 @@
 import { redactEmail, redactSecrets } from "../log-redact";
-import { sourceCandidates } from "../mock-ai";
+import { generateOutreach, newOutreachMessage, sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
 import { scoreCandidate } from "../scoring";
+import { effectiveTone } from "../skills";
 import { evaluateNeedReadiness } from "../needs/readiness";
 import {
   mapApolloCandidates,
@@ -93,6 +94,9 @@ export interface SourcingActionDependencies {
 }
 
 const MAX_SOURCE_COUNT = 20;
+/** Same contract as `SHORTLIST_FLOOR` / `SHORTLIST_CAP` in the sourcing engine. */
+const SHORTLIST_DRAFT_FLOOR = 60;
+const SHORTLIST_DRAFT_CAP = 20;
 const SYNTHETIC_PLATFORMS = new Set<SourcePlatform>(["Referral", "Talent Pool"]);
 const DEDICATED_PLATFORMS = new Set<SourcePlatform>([
   "Sillage",
@@ -757,22 +761,59 @@ export function createSourcingActions({
       result = dedupeCandidates(scored, previous.candidates, {
         excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       });
+      const pendingDraftIds = new Set(
+        previous.outreach
+          .filter((message) => message.status === "Needs Approval")
+          .map((message) => message.candidateId),
+      );
+      const tone = effectiveTone(previous.skills);
+      const drafts = result.accepted
+        .filter((candidate) => {
+          const reported =
+            reviewed.value.candidates.find((item) => item.id === candidate.id)?.matchScore ??
+            candidate.matchScore;
+          return reported >= SHORTLIST_DRAFT_FLOOR;
+        })
+        .filter((candidate) => !pendingDraftIds.has(candidate.id))
+        .slice(0, SHORTLIST_DRAFT_CAP)
+        .map((candidate) => {
+          const dto = reviewed.value.candidates.find((item) => item.id === candidate.id);
+          const generated =
+            dto?.draftSubject && dto.draftBody
+              ? {
+                  subject: dto.draftSubject,
+                  body: dto.draftBody,
+                  personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
+                  channel: "Email" as const,
+                }
+              : generateOutreach(
+                  candidate,
+                  campaign,
+                  tone,
+                  "Email",
+                  1,
+                  undefined,
+                  campaign.jobAnalysis.language ?? previous.settings.defaultLanguage,
+                );
+          return newOutreachMessage(candidate, campaign, generated, tone, previous.settings, 1);
+        });
       let next: HermesState = {
         ...previous,
         candidates: [...result.accepted, ...previous.candidates],
+        outreach: drafts.length > 0 ? [...drafts, ...previous.outreach] : previous.outreach,
       };
       if (result.accepted.length > 0) next = recomputeMetrics(next, campaignId);
       const executionLabel =
         reviewed.value.mode === "cloud"
           ? "Reviewed cloud tool-calling"
-          : "Reviewed deterministic GitHub";
+          : "Reviewed LinkedIn + Apify";
       return withActivity(
         next,
         makeActivity({
           type: "sourcing",
           title: `Sourced ${result.accepted.length} candidates`,
-          notes: `${executionLabel} batch. ${result.skipped.length} skipped by dedupe and exclusions.`,
-          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
+          notes: `${executionLabel} batch. ${result.skipped.length} skipped by dedupe and exclusions. ${drafts.length} in-product first-touch draft${drafts.length === 1 ? "" : "s"} queued for approval (dry-run).`,
+          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped, ${drafts.length} drafted (live)`,
           campaignId,
           linkedEntityType: "campaign",
           linkedEntityId: campaignId,

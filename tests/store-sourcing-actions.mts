@@ -333,6 +333,82 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
   assert.equal(harness.events.length, 1);
 });
 
+test("live Source next batch drafts a dry-run first-touch for the shortlist, not below the floor", async () => {
+  const seed = buildSeedState();
+  const campaign = { ...seed.campaigns[0], status: "Sourcing" as const };
+  const skills = campaign.jobAnalysis.requiredSkills;
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], settings: { ...seed.settings, dryRunMode: true } },
+    syntheticSourcingAllowed: false,
+    responseBody: {
+      ok: true,
+      campaignId: campaign.id,
+      campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+      mode: "deterministic",
+      totalFound: 2,
+      requestId: "request-sequence-1",
+      idempotencyKey: "77777777-7777-4777-8777-777777777777",
+      sourcingRunId: "88888888-8888-4888-8888-888888888888",
+      appliedLessonIds: [],
+      candidates: [
+        {
+          id: "shortlist-go-1",
+          campaignId: campaign.id,
+          name: "Pat Go",
+          currentTitle: campaign.jobAnalysis.title,
+          currentCompany: "Example",
+          location: campaign.jobAnalysis.location ?? "Toronto",
+          linkedinUrl: "https://www.linkedin.com/in/pat-go",
+          githubUrl: "https://github.com/pat-go",
+          sourceUrl: "https://github.com/pat-go",
+          sourcePlatform: "GitHub",
+          sourceQuery: campaign.sourcingStrategy.githubQueries[0]?.query ?? "",
+          matchScore: 88,
+          matchBreakdown: [],
+          techStack: skills,
+          recentActivity: "Shipped Kubernetes and Go work this week.",
+          createdAt: "2026-07-14T12:00:00.000Z",
+        },
+        {
+          id: "below-floor-1",
+          campaignId: campaign.id,
+          name: "Calypso Martinez",
+          currentTitle: "Unrelated role",
+          currentCompany: "Elsewhere",
+          location: "Unknown",
+          linkedinUrl: "",
+          githubUrl: "https://github.com/calypso-name-only",
+          sourceUrl: "https://github.com/calypso-name-only",
+          sourcePlatform: "GitHub",
+          sourceQuery: campaign.sourcingStrategy.githubQueries[0]?.query ?? "",
+          matchScore: 12,
+          matchBreakdown: [],
+          techStack: [],
+          recentActivity: "",
+          createdAt: "2026-07-14T12:00:00.000Z",
+        },
+      ],
+      feedbackReceipts: [
+        { receiptId: "33333333-3333-4333-8333-333333333333", platform: "GitHub", candidateCount: 2 },
+      ],
+    },
+  });
+
+  const beforeOutreach = harness.state.outreach.length;
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 2 });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const newDrafts = harness.state.outreach.slice(0, harness.state.outreach.length - beforeOutreach);
+  assert.ok(newDrafts.length >= 1, "agent must draft first-touch for the shortlist");
+  assert.ok(newDrafts.every((message) => message.status === "Needs Approval"));
+  assert.ok(newDrafts.every((message) => message.dryRun === true));
+  assert.ok(newDrafts.every((message) => message.sentAt === null));
+  assert.ok(newDrafts.some((message) => message.candidateId === "shortlist-go-1"));
+  assert.ok(!newDrafts.some((message) => message.candidateId === "below-floor-1"));
+  assert.match(harness.activityDrafts[0]?.notes ?? "", /dry-run/i);
+});
+
 test("a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates", async () => {
   const seed = buildSeedState();
   const campaign = { ...seed.campaigns[0], status: "Sourcing" as const };
