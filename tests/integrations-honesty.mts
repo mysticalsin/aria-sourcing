@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { defaultIntegrations, defaultLiveIntegrations, testConnection } from "../src/lib/integrations";
-import { integrationShowsLive, visiblePeopleFirstLearningReceipts } from "../src/lib/sourcing/people-plugins";
+import {
+  integrationShowsLive,
+  missingPeoplePluginsToast,
+  peopleSourcePluginsConnected,
+  visiblePeopleFirstLearningReceipts,
+} from "../src/lib/sourcing/people-plugins";
 import type { JobAnalysis } from "../src/lib/types";
 
 let pass = 0, fail = 0;
@@ -116,6 +121,35 @@ ok(
     calypsoJob,
     liveTenant,
   ).every((receipt) => receipt.platform !== "GitHub"),
+);
+ok(
+  "unkeyed live tenant fails the people-plugin check on a finance need",
+  !peopleSourcePluginsConnected(liveTenant) &&
+    Boolean(missingPeoplePluginsToast(calypsoJob, liveTenant)),
+);
+const keyedApify = liveTenant.map((item) =>
+  item.id === "int_apify" ? { ...item, status: "connected" as const, mode: "live" as const } : item,
+);
+ok(
+  "keyed Apify satisfies the people-plugin check without inventing LinkedIn OAuth",
+  peopleSourcePluginsConnected(keyedApify) && missingPeoplePluginsToast(calypsoJob, keyedApify) === null,
+);
+ok(
+  "Tavily connected is not a people source",
+  !peopleSourcePluginsConnected([
+    ...liveTenant,
+    {
+      id: "int_tavily",
+      name: "Tavily",
+      category: "Sourcing",
+      description: "Web search",
+      status: "connected",
+      mode: "live",
+      lastSync: null,
+      errors: [],
+      real: true,
+    },
+  ]),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

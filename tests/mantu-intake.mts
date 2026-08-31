@@ -253,6 +253,29 @@ ok(
     .every((step) => !/language:Calypso|language:LinuxPython/i.test(step.query)),
 );
 ok("finance / App Support plan has no GitHub steps", multi.every((step) => step.platform !== "GitHub"));
+const staleLinkedinPlan = plannedSourcingSearches({
+  jobAnalysis: campFromBlob.jobAnalysis,
+  sourcingStrategy: {
+    ...campFromBlob.sourcingStrategy,
+    linkedinBoolean:
+      '("Calypso Application Support") AND ("Linux Python Shell Oracle Grafana Dynatrace Linux Server") NOT "recruiter"',
+  },
+});
+ok(
+  "planned LinkedIn search splits the quoted Skill (Must) phrase before harvest",
+  !/"Linux Python Shell Oracle Grafana Dynatrace Linux Server"/i.test(
+    staleLinkedinPlan.find((step) => step.platform === "LinkedIn")?.query ?? "",
+  ) &&
+    /"Linux" OR "Python"/.test(
+      staleLinkedinPlan.find((step) => step.platform === "LinkedIn")?.query ?? "",
+    ),
+);
+ok(
+  "planned Apify query uses tokenized skills, not the quoted Skill (Must) phrase",
+  !/"Linux Python Shell Oracle Grafana Dynatrace Linux Server"/i.test(
+    staleLinkedinPlan.find((step) => step.platform === "Apify")?.query ?? "",
+  ) && /Python/i.test(staleLinkedinPlan.find((step) => step.platform === "Apify")?.query ?? ""),
+);
 ok(
   "Load Mantu sample is Calypso Application Support, not Crédit Agricole Murex",
   /calypso application support/i.test(SAMPLE_CALYPSO_APP_SUPPORT_NEED) &&

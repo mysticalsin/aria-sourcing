@@ -6,6 +6,7 @@
 
 import { roleProfile } from "@/lib/roles";
 import { GITHUB_SEARCH_LANGUAGES } from "@/lib/sourcing/github-search-language";
+import { repairLinkedinBoolean } from "@/lib/sourcing/linkedin-boolean";
 import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import type { JobAnalysis, SourcePlatform, SourcingStrategy } from "@/lib/types";
 
@@ -36,7 +37,10 @@ export function plannedSourcingSearches(input: {
   jobAnalysis: JobAnalysis;
   sourcingStrategy: Pick<SourcingStrategy, "githubQueries" | "linkedinBoolean">;
 }): PlannedSearch[] {
-  const linkedin = input.sourcingStrategy.linkedinBoolean.trim();
+  const linkedin = repairLinkedinBoolean(
+    input.jobAnalysis,
+    input.sourcingStrategy.linkedinBoolean,
+  ).trim();
   const allowGithub = roleProfile(input.jobAnalysis).platforms.includes("GitHub");
   const github = allowGithub
     ? input.sourcingStrategy.githubQueries

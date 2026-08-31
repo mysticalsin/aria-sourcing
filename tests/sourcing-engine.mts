@@ -336,6 +336,47 @@ if (noNameLeak.ok) {
     "live gate attaches a per-row CV citation",
     Boolean(gatedIn[0]?.matchBreakdown.some((item) => item.key === "experience" && /CV:/i.test(item.rationale))),
   );
+  const apifyNameOnly = applyLiveEngineGate(
+    [{
+      ...blank,
+      id: "apify-name-only",
+      campaignId: "camp-calypso",
+      name: "Calypso Martinez",
+      sourcePlatform: "Apify",
+      sourceQuery: "Calypso Application Support Linux Python",
+      techStack: ["Calypso"],
+      recentActivity: "Calypso Martinez is a marketer.",
+      experience: ["Calypso Martinez is a marketer. Brand campaigns only."],
+    }],
+    job,
+  );
+  ok("live gate drops an Apify-stamped name-only row", apifyNameOnly.length === 0);
+  ok("empty Apify harvest does not invent shortlist rows", applyLiveEngineGate([], job).length === 0);
+  const apifyKept = applyLiveEngineGate(
+    [{
+      ...blank,
+      id: "apify-elena",
+      campaignId: "camp-calypso",
+      avatarInitials: "EV",
+      name: "Elena Varga",
+      sourcePlatform: "Apify",
+      sourceQuery: "Calypso Application Support Linux Python",
+      currentTitle: "Calypso Application Support",
+      currentCompany: "BNPP CIB",
+      techStack: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      recentActivity: "Applicative Support. Calypso settlement, Capital Markets, Montreal.",
+      experience: [
+        "Production support for the Calypso settlement system. Trade Life Cycle, Settlements, Securities, Prime Brokerage.",
+      ],
+    }],
+    job,
+  );
+  ok(
+    "keyed Apify skill-matched row stays at or above the 60 floor with a CV citation",
+    apifyKept.length === 1 &&
+      apifyKept[0]!.matchScore >= SHORTLIST_FLOOR &&
+      Boolean(apifyKept[0]?.matchBreakdown.some((item) => item.key === "experience" && /CV:/i.test(item.rationale))),
+  );
 }
 
 if (parsedJd.ok) {

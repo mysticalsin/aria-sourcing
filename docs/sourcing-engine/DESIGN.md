@@ -159,7 +159,8 @@ hydrate and on the Strategy tab.
 - **Live path** uses configured providers (Apollo / Sillage / Seamless / Apify
   / LinkedIn / GitHub) when their keys exist. Source next batch for
   LinkedIn-first roles (finance / trading-platform / application support)
-  always executes the persisted LinkedIn boolean and Apify harvestapi search,
+  always executes the persisted LinkedIn boolean (repaired into Skill (Must)
+  tokens, never one quoted phrase) and Apify harvestapi search,
   even when a cloud model is configured. It does not GitHub-only a Calypso
   need and does not add GitHub steps unless the role's platforms include
   GitHub. A cloud model may draft outreach after those searches; it cannot
