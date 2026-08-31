@@ -239,17 +239,22 @@ export default function IntakePage() {
   /** Routes through the live LLM when a cloud provider is configured for chat.
    * Provider failures return a visible warning and an evidence-only parse. */
   async function handleParse() {
-    if (!email.trim()) {
+    const brief = email.trim();
+    const jdText = jd.trim();
+    if (!brief && !jdText) {
       toast({
         title: "Nothing to parse",
-        description: "Paste the recruiter email or brief first.",
+        description: "Paste the recruiter email/brief or the job description.",
         variant: "warning",
       });
       return;
     }
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
-    const result = await parseIntakeLive(settings, { email, jd: jd.trim() ? jd : undefined });
+    const result = await parseIntakeLive(settings, {
+      email: brief || jdText,
+      jd: brief && jdText ? jdText : undefined,
+    });
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
@@ -352,11 +357,14 @@ export default function IntakePage() {
     void actions.sourceNextBatch(campaign.id).then((res) => {
       if (res.ok) {
         const n = res.accepted.length;
+        const fixtureBatch = res.accepted.every((c) => c.provenance === "synthetic");
         toast({
           title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
           description: n > 0
-            ? `Added ${n} real candidate${n === 1 ? "" : "s"} for ${campaign.title}.`
-            : `The first real search for ${campaign.title} completed without a matching result.`,
+            ? `Added ${n} candidate${n === 1 ? "" : "s"} for ${campaign.title}${
+                fixtureBatch ? " (fixture evidence — not live people)." : "."
+              }`
+            : `The first search for ${campaign.title} completed without a matching result.`,
           variant: n > 0 ? "success" : "info",
         });
       } else {

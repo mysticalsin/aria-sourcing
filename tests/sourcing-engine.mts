@@ -24,6 +24,8 @@ import {
 } from "../src/lib/sourcing/engine";
 import { buildTextLayerPdf, extractPdfText } from "../src/lib/sourcing/ocr";
 import { parseVssNeeds } from "../src/lib/sourcing/vss-need";
+import { sourceEngineFixtureCandidates } from "../src/lib/sourcing/engine-candidates";
+import { vssToJobAnalysis } from "../src/lib/sourcing/vss-need";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tonyPath = join(here, "fixtures/tony-calypso-amacan-need.txt");
@@ -256,6 +258,38 @@ const evidence = {
   combinedNeedCount: both.length,
 };
 writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+const vssNeeds = parseVssNeeds(TONY_AMACAN);
+if (vssNeeds[0]) {
+  const campaign = {
+    id: "camp-amacan",
+    jobAnalysis: vssToJobAnalysis(vssNeeds[0]),
+  } as Parameters<typeof sourceEngineFixtureCandidates>[0];
+  const mapped = sourceEngineFixtureCandidates(campaign, [], 20);
+  ok("engine fixture batch stays at or under 20", mapped.accepted.length <= 20);
+  ok("engine fixture batch is non-empty", mapped.accepted.length > 0);
+  ok(
+    "engine fixture scores meet the 60 floor and are ranked",
+    mapped.accepted.every((c, i) => c.matchScore >= 60 && (i === 0 || mapped.accepted[i - 1]!.matchScore >= c.matchScore)),
+  );
+  ok(
+    "engine fixture batch is not a flat 75 cluster",
+    new Set(mapped.accepted.map((c) => c.matchScore)).size >= 2,
+  );
+  ok(
+    "engine fixture rows carry CV or LinkedIn evidence",
+    mapped.accepted.every((c) => (c.experience?.length ?? 0) > 0 || Boolean(c.recentActivity)),
+  );
+  ok(
+    "name-only Calypso is skipped on the campaign batch",
+    mapped.skipped.some((row) => /calypso martinez/i.test(row.name)) &&
+      !mapped.accepted.some((c) => /calypso martinez/i.test(c.name)),
+  );
+  ok(
+    "engine fixture rows are not dressed as live",
+    mapped.accepted.every((c) => c.provenance === "synthetic"),
+  );
+}
+
 ok("evidence file written", true);
 
 console.log(`RESULT sourcing-engine: ${pass} passed, ${fail} failed`);

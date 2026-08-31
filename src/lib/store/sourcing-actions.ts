@@ -10,6 +10,11 @@ import {
   mapWebSearchCandidates,
   type SourceResult,
 } from "../sourcing/candidate-mappers";
+import {
+  jobUsesEngineFixture,
+  sourceEngineFixtureCandidates,
+} from "../sourcing/engine-candidates";
+import { SHORTLIST_CAP } from "../sourcing/engine";
 import type { ApolloSearchProfile } from "../sourcing/apollo";
 import {
   campaignAllowsLiveSourcing,
@@ -871,7 +876,9 @@ export function createSourcingActions({
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
     }
-    const count = opts?.count ?? 6;
+    const engineFixture =
+      demoSourcing && jobUsesEngineFixture(initialCampaign.jobAnalysis);
+    const count = opts?.count ?? (engineFixture ? SHORTLIST_CAP : 6);
     const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;
     if (!Number.isInteger(count) || count < 1 || count > maxCount) {
       return invalidRequest(
@@ -1053,6 +1060,8 @@ export function createSourcingActions({
         latestState.candidates,
         weights,
       );
+    } else if (jobUsesEngineFixture(campaign.jobAnalysis)) {
+      result = sourceEngineFixtureCandidates(campaign, latestState.candidates, count);
     } else {
       result = sourceCandidates(
         campaign,

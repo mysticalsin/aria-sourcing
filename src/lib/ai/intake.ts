@@ -17,6 +17,7 @@ import {
 } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
+import { isVssRecruitmentNeed } from "@/lib/sourcing/vss-need";
 import { resolveAiProvider } from "./provider";
 import { hermesAvailable, hermesGenerate } from "./hermes";
 
@@ -208,18 +209,18 @@ export function groundLiveIntakeFields(
   const sourceLower = source.toLowerCase();
   const seniority = fields.seniority &&
     (claimAppearsInSource(fields.seniority, source) ||
-      (fields.seniority === "Mid" && /\bmid[- ]level\b|\bintermediate\b/i.test(source)))
+      (fields.seniority === "Mid" && /\bmid(?:dle)?\b|\bmid[- ]level\b|\bintermediate\b/i.test(source)))
       ? fields.seniority
       : undefined;
   const employmentType = fields.employmentType &&
-    ((fields.employmentType === "Contract" && /\bcontract|contractor|freelance|day rate\b/i.test(source)) ||
+    ((fields.employmentType === "Contract" && /\bcontract|contractor|freelance|day rate|consulting|\bcdi\b/i.test(source)) ||
       (fields.employmentType === "Part-time" && /\bpart[- ]time\b/i.test(source)) ||
-      (fields.employmentType === "Full-time" && /\bfull[- ]time\b|\bpermanent\b/i.test(source)))
+      (fields.employmentType === "Full-time" && /\bfull[- ]time\b|\bpermanent\b|\bcdi\b/i.test(source)))
       ? fields.employmentType
       : undefined;
   const locationType = fields.locationType &&
     ((fields.locationType === "Remote" && /\bremote\b|work from home/i.test(source)) ||
-      (fields.locationType === "Hybrid" && /\bhybrid\b/i.test(source)) ||
+      (fields.locationType === "Hybrid" && /\bhybrid\b|partial(?:ly)?\s+remote|possible\s+partial/i.test(source)) ||
       (fields.locationType === "On-site" && /\bon-?site\b|in office|in-person/i.test(source)))
       ? fields.locationType
       : undefined;
@@ -307,6 +308,10 @@ export async function parseIntakeLive(
   input: { email: string; jd?: string },
 ): Promise<ParsedIntake> {
   const mock = parseEmailAndJD(input);
+  const sourceText = `${input.email}\n${input.jd ?? ""}`;
+  if (isVssRecruitmentNeed(sourceText) && evaluateNeedReadiness(mock.jobAnalysis).ready) {
+    return mock;
+  }
 
   const aiCfg = resolveAiProvider(settings, "chat");
   if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {

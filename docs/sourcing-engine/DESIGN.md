@@ -35,6 +35,15 @@ Required fields after parse:
 A parse that cannot extract at least one required skill is not a need. Aria
 does not invent a brief.
 
+A complete VSS parse (title + seniority + employment + location type + at
+least one required skill) is **evidence**. The cloud parser must not replace
+it, shrink the Skill (Must) list, or leave the brief empty. Intake keeps the
+existing paste shape (recruiter email/brief + optional JD, `POST /api/intake`).
+
+On the demo Talent Pool path, these needs use the engine fixture shortlist
+(skills + CV + LinkedIn/other text, floor 60, cap 20, name-only FAIL). Aria
+does not dress that shortlist as live people.
+
 ## Evidence (what a candidate is scored on)
 
 A candidate is scored only on three evidence channels:

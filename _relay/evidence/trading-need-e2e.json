@@ -38,7 +38,7 @@
   "secondNeed": "Senior Calypso Business Analyst",
   "combinedNeedCount": 2,
   "stdout_tail": [
-    "RESULT sourcing-engine: 51 passed, 0 failed",
+    "RESULT sourcing-engine: 58 passed, 0 failed",
     "EVIDENCE command=tsx tests/sourcing-engine.mts exit_code=0 path=_relay/evidence/trading-need-e2e.json"
   ],
   "stderr_tail": [

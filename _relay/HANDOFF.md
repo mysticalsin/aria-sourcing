@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 438
 agent: cursor-cloud
-updated: 2026-08-31T03:20Z
+updated: 2026-08-31T03:28Z
 status: pr-open
 ---
 
@@ -33,6 +33,8 @@ status: pr-open
 5. Negative: Calypso Martinez name-only scores 0
 6. Combined VSS paste recovers both titles
 7. GitHub `language:` only for real languages; LinkedIn boolean no longer emits empty `AND ()`
+8. Complete VSS skips the cloud parser (no empty brief / “cloud did not complete” wipe)
+9. Demo Talent Pool for these needs uses the engine fixture shortlist (≤20, floor 60, CV/LinkedIn evidence, name-only skipped). Not dressed as live.
 
 ## Blockers
 

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   groundLiveIntakeFields,
   parseHermesIntakeJson,
@@ -9,6 +13,11 @@ import {
 import { parseEmailAndJD } from "../src/lib/mock-ai";
 import { evaluateNeedReadiness } from "../src/lib/needs/readiness";
 import { buildSeedState } from "../src/lib/seed";
+
+const TONY_AMACAN = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "fixtures/tony-calypso-amacan-need.txt"),
+  "utf8",
+);
 
 const minimalNeed = "We need a Data Engineer.";
 
@@ -109,4 +118,40 @@ test("placeholder whitespace is never accepted as a real title or skill", () => 
   assert.equal(readiness.ready, false);
   assert.ok(readiness.issues.some((issue) => issue.field === "title"));
   assert.ok(readiness.issues.some((issue) => issue.field === "requiredSkills"));
+});
+
+test("complete VSS evidence is not emptied by a missing cloud parser", async () => {
+  const settings = buildSeedState().settings;
+  const parsed = await parseIntakeLive(
+    {
+      ...settings,
+      hermesLiveMode: true,
+    },
+    { email: TONY_AMACAN },
+  );
+  assert.match(parsed.jobAnalysis.title, /calypso application support/i);
+  assert.ok(parsed.jobAnalysis.requiredSkills.some((s) => /linux/i.test(s)));
+  assert.ok(parsed.jobAnalysis.requiredSkills.some((s) => /calypso/i.test(s)));
+  assert.equal(parsed.jobAnalysis.seniority, "Mid");
+  assert.equal(parsed.jobAnalysis.locationType, "Hybrid");
+  assert.equal(evaluateNeedReadiness(parsed.jobAnalysis).ready, true);
+  assert.equal(parsed.providerWarning, undefined);
+  assert.equal(parsed.extractionMode, "evidence");
+});
+
+test("partial remote grounds as Hybrid and CDI/consulting as Contract", () => {
+  const grounded = groundLiveIntakeFields(
+    {
+      title: "Calypso Application Support",
+      seniority: "Mid",
+      employmentType: "Contract",
+      locationType: "Hybrid",
+      requiredSkills: ["Linux"],
+    },
+    "Title\nCalypso Application Support\nRemote\nPossible partially remote\nContract Type\nUndetermined Duration Contract (CDI)\nLevel of Experience\nMiddle - From 4 to 6 years",
+  );
+  assert.equal(grounded.title, "Calypso Application Support");
+  assert.equal(grounded.seniority, "Mid");
+  assert.equal(grounded.employmentType, "Contract");
+  assert.equal(grounded.locationType, "Hybrid");
 });
