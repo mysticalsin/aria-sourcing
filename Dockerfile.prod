@@ -30,7 +30,10 @@ RUN npm run build
 
 FROM node:22-bookworm-slim@sha256:53ada149d435c38b14476cb57e4a7da73c15595aba79bd6971b547ceb6d018bf AS runner
 WORKDIR /app
-ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
+# Fly `*.process.*.internal` is IPv6 6PN. IPv4-only 0.0.0.0 refuses
+# loop-to-web dispatch drain. `::` dual-stacks on Linux so 127.0.0.1
+# HEALTHCHECK and Fly http_service IPv4 probes still succeed.
+ENV NODE_ENV=production PORT=3000 HOSTNAME="::" NEXT_TELEMETRY_DISABLED=1
 # The standalone runtime needs only `node`. Strip npm/corepack/yarn from the final
 # image: they are never executed here, they widen the attack surface, and npm's own
 # bundled node_modules (sigstore, picomatch) carry fixable HIGH CVEs that would block
