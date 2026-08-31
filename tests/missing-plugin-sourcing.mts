@@ -104,6 +104,26 @@ function ok(name: string, cond: boolean) {
     /profileScraperMode:\s*"Full \+ email search"/.test(src) && !/profileScraperMode:\s*"Short"/.test(src),
   );
   ok("linkedin_profiles budget allows Full harvest", /DEFAULT_BUDGET_MS\s*=\s*150_000/.test(src));
+  ok(
+    "linkedin_profiles treats Apify free-plan empty SUCCEEDED as hard failure",
+    /apifyEmptySuccessIsQuota/.test(src) && /free-plan run limit/.test(src),
+  );
+}
+
+{
+  const { apifyEmptySuccessIsQuota } = await import("../src/lib/sourcing/apify.ts");
+  ok(
+    "empty SUCCEEDED with free user run limit is quota",
+    apifyEmptySuccessIsQuota("free user run limit reached", 0) === true,
+  );
+  ok(
+    "empty SUCCEEDED without limit message is not quota",
+    apifyEmptySuccessIsQuota("", 0) === false,
+  );
+  ok(
+    "non-empty dataset is never quota even with limit message",
+    apifyEmptySuccessIsQuota("free user run limit reached", 3) === false,
+  );
 }
 
 console.log(`RESULT missing-plugin-sourcing: ${pass} passed, ${fail} failed`);

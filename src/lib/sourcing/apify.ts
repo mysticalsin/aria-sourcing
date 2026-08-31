@@ -377,7 +377,7 @@ export async function startProfileSearchRun(
 }
 
 interface RawStatusEnvelope {
-  data?: { status?: string };
+  data?: { status?: string; statusMessage?: string };
 }
 
 /** Poll the async run's status. Terminal: SUCCEEDED / FAILED / TIMED-OUT / ABORTED. */
@@ -385,12 +385,31 @@ export async function getRunStatus(
   clearance: ProviderClearance,
   token: string,
   runId: string,
-): Promise<ApifyResult<{ status: string }>> {
+): Promise<ApifyResult<{ status: string; statusMessage: string }>> {
   const res = await apifyRequest<RawStatusEnvelope>(clearance, `/actor-runs/${encodeURIComponent(runId)}`, token, {
     timeoutMs: 15_000,
   });
   if (!res.ok) return res;
-  return { ok: true, status: res.status, data: { status: res.data.data?.status ?? "READY" } };
+  return {
+    ok: true,
+    status: res.status,
+    data: {
+      status: res.data.data?.status ?? "READY",
+      statusMessage: res.data.data?.statusMessage ?? "",
+    },
+  };
+}
+
+/**
+ * Apify free-plan runs often terminate as SUCCEEDED with an empty dataset and
+ * statusMessage "free user run limit reached". Treat that as a hard provider
+ * failure — not a legitimate empty shortlist.
+ */
+export function apifyEmptySuccessIsQuota(statusMessage: string, itemCount: number): boolean {
+  if (itemCount > 0) return false;
+  return /\b(free user run limit|run limit reached|monthly usage|usage limit|quota)\b/i.test(
+    statusMessage.trim(),
+  );
 }
 
 /** Fetch a completed run's dataset items, normalized into ApifyProfile[]. */

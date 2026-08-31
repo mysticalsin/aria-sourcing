@@ -4,7 +4,7 @@ import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { getRunStatus, fetchDatasetItems, resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { getRunStatus, fetchDatasetItems, resolveStoredApifyKey, apifyEmptySuccessIsQuota } from "@/lib/sourcing/apify";
 import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 
 export const runtime = "nodejs";

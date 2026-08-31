@@ -12,6 +12,8 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   CAMPAIGN_CHANGED: "Campaign authority changed. Retry from the current campaign.",
   MISSING_PLUGIN:
     "Connect LinkedIn and Apify in Settings. GitHub Sourcing cannot fill this role, even when toggled Live.",
+  SOURCING_PROVIDER_QUOTA:
+    "Apify free-plan run limit reached. Upgrade the Apify plan or wait for the monthly reset, then retry Source.",
   INSUFFICIENT_PERMISSIONS: "Sourcing authority is no longer available.",
   SOURCING_AGENT_RATE_LIMITED: "The sourcing-agent rate limit was reached. Try again later.",
   SOURCING_AGENT_REPLAY_BLOCKED: "This sourcing request was already claimed. Start a new sourcing run.",

@@ -4,6 +4,7 @@ import {
   fetchDatasetItems,
   getRunStatus,
   startProfileSearchRun,
+  apifyEmptySuccessIsQuota,
   type ApifyProfileSearchInput,
 } from "@/lib/sourcing/apify";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
@@ -67,9 +68,9 @@ export const linkedinProfilesProvider: SourcingProvider = {
     // Short mode returns no headline/about/skills/email — scored profiles then
     // fail the 80% quality floor and Source soft-empties. Full + email search
     // is required for Calypso BA / LinkedIn-first shortlists that stay contactable.
+    // Do not pass exact JD title as currentJobTitles — niche titles zero the actor.
     const input: ApifyProfileSearchInput = {
       searchQuery: query,
-      currentJobTitles: jd.title.trim() ? [jd.title.trim()] : undefined,
       locations: jd.regions.filter(Boolean).slice(0, 3),
       maxItems: Math.min(Math.max(count * 2, 10), 25),
       profileScraperMode: "Full + email search",
@@ -91,6 +92,16 @@ export const linkedinProfilesProvider: SourcingProvider = {
 
     const deadline = Date.now() + DEFAULT_BUDGET_MS;
     let status = started.data.status;
+    let statusMessage = "";
+    // Free-plan quota runs often land SUCCEEDED on the start response itself —
+    // always read statusMessage before treating an empty dataset as a real miss.
+    {
+      const polled = await getRunStatus(clearance.clearance, token, runId);
+      if (polled.ok) {
+        status = polled.data.status;
+        statusMessage = polled.data.statusMessage;
+      }
+    }
     while (!TERMINAL.has(status.toUpperCase())) {
       if (Date.now() >= deadline || ctx.signal?.aborted) {
         return { ok: false, accepted: [], skipped: [], error: "LinkedIn profile search timed out." };
@@ -113,6 +124,7 @@ export const linkedinProfilesProvider: SourcingProvider = {
         };
       }
       status = polled.data.status;
+      statusMessage = polled.data.statusMessage;
     }
 
     if (status.toUpperCase() !== "SUCCEEDED") {
@@ -120,7 +132,7 @@ export const linkedinProfilesProvider: SourcingProvider = {
         ok: false,
         accepted: [],
         skipped: [],
-        error: `LinkedIn profile search ended with status ${status}.`,
+        error: `LinkedIn profile search ended with status ${status}${statusMessage ? `: ${statusMessage}` : ""}.`,
       };
     }
 
@@ -136,6 +148,16 @@ export const linkedinProfilesProvider: SourcingProvider = {
         accepted: [],
         skipped: [],
         error: items.detail || items.title || "LinkedIn profile fetch failed.",
+      };
+    }
+
+    if (items.data.length === 0 && apifyEmptySuccessIsQuota(statusMessage, 0)) {
+      return {
+        ok: false,
+        accepted: [],
+        skipped: [],
+        error:
+          "Apify free-plan run limit reached. Upgrade the Apify plan or wait for the monthly reset, then retry Source.",
       };
     }
 

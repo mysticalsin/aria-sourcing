@@ -90,6 +90,7 @@ type ErrorCode =
   | "CAMPAIGN_INPUT_UNSAFE"
   | "CAMPAIGN_CHANGED"
   | "MISSING_PLUGIN"
+  | "SOURCING_PROVIDER_QUOTA"
   | "SOURCING_AGENT_RATE_LIMITED"
   | "SOURCING_AGENT_REPLAY_BLOCKED"
   | "SOURCING_AGENT_NOT_CONFIGURED"
@@ -449,9 +450,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
     status: number,
     code: ErrorCode,
     message: string,
+    _retryAfter?: number,
+    extra?: { settingsHref?: string },
   ) => {
     await recordClaimFailure(code);
-    return fail(status, code, message);
+    return fail(status, code, message, _retryAfter, extra);
   };
 
   const currentAuthority = async (): Promise<
@@ -641,6 +644,36 @@ async function handlePost(req: NextRequest, correlationId: string) {
           "SOURCING_AGENT_UPSTREAM_FAILED",
           "Real candidate search did not complete.",
         );
+      }
+      if (linkedInFirst && linkedInProfileToken?.trim()) {
+        const profileExecs = multi.executions.filter(
+          (execution) => execution.providerId === "linkedin_profiles",
+        );
+        const quotaHit = profileExecs.find(
+          (execution) =>
+            !execution.ok &&
+            /apify free-plan run limit|run limit reached/i.test(execution.error ?? ""),
+        );
+        if (quotaHit) {
+          return await failClaimed(
+            502,
+            "SOURCING_PROVIDER_QUOTA",
+            quotaHit.error ||
+              "Apify free-plan run limit reached. Upgrade the Apify plan or wait for the monthly reset, then retry Source.",
+            undefined,
+            { settingsHref: LINKEDIN_PROFILE_SEARCH_SETTINGS_HREF },
+          );
+        }
+        if (profileExecs.length === 0 || profileExecs.every((execution) => !execution.ok)) {
+          return await failClaimed(
+            502,
+            "SOURCING_AGENT_UPSTREAM_FAILED",
+            profileExecs.find((execution) => execution.error)?.error ||
+              "LinkedIn profile search did not complete.",
+            undefined,
+            { settingsHref: LINKEDIN_PROFILE_SEARCH_SETTINGS_HREF },
+          );
+        }
       }
       runner.seedFromOrchestrator(multi);
     } else {
