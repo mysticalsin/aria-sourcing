@@ -622,11 +622,25 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleRunAgent = async () => {
     const campaignId = c.id;
+    const missingPlugins = missingPeoplePluginsToast(c.jobAnalysis, integrations);
+    if (missingPlugins) {
+      toast({
+        title: "Connect LinkedIn and Apify",
+        description: missingPlugins,
+        variant: "error",
+      });
+      return;
+    }
     setAgentRunning(true);
     const res = await actions.runSourcingAgent(campaignId);
     setAgentRunning(false);
     if (!res.ok) {
-      toast({ title: "Sourcing agent didn't run", description: res.error, variant: "error" });
+      const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations);
+      toast({
+        title: failLoud ? failLoud.title : "Sourcing agent didn't run",
+        description: failLoud?.description ?? res.error,
+        variant: "error",
+      });
       return;
     }
     setFeedbackState((current) =>
@@ -641,6 +655,22 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         : current,
     );
     if (res.added === 0) {
+      const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+        c.jobAnalysis,
+        integrations,
+        {
+          accepted: { length: 0 },
+          source: res.mode === "deterministic" ? "github" : undefined,
+        },
+      );
+      if (emptyPeopleFirst) {
+        toast({
+          title: "Connect LinkedIn and Apify",
+          description: emptyPeopleFirst,
+          variant: "error",
+        });
+        return;
+      }
       toast({
         title: "No candidates were added",
         description:

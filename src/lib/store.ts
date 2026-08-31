@@ -63,6 +63,13 @@ import {
 } from "./sourcing/sourcing-agent-contract";
 import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
 import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
+import {
+  MISSING_PEOPLE_PLUGINS_TOAST,
+  isGithubOnlyEmptyBatch,
+  isPeopleFirstRole,
+  missingPeoplePluginsToast,
+  remapPeopleFirstSourcingError,
+} from "./sourcing/people-plugins";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
   defaultLiveIntegrations,
@@ -1633,6 +1640,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!campaignAllowsLiveSourcing(campaign.status)) {
         return { ok: false, added: 0, error: "Campaign is not active for sourcing." };
       }
+      const missingPlugins = missingPeoplePluginsToast(campaign.jobAnalysis, s.integrations);
+      if (missingPlugins) {
+        return { ok: false, added: 0, error: missingPlugins };
+      }
       const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 8);
       const reviewed = await requestReviewedSourcing(
         workspaceFetch,
@@ -1640,7 +1651,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         requestedCount,
       );
       if (!reviewed.ok) {
-        return { ok: false, added: 0, error: reviewed.error };
+        return {
+          ok: false,
+          added: 0,
+          error: remapPeopleFirstSourcingError(
+            reviewed.error,
+            campaign.jobAnalysis,
+            s.integrations,
+          ),
+        };
+      }
+      if (
+        isPeopleFirstRole(campaign.jobAnalysis) &&
+        isGithubOnlyEmptyBatch(reviewed.value)
+      ) {
+        return { ok: false, added: 0, error: MISSING_PEOPLE_PLUGINS_TOAST };
       }
       const out = reviewed.value;
       const executionMode = out.mode;

@@ -7,7 +7,12 @@ import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { executePrimaryAgentSourcing } from "@/lib/agents/studio-runner";
-import { useActions, useCampaign, useCampaignOutreach, useSettings } from "@/lib/store";
+import { useActions, useCampaign, useCampaignOutreach, useIntegrations, useSettings } from "@/lib/store";
+import {
+  emptyPeopleFirstShortlistError,
+  missingPeoplePluginsToast,
+  peoplePluginFailLoudUi,
+} from "@/lib/sourcing/people-plugins";
 import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, OutreachMessage } from "@/lib/types";
 import { initialsFrom, scoreTone, toneForOutreachStatus } from "@/lib/utils";
@@ -139,6 +144,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
   const actions = useActions();
   const settings = useSettings();
   const campaign = useCampaign(campaignId);
+  const integrations = useIntegrations();
   const campaignOutreach = useCampaignOutreach(campaignId);
   const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
@@ -170,6 +176,12 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       setPhase("error");
       return;
     }
+    const missingPlugins = missingPeoplePluginsToast(campaign.jobAnalysis, integrations);
+    if (missingPlugins) {
+      setErrorMessage(missingPlugins);
+      setPhase("error");
+      return;
+    }
 
     let retryStorage: Storage | null = null;
     try {
@@ -187,7 +199,12 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       sourceNextBatch: actions.sourceNextBatch,
     });
     if (!result.ok) {
-      setErrorMessage(result.error);
+      const failLoud = peoplePluginFailLoudUi(
+        result.error,
+        campaign.jobAnalysis,
+        integrations,
+      );
+      setErrorMessage(failLoud?.description ?? result.error);
       setPhase("error");
       return;
     }
@@ -195,6 +212,16 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
 
     setSourcedCount(sourced.length);
     if (sourced.length === 0) {
+      const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+        campaign.jobAnalysis,
+        integrations,
+        result,
+      );
+      if (emptyPeopleFirst) {
+        setErrorMessage(emptyPeopleFirst);
+        setPhase("error");
+        return;
+      }
       setPhase("empty");
       return;
     }
@@ -218,7 +245,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     setRunKey((k) => k + 1);
     // phase flips to "done" from the RevealStream's onDone once every card
     // has materialized (or instantly, on Skip / prefers-reduced-motion).
-  }, [phase, campaignId, campaign, campaignOutreach, actions]);
+  }, [phase, campaignId, campaign, campaignOutreach, actions, integrations]);
 
   const autoStartedRef = React.useRef(false);
   React.useEffect(() => {

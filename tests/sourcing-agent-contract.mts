@@ -144,6 +144,9 @@ test("store consumer uses strict response parsing, current authority, commit-tim
   assert.match(action, /commitPersisted\(\(prev\)/);
   assert.match(action, /dedupeCandidates\(/);
   assert.match(action, /if \(!persisted \|\| !authorized\)/);
+  assert.match(action, /missingPeoplePluginsToast/);
+  assert.match(action, /remapPeopleFirstSourcingError/);
+  assert.match(action, /isGithubOnlyEmptyBatch/);
 });
 
 test("campaign UI presents a completed zero-match search as information, not sourcing success", () => {
@@ -159,6 +162,9 @@ test("campaign UI presents a completed zero-match search as information, not sou
   assert.match(action, /res\.added\s*===\s*0/);
   assert.match(action, /No (?:candidates(?: were)? added|new matches)/i);
   assert.match(action, /variant:\s*"info"/);
+  assert.match(action, /peoplePluginFailLoudUi/);
+  assert.match(action, /Connect LinkedIn and Apify/);
+  assert.match(action, /emptyPeopleFirstShortlistError/);
 });
 
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
