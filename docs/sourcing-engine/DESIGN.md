@@ -130,17 +130,63 @@ Product APIs that run this engine:
 Outreach contact floor (`MIN_SCORE_FLOOR` 70) is a **separate** gate. This
 contract does not lower it. This contract's 60% floor is shortlist inclusion.
 
-## Acceptance need (proof, not a product name)
+## Acceptance needs (proof, not product names)
 
-Proof need: a trading-platform role whose required skill is **Calypso**.
+Calypso is a **client JD**, not a product and not a person. Do not rank
+someone because the string "Calypso" is their name.
+
+### Primary (E2E default)
+
+**Calypso Application Support** — AMACAN / BNPP CIB - Canada / Montreal.
+
+| Field | Value |
+| --- | --- |
+| Priority | Urgent but not Critical → `Urgent` (must not collapse to Critical) |
+| Contract | CDI, start 05/10/2026, 1 head, 12 months |
+| Remote | Possible partially remote → `Hybrid` |
+| Profile | IS&D - Applicative Support |
+| Seniority | Middle — From 4 to 6 years → `Mid`, min 4, max 6 |
+| Language | English fluent |
+| Skill (Must) | Linux, Python, Shell, Oracle, Grafana, Dynatrace, Linux Server |
+| Function | Production support for the Calypso settlement system in Capital Markets (Trade Life Cycle, Settlements, Securities, Prime Brokerage). 24/7 global. |
+
+Fixture: `tests/fixtures/tony-calypso-amacan-need.txt` (line-oriented VSS).
+
+Intake must recover this brief from paste JD or a connected email. An empty
+parsed brief (no title, no skills) is a FAIL. Manual field fill is not E2E.
+
+### Second need (same VSS family — do not ignore)
+
+**Senior Calypso Business Analyst** — same client / city family.
+
+| Field | Value |
+| --- | --- |
+| Priority | Urgent and Critical → `Critical` |
+| Seniority | Senior 7–10 years |
+| Skill (Must) | Calypso, Business Analysis, MySQL |
+| Domain | BA/MOA, T+1, Prime Brokerage/FI/Equities, SQL, Calypso back office |
+
+Fixtures: `SAMPLE_VSS_CALYPSO_BA_MONTREAL`;
+`tests/fixtures/ocr/calypso-ba-montreal-need.{pdf,png}`.
+
+A combined VSS paste that contains both `Title` blocks must recover **both**
+needs. The engine scores one need at a time; the primary E2E default is
+Application Support.
+
+### Recorded proof
 
 Must prove, with a recorded command + `exit_code` + path (not a self-report):
 
 1. Need in (paste JD or connected-email shape) → scored shortlist out.
 2. Every shortlisted person scores ≥ 60, at most 20, ranked high → low.
 3. At least one negative: a candidate whose only Calypso hit is their
-   **name** does not pass 60%.
+   **name** scores under 60 and is not shortlisted.
 4. Empty / name-only matches are FAIL.
+5. Skills + CV/resume + LinkedIn (or other) experience are the only evidence
+   channels. OCR recovers text-layer PDFs; image-only PDFs fail closed.
+
+**Floor is 60.** The undeployed PR #53 80 floor is out of scope and must not
+be adopted. Outreach contact floor (`MIN_SCORE_FLOOR` 70) stays separate.
 
 ## Out of scope
 
