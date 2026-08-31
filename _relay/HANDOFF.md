@@ -1,55 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 440
+shift: 441
 agent: cursor-cloud
-updated: 2026-08-31T04:15Z
+updated: 2026-08-31T07:06Z
 status: pr-open
 ---
 
-# Handoff — Shift 440
+# Handoff — Shift 441
 
 ## Current state
 
-- Branch `cursor/sourcing-engine-94b1` → **PR #54** against `main`
-- Product Verifier PASS on `5b40b5e` (citations, engine evidence, unclustered scores, no `@fixture.example` on Talent Pool)
-- Quality on `5b40b5e` failed: `flyctl config validate` → `no access token available` (fixed offline)
-- Quality on `a42003a` failed: module-boundaries cycle `engine.ts` ↔ `vss-need.ts` — fixed via `need-types.ts`
-- Quality on `d8d39a5` failed: `regenerateQueries` test still expected `language:gRPC`. Keyword token + `forks:>5`; `language:` only for real GH languages
-- No `FLY_API_TOKEN` / `flyctl auth` on the Quality job
-- Secret scan / dep audit / db-security still match main — do not chase
-- READY TO MERGE stays **no** until Quality is green and Devon Fly-shows
+- Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** against `main` (not merged)
+- Tip `b4a76321759d057cc605ccd290b2c1210278c0b7`
+- Quality **green** on `b4a7632` (run 33356172158)
+- Historic red still match main: secret scan, dep audit, db-security, supply chain, release gate — do not chase
+- **Fly is not this PR.** Live last documented: `d9e8cd0` on `main` (PR 51). Not `5b40b5e`, not `b4a7632`
+- Protected Fly release; no laptop/VM deploy. This VM has no `FLY_API_TOKEN` (`flyctl auth whoami` → `Error: no access token available. Please login with 'flyctl auth login'`)
+- Did not fake a Fly deploy
 
 ## Done this shift
 
-1. Replaced `execFileSync("flyctl", ["config", "validate", ...])` with `validateFlyRoleToml`
-2. Removed Quality `setup-flyctl` (that install is what made Quality worse after ENOENT)
-3. Kept `[[services]]` / `[http_service]` fail-closed
-4. `node --test infra/agent-frameworks/fly/deployment.test.mjs` 15/15
+1. Confirmed PR 54 still OPEN, mergeable, Quality green
+2. Did not merge, did not close, did not open a second PR
+3. Recorded Fly truth: host is still main `d9e8cd0`
 
 ## Blockers
 
-- Historic CI (secret scan / dep audit / db-security) matches main — still required, merge stays unstable
-- Live Fly login proof after land is Devon (`https://aria-mantu-app.fly.dev/`)
-- Fly still v163 until this SHA lands
+- Protected Fly release must land this branch before Ultron can walk the new engine
+- Historic required checks still fail as on main (merge stays unstable)
 
 ## Next steps
 
 ```bash
-# Wait for Quality green on this SHA
-# Devon: deploy to Fly aria-mantu-app, then login-proof
-# Do not merge until Devon Fly-shows
-# Do not open a second PR; do not touch Vercel or Polo or PR #53
+# Protected Fly release of cursor/sourcing-engine-94b1 → aria-mantu-app
+# Then Devon/Ultron walk https://aria-mantu-app.fly.dev/ (not v163 / not d9e8cd0)
+# Do not merge PR 54 from this agent
+# Do not fake flyctl deploy from the VM
 ```
 
 ## Decisions made (don't relitigate)
 
 - Product name is Aria. Calypso is a client **need**
-- Shortlist floor 60%; PR #53 80 floor out of scope
-- Quality must validate Fly TOML without a Fly account
-- One PR (#54). Fly is the production bar
+- One PR (#54). Do not merge yourself
+- Quality stays green; do not put FLY_API_TOKEN on Quality
+- Fly proof is a protected release, not a VM/laptop deploy
 
 ## Watch out
 
-- Manifest freeze application **154** / all **207** / parity **209**
-- Do not put FLY_API_TOKEN on Quality
-- Do not weaken private-no-proxy
+- Do not invent Fly tokens
+- Do not touch Vercel or Polo or PR #53
