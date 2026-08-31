@@ -273,10 +273,11 @@ function splitSkills(raw: string): string[] {
         .replace(/[.,]+$/g, "")
         .trim();
     const toks = protectedPart.text.split(/\s+/).filter(Boolean);
-    // VSS Skill (Must) is a space-separated token list. Always split when the
-    // line is not English prose — one chip "Linux Python Shell …" is zero recall.
+    // VSS Skill (Must) is a space-separated token list. Split blobs of 3+
+    // tokens that are not English prose — one chip "Linux Python Shell …"
+    // is zero recall. Keep two-word skill names (Distributed Systems).
     const shouldTokenize =
-      toks.length >= 2 &&
+      toks.length >= 3 &&
       !PROSE.test(protectedPart.text) &&
       toks.every((t) => t.length <= 32 || /\{\{P\d+\}\}/.test(t));
 

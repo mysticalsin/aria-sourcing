@@ -131,6 +131,11 @@ ok(
 ok("LinkedIn boolean is not an empty AND ()", !/AND\s*\(\s*\)/.test(strategy.linkedinBoolean));
 ok("LinkedIn boolean includes a must-have skill", /Linux|Python|Oracle|Calypso/i.test(strategy.linkedinBoolean));
 ok(
+  "two-word skill names stay one chip",
+  tokenizeMustHaveSkills(["Distributed Systems", "Design Systems"]).join("|") ===
+    "Distributed Systems|Design Systems",
+);
+ok(
   "unsplit Skill (Must) line tokenizes on spaces",
   tokenizeMustHaveSkills("Linux Python Shell Oracle Grafana Dynatrace Linux Server").filter((s) =>
     ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server"].some(
