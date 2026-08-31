@@ -1,7 +1,13 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
 
-import { TRADING_PLATFORM_JD } from "../src/lib/fixtures/trading-platform-need";
+const TONY_AMACAN = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "fixtures/tony-calypso-amacan-need.txt"),
+  "utf8",
+);
 
 let pass = 0;
 let fail = 0;
@@ -47,11 +53,11 @@ function request(body: unknown, cookie?: string) {
 }
 
 signedDemoSession = false;
-const anonymous = await post(request({ jd: TRADING_PLATFORM_JD, mode: "fixture" }));
+const anonymous = await post(request({ jd: TONY_AMACAN, mode: "fixture" }));
 ok("anonymous public-demo need POST is 401", anonymous.status === 401);
 
 signedDemoSession = true;
-const fixture = await post(request({ jd: TRADING_PLATFORM_JD, mode: "fixture" }, "aria_demo=signed"));
+const fixture = await post(request({ jd: TONY_AMACAN, mode: "fixture" }, "aria_demo=signed"));
 const fixtureBody = (await fixture.json()) as {
   ok?: boolean;
   shortlist?: { score: number; provenance: string }[];
@@ -72,7 +78,7 @@ ok(
   (fixtureBody.shortlist ?? []).every((row) => row.provenance === "fixture"),
 );
 
-const live = await post(request({ jd: TRADING_PLATFORM_JD, mode: "live" }, "aria_demo=signed"));
+const live = await post(request({ jd: TONY_AMACAN, mode: "live" }, "aria_demo=signed"));
 const liveBody = (await live.json()) as { ok?: boolean; code?: string; paths?: string[] };
 ok("live mode without provider keys fail-closes", live.status === 503 && liveBody.code === "PROVIDER_NOT_CONFIGURED");
 ok("live fail-closed returns three paths", liveBody.paths?.length === 3);

@@ -5,6 +5,12 @@ import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
+import {
+  isVssRecruitmentNeed,
+  parseVssNeeds,
+  urgencyFromVssPriority,
+  vssToJobAnalysis,
+} from "./sourcing/vss-need";
 import type {
   Booking,
   Campaign,
@@ -209,6 +215,8 @@ export interface ParsedIntake {
   confidence: Record<string, number>;
   extractionMode: "evidence" | "cloud";
   providerWarning?: string;
+  /** Extra VSS Title blocks in the same paste (primary is jobAnalysis). */
+  additionalNeeds?: { title: string; requiredSkills: string[] }[];
   /** Optional enrichment from a locked Dust agent (task "jdAnalysis"). A sibling
    *  display field, never merged into jobAnalysis's typed fields — free text from
    *  an external agent shouldn't be able to corrupt the scoring/sourcing pipeline.
@@ -218,7 +226,47 @@ export interface ParsedIntake {
 }
 
 export function isMantuNeedEmail(text: string): boolean {
+  if (isVssRecruitmentNeed(text)) return true;
   return /this need is now|key required skills/i.test(text) || /^\s*recruiter\s*:/im.test(text);
+}
+
+function parseVssIntake(text: string): ParsedIntake {
+  const needs = parseVssNeeds(text);
+  const primary = needs[0];
+  if (!primary) {
+    return parseMantuNeed(text);
+  }
+  const jobAnalysis = vssToJobAnalysis(primary);
+  const validationWarnings: ValidationWarning[] = [
+    ...evaluateNeedReadiness(jobAnalysis).issues,
+    { field: "salary", severity: "warning", message: "No salary/rate in the need. Confirm the band." },
+  ];
+  jobAnalysis.validationWarnings = validationWarnings;
+  const urgency = urgencyFromVssPriority(primary.priority);
+  const senderName = primary.mainManager || primary.mainRecruiter;
+  const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
+  return {
+    sender: { name: senderName, email: emailMatch?.[0] ?? "" },
+    intent: urgency === "Critical" ? "Urgent Hire" : "New Role",
+    urgency,
+    jobAnalysis,
+    validationWarnings,
+    clarificationDraft: validationWarnings.some((w) => w.severity === "critical")
+      ? buildClarificationEmail(senderName, jobAnalysis, validationWarnings)
+      : null,
+    confidence: {
+      title: primary.title ? 0.95 : 0.4,
+      salary: 0.3,
+      skills: primary.skillsMust.length ? 0.95 : 0.5,
+      location: primary.city ? 0.92 : 0.5,
+      seniority: jobAnalysis.seniority === "Unspecified" ? 0 : 0.85,
+    },
+    extractionMode: "evidence",
+    additionalNeeds: needs.slice(1).map((need) => ({
+      title: need.title,
+      requiredSkills: need.skillsMust,
+    })),
+  };
 }
 
 /** Does an inbound mailbox message look like a hiring need / JD email (vs a
@@ -439,6 +487,8 @@ function extractLocation(text: string): string {
 export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIntake {
   const text = `${input.email}\n${input.jd ?? ""}`.slice(0, MAX_PARSE_CHARS);
   const lower = text.toLowerCase();
+
+  if (isVssRecruitmentNeed(text)) return parseVssIntake(text);
 
   // Structured Mantu/Amaris "need is now ACTIVE" email → dedicated parser.
   if (isMantuNeedEmail(text)) return parseMantuNeed(text);
@@ -676,8 +726,26 @@ Aria Sourcing`;
 // good query. Only apply the qualifier for a region that's an actual place.
 const NON_LOCATION_REGIONS = new Set(["EU", "EMEA", "EEA", "APAC", "LATAM", "Remote", "Global"]);
 
+const GITHUB_SEARCH_LANGUAGES = new Set([
+  "python",
+  "shell",
+  "java",
+  "javascript",
+  "typescript",
+  "go",
+  "ruby",
+  "c++",
+  "c",
+  "rust",
+  "php",
+  "scala",
+  "kotlin",
+  "swift",
+  "sql",
+]);
+
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
-  const topSkills = jd.requiredSkills.slice(0, 4);
+  const topSkills = jd.requiredSkills.map((s) => s.trim()).filter(Boolean).slice(0, 4);
   const europeHints = europeSourcingLocationHints(jd);
   const region = jd.regions[0];
   const concreteRegion =
@@ -685,8 +753,11 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const locationQualifier = concreteRegion ? ` location:${concreteRegion}` : "";
   // Note: only user-search qualifiers are valid here (language:, location:,
   // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
-  // out the whole query on /search/users.
-  const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
+  // out the whole query on /search/users. Platforms (Calypso) are not languages.
+  const githubLangs = topSkills.filter((skill) =>
+    GITHUB_SEARCH_LANGUAGES.has(skill.toLowerCase().replace(/\s+/g, "")),
+  );
+  const githubQueries: GithubQuery[] = githubLangs.slice(0, 3).map((skill, i) => ({
     label: `${skill} contributors`,
     query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
       i === 0 ? "repos:>10" : "repos:>5"
@@ -698,11 +769,23 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     europeHints.length > 0
       ? europeHints.slice(0, 4)
       : jd.regions.filter((r) => !NON_LOCATION_REGIONS.has(r));
-  const linkedinBoolean = `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
-    .map((s) => `"${s}"`)
-    .join(" OR ")}) AND (${(linkedinGeoTerms.length ? linkedinGeoTerms : jd.regions)
-    .map((r) => `"${r}"`)
-    .join(" OR ")}) NOT "recruiter"`;
+  const seniorityDept = [jd.seniority !== "Unspecified" ? jd.seniority : "", jd.department]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const titleClause = jd.title.trim()
+    ? seniorityDept
+      ? `("${jd.title}" OR "${seniorityDept}")`
+      : `"${jd.title}"`
+    : seniorityDept
+      ? `"${seniorityDept}"`
+      : "";
+  const skillClause = topSkills.length ? `(${topSkills.map((s) => `"${s}"`).join(" OR ")})` : "";
+  const geoSource = linkedinGeoTerms.length ? linkedinGeoTerms : jd.regions;
+  const geoClause = geoSource.length ? `(${geoSource.map((r) => `"${r}"`).join(" OR ")})` : "";
+  const linkedinBoolean = [titleClause, skillClause, geoClause].filter(Boolean).join(" AND ")
+    ? `${[titleClause, skillClause, geoClause].filter(Boolean).join(" AND ")} NOT "recruiter"`
+    : "";
 
   const profile = roleProfile(jd);
   return {

@@ -1,6 +1,10 @@
 /**
- * Acceptance need: a capital-markets trading-platform role whose required
- * skill is Calypso. Calypso is the need, not a product name and not a person.
+ * Acceptance fixtures for the AMACAN / BNPP CIB Calypso needs.
+ * Calypso is the client JD, not a product name and not a person.
+ *
+ * Keep in sync with:
+ *   tests/fixtures/tony-calypso-amacan-need.txt
+ *   tests/fixtures/sample-vss-calypso-ba-montreal.txt
  */
 
 import {
@@ -10,52 +14,77 @@ import {
   type EngineRunResult,
 } from "@/lib/sourcing/engine";
 
-export const TRADING_PLATFORM_JD = `Need — Calypso Business Analyst (capital markets trading platform)
+/** Colon-form VSS — Senior Calypso BA (second need). Restored from SAMPLE_VSS_CALYPSO_BA_MONTREAL. */
+export const SAMPLE_VSS_CALYPSO_BA_MONTREAL = `Summary
+Title: Senior Calypso Business Analyst
+Type: Consulting
+Category: Active
+Priority: 1 - Urgent and critical
+Reason: Opening Position
+Status: Running
 
-We are hiring a Calypso Business Analyst for a trading-platform implementation
-at a sell-side bank. This is a product platform (Calypso), not a person.
+Recruitment Need Purpose
+Main Manager: AMACAN Lead
+Secondary Managers:
+Main Recruiter: ROUSSEAU Emma
+Secondary Recruiters:
+Company Employed by: Mantu
+City: Montreal
+Client: BNPP CIB Canada
+Company Billing To: AMACAN
 
-Required skills: Calypso, Trade Capture, SQL, Capital Markets, FO/BO
-Nice to have: Murex, Summit, Risk
-Minimum 5 years experience implementing Calypso front-office trade capture
-and back-office settlement.
+Project Information
+Contract Type: Consulting
+Freelancer: No
+Start Date: 01/09/2026
+Number of people: 1
+Remote: Hybrid
+Client Sector: Banking / CIB
+Project Type: Business Analysis
+Project Duration: 12 months
 
-Location: Europe / hybrid.
+Candidate Requirement
+Profiles: Senior Calypso Business Analyst
+Skill (Must): Calypso Business Analysis, MySQL
+Skill (Nice to have): Settlements, Trade lifecycle, Prime Brokerage, SQL
+Language (Must): English - Fluent
+Language (Nice to have): French - Intermediate
+Level of Experience: Senior (7-10 years)
+
+Mission Description / Profile Synthesis:
+Senior Calypso Business Analyst for AMACAN / BNPP CIB Canada (Montreal).
+Must: Calypso Business Analysis and MySQL. Domain: CIB/MOA, Settlements,
+Trade lifecycle, Calypso BO, SQL, T+1, Prime Brokerage/FI/Equities bridge,
+offshore coordination Mumbai, European business units. Partially remote OK.
+Prefer Open to Work candidates when scores are close.
+
+Candidate Search Support
+Target School:
+Ideal profile Id: CAL-BA-AMACAN-2026
+LinkedIn Profile:
+Boolean: ("Calypso") AND ("Business Analyst" OR "BA") AND (MySQL OR SQL) AND (Montreal OR Canada)
 `;
 
-export const TRADING_PLATFORM_EMAIL = `This need is now ACTIVE: Sell-side bank — Calypso Business Analyst
-Recruiter: Jordan Hale
-Client: Sell-side capital markets
-Skills: Calypso, Trade Capture, SQL, Capital Markets, FO/BO
-Nice to have: Murex, Summit
-Minimum 5 years
-Location: London / Europe
+/** Connected-email shape wrapping the Application Support need. */
+export const AMACAN_APP_SUPPORT_EMAIL = `From: MUNERA ALZATE Jacobo <jacobo.munera@amaris.com>
+Subject: Need is now ACTIVE — Calypso Application Support (AMACAN / Montreal)
+
+Please source against the attached VSS. Recruiter: MUNERA ALZATE Jacobo
+Client: BNPP CIB - Canada
 `;
 
-const BANKS = [
-  "NatWest Markets",
-  "BNP Paribas CIB",
-  "SocGen CIB",
-  "Crédit Agricole CIB",
-  "Barclays CIB",
-  "HSBC Markets",
-  "Deutsche Bank",
-  "UBS IB",
-  "ING Markets",
-  "Nordea Markets",
-  "Danske Bank",
-  "ABN Amro",
-  "Commerzbank",
-  "Intesa CIB",
-  "Santander CIB",
-  "Lloyds Markets",
-  "Standard Chartered",
-  "RBC Capital Markets",
-  "CIBC Markets",
-  "Scotiabank GBM",
-  "NAB Markets",
-  "ANZ Markets",
+const APP_SUPPORT_SKILLS = [
+  "Linux",
+  "Python",
+  "Shell",
+  "Oracle",
+  "Grafana",
+  "Dynatrace",
+  "Linux Server",
+  "Calypso",
 ];
+
+const BA_SKILLS = ["Calypso", "Business Analysis", "MySQL", "SQL"];
 
 const NAMES = [
   "Elena Varga",
@@ -82,20 +111,43 @@ const NAMES = [
   "Arjun Patel",
 ];
 
-function consultant(index: number, strength: "strong" | "solid"): CandidateEvidence {
+function appSupportConsultant(index: number, strength: "strong" | "solid"): CandidateEvidence {
   const name = NAMES[index] ?? `Consultant ${index + 1}`;
-  const bank = BANKS[index] ?? "European CIB";
-  const years = strength === "strong" ? 8 + (index % 5) : 5 + (index % 3);
-  const extras = strength === "strong" ? "Murex adjacency, risk reports, collateral." : "SQL extracts and FO/BO workflows.";
+  const years = strength === "strong" ? 5 + (index % 2) : 4;
+  const skills =
+    strength === "strong"
+      ? APP_SUPPORT_SKILLS
+      : ["Linux", "Python", "Shell", "Oracle", "Calypso"];
+  const monitors =
+    strength === "strong"
+      ? "Grafana and Dynatrace on Linux Server. Python and Shell automation. Oracle."
+      : "Oracle and Shell on Linux. Learning Grafana.";
   return {
-    id: `fixture-calypso-${index + 1}`,
+    id: `fixture-app-support-${index + 1}`,
     name,
-    skills: ["Calypso", "Trade Capture", "SQL", "Capital Markets", "FO/BO"],
+    skills,
     cvText:
-      `${years} years as a Calypso Business Analyst at ${bank}. ` +
-      `Led Calypso trading platform implementation: trade capture, FO/BO, settlement. ${extras}`,
+      `${years} years production support for the Calypso settlement system in Capital Markets. ` +
+      `Trade Life Cycle, Settlements, Securities, Prime Brokerage. 24/7 global. ${monitors}`,
     linkedinText:
-      `Calypso Business Analyst · ${bank}. Capital markets trading platform, trade capture, SQL.`,
+      `IS&D Applicative Support · Calypso settlement · Capital Markets · Montreal. ${monitors}`,
+    yearsExperience: years,
+    provenance: "fixture",
+  };
+}
+
+function baConsultant(index: number): CandidateEvidence {
+  const name = NAMES[16 + (index % 6)] ?? `BA ${index + 1}`;
+  const years = 7 + (index % 4);
+  return {
+    id: `fixture-calypso-ba-${index + 1}`,
+    name,
+    skills: BA_SKILLS,
+    cvText:
+      `${years} years as a Senior Calypso Business Analyst. BA/MOA, T+1, Prime Brokerage/FI/Equities, ` +
+      `SQL, MySQL, Calypso back office, Settlements, Trade lifecycle.`,
+    linkedinText:
+      `Senior Calypso BA · AMACAN / CIB. Business Analysis, MySQL, T+1, Prime Brokerage.`,
     yearsExperience: years,
     provenance: "fixture",
   };
@@ -134,11 +186,17 @@ export const MUREX_ONLY_CANDIDATE: CandidateEvidence = {
 };
 
 export const TRADING_PLATFORM_POOL: CandidateEvidence[] = [
-  ...Array.from({ length: 22 }, (_, index) => consultant(index, index < 12 ? "strong" : "solid")),
+  ...Array.from({ length: 12 }, (_, index) => appSupportConsultant(index, "strong")),
+  ...Array.from({ length: 4 }, (_, index) => appSupportConsultant(12 + index, "solid")),
+  ...Array.from({ length: 6 }, (_, index) => baConsultant(index)),
   NAME_ONLY_CANDIDATE,
   EMPTY_CANDIDATE,
   MUREX_ONLY_CANDIDATE,
 ];
+
+/** @deprecated Use the AMACAN VSS fixtures. Kept as a colon-form parse smoke. */
+export const TRADING_PLATFORM_JD = SAMPLE_VSS_CALYPSO_BA_MONTREAL;
+export const TRADING_PLATFORM_EMAIL = AMACAN_APP_SUPPORT_EMAIL;
 
 export function runFixtureSourcing(
   input: Omit<EngineRunInput, "mode" | "pool"> & { pool?: CandidateEvidence[] },

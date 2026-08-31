@@ -7,6 +7,7 @@
  */
 
 import { extractPdfText } from "@/lib/sourcing/ocr";
+import { isVssRecruitmentNeed, parseVssNeeds, vssToSourcingNeed } from "@/lib/sourcing/vss-need";
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -40,6 +41,16 @@ export const PLATFORM_SKILLS = [
   "Trade Capture",
   "FO/BO",
   "SQL",
+  "MySQL",
+  "Linux",
+  "Linux Server",
+  "Python",
+  "Shell",
+  "Oracle",
+  "Grafana",
+  "Dynatrace",
+  "Business Analysis",
+  "Prime Brokerage",
   "Capital Markets",
   "Risk",
   "Pricing",
@@ -181,8 +192,16 @@ function inferSignals(text: string, skills: string[]): string[] {
     "implementation",
     "capital markets",
     "settlement",
+    "settlements",
     "collateral",
     "pricing",
+    "production support",
+    "trade life cycle",
+    "trade lifecycle",
+    "prime brokerage",
+    "securities",
+    "t+1",
+    "business analysis",
   ].filter((phrase) => text.toLowerCase().includes(phrase));
   return uniqueSkills([...skills, ...phrases]);
 }
@@ -190,6 +209,11 @@ function inferSignals(text: string, skills: string[]): string[] {
 export function parseNeedFromText(text: string, source: NeedSource): ParseNeedFailure {
   const raw = (text ?? "").trim().slice(0, 20_000);
   if (!raw) return { ok: false, code: "EMPTY_INPUT" };
+
+  if (isVssRecruitmentNeed(raw)) {
+    const vss = parseVssNeeds(raw);
+    if (vss[0]) return { ok: true, need: vssToSourcingNeed(vss[0], source, raw) };
+  }
 
   const skillsLine =
     field("Skills", raw) ||
@@ -246,6 +270,10 @@ export function parseNeed(input: {
   }
   const email = input.email?.trim() ?? "";
   const jd = input.jd?.trim() ?? "";
+  const combined = `${email}\n${jd}`.trim();
+  if (email && (isVssRecruitmentNeed(email) || isVssRecruitmentNeed(combined))) {
+    return parseNeedFromText(combined || email, "email");
+  }
   if (email && /this need is now|key required skills|^\s*recruiter\s*:/im.test(email)) {
     return parseNeedFromText(`${email}\n${jd}`, "email");
   }

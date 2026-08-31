@@ -1,10 +1,45 @@
 {
   "command": "tsx tests/sourcing-engine.mts",
   "exit_code": 0,
-  "path": "/workspace/_relay/evidence/trading-need-e2e.json",
+  "path": "_relay/evidence/trading-need-e2e.json",
+  "need": "Calypso Application Support",
+  "requiredSkills": [
+    "Calypso",
+    "Linux",
+    "Python",
+    "Shell",
+    "Oracle",
+    "Grafana",
+    "Dynatrace",
+    "Linux Server"
+  ],
+  "shortlistCount": 16,
+  "scores": [
+    80,
+    80,
+    80,
+    80,
+    80,
+    80,
+    80,
+    80,
+    80,
+    80,
+    80,
+    80,
+    63,
+    63,
+    63,
+    63
+  ],
+  "nameOnlyScore": 0,
+  "nameOnlyPassedFloor": false,
+  "emptyPassedFloor": false,
+  "secondNeed": "Senior Calypso Business Analyst",
+  "combinedNeedCount": 2,
   "stdout_tail": [
-    "RESULT sourcing-engine: 34 passed, 0 failed",
-    "EVIDENCE command=tsx tests/sourcing-engine.mts exit_code=0 path=/workspace/_relay/evidence/trading-need-e2e.json"
+    "RESULT sourcing-engine: 51 passed, 0 failed",
+    "EVIDENCE command=tsx tests/sourcing-engine.mts exit_code=0 path=_relay/evidence/trading-need-e2e.json"
   ],
   "stderr_tail": [
     ""

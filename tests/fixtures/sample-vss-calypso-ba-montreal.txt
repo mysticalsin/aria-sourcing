@@ -1,0 +1,49 @@
+Summary
+Title: Senior Calypso Business Analyst
+Type: Consulting
+Category: Active
+Priority: 1 - Urgent and critical
+Reason: Opening Position
+Status: Running
+
+Recruitment Need Purpose
+Main Manager: AMACAN Lead
+Secondary Managers:
+Main Recruiter: ROUSSEAU Emma
+Secondary Recruiters:
+Company Employed by: Mantu
+City: Montreal
+Client: BNPP CIB Canada
+Company Billing To: AMACAN
+
+Project Information
+Contract Type: Consulting
+Freelancer: No
+Start Date: 01/09/2026
+Number of people: 1
+Remote: Hybrid
+Client Sector: Banking / CIB
+Project Type: Business Analysis
+Project Duration: 12 months
+
+Candidate Requirement
+Profiles: Senior Calypso Business Analyst
+Skill (Must): Calypso Business Analysis, MySQL
+Skill (Nice to have): Settlements, Trade lifecycle, Prime Brokerage, SQL
+Language (Must): English - Fluent
+Language (Nice to have): French - Intermediate
+Level of Experience: Senior (7-10 years)
+
+Mission Description / Profile Synthesis:
+Senior Calypso Business Analyst for AMACAN / BNPP CIB Canada (Montreal).
+Must: Calypso Business Analysis and MySQL. Domain: CIB/MOA, Settlements,
+Trade lifecycle, Calypso BO, SQL, T+1, Prime Brokerage/FI/Equities bridge,
+offshore coordination Mumbai, European business units. Partially remote OK.
+Prefer Open to Work candidates when scores are close.
+
+Candidate Search Support
+Target School:
+Ideal profile Id: CAL-BA-AMACAN-2026
+LinkedIn Profile:
+Boolean: ("Calypso") AND ("Business Analyst" OR "BA") AND (MySQL OR SQL) AND (Montreal OR Canada)
+

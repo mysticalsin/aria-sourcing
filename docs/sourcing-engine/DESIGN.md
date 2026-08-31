@@ -13,10 +13,11 @@ This file is the contract. Implementation follows it. UI does not define it.
 
 A need is a structured hiring brief Aria understands from one of two inputs:
 
-1. **Paste or upload** a job description (plain text, or a PDF/CV whose text
-   is recovered by OCR).
+1. **Paste or upload** a job description (plain text, Mantu VSS Recruitment
+   Need — line-oriented `Label` / `value` or `Label: value` — or a PDF/CV
+   whose text is recovered by OCR).
 2. **Inbound email** already connected to Aria (Mantu "need is now ACTIVE"
-   shape or a generic JD email).
+   shape, a VSS paste in the email body, or a generic JD email).
 
 Required fields after parse:
 

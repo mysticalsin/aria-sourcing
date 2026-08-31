@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,8 +6,8 @@ import {
   EMPTY_CANDIDATE,
   MUREX_ONLY_CANDIDATE,
   NAME_ONLY_CANDIDATE,
+  SAMPLE_VSS_CALYPSO_BA_MONTREAL,
   TRADING_PLATFORM_EMAIL,
-  TRADING_PLATFORM_JD,
   TRADING_PLATFORM_POOL,
   runFixtureSourcing,
 } from "../src/lib/fixtures/trading-platform-need";
@@ -23,6 +23,15 @@ import {
   shortlistNeed,
 } from "../src/lib/sourcing/engine";
 import { buildTextLayerPdf, extractPdfText } from "../src/lib/sourcing/ocr";
+import { parseVssNeeds } from "../src/lib/sourcing/vss-need";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const tonyPath = join(here, "fixtures/tony-calypso-amacan-need.txt");
+const baSamplePath = join(here, "fixtures/sample-vss-calypso-ba-montreal.txt");
+const ocrPdfPath = join(here, "fixtures/ocr/calypso-ba-montreal-need.pdf");
+const ocrPngPath = join(here, "fixtures/ocr/calypso-ba-montreal-need.png");
+const TONY_AMACAN = readFileSync(tonyPath, "utf8");
+const BA_SAMPLE_FILE = readFileSync(baSamplePath, "utf8");
 
 let pass = 0;
 let fail = 0;
@@ -34,29 +43,86 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const parsedJd = parseNeed({ jd: TRADING_PLATFORM_JD });
-ok("paste JD parses as a need", parsedJd.ok === true);
+ok("tony AMACAN fixture exists", existsSync(tonyPath) && TONY_AMACAN.includes("Calypso Application Support"));
+ok("BA Montreal sample fixture exists", existsSync(baSamplePath) && BA_SAMPLE_FILE.includes("Senior Calypso Business Analyst"));
+ok("OCR PDF fixture exists", existsSync(ocrPdfPath));
+ok("OCR PNG fixture exists", existsSync(ocrPngPath));
 ok(
-  "Calypso is a required skill on the need, not a person",
-  parsedJd.ok && parsedJd.need.requiredSkills.some((s) => s.toLowerCase() === "calypso"),
+  "SAMPLE_VSS_CALYPSO_BA_MONTREAL matches the in-repo fixture",
+  SAMPLE_VSS_CALYPSO_BA_MONTREAL.includes("Senior Calypso Business Analyst") &&
+    SAMPLE_VSS_CALYPSO_BA_MONTREAL.includes("MySQL"),
+);
+
+const parsedJd = parseNeed({ jd: TONY_AMACAN });
+ok("paste Tony VSS parses as a need", parsedJd.ok === true);
+ok(
+  "primary title is Calypso Application Support",
+  parsedJd.ok && /calypso application support/i.test(parsedJd.need.title),
 );
 ok("need source is paste", parsedJd.ok && parsedJd.need.source === "paste");
-
-const parsedEmail = parseNeed({ email: TRADING_PLATFORM_EMAIL });
-ok("connected-email shape parses", parsedEmail.ok === true && parsedEmail.need.source === "email");
 ok(
-  "email need requires Calypso as a platform skill",
+  "App Support must-haves include Linux Python Shell Oracle Grafana Dynatrace",
+  parsedJd.ok &&
+    ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace"].every((skill) =>
+      parsedJd.need.requiredSkills.some((s) => s.toLowerCase() === skill.toLowerCase()),
+    ),
+);
+ok(
+  "Linux Server is kept as a multi-word must-have",
+  parsedJd.ok && parsedJd.need.requiredSkills.some((s) => /linux\s+server/i.test(s)),
+);
+ok(
+  "Calypso is a platform skill on the App Support need, not a person",
+  parsedJd.ok && parsedJd.need.requiredSkills.some((s) => s.toLowerCase() === "calypso"),
+);
+ok(
+  "Middle 4-6 years maps to min 4",
+  parsedJd.ok && parsedJd.need.minYearsExperience === 4,
+);
+
+const parsedEmail = parseNeed({ email: TRADING_PLATFORM_EMAIL, jd: TONY_AMACAN });
+ok("connected-email + VSS paste parses as email", parsedEmail.ok === true && parsedEmail.need.source === "email");
+ok(
+  "email+JD still requires Calypso as a platform skill",
   parsedEmail.ok && parsedEmail.need.requiredSkills.some((s) => s.toLowerCase() === "calypso"),
+);
+
+const parsedBa = parseNeed({ jd: SAMPLE_VSS_CALYPSO_BA_MONTREAL });
+ok("BA VSS parses", parsedBa.ok === true && /senior calypso business analyst/i.test(parsedBa.ok ? parsedBa.need.title : ""));
+ok(
+  "BA must-haves include Calypso, Business Analysis, MySQL",
+  parsedBa.ok &&
+    ["Calypso", "Business Analysis", "MySQL"].every((skill) =>
+      parsedBa.need.requiredSkills.some((s) => s.toLowerCase() === skill.toLowerCase()),
+    ),
+);
+
+const both = parseVssNeeds(`${TONY_AMACAN}\n\n${SAMPLE_VSS_CALYPSO_BA_MONTREAL}`);
+ok("combined VSS paste recovers two needs", both.length === 2);
+ok(
+  "combined paste first need is Application Support",
+  /application support/i.test(both[0]?.title ?? ""),
+);
+ok(
+  "combined paste second need is Senior Calypso BA",
+  /business analyst/i.test(both[1]?.title ?? ""),
 );
 
 ok("empty input is not a need", parseNeed({}).ok === false);
 ok("skill-less prose is not a need", parseNeed({ jd: "Please hire someone nice." }).ok === false);
 
-const pdf = buildTextLayerPdf(TRADING_PLATFORM_JD);
+const pdf = buildTextLayerPdf(TONY_AMACAN.slice(0, 1_100));
 const pdfText = extractPdfText(pdf);
-ok("text-layer PDF extracts Calypso JD", pdfText.ok && pdfText.text.toLowerCase().includes("calypso"));
+ok("text-layer PDF extracts Calypso Application Support", pdfText.ok && /calypso/i.test(pdfText.text));
 const parsedPdf = parseNeed({ pdfBytes: pdf });
 ok("uploaded PDF becomes a need", parsedPdf.ok && parsedPdf.need.source === "upload");
+
+const ocrPdfBytes = new Uint8Array(readFileSync(ocrPdfPath));
+const ocrExtract = extractPdfText(ocrPdfBytes);
+ok(
+  "BA Montreal PDF is text-layer or fail-closed OCR_REQUIRED",
+  ocrExtract.ok === true || ocrExtract.code === "OCR_REQUIRED",
+);
 
 const blankPdf = buildTextLayerPdf("");
 const emptyExtract = extractPdfText(blankPdf);
@@ -64,7 +130,7 @@ ok("empty-text PDF is OCR_REQUIRED", emptyExtract.ok === false && emptyExtract.c
 const notPdf = extractPdfText(new Uint8Array([1, 2, 3, 4, 5]));
 ok("not a PDF is NOT_PDF", notPdf.ok === false && notPdf.code === "NOT_PDF");
 
-ok("name-only candidate is flagged", parsedJd.ok && isNameOnlyHit(parsedJd.need, NAME_ONLY_CANDIDATE));
+ok("name-only candidate is flagged on App Support", parsedJd.ok && isNameOnlyHit(parsedJd.need, NAME_ONLY_CANDIDATE));
 const nameOnlyScore = parsedJd.ok ? scoreEvidence(parsedJd.need, NAME_ONLY_CANDIDATE) : null;
 ok("name-only score is 0", nameOnlyScore?.score === 0);
 ok("name-only cannot pass the 60% floor", (nameOnlyScore?.score ?? 100) < SHORTLIST_FLOOR);
@@ -76,12 +142,12 @@ ok("empty evidence scores 0", emptyScore?.score === 0 && emptyScore.reason === "
 const murexScore = parsedJd.ok ? scoreEvidence(parsedJd.need, MUREX_ONLY_CANDIDATE) : null;
 ok("adjacent-only platform does not pass 60", (murexScore?.score ?? 100) < SHORTLIST_FLOOR);
 
-const fixtureRun = runFixtureSourcing({ jd: TRADING_PLATFORM_JD });
-ok("fixture engine succeeds", fixtureRun.ok === true);
+const fixtureRun = runFixtureSourcing({ jd: TONY_AMACAN });
+ok("fixture engine succeeds on App Support", fixtureRun.ok === true);
 if (fixtureRun.ok) {
   const { shortlist, rejected } = fixtureRun.result;
   ok("shortlist cap is 20", shortlist.length <= SHORTLIST_CAP);
-  ok("shortlist is non-empty for the trading-platform need", shortlist.length > 0);
+  ok("shortlist is non-empty for Application Support", shortlist.length > 0);
   ok(
     "every shortlisted score is at least 60",
     shortlist.every((row) => row.score >= SHORTLIST_FLOOR),
@@ -105,31 +171,39 @@ if (fixtureRun.ok) {
   );
 }
 
-const emailRun = runFixtureSourcing({ email: TRADING_PLATFORM_EMAIL });
+const baRun = runFixtureSourcing({ jd: SAMPLE_VSS_CALYPSO_BA_MONTREAL });
+ok("BA need produces a scored shortlist", baRun.ok === true && (baRun.ok ? baRun.result.shortlist.length > 0 : false));
+ok(
+  "BA shortlist meets the 60 floor",
+  baRun.ok && baRun.result.shortlist.every((row) => row.score >= SHORTLIST_FLOOR),
+);
+
+const emailRun = runFixtureSourcing({ email: TRADING_PLATFORM_EMAIL, jd: TONY_AMACAN });
 ok("email need produces a scored shortlist", emailRun.ok === true && (emailRun.ok ? emailRun.result.shortlist.length > 0 : false));
 
-const liveClosed = runSourcingEngine({ jd: TRADING_PLATFORM_JD, mode: "live" });
+const liveClosed = runSourcingEngine({ jd: TONY_AMACAN, mode: "live" });
 ok("live mode without keys or live pool is fail-closed", liveClosed.ok === false && liveClosed.code === "PROVIDER_NOT_CONFIGURED");
 ok("fail-closed returns three real paths", liveClosed.ok === false && (liveClosed.paths?.length ?? 0) === 3);
 
 const liveDressed = runSourcingEngine({
-  jd: TRADING_PLATFORM_JD,
+  jd: TONY_AMACAN,
   mode: "live",
   pool: TRADING_PLATFORM_POOL,
 });
 ok("fixture rows cannot be dressed as live", liveDressed.ok === false);
 
 const liveOk = runSourcingEngine({
-  jd: TRADING_PLATFORM_JD,
+  jd: TONY_AMACAN,
   mode: "live",
   pool: [
     {
       id: "live-1",
       name: "Elena Varga",
-      skills: ["Calypso", "Trade Capture", "SQL", "Capital Markets", "FO/BO"],
-      cvText: "Calypso BA. Trading platform implementation, trade capture, FO/BO, settlement.",
-      linkedinText: "Calypso Business Analyst. Capital markets trading platform.",
-      yearsExperience: 8,
+      skills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      cvText:
+        "Production support for the Calypso settlement system. Trade Life Cycle, Settlements, Securities, Prime Brokerage.",
+      linkedinText: "Applicative Support. Calypso settlement, Capital Markets, Montreal.",
+      yearsExperience: 5,
       provenance: "live",
     },
   ],
@@ -140,12 +214,12 @@ ok(
   Array.isArray(configuredLiveProviders()),
 );
 
-const noNameLeak = parseNeedFromText(TRADING_PLATFORM_JD, "paste");
+const noNameLeak = parseNeedFromText(TONY_AMACAN, "paste");
 if (noNameLeak.ok) {
   const sneaky: Parameters<typeof scoreEvidence>[1] = {
     id: "sneaky",
     name: "Calypso Martinez",
-    skills: ["Calypso", "Trade Capture"],
+    skills: ["Calypso", "Linux"],
     cvText: "Calypso Martinez is a marketer. Brand campaigns only.",
     linkedinText: "Calypso Martinez — marketing.",
     yearsExperience: 10,
@@ -158,24 +232,28 @@ if (noNameLeak.ok) {
 if (parsedJd.ok) {
   const overflow = shortlistNeed(
     parsedJd.need,
-    TRADING_PLATFORM_POOL.filter((c) => c.provenance === "fixture" && c.cvText.includes("Calypso Business Analyst")),
+    TRADING_PLATFORM_POOL.filter((c) => c.provenance === "fixture" && /calypso settlement|production support/i.test(c.cvText)),
     50,
   );
   ok("cap cannot exceed 20 even if caller asks for 50", overflow.shortlist.length <= SHORTLIST_CAP);
 }
 
-const evidenceDir = join(dirname(fileURLToPath(import.meta.url)), "../_relay/evidence");
+const evidenceDir = join(here, "../_relay/evidence");
 mkdirSync(evidenceDir, { recursive: true });
 const evidencePath = join(evidenceDir, "trading-need-e2e.json");
 const evidence = {
   command: "tsx tests/sourcing-engine.mts",
   exit_code: fail > 0 ? 1 : 0,
-  path: evidencePath,
+  path: "_relay/evidence/trading-need-e2e.json",
   need: parsedJd.ok ? parsedJd.need.title : null,
+  requiredSkills: parsedJd.ok ? parsedJd.need.requiredSkills : [],
   shortlistCount: fixtureRun.ok ? fixtureRun.result.shortlist.length : 0,
   scores: fixtureRun.ok ? fixtureRun.result.shortlist.map((row) => row.score) : [],
+  nameOnlyScore: nameOnlyScore?.score ?? null,
   nameOnlyPassedFloor: (nameOnlyScore?.score ?? 0) >= SHORTLIST_FLOOR,
   emptyPassedFloor: (emptyScore?.score ?? 0) >= SHORTLIST_FLOOR,
+  secondNeed: parsedBa.ok ? parsedBa.need.title : null,
+  combinedNeedCount: both.length,
 };
 writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
 ok("evidence file written", true);

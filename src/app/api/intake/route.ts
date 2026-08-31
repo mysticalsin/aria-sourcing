@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
   const parsed = parseEmailAndJD({ email, jd });
   return NextResponse.json({
     ok: true,
-    format: isMantuNeedEmail(email) ? "mantu-need" : "generic",
+    format: isMantuNeedEmail(`${email}\n${jd ?? ""}`) ? "mantu-need" : "generic",
     parsed,
     suggestedMeta: {
       hiringManager: parsed.sender.name,
