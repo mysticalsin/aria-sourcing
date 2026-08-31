@@ -1,56 +1,54 @@
 ---
 project: MSourcing / ARIA
-shift: 453
+shift: 454
 agent: cursor-cloud
-updated: 2026-08-31T10:04Z
+updated: 2026-08-31T10:45Z
 status: pr-open
 ---
 
-# Handoff — Shift 453
+# Handoff — Shift 454
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** against `main` (not merged)
-- Tip: **`74c0c92`** (fail-loud feature tip **`41d6ae0`**)
-- **Quality CI passed** on `74c0c92` (8m41s / 8m43s). Local gate was already green
-- Historic CI still red as on main: Secret scan, Dependency audit, Database security, Production image supply chain, Release gate. Do not chase
-- Live Fly v166 / `b8a79d2` still has the old generic invalid-response + GitHub Live-unconfigured lie. Devon Path B of `41d6ae0+` on `https://aria-mantu-app.fly.dev/` is the re-walk
-- READY TO MERGE stays **no** until that Fly walk PASSes
-- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not invent candidates. Did not complete OAuth. Did not touch Vercel. No demo deploys. Vercel is not proof
+- Tip: **`bc8f765`** — hide stale GitHub 0-row learning residue on people-first / unkeyed LinkedIn+Apify
+- Ultron Fly walk of v170 / `604d100` PASSed fail-loud toast + skills + Calypso identity. Leftover FAIL was GitHub 0-rows in the learning panel. This tip is that fix
+- Local gate green: `npm run typecheck && npm run typecheck:tests && npm test`
+- Historic CI still red as on main. Quality is the gate. Do not chase historic
+- READY TO MERGE stays **no** until a keyed shortlist (Tony lock)
+- This VM has no `FLY_API_TOKEN`. Did not fake a Fly deploy. Did not invent candidates. Did not complete OAuth. Did not touch Vercel
 
 ## Done this shift
 
-1. Confirmed Quality failure on superseded `c50a67a` was the two `tsc` errors already fixed in `41d6ae0`
-2. Confirmed Quality is green on HEAD `74c0c92`
-3. Did not chase historic CI. Did not touch Vercel. Did not merge
+1. `visiblePeopleFirstLearningReceipts` drops GitHub receipts on a people-first need while LinkedIn+Apify are unkeyed, and drops GitHub 0-count rows even if cards look connected
+2. Campaign Private role learning panel renders only those visible receipts
+3. `listPendingSourcingFeedback` and Source next batch return the same filtered set so stale Fly GitHub 0×N rows do not reappear
 
 ## Blockers
 
-- Protected Fly release must land `41d6ae0+` before Ultron can re-walk Command Center Source + Run Aria + Settings Live
-- Official LinkedIn partner search is not wired; Apify is the people source that unblocks the gate
+- Devon Path B of **`bc8f765`** onto `https://aria-mantu-app.fly.dev/` before Ultron re-walks the learning panel
+- Official LinkedIn partner search is not wired; Apify is the people source that unblocks a keyed shortlist
 - No Fly token here
 
 ## Next steps
 
 ```bash
-# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 (41d6ae0+) → aria-mantu-app
-# Ultron: walk Calypso Application Support on the new SHA at https://aria-mantu-app.fly.dev/
-#   Command Center Source next batch + Run Aria, LinkedIn+Apify unkeyed:
-#     toast/error is Connect LinkedIn and Apify / MISSING_PLUGIN
-#     must not say invalid-response
-#     must not be silent GitHub 0×3 or “reviewed GitHub queries completed”
-#   Settings: GitHub Sourcing must not badge Live while LinkedIn+Apify are unkeyed
+# Devon: Path B protected Fly release of cursor/sourcing-engine-94b1 (bc8f765) → aria-mantu-app
+# Ultron: walk Calypso Application Support on bc8f765 at https://aria-mantu-app.fly.dev/
+#   Learning panel must not show GitHub 0 real candidates / 0-query residue
+#   Fail-loud toast still Connect LinkedIn and Apify / MISSING_PLUGIN
+#   GitHub Sourcing must not badge Live while LinkedIn+Apify are unkeyed
 # Do not merge PR 54
-# READY TO MERGE: no until Fly walk PASS
+# READY TO MERGE: no until a keyed shortlist
 # Do not touch Vercel
-# Do not fake flyctl deploy
 # Do not complete LinkedIn OAuth from a VM
+# Do not invent candidates
 ```
 
 ## Decisions made (don't relitigate)
 
 - Product name is Aria. Calypso is a client **need**
-- One PR (#54). READY TO MERGE stays no until Fly walk PASS
+- One PR (#54). READY TO MERGE stays no until a keyed shortlist
 - Fly only: `https://aria-mantu-app.fly.dev/`. No Vercel. No demo deploys. No second implementer
 - Quality is the gate. Historic CI red matches main
 - Shortlist floor 60, cap 20, name-only fail, per-row citations
