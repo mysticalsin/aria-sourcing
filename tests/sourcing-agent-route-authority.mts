@@ -1606,7 +1606,9 @@ test("people-first harvest that never starts Apify fails loud and does not compl
   assert.equal(body.code, "PEOPLE_FIRST_HARVEST_NOT_STARTED");
   assert.match(String(body.error), /did not start/);
   assert.match(String(body.error), /Calypso Linux Python/);
-  assert.match(String(body.error), /harvestapi~linkedin-profile-search/);
+  assert.match(String(body.error), /Source next batch must start a real search/);
+  assert.doesNotMatch(String(body.error), /harvestapi~linkedin-profile-search/);
+  assert.doesNotMatch(String(body.error), /actor=/);
   assert.equal(completeCalls, 0);
   assert.deepEqual(failedRunCodes, ["PEOPLE_FIRST_HARVEST_NOT_STARTED"]);
 });

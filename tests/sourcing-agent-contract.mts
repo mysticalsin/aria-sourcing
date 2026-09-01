@@ -249,17 +249,18 @@ test("campaign UI presents a completed zero-match search as information, not sou
     new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
     "utf8",
   );
-  const start = page.indexOf("const handleRunAgent = async () =>");
-  const end = page.indexOf("const handleOpenRun", start);
+  const start = page.indexOf("const handleSource = async () =>");
+  const end = page.indexOf("const handleAutoSource", start);
   const action = page.slice(start, end);
 
   assert.ok(start >= 0 && end > start);
-  assert.match(action, /res\.added\s*===\s*0/);
+  assert.match(action, /res\.accepted\.length === 0/);
   assert.match(action, /No (?:candidates(?: were)? added|new matches)/i);
   assert.match(action, /variant:\s*"info"/);
-  assert.match(action, /peoplePluginFailLoudUi/);
-  assert.match(page, /Connect a real Apify/);
+  assert.match(page, /peoplePluginFailLoudUi/);
+  assert.match(page, /sourceRejectedToast/);
   assert.match(action, /emptyPeopleFirstToast/);
+  assert.doesNotMatch(page, /Source via Apify/);
 });
 
 test("people-first harvest route never statically loads Playwright or the cloud tool-loop", () => {
@@ -745,8 +746,8 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
     "utf8",
   );
-  const start = page.indexOf("const handleRunAgent = async () =>");
-  const end = page.indexOf("const handleOpenRun", start);
+  const start = page.indexOf("const handleAutoSource = async () =>");
+  const end = page.indexOf("const handleSourcingFeedback", start);
   const action = page.slice(start, end);
   const batchStart = page.indexOf("const handleSource = async () =>");
   const batchAction = page.slice(batchStart, start);
@@ -757,7 +758,7 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
   );
   assert.match(
     action,
-    /current\.campaignId === campaignId[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
+    /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
   assert.doesNotMatch(action, /setFeedbackReceipts\(res\.feedbackReceipts/);
   assert.match(
