@@ -1115,7 +1115,7 @@ test("people-first role with Apify ignores promoted GitHub lessons", async () =>
     rank: 1,
   }];
 
-  foundCandidates = [{
+  runnerCandidatesAfterRun = [{
     ...seed.candidates[0],
     id: "finance-apify-1",
     campaignId,
@@ -1152,7 +1152,7 @@ test("people-first role with a cloud model still searches Apify first, not GitHu
   storedTavilyKey = "tvly-test";
   storedApifyKey = "apify-test";
   campaign = financeCampaign();
-  foundCandidates = [{
+  runnerCandidatesAfterRun = [{
     ...seed.candidates[0],
     id: "finance-apify-2",
     campaignId,
