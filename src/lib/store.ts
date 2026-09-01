@@ -79,7 +79,7 @@ import {
   liveVisibleCandidates,
   stripLabFixturePeople,
 } from "./sourcing/lab-fixture-people";
-import { formatHarvestEvidenceError, CONNECT_APIFY_LABEL } from "./sourcing/harvest-evidence";
+import { formatHarvestEvidenceError } from "./sourcing/harvest-evidence";
 import { isPeopleFirstContactComplete } from "./sourcing/people-first-contact";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
@@ -313,6 +313,35 @@ function withActivity(
     campaigns,
     activities: [activity, ...state.activities].slice(0, 300),
   };
+}
+
+function applyLivePeopleFirstHygiene(state: HermesState): {
+  state: HermesState;
+  removedIds: string[];
+} {
+  const stripped = stripLabFixturePeople(state);
+  if (stripped.removedIds.length === 0) {
+    return { state, removedIds: [] };
+  }
+  const { title, notes } = peopleFirstFailActivity(FIXTURE_NOT_ON_LIVE_TOAST);
+  let next = stripped.state;
+  for (const campaignId of stripped.campaignIds) {
+    next = recomputeMetrics(next, campaignId);
+    next = withActivity(
+      next,
+      makeActivity({
+        type: "sourcing",
+        title,
+        notes,
+        outcome: `${stripped.removedIds.length} leftover GitHub / example.com row(s) removed — fail-loud, not a harvest`,
+        campaignId,
+        linkedEntityType: "campaign",
+        linkedEntityId: campaignId,
+      }),
+      campaignId,
+    );
+  }
+  return { state: next, removedIds: stripped.removedIds };
 }
 
 function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
@@ -570,27 +599,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
-      const stripped = stripLabFixturePeople({
+      const stripped = applyLivePeopleFirstHygiene({
         ...base,
         seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
       });
-      let liveState = stripped.state;
-      for (const campaignId of stripped.campaignIds) {
-        const removedHere = stripped.removedIds.length;
-        liveState = withActivity(
-          liveState,
-          makeActivity({
-            type: "sourcing",
-            title: CONNECT_APIFY_LABEL,
-            notes: FIXTURE_NOT_ON_LIVE_TOAST,
-            outcome: `${removedHere} lab fixture row(s) removed — fail-loud, not a harvest`,
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-      }
+      const liveState = stripped.state;
       const next = applyAuthoritativeRole(liveState, remote.role);
       if (remote.state && stripped.removedIds.length === 0) {
         skipNextPersist.current = true;
@@ -627,10 +640,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     if (serverSeats.status === "unavailable") return null;
 
     const base = normalizeHermesState(latest.state);
-    const liveState = {
+    const hygiened = applyLivePeopleFirstHygiene({
       ...base,
       seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
-    };
+    });
     const notice: Activity = {
       id: genId("act"),
       type: "system",
@@ -644,19 +657,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
     };
     const next = applyAuthoritativeRole(
-      { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
+      { ...hygiened.state, activities: [notice, ...hygiened.state.activities].slice(0, 300) },
       liveRoleRef.current,
     );
-    return { latest, next };
+    return { latest, next, persistHygiene: hygiened.removedIds.length > 0 };
   }, []);
 
   const applyRemoteConflict = useCallback((prepared: {
     latest: RemoteStateVersion;
     next: HermesState;
+    persistHygiene?: boolean;
   }) => {
     remoteUpdatedAtRef.current = prepared.latest.updatedAt;
-    skipNextPersist.current = true;
-    skipPersistSnapshot.current = prepared.next;
+    if (!prepared.persistHygiene) {
+      skipNextPersist.current = true;
+      skipPersistSnapshot.current = prepared.next;
+    }
     stateRef.current = prepared.next;
     setState(prepared.next);
     setWorkspaceStatus({ phase: "ready", mode: "live" });

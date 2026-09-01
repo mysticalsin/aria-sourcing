@@ -754,6 +754,15 @@ ok(
     leftoverCleaned.state.candidates.every((candidate) => candidate.id !== "cand_github_leftover") &&
     leftoverCleaned.state.candidates.some((candidate) => candidate.id === "cand_real_calypso"),
 );
+const storeHygiene = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+ok(
+  "live hydrate and conflict reload strip leftover GitHub / example.com and persist the audit",
+  /applyLivePeopleFirstHygiene/.test(storeHygiene) &&
+    /persistHygiene/.test(storeHygiene) &&
+    /leftover GitHub \/ example\.com/.test(storeHygiene) &&
+    /visibleWorkspaceCandidates/.test(storeHygiene) &&
+    /isPeopleFirstContactComplete/.test(storeHygiene),
+);
 ok(
   "fixture deny toast is Connect Apify / switch to Live",
   FIXTURE_NOT_ON_LIVE === "FIXTURE_NOT_ON_LIVE" &&

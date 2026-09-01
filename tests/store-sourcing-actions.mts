@@ -88,6 +88,8 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.match(sourcingActionsSource, /peopleFirstFailActivity/);
   assert.match(sourcingActionsSource, /persistPeopleFirstFailAudit/);
   assert.match(storeSource, /peopleFirstFailActivity/);
+  assert.match(storeSource, /applyLivePeopleFirstHygiene/);
+  assert.match(storeSource, /leftover GitHub \/ example\.com/);
   assert.match(sourcingActionsSource, /0 accepted — fail-loud, not a harvest/);
   assert.match(
     launchSource,
