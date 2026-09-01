@@ -13,6 +13,7 @@ import {
   peoplePluginFailLoudUi,
   peopleSourcePluginsConnected,
   remapPeopleFirstSourcingError,
+  sourceRejectedToast,
   visiblePeopleFirstLearningReceipts,
 } from "../src/lib/sourcing/people-plugins";
 import {
@@ -484,6 +485,28 @@ ok(
 );
 const toastSource = readFileSync(new URL("../src/components/ui/toast.tsx", import.meta.url), "utf8");
 ok("toast can render a CTA button", /toast-cta/.test(toastSource) && /actionLabel/.test(toastSource));
+ok(
+  "error toasts are assertive alerts, not polite-only",
+  /role=\{t\.variant === "error" \? "alert"/.test(toastSource) &&
+    /aria-live=\{t\.variant === "error" \? "assertive"/.test(toastSource),
+);
+const rejectedCrossOrigin = sourceRejectedToast(
+  "CROSS_ORIGIN_REQUEST",
+  calypsoJob,
+  liveTenant,
+);
+ok(
+  "sourceRejectedToast never swallows CROSS_ORIGIN_REQUEST",
+  rejectedCrossOrigin.title === "Sourcing failed" &&
+    /cross-origin/i.test(rejectedCrossOrigin.description) &&
+    /do not treat this as 0 people/i.test(rejectedCrossOrigin.description),
+);
+ok(
+  "sourceRejectedToast never returns null on a people-first 4xx",
+  sourceRejectedToast("Sourcing request failed (HTTP 403). Do not treat this as 0 people.", calypsoJob, liveTenant)
+    .description.length > 0 &&
+    sourceRejectedToast("The sourcing agent is unavailable.", calypsoJob, liveTenant).description.length > 0,
+);
 ok(
   "Apify query field asks the modal to keep focus",
   /data-autofocus/.test(apifyDialog),

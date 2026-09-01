@@ -84,15 +84,16 @@ for (const step of FIRST_RUN_GUIDE_STEPS) {
 const commandCenterPage = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
 const sourceStart = commandCenterPage.indexOf("async function handleSourceBatch()");
 const sourceAction = commandCenterPage.slice(sourceStart, commandCenterPage.indexOf("function handleGenerateReport"));
-check("Command Center Source next batch still remaps live-provider failures", /peoplePluginFailLoudUi/.test(sourceAction));
+check("Command Center Source next batch still remaps live-provider failures", /sourceRejectedToast/.test(sourceAction));
 check("Command Center Source next batch surfaces people-plugin honesty", /emptyPeopleFirstToast|emptyPeopleFirstShortlistError|missingPeoplePlugins/.test(sourceAction));
 check(
   "Command Center does not wall Source next batch behind missingPeoplePlugins",
   !(/if \(missingPeoplePlugins\)/.test(sourceAction) &&
     sourceAction.indexOf("if (missingPeoplePlugins)") < sourceAction.indexOf("sourceNextBatch")),
 );
-check("Command Center remaps invalid-response on people-first", /peoplePluginFailLoudUi\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
-check("Command Center fail toast carries CTA fields", /href: failLoud\?\.href/.test(sourceAction) && /actionLabel: failLoud\?\.actionLabel/.test(sourceAction));
+check("Command Center remaps invalid-response on people-first", /sourceRejectedToast\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
+check("Command Center fail toast carries CTA fields", /href: failLoud\.href/.test(sourceAction) && /actionLabel: failLoud\.actionLabel/.test(sourceAction));
+check("Command Center rejected Source next batch stays visible", /source-next-batch-error/.test(commandCenterPage) && /role="alert"/.test(commandCenterPage));
 check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
 const connectChannels = readFileSync(new URL("../src/components/dashboard/connect-channels.tsx", import.meta.url), "utf8");
 check(
@@ -107,7 +108,7 @@ check("Command Center strip does not badge raw integration.mode as Live", !/inte
 const candidatesPage = readFileSync(new URL("../src/app/candidates/page.tsx", import.meta.url), "utf8");
 check(
   "Candidates Source next batch names LinkedIn and Apify before the agent",
-  /emptyPeopleFirstToast|peoplePluginFailLoudUi/.test(candidatesPage) && /ConnectChannels|cc-connect-channels/.test(candidatesPage),
+  /sourceRejectedToast|emptyPeopleFirstToast|peoplePluginFailLoudUi/.test(candidatesPage) && /ConnectChannels|cc-connect-channels/.test(candidatesPage),
 );
 check(
   "Command Center fail-loud toast carries a CTA href",

@@ -46,7 +46,8 @@ import {
 } from "@/lib/store";
 import {
   emptyPeopleFirstToast,
-  peoplePluginFailLoudUi,
+  isPeopleFirstRole,
+  sourceRejectedToast,
 } from "@/lib/sourcing/people-plugins";
 import { funnelForCandidates } from "@/lib/metrics";
 import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/lib/utils";
@@ -110,6 +111,12 @@ export default function DashboardPage() {
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
   const [runToken, setRunToken] = React.useState(0);
+  const [sourceBatchError, setSourceBatchError] = React.useState<{
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel?: string;
+  } | null>(null);
 
   function handleOpenRun() {
     if (!activeCampaign) {
@@ -185,49 +192,83 @@ export default function DashboardPage() {
       });
       return;
     }
-    const result = await actions.sourceNextBatch(activeCampaign.id);
-    if (!result.ok) {
-      const failLoud = peoplePluginFailLoudUi(
-        result.error,
+    setSourceBatchError(null);
+    try {
+      const result = await actions.sourceNextBatch(activeCampaign.id);
+      if (!result.ok) {
+        const failLoud = sourceRejectedToast(
+          result.error,
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const emptyPeopleFirst = emptyPeopleFirstToast(
+        activeCampaign.jobAnalysis,
+        integrations,
+        result,
+        apiKeys,
+      );
+      if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (result.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const isLive = result.source === "github" || result.source === "web";
+      toast({
+        title: `Sourced ${pluralize(result.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
+        description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
+        variant: result.accepted.length > 0 ? "success" : "info",
+      });
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(
+        thrown,
         activeCampaign.jobAnalysis,
         integrations,
         apiKeys,
       );
+      setSourceBatchError(failLoud);
       toast({
-        title: failLoud
-          ? failLoud.title
-          : result.source === "paused"
-            ? "Campaign is paused"
-            : "Sourcing failed",
-        description: failLoud?.description ?? result.error,
-        href: failLoud?.href,
-        actionLabel: failLoud?.actionLabel,
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
         variant: "error",
       });
-      return;
     }
-    const emptyPeopleFirst = emptyPeopleFirstToast(
-      activeCampaign.jobAnalysis,
-      integrations,
-      result,
-      apiKeys,
-    );
-    if (emptyPeopleFirst) {
-      toast({
-        title: emptyPeopleFirst.title,
-        description: emptyPeopleFirst.description,
-        href: emptyPeopleFirst.href,
-        actionLabel: emptyPeopleFirst.actionLabel,
-        variant: "error",
-      });
-      return;
-    }
-    const isLive = result.source === "github" || result.source === "web";
-    toast({
-      title: `Sourced ${pluralize(result.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
-      description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
-      variant: result.accepted.length > 0 ? "success" : "info",
-    });
   }
 
   function handleGenerateReport() {
@@ -287,6 +328,16 @@ export default function DashboardPage() {
                   <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {sourceBatchError ? (
+                    <div
+                      role="alert"
+                      data-testid="source-next-batch-error"
+                      className="w-full rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-left text-sm"
+                    >
+                      <p className="font-semibold text-ink">{sourceBatchError.title}</p>
+                      <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
+                    </div>
+                  ) : null}
                   <Button leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>
                     New intake
                   </Button>

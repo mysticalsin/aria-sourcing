@@ -76,6 +76,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
+            role={t.variant === "error" ? "alert" : "status"}
+            aria-live={t.variant === "error" ? "assertive" : "polite"}
+            data-testid={t.variant === "error" ? "toast-error" : "toast"}
             className={cn(
               "pointer-events-auto flex items-start gap-3 rounded-2xl border border-line bg-surface p-4 shadow-lift animate-fade-in",
             )}

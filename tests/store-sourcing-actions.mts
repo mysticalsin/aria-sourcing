@@ -16,6 +16,7 @@ import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   PEOPLE_FIRST_HARVEST_UNAVAILABLE,
   peoplePluginFailLoudUi,
+  sourceRejectedToast,
 } from "../src/lib/sourcing/people-plugins";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
@@ -86,8 +87,8 @@ test("sourcing action boundary is React-free and wired through one stable factor
     agentRunSource,
     /executePrimaryAgentSourcing\(\{[\s\S]*?demoAuthorized: !supabaseEnabled && \(!isProduction \|\| demoLoginEnabled\),[\s\S]*?sourceNextBatch: actions\.sourceNextBatch,/,
   );
-  assert.match(agentRunSource, /emptyPeopleFirstToast|peoplePluginFailLoudUi/);
-  assert.match(agentRunSource, /peoplePluginFailLoudUi/);
+  assert.match(agentRunSource, /emptyPeopleFirstToast|sourceRejectedToast|peoplePluginFailLoudUi/);
+  assert.match(agentRunSource, /sourceRejectedToast/);
   assert.doesNotMatch(
     agentRunSource,
     /\bplatform\s*:/,
@@ -1874,6 +1875,53 @@ test("CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0", a
   assert.equal(toast?.title, "Sourcing failed");
   assert.match(String(toast?.description), /cross-origin/i);
   assert.match(String(toast?.description), /do not treat this as 0 people/i);
+  const rejected = sourceRejectedToast(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.equal(rejected.title, "Sourcing failed");
+  assert.equal(rejected.description, CROSS_ORIGIN_SOURCING_TOAST);
+  assert.equal(harness.persistedCalls, 0);
+});
+
+test("non-JSON 403 on Source next batch is fail-loud, never silent 0", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
+    syntheticSourcingAllowed: false,
+    responseStatus: 403,
+    responseText: "<html>Forbidden</html>",
+    responseContentType: "text/html",
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /Sourcing request failed \(HTTP 403\)|unavailable|Mock mode|MISSING_PLUGIN|Apify/i);
+    assert.doesNotMatch(result.error, /^$/);
+  }
+  const rejected = sourceRejectedToast(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.ok(rejected.title);
+  assert.ok(rejected.description);
+  assert.equal(harness.fetchCalls, 1);
   assert.equal(harness.persistedCalls, 0);
 });
 

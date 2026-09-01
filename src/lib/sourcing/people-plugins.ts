@@ -37,7 +37,7 @@ export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
 const OFFICIAL_LINKEDIN_PLUGIN_IDS = new Set(["int_linkedin_rsc"]);
 
 const GENERIC_SOURCING_FAILURE =
-  /invalid (response|result)|selected sourcing provider is not configured|sourcing agent (is unavailable|did not complete|could not be reached|returned an invalid)/i;
+  /invalid (response|result)|selected sourcing provider is not configured|sourcing agent (is unavailable|did not complete|could not be reached|returned an invalid)|sourcing request failed/i;
 
 export function isPeopleFirstRole(job: JobAnalysis): boolean {
   return roleProfile(job).queryStyle === "linkedin";
@@ -143,6 +143,23 @@ function keyedEmptyHarvestUi(description: string): PeoplePluginUi {
     href: SOURCE_VIA_APIFY_HREF,
     actionLabel: SOURCE_VIA_APIFY_LABEL,
   };
+}
+
+/** Never null. A rejected Source next batch POST must not be silent 0. */
+export function sourceRejectedToast(
+  error: string,
+  job?: JobAnalysis,
+  integrations?: readonly IntegrationStatus[],
+  apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
+): PeoplePluginUi {
+  const failLoud = peoplePluginFailLoudUi(error, job, integrations, apiKeys);
+  if (failLoud) return failLoud;
+  const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
+  const description = remapped.trim() || CROSS_ORIGIN_SOURCING_TOAST;
+  if (description === CROSS_ORIGIN_SOURCING_TOAST || /cross-origin/i.test(description)) {
+    return pluginUi("Sourcing failed", CROSS_ORIGIN_SOURCING_TOAST);
+  }
+  return pluginUi("Sourcing failed", description);
 }
 
 export function peoplePluginFailLoudUi(

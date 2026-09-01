@@ -23,7 +23,8 @@ import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useApiKeys, useCandidates, useHydrated, useIntegrations, useSeats } from "@/lib/store";
 import {
   emptyPeopleFirstToast,
-  peoplePluginFailLoudUi,
+  isPeopleFirstRole,
+  sourceRejectedToast,
 } from "@/lib/sourcing/people-plugins";
 import { corpusServerReadEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
@@ -166,6 +167,12 @@ function CandidatesView() {
   const [page, setPage] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [sourcing, setSourcing] = React.useState(false);
+  const [sourceBatchError, setSourceBatchError] = React.useState<{
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel?: string;
+  } | null>(null);
   const [draftingOutreach, setDraftingOutreach] = React.useState(false);
   const [draftProgress, setDraftProgress] = React.useState({ done: 0, total: 0 });
   // The just-sourced batch, staged for the streaming reveal below — purely a
@@ -307,53 +314,88 @@ function CandidatesView() {
       });
       return;
     }
+    setSourceBatchError(null);
     setSourcing(true);
-    const res = await actions.sourceNextBatch(activeCampaign.id);
-    setSourcing(false);
-    if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(
-        res.error,
+    try {
+      const res = await actions.sourceNextBatch(activeCampaign.id);
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(
+          res.error,
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const emptyPeopleFirst = emptyPeopleFirstToast(
+        activeCampaign.jobAnalysis,
+        integrations,
+        res,
+        apiKeys,
+      );
+      if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (res.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      const isLive = res.source === "github" || res.source === "web";
+      toast({
+        title: `Sourced ${pluralize(res.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
+        description: `${activeCampaign.title} · ${pluralize(res.skipped.length, "candidate")} skipped by dedupe & exclusions.`,
+        variant: res.accepted.length > 0 ? "success" : "info",
+      });
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(
+        thrown,
         activeCampaign.jobAnalysis,
         integrations,
         apiKeys,
       );
+      setSourceBatchError(failLoud);
       toast({
-        title: failLoud
-          ? failLoud.title
-          : res.source === "paused"
-            ? "Campaign is paused"
-            : "Sourcing failed",
-        description: failLoud?.description ?? res.error,
-        href: failLoud?.href,
-        actionLabel: failLoud?.actionLabel,
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
         variant: "error",
       });
-      return;
+    } finally {
+      setSourcing(false);
     }
-    const emptyPeopleFirst = emptyPeopleFirstToast(
-      activeCampaign.jobAnalysis,
-      integrations,
-      res,
-      apiKeys,
-    );
-    if (emptyPeopleFirst) {
-      toast({
-        title: emptyPeopleFirst.title,
-        description: emptyPeopleFirst.description,
-        href: emptyPeopleFirst.href,
-        actionLabel: emptyPeopleFirst.actionLabel,
-        variant: "error",
-      });
-      return;
-    }
-    setJustSourced(res.accepted);
-    setSourceBatchKey((k) => k + 1);
-    const isLive = res.source === "github" || res.source === "web";
-    toast({
-      title: `Sourced ${pluralize(res.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
-      description: `${activeCampaign.title} · ${pluralize(res.skipped.length, "candidate")} skipped by dedupe & exclusions.`,
-      variant: res.accepted.length > 0 ? "success" : "info",
-    });
   }
 
   /** Bulk stage move — routes every selected candidate through the SAME
@@ -517,6 +559,16 @@ function CandidatesView() {
           {sourcing ? "Sourcing…" : "Source next batch"}
         </Button>
       </div>
+      {sourceBatchError ? (
+        <div
+          role="alert"
+          data-testid="source-next-batch-error"
+          className="mb-4 rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm"
+        >
+          <p className="font-semibold text-ink">{sourceBatchError.title}</p>
+          <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
+        </div>
+      ) : null}
 
       {justSourced.length > 0 && (
         <div className="mb-6 space-y-2">

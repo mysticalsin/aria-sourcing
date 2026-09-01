@@ -77,6 +77,7 @@ import {
   emptyPeopleFirstToast,
   isPeopleFirstRole,
   peoplePluginFailLoudUi,
+  sourceRejectedToast,
   visiblePeopleFirstLearningReceipts,
 } from "@/lib/sourcing/people-plugins";
 import { repairGithubQueries } from "@/lib/sourcing/github-search-language";
@@ -386,6 +387,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const feedbackReceipts = feedbackState.campaignId === id ? feedbackState.receipts : [];
   const [feedbackSubmitting, setFeedbackSubmitting] = React.useState<Set<string>>(new Set());
   const [sourcing, setSourcing] = React.useState(false);
+  const [sourceBatchError, setSourceBatchError] = React.useState<{
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel?: string;
+  } | null>(null);
   const [enrichingAll, setEnrichingAll] = React.useState(false);
   // The just-sourced batch, staged for the streaming reveal below — purely a
   // display buffer; the store already committed these candidates for real.
@@ -551,19 +558,17 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const handleSource = async () => {
     if (sourcing) return;
     setSourcing(true);
+    setSourceBatchError(null);
     try {
       const res = await actions.sourceNextBatch(c.id);
       if (!res.ok) {
-        const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations, apiKeys);
+        const failLoud = sourceRejectedToast(res.error, c.jobAnalysis, integrations, apiKeys);
+        setSourceBatchError(failLoud);
         toast({
-          title: failLoud
-            ? failLoud.title
-            : res.source === "paused"
-              ? "Campaign is paused"
-              : "Sourcing failed",
-          description: failLoud?.description ?? res.error,
-          href: failLoud?.href,
-          actionLabel: failLoud?.actionLabel,
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
           variant: "error",
         });
         return;
@@ -593,6 +598,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       const isLive = res.source === "github" || res.source === "web";
       const emptyPeopleFirst = emptyPeopleFirstToast(c.jobAnalysis, integrations, res, apiKeys);
       if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
         toast({
           title: emptyPeopleFirst.title,
           description: emptyPeopleFirst.description,
@@ -604,12 +610,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       }
       if (res.accepted.length === 0) {
         if (isPeopleFirstRole(c.jobAnalysis)) {
+          const failLoud = sourceRejectedToast(
+            "Source next batch returned 0 people. This is not a successful harvest. Connect a real Apify key and switch the card to Live.",
+            c.jobAnalysis,
+            integrations,
+            apiKeys,
+          );
+          setSourceBatchError(failLoud);
           toast({
-            title: CONNECT_APIFY_LABEL,
-            description:
-              "Source next batch returned 0 people. This is not a successful harvest. Connect a real Apify key and switch the card to Live.",
-            href: CONNECT_APIFY_HREF,
-            actionLabel: CONNECT_APIFY_LABEL,
+            title: failLoud.title,
+            description: failLoud.description,
+            href: failLoud.href,
+            actionLabel: failLoud.actionLabel,
             variant: "error",
           });
           return;
@@ -632,18 +644,20 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             : "All matched candidates accepted into the pipeline.",
         variant: "success",
       });
-    } catch {
-      const failLoud = peoplePluginFailLoudUi(
-        formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "";
+      const failLoud = sourceRejectedToast(
+        /cross-origin/i.test(thrown) ? thrown : formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
         c.jobAnalysis,
         integrations,
         apiKeys,
       );
+      setSourceBatchError(failLoud);
       toast({
-        title: failLoud?.title ?? "Sourcing failed",
-        description: failLoud?.description ?? "People-first harvest did not complete.",
-        href: failLoud?.href,
-        actionLabel: failLoud?.actionLabel,
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
         variant: "error",
       });
     } finally {
@@ -1034,6 +1048,24 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
           <div className="flex min-w-0 flex-col items-stretch gap-2 lg:max-w-[55%] lg:items-end">
             <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
+            {sourceBatchError ? (
+              <div
+                role="alert"
+                data-testid="source-next-batch-error"
+                className="w-full rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-left text-sm"
+              >
+                <p className="font-semibold text-ink">{sourceBatchError.title}</p>
+                <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
+                {sourceBatchError.href && sourceBatchError.actionLabel ? (
+                  <Link
+                    href={sourceBatchError.href}
+                    className="mt-2 inline-flex h-8 items-center rounded-full bg-ink px-3 text-xs font-semibold text-paper"
+                  >
+                    {sourceBatchError.actionLabel}
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
             <Button
               variant="secondary"

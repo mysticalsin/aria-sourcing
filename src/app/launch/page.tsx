@@ -20,7 +20,7 @@ import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import type { ParsedIntake } from "@/lib/mock-ai";
 import { SAMPLE_LAUNCH_BRIEF } from "@/lib/launch/sample-brief";
 import { useActions, useApiKeys, useHydrated, useIntegrations, useSettings } from "@/lib/store";
-import { peoplePluginFailLoudUi } from "@/lib/sourcing/people-plugins";
+import { sourceRejectedToast } from "@/lib/sourcing/people-plugins";
 import {
   summarizeCampaignLaunch,
   type LaunchRoleResult,
@@ -120,21 +120,19 @@ export default function LaunchPage() {
         count: PER_WAVE,
       });
       if (!sourceResult.ok) {
-        const failLoud = peoplePluginFailLoudUi(
+        const failLoud = sourceRejectedToast(
           sourceResult.error,
           parsed.jobAnalysis,
           integrations,
           apiKeys,
         );
-        if (failLoud) {
-          toast({
-            title: failLoud.title,
-            description: failLoud.description,
-            href: failLoud.href,
-            actionLabel: failLoud.actionLabel,
-            variant: "error",
-          });
-        }
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
         setLaneSourcing(campaign.id, false);
         return { created: true, sourcingComplete: false };
       }

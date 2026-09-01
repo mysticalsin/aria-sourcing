@@ -32,7 +32,11 @@ import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
 import { useActions, useApiKeys, useCampaigns, useHydrated, useIntegrations, useSettings } from "@/lib/store";
-import { peoplePluginFailLoudUi } from "@/lib/sourcing/people-plugins";
+import {
+  emptyPeopleFirstToast,
+  isPeopleFirstRole,
+  sourceRejectedToast,
+} from "@/lib/sourcing/people-plugins";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   copyToClipboard,
@@ -413,30 +417,65 @@ export default function IntakePage() {
     // Fire-and-forget: the campaign page renders candidates as they land, and a
     // failure surfaces as a toast without blocking campaign creation.
     void actions.sourceNextBatch(campaign.id).then((res) => {
-      if (res.ok) {
-        const n = res.accepted.length;
-        const fixtureBatch = res.accepted.every((c) => c.provenance === "synthetic");
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(res.error, readyJob, integrations, apiKeys);
         toast({
-          title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
-          description: n > 0
-            ? `Added ${n} candidate${n === 1 ? "" : "s"} for ${campaign.title}${
-                fixtureBatch ? " (fixture evidence — not live people)." : "."
-              }`
-            : `The first search for ${campaign.title} completed without a matching result.`,
-          variant: n > 0 ? "success" : "info",
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
         });
-      } else {
-        const failLoud = peoplePluginFailLoudUi(res.error, readyJob, integrations, apiKeys);
-        toast({
-          title: failLoud ? failLoud.title : "Sourcing couldn't start",
-          description: failLoud
-            ? failLoud.description
-            : `${res.error} Retry with “Source next batch” on the campaign page.`,
-          href: failLoud?.href,
-          actionLabel: failLoud?.actionLabel,
-          variant: failLoud ? "error" : "warning",
-        });
+        return;
       }
+      const n = res.accepted.length;
+      const emptyPeopleFirst = emptyPeopleFirstToast(readyJob, integrations, res, apiKeys);
+      if (emptyPeopleFirst) {
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (n === 0 && isPeopleFirstRole(readyJob)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          readyJob,
+          integrations,
+          apiKeys,
+        );
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const fixtureBatch = res.accepted.every((c) => c.provenance === "synthetic");
+      toast({
+        title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
+        description: n > 0
+          ? `Added ${n} candidate${n === 1 ? "" : "s"} for ${campaign.title}${
+              fixtureBatch ? " (fixture evidence — not live people)." : "."
+            }`
+          : `The first search for ${campaign.title} completed without a matching result.`,
+        variant: n > 0 ? "success" : "info",
+      });
+    }).catch((error: unknown) => {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(thrown, readyJob, integrations, apiKeys);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
     });
     toast({
       title: "Campaign created",

@@ -220,6 +220,15 @@ hydrate and on the Strategy tab.
   false `CROSS_ORIGIN_REQUEST` on the product host is FAIL. A true
   cross-origin fails loud in the UI — never silent 0.
 
+  handleSource / Source next batch must toast every people-first
+  4xx/5xx, including `CROSS_ORIGIN_REQUEST`. A rejected POST that
+  becomes silent 0 (no toast, no inline alert, Calypso still 0) is
+  FAIL. The client must not swallow a 403. Error toasts use
+  `role="alert"` / `aria-live="assertive"` plus a durable
+  `source-next-batch-error` banner. Do not map unknown HTTP errors
+  to a swallowed generic unavailable string. Product-host Origin
+  must still reach `request_entry`.
+
   The keyed path must **start** a harvestapi Full run. If start
   does not happen, fail loud (`PEOPLE_FIRST_HARVEST_NOT_STARTED`).
   Do not fall through to LinkedIn 0-rows. Do not depend on

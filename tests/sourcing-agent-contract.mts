@@ -204,6 +204,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /classifySameOriginJsonRequest/);
   assert.doesNotMatch(route, /origin !== req\.nextUrl\.origin/);
   assert.match(design, /public product host/);
+  assert.match(design, /must toast every people-first/);
+  assert.match(design, /source-next-batch-error/);
   const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
@@ -227,6 +229,9 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(client, /formatHarvestEvidenceError\("aborted"/);
   assert.match(client, /CROSS_ORIGIN_REQUEST/);
   assert.match(client, /CROSS_ORIGIN_SOURCING_TOAST/);
+  assert.match(client, /Sourcing request failed/);
+  assert.match(client, /Do not treat this as 0 people/);
+  assert.doesNotMatch(client, /The sourcing agent is unavailable\./);
   assert.doesNotMatch(actions, /if \(missingPlugins\) \{\s*return await sourceFixtureDryRunBatch/);
   assert.match(helpers, /headline \|\| positionTitle/);
   assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
@@ -245,6 +250,7 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     PEOPLE_FIRST_HARVEST_UNAVAILABLE,
     remapPeopleFirstSourcingError,
     peoplePluginFailLoudUi,
+    sourceRejectedToast,
   } = await import("../src/lib/sourcing/people-plugins.ts");
   const missing = MISSING_PEOPLE_PLUGINS_TOAST;
   const mapped = await requestReviewedSourcing(
@@ -450,6 +456,36 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   assert.equal(crossOriginToast?.title, "Sourcing failed");
   assert.equal(crossOriginToast?.description, CROSS_ORIGIN_SOURCING_TOAST);
   assert.match(String(crossOriginToast?.description), /do not treat this as 0 people/i);
+  const rejectedAlways = sourceRejectedToast(
+    "CROSS_ORIGIN_REQUEST",
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(rejectedAlways.title, "Sourcing failed");
+  assert.equal(rejectedAlways.description, CROSS_ORIGIN_SOURCING_TOAST);
+  const htmlForbidden = await requestReviewedSourcing(
+    async () =>
+      new Response("<html>Forbidden</html>", {
+        status: 403,
+        headers: { "content-type": "text/html" },
+      }),
+    campaignId,
+    5,
+  );
+  assert.equal(htmlForbidden.ok, false);
+  if (!htmlForbidden.ok) {
+    assert.match(htmlForbidden.error, /Sourcing request failed \(HTTP 403\)/);
+    assert.match(htmlForbidden.error, /Do not treat this as 0 people/);
+    assert.doesNotMatch(htmlForbidden.error, /unavailable/i);
+  }
+  const htmlForbiddenToast = sourceRejectedToast(
+    htmlForbidden.ok ? "" : htmlForbidden.error,
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.ok(htmlForbiddenToast.title);
+  assert.ok(htmlForbiddenToast.description);
+  assert.match(htmlForbiddenToast.description, /Sourcing request failed|0 people|Apify|cross-origin/i);
 
   const abortedWait = await requestReviewedSourcing(async () => {
     const error = new Error("The operation was aborted.");
@@ -546,12 +582,15 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
   assert.match(page, /ConnectChannels|cc-connect-channels/);
+  assert.match(batchAction, /sourceRejectedToast/);
   assert.match(batchAction, /emptyPeopleFirstToast|peoplePluginFailLoudUi/);
   assert.match(batchAction, /href: failLoud|href: emptyPeopleFirst/);
   assert.match(batchAction, /try \{/);
   assert.match(batchAction, /finally/);
   assert.match(batchAction, /isPeopleFirstRole/);
   assert.match(batchAction, /variant: "error"/);
+  assert.match(page, /source-next-batch-error/);
+  assert.match(page, /role="alert"/);
   assert.match(page, /visiblePeopleFirstLearningReceipts/);
   assert.match(page, /visibleFeedbackReceipts/);
 });

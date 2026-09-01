@@ -11,7 +11,8 @@ import { executePrimaryAgentSourcing } from "@/lib/agents/studio-runner";
 import { useActions, useApiKeys, useCampaign, useCampaignOutreach, useIntegrations, useSettings } from "@/lib/store";
 import {
   emptyPeopleFirstToast,
-  peoplePluginFailLoudUi,
+  isPeopleFirstRole,
+  sourceRejectedToast,
 } from "@/lib/sourcing/people-plugins";
 import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, OutreachMessage } from "@/lib/types";
@@ -195,14 +196,14 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       sourceNextBatch: actions.sourceNextBatch,
     });
     if (!result.ok) {
-      const failLoud = peoplePluginFailLoudUi(
+      const failLoud = sourceRejectedToast(
         result.error,
         campaign.jobAnalysis,
         integrations,
         apiKeys,
       );
-      setErrorMessage(failLoud?.description ?? result.error);
-      setErrorCta(failLoud ? { href: failLoud.href, label: failLoud.actionLabel } : null);
+      setErrorMessage(failLoud.description);
+      setErrorCta({ href: failLoud.href, label: failLoud.actionLabel });
       setPhase("error");
       return;
     }
@@ -219,6 +220,18 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       if (emptyPeopleFirst) {
         setErrorMessage(emptyPeopleFirst.description);
         setErrorCta({ href: emptyPeopleFirst.href, label: emptyPeopleFirst.actionLabel });
+        setPhase("error");
+        return;
+      }
+      if (isPeopleFirstRole(campaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          campaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setErrorMessage(failLoud.description);
+        setErrorCta({ href: failLoud.href, label: failLoud.actionLabel });
         setPhase("error");
         return;
       }
@@ -317,7 +330,11 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
         </div>
 
         {phase === "error" && errorMessage && (
-          <div className="flex items-start gap-2.5 rounded-2xl bg-danger-soft px-3.5 py-3 text-sm text-danger ring-1 ring-inset ring-danger/20">
+          <div
+            role="alert"
+            data-testid="source-next-batch-error"
+            className="flex items-start gap-2.5 rounded-2xl bg-danger-soft px-3.5 py-3 text-sm text-danger ring-1 ring-inset ring-danger/20"
+          >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <div className="min-w-0 space-y-2">
               <span>{errorMessage}</span>

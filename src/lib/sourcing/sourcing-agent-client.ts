@@ -133,17 +133,20 @@ export async function requestReviewedSourcing(
   }
 
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
-    return { ok: false, error: "The sourcing agent returned an invalid response." };
-  }
-  const body = (await response.json().catch(() => null)) as unknown;
+  const jsonBody =
+    contentType.split(";", 1)[0]?.trim() === "application/json"
+      ? ((await response.json().catch(() => null)) as unknown)
+      : null;
   if (!response.ok) {
     const record =
-      body !== null && typeof body === "object" && !Array.isArray(body)
-        ? (body as Record<string, unknown>)
+      jsonBody !== null && typeof jsonBody === "object" && !Array.isArray(jsonBody)
+        ? (jsonBody as Record<string, unknown>)
         : null;
     const code = typeof record?.code === "string" ? record.code : null;
     const apiError = typeof record?.error === "string" ? record.error : "";
+    if (code === "CROSS_ORIGIN_REQUEST" || /cross-origin/i.test(apiError)) {
+      return { ok: false, error: CROSS_ORIGIN_SOURCING_TOAST };
+    }
     if (code === "MISSING_PLUGIN" || apiError.includes("MISSING_PLUGIN")) {
       return {
         ok: false,
@@ -153,14 +156,19 @@ export async function requestReviewedSourcing(
     if (isHarvestEvidenceCode(code) && apiError.trim()) {
       return { ok: false, error: apiError };
     }
+    if (typeof code === "string" && SAFE_SOURCING_ERRORS[code]) {
+      return { ok: false, error: SAFE_SOURCING_ERRORS[code] };
+    }
+    const detail = apiError.trim() || code || `HTTP ${response.status}`;
     return {
       ok: false,
-      error:
-        typeof code === "string" && SAFE_SOURCING_ERRORS[code]
-          ? SAFE_SOURCING_ERRORS[code]
-          : "The sourcing agent is unavailable.",
+      error: `Sourcing request failed (${detail}). Do not treat this as 0 people.`,
     };
   }
+  if (jsonBody === null) {
+    return { ok: false, error: "The sourcing agent returned an invalid response." };
+  }
+  const body = jsonBody;
 
   const parsed = parseSourcingAgentSuccessResponse(
     body,

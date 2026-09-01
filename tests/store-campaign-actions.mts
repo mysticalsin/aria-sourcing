@@ -79,8 +79,10 @@ test("campaign callers handle rejected creation, updates, queries, and sourcing"
     launchPageSource,
     /summarizeCampaignLaunch\(roleBlocks\.length, results\)/,
   );
-  assert.match(intakePageSource, /peoplePluginFailLoudUi/);
-  assert.match(launchPageSource, /peoplePluginFailLoudUi/);
+  assert.match(intakePageSource, /sourceRejectedToast/);
+  assert.match(launchPageSource, /sourceRejectedToast/);
+  assert.match(intakePageSource, /variant: "error"/);
+  assert.doesNotMatch(launchPageSource, /if \(failLoud\) \{/);
   assert.equal(
     (campaignPageSource.match(/if \(!actions\.updateCampaign/g) ?? []).length,
     6,

@@ -37,7 +37,8 @@ import {
 import { can } from "@/lib/rbac";
 import {
   emptyPeopleFirstToast,
-  peoplePluginFailLoudUi,
+  isPeopleFirstRole,
+  sourceRejectedToast,
 } from "@/lib/sourcing/people-plugins";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
@@ -165,6 +166,12 @@ export default function FleetPage() {
   const [scopeId, setScopeId] = React.useState<string>("");
   const [allocation, setAllocation] = React.useState<AllocationResult | null>(null);
   const [sourcing, setSourcing] = React.useState(false);
+  const [sourceBatchError, setSourceBatchError] = React.useState<{
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel?: string;
+  } | null>(null);
   const [allocating, setAllocating] = React.useState(false);
 
   // Add-agent modal
@@ -203,25 +210,23 @@ export default function FleetPage() {
       });
       return;
     }
+    setSourceBatchError(null);
     setSourcing(true);
     try {
       const result = await actions.sourceNextBatch(campaignId);
       if (!result.ok) {
-        const failLoud = peoplePluginFailLoudUi(
+        const failLoud = sourceRejectedToast(
           result.error,
           selectedCampaign.jobAnalysis,
           integrations,
           apiKeys,
         );
+        setSourceBatchError(failLoud);
         toast({
-          title: failLoud
-            ? failLoud.title
-            : result.source === "paused"
-              ? "Campaign is paused"
-              : "Sourcing failed",
-          description: failLoud?.description ?? result.error,
-          href: failLoud?.href,
-          actionLabel: failLoud?.actionLabel,
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
           variant: "error",
         });
         return;
@@ -233,11 +238,29 @@ export default function FleetPage() {
         apiKeys,
       );
       if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
         toast({
           title: emptyPeopleFirst.title,
           description: emptyPeopleFirst.description,
           href: emptyPeopleFirst.href,
           actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (result.accepted.length === 0 && isPeopleFirstRole(selectedCampaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          selectedCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
           variant: "error",
         });
         return;
@@ -254,10 +277,20 @@ export default function FleetPage() {
           : `${selectedCampaign.title} · ${skipped} excluded or already present. Results came through the reviewed provider sourcing path.`,
         variant: sourced > 0 ? "success" : "info",
       });
-    } catch {
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(
+        thrown,
+        selectedCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
       toast({
-        title: "Sourcing unavailable",
-        description: "The sourcing request did not complete. No candidate result was assumed or generated locally.",
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
         variant: "error",
       });
     } finally {
@@ -439,6 +472,17 @@ export default function FleetPage() {
                   </Button>
                 </div>
               </div>
+
+              {sourceBatchError ? (
+                <div
+                  role="alert"
+                  data-testid="source-next-batch-error"
+                  className="rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm"
+                >
+                  <p className="font-semibold text-ink">{sourceBatchError.title}</p>
+                  <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
+                </div>
+              ) : null}
 
               <p className="text-xs text-muted">
                 Sourcing runs the selected campaign through the canonical provider path; no local
