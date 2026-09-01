@@ -219,6 +219,11 @@ hydrate and on the Strategy tab.
 
 Outreach send without channel-connect + explicit approve is a contract fail.
 A valid Apify key that still throws `MISSING_PLUGIN` is a contract fail.
+A non-JSON `/api/sourcing-agent` crash (Playwright / browser-tools loaded at
+import) is a contract fail: people-first Source next batch must still run the
+keyed Apify harvest. Remaining harvest fails are fail-loud with a toast-cta
+— never a Dismiss-only "invalid response" wall. connect → source → outreach
+must not stop on that toast.
 
 ## OCR
 

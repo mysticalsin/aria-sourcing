@@ -167,10 +167,26 @@ test("campaign UI presents a completed zero-match search as information, not sou
   assert.match(action, /emptyPeopleFirstToast/);
 });
 
+test("people-first harvest route never statically loads Playwright or the cloud tool-loop", () => {
+  const route = readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8");
+  const toolLoop = readFileSync(new URL("../src/lib/ai/tool-loop.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(route, /from ["']@\/lib\/ai\/tool-loop["']/);
+  assert.doesNotMatch(route, /from ["']@\/lib\/ai\/browser-tools["']/);
+  assert.doesNotMatch(route, /from ["']playwright-core["']/);
+  assert.match(route, /await import\(["']@\/lib\/ai\/tool-loop["']\)/);
+  assert.doesNotMatch(toolLoop, /from ["']@\/lib\/ai\/browser-tools["']/);
+  assert.doesNotMatch(toolLoop, /from ["']playwright-core["']/);
+  assert.match(toolLoop, /import\(["']@\/lib\/ai\/browser-tools["']\)/);
+});
+
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
   const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client.ts");
-  const { MISSING_PEOPLE_PLUGINS_TOAST, remapPeopleFirstSourcingError, peoplePluginFailLoudUi } =
-    await import("../src/lib/sourcing/people-plugins.ts");
+  const {
+    MISSING_PEOPLE_PLUGINS_TOAST,
+    PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+    remapPeopleFirstSourcingError,
+    peoplePluginFailLoudUi,
+  } = await import("../src/lib/sourcing/people-plugins.ts");
   const missing = MISSING_PEOPLE_PLUGINS_TOAST;
   const mapped = await requestReviewedSourcing(
     async () =>
@@ -251,6 +267,48 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   assert.equal(toast?.href, "/settings");
   assert.match(String(toast?.actionLabel), /Access & Keys/);
   assert.match(missing, /Apify/);
+
+  const validApify = [{ provider: "Apify" as const, status: "valid" as const }];
+  const crashed = await requestReviewedSourcing(
+    async () =>
+      new Response("Internal Server Error", {
+        status: 500,
+        headers: { "content-type": "text/plain" },
+      }),
+    campaignId,
+    5,
+  );
+  assert.equal(crashed.ok, false);
+  if (crashed.ok) return;
+  assert.equal(
+    remapPeopleFirstSourcingError(crashed.error, financeJob, liveUnconfigured, validApify),
+    PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+  );
+  assert.doesNotMatch(
+    remapPeopleFirstSourcingError(crashed.error, financeJob, liveUnconfigured, validApify),
+    /invalid response|invalid result|MISSING_PLUGIN/i,
+  );
+  const keyedToast = peoplePluginFailLoudUi(
+    crashed.error,
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.equal(keyedToast?.title, "Sourcing failed");
+  assert.equal(keyedToast?.description, PEOPLE_FIRST_HARVEST_UNAVAILABLE);
+  assert.doesNotMatch(String(keyedToast?.description), /invalid response/i);
+  assert.doesNotMatch(String(keyedToast?.description), /MISSING_PLUGIN/);
+  assert.equal(keyedToast?.href, "/settings");
+  assert.match(String(keyedToast?.actionLabel), /Access & Keys/);
+  const invalidResultToast = peoplePluginFailLoudUi(
+    "The sourcing agent returned an invalid result.",
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.ok(invalidResultToast?.href);
+  assert.doesNotMatch(String(invalidResultToast?.description), /invalid result/i);
+  assert.doesNotMatch(String(invalidResultToast?.description), /MISSING_PLUGIN/);
 
   const legacyCode = await requestReviewedSourcing(
     async () =>

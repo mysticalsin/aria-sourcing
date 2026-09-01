@@ -3,12 +3,14 @@ import { defaultIntegrations, defaultLiveIntegrations, mergeSeedIntegrations, te
 import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   MISSING_PEOPLE_PLUGINS_TOAST,
+  PEOPLE_FIRST_HARVEST_UNAVAILABLE,
   emptyPeopleFirstShortlistError,
   hasValidApifyKey,
   integrationShowsLive,
   missingPeoplePluginsToast,
   peoplePluginFailLoudUi,
   peopleSourcePluginsConnected,
+  remapPeopleFirstSourcingError,
   visiblePeopleFirstLearningReceipts,
 } from "../src/lib/sourcing/people-plugins";
 import {
@@ -295,6 +297,44 @@ ok(
   "fail-loud toast always carries a Settings CTA",
   peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.href === "/settings" &&
     Boolean(peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.actionLabel),
+);
+const liveInvalidResponse = "The sourcing agent returned an invalid response.";
+const keyedHarvestFail = remapPeopleFirstSourcingError(
+  liveInvalidResponse,
+  calypsoJob,
+  liveTenant,
+  [{ provider: "Apify", status: "valid" }],
+);
+const keyedCrashToast = peoplePluginFailLoudUi(
+  liveInvalidResponse,
+  calypsoJob,
+  liveTenant,
+  [{ provider: "Apify", status: "valid" }],
+);
+ok(
+  "keyed invalid-response remaps to harvest-unavailable, not MISSING_PLUGIN",
+  keyedHarvestFail === PEOPLE_FIRST_HARVEST_UNAVAILABLE &&
+    !/invalid response|MISSING_PLUGIN/i.test(keyedHarvestFail),
+);
+ok(
+  "keyed invalid-response toast has Access & Keys CTA, not Dismiss-only",
+  keyedCrashToast?.href === "/settings" &&
+    /Access & Keys/.test(String(keyedCrashToast?.actionLabel)) &&
+    !/invalid response|MISSING_PLUGIN/i.test(String(keyedCrashToast?.description)),
+);
+const toolLoopSource = readFileSync(new URL("../src/lib/ai/tool-loop.ts", import.meta.url), "utf8");
+const sourcingAgentRoute = readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8");
+ok(
+  "tool-loop does not statically import Playwright or browser-tools",
+  !/from ["']@\/lib\/ai\/browser-tools["']/.test(toolLoopSource) &&
+    !/from ["']playwright-core["']/.test(toolLoopSource) &&
+    /import\(["']@\/lib\/ai\/browser-tools["']\)/.test(toolLoopSource),
+);
+ok(
+  "people-first sourcing-agent route does not statically import the cloud tool-loop",
+  !/from ["']@\/lib\/ai\/tool-loop["']/.test(sourcingAgentRoute) &&
+    !/from ["']playwright-core["']/.test(sourcingAgentRoute) &&
+    /import\(["']@\/lib\/ai\/tool-loop["']\)/.test(sourcingAgentRoute),
 );
 ok(
   "valid Apify key marks the Integrations Apify card connected",

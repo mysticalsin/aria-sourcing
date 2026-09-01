@@ -11,7 +11,6 @@ import {
 } from "@/lib/agent-disclosure-policy";
 import { DEFAULT_MODEL, VAULT_PROVIDER, resolveAiProvider, type AiProviderSlug } from "@/lib/ai/provider";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
-import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
@@ -556,7 +555,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
       async () => (await currentAuthority()).ok,
       apifyToken ?? undefined,
     );
-    const servers: ResolvedMcpServer[] = [
+    const servers = [
       {
         url: "builtin:sourcing-agent",
         token: "",
@@ -624,6 +623,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       const prompt = buildPrompt(initial.value.campaign, count, promotedLessons);
+      const { runAnthropicWithTools, runOpenAiWithTools } = await import("@/lib/ai/tool-loop");
       const result =
         cloudSlug === "anthropic"
           ? await runAnthropicWithTools({

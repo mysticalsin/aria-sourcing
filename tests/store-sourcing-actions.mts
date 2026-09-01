@@ -11,7 +11,11 @@ import { scoreCandidate } from "../src/lib/scoring";
 import { buildOutreachPrompt } from "../src/lib/ai/hermes";
 import { generateOutreach } from "../src/lib/mock-ai";
 import { defaultLiveIntegrations } from "../src/lib/integrations";
-import { EMPTY_PEOPLE_FIRST_HARVEST } from "../src/lib/sourcing/people-plugins";
+import {
+  EMPTY_PEOPLE_FIRST_HARVEST,
+  PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+  peoplePluginFailLoudUi,
+} from "../src/lib/sourcing/people-plugins";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
 
@@ -138,6 +142,7 @@ function createHarness(options: {
   responseBodies?: unknown[];
   responseStatus?: number;
   responseText?: string;
+  responseContentType?: string;
   fetchError?: Error;
   afterFetch?: () => void;
   beforeCommit?: (state: HermesState) => HermesState;
@@ -198,7 +203,7 @@ function createHarness(options: {
           ),
         {
           status: options.responseStatus ?? 200,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": options.responseContentType ?? "application/json" },
         },
       );
     },
@@ -1931,6 +1936,62 @@ test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next 
   }
   assert.match(String(harness.requests[0]?.input), /sourcing-agent|source\/need|source"/);
   assert.ok(harness.fetchCalls >= 1);
+});
+
+test("keyed people-first Source next batch does not toast invalid-response on a non-JSON sourcing-agent crash", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseText: "Internal Server Error",
+    responseStatus: 500,
+    responseContentType: "text/plain",
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, PEOPLE_FIRST_HARVEST_UNAVAILABLE);
+    assert.doesNotMatch(result.error, /invalid response/i);
+    assert.doesNotMatch(result.error, /invalid result/i);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  const toast = peoplePluginFailLoudUi(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+    apiKeys,
+  );
+  assert.equal(toast?.title, "Sourcing failed");
+  assert.equal(toast?.href, "/settings");
+  assert.match(String(toast?.actionLabel), /Access & Keys/);
+  assert.doesNotMatch(String(toast?.description), /invalid response/i);
+  assert.doesNotMatch(String(toast?.description), /MISSING_PLUGIN/);
+  assert.equal(harness.persistedCalls, 0);
 });
 
 test("people-first GitHub-only empty batch is fail-loud, not a successful search", async () => {

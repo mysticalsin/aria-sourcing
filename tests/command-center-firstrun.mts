@@ -92,6 +92,7 @@ check(
     sourceAction.indexOf("if (missingPeoplePlugins)") < sourceAction.indexOf("sourceNextBatch")),
 );
 check("Command Center remaps invalid-response on people-first", /peoplePluginFailLoudUi\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
+check("Command Center fail toast carries CTA fields", /href: failLoud\?\.href/.test(sourceAction) && /actionLabel: failLoud\?\.actionLabel/.test(sourceAction));
 check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
 const connectChannels = readFileSync(new URL("../src/components/dashboard/connect-channels.tsx", import.meta.url), "utf8");
 check(

@@ -15,6 +15,9 @@ export const MISSING_PEOPLE_PLUGINS_TOAST =
 export const EMPTY_PEOPLE_FIRST_HARVEST =
   "People-first harvest returned 0 candidates. The search finished — no shortlist was invented.";
 
+export const PEOPLE_FIRST_HARVEST_UNAVAILABLE =
+  "People-first harvest did not complete. Open Access & Keys to confirm the Apify key, then retry Source next batch.";
+
 export const PEOPLE_PLUGIN_SETTINGS_HREF = "/settings";
 export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
 
@@ -62,6 +65,7 @@ export function remapPeopleFirstSourcingError(
   const keyed = peopleSourcePluginsConnected(integrations ?? [], apiKeys);
   if (keyed) {
     if (error.includes("MISSING_PLUGIN")) return EMPTY_PEOPLE_FIRST_HARVEST;
+    if (GENERIC_SOURCING_FAILURE.test(error)) return PEOPLE_FIRST_HARVEST_UNAVAILABLE;
     return error;
   }
   if (error.includes("MISSING_PLUGIN") || GENERIC_SOURCING_FAILURE.test(error)) {
@@ -107,6 +111,9 @@ export function peoplePluginFailLoudUi(
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
   if (remapped === EMPTY_PEOPLE_FIRST_HARVEST || /0 candidates|empty harvest|0 profiles/i.test(remapped)) {
     return pluginUi("No shortlist from this harvest", remapped);
+  }
+  if (remapped === PEOPLE_FIRST_HARVEST_UNAVAILABLE || GENERIC_SOURCING_FAILURE.test(remapped)) {
+    return pluginUi("Sourcing failed", remapped);
   }
   if (
     !remapped.includes("MISSING_PLUGIN") &&
