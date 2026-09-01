@@ -259,7 +259,9 @@ hydrate and on the Strategy tab.
   code (Connect Apify / Mock mode), not a guessed 503. A generic
   `SOURCING_AGENT_UNAVAILABLE` toasts unavailable, not Mock.
   Campaign activity keeps an audit row for Mock / unavailable
-  so the fail is not toast-only.
+  so the fail is not toast-only. Notes keep
+  `PEOPLE_FIRST_HARVEST_MOCK` or `SOURCING_AGENT_UNAVAILABLE`
+  plus the toast text (Connect Apify / Mock mode).
 
   The keyed path must **start** a harvestapi Full run. If start
   does not happen, fail loud (`PEOPLE_FIRST_HARVEST_NOT_STARTED`).

@@ -13,6 +13,7 @@ import {
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
   missingPeoplePluginsToast,
+  peopleFirstFailActivity,
   remapPeopleFirstSourcingError,
   visiblePeopleFirstLearningReceipts,
 } from "../sourcing/people-plugins";
@@ -712,6 +713,26 @@ export function createSourcingActions({
   effectiveWeights,
   emitSource,
 }: SourcingActionDependencies): SourcingActions {
+  const persistPeopleFirstFailAudit = async (campaignId: string, error: string) => {
+    if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return;
+    const { title, notes } = peopleFirstFailActivity(error);
+    await commitPersisted((previous) =>
+      withActivity(
+        previous,
+        makeActivity({
+          type: "sourcing",
+          title,
+          notes,
+          outcome: "0 accepted — fail-loud, not a harvest",
+          campaignId,
+          linkedEntityType: "campaign",
+          linkedEntityId: campaignId,
+        }),
+        campaignId,
+      ),
+    );
+  };
+
   const sourceReviewedCampaignBatch = async (
     campaignId: string,
     count: number,
@@ -738,25 +759,9 @@ export function createSourcingActions({
       if (
         latestForError &&
         campaignForError &&
-        isPeopleFirstRole(campaignForError.jobAnalysis) &&
-        workspaceEffectAllowed() &&
-        sourcingMutationAllowed()
+        isPeopleFirstRole(campaignForError.jobAnalysis)
       ) {
-        await commitPersisted((previous) =>
-          withActivity(
-            previous,
-            makeActivity({
-              type: "sourcing",
-              title: /Mock mode/i.test(error) ? "Connect Apify" : "Sourcing failed",
-              notes: error,
-              outcome: "0 accepted — fail-loud, not a harvest",
-              campaignId,
-              linkedEntityType: "campaign",
-              linkedEntityId: campaignId,
-            }),
-            campaignId,
-          ),
-        );
+        await persistPeopleFirstFailAudit(campaignId, error);
       }
       return {
         ok: false,
@@ -797,14 +802,16 @@ export function createSourcingActions({
       isPeopleFirstRole(latestCampaign.jobAnalysis) &&
       isGithubOnlyEmptyBatch(reviewed.value)
     ) {
+      const error =
+        missingPeoplePluginsToast(
+          latestCampaign.jobAnalysis,
+          latest.integrations,
+          latest.apiKeys,
+        ) ?? EMPTY_PEOPLE_FIRST_HARVEST;
+      await persistPeopleFirstFailAudit(campaignId, error);
       return {
         ok: false,
-        error:
-          missingPeoplePluginsToast(
-            latestCampaign.jobAnalysis,
-            latest.integrations,
-            latest.apiKeys,
-          ) ?? EMPTY_PEOPLE_FIRST_HARVEST,
+        error,
         source: "unavailable",
       };
     }
@@ -813,26 +820,8 @@ export function createSourcingActions({
       candidateFromSourcingAgentDto(dto),
     );
     if (previewPeople.length > 0 && previewPeople.every(isLabFixtureCandidate)) {
-      if (
-        isPeopleFirstRole(latestCampaign.jobAnalysis) &&
-        workspaceEffectAllowed() &&
-        sourcingMutationAllowed()
-      ) {
-        await commitPersisted((previous) =>
-          withActivity(
-            previous,
-            makeActivity({
-              type: "sourcing",
-              title: "Connect Apify",
-              notes: FIXTURE_NOT_ON_LIVE_TOAST,
-              outcome: "0 accepted — fail-loud, not a harvest",
-              campaignId,
-              linkedEntityType: "campaign",
-              linkedEntityId: campaignId,
-            }),
-            campaignId,
-          ),
-        );
+      if (isPeopleFirstRole(latestCampaign.jobAnalysis)) {
+        await persistPeopleFirstFailAudit(campaignId, FIXTURE_NOT_ON_LIVE_TOAST);
       }
       return {
         ok: false,
@@ -852,23 +841,7 @@ export function createSourcingActions({
         itemCount: previewPeople.length,
         started: true,
       });
-      if (workspaceEffectAllowed() && sourcingMutationAllowed()) {
-        await commitPersisted((previous) =>
-          withActivity(
-            previous,
-            makeActivity({
-              type: "sourcing",
-              title: "Sourcing failed",
-              notes: incomplete,
-              outcome: "0 accepted — fail-loud, not a harvest",
-              campaignId,
-              linkedEntityType: "campaign",
-              linkedEntityId: campaignId,
-            }),
-            campaignId,
-          ),
-        );
-      }
+      await persistPeopleFirstFailAudit(campaignId, incomplete);
       return {
         ok: false,
         error: incomplete,

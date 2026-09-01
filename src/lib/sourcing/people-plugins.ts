@@ -231,6 +231,7 @@ export function peoplePluginFailLoudUi(
     remapped === MOCK_APIFY_TOAST ||
     remapped === FIXTURE_NOT_ON_LIVE_TOAST ||
     remapped.includes(FIXTURE_NOT_ON_LIVE) ||
+    remapped.includes("PEOPLE_FIRST_HARVEST_MOCK") ||
     /Mock mode|lab fixtures are not linkedin/i.test(remapped)
   ) {
     return {
@@ -263,6 +264,41 @@ export function peoplePluginFailLoudUi(
     href: CONNECT_APIFY_HREF,
     actionLabel: CONNECT_APIFY_LABEL,
   };
+}
+
+/**
+ * Campaign activity notes for a people-first fail-loud. Toast copy stays the
+ * remapped operator text; the row also keeps the stdout code so late
+ * read-only can grep Mock / unavailable after the toast is gone.
+ */
+export function peopleFirstFailActivityNotes(error: string): string {
+  const trimmed = error.trim();
+  if (!trimmed) return trimmed;
+  if (
+    /Mock mode|PEOPLE_FIRST_HARVEST_MOCK/i.test(trimmed) &&
+    !trimmed.includes("PEOPLE_FIRST_HARVEST_MOCK")
+  ) {
+    return `PEOPLE_FIRST_HARVEST_MOCK — ${trimmed}`;
+  }
+  if (
+    /lab fixtures are not linkedin|FIXTURE_NOT_ON_LIVE/i.test(trimmed) &&
+    !trimmed.includes("FIXTURE_NOT_ON_LIVE")
+  ) {
+    return `FIXTURE_NOT_ON_LIVE — ${trimmed}`;
+  }
+  if (
+    /Sourcing is unavailable|SOURCING_AGENT_UNAVAILABLE/i.test(trimmed) &&
+    !trimmed.includes("SOURCING_AGENT_UNAVAILABLE")
+  ) {
+    return `SOURCING_AGENT_UNAVAILABLE — ${trimmed}`;
+  }
+  return trimmed;
+}
+
+export function peopleFirstFailActivity(error: string): { title: string; notes: string } {
+  const notes = peopleFirstFailActivityNotes(error);
+  const ui = peoplePluginFailLoudUi(error) ?? sourceRejectedToast(error);
+  return { title: ui.title, notes };
 }
 
 export function emptyPeopleFirstToast(

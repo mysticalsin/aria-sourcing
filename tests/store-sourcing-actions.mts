@@ -16,6 +16,7 @@ import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   PEOPLE_FIRST_HARVEST_UNAVAILABLE,
   SOURCING_AGENT_UNAVAILABLE_TOAST,
+  peopleFirstFailActivity,
   peoplePluginFailLoudUi,
   sourceRejectedToast,
 } from "../src/lib/sourcing/people-plugins";
@@ -84,6 +85,9 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.equal((storeSource.match(/const sourceFromApollo = useCallback/g) ?? []).length, 0);
   assert.match(storeSource, /createSourcingActions\([\s\S]*?commitPersisted,/);
   assert.match(sourcingActionsSource, /await commitPersisted\(/);
+  assert.match(sourcingActionsSource, /peopleFirstFailActivity/);
+  assert.match(sourcingActionsSource, /persistPeopleFirstFailAudit/);
+  assert.match(storeSource, /peopleFirstFailActivity/);
   assert.match(sourcingActionsSource, /0 accepted — fail-loud, not a harvest/);
   assert.match(
     launchSource,
@@ -1939,7 +1943,9 @@ test("SOURCING_AGENT_UNAVAILABLE on Source next batch is fail-loud, never silent
   assert.equal(harness.fetchCalls, 1);
   assert.equal(harness.persistedCalls, 1);
   assert.equal(harness.activityDrafts[0]?.title, "Sourcing failed");
-  assert.equal(harness.activityDrafts[0]?.notes, SOURCING_AGENT_UNAVAILABLE_TOAST);
+  assert.match(String(harness.activityDrafts[0]?.notes), /SOURCING_AGENT_UNAVAILABLE/);
+  assert.match(String(harness.activityDrafts[0]?.notes), /This is not 0 people/);
+  assert.match(String(harness.activityDrafts[0]?.notes), /Sourcing is unavailable/);
 });
 
 test("non-JSON 403 on Source next batch is fail-loud, never silent 0", async () => {
@@ -2043,6 +2049,7 @@ test("Mock Apify card with a valid Access & Keys row still POSTs and fails loud"
   assert.equal(toast?.href, "/settings");
   assert.equal(harness.persistedCalls, 1);
   assert.equal(harness.activityDrafts[0]?.title, "Connect Apify");
+  assert.match(String(harness.activityDrafts[0]?.notes), /PEOPLE_FIRST_HARVEST_MOCK/);
   assert.match(String(harness.activityDrafts[0]?.notes), /Mock mode/);
 });
 
@@ -2242,7 +2249,10 @@ test("people-first GitHub-only empty batch is fail-loud, not a successful search
     assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
     assert.doesNotMatch(result.error, /invalid response/i);
   }
-  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.equal(harness.activityDrafts[0]?.title, peopleFirstFailActivity(EMPTY_PEOPLE_FIRST_HARVEST).title);
+  assert.match(String(harness.activityDrafts[0]?.notes), /0 candidates|harvest/i);
 });
 
 test("Apollo search commits only exact validated profiles through the sourcing boundary", async () => {

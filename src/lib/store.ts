@@ -68,6 +68,7 @@ import {
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
   missingPeoplePluginsToast,
+  peopleFirstFailActivity,
   remapPeopleFirstSourcingError,
   visiblePeopleFirstLearningReceipts,
 } from "./sourcing/people-plugins";
@@ -1687,27 +1688,63 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         requestedCount,
       );
       if (!reviewed.ok) {
+        const error = remapPeopleFirstSourcingError(
+          reviewed.error,
+          campaign.jobAnalysis,
+          s.integrations,
+          s.apiKeys,
+        );
+        if (isPeopleFirstRole(campaign.jobAnalysis)) {
+          const { title, notes } = peopleFirstFailActivity(error);
+          await commitPersisted((prev) =>
+            withActivity(
+              prev,
+              makeActivity({
+                type: "sourcing",
+                title,
+                notes,
+                outcome: "0 accepted — fail-loud, not a harvest",
+                campaignId,
+                linkedEntityType: "campaign",
+                linkedEntityId: campaignId,
+              }),
+              campaignId,
+            ),
+          );
+        }
         return {
           ok: false,
           added: 0,
-          error: remapPeopleFirstSourcingError(
-            reviewed.error,
-            campaign.jobAnalysis,
-            s.integrations,
-            s.apiKeys,
-          ),
+          error,
         };
       }
       if (
         isPeopleFirstRole(campaign.jobAnalysis) &&
         isGithubOnlyEmptyBatch(reviewed.value)
       ) {
+        const error =
+          missingPeoplePluginsToast(campaign.jobAnalysis, s.integrations, s.apiKeys) ??
+          EMPTY_PEOPLE_FIRST_HARVEST;
+        const { title, notes } = peopleFirstFailActivity(error);
+        await commitPersisted((prev) =>
+          withActivity(
+            prev,
+            makeActivity({
+              type: "sourcing",
+              title,
+              notes,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
         return {
           ok: false,
           added: 0,
-          error:
-            missingPeoplePluginsToast(campaign.jobAnalysis, s.integrations, s.apiKeys) ??
-            EMPTY_PEOPLE_FIRST_HARVEST,
+          error,
         };
       }
       const out = reviewed.value;
@@ -1726,13 +1763,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           itemCount: received.length,
           started: true,
         });
+        const { title, notes } = peopleFirstFailActivity(incomplete);
         await commitPersisted((prev) =>
           withActivity(
             prev,
             makeActivity({
               type: "sourcing",
-              title: "Sourcing failed",
-              notes: incomplete,
+              title,
+              notes,
               outcome: "0 accepted — fail-loud, not a harvest",
               campaignId,
               linkedEntityType: "campaign",
@@ -1744,13 +1782,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, added: 0, error: incomplete };
       }
       if (out.candidates.length > 0 && received.length === 0) {
+        const { title, notes } = peopleFirstFailActivity(FIXTURE_NOT_ON_LIVE_TOAST);
         await commitPersisted((prev) =>
           withActivity(
             prev,
             makeActivity({
               type: "sourcing",
-              title: CONNECT_APIFY_LABEL,
-              notes: FIXTURE_NOT_ON_LIVE_TOAST,
+              title,
+              notes,
               outcome: "0 accepted — fail-loud, not a harvest",
               campaignId,
               linkedEntityType: "campaign",

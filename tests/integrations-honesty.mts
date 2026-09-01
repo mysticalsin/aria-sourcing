@@ -11,6 +11,7 @@ import {
   hasValidApifyKey,
   integrationShowsLive,
   missingPeoplePluginsToast,
+  peopleFirstFailActivity,
   peoplePluginFailLoudUi,
   peopleSourcePluginsConnected,
   remapPeopleFirstSourcingError,
@@ -568,6 +569,17 @@ ok(
     SOURCING_AGENT_UNAVAILABLE_TOAST &&
     /This is not 0 people/i.test(SOURCING_AGENT_UNAVAILABLE_TOAST),
 );
+const mockAudit = peopleFirstFailActivity(MOCK_APIFY_TOAST);
+const unavailableAudit = peopleFirstFailActivity(SOURCING_AGENT_UNAVAILABLE_TOAST);
+ok(
+  "campaign activity notes keep stdout codes with the toast, not toast-only",
+  mockAudit.title === "Connect Apify" &&
+    /PEOPLE_FIRST_HARVEST_MOCK/.test(mockAudit.notes) &&
+    /Mock mode/.test(mockAudit.notes) &&
+    unavailableAudit.title === "Sourcing failed" &&
+    /SOURCING_AGENT_UNAVAILABLE/.test(unavailableAudit.notes) &&
+    /This is not 0 people/.test(unavailableAudit.notes),
+);
 const briefToast = sourceRejectedToast("CAMPAIGN_NOT_READY", calypsoJob, keyedApify);
 ok(
   "campaign_invalid_state toasts brief review, never Open Access & Keys",
@@ -641,7 +653,9 @@ ok(
     /sourceEngineFixtureCandidates/.test(design) &&
     !/still runs a dry-run\s+fixture matcher/.test(design) &&
     /PEOPLE_FIRST_HARVEST_MOCK/.test(design) &&
-    /audit row/.test(design),
+    /audit row/.test(design) &&
+    /not toast-only/.test(design) &&
+    /SOURCING_AGENT_UNAVAILABLE/.test(design),
 );
 ok(
   "DESIGN pins Apify as a real Live-switch card; Concept + valid key is harvest",

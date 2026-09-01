@@ -314,6 +314,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(design, /stale cloud-model settings blob/);
   assert.match(design, /PEOPLE_FIRST_HARVEST_MOCK/);
   assert.match(design, /not a guessed 503/);
+  assert.match(design, /not toast-only/);
+  assert.match(design, /plus the toast text/);
   const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
@@ -343,6 +345,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(client, /Do not treat this as 0 people/);
   assert.doesNotMatch(client, /The sourcing agent is unavailable\./);
   assert.doesNotMatch(actions, /if \(missingPlugins\) \{\s*return await sourceFixtureDryRunBatch/);
+  assert.match(actions, /peopleFirstFailActivity/);
+  assert.match(actions, /persistPeopleFirstFailAudit/);
   assert.match(helpers, /headline \|\| positionTitle/);
   assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
   assert.match(design, /recall-capable Apify harvestapi/);
