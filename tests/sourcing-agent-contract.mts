@@ -192,6 +192,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_STILL_RUNNING/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_EMPTY/);
+  assert.match(route, /!successfulQuery && !\(peopleFirst && !frameworkAuthorization\)/);
   assert.match(route, /multiSourcePlan.filter\(\(step\) => step.platform === "Apify"\)/);
   assert.match(tools, /profileScraperMode: "Full"/);
   assert.doesNotMatch(tools, /profileScraperMode: "Short"/);

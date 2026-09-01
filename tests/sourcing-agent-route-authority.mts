@@ -284,7 +284,8 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         if (runnerCandidatesAfterRun.length > 0) {
           foundCandidates = runnerCandidatesAfterRun;
         }
-        return { ok: true, content: {} };
+        const harvestOk = args.platform !== "Apify" || runnerHarvest?.status === "SUCCEEDED";
+        return { ok: harvestOk, content: {} };
       },
       getFound: () => foundCandidates,
       getExecutions: () => runnerQueries.map(({ platform, query }) => ({

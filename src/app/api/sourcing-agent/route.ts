@@ -630,7 +630,10 @@ async function handlePost(req: NextRequest, correlationId: string) {
           );
         }
       }
-      if (!successfulQuery) {
+      // People-first Apify can return ok:false with harvest evidence
+      // (not started / still running). Do not swallow that as a generic
+      // "search did not complete" before the harvest gate below.
+      if (!successfulQuery && !(peopleFirst && !frameworkAuthorization)) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_UPSTREAM_FAILED",
