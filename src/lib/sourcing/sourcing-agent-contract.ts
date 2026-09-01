@@ -12,8 +12,17 @@ import {
   URGENCY_LEVELS,
   type Campaign,
   type Candidate,
+  type JobAnalysis,
   type SystemSettings,
 } from "@/lib/types";
+import { DEFAULT_SCORING_WEIGHTS } from "@/lib/scoring";
+import {
+  employmentFromVss,
+  locationTypeFromRemote,
+  seniorityFromVss,
+  tokenizeMustHaveSkills,
+  urgencyFromVssPriority,
+} from "@/lib/sourcing/vss-need";
 import { initialsFrom } from "@/lib/utils";
 
 export const SOURCING_AGENT_PROVIDERS = [
@@ -196,12 +205,167 @@ export function sourcingAgentCampaignFingerprint(
 
 type ProjectionResult =
   | { status: "ok"; value: SourcingAgentWorkspace }
-  | { status: "campaign_not_found" | "invalid_state" };
+  | { status: "campaign_not_found" }
+  | { status: "invalid_state"; issueCodes?: string[] };
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+const ISSUE_CODE = /^[A-Za-z0-9._-]{1,40}$/;
+
+function zodIssueCodes(error: z.ZodError): string[] {
+  return [...new Set(error.issues.map((issue) => String(issue.code)))]
+    .filter((code) => ISSUE_CODE.test(code))
+    .slice(0, 16);
+}
+
+function asBoundedString(value: unknown, max: number): string {
+  return typeof value === "string" ? value.slice(0, max) : "";
+}
+
+function asStringList(value: unknown, maxItems: number, maxLength: number): string[] {
+  if (typeof value === "string") {
+    return tokenizeMustHaveSkills(value).map((item) => item.slice(0, maxLength)).slice(0, maxItems);
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.slice(0, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function asNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  if (typeof value === "string" && Number.isFinite(Number(value))) {
+    const parsed = Number(value);
+    return parsed >= 0 ? parsed : null;
+  }
+  return null;
+}
+
+function asEnum<T extends string>(value: unknown, allowed: readonly T[]): T | null {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : null;
+}
+
+function coerceJobAnalysis(raw: unknown): JobAnalysis | null {
+  const job = record(raw);
+  if (!job) return null;
+  const title = asBoundedString(job.title, 200);
+  const minYears = asNullableNumber(job.minYearsExperience);
+  const seniorityRaw = typeof job.seniority === "string" ? job.seniority : "";
+  const employmentRaw = typeof job.employmentType === "string" ? job.employmentType : "";
+  const locationRaw = typeof job.locationType === "string" ? job.locationType : "";
+  const urgencyRaw = typeof job.urgency === "string" ? job.urgency : "";
+  const companyStages = Array.isArray(job.companyStageTarget)
+    ? job.companyStageTarget.filter((stage): stage is (typeof COMPANY_STAGES)[number] =>
+        typeof stage === "string" && (COMPANY_STAGES as readonly string[]).includes(stage),
+      )
+    : [];
+  const warnings = Array.isArray(job.validationWarnings)
+    ? job.validationWarnings.flatMap((item) => {
+        const warning = record(item);
+        if (!warning) return [];
+        const field = asBoundedString(warning.field, 100);
+        const message = asBoundedString(warning.message, 1_000);
+        const severity = asEnum(warning.severity, ["info", "warning", "critical"] as const);
+        if (!field || !message || !severity) return [];
+        return [{ field, severity, message }];
+      })
+    : [];
+  const coerced: JobAnalysis = {
+    title,
+    department: asBoundedString(job.department, 200),
+    seniority: asEnum(job.seniority, SENIORITY_LEVELS) ?? seniorityFromVss(seniorityRaw, title, minYears),
+    employmentType: asEnum(job.employmentType, EMPLOYMENT_TYPES) ?? employmentFromVss(employmentRaw, ""),
+    locationType:
+      asEnum(job.locationType, LOCATION_TYPES) ?? locationTypeFromRemote(locationRaw, title),
+    regions: asStringList(job.regions, 50, 200),
+    timezone: asBoundedString(job.timezone, 100),
+    salaryMin: asNullableNumber(job.salaryMin),
+    salaryMax: asNullableNumber(job.salaryMax),
+    currency: asBoundedString(job.currency, 20),
+    equity: job.equity === true,
+    requiredSkills: asStringList(job.requiredSkills, 100, 100),
+    niceToHaveSkills: asStringList(job.niceToHaveSkills, 100, 100),
+    minYearsExperience: minYears,
+    maxYearsExperience: asNullableNumber(job.maxYearsExperience),
+    education: asBoundedString(job.education, 500),
+    industryExperience: asStringList(job.industryExperience, 50, 100),
+    companyStageTarget: companyStages.slice(0, 20),
+    teamSize: asBoundedString(job.teamSize, 100),
+    reportingTo: asBoundedString(job.reportingTo, 200),
+    urgency: asEnum(job.urgency, URGENCY_LEVELS) ?? urgencyFromVssPriority(urgencyRaw),
+    validationWarnings: warnings.slice(0, 100),
+  };
+  if (typeof job.location === "string") coerced.location = job.location.slice(0, 200);
+  if (typeof job.language === "string") coerced.language = job.language.slice(0, 20);
+  if (job.expectedStartDate === null || typeof job.expectedStartDate === "string") {
+    coerced.expectedStartDate =
+      typeof job.expectedStartDate === "string" ? job.expectedStartDate.slice(0, 100) : null;
+  }
+  return coerced;
+}
+
+function coerceScoringWeights(raw: unknown): Campaign["scoringWeights"] {
+  const rec = record(raw) ?? {};
+  const pick = (key: keyof typeof DEFAULT_SCORING_WEIGHTS) => {
+    const value = asNullableNumber(rec[key]);
+    return value != null && value <= 100 ? value : DEFAULT_SCORING_WEIGHTS[key];
+  };
+  const weights = {
+    skills: pick("skills"),
+    experience: pick("experience"),
+    companyStage: pick("companyStage"),
+    industry: pick("industry"),
+    location: pick("location"),
+    activity: pick("activity"),
+  };
+  return Object.values(weights).some((weight) => weight > 0) ? weights : { ...DEFAULT_SCORING_WEIGHTS };
+}
+
+function coerceGithubQueries(raw: unknown): Campaign["sourcingStrategy"]["githubQueries"] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    const query = record(item);
+    if (!query) return [];
+    const q = asBoundedString(query.query, 500).trim();
+    if (!q) return [];
+    return [{
+      label: asBoundedString(query.label, 200) || q.slice(0, 200),
+      query: q,
+      estimatedResults: asNullableNumber(query.estimatedResults) ?? 0,
+    }];
+  }).slice(0, 100);
+}
+
+function coerceProjectedCampaign(raw: unknown): SourcingAgentCampaign | null {
+  const campaign = record(raw);
+  if (!campaign) return null;
+  const id = asBoundedString(campaign.id, 100);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(id)) return null;
+  const status = asEnum(campaign.status, CAMPAIGN_STATUSES);
+  if (!status) return null;
+  const jobAnalysis = coerceJobAnalysis(campaign.jobAnalysis);
+  if (!jobAnalysis) return null;
+  const strategy = record(campaign.sourcingStrategy) ?? {};
+  return {
+    id,
+    status,
+    jobAnalysis,
+    scoringWeights: coerceScoringWeights(campaign.scoringWeights),
+    sourcingStrategy: {
+      excludedCompanies: asStringList(strategy.excludedCompanies, 500, 200),
+      githubQueries: coerceGithubQueries(strategy.githubQueries),
+      linkedinBoolean: asBoundedString(strategy.linkedinBoolean, 2_000),
+    },
+  };
 }
 
 export function projectSourcingAgentWorkspace(
@@ -236,41 +400,50 @@ export function projectSourcingAgentWorkspace(
   );
   if (!rawCampaign) return { status: "campaign_not_found" };
   const parsedCampaign = CampaignProjectionSchema.safeParse(rawCampaign);
-  if (!parsedCampaign.success) return { status: "invalid_state" };
+  const coercedCampaign = parsedCampaign.success
+    ? {
+        id: parsedCampaign.data.id,
+        status: parsedCampaign.data.status,
+        jobAnalysis: parsedCampaign.data.jobAnalysis,
+        scoringWeights: parsedCampaign.data.scoringWeights,
+        sourcingStrategy: {
+          excludedCompanies: [...parsedCampaign.data.sourcingStrategy.excludedCompanies],
+          githubQueries: parsedCampaign.data.sourcingStrategy.githubQueries.map((query) => ({ ...query })),
+          linkedinBoolean: parsedCampaign.data.sourcingStrategy.linkedinBoolean,
+        },
+      }
+    : coerceProjectedCampaign(rawCampaign);
+  if (!coercedCampaign) {
+    return {
+      status: "invalid_state",
+      issueCodes: parsedCampaign.success ? undefined : zodIssueCodes(parsedCampaign.error),
+    };
+  }
 
   const existing: CandidateDedupeIdentity[] = [];
   const rawCandidates = (Array.isArray(root.candidates) ? root.candidates : []).filter(
     (item) => record(item)?.campaignId === campaignId,
   );
-  if (rawCandidates.length > 5_000) return { status: "invalid_state" };
+  if (rawCandidates.length > 5_000) {
+    return { status: "invalid_state", issueCodes: ["too_big"] };
+  }
   for (const item of rawCandidates) {
     const candidate = record(item);
     if (!candidate) continue;
     const parsed = DedupeIdentitySchema.safeParse({
       campaignId: candidate.campaignId,
-      email: candidate.email,
-      linkedinUrl: candidate.linkedinUrl,
-      githubUrl: candidate.githubUrl,
-      ...(candidate.sourceUrl === undefined ? {} : { sourceUrl: candidate.sourceUrl }),
-      lastContactedAt: candidate.lastContactedAt,
+      email: typeof candidate.email === "string" ? candidate.email : "",
+      linkedinUrl: typeof candidate.linkedinUrl === "string" ? candidate.linkedinUrl : "",
+      githubUrl: typeof candidate.githubUrl === "string" ? candidate.githubUrl : "",
+      ...(typeof candidate.sourceUrl === "string" ? { sourceUrl: candidate.sourceUrl } : {}),
+      lastContactedAt: candidate.lastContactedAt ?? null,
     });
     if (!parsed.success) continue;
     const { campaignId: _campaignId, ...identity } = parsed.data;
     existing.push(identity);
   }
 
-  const projected = parsedCampaign.data;
-  const campaign: SourcingAgentCampaign = {
-    id: projected.id,
-    status: projected.status,
-    jobAnalysis: projected.jobAnalysis,
-    scoringWeights: projected.scoringWeights,
-    sourcingStrategy: {
-      excludedCompanies: [...projected.sourcingStrategy.excludedCompanies],
-      githubQueries: projected.sourcingStrategy.githubQueries.map((query) => ({ ...query })),
-      linkedinBoolean: projected.sourcingStrategy.linkedinBoolean,
-    },
-  };
+  const campaign: SourcingAgentCampaign = coercedCampaign;
   return {
     status: "ok",
     value: {

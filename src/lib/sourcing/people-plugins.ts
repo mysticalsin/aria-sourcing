@@ -40,6 +40,8 @@ export const SOURCING_AGENT_UNAVAILABLE_TOAST =
 
 export const PEOPLE_PLUGIN_SETTINGS_HREF = "/settings";
 export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
+export const CAMPAIGN_NOT_READY_TOAST =
+  "Complete and review the campaign brief before sourcing.";
 
 const OFFICIAL_LINKEDIN_PLUGIN_IDS = new Set(["int_linkedin_rsc"]);
 
@@ -151,6 +153,27 @@ function pluginUi(title: string, description: string): PeoplePluginUi {
   };
 }
 
+function isCampaignBriefError(error: string): boolean {
+  return (
+    error === CAMPAIGN_NOT_READY_TOAST ||
+    error.includes("CAMPAIGN_NOT_READY") ||
+    /campaign_invalid_state/i.test(error) ||
+    /complete and review the campaign brief/i.test(error) ||
+    /campaign brief requires review/i.test(error)
+  );
+}
+
+function campaignBriefUi(description: string): PeoplePluginUi {
+  return {
+    title: "Campaign needs review",
+    description: /complete and review the campaign brief/i.test(description)
+      ? description
+      : CAMPAIGN_NOT_READY_TOAST,
+    href: "",
+    actionLabel: "",
+  };
+}
+
 /** Keyed harvest fail: next search, not reconnect the key that already works. */
 function keyedEmptyHarvestUi(description: string): PeoplePluginUi {
   return {
@@ -175,6 +198,9 @@ export function sourceRejectedToast(
   if (description === CROSS_ORIGIN_SOURCING_TOAST || /cross-origin/i.test(description)) {
     return pluginUi("Sourcing failed", CROSS_ORIGIN_SOURCING_TOAST);
   }
+  if (isCampaignBriefError(description) || isCampaignBriefError(error)) {
+    return campaignBriefUi(description);
+  }
   if (
     description === SOURCING_AGENT_UNAVAILABLE_TOAST ||
     /Sourcing is unavailable/i.test(description)
@@ -194,6 +220,9 @@ export function peoplePluginFailLoudUi(
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
   if (remapped === CROSS_ORIGIN_SOURCING_TOAST || /cross-origin/i.test(remapped)) {
     return pluginUi("Sourcing failed", remapped);
+  }
+  if (isCampaignBriefError(remapped) || isCampaignBriefError(error)) {
+    return campaignBriefUi(remapped);
   }
   if (remapped === SOURCING_AGENT_UNAVAILABLE_TOAST || /Sourcing is unavailable/i.test(remapped)) {
     return pluginUi("Sourcing failed", SOURCING_AGENT_UNAVAILABLE_TOAST);

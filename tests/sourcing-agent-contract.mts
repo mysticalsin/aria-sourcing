@@ -73,6 +73,64 @@ test("workspace projection owns campaign and dedupe context while stripping unre
   assert.equal(JSON.stringify(projected.value).includes("private"), false);
 });
 
+test("people-first projection coerces a reviewed Calypso brief instead of invalid_state", () => {
+  const campaignId = "camp_1788068519249_senior-calypso-business-analyst";
+  const projected = projectSourcingAgentWorkspace(
+    {
+      campaigns: [{
+        id: campaignId,
+        status: "Sourcing",
+        jobAnalysis: {
+          title: "Senior Calypso Business Analyst",
+          department: "IS&D - Applicative Support",
+          seniority: "Senior (7-10 years)",
+          employmentType: "Consulting",
+          locationType: "Hybrid",
+          requiredSkills: "Calypso Business Analysis, MySQL",
+          extraClientField: "strip-me",
+        },
+        scoringWeights: { skills: 50 },
+        sourcingStrategy: {
+          githubQueries: [{ label: "python", query: "language:Python", extra: true }],
+        },
+      }],
+      candidates: [
+        {
+          campaignId,
+          email: "calypso.martinez@example.com",
+          githubUrl: "https://github.com/calypso-martinez",
+          sourcePlatform: "GitHub",
+        },
+      ],
+    },
+    campaignId,
+  );
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(projected.value.campaign.status, "Sourcing");
+  assert.equal(projected.value.campaign.jobAnalysis.title, "Senior Calypso Business Analyst");
+  assert.equal(projected.value.campaign.jobAnalysis.seniority, "Senior");
+  assert.equal(projected.value.campaign.jobAnalysis.employmentType, "Contract");
+  assert.ok(projected.value.campaign.jobAnalysis.requiredSkills.includes("Calypso"));
+  assert.ok(projected.value.campaign.jobAnalysis.requiredSkills.includes("MySQL"));
+  assert.equal(projected.value.campaign.scoringWeights.skills, 50);
+  assert.ok(projected.value.campaign.scoringWeights.experience > 0);
+  assert.equal(projected.value.campaign.sourcingStrategy.githubQueries[0]?.query, "language:Python");
+});
+
+test("projection still fail-closes when a campaign cannot be coerced", () => {
+  const projected = projectSourcingAgentWorkspace(
+    {
+      campaigns: [{ id: campaignId, status: "not-a-status", jobAnalysis: null }],
+    },
+    campaignId,
+  );
+  assert.equal(projected.status, "invalid_state");
+  if (projected.status !== "invalid_state") return;
+  assert.ok((projected.issueCodes ?? []).length > 0);
+  assert.ok((projected.issueCodes ?? []).every((code) => /^[A-Za-z0-9._-]+$/.test(code)));
+});
+
 test("people-first projection survives a stale cloud-model settings blob", () => {
   const state = {
     campaigns: [{
@@ -200,7 +258,7 @@ test("campaign UI presents a completed zero-match search as information, not sou
   assert.match(action, /No (?:candidates(?: were)? added|new matches)/i);
   assert.match(action, /variant:\s*"info"/);
   assert.match(action, /peoplePluginFailLoudUi/);
-  assert.match(page, /Connect LinkedIn/);
+  assert.match(page, /Connect a real Apify/);
   assert.match(action, /emptyPeopleFirstToast/);
 });
 
@@ -241,6 +299,11 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /session_null/);
   assert.match(route, /workspace_read_error/);
   assert.match(route, /campaign_invalid_state/);
+  assert.match(route, /campaign_invalid_state codes=/);
+  assert.match(route, /status === "invalid_state"/);
+  assert.match(design, /campaign_invalid_state/);
+  assert.match(design, /CAMPAIGN_NOT_READY/);
+  assert.match(design, /never Open Access & Keys/);
   assert.match(route, /SOURCING_AGENT_UNAVAILABLE:unhandled/);
   assert.match(route, /classifySameOriginJsonRequest/);
   assert.doesNotMatch(route, /origin !== req\.nextUrl\.origin/);

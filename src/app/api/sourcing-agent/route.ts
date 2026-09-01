@@ -362,13 +362,26 @@ async function handlePost(req: NextRequest, correlationId: string) {
       "workspace_read_error",
     );
   }
+  if (initial.status === "invalid_state") {
+    const codes = (initial.issueCodes ?? [])
+      .filter((code) => /^[A-Za-z0-9._-]{1,40}$/.test(code))
+      .slice(0, 12)
+      .join(",");
+    return fail(
+      409,
+      "CAMPAIGN_NOT_READY",
+      "Campaign brief requires review before sourcing.",
+      undefined,
+      codes ? `campaign_invalid_state codes=${codes}` : "campaign_invalid_state",
+    );
+  }
   if (initial.status !== "ok") {
     return fail(
       503,
       "SOURCING_AGENT_UNAVAILABLE",
       "Campaign authority is unavailable.",
       undefined,
-      "campaign_invalid_state",
+      "unhandled",
     );
   }
   if (!campaignAllowsSourcing(initial.value.campaign)) {
@@ -900,8 +913,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
           id: candidate.id,
           campaignId,
           name: candidate.name,
-          ...(candidate.email ? { email: candidate.email } : {}),
-          ...(candidate.phone ? { phone: candidate.phone } : {}),
+          ...(peopleFirst && candidate.email ? { email: candidate.email } : {}),
+          ...(peopleFirst && candidate.phone ? { phone: candidate.phone } : {}),
           currentTitle: candidate.currentTitle,
           currentCompany: candidate.currentCompany,
           location: candidate.location,

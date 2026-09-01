@@ -76,12 +76,14 @@ person's name is a name-only hit.
 - Their score must not pass the 60% floor.
 - Ranking someone because they are named Calypso is a contract violation.
 
-People-first shortlist rows must be **real people with email, phone, and
-LinkedIn**. Keep extra harvest fields when present. Do not invent contact
-fields. Leftover GitHub / `@example.com` / `@fixture.example` rows are
-**FAIL**. Name-only is **FAIL**. Live hydrate strips those leftover rows
-from people-first campaigns. If harvestapi Full returns people without
-email + phone + LinkedIn, fail loud
+People-first shortlist rows must be **real people with email, phone, and LinkedIn**.
+Keep extra harvest fields when present. Do not invent contact fields.
+Leftover GitHub / `@example.com` / `@fixture.example` rows are **FAIL**.
+Name-only is **FAIL**. Live hydrate strips those leftover rows from
+people-first campaigns. A valid stored Apify key plus a reviewed
+Calypso brief must reach `request_entry` — leftover GitHub rows or a
+strict projection miss must not toast Open Access & Keys. If harvestapi
+Full returns people without email + phone + LinkedIn, fail loud
 (`PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS`) with query + run-id. Do not
 keep those rows.
 
@@ -239,10 +241,16 @@ hydrate and on the Strategy tab.
 
   `request_exit` must name the 503 gate
   (`prod_fail_closed`, `supabase_disabled`, `session_null`,
-  `workspace_read_error`, `campaign_invalid_state`, `unhandled`).
-  People-first must not die on a stale cloud-model settings blob
-  before `request_entry`. A healthy product-host click prints
-  `request_entry` with the brief query and `apifyKeyPresent`.
+  `workspace_read_error`, `unhandled`). `campaign_invalid_state` is
+  **not** a 503 and never Open Access & Keys. It is `CAMPAIGN_NOT_READY`
+  (Complete and review the campaign brief) with zod issue codes on
+  `request_exit` — no PII, no key. People-first must not die on a
+  stale cloud-model settings blob, leftover GitHub / `@example.com`
+  rows, or a reviewed brief missing optional shape fields
+  (salary, githubQueries extras, VSS Consulting / Senior (7-10 years))
+  before `request_entry`. A healthy product-host click with a valid
+  stored Apify key prints `request_entry` with the brief query and
+  `apifyKeyPresent` true.
 
   When the Apify card is Mock, `request_entry` has
   `apifyKeyPresent` false and `request_exit` is
@@ -270,8 +278,8 @@ hydrate and on the Strategy tab.
   + a **Source via Apify** next-search CTA. If it returns people
   without email + phone + LinkedIn, fail
   `PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS` with query + run-id —
-  do not mint contacts and do not keep name-only rows. Never 15
-  identical `LinkedIn: 0 real candidates` rows. Do not invent
+  do not mint contacts and do not keep name-only rows. Never 15 identical
+  `LinkedIn: 0 real candidates` rows. Do not invent
   people. Do not complete a sourcing run that only stores 0-count
   receipts.
 

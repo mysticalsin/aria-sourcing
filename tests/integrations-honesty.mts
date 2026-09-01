@@ -568,6 +568,15 @@ ok(
     SOURCING_AGENT_UNAVAILABLE_TOAST &&
     /This is not 0 people/i.test(SOURCING_AGENT_UNAVAILABLE_TOAST),
 );
+const briefToast = sourceRejectedToast("CAMPAIGN_NOT_READY", calypsoJob, keyedApify);
+ok(
+  "campaign_invalid_state toasts brief review, never Open Access & Keys",
+  /complete and review the campaign brief/i.test(briefToast.description) &&
+    briefToast.actionLabel !== "Open Access & Keys" &&
+    briefToast.href !== "/settings" &&
+    sourceRejectedToast("campaign_invalid_state codes=invalid_type", calypsoJob, keyedApify).actionLabel !==
+      "Open Access & Keys",
+);
 ok(
   "generic unavailable on a Mock card stays unavailable, not a guessed Mock toast",
   remapPeopleFirstSourcingError(SOURCING_AGENT_UNAVAILABLE_TOAST, calypsoJob, liveTenant) ===

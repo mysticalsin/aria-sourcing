@@ -664,6 +664,7 @@ test("Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVE
     location: "Montreal",
     linkedinUrl: "https://www.linkedin.com/in/elena-varga-concept",
     githubUrl: "",
+    sourceExternalId: "elena-varga-concept",
     sourcePlatform: "Apify",
     sourceQuery: "Calypso Linux Python",
     matchScore: 72,
@@ -672,6 +673,7 @@ test("Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVE
     recentActivity: "Calypso settlement production support.",
     createdAt: "2026-09-01T12:00:00.000Z",
     provenance: "live",
+    lastContactedAt: null,
     email: "elena.varga@bnpp-cib.com",
     phone: "+1 514 555 0142",
   }];
@@ -700,12 +702,20 @@ test("Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVE
     );
     const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
     const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
-    const body = (await response.json()) as { code?: string; ok?: boolean };
+    const body = (await response.json()) as {
+      code?: string;
+      ok?: boolean;
+      candidates?: Array<{ email?: string; phone?: string; linkedinUrl?: string }>;
+    };
     assert.match(entry, /request_entry/);
     assert.match(entry, /"apifyKeyPresent":true/);
     assert.doesNotMatch(exit, /PEOPLE_FIRST_HARVEST_MOCK/);
     assert.notEqual(body.code, "PEOPLE_FIRST_HARVEST_MOCK");
     assert.equal(response.status, 200, JSON.stringify(body));
+    assert.equal(body.candidates?.[0]?.email, "elena.varga@bnpp-cib.com");
+    assert.equal(body.candidates?.[0]?.phone, "+1 514 555 0142");
+    assert.match(String(body.candidates?.[0]?.linkedinUrl), /linkedin\.com\/in\//);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
   } finally {
     process.stdout.write = origWrite;
   }
@@ -800,6 +810,77 @@ test("an incomplete need cannot reach provider, vault, or sourcing transport", a
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
   assert.equal(runnerCalls, 0);
+});
+
+test("people-first invalid_state is CAMPAIGN_NOT_READY, not Access & Keys unavailable", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = {
+    ...baseCampaign,
+    status: "not-a-status",
+    jobAnalysis: null,
+  } as unknown as Campaign;
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const response = await post(request());
+    const body = await response.json();
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "CAMPAIGN_NOT_READY");
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+    assert.match(exit, /campaign_invalid_state/);
+    assert.match(exit, /codes=/);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
+    assert.equal(runnerCalls, 0);
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
+test("people-first reviewed Calypso brief with leftover GitHub rows starts harvest", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = {
+    ...financeCampaign(),
+    jobAnalysis: {
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Applicative Support",
+      seniority: "Senior (7-10 years)",
+      employmentType: "Consulting",
+      locationType: "Hybrid",
+      requiredSkills: "Calypso Business Analysis, MySQL",
+    },
+    scoringWeights: { skills: 50 },
+    sourcingStrategy: {
+      githubQueries: [{ label: "python", query: "language:Python", extra: true }],
+    },
+  } as unknown as Campaign;
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const response = await post(request());
+    const body = await response.json();
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /"apifyKeyPresent":true/);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
+    assert.doesNotMatch(exit, /campaign_invalid_state/);
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+    assert.notEqual(body.code, "CAMPAIGN_NOT_READY");
+    assert.notEqual(response.status, 503, JSON.stringify(body));
+  } finally {
+    process.stdout.write = origWrite;
+  }
 });
 
 test("prompt-like instructions in persisted role fields are quarantined before provider I/O", async () => {
