@@ -144,7 +144,8 @@ test("store consumer uses strict response parsing, current authority, commit-tim
   assert.match(action, /commitPersisted\(\(prev\)/);
   assert.match(action, /dedupeCandidates\(/);
   assert.match(action, /if \(!persisted \|\| !authorized\)/);
-  assert.match(action, /missingPeoplePluginsToast/);
+  assert.doesNotMatch(action, /missingPeoplePluginsToast/);
+  assert.doesNotMatch(action, /mode: "fixture"/);
   assert.match(action, /remapPeopleFirstSourcingError/);
   assert.match(action, /isGithubOnlyEmptyBatch/);
 });
@@ -186,19 +187,33 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const apify = readFileSync(new URL("../src/lib/sourcing/apify.ts", import.meta.url), "utf8");
   const helpers = readFileSync(new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url), "utf8");
   const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
-  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS = 180_000/);
+  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS = 90_000/);
   assert.match(plan, /apifyHarvestQueryFromBrief/);
   assert.match(route, /peopleFirst \? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000/);
+  assert.match(route, /export const maxDuration = 90/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_STILL_RUNNING/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_EMPTY/);
+  assert.match(route, /request_entry/);
+  assert.match(route, /apifyKeyPresent/);
+  assert.match(route, /logAriaHarvest\("request_received"/);
   assert.match(route, /!successfulQuery && !\(peopleFirst && !frameworkAuthorization\)/);
   assert.match(route, /multiSourcePlan.filter\(\(step\) => step.platform === "Apify"\)/);
   assert.match(tools, /profileScraperMode: "Full"/);
   assert.doesNotMatch(tools, /profileScraperMode: "Short"/);
   assert.match(tools, /APIFY_HARVEST_WAIT_MS/);
-  assert.match(apify, /APIFY_HARVEST_WAIT_CAP_MS = 180_000/);
+  assert.match(apify, /APIFY_HARVEST_WAIT_CAP_MS = 90_000/);
   assert.match(apify, /still_running/);
+  const harvest = readFileSync(new URL("../src/lib/sourcing/harvest-evidence.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../src/lib/sourcing/sourcing-agent-client.ts", import.meta.url), "utf8");
+  const actions = readFileSync(new URL("../src/lib/store/sourcing-actions.ts", import.meta.url), "utf8");
+  assert.match(harvest, /process\.stdout\.write/);
+  assert.doesNotMatch(harvest, /console\.info/);
+  assert.match(harvest, /PEOPLE_FIRST_CLIENT_WAIT_MS = 90_000/);
+  assert.match(harvest, /PEOPLE_FIRST_HARVEST_ABORTED/);
+  assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);
+  assert.match(client, /formatHarvestEvidenceError\("aborted"/);
+  assert.doesNotMatch(actions, /if \(missingPlugins\) \{\s*return await sourceFixtureDryRunBatch/);
   assert.match(helpers, /headline \|\| positionTitle/);
   assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
   assert.match(design, /recall-capable Apify harvestapi/);
@@ -290,11 +305,11 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     financeJob,
     liveUnconfigured,
   );
-  assert.equal(toast?.title, "Add a valid Apify key");
+  assert.equal(toast?.title, "Connect Apify");
   assert.match(String(toast?.description), /MISSING_PLUGIN/);
   assert.doesNotMatch(String(toast?.description), /invalid response/i);
   assert.equal(toast?.href, "/settings");
-  assert.match(String(toast?.actionLabel), /Access & Keys/);
+  assert.match(String(toast?.actionLabel), /Connect Apify/);
   assert.match(missing, /Apify/);
 
   const validApify = [{ provider: "Apify" as const, status: "valid" as const }];
@@ -361,6 +376,27 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     assert.match(harvestEmpty.error, /Source via Apify/);
     assert.doesNotMatch(harvestEmpty.error, /unavailable/i);
   }
+  const abortedWait = await requestReviewedSourcing(async () => {
+    const error = new Error("The operation was aborted.");
+    error.name = "AbortError";
+    throw error;
+  }, campaignId, 5);
+  assert.equal(abortedWait.ok, false);
+  if (!abortedWait.ok) {
+    assert.match(abortedWait.error, /aborted after 90s/);
+    assert.match(abortedWait.error, /Do not treat this as 0 people/);
+    assert.doesNotMatch(abortedWait.error, /unavailable/i);
+  }
+  const abortToast = peoplePluginFailLoudUi(
+    abortedWait.ok ? "" : abortedWait.error,
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.ok(abortToast);
+  assert.notEqual(abortToast?.title, "Sourcing failed");
+  assert.doesNotMatch(String(abortToast?.description), /0 candidates were added/i);
+
   const harvestToast = peoplePluginFailLoudUi(
     harvestEmpty.ok ? "" : harvestEmpty.error,
     financeJob,

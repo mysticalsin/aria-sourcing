@@ -1,4 +1,8 @@
-import { isHarvestEvidenceCode } from "./harvest-evidence";
+import {
+  formatHarvestEvidenceError,
+  isHarvestEvidenceCode,
+  PEOPLE_FIRST_CLIENT_WAIT_MS,
+} from "./harvest-evidence";
 import { MISSING_PEOPLE_PLUGINS_TOAST } from "./people-plugins";
 import {
   parseSourcingAgentCandidates,
@@ -85,6 +89,7 @@ export async function requestReviewedSourcing(
         "Idempotency-Key": operationId,
         "X-Request-Id": operationId,
       },
+      signal: AbortSignal.timeout(PEOPLE_FIRST_CLIENT_WAIT_MS),
       body: JSON.stringify({
         campaignId,
         count,
@@ -97,7 +102,19 @@ export async function requestReviewedSourcing(
           : {}),
       }),
     });
-  } catch {
+  } catch (error) {
+    const aborted =
+      (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) ||
+      (typeof error === "object" &&
+        error !== null &&
+        "name" in error &&
+        (error.name === "AbortError" || error.name === "TimeoutError"));
+    if (aborted) {
+      return {
+        ok: false,
+        error: formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
+      };
+    }
     return { ok: false, error: "The sourcing agent could not be reached." };
   }
 

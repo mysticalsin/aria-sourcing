@@ -191,18 +191,30 @@ hydrate and on the Strategy tab.
   `site:linkedin.com` is not the harvest and must not run, succeed
   with 0, or mint LinkedIn learning receipts. The autonomous loop
   worker (`claimed:0`) is not this path — grep the **web** process
-  for `[aria-harvest]`, not loop ticks.
+  for `aria_harvest` / `[aria-harvest]` JSON on **stdout** (same
+  channel as `sourcing_loop_tick`). Do not use `console.info`.
+  First line is `request_received`. Then `request_entry` with
+  `apifyKeyPresent` (boolean, never the key), campaign title, and
+  query. Then harvest lines with `actor`, `query`
+  (`Calypso Linux Python`), `runId`, `status`, and `items`.
+  If Fly has no line, the browser did not hit this process.
 
-  The keyed path must **start** a harvestapi Full run and log
-  (no secrets) `actor`, `query` (`Calypso Linux Python`), `runId`,
-  `status`, and `item` count. If start does not happen, fail loud
-  (`PEOPLE_FIRST_HARVEST_NOT_STARTED`). Do not fall through to
-  LinkedIn 0-rows. Do not depend on Playwright / browser-tools.
+  Source next batch **always POSTs `/api/sourcing-agent`**. Do not
+  infer a missing key from integrations 1/7 and silently run a
+  fixture dry-run. A missing stored key fails loud **Connect Apify**.
+  A present key starts harvestapi Full.
+
+  The keyed path must **start** a harvestapi Full run. If start
+  does not happen, fail loud (`PEOPLE_FIRST_HARVEST_NOT_STARTED`).
+  Do not fall through to LinkedIn 0-rows. Do not depend on
+  Playwright / browser-tools.
 
   Poll until the actor is terminal (`SUCCEEDED` / `FAILED` /
   `ABORTED` / `TIMED-OUT`). Do not stamp 0 people because a local
   wait elapsed while the run was still `RUNNING`
-  (`PEOPLE_FIRST_HARVEST_STILL_RUNNING` + run-id). Budget 180s.
+  (`PEOPLE_FIRST_HARVEST_STILL_RUNNING` + run-id). Client and
+  server wait **90s**. A client abort is
+  `PEOPLE_FIRST_HARVEST_ABORTED` — fail loud, never silent 0.
 
   If harvestapi **honestly** returns 0 after `SUCCEEDED`, one
   evidenced fail (`PEOPLE_FIRST_HARVEST_EMPTY`) with query + run-id

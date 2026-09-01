@@ -29,9 +29,9 @@ const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
 const DEV_FUSION_PATH = "/actors/dev_fusion~linkedin-profile-scraper/run-sync-get-dataset-items";
 
-/** Poll until terminal. Full harvestapi often exceeds 75s; do not stamp 0 on a still-running actor. */
-export const APIFY_HARVEST_WAIT_MS = 180_000;
-export const APIFY_HARVEST_WAIT_CAP_MS = 180_000;
+/** Poll until terminal. Align with the 90s people-first client wait. Do not stamp 0 on a still-running actor. */
+export const APIFY_HARVEST_WAIT_MS = 90_000;
+export const APIFY_HARVEST_WAIT_CAP_MS = 90_000;
 
 // Actor input is capped server-side regardless of what the caller requests —
 // this is the single funnel every Apify run goes through.

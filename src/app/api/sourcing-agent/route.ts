@@ -45,6 +45,7 @@ import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import {
   formatHarvestEvidenceError,
+  logAriaHarvest,
   PEOPLE_FIRST_HARVEST_EMPTY,
   PEOPLE_FIRST_HARVEST_NOT_STARTED,
   PEOPLE_FIRST_HARVEST_STILL_RUNNING,
@@ -61,7 +62,7 @@ import type { Candidate, Role } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+export const maxDuration = 90;
 
 const SYSTEM_PROMPT =
   "You are Aria's autonomous sourcing agent. You have a search_candidates tool that returns real, " +
@@ -342,6 +343,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
   const tavilyKey = await resolveStoredTavilyKey(session);
   const apifyToken = await resolveStoredApifyKey(session);
+  const harvestQuery = apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis);
+  logAriaHarvest("request_entry", {
+    query: harvestQuery,
+    campaign: initial.value.campaign.jobAnalysis.title,
+    apifyKeyPresent: Boolean(apifyToken),
+    started: false,
+  });
   // Fail before claiming a run. Tavily is not LinkedIn. GitHub Live-unconfigured
   // is not a people source. Name the plugins and the connect action.
   if (peopleFirst && !apifyToken) {
@@ -906,6 +914,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
 export async function POST(req: NextRequest) {
   const correlationId = requestId(req);
+  logAriaHarvest("request_received", { query: "", started: false });
   try {
     return await handlePost(req, correlationId);
   } catch {

@@ -3,15 +3,9 @@ import { generateOutreach, newOutreachMessage, sourceCandidates } from "../mock-
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
 import {
-  mapFixtureApiShortlist,
-  needTextFromJob,
-} from "../sourcing/fixture-shortlist-candidates";
-import { CONNECT_CHANNELS_COPY } from "../sourcing/people-connect";
-import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
-  missingPeoplePluginsToast,
   peopleSourcePluginsConnected,
   remapPeopleFirstSourcingError,
   MISSING_PEOPLE_PLUGINS_TOAST,
@@ -931,128 +925,6 @@ export function createSourcingActions({
     };
   };
 
-  const sourceFixtureDryRunBatch = async (
-    campaignId: string,
-    initialFingerprint: string,
-  ): Promise<SourceNextBatchResult> => {
-    const initial = currentState();
-    const campaign = initial?.campaigns.find((item) => item.id === campaignId);
-    if (!initial || !campaign) {
-      return { ok: false, error: "Campaign not found.", source: "not_found" };
-    }
-    if (!evaluateNeedReadiness(campaign.jobAnalysis).ready) {
-      return invalidRequest("Review the need before sourcing.");
-    }
-    let body: unknown;
-    try {
-      const response = await workspaceFetch("/api/source/need", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "fixture",
-          count: SHORTLIST_DRAFT_CAP,
-          jd: needTextFromJob(campaign.jobAnalysis),
-        }),
-      });
-      body = await response.json().catch(() => null);
-      if (!response.ok || !isRecord(body) || body.ok !== true || body.mode !== "fixture") {
-        return {
-          ok: false,
-          error: `${CONNECT_CHANNELS_COPY} Dry-run shortlist needs a signed-in session.`,
-          source: "unavailable",
-        };
-      }
-    } catch {
-      return {
-        ok: false,
-        error: `${CONNECT_CHANNELS_COPY} Dry-run shortlist could not be reached.`,
-        source: "unavailable",
-      };
-    }
-    const mapped = mapFixtureApiShortlist({
-      campaign,
-      shortlist: isRecord(body) ? body.shortlist : null,
-      rejected: isRecord(body) ? body.rejected : null,
-    });
-    if (!mapped) {
-      return {
-        ok: false,
-        error: `${CONNECT_CHANNELS_COPY} Dry-run shortlist returned an unusable matcher payload.`,
-        source: "unavailable",
-      };
-    }
-    if (!candidatePersistenceAllowed("synthetic")) {
-      return invalidRequest("This workspace cannot persist a dry-run shortlist.");
-    }
-
-    let authorized = false;
-    let result: SourceResult = { accepted: [], skipped: mapped.skipped };
-    const applied = await commitPersisted((previous) => {
-      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return previous;
-      const latestCampaign = previous.campaigns.find((item) => item.id === campaignId);
-      if (
-        !latestCampaign ||
-        !campaignAllowsLiveSourcing(latestCampaign.status) ||
-        !evaluateNeedReadiness(latestCampaign.jobAnalysis).ready ||
-        sourcingAgentCampaignFingerprint(latestCampaign) !== initialFingerprint
-      ) {
-        return previous;
-      }
-      authorized = true;
-      result = dedupeCandidates(mapped.accepted, previous.candidates, {
-        excludedCompanies: latestCampaign.sourcingStrategy.excludedCompanies,
-      });
-      result = {
-        ...result,
-        skipped: [...result.skipped, ...mapped.skipped],
-      };
-      const pendingDraftIds = new Set(
-        previous.outreach
-          .filter((message) => message.status === "Needs Approval")
-          .map((message) => message.candidateId),
-      );
-      const tone = effectiveTone(previous.skills);
-      const language = latestCampaign.jobAnalysis.language ?? previous.settings.defaultLanguage;
-      const drafts = result.accepted
-        .filter((candidate) => candidate.matchScore >= SHORTLIST_DRAFT_FLOOR)
-        .filter((candidate) => !pendingDraftIds.has(candidate.id))
-        .slice(0, SHORTLIST_DRAFT_CAP)
-        .flatMap((candidate) =>
-          draftFirstTouchPair(candidate, latestCampaign, tone, previous.settings, language),
-        );
-      let next: HermesState = {
-        ...previous,
-        candidates: [...result.accepted, ...previous.candidates],
-        outreach: drafts.length > 0 ? [...drafts, ...previous.outreach] : previous.outreach,
-      };
-      if (result.accepted.length > 0) next = recomputeMetrics(next, campaignId);
-      return withActivity(
-        next,
-        makeActivity({
-          type: "sourcing",
-          title: `Sourced ${result.accepted.length} candidates`,
-          notes: `Dry-run fixture matcher. ${result.skipped.length} skipped by dedupe, exclusions, or name-only. ${drafts.length} in-product first-touch draft${drafts.length === 1 ? "" : "s"} queued for approval. Connect LinkedIn and Outlook to search live people.`,
-          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped, ${drafts.length} drafted (dry-run)`,
-          campaignId,
-          linkedEntityType: "campaign",
-          linkedEntityId: campaignId,
-        }),
-        campaignId,
-      );
-    });
-    if (!applied || !authorized) {
-      return {
-        ok: false,
-        error: "Workspace changed before the sourced candidates could be saved. Retry sourcing.",
-        source: "unavailable",
-      };
-    }
-    if (result.accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: result.accepted.length });
-    }
-    return { ...result, source: "mock", ok: true };
-  };
-
   const sourceNextBatch: SourcingActions["sourceNextBatch"] = async (
     campaignId,
     opts,
@@ -1137,14 +1009,9 @@ export function createSourcingActions({
     }
 
     if (!demoSourcing) {
-      const missingPlugins = missingPeoplePluginsToast(
-        initialCampaign.jobAnalysis,
-        initialState.integrations,
-        initialState.apiKeys,
-      );
-      if (missingPlugins) {
-        return await sourceFixtureDryRunBatch(campaignId, initialFingerprint);
-      }
+      // People-first must hit /api/sourcing-agent. The server is the source of
+      // truth for a stored Apify key. Do not infer "no key" from integrations
+      // 1/7 and silently run a fixture dry-run.
       return await sourceReviewedCampaignBatch(
         campaignId,
         count,

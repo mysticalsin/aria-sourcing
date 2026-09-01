@@ -377,6 +377,11 @@ ok(
   peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.href === "/settings" &&
     Boolean(peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.actionLabel),
 );
+ok(
+  "missing Apify key is Connect Apify, not silent 0",
+  peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.title === "Connect Apify" &&
+    peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.actionLabel === "Connect Apify",
+);
 const keyedEmptyToast = emptyPeopleFirstToast(
   calypsoJob,
   liveTenant,

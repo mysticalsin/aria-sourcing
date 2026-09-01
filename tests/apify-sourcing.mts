@@ -452,5 +452,30 @@ try {
   ok("Short-mode position titles are skill evidence", Boolean(shortRow?.techStack.includes("Calypso")));
 }
 
+{
+  const { logAriaHarvest, HARVEST_LOG_PREFIX } = await import("../src/lib/sourcing/harvest-evidence");
+  const chunks: string[] = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, ...rest: unknown[]) => {
+    chunks.push(String(chunk));
+    return originalWrite(chunk as never, ...(rest as never[]));
+  }) as typeof process.stdout.write;
+  try {
+    logAriaHarvest("request_entry", {
+      query: "Calypso Linux Python",
+      campaign: "Calypso Application Support",
+      apifyKeyPresent: true,
+      started: false,
+    });
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  const line = chunks.find((chunk) => chunk.includes("aria_harvest") && chunk.includes("request_entry")) ?? "";
+  const parsed = line.trim() ? JSON.parse(line.trim()) as Record<string, unknown> : {};
+  ok("harvest log is JSON on stdout", parsed.event === "aria_harvest" && parsed.tag === HARVEST_LOG_PREFIX);
+  ok("request_entry has apifyKeyPresent boolean, never a key", parsed.apifyKeyPresent === true && !JSON.stringify(parsed).includes("apify_api_"));
+  ok("request_entry carries actor and query", parsed.actor === "harvestapi~linkedin-profile-search" && parsed.query === "Calypso Linux Python");
+}
+
 console.log(`RESULT apify-sourcing: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

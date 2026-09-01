@@ -1787,7 +1787,7 @@ test("a rejected persisted commit never reports or emits sourcing success", asyn
   );
 });
 
-test("people-first Source next batch uses fixture dry-run when Apify is unkeyed", async () => {
+test("people-first Source next batch hits sourcing-agent when Apify looks unkeyed, not a silent fixture", async () => {
   const seed = buildSeedState();
   const campaign = {
     ...seed.campaigns[0],
@@ -1806,61 +1806,27 @@ test("people-first Source next batch uses fixture dry-run when Apify is unkeyed"
   const harness = createHarness({
     state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
     syntheticSourcingAllowed: false,
+    responseStatus: 503,
     responseBody: {
-      ok: true,
-      requestId: "fix-1",
-      mode: "fixture",
-      need: { title: "Calypso Application Support", requiredSkills: ["Calypso", "Linux"] },
-      shortlist: [
-        {
-          id: "fixture-app-support-1",
-          name: "Elena Varga",
-          score: 91,
-          breakdown: {
-            skills: 90,
-            cv: 88,
-            linkedin: 80,
-            composite: 87,
-            requiredHits: ["Calypso", "Linux"],
-            cvHits: ["production support"],
-            linkedinHits: ["Calypso"],
-          },
-          evidence: { skills: ["Calypso"], cv: ["production support"], linkedin: ["Calypso"] },
-          provenance: "fixture",
-          ineligible: false,
-          reason: null,
-        },
-      ],
-      rejected: [
-        {
-          id: "fixture-name-only",
-          name: "Calypso Martinez",
-          score: 12,
-          breakdown: { skills: 0, cv: 0, linkedin: 0, composite: 0, requiredHits: [], cvHits: [], linkedinHits: [] },
-          evidence: { skills: [], cv: [], linkedin: [] },
-          provenance: "fixture",
-          ineligible: true,
-          reason: "name_only",
-        },
-      ],
+      ok: false,
+      code: "MISSING_PLUGIN",
+      error:
+        "MISSING_PLUGIN: Add a valid Apify key in Access & Keys, or connect official LinkedIn. GitHub Sourcing cannot fill this people-first role.",
+      requestId: "req-unkeyed",
     },
   });
 
   const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
 
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    assert.equal(result.source, "mock");
-    assert.ok(result.accepted.length >= 1);
-    assert.equal(result.accepted[0]?.provenance, "synthetic");
-    assert.doesNotMatch(result.accepted[0]?.currentCompany ?? "", /\blive\b/i);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /MISSING_PLUGIN|Add a valid Apify key/);
   }
   assert.equal(harness.fetchCalls, 1);
-  assert.match(String(harness.requests[0]?.input), /\/api\/source\/need/);
-  assert.equal(JSON.parse(String(harness.requests[0]?.init?.body)).mode, "fixture");
-  assert.equal(harness.persistedCalls, 1);
-  assert.match(harness.activityDrafts[0]?.notes ?? "", /dry-run/i);
-  assert.doesNotMatch(harness.activityDrafts[0]?.outcome ?? "", /\(live\)/);
+  assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
+  assert.doesNotMatch(String(harness.requests[0]?.input), /source\/need/);
+  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.activityDrafts.length, 0);
 });
 
 test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next batch", async () => {

@@ -68,7 +68,6 @@ import {
   MISSING_PEOPLE_PLUGINS_TOAST,
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
-  missingPeoplePluginsToast,
   peopleSourcePluginsConnected,
   remapPeopleFirstSourcingError,
   visiblePeopleFirstLearningReceipts,
@@ -1656,14 +1655,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!campaign) return { ok: false, added: 0, error: "Campaign not found." };
       if (!campaignAllowsLiveSourcing(campaign.status)) {
         return { ok: false, added: 0, error: "Campaign is not active for sourcing." };
-      }
-      const missingPlugins = missingPeoplePluginsToast(campaign.jobAnalysis, s.integrations, s.apiKeys);
-      if (missingPlugins) {
-        const dryRun = await sourceNextBatch(campaignId, { count: 20 });
-        if (!dryRun.ok) {
-          return { ok: false, added: 0, error: dryRun.error };
-        }
-        return { ok: true, added: dryRun.accepted.length, mode: "fixture" };
       }
       const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 8);
       const reviewed = await requestReviewedSourcing(

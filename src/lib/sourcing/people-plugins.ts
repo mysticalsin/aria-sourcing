@@ -4,6 +4,8 @@
  */
 import { roleProfile } from "@/lib/roles";
 import {
+  CONNECT_APIFY_HREF,
+  CONNECT_APIFY_LABEL,
   SOURCE_VIA_APIFY_HREF,
   SOURCE_VIA_APIFY_LABEL,
 } from "@/lib/sourcing/harvest-evidence";
@@ -125,7 +127,7 @@ export function peoplePluginFailLoudUi(
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
   if (
     remapped === EMPTY_PEOPLE_FIRST_HARVEST ||
-    /0 candidates|empty harvest|0 profiles|did not start|still running|actor=harvestapi/i.test(remapped)
+    /0 candidates|empty harvest|0 profiles|did not start|still running|aborted after|actor=harvestapi/i.test(remapped)
   ) {
     const keyed = job ? peopleSourcePluginsConnected(integrations ?? [], apiKeys) : false;
     return keyed ? keyedEmptyHarvestUi(remapped) : pluginUi("No shortlist from this harvest", remapped);
@@ -140,7 +142,12 @@ export function peoplePluginFailLoudUi(
   ) {
     return null;
   }
-  return pluginUi("Add a valid Apify key", remapped.includes("MISSING_PLUGIN") ? remapped : MISSING_PEOPLE_PLUGINS_TOAST);
+  return {
+    title: CONNECT_APIFY_LABEL,
+    description: remapped.includes("MISSING_PLUGIN") ? remapped : MISSING_PEOPLE_PLUGINS_TOAST,
+    href: CONNECT_APIFY_HREF,
+    actionLabel: CONNECT_APIFY_LABEL,
+  };
 }
 
 export function emptyPeopleFirstToast(
@@ -154,7 +161,12 @@ export function emptyPeopleFirstToast(
   if (peopleSourcePluginsConnected(integrations, apiKeys)) {
     return keyedEmptyHarvestUi(description);
   }
-  return pluginUi("Add a valid Apify key", description);
+  return {
+    title: CONNECT_APIFY_LABEL,
+    description,
+    href: CONNECT_APIFY_HREF,
+    actionLabel: CONNECT_APIFY_LABEL,
+  };
 }
 
 /**
@@ -217,7 +229,11 @@ export function emptyPeopleFirstShortlistError(
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): string | null {
   if (result.accepted.length > 0 || !isPeopleFirstRole(job)) return null;
-  if (result.source === "mock") return null;
+  if (result.source === "mock") {
+    return peopleSourcePluginsConnected(integrations, apiKeys)
+      ? EMPTY_PEOPLE_FIRST_HARVEST
+      : MISSING_PEOPLE_PLUGINS_TOAST;
+  }
   if (peopleSourcePluginsConnected(integrations, apiKeys)) {
     return EMPTY_PEOPLE_FIRST_HARVEST;
   }
