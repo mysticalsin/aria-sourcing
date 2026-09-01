@@ -213,6 +213,13 @@ hydrate and on the Strategy tab.
   A real **Live** key starts harvestapi Full, people skill-match
   ≥60, cap ≤20.
 
+  Same-site Origin is the **public product host** (`Host` /
+  `X-Forwarded-Proto` + `X-Forwarded-Host`), not the Fly bind
+  address (`http://[::]:3000`). A click from
+  `https://aria-mantu-app.fly.dev` must reach `request_entry`. A
+  false `CROSS_ORIGIN_REQUEST` on the product host is FAIL. A true
+  cross-origin fails loud in the UI — never silent 0.
+
   The keyed path must **start** a harvestapi Full run. If start
   does not happen, fail loud (`PEOPLE_FIRST_HARVEST_NOT_STARTED`).
   Do not fall through to LinkedIn 0-rows. Do not depend on

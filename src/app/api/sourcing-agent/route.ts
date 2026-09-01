@@ -12,6 +12,7 @@ import {
 import { DEFAULT_MODEL, VAULT_PROVIDER, resolveAiProvider, type AiProviderSlug } from "@/lib/ai/provider";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
+import { classifySameOriginJsonRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -270,12 +271,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (prodFailClosed() || !supabaseEnabled) {
     return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Live sourcing authority is unavailable.");
   }
-  const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
-  if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
+  const sameOrigin = classifySameOriginJsonRequest(req);
+  if (sameOrigin === "unsupported_media_type") {
     return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
   }
-  const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (sameOrigin === "cross_origin_request") {
     return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin sourcing is not allowed.");
   }
 

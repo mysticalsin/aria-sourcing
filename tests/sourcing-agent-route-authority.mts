@@ -462,11 +462,53 @@ test("client-owned campaign objects, unknown fields, cross-origin, and non-JSON 
   assert.equal(crossOrigin.status, 403);
   assert.equal((await crossOrigin.json()).code, "CROSS_ORIGIN_REQUEST");
 
+  const flyAttacker = await post(
+    new NextRequest("http://[::]:3000/api/sourcing-agent", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://attacker.test",
+        host: "[::]:3000",
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "aria-mantu-app.fly.dev",
+        "x-real-ip": `192.0.2.${++requestSequence}`,
+        "x-request-id": crypto.randomUUID(),
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ campaignId, count: 1 }),
+    }),
+  );
+  assert.equal(flyAttacker.status, 403);
+  assert.equal((await flyAttacker.json()).code, "CROSS_ORIGIN_REQUEST");
+
   const wrongMedia = await post(request({}, "http://localhost", "application/jsonp"));
   assert.equal(wrongMedia.status, 415);
   assert.equal((await wrongMedia.json()).code, "INVALID_REQUEST");
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
+});
+
+test("product-host Origin on the Fly bind address is not CROSS_ORIGIN_REQUEST", async () => {
+  reset();
+  const flyProduct = await post(
+    new NextRequest("http://[::]:3000/api/sourcing-agent", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://aria-mantu-app.fly.dev",
+        host: "[::]:3000",
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "aria-mantu-app.fly.dev",
+        "x-real-ip": `192.0.2.${++requestSequence}`,
+        "x-request-id": crypto.randomUUID(),
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ campaignId, count: 1 }),
+    }),
+  );
+  const body = (await flyProduct.json()) as { code?: string };
+  assert.notEqual(body.code, "CROSS_ORIGIN_REQUEST");
+  assert.notEqual(flyProduct.status, 403);
 });
 
 test("missing, paused, and revoked campaigns fail closed before or after provider I/O", async () => {

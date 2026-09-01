@@ -3,7 +3,7 @@ import {
   isHarvestEvidenceCode,
   PEOPLE_FIRST_CLIENT_WAIT_MS,
 } from "./harvest-evidence";
-import { MISSING_PEOPLE_PLUGINS_TOAST } from "./people-plugins";
+import { CROSS_ORIGIN_SOURCING_TOAST, MISSING_PEOPLE_PLUGINS_TOAST } from "./people-plugins";
 import {
   parseSourcingAgentCandidates,
   parseSourcingAgentSuccessResponse,
@@ -13,6 +13,7 @@ import {
 const MISSING_PLUGIN_TOAST = MISSING_PEOPLE_PLUGINS_TOAST;
 
 const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
+  CROSS_ORIGIN_REQUEST: CROSS_ORIGIN_SOURCING_TOAST,
   CAMPAIGN_NOT_FOUND: "Campaign not found.",
   CAMPAIGN_NOT_ACTIVE: "Campaign is not active for sourcing.",
   CAMPAIGN_NOT_READY: "Complete and review the campaign brief before sourcing.",

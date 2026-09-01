@@ -201,6 +201,9 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /logAriaHarvest\("request_received"/);
   assert.doesNotMatch(route, /logAriaHarvest\("request_received", \{ query: ""/);
   assert.match(route, /logAriaHarvest\("request_exit"/);
+  assert.match(route, /classifySameOriginJsonRequest/);
+  assert.doesNotMatch(route, /origin !== req\.nextUrl\.origin/);
+  assert.match(design, /public product host/);
   const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
@@ -222,6 +225,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);
   assert.match(client, /Promise\.race/);
   assert.match(client, /formatHarvestEvidenceError\("aborted"/);
+  assert.match(client, /CROSS_ORIGIN_REQUEST/);
+  assert.match(client, /CROSS_ORIGIN_SOURCING_TOAST/);
   assert.doesNotMatch(actions, /if \(missingPlugins\) \{\s*return await sourceFixtureDryRunBatch/);
   assert.match(helpers, /headline \|\| positionTitle/);
   assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
@@ -235,6 +240,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
   const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client.ts");
   const {
+    CROSS_ORIGIN_SOURCING_TOAST,
     MISSING_PEOPLE_PLUGINS_TOAST,
     PEOPLE_FIRST_HARVEST_UNAVAILABLE,
     remapPeopleFirstSourcingError,
@@ -407,6 +413,44 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     assert.match(harvestMock.error, /Connect a real Apify key/);
     assert.doesNotMatch(harvestMock.error, /unavailable/i);
   }
+  const crossOriginBlocked = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "CROSS_ORIGIN_REQUEST",
+          error: "Cross-origin sourcing is not allowed.",
+          requestId: "req-cross-origin",
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(crossOriginBlocked.ok, false);
+  if (!crossOriginBlocked.ok) {
+    assert.equal(crossOriginBlocked.error, CROSS_ORIGIN_SOURCING_TOAST);
+    assert.match(crossOriginBlocked.error, /cross-origin/i);
+    assert.doesNotMatch(crossOriginBlocked.error, /unavailable/i);
+  }
+  assert.equal(
+    remapPeopleFirstSourcingError(
+      CROSS_ORIGIN_SOURCING_TOAST,
+      financeJob,
+      liveUnconfigured,
+      [{ provider: "Apify" as const, status: "valid" as const }],
+    ),
+    CROSS_ORIGIN_SOURCING_TOAST,
+  );
+  const crossOriginToast = peoplePluginFailLoudUi(
+    CROSS_ORIGIN_SOURCING_TOAST,
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(crossOriginToast?.title, "Sourcing failed");
+  assert.equal(crossOriginToast?.description, CROSS_ORIGIN_SOURCING_TOAST);
+  assert.match(String(crossOriginToast?.description), /do not treat this as 0 people/i);
+
   const abortedWait = await requestReviewedSourcing(async () => {
     const error = new Error("The operation was aborted.");
     error.name = "AbortError";

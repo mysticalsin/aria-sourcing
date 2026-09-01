@@ -28,6 +28,9 @@ export const PEOPLE_FIRST_HARVEST_UNAVAILABLE =
 export const MOCK_APIFY_TOAST =
   "Apify is in Mock mode. Source next batch will not harvest on Mock. Connect a real Apify key and switch the card to Live.";
 
+export const CROSS_ORIGIN_SOURCING_TOAST =
+  "This request was blocked as cross-origin. Source next batch from the product host — do not treat this as 0 people.";
+
 export const PEOPLE_PLUGIN_SETTINGS_HREF = "/settings";
 export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
 
@@ -74,6 +77,13 @@ export function remapPeopleFirstSourcingError(
 ): string {
   if (!isPeopleFirstRole(job)) return error;
   if (isConnectOrDryRunCopy(error)) return error;
+  if (
+    error === CROSS_ORIGIN_SOURCING_TOAST ||
+    error.includes("CROSS_ORIGIN_REQUEST") ||
+    /cross-origin/i.test(error)
+  ) {
+    return CROSS_ORIGIN_SOURCING_TOAST;
+  }
   if (apifyIntegrationIsMock(integrations ?? [])) {
     if (/actor=harvestapi/.test(error) && /Mock mode/.test(error)) return error;
     if (
@@ -143,6 +153,9 @@ export function peoplePluginFailLoudUi(
 ): PeoplePluginUi | null {
   if (isConnectOrDryRunCopy(error)) return null;
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
+  if (remapped === CROSS_ORIGIN_SOURCING_TOAST || /cross-origin/i.test(remapped)) {
+    return pluginUi("Sourcing failed", remapped);
+  }
   if (remapped === MOCK_APIFY_TOAST || /Mock mode/.test(remapped)) {
     return {
       title: CONNECT_APIFY_LABEL,

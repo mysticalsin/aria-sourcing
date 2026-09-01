@@ -12,6 +12,7 @@ import { buildOutreachPrompt } from "../src/lib/ai/hermes";
 import { generateOutreach } from "../src/lib/mock-ai";
 import { defaultLiveIntegrations } from "../src/lib/integrations";
 import {
+  CROSS_ORIGIN_SOURCING_TOAST,
   EMPTY_PEOPLE_FIRST_HARVEST,
   PEOPLE_FIRST_HARVEST_UNAVAILABLE,
   peoplePluginFailLoudUi,
@@ -1827,6 +1828,53 @@ test("people-first Source next batch hits sourcing-agent when Apify looks unkeye
   assert.doesNotMatch(String(harness.requests[0]?.input), /source\/need/);
   assert.equal(harness.persistedCalls, 0);
   assert.equal(harness.activityDrafts.length, 0);
+});
+
+test("CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
+    syntheticSourcingAllowed: false,
+    responseStatus: 403,
+    responseBody: {
+      ok: false,
+      code: "CROSS_ORIGIN_REQUEST",
+      error: "Cross-origin sourcing is not allowed.",
+      requestId: "req-cross-origin",
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, CROSS_ORIGIN_SOURCING_TOAST);
+    assert.doesNotMatch(result.error, /unavailable/i);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  assert.equal(harness.fetchCalls, 1);
+  assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
+  const toast = peoplePluginFailLoudUi(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.equal(toast?.title, "Sourcing failed");
+  assert.match(String(toast?.description), /cross-origin/i);
+  assert.match(String(toast?.description), /do not treat this as 0 people/i);
+  assert.equal(harness.persistedCalls, 0);
 });
 
 test("Mock Apify card with a valid Access & Keys row still POSTs and fails loud", async () => {
