@@ -186,22 +186,42 @@ hydrate and on the Strategy tab.
   stays repaired (`"Linux" OR "Python"`), never one quoted Skill (Must)
   blob, and is not sent to harvestapi.
 
-  The agent harvest waits as long as the Source via Apify modal
-  (90s budget, harvestapi wait up to 75s, cap 90s). Short-mode
-  discovery (no headline / about / skills) cannot prove a ≥60
-  skill-match. People-first `search_candidates` uses harvestapi
-  **Full** so skills, headline, about, and positions are evidence.
-  Mapping never stamps the JD title as `currentTitle` when the
-  actor returned no headline. Positions are skill evidence.
-  Name-only and empty rows stay FAIL. The finance gate still
-  requires score ≥ 60, cap 20, and a CV citation.
+  People-first Source next batch **executes harvestapi Full only**
+  until official LinkedIn partner search is wired. Tavily
+  `site:linkedin.com` is not the harvest and must not run, succeed
+  with 0, or mint LinkedIn learning receipts. The autonomous loop
+  worker (`claimed:0`) is not this path — grep the **web** process
+  for `[aria-harvest]`, not loop ticks.
 
-  Fail loud **only** when (a) the Apify key is missing or invalid, or
-  (b) harvestapi truly returned 0 profiles after a real run. A valid
-  key plus 0 people is a harvest bug (query, order, timeout, mapping,
-  or gate) — fix the harvest, do not toast **Open Access & Keys**.
-  Keyed empty harvest has no reconnect CTA. Access & Keys stays the
-  CTA when the key is missing or the harvest did not complete.
+  The keyed path must **start** a harvestapi Full run and log
+  (no secrets) `actor`, `query` (`Calypso Linux Python`), `runId`,
+  `status`, and `item` count. If start does not happen, fail loud
+  (`PEOPLE_FIRST_HARVEST_NOT_STARTED`). Do not fall through to
+  LinkedIn 0-rows. Do not depend on Playwright / browser-tools.
+
+  Poll until the actor is terminal (`SUCCEEDED` / `FAILED` /
+  `ABORTED` / `TIMED-OUT`). Do not stamp 0 people because a local
+  wait elapsed while the run was still `RUNNING`
+  (`PEOPLE_FIRST_HARVEST_STILL_RUNNING` + run-id). Budget 180s.
+
+  If harvestapi **honestly** returns 0 after `SUCCEEDED`, one
+  evidenced fail (`PEOPLE_FIRST_HARVEST_EMPTY`) with query + run-id
+  + a **Source via Apify** next-search CTA. Never 15 identical
+  `LinkedIn: 0 real candidates` rows. Do not invent people. Do not
+  complete a sourcing run that only stores 0-count receipts.
+
+  Short-mode discovery (no headline / about / skills) cannot prove
+  a ≥60 skill-match. Mapping never stamps the JD title as
+  `currentTitle` when the actor returned no headline. Positions
+  are skill evidence. Name-only and empty rows stay FAIL. The
+  finance gate still requires score ≥ 60, cap 20, and a CV citation.
+
+  Fail loud when (a) the Apify key is missing or invalid, (b) the
+  harvest never started, (c) the run is still going, or (d)
+  harvestapi truly returned 0 after a real run. A valid key plus
+  0-or-15-zero-rows is a harvest bug — fix the harvest, do not toast
+  **Open Access & Keys**. Access & Keys stays the CTA when the key
+  is missing or the harvest route did not complete.
 - **Honor a valid stored harvest key.** Access & Keys is the source of truth
   for Apify. A key whose provider is Apify (including `Apify (sourcing)`)
   and `status === "valid"` **is** people-first harvest. Source next batch,
