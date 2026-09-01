@@ -28,6 +28,7 @@ import {
   type CandidateMappingCampaign,
 } from "@/lib/sourcing/candidate-mappers";
 import { applyLiveEngineGate } from "@/lib/sourcing/live-shortlist";
+import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
     name: "search_candidates",
@@ -82,6 +83,7 @@ export interface SourcingQueryExecution {
   ok: boolean;
   candidateCount: number;
   skippedCount: number;
+  contactCompleteCount?: number;
   harvest?: HarvestEvidence;
 }
 
@@ -131,6 +133,7 @@ export function makeSourcingToolRunner(
     let skippedCount = 0;
     let harvestEvidence: HarvestEvidence | undefined;
     let rawHarvestCount = -1;
+    let contactCompleteCount: number | undefined;
 
     if (platform === "GitHub") {
       try {
@@ -214,8 +217,10 @@ export function makeSourcingToolRunner(
           alreadySeen as Candidate[],
           weights,
         );
-        accepted = mapped.accepted;
-        skippedCount = mapped.skipped.length;
+        const withContacts = mapped.accepted.filter(isPeopleFirstContactComplete);
+        contactCompleteCount = withContacts.length;
+        skippedCount = mapped.skipped.length + (mapped.accepted.length - withContacts.length);
+        accepted = withContacts;
       } catch (err) {
         executions.push({
           platform,
@@ -267,6 +272,7 @@ export function makeSourcingToolRunner(
       ok: true,
       candidateCount: accepted.length,
       skippedCount,
+      ...(contactCompleteCount !== undefined ? { contactCompleteCount } : {}),
       ...(harvestEvidence
         ? {
             harvest: {

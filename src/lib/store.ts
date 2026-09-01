@@ -78,7 +78,8 @@ import {
   liveVisibleCandidates,
   stripLabFixturePeople,
 } from "./sourcing/lab-fixture-people";
-import { CONNECT_APIFY_LABEL } from "./sourcing/harvest-evidence";
+import { formatHarvestEvidenceError, CONNECT_APIFY_LABEL } from "./sourcing/harvest-evidence";
+import { isPeopleFirstContactComplete } from "./sourcing/people-first-contact";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
   defaultLiveIntegrations,
@@ -1714,6 +1715,34 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const received = out.candidates.filter(
         (dto) => !isLabFixtureCandidate(candidateFromSourcingAgentDto(dto)),
       );
+      if (
+        isPeopleFirstRole(campaign.jobAnalysis) &&
+        received.length > 0 &&
+        received.every((dto) => !isPeopleFirstContactComplete(candidateFromSourcingAgentDto(dto)))
+      ) {
+        const incomplete = formatHarvestEvidenceError("incomplete_contacts", {
+          query: received.find((dto) => dto.sourceQuery)?.sourceQuery || campaign.jobAnalysis.title,
+          runId: "",
+          itemCount: received.length,
+          started: true,
+        });
+        await commitPersisted((prev) =>
+          withActivity(
+            prev,
+            makeActivity({
+              type: "sourcing",
+              title: "Sourcing failed",
+              notes: incomplete,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
+        return { ok: false, added: 0, error: incomplete };
+      }
       if (out.candidates.length > 0 && received.length === 0) {
         await commitPersisted((prev) =>
           withActivity(
@@ -1783,7 +1812,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const unique = dedupeCandidates(
           candidates
             .map((item) => item.candidate)
-            .filter((candidate) => !isLabFixtureCandidate(candidate)),
+            .filter((candidate) => !isLabFixtureCandidate(candidate))
+            .filter(
+              (candidate) =>
+                !isPeopleFirstRole(latestCampaign.jobAnalysis) ||
+                isPeopleFirstContactComplete(candidate),
+            ),
           prev.candidates,
           { excludedCompanies: latestCampaign.sourcingStrategy.excludedCompanies },
         ).accepted;
@@ -6423,25 +6457,41 @@ export function useActiveCampaignId(): string | null {
   return useStateOrEmpty().activeCampaignId;
 }
 
-function visibleWorkspaceCandidates(candidates: Candidate[]): Candidate[] {
-  return supabaseEnabled ? liveVisibleCandidates(candidates) : candidates;
+function visibleWorkspaceCandidates(candidates: Candidate[], campaigns: { id: string; jobAnalysis: Campaign["jobAnalysis"] }[]): Candidate[] {
+  const visible = supabaseEnabled ? liveVisibleCandidates(candidates) : candidates;
+  if (!supabaseEnabled) return visible;
+  const peopleFirstIds = new Set(
+    campaigns.filter((campaign) => isPeopleFirstRole(campaign.jobAnalysis)).map((campaign) => campaign.id),
+  );
+  return visible.filter(
+    (candidate) =>
+      !peopleFirstIds.has(candidate.campaignId) || isPeopleFirstContactComplete(candidate),
+  );
 }
 
 export function useCandidates(): Candidate[] {
-  return visibleWorkspaceCandidates(useStateOrEmpty().candidates);
+  const s = useStateOrEmpty();
+  return visibleWorkspaceCandidates(s.candidates, s.campaigns);
 }
 
 export function useCampaignCandidates(campaignId: string | null | undefined): Candidate[] {
   const s = useStateOrEmpty();
   const rows = campaignId ? s.candidates.filter((c) => c.campaignId === campaignId) : [];
-  return visibleWorkspaceCandidates(rows);
+  return visibleWorkspaceCandidates(rows, s.campaigns);
 }
 
 export function useCandidate(id: string | null | undefined): Candidate | undefined {
   const s = useStateOrEmpty();
   const found = id ? s.candidates.find((c) => c.id === id) : undefined;
   if (!found) return undefined;
-  return supabaseEnabled && isLabFixtureCandidate(found) ? undefined : found;
+  if (supabaseEnabled && isLabFixtureCandidate(found)) return undefined;
+  if (supabaseEnabled) {
+    const campaign = s.campaigns.find((item) => item.id === found.campaignId);
+    if (campaign && isPeopleFirstRole(campaign.jobAnalysis) && !isPeopleFirstContactComplete(found)) {
+      return undefined;
+    }
+  }
+  return found;
 }
 
 /** Scored chatbox applications awaiting recruiter handoff (TAnIA §5). */
@@ -6451,7 +6501,8 @@ export function useChatboxSubmissions(): ChatboxSubmission[] {
 
 /** Candidates in #Vivier (the talent pool), newest first. */
 export function useVivier(): Candidate[] {
-  return visibleWorkspaceCandidates(useStateOrEmpty().candidates.filter((c) => c.vivier));
+  const s = useStateOrEmpty();
+  return visibleWorkspaceCandidates(s.candidates.filter((c) => c.vivier), s.campaigns);
 }
 
 export function useOutreach(): OutreachMessage[] {

@@ -55,6 +55,7 @@ const sampleFullRawItem = {
       qualityScore: 80,
     },
   ],
+  phones: [{ phoneNumber: "+33 6 12 34 56 78" }],
   location: {
     linkedinText: "Paris, France",
     countryCode: "FR",
@@ -229,6 +230,7 @@ try {
       ok("normalizes headline", p?.headline === "Senior Go Engineer at Acme Corp");
       ok("normalizes about", p?.about === sampleFullRawItem.about);
       ok("normalizes email from emails[] (status===valid)", p?.email === "test@example.com");
+      ok("normalizes phone from phones[] without inventing", p?.phone === "+33 6 12 34 56 78");
       ok("normalizes nested location (text + countryCode)", p?.location?.text === "Paris, France" && p?.location?.countryCode === "FR");
       ok(
         "normalizes currentPosition from the Full array (position -> title, startDate/endDate -> dateRange)",
@@ -368,6 +370,7 @@ try {
     hiring: false,
     premium: true,
     email: "test@example.com",
+    phone: "+33 6 12 34 56 78",
   };
 
   const result = mapApifyCandidates([profile], campaign, "Senior Go Engineer", [], W);
@@ -384,6 +387,7 @@ try {
   ok("candidate is scored", typeof c?.matchScore === "number" && c.matchScore >= 0);
   ok("stage is Sourced", c?.stage === "Sourced");
   ok("email carried through from the normalized profile (emails[] resolved upstream)", c?.email === "test@example.com");
+  ok("phone carried through when harvestapi supplied it", c?.phone === "+33 6 12 34 56 78");
   ok("sourceExternalId set for dedupe/reference", c?.sourceExternalId === "test-candidate-dev");
   ok("provenance is live (real vendor data, not synthetic)", c?.provenance === "live");
 

@@ -644,6 +644,12 @@ ok(
     /harvestapi Full/.test(design),
 );
 ok(
+  "DESIGN requires email, phone, and LinkedIn on people-first rows",
+  /email, phone, and LinkedIn/.test(design) &&
+    /PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS/.test(design) &&
+    /Do not invent contact/.test(design),
+);
+ok(
   "Connect copy no longer promises a dry-run shortlist on live",
   /lab fixtures are not LinkedIn/.test(CONNECT_CHANNELS_COPY) &&
     !/dry-run shortlist/.test(CONNECT_CHANNELS_COPY),
@@ -680,6 +686,50 @@ ok(
     cleaned.state.candidates.every((candidate) => candidate.id !== "cand_fixture_lab") &&
     cleaned.state.candidates.some((candidate) => candidate.id === "cand_live_calypso") &&
     cleaned.state.outreach.every((message) => message.candidateId !== "cand_fixture_lab"),
+);
+
+const calypsoCampaign = {
+  ...seed.campaigns[0],
+  id: "camp_calypso_ba",
+  jobAnalysis: {
+    ...seed.campaigns[0].jobAnalysis,
+    title: "Senior Calypso Business Analyst",
+    department: "Finance",
+    requiredSkills: ["Calypso", "Linux", "Python"],
+  },
+};
+const leftoverGithub = {
+  ...seed.candidates[0],
+  id: "cand_github_leftover",
+  campaignId: "camp_calypso_ba",
+  email: "",
+  phone: "",
+  linkedinUrl: "",
+  githubUrl: "https://github.com/calypso-martinez",
+  sourcePlatform: "GitHub" as const,
+  provenance: "live" as const,
+};
+const realCalypso = {
+  ...seed.candidates[0],
+  id: "cand_real_calypso",
+  campaignId: "camp_calypso_ba",
+  email: "elena.varga@bnpp-cib.com",
+  phone: "+1 514 555 0142",
+  linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+  sourcePlatform: "Apify" as const,
+  provenance: "live" as const,
+};
+const leftoverCleaned = stripLabFixturePeople({
+  ...seed,
+  campaigns: [...seed.campaigns, calypsoCampaign],
+  candidates: [realCalypso, leftoverGithub],
+  outreach: [],
+});
+ok(
+  "strip removes leftover GitHub / name-only people from a people-first campaign",
+  leftoverCleaned.removedIds.includes("cand_github_leftover") &&
+    leftoverCleaned.state.candidates.every((candidate) => candidate.id !== "cand_github_leftover") &&
+    leftoverCleaned.state.candidates.some((candidate) => candidate.id === "cand_real_calypso"),
 );
 ok(
   "fixture deny toast is Connect Apify / switch to Live",

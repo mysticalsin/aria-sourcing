@@ -2,8 +2,10 @@
  * Lab fixture people are recorded matcher evidence, not LinkedIn.
  * Fly / live workspaces must not hydrate or display them.
  */
+import { roleProfile } from "@/lib/roles";
+import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
 import { isSyntheticRecipientEmail } from "@/lib/sourcing/people-connect";
-import type { HermesState } from "@/lib/types";
+import type { HermesState, JobAnalysis } from "@/lib/types";
 
 export const FIXTURE_NOT_ON_LIVE = "FIXTURE_NOT_ON_LIVE";
 
@@ -25,6 +27,21 @@ export function isLabFixtureCandidate(candidate: {
   return false;
 }
 
+function campaignIsPeopleFirst(job: JobAnalysis): boolean {
+  return roleProfile(job).queryStyle === "linkedin";
+}
+
+/** Leftover GitHub / name-only / synthetic mail on a people-first need. */
+export function isPeopleFirstLeftoverRow(candidate: {
+  email?: string;
+  phone?: string;
+  linkedinUrl?: string;
+  sourcePlatform?: string;
+  campaignId?: string;
+}): boolean {
+  return !isPeopleFirstContactComplete(candidate);
+}
+
 export function liveVisibleCandidates<T extends { email?: string; provenance?: string }>(
   candidates: readonly T[],
 ): T[] {
@@ -36,7 +53,16 @@ export function stripLabFixturePeople(state: HermesState): {
   removedIds: string[];
   campaignIds: string[];
 } {
-  const removed = state.candidates.filter(isLabFixtureCandidate);
+  const peopleFirstIds = new Set(
+    state.campaigns
+      .filter((campaign) => campaignIsPeopleFirst(campaign.jobAnalysis))
+      .map((campaign) => campaign.id),
+  );
+  const removed = state.candidates.filter(
+    (candidate) =>
+      isLabFixtureCandidate(candidate) ||
+      (peopleFirstIds.has(candidate.campaignId) && isPeopleFirstLeftoverRow(candidate)),
+  );
   if (removed.length === 0) {
     return { state, removedIds: [], campaignIds: [] };
   }

@@ -48,11 +48,13 @@ import {
   formatHarvestEvidenceError,
   logAriaHarvest,
   PEOPLE_FIRST_HARVEST_EMPTY,
+  PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS,
   PEOPLE_FIRST_HARVEST_MOCK,
   PEOPLE_FIRST_HARVEST_NOT_STARTED,
   PEOPLE_FIRST_HARVEST_STILL_RUNNING,
 } from "@/lib/sourcing/harvest-evidence";
 import { workspaceApifyIsMock } from "@/lib/sourcing/people-connect";
+import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
 import {
   apifyHarvestQueryFromBrief,
   PEOPLE_FIRST_SEARCH_BUDGET_MS,
@@ -112,6 +114,7 @@ type ErrorCode =
   | "PEOPLE_FIRST_HARVEST_NOT_STARTED"
   | "PEOPLE_FIRST_HARVEST_STILL_RUNNING"
   | "PEOPLE_FIRST_HARVEST_EMPTY"
+  | "PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS"
   | "PEOPLE_FIRST_HARVEST_MOCK";
 
 type Session = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
@@ -817,6 +820,17 @@ async function handlePost(req: NextRequest, correlationId: string) {
           formatHarvestEvidenceError("empty", harvest),
         );
       }
+      if (
+        harvestStatus === "SUCCEEDED" &&
+        harvest.itemCount > 0 &&
+        (apifyExec?.contactCompleteCount ?? 0) === 0
+      ) {
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS,
+          formatHarvestEvidenceError("incomplete_contacts", harvest),
+        );
+      }
       if (harvestStatus === "SUCCEEDED" && harvest.itemCount > 0 && runner.getFound().length === 0) {
         return await failClaimed(
           502,
@@ -881,10 +895,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
           });
           if (!subjectDisclosure.safe || !bodyDisclosure.safe) return null;
         }
+        if (peopleFirst && !isPeopleFirstContactComplete(candidate)) return null;
         return {
           id: candidate.id,
           campaignId,
           name: candidate.name,
+          ...(candidate.email ? { email: candidate.email } : {}),
+          ...(candidate.phone ? { phone: candidate.phone } : {}),
           currentTitle: candidate.currentTitle,
           currentCompany: candidate.currentCompany,
           location: candidate.location,

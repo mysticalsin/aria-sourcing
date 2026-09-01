@@ -6,6 +6,8 @@ import {
   FIXTURE_NOT_ON_LIVE_TOAST,
   isLabFixtureCandidate,
 } from "../sourcing/lab-fixture-people";
+import { isPeopleFirstContactComplete } from "../sourcing/people-first-contact";
+import { formatHarvestEvidenceError } from "../sourcing/harvest-evidence";
 import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
@@ -838,6 +840,41 @@ export function createSourcingActions({
         source: "unavailable",
       };
     }
+    if (
+      isPeopleFirstRole(latestCampaign.jobAnalysis) &&
+      previewPeople.length > 0 &&
+      previewPeople.every((candidate) => !isPeopleFirstContactComplete(candidate))
+    ) {
+      const incomplete = formatHarvestEvidenceError("incomplete_contacts", {
+        query: previewPeople.find((candidate) => candidate.sourceQuery)?.sourceQuery
+          || latestCampaign.jobAnalysis.title,
+        runId: "",
+        itemCount: previewPeople.length,
+        started: true,
+      });
+      if (workspaceEffectAllowed() && sourcingMutationAllowed()) {
+        await commitPersisted((previous) =>
+          withActivity(
+            previous,
+            makeActivity({
+              type: "sourcing",
+              title: "Sourcing failed",
+              notes: incomplete,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
+      }
+      return {
+        ok: false,
+        error: incomplete,
+        source: "unavailable",
+      };
+    }
 
     const observedPlatforms = [
       ...reviewed.value.feedbackReceipts.map((receipt) => receipt.platform),
@@ -871,7 +908,11 @@ export function createSourcingActions({
             matchBreakdown: score.breakdown,
           };
         })
-        .filter((candidate) => !isLabFixtureCandidate(candidate));
+        .filter((candidate) => !isLabFixtureCandidate(candidate))
+        .filter(
+          (candidate) =>
+            !isPeopleFirstRole(campaign.jobAnalysis) || isPeopleFirstContactComplete(candidate),
+        );
       result = dedupeCandidates(scored, previous.candidates, {
         excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       });

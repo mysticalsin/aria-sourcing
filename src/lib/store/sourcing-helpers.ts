@@ -211,6 +211,7 @@ export function mapApifyCandidates(
       campaignId: campaign.id,
       name,
       email: p.email ?? "",
+      phone: p.phone ?? "",
       avatarInitials: initialsFrom(name),
       currentTitle: headline || positionTitle,
       currentCompany,
@@ -261,7 +262,7 @@ export function mapApifyCandidates(
       ...base,
       enrichment: seedEnrichmentCoverage(base, "Apify", at, {
         email: Boolean(p.email),
-        phone: false,
+        phone: Boolean(p.phone),
         headline: Boolean(headline),
         location: Boolean(p.location?.text),
         skills: techStack.length > 0,

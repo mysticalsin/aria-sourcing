@@ -26,6 +26,7 @@ import { buildTextLayerPdf, extractPdfText } from "../src/lib/sourcing/ocr";
 import { parseVssNeeds } from "../src/lib/sourcing/vss-need";
 import { sourceEngineFixtureCandidates } from "../src/lib/sourcing/engine-candidates";
 import { applyLiveEngineGate } from "../src/lib/sourcing/live-shortlist";
+import { isPeopleFirstContactComplete } from "../src/lib/sourcing/people-first-contact";
 import { vssToJobAnalysis } from "../src/lib/sourcing/vss-need";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -417,6 +418,34 @@ if (noNameLeak.ok) {
   ok(
     "live gate caps a keyed skill-match shortlist at 20",
     overflowLive.length <= SHORTLIST_CAP && overflowLive.every((row) => row.matchScore >= SHORTLIST_FLOOR),
+  );
+  ok(
+    "people-first contact gate rejects name-only and example.com leftovers",
+    !isPeopleFirstContactComplete({ email: "", phone: "", linkedinUrl: "" }) &&
+      !isPeopleFirstContactComplete({
+        email: "calypso.martinez@example.com",
+        phone: "+1 514 555 0100",
+        linkedinUrl: "https://www.linkedin.com/in/calypso-martinez",
+      }) &&
+      !isPeopleFirstContactComplete({
+        email: "elena@fixture.example",
+        phone: "+1 514 555 0100",
+        linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+      }) &&
+      !isPeopleFirstContactComplete({
+        email: "calypso.martinez@bnpp-cib.com",
+        phone: "+1 514 555 0100",
+        linkedinUrl: "https://www.linkedin.com/in/calypso-martinez",
+        sourcePlatform: "GitHub",
+      }),
+  );
+  ok(
+    "people-first contact gate keeps a real email, phone, and LinkedIn",
+    isPeopleFirstContactComplete({
+      email: "elena.varga@bnpp-cib.com",
+      phone: "+1 514 555 0142",
+      linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+    }),
   );
 }
 

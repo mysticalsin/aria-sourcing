@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
+import { isPeopleFirstContactComplete } from "../src/lib/sourcing/people-first-contact";
 import type { Campaign } from "../src/lib/types";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
@@ -296,6 +297,18 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         ok: platform !== "Apify" || runnerHarvest?.status === "SUCCEEDED",
         candidateCount: foundCandidates.length,
         skippedCount: 0,
+        contactCompleteCount: foundCandidates.filter((row) =>
+          isPeopleFirstContactComplete(
+            row && typeof row === "object"
+              ? (row as {
+                  email?: string;
+                  phone?: string;
+                  linkedinUrl?: string;
+                  sourcePlatform?: string;
+                })
+              : {},
+          ),
+        ).length,
         ...(platform === "Apify" && runnerHarvest
           ? {
               harvest: {
@@ -659,7 +672,8 @@ test("Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVE
     recentActivity: "Calypso settlement production support.",
     createdAt: "2026-09-01T12:00:00.000Z",
     provenance: "live",
-    email: "",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
   }];
   const chunks: string[] = [];
   const origWrite = process.stdout.write.bind(process.stdout);
@@ -1362,7 +1376,8 @@ test("people-first role with Apify ignores promoted GitHub lessons", async () =>
     recentActivity: "Calypso settlement production support.",
     createdAt: "2026-09-01T12:00:00.000Z",
     provenance: "live",
-    email: "",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
   }];
 
   const response = await post(request());
@@ -1399,7 +1414,8 @@ test("people-first role with a cloud model still searches Apify first, not GitHu
     recentActivity: "Calypso settlement production support.",
     createdAt: "2026-09-01T12:00:00.000Z",
     provenance: "live",
-    email: "",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
   }];
 
   const response = await post(request());
@@ -1471,6 +1487,43 @@ test("people-first harvest still running is not stamped as 0 people", async () =
   assert.match(String(body.error), /run=run-still/);
   assert.doesNotMatch(String(body.error), /items=0/);
   assert.equal(completeCalls, 0);
+});
+
+test("people-first harvest without email+phone+LinkedIn fails loud with query and run-id", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 3, runId: "run-no-contacts" };
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "name-only-harvest",
+    campaignId,
+    name: "Calypso Martinez",
+    email: "",
+    phone: "",
+    linkedinUrl: "",
+    githubUrl: "https://github.com/calypso-martinez",
+    sourcePlatform: "GitHub",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 88,
+    matchBreakdown: [],
+    techStack: ["Calypso"],
+    recentActivity: "Name only.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS");
+  assert.match(String(body.error), /email, phone, and LinkedIn/);
+  assert.match(String(body.error), /query=Calypso Linux Python/);
+  assert.match(String(body.error), /run=run-no-contacts/);
+  assert.match(String(body.error), /Do not invent contacts/);
+  assert.equal(completeCalls, 0);
+  assert.equal("feedbackReceipts" in body, false);
 });
 
 test("people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receipts", async () => {

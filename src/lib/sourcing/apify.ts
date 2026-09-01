@@ -106,6 +106,7 @@ export interface ApifyProfile {
   hiring: boolean;
   premium: boolean;
   email: string | null;
+  phone: string | null;
 }
 
 /* ---- Raw actor output (harvestapi/linkedin-profile-search, as observed live)
@@ -137,6 +138,12 @@ interface RawApifyEmail {
   free?: boolean | null;
   status?: string | null;
   qualityScore?: number | null;
+}
+
+interface RawApifyPhone {
+  phone?: string | null;
+  phoneNumber?: string | null;
+  number?: string | null;
 }
 
 interface RawApifySkill {
@@ -191,6 +198,10 @@ interface RawApifyProfile {
   headline?: string;
   about?: string;
   emails?: RawApifyEmail[] | null;
+  phones?: RawApifyPhone[] | null;
+  phoneNumbers?: RawApifyPhone[] | null;
+  phone?: string | null;
+  mobileNumber?: string | null;
   location?: RawApifyLocation | null;
   connectionsCount?: number;
   followerCount?: number;
@@ -211,6 +222,27 @@ function deriveEmail(emails?: RawApifyEmail[] | null): string | null {
   if (!Array.isArray(emails) || emails.length === 0) return null;
   const confirmed = emails.find((e) => e?.status === "valid" || e?.deliverable === true);
   return (confirmed ?? emails[0])?.email ?? null;
+}
+
+function phoneValue(row: RawApifyPhone | string | null | undefined): string | null {
+  if (typeof row === "string") {
+    const trimmed = row.trim();
+    return trimmed || null;
+  }
+  const raw = row?.phone ?? row?.phoneNumber ?? row?.number ?? "";
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
+/** First harvestapi phone that looks real. Never invent a number. */
+function derivePhone(profile: RawApifyProfile): string | null {
+  const listed = [...(profile.phones ?? []), ...(profile.phoneNumbers ?? [])]
+    .map(phoneValue)
+    .filter((value): value is string => Boolean(value));
+  const singles = [profile.phone, profile.mobileNumber]
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean);
+  return listed[0] ?? singles[0] ?? null;
 }
 
 function skillNames(skills?: RawApifySkill[] | null): string[] {
@@ -307,6 +339,7 @@ function mapProfile(p: RawApifyProfile): ApifyProfile {
     hiring: p.hiring ?? false,
     premium: p.premium ?? false,
     email: deriveEmail(p.emails),
+    phone: derivePhone(p),
   };
 }
 

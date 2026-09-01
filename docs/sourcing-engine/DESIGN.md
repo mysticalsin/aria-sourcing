@@ -76,6 +76,15 @@ person's name is a name-only hit.
 - Their score must not pass the 60% floor.
 - Ranking someone because they are named Calypso is a contract violation.
 
+People-first shortlist rows must be **real people with email, phone, and
+LinkedIn**. Keep extra harvest fields when present. Do not invent contact
+fields. Leftover GitHub / `@example.com` / `@fixture.example` rows are
+**FAIL**. Name-only is **FAIL**. Live hydrate strips those leftover rows
+from people-first campaigns. If harvestapi Full returns people without
+email + phone + LinkedIn, fail loud
+(`PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS`) with query + run-id. Do not
+keep those rows.
+
 ## Score
 
 ```
@@ -258,9 +267,13 @@ hydrate and on the Strategy tab.
 
   If harvestapi **honestly** returns 0 after `SUCCEEDED`, one
   evidenced fail (`PEOPLE_FIRST_HARVEST_EMPTY`) with query + run-id
-  + a **Source via Apify** next-search CTA. Never 15 identical
-  `LinkedIn: 0 real candidates` rows. Do not invent people. Do not
-  complete a sourcing run that only stores 0-count receipts.
+  + a **Source via Apify** next-search CTA. If it returns people
+  without email + phone + LinkedIn, fail
+  `PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS` with query + run-id —
+  do not mint contacts and do not keep name-only rows. Never 15
+  identical `LinkedIn: 0 real candidates` rows. Do not invent
+  people. Do not complete a sourcing run that only stores 0-count
+  receipts.
 
   Short-mode discovery (no headline / about / skills) cannot prove
   a ≥60 skill-match. Mapping never stamps the JD title as
@@ -308,8 +321,8 @@ hydrate and on the Strategy tab.
   `POST /api/source/need` `mode: "fixture"` JSON or
   `sourceEngineFixtureCandidates` onto a campaign. That route returns
   `FIXTURE_NOT_ON_LIVE` on Fly. Campaign activity keeps a durable audit
-  row (Connect Apify), not a 5-second toast only. Never present
-  `@fixture.example` or `@example.com` as LinkedIn / live people.
+  row (Connect Apify), not a 5-second toast only. Never present leftover
+  GitHub, `@fixture.example`, or `@example.com` as LinkedIn / live people.
 - **LinkedIn Sourcing / RSC Configure is not an API-key paste.** Official
   LinkedIn partner search is **not wired**. Those cards must say that and
   send the operator to the harvest that is wired: a valid Apify key in

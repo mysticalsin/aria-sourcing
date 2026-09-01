@@ -18,8 +18,16 @@ export const PEOPLE_FIRST_HARVEST_STILL_RUNNING = "PEOPLE_FIRST_HARVEST_STILL_RU
 export const PEOPLE_FIRST_HARVEST_EMPTY = "PEOPLE_FIRST_HARVEST_EMPTY";
 export const PEOPLE_FIRST_HARVEST_ABORTED = "PEOPLE_FIRST_HARVEST_ABORTED";
 export const PEOPLE_FIRST_HARVEST_MOCK = "PEOPLE_FIRST_HARVEST_MOCK";
+export const PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS = "PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS";
 
-export type HarvestEvidenceKind = "not_started" | "still_running" | "empty" | "gated_empty" | "aborted" | "mock";
+export type HarvestEvidenceKind =
+  | "not_started"
+  | "still_running"
+  | "empty"
+  | "gated_empty"
+  | "incomplete_contacts"
+  | "aborted"
+  | "mock";
 
 export interface HarvestEvidence {
   actor: typeof HARVEST_ACTOR;
@@ -39,7 +47,8 @@ export function isHarvestEvidenceCode(code: string | null | undefined): boolean 
     code === PEOPLE_FIRST_HARVEST_STILL_RUNNING ||
     code === PEOPLE_FIRST_HARVEST_EMPTY ||
     code === PEOPLE_FIRST_HARVEST_ABORTED ||
-    code === PEOPLE_FIRST_HARVEST_MOCK
+    code === PEOPLE_FIRST_HARVEST_MOCK ||
+    code === PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS
   );
 }
 
@@ -64,6 +73,9 @@ export function formatHarvestEvidenceError(
   }
   if (kind === "mock") {
     return `Apify is in Mock mode. ${base}. Connect a real Apify key and switch the card to Live.`;
+  }
+  if (kind === "incomplete_contacts") {
+    return `People-first harvest returned people without email, phone, and LinkedIn. ${base}. Do not invent contacts. Do not keep name-only rows.`;
   }
   if (kind === "gated_empty") {
     return `People-first harvest returned profiles that did not meet skill-match ≥60. ${base}. Try Source via Apify with a narrower query.`;

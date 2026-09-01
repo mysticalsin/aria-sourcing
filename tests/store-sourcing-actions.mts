@@ -70,6 +70,8 @@ test("sourcing action boundary is React-free and wired through one stable factor
     /sourceEngineFixtureCandidates|jobUsesEngineFixture|@fixture\.example/,
   );
   assert.match(sourcingActionsSource, /isLabFixtureCandidate/);
+  assert.match(sourcingActionsSource, /isPeopleFirstContactComplete/);
+  assert.match(storeSource, /isPeopleFirstContactComplete/);
   assert.match(sourcingActionsSource, /FIXTURE_NOT_ON_LIVE_TOAST/);
   assert.doesNotMatch(sourcingActionsSource, /\/api\/source\/need/);
   assert.match(
@@ -2090,6 +2092,8 @@ test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next 
           id: "keyed-candidate-1",
           campaignId: campaign.id,
           name: "Elena Varga",
+          email: "elena.varga@bnpp-cib.com",
+          phone: "+1 514 555 0142",
           currentTitle: "Calypso Application Support",
           currentCompany: "BNPP CIB",
           location: "Montreal",

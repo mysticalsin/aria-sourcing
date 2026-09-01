@@ -60,6 +60,7 @@ const sampleProfile: ApifyProfile = {
   hiring: false,
   premium: false,
   email: null,
+  phone: null,
 };
 
 let itemsResult: ApifyResult<ApifyProfile[]> = { ok: true, status: 200, data: [sampleProfile] };
