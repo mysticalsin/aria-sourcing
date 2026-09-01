@@ -56,6 +56,7 @@ const active = resolveCommandCenterNextStep({
 });
 check("active campaign keep sourcing", active.cta === "Keep sourcing");
 check("active campaign reason uses title", active.reason === "Acting on SRE Lead");
+check("active campaign reason is context, not the product H1", active.reason !== "SRE Lead");
 check("active campaign href campaigns", active.href === "/campaigns");
 
 const idle = resolveCommandCenterNextStep({
@@ -80,6 +81,44 @@ for (const step of ONBOARDING_TOUR_STEPS) {
 for (const step of FIRST_RUN_GUIDE_STEPS) {
   check(`guide step has no enterprise jargon: ${step.id}`, !jargon.test(`${step.title} ${step.body}`));
 }
+
+const heroPanel = readFileSync(
+  new URL("../src/components/dashboard/hero-panel.tsx", import.meta.url),
+  "utf8",
+);
+const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
+const layoutSource = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+check(
+  "returning H1 is Aria-shaped, never the campaign title",
+  /Your next move is ready\./.test(heroPanel) &&
+    /cc-acting-on/.test(heroPanel) &&
+    !/nextStep\.reason\?\.replace\(\/\^Acting on \//.test(heroPanel),
+);
+check("first-run H1 stays paste a job", /Paste a job\. Aria finds people\./.test(heroPanel));
+check(
+  "hero decor is a clipped layer that cannot expand the scroll container",
+  /data-testid="cc-hero-decor"/.test(heroPanel) &&
+    /absolute inset-0 overflow-hidden/.test(heroPanel) &&
+    /pointer-events-none/.test(heroPanel),
+);
+check(
+  "DESIGN Command Center home chrome forbids campaign-title H1 and html overflow-x hide",
+  /Command Center home chrome/.test(design) &&
+    /NEVER the campaign title/.test(design) &&
+    /scrollWidth <= clientWidth/.test(design) &&
+    /no first-pass hide/.test(design),
+);
+check(
+  "root layout does not hide overflow-x on html or body",
+  !/<html[^>]*className="[^"]*overflow-x-hidden/.test(layoutSource) &&
+    !/<body[^>]*className="[^"]*overflow-x-hidden/.test(layoutSource),
+);
+check(
+  "harvest query pins stay Calypso Business Analyst and App Support Linux Python",
+  /Calypso Business Analyst/.test(design) &&
+    /Calypso Linux Python/.test(design) &&
+    /Calypso Business Analysis MySQL/.test(design),
+);
 
 const commandCenterPage = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
 const sourceStart = commandCenterPage.indexOf("async function handleSourceBatch()");

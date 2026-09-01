@@ -487,3 +487,23 @@ git SHA (`aria <sha>`) so Fly-show can prove which release is running.
 This contract's one logical product path is **connect → source → outreach**.
 Command Center, Source next batch, and the send gate are in scope for that
 path. The app name stays Aria.
+
+## Command Center home chrome
+
+Product is Aria, an agentic sourcing assistant. Calypso is a NEED, never the
+product name. Login/home chrome reads as Aria, then the active need.
+
+- Sidebar brand stays ARIA.
+- Returning Command Center H1 is Aria-shaped: "Aria" or "Your next move is
+  ready." NEVER the campaign title (the live bug: H1 is `nextStep.reason`
+  with "Acting on " stripped, so Senior Calypso Business Analyst is the
+  product title).
+- Active need is a campaign chip (header selector already) plus an optional
+  chip/subtitle "Acting on {title}". Not the H1. First-run H1 stays
+  "Paste a job. Aria finds people."
+- Decorative orbital/blobs live in a clipped layer
+  (`absolute inset-0 overflow-hidden pointer-events-none`) that MUST NOT
+  expand any scroll container. Prove at 1280 and 1440 that the Command
+  Center root `scrollWidth <= clientWidth`. Do NOT ship `overflow-x: hidden`
+  on html/body as the fix (Tony: no first-pass hide).
+

@@ -22,6 +22,23 @@ export function HeroPanel({ mode = "returning", nextStep }: HeroPanelProps) {
   return <ReturningHero nextStep={nextStep} />;
 }
 
+function HeroDecor({ orbital = false }: { orbital?: boolean }) {
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+      aria-hidden
+      data-testid="cc-hero-decor"
+    >
+      <div className="absolute inset-0 bg-dot-grid opacity-50" />
+      {orbital ? (
+        <div className="orbital absolute -right-24 -top-28 h-80 w-80 rounded-full opacity-30 animate-spin-slow" />
+      ) : null}
+      <div className="absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-tangerine/20 blur-3xl" />
+      <div className="absolute -bottom-10 right-16 h-56 w-56 rounded-full bg-electric/15 blur-3xl" />
+    </div>
+  );
+}
+
 function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
   const cta = nextStep?.cta ?? "Paste a job brief";
   const reason =
@@ -35,15 +52,7 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
       data-testid="cc-hero-first-run"
       aria-labelledby="cc-first-run-title"
     >
-      <div className="pointer-events-none absolute inset-0 bg-dot-grid opacity-50" aria-hidden />
-      <div
-        className="pointer-events-none absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-tangerine/20 blur-3xl"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute -bottom-10 right-16 h-56 w-56 rounded-full bg-electric/15 blur-3xl"
-        aria-hidden
-      />
+      <HeroDecor />
 
       <div className="relative z-10 max-w-3xl">
         <Eyebrow className="text-tangerine">Get started</Eyebrow>
@@ -85,6 +94,9 @@ function ReturningHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
   const primaryLabel = nextStep?.cta ?? "New intake";
   const showOutreach =
     nextStep?.href !== "/outreach" && nextStep?.href !== "/replies";
+  const actingOn = nextStep?.reason?.startsWith("Acting on ")
+    ? nextStep.reason.slice("Acting on ".length)
+    : null;
 
   return (
     <section
@@ -92,32 +104,29 @@ function ReturningHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
       data-testid="cc-hero-returning"
       aria-labelledby="cc-returning-title"
     >
-      <div className="pointer-events-none absolute inset-0 bg-dot-grid opacity-50" aria-hidden />
-      <div
-        className="orbital pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full opacity-30 animate-spin-slow"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-tangerine/20 blur-3xl"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute -bottom-10 right-16 h-56 w-56 rounded-full bg-electric/15 blur-3xl"
-        aria-hidden
-      />
+      <HeroDecor orbital />
 
       <div className="relative z-10 max-w-3xl">
         <Eyebrow className="text-tangerine">Command Center</Eyebrow>
 
         <h1 id="cc-returning-title" className="display mt-4 text-4xl text-ink sm:text-5xl lg:text-6xl">
-          {nextStep?.reason?.startsWith("Acting on ")
-            ? nextStep.reason.replace(/^Acting on /, "")
-            : "Your next move is ready."}
+          Your next move is ready.
         </h1>
 
+        {actingOn ? (
+          <p
+            className="mt-3 inline-flex max-w-full items-center rounded-full bg-violet/[0.08] px-3 py-1 text-sm font-semibold text-ink-soft ring-1 ring-inset ring-violet/15"
+            data-testid="cc-acting-on"
+          >
+            Acting on {actingOn}
+          </p>
+        ) : null}
+
         <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">
-          {nextStep?.reason ??
-            "Source talent, approve outreach, and book interviews — human approval, machine speed."}
+          {actingOn
+            ? "Source talent, approve outreach, and book interviews — human approval, machine speed."
+            : (nextStep?.reason ??
+              "Source talent, approve outreach, and book interviews — human approval, machine speed.")}
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
