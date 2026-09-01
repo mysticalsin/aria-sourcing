@@ -1,42 +1,44 @@
 ---
 project: MSourcing / ARIA
-shift: 466
+shift: 467
 agent: cursor-cloud
-updated: 2026-09-01T15:45Z
+updated: 2026-09-01T15:56Z
 status: pr-open-coding-gates
 ---
 
-# Handoff — Shift 466
+# Handoff — Shift 467
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** (not merged)
 - Leftover **PR #53 OPEN**. Do not touch. Do not merge
-- Feature tip (this shift): **`f594f25`** — Fly product-host Origin is same-site, not `CROSS_ORIGIN_REQUEST`
-- Prior tips: `b0f557b` Mock is not a live key; `8eda953` silent-no-op
-- Local gate green: `npx tsc --noEmit && npx tsc -p tsconfig.tests.json --pretty false && npm test`
+- Feature tip (this shift): **`3cb0c08`** — people-first 4xx/5xx toast + `source-next-batch-error` banner
+- Prior tips: `f594f25` product-host Origin; `b0f557b` Mock is not a live key
+- Local gate green on `3cb0c08`: `npx tsc --noEmit && npx tsc -p tsconfig.tests.json --pretty false && npm test`
 - READY TO MERGE stays **no**. Devon Path-B deploys PR 54 **tip**
 - Polo parked. Calypso is a **need**. No OAuth. No send. No merge. No Vercel. No Fly from this VM
 
 ## Done this shift
 
-1. Ultron 15:31:59Z on live `2e298e5`: POST happened. Web `48e441ea927078` logged `request_received` then `request_exit` `CROSS_ORIGIN_REQUEST`. No `request_entry`. HOSTNAME is `::`. Product URL is `https://aria-mantu-app.fly.dev/`
-2. Hypothesis confirmed: `handlePost` compared Origin to `req.nextUrl.origin` (`http://[::]:3000`)
-3. Same-site now uses Host / `X-Forwarded-Proto` + `X-Forwarded-Host`. Wildcard bind (`::`, `0.0.0.0`) is not the product host
-4. True cross-origin fails loud (`CROSS_ORIGIN_SOURCING_TOAST`) — never silent 0. Mock still not a live key
+1. Same Ultron 15:31:59Z click on live `2e298e5`: footer `aria 2e298e58c8ae`, silent none. No toast, no `PEOPLE_FIRST_HARVEST_MOCK`, no CORS copy, no audit row, Calypso still 0. Client swallowed the 403
+2. `sourceRejectedToast` is never null. handleSource / Source next batch (campaign, Command Center, candidates, fleet, launch, intake, agent-run-stream) always toast people-first 4xx/5xx including `CROSS_ORIGIN_REQUEST`
+3. Error toasts are `role="alert"` / `aria-live="assertive"`. Durable `source-next-batch-error` banner stays on screen
+4. Non-JSON 403 maps to `Sourcing request failed (HTTP 403). Do not treat this as 0 people.` — never the old unavailable swallow
+5. Same-site product-host Origin (`f594f25`) is unchanged. Product-host click must still reach `request_entry`
 
 ## Blockers
 
 - Official LinkedIn partner search is not wired. Do not complete OAuth. Do not invent candidates
-- This VM does not deploy Fly
+- This VM does not deploy Fly. This VM cannot re-walk live Calypso
 
 ## Next steps
 
 ```bash
-# Devon: Path B deploy of PR 54 tip (must include f594f25) onto aria-mantu-app
+# Devon: Path B deploy of PR 54 tip (must include 3cb0c08) onto aria-mantu-app
 # Grep WEB 48e441ea927078 for aria_harvest / [aria-harvest]
 # Product-host click must reach request_entry with query + apifyKeyPresent
 # CROSS_ORIGIN_REQUEST on https://aria-mantu-app.fly.dev is FAIL
+# A rejected POST must toast + banner — silent 0 is FAIL
 # Then Mock fail-loud or people skill-match ≥60 cap ≤20
 # Ultron: one Source next batch. Silent no-op is FAIL
 # This VM: coding gates only. Do not merge PR 53 or 54
@@ -51,6 +53,7 @@ status: pr-open-coding-gates
 - People-first harvest is Apify harvestapi Full. Tavily LinkedIn is not the harvest
 - Connected+Mock is not ready. `apifyKeyPresent` must not be true for Mock
 - Same-site Origin is the public product host, not the Fly bind address
+- A rejected people-first POST must toast. Silent 0 on 4xx/5xx is FAIL
 - Send stays dry-run until channel-connect **and** Tony approves
 - Devon owns Fly. READY TO MERGE stays no until live harvest is proven
 
@@ -62,3 +65,4 @@ status: pr-open-coding-gates
 - Manifest freeze: extend existing suites
 - Do not auto-flip the Apify card from Mock to Live because a key exists
 - Prefer Host over X-Forwarded-Host unless Host is a wildcard bind
+- Do not start a second slice
