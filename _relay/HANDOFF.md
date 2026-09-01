@@ -1,31 +1,31 @@
 ---
 project: MSourcing / ARIA
-shift: 476
+shift: 477
 agent: cursor-cloud
-updated: 2026-09-01T21:17Z
+updated: 2026-09-01T22:35Z
 status: pr-open-coding-gates
 ---
 
-# Handoff — Shift 476
+# Handoff — Shift 477
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** (not merged)
 - Leftover **PR #53 OPEN**. Do not touch. Do not merge
-- Feature tip: **`a6785c2`** — people-first queue ≥2; items=0 starts harvest 2
-- Ultron walked Fly **`a05cf5a`**: Overflow PASS, H1 PASS, Sourcing FAIL 0-and-stop. One run `Etz5JWFCQGm1605KE` query=`Calypso Business Analyst` SUCCEEDED items=0. Banner “Every planned search was tried” on a one-item plan
-- Harvest first query stays **`Calypso Business Analyst`** / App Support **`Calypso Linux Python`**
-- Local gate green on `a6785c2`: `npm run typecheck && npm run typecheck:tests && npm test`
-- READY TO MERGE stays **no**. Devon Path-B deploys PR 54 **tip** later
-- Polo parked. Overlay/Métis out of scope. Calypso is a **need**. No OAuth. No send. No merge. No Vercel. No Fly from this VM
+- Tip: **`ce7b16a`** — Auto source + two-click chrome + never-0 enqueue (`a6785c2`)
+- Feature commits: `a6785c2` never-0 queue; `5ff9160` Auto source + strip Apify chrome; tests through `ce7b16a`
+- Fly live stays **`a05cf5a`**. This VM did not Path-B / Fly / Vercel
+- Local gate green on `ce7b16a`: `npx tsc --noEmit && npm run typecheck:tests && npm test`
+- READY TO MERGE stays **no**
+- Polo parked. Overlay/Métis out of scope. Calypso is a **need**. No OAuth. No send. No merge
 
 ## Done this shift
 
-1. Hypothesis confirmed: route iterated `plannedSourcingSearches` Apify slice and treated a one-item / fingerprint-drift stop as exhausted. Banner copy said every search was tried anyway
-2. Plan: `peopleFirstHarvestQueue` / `peopleFirstHarvestAttempts` always ≥2. Next actor-input is `searchQuery=Calypso` + `currentJobTitles=["Business Analyst"]` (App Support titles stay off the keyword query so it remains `Calypso Linux Python`)
-3. Enqueue: one Source POST runs `peopleFirstHarvestQueue`, appends `nextPeopleFirstHarvest` after `SUCCEEDED items=0`, fresh 90s per attempt, 360s budget. `peopleFirstContinueAuthority` does not abort harvest 2 on leftover-strip fingerprint drift
-4. Banner “Every planned search was tried” only when `startedSearches >= 2`. One started harvest is `PEOPLE_FIRST_HARVEST_NOT_STARTED`, not EMPTY
-5. Tests: BA items=0 starts a second harvestapi run with a new run id; runner-level empty first harvest starts run-2; banner pin. Do not invent people
+1. Proved never-0 enqueue already in `a6785c2`. User chrome still said “Source via Apify”; Auto source was missing
+2. Two user clicks: **Source next batch** (one harvest) and **Auto source** (`runAutoSourcePipeline`: search → enrich → GitHub tech-stack merge when `queryStyle === "github"`). No AgentRunStream
+3. Stripped Source via Apify / actor ids / Sillage / Apollo / Seamless / Run sourcing agent / Run Aria from Command Center, campaign, and candidates chrome. Fail-loud toasts no longer point at an Apify button. Connect Apify / Access & Keys stays for missing/mock key
+4. Hidden pipeline: harvestapi LinkedIn search + harvestapi LinkedIn scraper (email/phone/full profile) + apivault_labs GitHub tech-stack merge onto the same people. `githubUrl` now survives `/api/source/enrich`. GitHub leftovers are not the shortlist
+5. Tests: never-0 empty→second search still green; contact shape / floor / cap still in `tests/sourcing-engine.mts`; chrome pins in `tests/auto-source.mts` + command-center + campaign lifecycle. User-facing `formatHarvestEvidenceError` has no `actor=`
 
 ## Blockers
 
@@ -35,14 +35,13 @@ status: pr-open-coding-gates
 ## Next steps
 
 ```bash
-# Devon: Path B deploy of PR 54 tip (must include a6785c2) onto aria-mantu-app
-# Ultron: one Source on camp_1788068519249 query=Calypso Business Analyst
+# Devon: Path B deploy of PR 54 tip ce7b16a onto aria-mantu-app
+# Ultron: one Source next batch on camp_1788068519249 query=Calypso Business Analyst
 # request_entry plannedHarvests>=2
 # If harvest 1 SUCCEEDED items=0: next_search_start + a second harvestapi run id
-# (broader query and/or currentJobTitles). No second click
-# Banner "every planned search was tried" only if ≥2 distinct searches actually ran
+# Auto source: search + enrich (+ GitHub only when queryStyle=github). One dataset
 # Real shortlist: email + phone + LinkedIn, skill-match >=60, cap <=20
-# H1 stays Your next move is ready. Overflow already PASS on a05cf5a
+# H1 stays Your next move is ready. Overflow WRAP. No Source via Apify chrome
 # This VM: coding gates only. Do not merge PR 53 or 54
 # READY TO MERGE: no
 ```
@@ -54,6 +53,8 @@ status: pr-open-coding-gates
 - Aria can never find 0 people. items=0 is next-search, not a result
 - Copy is not next-search. The loop must start harvest 2
 - First query stays `Calypso Business Analyst`
+- Two user clicks only. Actors stay in the backend
+- Fail-loud toasts must not send Tony to an Apify button
 - Do not hide overflow-x on html/body
 - Leftover GitHub / `@example.com` are not LinkedIn people
 - Do not invent people to fill a 0
@@ -70,3 +71,4 @@ status: pr-open-coding-gates
 - Do not share one 90s abort across planned harvests
 - Do not put Application Support into the harvestapi keyword query
 - Route-authority continue fixture must set `lastContactedAt: null`
+- Finance/BA Auto source must not dump GitHub leftovers as the shortlist
