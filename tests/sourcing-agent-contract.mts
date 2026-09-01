@@ -179,6 +179,27 @@ test("people-first harvest route never statically loads Playwright or the cloud 
   assert.match(toolLoop, /import\(["']@\/lib\/ai\/browser-tools["']\)/);
 });
 
+test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", () => {
+  const route = readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8");
+  const plan = readFileSync(new URL("../src/lib/sourcing/multi-source-plan.ts", import.meta.url), "utf8");
+  const tools = readFileSync(new URL("../src/lib/ai/sourcing-tools.ts", import.meta.url), "utf8");
+  const apify = readFileSync(new URL("../src/lib/sourcing/apify.ts", import.meta.url), "utf8");
+  const helpers = readFileSync(new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url), "utf8");
+  const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
+  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS = 90_000/);
+  assert.match(plan, /apifyHarvestQueryFromBrief/);
+  assert.match(route, /peopleFirst \? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000/);
+  assert.match(tools, /profileScraperMode: "Full"/);
+  assert.doesNotMatch(tools, /profileScraperMode: "Short"/);
+  assert.match(tools, /APIFY_HARVEST_WAIT_MS/);
+  assert.match(apify, /APIFY_HARVEST_WAIT_CAP_MS = 90_000/);
+  assert.match(helpers, /headline \|\| positionTitle/);
+  assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
+  assert.match(design, /recall-capable Apify harvestapi/);
+  assert.match(design, /Calypso Linux Python/);
+  assert.match(design, /do not toast \*\*Open Access & Keys\*\*/);
+});
+
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
   const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client.ts");
   const {

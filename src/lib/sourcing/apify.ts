@@ -22,9 +22,15 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
+import { providerIsApify } from "@/lib/sourcing/people-connect";
+
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
 const DEV_FUSION_PATH = "/actors/dev_fusion~linkedin-profile-scraper/run-sync-get-dataset-items";
+
+/** Align with Source via Apify's 90s poll — harvestapi Full needs more than 20s. */
+export const APIFY_HARVEST_WAIT_MS = 75_000;
+export const APIFY_HARVEST_WAIT_CAP_MS = 90_000;
 
 // Actor input is capped server-side regardless of what the caller requests —
 // this is the single funnel every Apify run goes through.
@@ -426,7 +432,7 @@ export async function runProfileSearchAndWait(
   if (!runId || !datasetId) {
     return { ok: false, status: 0, title: "Apify run missing ids", detail: "" };
   }
-  const deadline = Date.now() + Math.min(Math.max(opts?.timeoutMs ?? 20_000, 4_000), 40_000);
+  const deadline = Date.now() + Math.min(Math.max(opts?.timeoutMs ?? APIFY_HARVEST_WAIT_MS, 4_000), APIFY_HARVEST_WAIT_CAP_MS);
   while (Date.now() < deadline) {
     if (opts?.signal?.aborted) {
       return { ok: false, status: 0, title: "Apify search aborted", detail: "" };
@@ -500,14 +506,18 @@ export async function resolveStoredApifyKey(
   if (!svc) return null;
   const { data: wid } = await session.rpc("current_workspace_id");
   if (!wid) return null;
-  const { data: row } = await svc
+  const { data: rows } = await svc
     .from("api_keys")
-    .select("secret")
+    .select("secret, provider")
     .eq("workspace_id", wid)
-    .eq("provider", "Apify")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
+  const row = (rows ?? []).find(
+    (item) =>
+      providerIsApify(String(item.provider ?? "")) &&
+      typeof item.secret === "string" &&
+      item.secret.length > 0,
+  );
   if (!row?.secret || typeof row.secret !== "string") return null;
   return decryptSecret(row.secret);
 }
@@ -515,14 +525,18 @@ export async function resolveStoredApifyKey(
 export async function resolveStoredApifyKeyForWorkspace(workspaceId: string): Promise<string | null> {
   const svc = getServiceSupabase();
   if (!svc) return null;
-  const { data: row } = await svc
+  const { data: rows } = await svc
     .from("api_keys")
-    .select("secret")
+    .select("secret, provider")
     .eq("workspace_id", workspaceId)
-    .eq("provider", "Apify")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
+  const row = (rows ?? []).find(
+    (item) =>
+      providerIsApify(String(item.provider ?? "")) &&
+      typeof item.secret === "string" &&
+      item.secret.length > 0,
+  );
   if (!row?.secret || typeof row.secret !== "string") return null;
   return decryptSecret(row.secret);
 }

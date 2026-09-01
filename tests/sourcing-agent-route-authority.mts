@@ -1091,8 +1091,8 @@ test("people-first role with Apify ignores promoted GitHub lessons", async () =>
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.mode, "deterministic");
+  assert.equal(runnerQueries[0]?.platform, "Apify");
   assert.ok(runnerQueries.some((step) => step.platform === "LinkedIn"));
-  assert.ok(runnerQueries.some((step) => step.platform === "Apify"));
   assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
 });
 
@@ -1108,8 +1108,9 @@ test("people-first role with a cloud model still searches LinkedIn and Apify, no
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.mode, "deterministic");
-  assert.equal(runnerQueries[0]?.platform, "LinkedIn");
-  assert.ok(runnerQueries.some((step) => step.platform === "Apify"));
+  assert.equal(runnerQueries[0]?.platform, "Apify");
+  assert.match(String(runnerQueries[0]?.query), /^Calypso Linux Python$/);
+  assert.ok(runnerQueries.some((step) => step.platform === "LinkedIn"));
   assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);

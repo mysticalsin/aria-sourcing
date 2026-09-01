@@ -11,7 +11,7 @@ import type {
   OutreachMessage,
 } from "@/lib/types";
 
-function providerIsApify(provider: string): boolean {
+export function providerIsApify(provider: string): boolean {
   return provider === "Apify" || /^apify(\b|\s|$|\()/i.test(provider);
 }
 

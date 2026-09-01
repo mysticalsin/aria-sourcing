@@ -378,6 +378,46 @@ if (noNameLeak.ok) {
       apifyKept[0]!.matchScore >= SHORTLIST_FLOOR &&
       Boolean(apifyKept[0]?.matchBreakdown.some((item) => item.key === "experience" && /CV:/i.test(item.rationale))),
   );
+  const jdTitleOnly = applyLiveEngineGate(
+    [{
+      ...blank,
+      id: "apify-jd-stamp",
+      campaignId: "camp-calypso",
+      name: "Jane Doe",
+      sourcePlatform: "Apify",
+      sourceQuery: "Calypso Linux Python",
+      currentTitle: job.title,
+      currentCompany: "",
+      techStack: [],
+      recentActivity: "Sourced via Apify LinkedIn profile search.",
+      experience: [],
+    }],
+    job,
+  );
+  ok("live gate drops a JD-title stamp with no skill or position evidence", jdTitleOnly.length === 0);
+  const overflowLive = applyLiveEngineGate(
+    Array.from({ length: 24 }, (_, index) => ({
+      ...blank,
+      id: `apify-cap-${index}`,
+      campaignId: "camp-calypso",
+      avatarInitials: "EV",
+      name: `Elena Varga ${index}`,
+      sourcePlatform: "Apify" as const,
+      sourceQuery: "Calypso Linux Python",
+      currentTitle: "Calypso Production Support",
+      currentCompany: "BNPP CIB",
+      techStack: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      recentActivity: "Applicative Support. Calypso settlement, Capital Markets, Montreal.",
+      experience: [
+        "Production support for the Calypso settlement system. Trade Life Cycle, Settlements, Securities, Prime Brokerage.",
+      ],
+    })),
+    job,
+  );
+  ok(
+    "live gate caps a keyed skill-match shortlist at 20",
+    overflowLive.length <= SHORTLIST_CAP && overflowLive.every((row) => row.matchScore >= SHORTLIST_FLOOR),
+  );
 }
 
 if (parsedJd.ok) {

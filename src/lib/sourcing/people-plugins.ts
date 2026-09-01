@@ -101,6 +101,16 @@ function pluginUi(title: string, description: string): PeoplePluginUi {
   };
 }
 
+/** Keyed empty harvest is honest fail-loud — not "reconnect the key that already works". */
+function keyedEmptyHarvestUi(description: string): PeoplePluginUi {
+  return {
+    title: "No shortlist from this harvest",
+    description,
+    href: "",
+    actionLabel: "",
+  };
+}
+
 export function peoplePluginFailLoudUi(
   error: string,
   job?: JobAnalysis,
@@ -110,7 +120,8 @@ export function peoplePluginFailLoudUi(
   if (isConnectOrDryRunCopy(error)) return null;
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
   if (remapped === EMPTY_PEOPLE_FIRST_HARVEST || /0 candidates|empty harvest|0 profiles/i.test(remapped)) {
-    return pluginUi("No shortlist from this harvest", remapped);
+    const keyed = job ? peopleSourcePluginsConnected(integrations ?? [], apiKeys) : false;
+    return keyed ? keyedEmptyHarvestUi(remapped) : pluginUi("No shortlist from this harvest", remapped);
   }
   if (remapped === PEOPLE_FIRST_HARVEST_UNAVAILABLE || GENERIC_SOURCING_FAILURE.test(remapped)) {
     return pluginUi("Sourcing failed", remapped);
@@ -134,7 +145,7 @@ export function emptyPeopleFirstToast(
   const description = emptyPeopleFirstShortlistError(job, integrations, result, apiKeys);
   if (!description) return null;
   if (peopleSourcePluginsConnected(integrations, apiKeys)) {
-    return pluginUi("No shortlist from this harvest", description);
+    return keyedEmptyHarvestUi(description);
   }
   return pluginUi("Add a valid Apify key", description);
 }

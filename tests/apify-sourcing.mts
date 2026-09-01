@@ -395,6 +395,36 @@ try {
   ok("name falls back to Unknown when both first/last are blank", sc?.name === "Unknown");
   ok("blank email stays blank (no fabricated address)", sc?.email === "");
   ok("currentCompany blank when no currentPosition (Short mode with no positions)", sc?.currentCompany === "");
+  ok("empty headline does not stamp the JD title as currentTitle", sc?.currentTitle === "" && sc?.currentTitle !== campaign.jobAnalysis.title);
+
+  const shortMode: ApifyProfile = {
+    ...profile,
+    id: "short-calypso",
+    publicIdentifier: "",
+    linkedinUrl: "https://www.linkedin.com/in/ACwAABshortCalypsoUrn",
+    headline: "",
+    about: "",
+    currentPosition: [{ title: "Calypso Production Support", companyName: "BNPP CIB", dateRange: "Present" }],
+    experience: [],
+    topSkills: [],
+    skills: [],
+    email: null,
+  };
+  const financeCampaign = {
+    ...campaign,
+    jobAnalysis: {
+      ...campaign.jobAnalysis,
+      title: "Calypso Application Support",
+      requiredSkills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+    },
+  };
+  const shortMapped = mapApifyCandidates([shortMode], financeCampaign, "Calypso Linux Python", [], W);
+  const shortRow = shortMapped.accepted[0];
+  ok(
+    "Short-mode currentTitle is the position, not the JD title",
+    shortRow?.currentTitle === "Calypso Production Support" && shortRow.currentTitle !== financeCampaign.jobAnalysis.title,
+  );
+  ok("Short-mode position titles are skill evidence", Boolean(shortRow?.techStack.includes("Calypso")));
 }
 
 console.log(`RESULT apify-sourcing: ${pass} passed, ${fail} failed`);

@@ -49,14 +49,27 @@ export function liveSourcingNeedFromJob(job: JobAnalysis): SourcingNeed {
   };
 }
 
-function cvTextFor(candidate: Candidate): string {
-  return [...(candidate.experience ?? []), candidate.recentActivity, candidate.currentTitle]
+/** JD title stamped onto a thin harvest row is not evidence. */
+function evidenceTitle(currentTitle: string | undefined, jobTitle: string): string {
+  const title = (currentTitle ?? "").trim();
+  if (!title) return "";
+  if (title.toLowerCase() === jobTitle.trim().toLowerCase()) return "";
+  return title;
+}
+
+function cvTextFor(candidate: Candidate, job: JobAnalysis): string {
+  return [...(candidate.experience ?? []), candidate.recentActivity, evidenceTitle(candidate.currentTitle, job.title)]
     .filter(Boolean)
     .join("\n");
 }
 
-function linkedinTextFor(candidate: Candidate): string {
-  return [candidate.currentTitle, candidate.currentCompany, candidate.recentActivity, candidate.location]
+function linkedinTextFor(candidate: Candidate, job: JobAnalysis): string {
+  return [
+    evidenceTitle(candidate.currentTitle, job.title),
+    candidate.currentCompany,
+    candidate.recentActivity,
+    candidate.location,
+  ]
     .filter(Boolean)
     .join("\n");
 }
@@ -113,8 +126,8 @@ export function applyLiveEngineGate(candidates: Candidate[], job: JobAnalysis): 
   const finance = roleFamily(job) === "finance";
   const kept: Candidate[] = [];
   for (const candidate of candidates) {
-    const cvText = cvTextFor(candidate);
-    const linkedinText = linkedinTextFor(candidate);
+    const cvText = cvTextFor(candidate, job);
+    const linkedinText = linkedinTextFor(candidate, job);
     const evidence: CandidateEvidence = {
       id: candidate.id,
       name: candidate.name,

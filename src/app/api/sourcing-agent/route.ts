@@ -43,7 +43,7 @@ import {
 } from "@/lib/sourcing/sourcing-agent-contract";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
-import { plannedSourcingSearches } from "@/lib/sourcing/multi-source-plan";
+import { PEOPLE_FIRST_SEARCH_BUDGET_MS, plannedSourcingSearches } from "@/lib/sourcing/multi-source-plan";
 import { roleProfile } from "@/lib/roles";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -565,14 +565,14 @@ async function handlePost(req: NextRequest, correlationId: string) {
     ];
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
-      const searchSignal = AbortSignal.timeout(45_000);
+      const searchSignal = AbortSignal.timeout(peopleFirst ? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000);
       const searches = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
         : [
             ...promotedLessons
               .filter((lesson) =>
                 peopleFirst
-                  ? lesson.platform === "LinkedIn"
+                  ? lesson.platform === "Apify" || lesson.platform === "LinkedIn"
                   : lesson.platform === "LinkedIn" || lesson.platform === "GitHub",
               )
               .map((lesson) => ({ platform: lesson.platform, query: lesson.query })),
@@ -582,6 +582,12 @@ async function handlePost(req: NextRequest, correlationId: string) {
               (step, index, all) =>
                 all.findIndex((other) => other.platform === step.platform && other.query === step.query) === index,
             )
+            .sort((left, right) => {
+              if (!peopleFirst) return 0;
+              const rank = (platform: string) =>
+                platform === "Apify" ? 0 : platform === "LinkedIn" ? 1 : 2;
+              return rank(left.platform) - rank(right.platform);
+            })
             .slice(0, 5);
       let successfulQuery = false;
       for (const step of searches) {

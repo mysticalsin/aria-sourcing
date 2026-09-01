@@ -10,7 +10,7 @@ import { roleFamily, roleProfile } from "../src/lib/roles";
 import { splitGluedSkillBlob, tokenizeMustHaveSkills } from "../src/lib/sourcing/vss-need";
 import { githubSkillQueryToken, repairGithubQueries } from "../src/lib/sourcing/github-search-language";
 import { repairLinkedinBoolean } from "../src/lib/sourcing/linkedin-boolean";
-import { plannedSourcingSearches } from "../src/lib/sourcing/multi-source-plan";
+import { apifyHarvestQueryFromBrief, plannedSourcingSearches } from "../src/lib/sourcing/multi-source-plan";
 
 const TONY_AMACAN = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "fixtures/tony-calypso-amacan-need.txt"),
@@ -236,15 +236,28 @@ ok(
   ) && !campFromBlob.jobAnalysis.requiredSkills.some((s) => /Linux Python Shell/i.test(s)),
 );
 const multi = plannedSourcingSearches(campFromBlob);
-ok("multi-source plan starts with LinkedIn", multi[0]?.platform === "LinkedIn");
+ok("people-first plan starts with the wired Apify harvest", multi[0]?.platform === "Apify");
 ok("multi-source plan includes Apify", multi.some((step) => step.platform === "Apify"));
+ok("people-first plan still keeps the LinkedIn boolean after Apify", multi.some((step) => step.platform === "LinkedIn"));
 const apifyStep = multi.find((step) => step.platform === "Apify");
 ok(
-  "Apify query is title plus tokenized skills, not language:Calypso",
-  Boolean(apifyStep?.query) &&
-    /Calypso/i.test(apifyStep?.query ?? "") &&
-    /Python/i.test(apifyStep?.query ?? "") &&
-    !/language:/i.test(apifyStep?.query ?? ""),
+  "Apify harvest query is Calypso Linux Python, not title+six AND and not language:Calypso",
+  apifyStep?.query === "Calypso Linux Python" && !/language:/i.test(apifyStep?.query ?? ""),
+);
+ok(
+  "harvestapi query is not the full title jammed with six skills",
+  !/Application Support Linux Python Shell Oracle Grafana/i.test(apifyStep?.query ?? ""),
+);
+ok(
+  "people-first Apify harvest does not require a LinkedIn boolean",
+  plannedSourcingSearches({
+    jobAnalysis: campFromBlob.jobAnalysis,
+    sourcingStrategy: { githubQueries: [], linkedinBoolean: "" },
+  }).some((step) => step.platform === "Apify" && step.query === "Calypso Linux Python"),
+);
+ok(
+  "apifyHarvestQueryFromBrief is skill-match keywords, not a name",
+  apifyHarvestQueryFromBrief(campFromBlob.jobAnalysis) === "Calypso Linux Python",
 );
 ok(
   "multi-source GitHub steps are not language:Calypso or a skill blob",

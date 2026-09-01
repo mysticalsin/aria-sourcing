@@ -5,6 +5,7 @@ import {
   MISSING_PEOPLE_PLUGINS_TOAST,
   PEOPLE_FIRST_HARVEST_UNAVAILABLE,
   emptyPeopleFirstShortlistError,
+  emptyPeopleFirstToast,
   hasValidApifyKey,
   integrationShowsLive,
   missingPeoplePluginsToast,
@@ -375,6 +376,27 @@ ok(
   "fail-loud toast always carries a Settings CTA",
   peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.href === "/settings" &&
     Boolean(peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.actionLabel),
+);
+const keyedEmptyToast = emptyPeopleFirstToast(
+  calypsoJob,
+  liveTenant,
+  { accepted: { length: 0 }, source: "web" },
+  [{ provider: "Apify", status: "valid" }],
+);
+const keyedEmptyFailLoud = peoplePluginFailLoudUi(
+  EMPTY_PEOPLE_FIRST_HARVEST,
+  calypsoJob,
+  liveTenant,
+  [{ provider: "Apify", status: "valid" }],
+);
+ok(
+  "keyed empty harvest is fail-loud without an Access & Keys reconnect CTA",
+  keyedEmptyToast?.title === "No shortlist from this harvest" &&
+    keyedEmptyToast.description === EMPTY_PEOPLE_FIRST_HARVEST &&
+    !keyedEmptyToast.href &&
+    !/Access & Keys/i.test(keyedEmptyToast.actionLabel) &&
+    !keyedEmptyFailLoud?.href &&
+    !/Access & Keys/i.test(String(keyedEmptyFailLoud?.actionLabel)),
 );
 const liveInvalidResponse = "The sourcing agent returned an invalid response.";
 const keyedHarvestFail = remapPeopleFirstSourcingError(

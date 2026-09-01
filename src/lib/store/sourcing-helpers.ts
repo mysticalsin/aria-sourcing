@@ -19,9 +19,10 @@ import { tokenizeMustHaveSkills } from "../sourcing/vss-need";
  * data the candidate already has, and the candidate drawer's provenance
  * badges show the right source from the moment a candidate is sourced.
  * `present` reflects the RAW provider signal, not the Candidate object's
- * post-fallback fields — e.g. `currentTitle` defaults to the job title when
- * no real headline was scraped, and that fallback must never be attributed
- * to the provider as "supplied" data.
+ * post-fallback fields — e.g. `currentTitle` used to default to the job title
+ * when no real headline was scraped, and that fallback must never be
+ * attributed to the provider as "supplied" data. The mapper no longer stamps
+ * the JD title; empty headline falls back to the first position title only.
  */
 function seedEnrichmentCoverage(
   candidate: Candidate,
@@ -188,9 +189,14 @@ export function mapApifyCandidates(
     const name = [p.firstName, p.lastName].filter(Boolean).join(" ").trim() || "Unknown";
     const headline = p.headline.trim();
     const about = p.about.trim();
-    const hay = `${headline} ${about} ${p.topSkills.join(" ")} ${p.skills.join(" ")}`.toLowerCase();
+    const positionHay = [
+      ...p.currentPosition.map((pos) => `${pos.title} ${pos.companyName}`),
+      ...p.experience.map((pos) => `${pos.title} ${pos.companyName}`),
+    ].join(" ");
+    const hay = `${headline} ${about} ${p.topSkills.join(" ")} ${p.skills.join(" ")} ${positionHay}`.toLowerCase();
     const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
     const currentCompany = p.currentPosition[0]?.companyName ?? "";
+    const positionTitle = p.currentPosition[0]?.title.trim() ?? "";
     const experienceLines = [
       about,
       ...p.currentPosition.map((pos) => `${pos.title} @ ${pos.companyName} (${pos.dateRange})`.trim()),
@@ -206,7 +212,7 @@ export function mapApifyCandidates(
       name,
       email: p.email ?? "",
       avatarInitials: initialsFrom(name),
-      currentTitle: headline || jd.title,
+      currentTitle: headline || positionTitle,
       currentCompany,
       location: p.location?.text ?? "",
       timezone: "",

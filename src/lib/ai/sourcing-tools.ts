@@ -18,7 +18,8 @@ import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
-import { runProfileSearchAndWait } from "@/lib/sourcing/apify";
+import { APIFY_HARVEST_WAIT_MS, runProfileSearchAndWait } from "@/lib/sourcing/apify";
+import { SHORTLIST_CAP } from "@/lib/sourcing/engine";
 import { mapApifyCandidates } from "@/lib/store/sourcing-helpers";
 import {
   mapGithubCandidates,
@@ -110,7 +111,11 @@ export function makeSourcingToolRunner(
 
     const platform = String(args.platform ?? "").trim() as SourcePlatform;
     const query = String(args.query ?? "").trim().slice(0, 256);
-    const count = Math.min(Math.max(Math.trunc(Number(args.count)) || 5, 1), 10);
+    const requested = Math.trunc(Number(args.count)) || (platform === "Apify" ? 8 : 5);
+    const count =
+      platform === "Apify"
+        ? Math.min(Math.max(requested, 1), SHORTLIST_CAP)
+        : Math.min(Math.max(requested, 1), 10);
     if (!platform) return { ok: false, error: "Missing platform." };
     if (!query) return { ok: false, error: "Missing query." };
     const policy = validateSourcingQuery(platform, query, campaign);
@@ -148,10 +153,11 @@ export function makeSourcingToolRunner(
           apifyToken,
           {
             searchQuery: query,
-            profileScraperMode: "Short",
+            // Short mode has no headline/about/skills — finance ≥60 skill-match cannot hold.
+            profileScraperMode: "Full",
             maxItems: count,
           },
-          { timeoutMs: 20_000, signal },
+          { timeoutMs: APIFY_HARVEST_WAIT_MS, signal },
         );
         if (!profiles.ok) {
           executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
