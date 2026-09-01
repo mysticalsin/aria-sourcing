@@ -333,6 +333,8 @@ hydrate and on the Strategy tab.
   `FIXTURE_NOT_ON_LIVE` on Fly. Campaign activity keeps a durable audit
   row (Connect Apify), not a 5-second toast only. Never present leftover
   GitHub, `@fixture.example`, or `@example.com` as LinkedIn / live people.
+  People-first Sourced is visible harvest people only. Mock / unkeyed empty
+  campaigns fail loud Connect Apify without a second Source click.
 - **LinkedIn Sourcing / RSC Configure is not an API-key paste.** Official
   LinkedIn partner search is **not wired**. Those cards must say that and
   send the operator to the harvest that is wired: a valid Apify key in

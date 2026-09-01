@@ -76,6 +76,7 @@ import {
 import {
   emptyPeopleFirstToast,
   isPeopleFirstRole,
+  missingPeoplePluginsToast,
   peoplePluginFailLoudUi,
   sourceRejectedToast,
   visiblePeopleFirstLearningReceipts,
@@ -481,8 +482,22 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     integrations,
     apiKeys,
   );
-  const health = campaignHealth(c);
-  const nextAction = nextActionForCampaign(c);
+  const peopleFirst = isPeopleFirstRole(c.jobAnalysis);
+  const visibleSourced = peopleFirst ? candidates.length : m.sourced;
+  const visibleCampaign = {
+    ...c,
+    metrics: { ...c.metrics, sourced: visibleSourced },
+  };
+  const health = campaignHealth(visibleCampaign);
+  const nextAction = nextActionForCampaign(visibleCampaign);
+  const connectBlocker =
+    peopleFirst && candidates.length === 0
+      ? missingPeoplePluginsToast(c.jobAnalysis, integrations, apiKeys)
+      : null;
+  const peopleFirstConnectUi = connectBlocker
+    ? peoplePluginFailLoudUi(connectBlocker, c.jobAnalysis, integrations, apiKeys)
+    : null;
+  const failLoudBanner = sourceBatchError ?? peopleFirstConnectUi;
   const scores = candidates.map((cand) => cand.matchScore);
   const campaignReplies = allReplies.filter((r) => r.campaignId === c.id);
   const campaignBookings = allBookings.filter((b) => b.campaignId === c.id);
@@ -966,7 +981,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     icon: React.ReactNode;
     tone: Tone;
   }[] = [
-    { label: "Sourced", value: formatNumber(m.sourced), hint: "Candidates in the pool", icon: <Users />, tone: "electric" },
+    { label: "Sourced", value: formatNumber(visibleSourced), hint: "Candidates in the pool", icon: <Users />, tone: "electric" },
     { label: "Contacted", value: formatNumber(m.contacted), hint: "Outreach delivered", icon: <Send />, tone: "tangerine" },
     { label: "Reply rate", value: formatPercent(m.replyRate), hint: "Replies per contact", icon: <MessageSquare />, tone: "aqua" },
     { label: "Interested", value: formatNumber(m.interested), hint: "Positive intent", icon: <Sparkles />, tone: "tangerine" },
@@ -1055,20 +1070,20 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
           <div className="flex min-w-0 flex-col items-stretch gap-2 lg:max-w-[55%] lg:items-end">
             <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
-            {sourceBatchError ? (
+            {failLoudBanner ? (
               <div
                 role="alert"
                 data-testid="source-next-batch-error"
                 className="w-full rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-left text-sm"
               >
-                <p className="font-semibold text-ink">{sourceBatchError.title}</p>
-                <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
-                {sourceBatchError.href && sourceBatchError.actionLabel ? (
+                <p className="font-semibold text-ink">{failLoudBanner.title}</p>
+                <p className="mt-0.5 text-muted">{failLoudBanner.description}</p>
+                {failLoudBanner.href && failLoudBanner.actionLabel ? (
                   <Link
-                    href={sourceBatchError.href}
+                    href={failLoudBanner.href}
                     className="mt-2 inline-flex h-8 items-center rounded-full bg-ink px-3 text-xs font-semibold text-paper"
                   >
-                    {sourceBatchError.actionLabel}
+                    {failLoudBanner.actionLabel}
                   </Link>
                 ) : null}
               </div>

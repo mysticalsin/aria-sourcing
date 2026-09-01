@@ -735,4 +735,8 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
   assert.match(page, /role="alert"/);
   assert.match(page, /visiblePeopleFirstLearningReceipts/);
   assert.match(page, /visibleFeedbackReceipts/);
+  assert.match(page, /missingPeoplePluginsToast/);
+  assert.match(page, /visibleSourced/);
+  assert.match(page, /failLoudBanner/);
+  assert.match(page, /peopleFirstConnectUi/);
 });

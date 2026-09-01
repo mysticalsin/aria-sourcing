@@ -655,7 +655,8 @@ ok(
     /PEOPLE_FIRST_HARVEST_MOCK/.test(design) &&
     /audit row/.test(design) &&
     /not toast-only/.test(design) &&
-    /SOURCING_AGENT_UNAVAILABLE/.test(design),
+    /SOURCING_AGENT_UNAVAILABLE/.test(design) &&
+    /without a second Source click/.test(design),
 );
 ok(
   "DESIGN pins Apify as a real Live-switch card; Concept + valid key is harvest",
