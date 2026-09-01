@@ -422,7 +422,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     return () => {
       cancelled = true;
     };
-  }, [actions, campaign, hydrated, id, integrations]);
+  }, [actions, apiKeys, campaign, hydrated, id, integrations]);
 
   if (!hydrated) {
     return (

@@ -63,13 +63,6 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     }
   }, []);
 
-  // Stop polling on unmount so a closed/navigated-away tab never keeps hitting
-  // /api/source/apify/status in the background.
-  React.useEffect(() => clearPoll, [clearPoll]);
-
-  if (!can(role, "source")) return null;
-  if (!apiKeys.some((k) => k.provider === "Apify")) return null;
-
   const resetAndClose = React.useCallback(() => {
     clearPoll();
     setSearchQuery("");
@@ -85,6 +78,13 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     setSearchError(null);
     setOpen(false);
   }, [clearPoll]);
+
+  // Stop polling on unmount so a closed/navigated-away tab never keeps hitting
+  // /api/source/apify/status in the background.
+  React.useEffect(() => clearPoll, [clearPoll]);
+
+  if (!can(role, "source")) return null;
+  if (!apiKeys.some((k) => k.provider === "Apify")) return null;
 
   async function poll(runId: string, datasetId: string, query: string) {
     if (Date.now() - pollStartedAt.current > POLL_TIMEOUT_MS) {
