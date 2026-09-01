@@ -72,7 +72,11 @@ export async function POST(req: NextRequest) {
   if (!campaign) return NextResponse.json({ ok: false, error: "Campaign not found." }, { status: 404 });
   const clearance = clearDiscoveryCriteria(
     "Sillage",
-    { domain: domain ?? "", linkedinUrl: linkedinUrl ?? "", linkedinHandle: linkedinHandle ?? "" },
+    {
+      domain: domain ?? "",
+      linkedinUrl: linkedinUrl ?? "",
+      linkedinHandle: linkedinHandle ?? "", // gitleaks:allow -- request field names, not a client id
+    },
     campaign,
   );
   if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });

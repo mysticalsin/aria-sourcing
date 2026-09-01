@@ -11,3 +11,11 @@ df6fa3398f1f6ee5cd4289056fff762704a674bc:docker-compose.yml:jwt:23
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:.env.production.example:generic-api-key:23
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/log-redact.mts:generic-api-key:33
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/audit-fixes.mts:generic-api-key:83
+# LinkedIn rule false-fired on the TypeScript identifier SourcingProvider.
+82436533666bc880313ec32b09c993b21905cbf5:src/lib/sourcing/providers/linkedin-profiles.ts:linkedin-client-secret:44
+# Synthetic cron fixture in a unit test — not a live credential.
+d4ca9af6dc65bbd488625e4edd25bcaa705e378f:tests/source-apify-auth.mts:generic-api-key:169
+# Synthetic cron fixture in a unit test — not a live credential.
+886df40f0e21c4fd8c2cf32865f2901a1caab5ae:tests/sourcing-loop-ignition-route.mts:generic-api-key:9
+# LinkedIn rule false-fired on the request field name linkedinHandle.
+f5f1e47fec2568fbcf6da60d73dc7aaf42585df7:src/app/api/source/sillage/start/route.ts:linkedin-client-id:75

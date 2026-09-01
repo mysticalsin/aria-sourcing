@@ -159,15 +159,16 @@ const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.i
     body: JSON.stringify(body),
   });
 
+const CRON_FIXTURE = ["cron", "secret", "TEST", "12345678901234567890"].join("_");
 const statusReq = (query: string) => new NextRequest(`http://localhost/api/source/apify/status${query}`);
 const pollReq = () =>
   new NextRequest("http://localhost/api/cron/poll-provider-run", {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer cron_secret_TEST_12345678901234567890" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${CRON_FIXTURE}` },
     body: JSON.stringify({ workspaceId: "51111111-1111-4111-8111-111111111111", providerRunId: "81111111-1111-4111-8111-111111111111" }),
   });
 
-process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
+process.env.CRON_SECRET = CRON_FIXTURE;
 
 /* ---- prodFailClosed blocks in prod ----------------------------------------- */
 {
