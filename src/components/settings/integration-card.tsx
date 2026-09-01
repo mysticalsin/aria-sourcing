@@ -315,8 +315,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             )}
             {integration.id === "int_heyreach" && (
               <p className="rounded-2xl bg-canvas px-3 py-2.5 text-xs leading-relaxed text-ink-soft">
-                A HeyReach key in Access & Keys is the LinkedIn send account for drafts. There is no
-                campaign or sender console here. Send stays dry-run until you approve.
+                A HeyReach key in Access & Keys is the LinkedIn send account for drafts. There is no campaign or sender console here. Send stays dry-run until you approve.
               </p>
             )}
 

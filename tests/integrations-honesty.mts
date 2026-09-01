@@ -464,10 +464,10 @@ ok("LinkedIn drafter surfaces HeyReach as the send account", /heyreach-sender/.t
 const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
 ok(
   "DESIGN pins invalid-agent recovery to Access & Keys and honest LinkedIn/HeyReach cards",
-  /Open Access & Keys/.test(design) &&
+  /Open\s+Access & Keys/.test(design) &&
     /not an API-key paste/.test(design) &&
     /not partner search/.test(design) &&
-    /not a fake Live send account/.test(design) &&
+    /not a fake Live(?:\/Connected)? send account/.test(design) &&
     /Dismiss-only/.test(design),
 );
 

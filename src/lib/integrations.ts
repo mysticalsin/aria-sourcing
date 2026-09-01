@@ -376,8 +376,8 @@ export function mergeSeedIntegrations(stored: IntegrationStatus[]): IntegrationS
         description: card.description,
         setupHref: card.setupHref,
         real: true,
-        status: "not_configured",
-        mode: "mock",
+        status: "not_configured" as const,
+        mode: "mock" as const,
         lastSync: null,
       };
     }
