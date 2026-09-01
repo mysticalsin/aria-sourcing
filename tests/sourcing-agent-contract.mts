@@ -186,17 +186,24 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const apify = readFileSync(new URL("../src/lib/sourcing/apify.ts", import.meta.url), "utf8");
   const helpers = readFileSync(new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url), "utf8");
   const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
-  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS = 90_000/);
+  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS = 180_000/);
   assert.match(plan, /apifyHarvestQueryFromBrief/);
   assert.match(route, /peopleFirst \? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_STILL_RUNNING/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_EMPTY/);
+  assert.match(route, /multiSourcePlan.filter\(\(step\) => step.platform === "Apify"\)/);
   assert.match(tools, /profileScraperMode: "Full"/);
   assert.doesNotMatch(tools, /profileScraperMode: "Short"/);
   assert.match(tools, /APIFY_HARVEST_WAIT_MS/);
-  assert.match(apify, /APIFY_HARVEST_WAIT_CAP_MS = 90_000/);
+  assert.match(apify, /APIFY_HARVEST_WAIT_CAP_MS = 180_000/);
+  assert.match(apify, /still_running/);
   assert.match(helpers, /headline \|\| positionTitle/);
   assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
   assert.match(design, /recall-capable Apify harvestapi/);
   assert.match(design, /Calypso Linux Python/);
+  assert.match(design, /\[aria-harvest\]/);
+  assert.match(design, /15 identical/);
   assert.match(design, /do not toast \*\*Open Access & Keys\*\*/);
 });
 
@@ -330,6 +337,38 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   assert.ok(invalidResultToast?.href);
   assert.doesNotMatch(String(invalidResultToast?.description), /invalid result/i);
   assert.doesNotMatch(String(invalidResultToast?.description), /MISSING_PLUGIN/);
+
+  const harvestEmpty = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "PEOPLE_FIRST_HARVEST_EMPTY",
+          error:
+            "People-first harvest returned 0 profiles. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python run=run-empty status=SUCCEEDED items=0. Try Source via Apify with a narrower query.",
+          requestId: "req-harvest-empty",
+        }),
+        { status: 502, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(harvestEmpty.ok, false);
+  if (!harvestEmpty.ok) {
+    assert.match(harvestEmpty.error, /run=run-empty/);
+    assert.match(harvestEmpty.error, /Calypso Linux Python/);
+    assert.match(harvestEmpty.error, /Source via Apify/);
+    assert.doesNotMatch(harvestEmpty.error, /unavailable/i);
+  }
+  const harvestToast = peoplePluginFailLoudUi(
+    harvestEmpty.ok ? "" : harvestEmpty.error,
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.equal(harvestToast?.href, "#source-apify");
+  assert.match(String(harvestToast?.actionLabel), /Source via Apify/);
+  assert.doesNotMatch(String(harvestToast?.actionLabel), /Access & Keys/);
 
   const legacyCode = await requestReviewedSourcing(
     async () =>

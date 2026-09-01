@@ -15,8 +15,8 @@ export interface PlannedSearch {
   query: string;
 }
 
-/** People-first Source next batch: long enough for harvestapi Full to finish. */
-export const PEOPLE_FIRST_SEARCH_BUDGET_MS = 90_000;
+/** People-first Source next batch: poll harvestapi Full until terminal. */
+export const PEOPLE_FIRST_SEARCH_BUDGET_MS = 180_000;
 
 /** Distinctive trading-platform tokens. These are skills / need words, never people. */
 const NEED_PLATFORM_TOKENS = [

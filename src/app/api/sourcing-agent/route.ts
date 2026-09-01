@@ -43,7 +43,17 @@ import {
 } from "@/lib/sourcing/sourcing-agent-contract";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
-import { PEOPLE_FIRST_SEARCH_BUDGET_MS, plannedSourcingSearches } from "@/lib/sourcing/multi-source-plan";
+import {
+  formatHarvestEvidenceError,
+  PEOPLE_FIRST_HARVEST_EMPTY,
+  PEOPLE_FIRST_HARVEST_NOT_STARTED,
+  PEOPLE_FIRST_HARVEST_STILL_RUNNING,
+} from "@/lib/sourcing/harvest-evidence";
+import {
+  apifyHarvestQueryFromBrief,
+  PEOPLE_FIRST_SEARCH_BUDGET_MS,
+  plannedSourcingSearches,
+} from "@/lib/sourcing/multi-source-plan";
 import { roleProfile } from "@/lib/roles";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -51,6 +61,7 @@ import type { Candidate, Role } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 180;
 
 const SYSTEM_PROMPT =
   "You are Aria's autonomous sourcing agent. You have a search_candidates tool that returns real, " +
@@ -90,7 +101,10 @@ type ErrorCode =
   | "MISSING_PLUGIN"
   | "SOURCING_AGENT_UPSTREAM_FAILED"
   | "SOURCING_AGENT_RESPONSE_INVALID"
-  | "SOURCING_AGENT_UNAVAILABLE";
+  | "SOURCING_AGENT_UNAVAILABLE"
+  | "PEOPLE_FIRST_HARVEST_NOT_STARTED"
+  | "PEOPLE_FIRST_HARVEST_STILL_RUNNING"
+  | "PEOPLE_FIRST_HARVEST_EMPTY";
 
 type Session = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
 
@@ -568,27 +582,30 @@ async function handlePost(req: NextRequest, correlationId: string) {
       const searchSignal = AbortSignal.timeout(peopleFirst ? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000);
       const searches = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
-        : [
-            ...promotedLessons
-              .filter((lesson) =>
-                peopleFirst
-                  ? lesson.platform === "LinkedIn"
-                  : lesson.platform === "LinkedIn" || lesson.platform === "GitHub",
+        : peopleFirst
+          ? multiSourcePlan.filter((step) => step.platform === "Apify").slice(0, 1)
+          : [
+              ...promotedLessons
+                .filter(
+                  (lesson) => lesson.platform === "LinkedIn" || lesson.platform === "GitHub",
+                )
+                .map((lesson) => ({ platform: lesson.platform, query: lesson.query })),
+              ...multiSourcePlan,
+            ]
+              .filter(
+                (step, index, all) =>
+                  all.findIndex((other) => other.platform === step.platform && other.query === step.query) === index,
               )
-              .map((lesson) => ({ platform: lesson.platform, query: lesson.query })),
-            ...multiSourcePlan,
-          ]
-            .filter(
-              (step, index, all) =>
-                all.findIndex((other) => other.platform === step.platform && other.query === step.query) === index,
-            )
-            .sort((left, right) => {
-              if (!peopleFirst) return 0;
-              const rank = (platform: string) =>
-                platform === "Apify" ? 0 : platform === "LinkedIn" ? 1 : 2;
-              return rank(left.platform) - rank(right.platform);
-            })
-            .slice(0, 5);
+              .slice(0, 5);
+      if (peopleFirst && !frameworkAuthorization && searches.length === 0) {
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_NOT_STARTED,
+          formatHarvestEvidenceError("not_started", {
+            query: apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis),
+          }),
+        );
+      }
       let successfulQuery = false;
       for (const step of searches) {
         const remaining = count - runner.getFound().length;
@@ -671,12 +688,55 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
 
     const executions = runner.getExecutions();
-    if (
-      peopleFirst &&
-      !frameworkAuthorization &&
-      !executions.some((execution) => execution.platform === "LinkedIn" || execution.platform === "Apify")
-    ) {
-      return await failClaimed(503, "MISSING_PLUGIN", MISSING_PEOPLE_PLUGINS_TOAST);
+    if (peopleFirst && !frameworkAuthorization) {
+      const plannedQuery = apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis);
+      const apifyExec = executions.find((execution) => execution.platform === "Apify");
+      const harvest = apifyExec?.harvest;
+      if (!harvest?.started) {
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_NOT_STARTED,
+          formatHarvestEvidenceError("not_started", {
+            query: harvest?.query || plannedQuery,
+            runId: harvest?.runId,
+            status: harvest?.status,
+          }),
+        );
+      }
+      const harvestStatus = harvest.status.toUpperCase();
+      const terminalFail =
+        harvestStatus === "FAILED" ||
+        harvestStatus === "ABORTED" ||
+        harvestStatus === "TIMED-OUT" ||
+        harvestStatus === "TIMED_OUT";
+      if (harvestStatus !== "SUCCEEDED" && !terminalFail) {
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_STILL_RUNNING,
+          formatHarvestEvidenceError("still_running", harvest),
+        );
+      }
+      if (harvestStatus === "SUCCEEDED" && harvest.itemCount === 0) {
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_EMPTY,
+          formatHarvestEvidenceError("empty", harvest),
+        );
+      }
+      if (harvestStatus === "SUCCEEDED" && harvest.itemCount > 0 && runner.getFound().length === 0) {
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_EMPTY,
+          formatHarvestEvidenceError("gated_empty", harvest),
+        );
+      }
+      if (harvestStatus !== "SUCCEEDED") {
+        return await failClaimed(
+          502,
+          "SOURCING_AGENT_UPSTREAM_FAILED",
+          formatHarvestEvidenceError("empty", { ...harvest, itemCount: 0 }),
+        );
+      }
     }
     if (executions.length === 0 || !executions.some((execution) => execution.ok)) {
       return await failClaimed(
@@ -758,9 +818,22 @@ async function handlePost(req: NextRequest, correlationId: string) {
       );
     }
 
-    const learningReceipts = executions.map((execution) =>
-      execution.platform === "Apify" ? { ...execution, platform: "LinkedIn" as const } : execution,
-    );
+    const learningReceipts = executions
+      .filter((execution) => !peopleFirst || (execution.ok && execution.candidateCount > 0))
+      .map((execution) => ({
+        platform: execution.platform === "Apify" ? ("LinkedIn" as const) : execution.platform,
+        query: execution.query,
+        ok: execution.ok,
+        candidateCount: execution.candidateCount,
+        skippedCount: execution.skippedCount,
+      }));
+    if (peopleFirst && learningReceipts.length === 0) {
+      return await failClaimed(
+        502,
+        "SOURCING_AGENT_UPSTREAM_FAILED",
+        "The sourcing agent completed without a real search.",
+      );
+    }
     const executed = new Set(
       executions.map((execution) => lessonExecutionKey(execution.platform, execution.query)),
     );

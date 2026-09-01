@@ -5,7 +5,7 @@ import { mock } from "node:test";
 
 mock.module("server-only", { namedExports: {} });
 
-const { startProfileSearchRun, getRunStatus, fetchDatasetItems, testApifyConnection } = await import("../src/lib/sourcing/apify");
+const { startProfileSearchRun, getRunStatus, fetchDatasetItems, testApifyConnection, runProfileSearchAndWait } = await import("../src/lib/sourcing/apify");
 const { clearProviderProbe } = await import("../src/lib/sourcing/provider-egress");
 const apifyClearance = clearProviderProbe("Apify");
 
@@ -315,6 +315,31 @@ try {
     globalThis.fetch = (async () => jsonResponse(401, { error: { type: "token-not-provided", message: "no token" } })) as typeof fetch;
     const bad = await testApifyConnection(apifyClearance, "apify_api_bad");
     ok("testApifyConnection: 401 maps to ok:false (invalid)", bad.ok === false && bad.status === 401);
+  }
+
+  {
+    globalThis.fetch = (async (url: unknown) => {
+      const href = String(url);
+      if (href.includes("/actors/harvestapi~linkedin-profile-search/runs") && !href.includes("actor-runs")) {
+        return jsonResponse(201, { data: { id: "run_running", defaultDatasetId: "ds_running", status: "RUNNING" } });
+      }
+      return jsonResponse(200, { data: { status: "RUNNING" } });
+    }) as typeof fetch;
+    const res = await runProfileSearchAndWait(
+      apifyClearance,
+      "tok",
+      { searchQuery: "Calypso Linux Python" },
+      { timeoutMs: 4_000 },
+    );
+    ok(
+      "wait elapsed while RUNNING is still_running, not 0 items",
+      res.ok === false &&
+        res.harvest.started &&
+        res.harvest.runId === "run_running" &&
+        res.harvest.status === "RUNNING" &&
+        res.harvest.itemCount < 0 &&
+        /still running/i.test(res.title),
+    );
   }
 } finally {
   globalThis.fetch = originalFetch;

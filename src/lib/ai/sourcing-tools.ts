@@ -19,6 +19,7 @@ import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sou
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 import { APIFY_HARVEST_WAIT_MS, runProfileSearchAndWait } from "@/lib/sourcing/apify";
+import { HARVEST_ACTOR, type HarvestEvidence } from "@/lib/sourcing/harvest-evidence";
 import { SHORTLIST_CAP } from "@/lib/sourcing/engine";
 import { mapApifyCandidates } from "@/lib/store/sourcing-helpers";
 import {
@@ -81,6 +82,7 @@ export interface SourcingQueryExecution {
   ok: boolean;
   candidateCount: number;
   skippedCount: number;
+  harvest?: HarvestEvidence;
 }
 
 /**
@@ -127,6 +129,8 @@ export function makeSourcingToolRunner(
     const alreadySeen = [...existing, ...found];
     let accepted: Candidate[] = [];
     let skippedCount = 0;
+    let harvestEvidence: HarvestEvidence | undefined;
+    let rawHarvestCount = -1;
 
     if (platform === "GitHub") {
       try {
@@ -142,12 +146,43 @@ export function makeSourcingToolRunner(
       }
     } else if (platform === "Apify") {
       if (!apifyToken) {
-        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+        executions.push({
+          platform,
+          query,
+          ok: false,
+          candidateCount: 0,
+          skippedCount: 0,
+          harvest: {
+            actor: HARVEST_ACTOR,
+            query,
+            runId: "",
+            status: "NOT_STARTED",
+            itemCount: -1,
+            started: false,
+          },
+        });
         return { ok: false, error: "Connect an Apify key in Settings first." };
       }
       try {
         const clearance = clearDiscoveryCriteria(platform, { searchQuery: query }, campaign);
-        if (!clearance.ok) return clearance;
+        if (!clearance.ok) {
+          executions.push({
+            platform,
+            query,
+            ok: false,
+            candidateCount: 0,
+            skippedCount: 0,
+            harvest: {
+              actor: HARVEST_ACTOR,
+              query,
+              runId: "",
+              status: "NOT_STARTED",
+              itemCount: -1,
+              started: false,
+            },
+          });
+          return clearance;
+        }
         const profiles = await runProfileSearchAndWait(
           clearance.clearance,
           apifyToken,
@@ -160,9 +195,18 @@ export function makeSourcingToolRunner(
           { timeoutMs: APIFY_HARVEST_WAIT_MS, signal },
         );
         if (!profiles.ok) {
-          executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+          executions.push({
+            platform,
+            query,
+            ok: false,
+            candidateCount: 0,
+            skippedCount: 0,
+            harvest: profiles.harvest,
+          });
           return { ok: false, error: profiles.title || "Apify search failed." };
         }
+        harvestEvidence = profiles.harvest;
+        rawHarvestCount = profiles.data.length;
         const mapped = mapApifyCandidates(
           profiles.data,
           campaign as Campaign,
@@ -173,7 +217,21 @@ export function makeSourcingToolRunner(
         accepted = mapped.accepted;
         skippedCount = mapped.skipped.length;
       } catch (err) {
-        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+        executions.push({
+          platform,
+          query,
+          ok: false,
+          candidateCount: 0,
+          skippedCount: 0,
+          harvest: {
+            actor: HARVEST_ACTOR,
+            query,
+            runId: "",
+            status: "NOT_STARTED",
+            itemCount: -1,
+            started: false,
+          },
+        });
         return { ok: false, error: err instanceof Error ? err.message : "Apify search failed." };
       }
     } else if (isWebSearchPlatform(platform)) {
@@ -209,6 +267,14 @@ export function makeSourcingToolRunner(
       ok: true,
       candidateCount: accepted.length,
       skippedCount,
+      ...(harvestEvidence
+        ? {
+            harvest: {
+              ...harvestEvidence,
+              itemCount: rawHarvestCount >= 0 ? rawHarvestCount : harvestEvidence.itemCount,
+            },
+          }
+        : {}),
     });
     const summary: SearchSummary[] = accepted.map((c) => ({
       id: c.id,

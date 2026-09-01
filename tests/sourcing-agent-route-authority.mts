@@ -91,6 +91,17 @@ let requestedCloudProvider = "";
 let requestedCloudModel = "";
 let storedTavilyKey: string | null = null;
 let storedApifyKey: string | null = null;
+let runnerHarvest: {
+  started: boolean;
+  status: string;
+  itemCount: number;
+  runId?: string;
+} | null = {
+  started: true,
+  status: "SUCCEEDED",
+  itemCount: 1,
+  runId: "apify-run-test",
+};
 
 const query: Record<string, unknown> = {};
 Object.assign(query, {
@@ -279,9 +290,21 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
       getExecutions: () => runnerQueries.map(({ platform, query }) => ({
         platform,
         query,
-        ok: true,
+        ok: platform !== "Apify" || runnerHarvest?.status === "SUCCEEDED",
         candidateCount: foundCandidates.length,
         skippedCount: 0,
+        ...(platform === "Apify" && runnerHarvest
+          ? {
+              harvest: {
+                actor: "harvestapi~linkedin-profile-search",
+                query,
+                runId: runnerHarvest.runId ?? "apify-run-test",
+                status: runnerHarvest.status,
+                itemCount: runnerHarvest.itemCount,
+                started: runnerHarvest.started,
+              },
+            }
+          : {}),
       })),
     }),
   },
@@ -382,6 +405,12 @@ function reset() {
   requestedCloudModel = "";
   storedTavilyKey = null;
   storedApifyKey = null;
+  runnerHarvest = {
+    started: true,
+    status: "SUCCEEDED",
+    itemCount: 1,
+    runId: "apify-run-test",
+  };
 }
 
 test("active campaign is loaded from authoritative workspace state before and after provider I/O", async () => {
@@ -1086,31 +1115,73 @@ test("people-first role with Apify ignores promoted GitHub lessons", async () =>
     rank: 1,
   }];
 
+  foundCandidates = [{
+    ...seed.candidates[0],
+    id: "finance-apify-1",
+    campaignId,
+    name: "Elena Varga",
+    currentTitle: "Calypso Production Support",
+    currentCompany: "BNPP CIB",
+    location: "Montreal",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga-harvest",
+    githubUrl: "",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 72,
+    matchBreakdown: [],
+    techStack: ["Linux", "Python", "Calypso"],
+    recentActivity: "Calypso settlement production support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+    email: "",
+  }];
+
   const response = await post(request());
   const body = await response.json();
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.mode, "deterministic");
   assert.equal(runnerQueries[0]?.platform, "Apify");
-  assert.ok(runnerQueries.some((step) => step.platform === "LinkedIn"));
+  assert.ok(!runnerQueries.some((step) => step.platform === "LinkedIn"));
   assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
 });
 
-test("people-first role with a cloud model still searches LinkedIn and Apify, not GitHub", async () => {
+test("people-first role with a cloud model still searches Apify first, not GitHub or Tavily LinkedIn", async () => {
   reset();
   cloudConfigured = true;
   storedTavilyKey = "tvly-test";
   storedApifyKey = "apify-test";
   campaign = financeCampaign();
+  foundCandidates = [{
+    ...seed.candidates[0],
+    id: "finance-apify-2",
+    campaignId,
+    name: "Elena Varga",
+    currentTitle: "Calypso Production Support",
+    currentCompany: "BNPP CIB",
+    location: "Montreal",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga-harvest-2",
+    githubUrl: "",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 72,
+    matchBreakdown: [],
+    techStack: ["Linux", "Python", "Calypso"],
+    recentActivity: "Calypso settlement production support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+    email: "",
+  }];
 
   const response = await post(request());
   const body = await response.json();
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.mode, "deterministic");
+  assert.equal(runnerQueries.length, 1);
   assert.equal(runnerQueries[0]?.platform, "Apify");
   assert.match(String(runnerQueries[0]?.query), /^Calypso Linux Python$/);
-  assert.ok(runnerQueries.some((step) => step.platform === "LinkedIn"));
+  assert.ok(!runnerQueries.some((step) => step.platform === "LinkedIn"));
   assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
@@ -1136,4 +1207,57 @@ test("people-first framework run without Apify fails loud and does not search Gi
   assert.equal(runnerCalls, 0);
   assert.equal(beginCalls, 0);
   assert.equal(frameworkBeginCalls, 0);
+});
+
+test("people-first harvest that never starts Apify fails loud and does not complete 0-row receipts", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = null;
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_NOT_STARTED");
+  assert.match(String(body.error), /did not start/);
+  assert.match(String(body.error), /Calypso Linux Python/);
+  assert.match(String(body.error), /harvestapi~linkedin-profile-search/);
+  assert.equal(completeCalls, 0);
+  assert.deepEqual(failedRunCodes, ["PEOPLE_FIRST_HARVEST_NOT_STARTED"]);
+});
+
+test("people-first harvest still running is not stamped as 0 people", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = { started: true, status: "RUNNING", itemCount: -1, runId: "run-still" };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_STILL_RUNNING");
+  assert.match(String(body.error), /still running/);
+  assert.match(String(body.error), /run=run-still/);
+  assert.doesNotMatch(String(body.error), /items=0/);
+  assert.equal(completeCalls, 0);
+});
+
+test("people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receipts", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty" };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /0 profiles/);
+  assert.match(String(body.error), /query=Calypso Linux Python/);
+  assert.match(String(body.error), /run=run-empty/);
+  assert.equal(completeCalls, 0);
+  assert.equal("feedbackReceipts" in body, false);
 });

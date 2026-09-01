@@ -1,3 +1,4 @@
+import { isHarvestEvidenceCode } from "./harvest-evidence";
 import { MISSING_PEOPLE_PLUGINS_TOAST } from "./people-plugins";
 import {
   parseSourcingAgentCandidates,
@@ -117,6 +118,9 @@ export async function requestReviewedSourcing(
         ok: false,
         error: apiError.includes("MISSING_PLUGIN") ? apiError : MISSING_PLUGIN_TOAST,
       };
+    }
+    if (isHarvestEvidenceCode(code) && apiError.trim()) {
+      return { ok: false, error: apiError };
     }
     return {
       ok: false,

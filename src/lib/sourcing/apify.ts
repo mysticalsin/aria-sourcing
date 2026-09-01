@@ -22,15 +22,16 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
+import { HARVEST_ACTOR, logAriaHarvest, type HarvestEvidence } from "@/lib/sourcing/harvest-evidence";
 import { providerIsApify } from "@/lib/sourcing/people-connect";
 
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
 const DEV_FUSION_PATH = "/actors/dev_fusion~linkedin-profile-scraper/run-sync-get-dataset-items";
 
-/** Align with Source via Apify's 90s poll — harvestapi Full needs more than 20s. */
-export const APIFY_HARVEST_WAIT_MS = 75_000;
-export const APIFY_HARVEST_WAIT_CAP_MS = 90_000;
+/** Poll until terminal. Full harvestapi often exceeds 75s; do not stamp 0 on a still-running actor. */
+export const APIFY_HARVEST_WAIT_MS = 180_000;
+export const APIFY_HARVEST_WAIT_CAP_MS = 180_000;
 
 // Actor input is capped server-side regardless of what the caller requests —
 // this is the single funnel every Apify run goes through.
@@ -418,37 +419,124 @@ export async function fetchDatasetItems(
 }
 
 const TERMINAL_FAIL = new Set(["FAILED", "TIMED-OUT", "ABORTED", "TIMED_OUT"]);
+const TERMINAL_OK = "SUCCEEDED";
 
-/** Start harvestapi search and wait for profiles. Used by search_candidates. */
+export type ApifyHarvestWaitResult =
+  | { ok: true; status: number; data: ApifyProfile[]; harvest: HarvestEvidence }
+  | { ok: false; status: number; title: string; detail: string; harvest: HarvestEvidence };
+
+function harvestMeta(
+  query: string,
+  patch: Partial<HarvestEvidence> = {},
+): HarvestEvidence {
+  return {
+    actor: HARVEST_ACTOR,
+    query,
+    runId: patch.runId ?? "",
+    status: patch.status ?? "",
+    itemCount: patch.itemCount ?? -1,
+    started: patch.started ?? false,
+  };
+}
+
+/** Start harvestapi search and poll until terminal. Used by search_candidates. */
 export async function runProfileSearchAndWait(
   clearance: ProviderClearance,
   token: string,
   input: ApifyProfileSearchInput,
   opts?: { timeoutMs?: number; signal?: AbortSignal },
-): Promise<ApifyResult<ApifyProfile[]>> {
+): Promise<ApifyHarvestWaitResult> {
+  const query = (input.searchQuery ?? "").trim();
   const started = await startProfileSearchRun(clearance, token, input);
-  if (!started.ok) return started;
+  if (!started.ok) {
+    const harvest = harvestMeta(query, { started: false, status: "NOT_STARTED" });
+    logAriaHarvest("not_started", { ...harvest, detail: started.title });
+    return { ...started, harvest };
+  }
   const { runId, datasetId } = started.data;
   if (!runId || !datasetId) {
-    return { ok: false, status: 0, title: "Apify run missing ids", detail: "" };
+    const harvest = harvestMeta(query, { started: false, status: "MISSING_IDS" });
+    logAriaHarvest("not_started", harvest);
+    return { ok: false, status: 0, title: "Apify run missing ids", detail: "", harvest };
   }
-  const deadline = Date.now() + Math.min(Math.max(opts?.timeoutMs ?? APIFY_HARVEST_WAIT_MS, 4_000), APIFY_HARVEST_WAIT_CAP_MS);
+  const harvestStart = harvestMeta(query, {
+    runId,
+    status: started.data.status || "READY",
+    started: true,
+  });
+  logAriaHarvest("started", harvestStart);
+  const deadline =
+    Date.now() + Math.min(Math.max(opts?.timeoutMs ?? APIFY_HARVEST_WAIT_MS, 4_000), APIFY_HARVEST_WAIT_CAP_MS);
+  let lastState = harvestStart.status;
   while (Date.now() < deadline) {
     if (opts?.signal?.aborted) {
-      return { ok: false, status: 0, title: "Apify search aborted", detail: "" };
+      const harvest = harvestMeta(query, { runId, status: lastState || "ABORTED", started: true });
+      logAriaHarvest("still_running", { ...harvest, detail: "signal aborted" });
+      return { ok: false, status: 0, title: "Apify search still running", detail: lastState, harvest };
     }
     const status = await getRunStatus(clearance, token, runId);
-    if (!status.ok) return status;
-    const state = status.data.status.toUpperCase();
-    if (state === "SUCCEEDED") {
-      return fetchDatasetItems(clearance, token, datasetId, input.maxItems ?? 8);
+    if (!status.ok) {
+      const harvest = harvestMeta(query, { runId, status: lastState || "STATUS_FAILED", started: true });
+      logAriaHarvest("status_failed", { ...harvest, detail: status.title });
+      return { ...status, harvest };
     }
-    if (TERMINAL_FAIL.has(state)) {
-      return { ok: false, status: status.status, title: `Apify run ${state}`, detail: "" };
+    lastState = status.data.status.toUpperCase();
+    if (lastState === TERMINAL_OK) {
+      const items = await fetchDatasetItems(clearance, token, datasetId, input.maxItems ?? 8);
+      if (!items.ok) {
+        const harvest = harvestMeta(query, { runId, status: lastState, started: true });
+        logAriaHarvest("dataset_failed", { ...harvest, detail: items.title });
+        return { ...items, harvest };
+      }
+      const harvest = harvestMeta(query, {
+        runId,
+        status: lastState,
+        itemCount: items.data.length,
+        started: true,
+      });
+      logAriaHarvest("succeeded", harvest);
+      return { ok: true, status: items.status, data: items.data, harvest };
+    }
+    if (TERMINAL_FAIL.has(lastState)) {
+      const harvest = harvestMeta(query, { runId, status: lastState, itemCount: 0, started: true });
+      logAriaHarvest("terminal_fail", harvest);
+      return { ok: false, status: status.status, title: `Apify run ${lastState}`, detail: "", harvest };
     }
     await new Promise((resolve) => setTimeout(resolve, 1_500));
   }
-  return { ok: false, status: 0, title: "Apify search timed out", detail: "" };
+  const lateStatus = await getRunStatus(clearance, token, runId);
+  if (lateStatus.ok) lastState = lateStatus.data.status.toUpperCase();
+  if (lateStatus.ok && lastState === TERMINAL_OK) {
+    const items = await fetchDatasetItems(clearance, token, datasetId, input.maxItems ?? 8);
+    if (items.ok) {
+      const harvest = harvestMeta(query, {
+        runId,
+        status: lastState,
+        itemCount: items.data.length,
+        started: true,
+      });
+      logAriaHarvest("succeeded", harvest);
+      return { ok: true, status: items.status, data: items.data, harvest };
+    }
+  }
+  if (lateStatus.ok && TERMINAL_FAIL.has(lastState)) {
+    const harvest = harvestMeta(query, { runId, status: lastState, itemCount: 0, started: true });
+    logAriaHarvest("terminal_fail", harvest);
+    return { ok: false, status: lateStatus.status, title: `Apify run ${lastState}`, detail: "", harvest };
+  }
+  const harvest = harvestMeta(query, {
+    runId,
+    status: lastState || "RUNNING",
+    started: true,
+  });
+  logAriaHarvest("still_running", harvest);
+  return {
+    ok: false,
+    status: 0,
+    title: "Apify search still running",
+    detail: harvest.status,
+    harvest,
+  };
 }
 
 /** Cheap, no-run connectivity check used by the API-key "Test connection" flow. */

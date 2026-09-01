@@ -4,6 +4,10 @@
  */
 import { roleProfile } from "@/lib/roles";
 import {
+  SOURCE_VIA_APIFY_HREF,
+  SOURCE_VIA_APIFY_LABEL,
+} from "@/lib/sourcing/harvest-evidence";
+import {
   hasValidApifyKey,
   isConnectOrDryRunCopy,
 } from "@/lib/sourcing/people-connect";
@@ -101,13 +105,13 @@ function pluginUi(title: string, description: string): PeoplePluginUi {
   };
 }
 
-/** Keyed empty harvest is honest fail-loud — not "reconnect the key that already works". */
+/** Keyed harvest fail: next search, not reconnect the key that already works. */
 function keyedEmptyHarvestUi(description: string): PeoplePluginUi {
   return {
     title: "No shortlist from this harvest",
     description,
-    href: "",
-    actionLabel: "",
+    href: SOURCE_VIA_APIFY_HREF,
+    actionLabel: SOURCE_VIA_APIFY_LABEL,
   };
 }
 
@@ -119,7 +123,10 @@ export function peoplePluginFailLoudUi(
 ): PeoplePluginUi | null {
   if (isConnectOrDryRunCopy(error)) return null;
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
-  if (remapped === EMPTY_PEOPLE_FIRST_HARVEST || /0 candidates|empty harvest|0 profiles/i.test(remapped)) {
+  if (
+    remapped === EMPTY_PEOPLE_FIRST_HARVEST ||
+    /0 candidates|empty harvest|0 profiles|did not start|still running|actor=harvestapi/i.test(remapped)
+  ) {
     const keyed = job ? peopleSourcePluginsConnected(integrations ?? [], apiKeys) : false;
     return keyed ? keyedEmptyHarvestUi(remapped) : pluginUi("No shortlist from this harvest", remapped);
   }
@@ -196,6 +203,7 @@ export function visiblePeopleFirstLearningReceipts<
   if (!isPeopleFirstRole(job)) return [...receipts];
   const peopleKeyed = peopleSourcePluginsConnected(integrations, apiKeys);
   return receipts.filter((receipt) => {
+    if (receipt.candidateCount === 0) return false;
     if (receipt.platform !== "GitHub") return true;
     if (!peopleKeyed) return false;
     return receipt.candidateCount > 0;

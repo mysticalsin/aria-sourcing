@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Button, Field, Input, Modal, Switch, useToast } from "@/components/ui";
+import { providerIsApify } from "@/lib/sourcing/people-connect";
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import type { ApifyProfileSearchInput } from "@/lib/sourcing/apify";
@@ -83,8 +84,19 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
   // /api/source/apify/status in the background.
   React.useEffect(() => clearPoll, [clearPoll]);
 
+  React.useEffect(() => {
+    const openFromHash = () => {
+      if (typeof window !== "undefined" && window.location.hash === "#source-apify") {
+        setOpen(true);
+      }
+    };
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, []);
+
   if (!can(role, "source")) return null;
-  if (!apiKeys.some((k) => k.provider === "Apify")) return null;
+  if (!apiKeys.some((k) => providerIsApify(k.provider))) return null;
 
   async function poll(runId: string, datasetId: string, query: string) {
     if (Date.now() - pollStartedAt.current > POLL_TIMEOUT_MS) {

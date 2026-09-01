@@ -393,10 +393,24 @@ ok(
   "keyed empty harvest is fail-loud without an Access & Keys reconnect CTA",
   keyedEmptyToast?.title === "No shortlist from this harvest" &&
     keyedEmptyToast.description === EMPTY_PEOPLE_FIRST_HARVEST &&
-    !keyedEmptyToast.href &&
+    keyedEmptyToast.href === "#source-apify" &&
+    /Source via Apify/i.test(keyedEmptyToast.actionLabel) &&
     !/Access & Keys/i.test(keyedEmptyToast.actionLabel) &&
-    !keyedEmptyFailLoud?.href &&
-    !/Access & Keys/i.test(String(keyedEmptyFailLoud?.actionLabel)),
+    keyedEmptyFailLoud?.href === "#source-apify" &&
+    /Source via Apify/i.test(String(keyedEmptyFailLoud?.actionLabel)),
+);
+ok(
+  "people-first learning hides stacked LinkedIn 0-rows",
+  visiblePeopleFirstLearningReceipts(
+    [
+      { platform: "LinkedIn", candidateCount: 0 },
+      { platform: "LinkedIn", candidateCount: 0 },
+      { platform: "Apify", candidateCount: 3 },
+    ],
+    calypsoJob,
+    liveTenant,
+    [{ provider: "Apify", status: "valid" }],
+  ).every((receipt) => receipt.candidateCount > 0),
 );
 const liveInvalidResponse = "The sourcing agent returned an invalid response.";
 const keyedHarvestFail = remapPeopleFirstSourcingError(
