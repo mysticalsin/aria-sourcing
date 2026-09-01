@@ -29,6 +29,7 @@ import {
 } from "@/lib/sourcing/candidate-mappers";
 import { applyLiveEngineGate } from "@/lib/sourcing/live-shortlist";
 import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
+import { roleProfile } from "@/lib/roles";
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
     name: "search_candidates",
@@ -217,10 +218,16 @@ export function makeSourcingToolRunner(
           alreadySeen as Candidate[],
           weights,
         );
-        const withContacts = mapped.accepted.filter(isPeopleFirstContactComplete);
-        contactCompleteCount = withContacts.length;
-        skippedCount = mapped.skipped.length + (mapped.accepted.length - withContacts.length);
-        accepted = withContacts;
+        const peopleFirst = roleProfile(campaign.jobAnalysis).queryStyle === "linkedin";
+        if (peopleFirst) {
+          const withContacts = mapped.accepted.filter(isPeopleFirstContactComplete);
+          contactCompleteCount = withContacts.length;
+          skippedCount = mapped.skipped.length + (mapped.accepted.length - withContacts.length);
+          accepted = withContacts;
+        } else {
+          accepted = mapped.accepted;
+          skippedCount = mapped.skipped.length;
+        }
       } catch (err) {
         executions.push({
           platform,
