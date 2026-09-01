@@ -73,6 +73,41 @@ test("workspace projection owns campaign and dedupe context while stripping unre
   assert.equal(JSON.stringify(projected.value).includes("private"), false);
 });
 
+test("people-first projection survives a stale cloud-model settings blob", () => {
+  const state = {
+    campaigns: [{
+      ...campaign,
+      jobAnalysis: {
+        ...campaign.jobAnalysis,
+        title: "Calypso Application Support",
+        department: "IS&D - Applicative Support",
+        requiredSkills: ["Linux", "Python", "Calypso"],
+        extraClientField: "strip-me",
+      },
+    }],
+    settings: {
+      llmProviders: [{ id: "", kind: "not-a-provider", label: "", enabled: true }],
+      savedModels: [{
+        id: "bad",
+        providerId: "x",
+        modelName: "has spaces and/slash",
+        label: "",
+        enabled: true,
+      }],
+      defaultModels: { sourcing: 12 },
+    },
+  };
+  const projected = projectSourcingAgentWorkspace(state, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(projected.value.campaign.jobAnalysis.title, "Calypso Application Support");
+  assert.deepEqual(projected.value.aiSettings, {
+    llmProviders: [],
+    savedModels: [],
+    defaultModels: {},
+  });
+});
+
 test("campaign fingerprint changes when the persisted need or search strategy changes", () => {
   const initial = sourcingAgentCampaignFingerprint(campaign);
   const changedRole = sourcingAgentCampaignFingerprint({
@@ -201,11 +236,19 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /logAriaHarvest\("request_received"/);
   assert.doesNotMatch(route, /logAriaHarvest\("request_received", \{ query: ""/);
   assert.match(route, /logAriaHarvest\("request_exit"/);
+  assert.match(route, /prod_fail_closed/);
+  assert.match(route, /supabase_disabled/);
+  assert.match(route, /session_null/);
+  assert.match(route, /workspace_read_error/);
+  assert.match(route, /campaign_invalid_state/);
+  assert.match(route, /SOURCING_AGENT_UNAVAILABLE:unhandled/);
   assert.match(route, /classifySameOriginJsonRequest/);
   assert.doesNotMatch(route, /origin !== req\.nextUrl\.origin/);
   assert.match(design, /public product host/);
   assert.match(design, /must toast every people-first/);
   assert.match(design, /source-next-batch-error/);
+  assert.match(design, /prod_fail_closed/);
+  assert.match(design, /stale cloud-model settings blob/);
   const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
@@ -229,6 +272,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(client, /formatHarvestEvidenceError\("aborted"/);
   assert.match(client, /CROSS_ORIGIN_REQUEST/);
   assert.match(client, /CROSS_ORIGIN_SOURCING_TOAST/);
+  assert.match(client, /SOURCING_AGENT_UNAVAILABLE/);
+  assert.match(client, /SOURCING_AGENT_UNAVAILABLE_TOAST/);
   assert.match(client, /Sourcing request failed/);
   assert.match(client, /Do not treat this as 0 people/);
   assert.doesNotMatch(client, /The sourcing agent is unavailable\./);
@@ -248,6 +293,7 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     CROSS_ORIGIN_SOURCING_TOAST,
     MISSING_PEOPLE_PLUGINS_TOAST,
     PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+    SOURCING_AGENT_UNAVAILABLE_TOAST,
     remapPeopleFirstSourcingError,
     peoplePluginFailLoudUi,
     sourceRejectedToast,
@@ -463,6 +509,33 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   );
   assert.equal(rejectedAlways.title, "Sourcing failed");
   assert.equal(rejectedAlways.description, CROSS_ORIGIN_SOURCING_TOAST);
+  const unavailableBlocked = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "SOURCING_AGENT_UNAVAILABLE",
+          error: "Live sourcing authority is unavailable.",
+          requestId: "req-unavailable",
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(unavailableBlocked.ok, false);
+  if (!unavailableBlocked.ok) {
+    assert.equal(unavailableBlocked.error, SOURCING_AGENT_UNAVAILABLE_TOAST);
+    assert.doesNotMatch(unavailableBlocked.error, /0 people were sourced/i);
+  }
+  const unavailableToast = sourceRejectedToast(
+    unavailableBlocked.ok ? "" : unavailableBlocked.error,
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(unavailableToast.title, "Sourcing failed");
+  assert.equal(unavailableToast.description, SOURCING_AGENT_UNAVAILABLE_TOAST);
+  assert.match(unavailableToast.description, /do not treat this as 0 people|This is not 0 people/i);
   const htmlForbidden = await requestReviewedSourcing(
     async () =>
       new Response("<html>Forbidden</html>", {

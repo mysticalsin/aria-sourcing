@@ -5,6 +5,7 @@ import {
   MISSING_PEOPLE_PLUGINS_TOAST,
   MOCK_APIFY_TOAST,
   PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+  SOURCING_AGENT_UNAVAILABLE_TOAST,
   emptyPeopleFirstShortlistError,
   emptyPeopleFirstToast,
   hasValidApifyKey,
@@ -500,6 +501,12 @@ ok(
   rejectedCrossOrigin.title === "Sourcing failed" &&
     /cross-origin/i.test(rejectedCrossOrigin.description) &&
     /do not treat this as 0 people/i.test(rejectedCrossOrigin.description),
+);
+ok(
+  "sourceRejectedToast never swallows SOURCING_AGENT_UNAVAILABLE",
+  sourceRejectedToast("SOURCING_AGENT_UNAVAILABLE", calypsoJob, liveTenant).description ===
+    SOURCING_AGENT_UNAVAILABLE_TOAST &&
+    /This is not 0 people/i.test(SOURCING_AGENT_UNAVAILABLE_TOAST),
 );
 ok(
   "sourceRejectedToast never returns null on a people-first 4xx",

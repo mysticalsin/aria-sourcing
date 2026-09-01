@@ -3,7 +3,11 @@ import {
   isHarvestEvidenceCode,
   PEOPLE_FIRST_CLIENT_WAIT_MS,
 } from "./harvest-evidence";
-import { CROSS_ORIGIN_SOURCING_TOAST, MISSING_PEOPLE_PLUGINS_TOAST } from "./people-plugins";
+import {
+  CROSS_ORIGIN_SOURCING_TOAST,
+  MISSING_PEOPLE_PLUGINS_TOAST,
+  SOURCING_AGENT_UNAVAILABLE_TOAST,
+} from "./people-plugins";
 import {
   parseSourcingAgentCandidates,
   parseSourcingAgentSuccessResponse,
@@ -14,6 +18,7 @@ const MISSING_PLUGIN_TOAST = MISSING_PEOPLE_PLUGINS_TOAST;
 
 const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   CROSS_ORIGIN_REQUEST: CROSS_ORIGIN_SOURCING_TOAST,
+  SOURCING_AGENT_UNAVAILABLE: SOURCING_AGENT_UNAVAILABLE_TOAST,
   CAMPAIGN_NOT_FOUND: "Campaign not found.",
   CAMPAIGN_NOT_ACTIVE: "Campaign is not active for sourcing.",
   CAMPAIGN_NOT_READY: "Complete and review the campaign brief before sourcing.",
@@ -146,6 +151,9 @@ export async function requestReviewedSourcing(
     const apiError = typeof record?.error === "string" ? record.error : "";
     if (code === "CROSS_ORIGIN_REQUEST" || /cross-origin/i.test(apiError)) {
       return { ok: false, error: CROSS_ORIGIN_SOURCING_TOAST };
+    }
+    if (code === "SOURCING_AGENT_UNAVAILABLE" || /Sourcing is unavailable/i.test(apiError)) {
+      return { ok: false, error: SOURCING_AGENT_UNAVAILABLE_TOAST };
     }
     if (code === "MISSING_PLUGIN" || apiError.includes("MISSING_PLUGIN")) {
       return {

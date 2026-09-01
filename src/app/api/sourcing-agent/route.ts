@@ -259,17 +259,33 @@ async function handlePost(req: NextRequest, correlationId: string) {
     code: ErrorCode,
     error: string,
     retryAfter?: number,
+    reason?: string,
   ) => {
     logAriaHarvest("request_exit", {
       query: harvestQuery || undefined,
       started: false,
-      detail: code,
+      detail: reason ? `${code}:${reason}` : code,
     });
     return errorResponse(status, code, error, correlationId, retryAfter);
   };
 
-  if (prodFailClosed() || !supabaseEnabled) {
-    return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Live sourcing authority is unavailable.");
+  if (prodFailClosed()) {
+    return fail(
+      503,
+      "SOURCING_AGENT_UNAVAILABLE",
+      "Live sourcing authority is unavailable.",
+      undefined,
+      "prod_fail_closed",
+    );
+  }
+  if (!supabaseEnabled) {
+    return fail(
+      503,
+      "SOURCING_AGENT_UNAVAILABLE",
+      "Live sourcing authority is unavailable.",
+      undefined,
+      "supabase_disabled",
+    );
   }
   const sameOrigin = classifySameOriginJsonRequest(req);
   if (sameOrigin === "unsupported_media_type") {
@@ -281,7 +297,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
   const session = await getServerSupabase();
   if (!session) {
-    return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Live sourcing authority is unavailable.");
+    return fail(
+      503,
+      "SOURCING_AGENT_UNAVAILABLE",
+      "Live sourcing authority is unavailable.",
+      undefined,
+      "session_null",
+    );
   }
   const {
     data: { user },
@@ -328,8 +350,23 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (initial.status === "campaign_not_found") {
     return fail(404, "CAMPAIGN_NOT_FOUND", "Campaign not found.");
   }
+  if (initial.status === "unavailable") {
+    return fail(
+      503,
+      "SOURCING_AGENT_UNAVAILABLE",
+      "Campaign authority is unavailable.",
+      undefined,
+      "workspace_read_error",
+    );
+  }
   if (initial.status !== "ok") {
-    return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Campaign authority is unavailable.");
+    return fail(
+      503,
+      "SOURCING_AGENT_UNAVAILABLE",
+      "Campaign authority is unavailable.",
+      undefined,
+      "campaign_invalid_state",
+    );
   }
   if (!campaignAllowsSourcing(initial.value.campaign)) {
     return fail(409, "CAMPAIGN_NOT_ACTIVE", "Campaign is not active for sourcing.");
@@ -964,6 +1001,10 @@ export async function POST(req: NextRequest) {
   try {
     return await handlePost(req, correlationId);
   } catch {
+    logAriaHarvest("request_exit", {
+      started: false,
+      detail: "SOURCING_AGENT_UNAVAILABLE:unhandled",
+    });
     return errorResponse(
       503,
       "SOURCING_AGENT_UNAVAILABLE",

@@ -64,8 +64,7 @@ const JobAnalysisSchema = z
     language: bounded(20).optional(),
     expectedStartDate: bounded(100).nullable().optional(),
     validationWarnings: z.array(ValidationWarningSchema).max(100),
-  })
-  .strict();
+  });
 
 const ScoringWeightsSchema = z
   .object({
@@ -142,8 +141,7 @@ const LlmProviderSchema = z
     apiKeyId: bounded(100).min(1).optional(),
     enabled: z.boolean(),
     isDefault: z.boolean().optional(),
-  })
-  .strict();
+  });
 
 const SavedModelSchema = z
   .object({
@@ -157,8 +155,7 @@ const SavedModelSchema = z
       .array(z.enum(["sourcing", "outreach", "classification", "chat"]))
       .max(4)
       .optional(),
-  })
-  .strict();
+  });
 
 type SourcingAiSettings = Pick<
   SystemSettings,
@@ -212,27 +209,28 @@ export function projectSourcingAgentWorkspace(
   campaignId: string,
 ): ProjectionResult {
   const root = record(state);
-  if (!root || !Array.isArray(root.campaigns) || !Array.isArray(root.candidates)) {
-    return { status: "invalid_state" };
+  if (!root || !Array.isArray(root.campaigns)) {
+    return { status: "campaign_not_found" };
   }
   const settings = record(root.settings);
   const providers = z.array(LlmProviderSchema).max(50).safeParse(settings?.llmProviders ?? []);
   const models = z.array(SavedModelSchema).max(100).safeParse(settings?.savedModels ?? []);
   const rawDefaults = record(settings?.defaultModels);
   const sourcingDefault = rawDefaults?.sourcing;
-  if (
-    !providers.success ||
-    !models.success ||
-    (sourcingDefault !== undefined && typeof sourcingDefault !== "string")
-  ) {
-    return { status: "invalid_state" };
-  }
-  const aiSettings: SourcingAiSettings = {
-    llmProviders: providers.data,
-    savedModels: models.data,
-    defaultModels:
-      typeof sourcingDefault === "string" ? { sourcing: sourcingDefault } : {},
-  };
+  const settingsOk =
+    providers.success &&
+    models.success &&
+    (sourcingDefault === undefined || typeof sourcingDefault === "string");
+  // People-first harvest does not need a valid cloud-model blob. A stale
+  // settings row must not 503 before request_entry.
+  const aiSettings: SourcingAiSettings = settingsOk
+    ? {
+        llmProviders: providers.data,
+        savedModels: models.data,
+        defaultModels:
+          typeof sourcingDefault === "string" ? { sourcing: sourcingDefault } : {},
+      }
+    : { llmProviders: [], savedModels: [], defaultModels: {} };
   const rawCampaign = root.campaigns.find(
     (item) => record(item)?.id === campaignId,
   );
@@ -241,13 +239,13 @@ export function projectSourcingAgentWorkspace(
   if (!parsedCampaign.success) return { status: "invalid_state" };
 
   const existing: CandidateDedupeIdentity[] = [];
-  const rawCandidates = root.candidates.filter(
+  const rawCandidates = (Array.isArray(root.candidates) ? root.candidates : []).filter(
     (item) => record(item)?.campaignId === campaignId,
   );
   if (rawCandidates.length > 5_000) return { status: "invalid_state" };
   for (const item of rawCandidates) {
     const candidate = record(item);
-    if (!candidate) return { status: "invalid_state" };
+    if (!candidate) continue;
     const parsed = DedupeIdentitySchema.safeParse({
       campaignId: candidate.campaignId,
       email: candidate.email,
@@ -256,7 +254,7 @@ export function projectSourcingAgentWorkspace(
       ...(candidate.sourceUrl === undefined ? {} : { sourceUrl: candidate.sourceUrl }),
       lastContactedAt: candidate.lastContactedAt,
     });
-    if (!parsed.success) return { status: "invalid_state" };
+    if (!parsed.success) continue;
     const { campaignId: _campaignId, ...identity } = parsed.data;
     existing.push(identity);
   }

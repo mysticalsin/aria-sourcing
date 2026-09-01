@@ -31,6 +31,9 @@ export const MOCK_APIFY_TOAST =
 export const CROSS_ORIGIN_SOURCING_TOAST =
   "This request was blocked as cross-origin. Source next batch from the product host — do not treat this as 0 people.";
 
+export const SOURCING_AGENT_UNAVAILABLE_TOAST =
+  "Sourcing is unavailable. This is not 0 people. Retry Source next batch from the product host.";
+
 export const PEOPLE_PLUGIN_SETTINGS_HREF = "/settings";
 export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
 
@@ -83,6 +86,15 @@ export function remapPeopleFirstSourcingError(
     /cross-origin/i.test(error)
   ) {
     return CROSS_ORIGIN_SOURCING_TOAST;
+  }
+  if (
+    error === SOURCING_AGENT_UNAVAILABLE_TOAST ||
+    error.includes("SOURCING_AGENT_UNAVAILABLE") ||
+    /Live sourcing(?:-agent)? authority is unavailable|Campaign authority is unavailable|Sourcing is unavailable/i.test(
+      error,
+    )
+  ) {
+    return SOURCING_AGENT_UNAVAILABLE_TOAST;
   }
   if (apifyIntegrationIsMock(integrations ?? [])) {
     if (/actor=harvestapi/.test(error) && /Mock mode/.test(error)) return error;
@@ -159,6 +171,12 @@ export function sourceRejectedToast(
   if (description === CROSS_ORIGIN_SOURCING_TOAST || /cross-origin/i.test(description)) {
     return pluginUi("Sourcing failed", CROSS_ORIGIN_SOURCING_TOAST);
   }
+  if (
+    description === SOURCING_AGENT_UNAVAILABLE_TOAST ||
+    /Sourcing is unavailable/i.test(description)
+  ) {
+    return pluginUi("Sourcing failed", SOURCING_AGENT_UNAVAILABLE_TOAST);
+  }
   return pluginUi("Sourcing failed", description);
 }
 
@@ -172,6 +190,9 @@ export function peoplePluginFailLoudUi(
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
   if (remapped === CROSS_ORIGIN_SOURCING_TOAST || /cross-origin/i.test(remapped)) {
     return pluginUi("Sourcing failed", remapped);
+  }
+  if (remapped === SOURCING_AGENT_UNAVAILABLE_TOAST || /Sourcing is unavailable/i.test(remapped)) {
+    return pluginUi("Sourcing failed", SOURCING_AGENT_UNAVAILABLE_TOAST);
   }
   if (remapped === MOCK_APIFY_TOAST || /Mock mode/.test(remapped)) {
     return {

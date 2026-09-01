@@ -221,13 +221,19 @@ hydrate and on the Strategy tab.
   cross-origin fails loud in the UI — never silent 0.
 
   handleSource / Source next batch must toast every people-first
-  4xx/5xx, including `CROSS_ORIGIN_REQUEST`. A rejected POST that
-  becomes silent 0 (no toast, no inline alert, Calypso still 0) is
-  FAIL. The client must not swallow a 403. Error toasts use
-  `role="alert"` / `aria-live="assertive"` plus a durable
+  4xx/5xx, including `CROSS_ORIGIN_REQUEST` and
+  `SOURCING_AGENT_UNAVAILABLE`. A rejected POST that becomes silent
+  0 (no toast, no inline alert, Calypso still 0) is FAIL. Error
+  toasts use `role="alert"` / `aria-live="assertive"` plus a durable
   `source-next-batch-error` banner. Do not map unknown HTTP errors
-  to a swallowed generic unavailable string. Product-host Origin
-  must still reach `request_entry`.
+  to a swallowed generic unavailable string.
+
+  `request_exit` must name the 503 gate
+  (`prod_fail_closed`, `supabase_disabled`, `session_null`,
+  `workspace_read_error`, `campaign_invalid_state`, `unhandled`).
+  People-first must not die on a stale cloud-model settings blob
+  before `request_entry`. A healthy product-host click prints
+  `request_entry` with the brief query and `apifyKeyPresent`.
 
   The keyed path must **start** a harvestapi Full run. If start
   does not happen, fail loud (`PEOPLE_FIRST_HARVEST_NOT_STARTED`).

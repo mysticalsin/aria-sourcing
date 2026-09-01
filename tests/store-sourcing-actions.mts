@@ -15,6 +15,7 @@ import {
   CROSS_ORIGIN_SOURCING_TOAST,
   EMPTY_PEOPLE_FIRST_HARVEST,
   PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+  SOURCING_AGENT_UNAVAILABLE_TOAST,
   peoplePluginFailLoudUi,
   sourceRejectedToast,
 } from "../src/lib/sourcing/people-plugins";
@@ -1882,6 +1883,51 @@ test("CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0", a
   );
   assert.equal(rejected.title, "Sourcing failed");
   assert.equal(rejected.description, CROSS_ORIGIN_SOURCING_TOAST);
+  assert.equal(harness.persistedCalls, 0);
+});
+
+test("SOURCING_AGENT_UNAVAILABLE on Source next batch is fail-loud, never silent 0", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
+    syntheticSourcingAllowed: false,
+    responseStatus: 503,
+    responseBody: {
+      ok: false,
+      code: "SOURCING_AGENT_UNAVAILABLE",
+      error: "Live sourcing authority is unavailable.",
+      requestId: "req-unavailable",
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, SOURCING_AGENT_UNAVAILABLE_TOAST);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  const rejected = sourceRejectedToast(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.equal(rejected.title, "Sourcing failed");
+  assert.equal(rejected.description, SOURCING_AGENT_UNAVAILABLE_TOAST);
+  assert.match(rejected.description, /This is not 0 people/i);
+  assert.equal(harness.fetchCalls, 1);
   assert.equal(harness.persistedCalls, 0);
 });
 

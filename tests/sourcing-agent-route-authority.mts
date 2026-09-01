@@ -511,6 +511,64 @@ test("product-host Origin on the Fly bind address is not CROSS_ORIGIN_REQUEST", 
   assert.notEqual(flyProduct.status, 403);
 });
 
+test("people-first product-host click reaches request_entry even when LLM settings are invalid", async () => {
+  reset();
+  campaign = {
+    ...baseCampaign,
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  liveSettings = {
+    llmProviders: [{ id: "", kind: "not-a-provider", label: "", enabled: true }],
+    savedModels: [{
+      id: "bad",
+      providerId: "x",
+      modelName: "has spaces and/slash",
+      label: "",
+      enabled: true,
+    }],
+    defaultModels: { sourcing: 12 },
+  } as unknown as typeof liveSettings;
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const flyProduct = await post(
+      new NextRequest("http://[::]:3000/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://aria-mantu-app.fly.dev",
+          host: "[::]:3000",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "aria-mantu-app.fly.dev",
+          "x-real-ip": `192.0.2.${++requestSequence}`,
+          "x-request-id": crypto.randomUUID(),
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId, count: 1 }),
+      }),
+    );
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /apifyKeyPresent/);
+    assert.match(entry, /Calypso Linux Python/);
+    const body = (await flyProduct.json()) as { code?: string };
+    assert.notEqual(body.code, "CROSS_ORIGIN_REQUEST");
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
 test("missing, paused, and revoked campaigns fail closed before or after provider I/O", async () => {
   reset();
   campaign = null as unknown as typeof campaign;
