@@ -64,7 +64,7 @@ let listLessonCalls = 0;
 let completeCalls = 0;
 let failedRunCodes: string[] = [];
 let eventOrder: string[] = [];
-let runnerQueries: Array<{ platform: string; query: string }> = [];
+let runnerQueries: Array<{ platform: string; query: string; currentJobTitles?: string[] }> = [];
 let mutateDuringProvider: (() => void) | null = null;
 let mutateDuringRunner: (() => void) | null = null;
 let mutateDuringVault: (() => void) | null = null;
@@ -280,16 +280,23 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
   namedExports: {
     SOURCING_TOOL_DEFS: [],
     makeSourcingToolRunner: () => ({
-      run: async (_name: string, args: { platform?: string; query?: string }) => {
+      run: async (_name: string, args: { platform?: string; query?: string; currentJobTitles?: string[] }) => {
         runnerCalls += 1;
         eventOrder.push("runner");
+        const titles = Array.isArray(args.currentJobTitles)
+          ? args.currentJobTitles.filter((title): title is string => typeof title === "string" && title.trim().length > 0)
+          : [];
         runnerQueries.push({
           platform: String(args.platform ?? ""),
           query: String(args.query ?? ""),
+          ...(titles.length ? { currentJobTitles: titles } : {}),
         });
         mutateDuringRunner?.();
+        const harvestKey = titles.length
+          ? `${String(args.query ?? "")}|${titles.join(",")}`
+          : String(args.query ?? "");
         const harvest = args.platform === "Apify"
-          ? (runnerHarvestByQuery[String(args.query ?? "")] ?? runnerHarvest)
+          ? (runnerHarvestByQuery[harvestKey] ?? runnerHarvestByQuery[String(args.query ?? "")] ?? runnerHarvest)
           : null;
         if (runnerCandidatesAfterRun.length > 0) {
           if (args.platform === "Apify") {
@@ -1399,6 +1406,26 @@ function financeCampaign(): Campaign {
   };
 }
 
+function baCampaign(): Campaign {
+  return {
+    ...structuredClone(baseCampaign),
+    id: campaignId,
+    title: "Senior Calypso Business Analyst",
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Business Analysis",
+      requiredSkills: ["Calypso", "Business Analysis", "MySQL"],
+      industryExperience: ["Finance"],
+    },
+    sourcingStrategy: {
+      ...baseCampaign.sourcingStrategy,
+      linkedinBoolean: '("Calypso Business Analyst") AND ("Calypso") NOT "recruiter"',
+      githubQueries: [],
+    },
+  };
+}
+
 test("people-first role without LinkedIn/Apify keys fails loud and does not search GitHub", async () => {
   reset();
   cloudConfigured = true;
@@ -1651,6 +1678,7 @@ test("people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receip
   assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
   assert.match(String(body.error), /Empty harvest is not a result/);
   assert.match(String(body.error), /Do not stop at 0 people/);
+  assert.match(String(body.error), /Every planned search was tried/);
   assert.match(String(body.error), /query=Calypso Linux Python/);
   assert.match(String(body.error), /run=run-empty/);
   assert.ok(
@@ -1659,6 +1687,10 @@ test("people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receip
   assert.ok(
     runnerQueries.some((row) => row.platform === "Apify" && row.query !== "Calypso Linux Python"),
     "empty first query must continue to the next planned harvest",
+  );
+  assert.ok(
+    runnerQueries.filter((row) => row.platform === "Apify").length >= 2,
+    `SUCCEEDED items=0 must start a second harvest: ${JSON.stringify(runnerQueries)}`,
   );
   assert.equal(completeCalls, 0);
   assert.equal("feedbackReceipts" in body, false);
@@ -1709,4 +1741,51 @@ test("people-first empty first query continues and keeps a real shortlist from t
     `one Source click must start the next harvest without a second click: ${JSON.stringify(runnerQueries)}`,
   );
   assert.equal(completeCalls, 1);
+});
+
+test("BA SUCCEEDED items=0 starts a broader harvestapi run with a new run id", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baCampaign();
+  runnerHarvestByQuery = {
+    "Calypso Business Analyst": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "Etz5JWFCQGm1605KE" },
+    "Calypso|Business Analyst": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "next-actor-input" },
+    Calypso: { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-calypso-only" },
+    "Calypso Business Analysis": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-analysis" },
+  };
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-fallback" };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /Every planned search was tried/);
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "Apify" && row.query === "Calypso Business Analyst"),
+  );
+  assert.ok(
+    runnerQueries.some(
+      (row) =>
+        row.platform === "Apify" &&
+        (row.query !== "Calypso Business Analyst" ||
+          (row.currentJobTitles ?? []).includes("Business Analyst")),
+    ),
+    `first SUCCEEDED items=0 must enqueue a broader query or next actor-input: ${JSON.stringify(runnerQueries)}`,
+  );
+  assert.ok(
+    runnerQueries.filter((row) => row.platform === "Apify").length >= 2,
+    `one Source click must start harvest 2: ${JSON.stringify(runnerQueries)}`,
+  );
+  const runIds = runnerQueries.map((row) => {
+    const key = row.currentJobTitles?.length
+      ? `${row.query}|${row.currentJobTitles.join(",")}`
+      : row.query;
+    return runnerHarvestByQuery[key]?.runId ?? runnerHarvestByQuery[row.query]?.runId ?? runnerHarvest?.runId;
+  });
+  assert.ok(
+    new Set(runIds).size >= 2,
+    `second harvest must be a new run id: ${JSON.stringify({ runIds, runnerQueries })}`,
+  );
+  assert.equal(completeCalls, 0);
 });

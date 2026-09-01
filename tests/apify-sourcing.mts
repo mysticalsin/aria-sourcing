@@ -521,6 +521,18 @@ try {
     /Mock mode/.test(formatHarvestEvidenceError("mock", { query: "Calypso Linux Python" })) &&
       /Connect a real Apify key/.test(formatHarvestEvidenceError("mock", { query: "Calypso Linux Python" })),
   );
+  ok(
+    "empty banner names every planned search only after ≥2 harvests started",
+    /Every planned search was tried/.test(
+      formatHarvestEvidenceError("empty", { query: "Calypso Business Analyst" }, { startedSearches: 2 }),
+    ) &&
+      !/Every planned search was tried/.test(
+        formatHarvestEvidenceError("empty", { query: "Calypso Business Analyst" }, { startedSearches: 1 }),
+      ) &&
+      /Next planned search must start now/.test(
+        formatHarvestEvidenceError("empty", { query: "Calypso Business Analyst" }, { startedSearches: 1 }),
+      ),
+  );
 }
 
 console.log(`RESULT apify-sourcing: ${pass} passed, ${fail} failed`);

@@ -57,9 +57,21 @@ function distinctiveNeedPlatform(job: JobAnalysis): string {
 }
 
 /** Title role for harvest keywords. BA leftover VSS says "Business Analysis". */
-function harvestRoleFromTitle(title: string): string {
+function harvestKeywordRoleFromTitle(title: string): string {
   if (/\bbusiness analyst\b|\bba\b/i.test(title)) return "Business Analyst";
   return "";
+}
+
+/** harvestapi `currentJobTitles` after a keyword AND returned 0. */
+function harvestTitleFilterFromTitle(title: string): string {
+  if (/\bbusiness analyst\b|\bba\b/i.test(title)) return "Business Analyst";
+  if (/\bapplication support\b|\bapp(?:licative)? support\b/i.test(title)) return "Application Support";
+  if (/\bsupport analyst\b/i.test(title)) return "Support Analyst";
+  return "";
+}
+
+export function peopleFirstSearchKey(step: Pick<PlannedSearch, "query" | "currentJobTitles">): string {
+  return `${step.query.trim().toLowerCase()}|${(step.currentJobTitles ?? []).map((title) => title.toLowerCase()).join(",")}`;
 }
 
 /** VSS project-type / low-recall chips. Do not AND these as harvest keywords. */
@@ -76,7 +88,7 @@ function skipHarvestExtra(skill: string): boolean {
 export function apifyHarvestQueryFromBrief(job: JobAnalysis): string {
   const skills = tokenizeMustHaveSkills(job.requiredSkills);
   const platform = distinctiveNeedPlatform(job);
-  const role = harvestRoleFromTitle(job.title);
+  const role = harvestKeywordRoleFromTitle(job.title);
   const extra = skills
     .filter((skill) => !platform || skill.toLowerCase() !== platform.toLowerCase())
     .filter((skill) => !skipHarvestExtra(skill))
@@ -122,13 +134,15 @@ export function peopleFirstHarvestQueries(job: JobAnalysis): string[] {
  * harvestapi attempts until a real shortlist. First query stays the
  * title-role phrase. After `items=0`, next actor-input is platform
  * keywords + currentJobTitles, then broader phrases. Never 0-and-stop.
+ * A one-item plan is FAIL: Ultron Fly a05cf5a ran only
+ * `Calypso Business Analyst` and treated the plan as exhausted.
  */
 export function peopleFirstHarvestAttempts(job: JobAnalysis): PlannedSearch[] {
   const attempts: PlannedSearch[] = [];
   const seen = new Set<string>();
   const push = (query: string, currentJobTitles?: string[]) => {
     const trimmed = query.trim().slice(0, 256);
-    const key = `${trimmed.toLowerCase()}|${(currentJobTitles ?? []).join(",").toLowerCase()}`;
+    const key = peopleFirstSearchKey({ query: trimmed, currentJobTitles });
     if (!trimmed || seen.has(key)) return;
     seen.add(key);
     attempts.push({
@@ -139,11 +153,40 @@ export function peopleFirstHarvestAttempts(job: JobAnalysis): PlannedSearch[] {
   };
   const primary = apifyHarvestQueryFromBrief(job);
   const platform = distinctiveNeedPlatform(job);
-  const role = harvestRoleFromTitle(job.title);
+  const titleFilter = harvestTitleFilterFromTitle(job.title);
+  const attested = tokenizeMustHaveSkills(job.requiredSkills).find(linkedinAttestedHarvestExtra);
   push(primary);
-  if (platform && role) push(platform, [role]);
+  if (platform && titleFilter) push(platform, [titleFilter]);
   for (const query of peopleFirstHarvestQueries(job)) push(query);
+  if (attempts.length < 2 && platform && attested) push(`${platform} ${attested}`);
+  if (attempts.length < 2 && primary) {
+    const tokens = primary.split(/\s+/).filter(Boolean);
+    if (tokens.length > 1) {
+      if (titleFilter) push(tokens[0] ?? "", [titleFilter]);
+      if (attempts.length < 2) push(tokens.slice(0, -1).join(" "));
+    } else if (titleFilter) {
+      push(primary, [titleFilter]);
+    }
+  }
   return attempts.slice(0, PEOPLE_FIRST_MAX_ATTEMPTS);
+}
+
+/**
+ * Next harvestapi search after the ones already started. Used when
+ * `plannedSourcingSearches` collapsed to one Apify step — the Source
+ * click must still enqueue a broader query / next actor-input.
+ */
+export function nextPeopleFirstHarvest(
+  job: JobAnalysis,
+  alreadyTried: readonly Pick<PlannedSearch, "query" | "currentJobTitles">[],
+): PlannedSearch | null {
+  const tried = new Set(alreadyTried.map((step) => peopleFirstSearchKey(step)));
+  return peopleFirstHarvestAttempts(job).find((step) => !tried.has(peopleFirstSearchKey(step))) ?? null;
+}
+
+/** Queue the Source click actually runs. Never a one-item Apify plan. */
+export function peopleFirstHarvestQueue(job: JobAnalysis): PlannedSearch[] {
+  return peopleFirstHarvestAttempts(job);
 }
 
 function apifyQueryFromLinkedinPlan(job: JobAnalysis, linkedinBoolean: string): string {

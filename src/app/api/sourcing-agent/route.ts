@@ -57,8 +57,12 @@ import { workspaceApifyIsMock } from "@/lib/sourcing/people-connect";
 import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
 import {
   apifyHarvestQueryFromBrief,
+  nextPeopleFirstHarvest,
   PEOPLE_FIRST_ATTEMPT_WAIT_MS,
+  PEOPLE_FIRST_MAX_ATTEMPTS,
   PEOPLE_FIRST_SEARCH_BUDGET_MS,
+  peopleFirstHarvestQueue,
+  peopleFirstSearchKey,
   plannedSourcingSearches,
 } from "@/lib/sourcing/multi-source-plan";
 import { roleProfile } from "@/lib/roles";
@@ -435,7 +439,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   // Mock is not a live key. Do not decrypt or hang on vault before evidence.
   const apifyToken = apifyMock ? null : await resolveApifyKeyBounded(session);
   const plannedPeopleFirstHarvests = peopleFirst
-    ? multiSourcePlan.filter((step) => step.platform === "Apify")
+    ? peopleFirstHarvestQueue(initial.value.campaign.jobAnalysis)
     : [];
   logAriaHarvest("request_entry", {
     query: harvestQuery,
@@ -610,6 +614,43 @@ async function handlePost(req: NextRequest, correlationId: string) {
     return { ok: true, workspace: latest };
   };
 
+  /** People-first next-search must not die on leftover-strip fingerprint drift. */
+  const peopleFirstContinueAuthority = async (): Promise<
+    | { ok: true; workspace: Awaited<ReturnType<typeof readWorkspace>> & { status: "ok" } }
+    | { ok: false; status: number; code: ErrorCode; message: string }
+  > => {
+    const [{ data: latestRole }, { data: latestWorkspaceId }] = await Promise.all([
+      session.rpc("current_profile_role"),
+      session.rpc("current_workspace_id"),
+    ]);
+    if (!can(latestRole as Role, "source")) {
+      return {
+        ok: false,
+        status: 403,
+        code: "INSUFFICIENT_PERMISSIONS",
+        message: "Sourcing authority changed during the operation.",
+      };
+    }
+    if (latestWorkspaceId !== workspaceId) {
+      return {
+        ok: false,
+        status: 409,
+        code: "CAMPAIGN_CHANGED",
+        message: "Workspace authority changed during the operation.",
+      };
+    }
+    const latest = await readWorkspace(session, workspaceId, campaignId);
+    if (latest.status !== "ok" || !campaignAllowsSourcing(latest.value.campaign)) {
+      return {
+        ok: false,
+        status: 409,
+        code: "CAMPAIGN_CHANGED",
+        message: "Campaign authority changed during the operation.",
+      };
+    }
+    return { ok: true, workspace: latest };
+  };
+
   const failIfAuthorityChanged = async () => {
     const authority = await currentAuthority();
     if (authority.ok) return null;
@@ -680,7 +721,10 @@ async function handlePost(req: NextRequest, correlationId: string) {
       githubToken,
       tavilyKey ?? undefined,
       undefined,
-      async () => (await currentAuthority()).ok,
+      async () =>
+        peopleFirst && !frameworkAuthorization
+          ? (await peopleFirstContinueAuthority()).ok
+          : (await currentAuthority()).ok,
       apifyToken ?? undefined,
     );
     const servers = [
@@ -698,10 +742,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
       const searchBudget = setTimeout(() => searchAbort.abort(), searchBudgetMs);
       const searchSignal = searchAbort.signal;
       try {
+      const peopleFirstJob = initial.value.campaign.jobAnalysis;
       const searches = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
         : peopleFirst
-          ? multiSourcePlan.filter((step) => step.platform === "Apify")
+          ? [...peopleFirstHarvestQueue(peopleFirstJob)]
           : [
               ...promotedLessons
                 .filter(
@@ -715,20 +760,43 @@ async function handlePost(req: NextRequest, correlationId: string) {
                   all.findIndex((other) => other.platform === step.platform && other.query === step.query) === index,
               )
               .slice(0, 5);
+      if (peopleFirst && !frameworkAuthorization) {
+        const seen = new Set(searches.map((step) => peopleFirstSearchKey(step)));
+        while (searches.length < 2) {
+          const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
+          if (!next || seen.has(peopleFirstSearchKey(next))) break;
+          seen.add(peopleFirstSearchKey(next));
+          searches.push(next);
+        }
+      }
       if (peopleFirst && !frameworkAuthorization && searches.length === 0) {
         return await failClaimed(
           502,
           PEOPLE_FIRST_HARVEST_NOT_STARTED,
           formatHarvestEvidenceError("not_started", {
-            query: apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis),
+            query: apifyHarvestQueryFromBrief(peopleFirstJob),
           }),
         );
       }
       let successfulQuery = false;
-      for (let stepIndex = 0; stepIndex < searches.length; stepIndex += 1) {
-        const step = searches[stepIndex];
+      const maxSteps = peopleFirst && !frameworkAuthorization
+        ? PEOPLE_FIRST_MAX_ATTEMPTS
+        : searches.length;
+      for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
         const remaining = count - runner.getFound().length;
         if (remaining <= 0) break;
+        let step = searches[stepIndex];
+        if (!step && peopleFirst && !frameworkAuthorization) {
+          const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
+          if (!next) break;
+          searches.push(next);
+          step = next;
+        }
+        if (!step) break;
+        if (peopleFirst && !frameworkAuthorization && !searches[stepIndex + 1]) {
+          const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
+          if (next) searches.push(next);
+        }
         const nextStep = searches[stepIndex + 1];
         if (peopleFirst && !frameworkAuthorization && stepIndex > 0) {
           logAriaHarvest("next_search_start", {
@@ -771,31 +839,50 @@ async function handlePost(req: NextRequest, correlationId: string) {
           const lastHarvest = runner.getExecutions().at(-1)?.harvest;
           const harvestStatus = (lastHarvest?.status ?? "").toUpperCase();
           if (lastHarvest?.started && harvestStatus === "SUCCEEDED" && lastHarvest.itemCount === 0) {
-            if (nextStep) {
+            if (!nextStep) {
+              const appended = nextPeopleFirstHarvest(peopleFirstJob, searches);
+              if (appended) searches.push(appended);
+            }
+            const follow = searches[stepIndex + 1];
+            if (follow) {
               logAriaHarvest("empty_next_search", {
                 query: lastHarvest.query || step.query,
                 runId: lastHarvest.runId,
                 status: lastHarvest.status,
                 itemCount: lastHarvest.itemCount,
                 started: true,
-                nextQuery: nextStep.query,
-                detail: `nextQuery=${nextStep.query}`,
+                nextQuery: follow.query,
+                detail: `nextQuery=${follow.query}`,
               });
             }
           }
         }
-        const afterQuery = await readWorkspace(session, workspaceId, campaignId);
-        if (
-          afterQuery.status !== "ok" ||
-          !campaignAllowsSourcing(afterQuery.value.campaign) ||
-          afterQuery.value.fingerprint !== initial.value.fingerprint ||
-          afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
-        ) {
-          return await failClaimed(
-            409,
-            "CAMPAIGN_CHANGED",
-            "Campaign authority changed during the operation.",
-          );
+        if (!peopleFirst || frameworkAuthorization) {
+          const afterQuery = await readWorkspace(session, workspaceId, campaignId);
+          if (
+            afterQuery.status !== "ok" ||
+            !campaignAllowsSourcing(afterQuery.value.campaign) ||
+            afterQuery.value.fingerprint !== initial.value.fingerprint ||
+            afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
+          ) {
+            return await failClaimed(
+              409,
+              "CAMPAIGN_CHANGED",
+              "Campaign authority changed during the operation.",
+            );
+          }
+        } else {
+          const afterQuery = await readWorkspace(session, workspaceId, campaignId);
+          if (
+            afterQuery.status !== "ok" ||
+            !campaignAllowsSourcing(afterQuery.value.campaign)
+          ) {
+            return await failClaimed(
+              409,
+              "CAMPAIGN_CHANGED",
+              "Campaign authority changed during the operation.",
+            );
+          }
         }
       }
       // People-first Apify can return ok:false with harvest evidence
@@ -903,7 +990,28 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       const succeeded = harvests.filter((harvest) => harvest.status.toUpperCase() === "SUCCEEDED");
+      const startedDistinct = new Set(
+        harvests
+          .filter((harvest) => harvest.started)
+          .map((harvest) => `${harvest.runId}|${harvest.query.trim().toLowerCase()}`),
+      );
+      const startedSearches = startedDistinct.size;
       const succeededWithPeople = succeeded.filter((harvest) => harvest.itemCount > 0);
+      if (foundCount === 0 && startedSearches < 2) {
+        const next = nextPeopleFirstHarvest(
+          initial.value.campaign.jobAnalysis,
+          apifyExecs.map((execution) => ({ query: execution.query })),
+        );
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_NOT_STARTED,
+          formatHarvestEvidenceError("not_started", {
+            query: next?.query || plannedQuery,
+            runId: primaryHarvest.runId,
+            status: primaryHarvest.status,
+          }),
+        );
+      }
       if (succeededWithPeople.length > 0 && contactCompleteCount === 0 && foundCount === 0) {
         return await failClaimed(
           502,
@@ -915,7 +1023,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
         return await failClaimed(
           502,
           PEOPLE_FIRST_HARVEST_EMPTY,
-          formatHarvestEvidenceError("gated_empty", succeededWithPeople[0] ?? primaryHarvest),
+          formatHarvestEvidenceError(
+            "gated_empty",
+            succeededWithPeople[0] ?? primaryHarvest,
+            { startedSearches },
+          ),
         );
       }
       if (foundCount === 0) {
@@ -924,14 +1036,14 @@ async function handlePost(req: NextRequest, correlationId: string) {
         return await failClaimed(
           502,
           PEOPLE_FIRST_HARVEST_EMPTY,
-          formatHarvestEvidenceError("empty", emptyHarvest),
+          formatHarvestEvidenceError("empty", emptyHarvest, { startedSearches }),
         );
       }
       if (succeeded.length === 0) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_UPSTREAM_FAILED",
-          formatHarvestEvidenceError("empty", { ...primaryHarvest, itemCount: 0 }),
+          formatHarvestEvidenceError("empty", { ...primaryHarvest, itemCount: 0 }, { startedSearches }),
         );
       }
     }
@@ -942,7 +1054,10 @@ async function handlePost(req: NextRequest, correlationId: string) {
         "The sourcing agent completed without a real search.",
       );
     }
-    const finalAuthority = await currentAuthority();
+    const finalAuthority =
+      peopleFirst && !frameworkAuthorization
+        ? await peopleFirstContinueAuthority()
+        : await currentAuthority();
     if (!finalAuthority.ok) {
       return await failClaimed(
         finalAuthority.status,

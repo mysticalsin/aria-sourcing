@@ -56,6 +56,7 @@ export function isHarvestEvidenceCode(code: string | null | undefined): boolean 
 export function formatHarvestEvidenceError(
   kind: HarvestEvidenceKind,
   harvest: Pick<HarvestEvidence, "query"> & Partial<HarvestEvidence>,
+  opts?: { startedSearches?: number },
 ): string {
   const query = harvest.query.trim() || "(missing query)";
   const run = harvest.runId ? ` run=${harvest.runId}` : "";
@@ -63,6 +64,10 @@ export function formatHarvestEvidenceError(
   const items =
     harvest.itemCount != null && harvest.itemCount >= 0 ? ` items=${harvest.itemCount}` : "";
   const base = `actor=${HARVEST_ACTOR} query=${query}${run}${status}${items}`;
+  const plannedExhausted = (opts?.startedSearches ?? 0) >= 2;
+  const emptyTail = plannedExhausted
+    ? "Every planned search was tried. Do not stop at 0 people. Do not invent people."
+    : "Next planned search must start now. Do not stop at 0 people. Do not invent people.";
   if (kind === "not_started") {
     return `People-first harvest did not start. ${base}. Source next batch must start a harvestapi Full run.`;
   }
@@ -79,9 +84,9 @@ export function formatHarvestEvidenceError(
     return `People-first harvest returned people without email, phone, and LinkedIn. ${base}. Do not invent contacts. Do not keep name-only rows.`;
   }
   if (kind === "gated_empty") {
-    return `Empty harvest is not a result. ${base}. Every planned search was tried. Do not stop at 0 people. Do not invent people. Skill-match ≥60 still required.`;
+    return `Empty harvest is not a result. ${base}. ${emptyTail} Skill-match ≥60 still required.`;
   }
-  return `Empty harvest is not a result. ${base}. Every planned search was tried. Do not stop at 0 people. Do not invent people.`;
+  return `Empty harvest is not a result. ${base}. ${emptyTail}`;
 }
 
 function sanitizeHarvestPayload(payload: Record<string, unknown>): Record<string, unknown> {

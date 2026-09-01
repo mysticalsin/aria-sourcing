@@ -289,7 +289,12 @@ hydrate and on the Strategy tab.
   and then waits for a second click is FAIL. One Source click must
   enqueue/start the next planned harvest on `items=0` in the same
   request (fresh 90s per attempt, total budget 360s). Do not share
-  one 90s abort across the plan.
+  one 90s abort across the plan. The people-first queue is
+  `peopleFirstHarvestQueue` (≥2 distinct harvestapi searches), not
+  a one-item `plannedSourcingSearches` slice. After `SUCCEEDED
+  items=0`, append `nextPeopleFirstHarvest` if the in-request list
+  is exhausted and start that run (new run id or next actor-input).
+  Banner copy "every planned search was tried" is FAIL unless ≥2 distinct harvests actually started.
 
   - Keep the first query (`Calypso Business Analyst` / `Calypso Linux
     Python`). Ultron live proved that phrase can return `SUCCEEDED

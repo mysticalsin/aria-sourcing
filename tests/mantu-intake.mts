@@ -12,8 +12,10 @@ import { githubSkillQueryToken, repairGithubQueries } from "../src/lib/sourcing/
 import { repairLinkedinBoolean } from "../src/lib/sourcing/linkedin-boolean";
 import {
   apifyHarvestQueryFromBrief,
+  nextPeopleFirstHarvest,
   peopleFirstHarvestAttempts,
   peopleFirstHarvestQueries,
+  peopleFirstHarvestQueue,
   plannedSourcingSearches,
 } from "../src/lib/sourcing/multi-source-plan";
 
@@ -140,6 +142,21 @@ ok(
         (step.currentJobTitles ?? []).includes("Business Analyst"),
     ) &&
     baAttempts.some((step) => step.query === "Calypso Business Analysis"),
+);
+ok("BA people-first queue is never one harvest", peopleFirstHarvestQueue(ba.jobAnalysis).length >= 2);
+ok(
+  "BA items=0 next harvest is a broader query or next actor-input",
+  nextPeopleFirstHarvest(ba.jobAnalysis, [baAttempts[0]!])?.query !== "Calypso Business Analyst" ||
+    (nextPeopleFirstHarvest(ba.jobAnalysis, [baAttempts[0]!])?.currentJobTitles ?? []).includes(
+      "Business Analyst",
+    ),
+);
+ok(
+  "BA plannedSourcingSearches still has ≥2 Apify harvests",
+  plannedSourcingSearches({
+    jobAnalysis: ba.jobAnalysis,
+    sourcingStrategy: { githubQueries: [], linkedinBoolean: "" },
+  }).filter((step) => step.platform === "Apify").length >= 2,
 );
 ok(
   "BA scoring chips stay Calypso / Business Analysis / MySQL",
@@ -303,10 +320,21 @@ ok(
     appHarvests.includes("Calypso") &&
     appHarvests.length === 3,
 );
+const appAttempts = peopleFirstHarvestAttempts(campFromBlob.jobAnalysis);
 ok(
   "people-first plan lists every harvestapi fallback before LinkedIn",
-  multi.filter((step) => step.platform === "Apify").map((step) => step.query).join("|") ===
-    appHarvests.join("|"),
+  multi.filter((step) => step.platform === "Apify").length >= 2 &&
+    appAttempts.length >= 2 &&
+    appAttempts[0]?.query === "Calypso Linux Python" &&
+    appAttempts.some(
+      (step) =>
+        step.query === "Calypso" &&
+        (step.currentJobTitles ?? []).includes("Application Support"),
+    ),
+);
+ok(
+  "App Support empty harvest next-search is not a one-item plan",
+  peopleFirstHarvestQueue(campFromBlob.jobAnalysis).length >= 2,
 );
 ok(
   "multi-source GitHub steps are not language:Calypso or a skill blob",

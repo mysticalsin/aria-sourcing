@@ -310,5 +310,89 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
   ok("authority denial blocks both model transports before fetch", !anthropic.ok && !openAi.ok && fetchCalls === 0);
 }
 
+{
+  const { peopleFirstHarvestAttempts } = await import("../src/lib/sourcing/multi-source-plan");
+  const baCampaign = {
+    ...campaign,
+    jobAnalysis: {
+      ...campaign.jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Business Analysis",
+      requiredSkills: ["Calypso", "Business Analysis", "MySQL"],
+      industryExperience: ["Finance"],
+    },
+  };
+  const attempts = peopleFirstHarvestAttempts(baCampaign.jobAnalysis);
+  const originalFetch = globalThis.fetch;
+  const starts: Array<{ runId: string; searchQuery: string; currentJobTitles?: string[] }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/actors/harvestapi~linkedin-profile-search/runs") && !url.includes("actor-runs")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        searchQuery?: string;
+        currentJobTitles?: string[];
+      };
+      const runId = `run-${starts.length + 1}`;
+      starts.push({
+        runId,
+        searchQuery: String(body.searchQuery ?? ""),
+        ...(body.currentJobTitles?.length ? { currentJobTitles: body.currentJobTitles } : {}),
+      });
+      return jsonResponse({ data: { id: runId, defaultDatasetId: `ds-${runId}`, status: "READY" } });
+    }
+    if (url.includes("/actor-runs/")) {
+      return jsonResponse({ data: { status: "SUCCEEDED" } });
+    }
+    if (url.includes("/datasets/")) {
+      return jsonResponse([]);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+  const runner = makeSourcingToolRunner(
+    baCampaign,
+    [],
+    W,
+    "",
+    undefined,
+    undefined,
+    undefined,
+    "apify-test-token",
+  );
+  const first = attempts[0];
+  const second = attempts[1];
+  const firstResult = await runner.run("search_candidates", {
+    platform: "Apify",
+    query: first?.query,
+    currentJobTitles: first?.currentJobTitles,
+    count: 8,
+  });
+  const secondResult = await runner.run("search_candidates", {
+    platform: "Apify",
+    query: second?.query,
+    currentJobTitles: second?.currentJobTitles,
+    count: 8,
+  });
+  globalThis.fetch = originalFetch;
+  ok("BA plan has a second harvest after the title-role query", attempts.length >= 2 && first?.query === "Calypso Business Analyst");
+  ok(
+    "SUCCEEDED items=0 first harvest still starts a second harvestapi run",
+    firstResult.ok === true &&
+      secondResult.ok === true &&
+      starts.length >= 2 &&
+      starts[0]?.runId === "run-1" &&
+      starts[1]?.runId === "run-2",
+  );
+  ok(
+    "second harvest is a broader query or next actor-input",
+    starts[1]?.searchQuery !== starts[0]?.searchQuery ||
+      (starts[1]?.currentJobTitles ?? []).join(",") !== (starts[0]?.currentJobTitles ?? []).join(","),
+  );
+  ok(
+    "empty harvests do not invent people",
+    runner.getFound().length === 0 &&
+      runner.getExecutions().every((execution) => execution.harvest?.itemCount === 0),
+  );
+}
+
 console.log(`RESULT sourcing-agent: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

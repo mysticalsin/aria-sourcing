@@ -288,6 +288,12 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(plan, /apifyHarvestQueryFromBrief/);
   assert.match(plan, /peopleFirstHarvestQueries/);
   assert.match(plan, /peopleFirstHarvestAttempts/);
+  assert.match(plan, /nextPeopleFirstHarvest/);
+  assert.match(plan, /peopleFirstHarvestQueue/);
+  assert.match(route, /peopleFirstHarvestQueue/);
+  assert.match(route, /nextPeopleFirstHarvest/);
+  assert.match(route, /peopleFirstContinueAuthority/);
+  assert.match(route, /startedSearches/);
   assert.match(route, /peopleFirst \? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000/);
   assert.match(route, /export const maxDuration = 360/);
   assert.match(route, /PEOPLE_FIRST_ATTEMPT_WAIT_MS/);
@@ -336,7 +342,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
   assert.match(route, /!successfulQuery && !\(peopleFirst && !frameworkAuthorization\)/);
-  assert.match(route, /multiSourcePlan.filter\(\(step\) => step.platform === "Apify"\)/);
+  assert.match(route, /peopleFirstHarvestQueue\(peopleFirstJob\)/);
   assert.doesNotMatch(route, /filter\(\(step\) => step.platform === "Apify"\)\.slice\(0, 1\)/);
   assert.match(route, /empty_next_search/);
   assert.match(apify, /harvestapiActorInput/);
@@ -356,6 +362,11 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.doesNotMatch(harvest, /console\.(info|log|debug)\(/);
   assert.match(harvest, /PEOPLE_FIRST_CLIENT_WAIT_MS = 360_000/);
   assert.match(harvest, /Every planned search was tried/);
+  assert.match(harvest, /Next planned search must start now/);
+  assert.match(harvest, /startedSearches/);
+  assert.match(design, /peopleFirstHarvestQueue/);
+  assert.match(design, /nextPeopleFirstHarvest/);
+  assert.match(design, /≥2 distinct harvests actually started/);
   assert.doesNotMatch(harvest, /Engine continues to the next planned search/);
   assert.match(harvest, /PEOPLE_FIRST_HARVEST_ABORTED/);
   assert.match(harvest, /PEOPLE_FIRST_HARVEST_MOCK/);
