@@ -154,6 +154,7 @@ mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
       if (apifyTimeAdvanceMs > 0) mock.timers.tick(apifyTimeAdvanceMs);
       return apifyResult;
     },
+    scrapeGithubTechStack: async () => ({ ok: true, status: 200, data: [] }),
     resolveStoredApifyKey: async () => apifyKey,
   },
 });

@@ -473,11 +473,13 @@ ok(
   "keyed empty harvest is fail-loud without an Access & Keys reconnect CTA",
   keyedEmptyToast?.title === "Empty harvest is not a result" &&
     keyedEmptyToast.description === EMPTY_PEOPLE_FIRST_HARVEST &&
-    keyedEmptyToast.href === "#source-apify" &&
-    /Source via Apify/i.test(keyedEmptyToast.actionLabel) &&
+    keyedEmptyToast.href === "" &&
+    /Source next batch/i.test(keyedEmptyToast.actionLabel) &&
+    !/Source via Apify/i.test(keyedEmptyToast.actionLabel) &&
     !/Access & Keys/i.test(keyedEmptyToast.actionLabel) &&
-    keyedEmptyFailLoud?.href === "#source-apify" &&
-    /Source via Apify/i.test(String(keyedEmptyFailLoud?.actionLabel)),
+    keyedEmptyFailLoud?.href === "" &&
+    /Source next batch/i.test(String(keyedEmptyFailLoud?.actionLabel)) &&
+    !/Source via Apify/i.test(String(keyedEmptyFailLoud?.actionLabel)),
 );
 ok(
   "people-first learning hides stacked LinkedIn 0-rows",

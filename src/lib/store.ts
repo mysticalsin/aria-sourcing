@@ -80,6 +80,7 @@ import {
   stripLabFixturePeople,
 } from "./sourcing/lab-fixture-people";
 import { formatHarvestEvidenceError } from "./sourcing/harvest-evidence";
+import { runAutoSourcePipeline } from "./sourcing/auto-source";
 import { isPeopleFirstContactComplete } from "./sourcing/people-first-contact";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
@@ -100,6 +101,7 @@ import type {
   CandidateErasureStatus,
   HermesActions,
   HermesContextValue,
+  SourceNextBatchResult,
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
 } from "./store/contracts";
@@ -149,6 +151,7 @@ import type {
   OutreachStatus,
   OutreachTone,
   ReplyIntent,
+  SourcePlatform,
   SavedModel,
   SkillKey,
   SkillUpdate,
@@ -1695,6 +1698,34 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return { ok: true, total: targets.length, done, filled: filledTotal, spend: spendTotal };
     },
     [candidatePersistenceAllowed, commit, current, enrichCandidate, workspaceEffectAllowed],
+  );
+
+  const autoSource = useCallback(
+    async (
+      campaignId: string,
+      opts?: {
+        platform?: SourcePlatform;
+        count?: number;
+        agentFramework?: { runId: string; capabilityToken: string; query: string };
+      },
+    ): Promise<SourceNextBatchResult & { enriched?: boolean; techStackMerged?: boolean }> => {
+      const campaign = current().campaigns.find((row) => row.id === campaignId);
+      if (!campaign) {
+        return { ok: false, error: "Campaign not found.", source: "not_found" };
+      }
+      return runAutoSourcePipeline({
+        job: campaign.jobAnalysis,
+        search: () => sourceNextBatch(campaignId, opts),
+        enrich: async () => {
+          const result = await enrichCampaign(campaignId);
+          return { ok: result.ok, error: result.error };
+        },
+        mergeTechStack: async () => {
+          await enrichCampaign(campaignId, { want: ["skills"] });
+        },
+      });
+    },
+    [current, enrichCampaign, sourceNextBatch],
   );
 
   const runSourcingAgent = useCallback(
@@ -6263,6 +6294,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateCampaign,
       regenerateQueries,
       sourceNextBatch,
+      autoSource,
       addCandidateFromGithub,
       addCandidateManual,
       startSillageMapping,
@@ -6387,7 +6419,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, autoSource, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,

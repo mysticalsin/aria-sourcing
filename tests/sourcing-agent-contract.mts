@@ -696,8 +696,9 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     liveUnconfigured,
     validApify,
   );
-  assert.equal(harvestToast?.href, "#source-apify");
-  assert.match(String(harvestToast?.actionLabel), /Source via Apify/);
+  assert.equal(harvestToast?.href, "");
+  assert.match(String(harvestToast?.actionLabel), /Source next batch/);
+  assert.doesNotMatch(String(harvestToast?.actionLabel), /Source via Apify|harvestapi|M2FMdjR|Access & Keys/);
   assert.doesNotMatch(String(harvestToast?.actionLabel), /Access & Keys/);
 
   const legacyCode = await requestReviewedSourcing(

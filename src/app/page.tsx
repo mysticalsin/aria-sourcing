@@ -25,7 +25,6 @@ import { IntegrationStrip } from "@/components/dashboard/integration-strip";
 import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
-import { AgentRunStream } from "@/components/run/agent-run-stream";
 import {
   commandCenterMode,
   resolveCommandCenterNextStep,
@@ -57,7 +56,6 @@ import {
   FileText,
   GitBranch,
   Megaphone,
-  PlayCircle,
   Radar,
   Reply,
   Sparkles,
@@ -117,29 +115,12 @@ export default function DashboardPage() {
     [pipelineCandidates],
   );
 
-  // "Watch Aria Work" panel — remounted (via runToken as its key) on every
-  // "Run Aria" click so each click starts a genuinely fresh, replayable run.
-  const [runOpen, setRunOpen] = React.useState(false);
-  const [runToken, setRunToken] = React.useState(0);
   const [sourceBatchError, setSourceBatchError] = React.useState<{
     title: string;
     description: string;
     href?: string;
     actionLabel?: string;
   } | null>(null);
-
-  function handleOpenRun() {
-    if (!activeCampaign) {
-      toast({
-        title: "No active campaign",
-        description: "Create a campaign from an intake brief first.",
-        variant: "warning",
-      });
-      return;
-    }
-    setRunOpen(true);
-    setRunToken((k) => k + 1);
-  }
 
   const kpiCards: {
     label: string;
@@ -193,7 +174,72 @@ export default function DashboardPage() {
     },
   ];
 
-  async function handleSourceBatch() {
+  async function applySourceOutcome(
+    result: Awaited<ReturnType<typeof actions.sourceNextBatch>>,
+  ) {
+    if (!activeCampaign) return;
+    if (!result.ok) {
+      const failLoud = sourceRejectedToast(
+        result.error,
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
+      return;
+    }
+    const emptyPeopleFirst = emptyPeopleFirstToast(
+      activeCampaign.jobAnalysis,
+      integrations,
+      result,
+      apiKeys,
+    );
+    if (emptyPeopleFirst) {
+      setSourceBatchError(emptyPeopleFirst);
+      toast({
+        title: emptyPeopleFirst.title,
+        description: emptyPeopleFirst.description,
+        href: emptyPeopleFirst.href,
+        actionLabel: emptyPeopleFirst.actionLabel,
+        variant: "error",
+      });
+      return;
+    }
+    if (result.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
+      const failLoud = sourceRejectedToast(
+        "Source next batch returned 0 people. This is not a successful harvest.",
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
+      return;
+    }
+    const isLive = result.source === "github" || result.source === "web";
+    toast({
+      title: `Sourced ${pluralize(result.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
+      description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
+      variant: result.accepted.length > 0 ? "success" : "info",
+    });
+  }
+
+  async function runSourcing(
+    run: (campaignId: string) => Promise<Awaited<ReturnType<typeof actions.sourceNextBatch>>>,
+  ) {
     if (!activeCampaign) {
       toast({
         title: "No active campaign",
@@ -204,64 +250,8 @@ export default function DashboardPage() {
     }
     setSourceBatchError(null);
     try {
-      const result = await actions.sourceNextBatch(activeCampaign.id);
-      if (!result.ok) {
-        const failLoud = sourceRejectedToast(
-          result.error,
-          activeCampaign.jobAnalysis,
-          integrations,
-          apiKeys,
-        );
-        setSourceBatchError(failLoud);
-        toast({
-          title: failLoud.title,
-          description: failLoud.description,
-          href: failLoud.href,
-          actionLabel: failLoud.actionLabel,
-          variant: "error",
-        });
-        return;
-      }
-      const emptyPeopleFirst = emptyPeopleFirstToast(
-        activeCampaign.jobAnalysis,
-        integrations,
-        result,
-        apiKeys,
-      );
-      if (emptyPeopleFirst) {
-        setSourceBatchError(emptyPeopleFirst);
-        toast({
-          title: emptyPeopleFirst.title,
-          description: emptyPeopleFirst.description,
-          href: emptyPeopleFirst.href,
-          actionLabel: emptyPeopleFirst.actionLabel,
-          variant: "error",
-        });
-        return;
-      }
-      if (result.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
-        const failLoud = sourceRejectedToast(
-          "Source next batch returned 0 people. This is not a successful harvest.",
-          activeCampaign.jobAnalysis,
-          integrations,
-          apiKeys,
-        );
-        setSourceBatchError(failLoud);
-        toast({
-          title: failLoud.title,
-          description: failLoud.description,
-          href: failLoud.href,
-          actionLabel: failLoud.actionLabel,
-          variant: "error",
-        });
-        return;
-      }
-      const isLive = result.source === "github" || result.source === "web";
-      toast({
-        title: `Sourced ${pluralize(result.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
-        description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
-        variant: result.accepted.length > 0 ? "success" : "info",
-      });
+      const result = await run(activeCampaign.id);
+      await applySourceOutcome(result);
     } catch (error) {
       const thrown = error instanceof Error ? error.message : "Sourcing request failed";
       const failLoud = sourceRejectedToast(
@@ -279,6 +269,14 @@ export default function DashboardPage() {
         variant: "error",
       });
     }
+  }
+
+  async function handleSourceBatch() {
+    await runSourcing((campaignId) => actions.sourceNextBatch(campaignId));
+  }
+
+  async function handleAutoSource() {
+    await runSourcing((campaignId) => actions.autoSource(campaignId));
   }
 
   function handleGenerateReport() {
@@ -360,10 +358,10 @@ export default function DashboardPage() {
                   </Button>
                   <Button
                     variant="primary"
-                    leftIcon={<PlayCircle aria-hidden />}
-                    onClick={handleOpenRun}
+                    leftIcon={<Radar aria-hidden />}
+                    onClick={handleAutoSource}
                   >
-                    Run Aria
+                    Auto source
                   </Button>
                   <Button
                     variant="outline"
@@ -382,16 +380,6 @@ export default function DashboardPage() {
                 </div>
               </div>
             </Card>
-
-            {runOpen && activeCampaign && (
-              <AgentRunStream
-                key={runToken}
-                campaignId={activeCampaign.id}
-                autoStart
-                onClose={() => setRunOpen(false)}
-                className="animate-fade-in"
-              />
-            )}
 
             {/* KPI grid */}
             <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">

@@ -398,6 +398,101 @@ function CandidatesView() {
     }
   }
 
+  async function handleAutoSource() {
+    if (sourcing) return;
+    if (!activeCampaign) {
+      toast({
+        title: "No active campaign",
+        description: "Open a campaign (or start a new intake) to auto source its shortlist.",
+        variant: "warning",
+      });
+      return;
+    }
+    setSourceBatchError(null);
+    setSourcing(true);
+    try {
+      const res = await actions.autoSource(activeCampaign.id);
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(
+          res.error,
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const emptyPeopleFirst = emptyPeopleFirstToast(
+        activeCampaign.jobAnalysis,
+        integrations,
+        res,
+        apiKeys,
+      );
+      if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (res.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Auto source returned 0 people. This is not a successful harvest.",
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      toast({
+        title: `Auto sourced ${pluralize(res.accepted.length, "candidate")}`,
+        description: res.enriched
+          ? `${activeCampaign.title} · search, enrich, and merge finished.`
+          : `${activeCampaign.title} · ${pluralize(res.skipped.length, "candidate")} skipped by dedupe & exclusions.`,
+        variant: res.accepted.length > 0 ? "success" : "info",
+      });
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(
+        thrown,
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
+    } finally {
+      setSourcing(false);
+    }
+  }
+
   /** Bulk stage move — routes every selected candidate through the SAME
    *  setCandidateStage the drawer's per-candidate buttons use (preserves the
    *  maxStageRank high-water mark via withStage), reusing outreach's
@@ -557,6 +652,17 @@ function CandidatesView() {
           title={activeCampaign ? `Source the next batch for ${activeCampaign.title}` : "No active campaign"}
         >
           {sourcing ? "Sourcing…" : "Source next batch"}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          leftIcon={<Sparkles className="h-4 w-4" />}
+          onClick={handleAutoSource}
+          loading={sourcing}
+          disabled={sourcing}
+          title={activeCampaign ? `Auto source ${activeCampaign.title}` : "No active campaign"}
+        >
+          {sourcing ? "Sourcing…" : "Auto source"}
         </Button>
       </div>
       {sourceBatchError ? (

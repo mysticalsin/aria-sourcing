@@ -186,15 +186,15 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
         leftIcon={<Linkedin className="h-4 w-4" />}
         onClick={() => setOpen(true)}
         disabled={disabled}
-        title={disabled ? "Resume the campaign to source via Apify" : undefined}
+        title={disabled ? "Resume the campaign to source the next batch" : undefined}
       >
-        Source via Apify
+        Source next batch
       </Button>
       <Modal
         open={open}
         onClose={resetAndClose}
-        title="Source via Apify"
-        description="Real public LinkedIn profiles via a third-party provider (Apify harvestapi). No LinkedIn login, scraping, or session automation."
+        title="Source next batch"
+        description="Real public LinkedIn profiles via the harvest pipeline. No LinkedIn login, scraping, or session automation."
         footer={
           polling ? (
             <Button variant="ghost" size="md" onClick={resetAndClose}>

@@ -4,10 +4,13 @@
  */
 
 export const HARVEST_ACTOR = "harvestapi~linkedin-profile-search";
+export const HARVEST_ENRICH_ACTOR = "harvestapi~linkedin-profile-scraper";
+export const GITHUB_STACK_ACTOR = "apivault_labs~github-profile-scraper";
 export const HARVEST_LOG_PREFIX = "[aria-harvest]";
 export const ARIA_HARVEST_EVENT = "aria_harvest";
-export const SOURCE_VIA_APIFY_HREF = "#source-apify";
-export const SOURCE_VIA_APIFY_LABEL = "Source via Apify";
+/** User chrome.retry — never an actor-named button. */
+export const SOURCE_VIA_APIFY_HREF = "";
+export const SOURCE_VIA_APIFY_LABEL = "Source next batch";
 export const CONNECT_APIFY_HREF = "/settings";
 export const CONNECT_APIFY_LABEL = "Connect Apify";
 
@@ -63,16 +66,16 @@ export function formatHarvestEvidenceError(
   const status = harvest.status ? ` status=${harvest.status}` : "";
   const items =
     harvest.itemCount != null && harvest.itemCount >= 0 ? ` items=${harvest.itemCount}` : "";
-  const base = `actor=${HARVEST_ACTOR} query=${query}${run}${status}${items}`;
+  const base = `query=${query}${run}${status}${items}`;
   const plannedExhausted = (opts?.startedSearches ?? 0) >= 2;
   const emptyTail = plannedExhausted
     ? "Every planned search was tried. Do not stop at 0 people. Do not invent people."
     : "Next planned search must start now. Do not stop at 0 people. Do not invent people.";
   if (kind === "not_started") {
-    return `People-first harvest did not start. ${base}. Source next batch must start a harvestapi Full run.`;
+    return `People-first harvest did not start. ${base}. Source next batch must start a real search.`;
   }
   if (kind === "still_running") {
-    return `People-first harvest is still running. ${base}. Do not treat this as 0 people. Retry or open Source via Apify.`;
+    return `People-first harvest is still running. ${base}. Do not treat this as 0 people. Retry Source next batch.`;
   }
   if (kind === "aborted") {
     return `People-first harvest aborted after 90s. ${base}. Do not treat this as 0 people. Retry Source next batch.`;

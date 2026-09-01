@@ -127,10 +127,18 @@ check(
 );
 
 const commandCenterPage = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
-const sourceStart = commandCenterPage.indexOf("async function handleSourceBatch()");
+const sourceStart = commandCenterPage.indexOf("async function applySourceOutcome(");
 const sourceAction = commandCenterPage.slice(sourceStart, commandCenterPage.indexOf("function handleGenerateReport"));
 check("Command Center Source next batch still remaps live-provider failures", /sourceRejectedToast/.test(sourceAction));
 check("Command Center Source next batch surfaces people-plugin honesty", /emptyPeopleFirstToast|emptyPeopleFirstShortlistError|missingPeoplePlugins/.test(sourceAction));
+check(
+  "Command Center sourcing chrome is Source next batch + Auto source, not Apify",
+  /Source next batch/.test(commandCenterPage) &&
+    /Auto source/.test(commandCenterPage) &&
+    /handleAutoSource/.test(commandCenterPage) &&
+    !/Source via Apify/.test(commandCenterPage) &&
+    !/Run Aria/.test(commandCenterPage),
+);
 check(
   "Command Center does not wall Source next batch behind missingPeoplePlugins",
   !(/if \(missingPeoplePlugins\)/.test(sourceAction) &&
@@ -255,6 +263,22 @@ const candidatesPage = readFileSync(new URL("../src/app/candidates/page.tsx", im
 check(
   "Candidates Source next batch names LinkedIn and Apify before the agent",
   /sourceRejectedToast|emptyPeopleFirstToast|peoplePluginFailLoudUi/.test(candidatesPage) && /ConnectChannels|cc-connect-channels/.test(candidatesPage),
+);
+check(
+  "Candidates chrome is Source next batch + Auto source, not Apify",
+  /Source next batch/.test(candidatesPage) &&
+    /Auto source/.test(candidatesPage) &&
+    /handleAutoSource/.test(candidatesPage) &&
+    !/Source via Apify/.test(candidatesPage),
+);
+const campaignsPage = readFileSync(new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url), "utf8");
+check(
+  "Campaign chrome is Source next batch + Auto source, not actor pickers",
+  /Source next batch/.test(campaignsPage) &&
+    /Auto source/.test(campaignsPage) &&
+    !/Source via Apify/.test(campaignsPage) &&
+    !/Run sourcing agent/.test(campaignsPage) &&
+    !/SourceApifyButton/.test(campaignsPage),
 );
 check(
   "Command Center fail-loud toast carries a CTA href",

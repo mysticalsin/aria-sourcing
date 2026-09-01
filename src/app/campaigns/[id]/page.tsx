@@ -34,12 +34,7 @@ import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
-import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
-import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
-import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
-import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
-import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
@@ -68,11 +63,7 @@ import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
-import {
-  CONNECT_APIFY_HREF,
-  CONNECT_APIFY_LABEL,
-  formatHarvestEvidenceError,
-} from "@/lib/sourcing/harvest-evidence";
+import { formatHarvestEvidenceError } from "@/lib/sourcing/harvest-evidence";
 import {
   emptyPeopleFirstToast,
   isPeopleFirstRole,
@@ -123,7 +114,6 @@ function mergeSourcingFeedbackReceipts(
 import {
   ArrowLeft,
   Banknote,
-  Bot,
   CalendarCheck,
   CalendarPlus,
   CheckCircle2,
@@ -139,7 +129,6 @@ import {
   Pause,
   Pencil,
   Play,
-  PlayCircle,
   RefreshCw,
   Send,
   Sparkles,
@@ -380,7 +369,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [stageFilter, setStageFilter] = React.useState("all");
   const [scoreFilter, setScoreFilter] = React.useState("all");
-  const [agentRunning, setAgentRunning] = React.useState(false);
   const [feedbackState, setFeedbackState] = React.useState<{
     campaignId: string;
     receipts: SourcingFeedbackReceipt[];
@@ -404,10 +392,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [bookingCandidateId, setBookingCandidateId] = React.useState<string | null>(null);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
-  // "Watch Aria Work" panel — remounted (via runToken as its key) on every
-  // "Run Aria" click so each click starts a genuinely fresh, replayable run.
-  const [runOpen, setRunOpen] = React.useState(false);
-  const [runToken, setRunToken] = React.useState(0);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -626,7 +610,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       if (res.accepted.length === 0) {
         if (isPeopleFirstRole(c.jobAnalysis)) {
           const failLoud = sourceRejectedToast(
-            "Source next batch returned 0 people. This is not a successful harvest. Connect a real Apify key and switch the card to Live.",
+            "Source next batch returned 0 people. This is not a successful harvest.",
             c.jobAnalysis,
             integrations,
             apiKeys,
@@ -705,60 +689,46 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     });
   };
 
-  const handleRunAgent = async () => {
-    const campaignId = c.id;
-    setAgentRunning(true);
-    const res = await actions.runSourcingAgent(campaignId);
-    setAgentRunning(false);
-    if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(res.error ?? "", c.jobAnalysis, integrations, apiKeys);
-      toast({
-        title: failLoud ? failLoud.title : "Sourcing agent didn't run",
-        description: failLoud?.description ?? res.error,
-        href: failLoud?.href,
-        actionLabel: failLoud?.actionLabel,
-        variant: "error",
-      });
-      return;
-    }
-    setFeedbackState((current) =>
-      current.campaignId === campaignId
-        ? {
-            campaignId,
-            receipts: visiblePeopleFirstLearningReceipts(
-              mergeSourcingFeedbackReceipts(
-                current.receipts,
-                res.feedbackReceipts ?? [],
+  const handleAutoSource = async () => {
+    if (sourcing) return;
+    setSourcing(true);
+    setSourceBatchError(null);
+    try {
+      const res = await actions.autoSource(c.id);
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(res.error, c.jobAnalysis, integrations, apiKeys);
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setFeedbackState((current) =>
+        current.campaignId === c.id
+          ? {
+              campaignId: c.id,
+              receipts: visiblePeopleFirstLearningReceipts(
+                mergeSourcingFeedbackReceipts(
+                  current.receipts,
+                  res.feedbackReceipts ?? [],
+                ),
+                c.jobAnalysis,
+                integrations,
+                apiKeys,
               ),
-              c.jobAnalysis,
-              integrations,
-              apiKeys,
-            ),
-          }
-        : current,
-    );
-    if (res.mode === "fixture") {
-      toast({
-        title: CONNECT_APIFY_LABEL,
-        description:
-          "Lab fixtures are not LinkedIn. Connect a real Apify key and switch the card to Live.",
-        href: CONNECT_APIFY_HREF,
-        actionLabel: CONNECT_APIFY_LABEL,
-        variant: "error",
-      });
-      return;
-    }
-    if (res.added === 0) {
-      const emptyPeopleFirst = emptyPeopleFirstToast(
-        c.jobAnalysis,
-        integrations,
-        {
-          accepted: { length: 0 },
-          source: res.mode === "deterministic" ? "github" : undefined,
-        },
-        apiKeys,
+            }
+          : current,
       );
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      if (res.accepted.length > 0) setTab("candidates");
+      const emptyPeopleFirst = emptyPeopleFirstToast(c.jobAnalysis, integrations, res, apiKeys);
       if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
         toast({
           title: emptyPeopleFirst.title,
           description: emptyPeopleFirst.description,
@@ -768,27 +738,59 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         });
         return;
       }
+      if (res.accepted.length === 0) {
+        if (isPeopleFirstRole(c.jobAnalysis)) {
+          const failLoud = sourceRejectedToast(
+            "Auto source returned 0 people. This is not a successful harvest.",
+            c.jobAnalysis,
+            integrations,
+            apiKeys,
+          );
+          setSourceBatchError(failLoud);
+          toast({
+            title: failLoud.title,
+            description: failLoud.description,
+            href: failLoud.href,
+            actionLabel: failLoud.actionLabel,
+            variant: "error",
+          });
+          return;
+        }
+        toast({
+          title: "No candidates were added",
+          description: res.skipped.length
+            ? `${res.skipped.length} real results were excluded or already present.`
+            : "The real search completed without a matching result.",
+          variant: "info",
+        });
+        return;
+      }
       toast({
-        title: "No candidates were added",
-        description:
-          res.mode === "cloud"
-            ? "The real provider search completed, but every result was empty, excluded, or already present."
-            : "The reviewed GitHub queries completed, but every result was empty, excluded, or already present. No cloud model ran.",
-        variant: "info",
+        title: `Auto sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}`,
+        description: res.enriched
+          ? "Search, enrich, and merge finished. One shortlist."
+          : "Search finished. Enrichment did not add new fields.",
+        variant: "success",
       });
-      return;
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "";
+      const failLoud = sourceRejectedToast(
+        /cross-origin/i.test(thrown) ? thrown : formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
+        c.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
+    } finally {
+      setSourcing(false);
     }
-    toast({
-      title:
-        res.mode === "cloud"
-          ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
-          : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
-      description:
-        res.mode === "cloud"
-          ? "Real provider search and cloud-assisted drafts are ready for human review."
-          : "Real GitHub results and locally generated drafts are ready for human review. No cloud model ran.",
-      variant: "success",
-    });
   };
 
   const handleSourcingFeedback = async (
@@ -826,11 +828,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       description: "This aggregate result can inform a future human-reviewed sourcing lesson.",
       variant: "success",
     });
-  };
-
-  const handleOpenRun = () => {
-    setRunOpen(true);
-    setRunToken((k) => k + 1);
   };
 
   const handlePause = () => {
@@ -1100,26 +1097,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               {sourcing ? "Sourcing…" : "Source next batch"}
             </Button>
             <Button
-              variant="secondary"
-              leftIcon={<Bot className="h-4 w-4" />}
-              onClick={handleRunAgent}
-              disabled={agentRunning || !liveSourcingAllowed}
-              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run the sourcing agent" : undefined}
-            >
-              {agentRunning ? "Agent working…" : "Run sourcing agent"}
-            </Button>
-            <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApifyButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <Button
               variant="primary"
-              leftIcon={<PlayCircle className="h-4 w-4" />}
-              onClick={handleOpenRun}
-              disabled={!liveSourcingAllowed}
-              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run Aria" : undefined}
+              leftIcon={<Sparkles className="h-4 w-4" />}
+              onClick={handleAutoSource}
+              loading={sourcing}
+              disabled={sourcing || !liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to auto source" : undefined}
             >
-              Run Aria
+              {sourcing ? "Sourcing…" : "Auto source"}
             </Button>
             <Button
               variant="outline"
@@ -1213,16 +1198,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             })}
           </CardBody>
         </Card>
-      )}
-
-      {runOpen && (
-        <AgentRunStream
-          key={runToken}
-          campaignId={c.id}
-          autoStart
-          onClose={() => setRunOpen(false)}
-          className="mb-6 animate-fade-in"
-        />
       )}
 
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />

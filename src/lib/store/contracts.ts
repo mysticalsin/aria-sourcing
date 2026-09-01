@@ -157,6 +157,16 @@ export interface HermesActions {
       agentFramework?: { runId: string; capabilityToken: string; query: string };
     },
   ) => Promise<SourceNextBatchResult>;
+  /** Unattended chain: search → enrich → merge tech-stack when the role needs it.
+   *  Actors stay in the backend. Does not invent people. */
+  autoSource: (
+    campaignId: string,
+    opts?: {
+      platform?: SourcePlatform;
+      count?: number;
+      agentFramework?: { runId: string; capabilityToken: string; query: string };
+    },
+  ) => Promise<SourceNextBatchResult & { enriched?: boolean; techStackMerged?: boolean }>;
   /** Searches real provider results and drafts for human review. Cloud mode uses
    * a tool-capable model; deterministic mode executes persisted GitHub queries
    * directly and never presents itself as an LLM run. */

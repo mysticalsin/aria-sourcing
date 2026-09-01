@@ -27,6 +27,8 @@ import { providerIsApify } from "@/lib/sourcing/people-connect";
 
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
+const ENRICH_ACTOR_PATH = "/actors/harvestapi~linkedin-profile-scraper/run-sync-get-dataset-items";
+const GITHUB_STACK_PATH = "/actors/apivault_labs~github-profile-scraper/run-sync-get-dataset-items";
 const DEV_FUSION_PATH = "/actors/dev_fusion~linkedin-profile-scraper/run-sync-get-dataset-items";
 
 /** Poll until terminal. Align with the 90s people-first client wait. Do not stamp 0 on a still-running actor. */
@@ -616,6 +618,19 @@ export async function enrichProfilesByUrl(
 ): Promise<ApifyResult<ApifyProfile[]>> {
   const profileUrls = urls.map((u) => u.trim()).filter(Boolean);
   if (profileUrls.length === 0) return { ok: true, status: 200, data: [] };
+  const harvestapi = await apifyRequest<RawApifyProfile[]>(clearance, ENRICH_ACTOR_PATH, token, {
+    method: "POST",
+    body: {
+      urls: profileUrls,
+      profileUrls,
+      profileScraperMode: "Full + email search",
+    },
+    timeoutMs: 60_000,
+  });
+  if (harvestapi.ok) {
+    const items = Array.isArray(harvestapi.data) ? harvestapi.data : [];
+    return { ok: true, status: harvestapi.status, data: items.map(mapProfile) };
+  }
   const res = await apifyRequest<RawApifyProfile[]>(clearance, DEV_FUSION_PATH, token, {
     method: "POST",
     body: { profileUrls },
@@ -625,10 +640,36 @@ export async function enrichProfilesByUrl(
     if (res.status === 403 && res.title === "full-permission-actor-not-approved") {
       return { ok: false, status: res.status, title: "not_approved", detail: res.detail };
     }
-    return res;
+    return harvestapi.ok === false ? harvestapi : res;
   }
   const items = Array.isArray(res.data) ? res.data : [];
   return { ok: true, status: res.status, data: items.map(mapProfile) };
+}
+
+/** Tech-stack only. Merge onto an existing person. Never mint a GitHub leftover. */
+export async function scrapeGithubTechStack(
+  clearance: ProviderClearance,
+  token: string,
+  githubUrl: string,
+): Promise<ApifyResult<string[]>> {
+  const login = githubUrl.trim().split("/").filter(Boolean).at(-1) ?? "";
+  if (!login || login.length > 80) return { ok: true, status: 200, data: [] };
+  const res = await apifyRequest<Array<{ languages?: string[]; skills?: string[]; techStack?: string[] }>>(
+    clearance,
+    GITHUB_STACK_PATH,
+    token,
+    {
+      method: "POST",
+      body: { usernames: [login], username: login },
+      timeoutMs: 45_000,
+    },
+  );
+  if (!res.ok) return res;
+  const row = Array.isArray(res.data) ? res.data[0] : undefined;
+  const skills = [...(row?.languages ?? []), ...(row?.skills ?? []), ...(row?.techStack ?? [])]
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return { ok: true, status: res.status, data: [...new Set(skills)] };
 }
 
 /**

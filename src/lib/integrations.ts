@@ -82,7 +82,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "LinkedIn Recruiter System Connect",
       category: "Sourcing",
       description:
-        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only — not partner search. This card does not accept a pasted API key. Source via Apify when that key is valid.",
+        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only — not partner search. This card does not accept a pasted API key. Source next batch when a harvest key is valid.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,

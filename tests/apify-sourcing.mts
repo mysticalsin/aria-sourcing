@@ -531,7 +531,8 @@ try {
       ) &&
       /Next planned search must start now/.test(
         formatHarvestEvidenceError("empty", { query: "Calypso Business Analyst" }, { startedSearches: 1 }),
-      ),
+      ) &&
+      !/actor=/.test(formatHarvestEvidenceError("empty", { query: "Calypso Business Analyst", runId: "r1" })),
   );
 }
 
