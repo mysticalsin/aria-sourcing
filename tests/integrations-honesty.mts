@@ -142,7 +142,13 @@ const keyedApify = liveTenant.map((item) =>
 );
 ok(
   "keyed Apify satisfies the people-plugin check without inventing LinkedIn OAuth",
-  peopleSourcePluginsConnected(keyedApify) && missingPeoplePluginsToast(calypsoJob, keyedApify) === null,
+  peopleSourcePluginsConnected(keyedApify, [{ provider: "Apify", status: "valid" }]) &&
+    missingPeoplePluginsToast(calypsoJob, keyedApify, [{ provider: "Apify", status: "valid" }]) === null,
+);
+ok(
+  "an Apify card toggled Live without a valid Access & Keys row is not harvest",
+  !peopleSourcePluginsConnected(keyedApify) &&
+    Boolean(missingPeoplePluginsToast(calypsoJob, keyedApify)),
 );
 ok(
   "Tavily connected is not a people source",

@@ -18,7 +18,7 @@ export const EMPTY_PEOPLE_FIRST_HARVEST =
 export const PEOPLE_PLUGIN_SETTINGS_HREF = "/settings";
 export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
 
-const PEOPLE_PLUGIN_IDS = new Set(["int_apify", "int_linkedin_rsc"]);
+const OFFICIAL_LINKEDIN_PLUGIN_IDS = new Set(["int_linkedin_rsc"]);
 
 const GENERIC_SOURCING_FAILURE =
   /invalid (response|result)|selected sourcing provider is not configured|sourcing agent (is unavailable|did not complete|could not be reached|returned an invalid)/i;
@@ -36,7 +36,7 @@ export function peopleSourcePluginsConnected(
   if (hasValidApifyKey(apiKeys)) return true;
   return integrations.some(
     (item) =>
-      (PEOPLE_PLUGIN_IDS.has(item.id) || item.id.startsWith("int_linkedin")) &&
+      (OFFICIAL_LINKEDIN_PLUGIN_IDS.has(item.id) || item.id.startsWith("int_linkedin")) &&
       item.status === "connected" &&
       item.mode === "live",
   );
