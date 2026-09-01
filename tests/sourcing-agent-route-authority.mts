@@ -291,20 +291,26 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         const harvest = args.platform === "Apify"
           ? (runnerHarvestByQuery[String(args.query ?? "")] ?? runnerHarvest)
           : null;
-        if (runnerCandidatesAfterRun.length > 0 && (harvest?.itemCount ?? 0) > 0) {
-          const complete = runnerCandidatesAfterRun.filter((row) =>
-            isPeopleFirstContactComplete(
-              row && typeof row === "object"
-                ? (row as {
-                    email?: string;
-                    phone?: string;
-                    linkedinUrl?: string;
-                    sourcePlatform?: string;
-                  })
-                : {},
-            ),
-          );
-          if (complete.length > 0) foundCandidates = complete;
+        if (runnerCandidatesAfterRun.length > 0) {
+          if (args.platform === "Apify") {
+            if ((harvest?.itemCount ?? 0) > 0) {
+              const complete = runnerCandidatesAfterRun.filter((row) =>
+                isPeopleFirstContactComplete(
+                  row && typeof row === "object"
+                    ? (row as {
+                        email?: string;
+                        phone?: string;
+                        linkedinUrl?: string;
+                        sourcePlatform?: string;
+                      })
+                    : {},
+                ),
+              );
+              if (complete.length > 0) foundCandidates = complete;
+            }
+          } else {
+            foundCandidates = runnerCandidatesAfterRun;
+          }
         }
         const harvestOk = args.platform !== "Apify" || harvest?.status === "SUCCEEDED";
         return { ok: harvestOk, content: {} };
@@ -1675,13 +1681,17 @@ test("people-first empty first query continues and keeps a real shortlist from t
     phone: "+1 514 555 0142",
     linkedinUrl: "https://www.linkedin.com/in/elena-varga",
     githubUrl: "",
+    sourceUrl: "https://www.linkedin.com/in/elena-varga",
+    currentCompany: "BNPP CIB",
+    currentTitle: "Calypso Application Support",
     sourcePlatform: "Apify",
     sourceQuery: "Calypso Linux",
     matchScore: 72,
-    matchBreakdown: [],
+    matchBreakdown: seed.candidates[0].matchBreakdown,
     techStack: ["Calypso", "Linux"],
     recentActivity: "Calypso application support.",
     createdAt: "2026-09-01T12:00:00.000Z",
+    lastContactedAt: null,
     provenance: "live",
   }];
 
@@ -1690,7 +1700,7 @@ test("people-first empty first query continues and keeps a real shortlist from t
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.ok, true);
-  assert.ok(Array.isArray(body.candidates) && body.candidates.length >= 1);
+  assert.equal(body.candidates?.length, 1, JSON.stringify(body));
   assert.equal(body.candidates[0]?.email, "elena.varga@bnpp-cib.com");
   assert.ok(runnerQueries.some((row) => row.query === "Calypso Linux Python"));
   assert.ok(runnerQueries.some((row) => row.query !== "Calypso Linux Python"));

@@ -281,7 +281,7 @@ hydrate and on the Strategy tab.
 
   ## Never 0 people (product law)
 
-  Aria can **never find 0 people**. `items=0` is not a product result.
+  Aria can **never find 0 people**. items=0 is not a product result.
   0-and-stop is FAIL. A banner that stops at 0 is FAIL.
 
   Empty harvest MUST next-search until there is a real shortlist:
@@ -305,10 +305,9 @@ hydrate and on the Strategy tab.
   a banner that stops at 0. Do not invent people. Do not dress
   leftovers as the shortlist.
 
-  Pipeline sourced for **this campaign** must match the visible
-  shortlist, not a stale aggregate (the live "8 sourced" after a
-  0-person run). After leftover strip, sourced is the visible
-  people count.
+  Pipeline sourced for **this campaign** must match the visible shortlist,
+  not a stale aggregate (the live "8 sourced" after a 0-person run).
+  After leftover strip, sourced is the visible people count.
 
   If a later query returns people without email + phone + LinkedIn,
   do not keep those rows and do not mint contacts — continue to the

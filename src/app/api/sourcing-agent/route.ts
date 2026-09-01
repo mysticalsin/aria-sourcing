@@ -222,7 +222,7 @@ async function resolveApifyKeyBounded(
     return await Promise.race([
       resolveStoredApifyKey(session),
       new Promise<string | null>((resolve) => {
-        setTimeout(() => resolve(null), APIFY_KEY_RESOLVE_MS);
+        setTimeout(() => resolve(null), APIFY_KEY_RESOLVE_MS).unref?.();
       }),
     ]);
   } catch {
@@ -686,7 +686,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
     ];
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
-      const searchSignal = AbortSignal.timeout(peopleFirst ? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000);
+      const searchAbort = new AbortController();
+      const searchBudgetMs = peopleFirst ? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000;
+      const searchBudget = setTimeout(() => searchAbort.abort(), searchBudgetMs);
+      const searchSignal = searchAbort.signal;
+      try {
       const searches = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
         : peopleFirst
@@ -771,6 +775,9 @@ async function handlePost(req: NextRequest, correlationId: string) {
           "SOURCING_AGENT_UPSTREAM_FAILED",
           "Real candidate search did not complete.",
         );
+      }
+      } finally {
+        clearTimeout(searchBudget);
       }
     } else {
       if (!cloudSlug || !toolModel || !vaultKey) {
