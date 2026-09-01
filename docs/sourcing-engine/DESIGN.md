@@ -136,12 +136,18 @@ one glued word. LinkedIn boolean uses the same tokens as `"Linux" OR "Python"`,
 never one quoted Skill (Must) phrase. A stale persisted blob is repaired on
 hydrate and on the Strategy tab.
 
-- **LinkedIn is a primary source** (resumes, experience, skill-word search).
-  Aria is **not** LinkedIn-only: Apify plus other keyed sources (GitHub,
-  Talent Pool, Seamless, Sillage, Apollo) still run. GitHub `language:` is
-  only for real programming languages (Python, Shell, …).
+- **LinkedIn is a primary source** (resumes, experience, skill-word search)
+  when official partner search is connected. Official LinkedIn partner
+  search is **not wired**. Aria is **not** LinkedIn-only: Apify plus other
+  keyed sources (GitHub, Talent Pool, Seamless, Sillage, Apollo) still run.
+  GitHub `language:` is only for real programming languages (Python,
+  Shell, …). A Tavily `site:linkedin.com` web search is **not** the
+  people-first harvest and must not consume the harvest budget before
+  harvestapi finishes.
 - **Trading-platform / finance needs** (Calypso, Murex, application support)
-  put LinkedIn first, then Apify.
+  run the **wired Apify harvest first**. The LinkedIn boolean stays on the
+  plan for when official LinkedIn is connected; it is not the harvestapi
+  query and is not executed before Apify.
 - **Connect LinkedIn in the product** via official OAuth / Recruiter System
   Connect / a licensed vendor API. Fail closed without credentials. Do not
   scrape, do not automate a personal login, do not read a local LinkedIn
@@ -158,20 +164,51 @@ hydrate and on the Strategy tab.
   out) without network I/O.
 - **Live path** uses configured providers (Apollo / Sillage / Seamless / Apify
   / LinkedIn / GitHub) when their keys exist. Source next batch for
-  LinkedIn-first roles (finance / trading-platform / application support)
-  always executes the persisted LinkedIn boolean (repaired into Skill (Must)
-  tokens, never one quoted phrase) and Apify harvestapi search,
-  even when a cloud model is configured. It does not GitHub-only a Calypso
-  need and does not add GitHub steps unless the role's platforms include
-  GitHub. A cloud model may draft outreach after those searches; it cannot
+  people-first roles (finance / trading-platform / application support)
+  always runs a **recall-capable Apify harvestapi search** even when a
+  cloud model is configured. It does not GitHub-only a Calypso need and
+  does not add GitHub steps unless the role's platforms include GitHub.
+  A cloud model may draft outreach after those searches; it cannot
   replace them with `language:` blobs.
+- **Keyed people-first harvest is the product.** Empty harvest is honest,
+  not the product. When a valid Apify key is already Connected, Source
+  next batch on **Calypso Application Support** must return **real people**,
+  then a skill-match shortlist (score ≥ 60, cap ≤ 20). It must not be
+  0-or-toast. Do not invent candidates. Do not dress fixtures as live.
+
+  Harvest query (harvestapi `searchQuery`) is keywords, not a LinkedIn
+  boolean and not `title + first six Skill (Must) tokens` jammed as AND.
+  The recall shape is the distinctive platform from the need (Calypso
+  is a **need** / skill, never a person) plus two must-have skills —
+  the same shape that already works in Source via Apify
+  (`Calypso Linux Python`). People-first must emit this Apify step
+  even when the LinkedIn boolean is empty. Official LinkedIn boolean
+  stays repaired (`"Linux" OR "Python"`), never one quoted Skill (Must)
+  blob, and is not sent to harvestapi.
+
+  The agent harvest waits as long as the Source via Apify modal
+  (90s budget, harvestapi wait up to 75s, cap 90s). Short-mode
+  discovery (no headline / about / skills) cannot prove a ≥60
+  skill-match. People-first `search_candidates` uses harvestapi
+  **Full** so skills, headline, about, and positions are evidence.
+  Mapping never stamps the JD title as `currentTitle` when the
+  actor returned no headline. Positions are skill evidence.
+  Name-only and empty rows stay FAIL. The finance gate still
+  requires score ≥ 60, cap 20, and a CV citation.
+
+  Fail loud **only** when (a) the Apify key is missing or invalid, or
+  (b) harvestapi truly returned 0 profiles after a real run. A valid
+  key plus 0 people is a harvest bug (query, order, timeout, mapping,
+  or gate) — fix the harvest, do not toast **Open Access & Keys**.
+  Keyed empty harvest has no reconnect CTA. Access & Keys stays the
+  CTA when the key is missing or the harvest did not complete.
 - **Honor a valid stored harvest key.** Access & Keys is the source of truth
-  for Apify. A key with `provider === "Apify"` and `status === "valid"`
-  **is** people-first harvest. Source next batch, Run sourcing agent, and
-  Source via Apify must use it. Do not throw `MISSING_PLUGIN`. Do not ask
-  to reconnect a key that already tested valid. A Tavily key is **not**
-  LinkedIn Sourcing. HeyReach API / MCP is a **LinkedIn send** account, not
-  a people-search plugin.
+  for Apify. A key whose provider is Apify (including `Apify (sourcing)`)
+  and `status === "valid"` **is** people-first harvest. Source next batch,
+  Run sourcing agent, and Source via Apify must use it. Do not throw
+  `MISSING_PLUGIN`. Do not ask to reconnect a key that already tested
+  valid. A Tavily key is **not** LinkedIn Sourcing. HeyReach API / MCP is
+  a **LinkedIn send** account, not a people-search plugin.
 - **Integrations must show the working surface.** Merge seed cards into
   stored workspace integrations so a live tenant cannot lose the Apify
   card. The Apify card is `real: true`, reflects a valid Access & Keys
@@ -230,11 +267,14 @@ Outreach send without channel-connect + explicit approve is a contract fail.
 A valid Apify key that still throws `MISSING_PLUGIN` is a contract fail.
 A non-JSON `/api/sourcing-agent` crash (Playwright / browser-tools loaded at
 import) is a contract fail: people-first Source next batch must still run the
-keyed Apify harvest. When the sourcing agent returns an invalid response or
-the harvest does not complete, the operator gets a real next step — **Open
-Access & Keys** / Source via Apify, the path that already honors a valid
-Apify key — never a Dismiss-only wall. Do not invent candidates. connect →
-source → outreach must not stop on that toast.
+keyed Apify harvest. When the harvest does not complete (or the key is
+missing), the operator gets a real next step — **Open Access & Keys** /
+Source via Apify — never a Dismiss-only wall. When the key is already
+valid and harvestapi returned 0, do not send the operator to reconnect.
+Do not invent candidates. connect → source → outreach must not stop on
+that toast. After a real shortlist, Outlook and LinkedIn contact stay
+in-product; HeyReach drafts; send stays dry-run until channel-connect
+**and** Tony approves that send. No OAuth from a VM. No send. No merge.
 
 ## OCR
 
