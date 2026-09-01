@@ -19,6 +19,14 @@ every `open` entry at the start of each session/loop iteration. See
 Historical and current findings follow. The current consolidated audit is
 `_relay/2026-07-11-enterprise-audit.md`.
 
+## 2026-09-01 — Live empty harvest stopped after one harvestapi run
+**Severity:** correctness
+**File:** src/app/api/sourcing-agent/route.ts + src/lib/sourcing/auto-source.ts
+**Issue:** Source next batch and Auto source ran one harvest, items=0, and did not start harvest 2. In-request queue + Fly idle 60s cut the connection after the 90s poll. Mock `makeSourcingToolRunner` tests were green without a second POST. Auto source called search once.
+**Repro/evidence:** Fly `396b316`, camp_1788068519249, query `Calypso Business Analyst`. Banner/plannedHarvests>=2 with one run id.
+**Suggested fix:** one harvest per HTTP request; client/chain loops; one-step items=0 returns EMPTY
+**Status:** fixed (2b30d5f)
+
 ## 2026-07-14 — Booking and report actions returned false success
 **Severity:** correctness
 **File:** src/lib/store.ts:2957
