@@ -36,8 +36,7 @@ import {
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import {
-  emptyPeopleFirstShortlistError,
-  missingPeoplePluginsToast,
+  emptyPeopleFirstToast,
   peoplePluginFailLoudUi,
 } from "@/lib/sourcing/people-plugins";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -204,8 +203,6 @@ export default function FleetPage() {
       });
       return;
     }
-    missingPeoplePluginsToast(selectedCampaign.jobAnalysis, integrations);
-
     setSourcing(true);
     try {
       const result = await actions.sourceNextBatch(campaignId);
@@ -214,6 +211,7 @@ export default function FleetPage() {
           result.error,
           selectedCampaign.jobAnalysis,
           integrations,
+          apiKeys,
         );
         toast({
           title: failLoud
@@ -222,19 +220,24 @@ export default function FleetPage() {
               ? "Campaign is paused"
               : "Sourcing failed",
           description: failLoud?.description ?? result.error,
+          href: failLoud?.href,
+          actionLabel: failLoud?.actionLabel,
           variant: "error",
         });
         return;
       }
-      const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+      const emptyPeopleFirst = emptyPeopleFirstToast(
         selectedCampaign.jobAnalysis,
         integrations,
         result,
+        apiKeys,
       );
       if (emptyPeopleFirst) {
         toast({
-          title: "Connect LinkedIn and Apify",
-          description: emptyPeopleFirst,
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
           variant: "error",
         });
         return;

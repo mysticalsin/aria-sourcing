@@ -7,6 +7,7 @@ import {
   CONNECT_OUTLOOK_LABEL,
   linkedinConnectHref,
   needsChannelConnect,
+  needsDomainVerify,
   outlookConnectHref,
 } from "@/lib/sourcing/people-connect";
 import { hasValidApifyKey } from "@/lib/sourcing/people-plugins";
@@ -27,7 +28,8 @@ export function ConnectChannels({
 }) {
   const showChannels = needsChannelConnect(seats, integrations, apiKeys);
   const showApify = !hasValidApifyKey(apiKeys);
-  if (!showChannels && !showApify) return null;
+  const showVerify = needsDomainVerify(seats);
+  if (!showChannels && !showApify && !showVerify) return null;
 
   return (
     <div
@@ -70,6 +72,15 @@ export function ConnectChannels({
               {CONNECT_OUTLOOK_LABEL}
             </a>
           </>
+        ) : null}
+        {showVerify ? (
+          <Link
+            data-testid="cc-verify-domain"
+            href="/fleet"
+            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-ink/15 bg-surface px-4 text-sm font-semibold text-ink"
+          >
+            Verify domain
+          </Link>
         ) : null}
       </div>
     </div>

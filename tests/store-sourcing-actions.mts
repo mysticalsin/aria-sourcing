@@ -1848,7 +1848,7 @@ test("people-first Source next batch uses fixture dry-run when Apify is unkeyed"
     assert.equal(result.source, "mock");
     assert.ok(result.accepted.length >= 1);
     assert.equal(result.accepted[0]?.provenance, "synthetic");
-    assert.doesNotMatch(result.accepted[0]?.currentCompany ?? "", /live/i);
+    assert.doesNotMatch(result.accepted[0]?.currentCompany ?? "", /\blive\b/i);
   }
   assert.equal(harness.fetchCalls, 1);
   assert.match(String(harness.requests[0]?.input), /\/api\/source\/need/);

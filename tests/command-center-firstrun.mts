@@ -85,7 +85,7 @@ const commandCenterPage = readFileSync(new URL("../src/app/page.tsx", import.met
 const sourceStart = commandCenterPage.indexOf("async function handleSourceBatch()");
 const sourceAction = commandCenterPage.slice(sourceStart, commandCenterPage.indexOf("function handleGenerateReport"));
 check("Command Center Source next batch still remaps live-provider failures", /peoplePluginFailLoudUi/.test(sourceAction));
-check("Command Center Source next batch surfaces people-plugin honesty", /emptyPeopleFirstShortlistError|missingPeoplePlugins/.test(sourceAction));
+check("Command Center Source next batch surfaces people-plugin honesty", /emptyPeopleFirstToast|emptyPeopleFirstShortlistError|missingPeoplePlugins/.test(sourceAction));
 check(
   "Command Center does not wall Source next batch behind missingPeoplePlugins",
   !(/if \(missingPeoplePlugins\)/.test(sourceAction) &&
@@ -100,7 +100,11 @@ check("Command Center strip does not badge raw integration.mode as Live", !/inte
 const candidatesPage = readFileSync(new URL("../src/app/candidates/page.tsx", import.meta.url), "utf8");
 check(
   "Candidates Source next batch names LinkedIn and Apify before the agent",
-  /missingPeoplePluginsToast/.test(candidatesPage) && /ConnectChannels|cc-connect-channels/.test(candidatesPage),
+  /emptyPeopleFirstToast|peoplePluginFailLoudUi/.test(candidatesPage) && /ConnectChannels|cc-connect-channels/.test(candidatesPage),
+);
+check(
+  "Command Center fail-loud toast carries a CTA href",
+  /href: failLoud/.test(sourceAction) || /actionLabel: failLoud/.test(sourceAction),
 );
 
 console.log(`RESULT command-center-firstrun: ${pass} passed, ${fail} failed`);

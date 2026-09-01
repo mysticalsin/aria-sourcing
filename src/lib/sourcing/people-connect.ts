@@ -11,10 +11,14 @@ import type {
   OutreachMessage,
 } from "@/lib/types";
 
+function providerIsApify(provider: string): boolean {
+  return provider === "Apify" || /^apify(\b|\s|$|\()/i.test(provider);
+}
+
 export function hasValidApifyKey(
-  apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
+  apiKeys: readonly { provider: string; status: string }[] = [],
 ): boolean {
-  return apiKeys.some((key) => key.provider === "Apify" && key.status === "valid");
+  return apiKeys.some((key) => providerIsApify(key.provider) && key.status === "valid");
 }
 
 export function hasValidHeyReachKey(
@@ -36,7 +40,7 @@ export function isSyntheticRecipientEmail(email: string): boolean {
 }
 
 export const CONNECT_CHANNELS_COPY =
-  "Connect LinkedIn and Outlook in-product to search live people and send. Source next batch still runs a dry-run shortlist. Send stays dry-run until the channel is connected and you approve.";
+  "Connect LinkedIn and Outlook in-product to search live people and send. Source next batch still runs a dry-run shortlist. Email also needs Verify domain in Fleet. Send stays dry-run until the channel is connected and you approve.";
 
 export const CONNECT_LINKEDIN_LABEL = "Connect LinkedIn";
 export const CONNECT_OUTLOOK_LABEL = "Connect Outlook";
@@ -83,6 +87,26 @@ export function isOutlookMailboxConnected(seats: readonly AgentSeat[]): boolean 
   );
 }
 
+export function needsDomainVerify(seats: readonly AgentSeat[]): boolean {
+  return seats.some(
+    (seat) =>
+      MAILBOX_SEAT_PROVIDERS.has(seat.provider) &&
+      seat.mode === "live" &&
+      accountConnected(seat) &&
+      !seat.domainVerified,
+  );
+}
+
+export function isOutlookReadyToSend(seats: readonly AgentSeat[]): boolean {
+  return seats.some(
+    (seat) =>
+      MAILBOX_SEAT_PROVIDERS.has(seat.provider) &&
+      seat.mode === "live" &&
+      accountConnected(seat) &&
+      seat.domainVerified,
+  );
+}
+
 export function isLinkedInMessagingConnected(
   seats: readonly AgentSeat[],
   integrations: readonly IntegrationStatus[] = [],
@@ -120,7 +144,7 @@ export function channelReadyForLiveSend(
   integrations: readonly IntegrationStatus[] = [],
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): boolean {
-  if (channel === "Email") return isOutlookMailboxConnected(seats);
+  if (channel === "Email") return isOutlookReadyToSend(seats);
   if (channel === "LinkedIn") return isLinkedInMessagingConnected(seats, integrations, apiKeys);
   if (channel === "WhatsApp") {
     return seats.some(
@@ -141,7 +165,8 @@ export function liveMailboxSeat(seats: readonly AgentSeat[]): AgentSeat | undefi
       MAILBOX_SEAT_PROVIDERS.has(seat.provider) &&
       seat.status === "active" &&
       seat.mode === "live" &&
-      Boolean(seat.connectedAccount?.trim()),
+      Boolean(seat.connectedAccount?.trim()) &&
+      seat.domainVerified,
   );
 }
 
@@ -159,8 +184,11 @@ export function liveSendBlocker(
   }
   if (channel === "Email") {
     if (status !== "Approved") return "Only an approved message can be sent.";
-    if (!channelReadyForLiveSend("Email", seats, integrations, apiKeys)) {
+    if (!isOutlookMailboxConnected(seats)) {
       return "Connect Outlook in Fleet (Microsoft account), then Verify domain. Approval alone never sends.";
+    }
+    if (!isOutlookReadyToSend(seats)) {
+      return "Verify domain in Fleet before a live email send. Approval alone never sends.";
     }
     return null;
   }
@@ -180,4 +208,23 @@ export function liveSendBlocker(
 
 export function isConnectOrDryRunCopy(text: string): boolean {
   return /connect linkedin and outlook|dry-run shortlist/i.test(text);
+}
+
+/** A valid Access & Keys row is the working surface — mark the matching card connected. */
+export function applyHarvestKeysToIntegrations(
+  integrations: IntegrationStatus[],
+  apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
+): IntegrationStatus[] {
+  const apify = hasValidApifyKey(apiKeys);
+  const heyreach = hasValidHeyReachKey(apiKeys);
+  if (!apify && !heyreach) return integrations;
+  return integrations.map((row) => {
+    if (row.id === "int_apify" && apify) {
+      return { ...row, status: "connected" as const, errors: [] };
+    }
+    if (row.id === "int_heyreach" && heyreach) {
+      return { ...row, status: "connected" as const, errors: [] };
+    }
+    return row;
+  });
 }

@@ -837,7 +837,7 @@ export default function SettingsPage() {
                   {summary.notConfigured} not configured
                 </Badge>
               )}
-              <span className="text-xs text-muted">of {summary.total} total · mock is the safe default</span>
+              <span className="text-xs text-muted">of {summary.total} total · sample data until Live is on</span>
             </div>
 
             {integrations.length === 0 ? (

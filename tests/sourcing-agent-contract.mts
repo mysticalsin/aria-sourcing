@@ -164,7 +164,7 @@ test("campaign UI presents a completed zero-match search as information, not sou
   assert.match(action, /variant:\s*"info"/);
   assert.match(action, /peoplePluginFailLoudUi/);
   assert.match(page, /Connect LinkedIn/);
-  assert.match(action, /emptyPeopleFirstShortlistError/);
+  assert.match(action, /emptyPeopleFirstToast/);
 });
 
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
@@ -248,6 +248,8 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   assert.equal(toast?.title, "Add a valid Apify key");
   assert.match(String(toast?.description), /MISSING_PLUGIN/);
   assert.doesNotMatch(String(toast?.description), /invalid response/i);
+  assert.equal(toast?.href, "/settings");
+  assert.match(String(toast?.actionLabel), /Access & Keys/);
   assert.match(missing, /Apify/);
 
   const legacyCode = await requestReviewedSourcing(
@@ -314,8 +316,8 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
   assert.match(page, /ConnectChannels|cc-connect-channels/);
-  assert.match(batchAction, /missingPeoplePluginsToast/);
-  assert.match(batchAction, /peoplePluginFailLoudUi|emptyPeopleFirstShortlistError/);
+  assert.match(batchAction, /emptyPeopleFirstToast|peoplePluginFailLoudUi/);
+  assert.match(batchAction, /href: failLoud|href: emptyPeopleFirst/);
   assert.match(page, /visiblePeopleFirstLearningReceipts/);
   assert.match(page, /visibleFeedbackReceipts/);
 });

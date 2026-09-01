@@ -1,7 +1,6 @@
 /**
  * People-first roles (finance / trading-platform / application support) need
- * LinkedIn and/or Apify. GitHub Sourcing — even when the Settings card is
- * toggled Live while unconfigured — is not a people source.
+ * LinkedIn and/or Apify. GitHub Sourcing is not a people source.
  */
 import { roleProfile } from "@/lib/roles";
 import {
@@ -12,6 +11,12 @@ import type { ApiKey, IntegrationStatus, JobAnalysis } from "@/lib/types";
 
 export const MISSING_PEOPLE_PLUGINS_TOAST =
   "MISSING_PLUGIN: Add a valid Apify key in Access & Keys, or connect official LinkedIn. GitHub Sourcing cannot fill this people-first role.";
+
+export const EMPTY_PEOPLE_FIRST_HARVEST =
+  "People-first harvest returned 0 candidates. The search finished — no shortlist was invented.";
+
+export const PEOPLE_PLUGIN_SETTINGS_HREF = "/settings";
+export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
 
 const PEOPLE_PLUGIN_IDS = new Set(["int_apify", "int_linkedin_rsc"]);
 
@@ -49,10 +54,16 @@ export function missingPeoplePluginsToast(
 export function remapPeopleFirstSourcingError(
   error: string,
   job: JobAnalysis,
-  _integrations?: readonly IntegrationStatus[],
+  integrations?: readonly IntegrationStatus[],
+  apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): string {
   if (!isPeopleFirstRole(job)) return error;
   if (isConnectOrDryRunCopy(error)) return error;
+  const keyed = peopleSourcePluginsConnected(integrations ?? [], apiKeys);
+  if (keyed) {
+    if (error.includes("MISSING_PLUGIN")) return EMPTY_PEOPLE_FIRST_HARVEST;
+    return error;
+  }
   if (error.includes("MISSING_PLUGIN") || GENERIC_SOURCING_FAILURE.test(error)) {
     return MISSING_PEOPLE_PLUGINS_TOAST;
   }
@@ -70,23 +81,55 @@ export function isGithubOnlyEmptyBatch(input: {
   );
 }
 
+export type PeoplePluginUi = {
+  title: string;
+  description: string;
+  href: string;
+  actionLabel: string;
+};
+
+function pluginUi(title: string, description: string): PeoplePluginUi {
+  return {
+    title,
+    description,
+    href: PEOPLE_PLUGIN_SETTINGS_HREF,
+    actionLabel: PEOPLE_PLUGIN_SETTINGS_LABEL,
+  };
+}
+
 export function peoplePluginFailLoudUi(
   error: string,
   job?: JobAnalysis,
   integrations?: readonly IntegrationStatus[],
-): { title: string; description: string } | null {
+  apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
+): PeoplePluginUi | null {
   if (isConnectOrDryRunCopy(error)) return null;
-  const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations) : error;
+  const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
+  if (remapped === EMPTY_PEOPLE_FIRST_HARVEST || /0 candidates|empty harvest|0 profiles/i.test(remapped)) {
+    return pluginUi("No shortlist from this harvest", remapped);
+  }
   if (
     !remapped.includes("MISSING_PLUGIN") &&
-    !/Connect LinkedIn and Apify/i.test(remapped)
+    !/Connect LinkedIn and Apify/i.test(remapped) &&
+    !/Add a valid Apify key/i.test(remapped)
   ) {
     return null;
   }
-  return {
-    title: "Add a valid Apify key",
-    description: remapped.includes("MISSING_PLUGIN") ? remapped : MISSING_PEOPLE_PLUGINS_TOAST,
-  };
+  return pluginUi("Add a valid Apify key", remapped.includes("MISSING_PLUGIN") ? remapped : MISSING_PEOPLE_PLUGINS_TOAST);
+}
+
+export function emptyPeopleFirstToast(
+  job: JobAnalysis,
+  integrations: readonly IntegrationStatus[],
+  result: { accepted: { length: number }; source?: string },
+  apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
+): PeoplePluginUi | null {
+  const description = emptyPeopleFirstShortlistError(job, integrations, result, apiKeys);
+  if (!description) return null;
+  if (peopleSourcePluginsConnected(integrations, apiKeys)) {
+    return pluginUi("No shortlist from this harvest", description);
+  }
+  return pluginUi("Add a valid Apify key", description);
 }
 
 /**
@@ -148,6 +191,9 @@ export function emptyPeopleFirstShortlistError(
 ): string | null {
   if (result.accepted.length > 0 || !isPeopleFirstRole(job)) return null;
   if (result.source === "mock") return null;
+  if (peopleSourcePluginsConnected(integrations, apiKeys)) {
+    return EMPTY_PEOPLE_FIRST_HARVEST;
+  }
   if (result.source === "github" || missingPeoplePluginsToast(job, integrations, apiKeys)) {
     return MISSING_PEOPLE_PLUGINS_TOAST;
   }

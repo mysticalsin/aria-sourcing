@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Card, CardContent, Eyebrow, Badge, Select, Button, Field, useToast } from "@/components/ui";
-import { useCampaigns, useCandidates, useActions } from "@/lib/store";
+import { useCampaigns, useCandidates, useActions, useApiKeys } from "@/lib/store";
+import { hasValidHeyReachKey } from "@/lib/sourcing/people-plugins";
 import {
   OUTREACH_TONES,
   OUTREACH_CHANNELS,
@@ -17,7 +18,9 @@ export function QuickDraft() {
   const candidates = useCandidates();
   const campaigns = useCampaigns();
   const actions = useActions();
+  const apiKeys = useApiKeys();
   const { toast } = useToast();
+  const heyReachSender = hasValidHeyReachKey(apiKeys);
 
   const [candidateId, setCandidateId] = React.useState("");
   const [tone, setTone] = React.useState<OutreachTone>("Casual Professional");
@@ -127,6 +130,13 @@ export function QuickDraft() {
             />
           </Field>
         </div>
+        {channel === "LinkedIn" ? (
+          <p data-testid="heyreach-sender" className="mt-3 text-sm text-ink">
+            {heyReachSender
+              ? "Sender: HeyReach (connected). Drafts stay dry-run until you approve."
+              : "Connect HeyReach in Access & Keys to use it as the LinkedIn send account. Drafts stay dry-run until you approve."}
+          </p>
+        ) : null}
 
         {/* CTA */}
         <div className="mt-5 flex flex-wrap items-center gap-3">

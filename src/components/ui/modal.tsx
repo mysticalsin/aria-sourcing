@@ -57,7 +57,7 @@ export function Modal({
       const panel = panelRef.current;
       if (!panel) return;
       const preferred = panel.querySelector<HTMLElement>(
-        "input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
+        "[data-autofocus], input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
       );
       (preferred ?? panel.querySelector<HTMLElement>("button, [href]"))?.focus();
     }, 30);

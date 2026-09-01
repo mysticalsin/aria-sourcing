@@ -1,13 +1,18 @@
 import { readFileSync } from "node:fs";
 import { defaultIntegrations, defaultLiveIntegrations, mergeSeedIntegrations, testConnection } from "../src/lib/integrations";
 import {
+  EMPTY_PEOPLE_FIRST_HARVEST,
+  MISSING_PEOPLE_PLUGINS_TOAST,
+  emptyPeopleFirstShortlistError,
   hasValidApifyKey,
   integrationShowsLive,
   missingPeoplePluginsToast,
+  peoplePluginFailLoudUi,
   peopleSourcePluginsConnected,
   visiblePeopleFirstLearningReceipts,
 } from "../src/lib/sourcing/people-plugins";
 import {
+  applyHarvestKeysToIntegrations,
   isSyntheticRecipientEmail,
   liveSendBlocker,
 } from "../src/lib/sourcing/people-connect";
@@ -271,6 +276,67 @@ ok(
   "Apify and LinkedIn cards route to Access & Keys or Fleet, not a generic API-key dead-end",
   /Access & Keys/.test(settingsCard) && /Connect in Fleet/.test(settingsCard) && /Connect Microsoft account/.test(settingsCard),
 );
+ok(
+  "valid Apify key never asks to reconnect via MISSING_PLUGIN on an empty harvest",
+  emptyPeopleFirstShortlistError(
+    calypsoJob,
+    liveTenant,
+    { accepted: { length: 0 }, source: "github" },
+    [{ provider: "Apify", status: "valid" }],
+  ) === EMPTY_PEOPLE_FIRST_HARVEST,
+);
+ok(
+  "fail-loud toast always carries a Settings CTA",
+  peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.href === "/settings" &&
+    Boolean(peoplePluginFailLoudUi(MISSING_PEOPLE_PLUGINS_TOAST, calypsoJob, liveTenant)?.actionLabel),
+);
+ok(
+  "valid Apify key marks the Integrations Apify card connected",
+  applyHarvestKeysToIntegrations(liveTenant, [{ provider: "Apify", status: "valid" }]).some(
+    (row) => row.id === "int_apify" && row.status === "connected",
+  ),
+);
+ok(
+  "Apify (sourcing) label on a valid key still counts as harvest",
+  hasValidApifyKey([{ provider: "Apify (sourcing)", status: "valid" }]),
+);
+const toastSource = readFileSync(new URL("../src/components/ui/toast.tsx", import.meta.url), "utf8");
+ok("toast can render a CTA button", /toast-cta/.test(toastSource) && /actionLabel/.test(toastSource));
+ok(
+  "Apify query field asks the modal to keep focus",
+  /data-autofocus/.test(apifyDialog),
+);
+const connectedUnverified = [
+  {
+    id: "seat_maya",
+    name: "Maya",
+    operatorEmail: "maya@amaris.com",
+    provider: "Microsoft Graph",
+    status: "active",
+    mode: "live",
+    domainVerified: false,
+    dailyLimit: 40,
+    warmup: true,
+    warmupStartCap: 12,
+    warmupStepPerDay: 4,
+    warmupStartedAt: "",
+    minGapMinutes: 12,
+    sendWindow: { timezone: "CET", days: [1, 2, 3, 4, 5], startHour: 8, endHour: 18 },
+    sentToday: 0,
+    lastSendAt: null,
+    health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+    persona: "",
+    signature: "",
+    connectedAccount: "maya@amaris.com",
+    createdAt: "",
+  },
+];
+ok(
+  "connected Outlook without Verify domain cannot send",
+  /Verify domain/.test(liveSendBlocker("Email", "Approved", connectedUnverified, [], [], "maya.rivera@amaris.com") ?? ""),
+);
+const quickDraft = readFileSync(new URL("../src/components/outreach/quick-draft.tsx", import.meta.url), "utf8");
+ok("LinkedIn drafter surfaces HeyReach as the send account", /heyreach-sender/.test(quickDraft) && /HeyReach/.test(quickDraft));
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

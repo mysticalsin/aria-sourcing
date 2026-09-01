@@ -45,8 +45,7 @@ import {
   useSeats,
 } from "@/lib/store";
 import {
-  emptyPeopleFirstShortlistError,
-  missingPeoplePluginsToast,
+  emptyPeopleFirstToast,
   peoplePluginFailLoudUi,
 } from "@/lib/sourcing/people-plugins";
 import { funnelForCandidates } from "@/lib/metrics";
@@ -87,10 +86,6 @@ export default function DashboardPage() {
   const integrations = useIntegrations();
   const apiKeys = useApiKeys();
   const seats = useSeats();
-  const missingPeoplePlugins = activeCampaign
-    ? missingPeoplePluginsToast(activeCampaign.jobAnalysis, integrations, apiKeys)
-    : null;
-
   const unrepliedCount = React.useMemo(
     () => replies.filter((r) => !r.handled).length,
     [replies],
@@ -196,6 +191,7 @@ export default function DashboardPage() {
         result.error,
         activeCampaign.jobAnalysis,
         integrations,
+        apiKeys,
       );
       toast({
         title: failLoud
@@ -204,19 +200,24 @@ export default function DashboardPage() {
             ? "Campaign is paused"
             : "Sourcing failed",
         description: failLoud?.description ?? result.error,
+        href: failLoud?.href,
+        actionLabel: failLoud?.actionLabel,
         variant: "error",
       });
       return;
     }
-    const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+    const emptyPeopleFirst = emptyPeopleFirstToast(
       activeCampaign.jobAnalysis,
       integrations,
       result,
+      apiKeys,
     );
     if (emptyPeopleFirst) {
       toast({
-        title: "Connect LinkedIn and Apify",
-        description: emptyPeopleFirst,
+        title: emptyPeopleFirst.title,
+        description: emptyPeopleFirst.description,
+        href: emptyPeopleFirst.href,
+        actionLabel: emptyPeopleFirst.actionLabel,
         variant: "error",
       });
       return;

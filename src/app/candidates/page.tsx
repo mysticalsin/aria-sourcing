@@ -22,8 +22,7 @@ import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useApiKeys, useCandidates, useHydrated, useIntegrations, useSeats } from "@/lib/store";
 import {
-  emptyPeopleFirstShortlistError,
-  missingPeoplePluginsToast,
+  emptyPeopleFirstToast,
   peoplePluginFailLoudUi,
 } from "@/lib/sourcing/people-plugins";
 import { corpusServerReadEnabled } from "@/lib/supabase/config";
@@ -308,7 +307,6 @@ function CandidatesView() {
       });
       return;
     }
-    missingPeoplePluginsToast(activeCampaign.jobAnalysis, integrations, apiKeys);
     setSourcing(true);
     const res = await actions.sourceNextBatch(activeCampaign.id);
     setSourcing(false);
@@ -317,6 +315,7 @@ function CandidatesView() {
         res.error,
         activeCampaign.jobAnalysis,
         integrations,
+        apiKeys,
       );
       toast({
         title: failLoud
@@ -325,19 +324,24 @@ function CandidatesView() {
             ? "Campaign is paused"
             : "Sourcing failed",
         description: failLoud?.description ?? res.error,
+        href: failLoud?.href,
+        actionLabel: failLoud?.actionLabel,
         variant: "error",
       });
       return;
     }
-    const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+    const emptyPeopleFirst = emptyPeopleFirstToast(
       activeCampaign.jobAnalysis,
       integrations,
       res,
+      apiKeys,
     );
     if (emptyPeopleFirst) {
       toast({
-        title: "Connect LinkedIn and Apify",
-        description: emptyPeopleFirst,
+        title: emptyPeopleFirst.title,
+        description: emptyPeopleFirst.description,
+        href: emptyPeopleFirst.href,
+        actionLabel: emptyPeopleFirst.actionLabel,
         variant: "error",
       });
       return;

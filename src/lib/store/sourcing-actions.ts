@@ -733,6 +733,7 @@ export function createSourcingActions({
               reviewed.error,
               campaignForError.jobAnalysis,
               latestForError.integrations,
+              latestForError.apiKeys,
             )
           : reviewed.error,
         source: "unavailable",
@@ -921,6 +922,7 @@ export function createSourcingActions({
         reviewed.value.feedbackReceipts,
         latestCampaign.jobAnalysis,
         latest.integrations,
+        latest.apiKeys,
       ),
     };
   };

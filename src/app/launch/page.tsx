@@ -19,7 +19,7 @@ import { parseIntakeLive } from "@/lib/ai/intake";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import type { ParsedIntake } from "@/lib/mock-ai";
 import { SAMPLE_LAUNCH_BRIEF } from "@/lib/launch/sample-brief";
-import { useActions, useHydrated, useIntegrations, useSettings } from "@/lib/store";
+import { useActions, useApiKeys, useHydrated, useIntegrations, useSettings } from "@/lib/store";
 import { peoplePluginFailLoudUi } from "@/lib/sourcing/people-plugins";
 import {
   summarizeCampaignLaunch,
@@ -75,6 +75,7 @@ export default function LaunchPage() {
   const { toast } = useToast();
   const actions = useActions();
   const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
   const settings = useSettings();
 
   const [raw, setRaw] = React.useState("");
@@ -123,11 +124,14 @@ export default function LaunchPage() {
           sourceResult.error,
           parsed.jobAnalysis,
           integrations,
+          apiKeys,
         );
         if (failLoud) {
           toast({
             title: failLoud.title,
             description: failLoud.description,
+            href: failLoud.href,
+            actionLabel: failLoud.actionLabel,
             variant: "error",
           });
         }

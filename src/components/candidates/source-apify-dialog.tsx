@@ -70,7 +70,7 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
   if (!can(role, "source")) return null;
   if (!apiKeys.some((k) => k.provider === "Apify")) return null;
 
-  function resetAndClose() {
+  const resetAndClose = React.useCallback(() => {
     clearPoll();
     setSearchQuery("");
     setLocations("");
@@ -84,7 +84,7 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     setPolling(null);
     setSearchError(null);
     setOpen(false);
-  }
+  }, [clearPoll]);
 
   async function poll(runId: string, datasetId: string, query: string) {
     if (Date.now() - pollStartedAt.current > POLL_TIMEOUT_MS) {
@@ -163,6 +163,7 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     }
     pollStartedAt.current = Date.now();
     setPolling({ runId: res.runId, datasetId: res.datasetId, label });
+    void poll(res.runId, res.datasetId, label);
     pollTimer.current = setInterval(() => void poll(res.runId, res.datasetId, label), POLL_INTERVAL_MS);
   }
 
@@ -227,6 +228,7 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
                 id={`${idBase}-query`}
                 ref={queryInputRef}
                 autoFocus
+                data-autofocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="e.g. Staff Engineer Kubernetes"

@@ -1,4 +1,5 @@
 import { defaultIntegrations, mergeSeedIntegrations } from "../integrations";
+import { applyHarvestKeysToIntegrations } from "../sourcing/people-connect";
 import { repairGithubQueries } from "../sourcing/github-search-language";
 import { repairLinkedinBoolean } from "../sourcing/linkedin-boolean";
 import { tokenizeMustHaveSkills } from "../sourcing/vss-need";
@@ -64,7 +65,10 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
     // the current seed. Roadmap placeholders (`real: false`) also lose any older
     // fabricated connected/lastSync state; real cards keep their usage history.
-    integrations: mergeSeedIntegrations(parsed.integrations ?? defaultIntegrations()),
+    integrations: applyHarvestKeysToIntegrations(
+      mergeSeedIntegrations(parsed.integrations ?? defaultIntegrations()),
+      parsed.apiKeys ?? [],
+    ),
     activities: parsed.activities ?? [],
     activeCampaignId: parsed.activeCampaignId ?? null,
     apiKeys: parsed.apiKeys ?? [],
@@ -122,7 +126,10 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
     campaigns: (parsed.campaigns ?? []).map(repairCampaignSkillQueries),
     wins: parsed.wins ?? [],
     settings: withoutLegacyIntegrationAuthority(parsed.settings),
-    integrations: mergeSeedIntegrations(parsed.integrations ?? []),
+    integrations: applyHarvestKeysToIntegrations(
+      mergeSeedIntegrations(parsed.integrations ?? []),
+      parsed.apiKeys ?? [],
+    ),
   };
 }
 

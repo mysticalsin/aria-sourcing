@@ -114,7 +114,7 @@ export function mapFixtureApiRowToCandidate(
     email: fixtureEmail(name),
     avatarInitials: initials(name),
     currentTitle: campaign.jobAnalysis.title,
-    currentCompany: "Fixture desk (not live)",
+    currentCompany: "Fixture desk (dry-run)",
     location: campaign.jobAnalysis.location || campaign.jobAnalysis.regions[0] || "",
     timezone: campaign.jobAnalysis.timezone,
     linkedinUrl: "",

@@ -69,8 +69,7 @@ import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import {
-  emptyPeopleFirstShortlistError,
-  missingPeoplePluginsToast,
+  emptyPeopleFirstToast,
   peoplePluginFailLoudUi,
   visiblePeopleFirstLearningReceipts,
 } from "@/lib/sourcing/people-plugins";
@@ -413,6 +412,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                     mergeSourcingFeedbackReceipts(current.receipts, receipts),
                     campaign.jobAnalysis,
                     integrations,
+                    apiKeys,
                   )
                 : mergeSourcingFeedbackReceipts(current.receipts, receipts),
             }
@@ -466,6 +466,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     feedbackReceipts,
     c.jobAnalysis,
     integrations,
+    apiKeys,
   );
   const health = campaignHealth(c);
   const nextAction = nextActionForCampaign(c);
@@ -547,7 +548,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.sourceNextBatch(c.id);
     setSourcing(false);
     if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations);
+      const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations, apiKeys);
       toast({
         title: failLoud
           ? failLoud.title
@@ -555,6 +556,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             ? "Campaign is paused"
             : "Sourcing failed",
         description: failLoud?.description ?? res.error,
+        href: failLoud?.href,
+        actionLabel: failLoud?.actionLabel,
         variant: "error",
       });
       return;
@@ -570,6 +573,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               ),
               c.jobAnalysis,
               integrations,
+              apiKeys,
             ),
           }
         : current,
@@ -581,11 +585,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     setSourceBatchKey((k) => k + 1);
     if (res.accepted.length > 0) setTab("candidates");
     const isLive = res.source === "github" || res.source === "web";
-    const emptyPeopleFirst = emptyPeopleFirstShortlistError(c.jobAnalysis, integrations, res);
+    const emptyPeopleFirst = emptyPeopleFirstToast(c.jobAnalysis, integrations, res, apiKeys);
     if (emptyPeopleFirst) {
       toast({
-        title: "Connect LinkedIn and Apify",
-        description: emptyPeopleFirst,
+        title: emptyPeopleFirst.title,
+        description: emptyPeopleFirst.description,
+        href: emptyPeopleFirst.href,
+        actionLabel: emptyPeopleFirst.actionLabel,
         variant: "error",
       });
       return;
@@ -642,10 +648,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.runSourcingAgent(campaignId);
     setAgentRunning(false);
     if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(res.error ?? "", c.jobAnalysis, integrations);
+      const failLoud = peoplePluginFailLoudUi(res.error ?? "", c.jobAnalysis, integrations, apiKeys);
       toast({
         title: failLoud ? failLoud.title : "Sourcing agent didn't run",
         description: failLoud?.description ?? res.error,
+        href: failLoud?.href,
+        actionLabel: failLoud?.actionLabel,
         variant: "error",
       });
       return;
@@ -661,23 +669,27 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               ),
               c.jobAnalysis,
               integrations,
+              apiKeys,
             ),
           }
         : current,
     );
     if (res.added === 0) {
-      const emptyPeopleFirst = emptyPeopleFirstShortlistError(
+      const emptyPeopleFirst = emptyPeopleFirstToast(
         c.jobAnalysis,
         integrations,
         {
           accepted: { length: 0 },
-          source: res.mode === "deterministic" ? "github" : undefined,
+          source: res.mode === "fixture" ? "mock" : res.mode === "deterministic" ? "github" : undefined,
         },
+        apiKeys,
       );
       if (emptyPeopleFirst) {
         toast({
-          title: "Connect LinkedIn and Apify",
-          description: emptyPeopleFirst,
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
           variant: "error",
         });
         return;
@@ -988,7 +1000,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
           <div className="flex min-w-0 flex-col items-stretch gap-2 lg:max-w-[55%] lg:items-end">
             <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
-            {missingPeoplePluginsToast(c.jobAnalysis, integrations, apiKeys) ? null : null}
             <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
             <Button
               variant="secondary"

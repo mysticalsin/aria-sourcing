@@ -15,7 +15,7 @@ import {
   Field,
   useToast,
 } from "@/components/ui";
-import { useActions, useActiveCampaign, useIntegrations } from "@/lib/store";
+import { useActions, useActiveCampaign, useApiKeys, useIntegrations } from "@/lib/store";
 import {
   MISSING_PEOPLE_PLUGINS_TOAST,
   githubLiveAllowed,
@@ -60,6 +60,7 @@ const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
 export function IntegrationCard({ integration }: { integration: IntegrationStatus }) {
   const actions = useActions();
   const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
   const activeCampaign = useActiveCampaign();
   const router = useRouter();
   const { toast } = useToast();
@@ -84,6 +85,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     integration,
     integrations,
     activeCampaign?.jobAnalysis,
+    apiKeys,
   );
   const connected = integration.status === "connected";
   const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
@@ -126,11 +128,13 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     if (
       nextMode === "live" &&
       integration.id === "int_github" &&
-      !githubLiveAllowed(integrations, activeCampaign?.jobAnalysis)
+      !githubLiveAllowed(integrations, activeCampaign?.jobAnalysis, apiKeys)
     ) {
       toast({
-        title: "Connect LinkedIn and Apify",
+        title: "Add a valid Apify key",
         description: MISSING_PEOPLE_PLUGINS_TOAST,
+        href: "/settings",
+        actionLabel: "Open Access & Keys",
         variant: "error",
       });
       return;
@@ -141,7 +145,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
       description:
         nextMode === "live"
           ? "Live mode active: outreach routes through these credentials once the sending domain is verified."
-          : "Mock mode is the safe default. No real calls are made.",
+          : "Sample data until Live is on. No real calls are made.",
       variant: nextMode === "live" ? "warning" : "info",
     });
   }

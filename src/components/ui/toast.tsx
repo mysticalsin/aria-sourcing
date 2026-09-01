@@ -1,20 +1,31 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, AlertTriangle, Info, XCircle, X } from "lucide-react";
 
 type ToastVariant = "success" | "error" | "info" | "warning";
+
+export type ToastInput = {
+  title: string;
+  description?: string;
+  variant?: ToastVariant;
+  href?: string;
+  actionLabel?: string;
+};
 
 interface Toast {
   id: number;
   title: string;
   description?: string;
   variant: ToastVariant;
+  href?: string;
+  actionLabel?: string;
 }
 
 interface ToastContextValue {
-  toast: (t: { title: string; description?: string; variant?: ToastVariant }) => void;
+  toast: (t: ToastInput) => void;
 }
 
 const ToastContext = React.createContext<ToastContextValue | null>(null);
@@ -36,12 +47,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toast = React.useCallback(
-    (t: { title: string; description?: string; variant?: ToastVariant }) => {
+    (t: ToastInput) => {
       counter += 1;
       const id = counter;
-      const next: Toast = { id, title: t.title, description: t.description, variant: t.variant ?? "info" };
+      const next: Toast = {
+        id,
+        title: t.title,
+        description: t.description,
+        variant: t.variant ?? "info",
+        href: t.href,
+        actionLabel: t.actionLabel,
+      };
       setToasts((prev) => [...prev, next]);
-      window.setTimeout(() => remove(id), 4600);
+      window.setTimeout(() => remove(id), t.href ? 10_000 : 4600);
     },
     [remove],
   );
@@ -66,6 +84,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-ink">{t.title}</p>
               {t.description && <p className="mt-0.5 text-sm text-muted">{t.description}</p>}
+              {t.href && t.actionLabel ? (
+                <Link
+                  data-testid="toast-cta"
+                  href={t.href}
+                  className="mt-2 inline-flex h-8 items-center rounded-full bg-ink px-3 text-xs font-semibold text-paper"
+                >
+                  {t.actionLabel}
+                </Link>
+              ) : null}
             </div>
             <button
               onClick={() => remove(t.id)}

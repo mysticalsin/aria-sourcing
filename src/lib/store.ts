@@ -64,10 +64,12 @@ import {
 import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
 import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
 import {
+  EMPTY_PEOPLE_FIRST_HARVEST,
   MISSING_PEOPLE_PLUGINS_TOAST,
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
   missingPeoplePluginsToast,
+  peopleSourcePluginsConnected,
   remapPeopleFirstSourcingError,
   visiblePeopleFirstLearningReceipts,
 } from "./sourcing/people-plugins";
@@ -1677,6 +1679,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             reviewed.error,
             campaign.jobAnalysis,
             s.integrations,
+            s.apiKeys,
           ),
         };
       }
@@ -1684,7 +1687,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         isPeopleFirstRole(campaign.jobAnalysis) &&
         isGithubOnlyEmptyBatch(reviewed.value)
       ) {
-        return { ok: false, added: 0, error: MISSING_PEOPLE_PLUGINS_TOAST };
+        return {
+          ok: false,
+          added: 0,
+          error: peopleSourcePluginsConnected(s.integrations, s.apiKeys)
+            ? EMPTY_PEOPLE_FIRST_HARVEST
+            : MISSING_PEOPLE_PLUGINS_TOAST,
+        };
       }
       const out = reviewed.value;
       const executionMode = out.mode;
