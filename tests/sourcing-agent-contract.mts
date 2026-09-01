@@ -208,7 +208,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const client = readFileSync(new URL("../src/lib/sourcing/sourcing-agent-client.ts", import.meta.url), "utf8");
   const actions = readFileSync(new URL("../src/lib/store/sourcing-actions.ts", import.meta.url), "utf8");
   assert.match(harvest, /process\.stdout\.write/);
-  assert.doesNotMatch(harvest, /console\.info/);
+  assert.doesNotMatch(harvest, /console\.(info|log|debug)\(/);
   assert.match(harvest, /PEOPLE_FIRST_CLIENT_WAIT_MS = 90_000/);
   assert.match(harvest, /PEOPLE_FIRST_HARVEST_ABORTED/);
   assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);

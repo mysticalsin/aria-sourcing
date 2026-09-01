@@ -77,7 +77,7 @@ function sanitizeHarvestPayload(payload: Record<string, unknown>): Record<string
   return out;
 }
 
-/** Same channel as sourcing_loop_tick: JSON on process.stdout. Never console.info. */
+/** Same channel as sourcing_loop_tick: JSON on process.stdout, not Next console. */
 export function writeAriaHarvestStdout(payload: Record<string, unknown>): void {
   const line = `${JSON.stringify({
     event: ARIA_HARVEST_EVENT,
