@@ -12,10 +12,10 @@ status: pr-open-coding-gates
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** (not merged)
 - Leftover **PR #53 OPEN**. Do not touch. Do not merge
-- Feature tip / HEAD: **`7cfb52f`** — harvest `ok:false` reaches evidence codes
+- Feature tip: **`7cfb52f`** — harvest `ok:false` reaches evidence codes
 - Prior harvest ship: `c328724` (start/poll/one fail), tests `71d03fd` `29abeeb`
 - Local gate green on `7cfb52f`: `npx tsc --noEmit && npx tsc -p tsconfig.tests.json --pretty false && npm test`
-- READY TO MERGE stays **no**. Devon Path-B deploys `7cfb52f` and pings SHA when live harvest is not 0-or-15-zero-rows
+- READY TO MERGE stays **no**. Devon Path-B deploys PR 54 tip (must include `7cfb52f`) and pings SHA when live harvest is not 0-or-15-zero-rows
 - Polo parked. Calypso is a **need**. No OAuth. No send. No merge. No Vercel
 
 ## Done this shift
@@ -35,7 +35,7 @@ status: pr-open-coding-gates
 ## Next steps
 
 ```bash
-# Devon: Path B deploy of PR 54 tip 7cfb52f onto aria-mantu-app
+# Devon: Path B deploy of PR 54 tip (must include 7cfb52f) onto aria-mantu-app
 # Grep the WEB process for [aria-harvest] (not loop claimed:0)
 # Ping Ultron with the SHA when Calypso Application Support Source next batch is not 0-or-15-zero-rows
 # This VM: coding gates only. Do not merge PR 53 or 54
