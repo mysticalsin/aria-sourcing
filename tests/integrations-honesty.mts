@@ -19,10 +19,19 @@ import {
 } from "../src/lib/sourcing/people-plugins";
 import {
   applyHarvestKeysToIntegrations,
+  CONNECT_CHANNELS_COPY,
+  hasLiveApifyHarvest,
   isSyntheticRecipientEmail,
   liveSendBlocker,
   workspaceApifyIsMock,
 } from "../src/lib/sourcing/people-connect";
+import {
+  FIXTURE_NOT_ON_LIVE,
+  FIXTURE_NOT_ON_LIVE_TOAST,
+  isLabFixtureCandidate,
+  stripLabFixturePeople,
+} from "../src/lib/sourcing/lab-fixture-people";
+import { buildSeedState } from "../src/lib/seed";
 import type { JobAnalysis } from "../src/lib/types";
 
 let pass = 0, fail = 0;
@@ -184,6 +193,57 @@ ok(
 ok(
   "mergeSeedIntegrations restores a missing Apify card",
   mergeSeedIntegrations(liveTenant.filter((row) => row.id !== "int_apify")).some((row) => row.id === "int_apify" && row.real),
+);
+ok(
+  "Apify (LinkedIn profile search) is not a LinkedIn partner-search concept card",
+  apify != null && !isLinkedInSourcingCard(apify) && apify.real === true,
+);
+const demotedApify = mergeSeedIntegrations([
+  {
+    id: "int_apify",
+    name: "Apify (LinkedIn profile search)",
+    category: "Sourcing" as const,
+    description: "old",
+    status: "connected" as const,
+    mode: "mock" as const,
+    lastSync: null,
+    errors: [],
+    real: false,
+  },
+]);
+const repairedApify = demotedApify.find((row) => row.id === "int_apify");
+ok(
+  "merge seed cannot demote Apify to Concept — leftover mock from Concept is Live",
+  repairedApify?.real === true &&
+    repairedApify.mode === "live" &&
+    repairedApify.setupHref === "/settings",
+);
+const conceptPlusKey = applyHarvestKeysToIntegrations(
+  [
+    {
+      id: "int_apify",
+      name: "Apify (LinkedIn profile search)",
+      category: "Sourcing",
+      description: "old",
+      status: "connected",
+      mode: "mock",
+      lastSync: null,
+      errors: [],
+      real: false,
+    },
+  ],
+  [{ provider: "Apify", status: "valid" }],
+);
+ok(
+  "valid stored Apify key on a Concept card is harvest, not Mock",
+  conceptPlusKey.some((row) => row.id === "int_apify" && row.real && row.mode === "live" && row.status === "connected") &&
+    hasLiveApifyHarvest(conceptPlusKey, [{ provider: "Apify", status: "valid" }]) &&
+    !workspaceApifyIsMock({ integrations: conceptPlusKey }),
+);
+ok(
+  "operator Mock on a real card stays Mock even with a valid key",
+  workspaceApifyIsMock({ integrations: liveTenant }) &&
+    !hasLiveApifyHarvest(liveTenant, [{ provider: "Apify", status: "valid" }]),
 );
 ok(
   "synthetic example.com addresses cannot be sent",
@@ -564,6 +624,68 @@ ok(
     /not partner search/.test(design) &&
     /not a fake Live(?:\/Connected)? send account/.test(design) &&
     /Dismiss-only/.test(design),
+);
+ok(
+  "DESIGN forbids fixture hydration on Fly and does not promise a dry-run matcher",
+  /FIXTURE_NOT_ON_LIVE/.test(design) &&
+    /must not/.test(design) &&
+    /sourceEngineFixtureCandidates/.test(design) &&
+    !/still runs a dry-run\s+fixture matcher/.test(design) &&
+    /PEOPLE_FIRST_HARVEST_MOCK/.test(design) &&
+    /audit row/.test(design),
+);
+ok(
+  "DESIGN pins Apify as a real Live-switch card; Concept + valid key is harvest",
+  /isLinkedInSourcingCard/.test(design) &&
+    /excludes Apify/.test(design) &&
+    /Live mode switch/.test(design) &&
+    /Concept/.test(design) &&
+    /apifyKeyPresent/.test(design) &&
+    /harvestapi Full/.test(design),
+);
+ok(
+  "Connect copy no longer promises a dry-run shortlist on live",
+  /lab fixtures are not LinkedIn/.test(CONNECT_CHANNELS_COPY) &&
+    !/dry-run shortlist/.test(CONNECT_CHANNELS_COPY),
+);
+
+const seed = buildSeedState();
+const livePerson = {
+  ...seed.candidates[0],
+  id: "cand_live_calypso",
+  email: "maya.rivera@amaris.com",
+  provenance: "live" as const,
+};
+const fixturePerson = {
+  ...seed.candidates[0],
+  id: "cand_fixture_lab",
+  email: "elena@fixture.example",
+  provenance: "synthetic" as const,
+  linkedinUrl: "https://www.linkedin.com/in/elena-fixture",
+};
+const dirty = {
+  ...seed,
+  candidates: [livePerson, fixturePerson],
+  outreach: seed.outreach.filter((message) => message.candidateId === seed.candidates[0]?.id).map((message) => ({
+    ...message,
+    candidateId: "cand_fixture_lab",
+  })),
+};
+const cleaned = stripLabFixturePeople(dirty);
+ok("lab fixture email is not a live person", isLabFixtureCandidate(fixturePerson));
+ok("empty-email live harvest row is not a lab fixture", !isLabFixtureCandidate({ email: "", provenance: "live" }));
+ok(
+  "strip removes @fixture.example people from a live campaign snapshot",
+  cleaned.removedIds.includes("cand_fixture_lab") &&
+    cleaned.state.candidates.every((candidate) => candidate.id !== "cand_fixture_lab") &&
+    cleaned.state.candidates.some((candidate) => candidate.id === "cand_live_calypso") &&
+    cleaned.state.outreach.every((message) => message.candidateId !== "cand_fixture_lab"),
+);
+ok(
+  "fixture deny toast is Connect Apify / switch to Live",
+  FIXTURE_NOT_ON_LIVE === "FIXTURE_NOT_ON_LIVE" &&
+    /Connect a real Apify key/.test(FIXTURE_NOT_ON_LIVE_TOAST) &&
+    /Live/.test(FIXTURE_NOT_ON_LIVE_TOAST),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

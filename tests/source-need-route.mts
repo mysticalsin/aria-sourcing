@@ -101,5 +101,19 @@ const liveBody = (await live.json()) as { ok?: boolean; code?: string; paths?: s
 ok("live mode without provider keys fail-closes", live.status === 503 && liveBody.code === "PROVIDER_NOT_CONFIGURED");
 ok("live fail-closed returns three paths", liveBody.paths?.length === 3);
 
+const needRouteSource = readFileSync(
+  new URL("../src/app/api/source/need/route.ts", import.meta.url),
+  "utf8",
+);
+ok(
+  "Fly/live workspace refuses fixture mode before the matcher runs",
+  needRouteSource.includes("FIXTURE_NOT_ON_LIVE") &&
+    needRouteSource.includes('mode === "fixture" && supabaseEnabled'),
+);
+ok(
+  "Fly fixture deny does not tell the operator to run mode=fixture",
+  !/Run mode=fixture/.test(needRouteSource),
+);
+
 console.log(`RESULT source-need-route: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

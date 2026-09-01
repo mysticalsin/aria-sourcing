@@ -91,7 +91,7 @@ let requestedCloudProvider = "";
 let requestedCloudModel = "";
 let storedTavilyKey: string | null = null;
 let storedApifyKey: string | null = null;
-let workspaceIntegrations: Array<{ id: string; mode: string }> = [];
+let workspaceIntegrations: Array<{ id: string; mode: string; real?: boolean }> = [];
 let runnerHarvest: {
   started: boolean;
   status: string;
@@ -584,7 +584,7 @@ test("Mock Apify card logs PEOPLE_FIRST_HARVEST_MOCK after request_entry, not SO
       industryExperience: ["Fintech"],
     },
   };
-  workspaceIntegrations = [{ id: "int_apify", mode: "mock" }];
+  workspaceIntegrations = [{ id: "int_apify", mode: "mock", real: true }];
   storedApifyKey = "apify_api_should_not_decrypt_on_mock";
   const chunks: string[] = [];
   const origWrite = process.stdout.write.bind(process.stdout);
@@ -622,6 +622,76 @@ test("Mock Apify card logs PEOPLE_FIRST_HARVEST_MOCK after request_entry, not SO
     assert.match(String(body.error), /Mock mode/);
     assert.match(String(body.error), /Calypso Linux Python/);
     assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
+test("Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVEST_MOCK", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  workspaceIntegrations = [{ id: "int_apify", mode: "mock", real: false }];
+  campaign = {
+    ...baseCampaign,
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "concept-apify-1",
+    campaignId,
+    name: "Elena Varga",
+    currentTitle: "Calypso Production Support",
+    currentCompany: "BNPP CIB",
+    location: "Montreal",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga-concept",
+    githubUrl: "",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 72,
+    matchBreakdown: [],
+    techStack: ["Linux", "Python", "Calypso"],
+    recentActivity: "Calypso settlement production support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+    email: "",
+  }];
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const response = await post(
+      new NextRequest("http://[::]:3000/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://aria-mantu-app.fly.dev",
+          host: "[::]:3000",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "aria-mantu-app.fly.dev",
+          "x-real-ip": `192.0.2.${++requestSequence}`,
+          "x-request-id": crypto.randomUUID(),
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId, count: 1 }),
+      }),
+    );
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    const body = (await response.json()) as { code?: string; ok?: boolean };
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /"apifyKeyPresent":true/);
+    assert.doesNotMatch(exit, /PEOPLE_FIRST_HARVEST_MOCK/);
+    assert.notEqual(body.code, "PEOPLE_FIRST_HARVEST_MOCK");
+    assert.equal(response.status, 200, JSON.stringify(body));
   } finally {
     process.stdout.write = origWrite;
   }

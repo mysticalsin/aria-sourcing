@@ -3,6 +3,10 @@ import { generateOutreach, newOutreachMessage, sourceCandidates } from "../mock-
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
 import {
+  FIXTURE_NOT_ON_LIVE_TOAST,
+  isLabFixtureCandidate,
+} from "../sourcing/lab-fixture-people";
+import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
@@ -803,6 +807,38 @@ export function createSourcingActions({
       };
     }
 
+    const previewPeople = reviewed.value.candidates.map((dto) =>
+      candidateFromSourcingAgentDto(dto),
+    );
+    if (previewPeople.length > 0 && previewPeople.every(isLabFixtureCandidate)) {
+      if (
+        isPeopleFirstRole(latestCampaign.jobAnalysis) &&
+        workspaceEffectAllowed() &&
+        sourcingMutationAllowed()
+      ) {
+        await commitPersisted((previous) =>
+          withActivity(
+            previous,
+            makeActivity({
+              type: "sourcing",
+              title: "Connect Apify",
+              notes: FIXTURE_NOT_ON_LIVE_TOAST,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
+      }
+      return {
+        ok: false,
+        error: FIXTURE_NOT_ON_LIVE_TOAST,
+        source: "unavailable",
+      };
+    }
+
     const observedPlatforms = [
       ...reviewed.value.feedbackReceipts.map((receipt) => receipt.platform),
       ...reviewed.value.candidates.map((candidate) => candidate.sourcePlatform),
@@ -825,15 +861,17 @@ export function createSourcingActions({
       }
       authorized = true;
       const weights = effectiveWeights(campaign.scoringWeights, previous.skills);
-      const scored = reviewed.value.candidates.map((dto) => {
-        const candidate = candidateFromSourcingAgentDto(dto);
-        const score = scoreCandidate(candidate, campaign.jobAnalysis, weights);
-        return {
-          ...candidate,
-          matchScore: score.score,
-          matchBreakdown: score.breakdown,
-        };
-      });
+      const scored = reviewed.value.candidates
+        .map((dto) => {
+          const candidate = candidateFromSourcingAgentDto(dto);
+          const score = scoreCandidate(candidate, campaign.jobAnalysis, weights);
+          return {
+            ...candidate,
+            matchScore: score.score,
+            matchBreakdown: score.breakdown,
+          };
+        })
+        .filter((candidate) => !isLabFixtureCandidate(candidate));
       result = dedupeCandidates(scored, previous.candidates, {
         excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       });

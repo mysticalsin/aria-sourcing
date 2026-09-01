@@ -10,6 +10,10 @@ import {
   SOURCE_VIA_APIFY_LABEL,
 } from "@/lib/sourcing/harvest-evidence";
 import {
+  FIXTURE_NOT_ON_LIVE,
+  FIXTURE_NOT_ON_LIVE_TOAST,
+} from "@/lib/sourcing/lab-fixture-people";
+import {
   apifyIntegrationIsMock,
   hasLiveApifyHarvest,
   isConnectOrDryRunCopy,
@@ -194,7 +198,12 @@ export function peoplePluginFailLoudUi(
   if (remapped === SOURCING_AGENT_UNAVAILABLE_TOAST || /Sourcing is unavailable/i.test(remapped)) {
     return pluginUi("Sourcing failed", SOURCING_AGENT_UNAVAILABLE_TOAST);
   }
-  if (remapped === MOCK_APIFY_TOAST || /Mock mode/.test(remapped)) {
+  if (
+    remapped === MOCK_APIFY_TOAST ||
+    remapped === FIXTURE_NOT_ON_LIVE_TOAST ||
+    remapped.includes(FIXTURE_NOT_ON_LIVE) ||
+    /Mock mode|lab fixtures are not linkedin/i.test(remapped)
+  ) {
     return {
       title: CONNECT_APIFY_LABEL,
       description: remapped,

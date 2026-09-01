@@ -69,6 +69,9 @@ test("sourcing action boundary is React-free and wired through one stable factor
     sourcingActionsSource,
     /sourceEngineFixtureCandidates|jobUsesEngineFixture|@fixture\.example/,
   );
+  assert.match(sourcingActionsSource, /isLabFixtureCandidate/);
+  assert.match(sourcingActionsSource, /FIXTURE_NOT_ON_LIVE_TOAST/);
+  assert.doesNotMatch(sourcingActionsSource, /\/api\/source\/need/);
   assert.match(
     storeSource,
     /createSourcingActions\([\s\S]*?\),\n\s*\[[\s\S]*?commit,[\s\S]*?sourcingMutationAllowed,[\s\S]*?syntheticSourcingAllowed,[\s\S]*?workspaceEffectAllowed,[\s\S]*?workspaceFetch,[\s\S]*?\],/,

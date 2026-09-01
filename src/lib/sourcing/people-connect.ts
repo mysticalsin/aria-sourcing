@@ -21,15 +21,17 @@ export function hasValidApifyKey(
   return apiKeys.some((key) => providerIsApify(key.provider) && key.status === "valid");
 }
 
-/** Connected+Mock is not a live harvest key. */
+/** Operator left a real card on Mock. Concept / missing Live is not Mock. */
 export function apifyIntegrationIsMock(
-  integrations: readonly Pick<IntegrationStatus, "id" | "mode">[] = [],
+  integrations: readonly Pick<IntegrationStatus, "id" | "mode" | "real">[] = [],
 ): boolean {
-  return integrations.some((item) => item.id === "int_apify" && item.mode === "mock");
+  return integrations.some(
+    (item) => item.id === "int_apify" && item.mode === "mock" && item.real === true,
+  );
 }
 
 export function hasLiveApifyHarvest(
-  integrations: readonly Pick<IntegrationStatus, "id" | "mode">[] = [],
+  integrations: readonly Pick<IntegrationStatus, "id" | "mode" | "real">[] = [],
   apiKeys: readonly { provider: string; status: string }[] = [],
 ): boolean {
   if (apifyIntegrationIsMock(integrations)) return false;
@@ -44,9 +46,13 @@ export function workspaceApifyIsMock(state: unknown): boolean {
   return apifyIntegrationIsMock(
     integrations.flatMap((item) => {
       if (!item || typeof item !== "object") return [];
-      const row = item as { id?: unknown; mode?: unknown };
+      const row = item as { id?: unknown; mode?: unknown; real?: unknown };
       if (typeof row.id !== "string" || typeof row.mode !== "string") return [];
-      return [{ id: row.id, mode: row.mode as IntegrationStatus["mode"] }];
+      return [{
+        id: row.id,
+        mode: row.mode as IntegrationStatus["mode"],
+        real: row.real === true,
+      }];
     }),
   );
 }
@@ -70,7 +76,7 @@ export function isSyntheticRecipientEmail(email: string): boolean {
 }
 
 export const CONNECT_CHANNELS_COPY =
-  "Connect LinkedIn and Outlook in-product to search live people and send. Source next batch still runs a dry-run shortlist. Email also needs Verify domain in Fleet. Send stays dry-run until the channel is connected and you approve.";
+  "Connect LinkedIn and Outlook in-product to search live people and send. Source next batch needs a Live Apify key — lab fixtures are not LinkedIn. Email also needs Verify domain in Fleet. Send stays dry-run until the channel is connected and you approve.";
 
 export const CONNECT_LINKEDIN_LABEL = "Connect LinkedIn";
 export const CONNECT_OUTLOOK_LABEL = "Connect Outlook";
@@ -237,7 +243,7 @@ export function liveSendBlocker(
 }
 
 export function isConnectOrDryRunCopy(text: string): boolean {
-  return /connect linkedin and outlook|dry-run shortlist/i.test(text);
+  return /connect linkedin and outlook|lab fixtures are not linkedin|dry-run shortlist/i.test(text);
 }
 
 /** A valid Access & Keys row is the working surface — mark the matching card connected. */
@@ -245,12 +251,21 @@ export function applyHarvestKeysToIntegrations(
   integrations: IntegrationStatus[],
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): IntegrationStatus[] {
-  const apify = hasValidApifyKey(apiKeys);
-  if (!apify) return integrations;
+  const keyed = hasValidApifyKey(apiKeys);
   return integrations.map((row) => {
-    if (row.id === "int_apify") {
-      return { ...row, status: "connected" as const, errors: [] };
-    }
-    return row;
+    if (row.id !== "int_apify") return row;
+    const realCard: IntegrationStatus = {
+      ...row,
+      real: true,
+      setupHref: row.setupHref ?? "/settings",
+    };
+    if (!keyed) return realCard;
+    const operatorMock = row.real === true && row.mode === "mock";
+    return {
+      ...realCard,
+      status: "connected" as const,
+      errors: [],
+      mode: operatorMock ? "mock" : "live",
+    };
   });
 }

@@ -252,6 +252,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
 export function isLinkedInSourcingCard(
   integration: Pick<IntegrationStatus, "id" | "name" | "category">,
 ): boolean {
+  if (integration.id === "int_apify" || /apify/i.test(integration.name)) return false;
   if (integration.id === "int_linkedin" || integration.id === "int_linkedin_rsc") return true;
   if (integration.id.startsWith("int_linkedin")) return true;
   return integration.category === "Sourcing" && /linkedin/i.test(integration.name);
@@ -364,6 +365,17 @@ export function mergeSeedIntegrations(stored: IntegrationStatus[]): IntegrationS
         status: card.id === "int_supabase" ? card.status : "not_configured",
         mode: card.id === "int_supabase" ? card.mode : "mock",
         lastSync: card.id === "int_supabase" ? card.lastSync : null,
+        real: card.real,
+      };
+    }
+    if (card.id === "int_apify") {
+      return {
+        ...existing,
+        name: card.name,
+        description: card.description,
+        setupHref: card.setupHref ?? "/settings",
+        real: true,
+        mode: existing.real === true ? existing.mode : "live",
       };
     }
     if (isLinkedInSourcingCard(card)) {

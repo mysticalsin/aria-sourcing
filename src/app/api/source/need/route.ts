@@ -5,6 +5,10 @@ import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { runFixtureSourcing } from "@/lib/fixtures/trading-platform-need";
+import {
+  FIXTURE_NOT_ON_LIVE,
+  FIXTURE_NOT_ON_LIVE_PATHS,
+} from "@/lib/sourcing/lab-fixture-people";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import {
@@ -106,6 +110,18 @@ export async function POST(req: NextRequest) {
   const requestId = randomUUID();
   const pdfBytes = decodePdf(pdfBase64);
 
+  if (mode === "fixture" && supabaseEnabled) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: FIXTURE_NOT_ON_LIVE,
+        requestId,
+        paths: [...FIXTURE_NOT_ON_LIVE_PATHS],
+      },
+      { status: 409 },
+    );
+  }
+
   if (mode === "live") {
     const providers = configuredLiveProviders();
     if (providers.length === 0) {
@@ -115,7 +131,7 @@ export async function POST(req: NextRequest) {
           code: "PROVIDER_NOT_CONFIGURED",
           requestId,
           paths: [
-            "Run mode=fixture to prove the matcher on recorded evidence.",
+            "Connect Apify in Access & Keys and switch the card to Live.",
             "Add a live provider key (Apollo, Sillage, Seamless, Apify, or GitHub) in Settings.",
             "Paste the JD and score CVs Aria already holds — do not invent live people.",
           ],
@@ -133,7 +149,7 @@ export async function POST(req: NextRequest) {
           providers,
           paths: [
             "Search via the existing /api/source providers, then POST provenance:live evidence here.",
-            "Run mode=fixture to prove the matcher without inventing people.",
+            "Connect Apify in Access & Keys and switch the card to Live — do not hydrate lab fixtures.",
             "Paste the JD and score CVs Aria already holds.",
           ],
         },

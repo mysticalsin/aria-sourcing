@@ -77,6 +77,7 @@ mock.module(moduleUrl("src/lib/ai/web-tools.ts"), {
 });
 
 const route = await import("../src/app/api/source/route");
+const needRoute = await import("../src/app/api/source/need/route");
 
 function request(body: Record<string, unknown>, origin = "http://localhost") {
   return new NextRequest("http://localhost/api/source", {
@@ -126,6 +127,33 @@ ok(
     exactProfileBody.source === "github" &&
     sessionReads === 1 &&
     providerCalls === 1,
+);
+
+const fixtureOnLive = await needRoute.POST(
+  new NextRequest("http://localhost/api/source/need", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "http://localhost" },
+    body: JSON.stringify({ mode: "fixture", jd: "Senior Calypso Business Analyst Linux Python" }),
+  }),
+);
+const fixtureOnLiveBody = (await fixtureOnLive.json()) as {
+  ok?: boolean;
+  code?: string;
+  shortlist?: unknown[];
+  paths?: string[];
+};
+ok(
+  "live Fly need route refuses fixture mode",
+  fixtureOnLive.status === 409 && fixtureOnLiveBody.code === "FIXTURE_NOT_ON_LIVE",
+);
+ok(
+  "fixture refuse does not return lab people",
+  !Array.isArray(fixtureOnLiveBody.shortlist) || fixtureOnLiveBody.shortlist.length === 0,
+);
+ok(
+  "fixture refuse points at Connect Apify / Live",
+  (fixtureOnLiveBody.paths ?? []).some((path) => /Connect Apify/i.test(path)) &&
+    (fixtureOnLiveBody.paths ?? []).some((path) => /Live/i.test(path)),
 );
 
 console.log(`RESULT source-live-campaign-authority: ${pass} passed, ${fail} failed`);

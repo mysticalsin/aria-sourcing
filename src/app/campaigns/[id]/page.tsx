@@ -722,13 +722,24 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           }
         : current,
     );
+    if (res.mode === "fixture") {
+      toast({
+        title: CONNECT_APIFY_LABEL,
+        description:
+          "Lab fixtures are not LinkedIn. Connect a real Apify key and switch the card to Live.",
+        href: CONNECT_APIFY_HREF,
+        actionLabel: CONNECT_APIFY_LABEL,
+        variant: "error",
+      });
+      return;
+    }
     if (res.added === 0) {
       const emptyPeopleFirst = emptyPeopleFirstToast(
         c.jobAnalysis,
         integrations,
         {
           accepted: { length: 0 },
-          source: res.mode === "fixture" ? "mock" : res.mode === "deterministic" ? "github" : undefined,
+          source: res.mode === "deterministic" ? "github" : undefined,
         },
         apiKeys,
       );
@@ -754,15 +765,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     }
     toast({
       title:
-        res.mode === "fixture"
-          ? `Dry-run shortlist: ${res.added} candidate${res.added === 1 ? "" : "s"}`
-          : res.mode === "cloud"
+        res.mode === "cloud"
           ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
           : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
       description:
-        res.mode === "fixture"
-          ? "Fixture matcher. Connect LinkedIn and Outlook to search live people."
-          : res.mode === "cloud"
+        res.mode === "cloud"
           ? "Real provider search and cloud-assisted drafts are ready for human review."
           : "Real GitHub results and locally generated drafts are ready for human review. No cloud model ran.",
       variant: "success",

@@ -276,29 +276,40 @@ hydrate and on the Strategy tab.
   stays the CTA when the key is missing, the card is Mock, or the
   harvest route did not complete.
 - **Honor a valid stored harvest key.** Access & Keys is the source of truth
-  for Apify **when the card is not Mock**. A key whose provider is Apify
-  (including `Apify (sourcing)`) and `status === "valid"` **is**
-  people-first harvest only on Live. Connected+Mock is not harvest —
-  `apifyKeyPresent` is false and Source next batch fails loud. On Live,
-  do not throw `MISSING_PLUGIN`. Do not ask to reconnect a key that
-  already tested valid. A Tavily key is **not** LinkedIn Sourcing.
-  HeyReach API / MCP is a **LinkedIn send** account, not a people-search
-  plugin.
+  for Apify. A key whose provider is Apify (including `Apify (sourcing)`)
+  and `status === "valid"` **is** people-first harvest: `apifyKeyPresent`
+  true, `apifyMock` false, harvestapi Full **starts** (`request_entry` +
+  run-id). Do not require a Live toggle that the card never had. Do not
+  decrypt a Mock key. Do not invent people.
+
+  The operator **Mock** switch on a **real** card is still Mock —
+  `PEOPLE_FIRST_HARVEST_MOCK`, `apifyKeyPresent` false. If the card is
+  **Concept** or missing Live because merge demoted it, that is a product
+  bug: treat a valid key as Live for harvest. Do not treat leftover
+  GitHub / `@example.com` / `@fixture.example` rows as LinkedIn.
+
+  On Live, do not throw `MISSING_PLUGIN` for a key that already tested
+  valid. A Tavily key is **not** LinkedIn Sourcing. HeyReach API / MCP is
+  a **LinkedIn send** account, not a people-search plugin.
 - **Integrations must show the working surface.** Merge seed cards into
   stored workspace integrations so a live tenant cannot lose the Apify
-  card. The Apify card is `real: true`, reflects a valid Access & Keys
-  row (connected), and CTAs to `/settings` (Access & Keys) — never a
-  missing card and never a toast with no button. Sidebar, Command Center
-  strip, and Settings use the same connected count (`realIntegrationSummary`).
+  card or demote it to Concept. `isLinkedInSourcingCard` excludes Apify
+  even though the name contains LinkedIn. The Apify (LinkedIn profile
+  search) card is `real: true` with a Live mode switch, reflects a valid
+  Access & Keys row (connected), and CTAs to `/settings` (Access & Keys)
+  — never a Concept badge, never a missing Live toggle, never a toast
+  with no button. Sidebar, Command Center strip, and Settings use the
+  same connected count (`realIntegrationSummary`).
 - **Unkeyed people-first is a connect flow, not a wall.** If there is no
   valid Apify key and no official LinkedIn RSC, the UI is in-product
-  **Connect** actions with copy that explains why — not a toast-only
-  `MISSING_PLUGIN` dead end. Source next batch still runs a dry-run
-  fixture matcher (`POST /api/source/need` `mode: "fixture"`): recall ≥60
-  from the fixture pool, top ≤20, skill/CV/LinkedIn ranked, never name
-  match, provenance fixture/synthetic (`source: "mock"`). Never toast those
-  rows as live. Never present `@fixture.example` or `@example.com` as live
-  people.
+  **Connect Apify / switch to Live** with copy that explains why — not a
+  toast-only `MISSING_PLUGIN` dead end and not a silent fixture dry-run.
+  Fly and other live workspaces **must not** hydrate
+  `POST /api/source/need` `mode: "fixture"` JSON or
+  `sourceEngineFixtureCandidates` onto a campaign. That route returns
+  `FIXTURE_NOT_ON_LIVE` on Fly. Campaign activity keeps a durable audit
+  row (Connect Apify), not a 5-second toast only. Never present
+  `@fixture.example` or `@example.com` as LinkedIn / live people.
 - **LinkedIn Sourcing / RSC Configure is not an API-key paste.** Official
   LinkedIn partner search is **not wired**. Those cards must say that and
   send the operator to the harvest that is wired: a valid Apify key in
@@ -333,8 +344,9 @@ hydrate and on the Strategy tab.
   silent mock and not a toast-only wall:
 
   1. Source next batch / Run sourcing agent / Source via Apify using the
-     valid Apify key when it exists.
-  2. Otherwise dry-run fixture matcher (≥60 recall → ≤20).
+     valid **Live** Apify key when it exists.
+  2. Otherwise fail loud **Connect Apify / switch to Live** — do not
+     hydrate the fixture pool onto a Fly campaign.
   3. Connect LinkedIn (honest partner / Fleet OAuth) and Outlook (Fleet
      Graph + Verify domain) from the same flow.
 
