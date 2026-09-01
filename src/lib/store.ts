@@ -318,37 +318,60 @@ function withActivity(
 function applyLivePeopleFirstHygiene(state: HermesState): {
   state: HermesState;
   removedIds: string[];
+  metricsRealigned: boolean;
 } {
   const stripped = stripLabFixturePeople(state);
-  if (stripped.removedIds.length === 0) {
-    return { state, removedIds: [] };
-  }
-  const { title, notes } = peopleFirstFailActivity(FIXTURE_NOT_ON_LIVE_TOAST);
-  let next = stripped.state;
-  for (const campaignId of stripped.campaignIds) {
-    next = recomputeMetrics(next, campaignId);
-    next = withActivity(
-      next,
-      makeActivity({
-        type: "sourcing",
-        title,
-        notes,
-        outcome: `${stripped.removedIds.length} leftover GitHub / example.com row(s) removed — fail-loud, not a harvest`,
+  let next = stripped.removedIds.length === 0 ? state : stripped.state;
+  if (stripped.removedIds.length > 0) {
+    const { title, notes } = peopleFirstFailActivity(FIXTURE_NOT_ON_LIVE_TOAST);
+    for (const campaignId of stripped.campaignIds) {
+      next = recomputeMetrics(next, campaignId);
+      next = withActivity(
+        next,
+        makeActivity({
+          type: "sourcing",
+          title,
+          notes,
+          outcome: `${stripped.removedIds.length} leftover GitHub / example.com row(s) removed — fail-loud, not a harvest`,
+          campaignId,
+          linkedEntityType: "campaign",
+          linkedEntityId: campaignId,
+        }),
         campaignId,
-        linkedEntityType: "campaign",
-        linkedEntityId: campaignId,
-      }),
-      campaignId,
-    );
+      );
+    }
   }
-  return { state: next, removedIds: stripped.removedIds };
+  let metricsRealigned = false;
+  for (const campaign of next.campaigns) {
+    if (!isPeopleFirstRole(campaign.jobAnalysis)) continue;
+    const visibleCount = next.candidates.filter(
+      (candidate) =>
+        candidate.campaignId === campaign.id && isPeopleFirstContactComplete(candidate),
+    ).length;
+    if (campaign.metrics.sourced !== visibleCount) {
+      next = recomputeMetrics(next, campaign.id);
+      metricsRealigned = true;
+    }
+  }
+  if (stripped.removedIds.length === 0 && !metricsRealigned) {
+    return { state, removedIds: [], metricsRealigned: false };
+  }
+  return { state: next, removedIds: stripped.removedIds, metricsRealigned };
 }
 
 function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
-  const candidates = state.candidates.filter(
-    (candidate) => candidate.campaignId === campaignId,
-  );
   const campaign = state.campaigns.find((item) => item.id === campaignId);
+  const candidates = state.candidates.filter((candidate) => {
+    if (candidate.campaignId !== campaignId) return false;
+    if (
+      campaign &&
+      isPeopleFirstRole(campaign.jobAnalysis) &&
+      !isPeopleFirstContactComplete(candidate)
+    ) {
+      return false;
+    }
+    return true;
+  });
   const firstInterviewHours = campaign
     ? firstInterviewElapsedHours(
         state.bookings.filter((booking) => booking.campaignId === campaignId),
@@ -605,7 +628,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       const liveState = stripped.state;
       const next = applyAuthoritativeRole(liveState, remote.role);
-      if (remote.state && stripped.removedIds.length === 0) {
+      if (remote.state && stripped.removedIds.length === 0 && !stripped.metricsRealigned) {
         skipNextPersist.current = true;
         skipPersistSnapshot.current = next;
       }
@@ -660,7 +683,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       { ...hygiened.state, activities: [notice, ...hygiened.state.activities].slice(0, 300) },
       liveRoleRef.current,
     );
-    return { latest, next, persistHygiene: hygiened.removedIds.length > 0 };
+    return {
+      latest,
+      next,
+      persistHygiene: hygiened.removedIds.length > 0 || hygiened.metricsRealigned,
+    };
   }, []);
 
   const applyRemoteConflict = useCallback((prepared: {
@@ -1457,7 +1484,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!Array.isArray(out.profiles) || out.profiles.length === 0) {
         return {
           ok: false,
-          error: "Apify finished with 0 profiles. The harvest was empty — no candidates invented.",
+          error: "Empty harvest is not a result. Engine continues to the next planned search. Do not stop at 0 people.",
         };
       }
 

@@ -13,6 +13,8 @@ import type { JobAnalysis, SourcePlatform, SourcingStrategy } from "@/lib/types"
 export interface PlannedSearch {
   platform: SourcePlatform;
   query: string;
+  /** harvestapi title filter. Next actor-input when keyword AND returned 0. */
+  currentJobTitles?: string[];
 }
 
 /** People-first Source next batch: poll harvestapi Full until terminal. */
@@ -76,6 +78,65 @@ export function apifyHarvestQueryFromBrief(job: JobAnalysis): string {
   return tokens.join(" ").slice(0, 256).trim();
 }
 
+/** LinkedIn-attested leftover VSS chip. Use only as a broaden after the title-role query returns 0. */
+function linkedinAttestedHarvestExtra(skill: string): boolean {
+  return /^business analysis$/i.test(skill.trim());
+}
+
+/**
+ * Ordered harvestapi `searchQuery` strings. Primary stays the title-role
+ * query (`Calypso Business Analyst` / `Calypso Linux Python`). After an
+ * honest 0, broaden to a LinkedIn-attested skill or drop the last AND
+ * token, then the platform alone. Never invent people. Cap 3.
+ */
+export function peopleFirstHarvestQueries(job: JobAnalysis): string[] {
+  const primary = apifyHarvestQueryFromBrief(job);
+  const platform = distinctiveNeedPlatform(job);
+  const attested = tokenizeMustHaveSkills(job.requiredSkills).find(linkedinAttestedHarvestExtra);
+  const tokens = primary.split(/\s+/).filter(Boolean);
+  const dropLast = tokens.length > 1 ? tokens.slice(0, -1).join(" ") : "";
+  const attestedQuery = platform && attested ? `${platform} ${attested}` : "";
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const query of [primary, attestedQuery || dropLast, platform, dropLast]) {
+    const next = query.trim().slice(0, 256);
+    const key = next.toLowerCase();
+    if (!next || seen.has(key)) continue;
+    seen.add(key);
+    out.push(next);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/**
+ * harvestapi attempts until a real shortlist. First query stays the
+ * title-role phrase. After `items=0`, next actor-input is platform
+ * keywords + currentJobTitles, then broader phrases. Never 0-and-stop.
+ */
+export function peopleFirstHarvestAttempts(job: JobAnalysis): PlannedSearch[] {
+  const attempts: PlannedSearch[] = [];
+  const seen = new Set<string>();
+  const push = (query: string, currentJobTitles?: string[]) => {
+    const trimmed = query.trim().slice(0, 256);
+    const key = `${trimmed.toLowerCase()}|${(currentJobTitles ?? []).join(",").toLowerCase()}`;
+    if (!trimmed || seen.has(key)) return;
+    seen.add(key);
+    attempts.push({
+      platform: "Apify",
+      query: trimmed,
+      ...(currentJobTitles?.length ? { currentJobTitles } : {}),
+    });
+  };
+  const primary = apifyHarvestQueryFromBrief(job);
+  const platform = distinctiveNeedPlatform(job);
+  const role = harvestRoleFromTitle(job.title);
+  push(primary);
+  if (platform && role) push(platform, [role]);
+  for (const query of peopleFirstHarvestQueries(job)) push(query);
+  return attempts.slice(0, 4);
+}
+
 function apifyQueryFromLinkedinPlan(job: JobAnalysis, linkedinBoolean: string): string {
   if (!linkedinBoolean.trim()) return "";
   return apifyHarvestQueryFromBrief(job) || linkedinBoolean.trim().slice(0, 256);
@@ -98,11 +159,11 @@ export function plannedSourcingSearches(input: {
         .filter(usefulGithubQuery)
     : [];
   const apify = peopleFirst
-    ? apifyHarvestQueryFromBrief(input.jobAnalysis)
+    ? ""
     : apifyQueryFromLinkedinPlan(input.jobAnalysis, linkedin);
   const plan: PlannedSearch[] = [];
   if (peopleFirst) {
-    if (apify) plan.push({ platform: "Apify", query: apify });
+    plan.push(...peopleFirstHarvestAttempts(input.jobAnalysis));
     if (linkedin) plan.push({ platform: "LinkedIn", query: linkedin });
   } else {
     if (linkedin) plan.push({ platform: "LinkedIn", query: linkedin });
@@ -113,5 +174,5 @@ export function plannedSourcingSearches(input: {
       plan.push({ platform: "GitHub", query });
     }
   }
-  return plan.slice(0, 5);
+  return plan.slice(0, 6);
 }

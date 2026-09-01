@@ -5,7 +5,14 @@ import { mock } from "node:test";
 
 mock.module("server-only", { namedExports: {} });
 
-const { startProfileSearchRun, getRunStatus, fetchDatasetItems, testApifyConnection, runProfileSearchAndWait } = await import("../src/lib/sourcing/apify");
+const {
+  startProfileSearchRun,
+  getRunStatus,
+  fetchDatasetItems,
+  testApifyConnection,
+  runProfileSearchAndWait,
+  harvestapiActorInput,
+} = await import("../src/lib/sourcing/apify");
 const { clearProviderProbe } = await import("../src/lib/sourcing/provider-egress");
 const apifyClearance = clearProviderProbe("Apify");
 
@@ -172,6 +179,13 @@ try {
     ok("start hits the actor run path with the ~ actor id", seenUrl.includes("/actors/harvestapi~linkedin-profile-search/runs"));
     ok("start sends Bearer auth", seenAuth === "Bearer apify_api_tok123");
     ok("start sends only the set actor input fields", seenBody.searchQuery === "Senior Go Engineer" && seenBody.profileScraperMode === "Short" && seenBody.maxItems === 10 && Array.isArray(seenBody.locations) && !("takePages" in seenBody) && !("startPage" in seenBody));
+    ok(
+      "harvestapi actor input field is searchQuery, not keywords or q",
+      harvestapiActorInput({ searchQuery: "Calypso Business Analyst" }).searchQuery ===
+        "Calypso Business Analyst" &&
+        !("keywords" in harvestapiActorInput({ searchQuery: "Calypso Business Analyst" })) &&
+        !("query" in harvestapiActorInput({ searchQuery: "Calypso Business Analyst" })),
+    );
     ok("start result is ok", res.ok === true);
     if (res.ok) {
       ok("start parses runId", res.data.runId === "run_1");

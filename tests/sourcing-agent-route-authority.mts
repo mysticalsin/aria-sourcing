@@ -104,6 +104,10 @@ let runnerHarvest: {
   itemCount: 1,
   runId: "apify-run-test",
 };
+let runnerHarvestByQuery: Record<
+  string,
+  { started: boolean; status: string; itemCount: number; runId?: string }
+> = {};
 
 const query: Record<string, unknown> = {};
 Object.assign(query, {
@@ -284,17 +288,36 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
           query: String(args.query ?? ""),
         });
         mutateDuringRunner?.();
-        if (runnerCandidatesAfterRun.length > 0) {
-          foundCandidates = runnerCandidatesAfterRun;
+        const harvest = args.platform === "Apify"
+          ? (runnerHarvestByQuery[String(args.query ?? "")] ?? runnerHarvest)
+          : null;
+        if (runnerCandidatesAfterRun.length > 0 && (harvest?.itemCount ?? 0) > 0) {
+          const complete = runnerCandidatesAfterRun.filter((row) =>
+            isPeopleFirstContactComplete(
+              row && typeof row === "object"
+                ? (row as {
+                    email?: string;
+                    phone?: string;
+                    linkedinUrl?: string;
+                    sourcePlatform?: string;
+                  })
+                : {},
+            ),
+          );
+          if (complete.length > 0) foundCandidates = complete;
         }
-        const harvestOk = args.platform !== "Apify" || runnerHarvest?.status === "SUCCEEDED";
+        const harvestOk = args.platform !== "Apify" || harvest?.status === "SUCCEEDED";
         return { ok: harvestOk, content: {} };
       },
       getFound: () => foundCandidates,
-      getExecutions: () => runnerQueries.map(({ platform, query }) => ({
+      getExecutions: () => runnerQueries.map(({ platform, query }) => {
+        const harvest = platform === "Apify"
+          ? (runnerHarvestByQuery[query] ?? runnerHarvest)
+          : null;
+        return {
         platform,
         query,
-        ok: platform !== "Apify" || runnerHarvest?.status === "SUCCEEDED",
+        ok: platform !== "Apify" || harvest?.status === "SUCCEEDED",
         candidateCount: foundCandidates.length,
         skippedCount: 0,
         contactCompleteCount: foundCandidates.filter((row) =>
@@ -309,19 +332,20 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
               : {},
           ),
         ).length,
-        ...(platform === "Apify" && runnerHarvest
+        ...(platform === "Apify" && harvest
           ? {
               harvest: {
                 actor: "harvestapi~linkedin-profile-search",
                 query,
-                runId: runnerHarvest.runId ?? "apify-run-test",
-                status: runnerHarvest.status,
-                itemCount: runnerHarvest.itemCount,
-                started: runnerHarvest.started,
+                runId: harvest.runId ?? "apify-run-test",
+                status: harvest.status,
+                itemCount: harvest.itemCount,
+                started: harvest.started,
               },
             }
           : {}),
-      })),
+      };
+      }),
     }),
   },
 });
@@ -428,6 +452,7 @@ function reset() {
     itemCount: 1,
     runId: "apify-run-test",
   };
+  runnerHarvestByQuery = {};
 }
 
 test("active campaign is loaded from authoritative workspace state before and after provider I/O", async () => {
@@ -1618,9 +1643,56 @@ test("people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receip
 
   assert.equal(response.status, 502, JSON.stringify(body));
   assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
-  assert.match(String(body.error), /0 profiles/);
+  assert.match(String(body.error), /Empty harvest is not a result/);
+  assert.match(String(body.error), /Do not stop at 0 people/);
   assert.match(String(body.error), /query=Calypso Linux Python/);
   assert.match(String(body.error), /run=run-empty/);
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "Apify" && row.query === "Calypso Linux Python"),
+  );
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "Apify" && row.query !== "Calypso Linux Python"),
+    "empty first query must continue to the next planned harvest",
+  );
   assert.equal(completeCalls, 0);
   assert.equal("feedbackReceipts" in body, false);
+});
+
+test("people-first empty first query continues and keeps a real shortlist from the next search", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvestByQuery = {
+    "Calypso Linux Python": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-1" },
+  };
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 2, runId: "run-hit" };
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "cand-next-search",
+    campaignId,
+    name: "Elena Varga",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+    githubUrl: "",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux",
+    matchScore: 72,
+    matchBreakdown: [],
+    techStack: ["Calypso", "Linux"],
+    recentActivity: "Calypso application support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+  assert.ok(Array.isArray(body.candidates) && body.candidates.length >= 1);
+  assert.equal(body.candidates[0]?.email, "elena.varga@bnpp-cib.com");
+  assert.ok(runnerQueries.some((row) => row.query === "Calypso Linux Python"));
+  assert.ok(runnerQueries.some((row) => row.query !== "Calypso Linux Python"));
+  assert.equal(completeCalls, 1);
 });

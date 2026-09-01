@@ -78,9 +78,9 @@ export function formatHarvestEvidenceError(
     return `People-first harvest returned people without email, phone, and LinkedIn. ${base}. Do not invent contacts. Do not keep name-only rows.`;
   }
   if (kind === "gated_empty") {
-    return `People-first harvest returned profiles that did not meet skill-match ≥60. ${base}. Try Source via Apify with a narrower query.`;
+    return `Empty harvest is not a result. ${base}. Engine continues to the next planned search. Do not stop at 0 people. Skill-match ≥60 still required. Try Source via Apify.`;
   }
-  return `People-first harvest returned 0 profiles. ${base}. Try Source via Apify with a narrower query.`;
+  return `Empty harvest is not a result. ${base}. Engine continues to the next planned search. Do not stop at 0 people. Try Source via Apify.`;
 }
 
 function sanitizeHarvestPayload(payload: Record<string, unknown>): Record<string, unknown> {
@@ -112,7 +112,14 @@ export function writeAriaHarvestStdout(payload: Record<string, unknown>): void {
 
 export function logAriaHarvest(
   event: string,
-  harvest: Partial<HarvestEvidence> & { detail?: string; campaign?: string; apifyKeyPresent?: boolean } = {},
+  harvest: Partial<HarvestEvidence> & {
+    detail?: string;
+    campaign?: string;
+    apifyKeyPresent?: boolean;
+    actorInputField?: string;
+    actorSearchQuery?: string;
+    nextQuery?: string;
+  } = {},
 ): void {
   writeAriaHarvestStdout({
     phase: event,
@@ -124,6 +131,9 @@ export function logAriaHarvest(
     started: harvest.started,
     campaign: harvest.campaign,
     apifyKeyPresent: harvest.apifyKeyPresent,
+    actorInputField: harvest.actorInputField,
+    actorSearchQuery: harvest.actorSearchQuery,
+    nextQuery: harvest.nextQuery,
     detail: harvest.detail,
   });
 }

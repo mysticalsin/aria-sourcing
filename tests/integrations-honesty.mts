@@ -344,7 +344,7 @@ ok(
   /apify-search-error/.test(apifyDialog) &&
     /POLL_TIMEOUT_MS/.test(apifyDialog) &&
     /autoFocus/.test(apifyDialog) &&
-    /0 profiles/.test(readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8")),
+    /Empty harvest is not a result/.test(readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8")),
 );
 ok(
   "Apify and LinkedIn cards route to Access & Keys, not a generic API-key dead-end",
@@ -471,7 +471,7 @@ const keyedEmptyFailLoud = peoplePluginFailLoudUi(
 );
 ok(
   "keyed empty harvest is fail-loud without an Access & Keys reconnect CTA",
-  keyedEmptyToast?.title === "No shortlist from this harvest" &&
+  keyedEmptyToast?.title === "Next search required" &&
     keyedEmptyToast.description === EMPTY_PEOPLE_FIRST_HARVEST &&
     keyedEmptyToast.href === "#source-apify" &&
     /Source via Apify/i.test(keyedEmptyToast.actionLabel) &&

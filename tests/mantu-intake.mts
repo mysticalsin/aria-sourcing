@@ -10,7 +10,12 @@ import { roleFamily, roleProfile } from "../src/lib/roles";
 import { splitGluedSkillBlob, tokenizeMustHaveSkills } from "../src/lib/sourcing/vss-need";
 import { githubSkillQueryToken, repairGithubQueries } from "../src/lib/sourcing/github-search-language";
 import { repairLinkedinBoolean } from "../src/lib/sourcing/linkedin-boolean";
-import { apifyHarvestQueryFromBrief, plannedSourcingSearches } from "../src/lib/sourcing/multi-source-plan";
+import {
+  apifyHarvestQueryFromBrief,
+  peopleFirstHarvestAttempts,
+  peopleFirstHarvestQueries,
+  plannedSourcingSearches,
+} from "../src/lib/sourcing/multi-source-plan";
 
 const TONY_AMACAN = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "fixtures/tony-calypso-amacan-need.txt"),
@@ -115,6 +120,26 @@ ok(
   "BA harvest query is Calypso Business Analyst, not leftover Business Analysis MySQL",
   apifyHarvestQueryFromBrief(ba.jobAnalysis) === "Calypso Business Analyst" &&
     apifyHarvestQueryFromBrief(ba.jobAnalysis) !== "Calypso Business Analysis MySQL",
+);
+const baHarvests = peopleFirstHarvestQueries(ba.jobAnalysis);
+ok(
+  "BA empty harvest next-search broadens to Calypso Business Analysis then Calypso",
+  baHarvests[0] === "Calypso Business Analyst" &&
+    baHarvests.includes("Calypso Business Analysis") &&
+    baHarvests.includes("Calypso") &&
+    !baHarvests.includes("Calypso Business Analysis MySQL") &&
+    baHarvests.length === 3,
+);
+const baAttempts = peopleFirstHarvestAttempts(ba.jobAnalysis);
+ok(
+  "BA next actor-input is Calypso + currentJobTitles Business Analyst after the first 0",
+  baAttempts[0]?.query === "Calypso Business Analyst" &&
+    baAttempts.some(
+      (step) =>
+        step.query === "Calypso" &&
+        (step.currentJobTitles ?? []).includes("Business Analyst"),
+    ) &&
+    baAttempts.some((step) => step.query === "Calypso Business Analysis"),
 );
 ok(
   "BA scoring chips stay Calypso / Business Analysis / MySQL",
@@ -269,6 +294,19 @@ ok(
 ok(
   "apifyHarvestQueryFromBrief is skill-match keywords, not a name",
   apifyHarvestQueryFromBrief(campFromBlob.jobAnalysis) === "Calypso Linux Python",
+);
+const appHarvests = peopleFirstHarvestQueries(campFromBlob.jobAnalysis);
+ok(
+  "App Support empty harvest next-search drops the last AND token then the platform",
+  appHarvests[0] === "Calypso Linux Python" &&
+    appHarvests.includes("Calypso Linux") &&
+    appHarvests.includes("Calypso") &&
+    appHarvests.length === 3,
+);
+ok(
+  "people-first plan lists every harvestapi fallback before LinkedIn",
+  multi.filter((step) => step.platform === "Apify").map((step) => step.query).join("|") ===
+    appHarvests.join("|"),
 );
 ok(
   "multi-source GitHub steps are not language:Calypso or a skill blob",

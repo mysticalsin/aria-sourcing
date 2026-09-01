@@ -690,7 +690,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
       const searches = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
         : peopleFirst
-          ? multiSourcePlan.filter((step) => step.platform === "Apify").slice(0, 1)
+          ? multiSourcePlan.filter((step) => step.platform === "Apify")
           : [
               ...promotedLessons
                 .filter(
@@ -719,10 +719,35 @@ async function handlePost(req: NextRequest, correlationId: string) {
         if (remaining <= 0) break;
         const result = await runner.run(
           "search_candidates",
-          { platform: step.platform, query: step.query, count: remaining },
+          {
+            platform: step.platform,
+            query: step.query,
+            count: remaining,
+            ...("currentJobTitles" in step && step.currentJobTitles?.length
+              ? { currentJobTitles: step.currentJobTitles }
+              : {}),
+          },
           searchSignal,
         );
         successfulQuery = successfulQuery || result.ok;
+        if (peopleFirst && !frameworkAuthorization && result.ok) {
+          const lastHarvest = runner.getExecutions().at(-1)?.harvest;
+          const harvestStatus = (lastHarvest?.status ?? "").toUpperCase();
+          if (lastHarvest?.started && harvestStatus === "SUCCEEDED" && lastHarvest.itemCount === 0) {
+            const nextStep = searches[searches.indexOf(step) + 1];
+            if (nextStep) {
+              logAriaHarvest("empty_next_search", {
+                query: lastHarvest.query || step.query,
+                runId: lastHarvest.runId,
+                status: lastHarvest.status,
+                itemCount: lastHarvest.itemCount,
+                started: true,
+                nextQuery: nextStep.query,
+                detail: `nextQuery=${nextStep.query}`,
+              });
+            }
+          }
+        }
         const afterQuery = await readWorkspace(session, workspaceId, campaignId);
         if (
           afterQuery.status !== "ok" ||
@@ -800,62 +825,74 @@ async function handlePost(req: NextRequest, correlationId: string) {
     const executions = runner.getExecutions();
     if (peopleFirst && !frameworkAuthorization) {
       const plannedQuery = apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis);
-      const apifyExec = executions.find((execution) => execution.platform === "Apify");
-      const harvest = apifyExec?.harvest;
-      if (!harvest?.started) {
+      const apifyExecs = executions.filter((execution) => execution.platform === "Apify");
+      const harvests = apifyExecs
+        .map((execution) => execution.harvest)
+        .filter((harvest): harvest is NonNullable<typeof harvest> => Boolean(harvest));
+      const primaryHarvest =
+        harvests.find((harvest) => harvest.query === plannedQuery) ?? harvests[0];
+      if (!harvests.some((harvest) => harvest.started) || !primaryHarvest?.started) {
         return await failClaimed(
           502,
           PEOPLE_FIRST_HARVEST_NOT_STARTED,
           formatHarvestEvidenceError("not_started", {
-            query: harvest?.query || plannedQuery,
-            runId: harvest?.runId,
-            status: harvest?.status,
+            query: primaryHarvest?.query || plannedQuery,
+            runId: primaryHarvest?.runId,
+            status: primaryHarvest?.status,
           }),
         );
       }
-      const harvestStatus = harvest.status.toUpperCase();
-      const terminalFail =
-        harvestStatus === "FAILED" ||
-        harvestStatus === "ABORTED" ||
-        harvestStatus === "TIMED-OUT" ||
-        harvestStatus === "TIMED_OUT";
-      if (harvestStatus !== "SUCCEEDED" && !terminalFail) {
+      const foundCount = runner.getFound().length;
+      const contactCompleteCount = apifyExecs.reduce(
+        (sum, execution) => sum + (execution.contactCompleteCount ?? 0),
+        0,
+      );
+      const stillRunning = harvests.find((harvest) => {
+        const harvestStatus = harvest.status.toUpperCase();
+        const terminalFail =
+          harvestStatus === "FAILED" ||
+          harvestStatus === "ABORTED" ||
+          harvestStatus === "TIMED-OUT" ||
+          harvestStatus === "TIMED_OUT";
+        return harvest.started && harvestStatus !== "SUCCEEDED" && !terminalFail;
+      });
+      if (stillRunning && foundCount === 0) {
         return await failClaimed(
           502,
           PEOPLE_FIRST_HARVEST_STILL_RUNNING,
-          formatHarvestEvidenceError("still_running", harvest),
+          formatHarvestEvidenceError("still_running", stillRunning),
         );
       }
-      if (harvestStatus === "SUCCEEDED" && harvest.itemCount === 0) {
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_EMPTY,
-          formatHarvestEvidenceError("empty", harvest),
-        );
-      }
-      if (
-        harvestStatus === "SUCCEEDED" &&
-        harvest.itemCount > 0 &&
-        (apifyExec?.contactCompleteCount ?? 0) === 0
-      ) {
+      const succeeded = harvests.filter((harvest) => harvest.status.toUpperCase() === "SUCCEEDED");
+      const succeededWithPeople = succeeded.filter((harvest) => harvest.itemCount > 0);
+      if (succeededWithPeople.length > 0 && contactCompleteCount === 0 && foundCount === 0) {
         return await failClaimed(
           502,
           PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS,
-          formatHarvestEvidenceError("incomplete_contacts", harvest),
+          formatHarvestEvidenceError("incomplete_contacts", succeededWithPeople[0] ?? primaryHarvest),
         );
       }
-      if (harvestStatus === "SUCCEEDED" && harvest.itemCount > 0 && runner.getFound().length === 0) {
+      if (succeededWithPeople.length > 0 && foundCount === 0) {
         return await failClaimed(
           502,
           PEOPLE_FIRST_HARVEST_EMPTY,
-          formatHarvestEvidenceError("gated_empty", harvest),
+          formatHarvestEvidenceError("gated_empty", succeededWithPeople[0] ?? primaryHarvest),
         );
       }
-      if (harvestStatus !== "SUCCEEDED") {
+      if (foundCount === 0) {
+        const emptyHarvest =
+          succeeded.find((harvest) => harvest.itemCount === 0) ?? primaryHarvest;
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_EMPTY,
+          formatHarvestEvidenceError("empty", emptyHarvest),
+        );
+      }
+      if (succeeded.length === 0) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_UPSTREAM_FAILED",
-          formatHarvestEvidenceError("empty", { ...harvest, itemCount: 0 }),
+          formatHarvestEvidenceError("empty", { ...primaryHarvest, itemCount: 0 }),
         );
       }
     }

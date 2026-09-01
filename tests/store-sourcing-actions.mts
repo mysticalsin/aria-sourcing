@@ -89,7 +89,12 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.match(sourcingActionsSource, /persistPeopleFirstFailAudit/);
   assert.match(storeSource, /peopleFirstFailActivity/);
   assert.match(storeSource, /applyLivePeopleFirstHygiene/);
+  assert.match(storeSource, /metricsRealigned/);
   assert.match(storeSource, /leftover GitHub \/ example\.com/);
+  assert.match(
+    readFileSync(new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url), "utf8"),
+    /StagePipeline metrics=\{visibleCampaign.metrics\}/,
+  );
   assert.match(sourcingActionsSource, /0 accepted — fail-loud, not a harvest/);
   assert.match(
     launchSource,

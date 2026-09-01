@@ -283,6 +283,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
   assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS = 90_000/);
   assert.match(plan, /apifyHarvestQueryFromBrief/);
+  assert.match(plan, /peopleFirstHarvestQueries/);
+  assert.match(plan, /peopleFirstHarvestAttempts/);
   assert.match(route, /peopleFirst \? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000/);
   assert.match(route, /export const maxDuration = 90/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
@@ -316,11 +318,23 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(design, /not a guessed 503/);
   assert.match(design, /not toast-only/);
   assert.match(design, /plus the toast text/);
+  assert.match(design, /Never 0 people/);
+  assert.match(design, /can never find 0 people/);
+  assert.match(design, /items=0 is not a product result/);
+  assert.match(design, /visible shortlist/);
+  assert.match(design, /actorInputField=searchQuery/);
   const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
   assert.match(route, /!successfulQuery && !\(peopleFirst && !frameworkAuthorization\)/);
   assert.match(route, /multiSourcePlan.filter\(\(step\) => step.platform === "Apify"\)/);
+  assert.doesNotMatch(route, /filter\(\(step\) => step.platform === "Apify"\)\.slice\(0, 1\)/);
+  assert.match(route, /empty_next_search/);
+  assert.match(apify, /harvestapiActorInput/);
+  assert.match(apify, /actorInputField: "searchQuery"/);
+  assert.match(apify, /actor_input_matches_planned/);
+  assert.match(tools, /searchQuery: query/);
+  assert.match(tools, /currentJobTitles/);
   assert.match(tools, /profileScraperMode: "Full"/);
   assert.doesNotMatch(tools, /profileScraperMode: "Short"/);
   assert.match(tools, /APIFY_HARVEST_WAIT_MS/);
@@ -500,7 +514,7 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
           ok: false,
           code: "PEOPLE_FIRST_HARVEST_EMPTY",
           error:
-            "People-first harvest returned 0 profiles. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python run=run-empty status=SUCCEEDED items=0. Try Source via Apify with a narrower query.",
+            "Empty harvest is not a result. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python run=run-empty status=SUCCEEDED items=0. Engine continues to the next planned search. Do not stop at 0 people. Try Source via Apify.",
           requestId: "req-harvest-empty",
         }),
         { status: 502, headers: { "content-type": "application/json" } },
@@ -740,6 +754,7 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
   assert.match(page, /visibleFeedbackReceipts/);
   assert.match(page, /missingPeoplePluginsToast/);
   assert.match(page, /visibleSourced/);
+  assert.match(page, /StagePipeline metrics=\{visibleCampaign.metrics\}/);
   assert.match(page, /failLoudBanner/);
   assert.match(page, /peopleFirstConnectUi/);
 });

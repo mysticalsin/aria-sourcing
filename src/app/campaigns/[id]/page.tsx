@@ -1230,7 +1230,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Overview */}
       <TabPanel value="overview" active={tab === "overview"} idBase={idBase}>
         <div className="space-y-6">
-          <StagePipeline metrics={m} />
+          <StagePipeline metrics={visibleCampaign.metrics} />
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {overviewMetrics.map((mc) => (

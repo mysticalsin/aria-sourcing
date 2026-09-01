@@ -34,7 +34,7 @@ export function IntegrationStrip() {
 
   return (
     <section className="rounded-3xl border border-line bg-surface p-5 shadow-soft animate-fade-in">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+      <div className="flex min-w-0 max-w-full flex-col gap-4 lg:flex-row lg:items-center">
         {/* Summary — left */}
         <div className="flex shrink-0 items-center gap-3 lg:w-56">
           <span
@@ -58,9 +58,12 @@ export function IntegrationStrip() {
           </div>
         </div>
 
-        {/* Chips — scrollable strip */}
+        {/* Chips — wrap inside the column. Do not nowrap a flex row (page
+            min-content grows past the viewport). Do not hide overflow-x on
+            html/body. */}
         <div
-          className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:flex-1"
+          data-testid="cc-integration-pills"
+          className="flex min-w-0 w-full max-w-full flex-wrap gap-2 lg:flex-1"
           role="list"
           aria-label="Integration status"
         >

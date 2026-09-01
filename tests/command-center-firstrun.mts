@@ -106,7 +106,9 @@ check(
   /Command Center home chrome/.test(design) &&
     /NEVER the campaign title/.test(design) &&
     /scrollWidth <= clientWidth/.test(design) &&
-    /no first-pass hide/.test(design),
+    /no first-pass hide/.test(design) &&
+    /1270-wide viewport/.test(design) &&
+    /cc-integration-pills/.test(design),
 );
 check(
   "root layout does not hide overflow-x on html or body",
@@ -133,6 +135,11 @@ check(
 check("Command Center remaps invalid-response on people-first", /sourceRejectedToast\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
 check("Command Center fail toast carries CTA fields", /href: failLoud\.href/.test(sourceAction) && /actionLabel: failLoud\.actionLabel/.test(sourceAction));
 check("Command Center rejected Source next batch stays visible", /source-next-batch-error/.test(commandCenterPage) && /role="alert"/.test(commandCenterPage));
+check(
+  "Command Center pipeline for this campaign uses the visible shortlist",
+  /pipelineCandidates/.test(commandCenterPage) &&
+    /funnelForCandidates\(pipelineCandidates\)/.test(commandCenterPage),
+);
 check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
 const connectChannels = readFileSync(new URL("../src/components/dashboard/connect-channels.tsx", import.meta.url), "utf8");
 check(
@@ -144,6 +151,52 @@ check(
 const strip = readFileSync(new URL("../src/components/dashboard/integration-strip.tsx", import.meta.url), "utf8");
 check("Command Center strip uses honest Live display", /integrationShowsLive/.test(strip));
 check("Command Center strip does not badge raw integration.mode as Live", !/integration\.mode === "live"/.test(strip));
+check(
+  "Command Center integration pills wrap and shrink so they cannot expand the page",
+  /data-testid="cc-integration-pills"/.test(strip) &&
+    /flex-wrap/.test(strip) &&
+    /min-w-0/.test(strip) &&
+    /max-w-full/.test(strip) &&
+    !/-mx-1 flex gap-2 overflow-x-auto/.test(strip),
+);
+
+/** Model the live overflow: nowrap shrink-0 pills in a flex row grow the page.
+ *  wrap + min-w-0 bounds the row to the viewport. Ultron: 1270 clientWidth,
+ *  pills right edge ~1690. */
+function integrationPillsPageWidth(opts: {
+  viewportWidth: number;
+  wrap: boolean;
+  minW0: boolean;
+  pillWidths: number[];
+  gap: number;
+}): number {
+  const nowrap =
+    opts.pillWidths.reduce((sum, width) => sum + width, 0) +
+    opts.gap * Math.max(0, opts.pillWidths.length - 1);
+  if (!opts.wrap && !opts.minW0) return nowrap;
+  return Math.min(opts.viewportWidth, nowrap);
+}
+const livePills = [210, 190, 200, 185, 195, 180, 220, 205];
+check(
+  "1270-wide viewport does not get a horizontal scroller from topbar pills",
+  integrationPillsPageWidth({
+    viewportWidth: 1270,
+    wrap: true,
+    minW0: true,
+    pillWidths: livePills,
+    gap: 8,
+  }) <= 1270,
+);
+check(
+  "nowrap non-shrinking pills would overflow 1270 (the live bug)",
+  integrationPillsPageWidth({
+    viewportWidth: 1270,
+    wrap: false,
+    minW0: false,
+    pillWidths: livePills,
+    gap: 8,
+  }) > 1270,
+);
 const candidatesPage = readFileSync(new URL("../src/app/candidates/page.tsx", import.meta.url), "utf8");
 check(
   "Candidates Source next batch names LinkedIn and Apify before the agent",

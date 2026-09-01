@@ -343,6 +343,15 @@ function mapProfile(p: RawApifyProfile): ApifyProfile {
   };
 }
 
+/**
+ * Exact harvestapi actor JSON. The field is `searchQuery` (keywords AND),
+ * not `keywords`, `q`, or the LinkedIn boolean. Planned tokens must equal
+ * this string or the harvest diverged before Apify ran.
+ */
+export function harvestapiActorInput(input: ApifyProfileSearchInput): Record<string, unknown> {
+  return buildActorInput(input);
+}
+
 /** Send only the actor input fields the caller actually set. */
 function buildActorInput(input: ApifyProfileSearchInput): Record<string, unknown> {
   const body: Record<string, unknown> = {};
@@ -405,7 +414,15 @@ export async function startProfileSearchRun(
   token: string,
   input: ApifyProfileSearchInput,
 ): Promise<ApifyResult<{ runId: string; datasetId: string; status: string }>> {
-  const body = buildActorInput(input);
+  const body = harvestapiActorInput(input);
+  const planned = (input.searchQuery ?? "").trim();
+  const sent = typeof body.searchQuery === "string" ? body.searchQuery.trim() : "";
+  logAriaHarvest("actor_input", {
+    query: planned,
+    actorInputField: "searchQuery",
+    actorSearchQuery: sent,
+    detail: sent === planned ? "actor_input_matches_planned" : "actor_input_diverges",
+  });
   const res = await apifyRequest<RawRunEnvelope>(clearance, ACTOR_PATH, token, { method: "POST", body, timeoutMs: 15_000 });
   if (!res.ok) return res;
   const r = res.data.data ?? {};

@@ -116,6 +116,12 @@ export function makeSourcingToolRunner(
 
     const platform = String(args.platform ?? "").trim() as SourcePlatform;
     const query = String(args.query ?? "").trim().slice(0, 256);
+    const currentJobTitles = Array.isArray(args.currentJobTitles)
+      ? args.currentJobTitles
+          .filter((title): title is string => typeof title === "string" && title.trim().length > 0)
+          .map((title) => title.trim().slice(0, 120))
+          .slice(0, 8)
+      : [];
     const requested = Math.trunc(Number(args.count)) || (platform === "Apify" ? 8 : 5);
     const count =
       platform === "Apify"
@@ -168,7 +174,11 @@ export function makeSourcingToolRunner(
         return { ok: false, error: "Connect an Apify key in Settings first." };
       }
       try {
-        const clearance = clearDiscoveryCriteria(platform, { searchQuery: query }, campaign);
+        const clearance = clearDiscoveryCriteria(
+          platform,
+          { searchQuery: query, ...(currentJobTitles.length ? { currentJobTitles } : {}) },
+          campaign,
+        );
         if (!clearance.ok) {
           executions.push({
             platform,
@@ -192,6 +202,7 @@ export function makeSourcingToolRunner(
           apifyToken,
           {
             searchQuery: query,
+            ...(currentJobTitles.length ? { currentJobTitles } : {}),
             // Short mode has no headline/about/skills — finance ≥60 skill-match cannot hold.
             profileScraperMode: "Full",
             maxItems: count,

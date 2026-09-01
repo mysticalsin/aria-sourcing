@@ -105,7 +105,17 @@ export default function DashboardPage() {
   const isFirstRun = ccMode === "first_run";
 
   const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
-  const funnel = React.useMemo(() => funnelForCandidates(candidates), [candidates]);
+  const pipelineCandidates = React.useMemo(
+    () =>
+      activeCampaign
+        ? candidates.filter((row) => row.campaignId === activeCampaign.id)
+        : candidates,
+    [candidates, activeCampaign],
+  );
+  const funnel = React.useMemo(
+    () => funnelForCandidates(pipelineCandidates),
+    [pipelineCandidates],
+  );
 
   // "Watch Aria Work" panel — remounted (via runToken as its key) on every
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.

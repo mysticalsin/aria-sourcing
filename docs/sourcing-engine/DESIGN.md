@@ -181,11 +181,12 @@ hydrate and on the Strategy tab.
   does not add GitHub steps unless the role's platforms include GitHub.
   A cloud model may draft outreach after those searches; it cannot
   replace them with `language:` blobs.
-- **Keyed people-first harvest is the product.** Empty harvest is honest,
-  not the product. When a valid Apify key is already Connected, Source
-  next batch on **Calypso Application Support** must return **real people**,
-  then a skill-match shortlist (score ≥ 60, cap ≤ 20). It must not be
-  0-or-toast. Do not invent candidates. Do not dress fixtures as live.
+- **Keyed people-first harvest is the product.** Empty harvest is not a
+  product result. Aria can never find 0 people. When a valid Apify key
+  is already Connected, Source next batch on **Calypso Application
+  Support** must return **real people**, then a skill-match shortlist
+  (score ≥ 60, cap ≤ 20). It must not be 0-or-toast. Do not invent
+  candidates. Do not dress fixtures as live.
 
   Harvest query (harvestapi `searchQuery`) is keywords, not a LinkedIn
   boolean and not `title + first six Skill (Must) tokens` jammed as AND.
@@ -278,15 +279,41 @@ hydrate and on the Strategy tab.
   server wait **90s**. A client abort is
   `PEOPLE_FIRST_HARVEST_ABORTED` — fail loud, never silent 0.
 
-  If harvestapi **honestly** returns 0 after `SUCCEEDED`, one
-  evidenced fail (`PEOPLE_FIRST_HARVEST_EMPTY`) with query + run-id
-  + a **Source via Apify** next-search CTA. If it returns people
-  without email + phone + LinkedIn, fail
-  `PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS` with query + run-id —
-  do not mint contacts and do not keep name-only rows. Never 15 identical
-  `LinkedIn: 0 real candidates` rows. Do not invent
-  people. Do not complete a sourcing run that only stores 0-count
-  receipts.
+  ## Never 0 people (product law)
+
+  Aria can **never find 0 people**. `items=0` is not a product result.
+  0-and-stop is FAIL. A banner that stops at 0 is FAIL.
+
+  Empty harvest MUST next-search until there is a real shortlist:
+
+  - Keep the first query (`Calypso Business Analyst` / `Calypso Linux
+    Python`). Ultron live proved that phrase can return `SUCCEEDED
+    items=0`. That is a signal to continue, not a result.
+  - Log the exact actor input (`actorInputField=searchQuery`,
+    `actorSearchQuery` must equal the planned tokens). Field-name
+    divergence is not the live bug.
+  - Broaden to Calypso + BA skills that actually exist on LinkedIn
+    (`Calypso Business Analysis`), then the platform alone (`Calypso`).
+  - Next harvestapi input if the phrase AND returned 0: `searchQuery=
+    Calypso` + `currentJobTitles=["Business Analyst"]`.
+  - Next query if this phrase returned 0. Next actor-input if this
+    actor input returned 0. Keep going.
+  - Real shortlist only: email + phone + LinkedIn, skill-match ≥ 60,
+    cap ≤ 20.
+
+  FAIL: name-only, `@example.com`, leftover GitHub, fixture people,
+  a banner that stops at 0. Do not invent people. Do not dress
+  leftovers as the shortlist.
+
+  Pipeline sourced for **this campaign** must match the visible
+  shortlist, not a stale aggregate (the live "8 sourced" after a
+  0-person run). After leftover strip, sourced is the visible
+  people count.
+
+  If a later query returns people without email + phone + LinkedIn,
+  do not keep those rows and do not mint contacts — continue to the
+  next planned search. `PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS`
+  only after every planned search was tried. Never 15 identical `LinkedIn: 0 real candidates` rows.
 
   Short-mode discovery (no headline / about / skills) cannot prove
   a ≥60 skill-match. Mapping never stamps the JD title as
@@ -295,10 +322,11 @@ hydrate and on the Strategy tab.
   finance gate still requires score ≥ 60, cap 20, and a CV citation.
 
   Fail loud when (a) the Apify key is missing, invalid, or the card
-  is **Mock**, (b) the harvest never started, (c) the run is still
-  going, or (d) harvestapi truly returned 0 after a real run. A
-  valid **Live** key plus 0-or-15-zero-rows is a harvest bug — fix
-  the harvest, do not toast **Open Access & Keys**. Access & Keys
+  is **Mock**, (b) the harvest never started, or (c) the run is still
+  going. Do **not** fail-loud 0-and-stop because the first actor
+  returned `items=0`. That is next-search. A valid **Live** key plus
+  0-or-15-zero-rows is a harvest bug — fix the harvest (next query /
+  next actor input), do not toast **Open Access & Keys**. Access & Keys
   stays the CTA when the key is missing, the card is Mock, or the
   harvest route did not complete.
 - **Honor a valid stored harvest key.** Access & Keys is the source of truth
@@ -506,4 +534,10 @@ product name. Login/home chrome reads as Aria, then the active need.
   expand any scroll container. Prove at 1280 and 1440 that the Command
   Center root `scrollWidth <= clientWidth`. Do NOT ship `overflow-x: hidden`
   on html/body as the fix (Tony: no first-pass hide).
+- Integration pills (`cc-integration-pills`) wrap (`flex-wrap` +
+  `min-w-0` + `max-w-full`). Do not leave `whitespace-nowrap` chips in a
+  non-wrapping flex row — that is the live 1270 overflow (pills right
+  edge ~1690, page `scrollWidth` 4311). A 1270-wide viewport must not
+  get a horizontal scroller from the topbar strip. Contain the pills;
+  do not hide the page.
 
