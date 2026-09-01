@@ -11,7 +11,7 @@ import { scoreCandidate } from "../src/lib/scoring";
 import { buildOutreachPrompt } from "../src/lib/ai/hermes";
 import { generateOutreach } from "../src/lib/mock-ai";
 import { defaultLiveIntegrations } from "../src/lib/integrations";
-import { MISSING_PEOPLE_PLUGINS_TOAST } from "../src/lib/sourcing/people-plugins";
+import { EMPTY_PEOPLE_FIRST_HARVEST } from "../src/lib/sourcing/people-plugins";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
 
@@ -1946,13 +1946,21 @@ test("people-first GitHub-only empty batch is fail-loud, not a successful search
       industryExperience: ["Fintech"],
     },
   };
-  const integrations = defaultLiveIntegrations().map((item) =>
-    item.id === "int_apify"
-      ? { ...item, status: "connected" as const, mode: "live" as const }
-      : item,
-  );
+  const integrations = defaultLiveIntegrations();
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
   const harness = createHarness({
-    state: { ...seed, campaigns: [campaign], integrations },
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
     syntheticSourcingAllowed: false,
     responseBody: {
       ok: true,
@@ -1977,8 +1985,8 @@ test("people-first GitHub-only empty batch is fail-loud, not a successful search
 
   assert.equal(result.ok, false);
   if (!result.ok) {
-    assert.equal(result.error, MISSING_PEOPLE_PLUGINS_TOAST);
-    assert.match(result.error, /Apify/);
+    assert.equal(result.error, EMPTY_PEOPLE_FIRST_HARVEST);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
     assert.doesNotMatch(result.error, /invalid response/i);
   }
   assert.equal(harness.persistedCalls, 0);

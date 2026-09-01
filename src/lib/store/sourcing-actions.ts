@@ -8,9 +8,11 @@ import {
 } from "../sourcing/fixture-shortlist-candidates";
 import { CONNECT_CHANNELS_COPY } from "../sourcing/people-connect";
 import {
+  EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
   missingPeoplePluginsToast,
+  peopleSourcePluginsConnected,
   remapPeopleFirstSourcingError,
   MISSING_PEOPLE_PLUGINS_TOAST,
   visiblePeopleFirstLearningReceipts,
@@ -774,7 +776,9 @@ export function createSourcingActions({
     ) {
       return {
         ok: false,
-        error: MISSING_PEOPLE_PLUGINS_TOAST,
+        error: peopleSourcePluginsConnected(latest.integrations, latest.apiKeys)
+          ? EMPTY_PEOPLE_FIRST_HARVEST
+          : MISSING_PEOPLE_PLUGINS_TOAST,
         source: "unavailable",
       };
     }
