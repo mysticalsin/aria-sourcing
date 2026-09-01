@@ -24,7 +24,7 @@ export const MISSING_PEOPLE_PLUGINS_TOAST =
   "MISSING_PLUGIN: Add a valid Apify key in Access & Keys, or connect official LinkedIn. GitHub Sourcing cannot fill this people-first role.";
 
 export const EMPTY_PEOPLE_FIRST_HARVEST =
-  "Empty harvest is not a result. Engine continues to the next planned search. Do not stop at 0 people.";
+  "Empty harvest is not a result. Do not stop at 0 people.";
 
 export const PEOPLE_FIRST_HARVEST_UNAVAILABLE =
   "People-first harvest did not complete. Open Access & Keys to confirm the Apify key, then retry Source next batch.";
@@ -174,10 +174,10 @@ function campaignBriefUi(description: string): PeoplePluginUi {
   };
 }
 
-/** Keyed harvest fail: next search, not reconnect the key that already works. */
+/** Keyed harvest fail after the engine already next-searched. Not a reconnect. */
 function keyedEmptyHarvestUi(description: string): PeoplePluginUi {
   return {
-    title: "Next search required",
+    title: "Empty harvest is not a result",
     description,
     href: SOURCE_VIA_APIFY_HREF,
     actionLabel: SOURCE_VIA_APIFY_LABEL,
@@ -246,7 +246,7 @@ export function peoplePluginFailLoudUi(
     /0 candidates|empty harvest|0 profiles|do not stop at 0|did not start|still running|aborted after|actor=harvestapi/i.test(remapped)
   ) {
     const keyed = job ? peopleSourcePluginsConnected(integrations ?? [], apiKeys) : false;
-    return keyed ? keyedEmptyHarvestUi(remapped) : pluginUi("Next search required", remapped);
+    return keyed ? keyedEmptyHarvestUi(remapped) : pluginUi("Empty harvest is not a result", remapped);
   }
   if (remapped === PEOPLE_FIRST_HARVEST_UNAVAILABLE || GENERIC_SOURCING_FAILURE.test(remapped)) {
     return pluginUi("Sourcing failed", remapped);

@@ -57,6 +57,7 @@ import { workspaceApifyIsMock } from "@/lib/sourcing/people-connect";
 import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
 import {
   apifyHarvestQueryFromBrief,
+  PEOPLE_FIRST_ATTEMPT_WAIT_MS,
   PEOPLE_FIRST_SEARCH_BUDGET_MS,
   plannedSourcingSearches,
 } from "@/lib/sourcing/multi-source-plan";
@@ -67,7 +68,7 @@ import type { Candidate, Role } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 90;
+export const maxDuration = 360;
 
 /** Bound key lookup so a hung vault/Supabase read cannot stall before request_entry. */
 const APIFY_KEY_RESOLVE_MS = 8_000;
@@ -433,11 +434,17 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const apifyMock = initial.apifyMock;
   // Mock is not a live key. Do not decrypt or hang on vault before evidence.
   const apifyToken = apifyMock ? null : await resolveApifyKeyBounded(session);
+  const plannedPeopleFirstHarvests = peopleFirst
+    ? multiSourcePlan.filter((step) => step.platform === "Apify")
+    : [];
   logAriaHarvest("request_entry", {
     query: harvestQuery,
     campaign: initial.value.campaign.jobAnalysis.title,
     apifyKeyPresent: !apifyMock && Boolean(apifyToken),
     started: false,
+    detail: peopleFirst
+      ? `plannedHarvests=${plannedPeopleFirstHarvests.length}`
+      : undefined,
   });
   // Fail before claiming a run. Tavily is not LinkedIn. GitHub Live-unconfigured
   // is not a people source. Name the plugins and the connect action.
@@ -718,27 +725,52 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       let successfulQuery = false;
-      for (const step of searches) {
+      for (let stepIndex = 0; stepIndex < searches.length; stepIndex += 1) {
+        const step = searches[stepIndex];
         const remaining = count - runner.getFound().length;
         if (remaining <= 0) break;
-        const result = await runner.run(
-          "search_candidates",
-          {
-            platform: step.platform,
+        const nextStep = searches[stepIndex + 1];
+        if (peopleFirst && !frameworkAuthorization && stepIndex > 0) {
+          logAriaHarvest("next_search_start", {
             query: step.query,
-            count: remaining,
-            ...("currentJobTitles" in step && step.currentJobTitles?.length
-              ? { currentJobTitles: step.currentJobTitles }
-              : {}),
-          },
-          searchSignal,
-        );
+            started: false,
+            nextQuery: step.query,
+            detail: `attempt=${stepIndex + 1}/${searches.length}`,
+          });
+        }
+        const stepAbort = new AbortController();
+        const stepMs = peopleFirst && !frameworkAuthorization
+          ? PEOPLE_FIRST_ATTEMPT_WAIT_MS
+          : searchBudgetMs;
+        const stepTimer = setTimeout(() => stepAbort.abort(), stepMs);
+        if (!peopleFirst || frameworkAuthorization) {
+          if (searchSignal.aborted) stepAbort.abort();
+          else {
+            searchSignal.addEventListener("abort", () => stepAbort.abort(), { once: true });
+          }
+        }
+        let result: { ok: boolean } = { ok: false };
+        try {
+          result = await runner.run(
+            "search_candidates",
+            {
+              platform: step.platform,
+              query: step.query,
+              count: remaining,
+              ...("currentJobTitles" in step && step.currentJobTitles?.length
+                ? { currentJobTitles: step.currentJobTitles }
+                : {}),
+            },
+            stepAbort.signal,
+          );
+        } finally {
+          clearTimeout(stepTimer);
+        }
         successfulQuery = successfulQuery || result.ok;
         if (peopleFirst && !frameworkAuthorization && result.ok) {
           const lastHarvest = runner.getExecutions().at(-1)?.harvest;
           const harvestStatus = (lastHarvest?.status ?? "").toUpperCase();
           if (lastHarvest?.started && harvestStatus === "SUCCEEDED" && lastHarvest.itemCount === 0) {
-            const nextStep = searches[searches.indexOf(step) + 1];
             if (nextStep) {
               logAriaHarvest("empty_next_search", {
                 query: lastHarvest.query || step.query,

@@ -11,7 +11,8 @@ export const SOURCE_VIA_APIFY_LABEL = "Source via Apify";
 export const CONNECT_APIFY_HREF = "/settings";
 export const CONNECT_APIFY_LABEL = "Connect Apify";
 
-export const PEOPLE_FIRST_CLIENT_WAIT_MS = 90_000;
+/** Must cover every planned harvest in one Source click. 90s is 0-and-stop. */
+export const PEOPLE_FIRST_CLIENT_WAIT_MS = 360_000;
 
 export const PEOPLE_FIRST_HARVEST_NOT_STARTED = "PEOPLE_FIRST_HARVEST_NOT_STARTED";
 export const PEOPLE_FIRST_HARVEST_STILL_RUNNING = "PEOPLE_FIRST_HARVEST_STILL_RUNNING";
@@ -78,9 +79,9 @@ export function formatHarvestEvidenceError(
     return `People-first harvest returned people without email, phone, and LinkedIn. ${base}. Do not invent contacts. Do not keep name-only rows.`;
   }
   if (kind === "gated_empty") {
-    return `Empty harvest is not a result. ${base}. Engine continues to the next planned search. Do not stop at 0 people. Skill-match ≥60 still required. Try Source via Apify.`;
+    return `Empty harvest is not a result. ${base}. Every planned search was tried. Do not stop at 0 people. Do not invent people. Skill-match ≥60 still required.`;
   }
-  return `Empty harvest is not a result. ${base}. Engine continues to the next planned search. Do not stop at 0 people. Try Source via Apify.`;
+  return `Empty harvest is not a result. ${base}. Every planned search was tried. Do not stop at 0 people. Do not invent people.`;
 }
 
 function sanitizeHarvestPayload(payload: Record<string, unknown>): Record<string, unknown> {

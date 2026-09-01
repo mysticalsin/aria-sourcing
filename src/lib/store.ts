@@ -1484,7 +1484,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!Array.isArray(out.profiles) || out.profiles.length === 0) {
         return {
           ok: false,
-          error: "Empty harvest is not a result. Engine continues to the next planned search. Do not stop at 0 people.",
+          error: "Empty harvest is not a result. Do not stop at 0 people.",
         };
       }
 

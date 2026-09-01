@@ -1704,5 +1704,9 @@ test("people-first empty first query continues and keeps a real shortlist from t
   assert.equal(body.candidates[0]?.email, "elena.varga@bnpp-cib.com");
   assert.ok(runnerQueries.some((row) => row.query === "Calypso Linux Python"));
   assert.ok(runnerQueries.some((row) => row.query !== "Calypso Linux Python"));
+  assert.ok(
+    runnerQueries.filter((row) => row.platform === "Apify").length >= 2,
+    `one Source click must start the next harvest without a second click: ${JSON.stringify(runnerQueries)}`,
+  );
   assert.equal(completeCalls, 1);
 });

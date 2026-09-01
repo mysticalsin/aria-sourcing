@@ -25,13 +25,13 @@ export function HeroPanel({ mode = "returning", nextStep }: HeroPanelProps) {
 function HeroDecor({ orbital = false }: { orbital?: boolean }) {
   return (
     <div
-      className="pointer-events-none absolute inset-0 overflow-hidden"
+      className="pointer-events-none absolute inset-0 overflow-hidden [contain:paint]"
       aria-hidden
       data-testid="cc-hero-decor"
     >
       <div className="absolute inset-0 bg-dot-grid opacity-50" />
       {orbital ? (
-        <div className="orbital absolute -right-24 -top-28 h-80 w-80 rounded-full opacity-30 animate-spin-slow" />
+        <div className="orbital absolute right-0 top-0 h-80 w-80 translate-x-1/4 -translate-y-1/4 rounded-full opacity-30 animate-spin-slow" />
       ) : null}
       <div className="absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-tangerine/20 blur-3xl" />
       <div className="absolute -bottom-10 right-16 h-56 w-56 rounded-full bg-electric/15 blur-3xl" />

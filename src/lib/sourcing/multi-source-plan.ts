@@ -17,8 +17,17 @@ export interface PlannedSearch {
   currentJobTitles?: string[];
 }
 
-/** People-first Source next batch: poll harvestapi Full until terminal. */
-export const PEOPLE_FIRST_SEARCH_BUDGET_MS = 90_000;
+/** One harvestapi poll. Next-search after items=0 gets a fresh timer. */
+export const PEOPLE_FIRST_ATTEMPT_WAIT_MS = 90_000;
+/** Planned harvestapi attempts until a real shortlist. */
+export const PEOPLE_FIRST_MAX_ATTEMPTS = 4;
+/**
+ * One Source click must run every planned harvest. A shared 90s abort is
+ * 0-and-stop: the first SUCCEEDED items=0 consumes the budget and harvest 2
+ * never starts (Ultron Fly d99e772 v212).
+ */
+export const PEOPLE_FIRST_SEARCH_BUDGET_MS =
+  PEOPLE_FIRST_ATTEMPT_WAIT_MS * PEOPLE_FIRST_MAX_ATTEMPTS;
 
 /** Distinctive trading-platform tokens. These are skills / need words, never people. */
 const NEED_PLATFORM_TOKENS = [
@@ -134,7 +143,7 @@ export function peopleFirstHarvestAttempts(job: JobAnalysis): PlannedSearch[] {
   push(primary);
   if (platform && role) push(platform, [role]);
   for (const query of peopleFirstHarvestQueries(job)) push(query);
-  return attempts.slice(0, 4);
+  return attempts.slice(0, PEOPLE_FIRST_MAX_ATTEMPTS);
 }
 
 function apifyQueryFromLinkedinPlan(job: JobAnalysis, linkedinBoolean: string): string {

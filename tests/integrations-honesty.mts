@@ -471,7 +471,7 @@ const keyedEmptyFailLoud = peoplePluginFailLoudUi(
 );
 ok(
   "keyed empty harvest is fail-loud without an Access & Keys reconnect CTA",
-  keyedEmptyToast?.title === "Next search required" &&
+  keyedEmptyToast?.title === "Empty harvest is not a result" &&
     keyedEmptyToast.description === EMPTY_PEOPLE_FIRST_HARVEST &&
     keyedEmptyToast.href === "#source-apify" &&
     /Source via Apify/i.test(keyedEmptyToast.actionLabel) &&

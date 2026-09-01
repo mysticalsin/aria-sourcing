@@ -337,12 +337,12 @@ export default function DashboardPage() {
                   </p>
                   <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   {sourceBatchError ? (
                     <div
                       role="alert"
                       data-testid="source-next-batch-error"
-                      className="w-full rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-left text-sm"
+                      className="w-full min-w-0 max-w-full break-words rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-left text-sm"
                     >
                       <p className="font-semibold text-ink">{sourceBatchError.title}</p>
                       <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
@@ -410,7 +410,7 @@ export default function DashboardPage() {
             <IntegrationStrip />
 
             {/* Main two-column layout */}
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3">
               {/* Left: funnel + campaigns */}
               <div className="space-y-6 lg:col-span-2">
                 <Card className="animate-fade-in">
@@ -462,7 +462,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Right: attention + TAnIA summary + activity */}
-              <div className="space-y-6">
+              <div className="min-w-0 space-y-6">
                 <AttentionPanel />
 
                 <TaniaSummary />

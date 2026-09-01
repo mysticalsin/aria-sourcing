@@ -284,7 +284,12 @@ hydrate and on the Strategy tab.
   Aria can **never find 0 people**. items=0 is not a product result.
   0-and-stop is FAIL. A banner that stops at 0 is FAIL.
 
-  Empty harvest MUST next-search until there is a real shortlist:
+  Empty harvest MUST next-search until there is a real shortlist.
+  Copy is not next-search. A banner that says the engine continues
+  and then waits for a second click is FAIL. One Source click must
+  enqueue/start the next planned harvest on `items=0` in the same
+  request (fresh 90s per attempt, total budget 360s). Do not share
+  one 90s abort across the plan.
 
   - Keep the first query (`Calypso Business Analyst` / `Calypso Linux
     Python`). Ultron live proved that phrase can return `SUCCEEDED
@@ -302,8 +307,11 @@ hydrate and on the Strategy tab.
     cap ≤ 20.
 
   FAIL: name-only, `@example.com`, leftover GitHub, fixture people,
-  a banner that stops at 0. Do not invent people. Do not dress
-  leftovers as the shortlist.
+  a banner that stops at 0, a "Next search required" toast that does
+  not start harvest 2. Do not invent people. Do not dress leftovers
+  as the shortlist. Last-resort `PEOPLE_FIRST_HARVEST_EMPTY` only
+  after every planned search was started. That copy must not say
+  the engine continues.
 
   Pipeline sourced for **this campaign** must match the visible shortlist,
   not a stale aggregate (the live "8 sourced" after a 0-person run).
@@ -529,14 +537,20 @@ product name. Login/home chrome reads as Aria, then the active need.
   chip/subtitle "Acting on {title}". Not the H1. First-run H1 stays
   "Paste a job. Aria finds people."
 - Decorative orbital/blobs live in a clipped layer
-  (`absolute inset-0 overflow-hidden pointer-events-none`) that MUST NOT
-  expand any scroll container. Prove at 1280 and 1440 that the Command
-  Center root `scrollWidth <= clientWidth`. Do NOT ship `overflow-x: hidden`
+  (`absolute inset-0 overflow-hidden [contain:paint] pointer-events-none`)
+  that MUST NOT expand any scroll container. Do not use unclipped
+  `-right-24` orbital offsets. Prove at 1270 that the Command Center
+  root `scrollWidth <= clientWidth`. Do NOT ship `overflow-x: hidden`
   on html/body as the fix (Tony: no first-pass hide).
 - Integration pills (`cc-integration-pills`) wrap (`flex-wrap` +
   `min-w-0` + `max-w-full`). Do not leave `whitespace-nowrap` chips in a
   non-wrapping flex row — that is the live 1270 overflow (pills right
-  edge ~1690, page `scrollWidth` 4311). A 1270-wide viewport must not
-  get a horizontal scroller from the topbar strip. Contain the pills;
-  do not hide the page.
+  edge ~1690, page `scrollWidth` 4311).
+- Activity fail-loud outcome pills (`cc-activity-outcome`) wrap
+  (`whitespace-normal break-words max-w-full`). The live 1270 overflow
+  (scrollWidth 1313, pill right edge 1313) was a nowrap
+  "6 lab fixture row(s) removed — fail-loud" badge plus an unclipped
+  orbital. A 1270-wide viewport must not get a horizontal scroller from
+  the outcome pill or orbital. Contain the pill; clip the orbital; do
+  not hide the page.
 

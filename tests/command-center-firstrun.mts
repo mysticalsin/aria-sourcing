@@ -99,7 +99,9 @@ check(
   "hero decor is a clipped layer that cannot expand the scroll container",
   /data-testid="cc-hero-decor"/.test(heroPanel) &&
     /absolute inset-0 overflow-hidden/.test(heroPanel) &&
-    /pointer-events-none/.test(heroPanel),
+    /\[contain:paint\]/.test(heroPanel) &&
+    /pointer-events-none/.test(heroPanel) &&
+    !/-right-24/.test(heroPanel),
 );
 check(
   "DESIGN Command Center home chrome forbids campaign-title H1 and html overflow-x hide",
@@ -108,7 +110,9 @@ check(
     /scrollWidth <= clientWidth/.test(design) &&
     /no first-pass hide/.test(design) &&
     /1270-wide viewport/.test(design) &&
-    /cc-integration-pills/.test(design),
+    /cc-integration-pills/.test(design) &&
+    /cc-activity-outcome/.test(design) &&
+    /contain:paint/.test(design),
 );
 check(
   "root layout does not hide overflow-x on html or body",
@@ -195,6 +199,56 @@ check(
     minW0: false,
     pillWidths: livePills,
     gap: 8,
+  }) > 1270,
+);
+
+const timeline = readFileSync(
+  new URL("../src/components/shared/activity-timeline.tsx", import.meta.url),
+  "utf8",
+);
+check(
+  "activity fail-loud outcome pills wrap so they cannot expand the page",
+  /data-testid="cc-activity-outcome"/.test(timeline) &&
+    /whitespace-normal/.test(timeline) &&
+    /break-words/.test(timeline) &&
+    /max-w-full/.test(timeline),
+);
+
+/** Ultron 1270: nowrap fail-loud outcome (right edge 1313) + unclipped -right-24 orbital. */
+function activityOrbitalPageWidth(opts: {
+  viewportWidth: number;
+  columnWidth: number;
+  outcomeWidth: number;
+  wrapOutcome: boolean;
+  orbitalProtrusion: number;
+  clipOrbital: boolean;
+}): number {
+  const outcomeOverflow = opts.wrapOutcome
+    ? 0
+    : Math.max(0, opts.outcomeWidth - opts.columnWidth);
+  const orbitalOverflow = opts.clipOrbital ? 0 : opts.orbitalProtrusion;
+  return opts.viewportWidth + outcomeOverflow + orbitalOverflow;
+}
+check(
+  "1270-wide viewport does not grow from wrapped outcome pill + clipped orbital",
+  activityOrbitalPageWidth({
+    viewportWidth: 1270,
+    columnWidth: 400,
+    outcomeWidth: 480,
+    wrapOutcome: true,
+    orbitalProtrusion: 96,
+    clipOrbital: true,
+  }) <= 1270,
+);
+check(
+  "nowrap outcome plus unclipped orbital overflow 1270 (the live bug)",
+  activityOrbitalPageWidth({
+    viewportWidth: 1270,
+    columnWidth: 400,
+    outcomeWidth: 480,
+    wrapOutcome: false,
+    orbitalProtrusion: 96,
+    clipOrbital: false,
   }) > 1270,
 );
 const candidatesPage = readFileSync(new URL("../src/app/candidates/page.tsx", import.meta.url), "utf8");

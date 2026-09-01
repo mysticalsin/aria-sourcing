@@ -281,12 +281,21 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const apify = readFileSync(new URL("../src/lib/sourcing/apify.ts", import.meta.url), "utf8");
   const helpers = readFileSync(new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url), "utf8");
   const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
-  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS = 90_000/);
+  assert.match(plan, /PEOPLE_FIRST_ATTEMPT_WAIT_MS = 90_000/);
+  assert.match(plan, /PEOPLE_FIRST_MAX_ATTEMPTS = 4/);
+  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS/);
+  assert.match(plan, /PEOPLE_FIRST_ATTEMPT_WAIT_MS \* PEOPLE_FIRST_MAX_ATTEMPTS/);
   assert.match(plan, /apifyHarvestQueryFromBrief/);
   assert.match(plan, /peopleFirstHarvestQueries/);
   assert.match(plan, /peopleFirstHarvestAttempts/);
   assert.match(route, /peopleFirst \? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000/);
-  assert.match(route, /export const maxDuration = 90/);
+  assert.match(route, /export const maxDuration = 360/);
+  assert.match(route, /PEOPLE_FIRST_ATTEMPT_WAIT_MS/);
+  assert.match(route, /next_search_start/);
+  assert.match(route, /new AbortController\(\)/);
+  assert.match(design, /fresh 90s per attempt/);
+  assert.match(design, /total budget 360s/);
+  assert.match(design, /enqueue\/start the next planned harvest/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_STILL_RUNNING/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_EMPTY/);
@@ -345,7 +354,9 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const actions = readFileSync(new URL("../src/lib/store/sourcing-actions.ts", import.meta.url), "utf8");
   assert.match(harvest, /process\.stdout\.write/);
   assert.doesNotMatch(harvest, /console\.(info|log|debug)\(/);
-  assert.match(harvest, /PEOPLE_FIRST_CLIENT_WAIT_MS = 90_000/);
+  assert.match(harvest, /PEOPLE_FIRST_CLIENT_WAIT_MS = 360_000/);
+  assert.match(harvest, /Every planned search was tried/);
+  assert.doesNotMatch(harvest, /Engine continues to the next planned search/);
   assert.match(harvest, /PEOPLE_FIRST_HARVEST_ABORTED/);
   assert.match(harvest, /PEOPLE_FIRST_HARVEST_MOCK/);
   assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);
@@ -514,7 +525,7 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
           ok: false,
           code: "PEOPLE_FIRST_HARVEST_EMPTY",
           error:
-            "Empty harvest is not a result. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python run=run-empty status=SUCCEEDED items=0. Engine continues to the next planned search. Do not stop at 0 people. Try Source via Apify.",
+            "Empty harvest is not a result. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python run=run-empty status=SUCCEEDED items=0. Every planned search was tried. Do not stop at 0 people. Do not invent people.",
           requestId: "req-harvest-empty",
         }),
         { status: 502, headers: { "content-type": "application/json" } },
@@ -526,7 +537,8 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   if (!harvestEmpty.ok) {
     assert.match(harvestEmpty.error, /run=run-empty/);
     assert.match(harvestEmpty.error, /Calypso Linux Python/);
-    assert.match(harvestEmpty.error, /Source via Apify/);
+    assert.match(harvestEmpty.error, /Every planned search was tried/);
+    assert.doesNotMatch(harvestEmpty.error, /Engine continues/);
     assert.doesNotMatch(harvestEmpty.error, /unavailable/i);
   }
   const harvestMock = await requestReviewedSourcing(
