@@ -351,6 +351,9 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
   assert.match(design, /recall-capable Apify harvestapi/);
   assert.match(design, /Calypso Linux Python/);
+  assert.match(design, /Calypso Business Analysis MySQL/);
+  assert.match(design, /Business Analyst/);
+  assert.match(plan, /harvestRoleFromTitle|Business Analyst/);
   assert.match(design, /\[aria-harvest\]/);
   assert.match(design, /15 identical/);
   assert.match(design, /do not toast[\s\S]*\*\*Open Access & Keys\*\*/);

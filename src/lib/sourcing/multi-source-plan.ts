@@ -45,18 +45,34 @@ function distinctiveNeedPlatform(job: JobAnalysis): string {
   return NEED_PLATFORM_TOKENS.find((token) => hay.includes(token.toLowerCase())) ?? "";
 }
 
+/** Title role for harvest keywords. BA leftover VSS says "Business Analysis". */
+function harvestRoleFromTitle(title: string): string {
+  if (/\bbusiness analyst\b|\bba\b/i.test(title)) return "Business Analyst";
+  return "";
+}
+
+/** VSS project-type / low-recall chips. Do not AND these as harvest keywords. */
+function skipHarvestExtra(skill: string): boolean {
+  return /^(business analysis|mysql)$/i.test(skill.trim());
+}
+
 /**
  * harvestapi `searchQuery` is keywords (typically AND), not a LinkedIn boolean.
- * Title + six Skill (Must) tokens has near-zero recall. The recall shape is
- * the distinctive platform (Calypso is a need/skill) plus two must-have skills.
+ * Distinctive platform + first two non-platform Skill (Must) chips, skipping
+ * VSS project-type / MySQL leftovers. BA-shaped titles add Business Analyst.
+ * Application Support stays `Calypso Linux Python`.
  */
 export function apifyHarvestQueryFromBrief(job: JobAnalysis): string {
   const skills = tokenizeMustHaveSkills(job.requiredSkills);
   const platform = distinctiveNeedPlatform(job);
+  const role = harvestRoleFromTitle(job.title);
   const extra = skills
-    .filter((skill) => skill.toLowerCase() !== platform.toLowerCase())
-    .slice(0, 2);
-  const tokens = (platform ? [platform, ...extra] : skills.slice(0, 3)).filter(Boolean);
+    .filter((skill) => !platform || skill.toLowerCase() !== platform.toLowerCase())
+    .filter((skill) => !skipHarvestExtra(skill))
+    .filter((skill) => !role || skill.toLowerCase() !== role.toLowerCase());
+  const tokens = (platform ? [platform, role, ...extra] : [role, ...skills])
+    .filter(Boolean)
+    .slice(0, 3);
   return tokens.join(" ").slice(0, 256).trim();
 }
 

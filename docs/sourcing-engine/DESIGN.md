@@ -192,7 +192,10 @@ hydrate and on the Strategy tab.
   The recall shape is the distinctive platform from the need (Calypso
   is a **need** / skill, never a person) plus two must-have skills —
   the same shape that already works in Source via Apify
-  (`Calypso Linux Python`). People-first must emit this Apify step
+  (`Calypso Linux Python`). A Senior Calypso Business Analyst searches
+  `Calypso Business Analyst`, never leftover
+  `Calypso Business Analysis MySQL`. Scoring chips stay as-is.
+  People-first must emit this Apify step
   even when the LinkedIn boolean is empty. Official LinkedIn boolean
   stays repaired (`"Linux" OR "Python"`), never one quoted Skill (Must)
   blob, and is not sent to harvestapi.

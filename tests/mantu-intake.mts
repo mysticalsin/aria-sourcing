@@ -111,6 +111,17 @@ ok(
     ba.jobAnalysis.requiredSkills.some((s) => s.toLowerCase() === skill.toLowerCase()),
   ),
 );
+ok(
+  "BA harvest query is Calypso Business Analyst, not leftover Business Analysis MySQL",
+  apifyHarvestQueryFromBrief(ba.jobAnalysis) === "Calypso Business Analyst" &&
+    apifyHarvestQueryFromBrief(ba.jobAnalysis) !== "Calypso Business Analysis MySQL",
+);
+ok(
+  "BA scoring chips stay Calypso / Business Analysis / MySQL",
+  ["Calypso", "Business Analysis", "MySQL"].every((skill) =>
+    ba.jobAnalysis.requiredSkills.some((s) => s.toLowerCase() === skill.toLowerCase()),
+  ),
+);
 
 const both = parseEmailAndJD({ email: `${TONY_AMACAN}\n\n${SAMPLE_VSS_CALYPSO_BA_MONTREAL}` });
 ok("combined VSS primary is Application Support", /application support/i.test(both.jobAnalysis.title));
