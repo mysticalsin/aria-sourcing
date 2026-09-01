@@ -572,7 +572,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
             ...promotedLessons
               .filter((lesson) =>
                 peopleFirst
-                  ? lesson.platform === "Apify" || lesson.platform === "LinkedIn"
+                  ? lesson.platform === "LinkedIn"
                   : lesson.platform === "LinkedIn" || lesson.platform === "GitHub",
               )
               .map((lesson) => ({ platform: lesson.platform, query: lesson.query })),
