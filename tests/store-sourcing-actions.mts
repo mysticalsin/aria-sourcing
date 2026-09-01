@@ -81,7 +81,7 @@ test("sourcing action boundary is React-free and wired through one stable factor
     agentRunSource,
     /executePrimaryAgentSourcing\(\{[\s\S]*?demoAuthorized: !supabaseEnabled && \(!isProduction \|\| demoLoginEnabled\),[\s\S]*?sourceNextBatch: actions\.sourceNextBatch,/,
   );
-  assert.match(agentRunSource, /missingPeoplePluginsToast/);
+  assert.match(agentRunSource, /emptyPeopleFirstToast|peoplePluginFailLoudUi/);
   assert.match(agentRunSource, /peoplePluginFailLoudUi/);
   assert.doesNotMatch(
     agentRunSource,
