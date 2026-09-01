@@ -1,30 +1,29 @@
 ---
 project: MSourcing / ARIA
-shift: 467
+shift: 468
 agent: cursor-cloud
-updated: 2026-09-01T15:56Z
+updated: 2026-09-01T16:06Z
 status: pr-open-coding-gates
 ---
 
-# Handoff — Shift 467
+# Handoff — Shift 468
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** (not merged)
 - Leftover **PR #53 OPEN**. Do not touch. Do not merge
-- Feature tip (this shift): **`3cb0c08`** — people-first 4xx/5xx toast + `source-next-batch-error` banner
-- Prior tips: `f594f25` product-host Origin; `b0f557b` Mock is not a live key
-- Local gate green on `3cb0c08`: `npx tsc --noEmit && npx tsc -p tsconfig.tests.json --pretty false && npm test`
+- Feature tip (this shift): **`c68c04f`** — named 503 gates + `SOURCING_AGENT_UNAVAILABLE` toast + people-first projection no longer dies on stale LLM settings
+- Prior tips: `3cb0c08` fail-loud 4xx/5xx; `f594f25` product-host Origin
+- Local gate green on `c68c04f`: `npx tsc --noEmit && npx tsc -p tsconfig.tests.json --pretty false && npm test`
 - READY TO MERGE stays **no**. Devon Path-B deploys PR 54 **tip**
 - Polo parked. Calypso is a **need**. No OAuth. No send. No merge. No Vercel. No Fly from this VM
 
 ## Done this shift
 
-1. Same Ultron 15:31:59Z click on live `2e298e5`: footer `aria 2e298e58c8ae`, silent none. No toast, no `PEOPLE_FIRST_HARVEST_MOCK`, no CORS copy, no audit row, Calypso still 0. Client swallowed the 403
-2. `sourceRejectedToast` is never null. handleSource / Source next batch (campaign, Command Center, candidates, fleet, launch, intake, agent-run-stream) always toast people-first 4xx/5xx including `CROSS_ORIGIN_REQUEST`
-3. Error toasts are `role="alert"` / `aria-live="assertive"`. Durable `source-next-batch-error` banner stays on screen
-4. Non-JSON 403 maps to `Sourcing request failed (HTTP 403). Do not treat this as 0 people.` — never the old unavailable swallow
-5. Same-site product-host Origin (`f594f25`) is unchanged. Product-host click must still reach `request_entry`
+1. Ultron 15:47:42Z on live `029291c`: Origin passed. `request_received` then `request_exit` `SOURCING_AGENT_UNAVAILABLE`. No `request_entry`. Silent none
+2. After Origin, the generic 503 hid the gate. `request_exit` now names `prod_fail_closed`, `supabase_disabled`, `session_null`, `workspace_read_error`, `campaign_invalid_state`, `unhandled`
+3. People-first projection no longer 503s on a stale cloud-model settings blob. Product-host click with invalid LLM settings still prints `request_entry` + query + `apifyKeyPresent`
+4. `SOURCING_AGENT_UNAVAILABLE` maps to `SOURCING_AGENT_UNAVAILABLE_TOAST` — never silent 0, not remapped to Mock
 
 ## Blockers
 
@@ -34,13 +33,13 @@ status: pr-open-coding-gates
 ## Next steps
 
 ```bash
-# Devon: Path B deploy of PR 54 tip (must include 3cb0c08) onto aria-mantu-app
+# Devon: Path B deploy of PR 54 tip (must include c68c04f) onto aria-mantu-app
 # Grep WEB 48e441ea927078 for aria_harvest / [aria-harvest]
-# Product-host click must reach request_entry with query + apifyKeyPresent
-# CROSS_ORIGIN_REQUEST on https://aria-mantu-app.fly.dev is FAIL
-# A rejected POST must toast + banner — silent 0 is FAIL
-# Then Mock fail-loud or people skill-match ≥60 cap ≤20
-# Ultron: one Source next batch. Silent no-op is FAIL
+# If still 503: toast unavailable + named request_exit reason
+# Else request_entry with query + apifyKeyPresent
+# Then Mock fail-loud PEOPLE_FIRST_HARVEST_MOCK or people ≥60 ≤20
+# Ultron: one Source next batch. Silent 0 is FAIL
+# CROSS_ORIGIN_REQUEST on the product host is FAIL
 # This VM: coding gates only. Do not merge PR 53 or 54
 # READY TO MERGE: no
 ```
@@ -54,6 +53,8 @@ status: pr-open-coding-gates
 - Connected+Mock is not ready. `apifyKeyPresent` must not be true for Mock
 - Same-site Origin is the public product host, not the Fly bind address
 - A rejected people-first POST must toast. Silent 0 on 4xx/5xx is FAIL
+- A generic `SOURCING_AGENT_UNAVAILABLE` must toast unavailable, not Mock
+- People-first must not die on LLM settings before `request_entry`
 - Send stays dry-run until channel-connect **and** Tony approves
 - Devon owns Fly. READY TO MERGE stays no until live harvest is proven
 
