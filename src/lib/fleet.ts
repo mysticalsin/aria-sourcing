@@ -179,6 +179,13 @@ export function recentlyContacted(
  *  - respects per-seat caps, warm-up, windows, and the optional global cap
  * Pure function — returns a plan; the store applies it to the ledger.
  */
+export const EMAIL_ALLOCATION_PROVIDERS = new Set([
+  "Microsoft Graph",
+  "Gmail API",
+  "SendGrid",
+  "Resend",
+]);
+
 export function allocateBatch(
   pool: Candidate[],
   seats: AgentSeat[],
@@ -189,7 +196,6 @@ export function allocateBatch(
 ): AllocationResult {
   const nowMs = now.getTime();
   const remaining = new Map<string, number>();
-  const EMAIL_ALLOCATION_PROVIDERS = new Set(["Microsoft Graph", "Gmail API", "SendGrid", "Resend"]);
   for (const seat of seats) {
     // Planning/claiming respects status, auto-pause health and daily caps.
     // LinkedIn / WhatsApp / SMS seats are not email allocators.
