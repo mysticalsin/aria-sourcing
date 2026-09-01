@@ -121,10 +121,10 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
       ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
     ),
   ];
-  assert.equal(parityLines.length, 209);
+  assert.equal(parityLines.length, 210);
   assert.equal(
     createHash("sha256").update(parityLines.join("\n")).digest("hex"),
-    "0e3e79ba7f68a5610e7a02a9645edefe3780606223f4d69bf00ae873d4c41633",
+    "92090bc523150127609f7a870fb2b12894a95cbf11dce570789102b80ce7451b",
     "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
   );
   assert.ok(
