@@ -235,6 +235,15 @@ hydrate and on the Strategy tab.
   before `request_entry`. A healthy product-host click prints
   `request_entry` with the brief query and `apifyKeyPresent`.
 
+  When the Apify card is Mock, `request_entry` has
+  `apifyKeyPresent` false and `request_exit` is
+  `PEOPLE_FIRST_HARVEST_MOCK` — not a generic
+  `SOURCING_AGENT_UNAVAILABLE`. The toast must be that server
+  code (Connect Apify / Mock mode), not a guessed 503. A generic
+  `SOURCING_AGENT_UNAVAILABLE` toasts unavailable, not Mock.
+  Campaign activity keeps an audit row for Mock / unavailable
+  so the fail is not toast-only.
+
   The keyed path must **start** a harvestapi Full run. If start
   does not happen, fail loud (`PEOPLE_FIRST_HARVEST_NOT_STARTED`).
   Do not fall through to LinkedIn 0-rows. Do not depend on

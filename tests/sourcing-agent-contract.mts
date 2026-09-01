@@ -249,6 +249,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(design, /source-next-batch-error/);
   assert.match(design, /prod_fail_closed/);
   assert.match(design, /stale cloud-model settings blob/);
+  assert.match(design, /PEOPLE_FIRST_HARVEST_MOCK/);
+  assert.match(design, /not a guessed 503/);
   const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");

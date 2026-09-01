@@ -509,6 +509,13 @@ ok(
     /This is not 0 people/i.test(SOURCING_AGENT_UNAVAILABLE_TOAST),
 );
 ok(
+  "generic unavailable on a Mock card stays unavailable, not a guessed Mock toast",
+  remapPeopleFirstSourcingError(SOURCING_AGENT_UNAVAILABLE_TOAST, calypsoJob, liveTenant) ===
+    SOURCING_AGENT_UNAVAILABLE_TOAST &&
+    remapPeopleFirstSourcingError("SOURCING_AGENT_UNAVAILABLE", calypsoJob, liveTenant) ===
+      SOURCING_AGENT_UNAVAILABLE_TOAST,
+);
+ok(
   "sourceRejectedToast never returns null on a people-first 4xx",
   sourceRejectedToast("Sourcing request failed (HTTP 403). Do not treat this as 0 people.", calypsoJob, liveTenant)
     .description.length > 0 &&

@@ -91,6 +91,7 @@ let requestedCloudProvider = "";
 let requestedCloudModel = "";
 let storedTavilyKey: string | null = null;
 let storedApifyKey: string | null = null;
+let workspaceIntegrations: Array<{ id: string; mode: string }> = [];
 let runnerHarvest: {
   started: boolean;
   status: string;
@@ -117,6 +118,7 @@ Object.assign(query, {
           candidates: seed.candidates
             .slice(0, 1)
             .map((candidate) => ({ ...candidate, campaignId })),
+          integrations: workspaceIntegrations,
         },
         updated_at: `2026-07-13T14:00:0${stateReads}.000Z`,
       },
@@ -406,6 +408,7 @@ function reset() {
   requestedCloudModel = "";
   storedTavilyKey = null;
   storedApifyKey = null;
+  workspaceIntegrations = [];
   runnerHarvest = {
     started: true,
     status: "SUCCEEDED",
@@ -563,6 +566,61 @@ test("people-first product-host click reaches request_entry even when LLM settin
     assert.match(entry, /Calypso Linux Python/);
     const body = (await flyProduct.json()) as { code?: string };
     assert.notEqual(body.code, "CROSS_ORIGIN_REQUEST");
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
+test("Mock Apify card logs PEOPLE_FIRST_HARVEST_MOCK after request_entry, not SOURCING_AGENT_UNAVAILABLE", async () => {
+  reset();
+  campaign = {
+    ...baseCampaign,
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  workspaceIntegrations = [{ id: "int_apify", mode: "mock" }];
+  storedApifyKey = "apify_api_should_not_decrypt_on_mock";
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const flyProduct = await post(
+      new NextRequest("http://[::]:3000/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://aria-mantu-app.fly.dev",
+          host: "[::]:3000",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "aria-mantu-app.fly.dev",
+          "x-real-ip": `192.0.2.${++requestSequence}`,
+          "x-request-id": crypto.randomUUID(),
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId, count: 1 }),
+      }),
+    );
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /"apifyKeyPresent":false/);
+    assert.match(entry, /Calypso Linux Python/);
+    assert.match(exit, /PEOPLE_FIRST_HARVEST_MOCK/);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
+    const body = (await flyProduct.json()) as { code?: string; error?: string };
+    assert.equal(flyProduct.status, 503);
+    assert.equal(body.code, "PEOPLE_FIRST_HARVEST_MOCK");
+    assert.match(String(body.error), /Mock mode/);
+    assert.match(String(body.error), /Calypso Linux Python/);
     assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
   } finally {
     process.stdout.write = origWrite;

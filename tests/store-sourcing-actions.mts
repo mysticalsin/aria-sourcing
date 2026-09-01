@@ -79,6 +79,7 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.equal((storeSource.match(/const sourceFromApollo = useCallback/g) ?? []).length, 0);
   assert.match(storeSource, /createSourcingActions\([\s\S]*?commitPersisted,/);
   assert.match(sourcingActionsSource, /await commitPersisted\(/);
+  assert.match(sourcingActionsSource, /0 accepted — fail-loud, not a harvest/);
   assert.match(
     launchSource,
     /platform: supabaseEnabled \? undefined : "Talent Pool"/,
@@ -1828,8 +1829,9 @@ test("people-first Source next batch hits sourcing-agent when Apify looks unkeye
   assert.equal(harness.fetchCalls, 1);
   assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
   assert.doesNotMatch(String(harness.requests[0]?.input), /source\/need/);
-  assert.equal(harness.persistedCalls, 0);
-  assert.equal(harness.activityDrafts.length, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.match(String(harness.activityDrafts[0]?.notes), /MISSING_PLUGIN|Mock mode|Apify/);
 });
 
 test("CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0", async () => {
@@ -1883,7 +1885,9 @@ test("CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0", a
   );
   assert.equal(rejected.title, "Sourcing failed");
   assert.equal(rejected.description, CROSS_ORIGIN_SOURCING_TOAST);
-  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.match(String(harness.activityDrafts[0]?.notes), /cross-origin/i);
 });
 
 test("SOURCING_AGENT_UNAVAILABLE on Source next batch is fail-loud, never silent 0", async () => {
@@ -1928,7 +1932,9 @@ test("SOURCING_AGENT_UNAVAILABLE on Source next batch is fail-loud, never silent
   assert.equal(rejected.description, SOURCING_AGENT_UNAVAILABLE_TOAST);
   assert.match(rejected.description, /This is not 0 people/i);
   assert.equal(harness.fetchCalls, 1);
-  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts[0]?.title, "Sourcing failed");
+  assert.equal(harness.activityDrafts[0]?.notes, SOURCING_AGENT_UNAVAILABLE_TOAST);
 });
 
 test("non-JSON 403 on Source next batch is fail-loud, never silent 0", async () => {
@@ -1968,7 +1974,8 @@ test("non-JSON 403 on Source next batch is fail-loud, never silent 0", async () 
   assert.ok(rejected.title);
   assert.ok(rejected.description);
   assert.equal(harness.fetchCalls, 1);
-  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
 });
 
 test("Mock Apify card with a valid Access & Keys row still POSTs and fails loud", async () => {
@@ -2029,7 +2036,9 @@ test("Mock Apify card with a valid Access & Keys row still POSTs and fails loud"
   assert.equal(toast?.title, "Connect Apify");
   assert.match(String(toast?.description), /Mock mode/);
   assert.equal(toast?.href, "/settings");
-  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts[0]?.title, "Connect Apify");
+  assert.match(String(harness.activityDrafts[0]?.notes), /Mock mode/);
 });
 
 test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next batch", async () => {
@@ -2164,7 +2173,8 @@ test("keyed people-first Source next batch does not toast invalid-response on a 
   assert.match(String(toast?.actionLabel), /Access & Keys/);
   assert.doesNotMatch(String(toast?.description), /invalid response/i);
   assert.doesNotMatch(String(toast?.description), /MISSING_PLUGIN/);
-  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
 });
 
 test("people-first GitHub-only empty batch is fail-loud, not a successful search", async () => {

@@ -721,16 +721,40 @@ export function createSourcingActions({
     if (!reviewed.ok) {
       const latestForError = currentState();
       const campaignForError = latestForError?.campaigns.find((item) => item.id === campaignId);
+      const error = latestForError && campaignForError
+        ? remapPeopleFirstSourcingError(
+            reviewed.error,
+            campaignForError.jobAnalysis,
+            latestForError.integrations,
+            latestForError.apiKeys,
+          )
+        : reviewed.error;
+      if (
+        latestForError &&
+        campaignForError &&
+        isPeopleFirstRole(campaignForError.jobAnalysis) &&
+        workspaceEffectAllowed() &&
+        sourcingMutationAllowed()
+      ) {
+        await commitPersisted((previous) =>
+          withActivity(
+            previous,
+            makeActivity({
+              type: "sourcing",
+              title: /Mock mode/i.test(error) ? "Connect Apify" : "Sourcing failed",
+              notes: error,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
+      }
       return {
         ok: false,
-        error: latestForError && campaignForError
-          ? remapPeopleFirstSourcingError(
-              reviewed.error,
-              campaignForError.jobAnalysis,
-              latestForError.integrations,
-              latestForError.apiKeys,
-            )
-          : reviewed.error,
+        error,
         source: "unavailable",
       };
     }
