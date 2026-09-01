@@ -246,7 +246,11 @@ class GraphifyLessonsWorkerTests(unittest.TestCase):
         self.assertGreaterEqual(dockerfile.count("--require-hashes"), 2)
         self.assertIn("--no-deps", dockerfile)
         self.assertIn("pip check", dockerfile)
-        self.assertNotIn("apt-get", dockerfile)
+        # Distro upgrade patches fixable OS HIGH/CRITICAL CVEs on the pinned
+        # Python base (same pattern as bootstrap/Kong). Do not apt-get install
+        # extra packages — that would widen the worker beyond the lockfile.
+        self.assertIn("apt-get upgrade", dockerfile)
+        self.assertNotIn("apt-get install", dockerfile)
         self.assertNotIn("git+", requirements)
         self.assertIn("GRAPHIFY_QUERY_LOG_DISABLE=1", dockerfile)
         self.assertIn("USER 10001:10001", dockerfile)
