@@ -72,13 +72,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 154, posttest: 2, all: 207 },
+    { pretest: 51, application: 155, posttest: 2, all: 208 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "afe6cbb1a110aad52850ba1f5582e4c69c2d0f5bd39b08ac86f678fa44ac9689",
+    "1f164030a4b67a4824b9e9b608b00e97b2c2fb2c605604d7a157893b40bd8e90",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
