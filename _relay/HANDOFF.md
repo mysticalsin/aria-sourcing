@@ -1,56 +1,64 @@
 ---
 project: MSourcing / ARIA
-shift: 458
+shift: 459
 agent: cursor-cloud
-updated: 2026-08-31T20:38Z
+updated: 2026-09-01T01:08Z
 status: pr-open-coding-gates
 ---
 
-# Handoff — Shift 458
+# Handoff — Shift 459
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** (not merged)
 - Leftover **PR #53 OPEN**. Do not touch. Do not merge
-- Coding-gate tip: **`8cc8c23`** — planned LinkedIn+Apify harvest repairs quoted Skill (Must); keyed shortlist tests
-- Fly restore is **Devon on the laptop**. Do not wait on `FLY_API_TOKEN`. Do not ask for it. Do not deploy from this VM
-- Calypso is a client **need**, not a product name
-- Local gate green on `8cc8c23`: `npm run typecheck && npm run typecheck:tests && npm test`
-- READY TO MERGE stays **no** until a keyed LinkedIn+Apify shortlist
+- Feature tip: **`c4c655f`** — connect → source → outreach; toast CTA; honor valid Apify key; domain verify; keyed empty harvest fail-loud
+- Live Fly walk baseline remains SHA `6fd7e3f3f583` until Devon Path-B deploys this tip
+- Local gate green on `c4c655f`: `npm run typecheck && npm run typecheck:tests && npm test`
+- READY TO MERGE stays **no** until a keyed LinkedIn+Apify shortlist on Fly
+- Polo parked. Calypso is a **need**, not a product name
 
 ## Done this shift
 
-1. Stopped Fly restore from this VM (Tony: Devon owns it)
-2. `plannedSourcingSearches` runs `repairLinkedinBoolean` before LinkedIn/Apify steps
-3. Tests: unkeyed fail-loud; keyed Apify without OAuth; Tavily is not a people source; Apify name-only drops; empty harvest invents nobody; floor 60 + CV citation
+1. DESIGN.md already had connect → source → outreach (from `c0eecbb`). Did not relitigate
+2. Fail-loud toasts now have **Open Access & Keys** CTA (`toast-cta`). `MISSING_PLUGIN` is not the product path
+3. Valid Apify Access & Keys row **is** harvest. A Live card without a valid key is not. `Apify (sourcing)` label still counts
+4. Integrations merge + `applyHarvestKeysToIntegrations` marks Apify/HeyReach connected when keys are valid
+5. Apify modal: `data-autofocus`, immediate first poll, loud empty/timeout error
+6. Outlook send needs Fleet Graph **and** Verify domain. `example.com` / `@fixture.example` cannot send
+7. HeyReach is the LinkedIn sender in Quick Draft / outreach card when the key is valid. Still dry-run until approve
+8. Unkeyed people-first Source next batch uses fixture dry-run, not a toast wall
+9. Keyed GitHub-only empty harvest is `EMPTY_PEOPLE_FIRST_HARVEST`, not `MISSING_PLUGIN`
+10. Email allocation capacity ignores LinkedIn/WhatsApp/SMS seats
 
 ## Blockers
 
 - Official LinkedIn partner search is not wired. Do not complete OAuth from a VM. Do not invent candidates
-- Keyed live shortlist still requires a real Apify/LinkedIn key (operator Settings). Do not upgrade Apify from here
+- Keyed live shortlist still requires the stored Apify/LinkedIn key on Fly. Do not upgrade Apify from here
+- Devon Path-B deploys after these tests. This VM does not deploy Fly
 
 ## Next steps
 
 ```bash
-# This VM: coding gates only on PR 54 (LinkedIn+Apify shortlist honesty, tests)
-# Devon: Fly restore of PR 54 onto aria-mantu-app (laptop). Do not wait here
-# Do not merge PR 53. Do not merge PR 54
-# READY TO MERGE: no until a keyed LinkedIn+Apify shortlist
-# Do not touch Vercel. Do not complete LinkedIn OAuth from a VM
-# Do not invent candidates
+# Devon: Path B deploy of PR 54 tip c4c655f onto aria-mantu-app. Do not wait here
+# This VM: coding gates only. Do not merge PR 53. Do not merge PR 54
+# READY TO MERGE: no until a keyed LinkedIn+Apify shortlist on Fly
+# Do not touch Vercel. Do not complete LinkedIn or Microsoft OAuth from a VM
+# Do not invent candidates. Never auto-send
 ```
 
 ## Decisions made (don't relitigate)
 
 - Product name is Aria. Calypso is a client **need**
 - One coding PR (#54). Leftover #53 stays open and unmerged
-- Devon owns Fly restore. This agent does not deploy and does not ask for `FLY_API_TOKEN`
+- Access & Keys is the source of truth for Apify harvest. Do not ask to reconnect a valid key
+- Unkeyed people-first is Connect + fixture dry-run, not a `MISSING_PLUGIN` wall
+- Official LinkedIn search is concept/honest. Fleet OAuth is identity/messaging
+- Outlook send is Fleet Graph + Verify domain. Inbox SMTP is ingest
+- HeyReach is LinkedIn send, not people search
+- Send stays dry-run until channel-connect **and** Tony approves that send
+- Devon owns Fly. This agent does not deploy and does not ask for `FLY_API_TOKEN`
 - READY TO MERGE stays no until a keyed LinkedIn+Apify shortlist
-- Quality is the gate. Historic CI red matches main
-- Do not put FLY_API_TOKEN on Quality
-- GitHub `language:` and LinkedIn boolean use Skill (Must) tokens separately
-- Tavily is web search, not LinkedIn Sourcing
-- Outreach dry-run until Tony approves a send
 
 ## Watch out
 
@@ -61,4 +69,6 @@ status: pr-open-coding-gates
 - `campaign-actions.ts` runtime imports stay `import {` + `evaluateNeedReadiness` only
 - Engine must not import `@/lib/utils`
 - Do not import `src/lib/sourcing/engine.ts` from client `sourcing-actions.ts` or `sourcing-helpers.ts`
+- Do not put `@fixture.example` in `sourcing-actions.ts`
 - `applyLiveEngineGate` is server-only (`live-shortlist.ts`)
+- Manifest freeze: extend existing suites, do not add new suite files
