@@ -186,14 +186,23 @@ hydrate and on the Strategy tab.
   from the fixture pool, top ≤20, skill/CV/LinkedIn ranked, never name
   match, provenance fixture/synthetic (`source: "mock"`). Never toast those
   rows as live. Never present `@fixture.example` or `@example.com` as live
-  people. Official LinkedIn partner search is **not wired** — the LinkedIn
-  RSC / LinkedIn Sourcing card must say that honestly and must not pretend
-  a generic API-key Configure works. Concept-only is OK if labeled. It
-  must not block Source when Apify is valid. Official LinkedIn OAuth
-  (`/auth/linkedin?seat_id=` via Fleet) is identity/messaging only. Outlook
-  send is Fleet **Connect Microsoft account** (Graph OAuth, then Verify
-  domain). Email Inbox SMTP is ingest, not the send path. Do not complete
-  OAuth from a VM. Do not invent live people. Do not scrape.
+  people.
+- **LinkedIn Sourcing / RSC Configure is not an API-key paste.** Official
+  LinkedIn partner search is **not wired**. Those cards must say that and
+  send the operator to the harvest that is wired: a valid Apify key in
+  Access & Keys / Source via Apify. Do not open a generic “Paste your API
+  key” Configure. Fleet **Connect in Fleet** / Microsoft Graph OAuth is
+  identity and messaging only — it is not partner search and must not be
+  labeled as such. Concept-only is OK if labeled. It must not block Source
+  when Apify is valid. Do not implement LinkedIn OAuth from a VM. Do not
+  invent live people. Do not scrape. Outlook send is Fleet **Connect
+  Microsoft account** (Graph OAuth, then Verify domain). Email Inbox SMTP
+  is ingest, not the send path.
+- **HeyReach is a LinkedIn send key, not a fake Live send account.** A
+  valid HeyReach API / MCP row is the drafter’s LinkedIn send account.
+  Integrations must not show HeyReach as Live/Connected with zero
+  campaign or sender UI. Send stays dry-run until channel-connect **and**
+  Tony approves that send. Never `example.com`.
 - **Source via Apify** keeps focus in the search-query field so a full
   boolean can be typed. Start search returns a shortlist or a loud error
   in the modal. An empty harvest is a fail (no invented people, no
@@ -221,9 +230,11 @@ Outreach send without channel-connect + explicit approve is a contract fail.
 A valid Apify key that still throws `MISSING_PLUGIN` is a contract fail.
 A non-JSON `/api/sourcing-agent` crash (Playwright / browser-tools loaded at
 import) is a contract fail: people-first Source next batch must still run the
-keyed Apify harvest. Remaining harvest fails are fail-loud with a toast-cta
-— never a Dismiss-only "invalid response" wall. connect → source → outreach
-must not stop on that toast.
+keyed Apify harvest. When the sourcing agent returns an invalid response or
+the harvest does not complete, the operator gets a real next step — **Open
+Access & Keys** / Source via Apify, the path that already honors a valid
+Apify key — never a Dismiss-only wall. Do not invent candidates. connect →
+source → outreach must not stop on that toast.
 
 ## OCR
 

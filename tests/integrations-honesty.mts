@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { defaultIntegrations, defaultLiveIntegrations, mergeSeedIntegrations, testConnection } from "../src/lib/integrations";
+import { defaultIntegrations, defaultLiveIntegrations, isLinkedInSourcingCard, mergeSeedIntegrations, testConnection } from "../src/lib/integrations";
 import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   MISSING_PEOPLE_PLUGINS_TOAST,
@@ -281,8 +281,86 @@ ok(
     /0 profiles/.test(readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8")),
 );
 ok(
-  "Apify and LinkedIn cards route to Access & Keys or Fleet, not a generic API-key dead-end",
-  /Access & Keys/.test(settingsCard) && /Connect in Fleet/.test(settingsCard) && /Connect Microsoft account/.test(settingsCard),
+  "Apify and LinkedIn cards route to Access & Keys, not a generic API-key dead-end",
+  /Access & Keys/.test(settingsCard) &&
+    /isLinkedInSourcingCard/.test(settingsCard) &&
+    /Connect Microsoft account/.test(settingsCard) &&
+    !/Connect in Fleet/.test(settingsCard),
+);
+ok(
+  "LinkedIn Sourcing Configure never opens an API-key paste",
+  /Paste your API key/.test(settingsCard) &&
+    /setupOnly && setupHref/.test(settingsCard) &&
+    /isLinkedInSourcingCard\(integration\)/.test(settingsCard),
+);
+const linkedinSourcing = integrations.find((integration) => integration.id === "int_linkedin");
+ok(
+  "LinkedIn Sourcing is an honest concept card pointing at Apify Access & Keys",
+  linkedinSourcing?.real === false &&
+    linkedinSourcing.setupHref === "/settings" &&
+    /not wired/i.test(linkedinSourcing.description) &&
+    /apify/i.test(linkedinSourcing.description) &&
+    !/Paste your API key/i.test(linkedinSourcing.description) &&
+    isLinkedInSourcingCard(linkedinSourcing),
+);
+ok(
+  "LinkedIn RSC no longer claims Fleet OAuth is partner search",
+  linkedinRsc?.setupHref === "/settings" &&
+    /not partner search/i.test(linkedinRsc?.description ?? "") &&
+    /apify/i.test(linkedinRsc?.description ?? ""),
+);
+const leftoverLinkedIn = mergeSeedIntegrations([
+  {
+    id: "int_linkedin_vendor",
+    name: "LinkedIn Sourcing",
+    category: "Sourcing" as const,
+    description: "Paste a LinkedIn API key to search.",
+    status: "connected" as const,
+    mode: "live" as const,
+    lastSync: "2026-07-15T00:00:00.000Z",
+    errors: [],
+    real: true,
+  },
+]);
+const rewritten = leftoverLinkedIn.find((row) => row.id === "int_linkedin_vendor");
+ok(
+  "leftover LinkedIn Sourcing cards are rewritten off the API-key dead-end",
+  rewritten?.real === false &&
+    rewritten?.status === "not_configured" &&
+    rewritten?.setupHref === "/settings" &&
+    /not wired/i.test(rewritten?.description ?? "") &&
+    !/Paste a LinkedIn API key/i.test(rewritten?.description ?? ""),
+);
+ok(
+  "a valid HeyReach key is not a fake Live/Connected send account",
+  applyHarvestKeysToIntegrations(liveTenant, [{ provider: "HeyReach", status: "valid" }]).every(
+    (row) => row.id !== "int_heyreach" || row.status !== "connected",
+  ) &&
+    !integrationShowsLive(
+      { id: "int_heyreach", mode: "live", status: "connected" },
+      liveTenant,
+      calypsoJob,
+      [{ provider: "HeyReach", status: "valid" }],
+    ) &&
+    mergeSeedIntegrations([
+      {
+        id: "int_heyreach",
+        name: "HeyReach",
+        category: "Comms" as const,
+        description: "old",
+        status: "connected" as const,
+        mode: "live" as const,
+        lastSync: "2026-07-15T00:00:00.000Z",
+        errors: [],
+        real: true,
+      },
+    ]).some((row) => row.id === "int_heyreach" && row.status === "not_configured" && row.mode === "mock"),
+);
+ok(
+  "HeyReach card has no Live toggle and names the dry-run send key",
+  /int_heyreach/.test(settingsCard) &&
+    /no campaign or sender console/i.test(settingsCard) &&
+    /integration\.id !== "int_heyreach"/.test(settingsCard),
 );
 ok(
   "valid Apify key never asks to reconnect via MISSING_PLUGIN on an empty harvest",
@@ -383,6 +461,15 @@ ok(
 );
 const quickDraft = readFileSync(new URL("../src/components/outreach/quick-draft.tsx", import.meta.url), "utf8");
 ok("LinkedIn drafter surfaces HeyReach as the send account", /heyreach-sender/.test(quickDraft) && /HeyReach/.test(quickDraft));
+const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
+ok(
+  "DESIGN pins invalid-agent recovery to Access & Keys and honest LinkedIn/HeyReach cards",
+  /Open Access & Keys/.test(design) &&
+    /not an API-key paste/.test(design) &&
+    /not partner search/.test(design) &&
+    /not a fake Live send account/.test(design) &&
+    /Dismiss-only/.test(design),
+);
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -163,6 +163,7 @@ export function integrationShowsLive(
   job?: JobAnalysis | null,
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): boolean {
+  if (integration.id === "int_heyreach") return false;
   if (integration.mode !== "live" || integration.status !== "connected") return false;
   if (integration.id === "int_github" && !githubLiveAllowed(all, job, apiKeys)) return false;
   return true;

@@ -21,6 +21,7 @@ import {
   githubLiveAllowed,
   integrationShowsLive,
 } from "@/lib/sourcing/people-plugins";
+import { isLinkedInSourcingCard } from "@/lib/integrations";
 import type { IntegrationStatus } from "@/lib/types";
 import { toneForHealth, formatTimeAgo, cn } from "@/lib/utils";
 import {
@@ -90,19 +91,20 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
   const connected = integration.status === "connected";
   const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
   const setupOnly =
-    integration.id === "int_linkedin_rsc" ||
+    isLinkedInSourcingCard(integration) ||
     integration.id === "int_outlook" ||
     integration.id === "int_graph_teams" ||
     integration.id === "int_apify" ||
     integration.id === "int_heyreach";
   const configureLabel =
-    integration.id === "int_linkedin_rsc"
-      ? "Connect in Fleet"
+    isLinkedInSourcingCard(integration) || integration.id === "int_apify"
+      ? "Access & Keys"
       : integration.id === "int_outlook" || integration.id === "int_graph_teams"
         ? "Connect Microsoft account"
-        : integration.id === "int_apify" || integration.id === "int_heyreach"
+        : integration.id === "int_heyreach"
           ? "Access & Keys"
           : "Configure";
+  const setupHref = isLinkedInSourcingCard(integration) ? "/settings" : integration.setupHref;
 
   function handleCloseModal() {
     setConfigureOpen(false);
@@ -293,7 +295,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           )}
 
           <div className="mt-auto space-y-3 pt-1">
-            {integration.real && (
+            {integration.real && integration.id !== "int_heyreach" && (
               <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
                 <div>
                   <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
@@ -311,6 +313,12 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 />
               </div>
             )}
+            {integration.id === "int_heyreach" && (
+              <p className="rounded-2xl bg-canvas px-3 py-2.5 text-xs leading-relaxed text-ink-soft">
+                A HeyReach key in Access & Keys is the LinkedIn send account for drafts. There is no
+                campaign or sender console here. Send stays dry-run until you approve.
+              </p>
+            )}
 
             <div className="flex gap-2">
               <Button
@@ -319,8 +327,8 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 className="flex-1"
                 leftIcon={<Plug className="h-4 w-4" />}
                 onClick={() => {
-                  if (setupOnly && integration.setupHref) {
-                    router.push(integration.setupHref);
+                  if (setupOnly && setupHref) {
+                    router.push(setupHref);
                     return;
                   }
                   setConfigureOpen(true);
@@ -343,13 +351,13 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   Test connection
                 </Button>
               )}
-              {integration.real && integration.id !== "int_github" && integration.setupHref && (
+              {integration.real && integration.id !== "int_github" && setupHref && (
                 <Button
                   variant="subtle"
                   size="sm"
                   className="flex-1"
                   leftIcon={<Wrench className="h-4 w-4" />}
-                  onClick={() => router.push(integration.setupHref!)}
+                  onClick={() => router.push(setupHref)}
                 >
                   Setup guide
                 </Button>

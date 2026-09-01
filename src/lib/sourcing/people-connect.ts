@@ -216,13 +216,9 @@ export function applyHarvestKeysToIntegrations(
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): IntegrationStatus[] {
   const apify = hasValidApifyKey(apiKeys);
-  const heyreach = hasValidHeyReachKey(apiKeys);
-  if (!apify && !heyreach) return integrations;
+  if (!apify) return integrations;
   return integrations.map((row) => {
-    if (row.id === "int_apify" && apify) {
-      return { ...row, status: "connected" as const, errors: [] };
-    }
-    if (row.id === "int_heyreach" && heyreach) {
+    if (row.id === "int_apify") {
       return { ...row, status: "connected" as const, errors: [] };
     }
     return row;

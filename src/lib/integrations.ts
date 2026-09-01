@@ -63,19 +63,34 @@ export function defaultIntegrations(): IntegrationStatus[] {
       setupHref: "/settings",
     },
     {
-      id: "int_linkedin_rsc",
-      name: "LinkedIn Recruiter System Connect",
+      id: "int_linkedin",
+      name: "LinkedIn Sourcing",
       category: "Sourcing",
       description:
-        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only. This card does not accept a pasted API key. Source via Apify when that key is valid.",
+        "Official LinkedIn partner search is not wired. This card does not accept a pasted API key. Fleet OAuth is identity and messaging only — not partner search. Source people with a valid Apify key in Access & Keys.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
       errors: [
-        "Official partner search is not available. Connect LinkedIn messaging in Fleet, or source people with a valid Apify key.",
+        "Partner search is not available. Use Access & Keys → Apify for the live harvest that is wired.",
       ],
       real: false,
-      setupHref: "/fleet",
+      setupHref: "/settings",
+    },
+    {
+      id: "int_linkedin_rsc",
+      name: "LinkedIn Recruiter System Connect",
+      category: "Sourcing",
+      description:
+        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only — not partner search. This card does not accept a pasted API key. Source via Apify when that key is valid.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [
+        "Official partner search is not available. Source people with a valid Apify key in Access & Keys.",
+      ],
+      real: false,
+      setupHref: "/settings",
     },
     {
       id: "int_heyreach",
@@ -233,6 +248,33 @@ export function defaultIntegrations(): IntegrationStatus[] {
  * are demo fixtures, so every adapter starts explicitly unconfigured. Real
  * adapters stay `real: true` so Configure/Test remain visible; they are not
  * labelled Live until credentials exist. */
+/** LinkedIn people-search cards. Partner search is not wired — never an API-key paste. */
+export function isLinkedInSourcingCard(
+  integration: Pick<IntegrationStatus, "id" | "name" | "category">,
+): boolean {
+  if (integration.id === "int_linkedin" || integration.id === "int_linkedin_rsc") return true;
+  if (integration.id.startsWith("int_linkedin")) return true;
+  return integration.category === "Sourcing" && /linkedin/i.test(integration.name);
+}
+
+function honestLinkedInSourcingCard(
+  card: IntegrationStatus,
+  seed: IntegrationStatus,
+): IntegrationStatus {
+  return {
+    ...card,
+    name: seed.name,
+    description: seed.description,
+    setupHref: "/settings",
+    real: false,
+    status: "not_configured",
+    mode: "mock",
+    lastSync: null,
+    errors: seed.errors,
+    connectedAccount: undefined,
+  };
+}
+
 export function defaultLiveIntegrations(): IntegrationStatus[] {
   return defaultIntegrations().map((integration) => ({
     ...integration,
@@ -324,6 +366,21 @@ export function mergeSeedIntegrations(stored: IntegrationStatus[]): IntegrationS
         lastSync: card.id === "int_supabase" ? card.lastSync : null,
       };
     }
+    if (isLinkedInSourcingCard(card)) {
+      return honestLinkedInSourcingCard(existing, card);
+    }
+    if (card.id === "int_heyreach") {
+      return {
+        ...existing,
+        name: card.name,
+        description: card.description,
+        setupHref: card.setupHref,
+        real: true,
+        status: "not_configured",
+        mode: "mock",
+        lastSync: null,
+      };
+    }
     if (!card.real) {
       return {
         ...existing,
@@ -343,8 +400,14 @@ export function mergeSeedIntegrations(stored: IntegrationStatus[]): IntegrationS
       real: true,
     };
   });
+  const leftoverLinkedIn = seed.find((card) => card.id === "int_linkedin") ?? seed.find(isLinkedInSourcingCard);
   for (const extra of stored) {
-    if (!seed.some((card) => card.id === extra.id)) merged.push(extra);
+    if (seed.some((card) => card.id === extra.id)) continue;
+    if (leftoverLinkedIn && isLinkedInSourcingCard(extra)) {
+      merged.push(honestLinkedInSourcingCard(extra, leftoverLinkedIn));
+      continue;
+    }
+    merged.push(extra);
   }
   return merged;
 }
