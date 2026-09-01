@@ -193,16 +193,25 @@ hydrate and on the Strategy tab.
   worker (`claimed:0`) is not this path — grep the **web** process
   for `aria_harvest` / `[aria-harvest]` JSON on **stdout** (same
   channel as `sourcing_loop_tick`). Do not use `console.info`.
-  First line is `request_received`. Then `request_entry` with
-  `apifyKeyPresent` (boolean, never the key), campaign title, and
-  query. Then harvest lines with `actor`, `query`
-  (`Calypso Linux Python`), `runId`, `status`, and `items`.
-  If Fly has no line, the browser did not hit this process.
+  First line is `request_received` (no empty `query: ""`). Then
+  `request_entry` **before Tavily or any long wait**, with the
+  harvest query from the brief (`Calypso Linux Python`), campaign
+  title, and `apifyKeyPresent` (boolean, never the key). Then
+  harvest lines with `actor`, `query`, `runId`, `status`, and
+  `items`. If Fly has no line, the browser did not hit this process.
+
+  A **Mock** Apify card is not a live key. Connected+Mock is not
+  ready. `apifyKeyPresent` is **false** on Mock. Do not decrypt a
+  Mock key. `started:false` on Mock must be visible in the UI
+  (`PEOPLE_FIRST_HARVEST_MOCK` — toast that this is mock / connect
+  a real Apify key and switch the card to Live). Never look
+  Connected-and-ready then dead-button 0 people.
 
   Source next batch **always POSTs `/api/sourcing-agent`**. Do not
   infer a missing key from integrations 1/7 and silently run a
   fixture dry-run. A missing stored key fails loud **Connect Apify**.
-  A present key starts harvestapi Full.
+  A real **Live** key starts harvestapi Full, people skill-match
+  ≥60, cap ≤20.
 
   The keyed path must **start** a harvestapi Full run. If start
   does not happen, fail loud (`PEOPLE_FIRST_HARVEST_NOT_STARTED`).
@@ -228,19 +237,22 @@ hydrate and on the Strategy tab.
   are skill evidence. Name-only and empty rows stay FAIL. The
   finance gate still requires score ≥ 60, cap 20, and a CV citation.
 
-  Fail loud when (a) the Apify key is missing or invalid, (b) the
-  harvest never started, (c) the run is still going, or (d)
-  harvestapi truly returned 0 after a real run. A valid key plus
-  0-or-15-zero-rows is a harvest bug — fix the harvest, do not toast
-  **Open Access & Keys**. Access & Keys stays the CTA when the key
-  is missing or the harvest route did not complete.
+  Fail loud when (a) the Apify key is missing, invalid, or the card
+  is **Mock**, (b) the harvest never started, (c) the run is still
+  going, or (d) harvestapi truly returned 0 after a real run. A
+  valid **Live** key plus 0-or-15-zero-rows is a harvest bug — fix
+  the harvest, do not toast **Open Access & Keys**. Access & Keys
+  stays the CTA when the key is missing, the card is Mock, or the
+  harvest route did not complete.
 - **Honor a valid stored harvest key.** Access & Keys is the source of truth
-  for Apify. A key whose provider is Apify (including `Apify (sourcing)`)
-  and `status === "valid"` **is** people-first harvest. Source next batch,
-  Run sourcing agent, and Source via Apify must use it. Do not throw
-  `MISSING_PLUGIN`. Do not ask to reconnect a key that already tested
-  valid. A Tavily key is **not** LinkedIn Sourcing. HeyReach API / MCP is
-  a **LinkedIn send** account, not a people-search plugin.
+  for Apify **when the card is not Mock**. A key whose provider is Apify
+  (including `Apify (sourcing)`) and `status === "valid"` **is**
+  people-first harvest only on Live. Connected+Mock is not harvest —
+  `apifyKeyPresent` is false and Source next batch fails loud. On Live,
+  do not throw `MISSING_PLUGIN`. Do not ask to reconnect a key that
+  already tested valid. A Tavily key is **not** LinkedIn Sourcing.
+  HeyReach API / MCP is a **LinkedIn send** account, not a people-search
+  plugin.
 - **Integrations must show the working surface.** Merge seed cards into
   stored workspace integrations so a live tenant cannot lose the Apify
   card. The Apify card is `real: true`, reflects a valid Access & Keys

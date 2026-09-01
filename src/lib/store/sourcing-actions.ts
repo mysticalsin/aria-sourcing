@@ -6,9 +6,8 @@ import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
-  peopleSourcePluginsConnected,
+  missingPeoplePluginsToast,
   remapPeopleFirstSourcingError,
-  MISSING_PEOPLE_PLUGINS_TOAST,
   visiblePeopleFirstLearningReceipts,
 } from "../sourcing/people-plugins";
 import { scoreCandidate } from "../scoring";
@@ -770,9 +769,12 @@ export function createSourcingActions({
     ) {
       return {
         ok: false,
-        error: peopleSourcePluginsConnected(latest.integrations, latest.apiKeys)
-          ? EMPTY_PEOPLE_FIRST_HARVEST
-          : MISSING_PEOPLE_PLUGINS_TOAST,
+        error:
+          missingPeoplePluginsToast(
+            latestCampaign.jobAnalysis,
+            latest.integrations,
+            latest.apiKeys,
+          ) ?? EMPTY_PEOPLE_FIRST_HARVEST,
         source: "unavailable",
       };
     }

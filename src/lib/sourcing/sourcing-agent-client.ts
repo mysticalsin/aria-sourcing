@@ -82,25 +82,38 @@ export async function requestReviewedSourcing(
   const operationId = agentFramework?.runId ?? crypto.randomUUID();
   let response: Response;
   try {
-    response = await workspaceFetch("/api/sourcing-agent", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": operationId,
-        "X-Request-Id": operationId,
-      },
-      signal: AbortSignal.timeout(PEOPLE_FIRST_CLIENT_WAIT_MS),
-      body: JSON.stringify({
-        campaignId,
-        count,
-        ...(agentFramework
-          ? {
-              agentFrameworkRunId: agentFramework.runId,
-              agentFrameworkCapabilityToken: agentFramework.capabilityToken,
-              agentFrameworkQuery: agentFramework.query,
-            }
-          : {}),
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const error = new Error("The operation was aborted due to timeout");
+        error.name = "TimeoutError";
+        reject(error);
+      }, PEOPLE_FIRST_CLIENT_WAIT_MS);
+    });
+    response = await Promise.race([
+      workspaceFetch("/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": operationId,
+          "X-Request-Id": operationId,
+        },
+        signal: AbortSignal.timeout(PEOPLE_FIRST_CLIENT_WAIT_MS),
+        body: JSON.stringify({
+          campaignId,
+          count,
+          ...(agentFramework
+            ? {
+                agentFrameworkRunId: agentFramework.runId,
+                agentFrameworkCapabilityToken: agentFramework.capabilityToken,
+                agentFrameworkQuery: agentFramework.query,
+              }
+            : {}),
+        }),
       }),
+      timeout,
+    ]).finally(() => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     });
   } catch (error) {
     const aborted =

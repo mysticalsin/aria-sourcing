@@ -69,7 +69,13 @@ import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import {
+  CONNECT_APIFY_HREF,
+  CONNECT_APIFY_LABEL,
+  formatHarvestEvidenceError,
+} from "@/lib/sourcing/harvest-evidence";
+import {
   emptyPeopleFirstToast,
+  isPeopleFirstRole,
   peoplePluginFailLoudUi,
   visiblePeopleFirstLearningReceipts,
 } from "@/lib/sourcing/people-plugins";
@@ -545,76 +551,104 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const handleSource = async () => {
     if (sourcing) return;
     setSourcing(true);
-    const res = await actions.sourceNextBatch(c.id);
-    setSourcing(false);
-    if (!res.ok) {
-      const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations, apiKeys);
+    try {
+      const res = await actions.sourceNextBatch(c.id);
+      if (!res.ok) {
+        const failLoud = peoplePluginFailLoudUi(res.error, c.jobAnalysis, integrations, apiKeys);
+        toast({
+          title: failLoud
+            ? failLoud.title
+            : res.source === "paused"
+              ? "Campaign is paused"
+              : "Sourcing failed",
+          description: failLoud?.description ?? res.error,
+          href: failLoud?.href,
+          actionLabel: failLoud?.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setFeedbackState((current) =>
+        current.campaignId === c.id
+          ? {
+              campaignId: c.id,
+              receipts: visiblePeopleFirstLearningReceipts(
+                mergeSourcingFeedbackReceipts(
+                  current.receipts,
+                  res.feedbackReceipts ?? [],
+                ),
+                c.jobAnalysis,
+                integrations,
+                apiKeys,
+              ),
+            }
+          : current,
+      );
+      // Stage the reveal with the exact, already-committed batch — never a
+      // re-derived or re-scored copy — and jump to the Candidates tab so the
+      // stream is immediately visible instead of resolving behind a toast.
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      if (res.accepted.length > 0) setTab("candidates");
+      const isLive = res.source === "github" || res.source === "web";
+      const emptyPeopleFirst = emptyPeopleFirstToast(c.jobAnalysis, integrations, res, apiKeys);
+      if (emptyPeopleFirst) {
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (res.accepted.length === 0) {
+        if (isPeopleFirstRole(c.jobAnalysis)) {
+          toast({
+            title: CONNECT_APIFY_LABEL,
+            description:
+              "Source next batch returned 0 people. This is not a successful harvest. Connect a real Apify key and switch the card to Live.",
+            href: CONNECT_APIFY_HREF,
+            actionLabel: CONNECT_APIFY_LABEL,
+            variant: "error",
+          });
+          return;
+        }
+        toast({
+          title: "No candidates were added",
+          description: res.skipped.length
+            ? `${res.skipped.length} real results were excluded or already present.`
+            : "The real search completed without a matching result.",
+          variant: "info",
+        });
+        return;
+      }
       toast({
-        title: failLoud
-          ? failLoud.title
-          : res.source === "paused"
-            ? "Campaign is paused"
-            : "Sourcing failed",
-        description: failLoud?.description ?? res.error,
+        title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
+        description: res.skipped.length
+          ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
+          : isLive
+            ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
+            : "All matched candidates accepted into the pipeline.",
+        variant: "success",
+      });
+    } catch {
+      const failLoud = peoplePluginFailLoudUi(
+        formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
+        c.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      toast({
+        title: failLoud?.title ?? "Sourcing failed",
+        description: failLoud?.description ?? "People-first harvest did not complete.",
         href: failLoud?.href,
         actionLabel: failLoud?.actionLabel,
         variant: "error",
       });
-      return;
+    } finally {
+      setSourcing(false);
     }
-    setFeedbackState((current) =>
-      current.campaignId === c.id
-        ? {
-            campaignId: c.id,
-            receipts: visiblePeopleFirstLearningReceipts(
-              mergeSourcingFeedbackReceipts(
-                current.receipts,
-                res.feedbackReceipts ?? [],
-              ),
-              c.jobAnalysis,
-              integrations,
-              apiKeys,
-            ),
-          }
-        : current,
-    );
-    // Stage the reveal with the exact, already-committed batch — never a
-    // re-derived or re-scored copy — and jump to the Candidates tab so the
-    // stream is immediately visible instead of resolving behind a toast.
-    setJustSourced(res.accepted);
-    setSourceBatchKey((k) => k + 1);
-    if (res.accepted.length > 0) setTab("candidates");
-    const isLive = res.source === "github" || res.source === "web";
-    const emptyPeopleFirst = emptyPeopleFirstToast(c.jobAnalysis, integrations, res, apiKeys);
-    if (emptyPeopleFirst) {
-      toast({
-        title: emptyPeopleFirst.title,
-        description: emptyPeopleFirst.description,
-        href: emptyPeopleFirst.href,
-        actionLabel: emptyPeopleFirst.actionLabel,
-        variant: "error",
-      });
-      return;
-    }
-    if (res.accepted.length === 0) {
-      toast({
-        title: "No candidates were added",
-        description: res.skipped.length
-          ? `${res.skipped.length} real results were excluded or already present.`
-          : "The real search completed without a matching result.",
-        variant: "info",
-      });
-      return;
-    }
-    toast({
-      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
-      description: res.skipped.length
-        ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-        : isLive
-          ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
-          : "All matched candidates accepted into the pipeline.",
-      variant: "success",
-    });
   };
 
   // Batch variant of the drawer's unified enrichment waterfall (docs/

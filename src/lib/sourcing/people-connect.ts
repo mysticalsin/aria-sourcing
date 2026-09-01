@@ -21,6 +21,36 @@ export function hasValidApifyKey(
   return apiKeys.some((key) => providerIsApify(key.provider) && key.status === "valid");
 }
 
+/** Connected+Mock is not a live harvest key. */
+export function apifyIntegrationIsMock(
+  integrations: readonly Pick<IntegrationStatus, "id" | "mode">[] = [],
+): boolean {
+  return integrations.some((item) => item.id === "int_apify" && item.mode === "mock");
+}
+
+export function hasLiveApifyHarvest(
+  integrations: readonly Pick<IntegrationStatus, "id" | "mode">[] = [],
+  apiKeys: readonly { provider: string; status: string }[] = [],
+): boolean {
+  if (apifyIntegrationIsMock(integrations)) return false;
+  return hasValidApifyKey(apiKeys);
+}
+
+/** Raw workspace_state.integrations — projection does not include cards. */
+export function workspaceApifyIsMock(state: unknown): boolean {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return false;
+  const integrations = (state as { integrations?: unknown }).integrations;
+  if (!Array.isArray(integrations)) return false;
+  return apifyIntegrationIsMock(
+    integrations.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as { id?: unknown; mode?: unknown };
+      if (typeof row.id !== "string" || typeof row.mode !== "string") return [];
+      return [{ id: row.id, mode: row.mode as IntegrationStatus["mode"] }];
+    }),
+  );
+}
+
 export function hasValidHeyReachKey(
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): boolean {

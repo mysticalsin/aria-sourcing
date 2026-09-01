@@ -1820,13 +1820,74 @@ test("people-first Source next batch hits sourcing-agent when Apify looks unkeye
 
   assert.equal(result.ok, false);
   if (!result.ok) {
-    assert.match(result.error, /MISSING_PLUGIN|Add a valid Apify key/);
+    assert.match(result.error, /MISSING_PLUGIN|Add a valid Apify key|Mock mode/);
   }
   assert.equal(harness.fetchCalls, 1);
   assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
   assert.doesNotMatch(String(harness.requests[0]?.input), /source\/need/);
   assert.equal(harness.persistedCalls, 0);
   assert.equal(harness.activityDrafts.length, 0);
+});
+
+test("Mock Apify card with a valid Access & Keys row still POSTs and fails loud", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseStatus: 503,
+    responseBody: {
+      ok: false,
+      code: "PEOPLE_FIRST_HARVEST_MOCK",
+      error:
+        "Apify is in Mock mode. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python. Connect a real Apify key and switch the card to Live.",
+      requestId: "req-mock-apify",
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /Mock mode/);
+    assert.match(result.error, /Calypso Linux Python/);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  assert.equal(harness.fetchCalls, 1);
+  assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
+  const toast = peoplePluginFailLoudUi(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+    apiKeys,
+  );
+  assert.equal(toast?.title, "Connect Apify");
+  assert.match(String(toast?.description), /Mock mode/);
+  assert.equal(toast?.href, "/settings");
+  assert.equal(harness.persistedCalls, 0);
 });
 
 test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next batch", async () => {
@@ -1842,7 +1903,9 @@ test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next 
       industryExperience: ["Fintech"],
     },
   };
-  const integrations = defaultLiveIntegrations();
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
   const apiKeys = [
     {
       id: "key_apify",
@@ -1917,7 +1980,9 @@ test("keyed people-first Source next batch does not toast invalid-response on a 
       industryExperience: ["Fintech"],
     },
   };
-  const integrations = defaultLiveIntegrations();
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
   const apiKeys = [
     {
       id: "key_apify",
@@ -1973,7 +2038,9 @@ test("people-first GitHub-only empty batch is fail-loud, not a successful search
       industryExperience: ["Fintech"],
     },
   };
-  const integrations = defaultLiveIntegrations();
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
   const apiKeys = [
     {
       id: "key_apify",

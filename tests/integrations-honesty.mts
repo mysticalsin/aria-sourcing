@@ -3,6 +3,7 @@ import { defaultIntegrations, defaultLiveIntegrations, isLinkedInSourcingCard, m
 import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   MISSING_PEOPLE_PLUGINS_TOAST,
+  MOCK_APIFY_TOAST,
   PEOPLE_FIRST_HARVEST_UNAVAILABLE,
   emptyPeopleFirstShortlistError,
   emptyPeopleFirstToast,
@@ -18,6 +19,7 @@ import {
   applyHarvestKeysToIntegrations,
   isSyntheticRecipientEmail,
   liveSendBlocker,
+  workspaceApifyIsMock,
 } from "../src/lib/sourcing/people-connect";
 import type { JobAnalysis } from "../src/lib/types";
 
@@ -172,10 +174,10 @@ ok(
 );
 
 ok(
-  "a valid Apify Access & Keys row is a people harvest even when the card is not Live",
+  "a valid Apify Access & Keys row is not a people harvest when the card is Mock",
   hasValidApifyKey([{ provider: "Apify", status: "valid" }]) &&
-    peopleSourcePluginsConnected(liveTenant, [{ provider: "Apify", status: "valid" }]) &&
-    missingPeoplePluginsToast(calypsoJob, liveTenant, [{ provider: "Apify", status: "valid" }]) === null,
+    !peopleSourcePluginsConnected(liveTenant, [{ provider: "Apify", status: "valid" }]) &&
+    missingPeoplePluginsToast(calypsoJob, liveTenant, [{ provider: "Apify", status: "valid" }]) === MOCK_APIFY_TOAST,
 );
 ok(
   "mergeSeedIntegrations restores a missing Apify card",
@@ -367,10 +369,20 @@ ok(
   "valid Apify key never asks to reconnect via MISSING_PLUGIN on an empty harvest",
   emptyPeopleFirstShortlistError(
     calypsoJob,
-    liveTenant,
+    keyedApify,
     { accepted: { length: 0 }, source: "github" },
     [{ provider: "Apify", status: "valid" }],
   ) === EMPTY_PEOPLE_FIRST_HARVEST,
+);
+ok(
+  "Mock Apify card with a valid key is a Mock toast, not a silent empty harvest",
+  emptyPeopleFirstShortlistError(
+    calypsoJob,
+    liveTenant,
+    { accepted: { length: 0 }, source: "web" },
+    [{ provider: "Apify", status: "valid" }],
+  ) === MOCK_APIFY_TOAST &&
+    peoplePluginFailLoudUi(MOCK_APIFY_TOAST, calypsoJob, liveTenant, [{ provider: "Apify", status: "valid" }])?.title === "Connect Apify",
 );
 ok(
   "fail-loud toast always carries a Settings CTA",
@@ -384,14 +396,14 @@ ok(
 );
 const keyedEmptyToast = emptyPeopleFirstToast(
   calypsoJob,
-  liveTenant,
+  keyedApify,
   { accepted: { length: 0 }, source: "web" },
   [{ provider: "Apify", status: "valid" }],
 );
 const keyedEmptyFailLoud = peoplePluginFailLoudUi(
   EMPTY_PEOPLE_FIRST_HARVEST,
   calypsoJob,
-  liveTenant,
+  keyedApify,
   [{ provider: "Apify", status: "valid" }],
 );
 ok(
@@ -413,7 +425,7 @@ ok(
       { platform: "Apify", candidateCount: 3 },
     ],
     calypsoJob,
-    liveTenant,
+    keyedApify,
     [{ provider: "Apify", status: "valid" }],
   ).every((receipt) => receipt.candidateCount > 0),
 );
@@ -421,13 +433,13 @@ const liveInvalidResponse = "The sourcing agent returned an invalid response.";
 const keyedHarvestFail = remapPeopleFirstSourcingError(
   liveInvalidResponse,
   calypsoJob,
-  liveTenant,
+  keyedApify,
   [{ provider: "Apify", status: "valid" }],
 );
 const keyedCrashToast = peoplePluginFailLoudUi(
   liveInvalidResponse,
   calypsoJob,
-  liveTenant,
+  keyedApify,
   [{ provider: "Apify", status: "valid" }],
 );
 ok(
@@ -464,6 +476,11 @@ ok(
 ok(
   "Apify (sourcing) label on a valid key still counts as harvest",
   hasValidApifyKey([{ provider: "Apify (sourcing)", status: "valid" }]),
+);
+ok(
+  "workspace_state with int_apify mode mock is not a live harvest key",
+  workspaceApifyIsMock({ integrations: liveTenant }) &&
+    !workspaceApifyIsMock({ integrations: keyedApify }),
 );
 const toastSource = readFileSync(new URL("../src/components/ui/toast.tsx", import.meta.url), "utf8");
 ok("toast can render a CTA button", /toast-cta/.test(toastSource) && /actionLabel/.test(toastSource));

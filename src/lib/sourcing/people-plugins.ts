@@ -10,7 +10,8 @@ import {
   SOURCE_VIA_APIFY_LABEL,
 } from "@/lib/sourcing/harvest-evidence";
 import {
-  hasValidApifyKey,
+  apifyIntegrationIsMock,
+  hasLiveApifyHarvest,
   isConnectOrDryRunCopy,
 } from "@/lib/sourcing/people-connect";
 import type { ApiKey, IntegrationStatus, JobAnalysis } from "@/lib/types";
@@ -23,6 +24,9 @@ export const EMPTY_PEOPLE_FIRST_HARVEST =
 
 export const PEOPLE_FIRST_HARVEST_UNAVAILABLE =
   "People-first harvest did not complete. Open Access & Keys to confirm the Apify key, then retry Source next batch.";
+
+export const MOCK_APIFY_TOAST =
+  "Apify is in Mock mode. Source next batch will not harvest on Mock. Connect a real Apify key and switch the card to Live.";
 
 export const PEOPLE_PLUGIN_SETTINGS_HREF = "/settings";
 export const PEOPLE_PLUGIN_SETTINGS_LABEL = "Open Access & Keys";
@@ -42,7 +46,7 @@ export function peopleSourcePluginsConnected(
   integrations: readonly IntegrationStatus[],
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): boolean {
-  if (hasValidApifyKey(apiKeys)) return true;
+  if (hasLiveApifyHarvest(integrations, apiKeys)) return true;
   return integrations.some(
     (item) =>
       (OFFICIAL_LINKEDIN_PLUGIN_IDS.has(item.id) || item.id.startsWith("int_linkedin")) &&
@@ -56,7 +60,9 @@ export function missingPeoplePluginsToast(
   integrations: readonly IntegrationStatus[],
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): string | null {
-  if (!isPeopleFirstRole(job) || peopleSourcePluginsConnected(integrations, apiKeys)) return null;
+  if (!isPeopleFirstRole(job)) return null;
+  if (apifyIntegrationIsMock(integrations)) return MOCK_APIFY_TOAST;
+  if (peopleSourcePluginsConnected(integrations, apiKeys)) return null;
   return MISSING_PEOPLE_PLUGINS_TOAST;
 }
 
@@ -68,6 +74,18 @@ export function remapPeopleFirstSourcingError(
 ): string {
   if (!isPeopleFirstRole(job)) return error;
   if (isConnectOrDryRunCopy(error)) return error;
+  if (apifyIntegrationIsMock(integrations ?? [])) {
+    if (/actor=harvestapi/.test(error) && /Mock mode/.test(error)) return error;
+    if (
+      error === MOCK_APIFY_TOAST ||
+      /Mock mode/.test(error) ||
+      error.includes("MISSING_PLUGIN") ||
+      GENERIC_SOURCING_FAILURE.test(error)
+    ) {
+      return MOCK_APIFY_TOAST;
+    }
+    return error;
+  }
   const keyed = peopleSourcePluginsConnected(integrations ?? [], apiKeys);
   if (keyed) {
     if (error.includes("MISSING_PLUGIN")) return EMPTY_PEOPLE_FIRST_HARVEST;
@@ -125,6 +143,14 @@ export function peoplePluginFailLoudUi(
 ): PeoplePluginUi | null {
   if (isConnectOrDryRunCopy(error)) return null;
   const remapped = job ? remapPeopleFirstSourcingError(error, job, integrations, apiKeys) : error;
+  if (remapped === MOCK_APIFY_TOAST || /Mock mode/.test(remapped)) {
+    return {
+      title: CONNECT_APIFY_LABEL,
+      description: remapped,
+      href: CONNECT_APIFY_HREF,
+      actionLabel: CONNECT_APIFY_LABEL,
+    };
+  }
   if (
     remapped === EMPTY_PEOPLE_FIRST_HARVEST ||
     /0 candidates|empty harvest|0 profiles|did not start|still running|aborted after|actor=harvestapi/i.test(remapped)
@@ -229,14 +255,11 @@ export function emptyPeopleFirstShortlistError(
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): string | null {
   if (result.accepted.length > 0 || !isPeopleFirstRole(job)) return null;
-  if (result.source === "mock") {
-    return peopleSourcePluginsConnected(integrations, apiKeys)
-      ? EMPTY_PEOPLE_FIRST_HARVEST
-      : MISSING_PEOPLE_PLUGINS_TOAST;
-  }
+  if (apifyIntegrationIsMock(integrations)) return MOCK_APIFY_TOAST;
   if (peopleSourcePluginsConnected(integrations, apiKeys)) {
     return EMPTY_PEOPLE_FIRST_HARVEST;
   }
+  if (result.source === "mock") return MISSING_PEOPLE_PLUGINS_TOAST;
   if (result.source === "github" || missingPeoplePluginsToast(job, integrations, apiKeys)) {
     return MISSING_PEOPLE_PLUGINS_TOAST;
   }

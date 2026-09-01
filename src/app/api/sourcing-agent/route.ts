@@ -47,9 +47,11 @@ import {
   formatHarvestEvidenceError,
   logAriaHarvest,
   PEOPLE_FIRST_HARVEST_EMPTY,
+  PEOPLE_FIRST_HARVEST_MOCK,
   PEOPLE_FIRST_HARVEST_NOT_STARTED,
   PEOPLE_FIRST_HARVEST_STILL_RUNNING,
 } from "@/lib/sourcing/harvest-evidence";
+import { workspaceApifyIsMock } from "@/lib/sourcing/people-connect";
 import {
   apifyHarvestQueryFromBrief,
   PEOPLE_FIRST_SEARCH_BUDGET_MS,
@@ -63,6 +65,9 @@ import type { Candidate, Role } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 90;
+
+/** Bound key lookup so a hung vault/Supabase read cannot stall before request_entry. */
+const APIFY_KEY_RESOLVE_MS = 8_000;
 
 const SYSTEM_PROMPT =
   "You are Aria's autonomous sourcing agent. You have a search_candidates tool that returns real, " +
@@ -105,7 +110,8 @@ type ErrorCode =
   | "SOURCING_AGENT_UNAVAILABLE"
   | "PEOPLE_FIRST_HARVEST_NOT_STARTED"
   | "PEOPLE_FIRST_HARVEST_STILL_RUNNING"
-  | "PEOPLE_FIRST_HARVEST_EMPTY";
+  | "PEOPLE_FIRST_HARVEST_EMPTY"
+  | "PEOPLE_FIRST_HARVEST_MOCK";
 
 type Session = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
 
@@ -196,7 +202,28 @@ async function readWorkspace(
     .eq("workspace_id", workspaceId)
     .maybeSingle();
   if (error) return { status: "unavailable" as const };
-  return projectSourcingAgentWorkspace(data?.state, campaignId);
+  const projected = projectSourcingAgentWorkspace(data?.state, campaignId);
+  if (projected.status !== "ok") return projected;
+  return {
+    status: "ok" as const,
+    value: projected.value,
+    apifyMock: workspaceApifyIsMock(data?.state),
+  };
+}
+
+async function resolveApifyKeyBounded(
+  session: Session,
+): Promise<string | null> {
+  try {
+    return await Promise.race([
+      resolveStoredApifyKey(session),
+      new Promise<string | null>((resolve) => {
+        setTimeout(() => resolve(null), APIFY_KEY_RESOLVE_MS);
+      }),
+    ]);
+  } catch {
+    return null;
+  }
 }
 
 function campaignAllowsSourcing(campaign: SourcingAgentCampaign): boolean {
@@ -225,12 +252,20 @@ function lessonExecutionKey(platform: string, query: string): string {
 }
 
 async function handlePost(req: NextRequest, correlationId: string) {
+  let harvestQuery = "";
   const fail = (
     status: number,
     code: ErrorCode,
     error: string,
     retryAfter?: number,
-  ) => errorResponse(status, code, error, correlationId, retryAfter);
+  ) => {
+    logAriaHarvest("request_exit", {
+      query: harvestQuery || undefined,
+      started: false,
+      detail: code,
+    });
+    return errorResponse(status, code, error, correlationId, retryAfter);
+  };
 
   if (prodFailClosed() || !supabaseEnabled) {
     return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Live sourcing authority is unavailable.");
@@ -341,20 +376,31 @@ async function handlePost(req: NextRequest, correlationId: string) {
       return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "The selected provider has no workspace key.");
     }
   }
-  const tavilyKey = await resolveStoredTavilyKey(session);
-  const apifyToken = await resolveStoredApifyKey(session);
-  const harvestQuery = apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis);
+  harvestQuery = apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis);
+  const apifyMock = initial.apifyMock;
+  // Mock is not a live key. Do not decrypt or hang on vault before evidence.
+  const apifyToken = apifyMock ? null : await resolveApifyKeyBounded(session);
   logAriaHarvest("request_entry", {
     query: harvestQuery,
     campaign: initial.value.campaign.jobAnalysis.title,
-    apifyKeyPresent: Boolean(apifyToken),
+    apifyKeyPresent: !apifyMock && Boolean(apifyToken),
     started: false,
   });
   // Fail before claiming a run. Tavily is not LinkedIn. GitHub Live-unconfigured
   // is not a people source. Name the plugins and the connect action.
+  if (peopleFirst && apifyMock) {
+    return fail(
+      503,
+      PEOPLE_FIRST_HARVEST_MOCK,
+      formatHarvestEvidenceError("mock", { query: harvestQuery }),
+    );
+  }
   if (peopleFirst && !apifyToken) {
     return fail(503, "MISSING_PLUGIN", MISSING_PEOPLE_PLUGINS_TOAST);
   }
+  // Tavily after request_entry. People-first harvest is harvestapi Full only.
+  const tavilyKey =
+    peopleFirst && !frameworkAuthorization ? null : await resolveStoredTavilyKey(session);
   const configurationFingerprint = createHash("sha256")
     .update(initial.value.configurationFingerprint)
     .digest("hex");
@@ -914,7 +960,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
 export async function POST(req: NextRequest) {
   const correlationId = requestId(req);
-  logAriaHarvest("request_received", { query: "", started: false });
+  logAriaHarvest("request_received", { started: false });
   try {
     return await handlePost(req, correlationId);
   } catch {

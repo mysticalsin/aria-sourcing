@@ -17,8 +17,9 @@ export const PEOPLE_FIRST_HARVEST_NOT_STARTED = "PEOPLE_FIRST_HARVEST_NOT_STARTE
 export const PEOPLE_FIRST_HARVEST_STILL_RUNNING = "PEOPLE_FIRST_HARVEST_STILL_RUNNING";
 export const PEOPLE_FIRST_HARVEST_EMPTY = "PEOPLE_FIRST_HARVEST_EMPTY";
 export const PEOPLE_FIRST_HARVEST_ABORTED = "PEOPLE_FIRST_HARVEST_ABORTED";
+export const PEOPLE_FIRST_HARVEST_MOCK = "PEOPLE_FIRST_HARVEST_MOCK";
 
-export type HarvestEvidenceKind = "not_started" | "still_running" | "empty" | "gated_empty" | "aborted";
+export type HarvestEvidenceKind = "not_started" | "still_running" | "empty" | "gated_empty" | "aborted" | "mock";
 
 export interface HarvestEvidence {
   actor: typeof HARVEST_ACTOR;
@@ -37,7 +38,8 @@ export function isHarvestEvidenceCode(code: string | null | undefined): boolean 
     code === PEOPLE_FIRST_HARVEST_NOT_STARTED ||
     code === PEOPLE_FIRST_HARVEST_STILL_RUNNING ||
     code === PEOPLE_FIRST_HARVEST_EMPTY ||
-    code === PEOPLE_FIRST_HARVEST_ABORTED
+    code === PEOPLE_FIRST_HARVEST_ABORTED ||
+    code === PEOPLE_FIRST_HARVEST_MOCK
   );
 }
 
@@ -59,6 +61,9 @@ export function formatHarvestEvidenceError(
   }
   if (kind === "aborted") {
     return `People-first harvest aborted after 90s. ${base}. Do not treat this as 0 people. Retry Source next batch.`;
+  }
+  if (kind === "mock") {
+    return `Apify is in Mock mode. ${base}. Connect a real Apify key and switch the card to Live.`;
   }
   if (kind === "gated_empty") {
     return `People-first harvest returned profiles that did not meet skill-match ≥60. ${base}. Try Source via Apify with a narrower query.`;

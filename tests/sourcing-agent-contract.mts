@@ -144,7 +144,8 @@ test("store consumer uses strict response parsing, current authority, commit-tim
   assert.match(action, /commitPersisted\(\(prev\)/);
   assert.match(action, /dedupeCandidates\(/);
   assert.match(action, /if \(!persisted \|\| !authorized\)/);
-  assert.doesNotMatch(action, /missingPeoplePluginsToast/);
+  assert.match(action, /missingPeoplePluginsToast\(/);
+  assert.doesNotMatch(action, /if \(missingPeoplePluginsToast/);
   assert.doesNotMatch(action, /mode: "fixture"/);
   assert.match(action, /remapPeopleFirstSourcingError/);
   assert.match(action, /isGithubOnlyEmptyBatch/);
@@ -194,9 +195,15 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_STILL_RUNNING/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_EMPTY/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_MOCK/);
   assert.match(route, /request_entry/);
-  assert.match(route, /apifyKeyPresent/);
+  assert.match(route, /apifyKeyPresent: !apifyMock && Boolean\(apifyToken\)/);
   assert.match(route, /logAriaHarvest\("request_received"/);
+  assert.doesNotMatch(route, /logAriaHarvest\("request_received", \{ query: ""/);
+  assert.match(route, /logAriaHarvest\("request_exit"/);
+  const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
+  const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
+  assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
   assert.match(route, /!successfulQuery && !\(peopleFirst && !frameworkAuthorization\)/);
   assert.match(route, /multiSourcePlan.filter\(\(step\) => step.platform === "Apify"\)/);
   assert.match(tools, /profileScraperMode: "Full"/);
@@ -211,7 +218,9 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.doesNotMatch(harvest, /console\.(info|log|debug)\(/);
   assert.match(harvest, /PEOPLE_FIRST_CLIENT_WAIT_MS = 90_000/);
   assert.match(harvest, /PEOPLE_FIRST_HARVEST_ABORTED/);
+  assert.match(harvest, /PEOPLE_FIRST_HARVEST_MOCK/);
   assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);
+  assert.match(client, /Promise\.race/);
   assert.match(client, /formatHarvestEvidenceError\("aborted"/);
   assert.doesNotMatch(actions, /if \(missingPlugins\) \{\s*return await sourceFixtureDryRunBatch/);
   assert.match(helpers, /headline \|\| positionTitle/);
@@ -376,6 +385,28 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     assert.match(harvestEmpty.error, /Source via Apify/);
     assert.doesNotMatch(harvestEmpty.error, /unavailable/i);
   }
+  const harvestMock = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "PEOPLE_FIRST_HARVEST_MOCK",
+          error:
+            "Apify is in Mock mode. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python. Connect a real Apify key and switch the card to Live.",
+          requestId: "req-harvest-mock",
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(harvestMock.ok, false);
+  if (!harvestMock.ok) {
+    assert.match(harvestMock.error, /Mock mode/);
+    assert.match(harvestMock.error, /Calypso Linux Python/);
+    assert.match(harvestMock.error, /Connect a real Apify key/);
+    assert.doesNotMatch(harvestMock.error, /unavailable/i);
+  }
   const abortedWait = await requestReviewedSourcing(async () => {
     const error = new Error("The operation was aborted.");
     error.name = "AbortError";
@@ -473,6 +504,10 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
   assert.match(page, /ConnectChannels|cc-connect-channels/);
   assert.match(batchAction, /emptyPeopleFirstToast|peoplePluginFailLoudUi/);
   assert.match(batchAction, /href: failLoud|href: emptyPeopleFirst/);
+  assert.match(batchAction, /try \{/);
+  assert.match(batchAction, /finally/);
+  assert.match(batchAction, /isPeopleFirstRole/);
+  assert.match(batchAction, /variant: "error"/);
   assert.match(page, /visiblePeopleFirstLearningReceipts/);
   assert.match(page, /visibleFeedbackReceipts/);
 });
