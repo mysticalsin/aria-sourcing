@@ -1,32 +1,31 @@
 ---
 project: MSourcing / ARIA
-shift: 474
+shift: 475
 agent: cursor-cloud
-updated: 2026-09-01T19:43Z
+updated: 2026-09-01T20:18Z
 status: pr-open-coding-gates
 ---
 
-# Handoff — Shift 474
+# Handoff — Shift 475
 
 ## Current state
 
 - Branch `cursor/sourcing-engine-94b1` → **PR #54 OPEN** (not merged)
 - Leftover **PR #53 OPEN**. Do not touch. Do not merge
-- Feature tip (this shift): **`d4e700b`** — never-0 next-search + wrap pills + pipeline=shortlist + persist-skip pin
-- Prior feature commits: `9a33068` (continue past empty first harvest), `2dd3657` (never 0-and-stop + wrap pills)
+- Feature tip: **`6dbb72e`** — items=0 auto-starts next harvest; clip 1270 overflow
+- Ultron walked Fly `d99e772` v212: FAIL (banner-only next-search + scrollWidth 1313/1270)
 - Harvest first query stays **`Calypso Business Analyst`** / App Support **`Calypso Linux Python`**
-- Local gate green on `d4e700b`: `npx tsc --noEmit && npx tsc -p tsconfig.tests.json --pretty false && npm test`
+- Local gate green on `6dbb72e`: `npx tsc --noEmit && npx tsc -p tsconfig.tests.json --pretty false && npm test`
 - READY TO MERGE stays **no**. Devon Path-B deploys PR 54 **tip** later
 - Polo parked. Overlay/Métis out of scope. Calypso is a **need**. No OAuth. No send. No merge. No Vercel. No Fly from this VM
 
 ## Done this shift
 
-1. DESIGN section **Never 0 people (product law)**: items=0 is not a product result; 0-and-stop is FAIL; empty harvest must next-search until a real shortlist
-2. `peopleFirstHarvestAttempts` keeps first query, then `searchQuery=Calypso` + `currentJobTitles=["Business Analyst"]`, then broadeners (`Calypso Business Analysis`, `Calypso`). Cap 4. Route runs all Apify plan steps (no `.slice(0, 1)`). Logs `empty_next_search`
-3. Last-resort after every planned search still 0 is `PEOPLE_FIRST_HARVEST_EMPTY`. Do not invent people. Leftover GitHub / name-only / `@example.com` still fail (`PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS`)
-4. Topbar pills: `cc-integration-pills` is `flex-wrap min-w-0 max-w-full`. No html/body `overflow-x: hidden`. Test models 1270 `scrollWidth ≈ clientWidth`
-5. Pipeline sourced for this campaign = visible contact-complete shortlist (`metricsRealigned`). Persist skip only when leftover strip and metrics realign are both no-ops
-6. Tests extended in existing suites: empty first query continues (`sourcing-agent-route-authority` 40); leftover gate still INCOMPLETE; overflow pills (`command-center-firstrun` 47); live-role persist pin (`live-role-authority` 23)
+1. Root cause of 0-and-stop: one shared 90s `AbortController` across the plan. First `SUCCEEDED items=0` consumed the budget; harvest 2 never started. Banner said "Engine continues" anyway
+2. Fresh 90s per attempt (`PEOPLE_FIRST_ATTEMPT_WAIT_MS`). Total budget / client wait / `maxDuration` = 360s. Log `next_search_start` before harvest 2+. Same POST, no second click
+3. Last-resort `PEOPLE_FIRST_HARVEST_EMPTY` copy no longer claims the engine continues. Title is **Empty harvest is not a result**, not Next search required
+4. Overflow: `cc-activity-outcome` wraps; orbital in `overflow-hidden [contain:paint]` (no `-right-24`); grid/audit column `min-w-0`. No html/body overflow-x hide
+5. Tests: empty first query starts ≥2 Apify harvests in one POST; 1270 pill+orbital model; DESIGN never-0 + 360s pins. `command-center-firstrun` 50; `sourcing-agent-route-authority` 40
 
 ## Blockers
 
@@ -36,12 +35,11 @@ status: pr-open-coding-gates
 ## Next steps
 
 ```bash
-# Devon: Path B deploy of PR 54 tip (must include d4e700b) onto aria-mantu-app
-# Ultron Source: first request_entry query=Calypso Business Analyst
-# If that harvest is SUCCEEDED items=0, engine MUST next-search (not banner-stop)
+# Devon: Path B deploy of PR 54 tip (must include 6dbb72e) onto aria-mantu-app
+# Ultron: one Source. request_entry query=Calypso Business Analyst plannedHarvests>=2
+# If harvest 1 SUCCEEDED items=0: next_search_start + a second harvestapi run. No second click
 # Real shortlist: email + phone + LinkedIn, skill-match >=60, cap <=20
-# Pipeline count must match the visible shortlist, not stale 8
-# At 1270: Command Center pills scrollWidth ~= clientWidth; no html/body overflow-x hide
+# At 1270: scrollWidth ~= clientWidth (activity outcome + orbital must not expand)
 # H1 stays Your next move is ready.
 # This VM: coding gates only. Do not merge PR 53 or 54
 # READY TO MERGE: no
@@ -52,7 +50,8 @@ status: pr-open-coding-gates
 - Product name is Aria. Calypso is a client **need**
 - Returning Command Center H1 is Aria-shaped. Acting on {title} is chip/subtitle
 - Aria can never find 0 people. items=0 is next-search, not a result
-- First query stays `Calypso Business Analyst`. Engine continues after that 0
+- Copy is not next-search. The loop must start harvest 2
+- First query stays `Calypso Business Analyst`
 - Do not hide overflow-x on html/body
 - Leftover GitHub / `@example.com` are not LinkedIn people
 - Do not invent people to fill a 0
@@ -65,4 +64,5 @@ status: pr-open-coding-gates
 - Do not regress harvest first query or leftover-GitHub strip
 - Do not send the LinkedIn boolean as harvestapi `searchQuery`
 - Do not Path-B or Fly-deploy from this VM
-- Route-authority continue fixture must set `lastContactedAt: null` or dedupe drops the next-search person
+- Do not share one 90s abort across planned harvests
+- Route-authority continue fixture must set `lastContactedAt: null`
