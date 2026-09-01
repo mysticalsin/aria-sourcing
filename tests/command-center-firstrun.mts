@@ -93,7 +93,13 @@ check(
 );
 check("Command Center remaps invalid-response on people-first", /peoplePluginFailLoudUi\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
 check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
-check("Command Center shows in-product Connect CTAs", /cc-connect-channels/.test(commandCenterPage) && /cc-connect-linkedin/.test(commandCenterPage) && /cc-connect-outlook/.test(commandCenterPage));
+const connectChannels = readFileSync(new URL("../src/components/dashboard/connect-channels.tsx", import.meta.url), "utf8");
+check(
+  "Command Center shows in-product Connect CTAs",
+  /ConnectChannels|cc-connect-channels/.test(commandCenterPage) &&
+    /cc-connect-linkedin/.test(connectChannels) &&
+    /cc-connect-outlook/.test(connectChannels),
+);
 const strip = readFileSync(new URL("../src/components/dashboard/integration-strip.tsx", import.meta.url), "utf8");
 check("Command Center strip uses honest Live display", /integrationShowsLive/.test(strip));
 check("Command Center strip does not badge raw integration.mode as Live", !/integration\.mode === "live"/.test(strip));
