@@ -50,6 +50,11 @@ ok(
   "live outbound send preflights at action start and dispatch time",
   guardedBefore(actionBody("sendApprovedOutreach", "rejectOutreach"), /workspaceFetch\("\/api\/outreach\/send"/),
 );
+ok(
+  "send and LinkedIn confirm require channel-connect plus approval",
+  /liveSendBlocker\(/.test(actionBody("sendApprovedOutreach", "rejectOutreach")) &&
+    /liveSendBlocker\(/.test(actionBody("confirmManualSend", "sendApprovedOutreach")),
+);
 
 const addSeat = actionBody("addSeat", "deployAgents");
 ok(

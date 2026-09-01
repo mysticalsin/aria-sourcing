@@ -26,6 +26,7 @@ import {
   type TabItem,
 } from "@/components/ui";
 import { HydrationGate } from "@/components/app/page-header";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
@@ -55,9 +56,11 @@ import {
   useCampaignCandidates,
   useCampaignOutreach,
   useHermes,
+  useApiKeys,
   useHydrated,
   useIntegrations,
   useReplies,
+  useSeats,
   useReportForCampaign,
   useRole,
 } from "@/lib/store";
@@ -357,6 +360,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const report = useReportForCampaign(id);
   const actions = useActions();
   const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
+  const seats = useSeats();
   const role = useRole();
   const hermesState = useHermes().state;
   const { toast } = useToast();
@@ -538,15 +543,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSource = async () => {
     if (sourcing) return;
-    const missingPlugins = missingPeoplePluginsToast(c.jobAnalysis, integrations);
-    if (missingPlugins) {
-      toast({
-        title: "Connect LinkedIn and Apify",
-        description: missingPlugins,
-        variant: "error",
-      });
-      return;
-    }
     setSourcing(true);
     const res = await actions.sourceNextBatch(c.id);
     setSourcing(false);
@@ -642,15 +638,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleRunAgent = async () => {
     const campaignId = c.id;
-    const missingPlugins = missingPeoplePluginsToast(c.jobAnalysis, integrations);
-    if (missingPlugins) {
-      toast({
-        title: "Connect LinkedIn and Apify",
-        description: missingPlugins,
-        variant: "error",
-      });
-      return;
-    }
     setAgentRunning(true);
     const res = await actions.runSourcingAgent(campaignId);
     setAgentRunning(false);
@@ -707,11 +694,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     }
     toast({
       title:
-        res.mode === "cloud"
+        res.mode === "fixture"
+          ? `Dry-run shortlist: ${res.added} candidate${res.added === 1 ? "" : "s"}`
+          : res.mode === "cloud"
           ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
           : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
       description:
-        res.mode === "cloud"
+        res.mode === "fixture"
+          ? "Fixture matcher. Connect LinkedIn and Outlook to search live people."
+          : res.mode === "cloud"
           ? "Real provider search and cloud-assisted drafts are ready for human review."
           : "Real GitHub results and locally generated drafts are ready for human review. No cloud model ran.",
       variant: "success",
@@ -995,7 +986,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </dl>
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:max-w-[55%] lg:justify-end">
+          <div className="flex min-w-0 flex-col items-stretch gap-2 lg:max-w-[55%] lg:items-end">
+            <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
+            {missingPeoplePluginsToast(c.jobAnalysis, integrations, apiKeys) ? null : null}
+            <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
             <Button
               variant="secondary"
               leftIcon={<Sparkles className="h-4 w-4" />}
@@ -1053,6 +1047,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 Mark filled
               </Button>
             )}
+            </div>
           </div>
         </div>
 
@@ -1085,6 +1080,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 >
                   <p className="text-sm font-medium text-ink">
                     {receipt.platform}: {receipt.candidateCount} real candidate{receipt.candidateCount === 1 ? "" : "s"}
+                    {receipt.query ? ` · ${receipt.query}` : ""}
+                    {receipt.createdAt ? ` · ${new Date(receipt.createdAt).toLocaleString()}` : ""}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button

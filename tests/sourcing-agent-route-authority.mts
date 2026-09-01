@@ -1026,7 +1026,7 @@ test("people-first role without LinkedIn/Apify keys fails loud and does not sear
   assert.equal(response.status, 503);
   assert.equal(body.code, "MISSING_PLUGIN");
   assert.match(String(body.error), /MISSING_PLUGIN/);
-  assert.match(String(body.error), /Connect LinkedIn and Apify/);
+  assert.match(String(body.error), /Apify/);
   assert.doesNotMatch(String(body.error), /invalid response/i);
   assert.equal(beginCalls, 0);
   assert.equal(runnerCalls, 0);
@@ -1059,7 +1059,7 @@ test("people-first role with only a Tavily key still fails loud — Tavily is no
   assert.equal(response.status, 503);
   assert.equal(body.code, "MISSING_PLUGIN");
   assert.match(String(body.error), /MISSING_PLUGIN/);
-  assert.match(String(body.error), /Connect LinkedIn and Apify/);
+  assert.match(String(body.error), /Apify/);
   assert.doesNotMatch(String(body.error), /invalid response/i);
   assert.equal(runnerCalls, 0);
   assert.equal(beginCalls, 0);
@@ -1131,7 +1131,7 @@ test("people-first framework run without Apify fails loud and does not search Gi
 
   assert.equal(response.status, 503);
   assert.equal(body.code, "MISSING_PLUGIN");
-  assert.match(String(body.error), /Connect LinkedIn and Apify/);
+  assert.match(String(body.error), /Apify/);
   assert.equal(runnerCalls, 0);
   assert.equal(beginCalls, 0);
   assert.equal(frameworkBeginCalls, 0);

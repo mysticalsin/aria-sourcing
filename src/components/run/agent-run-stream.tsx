@@ -176,12 +176,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       setPhase("error");
       return;
     }
-    const missingPlugins = missingPeoplePluginsToast(campaign.jobAnalysis, integrations);
-    if (missingPlugins) {
-      setErrorMessage(missingPlugins);
-      setPhase("error");
-      return;
-    }
+    missingPeoplePluginsToast(campaign.jobAnalysis, integrations);
 
     let retryStorage: Storage | null = null;
     try {

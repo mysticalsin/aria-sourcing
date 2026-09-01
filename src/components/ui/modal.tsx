@@ -24,6 +24,8 @@ export function Modal({
 }) {
   const panelRef = React.useRef<HTMLDivElement>(null);
   const previouslyFocused = React.useRef<HTMLElement | null>(null);
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
   const titleId = React.useId();
 
   React.useEffect(() => {
@@ -31,7 +33,7 @@ export function Modal({
     previouslyFocused.current = document.activeElement as HTMLElement;
     lockBodyScroll();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Escape") { onCloseRef.current(); return; }
       if (e.key === "Tab") {
         const panel = panelRef.current;
         if (!panel) return;
@@ -52,7 +54,12 @@ export function Modal({
     };
     document.addEventListener("keydown", onKey);
     const t = window.setTimeout(() => {
-      panelRef.current?.querySelector<HTMLElement>("button, [href], input, textarea, select")?.focus();
+      const panel = panelRef.current;
+      if (!panel) return;
+      const preferred = panel.querySelector<HTMLElement>(
+        "input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
+      );
+      (preferred ?? panel.querySelector<HTMLElement>("button, [href]"))?.focus();
     }, 30);
     return () => {
       document.removeEventListener("keydown", onKey);
@@ -60,7 +67,7 @@ export function Modal({
       window.clearTimeout(t);
       previouslyFocused.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

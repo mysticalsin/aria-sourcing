@@ -1782,7 +1782,7 @@ test("a rejected persisted commit never reports or emits sourcing success", asyn
   );
 });
 
-test("people-first Source next batch fails loud when LinkedIn and Apify are unconfigured", async () => {
+test("people-first Source next batch uses fixture dry-run when Apify is unkeyed", async () => {
   const seed = buildSeedState();
   const campaign = {
     ...seed.campaigns[0],
@@ -1799,38 +1799,138 @@ test("people-first Source next batch fails loud when LinkedIn and Apify are unco
     item.id === "int_github" ? { ...item, mode: "live" as const, status: "not_configured" as const } : item,
   );
   const harness = createHarness({
-    state: { ...seed, campaigns: [campaign], integrations },
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
     syntheticSourcingAllowed: false,
-    responseText: "<html>bad gateway</html>",
-    responseStatus: 502,
+    responseBody: {
+      ok: true,
+      requestId: "fix-1",
+      mode: "fixture",
+      need: { title: "Calypso Application Support", requiredSkills: ["Calypso", "Linux"] },
+      shortlist: [
+        {
+          id: "fixture-app-support-1",
+          name: "Elena Varga",
+          score: 91,
+          breakdown: {
+            skills: 90,
+            cv: 88,
+            linkedin: 80,
+            composite: 87,
+            requiredHits: ["Calypso", "Linux"],
+            cvHits: ["production support"],
+            linkedinHits: ["Calypso"],
+          },
+          evidence: { skills: ["Calypso"], cv: ["production support"], linkedin: ["Calypso"] },
+          provenance: "fixture",
+          ineligible: false,
+          reason: null,
+        },
+      ],
+      rejected: [
+        {
+          id: "fixture-name-only",
+          name: "Calypso Martinez",
+          score: 12,
+          breakdown: { skills: 0, cv: 0, linkedin: 0, composite: 0, requiredHits: [], cvHits: [], linkedinHits: [] },
+          evidence: { skills: [], cv: [], linkedin: [] },
+          provenance: "fixture",
+          ineligible: true,
+          reason: "name_only",
+        },
+      ],
+    },
   });
 
   const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
 
-  assert.equal(result.ok, false);
-  if (!result.ok) {
-    assert.equal(result.error, MISSING_PEOPLE_PLUGINS_TOAST);
-    assert.match(result.error, /MISSING_PLUGIN/);
-    assert.match(result.error, /Connect LinkedIn and Apify/);
-    assert.doesNotMatch(result.error, /invalid response/i);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.source, "mock");
+    assert.ok(result.accepted.length >= 1);
+    assert.equal(result.accepted[0]?.provenance, "synthetic");
+    assert.doesNotMatch(result.accepted[0]?.currentCompany ?? "", /live/i);
   }
-  assert.equal(harness.fetchCalls, 0);
-  assert.equal(harness.persistedCalls, 0);
+  assert.equal(harness.fetchCalls, 1);
+  assert.match(String(harness.requests[0]?.input), /\/api\/source\/need/);
+  assert.equal(JSON.parse(String(harness.requests[0]?.init?.body)).mode, "fixture");
+  assert.equal(harness.persistedCalls, 1);
+  assert.match(harness.activityDrafts[0]?.notes ?? "", /dry-run/i);
+  assert.doesNotMatch(harness.activityDrafts[0]?.outcome ?? "", /\(live\)/);
+});
 
-  const framed = await harness.actions.sourceNextBatch(campaign.id, {
-    count: 6,
-    agentFramework: {
-      runId: "77777777-7777-4777-8777-777777777777",
-      capabilityToken: "s".repeat(43),
-      query: "language:Python followers:>40",
+test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next batch", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseBody: {
+      ok: true,
+      campaignId: campaign.id,
+      campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+      mode: "deterministic",
+      totalFound: 1,
+      requestId: "request-keyed-apify",
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      sourcingRunId: "22222222-2222-4222-8222-222222222222",
+      appliedLessonIds: [],
+      candidates: [
+        {
+          id: "keyed-candidate-1",
+          campaignId: campaign.id,
+          name: "Elena Varga",
+          currentTitle: "Calypso Application Support",
+          currentCompany: "BNPP CIB",
+          location: "Montreal",
+          linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+          githubUrl: "",
+          sourceUrl: "https://www.linkedin.com/in/elena-varga",
+          sourcePlatform: "Apify",
+          sourceQuery: "Calypso Linux Python",
+          matchScore: 88,
+          matchBreakdown: [],
+          techStack: ["Linux", "Python", "Calypso"],
+          recentActivity: "Production support",
+          createdAt: "2026-07-15T00:00:00.000Z",
+        },
+      ],
+      feedbackReceipts: [
+        { receiptId: "33333333-3333-4333-8333-333333333333", platform: "Apify", candidateCount: 1 },
+      ],
     },
   });
-  assert.equal(framed.ok, false);
-  if (!framed.ok) {
-    assert.equal(framed.error, MISSING_PEOPLE_PLUGINS_TOAST);
-    assert.doesNotMatch(framed.error, /invalid response/i);
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.notEqual(result.source, "mock");
+    assert.doesNotMatch(JSON.stringify(result), /MISSING_PLUGIN/);
   }
-  assert.equal(harness.fetchCalls, 0);
+  assert.match(String(harness.requests[0]?.input), /sourcing-agent|source\/need|source"/);
+  assert.ok(harness.fetchCalls >= 1);
 });
 
 test("people-first GitHub-only empty batch is fail-loud, not a successful search", async () => {
@@ -1878,7 +1978,7 @@ test("people-first GitHub-only empty batch is fail-loud, not a successful search
   assert.equal(result.ok, false);
   if (!result.ok) {
     assert.equal(result.error, MISSING_PEOPLE_PLUGINS_TOAST);
-    assert.match(result.error, /Connect LinkedIn and Apify/);
+    assert.match(result.error, /Apify/);
     assert.doesNotMatch(result.error, /invalid response/i);
   }
   assert.equal(harness.persistedCalls, 0);

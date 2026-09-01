@@ -3,6 +3,11 @@ import { generateOutreach, newOutreachMessage, sourceCandidates } from "../mock-
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
 import {
+  mapFixtureApiShortlist,
+  needTextFromJob,
+} from "../sourcing/fixture-shortlist-candidates";
+import { CONNECT_CHANNELS_COPY } from "../sourcing/people-connect";
+import {
   isGithubOnlyEmptyBatch,
   isPeopleFirstRole,
   missingPeoplePluginsToast,
@@ -665,6 +670,21 @@ function invalidRequest(error: string) {
   return { ok: false as const, error, source: "invalid" as const };
 }
 
+function draftFirstTouchPair(
+  candidate: Candidate,
+  campaign: HermesState["campaigns"][number],
+  tone: Parameters<typeof generateOutreach>[2],
+  settings: HermesState["settings"],
+  language: string | undefined,
+) {
+  const email = generateOutreach(candidate, campaign, tone, "Email", 1, undefined, language);
+  const linkedin = generateOutreach(candidate, campaign, tone, "LinkedIn", 1, undefined, language);
+  return [
+    newOutreachMessage(candidate, campaign, email, tone, settings, 1),
+    newOutreachMessage(candidate, campaign, linkedin, tone, settings, 1),
+  ];
+}
+
 function liveSourcingUnavailable(status: CampaignStatus): string {
   return status === "Paused"
     ? "Campaign is paused."
@@ -798,6 +818,7 @@ export function createSourcingActions({
           .map((message) => message.candidateId),
       );
       const tone = effectiveTone(previous.skills);
+      const language = campaign.jobAnalysis.language ?? previous.settings.defaultLanguage;
       const drafts = result.accepted
         .filter((candidate) => {
           const reported =
@@ -807,26 +828,40 @@ export function createSourcingActions({
         })
         .filter((candidate) => !pendingDraftIds.has(candidate.id))
         .slice(0, SHORTLIST_DRAFT_CAP)
-        .map((candidate) => {
+        .flatMap((candidate) => {
           const dto = reviewed.value.candidates.find((item) => item.id === candidate.id);
-          const generated =
+          const email =
             dto?.draftSubject && dto.draftBody
-              ? {
-                  subject: dto.draftSubject,
-                  body: dto.draftBody,
-                  personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
-                  channel: "Email" as const,
-                }
-              : generateOutreach(
+              ? newOutreachMessage(
                   candidate,
                   campaign,
+                  {
+                    subject: dto.draftSubject,
+                    body: dto.draftBody,
+                    personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
+                    channel: "Email",
+                  },
                   tone,
-                  "Email",
+                  previous.settings,
                   1,
-                  undefined,
-                  campaign.jobAnalysis.language ?? previous.settings.defaultLanguage,
+                )
+              : newOutreachMessage(
+                  candidate,
+                  campaign,
+                  generateOutreach(candidate, campaign, tone, "Email", 1, undefined, language),
+                  tone,
+                  previous.settings,
+                  1,
                 );
-          return newOutreachMessage(candidate, campaign, generated, tone, previous.settings, 1);
+          const linkedin = newOutreachMessage(
+            candidate,
+            campaign,
+            generateOutreach(candidate, campaign, tone, "LinkedIn", 1, undefined, language),
+            tone,
+            previous.settings,
+            1,
+          );
+          return [email, linkedin];
         });
       let next: HermesState = {
         ...previous,
@@ -888,6 +923,128 @@ export function createSourcingActions({
         latest.integrations,
       ),
     };
+  };
+
+  const sourceFixtureDryRunBatch = async (
+    campaignId: string,
+    initialFingerprint: string,
+  ): Promise<SourceNextBatchResult> => {
+    const initial = currentState();
+    const campaign = initial?.campaigns.find((item) => item.id === campaignId);
+    if (!initial || !campaign) {
+      return { ok: false, error: "Campaign not found.", source: "not_found" };
+    }
+    if (!evaluateNeedReadiness(campaign.jobAnalysis).ready) {
+      return invalidRequest("Review the need before sourcing.");
+    }
+    let body: unknown;
+    try {
+      const response = await workspaceFetch("/api/source/need", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "fixture",
+          count: SHORTLIST_DRAFT_CAP,
+          jd: needTextFromJob(campaign.jobAnalysis),
+        }),
+      });
+      body = await response.json().catch(() => null);
+      if (!response.ok || !isRecord(body) || body.ok !== true || body.mode !== "fixture") {
+        return {
+          ok: false,
+          error: `${CONNECT_CHANNELS_COPY} Dry-run shortlist needs a signed-in session.`,
+          source: "unavailable",
+        };
+      }
+    } catch {
+      return {
+        ok: false,
+        error: `${CONNECT_CHANNELS_COPY} Dry-run shortlist could not be reached.`,
+        source: "unavailable",
+      };
+    }
+    const mapped = mapFixtureApiShortlist({
+      campaign,
+      shortlist: isRecord(body) ? body.shortlist : null,
+      rejected: isRecord(body) ? body.rejected : null,
+    });
+    if (!mapped) {
+      return {
+        ok: false,
+        error: `${CONNECT_CHANNELS_COPY} Dry-run shortlist returned an unusable matcher payload.`,
+        source: "unavailable",
+      };
+    }
+    if (!candidatePersistenceAllowed("synthetic")) {
+      return invalidRequest("This workspace cannot persist a dry-run shortlist.");
+    }
+
+    let authorized = false;
+    let result: SourceResult = { accepted: [], skipped: mapped.skipped };
+    const applied = await commitPersisted((previous) => {
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return previous;
+      const latestCampaign = previous.campaigns.find((item) => item.id === campaignId);
+      if (
+        !latestCampaign ||
+        !campaignAllowsLiveSourcing(latestCampaign.status) ||
+        !evaluateNeedReadiness(latestCampaign.jobAnalysis).ready ||
+        sourcingAgentCampaignFingerprint(latestCampaign) !== initialFingerprint
+      ) {
+        return previous;
+      }
+      authorized = true;
+      result = dedupeCandidates(mapped.accepted, previous.candidates, {
+        excludedCompanies: latestCampaign.sourcingStrategy.excludedCompanies,
+      });
+      result = {
+        ...result,
+        skipped: [...result.skipped, ...mapped.skipped],
+      };
+      const pendingDraftIds = new Set(
+        previous.outreach
+          .filter((message) => message.status === "Needs Approval")
+          .map((message) => message.candidateId),
+      );
+      const tone = effectiveTone(previous.skills);
+      const language = latestCampaign.jobAnalysis.language ?? previous.settings.defaultLanguage;
+      const drafts = result.accepted
+        .filter((candidate) => candidate.matchScore >= SHORTLIST_DRAFT_FLOOR)
+        .filter((candidate) => !pendingDraftIds.has(candidate.id))
+        .slice(0, SHORTLIST_DRAFT_CAP)
+        .flatMap((candidate) =>
+          draftFirstTouchPair(candidate, latestCampaign, tone, previous.settings, language),
+        );
+      let next: HermesState = {
+        ...previous,
+        candidates: [...result.accepted, ...previous.candidates],
+        outreach: drafts.length > 0 ? [...drafts, ...previous.outreach] : previous.outreach,
+      };
+      if (result.accepted.length > 0) next = recomputeMetrics(next, campaignId);
+      return withActivity(
+        next,
+        makeActivity({
+          type: "sourcing",
+          title: `Sourced ${result.accepted.length} candidates`,
+          notes: `Dry-run fixture matcher. ${result.skipped.length} skipped by dedupe, exclusions, or name-only. ${drafts.length} in-product first-touch draft${drafts.length === 1 ? "" : "s"} queued for approval. Connect LinkedIn and Outlook to search live people.`,
+          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped, ${drafts.length} drafted (dry-run)`,
+          campaignId,
+          linkedEntityType: "campaign",
+          linkedEntityId: campaignId,
+        }),
+        campaignId,
+      );
+    });
+    if (!applied || !authorized) {
+      return {
+        ok: false,
+        error: "Workspace changed before the sourced candidates could be saved. Retry sourcing.",
+        source: "unavailable",
+      };
+    }
+    if (result.accepted.length > 0) {
+      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+    }
+    return { ...result, source: "mock", ok: true };
   };
 
   const sourceNextBatch: SourcingActions["sourceNextBatch"] = async (
@@ -977,9 +1134,10 @@ export function createSourcingActions({
       const missingPlugins = missingPeoplePluginsToast(
         initialCampaign.jobAnalysis,
         initialState.integrations,
+        initialState.apiKeys,
       );
       if (missingPlugins) {
-        return { ok: false, error: missingPlugins, source: "unavailable" };
+        return await sourceFixtureDryRunBatch(campaignId, initialFingerprint);
       }
       return await sourceReviewedCampaignBatch(
         campaignId,

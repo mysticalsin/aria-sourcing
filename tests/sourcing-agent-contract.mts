@@ -163,7 +163,7 @@ test("campaign UI presents a completed zero-match search as information, not sou
   assert.match(action, /No (?:candidates(?: were)? added|new matches)/i);
   assert.match(action, /variant:\s*"info"/);
   assert.match(action, /peoplePluginFailLoudUi/);
-  assert.match(action, /Connect LinkedIn and Apify/);
+  assert.match(page, /Connect LinkedIn/);
   assert.match(action, /emptyPeopleFirstShortlistError/);
 });
 
@@ -184,7 +184,7 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
   assert.equal(mapped.ok, false);
   if (mapped.ok) return;
   assert.match(mapped.error, /MISSING_PLUGIN/);
-  assert.match(mapped.error, /Connect LinkedIn and Apify/);
+  assert.match(mapped.error, /Apify/);
   assert.doesNotMatch(mapped.error, /invalid response/i);
 
   const financeJob = {
@@ -245,10 +245,10 @@ test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unc
     financeJob,
     liveUnconfigured,
   );
-  assert.equal(toast?.title, "Connect LinkedIn and Apify");
+  assert.equal(toast?.title, "Add a valid Apify key");
   assert.match(String(toast?.description), /MISSING_PLUGIN/);
   assert.doesNotMatch(String(toast?.description), /invalid response/i);
-  assert.match(missing, /Connect LinkedIn and Apify/);
+  assert.match(missing, /Apify/);
 
   const legacyCode = await requestReviewedSourcing(
     async () =>
@@ -313,7 +313,7 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     batchAction,
     /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
-  assert.match(batchAction, /Connect LinkedIn and Apify/);
+  assert.match(page, /ConnectChannels|cc-connect-channels/);
   assert.match(batchAction, /missingPeoplePluginsToast/);
   assert.match(batchAction, /peoplePluginFailLoudUi|emptyPeopleFirstShortlistError/);
   assert.match(page, /visiblePeopleFirstLearningReceipts/);

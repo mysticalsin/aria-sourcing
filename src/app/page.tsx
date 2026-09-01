@@ -20,6 +20,7 @@ import { HydrationGate } from "@/components/app/page-header";
 import { HeroPanel } from "@/components/dashboard/hero-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AttentionPanel } from "@/components/dashboard/attention-panel";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { IntegrationStrip } from "@/components/dashboard/integration-strip";
 import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
@@ -37,9 +38,11 @@ import {
   useCandidates,
   useDashboardKpis,
   useHydrated,
+  useApiKeys,
   useIntegrations,
   usePendingApprovals,
   useReplies,
+  useSeats,
 } from "@/lib/store";
 import {
   emptyPeopleFirstShortlistError,
@@ -82,8 +85,10 @@ export default function DashboardPage() {
   const replies = useReplies();
   const activeCampaign = useActiveCampaign();
   const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
+  const seats = useSeats();
   const missingPeoplePlugins = activeCampaign
-    ? missingPeoplePluginsToast(activeCampaign.jobAnalysis, integrations)
+    ? missingPeoplePluginsToast(activeCampaign.jobAnalysis, integrations, apiKeys)
     : null;
 
   const unrepliedCount = React.useMemo(
@@ -185,14 +190,6 @@ export default function DashboardPage() {
       });
       return;
     }
-    if (missingPeoplePlugins) {
-      toast({
-        title: "Connect LinkedIn and Apify",
-        description: missingPeoplePlugins,
-        variant: "error",
-      });
-      return;
-    }
     const result = await actions.sourceNextBatch(activeCampaign.id);
     if (!result.ok) {
       const failLoud = peoplePluginFailLoudUi(
@@ -286,15 +283,7 @@ export default function DashboardPage() {
                     <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
                     {nextStep.reason}
                   </p>
-                  {missingPeoplePlugins ? (
-                    <p
-                      role="alert"
-                      data-testid="cc-missing-plugin"
-                      className="mt-2 text-sm font-semibold text-danger"
-                    >
-                      {missingPeoplePlugins}
-                    </p>
-                  ) : null}
+                  <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>

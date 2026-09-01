@@ -18,6 +18,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { SeatCard } from "@/components/fleet/seat-card";
 import { FleetSummary } from "@/components/fleet/fleet-summary";
 import { SuppressionPanel } from "@/components/fleet/suppression-panel";
@@ -30,6 +31,7 @@ import {
   useActions,
   useSettings,
   useRole,
+  useApiKeys,
   useIntegrations,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
@@ -96,6 +98,7 @@ export default function FleetPage() {
   const activeId = useActiveCampaignId();
   const actions = useActions();
   const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
   const { toast } = useToast();
   const maxAgents = useSettings().fleet.maxAgents || 300;
   const role = useRole();
@@ -110,6 +113,12 @@ export default function FleetPage() {
   const [rosterStatus, setRosterStatus] = React.useState<"all" | SeatStatus>("all");
   const [rosterProvider, setRosterProvider] = React.useState<"all" | SeatProvider>("all");
   const [rosterVisible, setRosterVisible] = React.useState(SEAT_ROSTER_PAGE);
+
+  React.useEffect(() => {
+    const connect = new URLSearchParams(window.location.search).get("connect");
+    if (connect === "linkedin") setRosterProvider("LinkedIn Vendor API");
+    if (connect === "outlook") setRosterProvider("Microsoft Graph");
+  }, []);
 
   const filteredSeats = React.useMemo(() => {
     const q = rosterQuery.trim().toLowerCase();
@@ -195,18 +204,7 @@ export default function FleetPage() {
       });
       return;
     }
-    const missingPlugins = missingPeoplePluginsToast(
-      selectedCampaign.jobAnalysis,
-      integrations,
-    );
-    if (missingPlugins) {
-      toast({
-        title: "Connect LinkedIn and Apify",
-        description: missingPlugins,
-        variant: "error",
-      });
-      return;
-    }
+    missingPeoplePluginsToast(selectedCampaign.jobAnalysis, integrations);
 
     setSourcing(true);
     try {
@@ -358,6 +356,7 @@ export default function FleetPage() {
         <div className="space-y-8">
           {/* 1 — Fleet summary */}
           <FleetSummary />
+          <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} className="mt-0" />
 
           {/* 2 — Guardrail strip */}
           <Card>

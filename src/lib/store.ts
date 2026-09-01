@@ -71,6 +71,7 @@ import {
   remapPeopleFirstSourcingError,
   visiblePeopleFirstLearningReceipts,
 } from "./sourcing/people-plugins";
+import { liveMailboxSeat, liveSendBlocker } from "./sourcing/people-connect";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
   defaultLiveIntegrations,
@@ -218,7 +219,12 @@ function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[
     const row = item as Record<string, unknown>;
     if (
       Object.keys(row).some(
-        (key) => key !== "receiptId" && key !== "platform" && key !== "candidateCount",
+        (key) =>
+          key !== "receiptId" &&
+          key !== "platform" &&
+          key !== "candidateCount" &&
+          key !== "query" &&
+          key !== "createdAt",
       ) ||
       typeof row.receiptId !== "string" ||
       !UUID_RE.test(row.receiptId) ||
@@ -237,6 +243,8 @@ function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[
       receiptId: row.receiptId,
       platform: row.platform as SourcingFeedbackReceipt["platform"],
       candidateCount: row.candidateCount,
+      ...(typeof row.query === "string" ? { query: row.query } : {}),
+      ...(typeof row.createdAt === "string" ? { createdAt: row.createdAt } : {}),
     });
   }
   return receipts;
@@ -1404,9 +1412,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!out?.ok) return { ok: false, error: out?.error ?? "Apify status check failed." };
       if (out.status === "processing") return { ok: true, status: "processing" };
       if (out.status !== "completed") return { ok: false, error: out.error ?? "Apify run did not complete." };
+      if (!Array.isArray(out.profiles) || out.profiles.length === 0) {
+        return {
+          ok: false,
+          error: "Apify finished with 0 profiles. The harvest was empty — no candidates invented.",
+        };
+      }
 
       const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const { accepted, skipped } = mapApifyCandidates(out.profiles ?? [], campaign, query, s.candidates, weights);
+      const { accepted, skipped } = mapApifyCandidates(out.profiles, campaign, query, s.candidates, weights);
 
       commit((prev) => {
         let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
@@ -1621,7 +1635,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     ): Promise<{
       ok: boolean;
       added: number;
-      mode?: "cloud" | "deterministic";
+      mode?: "cloud" | "deterministic" | "fixture";
       feedbackReceipts?: SourcingFeedbackReceipt[];
       error?: string;
     }> => {
@@ -1641,9 +1655,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!campaignAllowsLiveSourcing(campaign.status)) {
         return { ok: false, added: 0, error: "Campaign is not active for sourcing." };
       }
-      const missingPlugins = missingPeoplePluginsToast(campaign.jobAnalysis, s.integrations);
+      const missingPlugins = missingPeoplePluginsToast(campaign.jobAnalysis, s.integrations, s.apiKeys);
       if (missingPlugins) {
-        return { ok: false, added: 0, error: missingPlugins };
+        const dryRun = await sourceNextBatch(campaignId, { count: 20 });
+        if (!dryRun.ok) {
+          return { ok: false, added: 0, error: dryRun.error };
+        }
+        return { ok: true, added: dryRun.accepted.length, mode: "fixture" };
       }
       const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 8);
       const reviewed = await requestReviewedSourcing(
@@ -1789,7 +1807,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ...(drafted === 0 && added > 0 ? { error: "Candidates were saved without drafts." } : {}),
       };
     },
-    [candidatePersistenceAllowed, commitPersisted, current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, commitPersisted, current, sourceNextBatch, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
   );
 
   const recordSourcingFeedback = useCallback(
@@ -2506,6 +2524,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       const campaign = s.campaigns.find((c) => c.id === msg.campaignId);
       if (!candidate || !campaign) return { ok: false, error: "Linked candidate/campaign missing." };
+      const sendBlock = liveSendBlocker(
+        msg.channel,
+        msg.status,
+        s.seats,
+        s.integrations,
+        s.apiKeys,
+        candidate.email,
+      );
+      if (sendBlock) return { ok: false, error: sendBlock };
 
       const now = new Date().toISOString();
       commit((prev) => {
@@ -2589,17 +2616,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (msg.status !== "Approved") return { ok: false, error: "Only an approved message can be sent." };
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       if (!candidate) return { ok: false, error: "Linked candidate missing." };
-      // Resolve a live seat for the message's channel: a live mailbox for Email
-      // (domain verification is checked — and persisted — server-side on send,
-      // not pre-filtered here, since that's the only place it can ever become
-      // true), or a live WhatsApp / SMS sender for the phone channels.
+      const sendBlock = liveSendBlocker(
+        msg.channel,
+        msg.status,
+        s.seats,
+        s.integrations,
+        s.apiKeys,
+        candidate.email,
+      );
+      if (sendBlock) return { ok: false, error: sendBlock };
+      // Resolve a live seat for the message's channel: a connected Outlook /
+      // Gmail mailbox for Email, or a live WhatsApp / SMS sender.
       const channel = msg.channel;
       const seat =
         channel === "WhatsApp"
-          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
+          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud" && x.connectedAccount.trim())
           : channel === "SMS"
-            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
-            : s.seats.find((x) => x.status === "active" && x.mode === "live");
+            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS" && x.connectedAccount.trim())
+            : liveMailboxSeat(s.seats);
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"

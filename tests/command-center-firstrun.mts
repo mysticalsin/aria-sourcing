@@ -84,23 +84,23 @@ for (const step of FIRST_RUN_GUIDE_STEPS) {
 const commandCenterPage = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
 const sourceStart = commandCenterPage.indexOf("async function handleSourceBatch()");
 const sourceAction = commandCenterPage.slice(sourceStart, commandCenterPage.indexOf("function handleGenerateReport"));
-check("Command Center Source next batch names LinkedIn and Apify", /Connect LinkedIn and Apify/.test(sourceAction));
-check("Command Center Source next batch surfaces MISSING_PLUGIN", /MISSING_PLUGIN|peoplePluginFailLoudUi|emptyPeopleFirstShortlistError|missingPeoplePlugins/.test(sourceAction));
+check("Command Center Source next batch still remaps live-provider failures", /peoplePluginFailLoudUi/.test(sourceAction));
+check("Command Center Source next batch surfaces people-plugin honesty", /emptyPeopleFirstShortlistError|missingPeoplePlugins/.test(sourceAction));
 check(
-  "Command Center toasts MISSING_PLUGIN before calling the agent",
-  /if \(missingPeoplePlugins\)/.test(sourceAction) &&
-    sourceAction.indexOf("if (missingPeoplePlugins)") < sourceAction.indexOf("sourceNextBatch"),
+  "Command Center does not wall Source next batch behind missingPeoplePlugins",
+  !(/if \(missingPeoplePlugins\)/.test(sourceAction) &&
+    sourceAction.indexOf("if (missingPeoplePlugins)") < sourceAction.indexOf("sourceNextBatch")),
 );
 check("Command Center remaps invalid-response on people-first", /peoplePluginFailLoudUi\(/.test(sourceAction) && /jobAnalysis/.test(sourceAction));
 check("Command Center does not treat empty GitHub as live success", !/Sourced \$\{pluralize\(result\.accepted\.length/.test(sourceAction) || /emptyPeopleFirst/.test(sourceAction));
-check("Command Center shows MISSING_PLUGIN alert before click", /cc-missing-plugin/.test(commandCenterPage));
+check("Command Center shows in-product Connect CTAs", /cc-connect-channels/.test(commandCenterPage) && /cc-connect-linkedin/.test(commandCenterPage) && /cc-connect-outlook/.test(commandCenterPage));
 const strip = readFileSync(new URL("../src/components/dashboard/integration-strip.tsx", import.meta.url), "utf8");
 check("Command Center strip uses honest Live display", /integrationShowsLive/.test(strip));
 check("Command Center strip does not badge raw integration.mode as Live", !/integration\.mode === "live"/.test(strip));
 const candidatesPage = readFileSync(new URL("../src/app/candidates/page.tsx", import.meta.url), "utf8");
 check(
   "Candidates Source next batch names LinkedIn and Apify before the agent",
-  /missingPeoplePluginsToast/.test(candidatesPage) && /Connect LinkedIn and Apify/.test(candidatesPage),
+  /missingPeoplePluginsToast/.test(candidatesPage) && /ConnectChannels|cc-connect-channels/.test(candidatesPage),
 );
 
 console.log(`RESULT command-center-firstrun: ${pass} passed, ${fail} failed`);

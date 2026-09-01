@@ -165,32 +165,60 @@ hydrate and on the Strategy tab.
   need and does not add GitHub steps unless the role's platforms include
   GitHub. A cloud model may draft outreach after those searches; it cannot
   replace them with `language:` blobs.
-- Live path with no Apify key on a people-first role is **fail-closed**:
-  `MISSING_PLUGIN` — **Connect LinkedIn and Apify** in Settings. A Tavily
-  key is **not** LinkedIn Sourcing. GitHub Sourcing toggled Live while
-  unconfigured is not a people source. The toast names those plugins and
-  the connect action — “invalid response” is not fail-loud. Official
-  partner LinkedIn search is not wired; do not invent people or complete
-  OAuth from a VM. Command Center Source next batch / Run Aria must show
-  this fail-loud surface — never “Sourced 0 candidates (live)” and never a
-  generic “invalid response” toast for an unkeyed people-first role. A
-  people-first agent error remaps to `MISSING_PLUGIN`. GitHub Sourcing
-  does not display Live on a people-first or unloaded need while LinkedIn
-  and Apify are unconfigured (Command Center strip and Settings card). A
-  GitHub-first software role may still show GitHub Live alone. No
-  silent GitHub 0×N receipts. The learning panel does not keep GitHub
-  0-row residue on a people-first need while LinkedIn and Apify are
-  unkeyed. Machine code
-  `PROVIDER_NOT_CONFIGURED` still applies when every live provider is absent.
-- If a required sensor is missing, the operator gets three real paths — not a
-  silent mock:
+- **Honor a valid stored harvest key.** Access & Keys is the source of truth
+  for Apify. A key with `provider === "Apify"` and `status === "valid"`
+  **is** people-first harvest. Source next batch, Run sourcing agent, and
+  Source via Apify must use it. Do not throw `MISSING_PLUGIN`. Do not ask
+  to reconnect a key that already tested valid. A Tavily key is **not**
+  LinkedIn Sourcing. HeyReach API / MCP is a **LinkedIn send** account, not
+  a people-search plugin.
+- **Integrations must show the working surface.** Merge seed cards into
+  stored workspace integrations so a live tenant cannot lose the Apify
+  card. The Apify card is `real: true`, reflects a valid Access & Keys
+  row (connected), and CTAs to `/settings` (Access & Keys) — never a
+  missing card and never a toast with no button. Sidebar, Command Center
+  strip, and Settings use the same connected count (`realIntegrationSummary`).
+- **Unkeyed people-first is a connect flow, not a wall.** If there is no
+  valid Apify key and no official LinkedIn RSC, the UI is in-product
+  **Connect** actions with copy that explains why — not a toast-only
+  `MISSING_PLUGIN` dead end. Source next batch still runs a dry-run
+  fixture matcher (`POST /api/source/need` `mode: "fixture"`): recall ≥60
+  from the fixture pool, top ≤20, skill/CV/LinkedIn ranked, never name
+  match, provenance fixture/synthetic (`source: "mock"`). Never toast those
+  rows as live. Never present `@fixture.example` or `@example.com` as live
+  people. Official LinkedIn partner search is **not wired** — the LinkedIn
+  RSC / LinkedIn Sourcing card must say that honestly and must not pretend
+  a generic API-key Configure works. Concept-only is OK if labeled. It
+  must not block Source when Apify is valid. Official LinkedIn OAuth
+  (`/auth/linkedin?seat_id=` via Fleet) is identity/messaging only. Outlook
+  send is Fleet **Connect Microsoft account** (Graph OAuth, then Verify
+  domain). Email Inbox SMTP is ingest, not the send path. Do not complete
+  OAuth from a VM. Do not invent live people. Do not scrape.
+- **Source via Apify** keeps focus in the search-query field so a full
+  boolean can be typed. Start search returns a shortlist or a loud error
+  in the modal. An empty harvest is a fail (no invented people, no
+  spin-then-silent-idle, no “already matched” lie).
+- After connect, Tony can contact people on **Outlook email and LinkedIn
+  message**. Agents draft both channels into Needs Approval. When HeyReach
+  API or MCP is connected, that is the LinkedIn send account the drafter
+  uses. Send stays dry-run until **both** (a) the relevant channel is
+  connected (Microsoft Graph / Gmail mailbox with a connected account +
+  Verify domain for Email; LinkedIn seat / official RSC / valid HeyReach
+  for LinkedIn) **and** (b) Tony explicitly approves that send. Never
+  auto-send. Never send to `example.com` / `@fixture.example` (synthetic).
+  Never send on his behalf without that gate. `gateOutbound` still blocks
+  AI disclosure.
+- If a required sensor is missing, the operator gets real paths — not a
+  silent mock and not a toast-only wall:
 
-  1. Run the fixture path to prove the matcher.
-  2. Add the missing provider key in Settings.
-  3. Paste / upload the JD and any CVs Aria already holds (no live search).
+  1. Source next batch / Run sourcing agent / Source via Apify using the
+     valid Apify key when it exists.
+  2. Otherwise dry-run fixture matcher (≥60 recall → ≤20).
+  3. Connect LinkedIn (honest partner / Fleet OAuth) and Outlook (Fleet
+     Graph + Verify domain) from the same flow.
 
-Outreach stays **dry-run** until a human approves a send. This contract does
-not authorize live contact.
+Outreach send without channel-connect + explicit approve is a contract fail.
+A valid Apify key that still throws `MISSING_PLUGIN` is a contract fail.
 
 ## OCR
 
@@ -279,7 +307,12 @@ git SHA (`aria <sha>`) so Fly-show can prove which release is running.
 
 ## Out of scope
 
-- UI chrome, Command Center, Polo, outreach send, WhatsApp, billing.
+- Polo, WhatsApp as a required channel, billing, Vercel-only work.
 - Weakening the floor for a "quick" path.
-- Invented live candidates.
-- Vercel-only work. One PR.
+- Invented live candidates. Automated LinkedIn login, scrape, or rate-limit
+  bypass. Completing OAuth from a VM.
+- A second coding PR. Leftover PR #53 stays open and unmerged.
+
+This contract's one logical product path is **connect → source → outreach**.
+Command Center, Source next batch, and the send gate are in scope for that
+path. The app name stays Aria.

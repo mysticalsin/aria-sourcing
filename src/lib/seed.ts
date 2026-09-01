@@ -272,6 +272,16 @@ function seedSeats(): AgentSeat[] {
       // Elevated bounce rate → auto-paused by the guardrail engine (demo).
       health: { sentTotal: 280, bounces: 19, complaints: 0, bounceRate: 0.068, complaintRate: 0 },
     },
+    {
+      ...base,
+      id: "seat_linkedin",
+      name: "Aria · LinkedIn",
+      operatorEmail: "linkedin.seat@hermes.example",
+      provider: "LinkedIn Vendor API",
+      warmupStartedAt: isoDaysBefore(10),
+      sentToday: 0,
+      health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+    },
   ];
 }
 

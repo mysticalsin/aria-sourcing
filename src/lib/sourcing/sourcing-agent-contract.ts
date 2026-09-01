@@ -329,6 +329,8 @@ export const SourcingFeedbackReceiptDtoSchema = z
     receiptId: z.string().uuid(),
     platform: z.enum(["GitHub", "LinkedIn", "Apify", "Stack Overflow", "Dribbble", "Behance"]),
     candidateCount: z.number().int().min(0).max(100),
+    query: z.string().max(500).optional(),
+    createdAt: z.string().datetime().optional(),
   })
   .strict();
 

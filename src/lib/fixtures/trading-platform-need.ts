@@ -426,9 +426,41 @@ export const MUREX_ONLY_CANDIDATE: CandidateEvidence = {
   provenance: "fixture",
 };
 
+const DESK_FIRST = ["Amina", "Boris", "Celia", "Dario", "Eva", "Farid", "Gita", "Hiro"];
+const DESK_LAST = ["Chen", "Okoye", "Novak", "Silva", "Park", "Khan", "Berg", "Sato"];
+const DESK_SKILL_TIERS: string[][] = [
+  ["Calypso", "Linux"],
+  ["Calypso", "Python"],
+  ["Calypso", "Linux", "Python"],
+  ["Linux", "Python", "Shell"],
+  ["Calypso", "Oracle", "Grafana"],
+  ["Calypso", "Linux", "Shell", "Oracle"],
+];
+
+/** Extra recall so the matcher considers ≥60 people. Coverage is stepped
+ *  below the named App Support / BA desks so the top-20 score spread stays
+ *  skill-ranked, not a clone bucket. */
+function extraDeskConsultant(index: number): CandidateEvidence {
+  const n = index + 1;
+  const skills = DESK_SKILL_TIERS[index % DESK_SKILL_TIERS.length] ?? ["Calypso"];
+  const years = 3 + (index % 5);
+  const cvBits = ["production support", ...skills.slice(0, 1 + (index % 2))];
+  const liBits = index % 3 === 0 ? skills.slice(0, 1) : skills.slice(0, 2);
+  return {
+    id: `fixture-desk-${n}`,
+    name: `${DESK_FIRST[index % DESK_FIRST.length]} ${DESK_LAST[index % DESK_LAST.length]} ${n}`,
+    skills,
+    cvText: `${years} years. ${cvBits.join("; ")}.`,
+    linkedinText: `Desk ${n}. ${liBits.join(" · ")}.`,
+    yearsExperience: years,
+    provenance: "fixture",
+  };
+}
+
 export const TRADING_PLATFORM_POOL: CandidateEvidence[] = [
   ...APP_SUPPORT_PROFILES.map((profile, index) => appSupportConsultant(index, profile)),
   ...Array.from({ length: 6 }, (_, index) => baConsultant(index)),
+  ...Array.from({ length: 40 }, (_, index) => extraDeskConsultant(index)),
   NAME_ONLY_CANDIDATE,
   EMPTY_CANDIDATE,
   MUREX_ONLY_CANDIDATE,

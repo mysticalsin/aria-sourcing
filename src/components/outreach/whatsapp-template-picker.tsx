@@ -202,7 +202,7 @@ export function WhatsAppTemplatePicker() {
 
           {!loading && !loadError && templates.length === 0 && (
             <p className="rounded-2xl border border-line bg-canvas px-4 py-3 text-sm text-muted" role="status">
-              No live-sender Meta templates with a bounded parameter schema are available.
+              No Meta-approved templates are available. WhatsApp is not a send path until a template exists. This is not a fake send.
             </p>
           )}
 

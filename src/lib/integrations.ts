@@ -54,27 +54,41 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Apify (LinkedIn profile search)",
       category: "Sourcing",
       description:
-        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation.",
+        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation. Add the key in Access & Keys.",
       status: "connected",
       mode: "mock",
       lastSync: isoHoursBefore(0.6),
       errors: [],
       real: true,
+      setupHref: "/settings",
     },
     {
       id: "int_linkedin_rsc",
       name: "LinkedIn Recruiter System Connect",
       category: "Sourcing",
       description:
-        "Official LinkedIn connect via OAuth (Fleet → LinkedIn Vendor API seat) or a LinkedIn Talent Solutions RSC partnership. Fail-closed without credentials. Not a scrape.",
+        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only. This card does not accept a pasted API key. Source via Apify when that key is valid.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
       errors: [
-        "Not connected. Use Fleet to start official LinkedIn OAuth, or apply for RSC at LinkedIn Talent Solutions.",
+        "Official partner search is not available. Connect LinkedIn messaging in Fleet, or source people with a valid Apify key.",
       ],
       real: false,
       setupHref: "/fleet",
+    },
+    {
+      id: "int_heyreach",
+      name: "HeyReach",
+      category: "Comms",
+      description:
+        "LinkedIn send account for drafted campaigns. Connect the API or MCP key in Access & Keys. Send stays dry-run until you approve.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [],
+      real: true,
+      setupHref: "/settings",
     },
     {
       id: "int_twenty",
@@ -293,4 +307,44 @@ export function integrationHealthSummary(integrations: IntegrationStatus[]): {
  *  full roadmap list of cards. */
 export function realIntegrationSummary(integrations: IntegrationStatus[]): ReturnType<typeof integrationHealthSummary> {
   return integrationHealthSummary(integrations.filter((i) => i.real));
+}
+
+/** Keep stored workspace cards aligned with the seed catalogue so a live
+ *  tenant cannot lose Apify (or any later real card). Extra stored cards stay. */
+export function mergeSeedIntegrations(stored: IntegrationStatus[]): IntegrationStatus[] {
+  const seed = defaultIntegrations();
+  const byId = new Map(stored.map((row) => [row.id, row]));
+  const merged = seed.map((card) => {
+    const existing = byId.get(card.id);
+    if (!existing) {
+      return {
+        ...card,
+        status: card.id === "int_supabase" ? card.status : "not_configured",
+        mode: card.id === "int_supabase" ? card.mode : "mock",
+        lastSync: card.id === "int_supabase" ? card.lastSync : null,
+      };
+    }
+    if (!card.real) {
+      return {
+        ...existing,
+        name: card.name,
+        description: card.description,
+        setupHref: card.setupHref,
+        real: false,
+        status: "not_configured" as const,
+        lastSync: null,
+      };
+    }
+    return {
+      ...existing,
+      name: card.name,
+      description: card.description,
+      setupHref: card.setupHref,
+      real: true,
+    };
+  });
+  for (const extra of stored) {
+    if (!seed.some((card) => card.id === extra.id)) merged.push(extra);
+  }
+  return merged;
 }

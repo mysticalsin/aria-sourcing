@@ -87,6 +87,20 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
   );
   const connected = integration.status === "connected";
   const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
+  const setupOnly =
+    integration.id === "int_linkedin_rsc" ||
+    integration.id === "int_outlook" ||
+    integration.id === "int_graph_teams" ||
+    integration.id === "int_apify" ||
+    integration.id === "int_heyreach";
+  const configureLabel =
+    integration.id === "int_linkedin_rsc"
+      ? "Connect in Fleet"
+      : integration.id === "int_outlook" || integration.id === "int_graph_teams"
+        ? "Connect Microsoft account"
+        : integration.id === "int_apify" || integration.id === "int_heyreach"
+          ? "Access & Keys"
+          : "Configure";
 
   function handleCloseModal() {
     setConfigureOpen(false);
@@ -282,7 +296,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                     Live mode
                   </label>
                   <p className="text-xs text-muted">
-                    {isLive ? "Real credentials path" : "Mock is the safe default"}
+                    {isLive ? "Real credentials path" : "Sample data until Live is on"}
                   </p>
                 </div>
                 <Switch
@@ -300,9 +314,15 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 size="sm"
                 className="flex-1"
                 leftIcon={<Plug className="h-4 w-4" />}
-                onClick={() => setConfigureOpen(true)}
+                onClick={() => {
+                  if (setupOnly && integration.setupHref) {
+                    router.push(integration.setupHref);
+                    return;
+                  }
+                  setConfigureOpen(true);
+                }}
               >
-                Configure
+                {configureLabel}
               </Button>
               {/* Only GitHub has a real, live connection check (testIntegration in
                   store.ts pings /api/source). Other real cards point to their actual

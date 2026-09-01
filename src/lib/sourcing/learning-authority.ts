@@ -45,6 +45,8 @@ export interface SourcingFeedbackReceipt {
   receiptId: string;
   platform: LearningPlatform;
   candidateCount: number;
+  query?: string;
+  createdAt?: string;
 }
 
 export type ListPendingSourcingFeedbackResult =

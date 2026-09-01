@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
-import { defaultIntegrations, defaultLiveIntegrations, testConnection } from "../src/lib/integrations";
+import { defaultIntegrations, defaultLiveIntegrations, mergeSeedIntegrations, testConnection } from "../src/lib/integrations";
 import {
+  hasValidApifyKey,
   integrationShowsLive,
   missingPeoplePluginsToast,
   peopleSourcePluginsConnected,
   visiblePeopleFirstLearningReceipts,
 } from "../src/lib/sourcing/people-plugins";
+import {
+  isSyntheticRecipientEmail,
+  liveSendBlocker,
+} from "../src/lib/sourcing/people-connect";
 import type { JobAnalysis } from "../src/lib/types";
 
 let pass = 0, fail = 0;
@@ -150,6 +155,121 @@ ok(
       real: true,
     },
   ]),
+);
+
+ok(
+  "a valid Apify Access & Keys row is a people harvest even when the card is not Live",
+  hasValidApifyKey([{ provider: "Apify", status: "valid" }]) &&
+    peopleSourcePluginsConnected(liveTenant, [{ provider: "Apify", status: "valid" }]) &&
+    missingPeoplePluginsToast(calypsoJob, liveTenant, [{ provider: "Apify", status: "valid" }]) === null,
+);
+ok(
+  "mergeSeedIntegrations restores a missing Apify card",
+  mergeSeedIntegrations(liveTenant.filter((row) => row.id !== "int_apify")).some((row) => row.id === "int_apify" && row.real),
+);
+ok(
+  "synthetic example.com addresses cannot be sent",
+  isSyntheticRecipientEmail("julien.moreau.ba@example.com") &&
+    isSyntheticRecipientEmail("elena@fixture.example") &&
+    !isSyntheticRecipientEmail("maya.rivera@amaris.com"),
+);
+ok(
+  "email send without Outlook connect is blocked even when Approved",
+  liveSendBlocker("Email", "Approved", [], []) ===
+    "Connect Outlook in Fleet (Microsoft account), then Verify domain. Approval alone never sends.",
+);
+ok(
+  "LinkedIn confirm without connect is blocked",
+  /Connect LinkedIn or HeyReach/.test(liveSendBlocker("LinkedIn", "Pending Manual Send", [], []) ?? ""),
+);
+ok(
+  "unapproved email cannot send even if a mailbox looks connected",
+  liveSendBlocker(
+    "Email",
+    "Needs Approval",
+    [
+      {
+        id: "seat_maya",
+        name: "Maya",
+        operatorEmail: "maya@amaris.com",
+        provider: "Microsoft Graph",
+        status: "active",
+        mode: "live",
+        domainVerified: true,
+        dailyLimit: 40,
+        warmup: true,
+        warmupStartCap: 12,
+        warmupStepPerDay: 4,
+        warmupStartedAt: "",
+        minGapMinutes: 12,
+        sendWindow: { timezone: "CET", days: [1, 2, 3, 4, 5], startHour: 8, endHour: 18 },
+        sentToday: 0,
+        lastSendAt: null,
+        health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+        persona: "",
+        signature: "",
+        connectedAccount: "maya@amaris.com",
+        createdAt: "",
+      },
+    ],
+  ) === "Only an approved message can be sent.",
+);
+ok(
+  "example.com is blocked even when approved and connected",
+  /synthetic example\.com/.test(
+    liveSendBlocker(
+      "Email",
+      "Approved",
+      [
+        {
+          id: "seat_maya",
+          name: "Maya",
+          operatorEmail: "maya@amaris.com",
+          provider: "Microsoft Graph",
+          status: "active",
+          mode: "live",
+          domainVerified: true,
+          dailyLimit: 40,
+          warmup: true,
+          warmupStartCap: 12,
+          warmupStepPerDay: 4,
+          warmupStartedAt: "",
+          minGapMinutes: 12,
+          sendWindow: { timezone: "CET", days: [1, 2, 3, 4, 5], startHour: 8, endHour: 18 },
+          sentToday: 0,
+          lastSendAt: null,
+          health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+          persona: "",
+          signature: "",
+          connectedAccount: "maya@amaris.com",
+          createdAt: "",
+        },
+      ],
+      [],
+      [],
+      "julien.moreau.ba@example.com",
+    ) ?? "",
+  ),
+);
+
+const connectUi = readFileSync(new URL("../src/components/dashboard/connect-channels.tsx", import.meta.url), "utf8");
+ok("Connect UI has LinkedIn and Outlook CTAs", /cc-connect-linkedin/.test(connectUi) && /cc-connect-outlook/.test(connectUi));
+const modalSource = readFileSync(new URL("../src/components/ui/modal.tsx", import.meta.url), "utf8");
+ok(
+  "Modal focuses the first input and does not re-steal focus when onClose identity changes",
+  /input:not\(\[disabled\]\)/.test(modalSource) && /\[open\]/.test(modalSource) && !/, onClose\]/.test(modalSource),
+);
+const apifyDialog = readFileSync(new URL("../src/components/candidates/source-apify-dialog.tsx", import.meta.url), "utf8");
+ok(
+  "Apify Start search fails loud on empty harvest or timeout and keeps the query field focused",
+  /apify-search-error/.test(apifyDialog) &&
+    /POLL_TIMEOUT_MS/.test(apifyDialog) &&
+    /autoFocus/.test(apifyDialog) &&
+    /0 profiles/.test(readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8")),
+);
+ok(
+  "Apify and LinkedIn cards route to Access & Keys or Fleet, not a generic API-key dead-end",
+  /Access & Keys/.test(settingsCard) && /Connect in Fleet/.test(settingsCard) && /Connect Microsoft account/.test(settingsCard),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

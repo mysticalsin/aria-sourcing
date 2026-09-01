@@ -16,10 +16,11 @@ import {
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
-import { useActions, useActiveCampaign, useCandidates, useHydrated, useIntegrations } from "@/lib/store";
+import { useActions, useActiveCampaign, useApiKeys, useCandidates, useHydrated, useIntegrations, useSeats } from "@/lib/store";
 import {
   emptyPeopleFirstShortlistError,
   missingPeoplePluginsToast,
@@ -147,6 +148,8 @@ function CandidatesView() {
   const actions = useActions();
   const activeCampaign = useActiveCampaign();
   const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
+  const seats = useSeats();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const focus = searchParams.get("focus");
@@ -189,6 +192,7 @@ function CandidatesView() {
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     const result = candidates.filter((c) => {
+      if (activeCampaign && c.campaignId !== activeCampaign.id) return false;
       if (stage !== "all" && c.stage !== stage) return false;
       if (source !== "all" && c.sourcePlatform !== source) return false;
       if (!q) return true;
@@ -202,7 +206,7 @@ function CandidatesView() {
       sort === "match" ? b.matchScore - a.matchScore : lastActivityIso(b) - lastActivityIso(a),
     );
     return result;
-  }, [candidates, query, stage, source, sort]);
+  }, [candidates, query, stage, source, sort, activeCampaign]);
 
   // Reset to page 1 whenever the result set could reshuffle out from under the
   // current page (filter/sort change or a bigger page size) — never leave the
@@ -304,18 +308,7 @@ function CandidatesView() {
       });
       return;
     }
-    const missingPlugins = missingPeoplePluginsToast(
-      activeCampaign.jobAnalysis,
-      integrations,
-    );
-    if (missingPlugins) {
-      toast({
-        title: "Connect LinkedIn and Apify",
-        description: missingPlugins,
-        variant: "error",
-      });
-      return;
-    }
+    missingPeoplePluginsToast(activeCampaign.jobAnalysis, integrations, apiKeys);
     setSourcing(true);
     const res = await actions.sourceNextBatch(activeCampaign.id);
     setSourcing(false);
@@ -504,9 +497,10 @@ function CandidatesView() {
           </span>{" "}
           {serverPreview
             ? pluralize(serverCandidates.total, "server candidate")
-            : `of ${pluralize(candidates.length, "candidate")} across all campaigns`}
+            : `of ${pluralize(candidates.length, "candidate")} ${activeCampaign ? `for ${activeCampaign.title}` : "across all campaigns"}`}
           {serverPreview && serverCandidates.loading ? " (loading)" : ""}
         </p>
+        <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} className="mt-0" />
         <Button
           variant="secondary"
           size="sm"

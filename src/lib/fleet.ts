@@ -189,11 +189,16 @@ export function allocateBatch(
 ): AllocationResult {
   const nowMs = now.getTime();
   const remaining = new Map<string, number>();
+  const EMAIL_ALLOCATION_PROVIDERS = new Set(["Microsoft Graph", "Gmail API", "SendGrid", "Resend"]);
   for (const seat of seats) {
     // Planning/claiming respects status, auto-pause health and daily caps.
+    // LinkedIn / WhatsApp / SMS seats are not email allocators.
     // The send WINDOW governs when a claimed send actually fires, not whether we
     // can plan it — so allocation works any hour; sends still wait for the window.
-    const blocked = seat.status !== "active" || seatHealthStatus(seat, settings).shouldPause;
+    const blocked =
+      seat.status !== "active" ||
+      !EMAIL_ALLOCATION_PROVIDERS.has(seat.provider) ||
+      seatHealthStatus(seat, settings).shouldPause;
     remaining.set(seat.id, blocked ? 0 : seatRemainingToday(seat, nowMs));
   }
 

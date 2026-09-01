@@ -160,6 +160,7 @@ const fixtureRun = runFixtureSourcing({ jd: TONY_AMACAN });
 ok("fixture engine succeeds on App Support", fixtureRun.ok === true);
 if (fixtureRun.ok) {
   const { shortlist, rejected } = fixtureRun.result;
+  ok("fixture pool recalls at least 60 people", TRADING_PLATFORM_POOL.length >= 60);
   ok("shortlist cap is 20", shortlist.length <= SHORTLIST_CAP);
   ok("shortlist is non-empty for Application Support", shortlist.length > 0);
   ok(

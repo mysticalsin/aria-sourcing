@@ -166,7 +166,7 @@ export interface HermesActions {
   ) => Promise<{
     ok: boolean;
     added: number;
-    mode?: "cloud" | "deterministic";
+    mode?: "cloud" | "deterministic" | "fixture";
     feedbackReceipts?: SourcingFeedbackReceipt[];
     error?: string;
   }>;
