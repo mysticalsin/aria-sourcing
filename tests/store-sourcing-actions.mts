@@ -20,6 +20,8 @@ import {
   peoplePluginFailLoudUi,
   sourceRejectedToast,
 } from "../src/lib/sourcing/people-plugins";
+import { formatHarvestEvidenceError } from "../src/lib/sourcing/harvest-evidence";
+import { peopleFirstHarvestQueue } from "../src/lib/sourcing/multi-source-plan";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
 
@@ -161,6 +163,7 @@ function createHarness(options: {
   responseBody?: unknown;
   responseBodies?: unknown[];
   responseStatus?: number;
+  responseStatuses?: number[];
   responseText?: string;
   responseContentType?: string;
   fetchError?: Error;
@@ -222,7 +225,7 @@ function createHarness(options: {
                 : options.responseBody ?? automaticBody),
           ),
         {
-          status: options.responseStatus ?? 200,
+          status: options.responseStatuses?.[fetchCalls - 1] ?? options.responseStatus ?? 200,
           headers: { "Content-Type": options.responseContentType ?? "application/json" },
         },
       );
@@ -2256,10 +2259,137 @@ test("people-first GitHub-only empty batch is fail-loud, not a successful search
     assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
     assert.doesNotMatch(result.error, /invalid response/i);
   }
-  assert.equal(harness.persistedCalls, 1);
-  assert.equal(harness.activityDrafts.length, 1);
+  assert.ok(harness.fetchCalls >= 2, "empty GitHub-only batch must continue the people-first queue");
+  assert.ok(harness.persistedCalls >= 1);
+  assert.ok(harness.activityDrafts.length >= 1);
   assert.equal(harness.activityDrafts[0]?.title, peopleFirstFailActivity(EMPTY_PEOPLE_FIRST_HARVEST).title);
   assert.match(String(harness.activityDrafts[0]?.notes), /0 candidates|harvest/i);
+});
+
+test("people-first Source next batch empty items=0 POSTs a second harvest with a distinct run id", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Business Analysis",
+      requiredSkills: ["Calypso", "Business Analysis"],
+      industryExperience: ["Finance"],
+    },
+  };
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  assert.ok(queue.length >= 2, "BA queue must have a second harvest");
+  assert.equal(queue[0]?.query, "Calypso Business Analyst");
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const firstRunId = "Etz5JWFCQGm1605KE";
+  const emptyOne = (query: string, runId: string) => ({
+    ok: false,
+    code: "PEOPLE_FIRST_HARVEST_EMPTY",
+    error: formatHarvestEvidenceError(
+      "empty",
+      { query, runId, status: "SUCCEEDED", itemCount: 0, started: true },
+      { startedSearches: 1 },
+    ),
+    requestId: `req-${runId}`,
+  });
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseStatuses: [502, 200],
+    responseBodies: [
+      emptyOne(queue[0]!.query, firstRunId),
+      {
+        ok: true,
+        campaignId: campaign.id,
+        campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+        mode: "deterministic",
+        totalFound: 1,
+        requestId: "request-harvest-2",
+        idempotencyKey: "11111111-1111-4111-8111-111111111111",
+        sourcingRunId: "22222222-2222-4222-8222-222222222222",
+        appliedLessonIds: [],
+        candidates: [
+          {
+            id: "ba-harvest-2",
+            campaignId: campaign.id,
+            name: "Elena Varga",
+            email: "elena.varga@bnpp-cib.com",
+            phone: "+1 514 555 0142",
+            currentTitle: "Calypso Business Analyst",
+            currentCompany: "BNPP CIB",
+            location: "Paris",
+            linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+            githubUrl: "",
+            sourceUrl: "https://www.linkedin.com/in/elena-varga",
+            sourcePlatform: "Apify",
+            sourceQuery: queue[1]!.query,
+            matchScore: 72,
+            matchBreakdown: [],
+            techStack: ["Calypso", "Business Analysis"],
+            recentActivity: "Calypso BA",
+            createdAt: "2026-09-01T12:00:00.000Z",
+          },
+        ],
+        feedbackReceipts: [
+          { receiptId: "33333333-3333-4333-8333-333333333333", platform: "Apify", candidateCount: 1 },
+        ],
+      },
+    ],
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  if (result.ok) {
+    assert.equal(result.accepted.length, 1);
+    assert.equal(result.accepted[0]?.email, "elena.varga@bnpp-cib.com");
+    assert.equal(result.accepted[0]?.phone, "+1 514 555 0142");
+    assert.match(result.accepted[0]?.linkedinUrl ?? "", /linkedin\.com/);
+    assert.doesNotMatch(result.accepted[0]?.email ?? "", /example\.com/);
+  }
+  assert.ok(harness.fetchCalls >= 2, `same click must POST harvest 2, got ${harness.fetchCalls}`);
+  const posted = harness.requests
+    .filter((row) => String(row.input).includes("/api/sourcing-agent"))
+    .map((row) => JSON.parse(String(row.init?.body ?? "{}")) as {
+      harvestQuery?: string;
+      currentJobTitles?: string[];
+    });
+  assert.ok(posted.length >= 2, `need two sourcing-agent POSTs, got ${posted.length}`);
+  assert.equal(posted[0]?.harvestQuery, "Calypso Business Analyst");
+  assert.ok(
+    posted[1]?.harvestQuery &&
+      (posted[1].harvestQuery !== "Calypso Business Analyst" ||
+        (posted[1].currentJobTitles ?? []).includes("Business Analyst")),
+    `harvest 2 must be a distinct planned step: ${JSON.stringify(posted)}`,
+  );
+  const idempotency = harness.requests.map((row) => {
+    const headers = row.init?.headers;
+    if (headers && typeof headers === "object" && !Array.isArray(headers) && "Idempotency-Key" in headers) {
+      return String((headers as Record<string, string>)["Idempotency-Key"]);
+    }
+    return "";
+  });
+  assert.ok(
+    idempotency[0] && idempotency[1] && idempotency[0] !== idempotency[1],
+    `second harvest must use a new idempotency key: ${JSON.stringify(idempotency)}`,
+  );
+  assert.doesNotMatch(JSON.stringify(result), /@example\.com/);
 });
 
 test("Apollo search commits only exact validated profiles through the sourcing boundary", async () => {

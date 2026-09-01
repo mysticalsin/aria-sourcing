@@ -1715,7 +1715,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return runAutoSourcePipeline({
         job: campaign.jobAnalysis,
-        search: () => sourceNextBatch(campaignId, opts),
+        search: (step) =>
+          sourceNextBatch(campaignId, {
+            ...opts,
+            harvestQuery: step.query,
+            currentJobTitles: step.currentJobTitles,
+          }),
         enrich: async () => {
           const result = await enrichCampaign(campaignId);
           return { ok: result.ok, error: result.error };

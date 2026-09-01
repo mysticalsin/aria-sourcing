@@ -1791,3 +1791,39 @@ test("BA SUCCEEDED items=0 starts a broader harvestapi run with a new run id", a
   );
   assert.equal(completeCalls, 0);
 });
+
+test("one-step harvestQuery empty is PEOPLE_FIRST_HARVEST_EMPTY so the client can start harvest 2", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baCampaign();
+  runnerHarvest = {
+    started: true,
+    status: "SUCCEEDED",
+    itemCount: 0,
+    runId: "Etz5JWFCQGm1605KE",
+  };
+
+  const response = await post(
+    request({ harvestQuery: "Calypso Business Analyst" }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /Empty harvest is not a result/);
+  assert.match(String(body.error), /Next planned search must start now/);
+  assert.match(String(body.error), /run=Etz5JWFCQGm1605KE/);
+  assert.match(String(body.error), /items=0/);
+  assert.doesNotMatch(String(body.error), /Every planned search was tried/);
+  assert.equal(runnerCalls, 1, "one harvestQuery is one harvestapi start, not an in-request loop");
+  assert.deepEqual(
+    runnerQueries.map((row) => row.query),
+    ["Calypso Business Analyst"],
+  );
+  assert.equal(
+    runnerQueries.length,
+    1,
+    "server must not start harvest 2 in the same HTTP request when harvestQuery is set",
+  );
+  assert.equal(completeCalls, 0);
+});

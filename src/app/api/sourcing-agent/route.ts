@@ -714,6 +714,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
 
     const githubToken = process.env.GITHUB_TOKEN ?? "";
+    let peopleFirstHarvestsStarted = 0;
     const runner = makeSourcingToolRunner(
       initial.value.campaign,
       initial.value.existing,
@@ -721,10 +722,17 @@ async function handlePost(req: NextRequest, correlationId: string) {
       githubToken,
       tavilyKey ?? undefined,
       undefined,
-      async () =>
-        peopleFirst && !frameworkAuthorization
-          ? (await peopleFirstContinueAuthority()).ok
-          : (await currentAuthority()).ok,
+      async () => {
+        if (peopleFirst && !frameworkAuthorization) {
+          const allow =
+            peopleFirstHarvestsStarted === 0
+              ? (await peopleFirstContinueAuthority()).ok
+              : true;
+          peopleFirstHarvestsStarted += 1;
+          return allow;
+        }
+        return (await currentAuthority()).ok;
+      },
       apifyToken ?? undefined,
     );
     const servers = [
@@ -768,6 +776,30 @@ async function handlePost(req: NextRequest, correlationId: string) {
           seen.add(peopleFirstSearchKey(next));
           searches.push(next);
         }
+        const requestedHarvest = validated.data.harvestQuery?.trim() ?? "";
+        if (requestedHarvest) {
+          const requestedTitles = (validated.data.currentJobTitles ?? [])
+            .map((title) => title.trim())
+            .filter(Boolean)
+            .slice(0, 8);
+          const requested = {
+            platform: "Apify" as const,
+            query: requestedHarvest,
+            ...(requestedTitles.length ? { currentJobTitles: requestedTitles } : {}),
+          };
+          const allowed = peopleFirstHarvestQueue(peopleFirstJob);
+          if (!allowed.some((step) => peopleFirstSearchKey(step) === peopleFirstSearchKey(requested))) {
+            return await failClaimed(
+              409,
+              "CAMPAIGN_CHANGED",
+              "Harvest step is not on the reviewed plan.",
+            );
+          }
+          // One harvest per HTTP request. The client click loops the queue.
+          // Appending nextPeopleFirstHarvest here is the Fly idle-cut: harvest 1
+          // polls 90s, harvest 2 never POSTs, the client gets abort not EMPTY.
+          searches.splice(0, searches.length, requested);
+        }
       }
       if (peopleFirst && !frameworkAuthorization && searches.length === 0) {
         return await failClaimed(
@@ -779,21 +811,27 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       let successfulQuery = false;
+      const requestedOneHarvest = Boolean(validated.data.harvestQuery?.trim());
       const maxSteps = peopleFirst && !frameworkAuthorization
-        ? PEOPLE_FIRST_MAX_ATTEMPTS
+        ? (requestedOneHarvest ? 1 : PEOPLE_FIRST_MAX_ATTEMPTS)
         : searches.length;
       for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
         const remaining = count - runner.getFound().length;
         if (remaining <= 0) break;
         let step = searches[stepIndex];
-        if (!step && peopleFirst && !frameworkAuthorization) {
+        if (!step && peopleFirst && !frameworkAuthorization && !requestedOneHarvest) {
           const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
           if (!next) break;
           searches.push(next);
           step = next;
         }
         if (!step) break;
-        if (peopleFirst && !frameworkAuthorization && !searches[stepIndex + 1]) {
+        if (
+          peopleFirst &&
+          !frameworkAuthorization &&
+          !requestedOneHarvest &&
+          !searches[stepIndex + 1]
+        ) {
           const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
           if (next) searches.push(next);
         }
@@ -839,7 +877,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
           const lastHarvest = runner.getExecutions().at(-1)?.harvest;
           const harvestStatus = (lastHarvest?.status ?? "").toUpperCase();
           if (lastHarvest?.started && harvestStatus === "SUCCEEDED" && lastHarvest.itemCount === 0) {
-            if (!nextStep) {
+            if (!nextStep && !requestedOneHarvest) {
               const appended = nextPeopleFirstHarvest(peopleFirstJob, searches);
               if (appended) searches.push(appended);
             }
@@ -871,19 +909,9 @@ async function handlePost(req: NextRequest, correlationId: string) {
               "Campaign authority changed during the operation.",
             );
           }
-        } else {
-          const afterQuery = await readWorkspace(session, workspaceId, campaignId);
-          if (
-            afterQuery.status !== "ok" ||
-            !campaignAllowsSourcing(afterQuery.value.campaign)
-          ) {
-            return await failClaimed(
-              409,
-              "CAMPAIGN_CHANGED",
-              "Campaign authority changed during the operation.",
-            );
-          }
         }
+        // People-first next harvest must POST even if leftover-strip drifted
+        // the campaign fingerprint. Authority is rechecked after the chain.
       }
       // People-first Apify can return ok:false with harvest evidence
       // (not started / still running). Do not swallow that as a generic
@@ -998,6 +1026,17 @@ async function handlePost(req: NextRequest, correlationId: string) {
       const startedSearches = startedDistinct.size;
       const succeededWithPeople = succeeded.filter((harvest) => harvest.itemCount > 0);
       if (foundCount === 0 && startedSearches < 2) {
+        const requestedOneStep = Boolean(validated.data.harvestQuery?.trim());
+        const oneStepEmpty =
+          requestedOneStep &&
+          succeeded.some((harvest) => harvest.started && harvest.itemCount === 0);
+        if (oneStepEmpty) {
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_EMPTY,
+            formatHarvestEvidenceError("empty", primaryHarvest, { startedSearches }),
+          );
+        }
         const next = nextPeopleFirstHarvest(
           initial.value.campaign.jobAnalysis,
           apifyExecs.map((execution) => ({ query: execution.query })),

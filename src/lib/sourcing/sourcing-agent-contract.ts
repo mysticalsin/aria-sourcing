@@ -127,6 +127,8 @@ export const SourcingAgentRequestSchema = z
     agentFrameworkRunId: z.string().uuid().optional(),
     agentFrameworkCapabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
     agentFrameworkQuery: z.string().trim().min(3).max(256).optional(),
+    harvestQuery: z.string().trim().min(1).max(256).optional(),
+    currentJobTitles: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
   })
   .strict()
   .refine(

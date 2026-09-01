@@ -44,6 +44,9 @@ primary_region = "cdg"
   auto_stop_machines   = "suspend"
   auto_start_machines  = true
   min_machines_running = 1
+  # Default 60s idle kills a Source click after harvest 1 (90s poll) before
+  # harvest 2 can POST. Client also loops one harvest per request.
+  idle_timeout         = 360
   [http_service.concurrency]
     type       = "requests"
     soft_limit = 200

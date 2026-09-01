@@ -74,6 +74,7 @@ export async function requestReviewedSourcing(
   campaignId: string,
   count: number,
   agentFramework?: { runId: string; capabilityToken: string; query: string },
+  harvestStep?: { query: string; currentJobTitles?: string[] },
 ): Promise<ReviewedSourcingRequestResult> {
   if (
     agentFramework &&
@@ -113,6 +114,14 @@ export async function requestReviewedSourcing(
                 agentFrameworkRunId: agentFramework.runId,
                 agentFrameworkCapabilityToken: agentFramework.capabilityToken,
                 agentFrameworkQuery: agentFramework.query,
+              }
+            : {}),
+          ...(harvestStep?.query
+            ? {
+                harvestQuery: harvestStep.query,
+                ...(harvestStep.currentJobTitles?.length
+                  ? { currentJobTitles: harvestStep.currentJobTitles }
+                  : {}),
               }
             : {}),
         }),

@@ -8,6 +8,8 @@ import {
 } from "../sourcing/lab-fixture-people";
 import { isPeopleFirstContactComplete } from "../sourcing/people-first-contact";
 import { formatHarvestEvidenceError } from "../sourcing/harvest-evidence";
+import { peopleFirstHarvestQueue } from "../sourcing/multi-source-plan";
+import type { PlannedSearch } from "../sourcing/multi-source-plan";
 import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
@@ -738,12 +740,14 @@ export function createSourcingActions({
     count: number,
     initialFingerprint: string,
     agentFramework?: { runId: string; capabilityToken: string; query: string },
+    harvestStep?: PlannedSearch,
   ): Promise<SourceNextBatchResult> => {
     const reviewed = await requestReviewedSourcing(
       workspaceFetch,
       campaignId,
       count,
       agentFramework,
+      harvestStep,
     );
     if (!reviewed.ok) {
       const latestForError = currentState();
@@ -1090,11 +1094,52 @@ export function createSourcingActions({
       // People-first must hit /api/sourcing-agent. The server is the source of
       // truth for a stored Apify key. Do not infer "no key" from integrations
       // 1/7 and silently run a fixture dry-run.
+      const explicitStep =
+        opts?.harvestQuery?.trim()
+          ? {
+              platform: "Apify" as const,
+              query: opts.harvestQuery.trim(),
+              ...(opts.currentJobTitles?.length ? { currentJobTitles: opts.currentJobTitles } : {}),
+            }
+          : null;
+      if (
+        !explicitStep &&
+        isPeopleFirstRole(initialCampaign.jobAnalysis)
+      ) {
+        // One harvest per HTTP request so a Fly idle cut cannot eat harvest 2.
+        // Same user click loops the queue until people or the plan is exhausted.
+        let last: SourceNextBatchResult | null = null;
+        for (const step of peopleFirstHarvestQueue(initialCampaign.jobAnalysis)) {
+          last = await sourceReviewedCampaignBatch(
+            campaignId,
+            count,
+            initialFingerprint,
+            opts?.agentFramework,
+            step,
+          );
+          if (last.ok && last.accepted.length > 0) return last;
+          if (!last.ok) {
+            const emptyContinue =
+              /Empty harvest is not a result|Next planned search must start|every planned search was tried/i.test(
+                last.error,
+              );
+            if (!emptyContinue) return last;
+          }
+        }
+        return (
+          last ?? {
+            ok: false,
+            error: EMPTY_PEOPLE_FIRST_HARVEST,
+            source: "unavailable",
+          }
+        );
+      }
       return await sourceReviewedCampaignBatch(
         campaignId,
         count,
         initialFingerprint,
         opts?.agentFramework,
+        explicitStep ?? undefined,
       );
     }
 

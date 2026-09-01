@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { runAutoSourcePipeline } from "../src/lib/sourcing/auto-source";
 import { EMPTY_PEOPLE_FIRST_HARVEST } from "../src/lib/sourcing/people-plugins";
 import { formatHarvestEvidenceError } from "../src/lib/sourcing/harvest-evidence";
+import { peopleFirstHarvestQueue } from "../src/lib/sourcing/multi-source-plan";
 import type { JobAnalysis } from "../src/lib/types";
 import type { SourceNextBatchResult } from "../src/lib/store/contracts";
 
@@ -94,20 +95,67 @@ function accepted(n: number): SourceNextBatchResult {
 
 {
   let enrichCalls = 0;
+  const queries: string[] = [];
+  const runIds: string[] = [];
   const result = await runAutoSourcePipeline({
     job: financeJob(),
-    search: async () => accepted(0),
+    search: async (step) => {
+      queries.push(step.query + (step.currentJobTitles ?? []).join(","));
+      runIds.push(`auto-${runIds.length + 1}`);
+      return {
+        ok: false,
+        error: formatHarvestEvidenceError(
+          "empty",
+          {
+            query: step.query,
+            runId: runIds[runIds.length - 1]!,
+            status: "SUCCEEDED",
+            itemCount: 0,
+          },
+          { startedSearches: 1 },
+        ),
+        source: "unavailable",
+      };
+    },
     enrich: async () => {
       enrichCalls += 1;
       return { ok: true };
     },
   });
   ok(
-    "empty Auto source harvest fails loud and does not invent people",
+    "Auto source continues after an empty first harvest",
+    queries.length >= 2 && peopleFirstHarvestQueue(financeJob()).length >= 2,
+  );
+  ok(
+    "Auto source empty chain uses distinct harvest run ids",
+    runIds.length >= 2 && runIds[0] !== runIds[1],
+  );
+  ok(
+    "exhausted Auto source fails loud and does not invent people",
     result.ok === false &&
       enrichCalls === 0 &&
       "error" in result &&
       result.error === EMPTY_PEOPLE_FIRST_HARVEST,
+  );
+}
+
+{
+  let enrichCalls = 0;
+  let searches = 0;
+  const result = await runAutoSourcePipeline({
+    job: financeJob(),
+    search: async () => {
+      searches += 1;
+      return searches === 1 ? accepted(0) : accepted(2);
+    },
+    enrich: async () => {
+      enrichCalls += 1;
+      return { ok: true };
+    },
+  });
+  ok(
+    "Auto source enriches after a later harvest hits",
+    result.ok === true && searches === 2 && enrichCalls === 1 && result.enriched === true,
   );
 }
 
@@ -152,6 +200,14 @@ ok(
     !/LpVuK3Zozwuipa5bp/.test(chrome) &&
     !/HCPOl6k3LqnOVdFns/.test(chrome) &&
     !/Run sourcing agent/.test(chrome),
+);
+
+const storeWiring = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+ok(
+  "Auto source wires each chain step as its own harvestQuery POST",
+  /runAutoSourcePipeline/.test(storeWiring) &&
+    /harvestQuery:\s*step\.query/.test(storeWiring) &&
+    /currentJobTitles:\s*step\.currentJobTitles/.test(storeWiring),
 );
 
 const campaigns = readFileSync(new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url), "utf8");

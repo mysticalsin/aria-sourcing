@@ -155,9 +155,12 @@ export interface HermesActions {
       platform?: SourcePlatform;
       count?: number;
       agentFramework?: { runId: string; capabilityToken: string; query: string };
+      harvestQuery?: string;
+      currentJobTitles?: string[];
     },
   ) => Promise<SourceNextBatchResult>;
   /** Unattended chain: search → enrich → merge tech-stack when the role needs it.
+   *  Empty first harvest continues to the next search in the same click.
    *  Actors stay in the backend. Does not invent people. */
   autoSource: (
     campaignId: string,
