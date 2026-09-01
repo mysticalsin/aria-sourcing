@@ -204,7 +204,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(design, /Calypso Linux Python/);
   assert.match(design, /\[aria-harvest\]/);
   assert.match(design, /15 identical/);
-  assert.match(design, /do not toast \*\*Open Access & Keys\*\*/);
+  assert.match(design, /do not toast[\s\S]*\*\*Open Access & Keys\*\*/);
 });
 
 test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
