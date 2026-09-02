@@ -33,13 +33,32 @@ export type HarvestEvidenceKind =
   | "aborted"
   | "mock";
 
+export type HarvestActorName =
+  | typeof HARVEST_ACTOR
+  | typeof HARVEST_ENRICH_ACTOR
+  | typeof GITHUB_STACK_ACTOR
+  | string;
+
 export interface HarvestEvidence {
-  actor: typeof HARVEST_ACTOR;
+  actor: HarvestActorName;
   query: string;
   runId: string;
   status: string;
   itemCount: number;
   started: boolean;
+}
+
+/** Toast-safe. Actor names stay in server logs, not user chrome. */
+export function formatEnrichmentRunIds(
+  enrich: Pick<HarvestEvidence, "runId">,
+  github: Pick<HarvestEvidence, "runId">,
+): string {
+  const enrichId = enrich.runId.trim();
+  const githubId = github.runId.trim();
+  if (!enrichId && !githubId) return "";
+  return [enrichId ? `enrich=${enrichId}` : "", githubId ? `github=${githubId}` : ""]
+    .filter(Boolean)
+    .join(" ");
 }
 
 const SECRET_KEY = /^(token|secret|authorization|password|apikey|api_key|apikeyid)$/i;
@@ -132,7 +151,7 @@ export function logAriaHarvest(
 ): void {
   writeAriaHarvestStdout({
     phase: event,
-    actor: HARVEST_ACTOR,
+    actor: harvest.actor || HARVEST_ACTOR,
     query: harvest.query,
     runId: harvest.runId || undefined,
     status: harvest.status || undefined,

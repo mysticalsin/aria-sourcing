@@ -4,7 +4,7 @@ import { buildSeedState } from "../src/lib/seed";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "../src/lib/ai/tool-loop";
 
 mock.module("server-only", { namedExports: {} });
-const { makeSourcingToolRunner, isSourcingTool, SOURCING_TOOL_DEFS } = await import("../src/lib/ai/sourcing-tools");
+const { makeSourcingToolRunner, isSourcingTool, SOURCING_TOOL_DEFS, peopleFirstEnrichmentClearance } = await import("../src/lib/ai/sourcing-tools");
 
 let pass = 0,
   fail = 0;
@@ -30,6 +30,14 @@ const W = campaign.scoringWeights;
 ok("SOURCING_TOOL_DEFS exposes search_candidates", SOURCING_TOOL_DEFS.some((t) => t.name === "search_candidates"));
 ok("isSourcingTool recognizes search_candidates", isSourcingTool("search_candidates"));
 ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
+ok(
+  "empty-harvest enrichment clearance is minted from the role-bound query",
+  peopleFirstEnrichmentClearance(campaign, campaign.jobAnalysis.title).ok === true,
+);
+ok(
+  "empty-harvest enrichment clearance stays role-bound",
+  peopleFirstEnrichmentClearance(campaign, "unrelated dentist hiring").ok === false,
+);
 
 // --- makeSourcingToolRunner: GitHub branch, mocked fetch --------------------
 {

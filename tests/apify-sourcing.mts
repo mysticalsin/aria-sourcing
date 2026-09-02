@@ -7,6 +7,8 @@ mock.module("server-only", { namedExports: {} });
 
 const {
   startProfileSearchRun,
+  startLinkedinProfileScraperRun,
+  startGithubProfileScraperRun,
   getRunStatus,
   fetchDatasetItems,
   testApifyConnection,
@@ -203,6 +205,38 @@ try {
     }) as typeof fetch;
     await startProfileSearchRun(apifyClearance, "tok", { searchQuery: "q", maxItems: 500 });
     ok("start caps maxItems at the server-side ceiling", seenBody.maxItems === 50);
+  }
+
+  // Empty search items=0 still POSTs enrich + GitHub /runs so the click
+  // logs a real run id. Do not invent people from an empty start.
+  {
+    const seen: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      seen.push(String(url));
+      return jsonResponse(201, { data: { id: "enrich_empty_1", status: "READY" } });
+    }) as typeof fetch;
+    const enrich = await startLinkedinProfileScraperRun(apifyClearance, "tok", []);
+    ok(
+      "empty LinkedIn harvest still starts the profile scraper /runs",
+      seen.some((url) => url.includes("/actors/harvestapi~linkedin-profile-scraper/runs")) &&
+        enrich.ok === true &&
+        enrich.ok &&
+        enrich.data.runId === "enrich_empty_1",
+    );
+
+    seen.length = 0;
+    globalThis.fetch = (async (url: unknown) => {
+      seen.push(String(url));
+      return jsonResponse(201, { data: { id: "github_empty_1", status: "READY" } });
+    }) as typeof fetch;
+    const github = await startGithubProfileScraperRun(apifyClearance, "tok", []);
+    ok(
+      "empty LinkedIn harvest still starts the GitHub scraper /runs",
+      seen.some((url) => url.includes("/actors/apivault_labs~github-profile-scraper/runs")) &&
+        github.ok === true &&
+        github.ok &&
+        github.data.runId === "github_empty_1",
+    );
   }
 
   // --- getRunStatus: parses status -------------------------------------------

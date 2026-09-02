@@ -5,6 +5,7 @@
  */
 
 import type { SourceNextBatchResult } from "@/lib/store/contracts";
+import { parseEnrichmentRunIds } from "@/lib/sourcing/people-first-fallthrough";
 import { EMPTY_PEOPLE_FIRST_HARVEST, isPeopleFirstRole } from "@/lib/sourcing/people-plugins";
 import { runPeopleFirstHarvestChain } from "@/lib/sourcing/people-first-chain";
 import type { PlannedSearch } from "@/lib/sourcing/multi-source-plan";
@@ -13,6 +14,8 @@ import type { JobAnalysis } from "@/lib/types";
 export interface AutoSourceEnrichResult {
   ok: boolean;
   error?: string;
+  enrichRunId?: string;
+  githubRunId?: string;
 }
 
 function isHardSearchStop(result: SourceNextBatchResult): boolean {
@@ -29,7 +32,14 @@ export async function runAutoSourcePipeline(input: {
   search: (step: PlannedSearch) => Promise<SourceNextBatchResult>;
   enrich: () => Promise<AutoSourceEnrichResult>;
   mergeTechStack?: () => Promise<void>;
-}): Promise<SourceNextBatchResult & { enriched?: boolean; techStackMerged?: boolean }> {
+}): Promise<
+  SourceNextBatchResult & {
+    enriched?: boolean;
+    techStackMerged?: boolean;
+    enrichRunId?: string;
+    githubRunId?: string;
+  }
+> {
   const searches: SourceNextBatchResult[] = [];
   const chain = await runPeopleFirstHarvestChain({
     job: input.job,
@@ -66,11 +76,30 @@ export async function runAutoSourcePipeline(input: {
     await input.mergeTechStack();
     techStackMerged = true;
   }
+  const fromLast = last && !last.ok ? parseEnrichmentRunIds(last.error) : {};
+  const enrichRunId = enrich.enrichRunId ?? fromLast.enrichRunId;
+  const githubRunId = enrich.githubRunId ?? fromLast.githubRunId;
+  const loggedEnrichment = Boolean(enrichRunId && githubRunId);
   if (chain.accepted.length > 0 && hit && hit.ok) {
-    return { ...hit, enriched: Boolean(enrich.ok || !enrich.error), techStackMerged };
+    return {
+      ...hit,
+      enriched: Boolean(enrich.ok || !enrich.error),
+      techStackMerged,
+      enrichRunId,
+      githubRunId,
+    };
   }
   if (last && !last.ok && isHardSearchStop(last)) {
-    return { ...last, enriched: Boolean(enrich.ok || !enrich.error), techStackMerged };
+    return { ...last, enriched: Boolean(enrich.ok || !enrich.error), techStackMerged, enrichRunId, githubRunId };
+  }
+  if (!loggedEnrichment) {
+    return {
+      ok: false,
+      error: "Empty harvest is not a result. Enrichment must start. Do not stop at 0 people. Do not invent people.",
+      source: "unavailable",
+      enriched: false,
+      techStackMerged,
+    };
   }
   return {
     ok: false,
@@ -78,7 +107,9 @@ export async function runAutoSourcePipeline(input: {
       ? EMPTY_PEOPLE_FIRST_HARVEST
       : "Empty harvest is not a result. Do not stop at 0 people.",
     source: "unavailable",
-    enriched: Boolean(enrich.ok || !enrich.error),
+    enriched: true,
     techStackMerged,
+    enrichRunId,
+    githubRunId,
   };
 }

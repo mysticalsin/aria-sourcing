@@ -162,6 +162,66 @@ function baJob(): JobAnalysis {
   );
 }
 
+{
+  const { isLastPeopleFirstHarvest, peopleFirstAlternateQuery, runPeopleFirstEmptyFallthrough } =
+    await import("../src/lib/sourcing/people-first-fallthrough");
+  const job = baJob();
+  const queue = peopleFirstHarvestQueue(job);
+  const logs: Array<{ phase: string; actor?: string; runId?: string }> = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    if (text.includes("aria_harvest")) {
+      try {
+        logs.push(JSON.parse(text) as { phase: string; actor?: string; runId?: string });
+      } catch {
+        // ignore non-JSON
+      }
+    }
+    return originalWrite(chunk, ...(args as []));
+  }) as typeof process.stdout.write;
+  let enrichStarts = 0;
+  let githubStarts = 0;
+  let alternateQuery = "";
+  const fallthrough = await runPeopleFirstEmptyFallthrough({
+    job,
+    startEnrich: async () => {
+      enrichStarts += 1;
+      return { ok: true, runId: "enrich-live-1", status: "READY" };
+    },
+    startGithub: async () => {
+      githubStarts += 1;
+      return { ok: true, runId: "github-live-1", status: "READY" };
+    },
+    alternateSearch: async (query) => {
+      alternateQuery = query;
+      return { acceptedCount: 0 };
+    },
+  });
+  process.stdout.write = originalWrite;
+  ok(
+    "first harvest is not the last planned harvest",
+    !isLastPeopleFirstHarvest(job, queue[0]!) && isLastPeopleFirstHarvest(job, queue.at(-1)!),
+  );
+  ok(
+    "after 8 empty LinkedIn harvests enrich and GitHub runs start",
+    enrichStarts === 1 && githubStarts === 1 && fallthrough.enrich.started && fallthrough.github.started,
+  );
+  ok(
+    "enrich and GitHub run ids are logged on the harvest trail",
+    logs.some((row) => row.actor === "harvestapi~linkedin-profile-scraper" && row.runId === "enrich-live-1") &&
+      logs.some((row) => row.actor === "apivault_labs~github-profile-scraper" && row.runId === "github-live-1") &&
+      /enrich=enrich-live-1/.test(fallthrough.logged) &&
+      /github=github-live-1/.test(fallthrough.logged),
+  );
+  ok(
+    "alternate source is not another Calypso harvestapi string",
+    alternateQuery === "Business Analyst Montreal" &&
+      !/^Calypso\b/.test(alternateQuery) &&
+      fallthrough.alternateQuery === "Business Analyst Montreal",
+  );
+}
+
 assert.ok(pass > 0);
 console.log(`RESULT people-first-chain: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

@@ -296,8 +296,17 @@ hydrate and on the Strategy tab.
   `peopleFirstHarvestQueue` (≥2 distinct harvestapi searches plus
   expansions), not a one-item `plannedSourcingSearches` slice. After
   `SUCCEEDED items=0`, the client POSTs the next harvest (new run id
-  or next actor-input via `nextPeopleFirstHarvest`). Empty LinkedIn search is not terminal: enrich
-  and GitHub profile-scraper merge onto the same people must run.
+  or next actor-input via `nextPeopleFirstHarvest`). Empty LinkedIn search is not terminal: after
+  the last planned harvest returns items=0, the same click must start
+  `harvestapi/linkedin-profile-scraper` and `apivault_labs/github-profile-scraper`
+  and log those run ids on the `aria_harvest` trail. enrichCampaign is not
+  that start — it no-ops when there are no LinkedIn URLs. The start is
+  `startLinkedinProfileScraperRun` / `startGithubProfileScraperRun` POSTing
+  `/runs` even with empty URLs, under `peopleFirstEnrichmentClearance`
+  (discovery, not a probe mint inside apify.ts). If those scrapers
+  still have nobody to merge, fall through to a LinkedIn web search
+  (role+geo, not another Calypso harvestapi string). A click cannot end at
+  0 people without a logged enrichment attempt. Do not invent people.
   People-first Source next batch uses the same chain as Auto source.
   Banner copy "every planned search was tried" is FAIL unless ≥2 distinct harvests actually started.
 

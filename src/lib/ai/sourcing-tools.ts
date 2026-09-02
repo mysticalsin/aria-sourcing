@@ -19,6 +19,7 @@ import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sou
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 import { APIFY_HARVEST_WAIT_MS, runProfileSearchAndWait } from "@/lib/sourcing/apify";
+import type { ProviderClearance } from "@/lib/sourcing/provider-egress";
 import { HARVEST_ACTOR, type HarvestEvidence } from "@/lib/sourcing/harvest-evidence";
 import { SHORTLIST_CAP } from "@/lib/sourcing/engine";
 import { mapApifyCandidates } from "@/lib/store/sourcing-helpers";
@@ -64,6 +65,17 @@ export const SOURCING_TOOL_DEFS: McpTool[] = [
 
 export function isSourcingTool(name: string): boolean {
   return name === "search_candidates";
+}
+
+/**
+ * Discovery clearance for starting enrich + GitHub scrapers after an empty
+ * harvestapi search. Query must stay role-bound. Do not mint from apify.ts.
+ */
+export function peopleFirstEnrichmentClearance(
+  campaign: CandidateMappingCampaign,
+  query: string,
+): { ok: true; clearance: ProviderClearance } | { ok: false; error: string } {
+  return clearDiscoveryCriteria("Apify", { searchQuery: query.trim().slice(0, 256) }, campaign);
 }
 
 interface SearchSummary {

@@ -10,7 +10,7 @@ import {
   validateCandidateBoundText,
 } from "@/lib/agent-disclosure-policy";
 import { DEFAULT_MODEL, VAULT_PROVIDER, resolveAiProvider, type AiProviderSlug } from "@/lib/ai/provider";
-import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
+import { SOURCING_TOOL_DEFS, makeSourcingToolRunner, peopleFirstEnrichmentClearance } from "@/lib/ai/sourcing-tools";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { classifySameOriginJsonRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
@@ -43,8 +43,13 @@ import {
   type SourcingAgentCampaign,
 } from "@/lib/sourcing/sourcing-agent-contract";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
-import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import {
+  resolveStoredApifyKey,
+  startGithubProfileScraperRun,
+  startLinkedinProfileScraperRun,
+} from "@/lib/sourcing/apify";
+import {
+  formatEnrichmentRunIds,
   formatHarvestEvidenceError,
   logAriaHarvest,
   PEOPLE_FIRST_HARVEST_EMPTY,
@@ -65,6 +70,11 @@ import {
   peopleFirstSearchKey,
   plannedSourcingSearches,
 } from "@/lib/sourcing/multi-source-plan";
+import {
+  isLastPeopleFirstHarvest,
+  peopleFirstAlternateQuery,
+  runPeopleFirstEmptyFallthrough,
+} from "@/lib/sourcing/people-first-fallthrough";
 import { roleProfile } from "@/lib/roles";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -462,9 +472,9 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (peopleFirst && !apifyToken) {
     return fail(503, "MISSING_PLUGIN", MISSING_PEOPLE_PLUGINS_TOAST);
   }
-  // Tavily after request_entry. People-first harvest is harvestapi Full only.
-  const tavilyKey =
-    peopleFirst && !frameworkAuthorization ? null : await resolveStoredTavilyKey(session);
+  // Tavily after request_entry. People-first harvest stays harvestapi Full.
+  // Tavily is only used after the harvest queue is exhausted (LinkedIn web).
+  const tavilyKey = await resolveStoredTavilyKey(session);
   const configurationFingerprint = createHash("sha256")
     .update(initial.value.configurationFingerprint)
     .digest("hex");
@@ -996,7 +1006,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
           }),
         );
       }
-      const foundCount = runner.getFound().length;
+      let foundCount = runner.getFound().length;
       const contactCompleteCount = apifyExecs.reduce(
         (sum, execution) => sum + (execution.contactCompleteCount ?? 0),
         0,
@@ -1025,31 +1035,99 @@ async function handlePost(req: NextRequest, correlationId: string) {
       );
       const startedSearches = startedDistinct.size;
       const succeededWithPeople = succeeded.filter((harvest) => harvest.itemCount > 0);
+      const peopleFirstJob = initial.value.campaign.jobAnalysis;
+      const requestedHarvestQuery = validated.data.harvestQuery?.trim() ?? "";
+      const requestedTitles = (validated.data.currentJobTitles ?? [])
+        .map((title) => title.trim())
+        .filter(Boolean)
+        .slice(0, 8);
+      const requestedStep = requestedHarvestQuery
+        ? {
+            query: requestedHarvestQuery,
+            ...(requestedTitles.length ? { currentJobTitles: requestedTitles } : {}),
+          }
+        : null;
+      let lastHarvestFallthrough: Awaited<
+        ReturnType<typeof runPeopleFirstEmptyFallthrough>
+      > | null = null;
+      const startEmptyFallthrough = async () => {
+        if (lastHarvestFallthrough || !apifyToken) return;
+        const roleQuery =
+          requestedHarvestQuery ||
+          primaryHarvest.query ||
+          peopleFirstAlternateQuery(peopleFirstJob);
+        const clearance = peopleFirstEnrichmentClearance(initial.value.campaign, roleQuery);
+        lastHarvestFallthrough = await runPeopleFirstEmptyFallthrough({
+          job: peopleFirstJob,
+          startEnrich: async () => {
+            if (!clearance.ok) return { ok: false, status: clearance.error };
+            const started = await startLinkedinProfileScraperRun(clearance.clearance, apifyToken, []);
+            return started.ok
+              ? { ok: true, runId: started.data.runId, status: started.data.status }
+              : { ok: false, status: started.title };
+          },
+          startGithub: async () => {
+            if (!clearance.ok) return { ok: false, status: clearance.error };
+            const started = await startGithubProfileScraperRun(clearance.clearance, apifyToken, []);
+            return started.ok
+              ? { ok: true, runId: started.data.runId, status: started.data.status }
+              : { ok: false, status: started.title };
+          },
+          alternateSearch: async (query) => {
+            const before = runner.getFound().length;
+            await runner.run("search_candidates", {
+              platform: "LinkedIn",
+              query,
+              count,
+            });
+            return { acceptedCount: Math.max(0, runner.getFound().length - before) };
+          },
+        });
+        foundCount = runner.getFound().length;
+      };
+      const emptyWithEnrichment = (
+        harvest: NonNullable<typeof primaryHarvest>,
+      ) => {
+        const base = formatHarvestEvidenceError("empty", harvest, { startedSearches });
+        const suffix = lastHarvestFallthrough?.logged
+          ? ` ${lastHarvestFallthrough.logged}`
+          : formatEnrichmentRunIds({ runId: "" }, { runId: "" });
+        return `${base}${suffix}`.trim();
+      };
       if (foundCount === 0 && startedSearches < 2) {
-        const requestedOneStep = Boolean(validated.data.harvestQuery?.trim());
+        const requestedOneStep = Boolean(requestedHarvestQuery);
         const oneStepEmpty =
           requestedOneStep &&
           succeeded.some((harvest) => harvest.started && harvest.itemCount === 0);
-        if (oneStepEmpty) {
+        if (
+          oneStepEmpty &&
+          requestedStep &&
+          isLastPeopleFirstHarvest(peopleFirstJob, requestedStep)
+        ) {
+          await startEmptyFallthrough();
+        }
+        if (oneStepEmpty && foundCount === 0) {
           return await failClaimed(
             502,
             PEOPLE_FIRST_HARVEST_EMPTY,
-            formatHarvestEvidenceError("empty", primaryHarvest, { startedSearches }),
+            emptyWithEnrichment(primaryHarvest),
           );
         }
-        const next = nextPeopleFirstHarvest(
-          initial.value.campaign.jobAnalysis,
-          apifyExecs.map((execution) => ({ query: execution.query })),
-        );
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_NOT_STARTED,
-          formatHarvestEvidenceError("not_started", {
-            query: next?.query || plannedQuery,
-            runId: primaryHarvest.runId,
-            status: primaryHarvest.status,
-          }),
-        );
+        if (foundCount === 0) {
+          const next = nextPeopleFirstHarvest(
+            peopleFirstJob,
+            apifyExecs.map((execution) => ({ query: execution.query })),
+          );
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_NOT_STARTED,
+            formatHarvestEvidenceError("not_started", {
+              query: next?.query || plannedQuery,
+              runId: primaryHarvest.runId,
+              status: primaryHarvest.status,
+            }),
+          );
+        }
       }
       if (succeededWithPeople.length > 0 && contactCompleteCount === 0 && foundCount === 0) {
         return await failClaimed(
@@ -1070,13 +1148,16 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       if (foundCount === 0) {
-        const emptyHarvest =
-          succeeded.find((harvest) => harvest.itemCount === 0) ?? primaryHarvest;
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_EMPTY,
-          formatHarvestEvidenceError("empty", emptyHarvest, { startedSearches }),
-        );
+        await startEmptyFallthrough();
+        if (foundCount === 0) {
+          const emptyHarvest =
+            succeeded.find((harvest) => harvest.itemCount === 0) ?? primaryHarvest;
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_EMPTY,
+            emptyWithEnrichment(emptyHarvest),
+          );
+        }
       }
       if (succeeded.length === 0) {
         return await failClaimed(

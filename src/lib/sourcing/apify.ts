@@ -22,12 +22,20 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
-import { HARVEST_ACTOR, logAriaHarvest, type HarvestEvidence } from "@/lib/sourcing/harvest-evidence";
+import {
+  GITHUB_STACK_ACTOR,
+  HARVEST_ACTOR,
+  HARVEST_ENRICH_ACTOR,
+  logAriaHarvest,
+  type HarvestEvidence,
+} from "@/lib/sourcing/harvest-evidence";
 import { providerIsApify } from "@/lib/sourcing/people-connect";
 
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
+const ENRICH_RUN_PATH = "/actors/harvestapi~linkedin-profile-scraper/runs";
 const ENRICH_ACTOR_PATH = "/actors/harvestapi~linkedin-profile-scraper/run-sync-get-dataset-items";
+const GITHUB_RUN_PATH = "/actors/apivault_labs~github-profile-scraper/runs";
 const GITHUB_STACK_PATH = "/actors/apivault_labs~github-profile-scraper/run-sync-get-dataset-items";
 const DEV_FUSION_PATH = "/actors/dev_fusion~linkedin-profile-scraper/run-sync-get-dataset-items";
 
@@ -433,6 +441,73 @@ export async function startProfileSearchRun(
     status: res.status,
     data: { runId: String(r.id ?? ""), datasetId: String(r.defaultDatasetId ?? ""), status: r.status ?? "READY" },
   };
+}
+
+/**
+ * Start harvestapi/linkedin-profile-scraper as an async run so a click can
+ * log a real run id even when search items=0 (nobody to scrape yet).
+ * Empty URLs still POST /runs. Do not invent people from this start.
+ */
+export async function startLinkedinProfileScraperRun(
+  clearance: ProviderClearance,
+  token: string,
+  urls: string[],
+): Promise<ApifyResult<{ runId: string; status: string }>> {
+  const profileUrls = urls.map((url) => url.trim()).filter(Boolean);
+  const res = await apifyRequest<RawRunEnvelope>(clearance, ENRICH_RUN_PATH, token, {
+    method: "POST",
+    body: {
+      urls: profileUrls,
+      profileUrls,
+      profileScraperMode: "Full + email search",
+    },
+    timeoutMs: 15_000,
+  });
+  if (!res.ok) return res;
+  const runId = String(res.data.data?.id ?? "");
+  const status = res.data.data?.status ?? "READY";
+  logAriaHarvest("started", {
+    actor: HARVEST_ENRICH_ACTOR,
+    query: "email-phone",
+    runId,
+    started: Boolean(runId),
+    status,
+    itemCount: profileUrls.length,
+  });
+  return { ok: true, status: res.status, data: { runId, status } };
+}
+
+/**
+ * Start apivault_labs/github-profile-scraper as an async run. Merge onto
+ * existing people only. Empty usernames still POST /runs so the attempt is
+ * logged. Never mint a GitHub leftover shortlist.
+ */
+export async function startGithubProfileScraperRun(
+  clearance: ProviderClearance,
+  token: string,
+  usernames: string[],
+): Promise<ApifyResult<{ runId: string; status: string }>> {
+  const logins = usernames.map((name) => name.trim()).filter(Boolean).slice(0, 8);
+  const res = await apifyRequest<RawRunEnvelope>(clearance, GITHUB_RUN_PATH, token, {
+    method: "POST",
+    body: {
+      usernames: logins,
+      ...(logins[0] ? { username: logins[0] } : {}),
+    },
+    timeoutMs: 15_000,
+  });
+  if (!res.ok) return res;
+  const runId = String(res.data.data?.id ?? "");
+  const status = res.data.data?.status ?? "READY";
+  logAriaHarvest("started", {
+    actor: GITHUB_STACK_ACTOR,
+    query: "tech-stack-merge",
+    runId,
+    started: Boolean(runId),
+    status,
+    itemCount: logins.length,
+  });
+  return { ok: true, status: res.status, data: { runId, status } };
 }
 
 interface RawStatusEnvelope {

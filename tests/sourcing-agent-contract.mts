@@ -393,6 +393,26 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(autoSource, /const enrich = await input.enrich/);
   assert.match(autoSource, /if \(input.mergeTechStack\)/);
   assert.doesNotMatch(autoSource, /queryStyle === ["']github["'] && input.mergeTechStack/);
+  const fallthrough = readFileSync(
+    new URL("../src/lib/sourcing/people-first-fallthrough.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(route, /runPeopleFirstEmptyFallthrough/);
+  assert.match(route, /isLastPeopleFirstHarvest/);
+  assert.match(route, /startLinkedinProfileScraperRun/);
+  assert.match(route, /startGithubProfileScraperRun/);
+  assert.match(route, /peopleFirstEnrichmentClearance/);
+  assert.match(fallthrough, /peopleFirstAlternateQuery/);
+  assert.match(apify, /startLinkedinProfileScraperRun/);
+  assert.match(apify, /startGithubProfileScraperRun/);
+  assert.match(apify, /linkedin-profile-scraper\/runs/);
+  assert.match(apify, /github-profile-scraper\/runs/);
+  assert.doesNotMatch(apify, /mintProviderClearance/);
+  assert.match(harvest, /formatEnrichmentRunIds/);
+  assert.match(harvest, /harvest\.actor \|\| HARVEST_ACTOR/);
+  assert.match(design, /logged enrichment attempt/);
+  assert.match(autoSource, /parseEnrichmentRunIds/);
+  assert.match(autoSource, /Enrichment must start/);
   assert.match(store, /sourcePeopleFirstBatch/);
   assert.match(store, /sourceNextBatchRaw/);
   assert.match(store, /return autoSource\(campaignId, opts\)/);

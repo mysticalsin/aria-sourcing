@@ -6,7 +6,8 @@ import { NextRequest } from "next/server";
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import { isPeopleFirstContactComplete } from "../src/lib/sourcing/people-first-contact";
-import type { Campaign } from "../src/lib/types";
+import { peopleFirstHarvestQueue, peopleFirstSearchKey } from "../src/lib/sourcing/multi-source-plan";
+import type { Campaign, JobAnalysis } from "../src/lib/types";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -56,6 +57,7 @@ let stateReads = 0;
 let providerCalls = 0;
 let vaultCalls = 0;
 let runnerCalls = 0;
+let fallthroughCalls = 0;
 let beginCalls = 0;
 let frameworkBeginCalls = 0;
 let frameworkCheckCalls = 0;
@@ -175,6 +177,55 @@ mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
 mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
   namedExports: { resolveStoredApifyKey: async () => storedApifyKey },
 });
+mock.module(moduleUrl("src/lib/sourcing/people-first-fallthrough.ts"), {
+  namedExports: {
+    isLastPeopleFirstHarvest: (
+      job: JobAnalysis,
+      step: { query: string; currentJobTitles?: string[] },
+    ) => {
+      const last = peopleFirstHarvestQueue(job).at(-1);
+      return Boolean(last && peopleFirstSearchKey(last) === peopleFirstSearchKey(step));
+    },
+    peopleFirstAlternateQuery: (job: JobAnalysis) =>
+      /\bbusiness analyst\b|\bba\b/i.test(job.title)
+        ? `${job.location?.trim() ? `Business Analyst ${job.location.trim()}` : "Business Analyst"}`
+        : job.title,
+    parseEnrichmentRunIds: (error: string) => ({
+      enrichRunId: error.match(/\benrich=([A-Za-z0-9._:-]+)/)?.[1],
+      githubRunId: error.match(/\bgithub=([A-Za-z0-9._:-]+)/)?.[1],
+    }),
+    runPeopleFirstEmptyFallthrough: async (input: {
+      job: JobAnalysis;
+      alternateSearch?: (query: string) => Promise<{ acceptedCount: number }>;
+    }) => {
+      fallthroughCalls += 1;
+      const alternateQuery = /\bbusiness analyst\b|\bba\b/i.test(input.job.title)
+        ? "Business Analyst Montreal"
+        : input.job.title;
+      let acceptedCount = 0;
+      if (input.alternateSearch) {
+        acceptedCount = (await input.alternateSearch(alternateQuery)).acceptedCount;
+      }
+      return {
+        enrich: {
+          actor: "harvestapi~linkedin-profile-scraper",
+          runId: "enrich-run-1",
+          started: true,
+          status: "READY",
+        },
+        github: {
+          actor: "apivault_labs~github-profile-scraper",
+          runId: "github-run-1",
+          started: true,
+          status: "READY",
+        },
+        alternateQuery,
+        acceptedCount,
+        logged: "enrich=enrich-run-1 github=github-run-1",
+      };
+    },
+  },
+});
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
     beginSourcingRun: async () => {
@@ -279,6 +330,7 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
 mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
   namedExports: {
     SOURCING_TOOL_DEFS: [],
+    peopleFirstEnrichmentClearance: () => ({ ok: true, clearance: {} }),
     makeSourcingToolRunner: () => ({
       run: async (_name: string, args: { platform?: string; query?: string; currentJobTitles?: string[] }) => {
         runnerCalls += 1;
@@ -423,6 +475,7 @@ function reset() {
   providerCalls = 0;
   vaultCalls = 0;
   runnerCalls = 0;
+  fallthroughCalls = 0;
   beginCalls = 0;
   frameworkBeginCalls = 0;
   frameworkCheckCalls = 0;
@@ -1826,4 +1879,47 @@ test("one-step harvestQuery empty is PEOPLE_FIRST_HARVEST_EMPTY so the client ca
     "server must not start harvest 2 in the same HTTP request when harvestQuery is set",
   );
   assert.equal(completeCalls, 0);
+  assert.equal(fallthroughCalls, 0, "harvest 1 empty must not start enrich before the queue is exhausted");
+});
+
+test("last empty harvest starts enrich and GitHub runs and logs those run ids", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  storedTavilyKey = "tvly-test";
+  campaign = {
+    ...baCampaign(),
+    jobAnalysis: {
+      ...baCampaign().jobAnalysis,
+      location: "Montreal",
+      regions: ["Montreal"],
+    },
+  };
+  const last = peopleFirstHarvestQueue(campaign.jobAnalysis).at(-1);
+  assert.ok(last, "BA queue must have a last harvest");
+  runnerHarvest = {
+    started: true,
+    status: "SUCCEEDED",
+    itemCount: 0,
+    runId: "last-harvest-run",
+  };
+
+  const response = await post(request({ harvestQuery: last!.query }));
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /Empty harvest is not a result/);
+  assert.match(String(body.error), /enrich=enrich-run-1/);
+  assert.match(String(body.error), /github=github-run-1/);
+  assert.doesNotMatch(String(body.error), /harvestapi/);
+  assert.doesNotMatch(String(body.error), /apivault/);
+  assert.equal(fallthroughCalls, 1, "last empty harvest must start enrich + GitHub in the same request");
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "LinkedIn" && row.query === "Business Analyst Montreal"),
+    `alternate must be LinkedIn web, not another Calypso harvestapi string: ${JSON.stringify(runnerQueries)}`,
+  );
+  assert.ok(
+    runnerQueries.every((row) => row.platform !== "Apify" || row.query === last!.query),
+    "last request must not start another Calypso harvestapi string",
+  );
 });

@@ -197,6 +197,7 @@ mock.module(moduleUrl("src/lib/ai/tool-loop.ts"), {
 mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
   namedExports: {
     SOURCING_TOOL_DEFS: [{ name: "search_candidates", description: "test" }],
+    peopleFirstEnrichmentClearance: () => ({ ok: true, clearance: {} }),
     makeSourcingToolRunner: () => {
       const executions: Array<Record<string, unknown>> = [];
       return {

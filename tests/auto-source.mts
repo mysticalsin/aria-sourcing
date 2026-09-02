@@ -110,18 +110,22 @@ function accepted(n: number): SourceNextBatchResult {
     search: async (step) => {
       queries.push(step.query + (step.currentJobTitles ?? []).join(","));
       runIds.push(`auto-${runIds.length + 1}`);
+      const queue = peopleFirstHarvestQueue(financeJob());
+      const last = queue.at(-1);
+      const isLast = last?.query === step.query;
+      const empty = formatHarvestEvidenceError(
+        "empty",
+        {
+          query: step.query,
+          runId: runIds[runIds.length - 1]!,
+          status: "SUCCEEDED",
+          itemCount: 0,
+        },
+        { startedSearches: 1 },
+      );
       return {
         ok: false,
-        error: formatHarvestEvidenceError(
-          "empty",
-          {
-            query: step.query,
-            runId: runIds[runIds.length - 1]!,
-            status: "SUCCEEDED",
-            itemCount: 0,
-          },
-          { startedSearches: 1 },
-        ),
+        error: isLast ? `${empty} enrich=enrich-run-1 github=github-run-1` : empty,
         source: "unavailable",
       };
     },
@@ -161,8 +165,35 @@ function accepted(n: number): SourceNextBatchResult {
       result.enriched === true,
   );
   ok(
+    "after 8 empty LinkedIn harvests the click logs enrich and GitHub run ids",
+    result.enrichRunId === "enrich-run-1" && result.githubRunId === "github-run-1",
+  );
+  ok(
     "a click cannot return 0-and-stop as a success",
     result.ok === false,
+  );
+}
+
+{
+  const result = await runAutoSourcePipeline({
+    job: financeJob(),
+    search: async (step) => ({
+      ok: false,
+      error: formatHarvestEvidenceError(
+        "empty",
+        { query: step.query, runId: "search-only", status: "SUCCEEDED", itemCount: 0 },
+        { startedSearches: 1 },
+      ),
+      source: "unavailable",
+    }),
+    enrich: async () => ({ ok: true }),
+  });
+  ok(
+    "a click cannot return 0-and-stop success without a logged enrichment attempt",
+    result.ok === false &&
+      "error" in result &&
+      /Enrichment must start/.test(result.error) &&
+      result.enriched === false,
   );
 }
 
