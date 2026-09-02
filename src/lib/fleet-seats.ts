@@ -1,16 +1,21 @@
 import { defaultSendWindow } from "./fleet";
 import {
   INTEGRATION_MODES,
+  LINKEDIN_SENDER_STATES,
   SEAT_PROVIDERS,
   SEAT_STATUSES,
   type AgentSeat,
   type IntegrationMode,
+  type LinkedInSenderState,
   type SeatProvider,
   type SeatStatus,
 } from "./types";
 
+// provider_sender_ref is deliberately absent: the vendor's sender id is opaque
+// and never reaches the browser. provider_state is enough for the card because
+// 0058 guarantees 'connected' implies a sender ref.
 export const AGENT_SEAT_SELECT =
-  "id, workspace_id, name, operator_email, provider, status, mode, domain_verified, daily_limit, warmup, warmup_start_cap, warmup_step_per_day, warmup_started_at, min_gap_minutes, persona, signature, connected_account, created_at";
+  "id, workspace_id, name, operator_email, provider, status, mode, domain_verified, daily_limit, warmup, warmup_start_cap, warmup_step_per_day, warmup_started_at, min_gap_minutes, persona, signature, connected_account, provider_state, created_at";
 
 export interface AgentSeatRow {
   id: string;
@@ -30,7 +35,13 @@ export interface AgentSeatRow {
   persona: string;
   signature: string;
   connected_account: string;
+  provider_state?: string | null;
   created_at: string;
+}
+
+/** Unknown or missing reads as disconnected: the card never shows a state the row did not carry. */
+export function linkedInSenderState(value: string | null | undefined): LinkedInSenderState {
+  return (LINKEDIN_SENDER_STATES as readonly string[]).includes(value ?? "") ? (value as LinkedInSenderState) : "disconnected";
 }
 
 function seatProvider(value: string, fallback?: SeatProvider): SeatProvider {
@@ -69,6 +80,7 @@ export function agentSeatRowToSeat(row: AgentSeatRow, existing?: AgentSeat): Age
     color: existing?.color,
     language: existing?.language,
     connectedAccount: row.connected_account,
+    providerState: linkedInSenderState(row.provider_state),
     createdAt: row.created_at,
     providerId: existing?.providerId,
     modelId: existing?.modelId,

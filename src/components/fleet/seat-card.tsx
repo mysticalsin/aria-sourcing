@@ -29,6 +29,8 @@ import type { AgentSeat, SeatProvider, ToolId } from "@/lib/types";
 import { ROBOT_PALETTE } from "@/lib/floor3d";
 import { cn, type Tone } from "@/lib/utils";
 import { AgentPromptEditor } from "./agent-prompt-editor";
+import { LinkedInConnectCard } from "./linkedin-connect-card";
+import { LINKEDIN_SENDER_ENDPOINT } from "@/lib/linkedin-connect-card";
 import {
   Mail,
   MailCheck,
@@ -191,6 +193,33 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     toast({ title: "Mailbox disconnected", variant: "info" });
   }
 
+  async function handleLinkedInDisconnect() {
+    if (supabaseEnabled) {
+      type DisconnectAnswer = { ok?: boolean; error?: string; status?: string; detail?: string };
+      let out: DisconnectAnswer | null = null;
+      try {
+        const res = await fetch(LINKEDIN_SENDER_ENDPOINT, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seatId: seat.id }),
+        });
+        out = (await res.json().catch(() => null)) as DisconnectAnswer | null;
+      } catch {
+        out = null;
+      }
+      if (!out?.ok) {
+        toast({ title: "LinkedIn not disconnected", description: out?.error ?? "Try again.", variant: "error" });
+        return;
+      }
+      if (out.status === "dry-run") {
+        toast({ title: "Public demo only", description: out.detail, variant: "info" });
+        return;
+      }
+    }
+    actions.updateSeat(seat.id, { connectedAccount: "", providerState: "disconnected" });
+    toast({ title: "LinkedIn disconnected", description: "Nothing sends from this account until you connect it again.", variant: "info" });
+  }
+
   async function handleToggleLive() {
     const result = await actions.toggleSeatLive(seat.id);
     toast({
@@ -242,7 +271,15 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
             </div>
           </div>
 
-          {/* Connected mailbox */}
+          {/* Connected account: the LinkedIn delivery seat gets the Connect LinkedIn card, mailboxes keep theirs */}
+          {seat.provider === LINKEDIN_VENDOR_PROVIDER ? (
+            <LinkedInConnectCard
+              seat={seat}
+              canManage={canManageLlm}
+              onConnect={startOAuth}
+              onDisconnect={handleLinkedInDisconnect}
+            />
+          ) : (
           <div className="rounded-2xl bg-canvas px-3 py-2.5">
             <div className="flex items-center gap-2">
               {seat.connectedAccount ? (
@@ -279,6 +316,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
               </Button>
             )}
           </div>
+          )}
 
           {/* Quota */}
           <Meter label="Sent today" used={seat.sentToday} limit={cap} />
@@ -541,7 +579,12 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
               Close
             </Button>
             {seat.connectedAccount && (
-              <Button variant="outline" size="sm" leftIcon={<Mail className="h-4 w-4" />} onClick={handleDisconnect}>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Mail className="h-4 w-4" />}
+                onClick={seat.provider === LINKEDIN_VENDOR_PROVIDER ? handleLinkedInDisconnect : handleDisconnect}
+              >
                 Disconnect
               </Button>
             )}

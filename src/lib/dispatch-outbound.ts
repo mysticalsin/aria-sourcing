@@ -37,6 +37,7 @@ import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclos
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import { linkedInSenderCanSend } from "@/lib/linkedin-connect-card";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -308,7 +309,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       if (msg.channel === "LinkedIn") {
         const { data: seat, error: seatErr } = await supabase
           .from("agent_seats")
-          .select("id, provider, status, mode")
+          .select("id, provider, status, mode, provider_state")
           .eq("id", msg.seat_id ?? "")
           .eq("workspace_id", msg.workspace_id)
           .maybeSingle();
@@ -324,6 +325,12 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         }
         if (!adapter.configured()) {
           await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
+          continue;
+        }
+        if (adapter.kind === "vendor-api" && !linkedInSenderCanSend(seat.provider_state)) {
+          // Sender not attached, paused or restricted (0058). The claim refuses
+          // too; blocking here keeps the reason visible on the row.
+          await finish("blocked", { pass: false, reasons: ["linkedin-sender-not-connected"] });
           continue;
         }
 

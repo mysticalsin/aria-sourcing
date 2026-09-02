@@ -1022,6 +1022,14 @@ export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 export const SEAT_STATUSES = ["active", "paused", "disabled"] as const;
 export type SeatStatus = (typeof SEAT_STATUSES)[number];
 
+/**
+ * Last known state of the LinkedIn sender behind the delivery seat, mirrored
+ * from the delivery provider (agent_seats.provider_state, 0058). Every claim
+ * holds unless it is "connected". Absent means "disconnected".
+ */
+export const LINKEDIN_SENDER_STATES = ["connected", "paused", "restricted", "disconnected"] as const;
+export type LinkedInSenderState = (typeof LINKEDIN_SENDER_STATES)[number];
+
 export interface SendWindow {
   startHour: number; // 0-23, local to timezone
   endHour: number; // 0-23
@@ -1072,6 +1080,8 @@ export interface AgentSeat {
   language?: string;
   /** Connected email account label (official API). Empty = not connected. */
   connectedAccount: string;
+  /** LinkedIn delivery seat only: the sender state the provider last reported. */
+  providerState?: LinkedInSenderState;
   createdAt: string;
   /** LlmProvider.id assigned to this agent (overrides workspace default). */
   providerId?: string;

@@ -93,7 +93,7 @@ interface FakeStoreSeed {
   sentToday?: number;
   messagesToday?: number;
   due?: LoopQueuedReply[];
-  seat?: { provider: string; status: string; mode: string } | null;
+  seat?: { provider: string; status: string; mode: string; providerState?: string } | null;
   claim?: { allowed: boolean; reason?: string; deliveryAttemptId?: string; profileUrl?: string } | null;
 }
 
@@ -170,7 +170,9 @@ function fakeStore(seed: FakeStoreSeed) {
       return seed.due ?? [];
     },
     async readSeat() {
-      return seed.seat === undefined ? { provider: "LinkedIn Vendor API", status: "active", mode: "live" } : seed.seat;
+      return seed.seat === undefined
+        ? { provider: "LinkedIn Vendor API", status: "active", mode: "live", providerState: "connected" }
+        : seed.seat;
     },
     async readRoleBrief() {
       return null;
@@ -556,6 +558,19 @@ await (async () => {
   const ms = await dispatchLinkedInLoopDue({ store: m.store, now: () => NOW, adapterFor: () => manual.adapter });
   ok("dispatch: assisted-manual seat → never counted as sent", ms.sent === 0 && ms.unconfigured === 1 && manual.calls() === 0);
   ok("dispatch: assisted-manual → blocked draft for a person", JSON.stringify(m.updates[0]?.patch.gateResult).includes("requires-vendor-api"));
+
+  // 0058: the sender behind the seat must be connected. The default and every
+  // other state hold before the claim, with the transport never called.
+  for (const providerState of [undefined, "disconnected", "paused", "restricted"]) {
+    const sender = adapter("vendor-api", true);
+    const st = fakeStore({ due: [dueReply()], seat: { provider: "LinkedIn Vendor API", status: "active", mode: "live", providerState } });
+    const ss = await dispatchLinkedInLoopDue({ store: st.store, now: () => NOW, adapterFor: () => sender.adapter });
+    ok(
+      `dispatch: sender state ${providerState ?? "missing"} → blocked linkedin-sender-not-connected, no claim, no send`,
+      ss.blocked === 1 && ss.sent === 0 && sender.calls() === 0 && st.claims.length === 0 &&
+        JSON.stringify(st.updates[0]?.patch.gateResult).includes("linkedin-sender-not-connected"),
+    );
+  }
 
   const noId = adapter("vendor-api", true, { id: undefined, status: "error", deliveryState: "unknown", detail: "no durable id" });
   const n = fakeStore({ due: [dueReply()] });

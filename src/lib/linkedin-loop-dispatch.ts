@@ -7,6 +7,7 @@ import { inLoopQuietHours, loopSendTime } from "@/lib/linkedin-loop";
 import type { LinkedInLoopStore, LoopQueuedReply } from "@/lib/linkedin-loop-store";
 import { linkedInAdapterForProvider, type LinkedInAdapter } from "@/lib/linkedin-channel";
 import { gateLoopReply } from "@/lib/linkedin-inbound";
+import { linkedInSenderCanSend } from "@/lib/linkedin-connect-card";
 
 export interface LoopDispatchStats {
   processed: number;
@@ -82,6 +83,12 @@ export async function dispatchLinkedInLoopDue(deps: LoopDispatchDeps, limit = 10
     }
     if (!adapter.configured()) {
       await block("linkedin-provider-unconfigured", "unconfigured");
+      continue;
+    }
+    if (!linkedInSenderCanSend(seat.providerState)) {
+      // The sender behind the seat is not attached, paused or restricted
+      // (0058). The claim would refuse too; blocking here keeps the reason visible.
+      await block("linkedin-sender-not-connected");
       continue;
     }
 

@@ -46,7 +46,7 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   "WhatsApp Cloud": "Cold WhatsApp needs a pre-approved Meta template; keep volume low and honor opt-out.",
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
   "LinkedIn Assisted Manual": "Assisted-manual only: draft, profile deep-link, human copy/paste/send, then record outcome.",
-  "LinkedIn Vendor API": "Licensed vendor API only; fails closed until credentials and a signed provider contract exist.",
+  "LinkedIn Vendor API": "Sends from your LinkedIn account and follows that account's limits. Nothing sends until the account is connected and LinkedIn sending is enabled on this workspace.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */

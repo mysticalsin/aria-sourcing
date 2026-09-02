@@ -101,7 +101,10 @@ export interface LinkedInLoopStore {
   countWorkspaceMessagesToday(workspaceId: string, timezone: string, now: Date): Promise<number | null>;
   insertReply(row: LoopReplyInsert): Promise<WriteResult>;
   listDueReplies(now: Date, limit: number): Promise<LoopQueuedReply[] | null>;
-  readSeat(workspaceId: string, seatId: string): Promise<{ provider: string; status: string; mode: string } | null>;
+  readSeat(
+    workspaceId: string,
+    seatId: string,
+  ): Promise<{ provider: string; status: string; mode: string; providerState?: string } | null>;
   readRoleBrief(workspaceId: string, specId: string): Promise<unknown>;
   updateReply(
     replyId: string,
@@ -428,7 +431,7 @@ export function supabaseLinkedInLoopStore(supabase: SupabaseClient): LinkedInLoo
     async readSeat(workspaceId, seatId) {
       const { data, error } = await supabase
         .from("agent_seats")
-        .select("id, provider, status, mode")
+        .select("id, provider, status, mode, provider_state")
         .eq("id", seatId)
         .eq("workspace_id", workspaceId)
         .maybeSingle();
@@ -438,7 +441,7 @@ export function supabaseLinkedInLoopStore(supabase: SupabaseClient): LinkedInLoo
       }
       const row = record(data);
       if (!row) return null;
-      return { provider: text(row.provider), status: text(row.status), mode: text(row.mode) };
+      return { provider: text(row.provider), status: text(row.status), mode: text(row.mode), providerState: text(row.provider_state) };
     },
     async readRoleBrief(workspaceId, specId) {
       const { data } = await supabase

@@ -162,7 +162,7 @@ function fakeStore(seed: { messagesToday?: number | null; controls?: LoopControl
       return [];
     },
     async readSeat() {
-      return { provider: "LinkedIn Vendor API", status: "active", mode: "live" };
+      return { provider: "LinkedIn Vendor API", status: "active", mode: "live", providerState: "connected" };
     },
     async readRoleBrief() {
       return null;
