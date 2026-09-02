@@ -5,17 +5,32 @@ import { Badge, Button, Drawer, Field, Input, Select, useToast } from "@/compone
 import { useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { LINKEDIN_ASSISTED_PROVIDER, LINKEDIN_VENDOR_PROVIDER } from "@/lib/linkedin-channel";
-import { LOOP_DEFAULT_DAILY_CAP, LOOP_DEFAULT_QUIET_HOURS } from "@/lib/linkedin-loop";
+import { LINKEDIN_CONNECT_NOTE_MAX, LOOP_DEFAULT_DAILY_CAP, LOOP_DEFAULT_QUIET_HOURS } from "@/lib/linkedin-loop";
 import { LINKEDIN_SENDING_OFF, type LinkedInSendingControls } from "@/lib/linkedin-caps";
 import {
   LAUNCH_COPY,
+  connectDraftAsLaunchDraft,
   draftLaunchState,
   shortlistForLaunch,
   type DraftLaunchState,
   type LaunchApprovalRow,
+  type LaunchConnectDraft,
   type LaunchDraft,
   type LaunchPerson,
 } from "@/lib/linkedin-campaign";
+import {
+  LINKEDIN_FIRST_MESSAGE_MAX_WORDS,
+  NO_EVENTS,
+  TARGETING_COPY,
+  connectDraftId,
+  decisionLabel,
+  draftConnectNote,
+  planCampaignDay,
+  wordCount,
+  type CampaignCaps,
+  type CampaignDecision,
+  type CampaignPersonEvents,
+} from "@/lib/linkedin-targeting";
 import type { AgentSeat, Campaign, Candidate, OutreachMessage } from "@/lib/types";
 import { Linkedin } from "lucide-react";
 
@@ -49,6 +64,21 @@ function clampHour(raw: string, fallback: number): number {
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) ? Math.min(23, Math.max(0, n)) : fallback;
 }
+
+/** What Aria knows about a person before any vendor event: only an opt-out recorded on the candidate. */
+export function eventsFromCandidate(candidate: Candidate | undefined): CampaignPersonEvents {
+  return { ...NO_EVENTS, optedOut: candidate?.stage === "Suppressed" || candidate?.stage === "Not Interested" };
+}
+
+const ACTION_TONE: Record<CampaignDecision["action"], "success" | "warning" | "neutral" | "danger"> = {
+  connect: "neutral",
+  "first-message": "success",
+  "reply-loop": "success",
+  cancel: "danger",
+  "no-response": "warning",
+  wait: "warning",
+  hold: "neutral",
+};
 
 /** The newest LinkedIn first-touch draft still waiting for a person, per candidate. */
 export function latestLinkedInDraft(outreach: OutreachMessage[], candidateId: string): OutreachMessage | null {
@@ -102,6 +132,8 @@ export function LaunchOutreachSheet({
   const quietStartId = React.useId();
   const quietEndId = React.useId();
   const calendarId = React.useId();
+  // One clock per open sheet, so the day plan does not drift between renders.
+  const now = React.useMemo(() => new Date(), [open, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const linkedinSeat =
     seats.find((s) => s.status === "active" && s.mode === "live" && s.provider === LINKEDIN_VENDOR_PROVIDER) ??
@@ -156,21 +188,77 @@ export function LaunchOutreachSheet({
 
   const people: LaunchPerson[] = shortlistForLaunch(candidates);
   const approvals = grant?.scope === "campaign" ? grant.drafts : [];
-  const rows = people.map((person) => {
+  const brief = { roleTitle: campaign.jobAnalysis.title || campaign.title, location: campaign.jobAnalysis.location };
+  const drafted = people.map((person) => {
+    const candidate = candidates.find((c) => c.id === person.candidateId);
     const message = latestLinkedInDraft(outreach, person.candidateId);
     const draft: LaunchDraft | null = message
       ? { messageId: message.id, candidateId: person.candidateId, profileUrl: person.profileUrl, subject: message.subject, body: message.body }
       : null;
     const state: DraftLaunchState | null = draft ? draftLaunchState(draft, approvals) : null;
-    return { person, draft, state };
+    const tooLong = draft ? wordCount(draft.body) > LINKEDIN_FIRST_MESSAGE_MAX_WORDS : false;
+    // The connection note goes first to anyone Aria is not connected to. It is
+    // rebuilt from the brief and the headline, so the note shown is the note hashed.
+    const connect: LaunchConnectDraft = {
+      messageId: connectDraftId(campaign.id, person.candidateId),
+      candidateId: person.candidateId,
+      profileUrl: person.profileUrl,
+      note: draftConnectNote({ name: person.name, headline: person.headline }, brief),
+    };
+    const connectState = draftLaunchState(connectDraftAsLaunchDraft(connect), approvals);
+    const events = eventsFromCandidate(candidate);
+    return { person, draft, state, tooLong, connect, connectState, events };
   });
-  const pending = rows.filter((r) => r.draft && r.state !== "launched").map((r) => r.draft as LaunchDraft);
+
+  // The section 4 table, per person, with today's limits allocated in order:
+  // highest score first, warm people next, new connects last. Until LinkedIn
+  // reports a degree (S0), nobody is assumed to be a connection.
+  const caps: CampaignCaps = {
+    controls: {
+      killSwitch: controls.killSwitch,
+      loopEnabled: controls.enabled,
+      messageCap: controls.messageCap,
+      connectCap: controls.connectCap,
+      timezone: controls.timezone,
+    },
+    messagesToday: controls.messagesToday,
+    connectsToday: controls.connectsToday,
+    now,
+    quiet: { start: clampHour(quietStart, LOOP_DEFAULT_QUIET_HOURS.start), end: clampHour(quietEnd, LOOP_DEFAULT_QUIET_HOURS.end) },
+    timezone: controls.timezone,
+  };
+  // The sheet previews what the tap does, so every person is planned as
+  // launched here; the launch badge says who is covered by a tap already, and
+  // the dispatcher re-checks the approval rows before anything leaves.
+  const plan = planCampaignDay(
+    drafted.map((row) => ({
+      person: {
+        candidateId: row.person.candidateId,
+        profileUrl: row.person.profileUrl,
+        matchScore: row.person.matchScore,
+        launched: true,
+      },
+      degree: "unknown" as const,
+      events: row.events,
+    })),
+    caps,
+  );
+  const rows = plan.entries.map((entry) => {
+    const row = drafted.find((r) => r.person.candidateId === entry.person.candidateId)!;
+    return { ...row, decision: entry.decision };
+  });
+
+  // The tap approves exactly what is on screen and nothing for someone who
+  // opted out: a first message under 80 words, and the connection note.
+  const eligible = rows.filter((r) => !r.events.optedOut && r.draft && !r.tooLong);
+  const pending = eligible.filter((r) => r.state !== "launched").map((r) => r.draft as LaunchDraft);
+  const pendingConnects = eligible.filter((r) => r.connectState !== "launched").map((r) => r.connect);
   const launchedCount = rows.filter((r) => r.state === "launched").length;
   const campaignLaunched = grant?.scope === "campaign";
   const blockedByReplyGrant = grant !== null && grant.scope !== "campaign";
 
   async function launch() {
-    if (!linkedinSeat || pending.length === 0) return;
+    if (!linkedinSeat || (pending.length === 0 && pendingConnects.length === 0)) return;
     setBusy(true);
     try {
       const res = await fetch("/api/outreach/linkedin-loop/launch", {
@@ -188,6 +276,7 @@ export function LaunchOutreachSheet({
           quietEnd: clampHour(quietEnd, LOOP_DEFAULT_QUIET_HOURS.end),
           timezone: controls.timezone,
           drafts: pending,
+          connects: pendingConnects,
         }),
       });
       const json = (await res.json().catch(() => null)) as
@@ -211,10 +300,13 @@ export function LaunchOutreachSheet({
         toast({ title: "Demo: nothing launched", description: "No launch is recorded without a backend.", variant: "info" });
         return;
       }
-      const approved = typeof json.approved === "number" ? json.approved : pending.length;
+      const launchedPeople = new Set([...pending.map((d) => d.candidateId), ...pendingConnects.map((d) => d.candidateId)]).size;
+      const approved = typeof json.approved === "number" ? json.approved : pending.length + pendingConnects.length;
       toast({
-        title: json.added ? `${approved} added to the launch` : `Outreach launched for ${approved} ${approved === 1 ? "person" : "people"}`,
-        description: "Messages go out from your LinkedIn account two to ten minutes apart, inside the daily limits.",
+        title: json.added
+          ? `${approved} ${approved === 1 ? "draft" : "drafts"} added to the launch`
+          : `Outreach launched for ${launchedPeople} ${launchedPeople === 1 ? "person" : "people"}`,
+        description: "Connection requests and messages go out from your LinkedIn account two to ten minutes apart, inside the daily limits.",
         variant: "success",
       });
       await load();
@@ -224,7 +316,8 @@ export function LaunchOutreachSheet({
   }
 
   const launchDisabled =
-    !canLaunch || busy || !loaded || !linkedinSeat || pending.length === 0 || blockedByReplyGrant;
+    !canLaunch || busy || !loaded || !linkedinSeat || (pending.length === 0 && pendingConnects.length === 0) || blockedByReplyGrant;
+  const pendingPeople = new Set([...pending.map((d) => d.candidateId), ...pendingConnects.map((d) => d.candidateId)]).size;
 
   return (
     <Drawer
@@ -237,8 +330,14 @@ export function LaunchOutreachSheet({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-xs text-muted" data-testid="launch-outreach-summary">
             {campaignLaunched
-              ? `${launchedCount} launched, ${pending.length} waiting for a tap.`
-              : `${pending.length} ${pending.length === 1 ? "person" : "people"} will be messaged.`}
+              ? `${launchedCount} launched, ${pendingPeople} waiting for a tap.`
+              : `${pendingPeople} ${pendingPeople === 1 ? "person" : "people"} will be contacted.`}
+            {" "}
+            <span data-testid="launch-day-plan">
+              Today: {plan.today.connects} connection {plan.today.connects === 1 ? "request" : "requests"}, {plan.today.messages}{" "}
+              {plan.today.messages === 1 ? "message" : "messages"}
+              {plan.waiting > 0 ? `, ${plan.waiting} waiting for tomorrow's limit.` : "."}
+            </span>
           </span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onClose} disabled={busy}>
@@ -336,8 +435,8 @@ export function LaunchOutreachSheet({
           <p className="text-sm text-muted">{LAUNCH_COPY.nobody}</p>
         ) : (
           <ul className="divide-y divide-line rounded-2xl border border-line" data-testid="launch-people">
-            {rows.map(({ person, draft, state }) => (
-              <li key={person.candidateId} className="space-y-2 p-3">
+            {rows.map(({ person, draft, state, tooLong, connect, decision }) => (
+              <li key={person.candidateId} className="space-y-2 p-3" data-testid="launch-person" data-action={decision.action}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-ink">{person.name}</div>
@@ -345,14 +444,42 @@ export function LaunchOutreachSheet({
                       {person.headline || person.profileUrl} · score {person.matchScore}
                     </div>
                   </div>
-                  <Badge tone={state ? STATE_TONE[state] : "neutral"} size="sm" dot>
-                    {state ? STATE_LABEL[state] : LAUNCH_COPY.noDraft}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge tone={ACTION_TONE[decision.action]} size="sm" data-testid="launch-person-action">
+                      {decisionLabel(decision)}
+                    </Badge>
+                    <Badge tone={state ? STATE_TONE[state] : "neutral"} size="sm" dot>
+                      {state ? STATE_LABEL[state] : LAUNCH_COPY.noDraft}
+                    </Badge>
+                  </div>
                 </div>
+                {decision.action !== "cancel" && (
+                  <div className="rounded-xl bg-ink/[0.03] px-3 py-2">
+                    <div className="flex items-center justify-between text-[0.625rem] font-semibold uppercase tracking-wide text-muted">
+                      <span>{TARGETING_COPY.connectionNote}</span>
+                      <span>
+                        {connect.note.length} of {LINKEDIN_CONNECT_NOTE_MAX}
+                      </span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-ink-soft" data-testid="launch-connect-note">
+                      {connect.note}
+                    </p>
+                  </div>
+                )}
                 {draft ? (
                   <div className="rounded-xl bg-ink/[0.03] px-3 py-2">
-                    <div className="text-[0.625rem] font-semibold uppercase tracking-wide text-muted">First message</div>
+                    <div className="flex items-center justify-between text-[0.625rem] font-semibold uppercase tracking-wide text-muted">
+                      <span>{TARGETING_COPY.firstMessage}</span>
+                      <span>
+                        {wordCount(draft.body)} of {LINKEDIN_FIRST_MESSAGE_MAX_WORDS} words
+                      </span>
+                    </div>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-ink-soft">{draft.body}</p>
+                    {tooLong && (
+                      <p role="alert" className="mt-1 text-xs text-danger">
+                        {TARGETING_COPY.messageTooLong}
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="text-xs text-muted">Generate a message from the candidate first. Nothing is sent to anyone without a draft you have seen.</p>

@@ -21,6 +21,12 @@ export type LinkedInGrantScope = "replies" | "campaign";
 export const LAUNCH_SCORE_FLOOR = 60;
 export const LAUNCH_PEOPLE_CAP = 20;
 
+/**
+ * One tap approves up to two drafts per person (S6): the connection note and
+ * the first message. The 0060 launch RPC refuses more.
+ */
+export const LAUNCH_DRAFTS_CAP = LAUNCH_PEOPLE_CAP * 2;
+
 /** A first-touch draft exactly as the sheet shows it. */
 export interface LaunchDraft {
   messageId: string;
@@ -29,6 +35,19 @@ export interface LaunchDraft {
   profileUrl: string;
   subject: string;
   body: string;
+}
+
+/** A connection note exactly as the sheet shows it (S6). No subject: the 0059 claim hashes the note alone. */
+export interface LaunchConnectDraft {
+  messageId: string;
+  candidateId: string;
+  profileUrl: string;
+  note: string;
+}
+
+/** A connection note is approved like a first touch, with an empty subject. */
+export function connectDraftAsLaunchDraft(draft: LaunchConnectDraft): LaunchDraft {
+  return { messageId: draft.messageId, candidateId: draft.candidateId, profileUrl: draft.profileUrl, subject: "", body: draft.note };
 }
 
 /** What the launch RPC receives per draft: the two hashes 0054 re-checks. */
@@ -131,7 +150,7 @@ export function draftLaunchState(draft: LaunchDraft, approvals: LaunchApprovalRo
 export const LAUNCH_COPY = {
   title: "Launch outreach",
   description:
-    "One tap sends the messages below from your LinkedIn account, two to ten minutes apart, inside the daily limits and outside quiet hours. Replies are answered until a meeting is booked.",
+    "One tap sends the connection requests and messages below from your LinkedIn account, two to ten minutes apart, inside the daily limits and outside quiet hours. People you are not connected to get the connection note first and the message once they accept. Replies are answered until a meeting is booked.",
   launch: "Launch outreach",
   addToLaunch: "Add to launch",
   launched: "Launched",

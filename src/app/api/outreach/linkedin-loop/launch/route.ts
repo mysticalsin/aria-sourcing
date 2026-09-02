@@ -7,7 +7,17 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
-import { LAUNCH_PEOPLE_CAP, launchDraftApprovals, type LaunchApprovalRow, type LaunchDraft } from "@/lib/linkedin-campaign";
+import {
+  LAUNCH_DRAFTS_CAP,
+  LAUNCH_PEOPLE_CAP,
+  connectDraftAsLaunchDraft,
+  launchDraftApprovals,
+  type LaunchApprovalRow,
+  type LaunchDraft,
+} from "@/lib/linkedin-campaign";
+import { LINKEDIN_CONNECT_NOTE_MAX } from "@/lib/linkedin-loop";
+import { LINKEDIN_FIRST_MESSAGE_MAX_WORDS, wordCount } from "@/lib/linkedin-targeting";
+import { gateOutbound } from "@/lib/gate";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 /**
@@ -34,6 +44,14 @@ const DraftSchema = z.object({
   body: z.string().min(1).max(50_000),
 });
 
+/** A connection note as the launch sheet showed it (S6). Under 200 characters, may be empty. */
+const ConnectDraftSchema = z.object({
+  messageId: z.string().min(1).max(120),
+  candidateId: z.string().min(1).max(120),
+  profileUrl: z.string().min(1).max(500),
+  note: z.string().max(LINKEDIN_CONNECT_NOTE_MAX).default(""),
+});
+
 const LaunchSchema = z.object({
   scope: z.enum(["replies", "campaign"]).default("replies"),
   campaignId: z.string().min(1).max(120),
@@ -48,6 +66,8 @@ const LaunchSchema = z.object({
   timezone: z.string().min(1).max(64).default("UTC"),
   /** The first-touch drafts exactly as the launch sheet showed them. Campaign scope only. */
   drafts: z.array(DraftSchema).max(LAUNCH_PEOPLE_CAP).default([]),
+  /** The connection notes exactly as the launch sheet showed them (S6). Campaign scope only. */
+  connects: z.array(ConnectDraftSchema).max(LAUNCH_PEOPLE_CAP).default([]),
 });
 
 const RevokeSchema = z.object({
@@ -134,13 +154,17 @@ export async function POST(req: NextRequest) {
   const validated = await validateBody(req, LaunchSchema, { maxBytes: 400_000 });
   if (!validated.ok) return validated.response;
   const d = validated.data;
-  const drafts: LaunchDraft[] = (d.drafts ?? []).map((draft) => ({
+  const messages: LaunchDraft[] = (d.drafts ?? []).map((draft) => ({
     messageId: draft.messageId,
     candidateId: draft.candidateId,
     profileUrl: draft.profileUrl,
     subject: draft.subject ?? "",
     body: draft.body,
   }));
+  // A connection note is approved like a first touch with an empty subject:
+  // the 0059 connect claim re-checks exactly that hash at dispatch.
+  const connects: LaunchDraft[] = (d.connects ?? []).map((draft) => connectDraftAsLaunchDraft({ ...draft, note: draft.note ?? "" }));
+  const drafts: LaunchDraft[] = [...messages, ...connects];
 
   // A campaign launch approves exactly the drafts that were shown. No drafts,
   // no launch: the server refuses before any write, and never fills the gap.
@@ -149,9 +173,25 @@ export async function POST(req: NextRequest) {
     if (drafts.length === 0) {
       return NextResponse.json({ ok: false, error: "no-drafts-shown" }, { status: 400 });
     }
+    if (drafts.length > LAUNCH_DRAFTS_CAP) {
+      return NextResponse.json({ ok: false, error: "too-many-drafts" }, { status: 400 });
+    }
     approvals = launchDraftApprovals(drafts);
     if (!approvals) {
       return NextResponse.json({ ok: false, error: "invalid-draft" }, { status: 400 });
+    }
+    // A note reaches a stranger's inbox before any message: the same
+    // candidate-facing gate as a message (never AI, no leaked markup).
+    for (const connect of connects) {
+      if (connect.body.trim() && !gateOutbound(connect.body).pass) {
+        return NextResponse.json({ ok: false, error: "note-not-human", messageId: connect.messageId }, { status: 422 });
+      }
+    }
+    // A first message stays under 80 words (plan section 4).
+    for (const message of messages) {
+      if (wordCount(message.body) > LINKEDIN_FIRST_MESSAGE_MAX_WORDS) {
+        return NextResponse.json({ ok: false, error: "message-too-long", messageId: message.messageId }, { status: 422 });
+      }
     }
   }
   if (!supabaseEnabled) return NextResponse.json(DRY_RUN);
@@ -171,6 +211,7 @@ export async function POST(req: NextRequest) {
     const campaign = campaigns.find((item) => (item as { id?: unknown } | null)?.id === d.campaignId);
     const internal = disclosureInternalFromCampaignLike(campaign);
     for (const draft of drafts) {
+      if (!draft.body.trim()) continue; // an empty connection note carries nothing to gate
       const disclosure = validateCandidateBoundText(draft.body, internal);
       const injection = detectInjection(draft.body);
       if (!disclosure.safe || injection.flagged) {
