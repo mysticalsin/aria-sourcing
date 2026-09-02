@@ -178,7 +178,7 @@ const ATTEMPT_STATUS_LABEL: Record<EnrichmentAttempt["status"], string> = {
   no_key_field: "Can't identify",
   budget_exceeded: "Budget reached",
   error: "Error",
-  deferred: "Time budget — re-run",
+  deferred: "Time budget, re-run",
 };
 
 const ATTEMPT_STATUS_TONE: Record<EnrichmentAttempt["status"], Tone> = {
@@ -1576,7 +1576,7 @@ export function CandidateDrawer({
                           className="flex items-center gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm text-muted"
                         >
                           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                          {p.label} — running…
+                          {p.label}: running…
                         </li>
                       ))
                     : recentEnrichmentAttempts.map((a, i) => (

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Card, CardContent, Eyebrow, Badge, Select, Button, Field, useToast } from "@/components/ui";
 import { useCampaigns, useCandidates, useActions, useApiKeys } from "@/lib/store";
-import { hasValidHeyReachKey } from "@/lib/sourcing/people-plugins";
+import { hasValidLinkedInSendKey } from "@/lib/sourcing/people-plugins";
 import {
   OUTREACH_TONES,
   OUTREACH_CHANNELS,
@@ -20,7 +20,7 @@ export function QuickDraft() {
   const actions = useActions();
   const apiKeys = useApiKeys();
   const { toast } = useToast();
-  const heyReachSender = hasValidHeyReachKey(apiKeys);
+  const linkedInSender = hasValidLinkedInSendKey(apiKeys);
 
   const [candidateId, setCandidateId] = React.useState("");
   const [tone, setTone] = React.useState<OutreachTone>("Casual Professional");
@@ -131,10 +131,10 @@ export function QuickDraft() {
           </Field>
         </div>
         {channel === "LinkedIn" ? (
-          <p data-testid="heyreach-sender" className="mt-3 text-sm text-ink">
-            {heyReachSender
-              ? "Sender: HeyReach (connected). Drafts stay dry-run until you approve."
-              : "Connect HeyReach in Access & Keys to use it as the LinkedIn send account. Drafts stay dry-run until you approve."}
+          <p data-testid="linkedin-sender" className="mt-3 text-sm text-ink">
+            {linkedInSender
+              ? "Sender: your LinkedIn account (connected). Drafts stay dry-run until you approve."
+              : "Connect LinkedIn in Fleet to send from your account. Drafts stay dry-run until you approve."}
           </p>
         ) : null}
 

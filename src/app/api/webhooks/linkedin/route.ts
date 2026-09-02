@@ -8,7 +8,7 @@ import { drainLinkedInLoop, ingestLinkedInLoopEvent } from "@/lib/linkedin-loop-
 export const dynamic = "force-dynamic";
 
 /**
- * LinkedIn reply webhook (HeyReach-shaped or generic vendor). The inbound half
+ * LinkedIn reply webhook (delivery-vendor shaped or generic). The inbound half
  * of the launched-campaign reply loop (docs/outreach/LINKEDIN-LOOP.md).
  *
  * Aria never reads LinkedIn itself: the vendor that holds the official send

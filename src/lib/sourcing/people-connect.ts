@@ -10,6 +10,12 @@ import type {
   OutreachChannel,
   OutreachMessage,
 } from "@/lib/types";
+import {
+  LINKEDIN_ASSISTED_PROVIDER,
+  LINKEDIN_SEND_INTEGRATION_ID,
+  LINKEDIN_SEND_KEY_PROVIDERS,
+  LINKEDIN_VENDOR_PROVIDER,
+} from "@/lib/linkedin-channel";
 
 export function providerIsApify(provider: string): boolean {
   return provider === "Apify" || /^apify(\b|\s|$|\()/i.test(provider);
@@ -57,14 +63,11 @@ export function workspaceApifyIsMock(state: unknown): boolean {
   );
 }
 
-export function hasValidHeyReachKey(
+/** A valid LinkedIn send key in Access & Keys. The provider ids are internal. */
+export function hasValidLinkedInSendKey(
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): boolean {
-  return apiKeys.some(
-    (key) =>
-      (key.provider === "HeyReach" || key.provider === "HeyReach MCP") &&
-      key.status === "valid",
-  );
+  return apiKeys.some((key) => LINKEDIN_SEND_KEY_PROVIDERS.has(key.provider) && key.status === "valid");
 }
 
 const SYNTHETIC_EMAIL_HOSTS = new Set(["example.com", "fixture.example"]);
@@ -76,12 +79,12 @@ export function isSyntheticRecipientEmail(email: string): boolean {
 }
 
 export const CONNECT_CHANNELS_COPY =
-  "Connect LinkedIn and Outlook in-product to search live people and send. Source next batch needs a Live Apify key — lab fixtures are not LinkedIn. Email also needs Verify domain in Fleet. Send stays dry-run until the channel is connected and you approve.";
+  "Connect LinkedIn and Outlook in-product to search live people and send. Source next batch needs a Live Apify key. Lab fixtures are not LinkedIn. Email also needs Verify domain in Fleet. Send stays dry-run until the channel is connected and you approve.";
 
 export const CONNECT_LINKEDIN_LABEL = "Connect LinkedIn";
 export const CONNECT_OUTLOOK_LABEL = "Connect Outlook";
 
-const LINKEDIN_SEAT_PROVIDERS = new Set(["LinkedIn Vendor API", "LinkedIn Assisted Manual"]);
+const LINKEDIN_SEAT_PROVIDERS = new Set<string>([LINKEDIN_VENDOR_PROVIDER, LINKEDIN_ASSISTED_PROVIDER]);
 const OUTLOOK_SEAT_PROVIDERS = new Set(["Microsoft Graph"]);
 const MAILBOX_SEAT_PROVIDERS = new Set(["Microsoft Graph", "Gmail API"]);
 
@@ -148,13 +151,13 @@ export function isLinkedInMessagingConnected(
   integrations: readonly IntegrationStatus[] = [],
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): boolean {
-  if (hasValidHeyReachKey(apiKeys)) return true;
+  if (hasValidLinkedInSendKey(apiKeys)) return true;
   const seatOk = seats.some(
     (seat) => LINKEDIN_SEAT_PROVIDERS.has(seat.provider) && accountConnected(seat),
   );
   const rscOk = integrations.some(
     (row) =>
-      (row.id === "int_heyreach" ||
+      (row.id === LINKEDIN_SEND_INTEGRATION_ID ||
         row.id === "int_linkedin_rsc" ||
         row.id.startsWith("int_linkedin")) &&
       row.status === "connected" &&
@@ -231,7 +234,7 @@ export function liveSendBlocker(
   if (channel === "LinkedIn") {
     if (status !== "Pending Manual Send") return "Message is not awaiting manual send.";
     if (!channelReadyForLiveSend("LinkedIn", seats, integrations, apiKeys)) {
-      return "Connect LinkedIn or HeyReach in-product before confirming a send. Approval alone never sends.";
+      return "Connect LinkedIn in Fleet before confirming a send. Approval alone never sends.";
     }
     return null;
   }

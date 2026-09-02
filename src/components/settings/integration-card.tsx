@@ -22,6 +22,7 @@ import {
   integrationShowsLive,
 } from "@/lib/sourcing/people-plugins";
 import { isLinkedInSourcingCard } from "@/lib/integrations";
+import { LINKEDIN_SEND_INTEGRATION_ID } from "@/lib/linkedin-channel";
 import type { IntegrationStatus } from "@/lib/types";
 import { toneForHealth, formatTimeAgo, cn } from "@/lib/utils";
 import {
@@ -95,13 +96,13 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     integration.id === "int_outlook" ||
     integration.id === "int_graph_teams" ||
     integration.id === "int_apify" ||
-    integration.id === "int_heyreach";
+    integration.id === LINKEDIN_SEND_INTEGRATION_ID;
   const configureLabel =
     isLinkedInSourcingCard(integration) || integration.id === "int_apify"
       ? "Access & Keys"
       : integration.id === "int_outlook" || integration.id === "int_graph_teams"
         ? "Connect Microsoft account"
-        : integration.id === "int_heyreach"
+        : integration.id === LINKEDIN_SEND_INTEGRATION_ID
           ? "Access & Keys"
           : "Configure";
   const setupHref = isLinkedInSourcingCard(integration) ? "/settings" : integration.setupHref;
@@ -295,7 +296,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           )}
 
           <div className="mt-auto space-y-3 pt-1">
-            {integration.real && integration.id !== "int_heyreach" && (
+            {integration.real && integration.id !== LINKEDIN_SEND_INTEGRATION_ID && (
               <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
                 <div>
                   <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
@@ -313,9 +314,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 />
               </div>
             )}
-            {integration.id === "int_heyreach" && (
+            {integration.id === LINKEDIN_SEND_INTEGRATION_ID && (
               <p className="rounded-2xl bg-canvas px-3 py-2.5 text-xs leading-relaxed text-ink-soft">
-                A HeyReach key in Access & Keys is the LinkedIn send account for drafts. There is no campaign or sender console here. Send stays dry-run until you approve.
+                The LinkedIn send key in Access & Keys makes your LinkedIn account the send account for drafts. There is no campaign or sender console here. Send stays dry-run until you approve.
               </p>
             )}
 

@@ -41,6 +41,7 @@ import {
   sourceRejectedToast,
 } from "@/lib/sourcing/people-plugins";
 import { supabaseEnabled } from "@/lib/supabase/config";
+import { LINKEDIN_VENDOR_PROVIDER } from "@/lib/linkedin-channel";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
   Bot,
@@ -116,7 +117,7 @@ export default function FleetPage() {
 
   React.useEffect(() => {
     const connect = new URLSearchParams(window.location.search).get("connect");
-    if (connect === "linkedin") setRosterProvider("LinkedIn Vendor API");
+    if (connect === "linkedin") setRosterProvider(LINKEDIN_VENDOR_PROVIDER);
     if (connect === "outlook") setRosterProvider("Microsoft Graph");
   }, []);
 

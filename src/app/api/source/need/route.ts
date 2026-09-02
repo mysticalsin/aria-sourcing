@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
           paths: [
             "Connect Apify in Access & Keys and switch the card to Live.",
             "Add a live provider key (Apollo, Sillage, Seamless, Apify, or GitHub) in Settings.",
-            "Paste the JD and score CVs Aria already holds — do not invent live people.",
+            "Paste the JD and score CVs Aria already holds. Do not invent live people.",
           ],
         },
         { status: 503 },
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
           providers,
           paths: [
             "Search via the existing /api/source providers, then POST provenance:live evidence here.",
-            "Connect Apify in Access & Keys and switch the card to Live — do not hydrate lab fixtures.",
+            "Connect Apify in Access & Keys and switch the card to Live. Do not hydrate lab fixtures.",
             "Paste the JD and score CVs Aria already holds.",
           ],
         },

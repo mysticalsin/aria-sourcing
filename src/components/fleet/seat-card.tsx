@@ -17,6 +17,7 @@ import {
 import { useActions, useSettings, useLlmProviders, useSavedModels, useTools, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
+import { LINKEDIN_VENDOR_PROVIDER, seatProviderLabel } from "@/lib/linkedin-channel";
 import {
   effectiveDailyCap,
   seatRemainingToday,
@@ -52,7 +53,7 @@ const PROVIDER_TONE: Record<SeatProvider, Tone> = {
   "WhatsApp Cloud": "aqua",
   "Twilio SMS": "violet",
   "LinkedIn Assisted Manual": "tangerine",
-  "LinkedIn Vendor API": "electric",
+  [LINKEDIN_VENDOR_PROVIDER]: "electric",
 };
 
 const STATUS_TONE: Record<AgentSeat["status"], Tone> = {
@@ -123,7 +124,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
   const isOAuthProvider =
     seat.provider === "Gmail API" ||
     seat.provider === "Microsoft Graph" ||
-    seat.provider === "LinkedIn Vendor API";
+    seat.provider === LINKEDIN_VENDOR_PROVIDER;
 
   const accountEmailId = React.useId();
 
@@ -171,7 +172,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     const path =
       seat.provider === "Gmail API"
         ? "/auth/google"
-        : seat.provider === "LinkedIn Vendor API"
+        : seat.provider === LINKEDIN_VENDOR_PROVIDER
           ? "/auth/linkedin"
           : "/auth/microsoft";
     window.location.href = `${path}?seat_id=${encodeURIComponent(seat.id)}`;
@@ -228,7 +229,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
           {/* Header */}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <Eyebrow>{seat.provider}</Eyebrow>
+              <Eyebrow>{seatProviderLabel(seat.provider)}</Eyebrow>
               <h3 className="truncate text-base font-bold text-ink">{seat.name}</h3>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -262,7 +263,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
                 </p>
               </div>
               <Badge tone={PROVIDER_TONE[seat.provider]} size="sm" className="ml-auto">
-                {seat.provider}
+                {seatProviderLabel(seat.provider)}
               </Badge>
             </div>
             {seat.connectedAccount && !seat.domainVerified && canManageLlm && (
@@ -563,15 +564,15 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
           {isOAuthProvider ? (
             <div className="space-y-3">
               <p className="text-sm text-muted">
-                {seat.provider === "LinkedIn Vendor API"
-                  ? "Connect LinkedIn through official OAuth. Fail-closed without LinkedIn app credentials. Search still uses Apify and other keyed sources — this is not a scrape."
+                {seat.provider === LINKEDIN_VENDOR_PROVIDER
+                  ? "Connect your LinkedIn account. Aria sends connection requests and messages from it, within the daily limits you set in Settings. Search still uses Apify and other keyed sources. This is not a scrape."
                   : `Connect the real mailbox via OAuth. Aria will send through the official ${seat.provider} API.`}
               </p>
               <Button variant="primary" size="sm" className="w-full" onClick={startOAuth}>
                 {seat.provider === "Gmail API"
                   ? "Connect Google account"
-                  : seat.provider === "LinkedIn Vendor API"
-                    ? "Connect LinkedIn account"
+                  : seat.provider === LINKEDIN_VENDOR_PROVIDER
+                    ? "Connect LinkedIn"
                     : "Connect Microsoft account"}
               </Button>
               {!supabaseEnabled && (

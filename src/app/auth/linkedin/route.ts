@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { LINKEDIN_VENDOR_PROVIDER } from "@/lib/linkedin-channel";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Start official LinkedIn OAuth (OpenID) for a LinkedIn Vendor API seat.
+ * Start official LinkedIn OAuth (OpenID) for the LinkedIn sending seat.
  * Fail-closed without LINKEDIN_CLIENT_ID. Official authorization endpoint only.
  *
  * Query params:
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
   const nonce = randomToken(16);
   const codeVerifier = randomToken(32);
   const codeChallenge = await pkceChallenge(codeVerifier);
-  const state = Buffer.from(JSON.stringify({ seatId, provider: "LinkedIn Vendor API", nonce })).toString("base64url");
+  const state = Buffer.from(JSON.stringify({ seatId, provider: LINKEDIN_VENDOR_PROVIDER, nonce })).toString("base64url");
 
   const authUrl = new URL("https://www.linkedin.com/oauth/v2/authorization");
   authUrl.searchParams.set("client_id", clientId);

@@ -43,7 +43,7 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
   const cta = nextStep?.cta ?? "Paste a job brief";
   const reason =
     nextStep?.reason ??
-    "Aria will find people and draft messages — you approve before anything sends.";
+    "Aria will find people and draft messages. You approve before anything sends.";
   const href = nextStep?.href ?? "/intake";
 
   return (
@@ -124,9 +124,9 @@ function ReturningHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
 
         <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">
           {actingOn
-            ? "Source talent, approve outreach, and book interviews — human approval, machine speed."
+            ? "Source talent, approve outreach, and book interviews. Human approval, machine speed."
             : (nextStep?.reason ??
-              "Source talent, approve outreach, and book interviews — human approval, machine speed.")}
+              "Source talent, approve outreach, and book interviews. Human approval, machine speed.")}
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">

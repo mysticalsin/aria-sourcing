@@ -16,7 +16,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { useActions, useApiKeys, useCandidate, useCampaign, useSettings } from "@/lib/store";
-import { hasValidHeyReachKey } from "@/lib/sourcing/people-plugins";
+import { hasValidLinkedInSendKey } from "@/lib/sourcing/people-plugins";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
 import {
   initialsFrom,
@@ -78,7 +78,7 @@ export function OutreachMessageCard({
   const apiKeys = useApiKeys();
   const a = useActions();
   const { toast } = useToast();
-  const heyReachSender = hasValidHeyReachKey(apiKeys);
+  const linkedInSender = hasValidLinkedInSendKey(apiKeys);
 
   const [subject, setSubject] = React.useState(message.subject);
   const [body, setBody] = React.useState(message.body);
@@ -360,8 +360,8 @@ export function OutreachMessageCard({
               <div>
                 <p className="font-semibold">LinkedIn message ready: manual send required</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  {heyReachSender
-                    ? "Sender: HeyReach (connected). Confirm stays dry-run until you approve this send."
+                  {linkedInSender
+                    ? "Sender: your LinkedIn account (connected). Confirm stays dry-run until you approve this send."
                     : "Aria cannot send LinkedIn messages automatically. Copy the draft, open the candidate's profile, paste it, then confirm here."}
                 </p>
               </div>

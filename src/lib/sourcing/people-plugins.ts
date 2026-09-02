@@ -19,6 +19,7 @@ import {
   isConnectOrDryRunCopy,
 } from "@/lib/sourcing/people-connect";
 import type { ApiKey, IntegrationStatus, JobAnalysis } from "@/lib/types";
+import { LINKEDIN_SEND_INTEGRATION_ID } from "@/lib/linkedin-channel";
 
 export const MISSING_PEOPLE_PLUGINS_TOAST =
   "MISSING_PLUGIN: Add a valid Apify key in Access & Keys, or connect official LinkedIn. GitHub Sourcing cannot fill this people-first role.";
@@ -52,7 +53,7 @@ export function isPeopleFirstRole(job: JobAnalysis): boolean {
   return roleProfile(job).queryStyle === "linkedin";
 }
 
-export { hasValidApifyKey, hasValidHeyReachKey } from "@/lib/sourcing/people-connect";
+export { hasValidApifyKey, hasValidLinkedInSendKey } from "@/lib/sourcing/people-connect";
 
 export function peopleSourcePluginsConnected(
   integrations: readonly IntegrationStatus[],
@@ -344,7 +345,7 @@ export function integrationShowsLive(
   job?: JobAnalysis | null,
   apiKeys: readonly Pick<ApiKey, "provider" | "status">[] = [],
 ): boolean {
-  if (integration.id === "int_heyreach") return false;
+  if (integration.id === LINKEDIN_SEND_INTEGRATION_ID) return false;
   if (integration.mode !== "live" || integration.status !== "connected") return false;
   if (integration.id === "int_github" && !githubLiveAllowed(all, job, apiKeys)) return false;
   return true;

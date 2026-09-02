@@ -222,7 +222,7 @@ export default function StudioPage() {
             )}
             <form onSubmit={createSpec} className="flex flex-col gap-4" aria-describedby={availability === "unavailable" ? "studio-unavailable" : undefined}>
               <Field label="Agent name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Backend hunter — Paris" maxLength={120} disabled={availability !== "ready"} />
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Backend hunter, Paris" maxLength={120} disabled={availability !== "ready"} />
               </Field>
               <Field label="Role title">
                 <Input value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} placeholder="Staff Backend Engineer" maxLength={120} disabled={availability !== "ready"} />

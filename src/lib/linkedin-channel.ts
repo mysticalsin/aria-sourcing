@@ -2,6 +2,22 @@ import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 
 export type LinkedInBackendKind = "assisted-manual" | "vendor-api";
 
+/**
+ * Internal provider and integration ids. These are DB values (agent_seats.provider,
+ * integrations.id, api_keys.provider) and never operator-facing copy: the
+ * product shows "LinkedIn" and "Connect LinkedIn". Components import these
+ * names instead of repeating the literals (tests/linkedin-white-label.mts).
+ */
+export const LINKEDIN_VENDOR_PROVIDER = "LinkedIn Vendor API" as const;
+export const LINKEDIN_ASSISTED_PROVIDER = "LinkedIn Assisted Manual" as const;
+export const LINKEDIN_SEND_INTEGRATION_ID = "int_heyreach" as const;
+export const LINKEDIN_SEND_KEY_PROVIDERS: ReadonlySet<string> = new Set(["HeyReach", "HeyReach MCP"]);
+
+/** What the operator sees for a seat provider. The licensed delivery seat is "LinkedIn". */
+export function seatProviderLabel(provider: string): string {
+  return provider === LINKEDIN_VENDOR_PROVIDER ? "LinkedIn" : provider;
+}
+
 export interface LinkedInDeliveryRequest {
   workspaceId: string;
   messageId: string;

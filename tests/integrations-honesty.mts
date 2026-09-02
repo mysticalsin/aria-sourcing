@@ -259,7 +259,7 @@ ok(
 );
 ok(
   "LinkedIn confirm without connect is blocked",
-  /Connect LinkedIn or HeyReach/.test(liveSendBlocker("LinkedIn", "Pending Manual Send", [], []) ?? ""),
+  /Connect LinkedIn in Fleet/.test(liveSendBlocker("LinkedIn", "Pending Manual Send", [], []) ?? ""),
 );
 ok(
   "unapproved email cannot send even if a mailbox looks connected",
@@ -423,10 +423,11 @@ ok(
     ]).some((row) => row.id === "int_heyreach" && row.status === "not_configured" && row.mode === "mock"),
 );
 ok(
-  "HeyReach card has no Live toggle and names the dry-run send key",
-  /int_heyreach/.test(settingsCard) &&
+  "LinkedIn sending card has no Live toggle, names the dry-run send key and never names the vendor",
+  /LINKEDIN_SEND_INTEGRATION_ID/.test(settingsCard) &&
     /no campaign or sender console/i.test(settingsCard) &&
-    /integration\.id !== "int_heyreach"/.test(settingsCard),
+    /integration\.id !== LINKEDIN_SEND_INTEGRATION_ID/.test(settingsCard) &&
+    !/heyreach/i.test(settingsCard),
 );
 ok(
   "valid Apify key never asks to reconnect via MISSING_PLUGIN on an empty harvest",
@@ -638,7 +639,10 @@ ok(
   /Verify domain/.test(liveSendBlocker("Email", "Approved", connectedUnverified, [], [], "maya.rivera@amaris.com") ?? ""),
 );
 const quickDraft = readFileSync(new URL("../src/components/outreach/quick-draft.tsx", import.meta.url), "utf8");
-ok("LinkedIn drafter surfaces HeyReach as the send account", /heyreach-sender/.test(quickDraft) && /HeyReach/.test(quickDraft));
+ok(
+  "LinkedIn drafter names the operator's LinkedIn account as the sender, never the vendor",
+  /linkedin-sender/.test(quickDraft) && /your LinkedIn account/.test(quickDraft) && !/heyreach/i.test(quickDraft),
+);
 const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
 ok(
   "DESIGN pins invalid-agent recovery to Access & Keys and honest LinkedIn/HeyReach cards",
@@ -679,7 +683,7 @@ ok(
 );
 ok(
   "Connect copy no longer promises a dry-run shortlist on live",
-  /lab fixtures are not LinkedIn/.test(CONNECT_CHANNELS_COPY) &&
+  /Lab fixtures are not LinkedIn/.test(CONNECT_CHANNELS_COPY) &&
     !/dry-run shortlist/.test(CONNECT_CHANNELS_COPY),
 );
 

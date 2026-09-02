@@ -1,6 +1,7 @@
 import type { IntegrationStatus } from "./types";
 import { isoHoursBefore } from "./utils";
 import { supabaseEnabled } from "./supabase/config";
+import { LINKEDIN_SEND_INTEGRATION_ID } from "./linkedin-channel";
 
 /* ============================================================================
    Integration adapters — MOCK MODE by default.
@@ -67,7 +68,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "LinkedIn Sourcing",
       category: "Sourcing",
       description:
-        "Official LinkedIn partner search is not wired. This card does not accept a pasted API key. Fleet OAuth is identity and messaging only — not partner search. Source people with a valid Apify key in Access & Keys.",
+        "Official LinkedIn partner search is not wired. This card does not accept a pasted API key. Fleet OAuth is identity and messaging only, not partner search. Source people with a valid Apify key in Access & Keys.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
@@ -82,7 +83,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "LinkedIn Recruiter System Connect",
       category: "Sourcing",
       description:
-        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only — not partner search. This card does not accept a pasted API key. Source next batch when a harvest key is valid. Add the Apify key in Access & Keys.",
+        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only, not partner search. This card does not accept a pasted API key. Source next batch when a harvest key is valid. Add the Apify key in Access & Keys.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
@@ -93,11 +94,11 @@ export function defaultIntegrations(): IntegrationStatus[] {
       setupHref: "/settings",
     },
     {
-      id: "int_heyreach",
-      name: "HeyReach",
+      id: LINKEDIN_SEND_INTEGRATION_ID,
+      name: "LinkedIn sending",
       category: "Comms",
       description:
-        "LinkedIn send account for drafted campaigns. Connect the API or MCP key in Access & Keys. Send stays dry-run until you approve.",
+        "Your LinkedIn account sends drafted campaigns. Connect LinkedIn in Fleet and add the send key in Access & Keys. Send stays dry-run until you approve.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
@@ -381,7 +382,7 @@ export function mergeSeedIntegrations(stored: IntegrationStatus[]): IntegrationS
     if (isLinkedInSourcingCard(card)) {
       return honestLinkedInSourcingCard(existing, card);
     }
-    if (card.id === "int_heyreach") {
+    if (card.id === LINKEDIN_SEND_INTEGRATION_ID) {
       return {
         ...existing,
         name: card.name,

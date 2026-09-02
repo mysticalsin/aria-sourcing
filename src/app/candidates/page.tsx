@@ -772,7 +772,7 @@ function CandidatesView() {
               const candidate = serverPreview ? candidates.find((local) => local.id === c.id) : c;
               if (!candidate) {
                 toast({
-                  title: "Candidate not yet synced locally — refresh to open",
+                  title: "Candidate not yet synced locally. Refresh to open",
                   variant: "warning",
                 });
                 return;

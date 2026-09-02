@@ -186,7 +186,7 @@ function enrichWithoutSession(
       status: "not_configured",
       fieldsFilled: [],
       costUnits: 0,
-      detail: "No authenticated session — connect provider keys in Settings → API Keys.",
+      detail: "No authenticated session. Connect provider keys in Settings → API Keys.",
     };
     next = recordEnrichmentAttempt(next, attempt);
     attempts.push(attempt);

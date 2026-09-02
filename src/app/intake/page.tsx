@@ -461,7 +461,7 @@ export default function IntakePage() {
         title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
         description: n > 0
           ? `Added ${n} candidate${n === 1 ? "" : "s"} for ${campaign.title}${
-              fixtureBatch ? " (fixture evidence — not live people)." : "."
+              fixtureBatch ? " (fixture evidence, not live people)." : "."
             }`
           : `The first search for ${campaign.title} completed without a matching result.`,
         variant: n > 0 ? "success" : "info",
