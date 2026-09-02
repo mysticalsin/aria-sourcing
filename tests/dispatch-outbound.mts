@@ -77,6 +77,7 @@ function makeFakeDb(seed: {
       select: () => q,
       eq: (col: string, val: unknown) => { filters.push((r) => r[col] === val); return q; },
       is: (col: string, val: unknown) => { filters.push((r) => (r[col] ?? null) === val); return q; },
+      neq: (col: string, val: unknown) => { filters.push((r) => r[col] !== val); return q; },
       lte: (col: string, val: string) => { filters.push((r) => String(r[col] ?? "") <= val); return q; },
       order: () => q,
       limit: (n: number) => {

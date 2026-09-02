@@ -10,10 +10,13 @@ import { createGoogleCalendarEvent, createGraphCalendarEvent } from "@/lib/calen
 import { claimCalendarBooking, reconcileCalendarBooking } from "@/lib/calendar-authority";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { supabaseLinkedInLoopStore } from "@/lib/linkedin-loop-store";
+import { supabaseLinkedInConnectStore } from "@/lib/linkedin-connect-store";
 import { ingestLinkedInInbound, type LinkedInIngestResult } from "@/lib/linkedin-inbound";
+import { ingestLinkedInConnectionAccepted, type ConnectionAcceptedResult } from "@/lib/linkedin-connect-inbound";
 import { dispatchLinkedInLoopDue, type LoopDispatchStats } from "@/lib/linkedin-loop-dispatch";
+import { dispatchLinkedInCampaignDue, type CampaignDispatchStats } from "@/lib/linkedin-connect-dispatch";
 import type { LoopBookingDeps } from "@/lib/linkedin-booking";
-import type { LoopInboundEvent } from "@/lib/linkedin-loop";
+import type { LoopConnectionAcceptedEvent, LoopInboundEvent } from "@/lib/linkedin-loop";
 import { composeReplyWithServerProvider } from "@/lib/reply-compose";
 
 export function linkedInLoopBookingDeps(svc: SupabaseClient): LoopBookingDeps {
@@ -72,4 +75,16 @@ export async function ingestLinkedInLoopEvent(svc: SupabaseClient, event: LoopIn
 
 export async function drainLinkedInLoop(svc: SupabaseClient, limit: number): Promise<LoopDispatchStats> {
   return dispatchLinkedInLoopDue({ store: supabaseLinkedInLoopStore(svc) }, limit);
+}
+
+export async function ingestLinkedInConnectionAcceptedEvent(
+  svc: SupabaseClient,
+  event: LoopConnectionAcceptedEvent,
+): Promise<ConnectionAcceptedResult> {
+  return ingestLinkedInConnectionAccepted({ store: supabaseLinkedInConnectStore(svc) }, event);
+}
+
+/** Connection requests due now (plan S5). Called after the reply drain. */
+export async function drainLinkedInCampaign(svc: SupabaseClient, limit: number): Promise<CampaignDispatchStats> {
+  return dispatchLinkedInCampaignDue({ store: supabaseLinkedInConnectStore(svc) }, limit);
 }

@@ -534,6 +534,11 @@ function adapter(kind: "vendor-api" | "assisted-manual", configured: boolean, ou
         ...outcome,
       };
     },
+    // The reply loop never sends a connection request.
+    connectConfigured: () => false,
+    async connect() {
+      throw new Error("connect must not be called by the reply loop");
+    },
   };
   return { adapter: a, calls: () => calls };
 }

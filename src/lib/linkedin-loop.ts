@@ -41,6 +41,9 @@ export const LOOP_MEETING_MINUTES = 30;
 export const LINKEDIN_DAILY_MESSAGE_CAP = 25;
 export const LINKEDIN_DAILY_CONNECT_CAP = 25;
 
+/** A connection note is short by LinkedIn's own rule (plan section 4). */
+export const LINKEDIN_CONNECT_NOTE_MAX = 200;
+
 /** The durable record a human creates when they launch a campaign. */
 export interface LoopGrant {
   id: string;
@@ -161,28 +164,30 @@ function parseTimestamp(value: unknown, fallback: number): number {
   return fallback;
 }
 
-function parseOneEvent(raw: unknown, now: number): LoopInboundEvent | null {
+/** The fields every vendor event shares, whatever its type. */
+interface EventParts {
+  event: Record<string, unknown>;
+  type: string;
+  lead: Record<string, unknown> | null;
+  message: Record<string, unknown> | null;
+  /** Canonical profile URL, or "" when the event names no real LinkedIn profile. */
+  profileUrl: string;
+  vendorCampaignId: string | null;
+  receivedAt: number;
+  firstName: string;
+  explicitId: string;
+}
+
+function eventParts(raw: unknown, now: number): EventParts | null {
   const event = record(raw);
   if (!event) return null;
   const type = firstString(event, ["eventType", "event_type", "event", "type"]).toLowerCase();
-  // A typed event that is not a reply (connection accepted, profile viewed,
-  // campaign completed) never enters the reply loop.
-  if (type && !REPLY_EVENT_TYPES.has(type)) return null;
-
   const lead = record(event.lead) ?? record(event.contact) ?? record(event.profile);
   const profileUrl = normalizeLinkedInProfileUrl(
     firstString(lead, ["profileUrl", "linkedinUrl", "linkedInProfileUrl", "linkedin_url", "url"]) ||
       firstString(event, ["profileUrl", "linkedinUrl", "linkedInProfileUrl", "linkedin_url"]),
   );
-  if (!profileUrl) return null;
-
   const message = record(event.message);
-  const text =
-    firstString(message, ["text", "body", "content"]) ||
-    firstString(event, ["messageText", "message_text", "text", "body", "content"]) ||
-    (typeof event.message === "string" ? event.message.trim() : "");
-  if (!text) return null;
-
   const campaign = record(event.campaign);
   const vendorCampaignId =
     firstString(event, ["campaignId", "campaign_id"]) || firstString(campaign, ["id", "campaignId"]) || null;
@@ -192,10 +197,39 @@ function parseOneEvent(raw: unknown, now: number): LoopInboundEvent | null {
   );
   const explicitId =
     firstString(message, ["id", "messageId"]) || firstString(event, ["messageId", "message_id", "id", "eventId"]);
-  const providerId =
-    explicitId ||
-    createHash("sha256").update(`${vendorCampaignId ?? ""}\n${profileUrl}\n${receivedAt}\n${text}`).digest("hex");
   const firstName = firstString(lead, ["firstName", "first_name"]) || firstString(event, ["firstName", "first_name"]);
+  return { event, type, lead, message, profileUrl, vendorCampaignId, receivedAt, firstName, explicitId };
+}
+
+function eventList(payload: unknown): unknown[] {
+  const container = record(payload);
+  return Array.isArray(payload)
+    ? payload
+    : Array.isArray(container?.events)
+      ? (container!.events as unknown[])
+      : Array.isArray(container?.data)
+        ? (container!.data as unknown[])
+        : [payload];
+}
+
+function parseOneEvent(raw: unknown, now: number): LoopInboundEvent | null {
+  const parts = eventParts(raw, now);
+  if (!parts) return null;
+  // A typed event that is not a reply (connection accepted, profile viewed,
+  // campaign completed) never enters the reply loop.
+  if (parts.type && !REPLY_EVENT_TYPES.has(parts.type)) return null;
+  if (!parts.profileUrl) return null;
+
+  const { event, message, profileUrl, vendorCampaignId, receivedAt, firstName } = parts;
+  const text =
+    firstString(message, ["text", "body", "content"]) ||
+    firstString(event, ["messageText", "message_text", "text", "body", "content"]) ||
+    (typeof event.message === "string" ? event.message.trim() : "");
+  if (!text) return null;
+
+  const providerId =
+    parts.explicitId ||
+    createHash("sha256").update(`${vendorCampaignId ?? ""}\n${profileUrl}\n${receivedAt}\n${text}`).digest("hex");
 
   return { profileUrl, text, providerId, vendorCampaignId, receivedAt, firstName };
 }
@@ -210,19 +244,55 @@ function parseOneEvent(raw: unknown, now: number): LoopInboundEvent | null {
 export function parseLinkedInInboundWebhook(payload: unknown, now = Date.now()): LoopInboundEvent[] {
   const out: LoopInboundEvent[] = [];
   const seen = new Set<string>();
-  const container = record(payload);
-  const list: unknown[] = Array.isArray(payload)
-    ? payload
-    : Array.isArray(container?.events)
-      ? (container!.events as unknown[])
-      : Array.isArray(container?.data)
-        ? (container!.data as unknown[])
-        : [payload];
-  for (const raw of list) {
+  for (const raw of eventList(payload)) {
     const event = parseOneEvent(raw, now);
     if (!event || seen.has(event.providerId)) continue;
     seen.add(event.providerId);
     out.push(event);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Connection accepted (the other event the campaign acts on)
+// ---------------------------------------------------------------------------
+
+export interface LoopConnectionAcceptedEvent {
+  /** Canonical lowercase linkedin.com/in or /pub profile URL. */
+  profileUrl: string;
+  /** Vendor event id when present, otherwise a deterministic digest. */
+  providerId: string;
+  vendorCampaignId: string | null;
+  /** Unix milliseconds. */
+  receivedAt: number;
+  firstName: string;
+}
+
+const ACCEPTED_EVENT_TYPES = new Set([
+  "connection_request_accepted",
+  "connection_accepted",
+  "invitation_accepted",
+  "connect_accepted",
+]);
+
+/**
+ * Extract "connection request accepted" events from a vendor webhook body.
+ * Only an explicitly typed accepted event with a real LinkedIn profile URL
+ * counts; an untyped or unknown-typed event is never read as an acceptance.
+ */
+export function parseLinkedInConnectionAccepted(payload: unknown, now = Date.now()): LoopConnectionAcceptedEvent[] {
+  const out: LoopConnectionAcceptedEvent[] = [];
+  const seen = new Set<string>();
+  for (const raw of eventList(payload)) {
+    const parts = eventParts(raw, now);
+    if (!parts || !ACCEPTED_EVENT_TYPES.has(parts.type) || !parts.profileUrl) continue;
+    const { profileUrl, vendorCampaignId, receivedAt, firstName } = parts;
+    const providerId =
+      parts.explicitId ||
+      createHash("sha256").update(`accepted\n${vendorCampaignId ?? ""}\n${profileUrl}\n${receivedAt}`).digest("hex");
+    if (seen.has(providerId)) continue;
+    seen.add(providerId);
+    out.push({ profileUrl, providerId, vendorCampaignId, receivedAt, firstName });
   }
   return out;
 }
@@ -301,6 +371,14 @@ export function zonedTimeToUtc(
 export function loopDayStart(date: Date, timezone: string): Date {
   const parts = zonedParts(date, timezone);
   return zonedTimeToUtc({ year: parts.year, month: parts.month, day: parts.day, hour: 0, minute: 0 }, timezone);
+}
+
+/** Start of the local day after the one containing `date`, as UTC. This is
+ *  when a spent workspace cap rolls; a row waiting for tomorrow's limit is
+ *  scheduled from here, jittered and pushed past quiet hours like any send. */
+export function loopNextDayStart(date: Date, timezone: string): Date {
+  const parts = zonedParts(date, timezone);
+  return zonedTimeToUtc({ year: parts.year, month: parts.month, day: parts.day + 1, hour: 0, minute: 0 }, timezone);
 }
 
 /** Local hour (0-23) of `date` in the grant's timezone. */
@@ -530,6 +608,55 @@ export function decideLoopReply(input: LoopScheduleInput): LoopScheduleDecision 
     return { action: "hold", reason: "workspace-message-cap-reached" };
   }
   if (input.sentToday >= Math.max(0, input.grant.dailyCap)) return { action: "hold", reason: "daily-cap-reached" };
+  const quiet: LoopQuietHours = { start: input.grant.quietStart, end: input.grant.quietEnd };
+  const sendAt = loopSendTime(input.now, input.seed, quiet, input.grant.timezone);
+  return { action: "schedule", sendAt, delayMs: sendAt.getTime() - input.now.getTime() };
+}
+
+// ---------------------------------------------------------------------------
+// The first message after an accepted connection request
+// ---------------------------------------------------------------------------
+
+export interface AcceptScheduleInput {
+  now: Date;
+  /** Stable per-event seed (the stored event id). */
+  seed: string;
+  /** The launch that sent the connection request. Only a campaign launch may
+   *  follow an acceptance with a message. */
+  grant: (LoopGrant & { scope: "replies" | "campaign" }) | null;
+  controls: LoopControls | null;
+  optedOut: boolean;
+  /** Every LinkedIn message the workspace claimed or sent in its local day. */
+  messagesToday: number;
+}
+
+export type AcceptHoldReason =
+  | "no-campaign-launch"
+  | "campaign-launch-revoked"
+  | "kill-switch"
+  | "loop-disabled"
+  | "opted-out"
+  | "workspace-message-cap-reached";
+
+export type AcceptScheduleDecision =
+  | { action: "schedule"; sendAt: Date; delayMs: number }
+  | { action: "hold"; reason: AcceptHoldReason };
+
+/**
+ * Whether and when the first message may follow an accepted connection
+ * request: same delay, same quiet hours, same workspace ceiling as a reply.
+ * The grant's reply sub-cap does not apply, this is a first touch and the
+ * first-touch claim counts it. Every hold is fail closed.
+ */
+export function decideFirstMessageAfterAccept(input: AcceptScheduleInput): AcceptScheduleDecision {
+  if (!input.grant || input.grant.scope !== "campaign") return { action: "hold", reason: "no-campaign-launch" };
+  if (input.grant.revokedAt) return { action: "hold", reason: "campaign-launch-revoked" };
+  if (!input.controls || input.controls.killSwitch) return { action: "hold", reason: "kill-switch" };
+  if (!input.controls.loopEnabled) return { action: "hold", reason: "loop-disabled" };
+  if (input.optedOut) return { action: "hold", reason: "opted-out" };
+  if (input.messagesToday >= effectiveMessageCap(input.controls)) {
+    return { action: "hold", reason: "workspace-message-cap-reached" };
+  }
   const quiet: LoopQuietHours = { start: input.grant.quietStart, end: input.grant.quietEnd };
   const sendAt = loopSendTime(input.now, input.seed, quiet, input.grant.timezone);
   return { action: "schedule", sendAt, delayMs: sendAt.getTime() - input.now.getTime() };

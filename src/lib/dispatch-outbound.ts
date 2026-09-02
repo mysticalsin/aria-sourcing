@@ -140,6 +140,9 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
     // Loop replies carry a campaign launch grant instead of a per-message
     // approval; src/lib/linkedin-loop-dispatch.ts owns them.
     .is("linkedin_reply_grant_id", null)
+    // Connection requests have their own claim, ledger and cap;
+    // src/lib/linkedin-connect-dispatch.ts owns them (0059 refuses them here too).
+    .neq("type", "connection_request")
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
   const { data: due, error: dueErr } = await dueQuery

@@ -201,6 +201,7 @@ function queryResult(data: unknown) {
     select: () => query,
     eq: () => query,
     is: () => query,
+    neq: () => query,
     in: () => query,
     lte: () => query,
     maybeSingle: async () => ({ data, error: null }),

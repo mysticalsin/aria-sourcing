@@ -2,8 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { readBoundedBody } from "@/lib/api/validate";
 import { safeLog } from "@/lib/log-redact";
-import { parseLinkedInInboundWebhook, verifyLoopWebhookSecret } from "@/lib/linkedin-loop";
-import { drainLinkedInLoop, ingestLinkedInLoopEvent } from "@/lib/linkedin-loop-server";
+import { parseLinkedInConnectionAccepted, parseLinkedInInboundWebhook, verifyLoopWebhookSecret } from "@/lib/linkedin-loop";
+import {
+  drainLinkedInCampaign,
+  drainLinkedInLoop,
+  ingestLinkedInConnectionAcceptedEvent,
+  ingestLinkedInLoopEvent,
+} from "@/lib/linkedin-loop-server";
 
 export const dynamic = "force-dynamic";
 
@@ -62,10 +67,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Opportunistic drain: only replies whose 2 to 10 minute delay has already
-  // elapsed go out here. The row stored above is never due yet.
+  // Accepted connection requests: the event is stored, then the first message
+  // the launch approved is queued 2 to 10 minutes out. Never sent from here.
+  for (const accepted of parseLinkedInConnectionAccepted(payload)) {
+    try {
+      const result = await ingestLinkedInConnectionAcceptedEvent(supabase, accepted);
+      const key = `accepted:${result.outcome}`;
+      outcomes[key] = (outcomes[key] ?? 0) + 1;
+      if (result.outcome === "retry") {
+        retryable = true;
+        safeLog("linkedin webhook: accepted event deferred", { reason: result.reason });
+      }
+    } catch (err) {
+      retryable = true;
+      safeLog("linkedin webhook accepted event error", { message: err instanceof Error ? err.message : "unknown" });
+    }
+  }
+
+  // Opportunistic drain: only replies and connection requests whose 2 to 10
+  // minute delay has already elapsed go out here. The rows stored above are
+  // never due yet.
   try {
     await drainLinkedInLoop(supabase, 5);
+    await drainLinkedInCampaign(supabase, 5);
   } catch (err) {
     safeLog("linkedin webhook: drain error", { message: err instanceof Error ? err.message : "unknown" });
   }
