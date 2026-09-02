@@ -82,7 +82,7 @@ function event(over: Partial<LoopInboundEvent> = {}): LoopInboundEvent {
   };
 }
 
-const CONTROLS_ON: LoopControls = { killSwitch: false, loopEnabled: true };
+const CONTROLS_ON: LoopControls = { killSwitch: false, loopEnabled: true, messageCap: 25, connectCap: 25, timezone: TZ };
 
 interface FakeStoreSeed {
   grant?: LoopGrantRow | null;
@@ -90,6 +90,7 @@ interface FakeStoreSeed {
   thread?: LoopThread | null;
   suppressed?: boolean;
   sentToday?: number;
+  messagesToday?: number;
   due?: LoopQueuedReply[];
   seat?: { provider: string; status: string; mode: string } | null;
   claim?: { allowed: boolean; reason?: string; deliveryAttemptId?: string; profileUrl?: string } | null;
@@ -155,6 +156,9 @@ function fakeStore(seed: FakeStoreSeed) {
     },
     async countAttemptsToday() {
       return seed.sentToday ?? 0;
+    },
+    async countWorkspaceMessagesToday() {
+      return seed.messagesToday ?? 0;
     },
     async insertReply(row) {
       const id = `out-${replies.length + 1}`;
@@ -258,7 +262,16 @@ function deps(store: LinkedInLoopStore, extra: Partial<LinkedInIngestDeps> = {})
 // decideLoopReply: every hold reason
 // ---------------------------------------------------------------------------
 {
-  const base = { now: NOW, seed: "in-1", grant: grant(), controls: CONTROLS_ON, inboundText: "sure", optedOut: false, sentToday: 0 };
+  const base = {
+    now: NOW,
+    seed: "in-1",
+    grant: grant(),
+    controls: CONTROLS_ON,
+    inboundText: "sure",
+    optedOut: false,
+    sentToday: 0,
+    messagesToday: 0,
+  };
   const scheduled = decideLoopReply(base);
   ok("decide: launched → scheduled", scheduled.action === "schedule");
   ok(
@@ -269,11 +282,11 @@ function deps(store: LinkedInLoopStore, extra: Partial<LinkedInIngestDeps> = {})
   ok("decide: no launch → hold no-campaign-launch", none.action === "hold" && none.reason === "no-campaign-launch");
   const revoked = decideLoopReply({ ...base, grant: grant({ revokedAt: "2026-09-01T00:00:00Z" }) });
   ok("decide: revoked launch → hold", revoked.action === "hold" && revoked.reason === "campaign-launch-revoked");
-  const kill = decideLoopReply({ ...base, controls: { killSwitch: true, loopEnabled: true } });
+  const kill = decideLoopReply({ ...base, controls: { ...CONTROLS_ON, killSwitch: true } });
   ok("decide: kill switch → hold", kill.action === "hold" && kill.reason === "kill-switch");
   const noControls = decideLoopReply({ ...base, controls: null });
   ok("decide: missing controls row → hold (fail closed)", noControls.action === "hold" && noControls.reason === "kill-switch");
-  const off = decideLoopReply({ ...base, controls: { killSwitch: false, loopEnabled: false } });
+  const off = decideLoopReply({ ...base, controls: { ...CONTROLS_ON, loopEnabled: false } });
   ok("decide: loop disabled → hold", off.action === "hold" && off.reason === "loop-disabled");
   const opted = decideLoopReply({ ...base, inboundText: "Please stop messaging me" });
   ok("decide: opt-out text → hold", opted.action === "hold" && opted.reason === "opted-out");
@@ -357,11 +370,11 @@ await (async () => {
   const at = q.replies[0]?.scheduledAt ?? "";
   ok("ingest: quiet hours → still scheduled, but after 08:00 Paris", r.outcome === "scheduled" && Date.parse(at) >= Date.parse("2026-09-03T06:00:00.000Z"));
 
-  const kill = fakeStore({ controls: { killSwitch: true, loopEnabled: true } });
+  const kill = fakeStore({ controls: { ...CONTROLS_ON, killSwitch: true } });
   const rk = await ingestLinkedInInbound(deps(kill.store), event());
   ok("ingest: kill switch → held, no reply row", rk.outcome === "held" && rk.reason === "kill-switch" && kill.replies.length === 0);
 
-  const off = fakeStore({ controls: { killSwitch: false, loopEnabled: false } });
+  const off = fakeStore({ controls: { ...CONTROLS_ON, loopEnabled: false } });
   const ro = await ingestLinkedInInbound(deps(off.store), event());
   ok("ingest: loop disabled → held", ro.outcome === "held" && ro.reason === "loop-disabled" && off.replies.length === 0);
 
@@ -548,11 +561,11 @@ await (async () => {
   const ns = await dispatchLinkedInLoopDue({ store: n.store, now: () => NOW, adapterFor: () => noId.adapter });
   ok("dispatch: vendor without message id → ambiguous, not sent", ns.sent === 0 && n.outcomes[0]?.outcome === "ambiguous");
 
-  const k = fakeStore({ due: [dueReply()], controls: { killSwitch: true, loopEnabled: true } });
+  const k = fakeStore({ due: [dueReply()], controls: { ...CONTROLS_ON, killSwitch: true } });
   const ks = await dispatchLinkedInLoopDue({ store: k.store, now: () => NOW, adapterFor: () => live.adapter });
   ok("dispatch: kill switch at send time → blocked, transport never runs", ks.blocked === 1 && ks.sent === 0 && k.claims.length === 0);
 
-  const off = fakeStore({ due: [dueReply()], controls: { killSwitch: false, loopEnabled: false } });
+  const off = fakeStore({ due: [dueReply()], controls: { ...CONTROLS_ON, loopEnabled: false } });
   const os = await dispatchLinkedInLoopDue({ store: off.store, now: () => NOW, adapterFor: () => live.adapter });
   ok("dispatch: loop disabled at send time → blocked", os.blocked === 1 && os.sent === 0);
 

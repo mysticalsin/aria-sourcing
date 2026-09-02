@@ -94,6 +94,9 @@ export interface LinkedInLoopStore {
   cancelQueuedReplies(workspaceId: string, profileUrl: string): Promise<boolean>;
   /** Attempts on the grant's local day (its timezone), not the UTC day. */
   countAttemptsToday(grant: LoopGrant, now: Date): Promise<number | null>;
+  /** Every LinkedIn message claimed or sent in the workspace's local day:
+   *  first touches (outreach_ledger) plus loop replies (linkedin_reply_attempts). */
+  countWorkspaceMessagesToday(workspaceId: string, timezone: string, now: Date): Promise<number | null>;
   insertReply(row: LoopReplyInsert): Promise<WriteResult>;
   listDueReplies(now: Date, limit: number): Promise<LoopQueuedReply[] | null>;
   readSeat(workspaceId: string, seatId: string): Promise<{ provider: string; status: string; mode: string } | null>;
@@ -177,7 +180,7 @@ export function supabaseLinkedInLoopStore(supabase: SupabaseClient): LinkedInLoo
     async readControls(workspaceId) {
       const { data, error } = await supabase
         .from("sourcing_loop_controls")
-        .select("kill_switch, linkedin_reply_loop_enabled")
+        .select("kill_switch, linkedin_reply_loop_enabled, linkedin_daily_message_cap, linkedin_daily_connect_cap, linkedin_timezone")
         .eq("workspace_id", workspaceId)
         .maybeSingle();
       if (error) {
@@ -186,7 +189,13 @@ export function supabaseLinkedInLoopStore(supabase: SupabaseClient): LinkedInLoo
       }
       const row = record(data);
       if (!row) return null;
-      return { killSwitch: row.kill_switch !== false, loopEnabled: row.linkedin_reply_loop_enabled === true };
+      return {
+        killSwitch: row.kill_switch !== false,
+        loopEnabled: row.linkedin_reply_loop_enabled === true,
+        messageCap: typeof row.linkedin_daily_message_cap === "number" ? row.linkedin_daily_message_cap : 0,
+        connectCap: typeof row.linkedin_daily_connect_cap === "number" ? row.linkedin_daily_connect_cap : 0,
+        timezone: text(row.linkedin_timezone, "UTC") || "UTC",
+      };
     },
     async insertInbound(row) {
       const { data, error } = await supabase
@@ -325,6 +334,31 @@ export function supabaseLinkedInLoopStore(supabase: SupabaseClient): LinkedInLoo
         return null;
       }
       return count ?? 0;
+    },
+    async countWorkspaceMessagesToday(workspaceId, timezone, now) {
+      const dayStart = loopDayStart(now, timezone).toISOString();
+      const [firstTouch, replies] = await Promise.all([
+        supabase
+          .from("outreach_ledger")
+          .select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("channel", "LinkedIn")
+          .in("status", ["claimed", "sent", "ambiguous"])
+          .gte("at", dayStart),
+        supabase
+          .from("linkedin_reply_attempts")
+          .select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .in("status", ["claimed", "sent", "ambiguous"])
+          .gte("at", dayStart),
+      ]);
+      if (firstTouch.error || replies.error) {
+        safeLog("linkedin loop: workspace message count error", {
+          message: firstTouch.error?.message ?? replies.error?.message ?? "unknown",
+        });
+        return null;
+      }
+      return (firstTouch.count ?? 0) + (replies.count ?? 0);
     },
     async insertReply(row) {
       const { data, error } = await supabase

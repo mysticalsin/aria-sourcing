@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Badge, Button, Card, CardContent, Switch, useConfirm, useToast } from "@/components/ui";
+import { Badge, Button, Card, CardContent, Field, Input, Switch, useConfirm, useToast } from "@/components/ui";
 import { useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import { LINKEDIN_DAILY_CONNECT_CAP, LINKEDIN_DAILY_MESSAGE_CAP } from "@/lib/linkedin-loop";
+import { LINKEDIN_SENDING_OFF, type LinkedInSendingControls } from "@/lib/linkedin-caps";
 import { ShieldAlert } from "lucide-react";
 
-type Controls = { killSwitch: boolean; enabled: boolean; persisted: boolean };
 type Grant = {
   id: string;
   campaign_id: string;
@@ -19,12 +20,28 @@ type Grant = {
   revoked_at: string | null;
 };
 
-const OFF: Controls = { killSwitch: true, enabled: false, persisted: false };
+function clampCap(raw: string, ceiling: number): number {
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(ceiling, Math.max(0, n));
+}
+
+function formatReset(iso: string | null, timezone: string): string {
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (!Number.isFinite(at.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "numeric", minute: "2-digit", hour12: false }).format(at);
+  } catch {
+    return "";
+  }
+}
 
 /**
- * Kill switch and launch list for the LinkedIn reply loop. The loop answers
- * candidate replies on its own only while this switch is on AND a campaign
- * has a live launch grant. Off is the default.
+ * LinkedIn sending: the workspace daily limits, today's usage, the reply
+ * loop switch and the kill switch. Aria sends from the operator's own
+ * LinkedIn account only while the switch is on AND a campaign has a live
+ * launch, and never past the two limits below. Off is the default.
  */
 export function LinkedInLoopPanel() {
   const role = useRole();
@@ -32,9 +49,13 @@ export function LinkedInLoopPanel() {
   const confirm = useConfirm();
   const isAdmin = can(role, "manage_settings");
   const canRevoke = can(role, "outreach");
-  const [controls, setControls] = React.useState<Controls>(OFF);
+  const [controls, setControls] = React.useState<LinkedInSendingControls>(LINKEDIN_SENDING_OFF);
   const [grants, setGrants] = React.useState<Grant[]>([]);
   const [busy, setBusy] = React.useState(false);
+  const [messageCap, setMessageCap] = React.useState(String(LINKEDIN_DAILY_MESSAGE_CAP));
+  const [connectCap, setConnectCap] = React.useState(String(LINKEDIN_DAILY_CONNECT_CAP));
+  const messageCapId = React.useId();
+  const connectCapId = React.useId();
 
   const load = React.useCallback(async () => {
     try {
@@ -42,18 +63,27 @@ export function LinkedInLoopPanel() {
         fetch("/api/outreach/linkedin-loop/controls"),
         fetch("/api/outreach/linkedin-loop/launch"),
       ]);
-      const controlsJson = (await controlsRes.json().catch(() => null)) as Partial<Controls> | null;
+      const controlsJson = (await controlsRes.json().catch(() => null)) as Partial<LinkedInSendingControls> | null;
       if (controlsRes.ok && controlsJson) {
-        setControls({
+        const next: LinkedInSendingControls = {
           killSwitch: controlsJson.killSwitch !== false,
           enabled: controlsJson.enabled === true,
           persisted: controlsJson.persisted === true,
-        });
+          messageCap: typeof controlsJson.messageCap === "number" ? controlsJson.messageCap : 0,
+          connectCap: typeof controlsJson.connectCap === "number" ? controlsJson.connectCap : 0,
+          timezone: typeof controlsJson.timezone === "string" && controlsJson.timezone ? controlsJson.timezone : "UTC",
+          messagesToday: typeof controlsJson.messagesToday === "number" ? controlsJson.messagesToday : 0,
+          connectsToday: typeof controlsJson.connectsToday === "number" ? controlsJson.connectsToday : 0,
+          resetsAt: typeof controlsJson.resetsAt === "string" ? controlsJson.resetsAt : null,
+        };
+        setControls(next);
+        setMessageCap(String(next.messageCap));
+        setConnectCap(String(next.connectCap));
       }
       const grantsJson = (await grantsRes.json().catch(() => null)) as { grants?: Grant[] } | null;
       if (grantsRes.ok && Array.isArray(grantsJson?.grants)) setGrants(grantsJson.grants);
     } catch {
-      setControls(OFF);
+      setControls(LINKEDIN_SENDING_OFF);
     }
   }, []);
 
@@ -64,11 +94,11 @@ export function LinkedInLoopPanel() {
   async function setEnabled(enabled: boolean, revokeAll = false) {
     if (!enabled) {
       const ok = await confirm({
-        title: revokeAll ? "Stop the loop and revoke every launch?" : "Pause automatic LinkedIn replies?",
+        title: revokeAll ? "Stop everything?" : "Pause automatic LinkedIn replies?",
         description: revokeAll
-          ? "Every queued reply becomes a draft for a person. Campaigns must be launched again to resume."
+          ? "Stop everything. Every queued message becomes a draft for a person. Campaigns must be launched again to resume."
           : "Queued replies wait as drafts until the loop is switched back on.",
-        confirmLabel: revokeAll ? "Kill" : "Pause",
+        confirmLabel: revokeAll ? "Stop everything" : "Pause",
         danger: true,
       });
       if (!ok) return;
@@ -86,8 +116,39 @@ export function LinkedInLoopPanel() {
         return;
       }
       toast({
-        title: enabled ? "LinkedIn reply loop on" : revokeAll ? "Loop killed" : "LinkedIn reply loop paused",
+        title: enabled ? "LinkedIn reply loop on" : revokeAll ? "Everything stopped" : "LinkedIn reply loop paused",
         description: json.persisted === false ? "Demo: nothing persisted, the loop stays off." : undefined,
+        variant: "success",
+      });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCaps() {
+    const next = {
+      messageCap: clampCap(messageCap, LINKEDIN_DAILY_MESSAGE_CAP),
+      connectCap: clampCap(connectCap, LINKEDIN_DAILY_CONNECT_CAP),
+    };
+    setBusy(true);
+    try {
+      const res = await fetch("/api/outreach/linkedin-loop/controls", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; persisted?: boolean } | null;
+      if (!res.ok || json?.ok !== true) {
+        toast({ title: "Limits not saved", description: json?.error ?? "The server refused the change.", variant: "error" });
+        return;
+      }
+      toast({
+        title: "Daily limits saved",
+        description:
+          json.persisted === false
+            ? "Demo: nothing persisted."
+            : `${next.messageCap} messages and ${next.connectCap} connection requests a day.`,
         variant: "success",
       });
       await load();
@@ -120,6 +181,10 @@ export function LinkedInLoopPanel() {
 
   const active = grants.filter((g) => !g.revoked_at);
   const live = !controls.killSwitch && controls.enabled;
+  const resetTime = formatReset(controls.resetsAt, controls.timezone);
+  const capsDirty =
+    clampCap(messageCap, LINKEDIN_DAILY_MESSAGE_CAP) !== controls.messageCap ||
+    clampCap(connectCap, LINKEDIN_DAILY_CONNECT_CAP) !== controls.connectCap;
 
   return (
     <div className="space-y-4">
@@ -131,15 +196,68 @@ export function LinkedInLoopPanel() {
                 <ShieldAlert className="h-4 w-4" />
               </span>
               <div>
-                <div className="text-sm font-semibold text-ink">Automatic LinkedIn replies</div>
+                <div className="text-sm font-semibold text-ink">LinkedIn sending</div>
                 <div className="text-xs text-muted">
-                  After you launch a campaign, Aria answers replies as you, two to ten minutes later, until a meeting is booked.
+                  After you launch a campaign, Aria sends connection requests and messages from your LinkedIn account, two to
+                  ten minutes apart, within the limits below, until a meeting is booked.
                 </div>
               </div>
             </div>
             <Badge tone={live ? "success" : "neutral"} dot>
               {controls.killSwitch ? "Workspace kill switch on" : live ? "On" : "Off"}
             </Badge>
+          </div>
+
+          <div className="rounded-2xl bg-ink/[0.03] p-4">
+            <div className="text-sm text-ink">Daily limits</div>
+            <p className="text-xs text-muted" data-testid="linkedin-usage-today">
+              Today: {controls.messagesToday} of {controls.messageCap} messages, {controls.connectsToday} of {controls.connectCap}{" "}
+              connection requests.
+              {resetTime ? ` Resets at ${resetTime} ${controls.timezone}.` : ""}
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Messages per day"
+                htmlFor={messageCapId}
+                hint={`0 to ${LINKEDIN_DAILY_MESSAGE_CAP}. First messages and replies together.`}
+              >
+                <Input
+                  id={messageCapId}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={LINKEDIN_DAILY_MESSAGE_CAP}
+                  step={1}
+                  value={messageCap}
+                  disabled={!isAdmin || busy}
+                  onChange={(e) => setMessageCap(e.target.value)}
+                  onBlur={() => setMessageCap(String(clampCap(messageCap, LINKEDIN_DAILY_MESSAGE_CAP)))}
+                />
+              </Field>
+              <Field
+                label="Connection requests per day"
+                htmlFor={connectCapId}
+                hint={`0 to ${LINKEDIN_DAILY_CONNECT_CAP}. New people only.`}
+              >
+                <Input
+                  id={connectCapId}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={LINKEDIN_DAILY_CONNECT_CAP}
+                  step={1}
+                  value={connectCap}
+                  disabled={!isAdmin || busy}
+                  onChange={(e) => setConnectCap(e.target.value)}
+                  onBlur={() => setConnectCap(String(clampCap(connectCap, LINKEDIN_DAILY_CONNECT_CAP)))}
+                />
+              </Field>
+            </div>
+            <div className="mt-3 flex items-center justify-end">
+              <Button variant="primary" size="sm" disabled={!isAdmin || busy || !capsDirty} onClick={() => void saveCaps()}>
+                Save limits
+              </Button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-4 rounded-2xl bg-ink/[0.03] p-4">
@@ -162,12 +280,15 @@ export function LinkedInLoopPanel() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-muted">
               {active.length === 0
-                ? "No campaign is launched. Launch one from Outreach to start the loop."
+                ? "No campaign is launched. Launch one from Outreach to start sending."
                 : `${active.length} launched campaign${active.length === 1 ? "" : "s"}.`}
             </div>
-            <Button variant="danger" size="sm" disabled={!isAdmin || busy} onClick={() => void setEnabled(false, true)}>
-              Kill switch
-            </Button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted">Stop everything. Every queued message becomes a draft for a person.</span>
+              <Button variant="danger" size="sm" disabled={!isAdmin || busy} onClick={() => void setEnabled(false, true)}>
+                Kill switch
+              </Button>
+            </div>
           </div>
 
           {active.length > 0 && (
@@ -177,8 +298,9 @@ export function LinkedInLoopPanel() {
                   <div className="min-w-0">
                     <div className="truncate font-medium text-ink">{grant.campaign_id}</div>
                     <div className="text-xs text-muted">
-                      Cap {grant.daily_cap} a day. Quiet {grant.quiet_start}:00 to {grant.quiet_end}:00 {grant.timezone}.
-                      {grant.vendor_campaign_id ? ` Vendor campaign ${grant.vendor_campaign_id}.` : " No vendor campaign id yet."}
+                      Replies {grant.daily_cap} a day inside the workspace limit. Quiet {grant.quiet_start}:00 to {grant.quiet_end}:00{" "}
+                      {grant.timezone}.
+                      {grant.vendor_campaign_id ? ` LinkedIn campaign ${grant.vendor_campaign_id}.` : " Not linked to a LinkedIn campaign yet."}
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" disabled={!canRevoke || busy} onClick={() => void revoke(grant)}>

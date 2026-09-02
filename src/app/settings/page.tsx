@@ -945,12 +945,12 @@ export default function SettingsPage() {
             </Card>
           </Section>
 
-          {/* 20 — LinkedIn reply loop */}
+          {/* 20 — LinkedIn sending */}
           <Section
             n="20"
-            eyebrow="Reply loop"
-            title="Automatic LinkedIn replies"
-            description="After a campaign launch, Aria answers replies as you with a two to ten minute delay until a meeting is booked. Off by default. Kill switch lives here."
+            eyebrow="Sending limits"
+            title="LinkedIn sending"
+            description="Daily limits for messages and connection requests from your LinkedIn account, today's usage, and the reply loop switch. Off by default. Kill switch lives here."
           >
             <LinkedInLoopPanel />
           </Section>

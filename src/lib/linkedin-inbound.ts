@@ -126,6 +126,10 @@ export async function ingestLinkedInInbound(deps: LinkedInIngestDeps, event: Loo
     store.countAttemptsToday(grant, now),
   ]);
   if (sentToday === null) return { outcome: "retry", reason: "attempt-count-unavailable" };
+  // Workspace ceiling (0056), counted in the workspace's own day. Without a
+  // controls row the decision below already holds, so 0 is only a placeholder.
+  const messagesToday = controls ? await store.countWorkspaceMessagesToday(grant.workspaceId, controls.timezone, now) : 0;
+  if (messagesToday === null) return { outcome: "retry", reason: "message-count-unavailable" };
   const decision = decideLoopReply({
     now,
     seed: inboundId,
@@ -134,6 +138,7 @@ export async function ingestLinkedInInbound(deps: LinkedInIngestDeps, event: Loo
     inboundText: event.text,
     optedOut: suppressed,
     sentToday,
+    messagesToday,
   });
   if (decision.action === "hold") return hold(decision.reason, thread.conversationId);
 

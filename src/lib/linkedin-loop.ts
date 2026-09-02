@@ -33,6 +33,14 @@ export const LOOP_DEFAULT_QUIET_HOURS: LoopQuietHours = { start: 21, end: 8 };
 export const LOOP_DEFAULT_DAILY_CAP = 20;
 export const LOOP_MEETING_MINUTES = 30;
 
+/**
+ * Workspace ceilings per local day (docs/outreach/ARIA-LINKEDIN-CONNECT.md 2.2).
+ * The UI cannot raise them, the 0056 check constraint mirrors them, and both
+ * claim RPCs refuse at the ceiling. A grant's dailyCap is a sub-limit inside.
+ */
+export const LINKEDIN_DAILY_MESSAGE_CAP = 25;
+export const LINKEDIN_DAILY_CONNECT_CAP = 25;
+
 /** The durable record a human creates when they launch a campaign. */
 export interface LoopGrant {
   id: string;
@@ -48,6 +56,23 @@ export interface LoopGrant {
 export interface LoopControls {
   killSwitch: boolean;
   loopEnabled: boolean;
+  /** Workspace message ceiling from sourcing_loop_controls (0056). */
+  messageCap: number;
+  /** Workspace connection-request ceiling from sourcing_loop_controls (0056). */
+  connectCap: number;
+  /** The local day the workspace caps roll in. */
+  timezone: string;
+}
+
+/** Effective workspace ceiling: never above the product cap, 0 without a controls row. */
+export function effectiveMessageCap(controls: LoopControls | null): number {
+  if (!controls || !Number.isFinite(controls.messageCap)) return 0;
+  return Math.min(LINKEDIN_DAILY_MESSAGE_CAP, Math.max(0, Math.floor(controls.messageCap)));
+}
+
+export function effectiveConnectCap(controls: LoopControls | null): number {
+  if (!controls || !Number.isFinite(controls.connectCap)) return 0;
+  return Math.min(LINKEDIN_DAILY_CONNECT_CAP, Math.max(0, Math.floor(controls.connectCap)));
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +496,9 @@ export interface LoopScheduleInput {
   optedOut: boolean;
   /** Loop replies already claimed or sent today under this grant. */
   sentToday: number;
+  /** Every LinkedIn message the workspace claimed or sent in its local day:
+   *  first touches, loop replies, whatever path queued them. */
+  messagesToday: number;
 }
 
 export type LoopScheduleDecision =
@@ -483,12 +511,14 @@ export type LoopHoldReason =
   | "kill-switch"
   | "loop-disabled"
   | "opted-out"
+  | "workspace-message-cap-reached"
   | "daily-cap-reached";
 
 /**
  * Whether and when an automatic reply may go out. Every hold reason is fail
  * closed: no grant, a revoked grant, an engaged kill switch, a disabled loop,
- * an opt-out, or a spent daily cap all mean a human answers instead.
+ * an opt-out, a spent workspace ceiling, or a spent grant cap all mean a
+ * human answers instead.
  */
 export function decideLoopReply(input: LoopScheduleInput): LoopScheduleDecision {
   if (!input.grant) return { action: "hold", reason: "no-campaign-launch" };
@@ -496,6 +526,9 @@ export function decideLoopReply(input: LoopScheduleInput): LoopScheduleDecision 
   if (!input.controls || input.controls.killSwitch) return { action: "hold", reason: "kill-switch" };
   if (!input.controls.loopEnabled) return { action: "hold", reason: "loop-disabled" };
   if (input.optedOut || isLoopOptOut(input.inboundText)) return { action: "hold", reason: "opted-out" };
+  if (input.messagesToday >= effectiveMessageCap(input.controls)) {
+    return { action: "hold", reason: "workspace-message-cap-reached" };
+  }
   if (input.sentToday >= Math.max(0, input.grant.dailyCap)) return { action: "hold", reason: "daily-cap-reached" };
   const quiet: LoopQuietHours = { start: input.grant.quietStart, end: input.grant.quietEnd };
   const sendAt = loopSendTime(input.now, input.seed, quiet, input.grant.timezone);
