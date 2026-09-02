@@ -19,6 +19,14 @@ every `open` entry at the start of each session/loop iteration. See
 Historical and current findings follow. The current consolidated audit is
 `_relay/2026-07-11-enterprise-audit.md`.
 
+## 2026-09-02 — Live 8-query expansion skipped enrich/GitHub on items=0
+**Severity:** correctness
+**File:** src/lib/store.ts (enrichCampaign); src/lib/sourcing/apify.ts (enrichProfilesByUrl / scrapeGithubTechStack)
+**Issue:** After 8 empty harvestapi searches, the same click never started `harvestapi/linkedin-profile-scraper` or `apivault_labs/github-profile-scraper`. Zero enrich/github rows on the `aria_harvest` trail. Fall-through was gated on having LinkedIn URLs / GitHub logins to merge. `enrichCampaign` returned `{ ok: true, total: 0 }` with no Apify POST. Tests stubbed `enrich()` as a JS function, not an actor start with a run id. `logAriaHarvest` hardcoded `actor: HARVEST_ACTOR`.
+**Repro/evidence:** Fly `510c950`, Ultron camp_1788068519249. Query expansion PASS (8 distinct harvestapi run ids, all SUCCEEDED items=0). Product FAIL: 0 candidates, no enrich, no GitHub merge.
+**Suggested fix:** Last empty harvest POSTs both `/runs` even with empty URLs, logs those run ids, then LinkedIn web alternate. A click cannot return 0-and-stop success without a logged enrichment attempt.
+**Status:** fixed (5728ad4)
+
 ## 2026-09-02 — Live never-0 stop after 4 canned Calypso harvests
 **Severity:** correctness
 **File:** src/lib/sourcing/multi-source-plan.ts; src/lib/sourcing/auto-source.ts
