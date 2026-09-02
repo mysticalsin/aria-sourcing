@@ -10,6 +10,8 @@ import { loopDayStart, type LoopControls, type LoopGrant } from "@/lib/linkedin-
 
 export interface LoopGrantRow extends LoopGrant {
   workspaceId: string;
+  /** 'replies' answers inbound only; 'campaign' also covers the launched first touches (0057). */
+  scope: "replies" | "campaign";
   seatId: string;
   calendarSeatId: string | null;
   vendorCampaignId: string | null;
@@ -130,6 +132,7 @@ function grantFromRow(row: Record<string, unknown> | null): LoopGrantRow | null 
   return {
     id: row.id,
     workspaceId: row.workspace_id,
+    scope: row.scope === "campaign" ? "campaign" : "replies",
     channel: row.channel === "WhatsApp" ? "WhatsApp" : "LinkedIn",
     campaignId: text(row.campaign_id),
     vendorCampaignId: typeof row.vendor_campaign_id === "string" && row.vendor_campaign_id ? row.vendor_campaign_id : null,
@@ -146,7 +149,7 @@ function grantFromRow(row: Record<string, unknown> | null): LoopGrantRow | null 
 }
 
 const GRANT_COLUMNS =
-  "id, workspace_id, channel, campaign_id, vendor_campaign_id, seat_id, calendar_seat_id, interviewer_email, role_title, revoked_at, daily_cap, quiet_start, quiet_end, timezone";
+  "id, workspace_id, scope, channel, campaign_id, vendor_campaign_id, seat_id, calendar_seat_id, interviewer_email, role_title, revoked_at, daily_cap, quiet_start, quiet_end, timezone";
 
 export function supabaseLinkedInLoopStore(supabase: SupabaseClient): LinkedInLoopStore {
   return {

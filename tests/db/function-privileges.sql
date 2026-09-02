@@ -144,6 +144,8 @@ begin
       ('public.record_linkedin_delivery_outcome(uuid,uuid,text,text,text)',    'service_role',  true),
       ('public.claim_linkedin_loop_reply(uuid)',                              'service_role',  true),
       ('public.set_linkedin_sending_caps(integer,integer,text)',              'authenticated', true),
+      ('public.launch_linkedin_campaign(text,uuid,jsonb,uuid,text,text,integer,integer,integer,text)', 'authenticated', true),
+      ('public.revoke_linkedin_reply_loop(uuid,text)',                        'authenticated', true),
       ('public.linkedin_workspace_timezone(uuid)',                            'owner_only',    true),
       ('public.linkedin_messages_today(uuid)',                                'owner_only',    true),
       ('public.linkedin_connects_today(uuid)',                                'owner_only',    true),

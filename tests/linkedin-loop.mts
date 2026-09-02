@@ -54,6 +54,7 @@ function grant(over: Partial<LoopGrantRow> = {}): LoopGrantRow {
   return {
     id: "grant-1",
     workspaceId: "ws-1",
+    scope: "replies",
     channel: "LinkedIn",
     campaignId: "camp-1",
     vendorCampaignId: "hr-77",

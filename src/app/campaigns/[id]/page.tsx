@@ -36,6 +36,7 @@ import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
+import { LaunchOutreachSheet } from "@/components/outreach/launch-outreach-sheet";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
 import { ReplyCard } from "@/components/replies/reply-card";
@@ -392,6 +393,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [bookingCandidateId, setBookingCandidateId] = React.useState<string | null>(null);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
+  const [launchOpen, setLaunchOpen] = React.useState(false);
+  const closeLaunch = React.useCallback(() => setLaunchOpen(false), []);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -1113,6 +1116,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             >
               Review outreach
             </Button>
+            <Button
+              variant="primary"
+              leftIcon={<Linkedin className="h-4 w-4" />}
+              onClick={() => setLaunchOpen(true)}
+              disabled={!can(role, "outreach")}
+              title={!can(role, "outreach") ? "Requires outreach permission" : undefined}
+              data-testid="launch-outreach-open"
+            >
+              Launch outreach
+            </Button>
             {c.status === "Paused" ? (
               <Button variant="primary" leftIcon={<Play className="h-4 w-4" />} onClick={handleResume}>
                 Resume campaign
@@ -1199,6 +1212,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </CardBody>
         </Card>
       )}
+
+      <LaunchOutreachSheet
+        open={launchOpen}
+        onClose={closeLaunch}
+        campaign={c}
+        candidates={candidates}
+        outreach={outreach}
+        seats={seats}
+      />
 
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 
