@@ -24,6 +24,7 @@ export const SETTINGS_SECTION_ORDER = [
   "17",
   "19",
   "18",
+  "20",
 ] as const;
 
 /** Maps each numbered settings section to the tab it lives under. */
@@ -41,6 +42,7 @@ export const SETTINGS_N_TO_TAB: Record<string, string> = {
   "02": "compliance",
   "05": "compliance",
   "07": "compliance",
+  "20": "compliance",
   "08": "voice",
   "13": "voice",
   "11": "access",

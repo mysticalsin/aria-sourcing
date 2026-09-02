@@ -136,6 +136,9 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
     .from("messages_outbound")
     .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
     .eq("status", "queued")
+    // Loop replies carry a campaign launch grant instead of a per-message
+    // approval; src/lib/linkedin-loop-dispatch.ts owns them.
+    .is("linkedin_reply_grant_id", null)
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
   const { data: due, error: dueErr } = await dueQuery

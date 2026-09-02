@@ -25,6 +25,7 @@ import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
+import { LinkedInLoopPanel } from "@/components/settings/linkedin-loop-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
@@ -942,6 +943,16 @@ export default function SettingsPage() {
                 </p>
               </CardContent>
             </Card>
+          </Section>
+
+          {/* 20 — LinkedIn reply loop */}
+          <Section
+            n="20"
+            eyebrow="Reply loop"
+            title="Automatic LinkedIn replies"
+            description="After a campaign launch, Aria answers replies as you with a two to ten minute delay until a meeting is booked. Off by default. Kill switch lives here."
+          >
+            <LinkedInLoopPanel />
           </Section>
 
           {/* 08 — Humanizer */}

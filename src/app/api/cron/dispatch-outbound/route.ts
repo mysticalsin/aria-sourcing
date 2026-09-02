@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import { recoverPendingWhatsAppInbound } from "@/lib/whatsapp-inbound";
+import { drainLinkedInLoop } from "@/lib/linkedin-loop-server";
 
 export const dynamic = "force-dynamic";
 
@@ -32,5 +33,6 @@ export async function GET(req: NextRequest) {
 
   const inboundRecovery = await recoverPendingWhatsAppInbound(supabase, 50);
   const stats = await dispatchDue(supabase, 50);
-  return NextResponse.json({ ok: true, ...stats, inboundRecovery });
+  const linkedinLoop = await drainLinkedInLoop(supabase, 50);
+  return NextResponse.json({ ok: true, ...stats, inboundRecovery, linkedinLoop });
 }
