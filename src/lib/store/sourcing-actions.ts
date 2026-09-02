@@ -8,8 +8,8 @@ import {
 } from "../sourcing/lab-fixture-people";
 import { isPeopleFirstContactComplete } from "../sourcing/people-first-contact";
 import { formatHarvestEvidenceError } from "../sourcing/harvest-evidence";
-import { peopleFirstHarvestQueue } from "../sourcing/multi-source-plan";
 import type { PlannedSearch } from "../sourcing/multi-source-plan";
+import { runPeopleFirstClickChain } from "../sourcing/people-first-chain";
 import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
@@ -750,6 +750,11 @@ export function createSourcingActions({
       harvestStep,
     );
     if (!reviewed.ok) {
+      if (reviewed.resume) {
+        // Chain budget ran out with planned harvests left. Same click
+        // re-POSTs from this step. Not a fail, not 0 people, not audited.
+        return { ok: false, error: reviewed.error, source: "unavailable", resume: reviewed.resume };
+      }
       const latestForError = currentState();
       const campaignForError = latestForError?.campaigns.find((item) => item.id === campaignId);
       const error = latestForError && campaignForError
@@ -1106,33 +1111,27 @@ export function createSourcingActions({
         !explicitStep &&
         isPeopleFirstRole(initialCampaign.jobAnalysis)
       ) {
-        // One harvest per HTTP request so a Fly idle cut cannot eat harvest 2.
-        // Same user click loops the queue until people or the plan is exhausted.
-        let last: SourceNextBatchResult | null = null;
-        for (const step of peopleFirstHarvestQueue(initialCampaign.jobAnalysis)) {
-          last = await sourceReviewedCampaignBatch(
-            campaignId,
-            count,
-            initialFingerprint,
-            opts?.agentFramework,
-            step,
-          );
-          if (last.ok && last.accepted.length > 0) return last;
-          if (!last.ok) {
-            const emptyContinue =
-              /Empty harvest is not a result|Next planned search must start|every planned search was tried/i.test(
-                last.error,
-              );
-            if (!emptyContinue) return last;
-          }
+        // One click, one server-owned chain. The server runs every planned
+        // harvest, then LinkedIn web, enrich, and GitHub merge. This side
+        // re-POSTs only on PEOPLE_FIRST_HARVEST_CONTINUE (resume step).
+        // Rate limit, quota, mock, empty: the click's honest fail. Never 0
+        // people as success.
+        const chain = await runPeopleFirstClickChain({
+          job: initialCampaign.jobAnalysis,
+          search: (resume) =>
+            sourceReviewedCampaignBatch(
+              campaignId,
+              count,
+              initialFingerprint,
+              opts?.agentFramework,
+              resume ?? undefined,
+            ),
+        });
+        const last = chain.result;
+        if (last.ok && last.accepted.length === 0) {
+          return { ok: false, error: EMPTY_PEOPLE_FIRST_HARVEST, source: "unavailable" };
         }
-        return (
-          last ?? {
-            ok: false,
-            error: EMPTY_PEOPLE_FIRST_HARVEST,
-            source: "unavailable",
-          }
-        );
+        return last;
       }
       return await sourceReviewedCampaignBatch(
         campaignId,

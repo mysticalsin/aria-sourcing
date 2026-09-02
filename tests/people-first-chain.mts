@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
-import { runPeopleFirstHarvestChain } from "../src/lib/sourcing/people-first-chain";
-import { peopleFirstHarvestQueue } from "../src/lib/sourcing/multi-source-plan";
+import { runPeopleFirstClickChain } from "../src/lib/sourcing/people-first-chain";
+import { peopleFirstHarvestQueue, type PlannedSearch } from "../src/lib/sourcing/multi-source-plan";
+import {
+  formatFallthroughEvidence,
+  parseEnrichmentRunIds,
+  peopleFirstAlternateQuery,
+  runPeopleFirstEmptyFallthrough,
+} from "../src/lib/sourcing/people-first-fallthrough";
 import type { JobAnalysis } from "../src/lib/types";
 
 let pass = 0;
@@ -41,108 +47,30 @@ function baJob(): JobAnalysis {
   };
 }
 
-{
-  const job = baJob();
-  const queue = peopleFirstHarvestQueue(job);
-  ok("BA queue is never one harvest", queue.length >= 2);
-  const runIds: string[] = [];
-  const result = await runPeopleFirstHarvestChain({
-    job,
-    search: async (step) => {
-      const runId = `harvestapi-${runIds.length + 1}`;
-      runIds.push(runId);
-      return {
-        runId,
-        started: true,
-        itemCount: 0,
-        status: "SUCCEEDED",
-        accepted: [],
-      };
-    },
-  });
-  ok("empty items=0 starts a second harvest, not a toast", runIds.length >= 2);
-  ok(
-    "second harvest has a distinct run id",
-    runIds[0] !== runIds[1] && new Set(runIds).size === runIds.length,
-  );
-  ok(
-    "empty chain escalates past the 4 canned Calypso harvests",
-    runIds.length > 4 && new Set(runIds).size === runIds.length,
-  );
-  ok(
-    "empty chain runs role+geo+synonym harvests",
-    result.attempts.some((attempt) => attempt.step.query === "Business Analyst Montreal") &&
-      result.attempts.some((attempt) => attempt.step.query === "Calypso consultant") &&
-      result.attempts.some((attempt) => /trading-platform BA/i.test(attempt.step.query)) &&
-      result.attempts.some((attempt) => /finance BA/i.test(attempt.step.query)),
-  );
-  ok("empty chain does not invent people", result.accepted.length === 0);
-  ok(
-    "first query stays Calypso Business Analyst",
-    result.attempts[0]?.step.query === "Calypso Business Analyst",
-  );
-  ok(
-    "harvest 2 is a broader query or next actor-input",
-    result.attempts[1]?.step.query !== "Calypso Business Analyst" ||
-      (result.attempts[1]?.step.currentJobTitles ?? []).includes("Business Analyst"),
-  );
-}
+type Result = { ok: true; accepted: string[] } | { ok: false; error: string; resume?: PlannedSearch };
 
-{
-  const job = baJob();
-  let calls = 0;
-  const result = await runPeopleFirstHarvestChain({
-    job,
-    search: async () => {
-      calls += 1;
-      if (calls === 1) {
-        return {
-          runId: "run-empty-1",
-          started: true,
-          itemCount: 0,
-          status: "SUCCEEDED",
-          accepted: [],
-        };
+function captureHarvestLogs(): { logs: Array<Record<string, unknown>>; restore: () => void } {
+  const logs: Array<Record<string, unknown>> = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    if (text.includes("aria_harvest")) {
+      try {
+        logs.push(JSON.parse(text) as Record<string, unknown>);
+      } catch {
+        // ignore non-JSON
       }
-      return {
-        runId: "run-hit-2",
-        started: true,
-        itemCount: 2,
-        status: "SUCCEEDED",
-        accepted: [{ id: "p-1" }, { id: "p-2" }],
-      };
-    },
-  });
-  ok("chain stops once a real shortlist lands", calls === 2 && result.accepted.length === 2);
-  ok(
-    "hit harvest is a distinct second run id",
-    result.attempts[0]?.runId === "run-empty-1" && result.attempts[1]?.runId === "run-hit-2",
-  );
+    }
+    return originalWrite(chunk, ...(args as []));
+  }) as typeof process.stdout.write;
+  return { logs, restore: () => { process.stdout.write = originalWrite; } };
 }
 
-{
-  const job = baJob();
-  let calls = 0;
-  await runPeopleFirstHarvestChain({
-    job,
-    search: async () => {
-      calls += 1;
-      return {
-        runId: "",
-        started: false,
-        itemCount: 0,
-        status: "NOT_STARTED",
-        accepted: [],
-        stop: true,
-      };
-    },
-  });
-  ok("hard stop does not fake a second run id", calls === 1);
-}
-
+// The queue itself: never one harvest, first query stays, escalation past the canned set.
 {
   const job = baJob();
   const queries = peopleFirstHarvestQueue(job).map((step) => step.query);
+  ok("BA queue is never one harvest", queries.length >= 2);
   ok("first query stays Calypso Business Analyst", queries[0] === "Calypso Business Analyst");
   ok(
     "later harvests escalate past the 4 canned Calypso variants",
@@ -151,75 +79,200 @@ function baJob(): JobAnalysis {
       queries.some((query) => /trading-platform BA/i.test(query)) &&
       queries.some((query) => /finance BA/i.test(query)),
   );
-  const canned = new Set([
-    "Calypso Business Analyst",
-    "Calypso",
-    "Calypso Business Analysis",
-  ]);
+  const canned = new Set(["Calypso Business Analyst", "Calypso", "Calypso Business Analysis"]);
   ok(
     "expansion harvests are not a loop of the same four Calypso strings",
     queries.filter((query) => !canned.has(query)).length >= 3,
   );
 }
 
+// One click = one POST. The server owns the chain. No resume: no second POST.
 {
-  const { isLastPeopleFirstHarvest, peopleFirstAlternateQuery, runPeopleFirstEmptyFallthrough } =
-    await import("../src/lib/sourcing/people-first-fallthrough");
   const job = baJob();
-  const queue = peopleFirstHarvestQueue(job);
-  const logs: Array<{ phase: string; actor?: string; runId?: string }> = [];
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
-    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
-    if (text.includes("aria_harvest")) {
-      try {
-        logs.push(JSON.parse(text) as { phase: string; actor?: string; runId?: string });
-      } catch {
-        // ignore non-JSON
-      }
-    }
-    return originalWrite(chunk, ...(args as []));
-  }) as typeof process.stdout.write;
-  let enrichStarts = 0;
-  let githubStarts = 0;
-  let alternateQuery = "";
-  const fallthrough = await runPeopleFirstEmptyFallthrough({
+  const posts: Array<PlannedSearch | null> = [];
+  const chain = await runPeopleFirstClickChain<Result>({
     job,
-    startEnrich: async () => {
-      enrichStarts += 1;
-      return { ok: true, runId: "enrich-live-1", status: "READY" };
-    },
-    startGithub: async () => {
-      githubStarts += 1;
-      return { ok: true, runId: "github-live-1", status: "READY" };
-    },
-    alternateSearch: async (query) => {
-      alternateQuery = query;
-      return { acceptedCount: 0 };
+    search: async (resume) => {
+      posts.push(resume);
+      return { ok: true, accepted: ["p-1", "p-2"] };
     },
   });
-  process.stdout.write = originalWrite;
+  ok("a hit is one POST, not 8", chain.requests === 1 && posts.length === 1 && posts[0] === null);
+  ok("hit result is returned untouched", chain.result.ok === true && chain.resumes.length === 0);
+}
+
+// Continuation: the server ran out of chain budget and names the resume step.
+// The same click re-POSTs that reviewed step and the server continues from it.
+{
+  const job = baJob();
+  const queue = peopleFirstHarvestQueue(job);
+  const posts: Array<PlannedSearch | null> = [];
+  const chain = await runPeopleFirstClickChain<Result>({
+    job,
+    search: async (resume) => {
+      posts.push(resume);
+      if (resume === null) return { ok: false, error: "Harvest chain needs another request.", resume: queue[3] };
+      if (resume.query === queue[3]!.query) {
+        return { ok: false, error: "Harvest chain needs another request.", resume: queue[6] };
+      }
+      return { ok: true, accepted: ["p-late"] };
+    },
+  });
   ok(
-    "first harvest is not the last planned harvest",
-    !isLastPeopleFirstHarvest(job, queue[0]!) && isLastPeopleFirstHarvest(job, queue.at(-1)!),
+    "CONTINUE re-POSTs the reviewed resume step in the same click",
+    chain.requests === 3 &&
+      posts[1]?.query === queue[3]!.query &&
+      posts[2]?.query === queue[6]!.query &&
+      chain.result.ok === true,
+  );
+  ok("resumes are recorded", chain.resumes.map((step) => step.query).join("|") === `${queue[3]!.query}|${queue[6]!.query}`);
+}
+
+// Desync guard: a resume step that is off-plan or moves backwards ends the click. No loop.
+{
+  const job = baJob();
+  const queue = peopleFirstHarvestQueue(job);
+  let posts = 0;
+  const backwards = await runPeopleFirstClickChain<Result>({
+    job,
+    search: async (resume) => {
+      posts += 1;
+      if (resume === null) return { ok: false, error: "continue", resume: queue[5] };
+      return { ok: false, error: "continue", resume: queue[2] };
+    },
+  });
+  ok("a backwards resume step stops the click instead of looping", posts === 2 && backwards.result.ok === false);
+  posts = 0;
+  const offPlan = await runPeopleFirstClickChain<Result>({
+    job,
+    search: async () => {
+      posts += 1;
+      return { ok: false, error: "continue", resume: { platform: "Apify", query: "Calypso product page" } };
+    },
+  });
+  ok("an off-plan resume step is ignored", posts === 1 && offPlan.result.ok === false);
+  posts = 0;
+  const sameStep = await runPeopleFirstClickChain<Result>({
+    job,
+    search: async () => {
+      posts += 1;
+      return { ok: false, error: "continue", resume: queue[0] };
+    },
+  });
+  ok("resuming the first step again is a replay, not a second POST", posts === 1);
+}
+
+// Rate limit / quota is FAIL, never done, never a second POST that burns another run.
+{
+  const job = baJob();
+  let posts = 0;
+  const chain = await runPeopleFirstClickChain<Result>({
+    job,
+    search: async () => {
+      posts += 1;
+      return { ok: false, error: "The sourcing-agent rate limit was reached. Try again later." };
+    },
+  });
+  ok(
+    "sourcing-agent rate limit is a hard fail, not a retry loop",
+    posts === 1 && chain.result.ok === false && /rate limit/.test(chain.result.ok ? "" : chain.result.error),
+  );
+}
+
+// Fallthrough order: LinkedIn web discovery, then enrich the URLs we hold, then GitHub merge.
+{
+  const job = baJob();
+  const capture = captureHarvestLogs();
+  const calls: string[] = [];
+  let enrichedUrls: string[] = [];
+  const result = await runPeopleFirstEmptyFallthrough({
+    job,
+    poolUrls: ["https://www.linkedin.com/in/pool-person"],
+    discoverLinkedin: async (query) => {
+      calls.push(`web:${query}`);
+      return { ok: true, urls: ["https://www.linkedin.com/in/web-person", "https://www.linkedin.com/in/pool-person"] };
+    },
+    enrichProfiles: async (urls) => {
+      calls.push("enrich");
+      enrichedUrls = urls;
+      return { ok: true, runId: "enrich-live-1", status: "SUCCEEDED", itemCount: 2, started: true, acceptedCount: 1 };
+    },
+    githubHandles: () => ["https://github.com/web-person"],
+    mergeGithub: async (handles) => {
+      calls.push(`github:${handles.join(",")}`);
+      return { ok: true, runId: "github-live-1", status: "SUCCEEDED", itemCount: 1, started: true };
+    },
+  });
+  capture.restore();
+  ok(
+    "fallthrough order is web discovery, enrich, GitHub",
+    calls.join("|") === "web:Business Analyst Montreal|enrich|github:https://github.com/web-person",
   );
   ok(
-    "after 8 empty LinkedIn harvests enrich and GitHub runs start",
-    enrichStarts === 1 && githubStarts === 1 && fallthrough.enrich.started && fallthrough.github.started,
+    "enrich POSTs every LinkedIn URL held once: harvest pool plus web hits, deduped",
+    enrichedUrls.length === 2 &&
+      enrichedUrls.includes("https://www.linkedin.com/in/pool-person") &&
+      enrichedUrls.includes("https://www.linkedin.com/in/web-person"),
   );
   ok(
-    "enrich and GitHub run ids are logged on the harvest trail",
-    logs.some((row) => row.actor === "harvestapi~linkedin-profile-scraper" && row.runId === "enrich-live-1") &&
-      logs.some((row) => row.actor === "apivault_labs~github-profile-scraper" && row.runId === "github-live-1") &&
-      /enrich=enrich-live-1/.test(fallthrough.logged) &&
-      /github=github-live-1/.test(fallthrough.logged),
+    "enrich and GitHub run ids and item counts are on the click evidence",
+    /enrich=enrich-live-1 items=2/.test(result.logged) &&
+      /github=github-live-1 items=1/.test(result.logged) &&
+      /web=Business Analyst Montreal:2/.test(result.logged) &&
+      result.acceptedCount === 1,
   );
   ok(
-    "alternate source is not another Calypso harvestapi string",
-    alternateQuery === "Business Analyst Montreal" &&
-      !/^Calypso\b/.test(alternateQuery) &&
-      fallthrough.alternateQuery === "Business Analyst Montreal",
+    "alternate source is LinkedIn web role+geo, not another Calypso harvestapi string",
+    result.alternateQuery === "Business Analyst Montreal" && !/^Calypso\b/.test(result.alternateQuery) &&
+      peopleFirstAlternateQuery(job) === "Business Analyst Montreal",
   );
+  ok(
+    "alternate search is on the aria_harvest trail",
+    capture.logs.some((row) => row.phase === "alternate_search" && row.query === "Business Analyst Montreal" && row.items === 2),
+  );
+  const parsed = parseEnrichmentRunIds(result.logged);
+  ok("run ids parse back from the evidence", parsed.enrichRunId === "enrich-live-1" && parsed.githubRunId === "github-live-1");
+}
+
+// Nothing to send: an empty-URL Apify POST is invalid-input (Fly 5728ad4), so the
+// click logs an explicit skip with the reason instead of faking a run.
+{
+  const job = baJob();
+  const capture = captureHarvestLogs();
+  let enrichCalls = 0;
+  let githubCalls = 0;
+  const result = await runPeopleFirstEmptyFallthrough({
+    job,
+    poolUrls: [],
+    discoverLinkedin: async () => ({ ok: false, urls: [], detail: "no Tavily key in Access & Keys" }),
+    enrichProfiles: async () => {
+      enrichCalls += 1;
+      return { ok: true, runId: "should-not-run", status: "SUCCEEDED", itemCount: 0, started: true, acceptedCount: 0 };
+    },
+    githubHandles: () => [],
+    mergeGithub: async () => {
+      githubCalls += 1;
+      return { ok: true, runId: "should-not-run", status: "SUCCEEDED", itemCount: 0, started: true };
+    },
+  });
+  capture.restore();
+  ok("no URLs means no enrich POST and no GitHub POST", enrichCalls === 0 && githubCalls === 0);
+  ok(
+    "skips are logged with their reason on the aria_harvest trail",
+    capture.logs.some((row) => row.phase === "enrich_skipped" && String(row.detail).includes("invalid-input")) &&
+      capture.logs.some((row) => row.phase === "github_skipped") &&
+      capture.logs.some((row) => row.phase === "alternate_search" && row.started === false),
+  );
+  ok(
+    "skipped steps are honest in the click evidence and never parse as run ids",
+    /enrich=skipped/.test(result.logged) &&
+      /github=skipped/.test(result.logged) &&
+      /web=Business Analyst Montreal:not_started \(no Tavily key/.test(result.logged) &&
+      parseEnrichmentRunIds(result.logged).enrichRunId === undefined &&
+      parseEnrichmentRunIds(result.logged).githubRunId === undefined &&
+      result.acceptedCount === 0,
+  );
+  ok("no invented people", result.acceptedCount === 0 && formatFallthroughEvidence(result) === result.logged);
 }
 
 assert.ok(pass > 0);

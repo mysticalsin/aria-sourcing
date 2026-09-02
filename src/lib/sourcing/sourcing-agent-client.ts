@@ -2,6 +2,7 @@ import {
   formatHarvestEvidenceError,
   isHarvestEvidenceCode,
   PEOPLE_FIRST_CLIENT_WAIT_MS,
+  PEOPLE_FIRST_HARVEST_CONTINUE,
 } from "./harvest-evidence";
 import {
   CROSS_ORIGIN_SOURCING_TOAST,
@@ -35,7 +36,22 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
 
 export type ReviewedSourcingRequestResult =
   | { ok: true; value: SourcingAgentSuccessResponse }
-  | { ok: false; error: string };
+  | { ok: false; error: string; resume?: { query: string; currentJobTitles?: string[] } };
+
+/** Planned step the server asks the same click to resume from. Never invented client-side. */
+function parseResumeStep(record: Record<string, unknown> | null): { query: string; currentJobTitles?: string[] } | null {
+  const raw = record?.resume;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const query = typeof (raw as { query?: unknown }).query === "string" ? (raw as { query: string }).query.trim() : "";
+  if (!query || query.length > 256) return null;
+  const titles = Array.isArray((raw as { currentJobTitles?: unknown }).currentJobTitles)
+    ? ((raw as { currentJobTitles: unknown[] }).currentJobTitles)
+        .filter((title): title is string => typeof title === "string" && title.trim().length > 0)
+        .map((title) => title.trim().slice(0, 120))
+        .slice(0, 8)
+    : [];
+  return titles.length ? { query, currentJobTitles: titles } : { query };
+}
 
 export async function acknowledgeReviewedSourcing(
   workspaceFetch: typeof fetch,
@@ -169,6 +185,11 @@ export async function requestReviewedSourcing(
         ok: false,
         error: apiError.includes("MISSING_PLUGIN") ? apiError : MISSING_PLUGIN_TOAST,
       };
+    }
+    if (code === PEOPLE_FIRST_HARVEST_CONTINUE) {
+      const resume = parseResumeStep(record);
+      const error = apiError.trim() || formatHarvestEvidenceError("continue", { query: resume?.query ?? "" });
+      return resume ? { ok: false, error, resume } : { ok: false, error };
     }
     if (isHarvestEvidenceCode(code) && apiError.trim()) {
       return { ok: false, error: apiError };

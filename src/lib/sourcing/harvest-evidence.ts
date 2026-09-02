@@ -23,6 +23,12 @@ export const PEOPLE_FIRST_HARVEST_EMPTY = "PEOPLE_FIRST_HARVEST_EMPTY";
 export const PEOPLE_FIRST_HARVEST_ABORTED = "PEOPLE_FIRST_HARVEST_ABORTED";
 export const PEOPLE_FIRST_HARVEST_MOCK = "PEOPLE_FIRST_HARVEST_MOCK";
 export const PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS = "PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS";
+/**
+ * The server ran out of chain budget with planned harvests left. The same
+ * click re-POSTs with `resume` and the server continues from that step.
+ * Not a result, not 0 people, not a second user click.
+ */
+export const PEOPLE_FIRST_HARVEST_CONTINUE = "PEOPLE_FIRST_HARVEST_CONTINUE";
 
 export type HarvestEvidenceKind =
   | "not_started"
@@ -31,6 +37,7 @@ export type HarvestEvidenceKind =
   | "gated_empty"
   | "incomplete_contacts"
   | "aborted"
+  | "continue"
   | "mock";
 
 export type HarvestActorName =
@@ -48,19 +55,6 @@ export interface HarvestEvidence {
   started: boolean;
 }
 
-/** Toast-safe. Actor names stay in server logs, not user chrome. */
-export function formatEnrichmentRunIds(
-  enrich: Pick<HarvestEvidence, "runId">,
-  github: Pick<HarvestEvidence, "runId">,
-): string {
-  const enrichId = enrich.runId.trim();
-  const githubId = github.runId.trim();
-  if (!enrichId && !githubId) return "";
-  return [enrichId ? `enrich=${enrichId}` : "", githubId ? `github=${githubId}` : ""]
-    .filter(Boolean)
-    .join(" ");
-}
-
 const SECRET_KEY = /^(token|secret|authorization|password|apikey|api_key|apikeyid)$/i;
 const SECRET_VALUE = /apify_api_|eyJ[A-Za-z0-9_-]{20,}/;
 
@@ -71,7 +65,8 @@ export function isHarvestEvidenceCode(code: string | null | undefined): boolean 
     code === PEOPLE_FIRST_HARVEST_EMPTY ||
     code === PEOPLE_FIRST_HARVEST_ABORTED ||
     code === PEOPLE_FIRST_HARVEST_MOCK ||
-    code === PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS
+    code === PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS ||
+    code === PEOPLE_FIRST_HARVEST_CONTINUE
   );
 }
 
@@ -98,6 +93,9 @@ export function formatHarvestEvidenceError(
   }
   if (kind === "aborted") {
     return `People-first harvest aborted after 90s. ${base}. Do not treat this as 0 people. Retry Source next batch.`;
+  }
+  if (kind === "continue") {
+    return `Harvest chain needs another request. ${base}. Next planned search must start now. Do not stop at 0 people. Do not invent people.`;
   }
   if (kind === "mock") {
     return `Apify is in Mock mode. ${base}. Connect a real Apify key and switch the card to Live.`;

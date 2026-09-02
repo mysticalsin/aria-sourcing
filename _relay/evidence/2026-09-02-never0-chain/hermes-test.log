@@ -1,0 +1,14 @@
+(node:18023) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18023) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18023) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+{"time":"2026-09-02T03:20:48.112Z","source":"hermes-proxy","level":"error","message":"Aria runtime base URL unavailable","reason":"Aria runtime URL is not configured."}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_NOT_CONFIGURED"}
+RESULT hermes-cloud-authority: 19 passed, 0 failed

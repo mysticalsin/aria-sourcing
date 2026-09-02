@@ -18,7 +18,12 @@ import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
-import { APIFY_HARVEST_WAIT_MS, runProfileSearchAndWait } from "@/lib/sourcing/apify";
+import {
+  APIFY_HARVEST_WAIT_MS,
+  runProfileSearchAndWait,
+  type ApifyProfile,
+  type GithubStackRow,
+} from "@/lib/sourcing/apify";
 import type { ProviderClearance } from "@/lib/sourcing/provider-egress";
 import { HARVEST_ACTOR, type HarvestEvidence } from "@/lib/sourcing/harvest-evidence";
 import { SHORTLIST_CAP } from "@/lib/sourcing/engine";
@@ -30,7 +35,10 @@ import {
 } from "@/lib/sourcing/candidate-mappers";
 import { applyLiveEngineGate } from "@/lib/sourcing/live-shortlist";
 import { harvestGeoTerms } from "@/lib/sourcing/multi-source-plan";
-import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
+import {
+  isPeopleFirstContactComplete,
+  isRealLinkedInProfileUrl,
+} from "@/lib/sourcing/people-first-contact";
 import { roleProfile } from "@/lib/roles";
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
@@ -119,6 +127,97 @@ export function makeSourcingToolRunner(
 ) {
   const found: Candidate[] = [];
   const executions: SourcingQueryExecution[] = [];
+  /** People-first harvest rows that lacked email or phone. Enrich pool, never the shortlist. */
+  const incompleteLinkedinUrls: string[] = [];
+  const peopleFirstRole = roleProfile(campaign.jobAnalysis).queryStyle === "linkedin";
+
+  function rememberIncomplete(rows: Candidate[]): void {
+    for (const row of rows) {
+      const url = row.linkedinUrl?.trim() ?? "";
+      if (!isRealLinkedInProfileUrl(url)) continue;
+      if (incompleteLinkedinUrls.some((known) => known.toLowerCase() === url.toLowerCase())) continue;
+      incompleteLinkedinUrls.push(url);
+    }
+  }
+
+  /**
+   * LinkedIn web discovery after harvestapi is exhausted. Returns real
+   * /in/ URLs for the enrich step. Never a shortlist row: a web hit has no
+   * email or phone and cannot prove a ≥60 skill-match on its own.
+   */
+  async function discoverLinkedinUrls(
+    query: string,
+    count: number,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; urls: string[]; detail?: string }> {
+    const clean = query.trim().slice(0, 256);
+    if (!clean) return { ok: false, urls: [], detail: "missing query" };
+    const policy = validateSourcingQuery("LinkedIn", clean, campaign);
+    if (!policy.ok) return { ok: false, urls: [], detail: policy.error };
+    if (!tavilyKey) return { ok: false, urls: [], detail: "no Tavily key in Access & Keys" };
+    if (beforeExternalCall && !(await beforeExternalCall())) {
+      return { ok: false, urls: [], detail: "Sourcing authority changed." };
+    }
+    const scopedQuery = ensureWebQueryScope("LinkedIn", clean);
+    const search = await runWebTool(
+      "web_search",
+      { query: scopedQuery },
+      { tavilyKey, fetchImpl: webFetchImpl, signal },
+    );
+    if (!search.ok) {
+      executions.push({ platform: "LinkedIn", query: clean, ok: false, candidateCount: 0, skippedCount: 0 });
+      return { ok: false, urls: [], detail: search.error ?? "Web search failed." };
+    }
+    const content = search.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
+    const hits = (content?.results ?? []).slice(0, Math.min(Math.max(count, 1), 10));
+    const urls: string[] = [];
+    for (const hit of hits) {
+      const url = extractLead(hit, "LinkedIn").url.trim();
+      if (!isRealLinkedInProfileUrl(url)) continue;
+      if (urls.some((known) => known.toLowerCase() === url.toLowerCase())) continue;
+      urls.push(url);
+    }
+    executions.push({
+      platform: "LinkedIn",
+      query: clean,
+      ok: true,
+      candidateCount: 0,
+      skippedCount: hits.length - urls.length,
+    });
+    return { ok: true, urls };
+  }
+
+  /**
+   * Enriched profiles (email search mode) become shortlist people only when
+   * they pass email + phone + LinkedIn and the live ≥60 gate.
+   */
+  function acceptEnrichedProfiles(
+    profiles: ApifyProfile[],
+    query: string,
+    harvest: HarvestEvidence,
+  ): { acceptedCount: number; contactCompleteCount: number } {
+    const alreadySeen = [...existing, ...found];
+    const mapped = mapApifyCandidates(
+      profiles,
+      campaign as Campaign,
+      query,
+      alreadySeen as Candidate[],
+      weights,
+    );
+    const withContacts = mapped.accepted.filter(isPeopleFirstContactComplete);
+    const gated = applyLiveEngineGate(withContacts, campaign.jobAnalysis);
+    found.push(...gated);
+    executions.push({
+      platform: "Apify",
+      query,
+      ok: true,
+      candidateCount: gated.length,
+      skippedCount: mapped.skipped.length + (mapped.accepted.length - gated.length),
+      contactCompleteCount: withContacts.length,
+      harvest: { ...harvest, itemCount: profiles.length },
+    });
+    return { acceptedCount: gated.length, contactCompleteCount: withContacts.length };
+  }
 
   async function run(
     name: string,
@@ -248,9 +347,9 @@ export function makeSourcingToolRunner(
           alreadySeen as Candidate[],
           weights,
         );
-        const peopleFirst = roleProfile(campaign.jobAnalysis).queryStyle === "linkedin";
-        if (peopleFirst) {
+        if (peopleFirstRole) {
           const withContacts = mapped.accepted.filter(isPeopleFirstContactComplete);
+          rememberIncomplete(mapped.accepted.filter((row) => !isPeopleFirstContactComplete(row)));
           contactCompleteCount = withContacts.length;
           skippedCount = mapped.skipped.length + (mapped.accepted.length - withContacts.length);
           accepted = withContacts;
@@ -334,9 +433,36 @@ export function makeSourcingToolRunner(
     return { ok: true, content: { platform, query, found: summary, skippedByDedupe: skippedCount } };
   }
 
+  /** GitHub tech stack merges onto an accepted person by login. Never a new row. */
+  function mergeGithubStack(rows: GithubStackRow[]): number {
+    let merged = 0;
+    for (const row of rows) {
+      if (!row.login || row.skills.length === 0) continue;
+      const suffix = `/${row.login.toLowerCase()}`;
+      const index = found.findIndex((person) =>
+        (person.githubUrl ?? "").trim().toLowerCase().replace(/\/+$/, "").endsWith(suffix),
+      );
+      if (index < 0) continue;
+      const person = found[index];
+      if (!person) continue;
+      const known = new Set(person.techStack.map((skill) => skill.toLowerCase()));
+      const added = row.skills.filter((skill) => !known.has(skill.toLowerCase()));
+      if (added.length === 0) continue;
+      found[index] = { ...person, techStack: [...person.techStack, ...added] };
+      merged += 1;
+    }
+    return merged;
+  }
+
   return {
     run,
     getFound: (): Candidate[] => found,
     getExecutions: (): SourcingQueryExecution[] => executions.map((execution) => ({ ...execution })),
+    getIncompleteLinkedinUrls: (): string[] => [...incompleteLinkedinUrls],
+    discoverLinkedinUrls,
+    acceptEnrichedProfiles,
+    mergeGithubStack,
   };
 }
+
+export type SourcingToolRunner = ReturnType<typeof makeSourcingToolRunner>;

@@ -1,115 +1,56 @@
 /**
- * Auto source: one unattended chain. Search until a real shortlist, then
- * enrich and merge. Empty first harvest is next-search, not a stop.
- * Actors stay in the backend. Do not invent people.
+ * Auto source: one unattended click. The server runs the harvest chain
+ * (search until a real shortlist, then LinkedIn web, enrich, GitHub merge).
+ * This side only runs the per-person enrichment waterfall on people that
+ * actually landed. 0 people is never a success. Do not invent people.
  */
 
 import type { SourceNextBatchResult } from "@/lib/store/contracts";
 import { parseEnrichmentRunIds } from "@/lib/sourcing/people-first-fallthrough";
 import { EMPTY_PEOPLE_FIRST_HARVEST, isPeopleFirstRole } from "@/lib/sourcing/people-plugins";
-import { runPeopleFirstHarvestChain } from "@/lib/sourcing/people-first-chain";
-import type { PlannedSearch } from "@/lib/sourcing/multi-source-plan";
 import type { JobAnalysis } from "@/lib/types";
 
 export interface AutoSourceEnrichResult {
   ok: boolean;
   error?: string;
-  enrichRunId?: string;
-  githubRunId?: string;
 }
 
-function isHardSearchStop(result: SourceNextBatchResult): boolean {
-  if (result.ok) return false;
-  const error = result.error;
-  if (/Empty harvest is not a result|Next planned search must start|every planned search was tried/i.test(error)) {
-    return false;
-  }
-  return true;
-}
+export type AutoSourceResult = SourceNextBatchResult & {
+  enriched?: boolean;
+  techStackMerged?: boolean;
+  enrichRunId?: string;
+  githubRunId?: string;
+};
 
 export async function runAutoSourcePipeline(input: {
   job: JobAnalysis;
-  search: (step: PlannedSearch) => Promise<SourceNextBatchResult>;
+  /** The click chain: one POST, re-POST only on PEOPLE_FIRST_HARVEST_CONTINUE. */
+  search: () => Promise<SourceNextBatchResult>;
   enrich: () => Promise<AutoSourceEnrichResult>;
   mergeTechStack?: () => Promise<void>;
-}): Promise<
-  SourceNextBatchResult & {
-    enriched?: boolean;
-    techStackMerged?: boolean;
-    enrichRunId?: string;
-    githubRunId?: string;
+}): Promise<AutoSourceResult> {
+  const result = await input.search();
+  if (!result.ok) {
+    // Rate limit, quota, mock, not started, empty after the whole chain:
+    // all FAIL. Never dress a failed chain as enriched.
+    return { ...result, enriched: false, techStackMerged: false, ...parseEnrichmentRunIds(result.error) };
   }
-> {
-  const searches: SourceNextBatchResult[] = [];
-  const chain = await runPeopleFirstHarvestChain({
-    job: input.job,
-    search: async (step) => {
-      const result = await input.search(step);
-      searches.push(result);
-      if (result.ok && result.accepted.length > 0) {
-        return {
-          runId: `accepted-${step.query}`,
-          started: true,
-          itemCount: result.accepted.length,
-          status: "SUCCEEDED",
-          accepted: result.accepted,
-        };
-      }
-      const runIdMatch = !result.ok ? result.error.match(/\brun=([A-Za-z0-9._:-]+)/) : null;
-      return {
-        runId: runIdMatch?.[1] ?? "",
-        started: Boolean(runIdMatch?.[1] || result.ok),
-        itemCount: 0,
-        status: result.ok ? "SUCCEEDED" : "EMPTY",
-        accepted: [],
-        stop: isHardSearchStop(result),
-      };
-    },
-  });
-  const last = searches.at(-1) ?? null;
-  const hit = searches.find((result) => result.ok && result.accepted.length > 0);
-  // Empty LinkedIn search is not terminal. Always attempt enrich, then
-  // GitHub profile-scraper merge onto the same people when provided.
+  if (result.accepted.length === 0) {
+    return {
+      ok: false,
+      error: isPeopleFirstRole(input.job)
+        ? EMPTY_PEOPLE_FIRST_HARVEST
+        : "Empty harvest is not a result. Do not stop at 0 people.",
+      source: "unavailable",
+      enriched: false,
+      techStackMerged: false,
+    };
+  }
   const enrich = await input.enrich();
   let techStackMerged = false;
   if (input.mergeTechStack) {
     await input.mergeTechStack();
     techStackMerged = true;
   }
-  const fromLast = last && !last.ok ? parseEnrichmentRunIds(last.error) : {};
-  const enrichRunId = enrich.enrichRunId ?? fromLast.enrichRunId;
-  const githubRunId = enrich.githubRunId ?? fromLast.githubRunId;
-  const loggedEnrichment = Boolean(enrichRunId && githubRunId);
-  if (chain.accepted.length > 0 && hit && hit.ok) {
-    return {
-      ...hit,
-      enriched: Boolean(enrich.ok || !enrich.error),
-      techStackMerged,
-      enrichRunId,
-      githubRunId,
-    };
-  }
-  if (last && !last.ok && isHardSearchStop(last)) {
-    return { ...last, enriched: Boolean(enrich.ok || !enrich.error), techStackMerged, enrichRunId, githubRunId };
-  }
-  if (!loggedEnrichment) {
-    return {
-      ok: false,
-      error: "Empty harvest is not a result. Enrichment must start. Do not stop at 0 people. Do not invent people.",
-      source: "unavailable",
-      enriched: false,
-      techStackMerged,
-    };
-  }
-  return {
-    ok: false,
-    error: isPeopleFirstRole(input.job)
-      ? EMPTY_PEOPLE_FIRST_HARVEST
-      : "Empty harvest is not a result. Do not stop at 0 people.",
-    source: "unavailable",
-    enriched: true,
-    techStackMerged,
-    enrichRunId,
-    githubRunId,
-  };
+  return { ...result, enriched: Boolean(enrich.ok || !enrich.error), techStackMerged };
 }

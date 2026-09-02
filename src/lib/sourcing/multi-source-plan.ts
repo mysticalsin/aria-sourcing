@@ -26,12 +26,17 @@ export const PEOPLE_FIRST_ATTEMPT_WAIT_MS = 90_000;
  */
 export const PEOPLE_FIRST_MAX_ATTEMPTS = 8;
 /**
- * One Source click must run every planned harvest. A shared 90s abort is
- * 0-and-stop: the first SUCCEEDED items=0 consumes the budget and harvest 2
- * never starts (Ultron Fly d99e772 v212).
+ * One Source click is one HTTP request that runs the whole chain: every
+ * planned harvest (fresh 90s each, never one shared abort: Ultron Fly
+ * d99e772 v212), then LinkedIn web, enrich, and GitHub merge. One harvest
+ * per request was the Fly 5728ad4 fail: 8 POSTs per click = 8 sourcing
+ * runs against a 10/day quota and a 10/min limiter, so the next click was
+ * SOURCING_AGENT_RATE_LIMITED. The server stops starting new harvests after
+ * this wall budget and answers PEOPLE_FIRST_HARVEST_CONTINUE with the resume
+ * step; the same click re-POSTs. Stays under route maxDuration 360s and Fly
+ * idle_timeout 360 with room for the fallthrough scrapers.
  */
-export const PEOPLE_FIRST_SEARCH_BUDGET_MS =
-  PEOPLE_FIRST_ATTEMPT_WAIT_MS * PEOPLE_FIRST_MAX_ATTEMPTS;
+export const PEOPLE_FIRST_CHAIN_BUDGET_MS = 200_000;
 
 /** Distinctive trading-platform tokens. These are skills / need words, never people. */
 const NEED_PLATFORM_TOKENS = [

@@ -1,0 +1,20 @@
+(node:17418) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17418) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17418) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"actor_input","actor":"harvestapi~linkedin-profile-search","query":"Senior Go Engineer","actorInputField":"searchQuery","actorSearchQuery":"Senior Go Engineer","detail":"actor_input_matches_planned"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"actor_input","actor":"harvestapi~linkedin-profile-search","query":"q","actorInputField":"searchQuery","actorSearchQuery":"q","detail":"actor_input_matches_planned"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"started","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","runId":"enrich_run_1","status":"READY","items":2,"started":true}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"started","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","runId":"github_run_1","status":"READY","items":2,"started":true}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"started","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","runId":"enrich_wait_1","status":"READY","items":1,"started":true}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"succeeded","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","runId":"enrich_wait_1","status":"SUCCEEDED","items":1,"started":true,"detail":"sent=1 Finished! Total 1 items"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"started","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","runId":"github_wait_1","status":"READY","items":1,"started":true}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"succeeded","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","runId":"github_wait_1","status":"SUCCEEDED","items":1,"started":true,"detail":"sent=1"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"not_started","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"NOT_STARTED","items":1,"started":false,"detail":"invalid-input"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"actor_input","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","actorInputField":"searchQuery","actorSearchQuery":"Calypso Linux Python","detail":"actor_input_matches_planned"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"started","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","runId":"run_running","status":"RUNNING","started":true}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"still_running","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","runId":"run_running","status":"RUNNING","started":true}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":false}
+RESULT apify-sourcing: 89 passed, 0 failed

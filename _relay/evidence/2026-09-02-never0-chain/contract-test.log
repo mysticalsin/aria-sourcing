@@ -1,0 +1,94 @@
+(node:64737) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:64738) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:64738) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: workspace projection owns campaign and dedupe context while stripping unrelated state
+ok 1 - workspace projection owns campaign and dedupe context while stripping unrelated state
+  ---
+  duration_ms: 1.779125
+  type: 'test'
+  ...
+# Subtest: people-first projection coerces a reviewed Calypso brief instead of invalid_state
+ok 2 - people-first projection coerces a reviewed Calypso brief instead of invalid_state
+  ---
+  duration_ms: 0.85175
+  type: 'test'
+  ...
+# Subtest: projection still fail-closes when a campaign cannot be coerced
+ok 3 - projection still fail-closes when a campaign cannot be coerced
+  ---
+  duration_ms: 0.18475
+  type: 'test'
+  ...
+# Subtest: people-first projection survives a stale cloud-model settings blob
+ok 4 - people-first projection survives a stale cloud-model settings blob
+  ---
+  duration_ms: 0.153375
+  type: 'test'
+  ...
+# Subtest: campaign fingerprint changes when the persisted need or search strategy changes
+ok 5 - campaign fingerprint changes when the persisted need or search strategy changes
+  ---
+  duration_ms: 0.056167
+  type: 'test'
+  ...
+# Subtest: strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads
+ok 6 - strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads
+  ---
+  duration_ms: 0.448083
+  type: 'test'
+  ...
+# Subtest: client reconstruction creates a minimal sourced candidate with no injected authority or history
+ok 7 - client reconstruction creates a minimal sourced candidate with no injected authority or history
+  ---
+  duration_ms: 0.141875
+  type: 'test'
+  ...
+# Subtest: store consumer uses strict response parsing, current authority, commit-time dedupe, and persisted truth
+ok 8 - store consumer uses strict response parsing, current authority, commit-time dedupe, and persisted truth
+  ---
+  duration_ms: 1.405292
+  type: 'test'
+  ...
+# Subtest: campaign UI presents a completed zero-match search as information, not sourcing success
+ok 9 - campaign UI presents a completed zero-match search as information, not sourcing success
+  ---
+  duration_ms: 0.776875
+  type: 'test'
+  ...
+# Subtest: people-first harvest route never statically loads Playwright or the cloud tool-loop
+ok 10 - people-first harvest route never statically loads Playwright or the cloud tool-loop
+  ---
+  duration_ms: 0.72925
+  type: 'test'
+  ...
+# Subtest: keyed people-first harvest is recall-capable Full Apify, not 0-or-toast
+ok 11 - keyed people-first harvest is recall-capable Full Apify, not 0-or-toast
+  ---
+  duration_ms: 3.395875
+  type: 'test'
+  ...
+# Subtest: reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast
+ok 12 - reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast
+  ---
+  duration_ms: 18.73325
+  type: 'test'
+  ...
+# Subtest: campaign UI keeps durable feedback scoped and merges new run receipts
+ok 13 - campaign UI keeps durable feedback scoped and merges new run receipts
+  ---
+  duration_ms: 0.315583
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 208.376167

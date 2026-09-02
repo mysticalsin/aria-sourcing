@@ -1,64 +1,64 @@
 /**
- * Never-0 harvest chain. Empty items=0 is next-search, not a result.
- * Each `search` call must start a real harvest. Tests mock `search` and
- * assert a second distinct run id — not plannedHarvests copy.
+ * One Source click is one server-owned chain. The client POSTs once; the
+ * server runs every planned harvest, then LinkedIn web, enrich, and GitHub
+ * merge. The client re-POSTs only when the server answers
+ * PEOPLE_FIRST_HARVEST_CONTINUE with a `resume` step (chain budget ran out
+ * with planned harvests left). Any other error is the click's honest result.
+ *
+ * Why not one harvest per request: Fly 5728ad4 burned 8 sourcing runs per
+ * click (quota 10/day, limiter 10/min) and the next click was rate-limited.
+ * A rate limit is FAIL, never "done". Do not invent people.
  */
 
 import type { JobAnalysis } from "@/lib/types";
 import {
-  PEOPLE_FIRST_MAX_ATTEMPTS,
   peopleFirstHarvestQueue,
+  peopleFirstSearchKey,
   type PlannedSearch,
 } from "@/lib/sourcing/multi-source-plan";
 
-export interface PeopleFirstSearchReceipt<T> {
-  runId: string;
-  started: boolean;
-  itemCount: number;
-  status: string;
-  accepted: T[];
-  /** Hard stop (auth, mock, missing key). Do not start the next harvest. */
-  stop?: boolean;
+export interface ResumeStep {
+  query: string;
+  currentJobTitles?: string[];
 }
 
-export interface PeopleFirstHarvestAttempt {
-  step: PlannedSearch;
-  runId: string;
-  started: boolean;
-  itemCount: number;
-  status: string;
-  acceptedCount: number;
+export type ClickChainSearchResult =
+  | { ok: true }
+  | { ok: false; error: string; resume?: ResumeStep };
+
+export interface ClickChainReceipt<T> {
+  result: T;
+  /** HTTP requests this click made. 1 unless the server asked to continue. */
+  requests: number;
+  resumes: PlannedSearch[];
 }
 
-export async function runPeopleFirstHarvestChain<T>(input: {
+/**
+ * Drive the click. `search(null)` starts the chain; `search(step)` resumes it.
+ * Resume steps must be on the reviewed queue and move forward, so a stale or
+ * replayed response cannot loop the chain or desync a second click.
+ */
+export async function runPeopleFirstClickChain<T extends ClickChainSearchResult>(input: {
   job: JobAnalysis;
-  search: (step: PlannedSearch) => Promise<PeopleFirstSearchReceipt<T>>;
-}): Promise<{
-  attempts: PeopleFirstHarvestAttempt[];
-  accepted: T[];
-}> {
-  const queue = peopleFirstHarvestQueue(input.job).slice(0, PEOPLE_FIRST_MAX_ATTEMPTS);
-  const attempts: PeopleFirstHarvestAttempt[] = [];
-  const accepted: T[] = [];
-  for (const step of queue) {
-    const result = await input.search(step);
-    attempts.push({
-      step,
-      runId: result.runId,
-      started: result.started,
-      itemCount: result.itemCount,
-      status: result.status,
-      acceptedCount: result.accepted.length,
-    });
-    if (result.accepted.length > 0) {
-      accepted.push(...result.accepted);
-      break;
-    }
-    if (result.stop) break;
+  search: (resume: PlannedSearch | null) => Promise<T>;
+}): Promise<ClickChainReceipt<T>> {
+  const queue = peopleFirstHarvestQueue(input.job);
+  const resumes: PlannedSearch[] = [];
+  // The first POST already covers step 0. A resume must point past it.
+  let cursor = 0;
+  let resume: PlannedSearch | null = null;
+  let result = await input.search(null);
+  let requests = 1;
+  while (!result.ok && result.resume && requests <= queue.length) {
+    const key = peopleFirstSearchKey(result.resume);
+    const index = queue.findIndex((step) => peopleFirstSearchKey(step) === key);
+    if (index < 0 || index <= cursor) break;
+    cursor = index;
+    resume = queue[index] ?? null;
+    if (!resume) break;
+    resumes.push(resume);
+    result = await input.search(resume);
+    requests += 1;
   }
-  return { attempts, accepted };
-}
-
-export function harvestStepFromReceipt(attempt: PeopleFirstHarvestAttempt): PlannedSearch {
-  return attempt.step;
+  return { result, requests, resumes };
 }

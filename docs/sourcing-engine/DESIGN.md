@@ -288,27 +288,66 @@ hydrate and on the Strategy tab.
   Copy is not next-search. A banner that says the engine continues
   and then waits for a second click is FAIL. One Source click must
   enqueue/start the next planned harvest on `items=0` in the same
-  click (fresh 90s per attempt, one harvest per HTTP request, up to
-  8 planned harvests). After the canned platform-keyword variants,
-  escalate to role+geo+synonym harvests (Business Analyst Montreal,
-  Calypso consultant, trading-platform BA, finance BA). Do not share
-  one 90s abort across the plan. The people-first queue is
-  `peopleFirstHarvestQueue` (≥2 distinct harvestapi searches plus
-  expansions), not a one-item `plannedSourcingSearches` slice. After
-  `SUCCEEDED items=0`, the client POSTs the next harvest (new run id
-  or next actor-input via `nextPeopleFirstHarvest`). Empty LinkedIn search is not terminal: after
-  the last planned harvest returns items=0, the same click must start
-  `harvestapi/linkedin-profile-scraper` and `apivault_labs/github-profile-scraper`
-  and log those run ids on the `aria_harvest` trail. enrichCampaign is not
-  that start — it no-ops when there are no LinkedIn URLs. The start is
-  `startLinkedinProfileScraperRun` / `startGithubProfileScraperRun` POSTing
-  `/runs` even with empty URLs, under `peopleFirstEnrichmentClearance`
-  (discovery, not a probe mint inside apify.ts). If those scrapers
-  still have nobody to merge, fall through to a LinkedIn web search
-  (role+geo, not another Calypso harvestapi string). A click cannot end at
-  0 people without a logged enrichment attempt. Do not invent people.
-  People-first Source next batch uses the same chain as Auto source.
-  Banner copy "every planned search was tried" is FAIL unless ≥2 distinct harvests actually started.
+  click (fresh 90s per attempt, up to 8 planned harvests). After the
+  canned platform-keyword variants, escalate to role+geo+synonym
+  harvests (Business Analyst Montreal, Calypso consultant,
+  trading-platform BA, finance BA). Do not share one 90s abort across
+  the plan. The people-first queue is `peopleFirstHarvestQueue` (≥2
+  distinct harvestapi searches plus expansions), not a one-item
+  `plannedSourcingSearches` slice. After `SUCCEEDED items=0` the
+  server starts the next harvest itself (new run id or next
+  actor-input; `nextPeopleFirstHarvest` is the same order).
+
+  **One click is one request and one sourcing run.** The server owns
+  the whole chain inside `POST /api/sourcing-agent`: every planned
+  harvest, then LinkedIn web, then enrich, then GitHub merge. One
+  harvest per HTTP request was the Fly 5728ad4 fail: 8 POSTs per
+  click were 8 sourcing runs against `max_sourcing_runs_per_day` (10)
+  and the 10/min limiter, so the next click was
+  `SOURCING_AGENT_RATE_LIMITED`. A rate limit or daily quota is FAIL,
+  never "done". The server stops starting new harvests after
+  `PEOPLE_FIRST_CHAIN_BUDGET_MS` (200s) and answers
+  `PEOPLE_FIRST_HARVEST_CONTINUE` with a `resume` step; the same
+  click re-POSTs `harvestQuery` = that reviewed step and the server
+  continues from it to the end of the plan. A resume step off the plan
+  or behind the cursor is rejected, so a replay or a second click
+  cannot desync the chain.
+
+  Empty LinkedIn search is not terminal. After the last planned
+  harvest returns items=0 the same request keeps going, in the only
+  order that can still produce real people:
+
+  1. LinkedIn web discovery (role+geo, `site:linkedin.com/in`, not
+     another Calypso harvestapi string). Needs a Tavily key; without
+     one the trail logs `alternate_search started=false` and says so.
+  2. Enrich: `harvestapi/linkedin-profile-scraper` in
+     `Profile details + email search ($10 per 1k)` mode (the actor's
+     enum) on every LinkedIn URL the click holds: harvest rows that
+     lacked email or phone plus the web hits. This is the POST that
+     yields email + phone. The actor field is `urls`. An empty `urls`
+     list is an Apify `invalid-input` (Fly 2026-09-02T02:39:12Z,
+     `status:"invalid-input" started:false`), not a run, so nothing to
+     send is logged as `enrich_skipped` with the reason, never a fake
+     run. Enriched profiles become shortlist rows only through the same
+     email + phone + LinkedIn and ≥60 gates.
+  3. GitHub: `apivault_labs/github-profile-scraper` on handles that
+     belong to accepted people (actor field `profileUrls`; `usernames`
+     is ignored and yields an empty run, Fly `uyQCE2eBvDjHFaNEp`).
+     Tech-stack merge only. No handle is `github_skipped`.
+
+  Every run logs `started` (run id) and `succeeded` (items) on the
+  `aria_harvest` trail with the actor name, plus the actor's
+  `statusMessage` so an all-zero walk is explainable. The fail copy
+  carries the same evidence: `web=<query>:<n>`, `enrich=<run id>
+  items=<n>` or `enrich=skipped (<why>)`, `github=...`. The start is
+  `runLinkedinProfileScraperAndWait` / `runGithubProfileScraperAndWait`
+  under `peopleFirstEnrichmentClearance` (discovery, not a probe mint
+  inside apify.ts). enrichCampaign is not that start; it is the
+  per-person waterfall after people landed. A click cannot end at 0
+  people without a logged enrichment attempt or a logged skip with its
+  reason. Do not invent people. People-first Source next batch uses
+  the same chain as Auto source. Banner copy "every planned search was
+  tried" is FAIL unless ≥2 distinct harvests actually started.
 
   - Keep the first query (`Calypso Business Analyst` / `Calypso Linux
     Python`). Ultron live proved that phrase can return `SUCCEEDED

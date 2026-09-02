@@ -83,6 +83,8 @@ export type SourceNextBatchResult =
       error: string;
       source: SourceNextBatchErrorSource;
       retryable?: "agent_framework_reconcile";
+      /** PEOPLE_FIRST_HARVEST_CONTINUE: the same click re-POSTs this planned step. */
+      resume?: { query: string; currentJobTitles?: string[] };
     };
 
 export type CandidateIntakeResult =

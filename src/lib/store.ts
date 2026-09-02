@@ -1715,12 +1715,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return runAutoSourcePipeline({
         job: campaign.jobAnalysis,
-        search: (step) =>
-          sourceNextBatchRaw(campaignId, {
-            ...opts,
-            harvestQuery: step.query,
-            currentJobTitles: step.currentJobTitles,
-          }),
+        // One POST per click. The reviewed-batch action owns the resume loop.
+        search: () => sourceNextBatchRaw(campaignId, opts),
         enrich: async () => {
           const result = await enrichCampaign(campaignId);
           return { ok: result.ok, error: result.error };
@@ -1733,10 +1729,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [current, enrichCampaign, sourceNextBatchRaw],
   );
 
-  // People-first Source next batch is the same chain as Auto source: expanded
-  // harvests, then enrich + GitHub profile-scraper merge. harvestQuery is one
-  // inner step so the chain does not recurse. Keep the factory boundary: do
-  // not re-declare the reviewed-batch action as a store useCallback.
+  // People-first Source next batch is the same chain as Auto source: the
+  // server runs expanded harvests, LinkedIn web, enrich, and GitHub merge in
+  // one request. harvestQuery is a resume step only. Keep the factory
+  // boundary: do not re-declare the reviewed-batch action as a store useCallback.
   const sourcePeopleFirstBatch = useCallback(
     async (
       campaignId: string,

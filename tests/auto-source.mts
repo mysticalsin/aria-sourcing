@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { runAutoSourcePipeline } from "../src/lib/sourcing/auto-source";
 import { EMPTY_PEOPLE_FIRST_HARVEST } from "../src/lib/sourcing/people-plugins";
 import { formatHarvestEvidenceError } from "../src/lib/sourcing/harvest-evidence";
-import { peopleFirstHarvestQueue } from "../src/lib/sourcing/multi-source-plan";
 import type { JobAnalysis } from "../src/lib/types";
 import type { SourceNextBatchResult } from "../src/lib/store/contracts";
 
@@ -64,11 +63,15 @@ function accepted(n: number): SourceNextBatchResult {
 }
 
 {
+  let searches = 0;
   let enrichCalls = 0;
   let stackCalls = 0;
   const result = await runAutoSourcePipeline({
     job: financeJob(),
-    search: async () => accepted(2),
+    search: async () => {
+      searches += 1;
+      return accepted(2);
+    },
     enrich: async () => {
       enrichCalls += 1;
       return { ok: true };
@@ -77,7 +80,7 @@ function accepted(n: number): SourceNextBatchResult {
       stackCalls += 1;
     },
   });
-  ok("BA Auto source searches then enriches", result.ok === true && enrichCalls === 1 && result.enriched === true);
+  ok("BA Auto source is one click chain, then enrich", searches === 1 && result.ok === true && enrichCalls === 1 && result.enriched === true);
   ok(
     "BA Auto source merges GitHub onto the same LinkedIn people, not as the shortlist",
     stackCalls === 1 &&
@@ -100,35 +103,24 @@ function accepted(n: number): SourceNextBatchResult {
   ok("software Auto source merges GitHub tech-stack onto the same people", result.ok === true && stackCalls === 1 && result.techStackMerged === true);
 }
 
+// The server ran every planned harvest, LinkedIn web, enrich, and GitHub and
+// still found nobody. The click is a fail with the run ids on it. Nothing
+// here pretends an "enriched" banner over 0 people.
 {
   let enrichCalls = 0;
   let stackCalls = 0;
-  const queries: string[] = [];
-  const runIds: string[] = [];
+  const empty = formatHarvestEvidenceError(
+    "empty",
+    { query: "finance BA", runId: "6IKfh6X9GYVa2HBkO", status: "SUCCEEDED", itemCount: 0 },
+    { startedSearches: 8 },
+  );
   const result = await runAutoSourcePipeline({
     job: financeJob(),
-    search: async (step) => {
-      queries.push(step.query + (step.currentJobTitles ?? []).join(","));
-      runIds.push(`auto-${runIds.length + 1}`);
-      const queue = peopleFirstHarvestQueue(financeJob());
-      const last = queue.at(-1);
-      const isLast = last?.query === step.query;
-      const empty = formatHarvestEvidenceError(
-        "empty",
-        {
-          query: step.query,
-          runId: runIds[runIds.length - 1]!,
-          status: "SUCCEEDED",
-          itemCount: 0,
-        },
-        { startedSearches: 1 },
-      );
-      return {
-        ok: false,
-        error: isLast ? `${empty} enrich=enrich-run-1 github=github-run-1` : empty,
-        source: "unavailable",
-      };
-    },
+    search: async () => ({
+      ok: false,
+      error: `${empty} web=Business Analyst Montreal:3 enrich=enrich-run-1 items=3 github=github-run-1 items=1`,
+      source: "unavailable",
+    }),
     enrich: async () => {
       enrichCalls += 1;
       return { ok: true };
@@ -138,82 +130,74 @@ function accepted(n: number): SourceNextBatchResult {
     },
   });
   ok(
-    "Auto source continues after an empty first harvest",
-    queries.length >= 2 && peopleFirstHarvestQueue(financeJob()).length >= 2,
-  );
-  ok(
-    "Auto source empty chain uses distinct harvest run ids",
-    runIds.length >= 2 && runIds[0] !== runIds[1],
-  );
-  ok(
-    "Auto source empty chain escalates past the 4 canned Calypso harvests",
-    queries.length > 4 &&
-      queries.some((query) => query.includes("Business Analyst Montreal")) &&
-      queries.some((query) => query.includes("Calypso consultant")) &&
-      queries.some((query) => /trading-platform BA/i.test(query)) &&
-      queries.some((query) => /finance BA/i.test(query)),
-  );
-  ok(
-    "empty LinkedIn search still attempts enrich and GitHub merge",
-    enrichCalls >= 1 && stackCalls >= 1 && result.techStackMerged === true,
-  );
-  ok(
-    "exhausted Auto source fails loud and does not invent people",
+    "exhausted chain fails loud, keeps the evidence, and does not invent people",
     result.ok === false &&
       "error" in result &&
-      result.error === EMPTY_PEOPLE_FIRST_HARVEST &&
-      result.enriched === true,
+      /Every planned search was tried/.test(result.error) &&
+      /run=6IKfh6X9GYVa2HBkO/.test(result.error),
   );
   ok(
-    "after 8 empty LinkedIn harvests the click logs enrich and GitHub run ids",
+    "the click carries the enrich and GitHub run ids the server logged",
     result.enrichRunId === "enrich-run-1" && result.githubRunId === "github-run-1",
   );
   ok(
-    "a click cannot return 0-and-stop as a success",
-    result.ok === false,
+    "0 people is never dressed as enriched",
+    result.enriched === false && result.techStackMerged === false && enrichCalls === 0 && stackCalls === 0,
   );
 }
 
+// Skipped steps are not run ids.
 {
   const result = await runAutoSourcePipeline({
     job: financeJob(),
-    search: async (step) => ({
+    search: async () => ({
       ok: false,
-      error: formatHarvestEvidenceError(
-        "empty",
-        { query: step.query, runId: "search-only", status: "SUCCEEDED", itemCount: 0 },
-        { startedSearches: 1 },
-      ),
+      error: `${EMPTY_PEOPLE_FIRST_HARVEST} web=Business Analyst Montreal:not_started (no Tavily key) enrich=skipped (nobody to enrich) github=skipped`,
       source: "unavailable",
     }),
     enrich: async () => ({ ok: true }),
   });
   ok(
-    "a click cannot return 0-and-stop success without a logged enrichment attempt",
-    result.ok === false &&
-      "error" in result &&
-      /Enrichment must start/.test(result.error) &&
-      result.enriched === false,
+    "a skipped enrich is honest: no run id, no enriched banner",
+    result.ok === false && result.enrichRunId === undefined && result.githubRunId === undefined && result.enriched === false,
   );
 }
 
+// Rate limit / quota is FAIL. Never done, never a banner.
 {
   let enrichCalls = 0;
-  let searches = 0;
   const result = await runAutoSourcePipeline({
     job: financeJob(),
-    search: async () => {
-      searches += 1;
-      return searches === 1 ? accepted(0) : accepted(2);
-    },
+    search: async () => ({
+      ok: false,
+      error: "The sourcing-agent rate limit was reached. Try again later.",
+      source: "unavailable",
+    }),
     enrich: async () => {
       enrichCalls += 1;
       return { ok: true };
     },
   });
   ok(
-    "Auto source enriches after a later harvest hits",
-    result.ok === true && searches === 2 && enrichCalls === 1 && result.enriched === true,
+    "sourcing-agent rate limit is never treated as success",
+    result.ok === false &&
+      "error" in result &&
+      /rate limit/.test(result.error) &&
+      result.enriched === false &&
+      enrichCalls === 0,
+  );
+}
+
+// A 200 with 0 people is not a shortlist.
+{
+  const result = await runAutoSourcePipeline({
+    job: financeJob(),
+    search: async () => accepted(0),
+    enrich: async () => ({ ok: true }),
+  });
+  ok(
+    "a click cannot return 0-and-stop as a success",
+    result.ok === false && "error" in result && result.error === EMPTY_PEOPLE_FIRST_HARVEST && result.enriched === false,
   );
 }
 
@@ -262,10 +246,10 @@ ok(
 
 const storeWiring = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 ok(
-  "Auto source wires each chain step as its own harvestQuery POST",
+  "Auto source is one POST per click; the server owns the harvest chain",
   /runAutoSourcePipeline/.test(storeWiring) &&
-    /harvestQuery:\s*step\.query/.test(storeWiring) &&
-    /currentJobTitles:\s*step\.currentJobTitles/.test(storeWiring),
+    /search: \(\) => sourceNextBatchRaw\(campaignId, opts\)/.test(storeWiring) &&
+    !/harvestQuery:\s*step\.query/.test(storeWiring),
 );
 ok(
   "people-first Source next batch uses the Auto source chain",
@@ -273,6 +257,13 @@ ok(
     /sourceNextBatchRaw/.test(storeWiring) &&
     /isPeopleFirstRole\(campaign\.jobAnalysis\)/.test(storeWiring) &&
     /return autoSource\(campaignId, opts\)/.test(storeWiring),
+);
+const actions = readFileSync(new URL("../src/lib/store/sourcing-actions.ts", import.meta.url), "utf8");
+ok(
+  "reviewed-batch action re-POSTs only on a server resume step, never a client-side 8-harvest loop",
+  /runPeopleFirstClickChain/.test(actions) &&
+    !/for \(const step of peopleFirstHarvestQueue/.test(actions) &&
+    /resume: reviewed\.resume/.test(actions),
 );
 
 const campaigns = readFileSync(new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url), "utf8");

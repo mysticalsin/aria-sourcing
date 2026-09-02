@@ -284,8 +284,8 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
   assert.match(plan, /PEOPLE_FIRST_ATTEMPT_WAIT_MS = 90_000/);
   assert.match(plan, /PEOPLE_FIRST_MAX_ATTEMPTS = 8/);
-  assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS/);
-  assert.match(plan, /PEOPLE_FIRST_ATTEMPT_WAIT_MS \* PEOPLE_FIRST_MAX_ATTEMPTS/);
+  assert.match(plan, /PEOPLE_FIRST_CHAIN_BUDGET_MS = 200_000/);
+  assert.doesNotMatch(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS/);
   assert.match(plan, /apifyHarvestQueryFromBrief/);
   assert.match(plan, /peopleFirstHarvestQueries/);
   assert.match(plan, /peopleFirstExpansionQueries/);
@@ -293,10 +293,10 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(plan, /nextPeopleFirstHarvest/);
   assert.match(plan, /peopleFirstHarvestQueue/);
   assert.match(route, /peopleFirstHarvestQueue/);
-  assert.match(route, /nextPeopleFirstHarvest/);
+  assert.match(route, /continueAt/);
   assert.match(route, /peopleFirstContinueAuthority/);
   assert.match(route, /startedSearches/);
-  assert.match(route, /peopleFirst \? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000/);
+  assert.doesNotMatch(route, /PEOPLE_FIRST_SEARCH_BUDGET_MS/);
   assert.match(route, /export const maxDuration = 360/);
   assert.match(route, /PEOPLE_FIRST_ATTEMPT_WAIT_MS/);
   assert.match(route, /next_search_start/);
@@ -347,7 +347,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
   const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
   assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
-  assert.match(route, /!successfulQuery && !\(peopleFirst && !frameworkAuthorization\)/);
+  assert.match(route, /if \(!successfulQuery\)/);
   assert.match(route, /peopleFirstHarvestQueue\(peopleFirstJob\)/);
   assert.doesNotMatch(route, /filter\(\(step\) => step.platform === "Apify"\)\.slice\(0, 1\)/);
   assert.match(route, /empty_next_search/);
@@ -382,14 +382,18 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const chain = readFileSync(new URL("../src/lib/sourcing/people-first-chain.ts", import.meta.url), "utf8");
   const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
   assert.match(flyApp, /idle_timeout\s*=\s*360/);
-  assert.match(actions, /peopleFirstHarvestQueue\(initialCampaign\.jobAnalysis\)/);
-  assert.match(actions, /Empty harvest is not a result\|Next planned search must start/);
-  assert.match(route, /requestedOneStep/);
-  assert.match(route, /requestedOneHarvest/);
-  assert.match(route, /oneStepEmpty/);
+  // One click, one server-owned chain. The client re-POSTs only on a resume
+  // step. One harvest per request was the Fly 5728ad4 rate-limit fail.
+  assert.match(actions, /runPeopleFirstClickChain/);
+  assert.doesNotMatch(actions, /for \(const step of peopleFirstHarvestQueue/);
+  assert.match(actions, /resume: reviewed\.resume/);
+  assert.match(route, /PEOPLE_FIRST_CHAIN_BUDGET_MS/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_CONTINUE/);
+  assert.match(route, /resumeIndex/);
   assert.match(route, /harvestQuery/);
   assert.match(client, /harvestQuery: harvestStep\.query/);
-  assert.match(autoSource, /runPeopleFirstHarvestChain/);
+  assert.match(client, /PEOPLE_FIRST_HARVEST_CONTINUE/);
+  assert.match(autoSource, /const result = await input\.search\(\)/);
   assert.match(autoSource, /const enrich = await input.enrich/);
   assert.match(autoSource, /if \(input.mergeTechStack\)/);
   assert.doesNotMatch(autoSource, /queryStyle === ["']github["'] && input.mergeTechStack/);
@@ -397,26 +401,40 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
     new URL("../src/lib/sourcing/people-first-fallthrough.ts", import.meta.url),
     "utf8",
   );
+  // Fallthrough order: LinkedIn web, enrich the URLs held, GitHub merge.
+  // Enrich POSTs real URLs with the actor schema; empty is a logged skip.
   assert.match(route, /runPeopleFirstEmptyFallthrough/);
-  assert.match(route, /isLastPeopleFirstHarvest/);
-  assert.match(route, /startLinkedinProfileScraperRun/);
-  assert.match(route, /startGithubProfileScraperRun/);
+  assert.match(route, /runner\.getIncompleteLinkedinUrls\(\)/);
+  assert.match(route, /runLinkedinProfileScraperAndWait/);
+  assert.match(route, /runGithubProfileScraperAndWait/);
+  assert.match(route, /runner\.acceptEnrichedProfiles/);
+  assert.match(route, /runner\.mergeGithubStack/);
   assert.match(route, /peopleFirstEnrichmentClearance/);
   assert.match(fallthrough, /peopleFirstAlternateQuery/);
+  assert.match(fallthrough, /enrich_skipped/);
+  assert.match(fallthrough, /github_skipped/);
+  assert.match(fallthrough, /alternate_search/);
   assert.match(apify, /startLinkedinProfileScraperRun/);
   assert.match(apify, /startGithubProfileScraperRun/);
   assert.match(apify, /linkedin-profile-scraper\/runs/);
   assert.match(apify, /github-profile-scraper\/runs/);
+  assert.match(apify, /Profile details \+ email search \(\$10 per 1k\)/);
+  assert.doesNotMatch(apify, /profileScraperMode: "Full \+ email search"/);
+  assert.doesNotMatch(apify, /usernames: /);
+  assert.match(apify, /profileUrls: logins/);
+  assert.match(apify, /statusMessage/);
   assert.doesNotMatch(apify, /mintProviderClearance/);
-  assert.match(harvest, /formatEnrichmentRunIds/);
+  assert.match(harvest, /PEOPLE_FIRST_HARVEST_CONTINUE/);
   assert.match(harvest, /harvest\.actor \|\| HARVEST_ACTOR/);
   assert.match(design, /logged enrichment attempt/);
+  assert.match(design, /PEOPLE_FIRST_HARVEST_CONTINUE/);
+  assert.match(design, /one sourcing run/);
   assert.match(autoSource, /parseEnrichmentRunIds/);
-  assert.match(autoSource, /Enrichment must start/);
+  assert.match(autoSource, /enriched: false/);
   assert.match(store, /sourcePeopleFirstBatch/);
   assert.match(store, /sourceNextBatchRaw/);
   assert.match(store, /return autoSource\(campaignId, opts\)/);
-  assert.match(chain, /for \(const step of queue\)/);
+  assert.match(chain, /while \(!result\.ok && result\.resume/);
   assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);
   assert.match(client, /Promise\.race/);
   assert.match(client, /formatHarvestEvidenceError\("aborted"/);

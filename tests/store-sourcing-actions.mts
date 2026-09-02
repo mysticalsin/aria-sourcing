@@ -2259,14 +2259,18 @@ test("people-first GitHub-only empty batch is fail-loud, not a successful search
     assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
     assert.doesNotMatch(result.error, /invalid response/i);
   }
-  assert.ok(harness.fetchCalls >= 2, "empty GitHub-only batch must continue the people-first queue");
+  assert.equal(
+    harness.fetchCalls,
+    1,
+    "one click is one request; the server owns the harvest chain (8 POSTs per click was the Fly 5728ad4 rate-limit fail)",
+  );
   assert.ok(harness.persistedCalls >= 1);
   assert.ok(harness.activityDrafts.length >= 1);
   assert.equal(harness.activityDrafts[0]?.title, peopleFirstFailActivity(EMPTY_PEOPLE_FIRST_HARVEST).title);
   assert.match(String(harness.activityDrafts[0]?.notes), /0 candidates|harvest/i);
 });
 
-test("people-first Source next batch empty items=0 POSTs a second harvest with a distinct run id", async () => {
+test("people-first Source next batch re-POSTs only the server's CONTINUE resume step, in the same click", async () => {
   const seed = buildSeedState();
   const campaign = {
     ...seed.campaigns[0],
@@ -2297,23 +2301,25 @@ test("people-first Source next batch empty items=0 POSTs a second harvest with a
       createdAt: "2026-07-15T00:00:00.000Z",
     },
   ];
-  const firstRunId = "Etz5JWFCQGm1605KE";
-  const emptyOne = (query: string, runId: string) => ({
+  // The server ran harvests 1..3 (fresh 90s each) and hit its chain budget
+  // with planned steps left. It names the resume step; the same click re-POSTs it.
+  const resume = queue[3]!;
+  const continueOne = {
     ok: false,
-    code: "PEOPLE_FIRST_HARVEST_EMPTY",
-    error: formatHarvestEvidenceError(
-      "empty",
-      { query, runId, status: "SUCCEEDED", itemCount: 0, started: true },
-      { startedSearches: 1 },
-    ),
-    requestId: `req-${runId}`,
-  });
+    code: "PEOPLE_FIRST_HARVEST_CONTINUE",
+    error: formatHarvestEvidenceError("continue", { query: resume.query }),
+    requestId: "req-continue-1",
+    resume: {
+      query: resume.query,
+      ...(resume.currentJobTitles?.length ? { currentJobTitles: resume.currentJobTitles } : {}),
+    },
+  };
   const harness = createHarness({
     state: { ...seed, campaigns: [campaign], integrations, apiKeys },
     syntheticSourcingAllowed: false,
     responseStatuses: [502, 200],
     responseBodies: [
-      emptyOne(queue[0]!.query, firstRunId),
+      continueOne,
       {
         ok: true,
         campaignId: campaign.id,
@@ -2363,20 +2369,20 @@ test("people-first Source next batch empty items=0 POSTs a second harvest with a
     assert.match(result.accepted[0]?.linkedinUrl ?? "", /linkedin\.com/);
     assert.doesNotMatch(result.accepted[0]?.email ?? "", /example\.com/);
   }
-  assert.ok(harness.fetchCalls >= 2, `same click must POST harvest 2, got ${harness.fetchCalls}`);
+  assert.equal(harness.fetchCalls, 2, `CONTINUE is one extra POST in the same click, got ${harness.fetchCalls}`);
   const posted = harness.requests
     .filter((row) => String(row.input).includes("/api/sourcing-agent"))
     .map((row) => JSON.parse(String(row.init?.body ?? "{}")) as {
       harvestQuery?: string;
       currentJobTitles?: string[];
     });
-  assert.ok(posted.length >= 2, `need two sourcing-agent POSTs, got ${posted.length}`);
-  assert.equal(posted[0]?.harvestQuery, "Calypso Business Analyst");
+  assert.equal(posted.length, 2, `need exactly two sourcing-agent POSTs, got ${posted.length}`);
+  assert.equal(posted[0]?.harvestQuery, undefined, "the first POST starts the server chain, not one step");
+  assert.equal(posted[1]?.harvestQuery, resume.query, `resume must POST the server's step: ${JSON.stringify(posted)}`);
+  assert.deepEqual(posted[1]?.currentJobTitles ?? [], resume.currentJobTitles ?? []);
   assert.ok(
-    posted[1]?.harvestQuery &&
-      (posted[1].harvestQuery !== "Calypso Business Analyst" ||
-        (posted[1].currentJobTitles ?? []).includes("Business Analyst")),
-    `harvest 2 must be a distinct planned step: ${JSON.stringify(posted)}`,
+    harness.activityDrafts.every((draft) => /^Sourced /.test(draft.title)),
+    `a CONTINUE is mid-chain, not a fail audit row: ${JSON.stringify(harness.activityDrafts.map((draft) => draft.title))}`,
   );
   const idempotency = harness.requests.map((row) => {
     const headers = row.init?.headers;

@@ -45,35 +45,37 @@ import {
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import {
   resolveStoredApifyKey,
-  startGithubProfileScraperRun,
-  startLinkedinProfileScraperRun,
+  runGithubProfileScraperAndWait,
+  runLinkedinProfileScraperAndWait,
 } from "@/lib/sourcing/apify";
 import {
-  formatEnrichmentRunIds,
   formatHarvestEvidenceError,
+  HARVEST_ACTOR,
   logAriaHarvest,
+  PEOPLE_FIRST_HARVEST_CONTINUE,
   PEOPLE_FIRST_HARVEST_EMPTY,
   PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS,
   PEOPLE_FIRST_HARVEST_MOCK,
   PEOPLE_FIRST_HARVEST_NOT_STARTED,
   PEOPLE_FIRST_HARVEST_STILL_RUNNING,
+  type HarvestEvidence,
 } from "@/lib/sourcing/harvest-evidence";
 import { workspaceApifyIsMock } from "@/lib/sourcing/people-connect";
 import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
 import {
   apifyHarvestQueryFromBrief,
-  nextPeopleFirstHarvest,
   PEOPLE_FIRST_ATTEMPT_WAIT_MS,
+  PEOPLE_FIRST_CHAIN_BUDGET_MS,
   PEOPLE_FIRST_MAX_ATTEMPTS,
-  PEOPLE_FIRST_SEARCH_BUDGET_MS,
   peopleFirstHarvestQueue,
   peopleFirstSearchKey,
   plannedSourcingSearches,
+  type PlannedSearch,
 } from "@/lib/sourcing/multi-source-plan";
 import {
-  isLastPeopleFirstHarvest,
   peopleFirstAlternateQuery,
   runPeopleFirstEmptyFallthrough,
+  type PeopleFirstFallthroughResult,
 } from "@/lib/sourcing/people-first-fallthrough";
 import { roleProfile } from "@/lib/roles";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
@@ -130,6 +132,7 @@ type ErrorCode =
   | "PEOPLE_FIRST_HARVEST_STILL_RUNNING"
   | "PEOPLE_FIRST_HARVEST_EMPTY"
   | "PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS"
+  | "PEOPLE_FIRST_HARVEST_CONTINUE"
   | "PEOPLE_FIRST_HARVEST_MOCK";
 
 type Session = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
@@ -156,9 +159,10 @@ function errorResponse(
   error: string,
   correlationId: string,
   retryAfter?: number,
+  extra?: Record<string, unknown>,
 ): NextResponse {
   const response = noStoreJson(
-    { ok: false, code, error, requestId: correlationId },
+    { ok: false, code, error, requestId: correlationId, ...(extra ?? {}) },
     status,
   );
   if (retryAfter !== undefined) response.headers.set("Retry-After", String(retryAfter));
@@ -278,13 +282,14 @@ async function handlePost(req: NextRequest, correlationId: string) {
     error: string,
     retryAfter?: number,
     reason?: string,
+    extra?: Record<string, unknown>,
   ) => {
     logAriaHarvest("request_exit", {
       query: harvestQuery || undefined,
       started: false,
       detail: reason ? `${code}:${reason}` : code,
     });
-    return errorResponse(status, code, error, correlationId, retryAfter);
+    return errorResponse(status, code, error, correlationId, retryAfter, extra);
   };
 
   if (prodFailClosed()) {
@@ -565,9 +570,10 @@ async function handlePost(req: NextRequest, correlationId: string) {
     status: number,
     code: ErrorCode,
     message: string,
+    extra?: Record<string, unknown>,
   ) => {
     await recordClaimFailure(code);
-    return fail(status, code, message);
+    return fail(status, code, message, undefined, undefined, extra);
   };
 
   const currentAuthority = async (): Promise<
@@ -754,17 +760,281 @@ async function handlePost(req: NextRequest, correlationId: string) {
       },
     ];
     let drafts: ReturnType<typeof parseDrafts> = [];
-    if (deterministic) {
+    if (deterministic && peopleFirst && !frameworkAuthorization) {
+      // ONE durable chain per click, server-owned: every planned harvest
+      // (fresh 90s each), then LinkedIn web, enrich, and GitHub merge. A
+      // reviewed `harvestQuery` only says where to resume after
+      // PEOPLE_FIRST_HARVEST_CONTINUE. Never 0 people as success. Do not
+      // invent people.
+      const peopleFirstJob = initial.value.campaign.jobAnalysis;
+      const queue = peopleFirstHarvestQueue(peopleFirstJob).slice(0, PEOPLE_FIRST_MAX_ATTEMPTS);
+      const plannedQuery = apifyHarvestQueryFromBrief(peopleFirstJob);
+      const requestedHarvest = validated.data.harvestQuery?.trim() ?? "";
+      let resumeIndex = 0;
+      if (requestedHarvest) {
+        const requestedTitles = (validated.data.currentJobTitles ?? [])
+          .map((title) => title.trim())
+          .filter(Boolean)
+          .slice(0, 8);
+        const requested = {
+          query: requestedHarvest,
+          ...(requestedTitles.length ? { currentJobTitles: requestedTitles } : {}),
+        };
+        resumeIndex = queue.findIndex(
+          (step) => peopleFirstSearchKey(step) === peopleFirstSearchKey(requested),
+        );
+        if (resumeIndex < 0) {
+          return await failClaimed(
+            409,
+            "CAMPAIGN_CHANGED",
+            "Harvest step is not on the reviewed plan.",
+          );
+        }
+      }
+      if (queue.length === 0) {
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_NOT_STARTED,
+          formatHarvestEvidenceError("not_started", { query: plannedQuery }),
+        );
+      }
+      const chainStart = Date.now();
+      let continueAt: PlannedSearch | null = null;
+      for (let index = resumeIndex; index < queue.length; index += 1) {
+        if (runner.getFound().length > 0) break;
+        if (index > resumeIndex && Date.now() - chainStart >= PEOPLE_FIRST_CHAIN_BUDGET_MS) {
+          continueAt = queue[index] ?? null;
+          break;
+        }
+        const step = queue[index];
+        if (!step) break;
+        harvestQuery = step.query;
+        const nextStep = queue[index + 1] ?? null;
+        if (index > resumeIndex) {
+          logAriaHarvest("next_search_start", {
+            query: step.query,
+            started: false,
+            nextQuery: step.query,
+            detail: `attempt=${index + 1}/${queue.length}`,
+          });
+        }
+        // Fresh 90s per harvest. Never one shared abort across the plan.
+        const stepAbort = new AbortController();
+        const stepTimer = setTimeout(() => stepAbort.abort(), PEOPLE_FIRST_ATTEMPT_WAIT_MS);
+        try {
+          await runner.run(
+            "search_candidates",
+            {
+              platform: step.platform,
+              query: step.query,
+              count,
+              ...(step.currentJobTitles?.length ? { currentJobTitles: step.currentJobTitles } : {}),
+            },
+            stepAbort.signal,
+          );
+        } finally {
+          clearTimeout(stepTimer);
+        }
+        const harvest = runner.getExecutions().at(-1)?.harvest;
+        if (!harvest?.started) {
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_NOT_STARTED,
+            formatHarvestEvidenceError("not_started", {
+              query: step.query,
+              runId: harvest?.runId,
+              status: harvest?.status,
+            }),
+          );
+        }
+        const harvestStatus = harvest.status.toUpperCase();
+        const terminalFail =
+          harvestStatus === "FAILED" ||
+          harvestStatus === "ABORTED" ||
+          harvestStatus === "TIMED-OUT" ||
+          harvestStatus === "TIMED_OUT";
+        if (harvestStatus !== "SUCCEEDED" && !terminalFail) {
+          if (runner.getFound().length > 0) break;
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_STILL_RUNNING,
+            formatHarvestEvidenceError("still_running", harvest),
+          );
+        }
+        if (runner.getFound().length === 0 && nextStep) {
+          logAriaHarvest("empty_next_search", {
+            query: harvest.query || step.query,
+            runId: harvest.runId,
+            status: harvest.status,
+            itemCount: Math.max(harvest.itemCount, 0),
+            started: true,
+            nextQuery: nextStep.query,
+            detail: `nextQuery=${nextStep.query}`,
+          });
+        }
+      }
+
+      let foundCount = runner.getFound().length;
+      if (foundCount === 0 && continueAt) {
+        // Chain budget ran out with planned harvests left. The same click
+        // re-POSTs from this step. Not a result, not 0 people.
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_CONTINUE,
+          formatHarvestEvidenceError("continue", { query: continueAt.query }),
+          {
+            resume: {
+              query: continueAt.query,
+              ...(continueAt.currentJobTitles?.length
+                ? { currentJobTitles: continueAt.currentJobTitles }
+                : {}),
+            },
+          },
+        );
+      }
+
+      let fallthrough: PeopleFirstFallthroughResult | null = null;
+      if (foundCount === 0) {
+        // Empty LinkedIn search is not terminal: LinkedIn web (role + geo),
+        // then enrich every URL we hold, then GitHub merge onto accepted people.
+        const alternateQuery = peopleFirstAlternateQuery(peopleFirstJob) || plannedQuery;
+        const clearance = peopleFirstEnrichmentClearance(initial.value.campaign, alternateQuery);
+        const notStarted = (detail: string) => ({
+          ok: false,
+          runId: "",
+          status: "NOT_STARTED",
+          itemCount: -1,
+          started: false,
+          acceptedCount: 0,
+          detail,
+        });
+        fallthrough = await runPeopleFirstEmptyFallthrough({
+          job: peopleFirstJob,
+          poolUrls: runner.getIncompleteLinkedinUrls(),
+          discoverLinkedin: (query) => runner.discoverLinkedinUrls(query, count),
+          enrichProfiles: async (urls) => {
+            if (!clearance.ok) return notStarted(clearance.error);
+            if (!apifyToken) return notStarted("no Apify key");
+            const run = await runLinkedinProfileScraperAndWait(clearance.clearance, apifyToken, urls);
+            if (!run.ok) {
+              return {
+                ok: false,
+                runId: run.harvest.runId,
+                status: run.harvest.status,
+                itemCount: run.harvest.itemCount,
+                started: run.harvest.started,
+                acceptedCount: 0,
+                detail: run.title,
+              };
+            }
+            const accepted = runner.acceptEnrichedProfiles(run.data, alternateQuery, run.harvest);
+            return {
+              ok: true,
+              runId: run.harvest.runId,
+              status: run.harvest.status,
+              itemCount: run.harvest.itemCount,
+              started: true,
+              acceptedCount: accepted.acceptedCount,
+            };
+          },
+          githubHandles: () =>
+            runner
+              .getFound()
+              .map((person) => person.githubUrl?.trim() ?? "")
+              .filter(Boolean),
+          mergeGithub: async (handles) => {
+            if (!clearance.ok) return notStarted(clearance.error);
+            if (!apifyToken) return notStarted("no Apify key");
+            const run = await runGithubProfileScraperAndWait(clearance.clearance, apifyToken, handles);
+            if (!run.ok) {
+              return {
+                ok: false,
+                runId: run.harvest.runId,
+                status: run.harvest.status,
+                itemCount: run.harvest.itemCount,
+                started: run.harvest.started,
+                detail: run.title,
+              };
+            }
+            const merged = runner.mergeGithubStack(run.data);
+            return {
+              ok: true,
+              runId: run.harvest.runId,
+              status: run.harvest.status,
+              itemCount: run.harvest.itemCount,
+              started: true,
+              detail: `merged=${merged}`,
+            };
+          },
+        });
+        foundCount = runner.getFound().length;
+      }
+
+      if (foundCount === 0) {
+        const searchHarvests = runner
+          .getExecutions()
+          .filter((execution) => execution.platform === "Apify")
+          .map((execution) => execution.harvest)
+          .filter(
+            (harvest): harvest is HarvestEvidence =>
+              Boolean(harvest) && harvest?.actor === HARVEST_ACTOR,
+          );
+        const primaryHarvest =
+          searchHarvests.find((harvest) => harvest.query === plannedQuery) ?? searchHarvests[0];
+        if (!primaryHarvest) {
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_NOT_STARTED,
+            formatHarvestEvidenceError("not_started", { query: plannedQuery }),
+          );
+        }
+        const startedSearches = new Set(
+          searchHarvests
+            .filter((harvest) => harvest.started)
+            .map((harvest) => `${harvest.runId}|${harvest.query.trim().toLowerCase()}`),
+        ).size;
+        const suffix = fallthrough ? ` ${fallthrough.logged}` : "";
+        const succeeded = searchHarvests.filter((harvest) => harvest.status.toUpperCase() === "SUCCEEDED");
+        if (succeeded.length === 0) {
+          return await failClaimed(
+            502,
+            "SOURCING_AGENT_UPSTREAM_FAILED",
+            `${formatHarvestEvidenceError("empty", { ...primaryHarvest, itemCount: 0 }, { startedSearches })}${suffix}`,
+          );
+        }
+        const withPeople = succeeded.filter((harvest) => harvest.itemCount > 0);
+        const contactCompleteCount = runner
+          .getExecutions()
+          .reduce((sum, execution) => sum + (execution.contactCompleteCount ?? 0), 0);
+        if (withPeople.length > 0 && contactCompleteCount === 0) {
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS,
+            `${formatHarvestEvidenceError("incomplete_contacts", withPeople[0] ?? primaryHarvest)}${suffix}`,
+          );
+        }
+        if (withPeople.length > 0) {
+          return await failClaimed(
+            502,
+            PEOPLE_FIRST_HARVEST_EMPTY,
+            `${formatHarvestEvidenceError("gated_empty", withPeople[0] ?? primaryHarvest, { startedSearches })}${suffix}`,
+          );
+        }
+        const emptyHarvest = succeeded.find((harvest) => harvest.itemCount === 0) ?? primaryHarvest;
+        return await failClaimed(
+          502,
+          PEOPLE_FIRST_HARVEST_EMPTY,
+          `${formatHarvestEvidenceError("empty", emptyHarvest, { startedSearches })}${suffix}`,
+        );
+      }
+    } else if (deterministic) {
       const searchAbort = new AbortController();
-      const searchBudgetMs = peopleFirst ? PEOPLE_FIRST_SEARCH_BUDGET_MS : 45_000;
+      const searchBudgetMs = 45_000;
       const searchBudget = setTimeout(() => searchAbort.abort(), searchBudgetMs);
       const searchSignal = searchAbort.signal;
       try {
-      const peopleFirstJob = initial.value.campaign.jobAnalysis;
-      const searches = frameworkAuthorization
-        ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
-        : peopleFirst
-          ? [...peopleFirstHarvestQueue(peopleFirstJob)]
+        const searches = frameworkAuthorization
+          ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
           : [
               ...promotedLessons
                 .filter(
@@ -778,134 +1048,27 @@ async function handlePost(req: NextRequest, correlationId: string) {
                   all.findIndex((other) => other.platform === step.platform && other.query === step.query) === index,
               )
               .slice(0, 5);
-      if (peopleFirst && !frameworkAuthorization) {
-        const seen = new Set(searches.map((step) => peopleFirstSearchKey(step)));
-        while (searches.length < 2) {
-          const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
-          if (!next || seen.has(peopleFirstSearchKey(next))) break;
-          seen.add(peopleFirstSearchKey(next));
-          searches.push(next);
-        }
-        const requestedHarvest = validated.data.harvestQuery?.trim() ?? "";
-        if (requestedHarvest) {
-          const requestedTitles = (validated.data.currentJobTitles ?? [])
-            .map((title) => title.trim())
-            .filter(Boolean)
-            .slice(0, 8);
-          const requested = {
-            platform: "Apify" as const,
-            query: requestedHarvest,
-            ...(requestedTitles.length ? { currentJobTitles: requestedTitles } : {}),
-          };
-          const allowed = peopleFirstHarvestQueue(peopleFirstJob);
-          if (!allowed.some((step) => peopleFirstSearchKey(step) === peopleFirstSearchKey(requested))) {
-            return await failClaimed(
-              409,
-              "CAMPAIGN_CHANGED",
-              "Harvest step is not on the reviewed plan.",
-            );
-          }
-          // One harvest per HTTP request. The client click loops the queue.
-          // Appending nextPeopleFirstHarvest here is the Fly idle-cut: harvest 1
-          // polls 90s, harvest 2 never POSTs, the client gets abort not EMPTY.
-          searches.splice(0, searches.length, requested);
-        }
-      }
-      if (peopleFirst && !frameworkAuthorization && searches.length === 0) {
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_NOT_STARTED,
-          formatHarvestEvidenceError("not_started", {
-            query: apifyHarvestQueryFromBrief(peopleFirstJob),
-          }),
-        );
-      }
-      let successfulQuery = false;
-      const requestedOneHarvest = Boolean(validated.data.harvestQuery?.trim());
-      const maxSteps = peopleFirst && !frameworkAuthorization
-        ? (requestedOneHarvest ? 1 : PEOPLE_FIRST_MAX_ATTEMPTS)
-        : searches.length;
-      for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
-        const remaining = count - runner.getFound().length;
-        if (remaining <= 0) break;
-        let step = searches[stepIndex];
-        if (!step && peopleFirst && !frameworkAuthorization && !requestedOneHarvest) {
-          const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
-          if (!next) break;
-          searches.push(next);
-          step = next;
-        }
-        if (!step) break;
-        if (
-          peopleFirst &&
-          !frameworkAuthorization &&
-          !requestedOneHarvest &&
-          !searches[stepIndex + 1]
-        ) {
-          const next = nextPeopleFirstHarvest(peopleFirstJob, searches);
-          if (next) searches.push(next);
-        }
-        const nextStep = searches[stepIndex + 1];
-        if (peopleFirst && !frameworkAuthorization && stepIndex > 0) {
-          logAriaHarvest("next_search_start", {
-            query: step.query,
-            started: false,
-            nextQuery: step.query,
-            detail: `attempt=${stepIndex + 1}/${searches.length}`,
-          });
-        }
-        const stepAbort = new AbortController();
-        const stepMs = peopleFirst && !frameworkAuthorization
-          ? PEOPLE_FIRST_ATTEMPT_WAIT_MS
-          : searchBudgetMs;
-        const stepTimer = setTimeout(() => stepAbort.abort(), stepMs);
-        if (!peopleFirst || frameworkAuthorization) {
+        let successfulQuery = false;
+        for (const step of searches) {
+          const remaining = count - runner.getFound().length;
+          if (remaining <= 0) break;
+          const stepAbort = new AbortController();
+          const stepTimer = setTimeout(() => stepAbort.abort(), searchBudgetMs);
           if (searchSignal.aborted) stepAbort.abort();
           else {
             searchSignal.addEventListener("abort", () => stepAbort.abort(), { once: true });
           }
-        }
-        let result: { ok: boolean } = { ok: false };
-        try {
-          result = await runner.run(
-            "search_candidates",
-            {
-              platform: step.platform,
-              query: step.query,
-              count: remaining,
-              ...("currentJobTitles" in step && step.currentJobTitles?.length
-                ? { currentJobTitles: step.currentJobTitles }
-                : {}),
-            },
-            stepAbort.signal,
-          );
-        } finally {
-          clearTimeout(stepTimer);
-        }
-        successfulQuery = successfulQuery || result.ok;
-        if (peopleFirst && !frameworkAuthorization && result.ok) {
-          const lastHarvest = runner.getExecutions().at(-1)?.harvest;
-          const harvestStatus = (lastHarvest?.status ?? "").toUpperCase();
-          if (lastHarvest?.started && harvestStatus === "SUCCEEDED" && lastHarvest.itemCount === 0) {
-            if (!nextStep && !requestedOneHarvest) {
-              const appended = nextPeopleFirstHarvest(peopleFirstJob, searches);
-              if (appended) searches.push(appended);
-            }
-            const follow = searches[stepIndex + 1];
-            if (follow) {
-              logAriaHarvest("empty_next_search", {
-                query: lastHarvest.query || step.query,
-                runId: lastHarvest.runId,
-                status: lastHarvest.status,
-                itemCount: lastHarvest.itemCount,
-                started: true,
-                nextQuery: follow.query,
-                detail: `nextQuery=${follow.query}`,
-              });
-            }
+          let result: { ok: boolean } = { ok: false };
+          try {
+            result = await runner.run(
+              "search_candidates",
+              { platform: step.platform, query: step.query, count: remaining },
+              stepAbort.signal,
+            );
+          } finally {
+            clearTimeout(stepTimer);
           }
-        }
-        if (!peopleFirst || frameworkAuthorization) {
+          successfulQuery = successfulQuery || result.ok;
           const afterQuery = await readWorkspace(session, workspaceId, campaignId);
           if (
             afterQuery.status !== "ok" ||
@@ -920,19 +1083,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
             );
           }
         }
-        // People-first next harvest must POST even if leftover-strip drifted
-        // the campaign fingerprint. Authority is rechecked after the chain.
-      }
-      // People-first Apify can return ok:false with harvest evidence
-      // (not started / still running). Do not swallow that as a generic
-      // "search did not complete" before the harvest gate below.
-      if (!successfulQuery && !(peopleFirst && !frameworkAuthorization)) {
-        return await failClaimed(
-          502,
-          "SOURCING_AGENT_UPSTREAM_FAILED",
-          "Real candidate search did not complete.",
-        );
-      }
+        if (!successfulQuery) {
+          return await failClaimed(
+            502,
+            "SOURCING_AGENT_UPSTREAM_FAILED",
+            "Real candidate search did not complete.",
+          );
+        }
       } finally {
         clearTimeout(searchBudget);
       }
@@ -987,186 +1144,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
 
     const executions = runner.getExecutions();
-    if (peopleFirst && !frameworkAuthorization) {
-      const plannedQuery = apifyHarvestQueryFromBrief(initial.value.campaign.jobAnalysis);
-      const apifyExecs = executions.filter((execution) => execution.platform === "Apify");
-      const harvests = apifyExecs
-        .map((execution) => execution.harvest)
-        .filter((harvest): harvest is NonNullable<typeof harvest> => Boolean(harvest));
-      const primaryHarvest =
-        harvests.find((harvest) => harvest.query === plannedQuery) ?? harvests[0];
-      if (!harvests.some((harvest) => harvest.started) || !primaryHarvest?.started) {
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_NOT_STARTED,
-          formatHarvestEvidenceError("not_started", {
-            query: primaryHarvest?.query || plannedQuery,
-            runId: primaryHarvest?.runId,
-            status: primaryHarvest?.status,
-          }),
-        );
-      }
-      let foundCount = runner.getFound().length;
-      const contactCompleteCount = apifyExecs.reduce(
-        (sum, execution) => sum + (execution.contactCompleteCount ?? 0),
-        0,
-      );
-      const stillRunning = harvests.find((harvest) => {
-        const harvestStatus = harvest.status.toUpperCase();
-        const terminalFail =
-          harvestStatus === "FAILED" ||
-          harvestStatus === "ABORTED" ||
-          harvestStatus === "TIMED-OUT" ||
-          harvestStatus === "TIMED_OUT";
-        return harvest.started && harvestStatus !== "SUCCEEDED" && !terminalFail;
-      });
-      if (stillRunning && foundCount === 0) {
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_STILL_RUNNING,
-          formatHarvestEvidenceError("still_running", stillRunning),
-        );
-      }
-      const succeeded = harvests.filter((harvest) => harvest.status.toUpperCase() === "SUCCEEDED");
-      const startedDistinct = new Set(
-        harvests
-          .filter((harvest) => harvest.started)
-          .map((harvest) => `${harvest.runId}|${harvest.query.trim().toLowerCase()}`),
-      );
-      const startedSearches = startedDistinct.size;
-      const succeededWithPeople = succeeded.filter((harvest) => harvest.itemCount > 0);
-      const peopleFirstJob = initial.value.campaign.jobAnalysis;
-      const requestedHarvestQuery = validated.data.harvestQuery?.trim() ?? "";
-      const requestedTitles = (validated.data.currentJobTitles ?? [])
-        .map((title) => title.trim())
-        .filter(Boolean)
-        .slice(0, 8);
-      const requestedStep = requestedHarvestQuery
-        ? {
-            query: requestedHarvestQuery,
-            ...(requestedTitles.length ? { currentJobTitles: requestedTitles } : {}),
-          }
-        : null;
-      let lastHarvestFallthrough: Awaited<
-        ReturnType<typeof runPeopleFirstEmptyFallthrough>
-      > | null = null;
-      const startEmptyFallthrough = async () => {
-        if (lastHarvestFallthrough || !apifyToken) return;
-        const roleQuery =
-          requestedHarvestQuery ||
-          primaryHarvest.query ||
-          peopleFirstAlternateQuery(peopleFirstJob);
-        const clearance = peopleFirstEnrichmentClearance(initial.value.campaign, roleQuery);
-        lastHarvestFallthrough = await runPeopleFirstEmptyFallthrough({
-          job: peopleFirstJob,
-          startEnrich: async () => {
-            if (!clearance.ok) return { ok: false, status: clearance.error };
-            const started = await startLinkedinProfileScraperRun(clearance.clearance, apifyToken, []);
-            return started.ok
-              ? { ok: true, runId: started.data.runId, status: started.data.status }
-              : { ok: false, status: started.title };
-          },
-          startGithub: async () => {
-            if (!clearance.ok) return { ok: false, status: clearance.error };
-            const started = await startGithubProfileScraperRun(clearance.clearance, apifyToken, []);
-            return started.ok
-              ? { ok: true, runId: started.data.runId, status: started.data.status }
-              : { ok: false, status: started.title };
-          },
-          alternateSearch: async (query) => {
-            const before = runner.getFound().length;
-            await runner.run("search_candidates", {
-              platform: "LinkedIn",
-              query,
-              count,
-            });
-            return { acceptedCount: Math.max(0, runner.getFound().length - before) };
-          },
-        });
-        foundCount = runner.getFound().length;
-      };
-      const emptyWithEnrichment = (
-        harvest: NonNullable<typeof primaryHarvest>,
-      ) => {
-        const base = formatHarvestEvidenceError("empty", harvest, { startedSearches });
-        const suffix = lastHarvestFallthrough?.logged
-          ? ` ${lastHarvestFallthrough.logged}`
-          : formatEnrichmentRunIds({ runId: "" }, { runId: "" });
-        return `${base}${suffix}`.trim();
-      };
-      if (foundCount === 0 && startedSearches < 2) {
-        const requestedOneStep = Boolean(requestedHarvestQuery);
-        const oneStepEmpty =
-          requestedOneStep &&
-          succeeded.some((harvest) => harvest.started && harvest.itemCount === 0);
-        if (
-          oneStepEmpty &&
-          requestedStep &&
-          isLastPeopleFirstHarvest(peopleFirstJob, requestedStep)
-        ) {
-          await startEmptyFallthrough();
-        }
-        if (oneStepEmpty && foundCount === 0) {
-          return await failClaimed(
-            502,
-            PEOPLE_FIRST_HARVEST_EMPTY,
-            emptyWithEnrichment(primaryHarvest),
-          );
-        }
-        if (foundCount === 0) {
-          const next = nextPeopleFirstHarvest(
-            peopleFirstJob,
-            apifyExecs.map((execution) => ({ query: execution.query })),
-          );
-          return await failClaimed(
-            502,
-            PEOPLE_FIRST_HARVEST_NOT_STARTED,
-            formatHarvestEvidenceError("not_started", {
-              query: next?.query || plannedQuery,
-              runId: primaryHarvest.runId,
-              status: primaryHarvest.status,
-            }),
-          );
-        }
-      }
-      if (succeededWithPeople.length > 0 && contactCompleteCount === 0 && foundCount === 0) {
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS,
-          formatHarvestEvidenceError("incomplete_contacts", succeededWithPeople[0] ?? primaryHarvest),
-        );
-      }
-      if (succeededWithPeople.length > 0 && foundCount === 0) {
-        return await failClaimed(
-          502,
-          PEOPLE_FIRST_HARVEST_EMPTY,
-          formatHarvestEvidenceError(
-            "gated_empty",
-            succeededWithPeople[0] ?? primaryHarvest,
-            { startedSearches },
-          ),
-        );
-      }
-      if (foundCount === 0) {
-        await startEmptyFallthrough();
-        if (foundCount === 0) {
-          const emptyHarvest =
-            succeeded.find((harvest) => harvest.itemCount === 0) ?? primaryHarvest;
-          return await failClaimed(
-            502,
-            PEOPLE_FIRST_HARVEST_EMPTY,
-            emptyWithEnrichment(emptyHarvest),
-          );
-        }
-      }
-      if (succeeded.length === 0) {
-        return await failClaimed(
-          502,
-          "SOURCING_AGENT_UPSTREAM_FAILED",
-          formatHarvestEvidenceError("empty", { ...primaryHarvest, itemCount: 0 }, { startedSearches }),
-        );
-      }
-    }
     if (executions.length === 0 || !executions.some((execution) => execution.ok)) {
       return await failClaimed(
         502,

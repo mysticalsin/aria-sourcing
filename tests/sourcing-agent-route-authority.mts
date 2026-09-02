@@ -6,7 +6,7 @@ import { NextRequest } from "next/server";
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import { isPeopleFirstContactComplete } from "../src/lib/sourcing/people-first-contact";
-import { peopleFirstHarvestQueue, peopleFirstSearchKey } from "../src/lib/sourcing/multi-source-plan";
+import { peopleFirstHarvestQueue } from "../src/lib/sourcing/multi-source-plan";
 import type { Campaign, JobAnalysis } from "../src/lib/types";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
@@ -57,7 +57,13 @@ let stateReads = 0;
 let providerCalls = 0;
 let vaultCalls = 0;
 let runnerCalls = 0;
-let fallthroughCalls = 0;
+/** Fallthrough state: what the click discovered, POSTed to enrich, and merged. */
+let enrichRuns: string[][] = [];
+let githubRuns: string[][] = [];
+let discoveredUrls: string[] = [];
+let incompleteUrls: string[] = [];
+let enrichedCandidates: unknown[] = [];
+let enrichRunResult: { ok: boolean; runId: string; status: string; itemCount: number } | null = null;
 let beginCalls = 0;
 let frameworkBeginCalls = 0;
 let frameworkCheckCalls = 0;
@@ -66,7 +72,7 @@ let listLessonCalls = 0;
 let completeCalls = 0;
 let failedRunCodes: string[] = [];
 let eventOrder: string[] = [];
-let runnerQueries: Array<{ platform: string; query: string; currentJobTitles?: string[] }> = [];
+let runnerQueries: Array<{ platform: string; query: string; currentJobTitles?: string[]; enriched?: boolean }> = [];
 let mutateDuringProvider: (() => void) | null = null;
 let mutateDuringRunner: (() => void) | null = null;
 let mutateDuringVault: (() => void) | null = null;
@@ -175,53 +181,40 @@ mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
   namedExports: { resolveStoredTavilyKey: async () => storedTavilyKey },
 });
 mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
-  namedExports: { resolveStoredApifyKey: async () => storedApifyKey },
-});
-mock.module(moduleUrl("src/lib/sourcing/people-first-fallthrough.ts"), {
   namedExports: {
-    isLastPeopleFirstHarvest: (
-      job: JobAnalysis,
-      step: { query: string; currentJobTitles?: string[] },
-    ) => {
-      const last = peopleFirstHarvestQueue(job).at(-1);
-      return Boolean(last && peopleFirstSearchKey(last) === peopleFirstSearchKey(step));
-    },
-    peopleFirstAlternateQuery: (job: JobAnalysis) =>
-      /\bbusiness analyst\b|\bba\b/i.test(job.title)
-        ? `${job.location?.trim() ? `Business Analyst ${job.location.trim()}` : "Business Analyst"}`
-        : job.title,
-    parseEnrichmentRunIds: (error: string) => ({
-      enrichRunId: error.match(/\benrich=([A-Za-z0-9._:-]+)/)?.[1],
-      githubRunId: error.match(/\bgithub=([A-Za-z0-9._:-]+)/)?.[1],
-    }),
-    runPeopleFirstEmptyFallthrough: async (input: {
-      job: JobAnalysis;
-      alternateSearch?: (query: string) => Promise<{ acceptedCount: number }>;
-    }) => {
-      fallthroughCalls += 1;
-      const alternateQuery = /\bbusiness analyst\b|\bba\b/i.test(input.job.title)
-        ? "Business Analyst Montreal"
-        : input.job.title;
-      let acceptedCount = 0;
-      if (input.alternateSearch) {
-        acceptedCount = (await input.alternateSearch(alternateQuery)).acceptedCount;
+    resolveStoredApifyKey: async () => storedApifyKey,
+    // The real module refuses an empty URL list (Apify invalid-input). The
+    // mock records exactly what the route asked to enrich.
+    runLinkedinProfileScraperAndWait: async (_clearance: unknown, _token: string, urls: string[]) => {
+      enrichRuns.push([...urls]);
+      const run = enrichRunResult;
+      const harvest = {
+        actor: "harvestapi~linkedin-profile-scraper",
+        query: "email-phone",
+        runId: run?.runId ?? "",
+        status: run ? run.status : "NOT_STARTED",
+        itemCount: run ? run.itemCount : -1,
+        started: Boolean(run?.runId),
+      };
+      if (!run || !run.ok) {
+        return { ok: false, status: 0, title: run ? `Apify run ${run.status}` : "no_profile_urls", detail: "", harvest };
       }
+      return { ok: true, status: 200, data: [], harvest };
+    },
+    runGithubProfileScraperAndWait: async (_clearance: unknown, _token: string, handles: string[]) => {
+      githubRuns.push([...handles]);
       return {
-        enrich: {
-          actor: "harvestapi~linkedin-profile-scraper",
-          runId: "enrich-run-1",
-          started: true,
-          status: "READY",
-        },
-        github: {
+        ok: true,
+        status: 200,
+        data: [],
+        harvest: {
           actor: "apivault_labs~github-profile-scraper",
+          query: "tech-stack-merge",
           runId: "github-run-1",
+          status: "SUCCEEDED",
+          itemCount: 0,
           started: true,
-          status: "READY",
         },
-        alternateQuery,
-        acceptedCount,
-        logged: "enrich=enrich-run-1 github=github-run-1",
       };
     },
   },
@@ -375,7 +368,44 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         return { ok: harvestOk, content: {} };
       },
       getFound: () => foundCandidates,
-      getExecutions: () => runnerQueries.map(({ platform, query }) => {
+      getIncompleteLinkedinUrls: () => [...incompleteUrls],
+      discoverLinkedinUrls: async (query: string) => {
+        runnerQueries.push({ platform: "LinkedIn", query });
+        if (!storedTavilyKey) return { ok: false, urls: [], detail: "no Tavily key in Access & Keys" };
+        return { ok: true, urls: [...discoveredUrls] };
+      },
+      acceptEnrichedProfiles: (_profiles: unknown[], query: string) => {
+        runnerQueries.push({ platform: "Apify", query, enriched: true });
+        const complete = enrichedCandidates.filter((row) =>
+          isPeopleFirstContactComplete(
+            row && typeof row === "object"
+              ? (row as { email?: string; phone?: string; linkedinUrl?: string; sourcePlatform?: string })
+              : {},
+          ),
+        );
+        foundCandidates = [...foundCandidates, ...complete];
+        return { acceptedCount: complete.length, contactCompleteCount: complete.length };
+      },
+      mergeGithubStack: () => 0,
+      getExecutions: () => runnerQueries.map(({ platform, query, enriched }) => {
+        if (enriched) {
+          return {
+            platform,
+            query,
+            ok: true,
+            candidateCount: foundCandidates.length,
+            skippedCount: 0,
+            contactCompleteCount: foundCandidates.length,
+            harvest: {
+              actor: "harvestapi~linkedin-profile-scraper",
+              query: "email-phone",
+              runId: enrichRunResult?.runId ?? "",
+              status: enrichRunResult?.status ?? "SUCCEEDED",
+              itemCount: enrichRunResult?.itemCount ?? 0,
+              started: true,
+            },
+          };
+        }
         const harvest = platform === "Apify"
           ? (runnerHarvestByQuery[query] ?? runnerHarvest)
           : null;
@@ -475,7 +505,12 @@ function reset() {
   providerCalls = 0;
   vaultCalls = 0;
   runnerCalls = 0;
-  fallthroughCalls = 0;
+  enrichRuns = [];
+  githubRuns = [];
+  discoveredUrls = [];
+  incompleteUrls = [];
+  enrichedCandidates = [];
+  enrichRunResult = null;
   beginCalls = 0;
   frameworkBeginCalls = 0;
   frameworkCheckCalls = 0;
@@ -1845,81 +1880,202 @@ test("BA SUCCEEDED items=0 starts a broader harvestapi run with a new run id", a
   assert.equal(completeCalls, 0);
 });
 
-test("one-step harvestQuery empty is PEOPLE_FIRST_HARVEST_EMPTY so the client can start harvest 2", async () => {
+function baMontrealCampaign(): Campaign {
+  const base = baCampaign();
+  return {
+    ...base,
+    jobAnalysis: { ...base.jobAnalysis, location: "Montreal", regions: ["Montreal"] },
+  };
+}
+
+function enrichedElena() {
+  return {
+    ...seed.candidates[0],
+    id: "cand-enriched-elena",
+    campaignId,
+    name: "Elena Varga",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+    githubUrl: "",
+    sourceUrl: "https://www.linkedin.com/in/elena-varga",
+    currentCompany: "BNPP CIB",
+    currentTitle: "Calypso Business Analyst",
+    sourcePlatform: "Apify",
+    sourceQuery: "Business Analyst Montreal",
+    matchScore: 74,
+    matchBreakdown: seed.candidates[0].matchBreakdown,
+    techStack: ["Calypso", "Business Analysis"],
+    recentActivity: "Calypso back office BA.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    lastContactedAt: null,
+    provenance: "live",
+  };
+}
+
+test("one click is one request: every planned harvest runs server-side, then web, enrich, GitHub", async () => {
   reset();
   storedApifyKey = "apify-test";
-  campaign = baCampaign();
-  runnerHarvest = {
-    started: true,
-    status: "SUCCEEDED",
-    itemCount: 0,
-    runId: "Etz5JWFCQGm1605KE",
-  };
+  campaign = baMontrealCampaign();
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-all" };
 
-  const response = await post(
-    request({ harvestQuery: "Calypso Business Analyst" }),
-  );
+  const response = await post(request());
   const body = await response.json();
 
   assert.equal(response.status, 502, JSON.stringify(body));
   assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
-  assert.match(String(body.error), /Empty harvest is not a result/);
-  assert.match(String(body.error), /Next planned search must start now/);
-  assert.match(String(body.error), /run=Etz5JWFCQGm1605KE/);
-  assert.match(String(body.error), /items=0/);
-  assert.doesNotMatch(String(body.error), /Every planned search was tried/);
-  assert.equal(runnerCalls, 1, "one harvestQuery is one harvestapi start, not an in-request loop");
+  assert.match(String(body.error), /Every planned search was tried/);
+  assert.equal(beginCalls, 1, "one click is one sourcing run, not 8 (quota 10/day, limiter 10/min)");
   assert.deepEqual(
-    runnerQueries.map((row) => row.query),
-    ["Calypso Business Analyst"],
+    runnerQueries.filter((row) => row.platform === "Apify" && !row.enriched).map((row) => row.query),
+    queue.map((step) => step.query),
+    "the same request runs the whole planned queue",
   );
-  assert.equal(
-    runnerQueries.length,
-    1,
-    "server must not start harvest 2 in the same HTTP request when harvestQuery is set",
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "LinkedIn" && row.query === "Business Analyst Montreal"),
+    `alternate must be LinkedIn web role+geo, not another Calypso harvestapi string: ${JSON.stringify(runnerQueries)}`,
   );
+  // No Tavily key and no harvest rows: nobody to enrich. An empty-URL POST is
+  // an Apify invalid-input (Fly 5728ad4), so the skip is explicit, never a fake run.
+  assert.equal(enrichRuns.length, 0);
+  assert.equal(githubRuns.length, 0);
+  assert.match(String(body.error), /web=Business Analyst Montreal:not_started \(no Tavily key/);
+  assert.match(String(body.error), /enrich=skipped/);
+  assert.match(String(body.error), /github=skipped/);
+  assert.doesNotMatch(String(body.error), /harvestapi/);
+  assert.doesNotMatch(String(body.error), /apivault/);
   assert.equal(completeCalls, 0);
-  assert.equal(fallthroughCalls, 0, "harvest 1 empty must not start enrich before the queue is exhausted");
+  assert.deepEqual(failedRunCodes, ["PEOPLE_FIRST_HARVEST_EMPTY"]);
 });
 
-test("last empty harvest starts enrich and GitHub runs and logs those run ids", async () => {
+test("after 8 empty harvests the same click POSTs enrich with the LinkedIn URLs it holds and lands a real shortlist", async () => {
   reset();
   storedApifyKey = "apify-test";
   storedTavilyKey = "tvly-test";
-  campaign = {
-    ...baCampaign(),
-    jobAnalysis: {
-      ...baCampaign().jobAnalysis,
-      location: "Montreal",
-      regions: ["Montreal"],
-    },
-  };
-  const last = peopleFirstHarvestQueue(campaign.jobAnalysis).at(-1);
-  assert.ok(last, "BA queue must have a last harvest");
-  runnerHarvest = {
-    started: true,
-    status: "SUCCEEDED",
-    itemCount: 0,
-    runId: "last-harvest-run",
-  };
+  campaign = baMontrealCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-all" };
+  incompleteUrls = ["https://www.linkedin.com/in/harvest-no-phone"];
+  discoveredUrls = ["https://www.linkedin.com/in/elena-varga", "https://www.linkedin.com/in/harvest-no-phone"];
+  enrichRunResult = { ok: true, runId: "enrich-run-1", status: "SUCCEEDED", itemCount: 2 };
+  enrichedCandidates = [enrichedElena()];
 
-  const response = await post(request({ harvestQuery: last!.query }));
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+  assert.equal(body.candidates?.length, 1, JSON.stringify(body));
+  assert.equal(body.candidates[0]?.email, "elena.varga@bnpp-cib.com");
+  assert.equal(body.candidates[0]?.phone, "+1 514 555 0142");
+  assert.equal(body.candidates[0]?.linkedinUrl, "https://www.linkedin.com/in/elena-varga");
+  assert.equal(beginCalls, 1);
+  assert.equal(enrichRuns.length, 1, "enrich must POST exactly once, after discovery");
+  assert.deepEqual(
+    [...enrichRuns[0]!].sort(),
+    ["https://www.linkedin.com/in/elena-varga", "https://www.linkedin.com/in/harvest-no-phone"].sort(),
+    "enrich POSTs the harvest pool plus the web hits, deduped",
+  );
+  assert.equal(githubRuns.length, 0, "no GitHub handle on the accepted person: GitHub is a logged skip, not a leftover run");
+  const order = runnerQueries.map((row) => (row.enriched ? "enrich" : row.platform));
+  assert.ok(order.indexOf("LinkedIn") < order.indexOf("enrich"), `web discovery before enrich: ${order.join(",")}`);
+  assert.equal(completeCalls, 1);
+});
+
+test("enrich that lands nobody is a fail with the run id and item count on it, never 0 as success", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  storedTavilyKey = "tvly-test";
+  campaign = baMontrealCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-all" };
+  discoveredUrls = ["https://www.linkedin.com/in/name-only-hit"];
+  enrichRunResult = { ok: true, runId: "enrich-run-2", status: "SUCCEEDED", itemCount: 1 };
+  enrichedCandidates = [];
+
+  const response = await post(request());
   const body = await response.json();
 
   assert.equal(response.status, 502, JSON.stringify(body));
   assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
-  assert.match(String(body.error), /Empty harvest is not a result/);
-  assert.match(String(body.error), /enrich=enrich-run-1/);
-  assert.match(String(body.error), /github=github-run-1/);
-  assert.doesNotMatch(String(body.error), /harvestapi/);
-  assert.doesNotMatch(String(body.error), /apivault/);
-  assert.equal(fallthroughCalls, 1, "last empty harvest must start enrich + GitHub in the same request");
+  assert.match(String(body.error), /web=Business Analyst Montreal:1/);
+  assert.match(String(body.error), /enrich=enrich-run-2 items=1/);
+  assert.match(String(body.error), /github=skipped/);
+  assert.match(String(body.error), /Do not invent people/);
+  assert.deepEqual(enrichRuns, [["https://www.linkedin.com/in/name-only-hit"]]);
+  assert.equal(completeCalls, 0);
+});
+
+test("harvestQuery resumes the server chain from that reviewed step and runs the rest in the same request", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baMontrealCampaign();
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  const resume = queue[3];
+  assert.ok(resume, "BA queue must have a fourth harvest");
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-resume" };
+
+  const response = await post(
+    request({
+      harvestQuery: resume!.query,
+      ...(resume!.currentJobTitles?.length ? { currentJobTitles: resume!.currentJobTitles } : {}),
+    }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.deepEqual(
+    runnerQueries.filter((row) => row.platform === "Apify" && !row.enriched).map((row) => row.query),
+    queue.slice(3).map((step) => step.query),
+    "resume runs from the reviewed step to the end of the plan, not one step",
+  );
   assert.ok(
     runnerQueries.some((row) => row.platform === "LinkedIn" && row.query === "Business Analyst Montreal"),
-    `alternate must be LinkedIn web, not another Calypso harvestapi string: ${JSON.stringify(runnerQueries)}`,
+    "a resumed chain still falls through to LinkedIn web",
   );
-  assert.ok(
-    runnerQueries.every((row) => row.platform !== "Apify" || row.query === last!.query),
-    "last request must not start another Calypso harvestapi string",
-  );
+  assert.equal(completeCalls, 0);
+});
+
+test("a harvestQuery off the reviewed plan is rejected before any harvest starts", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baMontrealCampaign();
+
+  const response = await post(request({ harvestQuery: "Calypso product page" }));
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "CAMPAIGN_CHANGED");
+  assert.equal(runnerCalls, 0);
+});
+
+test("chain budget exhausted answers PEOPLE_FIRST_HARVEST_CONTINUE with the next reviewed step, not 0 people", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baMontrealCampaign();
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-slow" };
+  const realNow = Date.now;
+  let skew = 0;
+  Date.now = () => realNow() + skew;
+  mutateDuringRunner = () => {
+    skew += 201_000;
+  };
+  try {
+    const response = await post(request());
+    const body = await response.json();
+
+    assert.equal(response.status, 502, JSON.stringify(body));
+    assert.equal(body.code, "PEOPLE_FIRST_HARVEST_CONTINUE");
+    assert.match(String(body.error), /Harvest chain needs another request/);
+    assert.match(String(body.error), /Do not stop at 0 people/);
+    assert.equal(body.resume?.query, queue[1]!.query, "resume names the next reviewed step");
+    assert.equal(runnerCalls, 1, "no new harvest starts after the budget");
+    assert.equal(enrichRuns.length, 0, "enrich waits for the whole plan");
+    assert.deepEqual(failedRunCodes, ["PEOPLE_FIRST_HARVEST_CONTINUE"]);
+    assert.equal(completeCalls, 0);
+  } finally {
+    Date.now = realNow;
+    mutateDuringRunner = null;
+  }
 });

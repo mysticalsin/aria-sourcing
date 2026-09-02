@@ -13,6 +13,8 @@ const {
   fetchDatasetItems,
   testApifyConnection,
   runProfileSearchAndWait,
+  runLinkedinProfileScraperAndWait,
+  runGithubProfileScraperAndWait,
   harvestapiActorInput,
 } = await import("../src/lib/sourcing/apify");
 const { clearProviderProbe } = await import("../src/lib/sourcing/provider-egress");
@@ -207,35 +209,165 @@ try {
     ok("start caps maxItems at the server-side ceiling", seenBody.maxItems === 50);
   }
 
-  // Empty search items=0 still POSTs enrich + GitHub /runs so the click
-  // logs a real run id. Do not invent people from an empty start.
+  // Enrich POSTs real LinkedIn URLs with the actor's own field and mode enum.
+  // Fly 5728ad4 sent `urls: []` + a made-up mode and got `invalid-input`
+  // (no run id). An empty URL list is a logged skip, never a POST.
   {
     const seen: string[] = [];
-    globalThis.fetch = (async (url: unknown) => {
+    let seenBody: Record<string, unknown> = {};
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
       seen.push(String(url));
-      return jsonResponse(201, { data: { id: "enrich_empty_1", status: "READY" } });
+      seenBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return jsonResponse(201, { data: { id: "enrich_run_1", defaultDatasetId: "ds_enrich_1", status: "READY" } });
     }) as typeof fetch;
-    const enrich = await startLinkedinProfileScraperRun(apifyClearance, "tok", []);
+    const empty = await startLinkedinProfileScraperRun(apifyClearance, "tok", []);
     ok(
-      "empty LinkedIn harvest still starts the profile scraper /runs",
-      seen.some((url) => url.includes("/actors/harvestapi~linkedin-profile-scraper/runs")) &&
+      "empty URLs never POST the profile scraper (Apify invalid-input), the skip is explicit",
+      seen.length === 0 && empty.ok === false && empty.title === "no_profile_urls",
+    );
+    const junk = await startLinkedinProfileScraperRun(apifyClearance, "tok", [
+      "https://github.com/someone",
+      "https://www.linkedin.com/search/results/people/?keywords=calypso",
+    ]);
+    ok("non-people URLs are not enrich targets", seen.length === 0 && junk.ok === false);
+    const enrich = await startLinkedinProfileScraperRun(apifyClearance, "tok", [
+      "https://www.linkedin.com/in/test-candidate-dev",
+      "https://www.linkedin.com/in/test-candidate-dev/",
+      "https://ca.linkedin.com/in/second-person",
+    ]);
+    ok(
+      "real LinkedIn URLs POST the profile scraper /runs once, deduped",
+      seen.length === 1 &&
+        seen[0]!.includes("/actors/harvestapi~linkedin-profile-scraper/runs") &&
         enrich.ok === true &&
         enrich.ok &&
-        enrich.data.runId === "enrich_empty_1",
+        enrich.data.runId === "enrich_run_1" &&
+        enrich.data.datasetId === "ds_enrich_1",
+    );
+    ok(
+      "profile scraper body uses the actor schema: urls[] + email search mode enum",
+      Array.isArray(seenBody.urls) &&
+        (seenBody.urls as string[]).length === 2 &&
+        seenBody.profileScraperMode === "Profile details + email search ($10 per 1k)" &&
+        !("profileUrls" in seenBody),
     );
 
     seen.length = 0;
-    globalThis.fetch = (async (url: unknown) => {
+    seenBody = {};
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
       seen.push(String(url));
-      return jsonResponse(201, { data: { id: "github_empty_1", status: "READY" } });
+      seenBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return jsonResponse(201, { data: { id: "github_run_1", defaultDatasetId: "ds_github_1", status: "READY" } });
     }) as typeof fetch;
-    const github = await startGithubProfileScraperRun(apifyClearance, "tok", []);
+    const noHandles = await startGithubProfileScraperRun(apifyClearance, "tok", []);
     ok(
-      "empty LinkedIn harvest still starts the GitHub scraper /runs",
-      seen.some((url) => url.includes("/actors/apivault_labs~github-profile-scraper/runs")) &&
+      "no GitHub handles never POST the GitHub scraper, the skip is explicit",
+      seen.length === 0 && noHandles.ok === false && noHandles.title === "no_github_handles",
+    );
+    const github = await startGithubProfileScraperRun(apifyClearance, "tok", [
+      "https://github.com/octocat",
+      "torvalds",
+      "https://github.com/octocat/",
+    ]);
+    ok(
+      "GitHub handles POST the GitHub scraper /runs with the actor field profileUrls, not usernames",
+      seen.length === 1 &&
+        seen[0]!.includes("/actors/apivault_labs~github-profile-scraper/runs") &&
         github.ok === true &&
         github.ok &&
-        github.data.runId === "github_empty_1",
+        github.data.runId === "github_run_1" &&
+        JSON.stringify(seenBody.profileUrls) === JSON.stringify(["octocat", "torvalds"]) &&
+        !("usernames" in seenBody) &&
+        !("username" in seenBody),
+    );
+  }
+
+  // Enrich run: POST /runs, poll to SUCCEEDED, read the dataset. Run id and
+  // item count are on the result; statusMessage is carried for the trail.
+  {
+    const seen: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      const href = String(url);
+      seen.push(href);
+      if (href.includes("/actors/harvestapi~linkedin-profile-scraper/runs")) {
+        return jsonResponse(201, { data: { id: "enrich_wait_1", defaultDatasetId: "ds_wait_1", status: "READY" } });
+      }
+      if (href.includes("/actor-runs/enrich_wait_1")) {
+        return jsonResponse(200, { data: { status: "SUCCEEDED", statusMessage: "Finished! Total 1 items" } });
+      }
+      if (href.includes("/datasets/ds_wait_1/items")) {
+        return jsonResponse(200, [sampleFullRawItem]);
+      }
+      return jsonResponse(404, { error: { type: "not-found", message: href } });
+    }) as typeof fetch;
+    const res = await runLinkedinProfileScraperAndWait(
+      apifyClearance,
+      "tok",
+      ["https://www.linkedin.com/in/test-candidate-dev"],
+      { timeoutMs: 4_000 },
+    );
+    ok(
+      "enrich run logs run id + items and returns email + phone people",
+      res.ok === true &&
+        res.harvest.runId === "enrich_wait_1" &&
+        res.harvest.actor === "harvestapi~linkedin-profile-scraper" &&
+        res.harvest.itemCount === 1 &&
+        res.harvest.status === "SUCCEEDED" &&
+        res.ok &&
+        res.data[0]?.email === "test@example.com" &&
+        res.data[0]?.phone === "+33 6 12 34 56 78",
+    );
+    ok(
+      "enrich run polls the run and reads its dataset",
+      seen.some((href) => href.includes("/actor-runs/enrich_wait_1")) &&
+        seen.some((href) => href.includes("/datasets/ds_wait_1/items")),
+    );
+
+    globalThis.fetch = (async (url: unknown) => {
+      const href = String(url);
+      if (href.includes("/actors/apivault_labs~github-profile-scraper/runs")) {
+        return jsonResponse(201, { data: { id: "github_wait_1", defaultDatasetId: "ds_gh_1", status: "READY" } });
+      }
+      if (href.includes("/actor-runs/github_wait_1")) {
+        return jsonResponse(200, { data: { status: "SUCCEEDED" } });
+      }
+      if (href.includes("/datasets/ds_gh_1/items")) {
+        return jsonResponse(200, [
+          { login: "octocat", topLanguages: ["Python", "Shell"], languageStats: { TypeScript: 62.5 } },
+        ]);
+      }
+      return jsonResponse(404, { error: { type: "not-found", message: href } });
+    }) as typeof fetch;
+    const gh = await runGithubProfileScraperAndWait(apifyClearance, "tok", ["https://github.com/octocat"], {
+      timeoutMs: 4_000,
+    });
+    ok(
+      "GitHub merge run logs run id + items and returns a tech stack per login",
+      gh.ok === true &&
+        gh.harvest.runId === "github_wait_1" &&
+        gh.harvest.itemCount === 1 &&
+        gh.ok &&
+        gh.data[0]?.login === "octocat" &&
+        gh.data[0]?.skills.includes("Python") &&
+        gh.data[0]?.skills.includes("TypeScript"),
+    );
+
+    globalThis.fetch = (async (url: unknown) => {
+      const href = String(url);
+      if (href.includes("/actors/harvestapi~linkedin-profile-scraper/runs")) {
+        return jsonResponse(400, { error: { type: "invalid-input", message: "Input is not valid" } });
+      }
+      return jsonResponse(404, { error: { type: "not-found", message: href } });
+    }) as typeof fetch;
+    const rejected = await runLinkedinProfileScraperAndWait(
+      apifyClearance,
+      "tok",
+      ["https://www.linkedin.com/in/test-candidate-dev"],
+      { timeoutMs: 4_000 },
+    );
+    ok(
+      "an Apify invalid-input is a not-started enrich, never 0 people and never a fake run id",
+      rejected.ok === false && rejected.harvest.started === false && rejected.harvest.runId === "" && rejected.title === "invalid-input",
     );
   }
 
