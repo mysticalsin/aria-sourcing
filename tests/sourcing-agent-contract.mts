@@ -283,12 +283,13 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const helpers = readFileSync(new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url), "utf8");
   const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
   assert.match(plan, /PEOPLE_FIRST_ATTEMPT_WAIT_MS = 90_000/);
-  assert.match(plan, /PEOPLE_FIRST_MAX_ATTEMPTS = 4/);
+  assert.match(plan, /PEOPLE_FIRST_MAX_ATTEMPTS = 8/);
   assert.match(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS/);
   assert.match(plan, /PEOPLE_FIRST_ATTEMPT_WAIT_MS \* PEOPLE_FIRST_MAX_ATTEMPTS/);
   assert.match(plan, /apifyHarvestQueryFromBrief/);
   assert.match(plan, /peopleFirstHarvestQueries/);
-  assert.match(plan, /peopleFirstHarvestAttempts/);
+  assert.match(plan, /peopleFirstExpansionQueries/);
+  assert.match(plan, /harvestGeoTerms/);
   assert.match(plan, /nextPeopleFirstHarvest/);
   assert.match(plan, /peopleFirstHarvestQueue/);
   assert.match(route, /peopleFirstHarvestQueue/);
@@ -301,7 +302,11 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /next_search_start/);
   assert.match(route, /new AbortController\(\)/);
   assert.match(design, /fresh 90s per attempt/);
-  assert.match(design, /total budget 360s/);
+  assert.match(design, /up to\s+8 planned harvests|8 planned harvests/);
+  assert.match(design, /Business Analyst Montreal/);
+  assert.match(design, /Calypso consultant/);
+  assert.match(design, /trading-platform BA/);
+  assert.match(design, /finance BA/);
   assert.match(design, /enqueue\/start the next planned harvest/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
   assert.match(route, /PEOPLE_FIRST_HARVEST_STILL_RUNNING/);
@@ -351,6 +356,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(apify, /actor_input_matches_planned/);
   assert.match(tools, /searchQuery: query/);
   assert.match(tools, /currentJobTitles/);
+  assert.match(tools, /harvestGeoTerms/);
   assert.match(tools, /profileScraperMode: "Full"/);
   assert.doesNotMatch(tools, /profileScraperMode: "Short"/);
   assert.match(tools, /APIFY_HARVEST_WAIT_MS/);
@@ -374,6 +380,7 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   const flyApp = readFileSync(new URL("../fly.app.toml", import.meta.url), "utf8");
   const autoSource = readFileSync(new URL("../src/lib/sourcing/auto-source.ts", import.meta.url), "utf8");
   const chain = readFileSync(new URL("../src/lib/sourcing/people-first-chain.ts", import.meta.url), "utf8");
+  const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
   assert.match(flyApp, /idle_timeout\s*=\s*360/);
   assert.match(actions, /peopleFirstHarvestQueue\(initialCampaign\.jobAnalysis\)/);
   assert.match(actions, /Empty harvest is not a result\|Next planned search must start/);
@@ -383,6 +390,12 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.match(route, /harvestQuery/);
   assert.match(client, /harvestQuery: harvestStep\.query/);
   assert.match(autoSource, /runPeopleFirstHarvestChain/);
+  assert.match(autoSource, /const enrich = await input.enrich/);
+  assert.match(autoSource, /if \(input.mergeTechStack\)/);
+  assert.doesNotMatch(autoSource, /queryStyle === ["']github["'] && input.mergeTechStack/);
+  assert.match(store, /sourcePeopleFirstBatch/);
+  assert.match(store, /sourceNextBatchRaw/);
+  assert.match(store, /return autoSource\(campaignId, opts\)/);
   assert.match(chain, /for \(const step of queue\)/);
   assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);
   assert.match(client, /Promise\.race/);

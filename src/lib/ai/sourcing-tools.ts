@@ -28,6 +28,7 @@ import {
   type CandidateMappingCampaign,
 } from "@/lib/sourcing/candidate-mappers";
 import { applyLiveEngineGate } from "@/lib/sourcing/live-shortlist";
+import { harvestGeoTerms } from "@/lib/sourcing/multi-source-plan";
 import { isPeopleFirstContactComplete } from "@/lib/sourcing/people-first-contact";
 import { roleProfile } from "@/lib/roles";
 export const SOURCING_TOOL_DEFS: McpTool[] = [
@@ -174,9 +175,14 @@ export function makeSourcingToolRunner(
         return { ok: false, error: "Connect an Apify key in Settings first." };
       }
       try {
+        const geos = harvestGeoTerms(campaign.jobAnalysis);
         const clearance = clearDiscoveryCriteria(
           platform,
-          { searchQuery: query, ...(currentJobTitles.length ? { currentJobTitles } : {}) },
+          {
+            searchQuery: query,
+            ...(currentJobTitles.length ? { currentJobTitles } : {}),
+            ...(geos.length ? { locations: geos } : {}),
+          },
           campaign,
         );
         if (!clearance.ok) {
@@ -203,6 +209,7 @@ export function makeSourcingToolRunner(
           {
             searchQuery: query,
             ...(currentJobTitles.length ? { currentJobTitles } : {}),
+            ...(geos.length ? { locations: geos } : {}),
             // Short mode has no headline/about/skills — finance ≥60 skill-match cannot hold.
             profileScraperMode: "Full",
             maxItems: count,

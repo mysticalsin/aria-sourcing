@@ -19,8 +19,12 @@ export interface PlannedSearch {
 
 /** One harvestapi poll. Next-search after items=0 gets a fresh timer. */
 export const PEOPLE_FIRST_ATTEMPT_WAIT_MS = 90_000;
-/** Planned harvestapi attempts until a real shortlist. */
-export const PEOPLE_FIRST_MAX_ATTEMPTS = 4;
+/**
+ * Planned harvestapi attempts until a real shortlist. 4 canned Calypso
+ * keyword variants then role+geo+synonym expansions. Cap 4 is FAIL:
+ * Fly 2b30d5f ran only those four and stopped at items=0.
+ */
+export const PEOPLE_FIRST_MAX_ATTEMPTS = 8;
 /**
  * One Source click must run every planned harvest. A shared 90s abort is
  * 0-and-stop: the first SUCCEEDED items=0 consumes the budget and harvest 2
@@ -54,6 +58,58 @@ function usefulGithubQuery(query: string): boolean {
 function distinctiveNeedPlatform(job: JobAnalysis): string {
   const hay = [job.title, ...job.requiredSkills, ...job.industryExperience].join(" ").toLowerCase();
   return NEED_PLATFORM_TOKENS.find((token) => hay.includes(token.toLowerCase())) ?? "";
+}
+
+const MACRO_GEO =
+  /^(eu|europe|emea|uk|usa|us|americas|apac|asia|remote|hybrid|worldwide|global)$/i;
+
+/** Concrete places from the brief (Montreal), never a macro region. */
+export function harvestGeoTerms(job: JobAnalysis): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (raw: string) => {
+    for (const part of raw.split(/[,/|]/)) {
+      const next = part.trim().slice(0, 80);
+      const key = next.toLowerCase();
+      if (!next || MACRO_GEO.test(next) || seen.has(key)) continue;
+      seen.add(key);
+      out.push(next);
+    }
+  };
+  if (job.location) push(job.location);
+  for (const region of job.regions) push(region);
+  return out.slice(0, 3);
+}
+
+/**
+ * Later harvests after the canned platform-keyword variants. Role+geo+
+ * synonyms from the reviewed brief. Do not invent people. Do not put
+ * Application Support into the harvestapi keyword query.
+ */
+export function peopleFirstExpansionQueries(job: JobAnalysis): string[] {
+  const platform = distinctiveNeedPlatform(job);
+  const role = harvestKeywordRoleFromTitle(job.title);
+  const geos = harvestGeoTerms(job);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (query: string) => {
+    const next = query.trim().slice(0, 256);
+    const key = next.toLowerCase();
+    if (!next || seen.has(key)) return;
+    seen.add(key);
+    out.push(next);
+  };
+  if (role) {
+    for (const geo of geos) push(`${role} ${geo}`);
+  }
+  if (platform) {
+    push(`${platform} consultant`);
+  }
+  if (role) {
+    push("trading-platform BA");
+    push("finance BA");
+  }
+  return out;
 }
 
 /** Title role for harvest keywords. BA leftover VSS says "Business Analysis". */
@@ -158,6 +214,7 @@ export function peopleFirstHarvestAttempts(job: JobAnalysis): PlannedSearch[] {
   push(primary);
   if (platform && titleFilter) push(platform, [titleFilter]);
   for (const query of peopleFirstHarvestQueries(job)) push(query);
+  for (const query of peopleFirstExpansionQueries(job)) push(query);
   if (attempts.length < 2 && platform && attested) push(`${platform} ${attested}`);
   if (attempts.length < 2 && primary) {
     const tokens = primary.split(/\s+/).filter(Boolean);
@@ -226,5 +283,5 @@ export function plannedSourcingSearches(input: {
       plan.push({ platform: "GitHub", query });
     }
   }
-  return plan.slice(0, 6);
+  return plan.slice(0, Math.max(6, PEOPLE_FIRST_MAX_ATTEMPTS));
 }

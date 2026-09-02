@@ -20,11 +20,12 @@ function baJob(): JobAnalysis {
     seniority: "Senior",
     employmentType: "Contract",
     locationType: "Hybrid",
-    regions: ["Europe"],
-    timezone: "Europe/Paris",
+    location: "Montreal",
+    regions: ["Montreal"],
+    timezone: "America/Montreal",
     salaryMin: null,
     salaryMax: null,
-    currency: "EUR",
+    currency: "CAD",
     equity: false,
     requiredSkills: ["Calypso", "Business Analysis"],
     niceToHaveSkills: [],
@@ -63,6 +64,17 @@ function baJob(): JobAnalysis {
   ok(
     "second harvest has a distinct run id",
     runIds[0] !== runIds[1] && new Set(runIds).size === runIds.length,
+  );
+  ok(
+    "empty chain escalates past the 4 canned Calypso harvests",
+    runIds.length > 4 && new Set(runIds).size === runIds.length,
+  );
+  ok(
+    "empty chain runs role+geo+synonym harvests",
+    result.attempts.some((attempt) => attempt.step.query === "Business Analyst Montreal") &&
+      result.attempts.some((attempt) => attempt.step.query === "Calypso consultant") &&
+      result.attempts.some((attempt) => /trading-platform BA/i.test(attempt.step.query)) &&
+      result.attempts.some((attempt) => /finance BA/i.test(attempt.step.query)),
   );
   ok("empty chain does not invent people", result.accepted.length === 0);
   ok(
@@ -126,6 +138,28 @@ function baJob(): JobAnalysis {
     },
   });
   ok("hard stop does not fake a second run id", calls === 1);
+}
+
+{
+  const job = baJob();
+  const queries = peopleFirstHarvestQueue(job).map((step) => step.query);
+  ok("first query stays Calypso Business Analyst", queries[0] === "Calypso Business Analyst");
+  ok(
+    "later harvests escalate past the 4 canned Calypso variants",
+    queries.some((query) => query === "Business Analyst Montreal") &&
+      queries.some((query) => query === "Calypso consultant") &&
+      queries.some((query) => /trading-platform BA/i.test(query)) &&
+      queries.some((query) => /finance BA/i.test(query)),
+  );
+  const canned = new Set([
+    "Calypso Business Analyst",
+    "Calypso",
+    "Calypso Business Analysis",
+  ]);
+  ok(
+    "expansion harvests are not a loop of the same four Calypso strings",
+    queries.filter((query) => !canned.has(query)).length >= 3,
+  );
 }
 
 assert.ok(pass > 0);

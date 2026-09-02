@@ -24,11 +24,12 @@ function financeJob(title = "Senior Calypso Business Analyst"): JobAnalysis {
     seniority: "Senior",
     employmentType: "Contract",
     locationType: "Hybrid",
-    regions: ["Europe"],
-    timezone: "Europe/Paris",
+    location: "Montreal",
+    regions: ["Montreal"],
+    timezone: "America/Montreal",
     salaryMin: null,
     salaryMax: null,
-    currency: "EUR",
+    currency: "CAD",
     equity: false,
     requiredSkills: ["Calypso", "Business Analysis"],
     niceToHaveSkills: [],
@@ -77,7 +78,13 @@ function accepted(n: number): SourceNextBatchResult {
     },
   });
   ok("BA Auto source searches then enriches", result.ok === true && enrichCalls === 1 && result.enriched === true);
-  ok("BA Auto source does not merge GitHub leftovers", stackCalls === 0 && result.techStackMerged !== true);
+  ok(
+    "BA Auto source merges GitHub onto the same LinkedIn people, not as the shortlist",
+    stackCalls === 1 &&
+      result.techStackMerged === true &&
+      result.ok === true &&
+      !JSON.stringify(result.accepted).includes("github.com"),
+  );
 }
 
 {
@@ -95,6 +102,7 @@ function accepted(n: number): SourceNextBatchResult {
 
 {
   let enrichCalls = 0;
+  let stackCalls = 0;
   const queries: string[] = [];
   const runIds: string[] = [];
   const result = await runAutoSourcePipeline({
@@ -121,6 +129,9 @@ function accepted(n: number): SourceNextBatchResult {
       enrichCalls += 1;
       return { ok: true };
     },
+    mergeTechStack: async () => {
+      stackCalls += 1;
+    },
   });
   ok(
     "Auto source continues after an empty first harvest",
@@ -131,11 +142,27 @@ function accepted(n: number): SourceNextBatchResult {
     runIds.length >= 2 && runIds[0] !== runIds[1],
   );
   ok(
+    "Auto source empty chain escalates past the 4 canned Calypso harvests",
+    queries.length > 4 &&
+      queries.some((query) => query.includes("Business Analyst Montreal")) &&
+      queries.some((query) => query.includes("Calypso consultant")) &&
+      queries.some((query) => /trading-platform BA/i.test(query)) &&
+      queries.some((query) => /finance BA/i.test(query)),
+  );
+  ok(
+    "empty LinkedIn search still attempts enrich and GitHub merge",
+    enrichCalls >= 1 && stackCalls >= 1 && result.techStackMerged === true,
+  );
+  ok(
     "exhausted Auto source fails loud and does not invent people",
     result.ok === false &&
-      enrichCalls === 0 &&
       "error" in result &&
-      result.error === EMPTY_PEOPLE_FIRST_HARVEST,
+      result.error === EMPTY_PEOPLE_FIRST_HARVEST &&
+      result.enriched === true,
+  );
+  ok(
+    "a click cannot return 0-and-stop as a success",
+    result.ok === false,
   );
 }
 
@@ -208,6 +235,13 @@ ok(
   /runAutoSourcePipeline/.test(storeWiring) &&
     /harvestQuery:\s*step\.query/.test(storeWiring) &&
     /currentJobTitles:\s*step\.currentJobTitles/.test(storeWiring),
+);
+ok(
+  "people-first Source next batch uses the Auto source chain",
+  /sourcePeopleFirstBatch/.test(storeWiring) &&
+    /sourceNextBatchRaw/.test(storeWiring) &&
+    /isPeopleFirstRole\(campaign\.jobAnalysis\)/.test(storeWiring) &&
+    /return autoSource\(campaignId, opts\)/.test(storeWiring),
 );
 
 const campaigns = readFileSync(new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url), "utf8");

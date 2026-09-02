@@ -288,12 +288,17 @@ hydrate and on the Strategy tab.
   Copy is not next-search. A banner that says the engine continues
   and then waits for a second click is FAIL. One Source click must
   enqueue/start the next planned harvest on `items=0` in the same
-  request (fresh 90s per attempt, total budget 360s). Do not share
+  click (fresh 90s per attempt, one harvest per HTTP request, up to
+  8 planned harvests). After the canned platform-keyword variants,
+  escalate to role+geo+synonym harvests (Business Analyst Montreal,
+  Calypso consultant, trading-platform BA, finance BA). Do not share
   one 90s abort across the plan. The people-first queue is
-  `peopleFirstHarvestQueue` (≥2 distinct harvestapi searches), not
-  a one-item `plannedSourcingSearches` slice. After `SUCCEEDED
-  items=0`, append `nextPeopleFirstHarvest` if the in-request list
-  is exhausted and start that run (new run id or next actor-input).
+  `peopleFirstHarvestQueue` (≥2 distinct harvestapi searches plus
+  expansions), not a one-item `plannedSourcingSearches` slice. After
+  `SUCCEEDED items=0`, the client POSTs the next harvest (new run id
+  or next actor-input via `nextPeopleFirstHarvest`). Empty LinkedIn search is not terminal: enrich
+  and GitHub profile-scraper merge onto the same people must run.
+  People-first Source next batch uses the same chain as Auto source.
   Banner copy "every planned search was tried" is FAIL unless ≥2 distinct harvests actually started.
 
   - Keep the first query (`Calypso Business Analyst` / `Calypso Linux

@@ -9,7 +9,6 @@ import { EMPTY_PEOPLE_FIRST_HARVEST, isPeopleFirstRole } from "@/lib/sourcing/pe
 import { runPeopleFirstHarvestChain } from "@/lib/sourcing/people-first-chain";
 import type { PlannedSearch } from "@/lib/sourcing/multi-source-plan";
 import type { JobAnalysis } from "@/lib/types";
-import { roleProfile } from "@/lib/roles";
 
 export interface AutoSourceEnrichResult {
   ok: boolean;
@@ -59,21 +58,27 @@ export async function runAutoSourcePipeline(input: {
   });
   const last = searches.at(-1) ?? null;
   const hit = searches.find((result) => result.ok && result.accepted.length > 0);
+  // Empty LinkedIn search is not terminal. Always attempt enrich, then
+  // GitHub profile-scraper merge onto the same people when provided.
+  const enrich = await input.enrich();
+  let techStackMerged = false;
+  if (input.mergeTechStack) {
+    await input.mergeTechStack();
+    techStackMerged = true;
+  }
   if (chain.accepted.length > 0 && hit && hit.ok) {
-    const enrich = await input.enrich();
-    let techStackMerged = false;
-    if (roleProfile(input.job).queryStyle === "github" && input.mergeTechStack) {
-      await input.mergeTechStack();
-      techStackMerged = true;
-    }
     return { ...hit, enriched: Boolean(enrich.ok || !enrich.error), techStackMerged };
   }
-  if (last && !last.ok && isHardSearchStop(last)) return last;
+  if (last && !last.ok && isHardSearchStop(last)) {
+    return { ...last, enriched: Boolean(enrich.ok || !enrich.error), techStackMerged };
+  }
   return {
     ok: false,
     error: isPeopleFirstRole(input.job)
       ? EMPTY_PEOPLE_FIRST_HARVEST
       : "Empty harvest is not a result. Do not stop at 0 people.",
     source: "unavailable",
+    enriched: Boolean(enrich.ok || !enrich.error),
+    techStackMerged,
   };
 }

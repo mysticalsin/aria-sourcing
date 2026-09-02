@@ -90,10 +90,17 @@ export function validateSourcingCriteria(
     campaign.jobAnalysis.title,
     ...campaign.jobAnalysis.requiredSkills,
     ...campaign.jobAnalysis.niceToHaveSkills,
+    ...campaign.jobAnalysis.industryExperience,
+    campaign.jobAnalysis.department,
+    campaign.jobAnalysis.location ?? "",
+    ...campaign.jobAnalysis.regions,
   ]
     .flatMap((value) => [value, ...value.split(/\s+/)])
     .map(token)
     .filter((value) => value.length >= 2);
+  if (/\bbusiness analyst\b|\bba\b/i.test(campaign.jobAnalysis.title)) {
+    roleTerms.push("ba");
+  }
   const normalizedQueryTokens = new Set(fieldValues.flatMap(({ value }) => [...queryTokens(value)]));
   if (!roleTerms.some((term) => normalizedQueryTokens.has(term))) {
     return { ok: false, error: `Search query is not bound to the approved role on ${platform}.` };

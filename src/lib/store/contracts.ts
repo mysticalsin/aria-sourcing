@@ -159,9 +159,11 @@ export interface HermesActions {
       currentJobTitles?: string[];
     },
   ) => Promise<SourceNextBatchResult>;
-  /** Unattended chain: search → enrich → merge tech-stack when the role needs it.
-   *  Empty first harvest continues to the next search in the same click.
-   *  Actors stay in the backend. Does not invent people. */
+  /** Unattended chain: search → enrich → GitHub profile-scraper merge onto the
+   *  same people. Empty LinkedIn search is not terminal. Empty first harvest
+   *  continues to the next expanded search in the same click. Actors stay in
+   *  the backend. Does not invent people. People-first Source next batch uses
+   *  this same chain. */
   autoSource: (
     campaignId: string,
     opts?: {

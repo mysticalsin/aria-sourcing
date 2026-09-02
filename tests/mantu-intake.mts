@@ -143,6 +143,15 @@ ok(
     ) &&
     baAttempts.some((step) => step.query === "Calypso Business Analysis"),
 );
+ok(
+  "BA later harvests use role+geo+synonyms, not a loop of four Calypso strings",
+  baAttempts.some((step) => step.query === "Business Analyst Montreal") &&
+    baAttempts.some((step) => step.query === "Calypso consultant") &&
+    baAttempts.some((step) => /trading-platform BA/i.test(step.query)) &&
+    baAttempts.some((step) => /finance BA/i.test(step.query)) &&
+    baAttempts[0]?.query === "Calypso Business Analyst" &&
+    baAttempts.length > 4,
+);
 ok("BA people-first queue is never one harvest", peopleFirstHarvestQueue(ba.jobAnalysis).length >= 2);
 ok(
   "BA items=0 next harvest is a broader query or next actor-input",

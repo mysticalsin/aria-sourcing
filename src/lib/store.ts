@@ -1048,7 +1048,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const {
-    sourceNextBatch,
+    sourceNextBatch: sourceNextBatchRaw,
     addCandidateFromGithub,
     addCandidateManual,
     sourceFromApollo,
@@ -1716,7 +1716,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return runAutoSourcePipeline({
         job: campaign.jobAnalysis,
         search: (step) =>
-          sourceNextBatch(campaignId, {
+          sourceNextBatchRaw(campaignId, {
             ...opts,
             harvestQuery: step.query,
             currentJobTitles: step.currentJobTitles,
@@ -1730,8 +1730,35 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         },
       });
     },
-    [current, enrichCampaign, sourceNextBatch],
+    [current, enrichCampaign, sourceNextBatchRaw],
   );
+
+  // People-first Source next batch is the same chain as Auto source: expanded
+  // harvests, then enrich + GitHub profile-scraper merge. harvestQuery is one
+  // inner step so the chain does not recurse. Keep the factory boundary: do
+  // not re-declare the reviewed-batch action as a store useCallback.
+  const sourcePeopleFirstBatch = useCallback(
+    async (
+      campaignId: string,
+      opts?: {
+        platform?: SourcePlatform;
+        count?: number;
+        agentFramework?: { runId: string; capabilityToken: string; query: string };
+        harvestQuery?: string;
+        currentJobTitles?: string[];
+      },
+    ): Promise<SourceNextBatchResult> => {
+      if (!opts?.harvestQuery?.trim()) {
+        const campaign = current().campaigns.find((row) => row.id === campaignId);
+        if (campaign && isPeopleFirstRole(campaign.jobAnalysis)) {
+          return autoSource(campaignId, opts);
+        }
+      }
+      return sourceNextBatchRaw(campaignId, opts);
+    },
+    [autoSource, current, sourceNextBatchRaw],
+  );
+  const sourceNextBatch = sourcePeopleFirstBatch;
 
   const runSourcingAgent = useCallback(
     async (
