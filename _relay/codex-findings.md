@@ -19,6 +19,14 @@ every `open` entry at the start of each session/loop iteration. See
 Historical and current findings follow. The current consolidated audit is
 `_relay/2026-07-11-enterprise-audit.md`.
 
+## 2026-09-02 — Live never-0 stop after 4 canned Calypso harvests
+**Severity:** correctness
+**File:** src/lib/sourcing/multi-source-plan.ts; src/lib/sourcing/auto-source.ts
+**Issue:** One Source click ran 4 canned harvestapi queries (`Calypso Business Analyst` → `Calypso`+titles → `Calypso Business Analysis` → `Calypso`), all SUCCEEDED items=0, then stopped. Role+geo+synonym harvests never ran. Enrich and GitHub profile-scraper merge never ran. Empty LinkedIn search was treated as terminal. No invented people (correct) but also no shortlist.
+**Repro/evidence:** Fly `2b30d5f`, Ultron camp_1788068519249. Plumbing PASS (4 distinct run ids). Product FAIL: 0 candidates, no enrich, no GitHub merge, no email/phone/LinkedIn.
+**Suggested fix:** PEOPLE_FIRST_MAX_ATTEMPTS=8 with peopleFirstExpansionQueries; always enrich+merge after the search chain; people-first Source next batch uses the Auto source chain.
+**Status:** fixed (510c950)
+
 ## 2026-09-01 — Live empty harvest stopped after one harvestapi run
 **Severity:** correctness
 **File:** src/app/api/sourcing-agent/route.ts + src/lib/sourcing/auto-source.ts
