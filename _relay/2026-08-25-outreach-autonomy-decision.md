@@ -17,7 +17,9 @@
 4. **Replies (A-6):** `decideAutopilot` returns `auto_approve_eligible` only when
    entitlement + guardrails pass and salary/injection/gate checks are clean;
    otherwise `queue` for human review.
-5. **LinkedIn:** Assisted-manual remains; vendor-api fail-closed until credentials.
+5. **LinkedIn:** Defaults to **Automatic** entitled vendor/API delivery
+   (`fleet.deliveryMode`). Manual assisted paste/confirm is opt-in.
+   Vendor-api still fail-closed until credentials. No scrape/session bots.
 
 ## Non-goals
 
