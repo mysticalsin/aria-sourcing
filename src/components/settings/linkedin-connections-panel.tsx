@@ -70,17 +70,20 @@ export function LinkedInConnectionsProvider({ children }: { children: React.Reac
 
 export function useLinkedInConnections(): LinkedInConnectionsValue {
   const ctx = React.useContext(LinkedInConnectionsContext);
-  if (ctx) return ctx;
-  return useLinkedInConnectionsState();
+  // Always call the standalone hook so Rules of Hooks stay stable; prefer
+  // the provider value when present (avoids double-fetch in the stack).
+  const standalone = useLinkedInConnectionsState({ enabled: !ctx });
+  return ctx ?? standalone;
 }
 
-function useLinkedInConnectionsState() {
+function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
+  const enabled = opts?.enabled !== false;
   const actions = useActions();
   const role = useRole();
   const localSeats = useSeats();
   const { toast } = useToast();
   const isAdmin = can(role, "manage_fleet");
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(enabled);
   const [connectingOAuth, setConnectingOAuth] = React.useState(false);
   const [connectingAssisted, setConnectingAssisted] = React.useState(false);
   const [testingSeat, setTestingSeat] = React.useState<string | null>(null);
@@ -93,6 +96,10 @@ function useLinkedInConnectionsState() {
   const [simulating, setSimulating] = React.useState(false);
 
   const load = React.useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/linkedin/connections", { method: "GET", credentials: "include" });
@@ -132,7 +139,7 @@ function useLinkedInConnectionsState() {
     } finally {
       setLoading(false);
     }
-  }, [localSeats, toast]);
+  }, [enabled, localSeats, toast]);
 
   React.useEffect(() => {
     void load();
