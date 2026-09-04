@@ -1,57 +1,22 @@
 {
-  "when": "2026-09-04T04:23:36.418607Z",
+  "when": "2026-09-04T13:59:57Z",
   "target": "https://aria-mantu-app.fly.dev",
-  "vercel_touched": false,
-  "live_ready": {
-    "ok": true,
+  "branch": "cursor/linkedin-auto-vm-fleet-b91d",
+  "tipSha": "20110a1d88b895ad33da8f8429f568eb94beeeed",
+  "pr": 64,
+  "live": {
+    "health": 200,
+    "ready": 200,
     "build": "5728ad41ab7a4c74757741ecc269bc298d98ba2a",
-    "migration": "0079_autopilot_enqueue_approval_hash_bind.sql"
+    "migration": "0079_autopilot_enqueue_approval_hash_bind.sql",
+    "authLinkedin": 401,
+    "linkedinConnections": 404,
+    "fleetComputers": 404,
+    "knowledgeCampaign": 404
   },
-  "probes": {
-    "GET /login": 200,
-    "GET /api/health": 200,
-    "GET /api/ready": 200,
-    "POST /api/auth/demo-login": {
-      "code": 404,
-      "detail": "Disabled in production (expected)"
-    },
-    "GET /auth/linkedin": {
-      "code": 401,
-      "body": "Not authenticated."
-    },
-    "GET /api/linkedin/connections": 404,
-    "GET /api/fleet/computers": 404,
-    "GET /api/knowledge/campaign": 404,
-    "GET /api/outreach/send": 405
-  },
-  "browser": {
-    "login_methods": [
-      "email/password"
-    ],
-    "linkedin_signin_button": false,
-    "linkedin_connect_requires_admin_session": true,
-    "settings_redirects_to_login": true,
-    "fleet_redirects_to_login": true,
-    "screenshots": [
-      "/opt/cursor/artifacts/fly-linkedin-e2e/01-login.png",
-      "/opt/cursor/artifacts/fly-linkedin-e2e/02-settings-redirect.png",
-      "/opt/cursor/artifacts/fly-linkedin-e2e/03-fleet-redirect.png",
-      "/opt/cursor/artifacts/fly-linkedin-e2e/04-auth-linkedin.png"
-    ]
-  },
-  "unit_tests": {
-    "linkedin-policy": "31 passed",
-    "linkedin-channel-contract": "16 passed",
-    "linkedin-connections": "47 passed",
-    "contact-lease": "10 passed",
-    "computer-supervisor": "8 passed",
-    "sourcing-automatic-deliver": "7 passed"
-  },
-  "blockers_for_full_authenticated_e2e": [
-    "No ADMIN_EMAIL/ADMIN_PASSWORD/ANON_KEY supplied to this agent (demo-login disabled on Fly)",
-    "PR #61 (linkedin-auto-vm-fleet) is NOT on live Fly tip \u2014 /api/fleet/computers and /api/linkedin/connections return 404",
-    "Protected Fly deploy requires deploy/fly-github-actions + recovery receipt (cannot dispatch from this agent)",
-    "LinkedIn OIDC connect (/auth/linkedin?seat_id=...) requires admin session + LINKEDIN_CLIENT_ID/SECRET on Fly"
-  ],
-  "conclusion": "Fly tenant is healthy and auth-gated. Unauthenticated LinkedIn connect cannot complete (by design). Full LinkedIn connection + automatic send E2E is BLOCKED until (1) admin credentials for session, (2) PR deployed to Fly, (3) LinkedIn OIDC secrets present."
+  "blockers": [
+    "FLY_API_TOKEN missing in agent environment",
+    "live migration 0079 not present on branch tip (0063)",
+    "admin credentials unavailable for authenticated E2E"
+  ]
 }

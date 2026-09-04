@@ -1,43 +1,42 @@
 ---
 project: MSourcing / ARIA
-shift: 99
+shift: 100
 agent: cursor-cloud
-updated: 2026-09-04 UTC
-status: linkedin-aria-vault-keys-wired
+updated: 2026-09-04T13:59Z
+status: linkedin-fleet-pr64-open-fly-deploy-blocked
 ---
 
-# Handoff — Shift 99
+# Handoff — Shift 100
 
 ## Current state
 
-- **Branch/PR:** `cursor/linkedin-auto-vm-fleet-b91d` → PR #61 (`integration/sourcing-enrichment-on-main`)
-- LinkedIn delivery still defaults to **Automatic**; Manual is Settings toggle
-- **Aria Settings vault is now the primary credential path** for LinkedIn OIDC, Vendor API, and Computer Supervisor (env remains fallback)
-- New vault providers: `LinkedIn OIDC`, `LinkedIn Vendor API`, `Computer Supervisor`
-- Settings fields on `SystemSettings`: `linkedinClientId`, `linkedinClientSecretKeyId`, `linkedinVendorApiUrl`, `linkedinVendorApiKeyId`, `computerSupervisorUrl`, `computerSupervisorTokenKeyId`
-- Resolver: `src/lib/linkedin-credentials.ts` (session + workspace/service-role paths)
-- UI: `LinkedInCredentialsPanel` inside LinkedIn outreach stack; API keys panel hints updated
-- Adapters / OAuth / connections readiness / dispatch / send all resolve vault first
+- **Branch/PR:** `cursor/linkedin-auto-vm-fleet-b91d` → **PR #64** (draft) onto `integration/sourcing-enrichment-on-main`
+- Tip SHA: `20110a1d88b895ad33da8f8429f568eb94beeeed`
+- LinkedIn Automatic + vault plug-and-play + contact lease + fleet computers are on this tip
+- Live Fly `https://aria-mantu-app.fly.dev` build `5728ad41…` / migration `0079_…`:
+  - `/api/health` + `/api/ready` → 200
+  - `/auth/linkedin` → **401** (route exists)
+  - `/api/linkedin/connections`, `/api/fleet/computers`, `/api/knowledge/campaign` → **404** (tip not deployed)
+- Agent has **no** `FLY_API_TOKEN` / admin credentials; requested via environment setup actions
 
 ## Done this shift
 
-1. Wired LinkedIn OIDC client secret, vendor API key, and computer-supervisor token to Aria API-key vault
-2. Settings → LinkedIn plug-and-play panel (URLs + key selectors); secrets never stored in settings JSON
-3. `linkedin-channel` + `computer-supervisor` accept vault-resolved credentials (env fallback)
-4. OAuth start/callback + connections readiness use workspace settings + vault
-5. Tests: `linkedin-credentials` 15/15, channel-contract 17/17, connections 47/47, computer-supervisor 8/8; `tsc --noEmit` green
+1. Fixed Rules-of-Hooks in LinkedIn connections panel (`enabled` skip when provider present)
+2. Registered `linkedin-credentials` + fleet suites in application manifest; refreshed contract freeze (172/225)
+3. Re-opened work as **PR #64**; pushed tip `20110a1`
+4. Reconfirmed Fly golive blocker: LinkedIn fleet APIs absent on live tip
 
 ## Blockers
 
-- Live Fly tip still needs PR #61 deploy + migration **0063**
-- Authenticated E2E still needs admin session + operator-pasted Aria keys (or env)
-- N=100 computer RAM budget still not provisioned
+1. **Fly deploy** — needs `FLY_API_TOKEN` (or protected `deploy/fly-github-actions` workflow + recovery receipt). Agent cannot mutate production without it.
+2. Live DB reports migration **0079**; this branch ledger tops at **0063** — reconcile before/during protected deploy (do not blindly image-swap).
+3. Authenticated E2E needs `ADMIN_EMAIL` / `ADMIN_PASSWORD` (demo login off on Fly) + operator vault keys after deploy.
 
 ## Next steps
 
-1. Ops: deploy PR #61 to Fly; apply 0063
-2. In Aria Settings: add LinkedIn OIDC / Vendor / Computer Supervisor keys → attach on LinkedIn stack
-3. Smoke: OIDC connect → automatic Vendor or Browser Computer send; second seat blocked on same identity
+1. Owner: inject `FLY_API_TOKEN` (and ideally admin login) into Cloud Agent secrets, **or** dispatch protected Deploy Aria Mantu with this SHA after CI green + migration reconciliation
+2. After deploy: prove `/api/linkedin/connections` → **401** (not 404); paste Aria vault keys; OIDC connect → Automatic Vendor or Browser Computer send
+3. Mark PR #64 ready when Fly smoke passes
 
 ## Decisions made (don't relitigate)
 
@@ -50,5 +49,5 @@ status: linkedin-aria-vault-keys-wired
 ## Watch out
 
 - `COMPUTER_SUPERVISOR_MOCK_SEND=1` is tests-only — never production
-- `bindComputerSupervisorEndpoint` must be cleared in `finally` after browser deliver
-- Vault providers must match exactly: `LinkedIn OIDC`, `LinkedIn Vendor API`, `Computer Supervisor`
+- Live migration **0079** is not in this repo tip — investigate lineage before deploy
+- Closed PRs #61 / #63 are superseded by **#64**
