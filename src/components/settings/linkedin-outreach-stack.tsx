@@ -57,8 +57,7 @@ function DeliveryModeToggle() {
           <span>
             <span className="block text-sm font-semibold text-ink">Automatic outreach</span>
             <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-              Agents queue LinkedIn sends via the entitled vendor/API seat after approval — no
-              paste/confirm per message.
+              Agents queue LinkedIn sends via an entitled vendor API or browser-computer seat after approval — no paste/confirm per message.
             </span>
           </span>
         </button>
@@ -120,7 +119,7 @@ function LinkedInOutreachStackInner() {
       id={LINKEDIN_OUTREACH_STACK_ID}
       eyebrow="LinkedIn stack"
       title="Identity & outreach"
-      description="Two steps: prove who you are with LinkedIn OIDC, then wire HeyReach MCP so agents can run real outreach sequences. Delivery defaults to Automatic."
+      description="Identity (OIDC), entitled automatic delivery (vendor API or browser computer), optional HeyReach MCP. Delivery defaults to Automatic; Manual is an explicit toggle."
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
@@ -130,7 +129,7 @@ function LinkedInOutreachStackInner() {
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           No scrape, no session bots, no password storage. OIDC tokens encrypted at rest.
           {deliveryMode === "automatic"
-            ? " Automatic mode queues entitled vendor/API sends after approval (lease, DNC, and rate caps still apply)."
+            ? " Automatic mode queues entitled vendor-api or browser-computer sends after approval (Postgres contact lease, DNC, and rate caps still apply)."
             : " Manual mode keeps assisted paste/confirm for each send."}
         </p>
       }

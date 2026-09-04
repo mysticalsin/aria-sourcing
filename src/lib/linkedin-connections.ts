@@ -3,7 +3,10 @@
  * No LinkedIn passwords, session cookies, or scrape — ever.
  */
 
-export type LinkedInSeatProvider = "LinkedIn Assisted Manual" | "LinkedIn Vendor API";
+export type LinkedInSeatProvider =
+  | "LinkedIn Assisted Manual"
+  | "LinkedIn Vendor API"
+  | "LinkedIn Browser Computer";
 
 export type LinkedInProviderReadiness = {
   /** Sign In with LinkedIn (OpenID Connect) client configured. */
@@ -11,6 +14,7 @@ export type LinkedInProviderReadiness = {
   encryptionReady: boolean;
   assistedManual: true;
   vendorApiConfigured: boolean;
+  browserComputerConfigured: boolean;
   inboundWebhookSecret: boolean;
 };
 
@@ -25,6 +29,9 @@ export function linkedInProviderReadiness(
     vendorApiConfigured: Boolean(
       env.LINKEDIN_VENDOR_API_URL?.trim() && env.LINKEDIN_VENDOR_API_KEY?.trim(),
     ),
+    browserComputerConfigured: Boolean(
+      env.COMPUTER_SUPERVISOR_URL?.trim() || env.COMPUTER_SUPERVISOR_MOCK_SEND === "1",
+    ),
     inboundWebhookSecret: Boolean(
       (env.LINKEDIN_INBOUND_WEBHOOK_SECRET ?? env.EMAIL_INBOUND_WEBHOOK_SECRET)?.trim(),
     ),
@@ -32,11 +39,17 @@ export function linkedInProviderReadiness(
 }
 
 export function isLinkedInSeatProvider(provider: string | null | undefined): provider is LinkedInSeatProvider {
-  return provider === "LinkedIn Assisted Manual" || provider === "LinkedIn Vendor API";
+  return (
+    provider === "LinkedIn Assisted Manual" ||
+    provider === "LinkedIn Vendor API" ||
+    provider === "LinkedIn Browser Computer"
+  );
 }
 
 export function defaultLinkedInSeatName(provider: LinkedInSeatProvider): string {
-  return provider === "LinkedIn Vendor API" ? "LinkedIn Vendor" : "My LinkedIn (manual)";
+  if (provider === "LinkedIn Vendor API") return "LinkedIn Vendor";
+  if (provider === "LinkedIn Browser Computer") return "LinkedIn Computer";
+  return "My LinkedIn (manual)";
 }
 
 export type LinkedInSeatRow = {
@@ -71,7 +84,7 @@ export function linkedInSeatCanGoLive(seat: {
   if (seat.status && seat.status !== "active") {
     return { ok: false, reason: "Seat must be active before going live." };
   }
-  return { ok: true, reason: "Ready for automatic vendor delivery or Manual approve-and-send." };
+  return { ok: true, reason: "Ready for automatic vendor/browser-computer delivery or Manual approve-and-send." };
 }
 
 export function normalizeLinkedInProfileUrl(raw: string): string | null {

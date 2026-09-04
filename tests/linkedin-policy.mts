@@ -80,7 +80,10 @@ const migration = readFileSync(
   "utf8",
 );
 ok("migration 0062 enqueue_linkedin_outbound", /enqueue_linkedin_outbound/.test(migration));
-ok("migration 0062 vendor-only automatic", /LinkedIn Vendor API/.test(migration));
+ok("migration 0062 vendor automatic", /LinkedIn Vendor API/.test(migration));
+const migration63 = readFileSync(new URL("../supabase/migrations/0063_contact_lease_and_browser_computer.sql", import.meta.url), "utf8");
+ok("migration 0063 browser-computer automatic", /LinkedIn Browser Computer/.test(migration63));
+ok("migration 0063 claim_contact", /claim_contact/.test(migration63));
 
 console.log(`RESULT linkedin-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

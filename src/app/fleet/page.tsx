@@ -21,6 +21,7 @@ import { SeatCard } from "@/components/fleet/seat-card";
 import { FleetSummary } from "@/components/fleet/fleet-summary";
 import { FleetRosterStack } from "@/components/fleet/fleet-roster-stack";
 import { SuppressionPanel } from "@/components/fleet/suppression-panel";
+import { FleetComputersPanel, type FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
 import { AllocationResultView } from "@/components/fleet/allocation-result";
 import {
   useHydrated,
@@ -151,6 +152,51 @@ export default function FleetPage() {
   const [allocation, setAllocation] = React.useState<AllocationResult | null>(null);
   const [sourcing, setSourcing] = React.useState(false);
   const [allocating, setAllocating] = React.useState(false);
+  const [computers, setComputers] = React.useState<FleetComputerRow[]>([]);
+  const [computersLoading, setComputersLoading] = React.useState(false);
+
+  const refreshComputers = React.useCallback(async () => {
+    setComputersLoading(true);
+    try {
+      const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { computers?: FleetComputerRow[] };
+      setComputers(data.computers ?? []);
+    } catch {
+      /* ignore — panel stays empty */
+    } finally {
+      setComputersLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    void refreshComputers();
+  }, [hydrated, refreshComputers]);
+
+  async function computerAction(action: string, computerId: string) {
+    try {
+      const res = await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, computerId }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        toast({ title: "Computer action failed", description: data.error ?? res.statusText, variant: "error" });
+        return;
+      }
+      await refreshComputers();
+      toast({
+        title: action === "take_control" ? "You have control" : action === "release_control" ? "Control released" : "Computer updated",
+        variant: "success",
+      });
+    } catch {
+      toast({ title: "Computer action failed", variant: "error" });
+    }
+  }
+
 
   // Add-agent modal
   const [addOpen, setAddOpen] = React.useState(false);
@@ -570,6 +616,16 @@ export default function FleetPage() {
           </FleetRosterStack>
 
           {/* 5 — Suppression */}
+          <FleetComputersPanel
+            computers={computers}
+            onRefresh={() => void refreshComputers()}
+            onTakeControl={(id) => void computerAction("take_control", id)}
+            onRelease={(id) => void computerAction("release_control", id)}
+            onObserve={() => {
+              /* View opens inside the panel only — never auto-pop a LinkedIn window. */
+            }}
+          />
+          {computersLoading ? null : null}
           <SuppressionPanel />
         </div>
       </HydrationGate>

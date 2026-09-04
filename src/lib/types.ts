@@ -1020,6 +1020,7 @@ export const SEAT_PROVIDERS = [
   "Twilio SMS",
   "LinkedIn Assisted Manual",
   "LinkedIn Vendor API",
+  "LinkedIn Browser Computer",
 ] as const;
 export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 
@@ -1083,6 +1084,10 @@ export interface AgentSeat {
   modelId?: string;
   /** Tool IDs enabled for this agent (overrides workspace defaults when set). */
   toolIds?: ToolId[];
+  /** Isolated Chromium computer id (LinkedIn Browser Computer seats). */
+  computerId?: string | null;
+  /** Automatic LinkedIn backend for this seat. */
+  linkedinDeliveryBackend?: "vendor-api" | "browser-computer" | null;
 }
 
 export const SUPPRESSION_TYPES = ["email", "domain", "phone", "linkedin"] as const;
@@ -1138,7 +1143,7 @@ export interface FleetSettings {
   maxAgents: number; // hard ceiling on deployable agents (e.g. 300)
   /**
    * LinkedIn delivery mode for the workspace fleet.
-   * `automatic` (default): agent queues sends via entitled vendor/API without per-message paste/confirm.
+   * `automatic` (default): agent queues sends via entitled vendor-api or browser-computer without per-message paste/confirm.
    * `manual`: assisted-manual — human copies/pastes in LinkedIn, then Confirms.
    */
   deliveryMode: LinkedInDeliveryMode;

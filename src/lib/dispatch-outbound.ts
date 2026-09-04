@@ -378,6 +378,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           subject: msg.subject ?? "",
           body: msg.body,
           attemptId: deliveryAttemptId,
+          seatId: msg.seat_id ?? undefined,
         });
         const outcomeKind =
           outcome.status === "sent" && outcome.deliveryState === "accepted"

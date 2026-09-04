@@ -31,6 +31,8 @@ begin
       ('public.claim_email_outbound(text,text,text,text,text,text,uuid)',      'authenticated', true),
       ('public.review_whatsapp_outbound(uuid,text)',                          'authenticated', true),
       ('public.enqueue_linkedin_outbound(text,text,text,uuid,text,text,text)', 'authenticated', true),
+      ('public.claim_contact(text,text,uuid,int)', 'authenticated', true),
+      ('public.complete_contact_lease(uuid,text,text)', 'authenticated', true),
       ('public.enqueue_whatsapp_outbound(text,text,text,uuid,text,text,text,text,uuid,jsonb)', 'authenticated', true),
       ('public.claim_and_record(text,text,text,uuid,text,integer)',            'service_role',  true),
       ('public.claim_agent_framework_run(uuid,uuid,uuid,uuid,text,text,uuid,text,text)', 'service_role', true),

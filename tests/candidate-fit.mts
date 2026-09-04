@@ -77,7 +77,7 @@ const strongLead = {
   location: "Montreal",
   timezone: "",
   recentActivity: "System Designer medical device FDA MTTF in Montreal.",
-} as Candidate;
+} as unknown as Candidate;
 const strongScore = scoreCandidate(strongLead, systemDesigner, DEFAULT_SCORING_WEIGHTS);
 ok(`strong System Designer lead scores >= 80 (got ${strongScore.score})`, strongScore.score >= 80);
 ok("strong lead meets sourcing quality bar", meetsSourcingQualityBar({ matchScore: strongScore.score }));

@@ -48,6 +48,7 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
   "LinkedIn Assisted Manual": "Manual mode: draft, profile deep-link, human copy/paste/send, then Confirm.",
   "LinkedIn Vendor API": "Automatic mode path: licensed vendor API; fails closed until LINKEDIN_VENDOR_* credentials exist.",
+  "LinkedIn Browser Computer": "Automatic mode path: isolated Chromium computer per seat (OpenBot-shaped); fails closed until computer supervisor is ready.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */

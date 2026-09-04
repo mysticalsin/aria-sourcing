@@ -4,6 +4,7 @@ import {
   getLinkedInAdapter,
   linkedInAdapterForProvider,
   linkedInBackendForProvider,
+  isLinkedInAutomaticProvider,
 } from "../src/lib/linkedin-channel";
 
 const migration = readFileSync("supabase/migrations/0054_linkedin_channel_adapter_authority.sql", "utf8");
@@ -89,6 +90,8 @@ ok(
 );
 ok("adapter maps assisted-manual by provider", linkedInBackendForProvider("LinkedIn Assisted Manual") === "assisted-manual");
 ok("adapter maps vendor-api by provider", linkedInBackendForProvider("LinkedIn Vendor API") === "vendor-api");
+ok("adapter maps browser-computer by provider", linkedInBackendForProvider("LinkedIn Browser Computer") === "browser-computer");
+ok("browser-computer is an automatic provider", isLinkedInAutomaticProvider("LinkedIn Browser Computer") === true);
 ok("unknown provider has no adapter", linkedInAdapterForProvider("LinkedIn Bot Fleet") === null);
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;

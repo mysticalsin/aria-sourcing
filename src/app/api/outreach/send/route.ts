@@ -17,7 +17,7 @@ import {
   resolveLinkedInDeliveryMode,
 } from "@/lib/linkedin-policy";
 import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
-import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import { isLinkedInAutomaticProvider, linkedInAdapterForProvider } from "@/lib/linkedin-channel";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
@@ -250,12 +250,13 @@ export async function POST(req: NextRequest) {
     if (liSeat.mode !== "live") {
       return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
     }
-    if (liSeat.provider !== "LinkedIn Vendor API") {
+    if (liSeat.provider !== "LinkedIn Vendor API" && liSeat.provider !== "LinkedIn Browser Computer") {
       return NextResponse.json(
         {
           status: "error",
           detail:
-            "Automatic LinkedIn delivery requires a live LinkedIn Vendor API seat. Connect vendor credentials (LINKEDIN_VENDOR_*) or switch Settings → LinkedIn to Manual approve-and-send.",
+            "Automatic LinkedIn delivery requires a live LinkedIn Vendor API or LinkedIn Browser Computer seat. Connect an entitled adapter in Settings → LinkedIn, or switch to Manual approve-and-send.",
+          settingsPath: "/settings?tab=integrations#linkedin-outreach-stack",
         },
         { status: 503 },
       );
@@ -266,7 +267,7 @@ export async function POST(req: NextRequest) {
         {
           status: "error",
           detail:
-            "LinkedIn vendor API is not configured (LINKEDIN_VENDOR_API_URL / LINKEDIN_VENDOR_API_KEY). Automatic send refused.",
+            "No live LinkedIn automatic adapter is configured for this seat (vendor API credentials or computer supervisor). Automatic send refused — open Settings → LinkedIn.",
         },
         { status: 503 },
       );

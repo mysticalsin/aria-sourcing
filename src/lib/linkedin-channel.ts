@@ -1,6 +1,7 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
+import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
 
-export type LinkedInBackendKind = "assisted-manual" | "vendor-api";
+export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "browser-computer";
 
 export interface LinkedInDeliveryRequest {
   workspaceId: string;
@@ -10,6 +11,8 @@ export interface LinkedInDeliveryRequest {
   subject: string;
   body: string;
   attemptId: string;
+  /** Seat id — required for browser-computer path (1 seat = 1 computer). */
+  seatId?: string;
 }
 
 export interface LinkedInDeliveryOutcome {
@@ -69,7 +72,7 @@ const vendorApiAdapter: LinkedInAdapter = {
         status: "error",
         deliveryState: "not-sent",
         provider: "LinkedIn Vendor API",
-        detail: "LINKEDIN_VENDOR_API_URL / LINKEDIN_VENDOR_API_KEY not set, LinkedIn vendor delivery refused.",
+        detail: "LINKEDIN_VENDOR_API_URL / LINKEDIN_VENDOR_API_KEY not set; LinkedIn vendor delivery refused.",
       };
     }
 
@@ -127,15 +130,157 @@ const vendorApiAdapter: LinkedInAdapter = {
   },
 };
 
+/**
+ * OpenBot-shaped browser computer: isolated Chromium per seat.
+ * Research browser tools must NEVER be reused for LinkedIn send.
+ * Contact permission is already enforced by claim_contact before dispatch.
+ */
+const browserComputerAdapter: LinkedInAdapter = {
+  kind: "browser-computer",
+  provider: "LinkedIn Browser Computer",
+  configured: () =>
+    Boolean(process.env.COMPUTER_SUPERVISOR_URL?.trim()) ||
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1",
+  async deliver(req) {
+    const profileUrl = req.profileUrl.trim();
+    if (!profileUrl) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail: "LinkedIn profile URL is required for browser-computer delivery.",
+      };
+    }
+    if (!req.seatId) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail: "seatId is required so the supervisor can bind 1 seat → 1 computer.",
+      };
+    }
+
+    try {
+      const computer = defaultComputerSupervisor.ensureComputer({
+        workspaceId: req.workspaceId,
+        seatId: req.seatId,
+      });
+      if (computer.control === "human") {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: "Human has control of this computer — bot send refused until Release.",
+        };
+      }
+      if (computer.status === "stopped" || computer.status === "error") {
+        await defaultComputerSupervisor.start(computer.computerId);
+      }
+
+      const job = await defaultComputerSupervisor.enqueueJob({
+        computerId: computer.computerId,
+        kind: "linkedin_send",
+        payload: {
+          workspaceId: req.workspaceId,
+          messageId: req.messageId,
+          candidateId: req.candidateId,
+          profileUrl,
+          subject: req.subject,
+          body: req.body,
+          attemptId: req.attemptId,
+        },
+      });
+
+      if (job.status === "refused") {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: job.detail || "Computer refused job (human mutex or not ready).",
+        };
+      }
+      if (job.status === "failed") {
+        return {
+          status: "error",
+          deliveryState: "unknown",
+          provider: "LinkedIn Browser Computer",
+          detail: job.detail || "Browser-computer job failed.",
+        };
+      }
+      if (job.status !== "succeeded") {
+        return {
+          status: "error",
+          deliveryState: "unknown",
+          provider: "LinkedIn Browser Computer",
+          detail: `Browser-computer job ended in ${job.status}.`,
+        };
+      }
+
+      // Mock / queued-local path: only treat as accepted when explicitly mocked or remote ACK.
+      if (
+        process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1" ||
+        Boolean(process.env.COMPUTER_SUPERVISOR_URL?.trim())
+      ) {
+        return {
+          status: "sent",
+          deliveryState: "accepted",
+          provider: "LinkedIn Browser Computer",
+          detail: job.detail,
+          id: job.jobId,
+        };
+      }
+
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail:
+          "Computer supervisor is not configured (COMPUTER_SUPERVISOR_URL). Automatic browser send refused — open Settings → LinkedIn.",
+      };
+    } catch (err) {
+      return {
+        status: "error",
+        deliveryState: "unknown",
+        provider: "LinkedIn Browser Computer",
+        detail: err instanceof Error ? err.message : "Browser-computer delivery failed.",
+      };
+    }
+  },
+};
+
 const adapters: Record<LinkedInBackendKind, LinkedInAdapter> = {
   "assisted-manual": assistedManualAdapter,
   "vendor-api": vendorApiAdapter,
+  "browser-computer": browserComputerAdapter,
 };
+
+/** Providers that may send on automatic deliveryMode (never assisted-manual). */
+export const LINKEDIN_AUTOMATIC_PROVIDERS = [
+  "LinkedIn Vendor API",
+  "LinkedIn Browser Computer",
+] as const;
+
+export function isLinkedInAutomaticProvider(provider: string | null | undefined): boolean {
+  return LINKEDIN_AUTOMATIC_PROVIDERS.includes(
+    provider as (typeof LINKEDIN_AUTOMATIC_PROVIDERS)[number],
+  );
+}
 
 export function linkedInBackendForProvider(provider: string | null | undefined): LinkedInBackendKind | null {
   const normalized = normalizeProvider(provider);
-  if (normalized === "linkedin assisted manual" || normalized === "linkedin assisted-manual") return "assisted-manual";
-  if (normalized === "linkedin vendor api" || normalized === "linkedin vendor-api") return "vendor-api";
+  if (normalized === "linkedin assisted manual" || normalized === "linkedin assisted-manual") {
+    return "assisted-manual";
+  }
+  if (normalized === "linkedin vendor api" || normalized === "linkedin vendor-api") {
+    return "vendor-api";
+  }
+  if (
+    normalized === "linkedin browser computer" ||
+    normalized === "linkedin browser-computer" ||
+    normalized === "linkedin computer"
+  ) {
+    return "browser-computer";
+  }
   return null;
 }
 

@@ -165,6 +165,7 @@ import {
   type WorkspaceStatus,
 } from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
+import { preferLinkedInAutomaticSeats } from "./sourcing-automatic-deliver";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyLearning,
@@ -2545,12 +2546,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         s.seats.find(
           (seat) =>
             seat.status === "active" &&
-            (seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API") &&
+            (seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API" || seat.provider === "LinkedIn Browser Computer") &&
             seat.mode === "live",
         ) ??
         s.seats.find(
           (seat) =>
-            seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API",
+            seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API" || seat.provider === "LinkedIn Browser Computer",
         );
 
       if (supabaseEnabled) {
@@ -2689,7 +2690,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             : channel === "LinkedIn"
               ? s.seats.find(
                   (x) =>
-                    x.status === "active" && x.mode === "live" && x.provider === "LinkedIn Vendor API",
+                    x.status === "active" &&
+                    x.mode === "live" &&
+                    (x.provider === "LinkedIn Vendor API" ||
+                      x.provider === "LinkedIn Browser Computer"),
                 )
               : s.seats.find((x) => x.status === "active" && x.mode === "live");
       if (!supabaseEnabled || !seat) {
@@ -2699,7 +2703,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             : channel === "SMS"
               ? "live SMS sender"
               : channel === "LinkedIn"
-                ? "live LinkedIn Vendor API seat (or switch LinkedIn to Manual)"
+                ? "live LinkedIn Vendor API or Browser Computer seat (or switch LinkedIn to Manual)"
                 : "live mailbox";
         return { ok: false, error: `No ${need} connected. Connect one in the Fleet first.` };
       }
@@ -4609,7 +4613,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: true, reason: "Switched to dry-run (mock)." };
       }
       const isLinkedIn =
-        seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API";
+        seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API" || seat.provider === "LinkedIn Browser Computer";
       if (!isLinkedIn) {
         if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
         if (!seat.domainVerified) return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
@@ -4807,7 +4811,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return c.matchScore >= s.settings.minScoreToContact && stageRank(c.stage) < 1;
       });
       const activeSeats = s.seats.filter((x) => x.status === "active");
-      const result = allocateBatch(pool, activeSeats, s.ledger, s.suppression, s.settings.fleet, new Date());
+      const orderedSeats =
+        s.settings.fleet?.deliveryMode === "manual"
+          ? activeSeats
+          : preferLinkedInAutomaticSeats(activeSeats, pool);
+      const result = allocateBatch(pool, orderedSeats, s.ledger, s.suppression, s.settings.fleet, new Date());
       if (result.assignments.length === 0) return result;
 
       const byCand = new Map(s.candidates.map((c) => [c.id, c]));

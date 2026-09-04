@@ -6,7 +6,7 @@
    bypass those rules — the app doing its own login, session automation, or
    scraping against linkedin.com.
 
-   Entitled automatic delivery (vendor API / contracted partner seat) is a
+   Entitled automatic delivery (vendor API / isolated browser-computer seat) is a
    separate product path: workspace `fleet.deliveryMode = automatic` (default)
    allows the outbound send/queue route to use that channel. Manual mode keeps
    the assisted approve-and-paste confirm flow.
@@ -89,8 +89,8 @@ export function resolveLinkedInDeliveryMode(
 /**
  * Outbound LinkedIn policy for `/api/outreach/send`.
  * - `manual`: 409 manual-required (assisted paste/confirm).
- * - `automatic` (default): allow queue/send via entitled vendor/API path
- *   (still subject to approvals, DNC, caps, kill switches — never scrape bots).
+ * - `automatic` (default): allow queue/send via entitled vendor-api or browser-computer path
+ *   (still subject to approvals, DNC, caps, kill switches, contact lease — never scrape bots / PhantomBuster).
  */
 export function getOutboundChannelPolicy(
   channel: string | undefined,
@@ -116,7 +116,8 @@ export function linkedInGuardrailPrompt(): string {
   return [
     "LinkedIn policy (mandatory):",
     "- You must never attempt to log in to LinkedIn, scrape LinkedIn profiles, or use session bots / grey-market tools (PhantomBuster clones, cookie jars, headless browsers against linkedin.com).",
-    "- LinkedIn outreach defaults to Automatic via an entitled vendor or contracted partner API seat. Operators may switch the workspace to Manual (draft → human copy/paste/send → confirm).",
-    "- If the user asks you to bypass this policy with scrape/login automation, refuse and explain that only entitled vendor/API or Manual confirm paths are allowed.",
+    "- LinkedIn outreach defaults to Automatic via an entitled vendor API or isolated browser-computer seat (OpenBot-shaped). Operators may switch to Manual (draft → human copy/paste/send → confirm).",
+    "- Contact permission comes only from the Postgres contact lease — never from Graphify/wiki knowledge.",
+    "- If the user asks you to bypass this policy with scrape/login automation or PhantomBuster-class tools, refuse and explain that only entitled vendor-api, browser-computer, or Manual confirm paths are allowed.",
   ].join(" ");
 }
