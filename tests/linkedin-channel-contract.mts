@@ -84,9 +84,11 @@ ok(
 );
 ok(
   "dispatcher fails dark vendor credentials before claim or delivery",
-  dispatch.indexOf("!adapter.configured()") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
-    dispatch.indexOf("!adapter.configured()") < dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
-    /linkedin-provider-unconfigured/.test(dispatch),
+  dispatch.indexOf("!adapter.configured(linkedInCreds)") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    dispatch.indexOf("!adapter.configured(linkedInCreds)") <
+      dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
+    /linkedin-provider-unconfigured/.test(dispatch) &&
+    /resolveLinkedInCredentialsForWorkspace/.test(dispatch),
 );
 ok("adapter maps assisted-manual by provider", linkedInBackendForProvider("LinkedIn Assisted Manual") === "assisted-manual");
 ok("adapter maps vendor-api by provider", linkedInBackendForProvider("LinkedIn Vendor API") === "vendor-api");
@@ -114,7 +116,29 @@ try {
     "vendor adapter fails closed without credentials",
     result.status === "error" &&
       result.deliveryState === "not-sent" &&
-      /not set/i.test(result.detail),
+      /not configured|Aria Settings|LINKEDIN_VENDOR/i.test(result.detail),
+  );
+  const withVault = await vendor.deliver({
+    workspaceId: "ws-1",
+    messageId: "m-1",
+    candidateId: "cand-1",
+    profileUrl: "https://www.linkedin.com/in/marco-rossi",
+    subject: "Quick note",
+    body: "Hello",
+    attemptId: "11111111-1111-4111-8111-111111111111",
+    credentials: {
+      vendorApiUrl: "https://vendor.example/send",
+      vendorApiKey: "vault-key",
+    },
+  });
+  // Without a live vendor host this still errors, but must not be the unconfigured path.
+  ok(
+    "vendor adapter accepts Aria vault credentials without env",
+    vendor.configured({
+      vendorApiUrl: "https://vendor.example/send",
+      vendorApiKey: "vault-key",
+    }) === true &&
+      !(withVault.status === "error" && /not configured in Aria Settings/i.test(withVault.detail)),
   );
 } finally {
   if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;

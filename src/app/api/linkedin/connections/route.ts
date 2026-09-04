@@ -9,6 +9,13 @@ import {
   pickLinkedInSeat,
   type LinkedInSeatProvider,
 } from "@/lib/linkedin-connections";
+import {
+  extractLinkedInCredentialRefs,
+  linkedInReadinessFromCredentials,
+  loadLinkedInCredentialRefsForWorkspace,
+  resolveLinkedInCredentials,
+  resolveLinkedInCredentialsForWorkspace,
+} from "@/lib/linkedin-credentials";
 import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -34,6 +41,16 @@ const EnsureOAuthSchema = z.object({
 });
 
 const BodySchema = z.discriminatedUnion("action", [EnsureSchema, EnsureOAuthSchema]);
+
+async function linkedInProvidersForWorkspace(workspaceId?: string | null) {
+  if (workspaceId) {
+    const refs = await loadLinkedInCredentialRefsForWorkspace(workspaceId);
+    const creds = await resolveLinkedInCredentialsForWorkspace(workspaceId, refs);
+    return linkedInReadinessFromCredentials(creds);
+  }
+  const creds = await resolveLinkedInCredentials(extractLinkedInCredentialRefs(undefined));
+  return linkedInReadinessFromCredentials(creds);
+}
 
 /**
  * List LinkedIn messaging seats + readiness. POST ensure_connect creates/picks
@@ -129,7 +146,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    providers: linkedInProviderReadiness(),
+    providers: await linkedInProvidersForWorkspace(wid),
     oauthConnections: Array.from(oauthBySeat.values()).map((o) => ({
       id: o.id,
       seatId: o.seat_id,
@@ -220,7 +237,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === "ensure_oauth") {
-    const readiness = linkedInProviderReadiness();
+    const readiness = await linkedInProvidersForWorkspace(wid);
     if (!readiness.oauthConfigured) {
       return NextResponse.json(
         {
@@ -272,7 +289,7 @@ async function ensureConnect(
   operatorLabel: string,
   goLive: boolean,
 ) {
-  const readiness = linkedInProviderReadiness();
+  const readiness = await linkedInProvidersForWorkspace(workspaceId);
   if (provider === "LinkedIn Vendor API" && !readiness.vendorApiConfigured) {
     return NextResponse.json(
       {

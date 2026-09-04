@@ -32,6 +32,7 @@ type ProviderReadiness = {
   encryptionReady: boolean;
   assistedManual: boolean;
   vendorApiConfigured: boolean;
+  browserComputerConfigured: boolean;
   inboundWebhookSecret: boolean;
 };
 
@@ -341,7 +342,7 @@ function useLinkedInConnectionsState() {
           id: "oauth",
           label: "LinkedIn OAuth credentials",
           ok: providers.oauthConfigured,
-          hint: "Set LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET, and redirect URI in your deployment.",
+          hint: "Attach a LinkedIn OIDC vault key + client id in Settings → LinkedIn (or set LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET).",
         },
         {
           id: "encryption",
@@ -353,6 +354,14 @@ function useLinkedInConnectionsState() {
           id: "vendor",
           label: "Vendor API (contracted automation)",
           ok: providers.vendorApiConfigured,
+          hint: "Attach LinkedIn Vendor API key + URL in Settings → LinkedIn (or LINKEDIN_VENDOR_* env).",
+          optional: true,
+        },
+        {
+          id: "browser",
+          label: "Browser computer supervisor",
+          ok: providers.browserComputerConfigured,
+          hint: "Attach Computer Supervisor token + URL in Settings → LinkedIn (or COMPUTER_SUPERVISOR_* env).",
           optional: true,
         },
         {

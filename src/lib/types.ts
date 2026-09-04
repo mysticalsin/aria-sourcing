@@ -998,6 +998,21 @@ export interface SystemSettings {
   hermesApiUrl?: string;
   /** References an ApiKey.id (provider "Aria Agent") holding the bearer token. */
   hermesApiKeyId?: string;
+  /**
+   * LinkedIn OpenID Connect client id (public). Pair with `linkedinClientSecretKeyId`
+   * from the Aria key vault for plug-and-play OIDC — env `LINKEDIN_CLIENT_*` remains a fallback.
+   */
+  linkedinClientId?: string;
+  /** ApiKey.id under provider "LinkedIn OIDC" (client secret). */
+  linkedinClientSecretKeyId?: string;
+  /** Entitled LinkedIn vendor messaging API base URL. */
+  linkedinVendorApiUrl?: string;
+  /** ApiKey.id under provider "LinkedIn Vendor API". */
+  linkedinVendorApiKeyId?: string;
+  /** Browser-computer supervisor base URL (OpenBot-shaped Chromium pool). */
+  computerSupervisorUrl?: string;
+  /** ApiKey.id under provider "Computer Supervisor" (bearer token). */
+  computerSupervisorTokenKeyId?: string;
   /** Maximum number of memory entries stored across all agents. */
   memoryCapacity?: number;
   /** Base URL of the hermes-agent web_server / management API (e.g. http://127.0.0.1:8643).
@@ -1198,6 +1213,9 @@ export const API_KEY_PROVIDERS = [
   "Tavily",
   "HeyReach",
   "Databricks",
+  "LinkedIn OIDC",
+  "LinkedIn Vendor API",
+  "Computer Supervisor",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];

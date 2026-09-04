@@ -18,6 +18,10 @@ import {
 } from "@/lib/linkedin-policy";
 import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
 import { isLinkedInAutomaticProvider, linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import {
+  extractLinkedInCredentialRefs,
+  resolveLinkedInCredentials,
+} from "@/lib/linkedin-credentials";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
@@ -262,12 +266,16 @@ export async function POST(req: NextRequest) {
       );
     }
     const adapter = linkedInAdapterForProvider(liSeat.provider);
-    if (!adapter?.configured()) {
+    const linkedInCreds = await resolveLinkedInCredentials(
+      extractLinkedInCredentialRefs(stateRec?.settings),
+    );
+    if (!adapter?.configured(linkedInCreds)) {
       return NextResponse.json(
         {
           status: "error",
           detail:
-            "No live LinkedIn automatic adapter is configured for this seat (vendor API credentials or computer supervisor). Automatic send refused — open Settings → LinkedIn.",
+            "No live LinkedIn automatic adapter is configured for this seat (add Vendor API / Computer Supervisor keys in Settings → LinkedIn, or set LINKEDIN_VENDOR_* / COMPUTER_SUPERVISOR_*). Automatic send refused.",
+          settingsPath: "/settings?tab=integrations#linkedin-outreach-stack",
         },
         { status: 503 },
       );

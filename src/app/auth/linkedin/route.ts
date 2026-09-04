@@ -1,31 +1,57 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
+import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import {
   LINKEDIN_AUTHORIZE_URL,
   LINKEDIN_OIDC_SCOPES,
-  linkedInOAuthConfigured,
   linkedInOAuthRedirectUri,
 } from "@/lib/linkedin-oauth";
+import {
+  extractLinkedInCredentialRefs,
+  resolveLinkedInCredentials,
+} from "@/lib/linkedin-credentials";
 
 export const dynamic = "force-dynamic";
 
 const STATE_COOKIE = "li_oauth_state";
 
+async function loadLinkedInOidcCredentials() {
+  const supabase = await getServerSupabase();
+  const svc = getServiceSupabase();
+  let refs = extractLinkedInCredentialRefs(undefined);
+  if (supabase && svc) {
+    const { data: wid } = await supabase.rpc("current_workspace_id");
+    if (wid) {
+      const { data: row } = await svc
+        .from("workspace_state")
+        .select("state")
+        .eq("workspace_id", wid)
+        .maybeSingle();
+      const state = row?.state;
+      if (state && typeof state === "object" && !Array.isArray(state)) {
+        refs = extractLinkedInCredentialRefs((state as Record<string, unknown>).settings);
+      }
+    }
+  }
+  return resolveLinkedInCredentials(refs);
+}
+
 /**
  * Start LinkedIn OpenID Connect (Sign In with LinkedIn).
  * Query: seat_id — agent_seats.id to bind the connection to.
+ * Client id/secret resolve from Aria Settings vault keys, with env fallback.
  */
 export async function GET(req: NextRequest) {
   const admin = await requireAdmin(await getServerSupabase());
   if (!admin.ok) return admin.response;
 
-  if (!linkedInOAuthConfigured()) {
+  const creds = await loadLinkedInOidcCredentials();
+  if (!creds.clientId || !creds.clientSecret) {
     return NextResponse.json(
       {
         ok: false,
         error:
-          "LinkedIn OAuth is not configured. Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET (LinkedIn Developer Portal → Sign In with LinkedIn using OpenID Connect).",
+          "LinkedIn OAuth is not configured. In Settings → LinkedIn, set the OIDC client id and attach a LinkedIn OIDC vault key (or set LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET).",
       },
       { status: 503 },
     );
@@ -40,7 +66,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "dry-run", error: PUBLIC_DEMO_DRY_RUN_DETAIL }, { status: 403 });
   }
 
-  const clientId = process.env.LINKEDIN_CLIENT_ID!;
   const redirectUri = linkedInOAuthRedirectUri();
   const nonce = randomToken(16);
   const state = Buffer.from(JSON.stringify({ seatId, nonce, provider: "LinkedIn OIDC" })).toString(
@@ -49,7 +74,7 @@ export async function GET(req: NextRequest) {
 
   const authUrl = new URL(LINKEDIN_AUTHORIZE_URL);
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("client_id", creds.clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("scope", LINKEDIN_OIDC_SCOPES);

@@ -102,6 +102,16 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
       hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,
       hermesApiKeyId: parsed.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
+      linkedinClientId: parsed.settings.linkedinClientId ?? defs.linkedinClientId ?? "",
+      linkedinClientSecretKeyId:
+        parsed.settings.linkedinClientSecretKeyId ?? defs.linkedinClientSecretKeyId ?? "",
+      linkedinVendorApiUrl: parsed.settings.linkedinVendorApiUrl ?? defs.linkedinVendorApiUrl ?? "",
+      linkedinVendorApiKeyId:
+        parsed.settings.linkedinVendorApiKeyId ?? defs.linkedinVendorApiKeyId ?? "",
+      computerSupervisorUrl:
+        parsed.settings.computerSupervisorUrl ?? defs.computerSupervisorUrl ?? "",
+      computerSupervisorTokenKeyId:
+        parsed.settings.computerSupervisorTokenKeyId ?? defs.computerSupervisorTokenKeyId ?? "",
       // D-2: guardrails and notifications fills.
       guardrails: parsed.settings.guardrails ?? defs.guardrails,
       notifications: parsed.settings.notifications ?? defs.notifications,

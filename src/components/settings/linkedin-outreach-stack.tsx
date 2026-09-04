@@ -13,6 +13,7 @@ import {
   useLinkedInConnections,
 } from "@/components/settings/linkedin-connections-panel";
 import { HeyReachOutreachStep } from "@/components/settings/heyreach-mcp-panel";
+import { LinkedInCredentialsPanel } from "@/components/settings/linkedin-credentials-panel";
 import { cn } from "@/lib/utils";
 import type { LinkedInDeliveryMode } from "@/lib/types";
 
@@ -135,6 +136,7 @@ function LinkedInOutreachStackInner() {
       }
     >
       <DeliveryModeToggle />
+      <LinkedInCredentialsPanel />
       <LinkedInIdentityStep stepState={identityState} />
       <HeyReachOutreachStep stepState={outreachState} identityComplete={signedIn} />
     </ConnectionStackShell>

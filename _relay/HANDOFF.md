@@ -1,76 +1,54 @@
 ---
 project: MSourcing / ARIA
-shift: 98
+shift: 99
 agent: cursor-cloud
 updated: 2026-09-04 UTC
-status: linkedin-auto-vm-fleet-implemented
+status: linkedin-aria-vault-keys-wired
 ---
 
-# Handoff — Shift 98
+# Handoff — Shift 99
 
 ## Current state
 
-- **Branch/PR:** `cursor/linkedin-auto-vm-fleet-b91d` → `integration/sourcing-enrichment-on-main`
-- LinkedIn delivery **defaults to Automatic**; Manual is an explicit Settings toggle
-- Automatic backends: **LinkedIn Vendor API** and **LinkedIn Browser Computer** (OpenBot-shaped isolated Chromium per seat)
-- **Postgres `claim_contact` / `contact_leases`** (migration `0063`) is the sole who-contacted-whom authority
-- Knowledge plane (`src/lib/knowledge-plane.ts`, `/api/knowledge/campaign`) is **read/write for recall only** — `knowledgePlaneMayGrantContactClaim()` is always `false`
-- Fleet → Computers panel: Observe / Take control **closed by default**; bot actions refuse while human holds control
-- Shortlist → `allocateBatch` prefers LinkedIn automatic seats when `deliveryMode=automatic` (`preferLinkedInAutomaticSeats`)
+- **Branch/PR:** `cursor/linkedin-auto-vm-fleet-b91d` → PR #61 (`integration/sourcing-enrichment-on-main`)
+- LinkedIn delivery still defaults to **Automatic**; Manual is Settings toggle
+- **Aria Settings vault is now the primary credential path** for LinkedIn OIDC, Vendor API, and Computer Supervisor (env remains fallback)
+- New vault providers: `LinkedIn OIDC`, `LinkedIn Vendor API`, `Computer Supervisor`
+- Settings fields on `SystemSettings`: `linkedinClientId`, `linkedinClientSecretKeyId`, `linkedinVendorApiUrl`, `linkedinVendorApiKeyId`, `computerSupervisorUrl`, `computerSupervisorTokenKeyId`
+- Resolver: `src/lib/linkedin-credentials.ts` (session + workspace/service-role paths)
+- UI: `LinkedInCredentialsPanel` inside LinkedIn outreach stack; API keys panel hints updated
+- Adapters / OAuth / connections readiness / dispatch / send all resolve vault first
 
 ## Done this shift
 
-1. Policy + Settings automatic default / Manual toggle (carry-forward + browser-computer entitlement)
-2. Contact lease module + migration 0063 + 80-claimer chaos test
-3. Computer supervisor + `browser-computer` LinkedIn adapter (fails closed without supervisor URL / mock)
-4. Minimal wiki/graph knowledge plane (serial write queue; no contact grants)
-5. Sourcing alignment helper + store `allocateOutreach` seat ordering
-6. Fleet computers API + UI (observe/takeover closed by default)
-7. Tests: contact-lease, computer-supervisor, knowledge-plane, sourcing-automatic-deliver; LinkedIn contracts green
-8. `npm run typecheck` + `npm run typecheck:tests` green
-
-
-## E2E on Fly (2026-09-04) — Fly only, no Vercel
-
-- Live tip healthy: `https://aria-mantu-app.fly.dev` (`/api/health` + `/api/ready` OK)
-- Login UI: email/password only; **no** LinkedIn sign-in button (OIDC connect is post-login `/auth/linkedin?seat_id=…`)
-- `/auth/linkedin` → **401 Not authenticated** (route live; needs admin session)
-- PR #61 APIs **not on tip**: `/api/linkedin/connections`, `/api/fleet/computers`, `/api/knowledge/campaign` → **404**
-- Demo login disabled (expected)
-- **Blocked for authenticated LinkedIn connect + automatic send:** admin credentials + protected Fly deploy of this branch + `LINKEDIN_CLIENT_*` (+ vendor/computer secrets)
-- Evidence: `_relay/evidence/2026-09-04-fly-linkedin-e2e.md` + `/opt/cursor/artifacts/fly-linkedin-e2e/`
+1. Wired LinkedIn OIDC client secret, vendor API key, and computer-supervisor token to Aria API-key vault
+2. Settings → LinkedIn plug-and-play panel (URLs + key selectors); secrets never stored in settings JSON
+3. `linkedin-channel` + `computer-supervisor` accept vault-resolved credentials (env fallback)
+4. OAuth start/callback + connections readiness use workspace settings + vault
+5. Tests: `linkedin-credentials` 15/15, channel-contract 17/17, connections 47/47, computer-supervisor 8/8; `tsc --noEmit` green
 
 ## Blockers
 
-- Live Chromium pool still needs `COMPUTER_SUPERVISOR_URL` (or mock) + Tony ToS/ban-risk accept for browser seats
-- Vendor path still needs `LINKEDIN_VENDOR_API_URL` / `LINKEDIN_VENDOR_API_KEY`
-- Apply migration **0063** on deploy
-- N=100 computer RAM budget not provisioned (documented in `services/computer-supervisor/README.md`)
+- Live Fly tip still needs PR #61 deploy + migration **0063**
+- Authenticated E2E still needs admin session + operator-pasted Aria keys (or env)
+- N=100 computer RAM budget still not provisioned
 
 ## Next steps
 
-1. Ops: apply 0063; set vendor and/or computer supervisor env on Fly
-2. Smoke: automatic Vendor seat send + Browser Computer mock send; second seat blocked on same identity
-3. Optional: gVisor / remote computer pool for N>5
-4. Optional: deepen Graphify EXTRACTED/INFERRED edges beyond minimal notes
+1. Ops: deploy PR #61 to Fly; apply 0063
+2. In Aria Settings: add LinkedIn OIDC / Vendor / Computer Supervisor keys → attach on LinkedIn stack
+3. Smoke: OIDC connect → automatic Vendor or Browser Computer send; second seat blocked on same identity
 
 ## Decisions made (don't relitigate)
 
-- **Production = Fly only** (`aria-mantu-app` / Fly apps). Do **not** deploy, configure, or debug Vercel for this product (Tony 2026-09-04).
-
-- LinkedIn delivery **defaults to Automatic**; Manual is opt-in (Tony 2026-09-04)
-- Automatic channel = entitled **vendor-api OR browser-computer**; never silent assisted-manual fallback
-- **Postgres contact lease is the only double-contact lock** — Graphify/wiki are knowledge recall only
-- Observe/takeover available in Fleet; **not auto-opened**
-- Scrape / PhantomBuster / cookie-jar tooling remains forbidden
-- Research browser tools (`browser-tools`) stay research-only — do not reuse for LinkedIn send
+- **Production = Fly only** — never Vercel
+- LinkedIn delivery defaults to Automatic; Manual is opt-in
+- Automatic = entitled vendor-api OR browser-computer; no silent assisted-manual fallback
+- Postgres contact lease is the only double-contact lock
+- **Aria vault keys are plug-and-play primary; env is fallback only**
 
 ## Watch out
 
-- Do **not** touch Vercel projects, envs, or deploys — Fly instance only.
-
-
-- Provider string is `LinkedIn Browser Computer` (seat) / backend kind `browser-computer`
-- Enqueue requires live automatic seat; fails closed with Settings deep-link when missing
-- `COMPUTER_SUPERVISOR_MOCK_SEND=1` is for tests only — never in production
-- Approval scope still normalizes LinkedIn profile URLs via `normalizeLinkedInProfileUrl`
+- `COMPUTER_SUPERVISOR_MOCK_SEND=1` is tests-only — never production
+- `bindComputerSupervisorEndpoint` must be cleared in `finally` after browser deliver
+- Vault providers must match exactly: `LinkedIn OIDC`, `LinkedIn Vendor API`, `Computer Supervisor`

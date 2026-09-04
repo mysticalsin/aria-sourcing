@@ -185,6 +185,12 @@ export function defaultSettings(): SystemSettings {
     hermesLiveMode: false,
     hermesApiUrl: "",
     hermesApiKeyId: "",
+    linkedinClientId: "",
+    linkedinClientSecretKeyId: "",
+    linkedinVendorApiUrl: "",
+    linkedinVendorApiKeyId: "",
+    computerSupervisorUrl: "",
+    computerSupervisorTokenKeyId: "",
     memoryCapacity: 200,
     hermesWebUrl: "",
   };

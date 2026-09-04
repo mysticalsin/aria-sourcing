@@ -21,6 +21,9 @@ const SELECTABLE_API_KEY_PROVIDERS = experimentalPaidSourcingEnabled
 const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
   Apify:
     "LinkedIn profile search connector token (from your search-provider console), format apify_api_…",
+  "LinkedIn OIDC": "LinkedIn app client secret (Developer Portal → Auth). Attach it on the LinkedIn stack.",
+  "LinkedIn Vendor API": "Entitled vendor messaging API key for automatic LinkedIn sends.",
+  "Computer Supervisor": "Bearer token for the browser-computer supervisor (isolated Chromium seats).",
 };
 const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
   Apify: "apify_api_…  (stored server-side, never shown again)",

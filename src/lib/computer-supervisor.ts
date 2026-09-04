@@ -50,6 +50,33 @@ export type AuditEntry = {
   actor: "bot" | "human" | "system";
 };
 
+export type ComputerSupervisorEndpoint = {
+  url?: string | null;
+  token?: string | null;
+  mockSend?: boolean | null;
+};
+
+let endpointOverride: ComputerSupervisorEndpoint | null = null;
+
+/** Bind Aria Settings / vault-resolved supervisor endpoint for the current deliver call. */
+export function bindComputerSupervisorEndpoint(endpoint: ComputerSupervisorEndpoint | null) {
+  endpointOverride = endpoint;
+}
+
+function supervisorUrl(): string {
+  return (endpointOverride?.url ?? process.env.COMPUTER_SUPERVISOR_URL ?? "").trim();
+}
+
+function supervisorToken(): string {
+  return (endpointOverride?.token ?? process.env.COMPUTER_SUPERVISOR_TOKEN ?? "").trim();
+}
+
+function supervisorMockSend(): boolean {
+  if (endpointOverride?.mockSend === true) return true;
+  if (endpointOverride?.mockSend === false) return false;
+  return process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1";
+}
+
 function isoNow() {
   return new Date().toISOString();
 }
@@ -110,13 +137,13 @@ export class ComputerSupervisor {
     rec.updatedAt = isoNow();
     this.audit(computerId, "start", "Booting isolated Chromium profile", "system");
     // Remote supervisor optional — local MVP flips to ready.
-    const remote = process.env.COMPUTER_SUPERVISOR_URL?.trim();
+    const remote = supervisorUrl();
     if (remote) {
       try {
         const res = await fetch(`${remote.replace(/\/$/, "")}/computers/${computerId}/start`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${process.env.COMPUTER_SUPERVISOR_TOKEN ?? ""}`,
+            Authorization: `Bearer ${supervisorToken()}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ seatId: rec.seatId, profileVolume: rec.profileVolume }),
@@ -241,13 +268,13 @@ export class ComputerSupervisor {
     this.jobs.set(job.jobId, job);
     this.audit(job.computerId, "act", `Running ${job.kind}`, "bot");
 
-    const remote = process.env.COMPUTER_SUPERVISOR_URL?.trim();
+    const remote = supervisorUrl();
     if (remote) {
       try {
         const res = await fetch(`${remote.replace(/\/$/, "")}/computers/${job.computerId}/jobs`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${process.env.COMPUTER_SUPERVISOR_TOKEN ?? ""}`,
+            Authorization: `Bearer ${supervisorToken()}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(job),
@@ -294,7 +321,7 @@ export class ComputerSupervisor {
 
     job.status = "succeeded";
     job.detail =
-      process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1"
+      supervisorMockSend()
         ? "mock browser-computer send accepted"
         : "queued on local computer supervisor (set COMPUTER_SUPERVISOR_URL for live Chromium)";
     job.finishedAt = isoNow();

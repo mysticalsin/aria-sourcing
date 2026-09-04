@@ -37,6 +37,10 @@ import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclos
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import {
+  loadLinkedInCredentialRefsForWorkspace,
+  resolveLinkedInCredentialsForWorkspace,
+} from "@/lib/linkedin-credentials";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -336,7 +340,12 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
           continue;
         }
-        if (!adapter.configured()) {
+        const linkedInRefs = await loadLinkedInCredentialRefsForWorkspace(msg.workspace_id);
+        const linkedInCreds = await resolveLinkedInCredentialsForWorkspace(
+          msg.workspace_id,
+          linkedInRefs,
+        );
+        if (!adapter.configured(linkedInCreds)) {
           await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
           continue;
         }
@@ -379,6 +388,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           body: msg.body,
           attemptId: deliveryAttemptId,
           seatId: msg.seat_id ?? undefined,
+          credentials: linkedInCreds,
         });
         const outcomeKind =
           outcome.status === "sent" && outcome.deliveryState === "accepted"

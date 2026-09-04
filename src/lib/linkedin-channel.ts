@@ -1,5 +1,10 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
-import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
+import { defaultComputerSupervisor, bindComputerSupervisorEndpoint } from "@/lib/computer-supervisor";
+import {
+  browserComputerConfigured,
+  vendorApiConfigured,
+  type LinkedInResolvedCredentials,
+} from "@/lib/linkedin-credentials";
 
 export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "browser-computer";
 
@@ -13,6 +18,8 @@ export interface LinkedInDeliveryRequest {
   attemptId: string;
   /** Seat id — required for browser-computer path (1 seat = 1 computer). */
   seatId?: string;
+  /** Aria vault / Settings-resolved credentials (env fallback inside helpers). */
+  credentials?: Partial<LinkedInResolvedCredentials>;
 }
 
 export interface LinkedInDeliveryOutcome {
@@ -26,7 +33,7 @@ export interface LinkedInDeliveryOutcome {
 export interface LinkedInAdapter {
   kind: LinkedInBackendKind;
   provider: string;
-  configured(): boolean;
+  configured(credentials?: Partial<LinkedInResolvedCredentials>): boolean;
   deliver(req: LinkedInDeliveryRequest): Promise<LinkedInDeliveryOutcome>;
 }
 
@@ -63,16 +70,17 @@ const assistedManualAdapter: LinkedInAdapter = {
 const vendorApiAdapter: LinkedInAdapter = {
   kind: "vendor-api",
   provider: "LinkedIn Vendor API",
-  configured: () => Boolean(process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY),
+  configured: (credentials) => vendorApiConfigured(credentials),
   async deliver(req) {
-    const endpoint = process.env.LINKEDIN_VENDOR_API_URL ?? "";
-    const token = process.env.LINKEDIN_VENDOR_API_KEY ?? "";
+    const creds = req.credentials;
+    const endpoint = (creds?.vendorApiUrl ?? process.env.LINKEDIN_VENDOR_API_URL ?? "").trim();
+    const token = (creds?.vendorApiKey ?? process.env.LINKEDIN_VENDOR_API_KEY ?? "").trim();
     if (!endpoint || !token) {
       return {
         status: "error",
         deliveryState: "not-sent",
         provider: "LinkedIn Vendor API",
-        detail: "LINKEDIN_VENDOR_API_URL / LINKEDIN_VENDOR_API_KEY not set; LinkedIn vendor delivery refused.",
+        detail: "LinkedIn Vendor API is not configured in Aria Settings (or LINKEDIN_VENDOR_* env). Delivery refused.",
       };
     }
 
@@ -138,9 +146,7 @@ const vendorApiAdapter: LinkedInAdapter = {
 const browserComputerAdapter: LinkedInAdapter = {
   kind: "browser-computer",
   provider: "LinkedIn Browser Computer",
-  configured: () =>
-    Boolean(process.env.COMPUTER_SUPERVISOR_URL?.trim()) ||
-    process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1",
+  configured: (credentials) => browserComputerConfigured(credentials),
   async deliver(req) {
     const profileUrl = req.profileUrl.trim();
     if (!profileUrl) {
@@ -160,6 +166,12 @@ const browserComputerAdapter: LinkedInAdapter = {
       };
     }
 
+    const bind = {
+      url: req.credentials?.computerSupervisorUrl,
+      token: req.credentials?.computerSupervisorToken,
+      mockSend: req.credentials?.computerSupervisorMockSend,
+    };
+    bindComputerSupervisorEndpoint(bind);
     try {
       const computer = defaultComputerSupervisor.ensureComputer({
         workspaceId: req.workspaceId,
@@ -216,11 +228,9 @@ const browserComputerAdapter: LinkedInAdapter = {
         };
       }
 
+      const supervisorReady = browserComputerConfigured(req.credentials);
       // Mock / queued-local path: only treat as accepted when explicitly mocked or remote ACK.
-      if (
-        process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1" ||
-        Boolean(process.env.COMPUTER_SUPERVISOR_URL?.trim())
-      ) {
+      if (supervisorReady) {
         return {
           status: "sent",
           deliveryState: "accepted",
@@ -235,7 +245,7 @@ const browserComputerAdapter: LinkedInAdapter = {
         deliveryState: "not-sent",
         provider: "LinkedIn Browser Computer",
         detail:
-          "Computer supervisor is not configured (COMPUTER_SUPERVISOR_URL). Automatic browser send refused — open Settings → LinkedIn.",
+          "Computer supervisor is not configured in Aria Settings (or COMPUTER_SUPERVISOR_URL). Automatic browser send refused — open Settings → LinkedIn.",
       };
     } catch (err) {
       return {
@@ -244,6 +254,8 @@ const browserComputerAdapter: LinkedInAdapter = {
         provider: "LinkedIn Browser Computer",
         detail: err instanceof Error ? err.message : "Browser-computer delivery failed.",
       };
+    } finally {
+      bindComputerSupervisorEndpoint(null);
     }
   },
 };

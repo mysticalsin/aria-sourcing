@@ -12,6 +12,10 @@ import {
   linkedInOAuthRedirectUri,
   type LinkedInUserInfo,
 } from "@/lib/linkedin-oauth";
+import {
+  extractLinkedInCredentialRefs,
+  resolveLinkedInCredentials,
+} from "@/lib/linkedin-credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -29,12 +33,6 @@ function timingSafeEqual(a: string, b: string): boolean {
  * bind to seat, redirect to Settings → Integrations.
  */
 export async function GET(req: NextRequest) {
-  const clientId = process.env.LINKEDIN_CLIENT_ID;
-  const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    return redirectError(req, "LinkedIn OAuth is not configured.");
-  }
-
   const searchParams = new URL(req.url).searchParams;
   const code = searchParams.get("code");
   const oauthError = searchParams.get("error");
@@ -80,6 +78,29 @@ export async function GET(req: NextRequest) {
   if (!admin.ok) return admin.response;
   if (publicDemoSideEffectsDisabled()) {
     return redirectError(req, PUBLIC_DEMO_DRY_RUN_DETAIL);
+  }
+
+  const { data: wid } = await supabase.rpc("current_workspace_id");
+  let settingsBag: unknown;
+  if (wid) {
+    const { data: row } = await svc
+      .from("workspace_state")
+      .select("state")
+      .eq("workspace_id", wid)
+      .maybeSingle();
+    const stateDoc = row?.state;
+    if (stateDoc && typeof stateDoc === "object" && !Array.isArray(stateDoc)) {
+      settingsBag = (stateDoc as Record<string, unknown>).settings;
+    }
+  }
+  const creds = await resolveLinkedInCredentials(extractLinkedInCredentialRefs(settingsBag));
+  const clientId = creds.clientId;
+  const clientSecret = creds.clientSecret;
+  if (!clientId || !clientSecret) {
+    return redirectError(
+      req,
+      "LinkedIn OAuth is not configured. Attach a LinkedIn OIDC vault key in Settings → LinkedIn (or set LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET).",
+    );
   }
 
   const redirectUri = linkedInOAuthRedirectUri();
@@ -133,7 +154,6 @@ export async function GET(req: NextRequest) {
   }
 
   const displayName = displayNameFromLinkedInProfile(profile);
-  const { data: wid } = await supabase.rpc("current_workspace_id");
   const { data: seatRow } = await svc.from("agent_seats").select("workspace_id, provider").eq("id", seatId).single();
   if (!seatRow || seatRow.workspace_id !== wid) {
     return redirectError(req, "Seat is not in your workspace.");
