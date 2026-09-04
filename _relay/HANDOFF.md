@@ -45,6 +45,8 @@ status: linkedin-auto-vm-fleet-implemented
 
 ## Decisions made (don't relitigate)
 
+- **Production = Fly only** (`aria-mantu-app` / Fly apps). Do **not** deploy, configure, or debug Vercel for this product (Tony 2026-09-04).
+
 - LinkedIn delivery **defaults to Automatic**; Manual is opt-in (Tony 2026-09-04)
 - Automatic channel = entitled **vendor-api OR browser-computer**; never silent assisted-manual fallback
 - **Postgres contact lease is the only double-contact lock** — Graphify/wiki are knowledge recall only
@@ -53,6 +55,9 @@ status: linkedin-auto-vm-fleet-implemented
 - Research browser tools (`browser-tools`) stay research-only — do not reuse for LinkedIn send
 
 ## Watch out
+
+- Do **not** touch Vercel projects, envs, or deploys — Fly instance only.
+
 
 - Provider string is `LinkedIn Browser Computer` (seat) / backend kind `browser-computer`
 - Enqueue requires live automatic seat; fails closed with Settings deep-link when missing
