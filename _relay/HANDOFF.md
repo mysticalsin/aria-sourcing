@@ -29,6 +29,17 @@ status: linkedin-auto-vm-fleet-implemented
 7. Tests: contact-lease, computer-supervisor, knowledge-plane, sourcing-automatic-deliver; LinkedIn contracts green
 8. `npm run typecheck` + `npm run typecheck:tests` green
 
+
+## E2E on Fly (2026-09-04) — Fly only, no Vercel
+
+- Live tip healthy: `https://aria-mantu-app.fly.dev` (`/api/health` + `/api/ready` OK)
+- Login UI: email/password only; **no** LinkedIn sign-in button (OIDC connect is post-login `/auth/linkedin?seat_id=…`)
+- `/auth/linkedin` → **401 Not authenticated** (route live; needs admin session)
+- PR #61 APIs **not on tip**: `/api/linkedin/connections`, `/api/fleet/computers`, `/api/knowledge/campaign` → **404**
+- Demo login disabled (expected)
+- **Blocked for authenticated LinkedIn connect + automatic send:** admin credentials + protected Fly deploy of this branch + `LINKEDIN_CLIENT_*` (+ vendor/computer secrets)
+- Evidence: `_relay/evidence/2026-09-04-fly-linkedin-e2e.md` + `/opt/cursor/artifacts/fly-linkedin-e2e/`
+
 ## Blockers
 
 - Live Chromium pool still needs `COMPUTER_SUPERVISOR_URL` (or mock) + Tony ToS/ban-risk accept for browser seats
