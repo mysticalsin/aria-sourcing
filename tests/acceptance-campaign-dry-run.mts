@@ -22,7 +22,7 @@ assert.match(source, /ARIA_RELEASE_SHA/, "the receipt must bind to the exact rel
 assert.match(source, /\{40\}/, "the exact release identity must be validated");
 assert.match(source, /confirmLive[^\n]*false/, "the harness must never opt in to a live send");
 assert.doesNotMatch(source, /confirmLive[^\n]*true/, "the harness must contain no live-send request");
-assert.match(source, /manual-required/, "LinkedIn must be proved as assisted-manual");
+assert.match(source, /dry-run/, "LinkedIn automatic with confirmLive=false must stay dry-run");
 assert.match(source, /outreach_ledger/, "the immutable delivery ledger must be checked");
 assert.match(source, /messages_outbound/, "the durable outbound table must be checked");
 assert.match(source, /aria_acceptance_marker/, "ephemeral resources need a deletion marker");
@@ -196,9 +196,10 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { status: "dry-run", detail: "Nothing sent." });
     }
     if (body.channel === "LinkedIn") {
-      event("app.linkedin-manual");
+      event("app.linkedin-automatic-dry-run");
       if (scenario === "linkedin_fail") return json(res, 500, { status: "error" });
-      return json(res, 409, { status: "manual-required", detail: "Manual only." });
+      // Automatic default: confirmLive=false never reaches the vendor wire.
+      return json(res, 200, { status: "dry-run", detail: "Nothing sent." });
     }
   }
 
@@ -337,7 +338,7 @@ assert.equal(receipt.checks.authenticatedWorkspaceBinding, true);
 assert.equal(receipt.checks.appSessionAuthority, true);
 assert.equal(receipt.checks.authenticatedStateReload, true);
 assert.equal(receipt.checks.emailConfirmLiveFalse, "dry-run");
-assert.equal(receipt.checks.linkedinPolicy, "manual-required");
+assert.equal(receipt.checks.linkedinPolicy, "dry-run");
 assert.equal(receipt.checks.outreachLedgerRows, 0);
 assert.equal(receipt.checks.messagesOutboundRows, 0);
 assert.equal(receipt.checks.cleanupVerified, true);
@@ -355,7 +356,7 @@ assert.deepEqual(happy.events.slice(-5), [
 ]);
 assert.ok(happy.events.indexOf("ledger.zero-proved") < happy.events.indexOf("cleanup.user-deleted"));
 assert.ok(happy.events.includes("app.email-dry-run"));
-assert.ok(happy.events.includes("app.linkedin-manual"));
+assert.ok(happy.events.includes("app.linkedin-automatic-dry-run"));
 
 const appFailure = runScenario("linkedin_fail");
 assert.notEqual(appFailure.status, 0, "an invalid LinkedIn safety response must fail acceptance");

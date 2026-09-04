@@ -61,7 +61,8 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // connected/lastSync state after the default seed became honest.
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
-export const STATE_VERSION = 18;
+// STATE_VERSION 19 — LinkedIn fleet.deliveryMode (automatic default; manual optional).
+export const STATE_VERSION = 19;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -197,7 +198,7 @@ export function defaultGuardrails(): GuardrailConfig {
       "Lead with the candidate's recent, specific work; one genuine reason you're reaching out; a soft, low-pressure ask. " +
       "Be warm, concise, peer-to-peer. Never write AI slop. Respect every guardrail below without exception.",
     rules: [
-      { id: genId("gr"), text: "Official APIs and authorized mailboxes only: never scrape, never automate LinkedIn DMs or logins. LinkedIn outreach uses assisted-manual copy/paste or an official LinkedIn Recruiter System Connect integration.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Official APIs and authorized mailboxes only: never scrape LinkedIn, never log in with recruiter cookies or session bots (no PhantomBuster clones). LinkedIn outreach defaults to Automatic via an entitled vendor/API seat; operators may switch to Manual approve-and-send.", enabled: true, locked: true },
       { id: genId("gr"), text: "Human approval required before any real send; dry-run is the default.", enabled: true, locked: true },
       { id: genId("gr"), text: "Honor per-seat daily caps, warm-up ramps, send windows, and the shared suppression + de-dupe ledger: no one is contacted twice.", enabled: true, locked: true },
       { id: genId("gr"), text: "Candidate PII is purpose-limited to active outreach and masked everywhere else; every reveal is audited.", enabled: true, locked: true },

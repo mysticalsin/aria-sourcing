@@ -36,7 +36,7 @@ export function isLinkedInSeatProvider(provider: string | null | undefined): pro
 }
 
 export function defaultLinkedInSeatName(provider: LinkedInSeatProvider): string {
-  return provider === "LinkedIn Vendor API" ? "LinkedIn Vendor" : "My LinkedIn (assisted)";
+  return provider === "LinkedIn Vendor API" ? "LinkedIn Vendor" : "My LinkedIn (manual)";
 }
 
 export type LinkedInSeatRow = {
@@ -71,7 +71,7 @@ export function linkedInSeatCanGoLive(seat: {
   if (seat.status && seat.status !== "active") {
     return { ok: false, reason: "Seat must be active before going live." };
   }
-  return { ok: true, reason: "Ready for assisted-manual or vendor delivery." };
+  return { ok: true, reason: "Ready for automatic vendor delivery or Manual approve-and-send." };
 }
 
 export function normalizeLinkedInProfileUrl(raw: string): string | null {

@@ -129,8 +129,8 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     checks.push({ rule: "Suppressed", status: "pass", detail: "Contact is not suppressed." });
   }
 
-  // LinkedIn assisted-manual: we cannot send automatically, but we can draft
-  // the message and ask the operator to paste it on the candidate's profile.
+  // LinkedIn: Automatic mode queues vendor delivery after approval; Manual mode
+  // drafts for operator paste/confirm. Either path still needs a profile URL.
   if (message.channel === "SMS") {
     const detail = "SMS delivery is disabled until recorded consent, opt-out, suppression, and durable dispatch controls are implemented.";
     blockers.push(detail);

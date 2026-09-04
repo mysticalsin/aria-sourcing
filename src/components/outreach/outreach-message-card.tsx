@@ -403,7 +403,9 @@ export function OutreachMessageCard({
               <div>
                 <p className="font-semibold">LinkedIn message ready: manual send required</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  Aria cannot send LinkedIn messages automatically. Copy the draft, open the candidate&apos;s profile, paste it, then confirm here.
+                  This workspace is in Manual LinkedIn mode. Copy the draft, open the candidate&apos;s
+                  profile, paste it, then confirm here — or switch Settings → LinkedIn to Automatic
+                  outreach.
                 </p>
               </div>
             </div>

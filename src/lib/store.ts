@@ -2400,20 +2400,25 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       const now = new Date().toISOString();
-      // LinkedIn is assisted-manual: the system drafts the message but a human must
-      // copy/paste it on the candidate's profile. Keep it out of the sent counter
-      // and ledger until the operator confirms the manual send.
+      // LinkedIn Manual: draft → human paste/confirm. LinkedIn Automatic (default):
+      // same hybrid as Email/WhatsApp — Approved, then explicit send queues vendor delivery.
       const isLive = !s.settings.dryRunMode;
-      const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
-      // Email, WhatsApp, and SMS all have a real live provider wired up in
-      // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS).
-      // None of them may be delivered on approval alone.
+      const linkedInDeliveryMode = s.settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic";
+      const isLinkedInManual = msg.channel === "LinkedIn" && isLive && linkedInDeliveryMode === "manual";
+      const isLinkedInAutomatic = msg.channel === "LinkedIn" && isLive && linkedInDeliveryMode === "automatic";
+      // Email, WhatsApp, SMS, and LinkedIn Automatic have a real live provider path in
+      // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS,
+      // LinkedIn Vendor API). None of them may be delivered on approval alone.
       const isLiveSendChannel =
-        (msg.channel === "Email" || msg.channel === "WhatsApp" || msg.channel === "SMS") && isLive;
+        (msg.channel === "Email" ||
+          msg.channel === "WhatsApp" ||
+          msg.channel === "SMS" ||
+          isLinkedInAutomatic) &&
+        isLive;
       // HYBRID send model: in LIVE mode an approval records approval and holds the
       // de-dupe slot (ledger 'claimed') but NEVER sends — an explicit sendApprovedOutreach()
       // actually delivers and only then flips to 'sent'. In dry-run/demo we simulate the
-      // send so the showcase stays alive. This is the never-auto-send guarantee.
+      // send so the showcase stays alive. This is the never-auto-send-without-approval guarantee.
       const isPendingSend = isLinkedInManual || isLiveSendChannel;
       const finalStatus: OutreachStatus = isLinkedInManual
         ? "Pending Manual Send"
@@ -2673,25 +2678,36 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Resolve a live seat for the message's channel: a live mailbox for Email
       // (domain verification is checked — and persisted — server-side on send,
       // not pre-filtered here, since that's the only place it can ever become
-      // true), or a live WhatsApp / SMS sender for the phone channels.
+      // true), a live WhatsApp / SMS sender for the phone channels, or a live
+      // LinkedIn Vendor API seat for automatic LinkedIn delivery.
       const channel = msg.channel;
       const seat =
         channel === "WhatsApp"
           ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
           : channel === "SMS"
             ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
-            : s.seats.find((x) => x.status === "active" && x.mode === "live");
+            : channel === "LinkedIn"
+              ? s.seats.find(
+                  (x) =>
+                    x.status === "active" && x.mode === "live" && x.provider === "LinkedIn Vendor API",
+                )
+              : s.seats.find((x) => x.status === "active" && x.mode === "live");
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"
             ? "live WhatsApp sender"
             : channel === "SMS"
               ? "live SMS sender"
-              : "live mailbox";
+              : channel === "LinkedIn"
+                ? "live LinkedIn Vendor API seat (or switch LinkedIn to Manual)"
+                : "live mailbox";
         return { ok: false, error: `No ${need} connected. Connect one in the Fleet first.` };
       }
       if ((channel === "WhatsApp" || channel === "SMS") && !candidate.phone) {
         return { ok: false, error: "No phone number on file for this candidate. Enrich it before a phone send." };
+      }
+      if (channel === "LinkedIn" && !(candidate.linkedinUrl ?? "").trim()) {
+        return { ok: false, error: "Candidate has no LinkedIn profile URL." };
       }
       let out: { status?: string; detail?: string };
       try {
@@ -2703,6 +2719,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             seatId: seat.id,
             candidateId: candidate.id,
             candidateEmail: candidate.email,
+            profileUrl: candidate.linkedinUrl,
             campaignId: msg.campaignId,
             subject: msg.subject,
             body: msg.body,
@@ -2718,7 +2735,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Send failed." };
       }
-      const deliveryQueued = channel === "WhatsApp" && out.status === "queued";
+      const deliveryQueued =
+        (channel === "WhatsApp" || channel === "LinkedIn") && out.status === "queued";
       if (out.status !== "sent" && !deliveryQueued) {
         return { ok: false, error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).` };
       }
@@ -2734,8 +2752,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             { ...prev, outreach },
             makeActivity({
               type: "outreach",
-              title: `WhatsApp delivery queued for ${candidate.name}`,
-              notes: "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
+              title:
+                channel === "LinkedIn"
+                  ? `LinkedIn delivery queued for ${candidate.name}`
+                  : `WhatsApp delivery queued for ${candidate.name}`,
+              notes:
+                channel === "LinkedIn"
+                  ? "ARIA will re-check suppression, the contact ledger, seat caps, and the approval before vendor delivery."
+                  : "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
               outcome: "Queued for policy check",
               campaignId: msg.campaignId,
               linkedEntityType: "candidate",
@@ -2787,7 +2811,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             title: `${channel} sent to ${candidate.name}`,
             notes: channel === "Email"
               ? `Live email delivered via ${seat.operatorEmail}.`
-              : `Live ${channel} delivered to ${candidate.phone ?? "the candidate"}.`,
+              : channel === "LinkedIn"
+                ? `Live LinkedIn delivered via ${seat.provider}.`
+                : `Live ${channel} delivered to ${candidate.phone ?? "the candidate"}.`,
             outcome: "Sent",
             campaignId: msg.campaignId,
             linkedEntityType: "candidate",
@@ -4608,7 +4634,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             type: "system",
             title: `Agent set LIVE: ${seat.name}`,
             notes: isLinkedIn
-              ? "LinkedIn seat live for assisted-manual or vendor messaging (no mailbox SPF required)."
+              ? "LinkedIn seat live for automatic vendor messaging or Manual approve-and-send (no mailbox SPF required)."
               : "Seat will send via the official provider API within guardrails.",
             outcome: "Live",
             campaignId: null,
@@ -4621,7 +4647,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return {
         ok: true,
         reason: isLinkedIn
-          ? "LinkedIn seat is live. Drafts still need approval; assisted-manual requires Confirm after you send."
+          ? "LinkedIn seat is live. Automatic mode queues vendor sends after approval; Manual mode still needs Confirm after you paste."
           : "Seat is live. Sends still require approval + guardrails.",
       };
     },
@@ -6605,6 +6631,7 @@ function buildLiveEmptyState(): HermesState {
       fleet: {
         recontactWindowDays: 90, bounceRatePauseThreshold: 0.05, complaintRatePauseThreshold: 0.001,
         enforceBusinessHours: true, jitter: true, globalDailyCap: null, maxAgents: 300,
+        deliveryMode: "automatic",
       },
       confidentialityMode: true,
       defaultLanguage: "en",

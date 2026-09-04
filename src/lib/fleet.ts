@@ -30,6 +30,7 @@ export function defaultFleetSettings(): FleetSettings {
     jitter: true,
     globalDailyCap: null,
     maxAgents: 300,
+    deliveryMode: "automatic",
   };
 }
 
@@ -45,8 +46,8 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   Resend: "Respect plan limits; verify domain (SPF/DKIM/DMARC) before sending.",
   "WhatsApp Cloud": "Cold WhatsApp needs a pre-approved Meta template; keep volume low and honor opt-out.",
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
-  "LinkedIn Assisted Manual": "Assisted-manual only: draft, profile deep-link, human copy/paste/send, then record outcome.",
-  "LinkedIn Vendor API": "Licensed vendor API only; fails closed until credentials and a signed provider contract exist.",
+  "LinkedIn Assisted Manual": "Manual mode: draft, profile deep-link, human copy/paste/send, then Confirm.",
+  "LinkedIn Vendor API": "Automatic mode path: licensed vendor API; fails closed until LINKEDIN_VENDOR_* credentials exist.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */

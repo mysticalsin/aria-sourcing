@@ -40,7 +40,7 @@ ok(
 ok("is LinkedIn Assisted Manual", isLinkedInSeatProvider("LinkedIn Assisted Manual"));
 ok("is LinkedIn Vendor API", isLinkedInSeatProvider("LinkedIn Vendor API"));
 ok("not Gmail", !isLinkedInSeatProvider("Gmail API"));
-ok("default assisted name", defaultLinkedInSeatName("LinkedIn Assisted Manual").includes("assisted"));
+ok("default assisted name", defaultLinkedInSeatName("LinkedIn Assisted Manual").includes("manual"));
 
 const seats = [
   { id: "1", name: "A", provider: "Gmail API", status: "active", mode: "mock" },
@@ -65,7 +65,11 @@ ok("summary fails", summary.ok === false && /seat mock/.test(summary.message));
 ok(
   "guardrail prompt forbids login/scrape",
   /never attempt to log in/i.test(linkedInGuardrailPrompt()) &&
-    /assisted-manual/i.test(linkedInGuardrailPrompt()),
+    /session bots|PhantomBuster/i.test(linkedInGuardrailPrompt()),
+);
+ok(
+  "guardrail prompt mentions Automatic default",
+  /defaults to Automatic/i.test(linkedInGuardrailPrompt()),
 );
 
 const migration = existsSync("supabase/migrations/0058_linkedin_assisted_and_inbound.sql")
@@ -103,6 +107,19 @@ ok("draft injects linkedInGuardrailPrompt", /linkedInGuardrailPrompt\(\)/.test(s
 const sendOnly = readFileSync("docs/LINKEDIN_SEND_ONLY.md", "utf8");
 ok("docs mention OIDC", /openid connect/i.test(sendOnly));
 ok("docs refuse password\/cookie capture", /password|cookie|session/i.test(sendOnly));
+ok("docs default automatic", /defaults to \*\*Automatic\*\*|Automatic outreach/i.test(sendOnly));
+ok("docs manual optional", /Manual approve-and-send|deliveryMode/i.test(sendOnly));
+
+const enqueueMigration = existsSync("supabase/migrations/0062_linkedin_automatic_enqueue.sql")
+  ? readFileSync("supabase/migrations/0062_linkedin_automatic_enqueue.sql", "utf8")
+  : "";
+ok("migration 0062 exists", enqueueMigration.length > 0);
+ok("0062 enqueue_linkedin_outbound", /enqueue_linkedin_outbound/.test(enqueueMigration));
+
+const stack = readFileSync("src/components/settings/linkedin-outreach-stack.tsx", "utf8");
+ok("settings stack Automatic outreach label", /Automatic outreach/.test(stack));
+ok("settings stack Manual approve-and-send label", /Manual approve-and-send/.test(stack));
+ok("settings stack writes deliveryMode", /deliveryMode/.test(stack));
 
 const oauthMigration = existsSync("supabase/migrations/0061_linkedin_oauth_connections.sql")
   ? readFileSync("supabase/migrations/0061_linkedin_oauth_connections.sql", "utf8")

@@ -109,6 +109,13 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
       // STATE_VERSION 11 — Aria management API URL.
       hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
+      // STATE_VERSION 19 — LinkedIn deliveryMode defaults to automatic.
+      fleet: {
+        ...defs.fleet,
+        ...(parsed.settings.fleet ?? {}),
+        deliveryMode:
+          parsed.settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic",
+      },
     },
     seats: (parsed.seats ?? []).map((seat) => ({
       ...seat,
@@ -122,6 +129,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
 export function normalizeHermesState(parsed: HermesState): HermesState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
   const settings = withoutLegacyIntegrationAuthority(parsed.settings);
+  const defs = defaultSettings();
   return {
     ...parsed,
     wins: parsed.wins ?? [],
@@ -129,6 +137,11 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
       ...settings,
       // Quality bar: never contact / accept below 80% unless operator raises further.
       minScoreToContact: Math.max(80, Number(settings.minScoreToContact) || 80),
+      fleet: {
+        ...defs.fleet,
+        ...(settings.fleet ?? {}),
+        deliveryMode: settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic",
+      },
     },
   };
 }

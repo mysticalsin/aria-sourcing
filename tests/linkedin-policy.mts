@@ -1,16 +1,19 @@
 /* ============================================================================
    tests/linkedin-policy.mts
-   Area: LinkedIn policy — ensures skills / prompts cannot bypass the
-   assisted-manual rule or instruct LinkedIn automation.
+   Area: LinkedIn policy — scrape/session bots blocked; outbound delivery
+   respects workspace deliveryMode (automatic default, manual → 409).
    ========================================================================== */
 
 import { readFileSync } from "fs";
 import * as linkedInPolicy from "../src/lib/linkedin-policy";
 
-const { checkLinkedInPolicy } = linkedInPolicy;
+const { checkLinkedInPolicy, resolveLinkedInDeliveryMode } = linkedInPolicy;
 type OutboundPolicy = { ok: boolean; reason?: string };
 const getOutboundChannelPolicy = (linkedInPolicy as unknown as {
-  getOutboundChannelPolicy?: (channel: string) => OutboundPolicy;
+  getOutboundChannelPolicy?: (
+    channel: string,
+    opts?: { deliveryMode?: string },
+  ) => OutboundPolicy;
 }).getOutboundChannelPolicy;
 
 let pass = 0,
@@ -44,21 +47,40 @@ for (const text of forbidden) {
 
 ok("allows official RSC wording", checkLinkedInPolicy("Use LinkedIn Recruiter System Connect API").ok === true);
 ok("allows assisted-manual wording", checkLinkedInPolicy("Operator copies the LinkedIn message and pastes it manually").ok === true);
+ok("allows automatic vendor wording", checkLinkedInPolicy("Queue LinkedIn via the entitled vendor API seat").ok === true);
+
+ok("resolve defaults to automatic", resolveLinkedInDeliveryMode(undefined) === "automatic");
+ok("resolve accepts manual", resolveLinkedInDeliveryMode("manual") === "manual");
+ok("resolve rejects unknown as automatic", resolveLinkedInDeliveryMode("weird") === "automatic");
 
 ok("outbound policy exposes a delivery decision", typeof getOutboundChannelPolicy === "function");
 if (getOutboundChannelPolicy) {
-  const linkedInDelivery = getOutboundChannelPolicy("LinkedIn");
-  ok("LinkedIn automated delivery is rejected", linkedInDelivery.ok === false);
-  ok("LinkedIn rejection requires manual delivery", /manual/i.test(linkedInDelivery.reason ?? ""));
+  const auto = getOutboundChannelPolicy("LinkedIn", { deliveryMode: "automatic" });
+  ok("LinkedIn automatic delivery is allowed", auto.ok === true);
+  const defaultMode = getOutboundChannelPolicy("LinkedIn");
+  ok("LinkedIn default (no opts) is automatic-allowed", defaultMode.ok === true);
+  const manual = getOutboundChannelPolicy("LinkedIn", { deliveryMode: "manual" });
+  ok("LinkedIn manual delivery is rejected", manual.ok === false);
+  ok("LinkedIn manual rejection mentions Manual", /manual/i.test(manual.reason ?? ""));
   ok("Email delivery is not rejected by the LinkedIn policy", getOutboundChannelPolicy("Email").ok === true);
 }
 
 const sendRoute = readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8");
 ok("outreach route imports outbound channel policy", /getOutboundChannelPolicy/.test(sendRoute));
+ok("outreach route resolves deliveryMode", /resolveLinkedInDeliveryMode/.test(sendRoute));
 ok(
-  "outreach route returns manual-required before a provider path for LinkedIn",
-  /getOutboundChannelPolicy\((?:payload\.channel|channel)\)[\s\S]*status:\s*"manual-required"/.test(sendRoute),
+  "outreach route returns manual-required when policy blocks LinkedIn",
+  /getOutboundChannelPolicy\([\s\S]*status:\s*"manual-required"/.test(sendRoute),
 );
+ok("outreach route enqueues LinkedIn automatic", /enqueue_linkedin_outbound/.test(sendRoute));
+ok("outreach route refuses assisted-manual fallback for automatic", /linkedin-automatic-requires-vendor|LinkedIn Vendor API/.test(sendRoute));
+
+const migration = readFileSync(
+  new URL("../supabase/migrations/0062_linkedin_automatic_enqueue.sql", import.meta.url),
+  "utf8",
+);
+ok("migration 0062 enqueue_linkedin_outbound", /enqueue_linkedin_outbound/.test(migration));
+ok("migration 0062 vendor-only automatic", /LinkedIn Vendor API/.test(migration));
 
 console.log(`RESULT linkedin-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

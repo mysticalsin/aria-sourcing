@@ -1124,6 +1124,10 @@ export interface OutreachLedgerEntry {
   at: string;
 }
 
+/** LinkedIn outreach delivery: automatic (default) queues entitled vendor/API sends; manual keeps assisted approve-and-paste. */
+export const LINKEDIN_DELIVERY_MODES = ["automatic", "manual"] as const;
+export type LinkedInDeliveryMode = (typeof LINKEDIN_DELIVERY_MODES)[number];
+
 export interface FleetSettings {
   recontactWindowDays: number; // global re-contact suppression window (default 90)
   bounceRatePauseThreshold: number; // auto-pause a seat above this (e.g. 0.05)
@@ -1132,6 +1136,12 @@ export interface FleetSettings {
   jitter: boolean;
   globalDailyCap: number | null; // optional org-wide ceiling across all seats
   maxAgents: number; // hard ceiling on deployable agents (e.g. 300)
+  /**
+   * LinkedIn delivery mode for the workspace fleet.
+   * `automatic` (default): agent queues sends via entitled vendor/API without per-message paste/confirm.
+   * `manual`: assisted-manual — human copies/pastes in LinkedIn, then Confirms.
+   */
+  deliveryMode: LinkedInDeliveryMode;
 }
 
 export interface AllocationAssignment {
