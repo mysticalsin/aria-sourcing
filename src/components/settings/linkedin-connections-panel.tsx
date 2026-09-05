@@ -18,6 +18,7 @@ import {
 import {
   Activity,
   Linkedin,
+  Monitor,
   Unplug,
   Wand2,
 } from "lucide-react";
@@ -86,6 +87,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const [loading, setLoading] = React.useState(enabled);
   const [connectingOAuth, setConnectingOAuth] = React.useState(false);
   const [connectingAssisted, setConnectingAssisted] = React.useState(false);
+  const [connectingBrowser, setConnectingBrowser] = React.useState(false);
   const [testingSeat, setTestingSeat] = React.useState<string | null>(null);
   const [label, setLabel] = React.useState("");
   const [providers, setProviders] = React.useState<ProviderReadiness | null>(null);
@@ -252,6 +254,79 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     }
   }
 
+
+  async function connectBrowserComputer() {
+    if (!supabaseEnabled) {
+      setConnectingBrowser(true);
+      try {
+        const seat = await actions.addSeat({
+          name: "OpenBot LinkedIn Computer",
+          operatorEmail: label.includes("@") ? label : "operator@demo.local",
+          provider: "LinkedIn Browser Computer",
+        });
+        if (!seat) {
+          toast({ title: "Connect failed", description: "Could not create a local Browser Computer seat.", variant: "error" });
+          return;
+        }
+        actions.updateSeat(seat.id, {
+          connectedAccount: label.trim() || "OpenBot sandbox",
+          computerId: seat.computerId ?? `comp_demo_${seat.id}`,
+          linkedinDeliveryBackend: "browser-computer",
+        });
+        const live = await actions.toggleSeatLive(seat.id);
+        toast({
+          title: live.ok ? "OpenBot Browser Computer ready" : "Seat created",
+          description: live.ok
+            ? "Open Fleet → Computers → Observe / Take control to log into LinkedIn inside the sandbox, then Automatic sends use this seat."
+            : live.reason,
+          variant: live.ok ? "success" : "warning",
+        });
+        await load();
+      } finally {
+        setConnectingBrowser(false);
+      }
+      return;
+    }
+    setConnectingBrowser(true);
+    try {
+      const res = await fetch("/api/linkedin/connections", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ensure_connect",
+          provider: "LinkedIn Browser Computer",
+          operatorLabel: label.trim() || undefined,
+          goLive: true,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+        status?: string;
+      } | null;
+      if (json?.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
+        return;
+      }
+      if (!json?.ok) {
+        toast({ title: "OpenBot seat failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
+        return;
+      }
+      toast({
+        title: "OpenBot Browser Computer ready",
+        description: json.detail ?? "Log into LinkedIn via Fleet → Computers → Observe / Take control.",
+        variant: "success",
+      });
+      await load();
+    } catch {
+      toast({ title: "Connect failed", description: "Network error.", variant: "error" });
+    } finally {
+      setConnectingBrowser(false);
+    }
+  }
+
   async function simulateEvent(seatId?: string) {
     setSimulating(true);
     try {
@@ -346,10 +421,10 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const readinessItems: ReadinessItem[] = providers
     ? [
         {
-          id: "oauth",
-          label: "LinkedIn OAuth credentials",
-          ok: providers.oauthConfigured,
-          hint: "Attach a LinkedIn OIDC vault key + client id in Settings → LinkedIn (or set LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET).",
+          id: "browser",
+          label: "OpenBot computer supervisor (required for Automatic)",
+          ok: providers.browserComputerConfigured,
+          hint: "Attach Computer Supervisor URL + token in Settings → LinkedIn (or COMPUTER_SUPERVISOR_*). Automatic sends run in the OpenBot sandbox/VM — not via LinkedIn APIs.",
         },
         {
           id: "encryption",
@@ -358,17 +433,17 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           hint: "DATA_ENCRYPTION_KEY (≥32 chars) must be configured.",
         },
         {
-          id: "vendor",
-          label: "Vendor API (contracted automation)",
-          ok: providers.vendorApiConfigured,
-          hint: "Attach LinkedIn Vendor API key + URL in Settings → LinkedIn (or LINKEDIN_VENDOR_* env).",
+          id: "oauth",
+          label: "LinkedIn OAuth credentials (optional)",
+          ok: providers.oauthConfigured,
+          hint: "Only if you still want Sign-in-with-LinkedIn identity badges. Not required for OpenBot send.",
           optional: true,
         },
         {
-          id: "browser",
-          label: "Browser computer supervisor",
-          ok: providers.browserComputerConfigured,
-          hint: "Attach Computer Supervisor token + URL in Settings → LinkedIn (or COMPUTER_SUPERVISOR_* env).",
+          id: "vendor",
+          label: "Vendor API (legacy optional)",
+          ok: providers.vendorApiConfigured,
+          hint: "Optional contracted messaging vendor. Prefer OpenBot Browser Computer for Automatic.",
           optional: true,
         },
         {
@@ -376,6 +451,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           label: "Inbound webhook secret",
           ok: providers.inboundWebhookSecret,
           hint: "Required for vendor reply events.",
+          optional: true,
         },
       ]
     : [];
@@ -385,6 +461,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     loading,
     connectingOAuth,
     connectingAssisted,
+    connectingBrowser,
     testingSeat,
     label,
     setLabel,
@@ -402,6 +479,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     readinessItems,
     connectWithLinkedInOAuth,
     connectAssisted,
+    connectBrowserComputer,
     simulateEvent,
     testSeat,
     actions,
@@ -421,6 +499,7 @@ export function LinkedInIdentityStep({
     loading,
     connectingOAuth,
     connectingAssisted,
+    connectingBrowser,
     testingSeat,
     label,
     setLabel,
@@ -438,21 +517,28 @@ export function LinkedInIdentityStep({
     readinessItems,
     connectWithLinkedInOAuth,
     connectAssisted,
+    connectBrowserComputer,
     simulateEvent,
     testSeat,
     actions,
     load,
   } = useLinkedInConnections();
 
+  const hasBrowserSeat = seats.some((s) => s.provider === "LinkedIn Browser Computer");
   const state: StepState =
-    stepState ?? (signedIn ? "complete" : providers?.oauthConfigured === false && supabaseEnabled ? "blocked" : "active");
+    stepState ??
+    (hasBrowserSeat || signedIn
+      ? "complete"
+      : providers?.browserComputerConfigured === false && supabaseEnabled
+        ? "blocked"
+        : "active");
 
   const advanced = hideAdvanced ? undefined : (
     <div className="space-y-4">
       <div>
-        <p className="text-xs font-medium text-ink">Assisted-manual without OAuth</p>
+        <p className="text-xs font-medium text-ink">Manual / OAuth fallbacks (optional)</p>
         <p className="mt-1 text-xs text-muted">
-          Creates a messaging seat without LinkedIn Sign In. Prefer OAuth when credentials are configured.
+          Prefer OpenBot Browser Computer above. Assisted-manual and Sign-in-with-LinkedIn are only for identity badges or paste-confirm workflows.
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
           <Field label="Operator label" htmlFor="li-operator-label">
@@ -521,12 +607,56 @@ export function LinkedInIdentityStep({
   return (
     <ConnectionStep
       step={1}
-      title="Identity — Sign in with LinkedIn"
-      subtitle="OpenID Connect login. We store encrypted tokens and your public profile — never your password."
+      title="OpenBot Browser Computer"
+      subtitle="Automatic LinkedIn outreach runs inside the OpenBot sandbox/VM — not through LinkedIn OIDC or Vendor APIs. We never store your password — never your password in Aria. Create a seat, then log in via Fleet → Computers → Observe / Take control."
       state={state}
       advanced={advanced}
     >
       {readinessItems.length > 0 ? <SystemReadiness items={readinessItems} /> : null}
+
+      {isAdmin && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              leftIcon={<Monitor className="h-4 w-4" />}
+              loading={connectingBrowser}
+              disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+              onClick={() => void connectBrowserComputer()}
+            >
+              {hasBrowserSeat ? "Reconnect OpenBot seat" : "Create OpenBot Browser Computer seat"}
+            </Button>
+            {!providers?.browserComputerConfigured && supabaseEnabled ? (
+              <p className="max-w-md text-xs text-muted">
+                Attach the OpenBot computer supervisor URL + token under LinkedIn credentials above, then create a seat.
+              </p>
+            ) : (
+              <p className="max-w-md text-xs text-muted">
+                After the seat is live, open Fleet → Computers → Observe / Take control to complete LinkedIn login / 2FA inside the sandbox.
+              </p>
+            )}
+          </div>
+          <details className="rounded-xl border border-line/70 bg-surface px-3 py-2 text-xs text-muted">
+            <summary className="cursor-pointer font-medium text-ink-soft">
+              Optional — Sign in with LinkedIn (OIDC identity only)
+            </summary>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Linkedin className="h-4 w-4" />}
+                loading={connectingOAuth}
+                disabled={!providers?.oauthConfigured && supabaseEnabled}
+                onClick={() => void connectWithLinkedInOAuth()}
+              >
+                {signedIn ? "Reconnect LinkedIn OIDC" : "Sign in with LinkedIn"}
+              </Button>
+              <p className="max-w-md text-xs text-muted">
+                Does not send messages and never asks for your LinkedIn password. Use only if you want an OIDC identity badge on a seat.
+              </p>
+            </div>
+          </details>
+        </div>
+      )}
 
       {signedIn && oauthSeat?.oauthProfile ? (
         <ConnectedIdentityBanner
@@ -537,28 +667,10 @@ export function LinkedInIdentityStep({
         />
       ) : null}
 
-      {isAdmin && (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            leftIcon={<Linkedin className="h-4 w-4" />}
-            loading={connectingOAuth}
-            disabled={!providers?.oauthConfigured && supabaseEnabled}
-            onClick={() => void connectWithLinkedInOAuth()}
-          >
-            {signedIn ? "Reconnect LinkedIn" : "Sign in with LinkedIn"}
-          </Button>
-          {!providers?.oauthConfigured && supabaseEnabled ? (
-            <p className="max-w-md text-xs text-muted">
-              OAuth env vars missing — expand System readiness above for details.
-            </p>
-          ) : null}
-        </div>
-      )}
-
       {loading ? (
         <p className="text-xs text-muted">Loading LinkedIn connection…</p>
       ) : seats.length === 0 ? (
-        <p className="text-xs text-muted">No LinkedIn seat yet. Sign in above to create one.</p>
+        <p className="text-xs text-muted">No LinkedIn seat yet. Create an OpenBot Browser Computer seat above.</p>
       ) : (
         <ul className="space-y-2">
           {seats.map((s, i) => {
@@ -576,6 +688,11 @@ export function LinkedInIdentityStep({
                   healthy={ready}
                   badges={
                     <>
+                      {s.provider === "LinkedIn Browser Computer" && (
+                        <Badge tone="electric" size="sm">
+                          OpenBot
+                        </Badge>
+                      )}
                       {s.oauthConnected && (
                         <Badge tone="electric" size="sm">
                           OIDC

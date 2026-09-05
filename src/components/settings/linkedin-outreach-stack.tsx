@@ -58,7 +58,7 @@ function DeliveryModeToggle() {
           <span>
             <span className="block text-sm font-semibold text-ink">Automatic outreach</span>
             <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-              Agents queue LinkedIn sends via an entitled vendor API or browser-computer seat after approval — no paste/confirm per message.
+              Agents queue LinkedIn sends through an OpenBot Browser Computer sandbox/VM after approval — no paste/confirm per message.
             </span>
           </span>
         </button>
@@ -120,7 +120,7 @@ function LinkedInOutreachStackInner() {
       id={LINKEDIN_OUTREACH_STACK_ID}
       eyebrow="LinkedIn stack"
       title="Identity & outreach"
-      description="Identity (OIDC), entitled automatic delivery (vendor API or browser computer), optional HeyReach MCP. Delivery defaults to Automatic; Manual is an explicit toggle."
+      description="OpenBot Browser Computer is the Automatic path (sandbox/VM send). OIDC identity and Vendor API are optional. Optional HeyReach MCP. Delivery defaults to Automatic; Manual is an explicit toggle."
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
@@ -128,9 +128,9 @@ function LinkedInOutreachStackInner() {
       footer={
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          No scrape, no session bots, no password storage. OIDC tokens encrypted at rest.
+          No scrape grey-market bots and no LinkedIn password storage in Aria. Login happens inside the OpenBot sandbox via Fleet Observe.
           {deliveryMode === "automatic"
-            ? " Automatic mode queues entitled vendor-api or browser-computer sends after approval (Postgres contact lease, DNC, and rate caps still apply)."
+            ? " Automatic mode queues OpenBot Browser Computer sends after approval (Postgres contact lease, DNC, and rate caps still apply)."
             : " Manual mode keeps assisted paste/confirm for each send."}
         </p>
       }

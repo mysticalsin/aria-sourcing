@@ -2692,8 +2692,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                   (x) =>
                     x.status === "active" &&
                     x.mode === "live" &&
-                    (x.provider === "LinkedIn Vendor API" ||
-                      x.provider === "LinkedIn Browser Computer"),
+                    x.provider === "LinkedIn Browser Computer",
+                ) ??
+                s.seats.find(
+                  (x) =>
+                    x.status === "active" &&
+                    x.mode === "live" &&
+                    x.provider === "LinkedIn Vendor API",
                 )
               : s.seats.find((x) => x.status === "active" && x.mode === "live");
       if (!supabaseEnabled || !seat) {

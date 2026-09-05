@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
 
 const EnsureSchema = z.object({
   action: z.literal("ensure_connect"),
-  provider: z.enum(["LinkedIn Assisted Manual", "LinkedIn Vendor API"]).default("LinkedIn Assisted Manual"),
+  provider: z.enum(["LinkedIn Assisted Manual", "LinkedIn Vendor API", "LinkedIn Browser Computer"]).default("LinkedIn Browser Computer"),
   operatorLabel: z.string().max(200).optional(),
   goLive: z.boolean().optional().default(true),
 });
@@ -54,7 +54,7 @@ async function linkedInProvidersForWorkspace(workspaceId?: string | null) {
 
 /**
  * List LinkedIn messaging seats + readiness. POST ensure_connect creates/picks
- * an assisted-manual (or vendor) seat, registers inbound route_key, optionally goes live.
+ * a Browser Computer (OpenBot), assisted-manual, or vendor seat, registers inbound route_key, optionally goes live.
  * Never asks for LinkedIn passwords or cookies.
  */
 export async function GET(req: NextRequest) {
@@ -299,6 +299,16 @@ async function ensureConnect(
       { status: 503 },
     );
   }
+  if (provider === "LinkedIn Browser Computer" && !readiness.browserComputerConfigured) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "OpenBot computer supervisor is not configured. Set Computer Supervisor URL + token in Settings → LinkedIn (or COMPUTER_SUPERVISOR_URL / COMPUTER_SUPERVISOR_TOKEN).",
+      },
+      { status: 503 },
+    );
+  }
 
   const { data: seatRows, error: seatErr } = await supabase
     .from("agent_seats")
@@ -339,6 +349,13 @@ async function ensureConnect(
         persona: "Warm, specific LinkedIn outreach. One genuine compliment, soft ask. No automation language.",
         signature: "",
         connected_account: operatorLabel,
+        computer_id: provider === "LinkedIn Browser Computer" ? `comp_${globalThis.crypto.randomUUID()}` : null,
+        linkedin_delivery_backend:
+          provider === "LinkedIn Browser Computer"
+            ? "browser-computer"
+            : provider === "LinkedIn Vendor API"
+              ? "vendor-api"
+              : null,
       })
       .select(AGENT_SEAT_SELECT)
       .single();
@@ -397,8 +414,10 @@ async function ensureConnect(
     mode: seat.mode,
     routeKey: route.route_key,
     detail:
-      provider === "LinkedIn Assisted Manual"
-        ? "Assisted-manual LinkedIn connected. Draft → copy/paste in LinkedIn → Confirm in Aria."
-        : "Vendor LinkedIn seat live. Outbound uses LINKEDIN_VENDOR_* APIs.",
+      provider === "LinkedIn Browser Computer"
+        ? "OpenBot Browser Computer seat live. Log into LinkedIn via Fleet → Computers → Observe / Take control, then Automatic sends run in the sandbox/VM."
+        : provider === "LinkedIn Assisted Manual"
+          ? "Assisted-manual LinkedIn connected. Draft → copy/paste in LinkedIn → Confirm in Aria."
+          : "Vendor LinkedIn seat live. Outbound uses LINKEDIN_VENDOR_* APIs.",
   });
 }

@@ -1,51 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 102
+shift: 103
 agent: cursor-cloud
-updated: 2026-09-05T07:34Z
-status: linkedin-live-on-fly-awaiting-admin-vault
+updated: 2026-09-05T18:57Z
+status: openbot-browser-computer-primary
 ---
 
-# Handoff — Shift 102
+# Handoff — Shift 103
 
 ## Current state
 
-- **Branch/PR:** `cursor/linkedin-auto-vm-fleet-b91d` → **PR #65**
-- **Live Fly tip:** build `911634d…` on `aria-mantu-app` (version 223)
-- LinkedIn fleet APIs are **live** (401/400, not 404)
-- Migration **0080_contact_lease_and_browser_computer.sql** applied on live DB
-- `/api/ready` reports `agentFrameworks:false` (expected without Flowise/Deerflow); `/api/health` 200
+- **Branch/PR:** `cursor/linkedin-auto-vm-fleet-b91d` → update PR #66 (or current open PR on this branch)
+- **Product direction (locked):** Automatic LinkedIn outreach uses **OpenBot Browser Computer** (sandbox/VM via computer supervisor) — **not** LinkedIn OIDC or Vendor API as the send path
+- Live Fly tip still has LinkedIn/fleet APIs; supervisor secrets may still be unset on Fly
 
 ## Done this shift
 
-1. Authenticated Fly with owner-provided token
-2. Applied contact-lease schema as 0080 (live lineage already used 0063)
-3. Fixed client/server import boundary (`linkedin-vault-providers`, `linkedin-automatic`)
-4. Deployed tip to Fly; verified LinkedIn/fleet/knowledge routes
+1. Credentials panel leads with OpenBot supervisor URL + Computer Supervisor vault token; OIDC/Vendor demoted to Advanced
+2. `ensure_connect` accepts `LinkedIn Browser Computer`; creates seat with `computer_id` + `linkedin_delivery_backend=browser-computer`
+3. Connections UI primary CTA: Create OpenBot Browser Computer seat; OIDC optional under details
+4. Automatic seat preference / send path prefers Browser Computer over Vendor API
+5. Documented OpenBot connect steps in `services/computer-supervisor/README.md`
 
 ## Blockers
 
-1. Admin credentials for authenticated OIDC connect + send smoke
-2. Operator must paste LinkedIn OIDC / Vendor / Supervisor keys in Aria Settings vault
-3. Optional: deploy DeerFlow/Flowise or accept `/api/ready` 503 on this tenant
+1. Need real OpenBot supervisor base URL + token (Settings vault or Fly `COMPUTER_SUPERVISOR_URL` / `COMPUTER_SUPERVISOR_TOKEN`)
+2. Admin login to create seat and complete LinkedIn login via Fleet Observe / Take control
+3. Do **not** set `COMPUTER_SUPERVISOR_MOCK_SEND=1` on production
 
 ## Next steps
 
-1. Owner: provide `ADMIN_EMAIL` / `ADMIN_PASSWORD` (or log in and paste vault keys)
-2. Smoke: OIDC connect → Automatic Vendor or Browser Computer send
-3. Mark PR #65 ready after authenticated smoke
+1. Operator: paste OpenBot supervisor URL + token in Settings → LinkedIn (or Fly secrets)
+2. Create OpenBot Browser Computer seat → Fleet Observe → LinkedIn login/2FA in sandbox
+3. Smoke Automatic send through supervisor; mark PR ready after smoke
 
 ## Decisions made (don't relitigate)
 
 - Production = Fly only (`aria-mantu-app`)
 - LinkedIn defaults Automatic; Manual opt-in
-- Automatic = vendor-api OR browser-computer; no silent assisted-manual fallback
+- **Automatic send path = OpenBot Browser Computer (primary)**; Vendor API is legacy optional; no silent assisted-manual fallback
+- Login for Automatic seats happens inside the OpenBot sandbox (Fleet Observe), not via LinkedIn OIDC for send
 - Postgres contact lease = only double-contact lock
 - Aria vault primary; env fallback
-- Production readiness cannot env-opt-out of agent frameworks (test-locked)
 
 ## Watch out
 
-- Rotate the Fly token shared in chat if this transcript is retained
-- Do not renumber live migrations; append only (0080+)
-- Never commit Fly tokens / anon secrets into the repo
+- Rotate any Fly token shared in chat if transcript retained
+- Never commit Fly tokens / supervisor secrets
+- Provider string is `LinkedIn Browser Computer`; vault provider `Computer Supervisor`

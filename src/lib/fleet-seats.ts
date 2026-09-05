@@ -10,7 +10,7 @@ import {
 } from "./types";
 
 export const AGENT_SEAT_SELECT =
-  "id, workspace_id, name, operator_email, provider, status, mode, domain_verified, daily_limit, warmup, warmup_start_cap, warmup_step_per_day, warmup_started_at, min_gap_minutes, persona, signature, connected_account, created_at";
+  "id, workspace_id, name, operator_email, provider, status, mode, domain_verified, daily_limit, warmup, warmup_start_cap, warmup_step_per_day, warmup_started_at, min_gap_minutes, persona, signature, connected_account, computer_id, linkedin_delivery_backend, created_at";
 
 export interface AgentSeatRow {
   id: string;
@@ -30,6 +30,8 @@ export interface AgentSeatRow {
   persona: string;
   signature: string;
   connected_account: string;
+  computer_id?: string | null;
+  linkedin_delivery_backend?: string | null;
   created_at: string;
 }
 
@@ -69,6 +71,12 @@ export function agentSeatRowToSeat(row: AgentSeatRow, existing?: AgentSeat): Age
     color: existing?.color,
     language: existing?.language,
     connectedAccount: row.connected_account,
+    computerId: row.computer_id ?? existing?.computerId ?? null,
+    linkedinDeliveryBackend:
+      row.linkedin_delivery_backend === "vendor-api" ||
+      row.linkedin_delivery_backend === "browser-computer"
+        ? row.linkedin_delivery_backend
+        : (existing?.linkedinDeliveryBackend ?? null),
     createdAt: row.created_at,
     providerId: existing?.providerId,
     modelId: existing?.modelId,
