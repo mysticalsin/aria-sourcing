@@ -21,12 +21,8 @@ const expectedMigrationCount = /^[1-9][0-9]*$/.test(expectedMigrationCountRaw)
   ? Number(expectedMigrationCountRaw)
   : Number.NaN;
 const expectedLedgerSha256 = process.env.ARIA_EXPECTED_LEDGER_SHA ?? "";
-const agentFrameworksRequired =
-  process.env.AGENT_FRAMEWORKS_REQUIRED === "true"
-    ? true
-    : process.env.AGENT_FRAMEWORKS_REQUIRED === "false"
-      ? false
-      : process.env.NODE_ENV === "production";
+const agentFrameworksRequired = process.env.NODE_ENV === "production" ||
+  process.env.AGENT_FRAMEWORKS_REQUIRED === "true";
 
 export async function GET(req: Request) {
   // Unauthenticated deep-readiness probe: 3 DB queries + adapter network
