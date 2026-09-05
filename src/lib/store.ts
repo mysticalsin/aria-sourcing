@@ -165,7 +165,7 @@ import {
   type WorkspaceStatus,
 } from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
-import { preferLinkedInAutomaticSeats } from "./sourcing-automatic-deliver";
+import { preferLinkedInAutomaticSeats } from "./linkedin-automatic";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyLearning,

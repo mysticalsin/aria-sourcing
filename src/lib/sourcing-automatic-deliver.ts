@@ -7,7 +7,10 @@
  */
 
 import { allocateBatch } from "@/lib/fleet";
-import { isLinkedInAutomaticProvider } from "@/lib/linkedin-channel";
+import {
+  isLinkedInAutomaticProvider,
+  preferLinkedInAutomaticSeats,
+} from "@/lib/linkedin-automatic";
 import type {
   AgentSeat,
   AllocationResult,
@@ -16,6 +19,8 @@ import type {
   OutreachLedgerEntry,
   SuppressionEntry,
 } from "@/lib/types";
+
+export { preferLinkedInAutomaticSeats } from "@/lib/linkedin-automatic";
 
 export type AutomaticDeliverPlan = {
   allocation: AllocationResult;
@@ -62,14 +67,3 @@ export function planShortlistAutomaticDeliver(opts: {
   return { allocation, automaticLinkedIn, other, deliveryModeAutomatic };
 }
 
-export function preferLinkedInAutomaticSeats(
-  seats: AgentSeat[],
-  pool: Array<Pick<Candidate, "linkedinUrl">> | Pick<Candidate, "linkedinUrl">,
-): AgentSeat[] {
-  const list = Array.isArray(pool) ? pool : [pool];
-  if (!list.some((c) => (c.linkedinUrl ?? "").trim())) return seats;
-  const auto = seats.filter((s) => s.status === "active" && isLinkedInAutomaticProvider(s.provider));
-  if (auto.length === 0) return seats;
-  const rest = seats.filter((s) => !auto.some((a) => a.id === s.id));
-  return [...auto, ...rest];
-}

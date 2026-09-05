@@ -266,17 +266,10 @@ const adapters: Record<LinkedInBackendKind, LinkedInAdapter> = {
   "browser-computer": browserComputerAdapter,
 };
 
-/** Providers that may send on automatic deliveryMode (never assisted-manual). */
-export const LINKEDIN_AUTOMATIC_PROVIDERS = [
-  "LinkedIn Vendor API",
-  "LinkedIn Browser Computer",
-] as const;
-
-export function isLinkedInAutomaticProvider(provider: string | null | undefined): boolean {
-  return LINKEDIN_AUTOMATIC_PROVIDERS.includes(
-    provider as (typeof LINKEDIN_AUTOMATIC_PROVIDERS)[number],
-  );
-}
+export {
+  LINKEDIN_AUTOMATIC_PROVIDERS,
+  isLinkedInAutomaticProvider,
+} from "@/lib/linkedin-automatic";
 
 export function linkedInBackendForProvider(provider: string | null | undefined): LinkedInBackendKind | null {
   const normalized = normalizeProvider(provider);
