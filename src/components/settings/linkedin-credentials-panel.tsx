@@ -9,7 +9,7 @@ import {
   COMPUTER_SUPERVISOR_VAULT_PROVIDER,
   LINKEDIN_OIDC_VAULT_PROVIDER,
   LINKEDIN_VENDOR_VAULT_PROVIDER,
-} from "@/lib/linkedin-credentials";
+} from "@/lib/linkedin-vault-providers";
 
 /**
  * Plug-and-play LinkedIn credential binding for Aria Settings.

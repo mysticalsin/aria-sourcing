@@ -2,16 +2,26 @@
  * Resolve LinkedIn OIDC / vendor API / computer-supervisor credentials from
  * Aria Settings (vault key ids + non-secret URLs) with env fallback.
  * Secrets never leave the vault except at the immediate call site.
+ *
+ * Do not import this module from Client Components — Settings UI must use
+ * `@/lib/linkedin-vault-providers` for provider labels only.
  */
 
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { LinkedInProviderReadiness } from "@/lib/linkedin-connections";
+import {
+  COMPUTER_SUPERVISOR_VAULT_PROVIDER,
+  LINKEDIN_OIDC_VAULT_PROVIDER,
+  LINKEDIN_VENDOR_VAULT_PROVIDER,
+} from "@/lib/linkedin-vault-providers";
 
-export const LINKEDIN_OIDC_VAULT_PROVIDER = "LinkedIn OIDC";
-export const LINKEDIN_VENDOR_VAULT_PROVIDER = "LinkedIn Vendor API";
-export const COMPUTER_SUPERVISOR_VAULT_PROVIDER = "Computer Supervisor";
+export {
+  COMPUTER_SUPERVISOR_VAULT_PROVIDER,
+  LINKEDIN_OIDC_VAULT_PROVIDER,
+  LINKEDIN_VENDOR_VAULT_PROVIDER,
+} from "@/lib/linkedin-vault-providers";
 
 export type LinkedInCredentialRefs = {
   /** Public OIDC client id (not a secret). */
