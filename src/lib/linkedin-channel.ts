@@ -169,6 +169,11 @@ const browserComputerAdapter: LinkedInAdapter = {
     const bind = {
       url: req.credentials?.computerSupervisorUrl,
       token: req.credentials?.computerSupervisorToken,
+      // Same secret OpenBot injects into agent-computers (COMPUTER_TOKEN).
+      computerToken:
+        process.env.OPENBOT_COMPUTER_TOKEN?.trim() ||
+        process.env.COMPUTER_TOKEN?.trim() ||
+        undefined,
       mockSend: req.credentials?.computerSupervisorMockSend,
     };
     bindComputerSupervisorEndpoint(bind);
