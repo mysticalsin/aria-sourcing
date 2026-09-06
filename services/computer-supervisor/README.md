@@ -38,23 +38,26 @@ Agent-computer (Bearer / `x-openbot-computer-token` = `COMPUTER_TOKEN`):
 
 Aria maps each seat’s `computerId` to an OpenBot bot id (`src/lib/openbot/bot-id.ts`), ensures the computer, then runs LinkedIn send against the agent-computer URL (`src/lib/openbot/linkedin-send.ts`).
 
-## Same LLM API as Aria (for OpenBot agents)
+## Same LLM API key as Aria (for OpenBot agents)
 
-OpenBot LangGraph/Mastra bots should **not** get their own model keys. Point them at Aria’s OpenAI-compatible proxy:
+OpenBot LangGraph/Mastra bots must use **Aria’s own provider API key** — not a separate OpenBot model key. Point them at Aria’s OpenAI-compatible proxy and pass the same key Aria spends:
 
 ```bash
 # On the OpenBot agent / compose service:
 OPENAI_BASE_URL=https://<your-aria-host>/api/openbot/v1
-OPENAI_API_KEY=<same value as Aria OPENBOT_LLM_PROXY_TOKEN>
+OPENAI_API_KEY=<same value as Aria OPENAI_API_KEY>
+# If Aria’s default cloud provider is Anthropic / Groq / etc., use that same key
+# (Aria matches Bearer against PROVIDER_ENV: OPENAI_API_KEY, ANTHROPIC_API_KEY, …).
 ```
 
-Aria side:
+Aria side (Fly secrets / env — same keys the rest of Aria uses):
 
 ```bash
-OPENBOT_LLM_PROXY_TOKEN=...          # shared secret OpenBot presents as OPENAI_API_KEY
+OPENAI_API_KEY=sk-...                # required (or another PROVIDER_ENV key Aria already uses)
 OPENBOT_LLM_PROVIDER=openai          # optional; else first configured PROVIDER_ENV key
 OPENBOT_LLM_MODEL=gpt-4o-mini        # optional override
-# Plus the normal Aria LLM keys, e.g. OPENAI_API_KEY / ANTHROPIC_API_KEY / vault
+# Optional alternate service auth (still spends Aria’s PROVIDER_ENV key upstream):
+# OPENBOT_LLM_PROXY_TOKEN=...
 ```
 
 Routes:
@@ -71,7 +74,7 @@ Routes:
 5. In LinkedIn connections, click **Create OpenBot Browser Computer seat**.
 6. Open Fleet → Computers → Observe / Take control and complete LinkedIn login / 2FA inside the sandbox.
 7. Keep Delivery mode on **Automatic** — approved LinkedIn messages ensure the seat’s computer and send via the agent-computer.
-8. (Optional) Point OpenBot agent `OPENAI_BASE_URL` at Aria’s `/api/openbot/v1` so bots use Aria’s LLM vault/env.
+8. Point OpenBot agent `OPENAI_BASE_URL` at Aria’s `/api/openbot/v1` and set `OPENAI_API_KEY` to the **same** Aria LLM key (e.g. `OPENAI_API_KEY`).
 
 Env fallback (optional; Settings vault is preferred for the supervisor token):
 
@@ -80,7 +83,7 @@ COMPUTER_SUPERVISOR_URL=https://computers.your-openbot-host.example
 COMPUTER_SUPERVISOR_TOKEN=...          # SUPERVISOR_TOKEN
 COMPUTER_TOKEN=...                     # or OPENBOT_COMPUTER_TOKEN — agent-computer secret
 COMPUTER_SUPERVISOR_MOCK_SEND=1        # local tests only — never on production
-OPENBOT_LLM_PROXY_TOKEN=...            # Aria ↔ OpenBot LLM proxy
+OPENAI_API_KEY=...                     # same key OpenBot presents to /api/openbot/v1
 ```
 
 When `COMPUTER_SUPERVISOR_URL` is unset, jobs queue locally and automatic send

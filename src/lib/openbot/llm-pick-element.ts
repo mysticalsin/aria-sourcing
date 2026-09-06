@@ -1,34 +1,11 @@
 /**
  * Optional Aria LLM assist for picking an OpenBot snapshot element.
- * Uses the same cloud provider env keys as the rest of Aria (PROVIDER_ENV).
+ * Uses the same Aria PROVIDER_ENV keys as the OpenBot LLM proxy / hermes.
  */
 
-import {
-  CLOUD_ENDPOINT,
-  DEFAULT_MODEL,
-  PROVIDER_ENV,
-  type AiProviderSlug,
-} from "@/lib/ai/provider";
+import { CLOUD_ENDPOINT } from "@/lib/ai/provider";
 import type { OpenBotSnapshotElement } from "@/lib/openbot/agent-computer-client";
-
-const SLUG_ORDER: AiProviderSlug[] = [
-  "openai",
-  "anthropic",
-  "groq",
-  "mistral",
-  "xai",
-  "kimi",
-  "deepseek",
-  "nvidia",
-];
-
-function envProvider(): { slug: AiProviderSlug; key: string } | null {
-  for (const slug of SLUG_ORDER) {
-    const key = (process.env[PROVIDER_ENV[slug]] ?? "").trim();
-    if (key && CLOUD_ENDPOINT[slug]) return { slug, key };
-  }
-  return null;
-}
+import { openBotLlmModelFor, resolveAriaLlmProvider } from "@/lib/openbot/llm-auth";
 
 function compactElements(elements: OpenBotSnapshotElement[], limit = 80): string {
   return elements
@@ -48,11 +25,10 @@ export async function pickOpenBotElementWithAriaLlm(
   if (elements.length === 0) return undefined;
   if (process.env.OPENBOT_LLM_PICK === "0") return undefined;
 
-  const provider = envProvider();
+  const provider = resolveAriaLlmProvider();
   if (!provider || provider.slug === "anthropic") return undefined;
 
-  const model =
-    (process.env.OPENBOT_LLM_MODEL ?? "").trim() || DEFAULT_MODEL[provider.slug];
+  const model = openBotLlmModelFor(provider);
 
   try {
     const res = await fetch(CLOUD_ENDPOINT[provider.slug], {

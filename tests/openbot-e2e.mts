@@ -132,7 +132,9 @@ async function main() {
   };
 
   // ---- Fake upstream OpenAI for Aria LLM proxy ----
+  let lastUpstreamAuth = "";
   const openaiUpstream = http.createServer(async (req, res) => {
+    lastUpstreamAuth = String(req.headers.authorization ?? "");
     const body = await readBody(req);
     const parsed = JSON.parse(body || "{}") as {
       messages?: Array<{ role?: string; content?: string }>;
@@ -422,10 +424,12 @@ async function main() {
       computerRec.botId || computerRec.computerId,
     );
 
-    // 6) Aria LLM proxy (auth + completions via stubbed OpenAI)
-    process.env.OPENBOT_LLM_PROXY_TOKEN = "proxy-secret";
+    // 6) Aria LLM proxy — OpenBot must auth with the SAME Aria API key
     process.env.OPENAI_API_KEY = "sk-test-aria";
     process.env.OPENBOT_LLM_PROVIDER = "openai";
+    delete process.env.OPENBOT_LLM_PROXY_TOKEN;
+    delete process.env.ARIA_OPENBOT_LLM_TOKEN;
+    lastUpstreamAuth = "";
 
     const unauthorized = await chatRoute.POST(
       new NextRequest("http://localhost/api/openbot/v1/chat/completions", {
@@ -446,7 +450,7 @@ async function main() {
       new NextRequest("http://localhost/api/openbot/v1/chat/completions", {
         method: "POST",
         headers: {
-          authorization: "Bearer proxy-secret",
+          authorization: "Bearer sk-test-aria",
           "content-type": "application/json",
         },
         body: JSON.stringify({
@@ -462,20 +466,48 @@ async function main() {
       choices?: Array<{ message?: { content?: string } }>;
       error?: { message?: string };
     };
-    ok("llm proxy returns 200", completion.status === 200, completionJson.error?.message ?? "");
+    ok("llm proxy accepts Aria OPENAI_API_KEY", completion.status === 200, completionJson.error?.message ?? "");
     ok(
       "llm proxy returns assistant text",
       Boolean(completionJson.choices?.[0]?.message?.content),
       JSON.stringify(completionJson).slice(0, 200),
     );
+    ok(
+      "upstream spends the same Aria API key",
+      lastUpstreamAuth === "Bearer sk-test-aria",
+      lastUpstreamAuth,
+    );
 
     const models = await modelsRoute.GET(
       new NextRequest("http://localhost/api/openbot/v1/models", {
-        headers: { authorization: "Bearer proxy-secret" },
+        headers: { authorization: "Bearer sk-test-aria" },
       }),
     );
     const modelsJson = (await models.json()) as { data?: Array<{ id?: string }> };
     ok("models lists aria model", models.status === 200 && (modelsJson.data?.length ?? 0) > 0);
+
+    // Optional proxy token still works, but upstream remains Aria's key
+    process.env.OPENBOT_LLM_PROXY_TOKEN = "proxy-secret";
+    lastUpstreamAuth = "";
+    const viaProxy = await chatRoute.POST(
+      new NextRequest("http://localhost/api/openbot/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer proxy-secret",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "ping via proxy token" }],
+        }),
+      }),
+    );
+    ok("optional proxy token still authorized", viaProxy.status === 200);
+    ok(
+      "proxy-token path still spends Aria OPENAI_API_KEY",
+      lastUpstreamAuth === "Bearer sk-test-aria",
+      lastUpstreamAuth,
+    );
 
     // Missing computer token fails closed when remote supervisor is bound
     bindComputerSupervisorEndpoint({
