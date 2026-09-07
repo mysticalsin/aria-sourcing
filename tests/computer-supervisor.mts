@@ -27,7 +27,7 @@ try {
   await supervisor.start(computer.computerId);
   ok("start flips to ready", supervisor.get(computer.computerId)?.status === "ready");
 
-  supervisor.takeControl(computer.computerId);
+  await supervisor.takeControl(computer.computerId);
   ok("takeControl sets human", supervisor.get(computer.computerId)?.control === "human");
 
   const refused = await supervisor.enqueueJob({
@@ -37,7 +37,7 @@ try {
   });
   ok("bot job refused while human has control", refused.status === "refused");
 
-  supervisor.releaseControl(computer.computerId);
+  await supervisor.releaseControl(computer.computerId);
   ok("releaseControl returns bot", supervisor.get(computer.computerId)?.control === "bot");
 
   const sent = await supervisor.enqueueJob({
@@ -47,6 +47,15 @@ try {
   });
   ok("bot job succeeds after release with mock send", sent.status === "succeeded");
   ok("audits recorded", supervisor.recentAudits(computer.computerId).length >= 3);
+
+  // Stable DB computer_id rebinds in-process seat mapping
+  const rebound = supervisor.ensureComputer({
+    workspaceId: "ws",
+    seatId: "seat-1",
+    computerId: "comp_stable_db_id",
+  });
+  ok("ensureComputer rebinds to stable computerId", rebound.computerId === "comp_stable_db_id");
+  ok("botId follows stable computerId", rebound.botId?.includes("comp") === true);
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
   else process.env.COMPUTER_SUPERVISOR_MOCK_SEND = previousMock;

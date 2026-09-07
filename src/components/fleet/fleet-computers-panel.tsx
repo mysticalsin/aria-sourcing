@@ -14,6 +14,7 @@ export type FleetComputerRow = {
   lastAudit: string | null;
   lastError: string | null;
   updatedAt: string;
+  remoteUrl?: string | null;
 };
 
 /**
@@ -26,12 +27,14 @@ export function FleetComputersPanel({
   onTakeControl,
   onRelease,
   onObserve,
+  onStart,
 }: {
   computers: FleetComputerRow[];
   onRefresh: () => void;
   onTakeControl: (computerId: string) => void;
   onRelease: (computerId: string) => void;
   onObserve: (computerId: string) => void;
+  onStart?: (computerId: string) => void;
 }) {
   const [observingId, setObservingId] = React.useState<string | null>(null);
 
@@ -101,6 +104,12 @@ export function FleetComputersPanel({
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {(c.status === "stopped" || c.status === "error") && onStart ? (
+                      <Button type="button" variant="secondary" size="sm" onClick={() => onStart(c.computerId)}>
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                        Start
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="secondary"
@@ -133,9 +142,27 @@ export function FleetComputersPanel({
                     className="mt-3 rounded-xl border border-dashed border-line bg-ink/[0.03] px-4 py-6 text-center text-xs text-muted"
                     role="status"
                   >
-                    Live stream stays closed by default. Connect COMPUTER_SUPERVISOR_URL to attach a
-                    real viewport for {c.computerId}. Activity here is ephemeral — durable record is
-                    audit + contact lease.
+                    {c.remoteUrl ? (
+                      <p>
+                        OpenBot computer is live.{" "}
+                        <a
+                          className="font-medium text-electric underline-offset-2 hover:underline"
+                          href={c.remoteUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open sandbox viewport
+                        </a>{" "}
+                        and complete LinkedIn login / 2FA there. While you hold Take control, Automatic
+                        sends pause.
+                      </p>
+                    ) : (
+                      <p>
+                        Live stream stays closed until the computer is started. Click Start or Take
+                        control (binds Settings → LinkedIn OpenBot supervisor). Activity here is
+                        ephemeral — durable record is audit + contact lease.
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </li>

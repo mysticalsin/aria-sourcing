@@ -57,8 +57,15 @@ ok(
 
 ok("browser computer dark without supervisor", browserComputerConfigured(emptyCreds) === false);
 ok(
-  "browser computer ready with supervisor url",
-  browserComputerConfigured({ computerSupervisorUrl: "https://computers.example" }) === true,
+  "browser computer dark with url but no token",
+  browserComputerConfigured({ computerSupervisorUrl: "https://computers.example" }) === false,
+);
+ok(
+  "browser computer ready with url + token",
+  browserComputerConfigured({
+    computerSupervisorUrl: "https://computers.example",
+    computerSupervisorToken: "tok",
+  }) === true,
 );
 ok(
   "browser computer ready with mock flag",

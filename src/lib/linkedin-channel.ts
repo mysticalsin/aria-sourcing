@@ -18,6 +18,8 @@ export interface LinkedInDeliveryRequest {
   attemptId: string;
   /** Seat id — required for browser-computer path (1 seat = 1 computer). */
   seatId?: string;
+  /** Stable OpenBot computer id from agent_seats.computer_id (1 seat = 1 bot). */
+  computerId?: string;
   /** Aria vault / Settings-resolved credentials (env fallback inside helpers). */
   credentials?: Partial<LinkedInResolvedCredentials>;
 }
@@ -176,11 +178,22 @@ const browserComputerAdapter: LinkedInAdapter = {
         undefined,
       mockSend: req.credentials?.computerSupervisorMockSend,
     };
+    if (!browserComputerConfigured(req.credentials)) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail:
+          "OpenBot supervisor URL + token are required in Settings → LinkedIn (or COMPUTER_SUPERVISOR_URL / COMPUTER_SUPERVISOR_TOKEN).",
+      };
+    }
+
     bindComputerSupervisorEndpoint(bind);
     try {
       const computer = defaultComputerSupervisor.ensureComputer({
         workspaceId: req.workspaceId,
         seatId: req.seatId,
+        computerId: req.computerId,
       });
       if (computer.control === "human") {
         return {
@@ -233,9 +246,12 @@ const browserComputerAdapter: LinkedInAdapter = {
         };
       }
 
-      const supervisorReady = browserComputerConfigured(req.credentials);
-      // Mock / queued-local path: only treat as accepted when explicitly mocked or remote ACK.
-      if (supervisorReady) {
+      // Mock path is an explicit ops opt-in; remote OpenBot ACK is required otherwise.
+      const mock =
+        req.credentials?.computerSupervisorMockSend === true ||
+        process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1";
+      const remoteAck = Boolean(job.detail && !job.detail.includes("queued on local"));
+      if (mock || remoteAck) {
         return {
           status: "sent",
           deliveryState: "accepted",
@@ -250,7 +266,7 @@ const browserComputerAdapter: LinkedInAdapter = {
         deliveryState: "not-sent",
         provider: "LinkedIn Browser Computer",
         detail:
-          "Computer supervisor is not configured in Aria Settings (or COMPUTER_SUPERVISOR_URL). Automatic browser send refused — open Settings → LinkedIn.",
+          "OpenBot remote computer did not acknowledge send. Check COMPUTER_SUPERVISOR_URL / token and Fleet → Computers → Open view.",
       };
     } catch (err) {
       return {

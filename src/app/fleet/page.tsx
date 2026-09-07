@@ -619,11 +619,10 @@ export default function FleetPage() {
           <FleetComputersPanel
             computers={computers}
             onRefresh={() => void refreshComputers()}
+            onStart={(id) => void computerAction("start", id)}
             onTakeControl={(id) => void computerAction("take_control", id)}
             onRelease={(id) => void computerAction("release_control", id)}
-            onObserve={() => {
-              /* View opens inside the panel only — never auto-pop a LinkedIn window. */
-            }}
+            onObserve={(id) => void computerAction("start", id)}
           />
           {computersLoading ? null : null}
           <SuppressionPanel />

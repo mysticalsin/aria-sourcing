@@ -402,14 +402,14 @@ async function main() {
     ok("remote path clicked send", state.clicks.includes("e11"));
 
     // Human mutex still refuses
-    supervisorSvc.takeControl(computerRec.computerId);
+    await supervisorSvc.takeControl(computerRec.computerId);
     const refused = await supervisorSvc.enqueueJob({
       computerId: computerRec.computerId,
       kind: "linkedin_send",
       payload: { profileUrl: "https://www.linkedin.com/in/x", body: "nope" },
     });
     ok("human mutex refuses remote job", refused.status === "refused");
-    supervisorSvc.releaseControl(computerRec.computerId);
+    await supervisorSvc.releaseControl(computerRec.computerId);
 
     // warmup_nav
     const warmup = await supervisorSvc.enqueueJob({

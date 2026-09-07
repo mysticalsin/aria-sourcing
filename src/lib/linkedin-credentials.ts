@@ -211,7 +211,8 @@ export function linkedInReadinessFromCredentials(
     assistedManual: true,
     vendorApiConfigured: Boolean(creds.vendorApiUrl && creds.vendorApiKey),
     browserComputerConfigured: Boolean(
-      creds.computerSupervisorUrl || creds.computerSupervisorMockSend,
+      creds.computerSupervisorMockSend ||
+        (creds.computerSupervisorUrl && creds.computerSupervisorToken),
     ),
     inboundWebhookSecret: Boolean(
       trim(env.LINKEDIN_INBOUND_WEBHOOK_SECRET ?? env.EMAIL_INBOUND_WEBHOOK_SECRET),
@@ -227,7 +228,12 @@ export function vendorApiConfigured(creds?: Partial<LinkedInResolvedCredentials>
 
 export function browserComputerConfigured(creds?: Partial<LinkedInResolvedCredentials>): boolean {
   const url = firstNonEmpty(creds?.computerSupervisorUrl, process.env.COMPUTER_SUPERVISOR_URL);
+  const token = firstNonEmpty(
+    creds?.computerSupervisorToken,
+    process.env.COMPUTER_SUPERVISOR_TOKEN,
+  );
   const mock =
     creds?.computerSupervisorMockSend === true || process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1";
-  return Boolean(url || mock);
+  // Live OpenBot needs both supervisor URL and bearer token. Mock is explicit opt-in only.
+  return Boolean(mock || (url && token));
 }

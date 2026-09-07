@@ -326,7 +326,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       if (msg.channel === "LinkedIn") {
         const { data: seat, error: seatErr } = await supabase
           .from("agent_seats")
-          .select("id, provider, status, mode")
+          .select("id, provider, status, mode, computer_id")
           .eq("id", msg.seat_id ?? "")
           .eq("workspace_id", msg.workspace_id)
           .maybeSingle();
@@ -388,6 +388,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           body: msg.body,
           attemptId: deliveryAttemptId,
           seatId: msg.seat_id ?? undefined,
+          computerId: seat.computer_id ?? undefined,
           credentials: linkedInCreds,
         });
         const outcomeKind =

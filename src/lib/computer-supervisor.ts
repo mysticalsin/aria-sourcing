@@ -157,10 +157,24 @@ export class ComputerSupervisor {
     seatId: string;
     computerId?: string;
   }): ComputerRecord {
+    if (opts.computerId) {
+      const byId = this.computers.get(opts.computerId);
+      if (byId) return byId;
+    }
     const existing = [...this.computers.values()].find(
       (c) => c.workspaceId === opts.workspaceId && c.seatId === opts.seatId,
     );
-    if (existing) return existing;
+    if (existing) {
+      // Prefer stable DB computer_id so OpenBot bot ids match across processes.
+      if (opts.computerId && existing.computerId !== opts.computerId) {
+        this.computers.delete(existing.computerId);
+        existing.computerId = opts.computerId;
+        existing.botId = toOpenBotBotId(opts.computerId);
+        this.computers.set(opts.computerId, existing);
+        this.audit(opts.computerId, "ensure", `Rebound seat ${opts.seatId} to stable computer id`);
+      }
+      return existing;
+    }
     const computerId = opts.computerId ?? makeId("comp");
     const rec: ComputerRecord = {
       computerId,
@@ -263,27 +277,33 @@ export class ComputerSupervisor {
   }
 
   /** Human opens observe/takeover — bot actions refuse until release. */
-  takeControl(computerId: string): ComputerRecord {
-    const rec = this.require(computerId);
+  async takeControl(computerId: string): Promise<ComputerRecord> {
+    let rec = this.require(computerId);
+    if (rec.status === "stopped" || rec.status === "error" || !rec.remoteUrl) {
+      rec = await this.start(computerId);
+      if (rec.status === "error") return rec;
+    }
     rec.control = "human";
     rec.updatedAt = isoNow();
     rec.lastAudit = "human_takeover";
     this.audit(computerId, "takeover", "Operator took control — bot mutex held", "human");
     const agent = agentCfg(rec);
     if (agent) {
-      void openBotTakeControl(agent).catch((err) => {
+      try {
+        await openBotTakeControl(agent);
+      } catch (err) {
         this.audit(
           computerId,
           "takeover_remote_failed",
           err instanceof Error ? err.message : "remote take failed",
           "system",
         );
-      });
+      }
     }
     return rec;
   }
 
-  releaseControl(computerId: string): ComputerRecord {
+  async releaseControl(computerId: string): Promise<ComputerRecord> {
     const rec = this.require(computerId);
     rec.control = "bot";
     rec.updatedAt = isoNow();
@@ -291,14 +311,16 @@ export class ComputerSupervisor {
     this.audit(computerId, "release", "Operator released control — bot may act", "human");
     const agent = agentCfg(rec);
     if (agent) {
-      void openBotReleaseControl(agent).catch((err) => {
+      try {
+        await openBotReleaseControl(agent);
+      } catch (err) {
         this.audit(
           computerId,
           "release_remote_failed",
           err instanceof Error ? err.message : "remote release failed",
           "system",
         );
-      });
+      }
     }
     return rec;
   }
@@ -477,7 +499,7 @@ export class ComputerSupervisor {
       }
     }
 
-    // Local MVP: durable enqueue signal (adapter records outcome).
+    // Local path: only mockSend may succeed. A configured URL without token must fail closed.
     if (job.kind === "login_assist") {
       this.requestHelp(job.computerId, "Login/2FA required — open Observe / Take control");
       job.status = "failed";
@@ -487,10 +509,30 @@ export class ComputerSupervisor {
       return job;
     }
 
+    if (supervisorUrl() && !openBotSupervisorCfg()) {
+      job.status = "failed";
+      job.detail =
+        "COMPUTER_SUPERVISOR_URL is set but supervisor token is missing — refuse local fake send";
+      job.finishedAt = isoNow();
+      rec.status = "error";
+      rec.lastError = job.detail;
+      this.jobs.set(job.jobId, job);
+      return job;
+    }
+
+    if (!supervisorMockSend()) {
+      job.status = "failed";
+      job.detail =
+        "OpenBot supervisor is not configured. Set COMPUTER_SUPERVISOR_URL + token (or COMPUTER_SUPERVISOR_MOCK_SEND=1 for tests).";
+      job.finishedAt = isoNow();
+      rec.status = "error";
+      rec.lastError = job.detail;
+      this.jobs.set(job.jobId, job);
+      return job;
+    }
+
     job.status = "succeeded";
-    job.detail = supervisorMockSend()
-      ? "mock browser-computer send accepted"
-      : "queued on local computer supervisor (set COMPUTER_SUPERVISOR_URL for live OpenBot Chromium)";
+    job.detail = "mock browser-computer send accepted";
     job.finishedAt = isoNow();
     rec.status = "ready";
     rec.lastAudit = job.detail;
