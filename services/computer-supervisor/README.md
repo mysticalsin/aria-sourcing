@@ -45,17 +45,17 @@ OpenBot LangGraph/Mastra bots must use **Aria’s own provider API key** — not
 ```bash
 # On the OpenBot agent / compose service:
 OPENAI_BASE_URL=https://<your-aria-host>/api/openbot/v1
-OPENAI_API_KEY=<same value as Aria OPENAI_API_KEY>
-# If Aria’s default cloud provider is Anthropic / Groq / etc., use that same key
-# (Aria matches Bearer against PROVIDER_ENV: OPENAI_API_KEY, ANTHROPIC_API_KEY, …).
+# Use the SAME secret Aria has in PROVIDER_ENV (Fly today: KIMI_API_KEY).
+OPENAI_API_KEY=<same value as Aria KIMI_API_KEY or OPENAI_API_KEY>
 ```
 
 Aria side (Fly secrets / env — same keys the rest of Aria uses):
 
 ```bash
-OPENAI_API_KEY=sk-...                # required (or another PROVIDER_ENV key Aria already uses)
-OPENBOT_LLM_PROVIDER=openai          # optional; else first configured PROVIDER_ENV key
-OPENBOT_LLM_MODEL=gpt-4o-mini        # optional override
+KIMI_API_KEY=sk-kimi-...             # production Aria default (or OPENAI_API_KEY / etc.)
+KIMI_BASE_URL=https://api.kimi.com/coding/v1
+OPENBOT_LLM_PROVIDER=kimi            # optional; else first configured PROVIDER_ENV key
+OPENBOT_LLM_MODEL=moonshot-v1-8k     # optional override
 # Optional alternate service auth (still spends Aria’s PROVIDER_ENV key upstream):
 # OPENBOT_LLM_PROXY_TOKEN=...
 ```
@@ -64,6 +64,8 @@ Routes:
 
 - `POST /api/openbot/v1/chat/completions`
 - `GET  /api/openbot/v1/models`
+
+**E2E gates:** `tests/openbot-e2e.mts`, `tests/openbot-llm-auth.mts`, and (when `/tmp/aria-e2e/kimi.key` is present) `tests/openbot-live-same-key.mts` — OpenBot Bearer must equal Aria’s key and upstream `Authorization` must be that same key.
 
 ## Connect OpenBot to Aria
 

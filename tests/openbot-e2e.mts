@@ -509,6 +509,37 @@ async function main() {
       lastUpstreamAuth,
     );
 
+    // 7) Ambiguous Message control → LLM assist with same Aria key
+    state.stage = "profile";
+    state.typed = [];
+    state.clicks = [];
+    // Override snapshot elements via a one-off profile stage hack: reuse composer
+    // path after LLM picks e1. Patch computer handler indirectly by renaming:
+    // We navigate + call linkedin send against a custom agent cfg while the
+    // mock still returns standard profile Elements with exact "Message".
+    // Instead, call pick + send through a temporary element list via linkedin-send
+    // by briefly swapping stage labels — use openBotLinkedInSend after forcing
+    // ambiguous names through a dedicated micro-server is covered in
+    // openbot-live-same-key.mts. Here assert LLM pick spends same key:
+    lastUpstreamAuth = "";
+    const { pickOpenBotElementWithAriaLlm } = await import(
+      "../src/lib/openbot/llm-pick-element"
+    );
+    const picked = await pickOpenBotElementWithAriaLlm(
+      [
+        { ref: "e9", role: "button", name: "Connect", disabled: false },
+        { ref: "e1", role: "button", name: "Send a note", disabled: false },
+        { ref: "e2", role: "button", name: "More", disabled: false },
+      ],
+      "Open the LinkedIn message composer",
+    );
+    ok("LLM element pick returns a ref", Boolean(picked?.ref), picked?.ref ?? "");
+    ok(
+      "LLM element pick spends Aria OPENAI_API_KEY",
+      lastUpstreamAuth === "Bearer sk-test-aria",
+      lastUpstreamAuth,
+    );
+
     // Missing computer token fails closed when remote supervisor is bound
     bindComputerSupervisorEndpoint({
       url: supervisorUrl,
