@@ -9,6 +9,11 @@
  * Aria authenticates the Bearer token against its configured PROVIDER_ENV
  * keys and spends that same key upstream. An optional OPENBOT_LLM_PROXY_TOKEN
  * remains as an alternate service auth that still spends Aria's keys.
+ *
+ * Cloudflare Workers AI (`CLOUDFLARE_WORKERS_AI_SECRET` +
+ * `CLOUDFLARE_WORKERS_AI_URL`) is also same-key eligible when configured —
+ * OpenBot presents that secret as OPENAI_API_KEY and Aria spends it on the
+ * intake-llm worker.
  */
 
 import {
@@ -30,10 +35,18 @@ export const OPENBOT_LLM_SLUG_ORDER: AiProviderSlug[] = [
   "nvidia",
 ];
 
+export const OPENBOT_CF_WORKERS_AI_SLUG = "cloudflare_workers_ai" as const;
+
+export type OpenBotLlmSlug = AiProviderSlug | typeof OPENBOT_CF_WORKERS_AI_SLUG;
+
 export type OpenBotLlmProvider = {
-  slug: AiProviderSlug;
+  slug: OpenBotLlmSlug;
   key: string;
+  /** Upstream URL for non-OpenAI-shape providers (e.g. CF Workers AI). */
+  endpoint?: string;
 };
+
+const CF_DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 function secretsEqual(a: string, b: string): boolean {
   if (!a || !b) return false;
@@ -51,6 +64,15 @@ function optionalProxyToken(env: NodeJS.ProcessEnv = process.env): string {
   ).trim();
 }
 
+function cloudflareWorkersAiProvider(
+  env: NodeJS.ProcessEnv = process.env,
+): OpenBotLlmProvider | null {
+  const key = (env.CLOUDFLARE_WORKERS_AI_SECRET ?? "").trim();
+  const endpoint = (env.CLOUDFLARE_WORKERS_AI_URL ?? "").trim().replace(/\/+$/, "");
+  if (!key || !endpoint) return null;
+  return { slug: OPENBOT_CF_WORKERS_AI_SLUG, key, endpoint };
+}
+
 /** Every Aria cloud LLM key present in env (same PROVIDER_ENV as hermes/chat). */
 export function listAriaLlmProviders(
   env: NodeJS.ProcessEnv = process.env,
@@ -60,6 +82,8 @@ export function listAriaLlmProviders(
     const key = (env[PROVIDER_ENV[slug]] ?? "").trim();
     if (key && CLOUD_ENDPOINT[slug]) out.push({ slug, key });
   }
+  const cf = cloudflareWorkersAiProvider(env);
+  if (cf) out.push(cf);
   return out;
 }
 
@@ -70,10 +94,10 @@ export function listAriaLlmProviders(
 export function resolveAriaLlmProvider(
   env: NodeJS.ProcessEnv = process.env,
 ): OpenBotLlmProvider | null {
-  const preferred = (env.OPENBOT_LLM_PROVIDER ?? "").trim().toLowerCase() as AiProviderSlug;
+  const preferred = (env.OPENBOT_LLM_PROVIDER ?? "").trim().toLowerCase();
   const configured = listAriaLlmProviders(env);
   if (configured.length === 0) return null;
-  if (preferred && OPENBOT_LLM_SLUG_ORDER.includes(preferred)) {
+  if (preferred) {
     const hit = configured.find((p) => p.slug === preferred);
     if (hit) return hit;
   }
@@ -84,7 +108,16 @@ export function openBotLlmModelFor(
   provider: OpenBotLlmProvider,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  return (env.OPENBOT_LLM_MODEL ?? "").trim() || DEFAULT_MODEL[provider.slug];
+  const override = (env.OPENBOT_LLM_MODEL ?? "").trim();
+  if (override) return override;
+  if (provider.slug === OPENBOT_CF_WORKERS_AI_SLUG) return CF_DEFAULT_MODEL;
+  return DEFAULT_MODEL[provider.slug];
+}
+
+export function isCloudflareWorkersAiProvider(
+  provider: OpenBotLlmProvider,
+): boolean {
+  return provider.slug === OPENBOT_CF_WORKERS_AI_SLUG;
 }
 
 export type OpenBotLlmAuthFailureReason = "missing_aria_key" | "unauthorized";

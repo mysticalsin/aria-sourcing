@@ -60,5 +60,24 @@ ok(
 const noKeys = authorizeOpenBotLlm("Bearer anything", {} as NodeJS.ProcessEnv);
 ok("missing Aria key → not ready", !noKeys.ok && noKeys.reason === "missing_aria_key");
 
+const cfEnv = {
+  CLOUDFLARE_WORKERS_AI_SECRET: "cf-secret-test",
+  CLOUDFLARE_WORKERS_AI_URL: "https://example.workers.dev",
+  OPENBOT_LLM_PROVIDER: "cloudflare_workers_ai",
+} as NodeJS.ProcessEnv;
+ok(
+  "lists Cloudflare Workers AI when secret+url set",
+  listAriaLlmProviders(cfEnv).some((p) => p.slug === "cloudflare_workers_ai"),
+);
+ok(
+  "prefers cloudflare_workers_ai when OPENBOT_LLM_PROVIDER set",
+  resolveAriaLlmProvider(cfEnv)?.slug === "cloudflare_workers_ai",
+);
+const withCf = authorizeOpenBotLlm("Bearer cf-secret-test", cfEnv);
+ok(
+  "accepts CLOUDFLARE_WORKERS_AI_SECRET as same-key auth",
+  withCf.ok && withCf.provider.slug === "cloudflare_workers_ai",
+);
+
 console.log(`RESULT openbot-llm-auth: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

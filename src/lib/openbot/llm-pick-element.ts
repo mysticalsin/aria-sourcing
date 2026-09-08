@@ -5,7 +5,11 @@
 
 import { CLOUD_ENDPOINT } from "@/lib/ai/provider";
 import type { OpenBotSnapshotElement } from "@/lib/openbot/agent-computer-client";
-import { openBotLlmModelFor, resolveAriaLlmProvider } from "@/lib/openbot/llm-auth";
+import {
+  isCloudflareWorkersAiProvider,
+  openBotLlmModelFor,
+  resolveAriaLlmProvider,
+} from "@/lib/openbot/llm-auth";
 
 function compactElements(elements: OpenBotSnapshotElement[], limit = 80): string {
   return elements
@@ -16,7 +20,7 @@ function compactElements(elements: OpenBotSnapshotElement[], limit = 80): string
 
 /**
  * Ask Aria's configured cloud LLM which snapshot ref matches `goal`.
- * OpenAI-compatible providers only (JSON one-liner).
+ * Supports OpenAI-compatible providers and Cloudflare Workers AI.
  */
 export async function pickOpenBotElementWithAriaLlm(
   elements: OpenBotSnapshotElement[],
@@ -29,39 +33,57 @@ export async function pickOpenBotElementWithAriaLlm(
   if (!provider || provider.slug === "anthropic") return undefined;
 
   const model = openBotLlmModelFor(provider);
+  const system =
+    "You pick UI elements for LinkedIn browser automation. " +
+    'Reply with ONLY JSON: {"ref":"..."} from the list, or {"ref":null}.';
+  const user = `Goal: ${goal}\n\nElements:\n${compactElements(elements)}`;
 
   try {
-    const res = await fetch(CLOUD_ENDPOINT[provider.slug], {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${provider.key}`,
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 64,
-        temperature: 0,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You pick UI elements for LinkedIn browser automation. " +
-              'Reply with ONLY JSON: {"ref":"..."} from the list, or {"ref":null}.',
-          },
-          {
-            role: "user",
-            content: `Goal: ${goal}\n\nElements:\n${compactElements(elements)}`,
-          },
-        ],
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return undefined;
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const text = json.choices?.[0]?.message?.content?.trim() ?? "";
+    let text = "";
+    if (isCloudflareWorkersAiProvider(provider)) {
+      const endpoint = (provider.endpoint ?? "").trim();
+      if (!endpoint) return undefined;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${provider.key}`,
+        },
+        body: JSON.stringify({ prompt: `${system}\n\n${user}` }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) return undefined;
+      const json = (await res.json()) as { ok?: boolean; text?: string };
+      if (json.ok === false) return undefined;
+      text = (json.text ?? "").trim();
+    } else {
+      const endpoint = CLOUD_ENDPOINT[provider.slug as keyof typeof CLOUD_ENDPOINT];
+      if (!endpoint) return undefined;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${provider.key}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 64,
+          temperature: 0,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) return undefined;
+      const json = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      text = json.choices?.[0]?.message?.content?.trim() ?? "";
+    }
+
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return undefined;
     const parsed = JSON.parse(match[0]) as { ref?: string | null };

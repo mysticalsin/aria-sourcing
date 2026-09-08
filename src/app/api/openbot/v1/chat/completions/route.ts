@@ -9,6 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { CLOUD_ENDPOINT } from "@/lib/ai/provider";
 import {
   authorizeOpenBotLlm,
+  isCloudflareWorkersAiProvider,
   openBotLlmModelFor,
   openBotLlmReadyMessage,
   resolveAriaLlmProvider,
@@ -121,6 +122,52 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    if (isCloudflareWorkersAiProvider(provider)) {
+      const endpoint = (provider.endpoint ?? "").trim();
+      if (!endpoint) {
+        return NextResponse.json(
+          { error: { message: "CLOUDFLARE_WORKERS_AI_URL is not configured." } },
+          { status: 503 },
+        );
+      }
+      const prompt = [
+        ...(systemParts.length ? [`System:\n${systemParts.join("\n\n")}`] : []),
+        ...chatMessages.map((m) => `${m.role}:\n${m.content}`),
+      ].join("\n\n");
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${provider.key}`,
+        },
+        body: JSON.stringify({ prompt }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        text?: string;
+        model?: string;
+        reason?: string;
+        error?: { message?: string };
+      };
+      if (!res.ok || json.ok === false) {
+        return NextResponse.json(
+          {
+            error: {
+              message:
+                json.error?.message ||
+                json.reason ||
+                `Upstream ${res.status}`,
+            },
+          },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json(
+        openAiResponse(json.model || model, json.text ?? ""),
+      );
+    }
+
     if (provider.slug === "anthropic") {
       const res = await fetch(CLOUD_ENDPOINT.anthropic, {
         method: "POST",
@@ -160,7 +207,14 @@ export async function POST(req: NextRequest) {
         : []),
       ...chatMessages,
     ];
-    const res = await fetch(CLOUD_ENDPOINT[provider.slug], {
+    const endpoint = CLOUD_ENDPOINT[provider.slug as keyof typeof CLOUD_ENDPOINT];
+    if (!endpoint) {
+      return NextResponse.json(
+        { error: { message: `No upstream endpoint for provider ${provider.slug}` } },
+        { status: 503 },
+      );
+    }
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
