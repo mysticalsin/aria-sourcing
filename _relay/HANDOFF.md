@@ -11,7 +11,7 @@ status: llm-wiki-java-sourcing-green
 ## Current state
 
 - **Branch:** `cursor/llm-wiki-brain-java-sourcing-b91d`
-- **PR:** open via https://github.com/mysticalsin/aria-sourcing/compare/integration/sourcing-enrichment-on-main...cursor/llm-wiki-brain-java-sourcing-b91d?expand=1 (`gh pr create` blocked for this agent; ManagePullRequest unavailable)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/75
 - **Commit:** `c110eb0`
 - **Base:** `integration/sourcing-enrichment-on-main` (same as PR #74)
 - **Feature:** Durable LLM wiki brain on disk (`ARIA_WIKI_DIR` / `data/llm-wiki`) — not Supabase; Senior Java Developer sourcing demo
