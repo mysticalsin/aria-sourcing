@@ -22,6 +22,11 @@ import { FleetSummary } from "@/components/fleet/fleet-summary";
 import { FleetRosterStack } from "@/components/fleet/fleet-roster-stack";
 import { SuppressionPanel } from "@/components/fleet/suppression-panel";
 import { FleetComputersPanel, type FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
+import {
+  FleetComputerOpsBoard,
+  type FleetAuditEvent,
+  type FleetOpsSummary,
+} from "@/components/fleet/fleet-computer-ops-board";
 import { AllocationResultView } from "@/components/fleet/allocation-result";
 import {
   useHydrated,
@@ -155,6 +160,9 @@ export default function FleetPage() {
   const [computers, setComputers] = React.useState<FleetComputerRow[]>([]);
   const [computersLoading, setComputersLoading] = React.useState(false);
   const [observingComputerId, setObservingComputerId] = React.useState<string | null>(null);
+  const [opsSummary, setOpsSummary] = React.useState<FleetOpsSummary | null>(null);
+  const [fleetAudits, setFleetAudits] = React.useState<FleetAuditEvent[]>([]);
+  const [auditFocusId, setAuditFocusId] = React.useState<string | null>(null);
 
   const refreshComputers = React.useCallback(async () => {
     setComputersLoading(true);
@@ -175,14 +183,26 @@ export default function FleetPage() {
       }
       const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
       if (!res.ok) return;
-      const data = (await res.json()) as { computers?: FleetComputerRow[] };
+      const data = (await res.json()) as {
+        computers?: FleetComputerRow[];
+        summary?: FleetOpsSummary;
+        recentAudits?: FleetAuditEvent[];
+      };
       const rows = data.computers ?? [];
+      setOpsSummary(data.summary ?? null);
+      setFleetAudits(data.recentAudits ?? []);
       // In demo (no Supabase seats on the API), merge ensured local computers with seat names.
       if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {
         // ensure POSTs should have populated in-process map — re-GET after ensures
         const again = await fetch("/api/fleet/computers", { credentials: "same-origin" });
         if (again.ok) {
-          const againData = (await again.json()) as { computers?: FleetComputerRow[] };
+          const againData = (await again.json()) as {
+            computers?: FleetComputerRow[];
+            summary?: FleetOpsSummary;
+            recentAudits?: FleetAuditEvent[];
+          };
+          setOpsSummary(againData.summary ?? null);
+          setFleetAudits(againData.recentAudits ?? []);
           setComputers(
             (againData.computers ?? []).map((c) => {
               const seat = browserSeats.find(
@@ -665,14 +685,25 @@ export default function FleetPage() {
           </section>
           </FleetRosterStack>
 
-          {/* 5 — Suppression */}
+          {/* 5 — Computer ops / audit */}
+          <FleetComputerOpsBoard
+            computers={computers}
+            summary={opsSummary}
+            recentAudits={fleetAudits}
+            selectedComputerId={auditFocusId}
+            onSelectComputer={setAuditFocusId}
+            onRefresh={() => void refreshComputers()}
+          />
           <FleetComputersPanel
             computers={computers}
             observingId={observingComputerId}
             onObservingChange={setObservingComputerId}
             onRefresh={() => void refreshComputers()}
             onStart={(id) => void computerAction("start", id)}
-            onTakeControl={(id) => void computerAction("take_control", id)}
+            onTakeControl={(id) => {
+              setAuditFocusId(id);
+              void computerAction("take_control", id);
+            }}
             onRelease={(id) => void computerAction("release_control", id)}
             onObserve={(id) => void computerAction("start", id)}
           />

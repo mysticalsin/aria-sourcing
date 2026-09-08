@@ -5,6 +5,7 @@ import {
   bindComputerSupervisorEndpoint,
   defaultComputerSupervisor,
 } from "@/lib/computer-supervisor";
+import { queryComputerAuditsDurable, summarizeFleetComputers } from "@/lib/computer-audit";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { validateBody } from "@/lib/api/validate";
@@ -36,16 +37,46 @@ async function bindWorkspaceSupervisor(workspaceId: string | null) {
   return creds;
 }
 
+function enrichComputer(
+  rec: ReturnType<typeof defaultComputerSupervisor.ensureComputer>,
+  extras?: { seatName?: string; seatStatus?: string },
+) {
+  return {
+    ...rec,
+    seatName: extras?.seatName,
+    seatStatus: extras?.seatStatus,
+    lastAudit: rec.lastAudit,
+    remoteUrl: rec.remoteUrl ?? null,
+    viewUrl: rec.viewUrl ?? rec.remoteUrl ?? null,
+    recentAudits: defaultComputerSupervisor.recentAudits(rec.computerId, 8),
+  };
+}
+
 /**
- * GET — list computers for the workspace (observe/takeover UI; closed by default).
- * POST — start | stop | reset | take_control | release_control | request_help
+ * GET — list computers + ops summary + recent fleet audits.
+ * POST — ensure | start | stop | reset | take_control | release_control | request_help
  */
 export async function GET() {
   const supabase = await getServerSupabase();
   if (!supabase) {
     try {
       await bindWorkspaceSupervisor(null);
-      return NextResponse.json({ computers: defaultComputerSupervisor.list("__local__") });
+      const computers = defaultComputerSupervisor
+        .list("__local__")
+        .map((rec) => enrichComputer(rec));
+      const durable = await queryComputerAuditsDurable({
+        workspaceId: "__local__",
+        limit: 80,
+      });
+      const recentAudits =
+        durable.length > 0
+          ? durable
+          : defaultComputerSupervisor.recentFleetAudits("__local__", 40);
+      return NextResponse.json({
+        computers,
+        summary: summarizeFleetComputers(computers),
+        recentAudits,
+      });
     } finally {
       bindComputerSupervisorEndpoint(null);
     }
@@ -68,17 +99,23 @@ export async function GET() {
         seatId: seat.id,
         computerId: seat.computer_id ?? undefined,
       });
-      return {
-        ...rec,
-        seatName: seat.name,
-        seatStatus: seat.status,
-        lastAudit: rec.lastAudit,
-        remoteUrl: rec.remoteUrl ?? null,
-        viewUrl: rec.viewUrl ?? rec.remoteUrl ?? null,
-      };
+      return enrichComputer(rec, { seatName: seat.name, seatStatus: seat.status });
     });
 
-    return NextResponse.json({ computers });
+    const durable = await queryComputerAuditsDurable({
+      workspaceId: String(wid),
+      limit: 80,
+    });
+    const recentAudits =
+      durable.length > 0
+        ? durable
+        : defaultComputerSupervisor.recentFleetAudits(String(wid), 40);
+
+    return NextResponse.json({
+      computers,
+      summary: summarizeFleetComputers(computers),
+      recentAudits,
+    });
   } finally {
     bindComputerSupervisorEndpoint(null);
   }
@@ -158,7 +195,10 @@ export async function POST(req: NextRequest) {
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
-    return NextResponse.json({ computer: rec });
+    return NextResponse.json({
+      computer: enrichComputer(rec),
+      recentAudits: defaultComputerSupervisor.recentAudits(rec.computerId, 12),
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "computer action failed" },

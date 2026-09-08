@@ -27,6 +27,9 @@ export default function FleetComputerViewportPage() {
   const [computer, setComputer] = React.useState<ComputerState | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [audits, setAudits] = React.useState<
+    Array<{ at: string; action: string; detail: string; actor: string }>
+  >([]);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -35,6 +38,16 @@ export default function FleetComputerViewportPage() {
       const data = (await res.json()) as { computers?: ComputerState[] };
       const hit = (data.computers ?? []).find((c) => c.computerId === computerId) ?? null;
       setComputer(hit);
+      const auditRes = await fetch(
+        `/api/fleet/computers/audits?computerId=${encodeURIComponent(computerId)}&limit=20`,
+        { credentials: "same-origin" },
+      );
+      if (auditRes.ok) {
+        const auditData = (await auditRes.json()) as {
+          events?: Array<{ at: string; action: string; detail: string; actor: string }>;
+        };
+        setAudits(auditData.events ?? []);
+      }
     } catch {
       /* ignore */
     }
@@ -177,6 +190,27 @@ export default function FleetComputerViewportPage() {
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-amber-400/10 to-transparent" />
             ) : null}
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+          <h2 className="text-sm font-semibold text-white">Audit trail</h2>
+          <p className="mt-1 text-xs text-slate-400">
+            Append-only events for this computer (export CSV from Fleet ops board).
+          </p>
+          <ol className="mt-3 max-h-56 space-y-2 overflow-auto">
+            {audits.length === 0 ? (
+              <li className="text-xs text-slate-500">No events yet.</li>
+            ) : (
+              [...audits].reverse().map((e, i) => (
+                <li key={`${e.at}-${i}`} className="border-l border-white/10 pl-3 text-xs text-slate-300">
+                  <span className="font-semibold text-slate-100">{e.action}</span>
+                  <span className="ml-2 uppercase tracking-wide text-slate-500">{e.actor}</span>
+                  <div className="text-slate-400">{e.detail}</div>
+                  <div className="font-mono text-[10px] text-slate-500">{e.at}</div>
+                </li>
+              ))
+            )}
+          </ol>
         </section>
       </div>
     </main>

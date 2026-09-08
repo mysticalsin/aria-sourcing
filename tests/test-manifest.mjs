@@ -108,6 +108,7 @@ export const testManifest = {
     {"id":"linkedin-credentials","executable":"tsx","argv":["tests/linkedin-credentials.mts"]},
     {"id":"contact-lease","executable":"tsx","argv":["tests/contact-lease.mts"]},
     {"id":"computer-supervisor","executable":"tsx","argv":["tests/computer-supervisor.mts"]},
+    {"id":"computer-audit","executable":"tsx","argv":["tests/computer-audit.mts"]},
     {"id":"openbot-bot-id","executable":"tsx","argv":["tests/openbot-bot-id.mts"]},
     {"id":"openbot-llm-auth","executable":"tsx","argv":["tests/openbot-llm-auth.mts"]},
     {"id":"openbot-e2e","executable":"tsx","argv":["tests/openbot-e2e.mts"]},

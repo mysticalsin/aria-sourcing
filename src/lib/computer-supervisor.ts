@@ -24,6 +24,9 @@ import {
   openBotStopComputer,
   type OpenBotSupervisorConfig,
 } from "@/lib/openbot/supervisor-client";
+import {
+  recordComputerAudit,
+} from "@/lib/computer-audit";
 
 export type ComputerStatus =
   | "stopped"
@@ -70,6 +73,11 @@ export type AuditEntry = {
   action: string;
   detail: string;
   actor: "bot" | "human" | "system";
+  workspaceId?: string;
+  seatId?: string | null;
+  correlationId?: string | null;
+  jobId?: string | null;
+  id?: string;
 };
 
 export type ComputerSupervisorEndpoint = {
@@ -142,17 +150,51 @@ export class ComputerSupervisor {
   private audits: AuditEntry[] = [];
   /** Serialize jobs per computer so one seat never runs two Chromium actions at once. */
   private computerChains = new Map<string, Promise<unknown>>();
-  private readonly maxAudits = 500;
+  private readonly maxAudits = 2_000;
+  /** Active human takeover correlation per computer. */
+  private takeoverCorrelation = new Map<string, string>();
 
   private audit(
     computerId: string,
     action: string,
     detail: string,
     actor: AuditEntry["actor"] = "system",
+    extra?: { correlationId?: string | null; jobId?: string | null },
   ) {
-    this.audits.push({ at: isoNow(), computerId, action, detail, actor });
+    const rec = this.computers.get(computerId);
+    const correlationId =
+      extra?.correlationId ??
+      this.takeoverCorrelation.get(computerId) ??
+      null;
+    const durable = recordComputerAudit({
+      workspaceId: rec?.workspaceId ?? "__local__",
+      computerId,
+      seatId: rec?.seatId ?? null,
+      action,
+      detail,
+      actor,
+      correlationId,
+      jobId: extra?.jobId ?? null,
+    });
+    const entry: AuditEntry = {
+      id: durable.id,
+      at: durable.at,
+      computerId,
+      action,
+      detail,
+      actor,
+      workspaceId: durable.workspaceId,
+      seatId: durable.seatId,
+      correlationId: durable.correlationId,
+      jobId: durable.jobId,
+    };
+    this.audits.push(entry);
     if (this.audits.length > this.maxAudits) {
       this.audits.splice(0, this.audits.length - this.maxAudits);
+    }
+    if (rec) {
+      rec.lastAudit = `${action}: ${detail}`.slice(0, 160);
+      rec.updatedAt = isoNow();
     }
   }
 
@@ -302,10 +344,18 @@ export class ComputerSupervisor {
       rec = await this.start(computerId);
       if (rec.status === "error") return rec;
     }
+    const correlationId = `takeover_${computerId}_${Date.now().toString(36)}`;
+    this.takeoverCorrelation.set(computerId, correlationId);
     rec.control = "human";
     rec.updatedAt = isoNow();
     rec.lastAudit = "human_takeover";
-    this.audit(computerId, "takeover", "Operator took control — bot mutex held", "human");
+    this.audit(
+      computerId,
+      "takeover",
+      "Operator took control — bot mutex held",
+      "human",
+      { correlationId },
+    );
     const agent = agentCfg(rec);
     if (agent) {
       try {
@@ -316,6 +366,7 @@ export class ComputerSupervisor {
           "takeover_remote_failed",
           err instanceof Error ? err.message : "remote take failed",
           "system",
+          { correlationId },
         );
       }
     }
@@ -324,10 +375,18 @@ export class ComputerSupervisor {
 
   async releaseControl(computerId: string): Promise<ComputerRecord> {
     const rec = this.require(computerId);
+    const correlationId = this.takeoverCorrelation.get(computerId) ?? null;
     rec.control = "bot";
     rec.updatedAt = isoNow();
     rec.lastAudit = "control_released";
-    this.audit(computerId, "release", "Operator released control — bot may act", "human");
+    this.audit(
+      computerId,
+      "release",
+      "Operator released control — bot may act",
+      "human",
+      { correlationId },
+    );
+    this.takeoverCorrelation.delete(computerId);
     const agent = agentCfg(rec);
     if (agent) {
       try {
@@ -338,6 +397,7 @@ export class ComputerSupervisor {
           "release_remote_failed",
           err instanceof Error ? err.message : "remote release failed",
           "system",
+          { correlationId },
         );
       }
     }
@@ -583,6 +643,21 @@ export class ComputerSupervisor {
 
   recentAudits(computerId: string, limit = 20): AuditEntry[] {
     return this.audits.filter((a) => a.computerId === computerId).slice(-limit);
+  }
+
+  /** Fleet-wide recent audits (newest last). */
+  recentFleetAudits(workspaceId: string, limit = 50): AuditEntry[] {
+    return this.audits
+      .filter((a) => !a.workspaceId || a.workspaceId === workspaceId)
+      .slice(-limit);
+  }
+
+  listJobs(computerId?: string): ComputerJob[] {
+    const all = [...this.jobs.values()];
+    if (!computerId) return all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return all
+      .filter((j) => j.computerId === computerId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   private require(computerId: string): ComputerRecord {
