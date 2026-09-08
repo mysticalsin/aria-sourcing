@@ -13,6 +13,8 @@ export type OpenBotComputerState = {
   port?: number;
   /** Agent-computer base URL when published or on a shared network. */
   url?: string;
+  /** Optional human live-view URL (screenshot / remote desktop). */
+  viewUrl?: string;
 };
 
 export type OpenBotSupervisorConfig = {
@@ -48,6 +50,7 @@ type OpenBotEnsureWire = {
   startedAt?: string;
   port?: number;
   url?: string;
+  viewUrl?: string;
 };
 
 function mapState(botId: string, data: OpenBotEnsureWire): OpenBotComputerState {
@@ -58,6 +61,7 @@ function mapState(botId: string, data: OpenBotEnsureWire): OpenBotComputerState 
     startedAt: data.startedAt,
     port: data.port,
     url: data.url,
+    viewUrl: data.viewUrl,
   };
 }
 

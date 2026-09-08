@@ -74,6 +74,7 @@ export async function GET() {
         seatStatus: seat.status,
         lastAudit: rec.lastAudit,
         remoteUrl: rec.remoteUrl ?? null,
+        viewUrl: rec.viewUrl ?? rec.remoteUrl ?? null,
       };
     });
 

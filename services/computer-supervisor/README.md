@@ -38,6 +38,36 @@ Agent-computer (Bearer / `x-openbot-computer-token` = `COMPUTER_TOKEN`):
 
 Aria maps each seat’s `computerId` to an OpenBot bot id (`src/lib/openbot/bot-id.ts`), ensures the computer, then runs LinkedIn send against the agent-computer URL (`src/lib/openbot/linkedin-send.ts`).
 
+## Local live Chromium fleet (dev / proof)
+
+Aria ships an OpenBot-compatible Playwright supervisor you can run on a workstation
+with Google Chrome (no Docker required):
+
+```bash
+DISPLAY=:1 OPENBOT_HEADED=1 OPENBOT_MAX_COMPUTERS=10 \
+  SUPERVISOR_TOKEN=aria-supervisor-dev COMPUTER_TOKEN=aria-computer-dev \
+  OPENBOT_PUBLIC_BASE=http://127.0.0.1:18765 \
+  node scripts/openbot-chromium-supervisor.mjs
+
+# Prove 10 agents open LinkedIn + Take control:
+node scripts/prove-openbot-chromium-fleet.mjs
+```
+
+Point Aria at it:
+
+```bash
+COMPUTER_SUPERVISOR_URL=http://127.0.0.1:18765
+COMPUTER_SUPERVISOR_TOKEN=aria-supervisor-dev
+COMPUTER_TOKEN=aria-computer-dev
+```
+
+Each `ensure` returns:
+
+- `url` — agent-computer base (`/c/:botId`) for navigate/snapshot/click
+- `viewUrl` — live operator page (`/view/:botId`) for Fleet **Open sandbox viewport** / Take control
+
+Fleet lists every seat’s computer; operators can Take control any of the N VMs independently.
+
 ## Same LLM API key as Aria (for OpenBot agents)
 
 OpenBot LangGraph/Mastra bots must use **Aria’s own provider API key** — not a separate OpenBot model key. Point them at Aria’s OpenAI-compatible proxy and pass the same key Aria spends:

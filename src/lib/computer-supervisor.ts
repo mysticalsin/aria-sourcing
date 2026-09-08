@@ -47,6 +47,8 @@ export type ComputerRecord = {
   updatedAt: string;
   botId?: string;
   remoteUrl?: string | null;
+  /** Human-facing live view (screenshot/stream). Falls back to remoteUrl. */
+  viewUrl?: string | null;
 };
 
 export type ComputerJobKind = "linkedin_send" | "warmup_nav" | "login_assist";
@@ -190,6 +192,7 @@ export class ComputerSupervisor {
       updatedAt: isoNow(),
       botId: toOpenBotBotId(computerId),
       remoteUrl: null,
+      viewUrl: null,
     };
     this.computers.set(computerId, rec);
     this.audit(computerId, "ensure", `Seat ${opts.seatId} computer registered`);
@@ -218,6 +221,7 @@ export class ComputerSupervisor {
         rec.botId = state.botId || rec.botId || toOpenBotBotId(computerId);
         rec.remoteUrl =
           state.url ?? (state.port ? `http://127.0.0.1:${state.port}` : rec.remoteUrl);
+        rec.viewUrl = state.viewUrl || rec.remoteUrl;
         if (!rec.remoteUrl) {
           rec.status = "error";
           rec.lastError =
@@ -237,6 +241,7 @@ export class ComputerSupervisor {
       // No remote OpenBot host yet — still give operators an in-Aria control
       // surface so Take control / Release work visibly in Fleet.
       rec.remoteUrl = `/fleet/computers/${encodeURIComponent(computerId)}/viewport`;
+      rec.viewUrl = rec.remoteUrl;
       this.audit(
         computerId,
         "start_local_viewport",
@@ -267,6 +272,7 @@ export class ComputerSupervisor {
     rec.status = "stopped";
     rec.control = "bot";
     rec.remoteUrl = null;
+    rec.viewUrl = null;
     rec.updatedAt = isoNow();
     this.audit(computerId, "stop", "Computer stopped", "system");
     return rec;
@@ -284,6 +290,7 @@ export class ComputerSupervisor {
       }
     }
     rec.remoteUrl = null;
+    rec.viewUrl = null;
     await this.stop(computerId);
     return this.start(computerId);
   }

@@ -15,6 +15,7 @@ export type FleetComputerRow = {
   lastError: string | null;
   updatedAt: string;
   remoteUrl?: string | null;
+  viewUrl?: string | null;
 };
 
 function isAriaViewport(url: string | null | undefined): boolean {
@@ -86,7 +87,8 @@ export function FleetComputersPanel({
         <ul className="divide-y divide-line/60">
           {computers.map((c) => {
             const observing = observingId === c.computerId;
-            const ariaViewport = isAriaViewport(c.remoteUrl);
+            const openUrl = c.viewUrl || c.remoteUrl;
+            const ariaViewport = isAriaViewport(openUrl);
             return (
               <li key={c.computerId} className="px-5 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -162,7 +164,7 @@ export function FleetComputersPanel({
                     className="mt-3 space-y-3 rounded-xl border border-dashed border-line bg-ink/[0.03] px-4 py-4 text-xs text-muted"
                     role="status"
                   >
-                    {c.remoteUrl ? (
+                    {openUrl ? (
                       <>
                         <p>
                           {c.control === "human" ? (
@@ -170,10 +172,10 @@ export function FleetComputersPanel({
                           ) : null}
                           {ariaViewport
                             ? "Operator viewport is ready inside Aria (bind COMPUTER_SUPERVISOR_URL for live Chromium)."
-                            : "OpenBot computer is live."}{" "}
+                            : "Live Chromium computer is running."}{" "}
                           <a
                             className="inline-flex items-center gap-1 font-medium text-electric underline-offset-2 hover:underline"
-                            href={c.remoteUrl}
+                            href={openUrl}
                             target="_blank"
                             rel="noreferrer"
                           >
