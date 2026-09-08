@@ -138,6 +138,8 @@ export class ComputerSupervisor {
   private computers = new Map<string, ComputerRecord>();
   private jobs = new Map<string, ComputerJob>();
   private audits: AuditEntry[] = [];
+  /** Serialize jobs per computer so one seat never runs two Chromium actions at once. */
+  private computerChains = new Map<string, Promise<unknown>>();
   private readonly maxAudits = 500;
 
   private audit(
@@ -372,7 +374,23 @@ export class ComputerSupervisor {
 
     this.jobs.set(jobId, job);
     this.audit(opts.computerId, "decide", `Accepted job ${opts.kind}`, "bot");
-    return this.runJob(job);
+
+    // One Chromium per seat: chain jobs so concurrent enqueue on the same
+    // computer never interleaves navigate/click/type.
+    const prev = this.computerChains.get(opts.computerId) ?? Promise.resolve();
+    const run = prev.then(
+      () => this.runJob(job),
+      () => this.runJob(job),
+    );
+    this.computerChains.set(
+      opts.computerId,
+      run.finally(() => {
+        if (this.computerChains.get(opts.computerId) === run) {
+          this.computerChains.delete(opts.computerId);
+        }
+      }),
+    );
+    return run;
   }
 
   private async runJob(job: ComputerJob): Promise<ComputerJob> {

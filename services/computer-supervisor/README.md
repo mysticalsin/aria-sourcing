@@ -67,6 +67,34 @@ Routes:
 
 **E2E gates:** `tests/openbot-e2e.mts`, `tests/openbot-llm-auth.mts`, and (when `/tmp/aria-e2e/kimi.key` is present) `tests/openbot-live-same-key.mts` — OpenBot Bearer must equal Aria’s key and upstream `Authorization` must be that same key.
 
+## Fly-only A→Z workflow (never Vercel)
+
+Production host: **https://aria-mantu-app.fly.dev** (`fly.app.toml`).  
+The public Vercel demo (`aria-sourcing-demo.vercel.app`) is **not** LinkedIn/OpenBot production.
+
+```
+Apify LinkedIn harvest
+  → score + minScoreToContact (default 80) + compliance
+  → allocateBatch prefers LinkedIn Browser Computer seats
+  → 1 seat = 1 OpenBot Chromium computer (stable computer_id)
+  → Fleet Start / Open view / Take control → LinkedIn login per seat
+  → Automatic send: navigate profile → Message → type → Send
+  → OpenBot LLM (optional) via https://aria-mantu-app.fly.dev/api/openbot/v1
+     with the SAME Aria PROVIDER_ENV key (Kimi / DeepSeek / …)
+```
+
+### Scale: N agents = N VMs
+
+| Concurrent seats | OpenBot host RAM (approx) |
+| --- | --- |
+| 2–5 | ~2–8 Gi |
+| 10 | ~10–20 Gi |
+| 20 | ~20–40 Gi |
+
+Aria’s Fly web VM (`shared-cpu-2x` / 2gb) orchestrates; Chromium seats run on a **separate OpenBot supervisor host**. Do not share one browser across seats. Jobs on the same seat are serialized in-process.
+
+Gate: `tests/openbot-fly-workflow-e2e.mts` (10 concurrent ensure + send).
+
 ## Connect OpenBot to Aria
 
 1. Run CopilotKit OpenBot supervisor + agent-computer (isolated Chromium seats / VMs).

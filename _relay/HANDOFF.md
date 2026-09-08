@@ -1,51 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 108
+shift: 109
 agent: cursor-cloud
-updated: 2026-09-07T18:05Z
-status: openbot-connect-path-fixed-e2e-green
+updated: 2026-09-08T01:40Z
+status: fly-workflow-10vm-e2e-green
 ---
 
-# Handoff — Shift 108
+# Handoff — Shift 109
 
 ## Current state
 
-- **Branch/PR:** `cursor/linkedin-auto-vm-fleet-b91d` → https://github.com/mysticalsin/aria-sourcing/pull/72
-- **Latest Aria integration:** `d46a3d2` (this branch is ahead with OpenBot + LinkedIn automatic work)
-- **Live Fly tip:** still build `911634d` — `/api/openbot/v1` 404; Fleet/LinkedIn routes exist (401 without auth)
-- **E2E green:** computer-supervisor 10, linkedin-credentials 16, openbot-e2e 30, openbot-live-same-key 19, openbot-llm-auth 9
+- **Branch:** `cursor/linkedin-auto-vm-fleet-b91d`
+- **Production:** Fly `https://aria-mantu-app.fly.dev` only — never Vercel for LinkedIn/OpenBot
+- **Workflow E2E:** `openbot-fly-workflow-e2e` 21/21 — 10 agents / 10 VMs concurrent contact
+- **Evidence:** `_relay/evidence/2026-09-08-fly-openbot-workflow-e2e.md`
+- **Live tip:** health 200; `/api/openbot/v1` still 404 until protected Fly deploy
 
 ## Done this shift
 
-1. Checked latest integration — no commits behind; OpenBot work still unmerged
-2. Fixed LinkedIn OpenBot connect path:
-   - stable `computer_id` on deliver + ensureComputer rebind
-   - Fleet API binds Settings vault supervisor credentials
-   - Observe/Start/Take control actually start OpenBot computer; show remoteUrl
-   - browserComputerConfigured requires URL **+** token (or mock)
-   - local fake-send fail-closed unless `COMPUTER_SUPERVISOR_MOCK_SEND=1`
-3. Re-verified same Aria API key (Kimi) E2E + LinkedIn LLM-assisted send
+1. Confirmed Fly-only production (`fly.app.toml` / deploy-aria-mantu.yml); Vercel is demo-only
+2. Per-computer job serialization (1 Chromium never runs two jobs interleaved)
+3. Full A→Z gate: source → validate → allocate 10 seats → ensure 10 OpenBot bots → concurrent “open to opportunities” sends
+4. README documents Fly A→Z + N-agent scale table
 
-## Blockers (live)
+## Blockers (live Chromium on Fly)
 
-1. Deploy PR #72 to Fly so `/api/openbot/v1` exists
-2. Rotate Fly `KIMI_API_KEY` (currently 401 at Kimi)
-3. Set OpenBot supervisor URL/token + `COMPUTER_TOKEN` on Fly/Settings
-4. Operator: Settings → create OpenBot seat → Fleet → Start/Open view → LinkedIn login
+1. Protected deploy of this branch to `aria-mantu-app`
+2. Separate OpenBot supervisor host with RAM for N Chromiums (~10–20 Gi for N=10)
+3. `COMPUTER_SUPERVISOR_*` + `COMPUTER_TOKEN` + valid Aria LLM key on Fly
+4. Per-seat LinkedIn login via Fleet Take control
 
 ## Next steps
 
-1. Merge/deploy PR #72
-2. Rotate Kimi key; point OpenBot `OPENAI_BASE_URL` at Aria `/api/openbot/v1` with same key
-3. Live smoke: create seat → Take control → LinkedIn login → Automatic send
+1. Owner: protected Fly deploy of this SHA
+2. Stand up OpenBot supervisor for N=10
+3. Create 10 seats → login each → Apify source → Automatic send smoke
 
 ## Decisions made (don't relitigate)
 
-- OpenBot uses Aria’s same PROVIDER_ENV key (prod = Kimi)
+- Production = Fly only (never Vercel for this product)
 - Automatic LinkedIn = OpenBot Browser Computer
-- Production = Fly only
+- 1 agent seat = 1 OpenBot Chromium computer
 
 ## Watch out
 
-- Never print Fly secrets
-- Docker unavailable here — live Chromium OpenBot not bootable in this VM
+- Do not `fly deploy` outside protected workflow
+- Never set `COMPUTER_SUPERVISOR_MOCK_SEND=1` on production
