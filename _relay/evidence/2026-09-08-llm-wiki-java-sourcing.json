@@ -1,0 +1,91 @@
+{
+  "at": "2026-09-08T21:25:28.073Z",
+  "brainStore": "llm-wiki",
+  "wikiRoot": "/tmp/aria-wiki-java-1788902726844",
+  "campaignId": "camp_java_dev",
+  "grantsContactClaim": false,
+  "query": "language:Java followers:>20",
+  "noteCount": 5,
+  "profiles": [
+    {
+      "login": "peng-zhihui",
+      "name": "稚晖",
+      "company": "HUAWEI Research",
+      "location": "Shanghai",
+      "htmlUrl": "https://github.com/peng-zhihui",
+      "publicRepos": 61,
+      "followers": 87350,
+      "bio": "野生钢铁侠本侠。"
+    },
+    {
+      "login": "JakeWharton",
+      "name": "Jake Wharton",
+      "company": "@SkylightFamily",
+      "location": "Pittsburgh, PA, USA",
+      "htmlUrl": "https://github.com/JakeWharton",
+      "publicRepos": 154,
+      "followers": 68535,
+      "bio": null
+    },
+    {
+      "login": "IDouble",
+      "name": "Alp ₿📈🚀🌕",
+      "company": "🕊️ NDA (Our Priorities: Peace Through Strength, De-Escalation, and a Greater Future for Humanity) 🐘🦅🕊️",
+      "location": "Alpen, Schweiz",
+      "htmlUrl": "https://github.com/IDouble",
+      "publicRepos": 61,
+      "followers": 59453,
+      "bio": "🕊️JA zur Neutralitätsinitiative! Als starkes und neutrales Land können Wir Konflikte entschärfen und eine unabhängige Plattform für Frieden"
+    },
+    {
+      "login": "daimajia",
+      "name": "代码家",
+      "company": null,
+      "location": "Beijing, China",
+      "htmlUrl": "https://github.com/daimajia",
+      "publicRepos": 98,
+      "followers": 24949,
+      "bio": "Coder | Investor | Tech Enthusiast"
+    },
+    {
+      "login": "chrisbanes",
+      "name": "Chris Banes",
+      "company": "Software Engineer",
+      "location": "Bath, UK",
+      "htmlUrl": "https://github.com/chrisbanes",
+      "publicRepos": 63,
+      "followers": 18954,
+      "bio": null
+    },
+    {
+      "login": "Trinea",
+      "name": "Trinea",
+      "company": null,
+      "location": "HangZhou",
+      "htmlUrl": "https://github.com/Trinea",
+      "publicRepos": 24,
+      "followers": 17045,
+      "bio": null
+    },
+    {
+      "login": "unclebob",
+      "name": "Robert C. Martin",
+      "company": "Uncle Bob Consulting LLC. ",
+      "location": "Gurnee, IL",
+      "htmlUrl": "https://github.com/unclebob",
+      "publicRepos": 95,
+      "followers": 16625,
+      "bio": "Uncle Bob.  Author of Clean Code."
+    },
+    {
+      "login": "stormzhang",
+      "name": "stormzhang",
+      "company": "stormzhang.ai",
+      "location": "Global/Shanghai",
+      "htmlUrl": "https://github.com/stormzhang",
+      "publicRepos": 9,
+      "followers": 16163,
+      "bio": "Full-stack developer, Productor, AI Builder."
+    }
+  ]
+}

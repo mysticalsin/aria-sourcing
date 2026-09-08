@@ -27,6 +27,7 @@ import {
 } from "@/components/ui";
 import { motion } from "framer-motion";
 import { HydrationGate } from "@/components/app/page-header";
+import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { staggerContainer } from "@/lib/dashboard-motion";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -1195,6 +1196,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Sourcing Strategy */}
       <TabPanel value="strategy" active={tab === "strategy"} idBase={idBase}>
         <div className="space-y-6">
+          <CampaignWikiPanel campaignId={c.id} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <Eyebrow>Where Aria looks</Eyebrow>

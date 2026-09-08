@@ -965,7 +965,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const candidatePersistenceAllowed = useCallback(
     (provenance: NonNullable<Candidate["provenance"]>) =>
-      supabaseEnabled || provenance === "synthetic",
+      // Demo (no Supabase): allow both synthetic Talent Pool and live GitHub/web
+      // profiles so operators can run real sourcing E2E locally. Live workspaces
+      // always allow persistence for any provenance the server returns.
+      supabaseEnabled || provenance === "synthetic" || provenance === "live",
     [],
   );
 

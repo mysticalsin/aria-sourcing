@@ -62,7 +62,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
 // STATE_VERSION 19 — LinkedIn fleet.deliveryMode (automatic default; manual optional).
-export const STATE_VERSION = 19;
+export const STATE_VERSION = 20;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -307,7 +307,7 @@ export function seedInterviewers(): Interviewer[] {
 
 function backendJob(): JobAnalysis {
   return {
-    title: "Senior Backend Engineer",
+    title: "Senior Java Developer",
     department: "Platform",
     seniority: "Senior",
     employmentType: "Full-time",
@@ -318,8 +318,8 @@ function backendJob(): JobAnalysis {
     salaryMax: 120000,
     currency: "EUR",
     equity: true,
-    requiredSkills: ["Go", "Kubernetes", "PostgreSQL", "gRPC", "Distributed Systems"],
-    niceToHaveSkills: ["Kafka", "OpenTelemetry", "Terraform"],
+    requiredSkills: ["Java", "Spring Boot", "PostgreSQL", "Kafka", "Microservices"],
+    niceToHaveSkills: ["Kubernetes", "gRPC", "OpenTelemetry"],
     minYearsExperience: 5,
     maxYearsExperience: 10,
     education: "No formal requirement",
@@ -413,7 +413,8 @@ const SPECS: CampaignSpec[] = [
     job: backendJob(),
     hiringManager: "Daniela Brandt",
     hiringManagerEmail: "daniela.brandt@northwind.example",
-    status: "Interviewing",
+    // Sourcing so campaignAllowsLiveSourcing enables UI Source for Java wiki demo
+    status: "Sourcing",
     count: 22,
     stagePlan: [
       "Interviewed", "Booked", "Booked", "Interested", "Interested", "Interested",
