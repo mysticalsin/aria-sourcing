@@ -1,0 +1,28 @@
+{
+  "at": "2026-09-08T21:52:00Z",
+  "brainStore": "llm-wiki",
+  "wikiRoot": "/tmp/aria-llm-wiki",
+  "campaignId": "camp_seed_backend",
+  "proveCampaignId": "camp_java_dev",
+  "grantsContactClaim": false,
+  "query": "language:Java followers:>20",
+  "noteCount": 5,
+  "proveProfileCount": 8,
+  "apiSourceUsers": 5,
+  "uiDemo": {
+    "ok": true,
+    "port": 3010,
+    "checks": {
+      "llm_wiki": true,
+      "suggested_search": true,
+      "source_button": true,
+      "java_note": true,
+      "no_contact_grant": true,
+      "senior_java": true,
+      "source_enabled": true
+    },
+    "screenshot": "_relay/evidence/2026-09-08-llm-wiki-java-sourcing-ui.png"
+  },
+  "seedStatus": "Sourcing",
+  "stateVersion": 21
+}

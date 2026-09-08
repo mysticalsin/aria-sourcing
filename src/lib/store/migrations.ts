@@ -23,13 +23,17 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   // STATE_VERSION 18 — wipe fake "connected" seeds on real cards (GitHub/Apify/Graph/SendGrid)
   // that never had a real credential attached.
   const preHonestIntegrations = (parsed.version ?? 0) < 18;
+  // STATE_VERSION 21 — Java seed campaign must allow live sourcing for wiki demos.
+  const preJavaSourcing = (parsed.version ?? 0) < 21;
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   const FAKE_CONNECTED_IDS = new Set(["int_github", "int_apify", "int_graph_teams", "int_sendgrid"]);
   return {
     ...parsed,
     version: STATE_VERSION,
     // D-2: fill every required root field that may be absent in older blobs.
-    campaigns: parsed.campaigns ?? [],
+    campaigns: (parsed.campaigns ?? []).map((c) =>
+      preJavaSourcing && c.id === "camp_seed_backend" ? { ...c, status: "Sourcing" as const } : c,
+    ),
     // STATE_VERSION 13 — backfill the TAnIA layer (lead source + star rating) on
     // any candidate that predates it, without clobbering explicit values.
     candidates: (parsed.candidates ?? []).map((c) => ({

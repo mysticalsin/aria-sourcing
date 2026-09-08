@@ -4,7 +4,6 @@ import { getServerSupabase } from "@/lib/supabase/server";
 import {
   defaultKnowledgePlane,
   seedJavaDeveloperWiki,
-  type KnowledgeNoteKind,
 } from "@/lib/knowledge-plane";
 import { knowledgePlaneMayGrantContactClaim } from "@/lib/contact-lease";
 import { validateBody } from "@/lib/api/validate";
@@ -93,11 +92,4 @@ export async function POST(req: NextRequest) {
     brainStore: "llm-wiki",
     wikiPath: defaultKnowledgePlane.readCampaign(workspaceId, body.campaignId).wikiPath,
   });
-}
-
-export function mapKind(kind: string): KnowledgeNoteKind {
-  if (kind === "purpose" || kind === "playbook" || kind === "objection" || kind === "outcome") {
-    return kind;
-  }
-  return "who_what";
 }

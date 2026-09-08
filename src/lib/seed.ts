@@ -62,7 +62,9 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
 // STATE_VERSION 19 — LinkedIn fleet.deliveryMode (automatic default; manual optional).
-export const STATE_VERSION = 20;
+// STATE_VERSION 21 — Senior Java campaign (camp_seed_backend) moved to Sourcing so
+// campaignAllowsLiveSourcing enables the Source button for LLM-wiki Java demos.
+export const STATE_VERSION = 21;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
