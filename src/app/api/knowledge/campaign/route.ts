@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
     ...snap,
     draftContext: defaultKnowledgePlane.compileDraftContext(workspaceId, campaignId),
     suggestedGithubQuery: defaultKnowledgePlane.suggestGithubQuery(workspaceId, campaignId),
+    suggestedLinkedInQuery: defaultKnowledgePlane.suggestLinkedInQuery(workspaceId, campaignId),
     grantsContactClaim: knowledgePlaneMayGrantContactClaim(),
     brainStore: "llm-wiki",
   });
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
       ...snap,
       draftContext: defaultKnowledgePlane.compileDraftContext(workspaceId, body.campaignId),
       suggestedGithubQuery: defaultKnowledgePlane.suggestGithubQuery(workspaceId, body.campaignId),
+      suggestedLinkedInQuery: defaultKnowledgePlane.suggestLinkedInQuery(workspaceId, body.campaignId),
       grantsContactClaim: knowledgePlaneMayGrantContactClaim(),
       brainStore: "llm-wiki",
     });

@@ -1041,9 +1041,22 @@ export function createSourcingActions({
       }
       return { ok: false, error: "Campaign is paused.", source: "paused" };
     }
+    if (!evaluateNeedReadiness(campaign.jobAnalysis).ready) {
+      return invalidRequest("Campaign authority changed during sourcing. Review the current brief and retry.");
+    }
+    // Demo localStorage can remigrate strategy platforms mid-request (LinkedIn-first
+    // patch). Keep the brief stable; do not fail the whole LinkedIn batch on
+    // strategy-order fingerprint churn.
     if (
-      !evaluateNeedReadiness(campaign.jobAnalysis).ready ||
+      !demoSourcing &&
       sourcingAgentCampaignFingerprint(campaign) !== initialFingerprint
+    ) {
+      return invalidRequest("Campaign authority changed during sourcing. Review the current brief and retry.");
+    }
+    if (
+      demoSourcing &&
+      (campaign.id !== initialCampaign.id ||
+        campaign.jobAnalysis.title !== initialCampaign.jobAnalysis.title)
     ) {
       return invalidRequest("Campaign authority changed during sourcing. Review the current brief and retry.");
     }
@@ -1089,9 +1102,17 @@ export function createSourcingActions({
       if (
         !currentCampaign ||
         !campaignAllowsLiveSourcing(currentCampaign.status) ||
-        !evaluateNeedReadiness(currentCampaign.jobAnalysis).ready ||
-        sourcingAgentCampaignFingerprint(currentCampaign) !== initialFingerprint
+        !evaluateNeedReadiness(currentCampaign.jobAnalysis).ready
       ) {
+        return previous;
+      }
+      if (demoSourcing) {
+        if (
+          currentCampaign.jobAnalysis.title !== initialCampaign.jobAnalysis.title
+        ) {
+          return previous;
+        }
+      } else if (sourcingAgentCampaignFingerprint(currentCampaign) !== initialFingerprint) {
         return previous;
       }
       authorized = true;

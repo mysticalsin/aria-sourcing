@@ -307,7 +307,19 @@ export class FileWikiKnowledgePlane {
     return lines.join("\n");
   }
 
-  /** Suggested GitHub search query from wiki who_what / purpose notes. */
+  /** Suggested LinkedIn boolean / keywords from wiki (primary for LinkedIn-first). */
+  suggestLinkedInQuery(workspaceId: string, campaignId: string): string | null {
+    const snap = this.readCampaign(workspaceId, campaignId);
+    const who = snap.notes.find((n) => n.kind === "who_what");
+    const purpose = snap.notes.find((n) => n.kind === "purpose");
+    const text = `${who?.body ?? ""} ${purpose?.body ?? ""}`;
+    if (/java/i.test(text)) {
+      return "Senior Java Developer OR \"Java Engineer\" Spring Boot";
+    }
+    return null;
+  }
+
+  /** @deprecated Prefer suggestLinkedInQuery for LinkedIn-first campaigns. */
   suggestGithubQuery(workspaceId: string, campaignId: string): string | null {
     const snap = this.readCampaign(workspaceId, campaignId);
     const who = snap.notes.find((n) => n.kind === "who_what");
@@ -363,9 +375,10 @@ export async function seedJavaDeveloperWiki(
     kind: "playbook",
     title: "Sourcing playbook",
     body:
-      "1) Read this wiki. 2) Search GitHub with language:Java followers:>20 (and refine by location). " +
-      "3) Score against must-haves. 4) Draft low-pressure outreach from verified work only. " +
-      "5) Never treat wiki recall as contact permission — claim_contact / lease only.",
+      "1) Read this wiki. 2) Search LinkedIn FIRST with the boolean (Senior Java + Spring Boot). " +
+      "3) Use GitHub only as secondary signal. 4) Score against must-haves. " +
+      "5) Draft low-pressure LinkedIn/email outreach from verified work only. " +
+      "6) Never treat wiki recall as contact permission — claim_contact / lease only.",
   });
   await plane.upsertNote({
     id: "java_objection",

@@ -64,7 +64,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // STATE_VERSION 19 — LinkedIn fleet.deliveryMode (automatic default; manual optional).
 // STATE_VERSION 21 — Senior Java campaign (camp_seed_backend) moved to Sourcing so
 // campaignAllowsLiveSourcing enables the Source button for LLM-wiki Java demos.
-export const STATE_VERSION = 21;
+export const STATE_VERSION = 22;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 

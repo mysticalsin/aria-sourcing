@@ -73,6 +73,11 @@ ok(
   "java suggests github query",
   plane.suggestGithubQuery("ws", "camp_java") === "language:Java followers:>20",
 );
+ok(
+  "java suggests linkedin query first",
+  plane.suggestLinkedInQuery("ws", "camp_java") ===
+    'Senior Java Developer OR "Java Engineer" Spring Boot',
+);
 ok("java grantsContactClaim still false", java.grantsContactClaim === false);
 
 console.log(`RESULT knowledge-plane: ${pass} passed, ${fail} failed`);

@@ -16,6 +16,7 @@ type WikiPayload = {
   edges?: Array<{ fromLabel: string; toLabel: string; relation: string; kind: string }>;
   draftContext?: string;
   suggestedGithubQuery?: string | null;
+  suggestedLinkedInQuery?: string | null;
   grantsContactClaim?: boolean;
   brainStore?: string;
   wikiPath?: string;
@@ -91,10 +92,19 @@ export function CampaignWikiPanel({ campaignId }: { campaignId: string }) {
 
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
 
-      {data?.suggestedGithubQuery ? (
-        <p className="mt-3 rounded-lg bg-ink/[0.03] px-3 py-2 font-mono text-xs text-ink">
-          Suggested search: {data.suggestedGithubQuery}
-        </p>
+      {data?.suggestedLinkedInQuery || data?.suggestedGithubQuery ? (
+        <div className="mt-3 space-y-1.5">
+          {data.suggestedLinkedInQuery ? (
+            <p className="rounded-lg bg-tangerine/10 px-3 py-2 font-mono text-xs text-ink">
+              LinkedIn first: {data.suggestedLinkedInQuery}
+            </p>
+          ) : null}
+          {data.suggestedGithubQuery ? (
+            <p className="rounded-lg bg-ink/[0.03] px-3 py-2 font-mono text-xs text-muted">
+              GitHub secondary: {data.suggestedGithubQuery}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       <ul className="mt-4 grid gap-3 sm:grid-cols-2">

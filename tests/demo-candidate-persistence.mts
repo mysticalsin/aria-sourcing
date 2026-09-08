@@ -22,11 +22,17 @@ function candidateWithProvenance(
   };
 }
 
-test("demo persistence accepts only explicitly synthetic candidate records", () => {
+test("demo persistence accepts synthetic and live candidate records", () => {
   const seed = buildSeedState();
   assert.equal(demoStateAllowsCandidatePersistence(seed), true);
 
-  for (const provenance of ["live", "manual", undefined] as const) {
+  const withLive: HermesState = {
+    ...seed,
+    candidates: [candidateWithProvenance("live"), ...seed.candidates],
+  };
+  assert.equal(demoStateAllowsCandidatePersistence(withLive), true);
+
+  for (const provenance of ["manual", undefined] as const) {
     const unsafe: HermesState = {
       ...seed,
       candidates: [candidateWithProvenance(provenance), ...seed.candidates],
@@ -35,14 +41,18 @@ test("demo persistence accepts only explicitly synthetic candidate records", () 
   }
 });
 
-test("demo hydration purges a legacy localStorage snapshot containing real candidate PII", () => {
+test("demo hydration keeps LinkedIn/live profiles and purges unknown provenance", () => {
   const seed = buildSeedState();
-  const polluted: HermesState = {
+  const liveOk: HermesState = {
     ...seed,
     candidates: [candidateWithProvenance("live"), ...seed.candidates],
   };
+  const polluted: HermesState = {
+    ...seed,
+    candidates: [candidateWithProvenance(undefined), ...seed.candidates],
+  };
   const values = new Map<string, string>([
-    ["hermes-sourcing:v1", JSON.stringify(polluted)],
+    ["hermes-sourcing:v1", JSON.stringify(liveOk)],
   ]);
   const removed: string[] = [];
   const previousWindow = globalThis.window;
@@ -61,8 +71,13 @@ test("demo hydration purges a legacy localStorage snapshot containing real candi
   try {
     const loaded = loadState();
     assert.equal(demoStateAllowsCandidatePersistence(loaded), true);
-    assert.equal(loaded.candidates.some((candidate) => candidate.provenance === "live"), false);
-    assert.deepEqual(removed, ["hermes-sourcing:v1"]);
+    assert.equal(loaded.candidates.some((candidate) => candidate.provenance === "live"), true);
+    assert.deepEqual(removed, []);
+
+    values.set("hermes-sourcing:v1", JSON.stringify(polluted));
+    const purged = loadState();
+    assert.equal(purged.candidates.some((c) => c.provenance === undefined), false);
+    assert.ok(removed.includes("hermes-sourcing:v1"));
   } finally {
     if (previousWindow === undefined) {
       Reflect.deleteProperty(globalThis, "window");
@@ -75,7 +90,7 @@ test("demo hydration purges a legacy localStorage snapshot containing real candi
   }
 });
 
-test("the store enforces the synthetic-only predicate at commit and localStorage boundaries", () => {
+test("the store enforces the demo persistence predicate at commit and localStorage boundaries", () => {
   const occurrences = storeSource.match(/demoStateAllowsCandidatePersistence\(/g) ?? [];
   assert.ok(occurrences.length >= 3);
   assert.match(

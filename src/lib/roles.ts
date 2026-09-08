@@ -30,17 +30,18 @@ export interface RoleProfile {
 const PROFILES: Record<RoleFamily, Omit<RoleProfile, "family">> = {
   software: {
     label: "Software engineering",
-    titles: ["Software Engineer", "Senior Software Engineer", "Backend Engineer", "Full-Stack Engineer", "Staff Engineer", "Platform Engineer"],
+    titles: ["Software Engineer", "Senior Software Engineer", "Backend Engineer", "Full-Stack Engineer", "Staff Engineer", "Platform Engineer", "Java Developer", "Senior Java Developer"],
     companies: ["Brightloop", "Helix Data", "Forgepoint", "Aurora Grid", "Meridian Cloud", "Northwind Labs", "Vellum AI", "Cobalt Systems"],
-    platforms: ["GitHub", "LinkedIn", "Stack Overflow"],
-    queryStyle: "github",
+    // LinkedIn-first for outreach-ready sourcing; GitHub remains secondary signal.
+    platforms: ["LinkedIn", "GitHub", "Stack Overflow"],
+    queryStyle: "linkedin",
   },
   data: {
     label: "Data & ML",
     titles: ["Data Engineer", "Machine Learning Engineer", "Data Scientist", "Analytics Engineer", "ML Platform Engineer"],
     companies: ["Helix Data", "Vellum AI", "Snowfield Analytics", "Latchkey", "Aurora Grid", "Meridian Cloud"],
-    platforms: ["GitHub", "LinkedIn", "Stack Overflow"],
-    queryStyle: "github",
+    platforms: ["LinkedIn", "GitHub", "Stack Overflow"],
+    queryStyle: "linkedin",
   },
   design: {
     label: "Product design",

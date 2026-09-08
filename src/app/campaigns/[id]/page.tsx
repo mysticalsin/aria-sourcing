@@ -515,7 +515,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const handleSource = async () => {
     if (sourcing) return;
     setSourcing(true);
-    const res = await actions.sourceNextBatch(c.id);
+    const beforeIds = new Set(candidates.map((cand) => cand.id));
+    // LinkedIn-first: prefer LinkedIn when the strategy lists it first (or at all).
+    const preferred =
+      c.sourcingStrategy.primaryPlatforms.find((p) => p === "LinkedIn") ??
+      c.sourcingStrategy.primaryPlatforms[0];
+    const res = await actions.sourceNextBatch(c.id, preferred ? { platform: preferred } : undefined);
     setSourcing(false);
     if (!res.ok) {
       toast({
@@ -542,6 +547,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     setJustSourced(res.accepted);
     setSourceBatchKey((k) => k + 1);
     if (res.accepted.length > 0) setTab("candidates");
+
+    const newlyAccepted = res.accepted.filter((cand) => !beforeIds.has(cand.id));
+    let drafted = 0;
+    for (const cand of newlyAccepted.slice(0, 8)) {
+      const msg = actions.generateOutreachFor(cand.id, undefined, "LinkedIn");
+      if (msg) drafted += 1;
+    }
+
     const isLive = res.source === "github" || res.source === "web";
     if (res.accepted.length === 0) {
       toast({
@@ -554,14 +567,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       return;
     }
     toast({
-      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
-      description: res.skipped.length
-        ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-        : isLive
-          ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
-          : "All matched candidates accepted into the pipeline.",
+      title: `Sourced ${res.accepted.length} via ${preferred ?? res.source}${isLive ? " (live)" : ""}`,
+      description:
+        drafted > 0
+          ? `${drafted} LinkedIn outreach draft${drafted === 1 ? "" : "s"} ready for review — ready to reach out.`
+          : res.skipped.length
+            ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
+            : isLive
+              ? "Live LinkedIn/web results are in the pipeline."
+              : "All matched candidates accepted into the pipeline.",
       variant: "success",
     });
+    if (drafted > 0) setTab("outreach");
   };
 
   // Batch variant of the drawer's unified enrichment waterfall (docs/

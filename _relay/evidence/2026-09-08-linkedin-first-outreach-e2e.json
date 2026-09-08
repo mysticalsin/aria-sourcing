@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-08T22:46:59.434Z",
+  "base": "http://127.0.0.1:3040",
+  "flow": "login → Java campaign → LLM wiki (LinkedIn first) → Source next batch → candidates → outreach ready",
+  "videoWebm": "/opt/cursor/artifacts/aria-linkedin-java-ready-to-outreach.webm",
+  "videoMp4": "/opt/cursor/artifacts/aria-linkedin-java-ready-to-outreach.mp4",
+  "screenshots": [
+    "_relay/evidence/2026-09-08-linkedin-first-wiki.png",
+    "_relay/evidence/2026-09-08-linkedin-first-sourced.png",
+    "_relay/evidence/2026-09-08-linkedin-first-candidates.png",
+    "_relay/evidence/2026-09-08-linkedin-first-outreach-ready.png"
+  ]
+}

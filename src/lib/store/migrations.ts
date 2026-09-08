@@ -25,15 +25,46 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   const preHonestIntegrations = (parsed.version ?? 0) < 18;
   // STATE_VERSION 21 — Java seed campaign must allow live sourcing for wiki demos.
   const preJavaSourcing = (parsed.version ?? 0) < 21;
+  // STATE_VERSION 22 — software/data roles are LinkedIn-first; rebuild strategy platforms.
+  const preLinkedInFirst = (parsed.version ?? 0) < 22;
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   const FAKE_CONNECTED_IDS = new Set(["int_github", "int_apify", "int_graph_teams", "int_sendgrid"]);
   return {
     ...parsed,
     version: STATE_VERSION,
     // D-2: fill every required root field that may be absent in older blobs.
-    campaigns: (parsed.campaigns ?? []).map((c) =>
-      preJavaSourcing && c.id === "camp_seed_backend" ? { ...c, status: "Sourcing" as const } : c,
-    ),
+    campaigns: (parsed.campaigns ?? []).map((c) => {
+      let next = preJavaSourcing && c.id === "camp_seed_backend" ? { ...c, status: "Sourcing" as const } : c;
+      if (preLinkedInFirst) {
+        // Lazy require avoided — platforms order is patched inline for Java/software campaigns.
+        const platforms = next.sourcingStrategy?.primaryPlatforms ?? [];
+        if (platforms[0] !== "LinkedIn" && platforms.includes("LinkedIn")) {
+          next = {
+            ...next,
+            sourcingStrategy: {
+              ...next.sourcingStrategy,
+              primaryPlatforms: ["LinkedIn", ...platforms.filter((p) => p !== "LinkedIn")].slice(0, 2) as typeof platforms,
+              secondaryPlatforms: [
+                ...platforms.filter((p) => p !== "LinkedIn").slice(1),
+                ...(next.sourcingStrategy.secondaryPlatforms ?? []),
+              ].filter((p, i, arr) => arr.indexOf(p) === i),
+            },
+          };
+        } else if (platforms[0] !== "LinkedIn") {
+          next = {
+            ...next,
+            sourcingStrategy: {
+              ...next.sourcingStrategy,
+              primaryPlatforms: ["LinkedIn", platforms[0] ?? "GitHub"].filter(Boolean).slice(0, 2) as typeof platforms,
+              secondaryPlatforms: next.sourcingStrategy.secondaryPlatforms?.length
+                ? next.sourcingStrategy.secondaryPlatforms
+                : ["GitHub", "Stack Overflow"],
+            },
+          };
+        }
+      }
+      return next;
+    }),
     // STATE_VERSION 13 — backfill the TAnIA layer (lead source + star rating) on
     // any candidate that predates it, without clobbering explicit values.
     candidates: (parsed.candidates ?? []).map((c) => ({
