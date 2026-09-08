@@ -154,20 +154,60 @@ export default function FleetPage() {
   const [allocating, setAllocating] = React.useState(false);
   const [computers, setComputers] = React.useState<FleetComputerRow[]>([]);
   const [computersLoading, setComputersLoading] = React.useState(false);
+  const [observingComputerId, setObservingComputerId] = React.useState<string | null>(null);
 
   const refreshComputers = React.useCallback(async () => {
     setComputersLoading(true);
     try {
+      const browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
+      for (const seat of browserSeats) {
+        const computerId = seat.computerId || seat.id;
+        await fetch("/api/fleet/computers", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "ensure",
+            computerId,
+            seatId: seat.id,
+          }),
+        }).catch(() => null);
+      }
       const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
       if (!res.ok) return;
       const data = (await res.json()) as { computers?: FleetComputerRow[] };
-      setComputers(data.computers ?? []);
+      const rows = data.computers ?? [];
+      // In demo (no Supabase seats on the API), merge ensured local computers with seat names.
+      if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {
+        // ensure POSTs should have populated in-process map — re-GET after ensures
+        const again = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+        if (again.ok) {
+          const againData = (await again.json()) as { computers?: FleetComputerRow[] };
+          setComputers(
+            (againData.computers ?? []).map((c) => {
+              const seat = browserSeats.find(
+                (s) => s.id === c.seatId || s.computerId === c.computerId,
+              );
+              return seat ? { ...c, seatName: seat.name } : c;
+            }),
+          );
+          return;
+        }
+      }
+      setComputers(
+        rows.map((c) => {
+          const seat = browserSeats.find(
+            (s) => s.id === c.seatId || s.computerId === c.computerId,
+          );
+          return seat ? { ...c, seatName: seat.name } : c;
+        }),
+      );
     } catch {
       /* ignore — panel stays empty */
     } finally {
       setComputersLoading(false);
     }
-  }, []);
+  }, [seats]);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -187,9 +227,19 @@ export default function FleetPage() {
         toast({ title: "Computer action failed", description: data.error ?? res.statusText, variant: "error" });
         return;
       }
+      if (action === "take_control") setObservingComputerId(computerId);
       await refreshComputers();
       toast({
-        title: action === "take_control" ? "You have control" : action === "release_control" ? "Control released" : "Computer updated",
+        title:
+          action === "take_control"
+            ? "You have control"
+            : action === "release_control"
+              ? "Control released"
+              : "Computer updated",
+        description:
+          action === "take_control"
+            ? "Open the sandbox viewport to finish LinkedIn login / 2FA. Automatic sends pause until you Release."
+            : undefined,
         variant: "success",
       });
     } catch {
@@ -618,6 +668,8 @@ export default function FleetPage() {
           {/* 5 — Suppression */}
           <FleetComputersPanel
             computers={computers}
+            observingId={observingComputerId}
+            onObservingChange={setObservingComputerId}
             onRefresh={() => void refreshComputers()}
             onStart={(id) => void computerAction("start", id)}
             onTakeControl={(id) => void computerAction("take_control", id)}

@@ -26,9 +26,17 @@ try {
 
   await supervisor.start(computer.computerId);
   ok("start flips to ready", supervisor.get(computer.computerId)?.status === "ready");
+  ok(
+    "start without remote OpenBot sets Aria viewport remoteUrl",
+    Boolean(supervisor.get(computer.computerId)?.remoteUrl?.includes("/viewport")),
+  );
 
   await supervisor.takeControl(computer.computerId);
   ok("takeControl sets human", supervisor.get(computer.computerId)?.control === "human");
+  ok(
+    "takeControl keeps viewport remoteUrl",
+    Boolean(supervisor.get(computer.computerId)?.remoteUrl?.includes("/viewport")),
+  );
 
   const refused = await supervisor.enqueueJob({
     computerId: computer.computerId,

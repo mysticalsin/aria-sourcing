@@ -84,8 +84,17 @@ export async function GET() {
 }
 
 const BodySchema = z.object({
-  action: z.enum(["start", "stop", "reset", "take_control", "release_control", "request_help"]),
+  action: z.enum([
+    "ensure",
+    "start",
+    "stop",
+    "reset",
+    "take_control",
+    "release_control",
+    "request_help",
+  ]),
   computerId: z.string().min(1).max(120),
+  seatId: z.string().min(1).max(120).optional(),
   detail: z.string().max(500).optional(),
 });
 
@@ -102,6 +111,10 @@ export async function POST(req: NextRequest) {
     role = (roleName as Role) ?? "member";
     const { data: wid } = await supabase.rpc("current_workspace_id");
     workspaceId = wid ? String(wid) : null;
+  } else {
+    // Demo / localStorage mode — no Supabase session; match requireAdmin fail-open.
+    role = "admin";
+    workspaceId = "__local__";
   }
   if (!can(role, "manage_fleet")) {
     return NextResponse.json({ error: "Admins only" }, { status: 403 });
@@ -111,6 +124,15 @@ export async function POST(req: NextRequest) {
     await bindWorkspaceSupervisor(workspaceId);
     let rec;
     switch (body.action) {
+      case "ensure": {
+        const seatId = (body.seatId ?? body.computerId).trim();
+        rec = defaultComputerSupervisor.ensureComputer({
+          workspaceId: workspaceId ?? "__local__",
+          seatId,
+          computerId: body.computerId,
+        });
+        break;
+      }
       case "start":
         rec = await defaultComputerSupervisor.start(body.computerId);
         break;

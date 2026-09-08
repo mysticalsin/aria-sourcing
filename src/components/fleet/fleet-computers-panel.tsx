@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Monitor, Eye, Hand, Unlock, RefreshCw, CircleHelp } from "lucide-react";
+import { Monitor, Eye, Hand, Unlock, RefreshCw, CircleHelp, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,11 @@ export type FleetComputerRow = {
   remoteUrl?: string | null;
 };
 
+function isAriaViewport(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return url.startsWith("/fleet/computers/") && url.includes("/viewport");
+}
+
 /**
  * Fleet → Computers panel. Observe / Take control are CLOSED by default —
  * operators must click to open a live view (never auto-pop LinkedIn windows).
@@ -28,6 +33,8 @@ export function FleetComputersPanel({
   onRelease,
   onObserve,
   onStart,
+  observingId: observingIdProp,
+  onObservingChange,
 }: {
   computers: FleetComputerRow[];
   onRefresh: () => void;
@@ -35,8 +42,13 @@ export function FleetComputersPanel({
   onRelease: (computerId: string) => void;
   onObserve: (computerId: string) => void;
   onStart?: (computerId: string) => void;
+  /** Controlled observe target (e.g. after Take control). */
+  observingId?: string | null;
+  onObservingChange?: (computerId: string | null) => void;
 }) {
-  const [observingId, setObservingId] = React.useState<string | null>(null);
+  const [observingIdInternal, setObservingIdInternal] = React.useState<string | null>(null);
+  const observingId = observingIdProp !== undefined ? observingIdProp : observingIdInternal;
+  const setObservingId = onObservingChange ?? setObservingIdInternal;
 
   return (
     <section
@@ -50,8 +62,9 @@ export function FleetComputersPanel({
             Isolated LinkedIn computers
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            One Chromium computer per seat. Live view stays closed until you click Observe or Take
-            control. While you hold control, the bot refuses actions.
+            One Chromium computer per seat. Live view stays closed until you click Open view or Take
+            control. While you hold control, the bot refuses actions — Release when LinkedIn login /
+            2FA is done.
           </p>
         </div>
         <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>
@@ -65,15 +78,15 @@ export function FleetComputersPanel({
           <CircleHelp className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <p>
             No browser-computer seats yet. Add a{" "}
-            <span className="font-medium text-ink">LinkedIn Browser Computer</span> seat in Fleet, or
-            keep using Vendor API for automatic delivery. Contact exclusivity still comes from the
-            Postgres lease — never from wiki/graph memory.
+            <span className="font-medium text-ink">LinkedIn Browser Computer</span> seat in Settings
+            → LinkedIn (or Fleet), then return here to Start / Take control.
           </p>
         </div>
       ) : (
         <ul className="divide-y divide-line/60">
           {computers.map((c) => {
             const observing = observingId === c.computerId;
+            const ariaViewport = isAriaViewport(c.remoteUrl);
             return (
               <li key={c.computerId} className="px-5 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -130,7 +143,14 @@ export function FleetComputersPanel({
                         Release
                       </Button>
                     ) : (
-                      <Button type="button" size="sm" onClick={() => onTakeControl(c.computerId)}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setObservingId(c.computerId);
+                          onTakeControl(c.computerId);
+                        }}
+                      >
                         <Hand className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                         Take control
                       </Button>
@@ -139,23 +159,39 @@ export function FleetComputersPanel({
                 </div>
                 {observing ? (
                   <div
-                    className="mt-3 rounded-xl border border-dashed border-line bg-ink/[0.03] px-4 py-6 text-center text-xs text-muted"
+                    className="mt-3 space-y-3 rounded-xl border border-dashed border-line bg-ink/[0.03] px-4 py-4 text-xs text-muted"
                     role="status"
                   >
                     {c.remoteUrl ? (
-                      <p>
-                        OpenBot computer is live.{" "}
-                        <a
-                          className="font-medium text-electric underline-offset-2 hover:underline"
-                          href={c.remoteUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open sandbox viewport
-                        </a>{" "}
-                        and complete LinkedIn login / 2FA there. While you hold Take control, Automatic
-                        sends pause.
-                      </p>
+                      <>
+                        <p>
+                          {c.control === "human" ? (
+                            <span className="font-medium text-tangerine">You have control — bot paused. </span>
+                          ) : null}
+                          {ariaViewport
+                            ? "Operator viewport is ready inside Aria (bind COMPUTER_SUPERVISOR_URL for live Chromium)."
+                            : "OpenBot computer is live."}{" "}
+                          <a
+                            className="inline-flex items-center gap-1 font-medium text-electric underline-offset-2 hover:underline"
+                            href={c.remoteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open sandbox viewport
+                            <ExternalLink className="h-3 w-3" aria-hidden />
+                          </a>
+                        </p>
+                        <div className="rounded-lg border border-line bg-surface px-4 py-3 text-left text-sm text-ink">
+                          <p className="font-medium">
+                            {c.control === "human"
+                              ? "Complete LinkedIn login / 2FA in the sandbox, then Release."
+                              : "Click Take control whenever you need to intervene — Automatic refuses sends while you hold it."}
+                          </p>
+                          <p className="mt-1 text-xs text-muted">
+                            1 seat = 1 computer. Mutex is enforced server-side in ComputerSupervisor.
+                          </p>
+                        </div>
+                      </>
                     ) : (
                       <p>
                         Live stream stays closed until the computer is started. Click Start or Take

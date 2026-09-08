@@ -233,6 +233,16 @@ export class ComputerSupervisor {
         this.audit(computerId, "start_failed", rec.lastError, "system");
         return rec;
       }
+    } else {
+      // No remote OpenBot host yet — still give operators an in-Aria control
+      // surface so Take control / Release work visibly in Fleet.
+      rec.remoteUrl = `/fleet/computers/${encodeURIComponent(computerId)}/viewport`;
+      this.audit(
+        computerId,
+        "start_local_viewport",
+        "OpenBot supervisor unset — using Aria operator viewport for Take control",
+        "system",
+      );
     }
 
     rec.status = "ready";

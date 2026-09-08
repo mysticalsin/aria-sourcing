@@ -4349,11 +4349,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const authorizedState = stateRef.current;
       if (!authorizedState || !can(authorizedState.currentRole, "manage_fleet")) return null;
       const now = new Date().toISOString();
+      const provider = partial.provider ?? "Microsoft Graph";
       const draft: AgentSeat = {
         id: genId("seat"),
         name: partial.name,
         operatorEmail: partial.operatorEmail,
-        provider: partial.provider ?? "Microsoft Graph",
+        provider,
         status: "active",
         mode: "mock",
         domainVerified: false,
@@ -4373,6 +4374,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         signature: partial.signature ?? "",
         language: partial.language ?? current().settings.defaultLanguage,
         connectedAccount: "",
+        computerId:
+          provider === "LinkedIn Browser Computer"
+            ? (partial.computerId ?? `comp_${globalThis.crypto.randomUUID()}`)
+            : (partial.computerId ?? null),
         createdAt: now,
       };
       let seat = draft;
