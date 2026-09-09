@@ -113,21 +113,25 @@ async function main() {
   // Agents tab
   await page.getByRole("tab", { name: /agents/i }).first().click({ force: true });
   await page.waitForTimeout(4000);
-  await page.getByText(/VMs working this campaign/i).first().waitFor({ timeout: 15_000 });
+  await page.getByText(/Agents on this campaign/i).first().waitFor({ timeout: 15_000 });
   await page.getByText(/Java · Agent 01/i).first().waitFor({ timeout: 10_000 });
+  await page.getByText(/\d+ attached/i).first().waitFor({ timeout: 10_000 });
   await page.screenshot({
     path: path.join(EVIDENCE, "2026-09-09-campaign-agents-tab.png"),
     fullPage: false,
   });
 
-  // Start first VM (must become ready/live — not max-computers error)
-  const startBtn = page.getByRole("button", { name: /start vm/i }).first();
-  if (!(await startBtn.count())) {
-    // Already running — click Observe path still valid
-    console.log("Start VM not shown — computer may already be live");
-  } else {
-    await startBtn.click({ force: true });
+  // Observe starts VM if needed (parity with Fleet)
+  const observe = page.getByRole("button", { name: /^observe$/i }).first();
+  if (await observe.count()) {
+    await observe.click({ force: true });
     await page.waitForTimeout(10_000);
+  } else {
+    const startBtn = page.getByRole("button", { name: /start vm/i }).first();
+    if (await startBtn.count()) {
+      await startBtn.click({ force: true });
+      await page.waitForTimeout(10_000);
+    }
   }
 
   // Assert at least one campaign VM is live (ignore stale audit log text).
@@ -144,14 +148,14 @@ async function main() {
     throw new Error("Start VM did not bring Java · Agent 01 live (ready/busy)");
   }
 
-  // Observe
-  const observe = page.getByRole("button", { name: /^observe$/i }).first();
-  if (await observe.count()) {
-    await observe.click({ force: true });
-    await page.waitForTimeout(3000);
-  } else {
-    // Hide view means already observing
-    console.log("Observe already active or unavailable");
+  // Observe already triggered start above; ensure view is open
+  const hide = page.getByRole("button", { name: /hide view/i }).first();
+  if (!(await hide.count())) {
+    const observeAgain = page.getByRole("button", { name: /^observe$/i }).first();
+    if (await observeAgain.count()) {
+      await observeAgain.click({ force: true });
+      await page.waitForTimeout(3000);
+    }
   }
   await page.screenshot({
     path: path.join(EVIDENCE, "2026-09-09-campaign-agents-observe.png"),
@@ -167,6 +171,8 @@ async function main() {
   await page.getByRole("button", { name: /^release$/i }).first().waitFor({ timeout: 10_000 });
   // Summary badge should reflect at least one human-held seat
   await page.getByText(/^[1-9]\d* human control$/i).first().waitFor({ timeout: 10_000 });
+  // Audit trail should show takeover
+  await page.getByText(/takeover/i).first().waitFor({ timeout: 10_000 });
   await page.screenshot({
     path: path.join(EVIDENCE, "2026-09-09-campaign-agents-take-control.png"),
     fullPage: false,

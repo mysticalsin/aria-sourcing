@@ -54,9 +54,11 @@ function enrichComputer(
 
 /**
  * GET — list computers + ops summary + recent fleet audits.
+ * Optional ?campaignId= filters recentAudits to that campaign (when tagged).
  * POST — ensure | start | stop | reset | take_control | release_control | request_help
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const campaignId = req.nextUrl.searchParams.get("campaignId")?.trim() || undefined;
   const supabase = await getServerSupabase();
   if (!supabase) {
     try {
@@ -66,12 +68,18 @@ export async function GET() {
         .map((rec) => enrichComputer(rec));
       const durable = await queryComputerAuditsDurable({
         workspaceId: "__local__",
+        campaignId,
         limit: 80,
       });
-      const recentAudits =
+      let recentAudits =
         durable.length > 0
           ? durable
           : defaultComputerSupervisor.recentFleetAudits("__local__", 40);
+      if (campaignId) {
+        recentAudits = recentAudits.filter(
+          (a) => !("campaignId" in a) || !a.campaignId || a.campaignId === campaignId,
+        );
+      }
       return NextResponse.json({
         computers,
         summary: summarizeFleetComputers(computers),
@@ -98,18 +106,25 @@ export async function GET() {
         workspaceId: String(wid),
         seatId: seat.id,
         computerId: seat.computer_id ?? undefined,
+        campaignId,
       });
       return enrichComputer(rec, { seatName: seat.name, seatStatus: seat.status });
     });
 
     const durable = await queryComputerAuditsDurable({
       workspaceId: String(wid),
+      campaignId,
       limit: 80,
     });
-    const recentAudits =
+    let recentAudits =
       durable.length > 0
         ? durable
         : defaultComputerSupervisor.recentFleetAudits(String(wid), 40);
+    if (campaignId) {
+      recentAudits = recentAudits.filter(
+        (a) => !("campaignId" in a) || !a.campaignId || a.campaignId === campaignId,
+      );
+    }
 
     return NextResponse.json({
       computers,
@@ -133,6 +148,7 @@ const BodySchema = z.object({
   ]),
   computerId: z.string().min(1).max(120),
   seatId: z.string().min(1).max(120).optional(),
+  campaignId: z.string().min(1).max(120).optional(),
   detail: z.string().max(500).optional(),
 });
 
@@ -160,6 +176,7 @@ export async function POST(req: NextRequest) {
 
   try {
     await bindWorkspaceSupervisor(workspaceId);
+    const campaignOpts = { campaignId: body.campaignId };
     let rec;
     switch (body.action) {
       case "ensure": {
@@ -168,11 +185,12 @@ export async function POST(req: NextRequest) {
           workspaceId: workspaceId ?? "__local__",
           seatId,
           computerId: body.computerId,
+          campaignId: body.campaignId,
         });
         break;
       }
       case "start":
-        rec = await defaultComputerSupervisor.start(body.computerId);
+        rec = await defaultComputerSupervisor.start(body.computerId, campaignOpts);
         break;
       case "stop":
         rec = await defaultComputerSupervisor.stop(body.computerId);
@@ -181,10 +199,10 @@ export async function POST(req: NextRequest) {
         rec = await defaultComputerSupervisor.reset(body.computerId);
         break;
       case "take_control":
-        rec = await defaultComputerSupervisor.takeControl(body.computerId);
+        rec = await defaultComputerSupervisor.takeControl(body.computerId, campaignOpts);
         break;
       case "release_control":
-        rec = await defaultComputerSupervisor.releaseControl(body.computerId);
+        rec = await defaultComputerSupervisor.releaseControl(body.computerId, campaignOpts);
         break;
       case "request_help":
         rec = defaultComputerSupervisor.requestHelp(

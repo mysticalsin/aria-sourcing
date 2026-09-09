@@ -29,9 +29,16 @@ const PatchSeatSchema = z.object({
   id: z.string().uuid(),
   operatorEmail: z.string().email().max(255).optional(),
   mode: z.enum(INTEGRATION_MODES).optional(),
-}).refine((value) => value.operatorEmail !== undefined || value.mode !== undefined, {
-  message: "Provide operatorEmail or mode.",
-});
+  assignedCampaignIds: z.array(z.string().min(1).max(120)).max(50).optional(),
+}).refine(
+  (value) =>
+    value.operatorEmail !== undefined ||
+    value.mode !== undefined ||
+    value.assignedCampaignIds !== undefined,
+  {
+    message: "Provide operatorEmail, mode, or assignedCampaignIds.",
+  },
+);
 
 async function requireFleetManager(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -124,13 +131,16 @@ export async function PATCH(req: NextRequest) {
 
   const validated = await validateBody(req, PatchSeatSchema, { maxBytes: 2_000 });
   if (!validated.ok) return validated.response;
-  const { id, operatorEmail, mode } = validated.data;
+  const { id, operatorEmail, mode, assignedCampaignIds } = validated.data;
 
   if (!actor.supabase) return NextResponse.json({ ok: true, demo: true });
 
-  const patch: Record<string, string> = {};
+  const patch: Record<string, unknown> = {};
   if (operatorEmail !== undefined) patch.operator_email = operatorEmail;
   if (mode !== undefined) patch.mode = mode;
+  if (assignedCampaignIds !== undefined) {
+    patch.assigned_campaign_ids = [...new Set(assignedCampaignIds)];
+  }
 
   const { data, error } = await actor.supabase
     .from("agent_seats")

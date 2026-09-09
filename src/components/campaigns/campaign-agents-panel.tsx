@@ -11,7 +11,7 @@ import {
   Unlock,
   Link2,
 } from "lucide-react";
-import { Badge, Button } from "@/components/ui";
+import { Badge, Button, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { AgentSeat } from "@/lib/types";
 import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
@@ -23,7 +23,39 @@ type AuditEvent = {
   action: string;
   detail: string;
   actor: string;
+  correlationId?: string | null;
+  jobId?: string | null;
+  campaignId?: string | null;
 };
+
+function relativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso;
+  const sec = Math.round((Date.now() - t) / 1000);
+  if (sec < 45) return "just now";
+  if (sec < 3600) return `${Math.max(1, Math.round(sec / 60))}m ago`;
+  if (sec < 86400) return `${Math.round(sec / 3600)}h ago`;
+  return `${Math.round(sec / 86400)}d ago`;
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "ready":
+      return "ready";
+    case "busy":
+      return "busy";
+    case "starting":
+      return "starting";
+    case "stopped":
+      return "stopped";
+    case "error":
+      return "error";
+    case "help_requested":
+      return "needs help";
+    default:
+      return status;
+  }
+}
 
 /**
  * Per-campaign Browser Computer agents: live Chromium VMs with Observe /
@@ -40,6 +72,7 @@ export function CampaignAgentsPanel({
   onAssignSeat?: (seatId: string) => void;
   onUnassignSeat?: (seatId: string) => void;
 }) {
+  const { toast } = useToast();
   const campaignSeats = React.useMemo(
     () =>
       seats.filter(
@@ -68,19 +101,42 @@ export function CampaignAgentsPanel({
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
-      // Ensure each campaign seat has a computer registered with the supervisor.
+      const ensureErrors: string[] = [];
       for (const seat of campaignSeats) {
         const computerId = seat.computerId || seat.id;
-        await fetch("/api/fleet/computers", {
+        const ens = await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "ensure", computerId, seatId: seat.id }),
+          body: JSON.stringify({
+            action: "ensure",
+            computerId,
+            seatId: seat.id,
+            campaignId,
+          }),
         }).catch(() => null);
+        if (ens && !ens.ok) {
+          const body = (await ens.json().catch(() => ({}))) as { error?: string };
+          const msg = body.error ?? `ensure failed (${ens.status})`;
+          ensureErrors.push(msg);
+          if (/max computers/i.test(msg)) {
+            ensureErrors.push(
+              "Chromium host is at capacity — stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS.",
+            );
+          }
+        }
       }
-      const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+      if (ensureErrors.length) {
+        setError(ensureErrors[0]);
+      } else {
+        setError(null);
+      }
+
+      const res = await fetch(
+        `/api/fleet/computers?campaignId=${encodeURIComponent(campaignId)}`,
+        { credentials: "same-origin" },
+      );
       if (!res.ok) {
         setError(`Fleet computers unavailable (${res.status})`);
         return;
@@ -93,7 +149,6 @@ export function CampaignAgentsPanel({
         campaignSeats.map((s) => s.computerId || s.id).filter(Boolean) as string[],
       );
       const rows = (data.computers ?? []).filter((c) => ids.has(c.computerId));
-      // Merge seat names when API didn't enrich
       setComputers(
         rows.map((c) => {
           const seat = campaignSeats.find(
@@ -102,15 +157,21 @@ export function CampaignAgentsPanel({
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
-      setAudits(
-        (data.recentAudits ?? []).filter((a) => ids.has(a.computerId)).slice(-40),
+
+      const campaignAudits = (data.recentAudits ?? []).filter(
+        (a) =>
+          ids.has(a.computerId) &&
+          (!a.campaignId || a.campaignId === campaignId),
       );
+      // Prefer campaign-tagged audits; fall back to computer-scoped when untagged.
+      const tagged = campaignAudits.filter((a) => a.campaignId === campaignId);
+      setAudits((tagged.length ? tagged : campaignAudits).slice(-40));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load campaign agents");
     } finally {
       setLoading(false);
     }
-  }, [campaignSeats]);
+  }, [campaignSeats, campaignId]);
 
   React.useEffect(() => {
     void refresh();
@@ -129,24 +190,80 @@ export function CampaignAgentsPanel({
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, computerId }),
+        body: JSON.stringify({ action, computerId, campaignId }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         computer?: FleetComputerRow;
       };
       if (!res.ok) {
-        setError(body.error ?? res.statusText);
+        const msg = body.error ?? res.statusText;
+        setError(msg);
+        toast({ title: "Computer action failed", description: msg, variant: "error" });
         return;
       }
-      if (action === "take_control") setObservingId(computerId);
-      if (action === "start" && body.computer) {
+      if (body.computer?.status === "error") {
+        const msg =
+          body.computer.lastError ||
+          "Computer entered error state — check Chromium supervisor capacity.";
+        setError(msg);
+        toast({ title: "Computer action failed", description: msg, variant: "error" });
+        await refresh();
+        return;
+      }
+      if (action === "take_control" || action === "start") {
         setObservingId(computerId);
       }
       await refresh();
+      toast({
+        title:
+          action === "take_control"
+            ? "You have control"
+            : action === "release_control"
+              ? "Control released"
+              : "Computer ready",
+        description:
+          action === "take_control"
+            ? "Bot paused. Finish LinkedIn login / 2FA in the viewport, then Release when done."
+            : action === "start"
+              ? "Live viewport opened — Observe to watch, or Take control to intervene."
+              : "Bot may act again on this seat.",
+        variant: "success",
+      });
+    } catch {
+      toast({ title: "Computer action failed", variant: "error" });
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function observe(computerId: string, selected: boolean) {
+    if (selected) {
+      setObservingId(null);
+      return;
+    }
+    const row = computers.find((c) => c.computerId === computerId);
+    if (!row || row.status === "stopped" || row.status === "error") {
+      await act("start", computerId);
+      return;
+    }
+    setObservingId(computerId);
+  }
+
+  function detachSeat(seat: AgentSeat, computer: FleetComputerRow) {
+    if (!onUnassignSeat) return;
+    const live =
+      computer.control === "human" ||
+      computer.status === "ready" ||
+      computer.status === "busy" ||
+      computer.status === "help_requested";
+    if (live) {
+      const ok = window.confirm(
+        `${seat.name} is still ${computer.control === "human" ? "under human control" : "live"}. Detach from this campaign only? The Chromium VM stays running on Fleet.`,
+      );
+      if (!ok) return;
+    }
+    onUnassignSeat(seat.id);
   }
 
   const observing = computers.find((c) => c.computerId === observingId) ?? null;
@@ -173,16 +290,16 @@ export function CampaignAgentsPanel({
             className="mt-0.5 flex items-center gap-2 text-base font-semibold text-ink"
           >
             <Bot className="h-4 w-4 text-electric" aria-hidden />
-            VMs working this campaign
+            Agents on this campaign
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            Each LinkedIn Browser Computer seat is one Chromium VM. Start it, watch live work, or
-            Take control anytime — the bot pauses until you Release.
+            LinkedIn Browser Computer seats attached here — one Chromium VM each. Observe starts the
+            VM if needed; Take control pauses the bot until you Release.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge size="sm" tone="electric">
-            {campaignSeats.length} agents
+            {campaignSeats.length} attached
           </Badge>
           <Badge size="sm" tone={readyCount ? "electric" : "neutral"}>
             {readyCount} live
@@ -191,7 +308,7 @@ export function CampaignAgentsPanel({
             {humanCount} human control
           </Badge>
           <Button type="button" size="sm" variant="secondary" onClick={() => void refresh()} disabled={loading}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} aria-hidden />
             Refresh
           </Button>
         </div>
@@ -238,8 +355,16 @@ export function CampaignAgentsPanel({
                 } satisfies FleetComputerRow);
               const selected = observingId === computerId;
               const busy = busyId === computerId;
+              const needsHelp = c.status === "help_requested";
               return (
-                <li key={seat.id} className={cn("px-5 py-4", selected && "bg-electric/5")}>
+                <li
+                  key={seat.id}
+                  className={cn(
+                    "px-5 py-4",
+                    selected && "bg-electric/5",
+                    needsHelp && "bg-tangerine/5",
+                  )}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -248,7 +373,18 @@ export function CampaignAgentsPanel({
                         <Badge size="sm" tone={c.control === "human" ? "tangerine" : "electric"}>
                           {c.control === "human" ? "Human control" : "Bot"}
                         </Badge>
-                        <span className="text-xs text-muted">{c.status}</span>
+                        <Badge
+                          size="sm"
+                          tone={
+                            needsHelp || c.status === "error"
+                              ? "tangerine"
+                              : c.status === "ready" || c.status === "busy"
+                                ? "electric"
+                                : "neutral"
+                          }
+                        >
+                          {statusLabel(c.status)}
+                        </Badge>
                       </div>
                       <p className="mt-0.5 font-mono text-[11px] text-muted">{computerId}</p>
                       {c.lastAudit ? (
@@ -256,6 +392,11 @@ export function CampaignAgentsPanel({
                       ) : null}
                       {c.lastError ? (
                         <p className="mt-1 text-xs text-danger">{c.lastError}</p>
+                      ) : null}
+                      {needsHelp ? (
+                        <p className="mt-1 text-xs font-medium text-tangerine">
+                          Needs operator help — Take control to finish LinkedIn login / 2FA.
+                        </p>
                       ) : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -275,7 +416,8 @@ export function CampaignAgentsPanel({
                         size="sm"
                         variant="secondary"
                         aria-pressed={selected}
-                        onClick={() => setObservingId(selected ? null : computerId)}
+                        disabled={busy}
+                        onClick={() => void observe(computerId, selected)}
                       >
                         <Eye className="mr-1.5 h-3.5 w-3.5" />
                         {selected ? "Hide view" : "Observe"}
@@ -307,7 +449,7 @@ export function CampaignAgentsPanel({
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => onUnassignSeat(seat.id)}
+                          onClick={() => detachSeat(seat, c)}
                         >
                           Detach
                         </Button>
@@ -332,6 +474,13 @@ export function CampaignAgentsPanel({
             </div>
             {observing && isRemoteLive ? (
               <div className="space-y-2 p-3">
+                {observing.control === "human" ? (
+                  <p className="rounded-lg border border-tangerine/40 bg-tangerine/10 px-3 py-2 text-xs text-ink">
+                    <span className="font-medium text-tangerine">You have control — bot paused. </span>
+                    Complete LinkedIn login / 2FA in the sandbox, then click Release so automatic
+                    sends can continue.
+                  </p>
+                ) : null}
                 <iframe
                   title={`Live view ${observing.computerId}`}
                   src={liveUrl!}
@@ -350,19 +499,22 @@ export function CampaignAgentsPanel({
               </div>
             ) : observing && liveUrl ? (
               <div className="space-y-2 p-4 text-sm text-muted">
+                {observing.control === "human" ? (
+                  <p className="rounded-lg border border-tangerine/40 bg-tangerine/10 px-3 py-2 text-xs text-ink">
+                    <span className="font-medium text-tangerine">You have control — bot paused. </span>
+                    Open the sandbox to finish LinkedIn login / 2FA, then Release.
+                  </p>
+                ) : null}
                 <p>
                   Operator viewport ready.{" "}
                   <a className="font-medium text-electric underline" href={liveUrl} target="_blank" rel="noreferrer">
                     Open sandbox viewport
                   </a>
                 </p>
-                <p className="text-xs">
-                  Bind a live Chromium supervisor (`COMPUTER_SUPERVISOR_URL`) for in-panel streaming.
-                </p>
               </div>
             ) : (
               <div className="px-4 py-10 text-center text-sm text-muted">
-                Start a VM and click Observe to watch this campaign&apos;s agent work — or Take
+                Click Observe to start (if needed) and watch this campaign&apos;s agent — or Take
                 control to intervene.
               </div>
             )}
@@ -372,14 +524,25 @@ export function CampaignAgentsPanel({
                 Recent audits
               </p>
               <ol className="mt-2 max-h-48 space-y-2 overflow-auto">
-                {[...audits].reverse().slice(0, 12).map((e, i) => (
-                  <li key={e.id ?? `${e.at}-${i}`} className="text-xs text-muted">
-                    <span className="font-medium text-ink">{e.action}</span> · {e.detail}
-                    <span className="mt-0.5 block font-mono text-[10px]">
-                      {e.computerId} · {e.actor}
-                    </span>
-                  </li>
-                ))}
+                {[...audits].reverse().slice(0, 12).map((e, i) => {
+                  const hot =
+                    e.action === "takeover" ||
+                    e.action === "help_requested" ||
+                    e.action.includes("failed");
+                  return (
+                    <li
+                      key={e.id ?? `${e.at}-${i}`}
+                      className={cn("text-xs text-muted", hot && "text-ink")}
+                    >
+                      <span className="font-medium text-ink">{e.action}</span> · {e.detail}
+                      <span className="mt-0.5 block font-mono text-[10px]">
+                        {relativeTime(e.at)} · {e.computerId} · {e.actor}
+                        {e.correlationId ? ` · ${e.correlationId}` : ""}
+                        {e.jobId ? ` · job ${e.jobId}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
                 {audits.length === 0 ? (
                   <li className="text-xs text-muted">No audits yet — Start or Take control to begin.</li>
                 ) : null}

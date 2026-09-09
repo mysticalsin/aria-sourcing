@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
 
   const url = req.nextUrl;
   const computerId = url.searchParams.get("computerId")?.trim() || undefined;
+  const campaignId = url.searchParams.get("campaignId")?.trim() || undefined;
   const action = url.searchParams.get("action")?.trim() || undefined;
   const actor = (url.searchParams.get("actor")?.trim() || undefined) as
     | ComputerAuditActor
@@ -65,6 +66,7 @@ export async function GET(req: NextRequest) {
   const events = await queryComputerAuditsDurable({
     workspaceId: resolved.workspaceId,
     computerId,
+    campaignId,
     action,
     actor,
     correlationId,
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     workspaceId: resolved.workspaceId,
     count: events.length,
-    filters: { computerId, action, actor, correlationId, since, until, limit },
+    filters: { computerId, campaignId, action, actor, correlationId, since, until, limit },
     events,
   });
 }

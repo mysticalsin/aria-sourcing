@@ -1417,11 +1417,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             }}
           />
           <p className="text-xs text-muted">
-            Workspace-wide fleet ops remain on{" "}
+            Same Chromium mutex as{" "}
             <Link href="/fleet" className="font-medium text-electric underline-offset-2 hover:underline">
               Fleet
             </Link>
-            . This tab scopes VMs to agents attached to <span className="font-mono">{c.id}</span>.
+            — this tab only shows agents attached to {c.title}.
           </p>
         </div>
       </TabPanel>

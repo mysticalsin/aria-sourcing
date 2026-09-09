@@ -21,6 +21,7 @@ export type ComputerAuditEvent = {
   workspaceId: string;
   computerId: string;
   seatId?: string | null;
+  campaignId?: string | null;
   action: string;
   detail: string;
   actor: ComputerAuditActor;
@@ -69,6 +70,7 @@ async function appendPostgres(event: ComputerAuditEvent) {
       workspace_id: event.workspaceId,
       computer_id: event.computerId,
       seat_id: event.seatId ?? null,
+      campaign_id: event.campaignId ?? null,
       action: event.action,
       detail: event.detail,
       actor: event.actor,
@@ -91,6 +93,7 @@ export function recordComputerAudit(
     workspaceId: input.workspaceId,
     computerId: input.computerId,
     seatId: input.seatId ?? null,
+    campaignId: input.campaignId ?? null,
     action: input.action,
     detail: input.detail,
     actor: input.actor,
@@ -107,6 +110,7 @@ export function recordComputerAudit(
 export type ComputerAuditQuery = {
   workspaceId: string;
   computerId?: string;
+  campaignId?: string;
   action?: string;
   actor?: ComputerAuditActor;
   correlationId?: string;
@@ -141,6 +145,7 @@ function readJsonlTail(limit: number): ComputerAuditEvent[] {
 function matches(event: ComputerAuditEvent, q: ComputerAuditQuery): boolean {
   if (event.workspaceId !== q.workspaceId) return false;
   if (q.computerId && event.computerId !== q.computerId) return false;
+  if (q.campaignId && event.campaignId !== q.campaignId) return false;
   if (q.action && event.action !== q.action) return false;
   if (q.actor && event.actor !== q.actor) return false;
   if (q.correlationId && event.correlationId !== q.correlationId) return false;
@@ -175,12 +180,13 @@ export async function queryComputerAuditsDurable(
       let req = supabase
         .from("computer_audits")
         .select(
-          "id, workspace_id, computer_id, seat_id, action, detail, actor, correlation_id, job_id, meta, created_at",
+          "id, workspace_id, computer_id, seat_id, campaign_id, action, detail, actor, correlation_id, job_id, meta, created_at",
         )
         .eq("workspace_id", q.workspaceId)
         .order("created_at", { ascending: false })
         .limit(limit);
       if (q.computerId) req = req.eq("computer_id", q.computerId);
+      if (q.campaignId) req = req.eq("campaign_id", q.campaignId);
       if (q.action) req = req.eq("action", q.action);
       if (q.actor) req = req.eq("actor", q.actor);
       if (q.correlationId) req = req.eq("correlation_id", q.correlationId);
@@ -195,6 +201,7 @@ export async function queryComputerAuditsDurable(
             workspaceId: String(row.workspace_id),
             computerId: String(row.computer_id),
             seatId: row.seat_id ? String(row.seat_id) : null,
+            campaignId: row.campaign_id ? String(row.campaign_id) : null,
             action: String(row.action),
             detail: String(row.detail ?? ""),
             actor: row.actor as ComputerAuditActor,
@@ -217,6 +224,7 @@ export function computerAuditsToCsv(events: ComputerAuditEvent[]): string {
     "workspace_id",
     "computer_id",
     "seat_id",
+    "campaign_id",
     "action",
     "actor",
     "detail",
@@ -231,6 +239,7 @@ export function computerAuditsToCsv(events: ComputerAuditEvent[]): string {
       e.workspaceId,
       e.computerId,
       e.seatId ?? "",
+      e.campaignId ?? "",
       e.action,
       e.actor,
       e.detail,

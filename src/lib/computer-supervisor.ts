@@ -52,6 +52,8 @@ export type ComputerRecord = {
   remoteUrl?: string | null;
   /** Human-facing live view (screenshot/stream). Falls back to remoteUrl. */
   viewUrl?: string | null;
+  /** Last campaign scope that touched this computer (Campaign Agents). */
+  campaignId?: string | null;
 };
 
 export type ComputerJobKind = "linkedin_send" | "warmup_nav" | "login_assist";
@@ -75,6 +77,7 @@ export type AuditEntry = {
   actor: "bot" | "human" | "system";
   workspaceId?: string;
   seatId?: string | null;
+  campaignId?: string | null;
   correlationId?: string | null;
   jobId?: string | null;
   id?: string;
@@ -159,22 +162,30 @@ export class ComputerSupervisor {
     action: string,
     detail: string,
     actor: AuditEntry["actor"] = "system",
-    extra?: { correlationId?: string | null; jobId?: string | null },
+    extra?: {
+      correlationId?: string | null;
+      jobId?: string | null;
+      campaignId?: string | null;
+      meta?: Record<string, unknown>;
+    },
   ) {
     const rec = this.computers.get(computerId);
     const correlationId =
       extra?.correlationId ??
       this.takeoverCorrelation.get(computerId) ??
       null;
+    const campaignId = extra?.campaignId ?? rec?.campaignId ?? null;
     const durable = recordComputerAudit({
       workspaceId: rec?.workspaceId ?? "__local__",
       computerId,
       seatId: rec?.seatId ?? null,
+      campaignId,
       action,
       detail,
       actor,
       correlationId,
       jobId: extra?.jobId ?? null,
+      meta: extra?.meta,
     });
     const entry: AuditEntry = {
       id: durable.id,
@@ -185,6 +196,7 @@ export class ComputerSupervisor {
       actor,
       workspaceId: durable.workspaceId,
       seatId: durable.seatId,
+      campaignId: durable.campaignId,
       correlationId: durable.correlationId,
       jobId: durable.jobId,
     };
@@ -202,10 +214,14 @@ export class ComputerSupervisor {
     workspaceId: string;
     seatId: string;
     computerId?: string;
+    campaignId?: string | null;
   }): ComputerRecord {
     if (opts.computerId) {
       const byId = this.computers.get(opts.computerId);
-      if (byId) return byId;
+      if (byId) {
+        if (opts.campaignId) byId.campaignId = opts.campaignId;
+        return byId;
+      }
     }
     const existing = [...this.computers.values()].find(
       (c) => c.workspaceId === opts.workspaceId && c.seatId === opts.seatId,
@@ -217,8 +233,11 @@ export class ComputerSupervisor {
         existing.computerId = opts.computerId;
         existing.botId = toOpenBotBotId(opts.computerId);
         this.computers.set(opts.computerId, existing);
-        this.audit(opts.computerId, "ensure", `Rebound seat ${opts.seatId} to stable computer id`);
+        this.audit(opts.computerId, "ensure", `Rebound seat ${opts.seatId} to stable computer id`, "system", {
+          campaignId: opts.campaignId,
+        });
       }
+      if (opts.campaignId) existing.campaignId = opts.campaignId;
       return existing;
     }
     const computerId = opts.computerId ?? makeId("comp");
@@ -235,9 +254,12 @@ export class ComputerSupervisor {
       botId: toOpenBotBotId(computerId),
       remoteUrl: null,
       viewUrl: null,
+      campaignId: opts.campaignId ?? null,
     };
     this.computers.set(computerId, rec);
-    this.audit(computerId, "ensure", `Seat ${opts.seatId} computer registered`);
+    this.audit(computerId, "ensure", `Seat ${opts.seatId} computer registered`, "system", {
+      campaignId: opts.campaignId,
+    });
     return rec;
   }
 
@@ -249,12 +271,15 @@ export class ComputerSupervisor {
     return this.computers.get(computerId);
   }
 
-  async start(computerId: string): Promise<ComputerRecord> {
+  async start(computerId: string, opts?: { campaignId?: string | null }): Promise<ComputerRecord> {
     const rec = this.computers.get(computerId);
     if (!rec) throw new Error("computer-not-found");
+    if (opts?.campaignId) rec.campaignId = opts.campaignId;
     rec.status = "starting";
     rec.updatedAt = isoNow();
-    this.audit(computerId, "start", "Booting isolated Chromium via OpenBot ensure", "system");
+    this.audit(computerId, "start", "Booting isolated Chromium via OpenBot ensure", "system", {
+      campaignId: opts?.campaignId,
+    });
 
     const cfg = openBotSupervisorCfg();
     if (cfg) {
@@ -353,10 +378,11 @@ export class ComputerSupervisor {
   }
 
   /** Human opens observe/takeover — bot actions refuse until release. */
-  async takeControl(computerId: string): Promise<ComputerRecord> {
+  async takeControl(computerId: string, opts?: { campaignId?: string | null }): Promise<ComputerRecord> {
     let rec = this.require(computerId);
+    if (opts?.campaignId) rec.campaignId = opts.campaignId;
     if (rec.status === "stopped" || rec.status === "error" || !rec.remoteUrl) {
-      rec = await this.start(computerId);
+      rec = await this.start(computerId, opts);
       if (rec.status === "error") return rec;
     }
     const correlationId = `takeover_${computerId}_${Date.now().toString(36)}`;
@@ -369,7 +395,7 @@ export class ComputerSupervisor {
       "takeover",
       "Operator took control — bot mutex held",
       "human",
-      { correlationId },
+      { correlationId, campaignId: opts?.campaignId },
     );
     const agent = agentCfg(rec);
     if (agent) {
@@ -388,8 +414,9 @@ export class ComputerSupervisor {
     return rec;
   }
 
-  async releaseControl(computerId: string): Promise<ComputerRecord> {
+  async releaseControl(computerId: string, opts?: { campaignId?: string | null }): Promise<ComputerRecord> {
     const rec = this.require(computerId);
+    if (opts?.campaignId) rec.campaignId = opts.campaignId;
     const correlationId = this.takeoverCorrelation.get(computerId) ?? null;
     rec.control = "bot";
     rec.updatedAt = isoNow();
@@ -399,7 +426,7 @@ export class ComputerSupervisor {
       "release",
       "Operator released control — bot may act",
       "human",
-      { correlationId },
+      { correlationId, campaignId: opts?.campaignId },
     );
     this.takeoverCorrelation.delete(computerId);
     const agent = agentCfg(rec);
@@ -412,7 +439,7 @@ export class ComputerSupervisor {
           "release_remote_failed",
           err instanceof Error ? err.message : "remote release failed",
           "system",
-          { correlationId },
+          { correlationId, campaignId: opts?.campaignId },
         );
       }
     }
@@ -454,7 +481,9 @@ export class ComputerSupervisor {
       job.detail = "human-has-control";
       job.finishedAt = isoNow();
       this.jobs.set(jobId, job);
-      this.audit(opts.computerId, "act_refused", `Job ${opts.kind} refused — human mutex`, "bot");
+      this.audit(opts.computerId, "act_refused", `Job ${opts.kind} refused — human mutex`, "bot", {
+        jobId,
+      });
       return job;
     }
 
@@ -465,7 +494,7 @@ export class ComputerSupervisor {
     }
 
     this.jobs.set(jobId, job);
-    this.audit(opts.computerId, "decide", `Accepted job ${opts.kind}`, "bot");
+    this.audit(opts.computerId, "decide", `Accepted job ${opts.kind}`, "bot", { jobId });
 
     // One Chromium per seat: chain jobs so concurrent enqueue on the same
     // computer never interleaves navigate/click/type.
@@ -487,18 +516,35 @@ export class ComputerSupervisor {
 
   private async runJob(job: ComputerJob): Promise<ComputerJob> {
     const rec = this.require(job.computerId);
+    const campaignId =
+      typeof job.payload.campaignId === "string" ? job.payload.campaignId : rec.campaignId ?? null;
+    if (campaignId) rec.campaignId = campaignId;
+    const jobMeta = {
+      messageId: job.payload.messageId,
+      candidateId: job.payload.candidateId,
+      campaignId,
+    };
     if (rec.control === "human") {
       job.status = "refused";
       job.detail = "human-has-control";
       job.finishedAt = isoNow();
       this.jobs.set(job.jobId, job);
+      this.audit(job.computerId, "act_refused", `Job ${job.kind} refused mid-run — human mutex`, "bot", {
+        jobId: job.jobId,
+        campaignId,
+        meta: jobMeta,
+      });
       return job;
     }
 
     rec.status = "busy";
     job.status = "running";
     this.jobs.set(job.jobId, job);
-    this.audit(job.computerId, "act", `Running ${job.kind}`, "bot");
+    this.audit(job.computerId, "act", `Running ${job.kind}`, "bot", {
+      jobId: job.jobId,
+      campaignId,
+      meta: jobMeta,
+    });
 
     const remoteSupervisor = openBotSupervisorCfg();
     if (remoteSupervisor) {
@@ -512,6 +558,11 @@ export class ComputerSupervisor {
           job.detail = fresh.lastError || "OpenBot computer not ready";
           job.finishedAt = isoNow();
           this.jobs.set(job.jobId, job);
+          this.audit(job.computerId, "act_failed", job.detail, "bot", {
+            jobId: job.jobId,
+            campaignId,
+            meta: jobMeta,
+          });
           return job;
         }
 
@@ -521,6 +572,11 @@ export class ComputerSupervisor {
           job.detail = "help_requested";
           job.finishedAt = isoNow();
           this.jobs.set(job.jobId, job);
+          this.audit(job.computerId, "act_failed", job.detail, "bot", {
+            jobId: job.jobId,
+            campaignId,
+            meta: jobMeta,
+          });
           return job;
         }
 
@@ -534,6 +590,11 @@ export class ComputerSupervisor {
             fresh.status = "error";
             fresh.lastError = job.detail;
             this.jobs.set(job.jobId, job);
+            this.audit(job.computerId, "act_failed", job.detail, "bot", {
+              jobId: job.jobId,
+              campaignId,
+              meta: jobMeta,
+            });
             return job;
           }
 
@@ -555,6 +616,11 @@ export class ComputerSupervisor {
             job.detail = result.detail;
             job.finishedAt = isoNow();
             this.jobs.set(job.jobId, job);
+            this.audit(job.computerId, "act_failed", job.detail, "bot", {
+              jobId: job.jobId,
+              campaignId,
+              meta: jobMeta,
+            });
             return job;
           }
 
@@ -565,7 +631,13 @@ export class ComputerSupervisor {
           if (!result.ok) fresh.lastError = result.detail;
           fresh.updatedAt = isoNow();
           this.jobs.set(job.jobId, job);
-          this.audit(job.computerId, "act_done", job.detail, "bot");
+          this.audit(
+            job.computerId,
+            result.ok ? "act_done" : "act_failed",
+            job.detail,
+            "bot",
+            { jobId: job.jobId, campaignId, meta: jobMeta },
+          );
           return job;
         }
 
@@ -577,6 +649,11 @@ export class ComputerSupervisor {
             job.finishedAt = isoNow();
             fresh.status = "error";
             this.jobs.set(job.jobId, job);
+            this.audit(job.computerId, "act_failed", job.detail, "bot", {
+              jobId: job.jobId,
+              campaignId,
+              meta: jobMeta,
+            });
             return job;
           }
           const url = String(
@@ -588,7 +665,11 @@ export class ComputerSupervisor {
           job.finishedAt = isoNow();
           fresh.status = "ready";
           this.jobs.set(job.jobId, job);
-          this.audit(job.computerId, "act_done", job.detail, "bot");
+          this.audit(job.computerId, "act_done", job.detail, "bot", {
+            jobId: job.jobId,
+            campaignId,
+            meta: jobMeta,
+          });
           return job;
         }
 
@@ -597,6 +678,11 @@ export class ComputerSupervisor {
         job.finishedAt = isoNow();
         fresh.status = "error";
         this.jobs.set(job.jobId, job);
+        this.audit(job.computerId, "act_failed", job.detail, "bot", {
+          jobId: job.jobId,
+          campaignId,
+          meta: jobMeta,
+        });
         return job;
       } catch (err) {
         job.status = "failed";
@@ -605,6 +691,11 @@ export class ComputerSupervisor {
         rec.status = "error";
         rec.lastError = job.detail;
         this.jobs.set(job.jobId, job);
+        this.audit(job.computerId, "act_failed", job.detail, "bot", {
+          jobId: job.jobId,
+          campaignId,
+          meta: jobMeta,
+        });
         return job;
       }
     }
@@ -616,6 +707,11 @@ export class ComputerSupervisor {
       job.detail = "help_requested";
       job.finishedAt = isoNow();
       this.jobs.set(job.jobId, job);
+      this.audit(job.computerId, "act_failed", job.detail, "bot", {
+        jobId: job.jobId,
+        campaignId,
+        meta: jobMeta,
+      });
       return job;
     }
 
@@ -627,6 +723,11 @@ export class ComputerSupervisor {
       rec.status = "error";
       rec.lastError = job.detail;
       this.jobs.set(job.jobId, job);
+      this.audit(job.computerId, "act_failed", job.detail, "bot", {
+        jobId: job.jobId,
+        campaignId,
+        meta: jobMeta,
+      });
       return job;
     }
 
@@ -638,6 +739,11 @@ export class ComputerSupervisor {
       rec.status = "error";
       rec.lastError = job.detail;
       this.jobs.set(job.jobId, job);
+      this.audit(job.computerId, "act_failed", job.detail, "bot", {
+        jobId: job.jobId,
+        campaignId,
+        meta: jobMeta,
+      });
       return job;
     }
 
@@ -648,7 +754,11 @@ export class ComputerSupervisor {
     rec.lastAudit = job.detail;
     rec.updatedAt = isoNow();
     this.jobs.set(job.jobId, job);
-    this.audit(job.computerId, "act_done", job.detail, "bot");
+    this.audit(job.computerId, "act_done", job.detail, "bot", {
+      jobId: job.jobId,
+      campaignId,
+      meta: jobMeta,
+    });
     return job;
   }
 
