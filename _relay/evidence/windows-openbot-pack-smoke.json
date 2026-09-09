@@ -1,0 +1,71 @@
+{
+  "ok": true,
+  "startedAt": "2026-09-09T17:45:07.070Z",
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "node": "v22.14.0"
+  },
+  "steps": [
+    {
+      "name": "pack",
+      "at": "2026-09-09T17:45:07.113Z",
+      "detail": "Packed /workspace/dist/aria-openbot-chromium-windows-portable.zip"
+    },
+    {
+      "name": "validate-tree",
+      "at": "2026-09-09T17:45:07.115Z",
+      "detail": "/workspace/dist/aria-openbot-chromium-windows-portable.zip"
+    },
+    {
+      "name": "windows-path-helpers",
+      "at": "2026-09-09T17:45:07.115Z",
+      "detail": "win32 Chrome + tmpdir + UA present"
+    },
+    {
+      "name": "install-deps",
+      "at": "2026-09-09T17:45:09.628Z",
+      "detail": "/tmp/aria-win-pack-UdhaLl/pkg"
+    },
+    {
+      "name": "health",
+      "at": "2026-09-09T17:45:10.062Z",
+      "detail": "http://127.0.0.1:18771/health"
+    },
+    {
+      "name": "ensure",
+      "at": "2026-09-09T17:45:10.364Z",
+      "detail": "{\"botId\":\"win_pack_bot\",\"container\":\"openbot-chromium-win_pack_bot\",\"status\":\"running\",\"url\":\"http://127.0.0.1:18771/c/win_pack_bot\",\"viewUrl\":\"http://127.0.0.1:18771/view/win_pack_bot\",\"port\":18771}"
+    },
+    {
+      "name": "view-fs",
+      "at": "2026-09-09T17:45:10.374Z",
+      "detail": "bytes=11565"
+    },
+    {
+      "name": "take-control",
+      "at": "2026-09-09T17:45:10.379Z",
+      "detail": "{\"control\":\"human\"}"
+    },
+    {
+      "name": "click-xy",
+      "at": "2026-09-09T17:45:10.391Z",
+      "detail": "status=200"
+    },
+    {
+      "name": "shutdown",
+      "at": "2026-09-09T17:45:10.471Z",
+      "detail": "exit=0"
+    },
+    {
+      "name": "done",
+      "at": "2026-09-09T17:45:10.471Z",
+      "detail": "Windows portable package smoke passed on this device"
+    }
+  ],
+  "archive": {
+    "path": "/workspace/dist/aria-openbot-chromium-windows-portable.zip",
+    "bytes": 13957
+  },
+  "finishedAt": "2026-09-09T17:45:10.472Z"
+}

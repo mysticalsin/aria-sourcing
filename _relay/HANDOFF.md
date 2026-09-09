@@ -1,43 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 121
+shift: 122
 agent: cursor-cloud
-updated: 2026-09-09T15:00Z
-status: fly-view-interactive-fullscreen
+updated: 2026-09-09T17:45Z
+status: windows-openbot-pack-shipped
 ---
 
-# Handoff — Shift 121
+# Handoff — Shift 122
 
 ## Current state
 
-- **Branch:** `cursor/campaign-agent-vm-control-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/76
-- **Fly Chromium:** https://aria-mantu-computers.fly.dev — Take control is fullscreen + click/type/scroll wired
-- **View URL:** https://aria-mantu-computers.fly.dev/view/comp_java_01?fs=1
-- **Fly app tip:** redeploy pending with Campaign Agents fullscreen panel (this commit)
+- **Branch:** `cursor/windows-openbot-chromium-pack-b91d` (from campaign tip `94ca1b8`)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/77 (base: `cursor/campaign-agent-vm-control-b91d`)
+- **Prior PR:** https://github.com/mysticalsin/aria-sourcing/pull/76 (Fly interactive Take control)
+- **Windows portable zip:** rebuild with `node scripts/pack-windows-openbot-chromium.mjs` → `dist/aria-openbot-chromium-windows-portable.zip`
+- **Smoke evidence:** `_relay/evidence/windows-openbot-pack-smoke.json` (`ok: true` on this Linux agent host)
+- **Artifact zip:** `/opt/cursor/artifacts/aria-openbot-chromium-windows-portable.zip`
 
 ## Done this shift
 
-1. Fixed OpenBot `/view` — keyboard forwarding, type box, accurate click mapping via naturalWidth/Height, scroll, fullscreen Take control
-2. Redeployed `aria-mantu-computers` with interactive view
-3. Campaign Agents Take control opens full sandbox tab + in-panel fullscreen when human
-4. Proved click/type/key APIs + HUMAN+fs screenshot
+1. Windows-safe supervisor paths (`os.tmpdir`, win32 Chrome candidates, Windows UA)
+2. `packages/windows-openbot-chromium/` Install/Start/Stop `.bat` + README
+3. Pack + smoke scripts; smoke passed (pack → install → health → ensure → view?fs=1 → take → click-xy)
+4. Pushed branch + opened PR #77
 
 ## Blockers
 
-1. Operator still must complete LinkedIn login/2FA once (credentials not in agent env)
+1. This device is Linux — cannot natively run `.bat`/headed Windows Chrome UI; smoke covers packaged JS + launcher contents
+2. Operator still must complete LinkedIn login/2FA once on Fly (or on Windows package) — credentials not in agent env
 
 ## Next steps
 
-1. Open https://aria-mantu-computers.fly.dev/view/comp_java_01?fs=1 → click email field → type → login
-2. Release when done; re-run LinkedIn send proof
+1. On a Windows PC: unzip portable → `Install.bat` → edit `.env.cmd` → `Start-OpenBot.bat`
+2. Point Aria `COMPUTER_SUPERVISOR_URL` at that host for local headed Take control
+3. Merge PR #77 into campaign branch / continue Fly LinkedIn login proof on PR #76
 
 ## Decisions made (don't relitigate)
 
 - Production LinkedIn/OpenBot/campaign VMs = Fly only
-- Screenshot remote desktop (not true VNC) — input via click-xy + keyboard APIs
-- Never COMPUTER_SUPERVISOR_MOCK_SEND=1 on prod
+- Windows package = local headed workstation path, not a replacement for Fly prod
+- Zip does not embed `node_modules` — Windows runs `Install.bat` (Node 20+)
+- Never `COMPUTER_SUPERVISOR_MOCK_SEND=1` on prod
 
 ## Watch out
 
-- Do not commit computer/supervisor tokens embedded in view HTML (existing design)
+- Do not commit computer/supervisor tokens or `.env.cmd`
+- Built zip under `dist/` is gitignored — regenerate with pack script
