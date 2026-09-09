@@ -46,11 +46,11 @@ __pycache__/
 /floor3d-*.png
 /office-*.png
 
-# Scratch: port-reference clones + working plans
-ultraplan/
-tmp/
-.vercel
-.env*
+# Built Windows portable OpenBot package (rebuild: node scripts/pack-windows-openbot-chromium.mjs)
+/dist/windows-openbot-chromium/
+/dist/aria-openbot-chromium-windows-portable.zip
+/dist/aria-openbot-chromium-windows-portable.tar.gz
+
 
 # Next's distDir always resolves via path.join(projectRoot, distDir) even when
 # NEXT_DIST_DIR is an absolute path (e.g. $TMPDIR) -- it lands nested in here

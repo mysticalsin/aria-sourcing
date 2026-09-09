@@ -53,6 +53,21 @@ DISPLAY=:1 OPENBOT_HEADED=1 OPENBOT_MAX_COMPUTERS=10 \
 node scripts/prove-openbot-chromium-fleet.mjs
 ```
 
+### Windows portable package
+
+For headed Chromium on a Windows PC (Campaign Agents / Fleet Take control):
+
+```bash
+# From repo tip — builds dist/aria-openbot-chromium-windows-portable.zip
+node scripts/pack-windows-openbot-chromium.mjs
+
+# Smoke the packaged supervisor on this machine (Linux/macOS/Windows):
+node scripts/test-windows-openbot-package.mjs
+```
+
+On Windows: unzip → `Install.bat` → edit `.env.cmd` → `Start-OpenBot.bat`.
+See `packages/windows-openbot-chromium/README.md`.
+
 Point Aria at it:
 
 ```bash

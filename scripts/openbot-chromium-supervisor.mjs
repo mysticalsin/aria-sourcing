@@ -12,11 +12,13 @@
  *   COMPUTER_TOKEN=...
  *   OPENBOT_HEADED=1          # show real Chrome windows on $DISPLAY
  *   OPENBOT_MAX_COMPUTERS=10
- *   OPENBOT_PROFILE_ROOT=/tmp/aria-openbot/profiles
+ *   OPENBOT_PROFILE_ROOT=<os.tmpdir>/aria-openbot/profiles
  *   OPENBOT_PUBLIC_BASE=http://127.0.0.1:18765
+ *   OPENBOT_CHROME_PATH=...   # optional; auto-detects Chrome on Win/macOS/Linux
  */
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 
@@ -27,13 +29,63 @@ const SUPERVISOR_TOKEN = (process.env.SUPERVISOR_TOKEN || "aria-supervisor-dev")
 const COMPUTER_TOKEN = (process.env.COMPUTER_TOKEN || "aria-computer-dev").trim();
 const HEADED = process.env.OPENBOT_HEADED === "1";
 const MAX = Number(process.env.OPENBOT_MAX_COMPUTERS || 10);
-const PROFILE_ROOT = process.env.OPENBOT_PROFILE_ROOT || "/tmp/aria-openbot/profiles";
 const PUBLIC_BASE = (process.env.OPENBOT_PUBLIC_BASE || `http://127.0.0.1:${PORT}`).replace(/\/$/, "");
-const CHROME_PATH =
-  process.env.OPENBOT_CHROME_PATH ||
-  // Playwright browsers path in Docker (Dockerfile.computers)
-  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
-  "/usr/local/bin/google-chrome";
+
+/** Default profile root works on Windows, macOS, and Linux. */
+function defaultProfileRoot() {
+  return path.join(os.tmpdir(), "aria-openbot", "profiles");
+}
+
+/**
+ * Prefer an explicit Chrome path; otherwise pick a platform Chrome if present.
+ * Empty string → Playwright bundled Chromium.
+ */
+function resolveChromePath() {
+  const fromEnv =
+    process.env.OPENBOT_CHROME_PATH ||
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
+    "";
+  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+
+  /** @type {string[]} */
+  let candidates = [];
+  if (process.platform === "win32") {
+    const pf = process.env.PROGRAMFILES || "C:\\Program Files";
+    const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const local = process.env.LOCALAPPDATA || "";
+    candidates = [
+      path.join(pf, "Google", "Chrome", "Application", "chrome.exe"),
+      path.join(pf86, "Google", "Chrome", "Application", "chrome.exe"),
+      local ? path.join(local, "Google", "Chrome", "Application", "chrome.exe") : "",
+    ].filter(Boolean);
+  } else if (process.platform === "darwin") {
+    candidates = [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ];
+  } else {
+    candidates = [
+      "/usr/local/bin/google-chrome",
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+    ];
+  }
+  return candidates.find((p) => fs.existsSync(p)) || "";
+}
+
+function defaultUserAgent() {
+  if (process.platform === "win32") {
+    return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+  }
+  if (process.platform === "darwin") {
+    return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+  }
+  return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+}
+
+const PROFILE_ROOT = process.env.OPENBOT_PROFILE_ROOT || defaultProfileRoot();
+const CHROME_PATH = resolveChromePath();
 
 fs.mkdirSync(PROFILE_ROOT, { recursive: true });
 
@@ -109,7 +161,7 @@ async function getBrowser() {
       "--window-size=1280,800",
     ],
   };
-  if (fs.existsSync(CHROME_PATH)) {
+  if (CHROME_PATH) {
     launchOpts.executablePath = CHROME_PATH;
   }
   sharedBrowser = await chromium.launch(launchOpts);
@@ -130,8 +182,7 @@ async function ensureComputer(botId) {
   fs.mkdirSync(profileDir, { recursive: true });
   const context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
-    userAgent:
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    userAgent: defaultUserAgent(),
     locale: "en-US",
   });
   // Persist storage state path for later sessions

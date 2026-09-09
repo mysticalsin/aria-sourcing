@@ -1,0 +1,17 @@
+{
+  "name": "aria-openbot-chromium-windows",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Portable Windows OpenBot Chromium supervisor for Aria Campaign Agents / Fleet Take control.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node scripts/openbot-chromium-supervisor.mjs",
+    "install:browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "1.61.1"
+  }
+}

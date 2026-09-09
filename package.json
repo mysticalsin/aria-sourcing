@@ -49,7 +49,9 @@
     "test:all": "node scripts/run-test-manifest.mjs --group all",
     "test:database": "node scripts/run-test-manifest.mjs --group database",
     "test:recovery": "node scripts/run-test-manifest.mjs --group recovery",
-    "test:authority-regression": "node scripts/run-test-manifest.mjs --group authority-regression"
+    "test:authority-regression": "node scripts/run-test-manifest.mjs --group authority-regression",
+    "pack:windows-openbot": "node scripts/pack-windows-openbot-chromium.mjs",
+    "test:windows-openbot-pack": "node scripts/test-windows-openbot-package.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
