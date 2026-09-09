@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-09T08:22:24.566Z",
+  "base": "http://127.0.0.1:3060",
+  "flow": "Settings dry-run off → Agents → Outreach LinkedIn Approve → Send now → Agents",
+  "linkedInVisible": true,
+  "sendClicked": true,
+  "sendDetail": "Agent Fleet | Outreach delivered | Outreach approved: Oliver Fontaine | Email approved, awaiting an explicit send. | Approved, pending send | Lawful basis recorded: Oliver Fontaine | LinkedIn Browser Computer seats attached here — one Chromium VM each. Observe starts the VM if needed; Take control pauses the bot until you Release. | 0 live | Live viewportSelect Observe | warmup_navigate · Opened L",
+  "videoMp4": "/opt/cursor/artifacts/aria-linkedin-campaign-reachout.mp4",
+  "videoWebm": "/opt/cursor/artifacts/aria-linkedin-campaign-reachout.webm",
+  "ffmpegOk": false,
+  "deliveryProofs": [
+    "_relay/evidence/2026-09-09-linkedin-campaign-reachout-mock.json",
+    "_relay/evidence/2026-09-09-linkedin-campaign-reachout-fly.json"
+  ]
+}
