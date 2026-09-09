@@ -27,6 +27,8 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   const preJavaSourcing = (parsed.version ?? 0) < 21;
   // STATE_VERSION 22 — software/data roles are LinkedIn-first; rebuild strategy platforms.
   const preLinkedInFirst = (parsed.version ?? 0) < 22;
+  // STATE_VERSION 23 — attach LinkedIn Browser Computer agents to Java campaign.
+  const preCampaignVmAgents = (parsed.version ?? 0) < 23;
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   const FAKE_CONNECTED_IDS = new Set(["int_github", "int_apify", "int_graph_teams", "int_sendgrid"]);
   return {
@@ -162,12 +164,21 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
           parsed.settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic",
       },
     },
-    seats: (parsed.seats ?? []).map((seat) => ({
-      ...seat,
-      providerId: seat.providerId,
-      modelId: seat.modelId,
-      toolIds: seat.toolIds,
-    })),
+    seats: (() => {
+      const seats = (parsed.seats ?? []).map((seat) => ({
+        ...seat,
+        providerId: seat.providerId,
+        modelId: seat.modelId,
+        toolIds: seat.toolIds,
+        assignedCampaignIds: seat.assignedCampaignIds ?? [],
+      }));
+      if (!preCampaignVmAgents) return seats;
+      const seedSeats = buildSeedState().seats.filter(
+        (s) => s.provider === "LinkedIn Browser Computer" && s.assignedCampaignIds?.includes("camp_seed_backend"),
+      );
+      const existing = new Set(seats.map((s) => s.id));
+      return [...seats, ...seedSeats.filter((s) => !existing.has(s.id))];
+    })(),
   };
 }
 

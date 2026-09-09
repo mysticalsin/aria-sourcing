@@ -1101,6 +1101,11 @@ export interface AgentSeat {
   toolIds?: ToolId[];
   /** Isolated Chromium computer id (LinkedIn Browser Computer seats). */
   computerId?: string | null;
+  /**
+   * Campaigns this seat/agent is attached to for Observe / Take control.
+   * Workspace seats can serve multiple campaigns; UI filters by this list.
+   */
+  assignedCampaignIds?: string[];
   /** Automatic LinkedIn backend for this seat. */
   linkedinDeliveryBackend?: "vendor-api" | "browser-computer" | null;
 }

@@ -28,6 +28,7 @@ import {
 import { motion } from "framer-motion";
 import { HydrationGate } from "@/components/app/page-header";
 import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
+import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { staggerContainer } from "@/lib/dashboard-motion";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -62,6 +63,7 @@ import {
   useReplies,
   useReportForCampaign,
   useRole,
+  useSeats,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
@@ -351,6 +353,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const allBookings = useBookings();
   const report = useReportForCampaign(id);
   const actions = useActions();
+  const seats = useSeats();
   const role = useRole();
   const hermesState = useHermes().state;
   const { toast } = useToast();
@@ -494,6 +497,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     { value: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
     { value: "jd", label: "JD Analysis", icon: <FileSearch className="h-4 w-4" /> },
     { value: "strategy", label: "Sourcing Strategy", icon: <Compass className="h-4 w-4" /> },
+    {
+      value: "agents",
+      label: "Agents",
+      icon: <Bot className="h-4 w-4" />,
+      count: seats.filter(
+        (s) =>
+          s.provider === "LinkedIn Browser Computer" &&
+          (s.assignedCampaignIds ?? []).includes(c.id),
+      ).length,
+    },
     { value: "candidates", label: "Candidates", icon: <Users className="h-4 w-4" />, count: candidates.length },
     { value: "outreach", label: "Outreach", icon: <Send className="h-4 w-4" />, count: outreach.length },
     { value: "replies", label: "Replies", icon: <MessageSquare className="h-4 w-4" />, count: campaignReplies.length },
@@ -1370,6 +1383,46 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               )}
             </CardBody>
           </Card>
+        </div>
+      </TabPanel>
+
+      <TabPanel value="agents" active={tab === "agents"} idBase={idBase}>
+        <div className="space-y-6">
+          <CampaignAgentsPanel
+            campaignId={c.id}
+            seats={seats}
+            onAssignSeat={(seatId) => {
+              const seat = seats.find((s) => s.id === seatId);
+              if (!seat) return;
+              const next = Array.from(
+                new Set([...(seat.assignedCampaignIds ?? []), c.id]),
+              );
+              actions.updateSeat(seatId, { assignedCampaignIds: next });
+              toast({
+                title: "Agent attached",
+                description: `${seat.name} can now work this campaign with Observe / Take control.`,
+                variant: "success",
+              });
+            }}
+            onUnassignSeat={(seatId) => {
+              const seat = seats.find((s) => s.id === seatId);
+              if (!seat) return;
+              const next = (seat.assignedCampaignIds ?? []).filter((id) => id !== c.id);
+              actions.updateSeat(seatId, { assignedCampaignIds: next });
+              toast({
+                title: "Agent detached",
+                description: `${seat.name} removed from this campaign’s VM panel.`,
+                variant: "info",
+              });
+            }}
+          />
+          <p className="text-xs text-muted">
+            Workspace-wide fleet ops remain on{" "}
+            <Link href="/fleet" className="font-medium text-electric underline-offset-2 hover:underline">
+              Fleet
+            </Link>
+            . This tab scopes VMs to agents attached to <span className="font-mono">{c.id}</span>.
+          </p>
         </div>
       </TabPanel>
 

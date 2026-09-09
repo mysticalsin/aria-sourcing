@@ -272,6 +272,21 @@ export class ComputerSupervisor {
           this.audit(computerId, "start_failed", rec.lastError, "system");
           return rec;
         }
+        // Warm the Chromium to LinkedIn so Observe shows real work surface.
+        const agent = agentCfg(rec);
+        if (agent) {
+          try {
+            await openBotNavigate(agent, "https://www.linkedin.com/");
+            this.audit(computerId, "warmup_navigate", "Opened LinkedIn after ensure", "system");
+          } catch (navErr) {
+            this.audit(
+              computerId,
+              "warmup_navigate_failed",
+              navErr instanceof Error ? navErr.message : "LinkedIn warmup navigate failed",
+              "system",
+            );
+          }
+        }
       } catch (err) {
         rec.status = "error";
         rec.lastError = err instanceof Error ? err.message : "OpenBot ensure failed";

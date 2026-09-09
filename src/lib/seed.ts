@@ -34,6 +34,7 @@ import type {
   PrequalRecord,
   ReplyIntent,
   SavedModel,
+  SeatProvider,
   StarRating,
   SuppressionEntry,
   SystemSettings,
@@ -64,7 +65,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // STATE_VERSION 19 — LinkedIn fleet.deliveryMode (automatic default; manual optional).
 // STATE_VERSION 21 — Senior Java campaign (camp_seed_backend) moved to Sourcing so
 // campaignAllowsLiveSourcing enables the Source button for LLM-wiki Java demos.
-export const STATE_VERSION = 22;
+export const STATE_VERSION = 23;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -280,6 +281,52 @@ function seedSeats(): AgentSeat[] {
       sentToday: 0,
       // Elevated bounce rate → auto-paused by the guardrail engine (demo).
       health: { sentTotal: 280, bounces: 19, complaints: 0, bounceRate: 0.068, complaintRate: 0 },
+    },
+    // LinkedIn Browser Computer agents attached to the Senior Java Developer campaign.
+    {
+      ...base,
+      id: "seat_java_vm_01",
+      name: "Java · Agent 01",
+      operatorEmail: "java.agent01@hermes.example",
+      provider: "LinkedIn Browser Computer" as SeatProvider,
+      warmupStartedAt: isoDaysBefore(10),
+      sentToday: 0,
+      health: { sentTotal: 12, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      computerId: "comp_java_01",
+      linkedinDeliveryBackend: "browser-computer" as const,
+      assignedCampaignIds: ["camp_seed_backend"],
+      persona:
+        "LinkedIn outreach agent for Senior Java Developer. Warm peer-to-peer tone. Never invent experience.",
+    },
+    {
+      ...base,
+      id: "seat_java_vm_02",
+      name: "Java · Agent 02",
+      operatorEmail: "java.agent02@hermes.example",
+      provider: "LinkedIn Browser Computer" as SeatProvider,
+      warmupStartedAt: isoDaysBefore(8),
+      sentToday: 0,
+      health: { sentTotal: 8, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      computerId: "comp_java_02",
+      linkedinDeliveryBackend: "browser-computer" as const,
+      assignedCampaignIds: ["camp_seed_backend"],
+      persona:
+        "LinkedIn outreach agent for Senior Java Developer. Concise, specific compliments on JVM work.",
+    },
+    {
+      ...base,
+      id: "seat_java_vm_03",
+      name: "Java · Agent 03",
+      operatorEmail: "java.agent03@hermes.example",
+      provider: "LinkedIn Browser Computer" as SeatProvider,
+      warmupStartedAt: isoDaysBefore(6),
+      sentToday: 0,
+      health: { sentTotal: 4, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      computerId: "comp_java_03",
+      linkedinDeliveryBackend: "browser-computer" as const,
+      assignedCampaignIds: ["camp_seed_backend"],
+      persona:
+        "LinkedIn outreach agent for Senior Java Developer. Soft ask, no corporate fluff.",
     },
   ];
 }

@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-09T06:38:57.485Z",
+  "base": "http://127.0.0.1:3040",
+  "flow": "campaign → Agents tab → Start VM → Observe → Take control → Release",
+  "asserted": [
+    "no start_failed",
+    "Human control visible",
+    "Release restores Take control"
+  ],
+  "videoMp4": "/opt/cursor/artifacts/aria-campaign-agents-vm-take-control.mp4",
+  "videoWebm": "/opt/cursor/artifacts/aria-campaign-agents-vm-take-control.webm"
+}

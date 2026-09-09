@@ -46,6 +46,34 @@ const nextConfig = {
         ? []
         : ["http://127.0.0.1:54321 ws://127.0.0.1:54321 http://localhost:54321 ws://localhost:54321"]),
     ].join(" ");
+    // Live Chromium operator viewports (OpenBot /view/:botId) embed cross-origin.
+    // Without frame-src, default-src 'self' blanks the campaign/fleet Observe iframe.
+    const supervisorOrigins = [];
+    for (const raw of [
+      process.env.COMPUTER_SUPERVISOR_URL,
+      process.env.NEXT_PUBLIC_COMPUTER_SUPERVISOR_URL,
+    ]) {
+      if (!raw) continue;
+      try {
+        supervisorOrigins.push(new URL(raw).origin);
+      } catch {
+        /* ignore bad URL */
+      }
+    }
+    const frameSrc = [
+      "frame-src 'self'",
+      ...new Set(supervisorOrigins),
+      ...(isProd
+        ? []
+        : [
+            "http://127.0.0.1:18765",
+            "http://localhost:18765",
+            "http://127.0.0.1:18766",
+            "http://localhost:18766",
+          ]),
+      // Fly / hosted OpenBot view hosts (https only).
+      "https:",
+    ].join(" ");
     const csp = [
       "default-src 'self'",
       scriptSrc,
@@ -57,6 +85,7 @@ const nextConfig = {
       // blob: lets three's GLTFLoader fetch each GLB's own embedded textures
       // (same-origin in-memory data the page itself creates).
       connectSrc,
+      frameSrc,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
