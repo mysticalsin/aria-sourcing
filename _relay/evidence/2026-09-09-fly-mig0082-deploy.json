@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-09T14:35:00.755804+00:00",
+  "app": "https://aria-mantu-app.fly.dev",
+  "computers": "https://aria-mantu-computers.fly.dev",
+  "releaseSha": "d8115f6908a0bf1cf7d648fb9ac1c62b385e2331",
+  "migration": "0082_campaign_agent_bindings.sql",
+  "migrationCount": 81,
+  "health": "healthy",
+  "ready": {
+    "ok": false,
+    "reason": "agentFrameworks false (known for this tenant)",
+    "build": "d8115f6908a0bf1cf7d648fb9ac1c62b385e2331",
+    "migration": "0082_campaign_agent_bindings.sql",
+    "migrationComponent": true
+  },
+  "linkedinSendProof": "help_requested login wall \u2014 no LinkedIn credentials in environment to complete operator login",
+  "chromiumView": "https://aria-mantu-computers.fly.dev/view/comp_java_01"
+}
