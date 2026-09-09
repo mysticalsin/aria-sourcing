@@ -1,49 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 122
+shift: 123
 agent: cursor-cloud
-updated: 2026-09-09T22:40Z
-status: aria-e2e-antibot-ux-wired
+updated: 2026-09-09T23:51Z
+status: tony-walteur-e2e-video-ready
 ---
 
-# Handoff — Shift 122
+# Handoff — Shift 123
 
 ## Current state
 
 - **Branch:** `cursor/aria-e2e-antibot-ux-b91d`
-- **Base:** `integration/sourcing-enrichment-on-main` (tracks via campaign-agent-vm-control)
-- Core anti-bot libs + UI wiring for LinkedIn OpenBot happy path are in-tree
-- `npx tsc --noEmit` clean; `tests/send-pacing.mts` + `tests/campaign-go-live.mts` green
+- Tony Walteur E2E showcase video ready at `/opt/cursor/artifacts/aria-tony-walteur-e2e-outreach.mp4` (~79s)
+- Flow: Aria campaign → Agents go-live → OpenBot LinkedIn on Tony Walteur → Outreach Approve-ready
+- Live LinkedIn session on Fly still hits authwall without operator login; video splices a captured Tony profile OpenBot view
 
 ## Done this shift
 
-1. Setup guide + onboarding rewritten to Connect email → Pick LLM → Create campaign → Attach agent → Take control login → Approve → Send (dry-run called out; `hermes:onboarded:v2`)
-2. `computer_help` recommendations + AttentionPanel fetches `/api/fleet/computers`
-3. CampaignGoLiveChecklist + BanRiskStrip on Agents tab; CampaignFunnelSpine on Overview; SendOutcomeChip on outreach send
-4. Pacing enforced in `/api/outreach/send` (deferred + paceReason) + browser adapter help_requested gate; allocateBatch respects send window when enforceBusinessHours; lastSendAt/sentToday updated on success
-5. OpenBot supervisor: launchPersistentContext, human-like /type, /session-probe, mouse dwell before click
-6. ComputerSupervisor: session gate on linkedin_send; Release clears help_requested + auto-retries ≤3 failed sends
-7. LINKEDIN_BROWSER_SEAT_DEFAULTS in seed + addSeat; `scripts/source-idle-campaigns.mjs` dry log only
+1. Recorded live Aria walkthrough (`scripts/record-tony-walteur-outreach-e2e.mjs`) with Tony draft injected
+2. Built final showcase MP4 with Tony LinkedIn OpenBot profile + Approve-ready outreach
+3. Artifacts: `tony-walteur-linkedin-openbot-tony.png`, `tony-walteur-outreach-draft.png`, `tony-walteur-ready-to-reach-out.png`
 
 ## Blockers
 
-1. Operator must still complete LinkedIn login/2FA once per computer (credentials not in agent env)
-2. Fly Chromium redeploy needed to pick up openbot-chromium-supervisor.mjs typing/profile changes
+1. Operator LinkedIn login/2FA still required once per computer before Message send
+2. Fly Chromium may authwall public profile after cookie accept — capture Tony preview before that
 
 ## Next steps
 
-1. Redeploy `aria-mantu-computers` with updated `scripts/openbot-chromium-supervisor.mjs`
-2. Take control → login → Release → prove LinkedIn send with pacing + outcome chip
-3. Optional: wire CampaignGoLiveChecklist `computers` prop from live fleet fetch
+1. Operator: Take control on `comp_java_01` → LinkedIn login → Release → Approve Tony draft → Send
+2. Redeploy computers supervisor if typing/profile changes not yet live
 
 ## Decisions made (don't relitigate)
 
-- Production LinkedIn/OpenBot/campaign VMs = Fly only
-- Never COMPUTER_SUPERVISOR_MOCK_SEND=1 on prod
-- AttentionPanel client-fetches computers (minimal invasive vs deriveRecommendations callers)
-- allocateBatch uses isWithinSendWindow (not evaluateSendPace) to avoid fleet↔send-pacing circular import
+- Production LinkedIn/OpenBot = Fly only
+- Never mock send on prod
+- Do not click in-app Take control during Playwright video (overlay hijacks recording) — use `/view` URL
 
 ## Watch out
 
-- Do not commit computer/supervisor tokens in view HTML
-- source-idle-campaigns.mjs must never send
+- Storage key `hermes-sourcing:v1`; campaign `camp_seed_backend`
+- Do not commit OpenBot tokens from view HTML
