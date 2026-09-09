@@ -214,6 +214,17 @@ export function CampaignAgentsPanel({
       if (action === "take_control" || action === "start") {
         setObservingId(computerId);
       }
+      if (action === "take_control" && typeof window !== "undefined") {
+        // Prefer the dedicated full-sandbox tab for LinkedIn login (keyboard + fullscreen).
+        const url =
+          body.computer?.viewUrl ||
+          body.computer?.remoteUrl ||
+          computers.find((c) => c.computerId === computerId)?.viewUrl ||
+          computers.find((c) => c.computerId === computerId)?.remoteUrl;
+        if (url && /^https?:\/\//i.test(url)) {
+          window.open(`${url}${url.includes("?") ? "&" : "?"}fs=1`, "_blank", "noopener,noreferrer");
+        }
+      }
       await refresh();
       toast({
         title:
@@ -224,7 +235,7 @@ export function CampaignAgentsPanel({
               : "Computer ready",
         description:
           action === "take_control"
-            ? "Bot paused. Finish LinkedIn login / 2FA in the viewport, then Release when done."
+            ? "Fullscreen sandbox opened — click LinkedIn fields and type your login, then Release when done."
             : action === "start"
               ? "Live viewport opened — Observe to watch, or Take control to intervene."
               : "Bot may act again on this seat.",
@@ -473,29 +484,73 @@ export function CampaignAgentsPanel({
               )}
             </div>
             {observing && isRemoteLive ? (
-              <div className="space-y-2 p-3">
+              <div
+                className={cn(
+                  "space-y-2 p-3",
+                  observing.control === "human" &&
+                    "fixed inset-0 z-50 flex flex-col bg-ink p-0 sm:p-0",
+                )}
+              >
                 {observing.control === "human" ? (
-                  <p className="rounded-lg border border-tangerine/40 bg-tangerine/10 px-3 py-2 text-xs text-ink">
-                    <span className="font-medium text-tangerine">You have control — bot paused. </span>
-                    Complete LinkedIn login / 2FA in the sandbox, then click Release so automatic
-                    sends can continue.
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#0c1424] px-3 py-2 text-xs text-paper">
+                    <p>
+                      <span className="font-medium text-tangerine">You have control — bot paused. </span>
+                      Click and type in the sandbox to finish LinkedIn login / 2FA, then Release.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 font-medium text-electric"
+                        href={liveUrl!}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open full sandbox
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={busyId === observing.computerId}
+                        onClick={() => void act("release_control", observing.computerId)}
+                      >
+                        <Unlock className="mr-1.5 h-3.5 w-3.5" />
+                        Release
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">
+                    Observe mode — Take control for fullscreen interactive login.
                   </p>
-                ) : null}
+                )}
                 <iframe
                   title={`Live view ${observing.computerId}`}
-                  src={liveUrl!}
-                  className="aspect-video w-full rounded-lg border border-line bg-ink/5"
-                  allow="clipboard-read; clipboard-write"
+                  src={
+                    observing.control === "human"
+                      ? `${liveUrl!}${liveUrl!.includes("?") ? "&" : "?"}fs=1`
+                      : liveUrl!
+                  }
+                  className={cn(
+                    "w-full rounded-lg border border-line bg-ink/5",
+                    observing.control === "human"
+                      ? "min-h-0 flex-1 rounded-none border-0"
+                      : "aspect-video",
+                  )}
+                  allow="clipboard-read; clipboard-write; fullscreen"
+                  allowFullScreen
                 />
-                <a
-                  className="inline-flex items-center gap-1 text-xs font-medium text-electric"
-                  href={liveUrl!}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open full sandbox
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+                {observing.control !== "human" ? (
+                  <a
+                    className="inline-flex items-center gap-1 text-xs font-medium text-electric"
+                    href={liveUrl!}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open full sandbox
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : null}
               </div>
             ) : observing && liveUrl ? (
               <div className="space-y-2 p-4 text-sm text-muted">

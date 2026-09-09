@@ -224,22 +224,53 @@ function viewPage(botId) {
   <title>OpenBot ${botId}</title>
   <style>
     :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
-    body { margin: 0; background: #070b14; color: #e8eefc; }
-    header { display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:space-between;
-      padding:12px 16px; border-bottom:1px solid #1e2a44; background:#0c1424; position:sticky; top:0; }
+    html, body { margin: 0; height: 100%; background: #05070c; color: #e8eefc; overflow: hidden; }
+    body { display: flex; flex-direction: column; }
+    header {
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between;
+      padding:10px 14px; border-bottom:1px solid #1e2a44; background:#0c1424; z-index:5;
+      flex: 0 0 auto;
+    }
+    body.fs header { position: absolute; left: 0; right: 0; top: 0; background: rgba(12,20,36,.92); backdrop-filter: blur(8px); }
+    body.fs header.collapsed { transform: translateY(-110%); transition: transform .2s ease; }
+    body.fs:hover header.collapsed { transform: translateY(0); }
     .badge { padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
     .human { background:#5b3410; color:#ffd29a; }
     .bot { background:#10384f; color:#8de7ff; }
     button { background:#5b7cfa; color:white; border:0; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
     button.secondary { background:#24314d; }
-    main { padding:16px; display:grid; gap:12px; }
-    #shot { width:100%; max-width:1280px; border:1px solid #24314d; border-radius:12px; background:#000; cursor:crosshair; }
+    button:disabled { opacity:.55; cursor:wait; }
+    #stage {
+      flex: 1 1 auto; min-height: 0; display:flex; flex-direction:column; gap:8px;
+      padding: 12px; background:#05070c;
+    }
+    body.fs #stage { padding: 0; }
+    #hint { font-size:12px; color:#9db0d0; }
+    body.fs #hint { display:none; }
     #meta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; color:#9db0d0; }
-    #err { color:#ff8d9c; min-height:1.2em; }
+    #err { color:#ff8d9c; min-height:1.2em; font-size:13px; }
+    #frame {
+      position: relative; flex: 1 1 auto; min-height: 0; background:#000;
+      border:1px solid #24314d; border-radius:12px; overflow:hidden;
+      display:flex; align-items:center; justify-content:center;
+    }
+    body.fs #frame { border:0; border-radius:0; }
+    #shot {
+      display:block; max-width:100%; max-height:100%; width:auto; height:auto;
+      cursor: crosshair; outline: none; user-select: none; -webkit-user-drag: none;
+      background:#000;
+    }
+    #shot:focus { box-shadow: inset 0 0 0 2px #5b7cfa; }
+    #typebox {
+      width: min(720px, 100%); border-radius:8px; border:1px solid #24314d; background:#0c1424;
+      color:#e8eefc; padding:10px 12px; font-size:14px;
+    }
+    body.fs #typeRow { display:none; }
+    #typeRow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   </style>
 </head>
-<body>
-  <header>
+<body class="${control === "human" ? "fs" : ""}">
+  <header id="toolbar">
     <div>
       <div style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#7fd7ff">Live Chromium computer</div>
       <div style="font-weight:700;margin-top:2px">${botId}</div>
@@ -247,21 +278,38 @@ function viewPage(botId) {
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span id="controlBadge" class="badge ${control === "human" ? "human" : "bot"}">${control}</span>
       <span id="statusText" style="font-size:12px;color:#9db0d0">${status}</span>
-      <button type="button" onclick="take()">Take control</button>
-      <button type="button" class="secondary" onclick="release()">Release</button>
+      <button type="button" id="btnTake" onclick="take()">Take control</button>
+      <button type="button" class="secondary" id="btnRelease" onclick="release()">Release</button>
       <button type="button" class="secondary" onclick="goLinkedIn()">Open LinkedIn</button>
-      <button type="button" class="secondary" onclick="goExample()">example.com</button>
+      <button type="button" class="secondary" onclick="toggleFs()">Fullscreen</button>
     </div>
   </header>
-  <main>
+  <div id="stage">
+    <div id="hint">Click the desktop to focus · type normally · Esc releases focus · Take control opens fullscreen</div>
     <div id="meta">loading…</div>
     <div id="err"></div>
-    <img id="shot" alt="Live Chromium screenshot" />
-  </main>
+    <div id="frame">
+      <img id="shot" tabindex="0" alt="Live Chromium screenshot — click then type" />
+    </div>
+    <div id="typeRow">
+      <input id="typebox" type="text" autocomplete="off" spellcheck="false"
+        placeholder="Type here and press Enter to send into the focused LinkedIn field" />
+      <button type="button" class="secondary" onclick="sendTypebox()">Send text</button>
+    </div>
+  </div>
   <script>
     const botId = ${JSON.stringify(botId)};
     const token = ${JSON.stringify(COMPUTER_TOKEN)};
-    const base = ${JSON.stringify(PUBLIC_BASE)} + '/c/' + encodeURIComponent(botId);
+    const supervisorToken = ${JSON.stringify(SUPERVISOR_TOKEN)};
+    const publicBase = ${JSON.stringify(PUBLIC_BASE)};
+    const base = publicBase + '/c/' + encodeURIComponent(botId);
+    const shot = document.getElementById('shot');
+    const typebox = document.getElementById('typebox');
+    let human = ${control === "human" ? "true" : "false"};
+    let busy = false;
+    let refreshTimer = null;
+    let pauseRefreshUntil = 0;
+
     async function api(path, body) {
       const res = await fetch(base + path, {
         method: 'POST',
@@ -277,53 +325,209 @@ function viewPage(botId) {
       if (!res.ok) throw new Error(data.error || res.statusText);
       return data;
     }
+
+    function setErr(msg) {
+      document.getElementById('err').textContent = msg || '';
+    }
+
+    function mapPoint(ev) {
+      const rect = shot.getBoundingClientRect();
+      const nw = shot.naturalWidth || 1280;
+      const nh = shot.naturalHeight || 800;
+      if (!rect.width || !rect.height) return null;
+      const x = Math.round((ev.clientX - rect.left) * (nw / rect.width));
+      const y = Math.round((ev.clientY - rect.top) * (nh / rect.height));
+      return {
+        x: Math.max(0, Math.min(nw - 1, x)),
+        y: Math.max(0, Math.min(nh - 1, y)),
+      };
+    }
+
+    async function enterFullscreen() {
+      document.body.classList.add('fs');
+      const root = document.documentElement;
+      try {
+        if (!document.fullscreenElement && root.requestFullscreen) {
+          await root.requestFullscreen();
+        }
+      } catch (_) { /* browser may block without gesture — body.fs still fills the window */ }
+      shot.focus();
+    }
+
+    async function exitFullscreen() {
+      document.body.classList.remove('fs');
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+      } catch (_) {}
+    }
+
+    async function toggleFs() {
+      if (document.body.classList.contains('fs') && document.fullscreenElement) await exitFullscreen();
+      else await enterFullscreen();
+    }
+
     async function refresh() {
+      if (Date.now() < pauseRefreshUntil) return;
       try {
         const res = await fetch(base + '/screenshot?ts=' + Date.now(), {
-          headers: { 'authorization': 'Bearer ' + token, 'x-openbot-computer-token': token, 'x-openbot-bot-id': botId },
+          headers: {
+            'authorization': 'Bearer ' + token,
+            'x-openbot-computer-token': token,
+            'x-openbot-bot-id': botId,
+          },
         });
         if (!res.ok) throw new Error('screenshot ' + res.status);
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
-        const img = document.getElementById('shot');
-        const old = img.src;
-        img.src = url;
+        const old = shot.src;
+        shot.src = url;
         if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
         const meta = await fetch(base + '/read', {
-          headers: { 'authorization': 'Bearer ' + token, 'x-openbot-computer-token': token, 'x-openbot-bot-id': botId },
+          headers: {
+            'authorization': 'Bearer ' + token,
+            'x-openbot-computer-token': token,
+            'x-openbot-bot-id': botId,
+          },
         }).then(r => r.json());
         document.getElementById('meta').textContent = (meta.title || '') + ' — ' + (meta.url || '');
-        document.getElementById('err').textContent = '';
-        const st = await fetch(${JSON.stringify(PUBLIC_BASE)} + '/computers/' + encodeURIComponent(botId) + '/state', {
-          headers: { 'authorization': 'Bearer ' + ${JSON.stringify(SUPERVISOR_TOKEN)} },
+        setErr('');
+        const st = await fetch(publicBase + '/computers/' + encodeURIComponent(botId) + '/state', {
+          headers: { 'authorization': 'Bearer ' + supervisorToken },
         }).then(r => r.json()).catch(() => null);
         if (st) {
           const badge = document.getElementById('controlBadge');
           badge.textContent = st.control;
           badge.className = 'badge ' + (st.control === 'human' ? 'human' : 'bot');
           document.getElementById('statusText').textContent = st.status;
+          human = st.control === 'human';
+          if (human) document.body.classList.add('fs');
         }
       } catch (e) {
-        document.getElementById('err').textContent = String(e.message || e);
+        setErr(String(e.message || e));
       }
     }
-    async function take() { await api('/control/take', {}); await refresh(); }
-    async function release() { await api('/control/release', {}); await refresh(); }
-    async function goLinkedIn() { await api('/navigate', { url: 'https://www.linkedin.com/' }); await refresh(); }
-    async function goExample() { await api('/navigate', { url: 'https://example.com/' }); await refresh(); }
-    document.getElementById('shot').addEventListener('click', async (ev) => {
-      const img = ev.currentTarget;
-      const rect = img.getBoundingClientRect();
-      const x = Math.round((ev.clientX - rect.left) * (1280 / rect.width));
-      const y = Math.round((ev.clientY - rect.top) * (800 / rect.height));
+
+    function scheduleRefresh() {
+      if (refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = setInterval(refresh, human ? 900 : 1400);
+    }
+
+    async function take() {
+      await api('/control/take', {});
+      human = true;
+      await enterFullscreen();
+      await refresh();
+      scheduleRefresh();
+    }
+
+    async function release() {
+      await api('/control/release', {});
+      human = false;
+      await exitFullscreen();
+      await refresh();
+      scheduleRefresh();
+    }
+
+    async function goLinkedIn() {
+      await api('/navigate', { url: 'https://www.linkedin.com/' });
+      pauseRefreshUntil = Date.now() + 400;
+      await refresh();
+      shot.focus();
+    }
+
+    async function sendTypebox() {
+      const text = typebox.value;
+      if (!text) return;
       try {
-        await api('/click-xy', { x, y });
+        await api('/type-text', { text });
+        typebox.value = '';
+        pauseRefreshUntil = Date.now() + 250;
+        await refresh();
+        shot.focus();
+      } catch (e) {
+        setErr(String(e.message || e));
+      }
+    }
+
+    shot.addEventListener('pointerdown', async (ev) => {
+      if (busy) return;
+      const pt = mapPoint(ev);
+      if (!pt) return;
+      busy = true;
+      pauseRefreshUntil = Date.now() + 500;
+      try {
+        shot.focus();
+        await api('/click-xy', { x: pt.x, y: pt.y, button: ev.button === 2 ? 'right' : 'left' });
         await refresh();
       } catch (e) {
-        document.getElementById('err').textContent = String(e.message || e);
+        setErr(String(e.message || e));
+      } finally {
+        busy = false;
       }
     });
-    setInterval(refresh, 1200);
+
+    shot.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+    shot.addEventListener('wheel', async (ev) => {
+      ev.preventDefault();
+      const pt = mapPoint(ev);
+      if (!pt) return;
+      pauseRefreshUntil = Date.now() + 200;
+      try {
+        await api('/scroll', { x: pt.x, y: pt.y, deltaX: ev.deltaX, deltaY: ev.deltaY });
+      } catch (e) {
+        setErr(String(e.message || e));
+      }
+    }, { passive: false });
+
+    shot.addEventListener('keydown', async (ev) => {
+      if (ev.target === typebox) return;
+      // Let browser shortcuts with meta/ctrl alone pass except copy/paste we forward.
+      const key = ev.key;
+      if (!key) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      pauseRefreshUntil = Date.now() + 180;
+      try {
+        await api('/key', {
+          key,
+          code: ev.code,
+          text: key.length === 1 ? key : undefined,
+          altKey: ev.altKey,
+          ctrlKey: ev.ctrlKey,
+          metaKey: ev.metaKey,
+          shiftKey: ev.shiftKey,
+        });
+      } catch (e) {
+        setErr(String(e.message || e));
+      }
+    });
+
+    typebox.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        sendTypebox();
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && !human) document.body.classList.remove('fs');
+    });
+
+    // Auto-fullscreen when already in human control (e.g. Take control from Aria).
+    const wantsFs = new URLSearchParams(location.search).get('fs') === '1';
+    if (human || wantsFs) {
+      setTimeout(() => {
+        (async () => {
+          if (!human && wantsFs) {
+            try { await take(); return; } catch (_) {}
+          }
+          await enterFullscreen().catch(() => {});
+        })();
+      }, 50);
+    }
+
+    scheduleRefresh();
     refresh();
   </script>
 </body>
@@ -338,7 +542,7 @@ async function handleComputer(botId, req, res, pathname, method) {
   }
 
   if (pathname === "/screenshot" && method === "GET") {
-    const buf = await rec.page.screenshot({ type: "jpeg", quality: 55 });
+    const buf = await rec.page.screenshot({ type: "jpeg", quality: 70 });
     res.writeHead(200, {
       "content-type": "image/jpeg",
       "cache-control": "no-store",
@@ -400,8 +604,50 @@ async function handleComputer(botId, req, res, pathname, method) {
     const x = Number(body.x);
     const y = Number(body.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return json(res, 400, { error: "x,y required" });
-    await rec.page.mouse.click(x, y);
-    return json(res, 200, { action: "click-xy", x, y, url: rec.page.url() });
+    const button = body.button === "right" ? "right" : "left";
+    await rec.page.mouse.click(x, y, { button });
+    return json(res, 200, { action: "click-xy", x, y, button, url: rec.page.url() });
+  }
+
+  if (pathname === "/key" && method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const key = String(body.key || "");
+    if (!key) return json(res, 400, { error: "key required" });
+    const mods = [];
+    if (body.altKey) mods.push("Alt");
+    if (body.ctrlKey) mods.push("Control");
+    if (body.metaKey) mods.push("Meta");
+    if (body.shiftKey && key.length !== 1) mods.push("Shift");
+    // Printable characters: prefer keyboard.type so focused inputs receive text.
+    if (key.length === 1 && !body.ctrlKey && !body.metaKey && !body.altKey) {
+      await rec.page.keyboard.type(key, { delay: 10 });
+    } else {
+      const chord = [...mods, key].join("+");
+      await rec.page.keyboard.press(chord);
+    }
+    return json(res, 200, { action: "key", key });
+  }
+
+  if (pathname === "/type-text" && method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const text = String(body.text ?? "");
+    if (!text) return json(res, 400, { error: "text required" });
+    await rec.page.keyboard.type(text, { delay: 15 });
+    if (body.submit) await rec.page.keyboard.press("Enter");
+    return json(res, 200, { action: "type-text", characters: text.length });
+  }
+
+  if (pathname === "/scroll" && method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const x = Number(body.x);
+    const y = Number(body.y);
+    const deltaX = Number(body.deltaX) || 0;
+    const deltaY = Number(body.deltaY) || 0;
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      await rec.page.mouse.move(x, y);
+    }
+    await rec.page.mouse.wheel(deltaX, deltaY);
+    return json(res, 200, { action: "scroll", deltaX, deltaY });
   }
 
   if (pathname === "/control/take" && method === "POST") {
@@ -443,7 +689,17 @@ const server = http.createServer(async (req, res) => {
     const viewMatch = url.pathname.match(/^\/view\/([^/]+)$/);
     if (viewMatch && method === "GET") {
       const botId = decodeURIComponent(viewMatch[1]);
-      if (!computers.has(botId)) return html(res, 404, `<h1>Computer ${botId} not running</h1>`);
+      if (!computers.has(botId)) {
+        try {
+          await ensureComputer(botId);
+        } catch (err) {
+          return html(
+            res,
+            503,
+            `<h1>Computer ${botId} unavailable</h1><p>${err instanceof Error ? err.message : String(err)}</p>`,
+          );
+        }
+      }
       return html(res, 200, viewPage(botId));
     }
 
