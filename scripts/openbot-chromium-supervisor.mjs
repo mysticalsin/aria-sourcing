@@ -20,14 +20,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const PORT = Number(process.env.OPENBOT_SUPERVISOR_PORT || 18765);
+const PORT = Number(
+  process.env.PORT || process.env.OPENBOT_SUPERVISOR_PORT || 18765,
+);
 const SUPERVISOR_TOKEN = (process.env.SUPERVISOR_TOKEN || "aria-supervisor-dev").trim();
 const COMPUTER_TOKEN = (process.env.COMPUTER_TOKEN || "aria-computer-dev").trim();
 const HEADED = process.env.OPENBOT_HEADED === "1";
 const MAX = Number(process.env.OPENBOT_MAX_COMPUTERS || 10);
 const PROFILE_ROOT = process.env.OPENBOT_PROFILE_ROOT || "/tmp/aria-openbot/profiles";
 const PUBLIC_BASE = (process.env.OPENBOT_PUBLIC_BASE || `http://127.0.0.1:${PORT}`).replace(/\/$/, "");
-const CHROME_PATH = process.env.OPENBOT_CHROME_PATH || "/usr/local/bin/google-chrome";
+const CHROME_PATH =
+  process.env.OPENBOT_CHROME_PATH ||
+  // Playwright browsers path in Docker (Dockerfile.computers)
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
+  "/usr/local/bin/google-chrome";
 
 fs.mkdirSync(PROFILE_ROOT, { recursive: true });
 

@@ -1,0 +1,12 @@
+{
+  "name": "aria-mantu-computers",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "1.61.1"
+  }
+}

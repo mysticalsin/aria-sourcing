@@ -1,0 +1,23 @@
+# Fly OpenBot Chromium supervisor — 1 seat = 1 browser context.
+# Production host for campaign Agents / Fleet Take control (Fly only — never Vercel).
+FROM mcr.microsoft.com/playwright:v1.61.1-jammy
+
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=8080 \
+    OPENBOT_SUPERVISOR_PORT=8080 \
+    OPENBOT_HEADED=0 \
+    OPENBOT_MAX_COMPUTERS=5 \
+    OPENBOT_PROFILE_ROOT=/data/profiles \
+    OPENBOT_PUBLIC_BASE=https://aria-mantu-computers.fly.dev
+
+COPY services/computer-supervisor/package.json ./package.json
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+COPY scripts/openbot-chromium-supervisor.mjs ./scripts/openbot-chromium-supervisor.mjs
+
+RUN mkdir -p /data/profiles && chown -R pwuser:pwuser /data /app
+USER pwuser
+EXPOSE 8080
+HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "scripts/openbot-chromium-supervisor.mjs"]

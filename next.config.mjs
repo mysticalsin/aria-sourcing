@@ -63,6 +63,8 @@ const nextConfig = {
     const frameSrc = [
       "frame-src 'self'",
       ...new Set(supervisorOrigins),
+      // Fly OpenBot Chromium supervisor (campaign Agents / Fleet Observe).
+      "https://aria-mantu-computers.fly.dev",
       ...(isProd
         ? []
         : [
@@ -71,7 +73,7 @@ const nextConfig = {
             "http://127.0.0.1:18766",
             "http://localhost:18766",
           ]),
-      // Fly / hosted OpenBot view hosts (https only).
+      // Hosted OpenBot view hosts (https only). Never rely on Vercel for this path.
       "https:",
     ].join(" ");
     const csp = [

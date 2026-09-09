@@ -100,30 +100,41 @@ Routes:
 ## Fly-only A→Z workflow (never Vercel)
 
 Production host: **https://aria-mantu-app.fly.dev** (`fly.app.toml`).  
-The public Vercel demo (`aria-sourcing-demo.vercel.app`) is **not** LinkedIn/OpenBot production.
+Chromium supervisor: **https://aria-mantu-computers.fly.dev** (`fly.computers.toml`).  
+The public Vercel demo (`aria-sourcing-demo.vercel.app`) is **not** LinkedIn/OpenBot production — do not set `COMPUTER_SUPERVISOR_*` on Vercel.
 
 ```
 Apify LinkedIn harvest
   → score + minScoreToContact (default 80) + compliance
   → allocateBatch prefers LinkedIn Browser Computer seats
   → 1 seat = 1 OpenBot Chromium computer (stable computer_id)
-  → Fleet Start / Open view / Take control → LinkedIn login per seat
+  → Campaign Agents tab OR Fleet → Start / Observe / Take control → LinkedIn login per seat
   → Automatic send: navigate profile → Message → type → Send
   → OpenBot LLM (optional) via https://aria-mantu-app.fly.dev/api/openbot/v1
-     with the SAME Aria PROVIDER_ENV key (Kimi / DeepSeek / …)
+     with the SAME Aria PROVIDER_ENV key (Kimi / DeepSeek / Cloudflare Workers AI)
 ```
 
-### Scale: N agents = N VMs
+### Deploy Chromium supervisor (Fly)
 
-| Concurrent seats | OpenBot host RAM (approx) |
-| --- | --- |
-| 2–5 | ~2–8 Gi |
-| 10 | ~10–20 Gi |
-| 20 | ~20–40 Gi |
+```bash
+# One-time app + secrets (tokens never committed):
+fly apps create aria-mantu-computers -o personal
+openssl rand -hex 32   # SUPERVISOR_TOKEN
+openssl rand -hex 32   # COMPUTER_TOKEN
+fly secrets set -a aria-mantu-computers SUPERVISOR_TOKEN=... COMPUTER_TOKEN=...
+fly deploy --config fly.computers.toml --remote-only
 
-Aria’s Fly web VM (`shared-cpu-2x` / 2gb) orchestrates; Chromium seats run on a **separate OpenBot supervisor host**. Do not share one browser across seats. Jobs on the same seat are serialized in-process.
+# Point Aria web at the supervisor (URL is public env; tokens are secrets):
+fly secrets set -a aria-mantu-app \
+  COMPUTER_SUPERVISOR_TOKEN=... \
+  COMPUTER_TOKEN=... \
+  OPENBOT_COMPUTER_TOKEN=...
+# COMPUTER_SUPERVISOR_URL is in fly.app.toml [env] → https://aria-mantu-computers.fly.dev
+fly deploy --config fly.app.toml --remote-only
+```
 
 Gate: `tests/openbot-fly-workflow-e2e.mts` (10 concurrent ensure + send).
+Campaign Agents E2E: `scripts/record-campaign-agents-vm-e2e.mjs`.
 
 ## Connect OpenBot to Aria
 
