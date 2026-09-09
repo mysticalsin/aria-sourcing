@@ -54,6 +54,8 @@ export type ComputerRecord = {
   viewUrl?: string | null;
   /** Last campaign scope that touched this computer (Campaign Agents). */
   campaignId?: string | null;
+  /** Last LinkedIn session probe result (null = unknown). */
+  sessionHealthy?: boolean | null;
 };
 
 export type ComputerJobKind = "linkedin_send" | "warmup_nav" | "login_assist";
@@ -156,6 +158,9 @@ export class ComputerSupervisor {
   private readonly maxAudits = 2_000;
   /** Active human takeover correlation per computer. */
   private takeoverCorrelation = new Map<string, string>();
+  /** Failed linkedin_send jobIds already auto-retried after Release (cap once). */
+  private retriedJobIds = new Set<string>();
+  private static readonly RELEASE_RETRY_CAP = 3;
 
   private audit(
     computerId: string,
@@ -255,6 +260,7 @@ export class ComputerSupervisor {
       remoteUrl: null,
       viewUrl: null,
       campaignId: opts.campaignId ?? null,
+      sessionHealthy: null,
     };
     this.computers.set(computerId, rec);
     this.audit(computerId, "ensure", `Seat ${opts.seatId} computer registered`, "system", {
@@ -419,6 +425,12 @@ export class ComputerSupervisor {
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     const correlationId = this.takeoverCorrelation.get(computerId) ?? null;
     rec.control = "bot";
+    // Operator finished login — clear help_requested so the bot may send again.
+    if (rec.status === "help_requested") {
+      rec.status = "ready";
+      rec.lastError = null;
+      rec.sessionHealthy = true;
+    }
     rec.updatedAt = isoNow();
     rec.lastAudit = "control_released";
     this.audit(
@@ -443,12 +455,42 @@ export class ComputerSupervisor {
         );
       }
     }
+
+    // Auto-retry up to N recently failed linkedin_send jobs for this computer.
+    const failed = [...this.jobs.values()]
+      .filter(
+        (j) =>
+          j.computerId === computerId &&
+          j.kind === "linkedin_send" &&
+          j.status === "failed" &&
+          !this.retriedJobIds.has(j.jobId),
+      )
+      .sort((a, b) => Date.parse(b.finishedAt ?? b.createdAt) - Date.parse(a.finishedAt ?? a.createdAt))
+      .slice(0, ComputerSupervisor.RELEASE_RETRY_CAP);
+
+    for (const job of failed) {
+      this.retriedJobIds.add(job.jobId);
+      this.audit(
+        computerId,
+        "decide",
+        `Auto-retry linkedin_send after Release (${job.jobId})`,
+        "system",
+        { campaignId: opts?.campaignId, jobId: job.jobId },
+      );
+      void this.enqueueJob({
+        computerId,
+        kind: "linkedin_send",
+        payload: { ...job.payload, retryOf: job.jobId },
+      });
+    }
+
     return rec;
   }
 
   requestHelp(computerId: string, detail: string): ComputerRecord {
     const rec = this.require(computerId);
     rec.status = "help_requested";
+    rec.sessionHealthy = false;
     rec.lastError = detail;
     rec.updatedAt = isoNow();
     this.audit(computerId, "help_requested", detail, "bot");
@@ -485,6 +527,24 @@ export class ComputerSupervisor {
         jobId,
       });
       return job;
+    }
+
+    // Session gate: refuse LinkedIn sends while help_requested or session unhealthy.
+    if (opts.kind === "linkedin_send") {
+      if (rec.status === "help_requested" || rec.sessionHealthy === false) {
+        job.status = "refused";
+        job.detail = "help_requested";
+        job.finishedAt = isoNow();
+        this.jobs.set(jobId, job);
+        this.audit(
+          opts.computerId,
+          "act_refused",
+          "linkedin_send refused — session help_requested / unhealthy",
+          "bot",
+          { jobId },
+        );
+        return job;
+      }
     }
 
     if (rec.status !== "ready" && rec.status !== "busy") {

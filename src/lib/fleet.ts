@@ -192,10 +192,12 @@ export function allocateBatch(
   const nowMs = now.getTime();
   const remaining = new Map<string, number>();
   for (const seat of seats) {
-    // Planning/claiming respects status, auto-pause health and daily caps.
-    // The send WINDOW governs when a claimed send actually fires, not whether we
-    // can plan it — so allocation works any hour; sends still wait for the window.
-    const blocked = seat.status !== "active" || seatHealthStatus(seat, settings).shouldPause;
+    // Planning respects status, auto-pause health, daily caps, and (when
+    // enforceBusinessHours) the seat send window via isWithinSendWindow.
+    const blocked =
+      seat.status !== "active" ||
+      seatHealthStatus(seat, settings).shouldPause ||
+      (settings.enforceBusinessHours && !isWithinSendWindow(seat, now, true));
     remaining.set(seat.id, blocked ? 0 : seatRemainingToday(seat, nowMs));
   }
 

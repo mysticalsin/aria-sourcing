@@ -50,8 +50,6 @@ fs.mkdirSync(PROFILE_ROOT, { recursive: true });
 
 /** @type {Map<string, Computer>} */
 const computers = new Map();
-/** @type {import('playwright').Browser | null} */
-let sharedBrowser = null;
 
 function json(res, status, body) {
   const raw = JSON.stringify(body);
@@ -98,8 +96,36 @@ function botIdFromReq(req, fallback = "") {
   return String(typeof h === "string" ? h : fallback).trim();
 }
 
-async function getBrowser() {
-  if (sharedBrowser) return sharedBrowser;
+function randInt(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Short human-like dwell between actions. */
+async function dwell(minMs = 120, maxMs = 420) {
+  await sleep(randInt(minMs, maxMs));
+}
+
+function looksLikeLinkedInAuthWall(text, title = "", url = "") {
+  const blob = `${url} ${title} ${text}`.toLowerCase();
+  return (
+    blob.includes("/login") ||
+    blob.includes("authwall") ||
+    blob.includes("checkpoint") ||
+    blob.includes("sign in") ||
+    blob.includes("join linkedin") ||
+    blob.includes("enter the code") ||
+    blob.includes("two-step") ||
+    blob.includes("2fa") ||
+    blob.includes("verify your identity") ||
+    blob.includes("suspicious activity")
+  );
+}
+
+function launchOptsBase() {
   const launchOpts = {
     headless: !HEADED,
     args: [
@@ -108,12 +134,15 @@ async function getBrowser() {
       "--disable-blink-features=AutomationControlled",
       "--window-size=1280,800",
     ],
+    viewport: { width: 1280, height: 800 },
+    userAgent:
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    locale: "en-US",
   };
   if (fs.existsSync(CHROME_PATH)) {
     launchOpts.executablePath = CHROME_PATH;
   }
-  sharedBrowser = await chromium.launch(launchOpts);
-  return sharedBrowser;
+  return launchOpts;
 }
 
 async function ensureComputer(botId) {
@@ -125,20 +154,13 @@ async function ensureComputer(botId) {
   if (computers.size >= MAX) {
     throw new Error(`Max computers (${MAX}) reached`);
   }
-  const browser = await getBrowser();
   const profileDir = path.join(PROFILE_ROOT, botId);
   fs.mkdirSync(profileDir, { recursive: true });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    userAgent:
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
-    locale: "en-US",
-  });
-  // Persist storage state path for later sessions
-  const page = await context.newPage();
+  // Durable cookie/profile persistence per bot — prefer launchPersistentContext.
+  const context = await chromium.launchPersistentContext(profileDir, launchOptsBase());
+  const page = context.pages()[0] || (await context.newPage());
   page.setDefaultTimeout(45_000);
   if (HEADED) {
-    // Offset windows so multiple agents are visible on the desktop
     const idx = computers.size;
     const x = 40 + (idx % 5) * 60;
     const y = 40 + Math.floor(idx / 5) * 60;
@@ -152,7 +174,9 @@ async function ensureComputer(botId) {
       /* ignore window placement failures */
     }
   }
-  await page.goto("about:blank");
+  if (page.url() === "about:blank") {
+    await page.goto("about:blank").catch(() => {});
+  }
   const rec = {
     botId,
     context,
@@ -583,7 +607,21 @@ async function handleComputer(botId, req, res, pathname, method) {
     if (body.snapshotId !== rec.snapshotId) return json(res, 409, { error: "stale snapshot", stale: true });
     const loc = rec.refs.get(String(body.ref || ""));
     if (!loc) return json(res, 404, { error: "ref not found" });
+    try {
+      const box = await loc.boundingBox();
+      if (box) {
+        const mx = box.x + box.width * (0.3 + Math.random() * 0.4);
+        const my = box.y + box.height * (0.3 + Math.random() * 0.4);
+        await rec.page.mouse.move(mx + randInt(-8, 8), my + randInt(-6, 6), {
+          steps: randInt(4, 12),
+        });
+        await dwell(40, 140);
+      }
+    } catch {
+      /* fall through to locator click */
+    }
     await loc.click({ timeout: 15_000 });
+    await dwell();
     return json(res, 200, { action: "click", ref: body.ref, url: rec.page.url() });
   }
 
@@ -593,9 +631,35 @@ async function handleComputer(botId, req, res, pathname, method) {
     if (body.snapshotId !== rec.snapshotId) return json(res, 409, { error: "stale snapshot", stale: true });
     const loc = rec.refs.get(String(body.ref || ""));
     if (!loc) return json(res, 404, { error: "ref not found" });
-    await loc.fill(String(body.text || ""), { timeout: 15_000 });
+    const text = String(body.text || "");
+    await loc.click({ timeout: 15_000 });
+    await dwell(80, 220);
+    // Human-like typing — never loc.fill (instant paste is a bot tell).
+    await rec.page.keyboard.type(text, { delay: randInt(40, 120) });
+    await dwell();
     if (body.submit) await loc.press("Enter");
-    return json(res, 200, { action: "type", ref: body.ref, characters: String(body.text || "").length });
+    return json(res, 200, { action: "type", ref: body.ref, characters: text.length });
+  }
+
+  if (pathname === "/session-probe" && method === "POST") {
+    await rec.page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded" });
+    await dwell(200, 600);
+    const url = rec.page.url();
+    const title = await rec.page.title().catch(() => "");
+    const text = (await rec.page.locator("body").innerText().catch(() => "")).slice(0, 2000);
+    let healthy = false;
+    let detail = "Could not confirm LinkedIn session — Take control and open linkedin.com/feed";
+    if (looksLikeLinkedInAuthWall(text, title, url)) {
+      healthy = false;
+      detail = "LinkedIn login/checkpoint wall detected";
+    } else if (
+      /linkedin\.com/i.test(url) &&
+      (/feed|messaging|in\//i.test(url) || /linkedin/i.test(title))
+    ) {
+      healthy = true;
+      detail = "LinkedIn session appears logged in";
+    }
+    return json(res, 200, { healthy, detail, url });
   }
 
   if (pathname === "/click-xy" && method === "POST") {
@@ -605,6 +669,12 @@ async function handleComputer(botId, req, res, pathname, method) {
     const y = Number(body.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return json(res, 400, { error: "x,y required" });
     const button = body.button === "right" ? "right" : "left";
+    try {
+      await rec.page.mouse.move(x + randInt(-6, 6), y + randInt(-6, 6), { steps: randInt(3, 10) });
+      await dwell(30, 100);
+    } catch {
+      /* ignore */
+    }
     await rec.page.mouse.click(x, y, { button });
     return json(res, 200, { action: "click-xy", x, y, button, url: rec.page.url() });
   }
@@ -632,7 +702,8 @@ async function handleComputer(botId, req, res, pathname, method) {
     const body = JSON.parse((await readBody(req)) || "{}");
     const text = String(body.text ?? "");
     if (!text) return json(res, 400, { error: "text required" });
-    await rec.page.keyboard.type(text, { delay: 15 });
+    await rec.page.keyboard.type(text, { delay: randInt(40, 120) });
+    await dwell();
     if (body.submit) await rec.page.keyboard.press("Enter");
     return json(res, 200, { action: "type-text", characters: text.length });
   }
@@ -802,7 +873,6 @@ async function shutdown() {
   for (const botId of [...computers.keys()]) {
     await stopComputer(botId);
   }
-  if (sharedBrowser) await sharedBrowser.close().catch(() => {});
   process.exit(0);
 }
 process.on("SIGINT", () => void shutdown());

@@ -1,43 +1,49 @@
 ---
 project: MSourcing / ARIA
-shift: 121
+shift: 122
 agent: cursor-cloud
-updated: 2026-09-09T15:00Z
-status: fly-view-interactive-fullscreen
+updated: 2026-09-09T22:40Z
+status: aria-e2e-antibot-ux-wired
 ---
 
-# Handoff — Shift 121
+# Handoff — Shift 122
 
 ## Current state
 
-- **Branch:** `cursor/campaign-agent-vm-control-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/76
-- **Fly Chromium:** https://aria-mantu-computers.fly.dev — Take control is fullscreen + click/type/scroll wired
-- **View URL:** https://aria-mantu-computers.fly.dev/view/comp_java_01?fs=1
-- **Fly app tip:** redeploy pending with Campaign Agents fullscreen panel (this commit)
+- **Branch:** `cursor/aria-e2e-antibot-ux-b91d`
+- **Base:** `integration/sourcing-enrichment-on-main` (tracks via campaign-agent-vm-control)
+- Core anti-bot libs + UI wiring for LinkedIn OpenBot happy path are in-tree
+- `npx tsc --noEmit` clean; `tests/send-pacing.mts` + `tests/campaign-go-live.mts` green
 
 ## Done this shift
 
-1. Fixed OpenBot `/view` — keyboard forwarding, type box, accurate click mapping via naturalWidth/Height, scroll, fullscreen Take control
-2. Redeployed `aria-mantu-computers` with interactive view
-3. Campaign Agents Take control opens full sandbox tab + in-panel fullscreen when human
-4. Proved click/type/key APIs + HUMAN+fs screenshot
+1. Setup guide + onboarding rewritten to Connect email → Pick LLM → Create campaign → Attach agent → Take control login → Approve → Send (dry-run called out; `hermes:onboarded:v2`)
+2. `computer_help` recommendations + AttentionPanel fetches `/api/fleet/computers`
+3. CampaignGoLiveChecklist + BanRiskStrip on Agents tab; CampaignFunnelSpine on Overview; SendOutcomeChip on outreach send
+4. Pacing enforced in `/api/outreach/send` (deferred + paceReason) + browser adapter help_requested gate; allocateBatch respects send window when enforceBusinessHours; lastSendAt/sentToday updated on success
+5. OpenBot supervisor: launchPersistentContext, human-like /type, /session-probe, mouse dwell before click
+6. ComputerSupervisor: session gate on linkedin_send; Release clears help_requested + auto-retries ≤3 failed sends
+7. LINKEDIN_BROWSER_SEAT_DEFAULTS in seed + addSeat; `scripts/source-idle-campaigns.mjs` dry log only
 
 ## Blockers
 
-1. Operator still must complete LinkedIn login/2FA once (credentials not in agent env)
+1. Operator must still complete LinkedIn login/2FA once per computer (credentials not in agent env)
+2. Fly Chromium redeploy needed to pick up openbot-chromium-supervisor.mjs typing/profile changes
 
 ## Next steps
 
-1. Open https://aria-mantu-computers.fly.dev/view/comp_java_01?fs=1 → click email field → type → login
-2. Release when done; re-run LinkedIn send proof
+1. Redeploy `aria-mantu-computers` with updated `scripts/openbot-chromium-supervisor.mjs`
+2. Take control → login → Release → prove LinkedIn send with pacing + outcome chip
+3. Optional: wire CampaignGoLiveChecklist `computers` prop from live fleet fetch
 
 ## Decisions made (don't relitigate)
 
 - Production LinkedIn/OpenBot/campaign VMs = Fly only
-- Screenshot remote desktop (not true VNC) — input via click-xy + keyboard APIs
 - Never COMPUTER_SUPERVISOR_MOCK_SEND=1 on prod
+- AttentionPanel client-fetches computers (minimal invasive vs deriveRecommendations callers)
+- allocateBatch uses isWithinSendWindow (not evaluateSendPace) to avoid fleet↔send-pacing circular import
 
 ## Watch out
 
-- Do not commit computer/supervisor tokens embedded in view HTML (existing design)
+- Do not commit computer/supervisor tokens in view HTML
+- source-idle-campaigns.mjs must never send

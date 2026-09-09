@@ -24,7 +24,8 @@ export type RecommendationKind =
   | "book_interview"
   | "follow_up_due"
   | "stalled_draft"
-  | "source_campaign";
+  | "source_campaign"
+  | "computer_help";
 
 export interface Recommendation {
   id: string;
@@ -48,6 +49,7 @@ const STAGE_LEVERAGE: Record<RecommendationKind, number> = {
   approve_outreach: 5,
   stalled_draft: 6,
   book_interview: 8,
+  computer_help: 9,
 };
 
 const ROLLUP_LABEL: Record<RecommendationKind, string> = {
@@ -57,6 +59,7 @@ const ROLLUP_LABEL: Record<RecommendationKind, string> = {
   follow_up_due: "follow-ups due",
   stalled_draft: "stalled drafts",
   source_campaign: "campaigns to source",
+  computer_help: "computers needing help",
 };
 
 const KIND_TONE: Record<RecommendationKind, Tone> = {
@@ -66,6 +69,7 @@ const KIND_TONE: Record<RecommendationKind, Tone> = {
   follow_up_due: "aqua",
   stalled_draft: "danger",
   source_campaign: "electric",
+  computer_help: "danger",
 };
 
 const KIND_HREF: Record<RecommendationKind, string> = {
@@ -75,7 +79,47 @@ const KIND_HREF: Record<RecommendationKind, string> = {
   follow_up_due: "/outreach",
   stalled_draft: "/outreach",
   source_campaign: "/campaigns",
+  computer_help: "/fleet",
 };
+
+/** Minimal computer shape for help_requested attention items (Fleet API / supervisor). */
+export type ComputerHelpLike = {
+  computerId: string;
+  seatId?: string | null;
+  seatName?: string | null;
+  status?: string | null;
+  campaignId?: string | null;
+  lastError?: string | null;
+};
+
+/**
+ * High-priority items for Browser Computers stuck on help_requested
+ * (LinkedIn login / checkpoint). Deep-links to campaign Agents or Fleet.
+ */
+export function deriveComputerHelpRecommendations(
+  computers: ComputerHelpLike[],
+): Recommendation[] {
+  const items: Recommendation[] = [];
+  for (const c of computers) {
+    if (c.status !== "help_requested") continue;
+    const href = c.campaignId
+      ? `/campaigns/${c.campaignId}?tab=agents`
+      : "/fleet";
+    const label = c.seatName?.trim() || c.computerId;
+    items.push({
+      id: `computer_help:${c.computerId}`,
+      kind: "computer_help",
+      title: `${label} needs Take control`,
+      why: c.lastError?.trim() || "LinkedIn login / checkpoint — Take control, finish login, Release",
+      href,
+      tone: "danger",
+      // Above SLA-band replies so an auth wall always surfaces first.
+      priorityScore: 25_000,
+      count: 1,
+    });
+  }
+  return items.sort((a, b) => b.priorityScore - a.priorityScore);
+}
 
 /** Outreach messages sitting in Draft/Needs Approval this long without action
  *  escalate to a stalled-draft nudge instead of quietly aging in place. */

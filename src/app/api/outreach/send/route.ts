@@ -22,6 +22,9 @@ import {
   extractLinkedInCredentialRefs,
   resolveLinkedInCredentials,
 } from "@/lib/linkedin-credentials";
+import { evaluateSendPace } from "@/lib/send-pacing";
+import { defaultFleetSettings } from "@/lib/fleet";
+import type { AgentSeat } from "@/lib/types";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
@@ -265,6 +268,34 @@ export async function POST(req: NextRequest) {
         { status: 503 },
       );
     }
+
+    // Human pacing — refuse before queue so deferred sends never look like success.
+    const seatsArr = Array.isArray(stateRec?.seats) ? (stateRec.seats as unknown[]) : [];
+    const seatState = seatsArr
+      .map((item) => record(item))
+      .find((item) => item?.id === seatId) as AgentSeat | undefined;
+    if (seatState) {
+      const fleetSettings = {
+        ...defaultFleetSettings(),
+        ...(fleetRec as Record<string, unknown>),
+      };
+      const pace = evaluateSendPace({
+        seat: seatState,
+        settings: fleetSettings,
+      });
+      if (!pace.ok) {
+        return NextResponse.json(
+          {
+            status: "deferred",
+            detail: pace.detail ?? "Send deferred by pacing.",
+            paceReason: pace.reason,
+            nextEligibleAt: pace.nextEligibleAt ?? null,
+          },
+          { status: 429 },
+        );
+      }
+    }
+
     const adapter = linkedInAdapterForProvider(liSeat.provider);
     const linkedInCreds = await resolveLinkedInCredentials(
       extractLinkedInCredentialRefs(stateRec?.settings),

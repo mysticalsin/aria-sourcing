@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Badge, Card, CardContent, Button } from "@/components/ui";
 import {
+  useCampaigns,
   useDefaultModels,
   useLlmProviders,
   useSavedModels,
@@ -14,11 +15,33 @@ import {
 import { seatHasOutlookMailbox } from "@/lib/outlook-needs";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
-import { Check, Circle, Cpu, Inbox, Rocket } from "lucide-react";
+import {
+  Check,
+  Circle,
+  Cpu,
+  Hand,
+  Inbox,
+  Monitor,
+  Rocket,
+  Send,
+  ShieldCheck,
+} from "lucide-react";
 
 function seatHasOauthMailbox(seat: { provider?: string; connectedAccount?: string }): boolean {
   if (seatHasOutlookMailbox(seat)) return true;
   return seat.provider === "Gmail API" && Boolean(seat.connectedAccount?.trim());
+}
+
+function isBrowserComputerSeat(seat: {
+  provider?: string;
+  linkedinDeliveryBackend?: string | null;
+  computerId?: string | null;
+}): boolean {
+  return (
+    seat.provider === "LinkedIn Browser Computer" ||
+    seat.linkedinDeliveryBackend === "browser-computer" ||
+    Boolean(seat.computerId)
+  );
 }
 
 type Step = {
@@ -31,9 +54,14 @@ type Step = {
   icon: React.ReactNode;
 };
 
+/**
+ * Plug-and-play path for LinkedIn Browser Computer (OpenBot) happy path.
+ * Dry-run stays on until Approval & Compliance flips it — nothing contacts candidates until then.
+ */
 export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const seats = useSeats();
   const settings = useSettings();
+  const campaigns = useCampaigns();
   const providers = useLlmProviders();
   const models = useSavedModels();
   const defaults = useDefaultModels();
@@ -48,10 +76,23 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const llmOk = Boolean(
     sourcingModel?.enabled && sourcingProvider?.enabled && sourcingProvider.kind !== "Kimi",
   );
+  const campaign = campaigns[0];
+  const campaignOk = campaigns.length > 0;
+  const browserSeats = seats.filter(isBrowserComputerSeat);
+  const attachedOk =
+    Boolean(campaign) &&
+    browserSeats.some((s) => {
+      const assigned = s.assignedCampaignIds ?? [];
+      return assigned.length === 0 || assigned.includes(campaign!.id);
+    });
+  const agentsHref = campaign
+    ? `/campaigns/${campaign.id}?tab=agents`
+    : "/campaigns";
+  const dryRunOff = !settings.dryRunMode;
 
   const steps: Step[] = [
     {
-      id: "outlook",
+      id: "email",
       title: "Connect email",
       body: supabaseEnabled
         ? "Link Gmail or Outlook in Settings → Integrations so Aria can pull needs and send from your mailbox."
@@ -63,7 +104,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
     },
     {
       id: "llm",
-      title: "Pick the recruitment LLM",
+      title: "Pick LLM",
       body: "Choose which model sources candidates, parses needs, and drafts outreach.",
       done: llmOk,
       ctaLabel: llmOk ? "Change models" : "Pick models",
@@ -71,16 +112,55 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       icon: <Cpu className="h-4 w-4" aria-hidden />,
     },
     {
-      id: "source",
-      title: "Pull needs & source",
-      body: "On Intake, pull open needs from Outlook, parse the brief, create the campaign.",
-      done: false,
-      ctaLabel: "Go to Intake",
-      href: "/intake",
+      id: "campaign",
+      title: "Create campaign",
+      body: "On Intake, pull open needs from Outlook, parse the brief, and create the campaign.",
+      done: campaignOk,
+      ctaLabel: campaignOk ? "Open campaigns" : "Go to Intake",
+      href: campaignOk ? "/campaigns" : "/intake",
       icon: <Rocket className="h-4 w-4" aria-hidden />,
+    },
+    {
+      id: "attach",
+      title: "Attach agent",
+      body: "Attach a LinkedIn Browser Computer seat on the campaign Agents tab (1 seat = 1 Chromium).",
+      done: attachedOk,
+      ctaLabel: attachedOk ? "Manage agents" : "Attach agent",
+      href: agentsHref,
+      icon: <Monitor className="h-4 w-4" aria-hidden />,
+    },
+    {
+      id: "take-control",
+      title: "Take control · login",
+      body: "Start the agent, Take control, log into LinkedIn (and 2FA), then Release so the bot can send.",
+      done: false,
+      ctaLabel: "Take control",
+      href: agentsHref,
+      icon: <Hand className="h-4 w-4" aria-hidden />,
+    },
+    {
+      id: "approve",
+      title: "Approve",
+      body: settings.dryRunMode
+        ? "Dry-run is ON — approvals rehearse only; nothing contacts candidates until you flip it off under Approval & Compliance."
+        : "Approve outreach drafts. Dry-run is off — live Send will contact candidates.",
+      done: dryRunOff,
+      ctaLabel: settings.dryRunMode ? "Open dry-run settings" : "Open outreach",
+      href: settings.dryRunMode ? "/settings?tab=compliance" : "/outreach",
+      icon: <ShieldCheck className="h-4 w-4" aria-hidden />,
+    },
+    {
+      id: "send",
+      title: "Send",
+      body: "Send approved LinkedIn messages from Outreach. Human pacing, session health, and go-live checks apply.",
+      done: false,
+      ctaLabel: "Open outreach",
+      href: "/outreach",
+      icon: <Send className="h-4 w-4" aria-hidden />,
     },
   ];
 
+  const foundationDone = [outlookOk, llmOk].filter(Boolean).length;
   const doneCount = steps.filter((s) => s.done).length;
 
   return (
@@ -88,14 +168,18 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-ink">Plug and play — three steps</p>
+            <p className="text-sm font-semibold text-ink">LinkedIn OpenBot — setup path</p>
             <p className="mt-1 text-xs text-muted">
-              Stupid-simple path from empty workspace to live sourcing. Dry-run stays{" "}
-              {settings.dryRunMode ? "on" : "off"} until you flip it under Approval & Compliance.
+              Connect email → Pick LLM → Create campaign → Attach agent → Take control login → Approve →
+              Send. Dry-run is currently{" "}
+              <span className="font-semibold text-ink-soft">{settings.dryRunMode ? "on" : "off"}</span>
+              {settings.dryRunMode
+                ? " — flip it under Approval & Compliance when you are ready to contact for real."
+                : "."}
             </p>
           </div>
-          <Badge tone={doneCount >= 2 ? "success" : "electric"} size="sm">
-            {doneCount}/2 foundations ready
+          <Badge tone={foundationDone >= 2 ? "success" : "electric"} size="sm">
+            {doneCount}/{steps.length} steps · {foundationDone}/2 foundations
           </Badge>
         </div>
 
@@ -105,7 +189,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
               key={step.id}
               initial={{ opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.06, type: "spring", stiffness: 360, damping: 28 }}
+              transition={{ delay: i * 0.04, type: "spring", stiffness: 360, damping: 28 }}
               className={cn(
                 "flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between",
                 step.done ? "border-success/30 bg-success/[0.06]" : "border-line bg-surface",

@@ -442,7 +442,7 @@ export default function FleetPage() {
                   <ShieldCheck className="h-5 w-5" aria-hidden />
                 </span>
                 <div>
-                  <Eyebrow>Live guardrails</Eyebrow>
+                  <Eyebrow>Live pacing &amp; caps</Eyebrow>
                   <CardTitle>Speed without the footguns</CardTitle>
                   <p className="mt-1 text-sm text-muted">
                     Every agent runs under enforced rules — not suggestions.

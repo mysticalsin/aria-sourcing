@@ -12,6 +12,7 @@ import { DEFAULT_SCORING_WEIGHTS } from "./scoring";
 import { firstInterviewElapsedHours } from "./metrics";
 import { slaDueFor } from "./rules";
 import { defaultFleetSettings, defaultSendWindow } from "./fleet";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "./send-pacing";
 import { defaultSkills } from "./skills";
 import type {
   Activity,
@@ -285,6 +286,7 @@ function seedSeats(): AgentSeat[] {
     // LinkedIn Browser Computer agents attached to the Senior Java Developer campaign.
     {
       ...base,
+      ...LINKEDIN_BROWSER_SEAT_DEFAULTS,
       id: "seat_java_vm_01",
       name: "Java · Agent 01",
       operatorEmail: "java.agent01@hermes.example",
@@ -300,6 +302,7 @@ function seedSeats(): AgentSeat[] {
     },
     {
       ...base,
+      ...LINKEDIN_BROWSER_SEAT_DEFAULTS,
       id: "seat_java_vm_02",
       name: "Java · Agent 02",
       operatorEmail: "java.agent02@hermes.example",
@@ -315,6 +318,7 @@ function seedSeats(): AgentSeat[] {
     },
     {
       ...base,
+      ...LINKEDIN_BROWSER_SEAT_DEFAULTS,
       id: "seat_java_vm_03",
       name: "Java · Agent 03",
       operatorEmail: "java.agent03@hermes.example",

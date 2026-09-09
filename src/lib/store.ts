@@ -165,6 +165,7 @@ import {
   type WorkspaceStatus,
 } from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "./send-pacing";
 import { pickLiveLinkedInSendSeat, preferLinkedInAutomaticSeats } from "./linkedin-automatic";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
@@ -2669,7 +2670,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // approval) and only flips the local record to sent on a real "sent" response. This is
   // the one place a real email leaves; it never fires automatically.
   const sendApprovedOutreach = useCallback(
-    async (messageId: string): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
+    async (
+      messageId: string,
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      queued?: boolean;
+      status?: string;
+      detail?: string;
+      paceReason?: string;
+      dryRun?: boolean;
+    }> => {
       if (!workspaceEffectAllowed()) {
         return { ok: false, error: "Workspace unavailable. Retry before sending outreach." };
       }
@@ -2710,7 +2721,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (channel === "LinkedIn" && !(candidate.linkedinUrl ?? "").trim()) {
         return { ok: false, error: "Candidate has no LinkedIn profile URL." };
       }
-      let out: { status?: string; detail?: string };
+      let out: { status?: string; detail?: string; paceReason?: string };
       try {
         const res = await workspaceFetch("/api/outreach/send", {
           method: "POST",
@@ -2732,14 +2743,31 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         out = (await res.json().catch(() => ({ status: "error", detail: "Bad response from the send endpoint." }))) as {
           status?: string;
           detail?: string;
+          paceReason?: string;
         };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Send failed." };
       }
       const deliveryQueued =
         (channel === "WhatsApp" || channel === "LinkedIn") && out.status === "queued";
+      if (out.status === "dry-run") {
+        return {
+          ok: false,
+          error: out.detail ?? "Dry-run: nothing sent.",
+          status: out.status,
+          detail: out.detail,
+          dryRun: true,
+          paceReason: out.paceReason,
+        };
+      }
       if (out.status !== "sent" && !deliveryQueued) {
-        return { ok: false, error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).` };
+        return {
+          ok: false,
+          error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).`,
+          status: out.status,
+          detail: out.detail,
+          paceReason: out.paceReason,
+        };
       }
       if (deliveryQueued) {
         const now = new Date().toISOString();
@@ -2769,7 +2797,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             msg.campaignId,
           );
         });
-        return { ok: true, queued: true };
+        return {
+          ok: true,
+          queued: true,
+          status: out.status,
+          detail: out.detail,
+          paceReason: out.paceReason,
+        };
       }
       // Delivered. Flip the local record to sent (Scheduled + sentAt) and count it.
       const now = new Date().toISOString();
@@ -2795,7 +2829,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               }
             : c,
         );
-        let next: HermesState = { ...prev, outreach, ledger, candidates };
+        const seats = prev.seats.map((s) =>
+          s.id === seat.id
+            ? {
+                ...s,
+                lastSendAt: now,
+                sentToday: (s.sentToday ?? 0) + 1,
+              }
+            : s,
+        );
+        let next: HermesState = { ...prev, outreach, ledger, candidates, seats };
         next = {
           ...next,
           campaigns: next.campaigns.map((c) =>
@@ -2824,7 +2867,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      return { ok: true };
+      return {
+        ok: true,
+        status: out.status ?? "sent",
+        detail: out.detail,
+        paceReason: out.paceReason,
+      };
     },
     [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
@@ -4342,6 +4390,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!authorizedState || !can(authorizedState.currentRole, "manage_fleet")) return null;
       const now = new Date().toISOString();
       const provider = partial.provider ?? "Microsoft Graph";
+      const liBrowser =
+        provider === "LinkedIn Browser Computer" ||
+        partial.linkedinDeliveryBackend === "browser-computer";
+      const liDefaults = liBrowser ? LINKEDIN_BROWSER_SEAT_DEFAULTS : null;
       const draft: AgentSeat = {
         id: genId("seat"),
         name: partial.name,
@@ -4350,12 +4402,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         status: "active",
         mode: "mock",
         domainVerified: false,
-        dailyLimit: partial.dailyLimit ?? 40,
-        warmup: partial.warmup ?? true,
-        warmupStartCap: partial.warmupStartCap ?? 10,
-        warmupStepPerDay: partial.warmupStepPerDay ?? 4,
+        dailyLimit: partial.dailyLimit ?? liDefaults?.dailyLimit ?? 40,
+        warmup: partial.warmup ?? liDefaults?.warmup ?? true,
+        warmupStartCap: partial.warmupStartCap ?? liDefaults?.warmupStartCap ?? 10,
+        warmupStepPerDay: partial.warmupStepPerDay ?? liDefaults?.warmupStepPerDay ?? 4,
         warmupStartedAt: now,
-        minGapMinutes: partial.minGapMinutes ?? 12,
+        minGapMinutes: partial.minGapMinutes ?? liDefaults?.minGapMinutes ?? 12,
         sendWindow: partial.sendWindow ?? defaultSendWindow(),
         sentToday: 0,
         lastSendAt: null,
@@ -4370,6 +4422,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           provider === "LinkedIn Browser Computer"
             ? (partial.computerId ?? `comp_${globalThis.crypto.randomUUID()}`)
             : (partial.computerId ?? null),
+        linkedinDeliveryBackend:
+          partial.linkedinDeliveryBackend ??
+          (provider === "LinkedIn Browser Computer" ? "browser-computer" : null),
+        assignedCampaignIds: partial.assignedCampaignIds,
         createdAt: now,
       };
       let seat = draft;

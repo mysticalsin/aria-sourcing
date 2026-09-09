@@ -5,6 +5,9 @@ import {
   vendorApiConfigured,
   type LinkedInResolvedCredentials,
 } from "@/lib/linkedin-credentials";
+import { evaluateSendPace } from "@/lib/send-pacing";
+import { defaultFleetSettings } from "@/lib/fleet";
+import type { AgentSeat, FleetSettings } from "@/lib/types";
 
 export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "browser-computer";
 
@@ -24,6 +27,10 @@ export interface LinkedInDeliveryRequest {
   computerId?: string;
   /** Aria vault / Settings-resolved credentials (env fallback inside helpers). */
   credentials?: Partial<LinkedInResolvedCredentials>;
+  /** Optional seat snapshot for pacing (dispatch / send route). */
+  seat?: AgentSeat;
+  /** Optional fleet settings for pacing. */
+  fleetSettings?: FleetSettings;
 }
 
 export interface LinkedInDeliveryOutcome {
@@ -205,6 +212,29 @@ const browserComputerAdapter: LinkedInAdapter = {
           provider: "LinkedIn Browser Computer",
           detail: "Human has control of this computer — bot send refused until Release.",
         };
+      }
+      if (computer.status === "help_requested") {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: "help_requested — Take control, finish LinkedIn login, then Release.",
+        };
+      }
+      if (req.seat) {
+        const pace = evaluateSendPace({
+          seat: req.seat,
+          settings: req.fleetSettings ?? defaultFleetSettings(),
+          sessionHealthy: computer.status === "ready" || computer.status === "busy" ? true : undefined,
+        });
+        if (!pace.ok) {
+          return {
+            status: "error",
+            deliveryState: "not-sent",
+            provider: "LinkedIn Browser Computer",
+            detail: pace.detail ?? `Deferred: ${pace.reason}`,
+          };
+        }
       }
       if (computer.status === "stopped" || computer.status === "error") {
         await defaultComputerSupervisor.start(computer.computerId, { campaignId: req.campaignId });

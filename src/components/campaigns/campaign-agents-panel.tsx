@@ -15,6 +15,8 @@ import { Badge, Button, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { AgentSeat } from "@/lib/types";
 import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
+import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
+import { useSettings } from "@/lib/store";
 
 type AuditEvent = {
   id?: string;
@@ -73,6 +75,7 @@ export function CampaignAgentsPanel({
   onUnassignSeat?: (seatId: string) => void;
 }) {
   const { toast } = useToast();
+  const settings = useSettings();
   const campaignSeats = React.useMemo(
     () =>
       seats.filter(
@@ -287,6 +290,8 @@ export function CampaignAgentsPanel({
   const readyCount = computers.filter((c) => c.status === "ready" || c.status === "busy").length;
 
   return (
+    <div className="space-y-4">
+    <BanRiskStrip seats={campaignSeats} audits={audits} fleet={settings.fleet} />
     <section
       className="rounded-2xl border border-line bg-surface/80"
       aria-labelledby="campaign-agents-heading"
@@ -621,5 +626,6 @@ export function CampaignAgentsPanel({
         </div>
       ) : null}
     </section>
+    </div>
   );
 }

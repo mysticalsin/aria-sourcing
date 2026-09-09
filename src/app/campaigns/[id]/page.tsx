@@ -29,6 +29,8 @@ import { motion } from "framer-motion";
 import { HydrationGate } from "@/components/app/page-header";
 import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
 import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
+import { CampaignGoLiveChecklist } from "@/components/campaigns/campaign-go-live-checklist";
+import { CampaignFunnelSpine } from "@/components/campaigns/campaign-funnel-spine";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { staggerContainer } from "@/lib/dashboard-motion";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -64,6 +66,7 @@ import {
   useReportForCampaign,
   useRole,
   useSeats,
+  useSettings,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
@@ -354,6 +357,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const report = useReportForCampaign(id);
   const actions = useActions();
   const seats = useSeats();
+  const settings = useSettings();
   const role = useRole();
   const hermesState = useHermes().state;
   const { toast } = useToast();
@@ -1071,6 +1075,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Overview */}
       <TabPanel value="overview" active={tab === "overview"} idBase={idBase}>
         <div className="space-y-6">
+          <CampaignFunnelSpine
+            candidates={candidates}
+            outreach={outreach}
+            replies={allReplies.filter((r) => r.campaignId === c.id)}
+            bookings={allBookings.filter((b) => b.campaignId === c.id)}
+          />
           <StagePipeline metrics={m} />
 
           <motion.div
@@ -1388,6 +1398,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       <TabPanel value="agents" active={tab === "agents"} idBase={idBase}>
         <div className="space-y-6">
+          <CampaignGoLiveChecklist
+            campaignId={c.id}
+            settings={{
+              dryRunMode: settings.dryRunMode,
+              minScoreToContact: settings.minScoreToContact,
+            }}
+            seats={seats}
+          />
           <CampaignAgentsPanel
             campaignId={c.id}
             seats={seats}

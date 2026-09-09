@@ -1,9 +1,13 @@
 # LinkedIn channel — OIDC identity + Automatic / Manual messaging
 
-**Date:** 2026-09-04  
-**Status:** Sign In with LinkedIn (OpenID Connect) is the real identity connection.
-Messaging defaults to **Automatic** via an entitled vendor/API seat; operators may
-switch the workspace to **Manual** (assisted approve-and-paste). No scrape / session bots.
+> **Operator source of truth:** [`docs/LINKEDIN_OPERATOR.md`](./LINKEDIN_OPERATOR.md).  
+> Production Automatic LinkedIn send = **OpenBot Browser Computer on Fly** (human Take control for login once).  
+> Vendor API / assisted-manual paste are advanced/legacy paths below.
+
+**Date:** 2026-09-04 (banner updated 2026-09-09)  
+**Status:** Sign In with LinkedIn (OpenID Connect) is the identity connection helper.
+Messaging defaults to **Automatic** via an entitled **Browser Computer** seat (OpenBot); operators may
+switch the workspace to **Manual** (assisted approve-and-paste). No scrape / cookie farms / stealth plugins.
 
 ## Real login (OIDC)
 

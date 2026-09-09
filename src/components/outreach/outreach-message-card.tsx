@@ -44,6 +44,7 @@ import {
   ExternalLink,
   Clock,
 } from "lucide-react";
+import { SendOutcomeChip } from "@/components/outreach/send-outcome-chip";
 
 /** "waiting 3d" style label for how long a draft has sat in the queue — reuses
  *  formatTimeAgo's tested duration math, just drops the trailing "ago" so it
@@ -223,6 +224,12 @@ export function OutreachMessageCard({
 
   const [copied, setCopied] = React.useState(false);
   const [sending, setSending] = React.useState(false);
+  const [sendResult, setSendResult] = React.useState<{
+    status?: string;
+    detail?: string;
+    paceReason?: string;
+    dryRun?: boolean;
+  } | null>(null);
   async function handleCopyMessage() {
     try {
       await navigator.clipboard.writeText(`${subject}\n\n${body}`);
@@ -264,23 +271,33 @@ export function OutreachMessageCard({
 
   async function handleSend() {
     setSending(true);
+    setSendResult(null);
     const res = await a.sendApprovedOutreach(message.id);
     setSending(false);
+    setSendResult({
+      status: res.status ?? (res.ok ? (res.queued ? "queued" : "sent") : "error"),
+      detail: res.detail ?? res.error,
+      paceReason: res.paceReason,
+      dryRun: res.dryRun,
+    });
     if (!res.ok) {
       toast({ title: "Send blocked", description: res.error, variant: "error" });
       return;
     }
     if (res.queued) {
       toast({
-        title: "WhatsApp queued",
+        title: message.channel === "LinkedIn" ? "LinkedIn queued" : "WhatsApp queued",
         description: "ARIA will re-check consent, do-not-contact status, the reply window, and your approval before delivery.",
         variant: "success",
       });
       return;
     }
     toast({
-      title: "Email sent",
-      description: "Delivered from the live mailbox. The candidate is now marked as contacted.",
+      title: message.channel === "LinkedIn" ? "LinkedIn sent" : "Email sent",
+      description:
+        message.channel === "LinkedIn"
+          ? "Delivered via the automatic LinkedIn adapter. The candidate is now marked as contacted."
+          : "Delivered from the live mailbox. The candidate is now marked as contacted.",
       variant: "success",
     });
   }
@@ -468,6 +485,16 @@ export function OutreachMessageCard({
             )}
           </div>
         )}
+
+        {sendResult ? (
+          <SendOutcomeChip
+            dryRun={sendResult.dryRun}
+            status={sendResult.status}
+            detail={sendResult.detail}
+            paceReason={sendResult.paceReason}
+            showNextAction
+          />
+        ) : null}
 
         {/* Follow-up sequence hint */}
         <div className="flex items-center gap-2 text-xs text-muted">
