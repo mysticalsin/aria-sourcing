@@ -1,0 +1,55 @@
+{
+  "at": "2026-09-09T07:55:07.440Z",
+  "campaignId": "camp_seed_backend",
+  "seatId": "seat_java_vm_01",
+  "computerId": "comp_java_01",
+  "supervisorUrl": "",
+  "mock": true,
+  "outcome": {
+    "status": "sent",
+    "deliveryState": "accepted",
+    "detail": "mock browser-computer send accepted",
+    "id": "job_q50ucfy8"
+  },
+  "computerCampaignId": "camp_seed_backend",
+  "computerStatus": "ready",
+  "computerControl": "bot",
+  "campaignTaggedAudits": [
+    {
+      "action": "ensure",
+      "jobId": null,
+      "detail": "Seat seat_java_vm_01 computer registered"
+    },
+    {
+      "action": "start",
+      "jobId": null,
+      "detail": "Booting isolated Chromium via OpenBot ensure"
+    },
+    {
+      "action": "start_local_viewport",
+      "jobId": null,
+      "detail": "OpenBot supervisor unset — using Aria operator viewport for Take control"
+    },
+    {
+      "action": "ready",
+      "jobId": null,
+      "detail": "Computer ready for bot actions"
+    },
+    {
+      "action": "decide",
+      "jobId": "job_q50ucfy8",
+      "detail": "Accepted job linkedin_send"
+    },
+    {
+      "action": "act",
+      "jobId": "job_q50ucfy8",
+      "detail": "Running linkedin_send"
+    },
+    {
+      "action": "act_done",
+      "jobId": "job_q50ucfy8",
+      "detail": "mock browser-computer send accepted"
+    }
+  ],
+  "ok": true
+}

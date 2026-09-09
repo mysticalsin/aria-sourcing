@@ -165,7 +165,7 @@ import {
   type WorkspaceStatus,
 } from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
-import { preferLinkedInAutomaticSeats } from "./linkedin-automatic";
+import { pickLiveLinkedInSendSeat, preferLinkedInAutomaticSeats } from "./linkedin-automatic";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyLearning,
@@ -2691,18 +2691,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           : channel === "SMS"
             ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
             : channel === "LinkedIn"
-              ? s.seats.find(
-                  (x) =>
-                    x.status === "active" &&
-                    x.mode === "live" &&
-                    x.provider === "LinkedIn Browser Computer",
-                ) ??
-                s.seats.find(
-                  (x) =>
-                    x.status === "active" &&
-                    x.mode === "live" &&
-                    x.provider === "LinkedIn Vendor API",
-                )
+              ? pickLiveLinkedInSendSeat(s.seats, msg.campaignId)
               : s.seats.find((x) => x.status === "active" && x.mode === "live");
       if (!supabaseEnabled || !seat) {
         const need =

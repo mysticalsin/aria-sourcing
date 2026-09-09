@@ -138,7 +138,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   let dueQuery = supabase
     .from("messages_outbound")
-    .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
+    .select("id, workspace_id, spec_id, campaign_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
     .eq("status", "queued")
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
@@ -379,10 +379,15 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           continue;
         }
 
+        const campaignId =
+          (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) ||
+          (typeof msg.spec_id === "string" && msg.spec_id.trim()) ||
+          undefined;
         const outcome = await adapter.deliver({
           workspaceId: msg.workspace_id,
           messageId: msg.id,
           candidateId: msg.candidate_id,
+          campaignId,
           profileUrl: claimObj.profile_url,
           subject: msg.subject ?? "",
           body: msg.body,

@@ -7,6 +7,7 @@ import {
   planShortlistAutomaticDeliver,
   preferLinkedInAutomaticSeats,
 } from "../src/lib/sourcing-automatic-deliver";
+import { pickLiveLinkedInSendSeat } from "../src/lib/linkedin-automatic";
 import { defaultFleetSettings } from "../src/lib/fleet";
 import type { AgentSeat, Candidate } from "../src/lib/types";
 import { isLinkedInAutomaticProvider } from "../src/lib/linkedin-channel";
@@ -62,6 +63,44 @@ const ordered = preferLinkedInAutomaticSeats([emailSeat, liSeat], {
   linkedinUrl: "https://linkedin.com/in/a",
 });
 ok("prefer puts LinkedIn automatic seat first", ordered[0]?.id === "li");
+
+ok(
+  "pickLiveLinkedInSendSeat prefers campaign-attached Browser Computer",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "elsewhere",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+      seat({
+        id: "camp",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+      seat({
+        id: "vendor",
+        provider: "LinkedIn Vendor API",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+    ],
+    "camp_seed_backend",
+  )?.id === "camp",
+);
+ok(
+  "pickLiveLinkedInSendSeat falls back to unscoped Browser Computer",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({ id: "unscoped", provider: "LinkedIn Browser Computer", assignedCampaignIds: [] }),
+      seat({
+        id: "wrong",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+    ],
+    "camp_seed_backend",
+  )?.id === "unscoped",
+);
 
 const cand = {
   id: "c1",

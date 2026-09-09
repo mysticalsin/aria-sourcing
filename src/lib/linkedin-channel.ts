@@ -16,6 +16,8 @@ export interface LinkedInDeliveryRequest {
   subject: string;
   body: string;
   attemptId: string;
+  /** Campaign id — tags computer audits / job trail for Campaign Agents. */
+  campaignId?: string;
   /** Seat id — required for browser-computer path (1 seat = 1 computer). */
   seatId?: string;
   /** Stable OpenBot computer id from agent_seats.computer_id (1 seat = 1 bot). */
@@ -194,6 +196,7 @@ const browserComputerAdapter: LinkedInAdapter = {
         workspaceId: req.workspaceId,
         seatId: req.seatId,
         computerId: req.computerId,
+        campaignId: req.campaignId,
       });
       if (computer.control === "human") {
         return {
@@ -204,7 +207,7 @@ const browserComputerAdapter: LinkedInAdapter = {
         };
       }
       if (computer.status === "stopped" || computer.status === "error") {
-        await defaultComputerSupervisor.start(computer.computerId);
+        await defaultComputerSupervisor.start(computer.computerId, { campaignId: req.campaignId });
       }
 
       const job = await defaultComputerSupervisor.enqueueJob({
@@ -214,6 +217,7 @@ const browserComputerAdapter: LinkedInAdapter = {
           workspaceId: req.workspaceId,
           messageId: req.messageId,
           candidateId: req.candidateId,
+          campaignId: req.campaignId,
           profileUrl,
           subject: req.subject,
           body: req.body,

@@ -147,5 +147,66 @@ try {
   else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
 }
 
+ok(
+  "dispatcher selects campaign_id and passes campaignId into LinkedIn deliver",
+  /campaign_id/.test(dispatch) &&
+    /campaignId,/.test(dispatch) &&
+    dispatch.indexOf("campaignId") > dispatch.indexOf('msg.channel === "LinkedIn"'),
+);
+ok(
+  "store picks campaign-scoped LinkedIn send seat",
+  /pickLiveLinkedInSendSeat\(s\.seats, msg\.campaignId\)/.test(
+    readFileSync("src/lib/store.ts", "utf8"),
+  ),
+);
+
+{
+  const previousMock = process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
+  const previousUrl = process.env.COMPUTER_SUPERVISOR_URL;
+  const previousToken = process.env.COMPUTER_SUPERVISOR_TOKEN;
+  process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+  delete process.env.COMPUTER_SUPERVISOR_URL;
+  delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+  try {
+    const { bindComputerSupervisorEndpoint, defaultComputerSupervisor } = await import(
+      "../src/lib/computer-supervisor"
+    );
+    bindComputerSupervisorEndpoint({ mockSend: true });
+    const browser = getLinkedInAdapter("browser-computer");
+    const outcome = await browser.deliver({
+      workspaceId: "ws-1",
+      messageId: "m-li",
+      candidateId: "cand-1",
+      campaignId: "camp_seed_backend",
+      profileUrl: "https://www.linkedin.com/in/marco-rossi",
+      subject: "Java role",
+      body: "Hello from Aria",
+      attemptId: "11111111-1111-4111-8111-111111111111",
+      seatId: "seat_java_vm_01",
+      computerId: "comp_java_campaign_send",
+      credentials: { computerSupervisorMockSend: true },
+    });
+    ok(
+      "browser-computer deliver succeeds with campaignId under mock",
+      outcome.status === "sent" && outcome.deliveryState === "accepted",
+    );
+    ok(
+      "browser-computer tags computer + act_done audit with campaignId",
+      defaultComputerSupervisor.get("comp_java_campaign_send")?.campaignId === "camp_seed_backend" &&
+        defaultComputerSupervisor
+          .recentAudits("comp_java_campaign_send")
+          .some((a) => a.action === "act_done" && a.campaignId === "camp_seed_backend"),
+    );
+    bindComputerSupervisorEndpoint(null);
+  } finally {
+    if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
+    else process.env.COMPUTER_SUPERVISOR_MOCK_SEND = previousMock;
+    if (previousUrl === undefined) delete process.env.COMPUTER_SUPERVISOR_URL;
+    else process.env.COMPUTER_SUPERVISOR_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    else process.env.COMPUTER_SUPERVISOR_TOKEN = previousToken;
+  }
+}
+
 console.log(`RESULT linkedin-channel-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

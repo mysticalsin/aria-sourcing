@@ -42,3 +42,34 @@ export function preferLinkedInAutomaticSeats(
   const rest = seats.filter((s) => !auto.some((a) => a.id === s.id));
   return [...auto, ...rest];
 }
+
+/**
+ * Pick the live seat used for Approve → Send LinkedIn delivery.
+ * Prefer Browser Computer seats attached to the campaign (Campaign Agents),
+ * then unscoped Browser Computer, then Vendor API with the same campaign bias.
+ */
+export function pickLiveLinkedInSendSeat(
+  seats: AgentSeat[],
+  campaignId: string | null | undefined,
+): AgentSeat | undefined {
+  const campaignRank = (seat: AgentSeat): number => {
+    const assigned = seat.assignedCampaignIds ?? [];
+    if (campaignId && assigned.includes(campaignId)) return 0;
+    if (assigned.length === 0) return 1;
+    return 2;
+  };
+
+  const pickProvider = (provider: (typeof LINKEDIN_AUTOMATIC_PROVIDERS)[number]): AgentSeat | undefined => {
+    const live = seats
+      .filter((x) => x.status === "active" && x.mode === "live" && x.provider === provider)
+      .slice()
+      .sort((a, b) => campaignRank(a) - campaignRank(b) || a.id.localeCompare(b.id));
+    return live[0];
+  };
+
+  for (const provider of LINKEDIN_AUTOMATIC_PROVIDERS) {
+    const seat = pickProvider(provider);
+    if (seat) return seat;
+  }
+  return undefined;
+}

@@ -73,6 +73,12 @@ try {
     supervisor.recentAudits(computer.computerId).some((a) => a.action === "act_done" && a.jobId === sent.jobId),
   );
   ok(
+    "linkedin_send act_done audit carries campaignId from payload",
+    supervisor.recentAudits(computer.computerId).some(
+      (a) => a.action === "act_done" && a.jobId === sent.jobId && a.campaignId === "camp_seed_backend",
+    ),
+  );
+  ok(
     "campaign-tagged ensure stores campaignId",
     (() => {
       const tagged = supervisor.ensureComputer({
