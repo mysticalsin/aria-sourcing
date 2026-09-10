@@ -3,7 +3,11 @@
 // extra runtime dependency.
 import { headers as serverOnlyBoundary } from "next/headers";
 
-import { isPublicDemoSideEffectBlocked } from "@/lib/demo-side-effect-policy";
+import {
+  isPublicDemoAriaBotAllowed,
+  isPublicDemoAriaBotBlocked,
+  isPublicDemoSideEffectBlocked,
+} from "@/lib/demo-side-effect-policy";
 
 void serverOnlyBoundary;
 
@@ -16,6 +20,19 @@ void serverOnlyBoundary;
  */
 export function publicDemoSideEffectsDisabled(): boolean {
   return isPublicDemoSideEffectBlocked();
+}
+
+/**
+ * Public demo still blocks third-party OAuth / mailbox / calendar, but Fly
+ * showcase can set ENABLE_PUBLIC_DEMO_ARIABOT=true so AriaBot seats and
+ * Browser Computer LinkedIn delivery remain live.
+ */
+export function publicDemoAriaBotDisabled(): boolean {
+  return isPublicDemoAriaBotBlocked();
+}
+
+export function publicDemoAriaBotEnabled(): boolean {
+  return isPublicDemoAriaBotAllowed();
 }
 
 export const PUBLIC_DEMO_DRY_RUN_DETAIL =

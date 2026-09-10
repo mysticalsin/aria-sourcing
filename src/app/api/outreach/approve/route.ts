@@ -7,7 +7,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
-import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoAriaBotDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 /**
@@ -99,7 +99,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (publicDemoSideEffectsDisabled()) {
+  // Approvals must persist for AriaBot Browser Computer E2E on the Fly showcase.
+  if (publicDemoAriaBotDisabled()) {
     return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 

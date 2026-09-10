@@ -28,7 +28,7 @@ import type { AgentSeat } from "@/lib/types";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
-import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoAriaBotDisabled, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import type { LinkedInDeliveryMode } from "@/lib/types";
 
@@ -312,7 +312,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (publicDemoSideEffectsDisabled()) {
+    if (publicDemoAriaBotDisabled()) {
       return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
     }
 

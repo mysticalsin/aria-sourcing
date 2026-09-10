@@ -32,7 +32,10 @@ import {
 } from "@/lib/whatsapp-template-queue";
 import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-policy";
 import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
-import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import {
+  publicDemoAriaBotEnabled,
+  publicDemoSideEffectsDisabled,
+} from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
@@ -133,8 +136,11 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
   const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0, unconfigured: 0 };
 
   // A public demo may still use a real Supabase database. Never let a queued
-  // row from that shared environment reach a provider, regardless of caller.
-  if (publicDemoSideEffectsDisabled()) return stats;
+  // row from that shared environment reach a third-party provider. AriaBot
+  // LinkedIn Browser Computer is allowed when ENABLE_PUBLIC_DEMO_ARIABOT=true.
+  const demoBlocked = publicDemoSideEffectsDisabled();
+  const ariaBotLive = publicDemoAriaBotEnabled();
+  if (demoBlocked && !ariaBotLive) return stats;
 
   let dueQuery = supabase
     .from("messages_outbound")
@@ -142,6 +148,10 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
     .eq("status", "queued")
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
+  // Showcase escape hatch: only LinkedIn (AriaBot) may leave the outbox.
+  if (demoBlocked && ariaBotLive) {
+    dueQuery = dueQuery.eq("channel", "LinkedIn");
+  }
   const { data: due, error: dueErr } = await dueQuery
     .order("scheduled_at", { ascending: true })
     .limit(limit);

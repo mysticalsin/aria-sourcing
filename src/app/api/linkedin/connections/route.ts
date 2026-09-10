@@ -22,7 +22,12 @@ import { can } from "@/lib/rbac";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import type { Role } from "@/lib/types";
-import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import {
+  PUBLIC_DEMO_DRY_RUN_DETAIL,
+  publicDemoAriaBotDisabled,
+  publicDemoSideEffectsDisabled,
+} from "@/lib/server/demo-side-effects";
+
 import { safeLog } from "@/lib/log-redact";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
 
@@ -233,7 +238,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Could not resolve workspace." }, { status: 403 });
   }
 
-  if (publicDemoSideEffectsDisabled()) {
+  // AriaBot Browser Computer is first-party fleet infra — allow seat create when
+  // ENABLE_PUBLIC_DEMO_ARIABOT=true. OAuth / assisted-manual / vendor stay dry-run.
+  const browserComputerConnect =
+    body.action === "ensure_connect" && body.provider === "LinkedIn Browser Computer";
+  if (browserComputerConnect ? publicDemoAriaBotDisabled() : publicDemoSideEffectsDisabled()) {
     return NextResponse.json({ ok: true, status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
