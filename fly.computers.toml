@@ -14,6 +14,10 @@ primary_region = "cdg"
   OPENBOT_MAX_COMPUTERS    = "5"
   OPENBOT_PROFILE_ROOT     = "/data/profiles"
   OPENBOT_PUBLIC_BASE      = "https://aria-mantu-computers.fly.dev"
+  # Fluid Take control (CDP screencast) + multi-tab Chromium
+  OPENBOT_STREAM_QUALITY   = "55"
+  OPENBOT_STREAM_MAX_WIDTH = "1400"
+  OPENBOT_STREAM_MAX_HEIGHT = "900"
   # Secrets (fly secrets set -a aria-mantu-computers):
   #   SUPERVISOR_TOKEN, COMPUTER_TOKEN
 
@@ -35,5 +39,6 @@ primary_region = "cdg"
     grace_period = "30s"
 
 [[vm]]
-  size   = "performance-2x"
-  memory = "4gb"
+  # Screencast encode + multi-tab Chromium needs headroom; 2x/4gb felt laggy.
+  size   = "performance-4x"
+  memory = "8gb"
