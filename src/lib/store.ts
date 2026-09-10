@@ -2203,7 +2203,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     (messageId: string, patch: Partial<OutreachMessage>) =>
       commit((s) => ({
         ...s,
-        outreach: s.outreach.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+        outreach: s.outreach.map((m) => {
+          if (m.id !== messageId) return m;
+          const next = { ...m, ...patch };
+          if (typeof next.subject === "string") next.subject = humanizeText(next.subject);
+          if (typeof next.body === "string") next.body = humanizeText(next.body);
+          return next;
+        }),
       })),
     [commit],
   );
@@ -2333,7 +2339,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const initialMessage = s.outreach.find((m) => m.id === messageId);
       if (!initialMessage) return approvalBlocked("Message not found.");
       if (!isActionable(initialMessage)) return approvalBlocked("Message is no longer awaiting approval.");
-      let msg: OutreachMessage = initialMessage;
+      // Last-mile Humanizer: legacy drafts may still carry em dashes from older gens.
+      const cleanedSubject = humanizeText(initialMessage.subject);
+      const cleanedBody = humanizeText(initialMessage.body);
+      let msg: OutreachMessage =
+        cleanedSubject !== initialMessage.subject || cleanedBody !== initialMessage.body
+          ? { ...initialMessage, subject: cleanedSubject, body: cleanedBody }
+          : initialMessage;
+      if (msg !== initialMessage) {
+        commit((state) => ({
+          ...state,
+          outreach: state.outreach.map((m) => (m.id === messageId ? msg : m)),
+        }));
+        s = current();
+      }
       let candidate = s.candidates.find((c) => c.id === msg.candidateId);
       let campaign = s.campaigns.find((c) => c.id === msg.campaignId);
       if (!candidate || !campaign) return approvalBlocked("Linked candidate/campaign missing.");
@@ -3798,9 +3817,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           phone: sub.phone,
           avatarInitials: initials,
           currentTitle: sub.roleTitle,
-          currentCompany: "—",
-          location: sub.detected.location ?? "—",
-          timezone: "—",
+          currentCompany: "Unknown",
+          location: sub.detected.location ?? "Unknown",
+          timezone: "Unknown",
           linkedinUrl: "",
           githubUrl: "",
           sourcePlatform: "Referral", // closest base enum; leadSource is authoritative

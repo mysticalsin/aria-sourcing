@@ -20,6 +20,7 @@ import { checkOutreachApproval } from "@/lib/rules";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
 import type { CandidateLawfulBasis } from "@/lib/types";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
+import { humanizeText } from "@/lib/humanizer";
 import {
   initialsFrom,
   formatTimeAgo,
@@ -81,14 +82,20 @@ export function OutreachMessageCard({
   const a = useActions();
   const { toast } = useToast();
 
-  const [subject, setSubject] = React.useState(message.subject);
-  const [body, setBody] = React.useState(message.body);
+  const [subject, setSubject] = React.useState(() => humanizeText(message.subject));
+  const [body, setBody] = React.useState(() => humanizeText(message.body));
 
   // Re-sync local editor whenever the underlying message changes (regenerate / tone swap).
+  // Always re-run Humanizer so legacy drafts with em dashes never reach the editor.
   React.useEffect(() => {
-    setSubject(message.subject);
-    setBody(message.body);
-  }, [message.subject, message.body]);
+    const nextSubject = humanizeText(message.subject);
+    const nextBody = humanizeText(message.body);
+    setSubject(nextSubject);
+    setBody(nextBody);
+    if (nextSubject !== message.subject || nextBody !== message.body) {
+      a.updateOutreach(message.id, { subject: nextSubject, body: nextBody });
+    }
+  }, [message.subject, message.body, message.id, a]);
 
   const dirty = subject !== message.subject || body !== message.body;
   const ChannelIcon = message.channel === "Email" ? Mail : Linkedin;

@@ -9,6 +9,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoAriaBotDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { humanizeText } from "@/lib/humanizer";
 
 /**
  * Record a human approval for a SPECIFIC outbound message.
@@ -62,7 +63,10 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, ApproveSchema, { maxBytes: 100_000 });
   if (!validated.ok) return validated.response;
-  const { messageId, candidateId, channel, recipient, subject, body } = validated.data;
+  const raw = validated.data;
+  const subject = humanizeText(raw.subject);
+  const body = humanizeText(raw.body);
+  const { messageId, candidateId, channel, recipient } = raw;
 
   const { data: wid } = await supabase.rpc("current_workspace_id");
   if (!wid) return NextResponse.json({ ok: false, error: "Workspace not found." }, { status: 400 });

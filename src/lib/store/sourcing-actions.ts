@@ -1335,6 +1335,7 @@ export function createSourcingActions({
     if (!fields) return { ok: false, error: "Candidate details are invalid." };
 
     const now = new Date().toISOString();
+    const profileIsLinkedIn = /linkedin\.com\/in\//i.test(fields.profileUrl);
     const raw: Candidate = {
       id: genId("cand"),
       campaignId,
@@ -1345,7 +1346,8 @@ export function createSourcingActions({
       currentCompany: "",
       location: fields.location,
       timezone: "",
-      linkedinUrl: "",
+      // LinkedIn Connect/Message needs linkedinUrl, not only sourceUrl.
+      linkedinUrl: profileIsLinkedIn ? fields.profileUrl : "",
       githubUrl: "",
       sourceUrl: fields.profileUrl || undefined,
       sourcePlatform: "Manual",

@@ -107,7 +107,15 @@ async function main() {
   console.log("demo-login", loginStatus.status);
   if (loginStatus.status !== 200) throw new Error(`demo-login failed: ${loginStatus.status}`);
 
-  await page.goto(`${BASE}/campaigns`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+  
+  await page.goto(`${BASE}/settings`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+  await pause(page, 2000);
+  await dismiss(page);
+  await clickText(page, /skills|agent skills|humanizer/i);
+  await pause(page, 1500);
+  await page.screenshot({ path: path.join(OUT, "tonywalteur-00-skills.png"), fullPage: true });
+
+await page.goto(`${BASE}/campaigns`, { waitUntil: "domcontentloaded", timeout: 90_000 });
   await pause(page, 4000);
   await dismiss(page);
   await page.screenshot({ path: path.join(OUT, "tonywalteur-01-campaigns.png"), fullPage: true });
@@ -175,6 +183,13 @@ async function main() {
     await area.fill(cleaned).catch(() => {});
   }
   await page.screenshot({ path: path.join(OUT, "tonywalteur-04-outreach.png"), fullPage: true });
+  {
+    const bodies = await page.locator("textarea").allTextContents();
+    for (const b of bodies) {
+      if (/[\u2014\u2013]/.test(b)) throw new Error("em/en dash still visible in outreach editor");
+    }
+  }
+
   const approve = page.getByRole("button", { name: /approve|send|approve & send|queue/i }).first();
   if (await approve.count()) {
     await approve.click({ force: true }).catch(() => {});
