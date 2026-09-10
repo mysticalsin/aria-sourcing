@@ -221,14 +221,21 @@ async function startScreencast(rec) {
       try {
         await cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId });
       } catch {}
-      const payload = JSON.stringify({
-        type: "frame",
-        data: frame.data,
+      // Binary JPEG frames (Browserbase-style) — much lower WS overhead than base64 JSON.
+      const jpeg = Buffer.from(frame.data, "base64");
+      const meta = {
+        type: "frame_meta",
         metadata: frame.metadata || {},
         tabId: rec.activeTabId,
-      });
+        bytes: jpeg.length,
+        ts: Date.now(),
+      };
       for (const ws of rec.streamClients) {
-        if (ws.readyState === 1) ws.send(payload);
+        if (ws.readyState !== 1) continue;
+        try {
+          ws.send(JSON.stringify(meta));
+          ws.send(jpeg);
+        } catch {}
       }
     });
     await cdp.send("Page.startScreencast", {
@@ -392,54 +399,72 @@ function viewPage(botId) {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>AriaBot ${botId}</title>
+<title>Aria session · ${botId}</title>
 <style>
-:root{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif}
-html,body{margin:0;height:100%;background:#070a12;color:#e8eefc;overflow:hidden}
+:root{color-scheme:dark;--bg:#0b0f17;--panel:#121826;--line:#243044;--text:#e8eefc;--muted:#8fa3c2;--accent:#5b8cff;--ok:#3dd68c;--warn:#ffb020}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 20% -10%,#18233a 0%,var(--bg) 55%);color:var(--text);font-family:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;overflow:hidden}
 body{display:flex;flex-direction:column}
-header{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1e2a44;background:#0c1424;z-index:5;flex:0 0 auto}
-body.fs header{position:absolute;left:0;right:0;top:0;background:rgba(12,20,36,.92);backdrop-filter:blur(8px)}
-body.fs:not(:hover) header{opacity:.18;transition:opacity .2s}
-body.fs:hover header{opacity:1}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);background:rgba(12,18,30,.92);backdrop-filter:blur(10px);flex:0 0 auto;z-index:5}
+body.fs .top{position:absolute;left:0;right:0;top:0}
+body.fs:not(:hover) .top,#tabs{transition:opacity .2s}
+body.fs:not(:hover) .top{opacity:.12}
+body.fs:hover .top{opacity:1}
+.brand{display:flex;flex-direction:column;gap:2px;min-width:0}
+.brand .kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7eb6ff}
+.brand .title{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chiprow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#0e1524;font:11px/1.2 "IBM Plex Mono",ui-monospace,monospace;color:var(--muted)}
+.chip b{color:var(--text);font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(61,214,140,.15)}
+.dot.warn{background:var(--warn);box-shadow:0 0 0 3px rgba(255,176,32,.15)}
+.dot.bad{background:#ff5d6c;box-shadow:0 0 0 3px rgba(255,93,108,.15)}
 .badge{padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 .human{background:#5b3410;color:#ffd29a}.bot{background:#10384f;color:#8de7ff}
-button{background:#5b7cfa;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:600;cursor:pointer;font-size:13px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:600;cursor:pointer;font-size:13px}
 button.secondary{background:#24314d}button:disabled{opacity:.55;cursor:wait}
-#tabs{display:flex;gap:4px;align-items:center;padding:6px 10px 0;background:#0a1220;border-bottom:1px solid #1e2a44;overflow-x:auto;flex:0 0 auto}
-body.fs #tabs{padding-top:52px}
+#tabs{display:flex;gap:4px;align-items:center;padding:6px 10px 0;background:#0a1220;border-bottom:1px solid var(--line);overflow-x:auto;flex:0 0 auto}
+body.fs #tabs{padding-top:58px}
+body.fs:not(:hover) #tabs{opacity:.12}
+body.fs:hover #tabs{opacity:1}
 .tab{display:flex;align-items:center;gap:6px;max-width:220px;padding:6px 10px;border-radius:8px 8px 0 0;background:#152038;color:#c6d4ef;border:1px solid #24314d;border-bottom:0;cursor:pointer;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tab.active{background:#1c2d52;color:#fff;box-shadow:inset 0 -2px 0 #5b7cfa}
+.tab.active{background:#1c2d52;color:#fff;box-shadow:inset 0 -2px 0 var(--accent)}
 .tab .x{opacity:.55;border:0;background:transparent;color:inherit;padding:0 2px;cursor:pointer;font-size:14px}
 .tab .x:hover{opacity:1;color:#ff8d9c}
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:#05070c}
 #frame{position:relative;flex:1 1 auto;min-height:0;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}
 #canvas,#shot{display:block;max-width:100%;max-height:100%;width:auto;height:auto;cursor:crosshair;outline:none;user-select:none;background:#000}
 #shot{display:none}
-#metaBar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 12px;font:12px ui-monospace,Menlo,monospace;color:#9db0d0;border-top:1px solid #1e2a44;background:#0c1424;flex:0 0 auto}
-#fps{color:#7fd7ff}#err{color:#ff8d9c}
+#metaBar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 12px;font:12px "IBM Plex Mono",ui-monospace,Menlo,monospace;color:var(--muted);border-top:1px solid var(--line);background:rgba(12,18,30,.95);flex:0 0 auto}
+#fps,#rtt{color:#7fd7ff}#err{color:#ff8d9c}
 </style>
 </head>
 <body class="${control === "human" ? "fs" : ""}">
-<header>
-  <div>
-    <div style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#7fd7ff">AriaBot live browser</div>
-    <div style="font-weight:700;margin-top:2px;font-size:13px">${botId}</div>
+<div class="top">
+  <div class="brand">
+    <div class="kicker">Aria live session</div>
+    <div class="title">${botId}</div>
   </div>
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <div class="chiprow">
+    <span class="chip"><span id="connDot" class="dot warn"></span><b id="connLabel">connecting</b></span>
+    <span class="chip">FPS <b id="fps">—</b></span>
+    <span class="chip">RTT <b id="rtt">—</b></span>
     <span id="controlBadge" class="badge ${control === "human" ? "human" : "bot"}">${control}</span>
-    <span id="statusText" style="font-size:12px;color:#9db0d0">${status}</span>
-    <span id="fps">stream…</span>
+    <span id="statusText" class="chip">${status}</span>
+  </div>
+  <div class="actions">
     <button type="button" onclick="take()">Take control</button>
     <button type="button" class="secondary" onclick="release()">Release</button>
     <button type="button" class="secondary" onclick="newTab()">+ Tab</button>
     <button type="button" class="secondary" onclick="goLinkedIn()">LinkedIn</button>
     <button type="button" class="secondary" onclick="toggleFs()">Fullscreen</button>
   </div>
-</header>
+</div>
 <div id="tabs"></div>
 <div id="stage">
   <div id="frame">
-    <canvas id="canvas" tabindex="0" aria-label="Live AriaBot desktop"></canvas>
+    <canvas id="canvas" tabindex="0" aria-label="Live Aria browser session"></canvas>
     <img id="shot" tabindex="0" alt="Fallback screenshot"/>
   </div>
   <div id="metaBar"><span id="meta">connecting stream…</span><span id="err"></span></div>
@@ -463,6 +488,11 @@ let useFallback = false;
 let fallbackTimer = null;
 let pendingKeys = [];
 let keyFlushTimer = null;
+let lastMeta = null;
+let moveTimer = null;
+let lastMove = null;
+let pingTimer = null;
+let lastPingAt = 0;
 
 async function api(path, body) {
   const res = await fetch(base + path, {
@@ -481,6 +511,12 @@ async function api(path, body) {
 }
 
 function setErr(msg) { document.getElementById("err").textContent = msg || ""; }
+function setConn(state, label) {
+  const dot = document.getElementById("connDot");
+  const lab = document.getElementById("connLabel");
+  dot.className = "dot" + (state === "ok" ? "" : state === "bad" ? " bad" : " warn");
+  lab.textContent = label;
+}
 
 function mapPoint(ev, el) {
   const rect = el.getBoundingClientRect();
@@ -532,7 +568,55 @@ async function toggleFs() {
   else await enterFullscreen();
 }
 
-function paintFrame(b64, metadata) {
+function bumpFps() {
+  frameCount += 1;
+  const now = Date.now();
+  if (now - lastFpsAt >= 1000) {
+    document.getElementById("fps").textContent = String(frameCount);
+    frameCount = 0; lastFpsAt = now;
+  }
+}
+
+function paintBitmap(bitmap, metadata) {
+  naturalW = bitmap.width || metadata?.deviceWidth || naturalW;
+  naturalH = bitmap.height || metadata?.deviceHeight || naturalH;
+  if (canvas.width !== naturalW || canvas.height !== naturalH) {
+    canvas.width = naturalW; canvas.height = naturalH;
+  }
+  ctx.drawImage(bitmap, 0, 0);
+  if (bitmap.close) bitmap.close();
+  bumpFps();
+  if (lastMeta?.ts) {
+    const rtt = Math.max(0, Date.now() - lastMeta.ts);
+    document.getElementById("rtt").textContent = rtt + "ms";
+  }
+}
+
+async function paintBinary(buf) {
+  try {
+    const blob = new Blob([buf], { type: "image/jpeg" });
+    if (createImageBitmap) {
+      const bmp = await createImageBitmap(blob);
+      paintBitmap(bmp, lastMeta?.metadata);
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      naturalW = img.naturalWidth || naturalW;
+      naturalH = img.naturalHeight || naturalH;
+      if (canvas.width !== naturalW || canvas.height !== naturalH) {
+        canvas.width = naturalW; canvas.height = naturalH;
+      }
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      bumpFps();
+    };
+    img.src = url;
+  } catch (e) { setErr(String(e.message || e)); }
+}
+
+function paintFrameB64(b64, metadata) {
   const img = new Image();
   img.onload = () => {
     naturalW = img.naturalWidth || metadata?.deviceWidth || naturalW;
@@ -541,12 +625,7 @@ function paintFrame(b64, metadata) {
       canvas.width = naturalW; canvas.height = naturalH;
     }
     ctx.drawImage(img, 0, 0);
-    frameCount += 1;
-    const now = Date.now();
-    if (now - lastFpsAt >= 1000) {
-      document.getElementById("fps").textContent = frameCount + " fps";
-      frameCount = 0; lastFpsAt = now;
-    }
+    bumpFps();
   };
   img.src = "data:image/jpeg;base64," + b64;
 }
@@ -576,7 +655,8 @@ function enableFallback(reason) {
   useFallback = true;
   canvas.style.display = "none";
   shot.style.display = "block";
-  document.getElementById("fps").textContent = "poll ~5fps";
+  document.getElementById("fps").textContent = "~5";
+  setConn("warn", "fallback");
   setErr(reason || "stream unavailable — fast screenshot fallback");
   if (fallbackTimer) clearInterval(fallbackTimer);
   fallbackTimer = setInterval(fallbackRefresh, human ? 180 : 400);
@@ -587,19 +667,38 @@ function connectStream() {
   if (ws) try { ws.close(); } catch (_) {}
   const url = wsBase + "/c/" + encodeURIComponent(botId) + "/stream?token=" + encodeURIComponent(token);
   ws = new WebSocket(url);
+  ws.binaryType = "arraybuffer";
   ws.onopen = () => {
     useFallback = false;
     canvas.style.display = "block";
     shot.style.display = "none";
     if (fallbackTimer) { clearInterval(fallbackTimer); fallbackTimer = null; }
     setErr("");
-    document.getElementById("fps").textContent = "live";
+    setConn("ok", "live");
+    document.getElementById("fps").textContent = "…";
+    if (pingTimer) clearInterval(pingTimer);
+    pingTimer = setInterval(() => {
+      if (ws && ws.readyState === 1) {
+        lastPingAt = Date.now();
+        ws.send(JSON.stringify({ type: "ping", t: lastPingAt }));
+      }
+    }, 2000);
   };
   ws.onmessage = (ev) => {
+    if (typeof ev.data !== "string") {
+      void paintBinary(ev.data);
+      return;
+    }
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
-    if (msg.type === "frame") paintFrame(msg.data, msg.metadata);
-    else if (msg.type === "tabs") renderTabs(msg.tabs);
-    else if (msg.type === "meta") {
+    if (msg.type === "frame_meta") {
+      lastMeta = msg;
+      if (msg.metadata?.deviceWidth) naturalW = msg.metadata.deviceWidth;
+      if (msg.metadata?.deviceHeight) naturalH = msg.metadata.deviceHeight;
+    } else if (msg.type === "frame") {
+      paintFrameB64(msg.data, msg.metadata);
+    } else if (msg.type === "tabs") {
+      renderTabs(msg.tabs);
+    } else if (msg.type === "meta") {
       const badge = document.getElementById("controlBadge");
       badge.textContent = msg.control;
       badge.className = "badge " + (msg.control === "human" ? "human" : "bot");
@@ -607,10 +706,18 @@ function connectStream() {
       document.getElementById("meta").textContent = msg.url || "";
       human = msg.control === "human";
       if (human) document.body.classList.add("fs");
-    } else if (msg.type === "error") enableFallback(msg.error);
+    } else if (msg.type === "pong") {
+      document.getElementById("rtt").textContent = Math.max(0, Date.now() - (msg.t || lastPingAt)) + "ms";
+    } else if (msg.type === "error") {
+      enableFallback(msg.error);
+    }
   };
   ws.onerror = () => enableFallback("websocket error");
-  ws.onclose = () => { if (!useFallback) setTimeout(connectStream, 800); };
+  ws.onclose = () => {
+    setConn("bad", "reconnecting");
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    if (!useFallback) setTimeout(connectStream, 800);
+  };
 }
 
 async function take() { await api("/control/take", {}); human = true; await enterFullscreen(); connectStream(); }
@@ -620,6 +727,17 @@ async function newTab(url) { await api("/tabs/new", url ? { url } : {}); (useFal
 async function activateTab(id) { await api("/tabs/activate", { id }); (useFallback ? shot : canvas).focus(); }
 async function closeTab(id) { try { await api("/tabs/close", { id }); } catch (e) { setErr(String(e.message || e)); } }
 
+function queueMove(pt) {
+  lastMove = pt;
+  if (moveTimer) return;
+  moveTimer = setTimeout(() => {
+    moveTimer = null;
+    const p = lastMove; lastMove = null;
+    if (!p) return;
+    void api("/move-xy", { x: p.x, y: p.y, human: true }).catch(() => {});
+  }, 16);
+}
+
 function bindPointer(el) {
   el.addEventListener("pointerdown", (ev) => {
     const pt = mapPoint(ev, el);
@@ -627,6 +745,11 @@ function bindPointer(el) {
     el.focus();
     void api("/click-xy", { x: pt.x, y: pt.y, button: ev.button === 2 ? "right" : "left", human: true })
       .catch((e) => setErr(String(e.message || e)));
+  });
+  el.addEventListener("pointermove", (ev) => {
+    if (!human) return;
+    const pt = mapPoint(ev, el);
+    if (pt) queueMove(pt);
   });
   el.addEventListener("contextmenu", (ev) => ev.preventDefault());
   el.addEventListener("wheel", (ev) => {
@@ -812,6 +935,22 @@ async function handleComputer(botId, req, res, pathname, method) {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return json(res, 400, { error: "x,y required" });
     const button = body.button === "right" ? "right" : "left";
     const humanFast = body.human === true || rec.control === "human";
+    if (humanFast && rec.cdp) {
+      const btn = button === "right" ? "right" : "left";
+      const buttons = button === "right" ? 2 : 1;
+      try {
+        await rec.cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseMoved", x, y, button: "none", buttons: 0,
+        });
+        await rec.cdp.send("Input.dispatchMouseEvent", {
+          type: "mousePressed", x, y, button: btn, buttons, clickCount: 1,
+        });
+        await rec.cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased", x, y, button: btn, buttons: 0, clickCount: 1,
+        });
+        return json(res, 200, { action: "click-xy", x, y, button, via: "cdp", url: rec.page.url() });
+      } catch {}
+    }
     if (!humanFast) {
       try {
         await rec.page.mouse.move(x + randInt(-6, 6), y + randInt(-6, 6), { steps: randInt(3, 10) });
@@ -820,6 +959,22 @@ async function handleComputer(botId, req, res, pathname, method) {
     }
     await rec.page.mouse.click(x, y, { button, delay: humanFast ? 0 : undefined });
     return json(res, 200, { action: "click-xy", x, y, button, url: rec.page.url() });
+  }
+
+  if (pathname === "/move-xy" && method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const x = Number(body.x), y = Number(body.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return json(res, 400, { error: "x,y required" });
+    if (rec.cdp) {
+      try {
+        await rec.cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseMoved", x, y, button: "none", buttons: 0,
+        });
+        return json(res, 200, { action: "move-xy", x, y, via: "cdp" });
+      } catch {}
+    }
+    await rec.page.mouse.move(x, y);
+    return json(res, 200, { action: "move-xy", x, y });
   }
 
   if (pathname === "/key" && method === "POST") {
@@ -892,7 +1047,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/health") {
       return json(res, 200, {
         ok: true, computers: computers.size, headed: HEADED, max: MAX,
-        stream: "cdp-screencast", multitab: true,
+        stream: "cdp-screencast-binary", multitab: true, liveView: "browserbase-style",
       });
     }
 
@@ -993,6 +1148,14 @@ server.on("upgrade", (req, socket, head) => {
       }));
       void tabList(rec).then((tabs) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "tabs", tabs })); });
       void startScreencast(rec);
+      ws.on("message", (data) => {
+        try {
+          const msg = JSON.parse(String(data));
+          if (msg && msg.type === "ping") {
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: "pong", t: msg.t || Date.now() }));
+          }
+        } catch {}
+      });
       ws.on("close", () => {
         rec.streamClients.delete(ws);
         if (rec.streamClients.size === 0) void stopScreencast(rec);
@@ -1008,7 +1171,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(JSON.stringify({
     event: "openbot_chromium_supervisor_ready",
     port: PORT, headed: HEADED, max: MAX, publicBase: PUBLIC_BASE,
-    stream: "cdp-screencast", multitab: true,
+    stream: "cdp-screencast-binary", multitab: true, liveView: "browserbase-style",
     chrome: fs.existsSync(CHROME_PATH) ? CHROME_PATH : "playwright-default",
   }));
 });

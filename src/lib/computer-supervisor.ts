@@ -664,10 +664,15 @@ export class ComputerSupervisor {
           ).trim();
           const subject = String(job.payload.subject ?? "").trim() || undefined;
 
+          const preferConnect =
+            job.payload.preferConnect === true ||
+            job.payload.action === "connect" ||
+            job.payload.mode === "connect";
           const result = await openBotLinkedInSend(agent, {
             profileUrl,
             messageBody,
             subject,
+            preferConnect,
           });
 
           if (result.helpRequested) {

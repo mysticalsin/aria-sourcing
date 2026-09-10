@@ -85,6 +85,8 @@ export function buildOutreachPrompt(opts: {
   language: string;
   persona?: string;
   signature?: string;
+  /** Active outreach_skill playbook markdown from Agent Skills. */
+  skillPlaybook?: string;
 }): string {
   const lines = [
     `Draft a first-touch ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
@@ -114,7 +116,10 @@ export function buildOutreachPrompt(opts: {
         `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
       ].join("\n"),
     "",
-    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler.",
+    opts.skillPlaybook
+      ? ["Agent Skills playbook (must follow):", opts.skillPlaybook.trim(), ""].join("\n")
+      : "",
+    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler. Never use em dashes (—) or en dashes (–); use commas or periods. The Humanizer will strip remaining AI tells.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",
     "",
     "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",

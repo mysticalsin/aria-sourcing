@@ -31,6 +31,8 @@ export interface LinkedInDeliveryRequest {
   seat?: AgentSeat;
   /** Optional fleet settings for pacing. */
   fleetSettings?: FleetSettings;
+  /** Prefer Connect + note when Message is unavailable (default true for AriaBot). */
+  preferConnect?: boolean;
 }
 
 export interface LinkedInDeliveryOutcome {
@@ -252,6 +254,7 @@ const browserComputerAdapter: LinkedInAdapter = {
           subject: req.subject,
           body: req.body,
           attemptId: req.attemptId,
+          preferConnect: req.preferConnect !== false,
         },
       });
 

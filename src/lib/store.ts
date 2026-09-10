@@ -344,6 +344,7 @@ function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
  */
 async function attemptLiveFollowUpGen(opts: {
   settings: SystemSettings;
+  skills: AgentSkill[];
   candidate: Candidate;
   campaign: Campaign;
   tone: OutreachTone;
@@ -355,7 +356,7 @@ async function attemptLiveFollowUpGen(opts: {
   touchNote: string;
   runEffect: <T>(effect: () => T) => WorkspaceEffectAttempt<T>;
 }): Promise<{ gen: GeneratedOutreach; live: boolean }> {
-  const { settings, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote, runEffect } = opts;
+  const { settings, skills, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote, runEffect } = opts;
   const aiCfg = resolveAiProvider(settings, "outreach", {
     providerId: seat?.providerId,
     modelId: seat?.modelId,
@@ -381,6 +382,7 @@ async function attemptLiveFollowUpGen(opts: {
     language: lang,
     persona: voice?.persona,
     signature: voice?.signature,
+    skillPlaybook: getSkill(skills, "outreach_skill")?.content,
   });
   const ariaPrompt = settings.guardrails?.ariaPrompt;
   const guardrails = [ariaPrompt, touchNote].filter(Boolean).join("\n\n");
@@ -1989,6 +1991,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           language: lang,
           persona: voice?.persona,
           signature: voice?.signature,
+          skillPlaybook: getSkill(s.skills, "outreach_skill")?.content,
         });
         // F-2: prepend ariaPrompt when set so it shapes the live generation.
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
@@ -2098,6 +2101,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
       // follow-up touch isn't silently downgraded to canned copy at scale.
       const { gen, live } = await attemptLiveFollowUpGen({
+        skills: s.skills,
         settings: s.settings,
         candidate,
         campaign,
@@ -2159,6 +2163,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
       // #Vivier re-contact isn't silently downgraded to canned copy either.
       const { gen, live } = await attemptLiveFollowUpGen({
+        skills: s.skills,
         settings: s.settings,
         candidate,
         campaign,
@@ -2240,6 +2245,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           tone: nextTone,
           channel: msg.channel,
           language: lang,
+          skillPlaybook: getSkill(s.skills, "outreach_skill")?.content,
         });
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
         const liGuard = msg.channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";

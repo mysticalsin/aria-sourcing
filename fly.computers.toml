@@ -15,9 +15,10 @@ primary_region = "cdg"
   OPENBOT_PROFILE_ROOT     = "/data/profiles"
   OPENBOT_PUBLIC_BASE      = "https://aria-mantu-computers.fly.dev"
   # Fluid Take control (CDP screencast) + multi-tab Chromium
-  OPENBOT_STREAM_QUALITY   = "55"
-  OPENBOT_STREAM_MAX_WIDTH = "1400"
-  OPENBOT_STREAM_MAX_HEIGHT = "900"
+  # Lower quality + 1280 width = snappier encode (Browserbase-like feel)
+  OPENBOT_STREAM_QUALITY   = "45"
+  OPENBOT_STREAM_MAX_WIDTH = "1280"
+  OPENBOT_STREAM_MAX_HEIGHT = "800"
   # Secrets (fly secrets set -a aria-mantu-computers):
   #   SUPERVISOR_TOKEN, COMPUTER_TOKEN
 
@@ -37,6 +38,11 @@ primary_region = "cdg"
     interval     = "15s"
     timeout      = "5s"
     grace_period = "30s"
+
+# Persist Chromium profiles (LinkedIn login/cookies) across deploys.
+[mounts]
+  source = "openbot_profiles"
+  destination = "/data"
 
 [[vm]]
   # Screencast encode + multi-tab Chromium needs headroom; 2x/4gb felt laggy.
