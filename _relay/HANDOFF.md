@@ -1,48 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 139
+shift: 140
 agent: cursor-cloud
-updated: 2026-09-10T23:19Z
-status: linkedin-browser-agents-wired
+updated: 2026-09-10T23:28Z
+status: linkedin-agent-toolkits-deep-wired
 ---
 
-# Handoff — Shift 139
+# Handoff — Shift 140
 
 ## Current state
 
 - **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/97
-- **Computers health:** Browserbase-class live view still live (`liveView: browserbase-style`)
-- **Scrapling:** sidecar + enrich/`fetch_page` wiring unchanged
-- **LinkedIn agent toolkits:** adapters + `linkedin_agent_tool` provider + unified sidecar
+- **LinkedIn toolkits:** NightTrek / Orca / browser-use / CrewAI pack / Linki / OpenOutreach deeply wired
 
 ## Done this shift
 
-1. Wired `searchLinkedInProfiles` into LinkedIn sourcing fan-out via `linkedin_agent_tool` provider
-2. Registered provider in `providersForCampaign` pick lists (fail-closed unless `ARIA_LINKEDIN_AGENT_TOOL_ENABLED=1`)
-3. Added `tools/linkedin-browser-agents/` unified sidecar (`/analyze` `/search` `/act` `/qualify`)
-4. Added `listLinkedInBrowserAgentStatus` + docs + unit test (`tests/linkedin-browser-agents.mts`)
-5. Confirmed Connect/Message still refused to browser-use (AriaBot only)
+1. Agent tools: `analyze_linkedin_profile`, `qualify_lead_icp`, `browser_use_navigate` on sourcing loop
+2. Outreach live draft pulls Orca/ICP context via `/api/source/linkedin-research`
+3. Skills playbooks updated for toolkit usage
+4. Sidecar HTTP contracts smoked; Connect/Message still refused
+5. Unit tests expanded; `npm run typecheck` green
 
 ## Blockers
 
-1. Operator LinkedIn login still required once on `comp_tony_01` for Connect E2E
-2. Sidecars not deployed on Fly yet (local/dev enable via env)
+1. Operator LinkedIn login once on AriaBot seat for Connect E2E
+2. Sidecars not on Fly yet (enable via env locally)
 
 ## Next steps
 
-1. Operator Take control LinkedIn login on live view
-2. Optionally deploy Scrapling + linkedin-browser-agents sidecars on Fly
-3. Re-run Tony Walteur Connect E2E after login persists on `/data/profiles`
+1. Operator Take control LinkedIn login
+2. Optionally deploy Scrapling + linkedin-browser-agents on Fly
+3. Re-run Tony Walteur Connect E2E after session persists
 
-## Decisions made (don't relitigate)
+## Decisions (don't relitigate)
 
-- Scrapling = public web research only; LinkedIn send stays on AriaBot
-- browser-use / CrewAI packs never replace Take control for LinkedIn Connect/Message
-- Agent toolkit sidecars are fail-closed and optional
+- Scrapling = public web only
+- browser-use navigate optional; Connect/Message = AriaBot only
+- Toolkits fail-closed unless explicitly enabled
 
 ## Watch out
 
-- Pass `NEXT_PUBLIC_SUPABASE_ANON_KEY` on app deploys
 - Never commit Fly secrets / demo password
-- `typecheck:tests` still has unrelated pre-existing errors in demo-candidate-persistence / openbot-llm-auth
+- Pass Supabase anon key on app deploys

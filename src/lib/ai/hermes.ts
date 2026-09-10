@@ -87,6 +87,8 @@ export function buildOutreachPrompt(opts: {
   signature?: string;
   /** Active outreach_skill playbook markdown from Agent Skills. */
   skillPlaybook?: string;
+  /** Optional Orca-style profile insight + ICP qualify context. */
+  linkedInAgentContext?: string;
 }): string {
   const lines = [
     `Draft a first-touch ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
@@ -107,6 +109,9 @@ export function buildOutreachPrompt(opts: {
         ? opts.recentActivity
         : "n/a"
     }`,
+    opts.linkedInAgentContext ? "" : "",
+    opts.linkedInAgentContext ? "LinkedIn agent context (Orca / Linki / OpenOutreach):" : "",
+    opts.linkedInAgentContext ? opts.linkedInAgentContext : "",
     "",
     "Role:",
     opts.roleContext ??

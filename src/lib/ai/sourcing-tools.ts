@@ -62,10 +62,54 @@ export const SOURCING_TOOL_DEFS: McpTool[] = [
       required: ["platform", "query"],
     },
   },
+  {
+    name: "analyze_linkedin_profile",
+    description:
+      "Orca-style analysis of a public LinkedIn profile URL: focus areas, career trajectory notes, and professional pain points for outreach personalization. Does not log into LinkedIn.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profileUrl: { type: "string", description: "Public LinkedIn profile URL (linkedin.com/in/...)." },
+      },
+      required: ["profileUrl"],
+    },
+  },
+  {
+    name: "qualify_lead_icp",
+    description:
+      "Linki / OpenOutreach style ICP qualification for a lead URL or snippet. Returns a score and reasons. Safe resolution preferred over aggressive scraping.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profileUrl: { type: "string", description: "Optional public profile URL." },
+        snippet: { type: "string", description: "Optional title/company/snippet text." },
+        icp: { type: "string", description: "Ideal customer / candidate profile description." },
+      },
+      required: ["icp"],
+    },
+  },
+  {
+    name: "browser_use_navigate",
+    description:
+      "Optional browser-use / CrewAI-skills-pack navigate for PUBLIC pages when enabled. Never use for LinkedIn Connect or Message — those stay on AriaBot Take control.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Absolute http(s) URL of a public page." },
+      },
+      required: ["url"],
+    },
+  },
+
 ];
 
 export function isSourcingTool(name: string): boolean {
-  return name === "search_candidates";
+  return (
+    name === "search_candidates" ||
+    name === "analyze_linkedin_profile" ||
+    name === "qualify_lead_icp" ||
+    name === "browser_use_navigate"
+  );
 }
 
 interface SearchSummary {
@@ -141,6 +185,31 @@ export function makeSourcingToolRunner(
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<{ ok: boolean; content?: unknown; error?: string }> {
+        if (name === "analyze_linkedin_profile") {
+      const { analyzeLinkedInProfile } = await import("@/lib/integrations/linkedin-browser-agents");
+      const profileUrl = String(args.profileUrl ?? "").trim();
+      if (!profileUrl) return { ok: false, error: "Missing profileUrl." };
+      const insight = await analyzeLinkedInProfile(profileUrl);
+      return { ok: true, content: insight };
+    }
+    if (name === "qualify_lead_icp") {
+      const { qualifyLeadAgainstIcp } = await import("@/lib/integrations/linkedin-browser-agents");
+      const icp = String(args.icp ?? "").trim();
+      if (!icp) return { ok: false, error: "Missing icp." };
+      const result = await qualifyLeadAgainstIcp({
+        profileUrl: String(args.profileUrl ?? "").trim() || undefined,
+        snippet: String(args.snippet ?? "").trim() || undefined,
+        icp,
+      });
+      return { ok: true, content: result };
+    }
+    if (name === "browser_use_navigate") {
+      const { runBrowserUseAction } = await import("@/lib/integrations/linkedin-browser-agents");
+      const url = String(args.url ?? "").trim();
+      if (!url) return { ok: false, error: "Missing url." };
+      const result = await runBrowserUseAction({ type: "navigate", url });
+      return result.ok ? { ok: true, content: result } : { ok: false, error: result.detail };
+    }
     if (name !== "search_candidates") return { ok: false, error: "Unknown tool." };
 
     const platform = String(args.platform ?? "").trim() as SourcePlatform;

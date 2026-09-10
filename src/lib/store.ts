@@ -30,6 +30,7 @@ import {
   hermesGenerate,
   parseHermesOutreach,
 } from "./ai/hermes";
+import { fetchLinkedInAgentContext } from "./integrations/linkedin-agent-context-client";
 import { resolveAiProvider } from "./ai/provider";
 import {
   anonymizeHermesState,
@@ -365,6 +366,13 @@ async function attemptLiveFollowUpGen(opts: {
     return { gen: mockGen, live: false };
   }
 
+  const linkedInAgentContext = await fetchLinkedInAgentContext({
+    profileUrl: candidate.linkedinUrl || candidate.sourceUrl,
+    snippet: [candidate.currentTitle, candidate.currentCompany, candidate.location]
+      .filter(Boolean)
+      .join(" · "),
+    icp: campaign.jobAnalysis.title,
+  });
   const basePrompt = buildOutreachPrompt({
     candidateName: candidate.name,
     candidateTitle: candidate.currentTitle,
@@ -383,6 +391,7 @@ async function attemptLiveFollowUpGen(opts: {
     persona: voice?.persona,
     signature: voice?.signature,
     skillPlaybook: getSkill(skills, "outreach_skill")?.content,
+    linkedInAgentContext,
   });
   const ariaPrompt = settings.guardrails?.ariaPrompt;
   const guardrails = [ariaPrompt, touchNote].filter(Boolean).join("\n\n");
@@ -1974,6 +1983,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       let gen: GeneratedOutreach = mockGen;
       let live = false;
       if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
+        const linkedInAgentContext = await fetchLinkedInAgentContext({
+          profileUrl: candidate.linkedinUrl || candidate.sourceUrl,
+          snippet: [candidate.currentTitle, candidate.currentCompany, candidate.location]
+            .filter(Boolean)
+            .join(" · "),
+          icp: campaign.jobAnalysis.title,
+        });
         const basePrompt = buildOutreachPrompt({
           candidateName: candidate.name,
           candidateTitle: candidate.currentTitle,
@@ -1992,6 +2008,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           persona: voice?.persona,
           signature: voice?.signature,
           skillPlaybook: getSkill(s.skills, "outreach_skill")?.content,
+          linkedInAgentContext,
         });
         // F-2: prepend ariaPrompt when set so it shapes the live generation.
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
@@ -2236,6 +2253,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const aiCfg = resolveAiProvider(s.settings, "outreach");
       if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
         const lang = campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+        const linkedInAgentContext = await fetchLinkedInAgentContext({
+          profileUrl: candidate.linkedinUrl || candidate.sourceUrl,
+          snippet: [candidate.currentTitle, candidate.currentCompany, candidate.location]
+            .filter(Boolean)
+            .join(" · "),
+          icp: campaign.jobAnalysis.title,
+        });
         const basePrompt = buildOutreachPrompt({
           candidateName: candidate.name,
           candidateTitle: candidate.currentTitle,
@@ -2252,6 +2276,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           channel: msg.channel,
           language: lang,
           skillPlaybook: getSkill(s.skills, "outreach_skill")?.content,
+          linkedInAgentContext,
         });
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
         const liGuard = msg.channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";

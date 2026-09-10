@@ -30,3 +30,16 @@ LinkedIn **Connect / Message** in production still runs on **AriaBot computers**
 (OpenBot Chromium). browser-use sidecars are optional and never replace the
 seat + human Take-control path. Outreach copy always passes the **Humanizer**
 (no em/en dashes as AI tells) via `outreach_skill` + `humanizeText`.
+
+## Agent tools (sourcing loop)
+
+When the sourcing agent runs, these tools are registered alongside `search_candidates`:
+
+| Tool | Upstream mapping |
+|---|---|
+| `analyze_linkedin_profile` | Orca-style profile insight |
+| `qualify_lead_icp` | Linki / OpenOutreach ICP score |
+| `browser_use_navigate` | browser-use + CrewAI skills pack (public navigate only) |
+| LinkedIn `search_candidates` | NightTrek agent tool provider when enabled |
+
+Outreach live draft also pulls Orca/ICP context via `/api/source/linkedin-research`.
