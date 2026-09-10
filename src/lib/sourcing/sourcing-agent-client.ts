@@ -16,6 +16,7 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   SOURCING_AGENT_NOT_CONFIGURED: "The selected sourcing provider is not configured.",
   SOURCING_AGENT_UPSTREAM_FAILED: "The sourcing agent did not complete.",
   SOURCING_AGENT_RESPONSE_INVALID: "The sourcing agent returned an invalid result.",
+  SOURCING_AGENT_UNAVAILABLE: "The sourcing agent is unavailable.",
 };
 
 export type ReviewedSourcingRequestResult =

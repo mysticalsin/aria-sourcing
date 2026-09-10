@@ -37,35 +37,37 @@ const ValidationWarningSchema = z
   })
   .strict();
 
-const JobAnalysisSchema = z
-  .object({
-    title: bounded(200),
-    department: bounded(200),
-    seniority: z.enum(SENIORITY_LEVELS),
-    employmentType: z.enum(EMPLOYMENT_TYPES),
-    locationType: z.enum(LOCATION_TYPES),
-    location: bounded(200).optional(),
-    regions: boundedArray(50, 200),
-    timezone: bounded(100),
-    salaryMin: z.number().finite().nonnegative().nullable(),
-    salaryMax: z.number().finite().nonnegative().nullable(),
-    currency: bounded(20),
-    equity: z.boolean(),
-    requiredSkills: boundedArray(100, 100),
-    niceToHaveSkills: boundedArray(100, 100),
-    minYearsExperience: z.number().finite().nonnegative().nullable(),
-    maxYearsExperience: z.number().finite().nonnegative().nullable(),
-    education: bounded(500),
-    industryExperience: boundedArray(50, 100),
-    companyStageTarget: z.array(z.enum(COMPANY_STAGES)).max(20),
-    teamSize: bounded(100),
-    reportingTo: bounded(200),
-    urgency: z.enum(URGENCY_LEVELS),
-    language: bounded(20).optional(),
-    expectedStartDate: bounded(100).nullable().optional(),
-    validationWarnings: z.array(ValidationWarningSchema).max(100),
-  })
-  .strict();
+// Strip unknown keys (do not .strict()): live workspace_state often carries
+// legacy / wiki / intake extras on jobAnalysis (searchBoolean, localeContext,
+// missionDescription, …). Projection must authorize sourcing from the known
+// fields rather than 503 "Campaign authority is unavailable."
+const JobAnalysisSchema = z.object({
+  title: bounded(200),
+  department: bounded(200),
+  seniority: z.enum(SENIORITY_LEVELS),
+  employmentType: z.enum(EMPLOYMENT_TYPES),
+  locationType: z.enum(LOCATION_TYPES),
+  location: bounded(200).optional(),
+  regions: boundedArray(50, 200),
+  timezone: bounded(100),
+  salaryMin: z.number().finite().nonnegative().nullable(),
+  salaryMax: z.number().finite().nonnegative().nullable(),
+  currency: bounded(20),
+  equity: z.boolean(),
+  requiredSkills: boundedArray(100, 100),
+  niceToHaveSkills: boundedArray(100, 100),
+  minYearsExperience: z.number().finite().nonnegative().nullable(),
+  maxYearsExperience: z.number().finite().nonnegative().nullable(),
+  education: bounded(500),
+  industryExperience: boundedArray(50, 100),
+  companyStageTarget: z.array(z.enum(COMPANY_STAGES)).max(20),
+  teamSize: bounded(100),
+  reportingTo: bounded(200),
+  urgency: z.enum(URGENCY_LEVELS),
+  language: bounded(20).optional(),
+  expectedStartDate: bounded(100).nullable().optional(),
+  validationWarnings: z.array(ValidationWarningSchema).max(100),
+});
 
 const ScoringWeightsSchema = z
   .object({
