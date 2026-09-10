@@ -117,6 +117,37 @@ export async function openBotResetComputer(
   return { reset: Boolean(data.reset) };
 }
 
+export async function openBotCreateSession(
+  cfg: OpenBotSupervisorConfig,
+  opts: { sessionId?: string; botId?: string; url?: string } = {},
+): Promise<OpenBotComputerState & { sessionId: string; connectUrl?: string }> {
+  const res = await supervisorFetch(cfg, "/sessions", {
+    method: "POST",
+    body: JSON.stringify({
+      sessionId: opts.sessionId || opts.botId,
+      botId: opts.botId || opts.sessionId,
+      url: opts.url,
+    }),
+    timeoutMs: 120_000,
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    throw new Error(`OpenBot session ${res.status}: ${err.slice(0, 240) || res.statusText}`);
+  }
+  const data = (await res.json()) as OpenBotEnsureWire & {
+    sessionId?: string;
+    connectUrl?: string;
+    viewUrl?: string;
+  };
+  const botId = data.botId || data.sessionId || opts.botId || opts.sessionId || "session";
+  return {
+    ...mapState(botId, data),
+    sessionId: data.sessionId || botId,
+    connectUrl: data.connectUrl || data.url,
+    viewUrl: data.viewUrl,
+  };
+}
+
 export async function openBotListComputers(
   cfg: OpenBotSupervisorConfig,
 ): Promise<{ computers: OpenBotComputerState[] }> {

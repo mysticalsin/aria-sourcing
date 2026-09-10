@@ -19,9 +19,14 @@ primary_region = "cdg"
   OPENBOT_STREAM_QUALITY   = "45"
   OPENBOT_STREAM_MAX_WIDTH = "1280"
   OPENBOT_STREAM_MAX_HEIGHT = "800"
+  OPENBOT_STEALTH          = "1"
+  OPENBOT_LOCALE           = "en-US"
+  OPENBOT_TIMEZONE         = "America/Montreal"
+  # Optional sticky egress (Browserbase / Steel style):
+  # OPENBOT_PROXY_SERVER = "http://user:pass@proxy:port"
   # Secrets (fly secrets set -a aria-mantu-computers):
   #   SUPERVISOR_TOKEN, COMPUTER_TOKEN
-
+  #   OPENBOT_PROXY_SERVER / OPENBOT_PROXY_USERNAME / OPENBOT_PROXY_PASSWORD
 [http_service]
   internal_port        = 8080
   force_https          = true

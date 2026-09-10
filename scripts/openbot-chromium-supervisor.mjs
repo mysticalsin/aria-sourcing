@@ -15,6 +15,8 @@
  *   OPENBOT_PUBLIC_BASE
  *   OPENBOT_STREAM_QUALITY (default 55)
  *   OPENBOT_STREAM_MAX_WIDTH / OPENBOT_STREAM_MAX_HEIGHT
+ *   OPENBOT_PROXY_SERVER / OPENBOT_PROXY_USERNAME / OPENBOT_PROXY_PASSWORD
+ *   OPENBOT_LOCALE / OPENBOT_TIMEZONE / OPENBOT_STEALTH=0 to disable
  */
 import http from "node:http";
 import fs from "node:fs";
@@ -36,6 +38,13 @@ const CHROME_PATH =
   process.env.OPENBOT_CHROME_PATH ||
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
   "/usr/local/bin/google-chrome";
+/** Optional outbound proxy (Browserbase / Steel style sticky egress). */
+const PROXY_SERVER = (process.env.OPENBOT_PROXY_SERVER || "").trim();
+const PROXY_USER = (process.env.OPENBOT_PROXY_USERNAME || "").trim();
+const PROXY_PASS = (process.env.OPENBOT_PROXY_PASSWORD || "").trim();
+const LOCALE = (process.env.OPENBOT_LOCALE || "en-US").trim();
+const TIMEZONE = (process.env.OPENBOT_TIMEZONE || "America/Montreal").trim();
+const STEALTH = process.env.OPENBOT_STEALTH !== "0";
 
 fs.mkdirSync(PROFILE_ROOT, { recursive: true });
 
@@ -108,22 +117,39 @@ function looksLikeLinkedInAuthWall(text, title = "", url = "") {
 }
 
 function launchOptsBase() {
+  const jitterW = 1400 + randInt(-24, 24);
+  const jitterH = 900 + randInt(-16, 16);
   const opts = {
     headless: !HEADED,
     args: [
       "--no-sandbox",
       "--disable-dev-shm-usage",
       "--disable-blink-features=AutomationControlled",
-      "--window-size=1400,900",
+      `--window-size=${jitterW},${jitterH}`,
       "--disable-background-timer-throttling",
       "--disable-renderer-backgrounding",
       "--disable-backgrounding-occluded-windows",
+      ...(STEALTH
+        ? [
+            "--disable-features=IsolateOrigins,site-per-process",
+            "--lang=" + LOCALE.replace("_", "-"),
+          ]
+        : []),
     ],
-    viewport: { width: 1400, height: 900 },
+    viewport: { width: jitterW, height: jitterH },
     userAgent:
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
-    locale: "en-US",
+    locale: LOCALE,
+    timezoneId: TIMEZONE,
+    colorScheme: "light",
+    deviceScaleFactor: 1,
   };
+  if (PROXY_SERVER) {
+    opts.proxy = {
+      server: PROXY_SERVER,
+      ...(PROXY_USER ? { username: PROXY_USER, password: PROXY_PASS } : {}),
+    };
+  }
   if (fs.existsSync(CHROME_PATH)) opts.executablePath = CHROME_PATH;
   return opts;
 }
@@ -312,6 +338,15 @@ async function ensureComputer(botId) {
   const profileDir = path.join(PROFILE_ROOT, botId);
   fs.mkdirSync(profileDir, { recursive: true });
   const context = await chromium.launchPersistentContext(profileDir, launchOptsBase());
+  if (STEALTH) {
+    await context.addInitScript(() => {
+      try {
+        Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+        // Soften common automation fingerprints without claiming a full stealth stack.
+        if (!window.chrome) window.chrome = { runtime: {} };
+      } catch (_) {}
+    });
+  }
   const page = context.pages()[0] || (await context.newPage());
   const rec = {
     botId,
@@ -389,6 +424,86 @@ async function buildSnapshot(rec) {
   };
 }
 
+
+/** Browserbase-style low-latency human input over the screencast WebSocket. */
+async function handleStreamInput(rec, msg) {
+  if (!msg || typeof msg !== "object") return;
+  const page = rec.page;
+  if (!page || page.isClosed()) return;
+  const type = String(msg.type || "");
+  try {
+    if (type === "navigate") {
+      const url = String(msg.url || "").trim();
+      if (!url) return;
+      await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => {});
+      broadcastMeta(rec);
+      return;
+    }
+    if (type === "click") {
+      const x = Number(msg.x), y = Number(msg.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const button = msg.button === "right" ? "right" : "left";
+      if (rec.cdp) {
+        const btn = button === "right" ? "right" : "left";
+        const buttons = button === "right" ? 2 : 1;
+        await rec.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
+        await rec.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: btn, buttons, clickCount: 1 });
+        await rec.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: btn, buttons: 0, clickCount: 1 });
+      } else {
+        await page.mouse.click(x, y, { button });
+      }
+      return;
+    }
+    if (type === "move") {
+      const x = Number(msg.x), y = Number(msg.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      if (rec.cdp) {
+        await rec.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
+      } else {
+        await page.mouse.move(x, y);
+      }
+      return;
+    }
+    if (type === "scroll") {
+      const x = Number(msg.x), y = Number(msg.y);
+      const deltaX = Number(msg.deltaX) || 0, deltaY = Number(msg.deltaY) || 0;
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        if (rec.cdp) await rec.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
+        else await page.mouse.move(x, y);
+      }
+      await page.mouse.wheel(deltaX, deltaY);
+      return;
+    }
+    if (type === "type") {
+      const text = String(msg.text ?? "");
+      if (!text) return;
+      await page.keyboard.type(text, { delay: 0 });
+      return;
+    }
+    if (type === "key") {
+      const key = String(msg.key || "");
+      if (!key) return;
+      const mods = [];
+      if (msg.altKey) mods.push("Alt");
+      if (msg.ctrlKey) mods.push("Control");
+      if (msg.metaKey) mods.push("Meta");
+      if (msg.shiftKey && key.length !== 1) mods.push("Shift");
+      if (key.length === 1 && !msg.ctrlKey && !msg.metaKey && !msg.altKey) {
+        await page.keyboard.type(key, { delay: 0 });
+      } else {
+        await page.keyboard.press([...mods, key].join("+"));
+      }
+    }
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: "stream_input_error",
+      botId: rec.botId,
+      type,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+  }
+}
+
 function viewPage(botId) {
   const rec = computers.get(botId);
   const control = rec?.control ?? "unknown";
@@ -438,6 +553,12 @@ body.fs:hover #tabs{opacity:1}
 #shot{display:none}
 #metaBar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 12px;font:12px "IBM Plex Mono",ui-monospace,Menlo,monospace;color:var(--muted);border-top:1px solid var(--line);background:rgba(12,18,30,.95);flex:0 0 auto}
 #fps,#rtt{color:#7fd7ff}#err{color:#ff8d9c}
+.omnibox{flex:1 1 auto;display:flex;gap:8px;align-items:center;min-width:0}
+.omnibox input{flex:1 1 auto;min-width:0;background:#0a1220;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:7px 10px;font:12px "IBM Plex Mono",ui-monospace,monospace}
+.omnibox input:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+#banner{display:none;position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:8;padding:8px 14px;border-radius:999px;background:rgba(20,28,48,.92);border:1px solid var(--line);font-size:12px;color:var(--muted);backdrop-filter:blur(8px)}
+#banner.show{display:block}
+#sessionChip b{color:#9ad0ff}
 </style>
 </head>
 <body class="${control === "human" ? "fs" : ""}">
@@ -450,6 +571,7 @@ body.fs:hover #tabs{opacity:1}
     <span class="chip"><span id="connDot" class="dot warn"></span><b id="connLabel">connecting</b></span>
     <span class="chip">FPS <b id="fps">—</b></span>
     <span class="chip">RTT <b id="rtt">—</b></span>
+    <span class="chip" id="sessionChip">session <b>live</b></span>
     <span id="controlBadge" class="badge ${control === "human" ? "human" : "bot"}">${control}</span>
     <span id="statusText" class="chip">${status}</span>
   </div>
@@ -467,7 +589,13 @@ body.fs:hover #tabs{opacity:1}
     <canvas id="canvas" tabindex="0" aria-label="Live Aria browser session"></canvas>
     <img id="shot" tabindex="0" alt="Fallback screenshot"/>
   </div>
-  <div id="metaBar"><span id="meta">connecting stream…</span><span id="err"></span></div>
+  <div id="banner">Reconnecting stream…</div>
+<div id="metaBar">
+  <form class="omnibox" id="omniForm" autocomplete="off">
+    <input id="omni" type="url" spellcheck="false" placeholder="https:// — navigate like Browserbase / Steel"/>
+  </form>
+  <span id="err"></span>
+</div>
 </div>
 <script>
 const botId = ${JSON.stringify(botId)};
@@ -509,6 +637,28 @@ async function api(path, body) {
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
+
+function sendInput(msg) {
+  if (ws && ws.readyState === 1) {
+    try { ws.send(JSON.stringify(msg)); return true; } catch (_) {}
+  }
+  return false;
+}
+
+function setOmni(url) {
+  const el = document.getElementById("omni");
+  if (el && document.activeElement !== el) el.value = url || "";
+}
+
+document.getElementById("omniForm").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const raw = (document.getElementById("omni").value || "").trim();
+  if (!raw) return;
+  const url = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
+  if (sendInput({ type: "navigate", url })) return;
+  void api("/navigate", { url }).catch((e) => setErr(String(e.message || e)));
+});
+
 
 function setErr(msg) { document.getElementById("err").textContent = msg || ""; }
 function setConn(state, label) {
@@ -675,6 +825,7 @@ function connectStream() {
     if (fallbackTimer) { clearInterval(fallbackTimer); fallbackTimer = null; }
     setErr("");
     setConn("ok", "live");
+    document.getElementById("banner").classList.remove("show");
     document.getElementById("fps").textContent = "…";
     if (pingTimer) clearInterval(pingTimer);
     pingTimer = setInterval(() => {
@@ -703,7 +854,7 @@ function connectStream() {
       badge.textContent = msg.control;
       badge.className = "badge " + (msg.control === "human" ? "human" : "bot");
       document.getElementById("statusText").textContent = msg.status || "";
-      document.getElementById("meta").textContent = msg.url || "";
+      setOmni(msg.url || "");
       human = msg.control === "human";
       if (human) document.body.classList.add("fs");
     } else if (msg.type === "pong") {
@@ -715,6 +866,7 @@ function connectStream() {
   ws.onerror = () => enableFallback("websocket error");
   ws.onclose = () => {
     setConn("bad", "reconnecting");
+    document.getElementById("banner").classList.add("show");
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (!useFallback) setTimeout(connectStream, 800);
   };
@@ -734,7 +886,9 @@ function queueMove(pt) {
     moveTimer = null;
     const p = lastMove; lastMove = null;
     if (!p) return;
-    void api("/move-xy", { x: p.x, y: p.y, human: true }).catch(() => {});
+    if (!sendInput({ type: "move", x: p.x, y: p.y })) {
+      void api("/move-xy", { x: p.x, y: p.y, human: true }).catch(() => {});
+    }
   }, 16);
 }
 
@@ -743,8 +897,11 @@ function bindPointer(el) {
     const pt = mapPoint(ev, el);
     if (!pt) return;
     el.focus();
-    void api("/click-xy", { x: pt.x, y: pt.y, button: ev.button === 2 ? "right" : "left", human: true })
-      .catch((e) => setErr(String(e.message || e)));
+    const btn = ev.button === 2 ? "right" : "left";
+    if (!sendInput({ type: "click", x: pt.x, y: pt.y, button: btn })) {
+      void api("/click-xy", { x: pt.x, y: pt.y, button: btn, human: true })
+        .catch((e) => setErr(String(e.message || e)));
+    }
   });
   el.addEventListener("pointermove", (ev) => {
     if (!human) return;
@@ -756,7 +913,9 @@ function bindPointer(el) {
     ev.preventDefault();
     const pt = mapPoint(ev, el);
     if (!pt) return;
-    void api("/scroll", { x: pt.x, y: pt.y, deltaX: ev.deltaX, deltaY: ev.deltaY, human: true }).catch(() => {});
+    if (!sendInput({ type: "scroll", x: pt.x, y: pt.y, deltaX: ev.deltaX, deltaY: ev.deltaY })) {
+      void api("/scroll", { x: pt.x, y: pt.y, deltaX: ev.deltaX, deltaY: ev.deltaY, human: true }).catch(() => {});
+    }
   }, { passive: false });
   el.addEventListener("keydown", (ev) => {
     const key = ev.key; if (!key) return;
@@ -782,9 +941,17 @@ async function flushKeys() {
     while (i < batch.length && batch[i].text && !batch[i].ctrlKey && !batch[i].metaKey && !batch[i].altKey) {
       run.push(batch[i].text); i += 1;
     }
-    if (run.length) { void api("/type-text", { text: run.join(""), human: true }).catch((e) => setErr(String(e.message || e))); continue; }
+    if (run.length) {
+      const text = run.join("");
+      if (!sendInput({ type: "type", text })) {
+        void api("/type-text", { text, human: true }).catch((e) => setErr(String(e.message || e)));
+      }
+      continue;
+    }
     const k = batch[i++];
-    void api("/key", k).catch((e) => setErr(String(e.message || e)));
+    if (!sendInput({ type: "key", ...k })) {
+      void api("/key", k).catch((e) => setErr(String(e.message || e)));
+    }
   }
 }
 
@@ -1048,6 +1215,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true, computers: computers.size, headed: HEADED, max: MAX,
         stream: "cdp-screencast-binary", multitab: true, liveView: "browserbase-style",
+        input: "websocket+cdp",
+        sessions: true,
+        stealth: STEALTH,
+        proxy: Boolean(PROXY_SERVER),
+        locale: LOCALE,
+        timezone: TIMEZONE,
       });
     }
 
@@ -1072,6 +1245,28 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (bearer(req) !== SUPERVISOR_TOKEN) return json(res, 401, { error: "Unauthorized." });
+
+    // Browserbase/Steel-style session create: ensure seat + return connect/view URLs.
+    if (url.pathname === "/sessions" && method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}");
+      const botId = String(body.sessionId || body.botId || `sess_${Date.now().toString(36)}`).slice(0, 64);
+      const startUrl = typeof body.url === "string" ? body.url.trim() : "";
+      const rec = await ensureComputer(botId);
+      if (startUrl) {
+        await rec.page.goto(startUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+      }
+      return json(res, 200, {
+        ok: true,
+        sessionId: botId,
+        botId,
+        status: rec.status,
+        connectUrl: computerUrl(botId),
+        viewUrl: viewUrl(botId) + "?fs=1",
+        stream: "cdp-screencast-binary",
+        liveView: "browserbase-style",
+        pageUrl: rec.page.url(),
+      });
+    }
 
     const stateMatch = url.pathname.match(/^\/computers\/([^/]+)\/state$/);
     if (stateMatch && method === "GET") {
@@ -1151,9 +1346,13 @@ server.on("upgrade", (req, socket, head) => {
       ws.on("message", (data) => {
         try {
           const msg = JSON.parse(String(data));
-          if (msg && msg.type === "ping") {
+          if (!msg || typeof msg !== "object") return;
+          if (msg.type === "ping") {
             if (ws.readyState === 1) ws.send(JSON.stringify({ type: "pong", t: msg.t || Date.now() }));
+            return;
           }
+          // Human input over the same WS as the screencast (Browserbase/Steel feel).
+          void handleStreamInput(rec, msg);
         } catch {}
       });
       ws.on("close", () => {
@@ -1172,6 +1371,7 @@ server.listen(PORT, "0.0.0.0", () => {
     event: "openbot_chromium_supervisor_ready",
     port: PORT, headed: HEADED, max: MAX, publicBase: PUBLIC_BASE,
     stream: "cdp-screencast-binary", multitab: true, liveView: "browserbase-style",
+    input: "websocket+cdp", sessions: true, stealth: STEALTH, proxy: Boolean(PROXY_SERVER),
     chrome: fs.existsSync(CHROME_PATH) ? CHROME_PATH : "playwright-default",
   }));
 });

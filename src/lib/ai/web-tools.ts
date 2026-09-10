@@ -19,6 +19,7 @@ import {
   scrubExactSecretString,
   scrubExactSecretValue,
 } from "@/lib/credential-safety";
+import { scraplingFetch } from "@/lib/scrapling/adapter";
 
 export type WebFetch = (url: string | URL, init?: PublicFetchInit) => Promise<Response>;
 
@@ -288,6 +289,27 @@ async function webSearch(
 async function fetchPage(urlRaw: string, fetchImpl: WebFetch, signal?: AbortSignal): Promise<ToolResult> {
   const url = urlRaw.trim();
   if (!url) return { ok: false, error: "Missing url." };
+
+  // Prefer Scrapling sidecar for stealthy public-web research when enabled.
+  try {
+    const scraped = await scraplingFetch({ url, timeoutMs: 20_000 });
+    if (scraped.ok) {
+      return {
+        ok: true,
+        content: {
+          url: scraped.url,
+          title: (scraped.title ?? "").slice(0, 200),
+          text: scraped.text.slice(0, MAX_TEXT),
+          truncated: scraped.text.length > MAX_TEXT,
+          via: scraped.via,
+          extracted: scraped.extracted,
+        },
+      };
+    }
+  } catch {
+    // fall through to compliant public fetch
+  }
+
   const r = await safeGet(url, "text/html,application/xhtml+xml,text/plain", fetchImpl, signal);
   if (!r.ok) return { ok: false, error: r.error };
   const { title, text } = stripHtml(r.body ?? "");

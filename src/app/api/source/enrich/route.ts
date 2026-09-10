@@ -10,6 +10,7 @@ import { orchestrateEnrichment } from "@/lib/enrichment/orchestrator";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
 import { recordEnrichmentAttempt } from "@/lib/enrichment/merge";
 import { analyzeLinkedInProfile, qualifyLeadAgainstIcp } from "@/lib/integrations/linkedin-browser-agents";
+import { scraplingFetch } from "@/lib/scrapling/adapter";
 import {
   ENRICHABLE_FIELDS,
   SOURCE_PLATFORMS,
@@ -231,8 +232,10 @@ export async function POST(req: NextRequest) {
     const enriched = result.candidate;
 
     // Agent Skills path: Orca-style profile insight + optional ICP qualify for LinkedIn URLs.
+    // Scrapling (https://github.com/D4Vinci/Scrapling) enriches public source URLs when enabled.
     let profileInsight: Awaited<ReturnType<typeof analyzeLinkedInProfile>> | null = null;
     let icp: Awaited<ReturnType<typeof qualifyLeadAgainstIcp>> | null = null;
+    let scraplingNote: string | null = null;
     const linkedinUrl = (enriched.linkedinUrl || candidate.linkedinUrl || "").trim();
     if (linkedinUrl) {
       profileInsight = await analyzeLinkedInProfile(linkedinUrl);
@@ -244,6 +247,32 @@ export async function POST(req: NextRequest) {
         icp: "Enterprise AI / agentic systems / innovation leadership",
       });
     }
+
+    const publicSource =
+      (typeof (enriched as { sourceUrl?: string }).sourceUrl === "string"
+        ? (enriched as { sourceUrl?: string }).sourceUrl
+        : "") ||
+      (typeof (candidate as { sourceUrl?: string }).sourceUrl === "string"
+        ? (candidate as { sourceUrl?: string }).sourceUrl
+        : "") ||
+      "";
+    const publicUrl = publicSource.trim();
+    if (publicUrl && !/linkedin\.com/i.test(publicUrl)) {
+      const scraped = await scraplingFetch({
+        url: publicUrl,
+        sessionId: `enrich:${enriched.id || candidate.id}`,
+        timeoutMs: 15_000,
+      });
+      if (scraped.ok && scraped.text) {
+        scraplingNote = `Scrapling research (${scraped.via}): ${(scraped.title || publicUrl).slice(0, 120)}. ${scraped.text.slice(0, 280)}`;
+      }
+    }
+
+    const activityBits = [
+      profileInsight?.headline ? `Profile focus: ${profileInsight.headline}` : null,
+      ...(profileInsight?.trajectoryNotes.slice(0, 2) ?? []),
+      scraplingNote,
+    ].filter(Boolean);
 
     return NextResponse.json({
       ok: true,
@@ -258,14 +287,9 @@ export async function POST(req: NextRequest) {
         externalIds: enriched.externalIds,
         matchScore: enriched.matchScore,
         matchBreakdown: enriched.matchBreakdown,
-        ...(profileInsight
+        ...(activityBits.length
           ? {
-              recentActivity: [
-                profileInsight.headline ? `Profile focus: ${profileInsight.headline}` : null,
-                ...profileInsight.trajectoryNotes.slice(0, 2),
-              ]
-                .filter(Boolean)
-                .join(" "),
+              recentActivity: activityBits.join(" "),
             }
           : {}),
       },
@@ -273,6 +297,9 @@ export async function POST(req: NextRequest) {
       spend: result.spend,
       profileInsight,
       icp,
+      scrapling: scraplingNote
+        ? { ok: true, note: scraplingNote }
+        : { ok: false, detail: "Scrapling skipped or not enabled for this candidate." },
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Enrichment failed.";

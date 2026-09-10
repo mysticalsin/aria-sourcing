@@ -1,0 +1,3 @@
+# Optional — install for full Scrapling stealth fetch.
+# pip install -r tools/scrapling/requirements.txt
+scrapling>=0.2.0
