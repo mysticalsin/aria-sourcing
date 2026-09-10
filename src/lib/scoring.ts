@@ -5,6 +5,7 @@ import type {
   ScoringWeights,
 } from "./types";
 import { clamp, round } from "./utils";
+import { candidateMatchesRoleTitle } from "./sourcing/candidate-fit";
 
 export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   skills: 34,
@@ -111,12 +112,21 @@ function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale:
   if (titleOverlap >= 0.5 && reqHit >= 1) score = Math.max(score, 82);
   if (titleOverlap >= 0.6) score = Math.max(score, 86);
   if (titleOverlap >= 0.9 && reqHit >= 1) score = Math.max(score, 92);
+  // Product/consulting roles (Calypso Support, …) often match via snippet +
+  // aliases rather than a contiguous headline phrase — still authorize contact.
+  const roleTitleMatched = candidateMatchesRoleTitle(
+    { currentTitle: c.currentTitle, recentActivity: c.recentActivity },
+    jd.title,
+  );
+  if (roleTitleMatched) {
+    score = Math.max(score, reqHit >= 1 ? 88 : 80);
+  }
   return {
     score,
     rationale: `${reqHit}/${req.length || "—"} required, ${niceHit}/${
       nice.length || "—"
     } nice-to-have skills present${
-      titleOverlap >= 0.5 ? `; title aligns with ${jd.title}` : ""
+      titleOverlap >= 0.5 || roleTitleMatched ? `; title aligns with ${jd.title}` : ""
     }.`,
   };
 }
@@ -267,7 +277,11 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
   const skillsEvidence =
     candidate.techStack.length > 0 ||
     reqHitFromCorpus(candidate, jd) > 0 ||
-    titleOverlapRatio(candidate.currentTitle, jd.title) >= 0.5;
+    titleOverlapRatio(candidate.currentTitle, jd.title) >= 0.5 ||
+    candidateMatchesRoleTitle(
+      { currentTitle: candidate.currentTitle, recentActivity: candidate.recentActivity },
+      jd.title,
+    );
 
   return {
     skills: {

@@ -51,6 +51,36 @@ ok(
     "System Designer",
   ),
 );
+ok(
+  "Calypso Application Support matches Calypso Support Analyst",
+  candidateMatchesRoleTitle(
+    {
+      currentTitle: "Calypso Support Analyst",
+      recentActivity: "Production support for Calypso in capital markets.",
+    },
+    "Calypso Application Support",
+  ),
+);
+ok(
+  "Calypso product + developer function in snippet matches Application Support role",
+  candidateMatchesRoleTitle(
+    {
+      currentTitle: "Senior Software Developer",
+      recentActivity: "Calypso trading systems development and support at BMO.",
+    },
+    "Calypso Application Support",
+  ),
+);
+ok(
+  "Unrelated developer without Calypso does not match",
+  !candidateMatchesRoleTitle(
+    {
+      currentTitle: "Senior Software Developer",
+      recentActivity: "React and Node services in Montreal.",
+    },
+    "Calypso Application Support",
+  ),
+);
 
 const systemDesigner = parseEmailAndJD({
   email: `This need is now ACTIVE: System Designer

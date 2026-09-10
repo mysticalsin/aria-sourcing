@@ -26,7 +26,63 @@ export function roleTitleMatchAliases(roleTitle: string): string[] {
   if (/murex/i.test(t)) {
     aliases.push("Murex Consultant", "Murex Support", "Front Office Support");
   }
+  if (/calypso/i.test(t)) {
+    aliases.push(
+      "Calypso Support",
+      "Calypso Application Support",
+      "Calypso Support Analyst",
+      "Calypso Business Analyst",
+      "Calypso Consultant",
+      "Calypso Developer",
+      "Calypso Engineer",
+    );
+  }
+  if (/application support/i.test(t)) {
+    aliases.push(
+      "Application Support Analyst",
+      "Application Support Engineer",
+      "Apps Support",
+      "Production Support",
+      "Production Support Analyst",
+    );
+  }
+  if (/business analyst/i.test(t)) {
+    aliases.push("Business Analyst", "Functional Analyst", "FO Business Analyst");
+  }
   return aliases;
+}
+
+const PRODUCT_ROLE_TOKENS = [
+  "calypso",
+  "murex",
+  "summit",
+  "kondor",
+  "sophis",
+  "fidessa",
+] as const;
+const FUNCTION_ROLE_TOKENS = [
+  "support",
+  "analyst",
+  "consultant",
+  "developer",
+  "engineer",
+  "programmer",
+  "architect",
+] as const;
+
+/**
+ * Consulting product roles (Calypso/Murex/…) often appear as
+ * "Developer — Calypso" or snippet-only product mentions. Accept when the
+ * haystack carries the product token plus a support/analyst/dev function token.
+ */
+function productFunctionRoleMatch(hay: string, roleTitle: string): boolean {
+  const role = roleTitle.toLowerCase();
+  const product = PRODUCT_ROLE_TOKENS.find((token) => role.includes(token));
+  if (!product) return false;
+  const functionNeeded = FUNCTION_ROLE_TOKENS.some((token) => role.includes(token));
+  if (!functionNeeded) return false;
+  if (!hay.includes(product)) return false;
+  return FUNCTION_ROLE_TOKENS.some((token) => hay.includes(token));
 }
 
 function titleTokenHits(hay: string, roleTitle: string): number {
@@ -63,7 +119,7 @@ export function candidateMatchesRoleTitle(
     if (new RegExp(`(?:^|[^a-z0-9])${phrase}(?:$|[^a-z0-9])`, "i").test(hay)) return true;
     if (tokens.length === 1 && titleTokenHits(hay, alias) >= 1) return true;
   }
-  return false;
+  return productFunctionRoleMatch(hay, roleTitle);
 }
 
 /** Keep only leads that clear the sourcing quality floor (default 80%). */
