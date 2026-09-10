@@ -1,8 +1,8 @@
 {
-  "at": "2026-09-09T14:34:10.284Z",
-  "campaignId": "camp_seed_backend",
+  "at": "2026-09-10T22:47:53.439Z",
+  "campaignId": "camp_tony_e2e",
   "seatId": "seat_java_vm_01",
-  "computerId": "comp_java_01",
+  "computerId": "comp_tony_01",
   "supervisorUrl": "https://aria-mantu-computers.fly.dev",
   "mock": false,
   "outcome": {
@@ -10,7 +10,7 @@
     "deliveryState": "unknown",
     "detail": "LinkedIn login/2FA wall — open Fleet → Computers → Observe / Take control"
   },
-  "computerCampaignId": "camp_seed_backend",
+  "computerCampaignId": "camp_tony_e2e",
   "computerStatus": "help_requested",
   "computerControl": "bot",
   "campaignTaggedAudits": [
@@ -36,12 +36,12 @@
     },
     {
       "action": "decide",
-      "jobId": "job_dls2wk7v",
+      "jobId": "job_jdbicm3b",
       "detail": "Accepted job linkedin_send"
     },
     {
       "action": "act",
-      "jobId": "job_dls2wk7v",
+      "jobId": "job_jdbicm3b",
       "detail": "Running linkedin_send"
     },
     {
@@ -51,7 +51,7 @@
     },
     {
       "action": "act_failed",
-      "jobId": "job_dls2wk7v",
+      "jobId": "job_jdbicm3b",
       "detail": "LinkedIn login/2FA wall — open Fleet → Computers → Observe / Take control"
     }
   ],

@@ -1,47 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 136
+shift: 137
 agent: cursor-cloud
-updated: 2026-09-10T22:27Z
-status: responsive-vm-skills-e2e-recorded
+updated: 2026-09-10T22:50Z
+status: humanizer-skills-deployed-linkedin-login-blocker
 ---
 
-# Handoff — Shift 136
+# Handoff — Shift 137
 
 ## Current state
 
-- **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d` @ latest
-- **Fly computers:** https://aria-mantu-computers.fly.dev — `cdp-screencast-binary`, multitab, Browserbase-style live view
-- **Volume:** `openbot_profiles` **attached** at `/data` (LinkedIn cookies will persist after next operator login)
-- **Fly app:** https://aria-mantu-app.fly.dev redeployed with skills/humanizer wiring
-- **E2E artifacts:** `/opt/cursor/artifacts/tonywalteur-full-cycle-e2e.mp4` (+ webm/json/screenshots)
+- **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d` @ `692ae90`
+- **Fly computers:** https://aria-mantu-computers.fly.dev — `cdp-screencast-binary`, multitab, Browserbase-style live view, volume `openbot_profiles` at `/data`
+- **Fly app:** https://aria-mantu-app.fly.dev redeployed with last-mile Humanizer + LinkedIn agent skill adapters
+- **E2E:** `/opt/cursor/artifacts/tonywalteur-full-cycle-e2e.mp4` (+ webm/json). `linkedin_send` for tonywalteur returns `help_requested` (login wall)
 
 ## Done this shift
 
-1. Binary CDP screencast + CDP input + Browserbase-style live chrome
-2. `outreach_skill` → `buildOutreachPrompt(skillPlaybook)`; LinkedIn send humanizes + `preferConnect`
-3. Scrapling adapter + docs; sourcing skill references it
-4. Computers volume mounted; app+computers redeployed
-5. Recorded Tony Walteur full-cycle video (Aria login → campaign UI → live view). LinkedIn session currently login-walled (fresh volume)
+1. Humanizer on approve API, store update/approve, outreach card display (legacy em-dash drafts cleaned)
+2. Manual candidate intake sets `linkedinUrl` when profile is LinkedIn
+3. `linkedin-browser-agents` adapters (Orca/Linki/OpenOutreach/browser-use) + enrich wiring + skills playbook text
+4. Scrapling bridge already present; sourcing skill references it
+5. Redeployed app; re-recorded Tony Walteur full-cycle video; proved `linkedin_send` job path
 
 ## Blockers
 
-1. Operator must Take control once and complete LinkedIn login/2FA; session will then persist on `openbot_profiles`
-2. After login: Release control → Approve/Send on Tony Walteur campaign to finish Connect+note
-3. `gh pr create` forbidden for this token; ManagePullRequest tool unavailable in this environment — open/update PR from Cursor UI or a token with `pull_requests: write`
+1. Operator must Take control on `comp_tony_01` and complete LinkedIn login/2FA once; session persists on volume
+2. After login: Release control → Approve/Send Tony Walteur Connect+note to finish reach-out
 
 ## Next steps
 
-1. Operator: Settings/Fleet → AriaBot → Take control → LinkedIn login on `comp_tony_01`
-2. Confirm `/c/comp_tony_01/session-probe` returns healthy
+1. Operator: Fleet → AriaBot → Take control → LinkedIn login on `comp_tony_01`
+2. Confirm `POST /c/comp_tony_01/session-probe` returns healthy
 3. Approve outreach for Tony Walteur → AriaBot Connect+note
-4. Open PR for `cursor/ariabot-vm-fluid-multitab-b91d` → `integration/sourcing-enrichment-on-main` if not already
+4. Re-run `node scripts/record-tonywalteur-full-cycle-e2e.mjs` for Connect success video
 
 ## Decisions made (don't relitigate)
 
 - Keep demo-login dry-run for third-party; AriaBot unlocked via `ENABLE_PUBLIC_DEMO_ARIABOT`
 - Prefer Connect+note when Message unavailable
 - Scrapling is optional public-web research; LinkedIn stays on AriaBot computers
+- browser-use sidecars never replace AriaBot Take control for LinkedIn
 - Fluidity is supervisor-side (CDP stream)
 
 ## Watch out
