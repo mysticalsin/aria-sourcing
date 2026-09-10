@@ -108,15 +108,25 @@ const CampaignProjectionSchema = z.object({
       .min(1)
       .max(8),
     linkedinBoolean: bounded(2_000),
+    // Live workspaces sometimes store wiki/agent query rows as
+    // {id,query,rationale,estimatedResults} without `label`. Accept those,
+    // strip unknowns, and default label from the query text.
     githubQueries: z
       .array(
         z
           .object({
-            label: bounded(200),
+            label: bounded(200).optional(),
             query: bounded(500).min(1),
-            estimatedResults: z.number().finite().nonnegative(),
+            estimatedResults: z.number().finite().nonnegative().optional(),
           })
-          .strict(),
+          .transform((row) => ({
+            label: (row.label && row.label.trim()) || row.query.slice(0, 200),
+            query: row.query,
+            estimatedResults:
+              typeof row.estimatedResults === "number" && Number.isFinite(row.estimatedResults)
+                ? row.estimatedResults
+                : 0,
+          })),
       )
       .max(100),
   }),

@@ -73,18 +73,26 @@ test("workspace projection owns campaign and dedupe context while stripping unre
   assert.equal(JSON.stringify(projected.value).includes("private"), false);
 });
 
-test("workspace projection strips legacy jobAnalysis extras instead of invalid_state", () => {
+test("workspace projection accepts githubQueries without label and strips rationale/id extras", () => {
   const state = {
     campaigns: [
       {
         ...campaign,
-        jobAnalysis: {
-          ...campaign.jobAnalysis,
-          searchBoolean: null,
-          localeContext: "Montreal",
-          missionDescription: "Support Calypso",
-          linkedinBoolean: "(legacy misplaced field)",
-          requiredLanguages: ["English", "French"],
+        sourcingStrategy: {
+          ...campaign.sourcingStrategy,
+          githubQueries: [
+            {
+              id: "gq_legacy",
+              query: "Calypso location:Montreal",
+              rationale: "wiki signal",
+              estimatedResults: 8,
+            },
+            {
+              label: "Labeled",
+              query: "language:Python",
+              estimatedResults: 12,
+            },
+          ],
         },
       },
     ],
@@ -98,14 +106,18 @@ test("workspace projection strips legacy jobAnalysis extras instead of invalid_s
   const projected = projectSourcingAgentWorkspace(state, campaignId);
   assert.equal(projected.status, "ok");
   if (projected.status !== "ok") return;
-  assert.equal(
-    JSON.stringify(projected.value.campaign.jobAnalysis).includes("searchBoolean"),
-    false,
-  );
-  assert.equal(
-    JSON.stringify(projected.value.campaign.jobAnalysis).includes("missionDescription"),
-    false,
-  );
+  assert.deepEqual(projected.value.campaign.sourcingStrategy.githubQueries, [
+    {
+      label: "Calypso location:Montreal",
+      query: "Calypso location:Montreal",
+      estimatedResults: 8,
+    },
+    {
+      label: "Labeled",
+      query: "language:Python",
+      estimatedResults: 12,
+    },
+  ]);
 });
 
 test("campaign fingerprint changes when the persisted need or search strategy changes", () => {
