@@ -81,6 +81,26 @@ ok(
     "Calypso Application Support",
   ),
 );
+ok(
+  "Windows Desktop Engineer aliases match Intune Engineer",
+  candidateMatchesRoleTitle(
+    {
+      currentTitle: "Intune Engineer",
+      recentActivity: "Microsoft Intune and Autopilot endpoint management in Montreal.",
+    },
+    "Enterprise Windows Desktop Engineer",
+  ),
+);
+ok(
+  "Windows Desktop Engineer matches Endpoint / Intune System Engineer headline",
+  candidateMatchesRoleTitle(
+    {
+      currentTitle: "System Engineer - Endpoint || Intune || Windows365",
+      recentActivity: "Endpoint management with Microsoft Intune and Configuration Manager.",
+    },
+    "Enterprise Windows Desktop Engineer",
+  ),
+);
 
 const systemDesigner = parseEmailAndJD({
   email: `This need is now ACTIVE: System Designer

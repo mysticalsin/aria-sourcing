@@ -49,6 +49,20 @@ export function roleTitleMatchAliases(roleTitle: string): string[] {
   if (/business analyst/i.test(t)) {
     aliases.push("Business Analyst", "Functional Analyst", "FO Business Analyst");
   }
+  if (/windows desktop|endpoint engineer|intune engineer|desktop engineer/i.test(t)) {
+    aliases.push(
+      "Windows Desktop Engineer",
+      "Enterprise Windows Desktop Engineer",
+      "Endpoint Engineer",
+      "Intune Engineer",
+      "Desktop Engineer",
+      "Windows Engineer",
+      "Modern Workplace Engineer",
+      "Endpoint Management Engineer",
+      "SCCM Engineer",
+      "Desktop Support Engineer",
+    );
+  }
   return aliases;
 }
 
@@ -59,6 +73,9 @@ const PRODUCT_ROLE_TOKENS = [
   "kondor",
   "sophis",
   "fidessa",
+  "intune",
+  "autopilot",
+  "sccm",
 ] as const;
 const FUNCTION_ROLE_TOKENS = [
   "support",
@@ -68,6 +85,8 @@ const FUNCTION_ROLE_TOKENS = [
   "engineer",
   "programmer",
   "architect",
+  "desktop",
+  "endpoint",
 ] as const;
 
 /**
@@ -77,6 +96,23 @@ const FUNCTION_ROLE_TOKENS = [
  */
 function productFunctionRoleMatch(hay: string, roleTitle: string): boolean {
   const role = roleTitle.toLowerCase();
+  if (/windows desktop|endpoint engineer|intune engineer|desktop engineer/i.test(roleTitle)) {
+    const platform = [
+      "intune",
+      "endpoint",
+      "sccm",
+      "autopilot",
+      "windows desktop",
+      "windows365",
+      "configmgr",
+      "configuration manager",
+      "modern workplace",
+    ].some((token) => hay.includes(token));
+    const fn = ["engineer", "administrator", "admin", "specialist", "architect"].some((token) =>
+      hay.includes(token),
+    );
+    if (platform && fn) return true;
+  }
   const product = PRODUCT_ROLE_TOKENS.find((token) => role.includes(token));
   if (!product) return false;
   const functionNeeded = FUNCTION_ROLE_TOKENS.some((token) => role.includes(token));
