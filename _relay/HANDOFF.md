@@ -1,53 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 135
+shift: 136
 agent: cursor-cloud
-updated: 2026-09-10T22:15Z
-status: responsive-vm-skills-e2e-in-progress
+updated: 2026-09-10T22:27Z
+status: responsive-vm-skills-e2e-recorded
 ---
 
-# Handoff — Shift 135
+# Handoff — Shift 136
 
 ## Current state
 
-- **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d`
-- **PR:** #94 → `integration/sourcing-enrichment-on-main`
-- **Fly computers:** https://aria-mantu-computers.fly.dev — CDP binary screencast + multi-tab + Browserbase-style live view
-- **Fly app:** https://aria-mantu-app.fly.dev
-- **Volume:** `openbot_profiles` (10GB cdg) — mount in `fly.computers.toml` (`/data`); attach on next computers deploy
+- **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d` @ latest
+- **Fly computers:** https://aria-mantu-computers.fly.dev — `cdp-screencast-binary`, multitab, Browserbase-style live view
+- **Volume:** `openbot_profiles` **attached** at `/data` (LinkedIn cookies will persist after next operator login)
+- **Fly app:** https://aria-mantu-app.fly.dev redeployed with skills/humanizer wiring
+- **E2E artifacts:** `/opt/cursor/artifacts/tonywalteur-full-cycle-e2e.mp4` (+ webm/json/screenshots)
 
 ## Done this shift
 
-1. Humanizer last-mile on LinkedIn send (`src/lib/openbot/linkedin-send.ts`) + Connect+note path (`preferConnect`)
-2. `outreach_skill` playbook injected into `buildOutreachPrompt` via `skillPlaybook` from store
-3. Live view: binary JPEG WS frames, CDP Input clicks/moves, RTT/FPS chips, Browserbase-style chrome
-4. Scrapling bridge (`src/lib/scrapling/adapter.ts`) + docs; sourcing skill references it
-5. Stream quality tuned in `fly.computers.toml` (q45 / 1280×800)
+1. Binary CDP screencast + CDP input + Browserbase-style live chrome
+2. `outreach_skill` → `buildOutreachPrompt(skillPlaybook)`; LinkedIn send humanizes + `preferConnect`
+3. Scrapling adapter + docs; sourcing skill references it
+4. Computers volume mounted; app+computers redeployed
+5. Recorded Tony Walteur full-cycle video (Aria login → campaign UI → live view). LinkedIn session currently login-walled (fresh volume)
 
 ## Blockers
 
-1. Computers volume not yet attached to running machine (needs `fly deploy -c fly.computers.toml`)
-2. Operator LinkedIn session may need re-login after volume attach/redeploy
-3. Full tonywalteur campaign E2E video still in progress
+1. Operator must Take control once and complete LinkedIn login/2FA; session will then persist on `openbot_profiles`
+2. After login: Release control → Approve/Send on Tony Walteur campaign to finish Connect+note
+3. `gh pr create` forbidden for this token; ManagePullRequest tool unavailable in this environment — open/update PR from Cursor UI or a token with `pull_requests: write`
 
 ## Next steps
 
-1. Deploy computers with mounts; confirm `/health` shows `cdp-screencast-binary` and `/data` mounted
-2. Deploy app with skill/humanizer wiring
-3. Create campaign targeting https://www.linkedin.com/in/tonywalteur/
-4. Draft (skills+humanizer) → approve → AriaBot Connect+note / Message
-5. Record full E2E video to `/opt/cursor/artifacts/`
+1. Operator: Settings/Fleet → AriaBot → Take control → LinkedIn login on `comp_tony_01`
+2. Confirm `/c/comp_tony_01/session-probe` returns healthy
+3. Approve outreach for Tony Walteur → AriaBot Connect+note
+4. Open PR for `cursor/ariabot-vm-fluid-multitab-b91d` → `integration/sourcing-enrichment-on-main` if not already
 
 ## Decisions made (don't relitigate)
 
 - Keep demo-login dry-run for third-party; AriaBot unlocked via `ENABLE_PUBLIC_DEMO_ARIABOT`
-- Prefer Connect+note when Message unavailable (`preferConnect` default true on LinkedIn browser path)
-- Scrapling is optional sidecar for public web research; LinkedIn stays on AriaBot computers
-- Fluidity fix is supervisor-side (CDP stream), not Aria Next app rebuild
+- Prefer Connect+note when Message unavailable
+- Scrapling is optional public-web research; LinkedIn stays on AriaBot computers
+- Fluidity is supervisor-side (CDP stream)
 
 ## Watch out
 
-- Deploy computers with `fly.computers.toml` so volume mounts
 - Pass `NEXT_PUBLIC_SUPABASE_ANON_KEY` on app deploys
-- Keep `/ariabot/` public in proxy matcher
-- Never commit secrets from `fly ssh printenv`
+- Demo-login rate limit 5/min; username is `Twalteur@amaris.com`
+- Never commit Fly secrets / demo password
