@@ -309,7 +309,6 @@ export function CampaignAgentsPanel({
             Agents on this campaign
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-OpenBot → AriaBot in campaign agents copy
             LinkedIn AriaBot Browser Computer seats attached here — one Chromium VM each. Observe starts the
             VM if needed; Take control pauses the bot until you Release.
           </p>
