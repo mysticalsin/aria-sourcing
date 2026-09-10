@@ -128,7 +128,9 @@ function LinkedInOutreachStackInner() {
       footer={
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          No scrape grey-market bots and no LinkedIn password storage in Aria. Login happens inside the OpenBot sandbox via Fleet Observe.
+          No scrape grey-market bots and no LinkedIn password storage in Aria. Log in once via{" "}
+          <span className="font-medium text-ink-soft">Open LinkedIn login for agents</span> — the VM
+          keeps that session for Automatic sends.
           {deliveryMode === "automatic"
             ? " Automatic mode queues OpenBot Browser Computer sends after approval (Postgres contact lease, DNC, and rate caps still apply)."
             : " Manual mode keeps assisted paste/confirm for each send."}

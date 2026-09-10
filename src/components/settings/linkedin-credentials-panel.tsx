@@ -65,9 +65,10 @@ export function LinkedInCredentialsPanel() {
         </p>
         <p className="mt-1 text-sm text-ink">
           Automatic LinkedIn outreach runs inside the{" "}
-          <span className="font-medium">sandbox / VM OpenBot creates</span> — not through LinkedIn’s
-          OIDC or Vendor APIs. Point Aria at your computer supervisor, create a Browser Computer
-          seat, then log in to LinkedIn once via Fleet → Observe / Take control.
+          <span className="font-medium">sandbox / VM OpenBot creates</span>. Point Aria at your computer
+          supervisor, then use <span className="font-medium">Login once — agents use this account</span>{" "}
+          below to sign into LinkedIn inside that VM. Agents reuse the durable Chromium session — Aria never
+          stores your LinkedIn password.
         </p>
       </div>
 
@@ -85,9 +86,9 @@ export function LinkedInCredentialsPanel() {
           </li>
           <li>Paste the supervisor URL below and attach that vault key.</li>
           <li>
-            In LinkedIn connections, create a{" "}
-            <span className="font-medium text-ink-soft">Browser Computer</span> seat, then open Fleet
-            → Computers → Observe / Take control to complete LinkedIn login / 2FA inside the sandbox.
+            In the LinkedIn stack, click{" "}
+            <span className="font-medium text-ink-soft">Open LinkedIn login for agents</span> — sign in
+            once (with 2FA) inside the sandbox. Release when done; agents keep using that session.
           </li>
         </ol>
       </div>

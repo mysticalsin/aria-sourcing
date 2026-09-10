@@ -171,6 +171,7 @@ export async function GET(req: NextRequest) {
         mode: s.mode,
         operatorEmail: s.operator_email,
         connectedAccount: s.connected_account || null,
+        computerId: s.computer_id ?? null,
         adapterConfigured: adapter?.configured() ?? false,
         oauthConnected: Boolean(oauth),
         oauthProfile: oauth

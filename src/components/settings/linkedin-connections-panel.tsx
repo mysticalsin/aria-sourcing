@@ -18,6 +18,7 @@ import {
 import {
   Activity,
   Linkedin,
+  LogIn,
   Monitor,
   Unplug,
   Wand2,
@@ -52,6 +53,7 @@ type SeatRow = {
   mode: string;
   operatorEmail?: string;
   connectedAccount?: string | null;
+  computerId?: string | null;
   adapterConfigured?: boolean;
   oauthConnected?: boolean;
   oauthProfile?: OAuthProfile | null;
@@ -88,6 +90,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const [connectingOAuth, setConnectingOAuth] = React.useState(false);
   const [connectingAssisted, setConnectingAssisted] = React.useState(false);
   const [connectingBrowser, setConnectingBrowser] = React.useState(false);
+  const [openingAgentLogin, setOpeningAgentLogin] = React.useState(false);
   const [testingSeat, setTestingSeat] = React.useState<string | null>(null);
   const [label, setLabel] = React.useState("");
   const [providers, setProviders] = React.useState<ProviderReadiness | null>(null);
@@ -125,6 +128,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           mode: s.mode,
           connectedAccount: s.connectedAccount,
           operatorEmail: s.operatorEmail,
+          computerId: s.computerId ?? null,
         }));
 
       if (json?.demo || !supabaseEnabled) {
@@ -327,6 +331,102 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     }
   }
 
+  /**
+   * Login once for agents: ensure OpenBot Browser Computer seat → start VM →
+   * Take control → open fullscreen sandbox on LinkedIn. Session persists in the
+   * Chromium profile so later Automatic sends reuse this account.
+   */
+  async function openAgentLinkedInLogin() {
+    setOpeningAgentLogin(true);
+    try {
+      let browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
+      if (browserSeats.length === 0) {
+        await connectBrowserComputer();
+        // Reload seats from API / local store after create.
+        const res = await fetch("/api/linkedin/connections", { method: "GET", credentials: "include" });
+        const json = (await res.json().catch(() => null)) as { seats?: SeatRow[] } | null;
+        if (Array.isArray(json?.seats) && json.seats.length > 0) {
+          browserSeats = json.seats.filter((s) => s.provider === "LinkedIn Browser Computer");
+          setSeats(json.seats);
+        } else {
+          browserSeats = localSeats
+            .filter((s) => s.provider === "LinkedIn Browser Computer")
+            .map((s) => ({
+              id: s.id,
+              name: s.name,
+              provider: s.provider,
+              status: s.status,
+              mode: s.mode,
+              computerId: s.computerId ?? null,
+            }));
+        }
+      }
+      const seat = browserSeats[0];
+      if (!seat) {
+        toast({
+          title: "No OpenBot seat",
+          description: "Create an OpenBot Browser Computer seat first, then try again.",
+          variant: "error",
+        });
+        return;
+      }
+      const computerId =
+        (seat.computerId && String(seat.computerId).trim()) ||
+        localSeats.find((s) => s.id === seat.id)?.computerId ||
+        `comp_${seat.id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 24)}`;
+
+      // Persist computer id on the seat so agents keep reusing the same VM profile.
+      if (!seat.computerId) {
+        actions.updateSeat(seat.id, {
+          computerId,
+          linkedinDeliveryBackend: "browser-computer",
+          connectedAccount: seat.connectedAccount || label.trim() || "OpenBot LinkedIn",
+        });
+      }
+
+      async function fleetAct(action: "ensure" | "start" | "take_control") {
+        const res = await fetch("/api/fleet/computers", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, computerId, seatId: seat.id }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+          computer?: { viewUrl?: string | null; remoteUrl?: string | null; status?: string; lastError?: string | null };
+        } | null;
+        if (!res.ok) throw new Error(body?.error || res.statusText);
+        return body?.computer ?? null;
+      }
+
+      await fleetAct("ensure");
+      await fleetAct("start");
+      const controlled = await fleetAct("take_control");
+      const url = controlled?.viewUrl || controlled?.remoteUrl;
+      if (url && /^https?:\/\//i.test(url)) {
+        const join = url.includes("?") ? "&" : "?";
+        window.open(`${url}${join}fs=1`, "_blank", "noopener,noreferrer");
+      } else {
+        window.open("/fleet", "_blank", "noopener,noreferrer");
+      }
+      toast({
+        title: "LinkedIn login sandbox opened",
+        description:
+          "Sign in once inside the VM (including 2FA). Release control when done — agents reuse this session for sourcing outreach.",
+        variant: "success",
+      });
+      await load();
+    } catch (err) {
+      toast({
+        title: "Could not open LinkedIn login",
+        description: err instanceof Error ? err.message : "OpenBot supervisor may be unavailable.",
+        variant: "error",
+      });
+    } finally {
+      setOpeningAgentLogin(false);
+    }
+  }
+
   async function simulateEvent(seatId?: string) {
     setSimulating(true);
     try {
@@ -462,6 +562,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     connectingOAuth,
     connectingAssisted,
     connectingBrowser,
+    openingAgentLogin,
     testingSeat,
     label,
     setLabel,
@@ -480,6 +581,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     connectWithLinkedInOAuth,
     connectAssisted,
     connectBrowserComputer,
+    openAgentLinkedInLogin,
     simulateEvent,
     testSeat,
     actions,
@@ -500,6 +602,7 @@ export function LinkedInIdentityStep({
     connectingOAuth,
     connectingAssisted,
     connectingBrowser,
+    openingAgentLogin,
     testingSeat,
     label,
     setLabel,
@@ -518,6 +621,7 @@ export function LinkedInIdentityStep({
     connectWithLinkedInOAuth,
     connectAssisted,
     connectBrowserComputer,
+    openAgentLinkedInLogin,
     simulateEvent,
     testSeat,
     actions,
@@ -608,7 +712,7 @@ export function LinkedInIdentityStep({
     <ConnectionStep
       step={1}
       title="OpenBot Browser Computer"
-      subtitle="Automatic LinkedIn outreach runs inside the OpenBot sandbox/VM — not through LinkedIn OIDC or Vendor APIs. We never store your password — never your password in Aria. Create a seat, then log in via Fleet → Computers → Observe / Take control."
+      subtitle="Log into LinkedIn once in the agent VM. That session stays on this Browser Computer seat — Automatic outreach and campaign agents reuse it. Aria never stores your LinkedIn password."
       state={state}
       advanced={advanced}
     >
@@ -616,22 +720,40 @@ export function LinkedInIdentityStep({
 
       {isAdmin && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              leftIcon={<Monitor className="h-4 w-4" />}
-              loading={connectingBrowser}
-              disabled={!providers?.browserComputerConfigured && supabaseEnabled}
-              onClick={() => void connectBrowserComputer()}
-            >
-              {hasBrowserSeat ? "Reconnect OpenBot seat" : "Create OpenBot Browser Computer seat"}
-            </Button>
+          <div className="rounded-2xl border border-electric/30 bg-electric/5 px-4 py-4">
+            <p className="text-sm font-semibold text-ink">Login once — agents use this account</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              Opens your OpenBot Chromium VM so you can sign in to LinkedIn (and complete 2FA). After you
+              Release control, sourcing outreach agents send from this same durable profile — you do not
+              log in again per campaign.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button
+                leftIcon={<LogIn className="h-4 w-4" />}
+                loading={openingAgentLogin || connectingBrowser}
+                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+                onClick={() => void openAgentLinkedInLogin()}
+              >
+                {hasBrowserSeat ? "Open LinkedIn login for agents" : "Create seat & open LinkedIn login"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Monitor className="h-4 w-4" />}
+                loading={connectingBrowser}
+                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+                onClick={() => void connectBrowserComputer()}
+              >
+                {hasBrowserSeat ? "Reconnect seat only" : "Create seat only"}
+              </Button>
+            </div>
             {!providers?.browserComputerConfigured && supabaseEnabled ? (
-              <p className="max-w-md text-xs text-muted">
-                Attach the OpenBot computer supervisor URL + token under LinkedIn credentials above, then create a seat.
+              <p className="mt-2 text-xs text-muted">
+                Attach the OpenBot computer supervisor URL + token under credentials above first.
               </p>
             ) : (
-              <p className="max-w-md text-xs text-muted">
-                After the seat is live, open Fleet → Computers → Observe / Take control to complete LinkedIn login / 2FA inside the sandbox.
+              <p className="mt-2 text-xs text-muted">
+                Tip: keep one Browser Computer seat. New seats mean a fresh empty profile and another login.
               </p>
             )}
           </div>
@@ -705,6 +827,17 @@ export function LinkedInIdentityStep({
                   }
                   actions={
                     <>
+                      {s.provider === "LinkedIn Browser Computer" && isAdmin && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          leftIcon={<LogIn className="h-3.5 w-3.5" />}
+                          loading={openingAgentLogin}
+                          onClick={() => void openAgentLinkedInLogin()}
+                        >
+                          Login for agents
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="subtle"
