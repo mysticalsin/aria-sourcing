@@ -1,46 +1,41 @@
 ---
 project: MSourcing / ARIA
-shift: 124
+shift: 125
 agent: cursor-cloud
-updated: 2026-09-10T01:05Z
-status: fly-demo-admin-password-reset-verified
+updated: 2026-09-10T13:02Z
+status: fly-demo-login-twalteur-verified
 ---
 
-# Handoff — Shift 124
+# Handoff — Shift 125
 
 ## Current state
 
-- **Branch:** `cursor/fly-demo-admin-password-8b0f` (from `cursor/aria-e2e-antibot-ux-b91d`)
-- **Fly web:** https://aria-mantu-app.fly.dev — healthy; release **v239**
-- Demo admin password reset on production Fly is **done and verified** (value not recorded here)
-- `POST /api/auth/demo-login` with username `admin` + configured password → **200 `{"ok":true}`**; wrong password → **401**
+- **Branch:** `cursor/fly-demo-twalteur-login-b91d`
+- **Fly web:** https://aria-mantu-app.fly.dev — healthy; demo login identity is `Twalteur@amaris.com`
+- Verified: `POST /api/auth/demo-login` with that username + configured password → **200**; `admin` / wrong password → **401**
 
 ## Done this shift
 
-1. Set Fly secrets on `aria-mantu-app`: `DEMO_ADMIN_PASSWORD`, `NEXT_PUBLIC_DEMO_ADMIN_PASSWORD`, `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true`, `ENABLE_DEMO_LOGIN=true`
-2. Created/updated GoTrue user `admin@hermes.local` to match demo password; seeded admin profile + `hermes.local` workspace
-3. Redeployed `aria-mantu-app` with build-arg `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true` + current Kong anon key
-4. Runtime gate in `src/app/api/auth/demo-login/route.ts` also honors `ENABLE_DEMO_LOGIN` / dynamic `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` (avoids build-time inline-only trap)
-5. Verified live demo-login against production URL
+1. Demo-login accepts configurable `DEMO_ADMIN_USERNAME` / `DEMO_ADMIN_EMAIL`
+2. Fly secrets set for username/email; GoTrue user password synced; profile email/role admin patched
+3. Redeployed `aria-mantu-app` with `NEXT_PUBLIC_DEMO_ADMIN_USERNAME` build-arg
+4. Password value not recorded in `_relay/`
 
 ## Blockers
 
-1. None for password reset. Operator LinkedIn login/2FA on computers fleet still required for real Message send (prior shift).
+1. None for login. LinkedIn Message still needs operator Take control login/2FA on computers.
 
 ## Next steps
 
-1. Open/merge PR for `cursor/fly-demo-admin-password-8b0f` into the antibot UX branch / integration as desired
-2. Operator: Take control on `comp_java_01` → LinkedIn login → Release → Approve Tony draft → Send (unchanged)
+1. Merge this branch / open PR as desired
+2. Operator LinkedIn login on `comp_java_01` when ready to send
 
 ## Decisions made (don't relitigate)
 
-- Production LinkedIn/OpenBot = Fly only
-- Never mock send on prod
-- `aria-mantu-app` is the public showcase: demo-login may be ON with Fly secrets (do not copy that posture to a separate real-tenant app)
-- Never commit `.env.local` or print demo passwords into `_relay/`
+- Showcase Fly app may keep demo-login ON
+- Do not commit passwords / tokens
 
 ## Watch out
 
-- `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` is a **build-arg**; runtime secret alone was not enough on the prior image until rebuild + runtime gate fix
-- GoTrue password for `admin@hermes.local` must stay in sync with `DEMO_ADMIN_PASSWORD` or demo-login returns 500 after credential check
-- Do not commit OpenBot tokens / Fly API tokens / service-role keys
+- GoTrue email for demo user must stay in sync with `DEMO_ADMIN_EMAIL`
+- Do not bake `DEMO_ADMIN_PASSWORD` into the Docker image
