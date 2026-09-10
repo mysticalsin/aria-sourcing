@@ -1487,6 +1487,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
+          <Card className="overflow-x-auto">
+            <CardBody>
+              <CandidateTable candidates={filteredCandidates} onSelect={openCandidate} />
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1521,12 +1527,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 />
               </div>
               <Meter label="Workspace enrichment spend" used={enrichmentSpend} limit={enrichmentBudget} tone="electric" />
-            </CardBody>
-          </Card>
-
-          <Card className="overflow-x-auto">
-            <CardBody>
-              <CandidateTable candidates={filteredCandidates} onSelect={openCandidate} />
             </CardBody>
           </Card>
         </div>
