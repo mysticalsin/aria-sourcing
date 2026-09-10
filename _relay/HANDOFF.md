@@ -1,48 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 132
+shift: 133
 agent: cursor-cloud
-updated: 2026-09-10T21:14Z
-status: ariabot-fly-connect-unblocked
+updated: 2026-09-10T21:25Z
+status: ariabot-fly-connect-verified
 ---
 
-# Handoff — Shift 132
+# Handoff — Shift 133
 
 ## Current state
 
-- **Branch:** `cursor/fly-sourcing-e2e-ready-b91d`
-- **Fly:** https://aria-mantu-app.fly.dev
-- **Root cause of "Public demo… disabled" + "No AriaBot seat":** `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true` dry-ran `POST /api/linkedin/connections` before Browser Computer seat create
-- **Fix:** `ENABLE_PUBLIC_DEMO_ARIABOT=true` escape hatch — AriaBot Browser Computer connect + LinkedIn approve/send/dispatch allowed; third-party OAuth/email/WhatsApp stay dry-run
-- **Fly secret:** `ENABLE_PUBLIC_DEMO_ARIABOT=true` set on `aria-mantu-app` (needs image deploy to take effect in code)
+- **Branch:** `cursor/fly-sourcing-e2e-ready-b91d` @ `04b7a80`
+- **PR:** #93 → `integration/sourcing-enrichment-on-main`
+- **Fly:** https://aria-mantu-app.fly.dev — AriaBot Browser Computer **connect works**
+- **Evidence:** `_relay/evidence/2026-09-10-ariabot-fly-connect.md`
 
-## Done this shift
+## Done
 
-1. Policy carve-out in `src/lib/demo-side-effect-policy.ts` + server helpers
-2. LinkedIn Browser Computer `ensure_connect` uses `publicDemoAriaBotDisabled()`
-3. Outreach approve + LinkedIn send + outbound dispatch LinkedIn-only under AriaBot hatch
-4. Tests: `tests/demo-live-side-effects.mts` green (48 pass)
+1. `ENABLE_PUBLIC_DEMO_ARIABOT` carve-out (connect/approve/LinkedIn send/dispatch)
+2. Migration 0083 inbound route allows Browser Computer (applied on prod)
+3. Verified ensure_connect + fleet start + LinkedIn navigate on Fly
 
 ## Blockers
 
-1. Deploy of this commit still required before UI connect works on Fly
-2. Real LinkedIn session still needs operator 2FA inside AriaBot VM once
+1. Real LinkedIn session still needs operator 2FA inside AriaBot VM once
+2. ComputerUse browser subagent unavailable this shift (model usage) — API/fleet proof done instead
 
-## Next steps
+## Next
 
-1. Deploy `aria-mantu-app` with `NEXT_PUBLIC_SUPABASE_ANON_KEY` build-arg
-2. Login as Twalteur → Settings → Create AriaBot seat / Log in with LinkedIn
-3. Take control → LinkedIn login → Release → approve/send on Windows Desktop campaign
-4. Record short E2E evidence if needed
+1. Operator: Settings → AriaBot → Take control → LinkedIn login/2FA → Release
+2. Approve/Send one Windows Desktop campaign outreach through AriaBot
+3. Merge PR #93
 
-## Decisions made (don't relitigate)
+## Decisions
 
-- Keep demo login on for showcase password path
-- AriaBot Browser Computer is first-party; allow via `ENABLE_PUBLIC_DEMO_ARIABOT`, do not disable entire public-demo wall
-- Prefer one Browser Computer seat
+- Keep demo login on; unlock AriaBot via `ENABLE_PUBLIC_DEMO_ARIABOT`, not full side-effect disable
+- Browser Computer inbound route is optional for Observe/Take control
 
 ## Watch out
 
-- Always pass `NEXT_PUBLIC_SUPABASE_ANON_KEY` on deploy
+- Pass `NEXT_PUBLIC_SUPABASE_ANON_KEY` on every deploy
 - Keep `/ariabot/` public in proxy matcher
-- Do not commit demo passwords or service-role keys
