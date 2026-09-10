@@ -239,3 +239,47 @@ export async function qualifyLeadAgainstIcp(input: {
     };
   }
 }
+
+
+/** Operator-facing status for LinkedIn / browser-agent sidecars. */
+export function listLinkedInBrowserAgentStatus(): {
+  id: string;
+  enabled: boolean;
+  urlConfigured: boolean;
+  role: string;
+}[] {
+  const flag = (name: string) => process.env[name] === "1" || process.env[name] === "true";
+  const url = (name: string) => Boolean((process.env[name] || "").trim());
+  return [
+    {
+      id: "orca",
+      enabled: flag("ARIA_ORCA_ENABLED"),
+      urlConfigured: url("ARIA_ORCA_URL"),
+      role: "LinkedIn profile insight (trajectory / focus / pain points)",
+    },
+    {
+      id: "linkedin-agent-tool",
+      enabled: flag("ARIA_LINKEDIN_AGENT_TOOL_ENABLED"),
+      urlConfigured: url("ARIA_LINKEDIN_AGENT_TOOL_URL"),
+      role: "LinkedIn search metadata for sourcing batches",
+    },
+    {
+      id: "browser-use",
+      enabled: flag("ARIA_BROWSER_USE_ENABLED"),
+      urlConfigured: url("ARIA_BROWSER_USE_URL"),
+      role: "Optional public navigate actions (Connect/Message stay on AriaBot)",
+    },
+    {
+      id: "linki",
+      enabled: flag("ARIA_LINKI_ENABLED"),
+      urlConfigured: url("ARIA_LINKI_URL"),
+      role: "ICP qualification / SDR scoring",
+    },
+    {
+      id: "openoutreach",
+      enabled: flag("ARIA_OPENOUTREACH_ENABLED"),
+      urlConfigured: url("ARIA_OPENOUTREACH_URL"),
+      role: "ICP qualification / SDR scoring",
+    },
+  ];
+}

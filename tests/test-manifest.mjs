@@ -55,6 +55,7 @@ export const testManifest = {
     {"id":"agent-framework-adapter-suite","executable":"node","argv":["--test","--test-reporter=spec","infra/agent-frameworks/adapter/adapter.test.mjs","infra/agent-frameworks/adapter/secret-preflight.test.mjs","infra/agent-frameworks/model-gateway/gateway.test.mjs","infra/agent-frameworks/deployment.test.mjs","infra/agent-frameworks/fly/deployment.test.mjs"]},
     {"id":"fleet","executable":"tsx","argv":["tests/fleet.mts"]},
     {"id":"humanizer","executable":"tsx","argv":["tests/humanizer.mts"]},
+    {"id":"linkedin-browser-agents","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","tests/linkedin-browser-agents.mts"]},
     {"id":"mock-ai","executable":"tsx","argv":["tests/mock-ai.mts"]},
     {"id":"mantu-intake","executable":"tsx","argv":["tests/mantu-intake.mts"]},
     {"id":"candidate-fit","executable":"tsx","argv":["tests/candidate-fit.mts"]},
@@ -318,6 +319,7 @@ export const testManifest = {
     "application": [
       "fleet",
       "humanizer",
+      "linkedin-browser-agents",
       "mock-ai",
       "mantu-intake",
       "candidate-fit",

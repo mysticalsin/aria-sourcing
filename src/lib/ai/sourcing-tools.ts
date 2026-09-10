@@ -187,6 +187,16 @@ export function makeSourcingToolRunner(
           skippedCount += profileResult.skipped.length;
         }
       }
+      const { linkedinAgentToolProvider } = await import(
+        "@/lib/sourcing/providers/linkedin-agent-tool"
+      );
+      if (await linkedinAgentToolProvider.isAvailable(ctx)) {
+        const agentResult = await linkedinAgentToolProvider.search({ query, count, ctx });
+        anyOk = anyOk || agentResult.ok;
+        if (!agentResult.ok) lastError = agentResult.error;
+        batches.push({ provider: linkedinAgentToolProvider, candidates: agentResult.accepted });
+        skippedCount += agentResult.skipped.length;
+      }
       const webResult = await linkedinWebProvider.search({ query, count, ctx });
       anyOk = anyOk || webResult.ok;
       if (!webResult.ok) lastError = webResult.error;

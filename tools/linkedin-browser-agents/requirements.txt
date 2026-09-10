@@ -1,0 +1,1 @@
+# stdlib-only sidecar; pin nothing required

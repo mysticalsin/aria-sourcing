@@ -8,6 +8,7 @@ export type SourcingProviderId =
   | "github"
   | "linkedin_profiles"
   | "linkedin_web"
+  | "linkedin_agent_tool"
   | "stackoverflow"
   | "dribbble"
   | "behance";

@@ -27,3 +27,9 @@ AriaBot computers aim for the same operator feel as:
 runtime for **public** pages. LinkedIn Connect/Message stays on AriaBot computers.
 
 See `docs/scrapling/README.md` and `tools/scrapling/`.
+
+## Agent toolkit bridges
+
+LinkedIn research / ICP sidecars (Orca, NightTrek LinkedIn agent tool, browser-use,
+Linki, OpenOutreach) are documented in `docs/integrations/linkedin-browser-agents.md`.
+Public-web stealth fetch uses [Scrapling](https://github.com/D4Vinci/Scrapling).

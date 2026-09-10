@@ -1,47 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 138
+shift: 139
 agent: cursor-cloud
-updated: 2026-09-10T23:10Z
-status: browserbase-live-view-scrapling-shipped
+updated: 2026-09-10T23:19Z
+status: linkedin-browser-agents-wired
 ---
 
-# Handoff — Shift 138
+# Handoff — Shift 139
 
 ## Current state
 
-- **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d` @ latest
+- **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/96
-- **Computers health:** `liveView: browserbase-style`, `input: websocket+cdp`, `sessions: true`, `stealth: true`
-- **Sessions API:** `POST /sessions` → connectUrl + viewUrl
-- **Scrapling:** `tools/scrapling/server.py` sidecar; wired into enrich + `fetch_page`
-- **Demo:** `/opt/cursor/artifacts/browserbase-live-view-demo.mp4`
+- **Computers health:** Browserbase-class live view still live (`liveView: browserbase-style`)
+- **Scrapling:** sidecar + enrich/`fetch_page` wiring unchanged
+- **LinkedIn agent toolkits:** adapters + `linkedin_agent_tool` provider + unified sidecar
 
 ## Done this shift
 
-1. Live view omnibox + WS human input + reconnect banner + session chip
-2. Proxy/stealth/locale/timezone hooks; health advertises capabilities
-3. Scrapling sidecar + docs + enrich/web-tools wiring
-4. Redeployed computers + app; recorded live-view demo
+1. Wired `searchLinkedInProfiles` into LinkedIn sourcing fan-out via `linkedin_agent_tool` provider
+2. Registered provider in `providersForCampaign` pick lists (fail-closed unless `ARIA_LINKEDIN_AGENT_TOOL_ENABLED=1`)
+3. Added `tools/linkedin-browser-agents/` unified sidecar (`/analyze` `/search` `/act` `/qualify`)
+4. Added `listLinkedInBrowserAgentStatus` + docs + unit test (`tests/linkedin-browser-agents.mts`)
+5. Confirmed Connect/Message still refused to browser-use (AriaBot only)
 
 ## Blockers
 
-1. LinkedIn login still required once on `comp_tony_01` for Connect E2E
-2. Scrapling package optional (`pip install scrapling`); urllib fallback works without it
+1. Operator LinkedIn login still required once on `comp_tony_01` for Connect E2E
+2. Sidecars not deployed on Fly yet (local/dev enable via env)
 
 ## Next steps
 
-1. Operator LinkedIn Take control login on live view
-2. Optionally deploy Scrapling sidecar on Fly and set `ARIA_SCRAPLING_ENABLED=1` + `SCRAPLING_URL`
-3. Continue queued LinkedIn agent toolkit adapters if not already covered
+1. Operator Take control LinkedIn login on live view
+2. Optionally deploy Scrapling + linkedin-browser-agents sidecars on Fly
+3. Re-run Tony Walteur Connect E2E after login persists on `/data/profiles`
 
 ## Decisions made (don't relitigate)
 
 - Scrapling = public web research only; LinkedIn send stays on AriaBot
-- Session API wraps ensure (no rewrite of fleet seats)
-- WS input preferred; HTTP verbs remain for bot automation
+- browser-use / CrewAI packs never replace Take control for LinkedIn Connect/Message
+- Agent toolkit sidecars are fail-closed and optional
 
 ## Watch out
 
 - Pass `NEXT_PUBLIC_SUPABASE_ANON_KEY` on app deploys
 - Never commit Fly secrets / demo password
+- `typecheck:tests` still has unrelated pre-existing errors in demo-candidate-persistence / openbot-llm-auth

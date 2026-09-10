@@ -1,6 +1,7 @@
 import type { SourcePlatform } from "@/lib/types";
 import { githubProvider } from "./github";
 import { linkedinProfilesProvider } from "./linkedin-profiles";
+import { linkedinAgentToolProvider } from "./linkedin-agent-tool";
 import {
   behanceProvider,
   dribbbleProvider,
@@ -11,6 +12,7 @@ import type { ProviderContext, SourcingProvider, SourcingProviderId } from "./ty
 
 const ALL_PROVIDERS: SourcingProvider[] = [
   linkedinProfilesProvider,
+  linkedinAgentToolProvider,
   githubProvider,
   linkedinWebProvider,
   stackOverflowProvider,
@@ -50,16 +52,16 @@ export function providersForCampaign(
   const pick = (...ids: SourcingProviderId[]) =>
     ids.map((id) => byId.get(id)).filter((p): p is SourcingProvider => Boolean(p));
 
-  if (primary === "Dribbble") return pick("dribbble", "linkedin_profiles", "linkedin_web", "behance");
-  if (primary === "Behance") return pick("behance", "linkedin_profiles", "linkedin_web", "dribbble");
+  if (primary === "Dribbble") return pick("dribbble", "linkedin_profiles", "linkedin_agent_tool", "linkedin_web", "behance");
+  if (primary === "Behance") return pick("behance", "linkedin_profiles", "linkedin_agent_tool", "linkedin_web", "dribbble");
   if (primary === "Stack Overflow") {
-    return pick("stackoverflow", "linkedin_profiles", "linkedin_web", "github");
+    return pick("stackoverflow", "linkedin_profiles", "linkedin_agent_tool", "linkedin_web", "github");
   }
   if (primary === "GitHub") {
-    return pick("github", "linkedin_profiles", "linkedin_web");
+    return pick("github", "linkedin_profiles", "linkedin_agent_tool", "linkedin_web");
   }
   // LinkedIn / Talent Pool / Referral / default → professional networks first
-  return pick("linkedin_profiles", "linkedin_web", "github");
+  return pick("linkedin_profiles", "linkedin_agent_tool", "linkedin_web", "github");
 }
 
 export type { ProviderContext, SourcingProvider, SourcingProviderId } from "./types";
