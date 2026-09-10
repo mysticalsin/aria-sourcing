@@ -116,31 +116,12 @@ function LoginInner() {
     setLoading(false);
   };
 
-  const signInWithEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const signInWithEmail = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setLoading(true);
     setAuthError(null);
-    if (
-      demoLoginEnabled &&
-      email.trim().toLowerCase() === String(demoUsername).trim().toLowerCase()
-    ) {
-      await runDemoLogin(password, email.trim());
-      return;
-    }
-    // Also allow typing the configured demo email even if build-time prefill lagged.
-    if (demoLoginEnabled && email.includes("@")) {
-      const res = await fetch("/api/auth/demo-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: email.trim(), password }),
-      });
-      if (res.ok) {
-        window.location.href = safeRedirect(redirect);
-        return;
-      }
-    }
     if (!supabaseEnabled) {
-      setAuthError("Use the demo admin credentials to enter.");
+      setAuthError("Live sign-in is unavailable.");
       setLoading(false);
       return;
     }
@@ -149,8 +130,17 @@ function LoginInner() {
       setLoading(false);
       return;
     }
-    const loginEmail = email.includes("@") ? email : `${email}@hermes.local`;
-    const { error: err } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+    const loginEmail = email.includes("@") ? email.trim() : `${email.trim()}@hermes.local`;
+    if (!loginEmail || !password) {
+      setAuthError("Email and password are required.");
+      setLoading(false);
+      setShowEmail(true);
+      return;
+    }
+    const { error: err } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password,
+    });
     if (err) {
       setAuthError(err.message);
       setLoading(false);
@@ -161,22 +151,36 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    // Explicit public demo: one-click sign-in with the configured demo identity.
-    if (demoLoginEnabled) void runDemoLogin(password || demoPassword, email.trim() || demoUsername);
-    else if (supabaseEnabled && azureLoginEnabled) void signInWithMicrosoft();
-    else if (supabaseEnabled) {
-      setShowEmail(true);
-      window.requestAnimationFrame(() => emailRef.current?.focus());
+    // Fly / live: password sign-in is the real path. Keep email form visible and
+    // submit GoTrue credentials — do not use one-click demo-login for the CTA.
+    if (supabaseEnabled && azureLoginEnabled && !email.trim()) {
+      void signInWithMicrosoft();
+      return;
     }
-    else router.push(safeRedirect(redirect));
+    if (supabaseEnabled) {
+      setShowEmail(true);
+      if (email.trim() && password) {
+        void signInWithEmail();
+        return;
+      }
+      window.requestAnimationFrame(() => emailRef.current?.focus());
+      return;
+    }
+    if (demoLoginEnabled) {
+      void runDemoLogin(password || demoPassword, email.trim() || demoUsername);
+      return;
+    }
+    router.push(safeRedirect(redirect));
   };
 
   const ctaText = loading
     ? "Signing in…"
-    : demoLoginEnabled
-      ? "Enter the demo console"
-      : supabaseEnabled
-        ? azureLoginEnabled ? "Sign in with Microsoft" : "Sign in with email"
+    : supabaseEnabled
+      ? azureLoginEnabled && !email.trim()
+        ? "Sign in with Microsoft"
+        : "Sign in"
+      : demoLoginEnabled
+        ? "Enter the demo console"
         : "Enter the console";
 
   return (
@@ -273,7 +277,7 @@ function LoginInner() {
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder={demoLoginEnabled ? "admin" : "name@company.com"}
+                    placeholder="name@company.com"
                     className="rounded-full bg-white/5 px-5 py-3 text-sm text-white placeholder-white/40 outline-none ring-1 ring-inset ring-white/15 transition focus:ring-white/40"
                   />
                   <label htmlFor="login-password" className="sr-only">
