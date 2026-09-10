@@ -25,7 +25,14 @@ import { demoAuthConfigured, mintDemoToken } from "@/lib/demo-auth";
  * Hard-disabled in production unless this is a deliberately public demo instance.
  */
 export async function POST(req: Request) {
-  if (isProduction && !demoLoginEnabled) {
+  // Prefer static demoLoginEnabled (build-time NEXT_PUBLIC_*) but also honor a
+  // runtime Fly secret: ENABLE_DEMO_LOGIN or dynamically-read NEXT_PUBLIC_* so
+  // operators can open the showcase without a full image rebuild. Bracket
+  // access avoids Next.js inlining of NEXT_PUBLIC_* at build time.
+  const runtimeDemoLogin =
+    process.env.ENABLE_DEMO_LOGIN === "true" ||
+    process.env["NEXT_PUBLIC_ENABLE_DEMO_LOGIN"] === "true";
+  if (isProduction && !demoLoginEnabled && !runtimeDemoLogin) {
     return NextResponse.json({ ok: false, error: "Disabled in production." }, { status: 404 });
   }
 
