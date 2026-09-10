@@ -11,7 +11,7 @@ status: linkedin-browser-agents-wired
 ## Current state
 
 - **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/96
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/97
 - **Computers health:** Browserbase-class live view still live (`liveView: browserbase-style`)
 - **Scrapling:** sidecar + enrich/`fetch_page` wiring unchanged
 - **LinkedIn agent toolkits:** adapters + `linkedin_agent_tool` provider + unified sidecar
