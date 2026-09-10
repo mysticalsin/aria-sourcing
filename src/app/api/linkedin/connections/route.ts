@@ -406,10 +406,37 @@ async function ensureConnect(
   });
   if (routeErr) {
     safeLog("upsert_linkedin_inbound_route error", { message: routeErr.message, code: routeErr.code });
-    return NextResponse.json({ ok: false, error: "Seat ready but inbound route registration failed. Apply migration 0058." }, { status: 500 });
+    // Browser Computer seats are usable for Observe / Take control without an
+    // inbound webhook route; do not fail the whole connect after seat insert.
+    if (provider === "LinkedIn Browser Computer") {
+      return NextResponse.json({
+        ok: true,
+        seatId: seat.id,
+        seatName: seat.name,
+        provider,
+        mode: seat.mode,
+        routeKey: null,
+        detail:
+          "AriaBot Browser Computer seat live (inbound route deferred). Log into LinkedIn via Fleet → Computers → Observe / Take control.",
+      });
+    }
+    return NextResponse.json({ ok: false, error: "Seat ready but inbound route registration failed. Apply migration 0058/0083." }, { status: 500 });
   }
   const route = routeResult as { ok?: boolean; route_key?: string; reason?: string } | null;
   if (!route?.ok) {
+    if (provider === "LinkedIn Browser Computer") {
+      return NextResponse.json({
+        ok: true,
+        seatId: seat.id,
+        seatName: seat.name,
+        provider,
+        mode: seat.mode,
+        routeKey: null,
+        detail:
+          "AriaBot Browser Computer seat live (inbound route deferred). Log into LinkedIn via Fleet → Computers → Observe / Take control.",
+        warning: route?.reason ?? "Inbound route registration deferred.",
+      });
+    }
     return NextResponse.json(
       { ok: false, error: route?.reason ?? "Inbound route registration failed." },
       { status: 409 },
