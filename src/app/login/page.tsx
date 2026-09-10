@@ -56,9 +56,11 @@ function LoginInner() {
   const reducedMotion = usePrefersReducedMotion();
   const [videoPausedByUser, setVideoPausedByUser] = React.useState(false);
   const [showEmail, setShowEmail] = React.useState(true);
+  const demoUsername =
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEMO_ADMIN_USERNAME) || "admin";
   const demoPassword =
     (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEMO_ADMIN_PASSWORD) || "admin";
-  const [email, setEmail] = React.useState(demoLoginEnabled ? "admin" : "");
+  const [email, setEmail] = React.useState(demoLoginEnabled ? demoUsername : "");
   const [password, setPassword] = React.useState(demoLoginEnabled ? demoPassword : "");
   const [authError, setAuthError] = React.useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
@@ -117,7 +119,10 @@ function LoginInner() {
     e.preventDefault();
     setLoading(true);
     setAuthError(null);
-    if (email.trim() === "admin" && demoLoginEnabled) {
+    if (
+      demoLoginEnabled &&
+      email.trim().toLowerCase() === String(demoUsername).trim().toLowerCase()
+    ) {
       await runDemoLogin(password);
       return;
     }
