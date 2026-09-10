@@ -9,6 +9,7 @@ import type {
 import type { Tone } from "./utils";
 import { recordedCandidateLawfulBasis } from "./candidate-lawful-basis";
 import { recordedCandidateFitEndorsement } from "./candidate-fit-endorsement";
+import { assessRoleTenure } from "./sourcing/role-tenure";
 
 /* ============================================================================
    Business rules — the guardrails Aria enforces before acting.
@@ -74,6 +75,21 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
       status: "pass",
       detail: `Match score ${candidate.matchScore} meets the ${settings.minScoreToContact} contact floor.`,
     });
+  }
+
+  // Role tenure — skip people who just started; prefer 6–12 months in role.
+  const tenure = assessRoleTenure(candidate);
+  if (tenure.timing === "too_early") {
+    blockers.push(tenure.detail);
+    checks.push({ rule: "Role tenure", status: "block", detail: tenure.detail });
+  } else if (tenure.timing === "preferred") {
+    checks.push({ rule: "Role tenure", status: "pass", detail: tenure.detail });
+  } else if (tenure.timing === "established") {
+    warnings.push(tenure.detail);
+    checks.push({ rule: "Role tenure", status: "warn", detail: tenure.detail });
+  } else {
+    warnings.push(tenure.detail);
+    checks.push({ rule: "Role tenure", status: "warn", detail: tenure.detail });
   }
 
   // Rule 3 — personalize every message

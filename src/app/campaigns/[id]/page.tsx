@@ -72,6 +72,7 @@ import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import { isContactReadyByTenure } from "@/lib/sourcing/role-tenure";
 import type {
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
@@ -107,6 +108,23 @@ function mergeSourcingFeedbackReceipts(
   }
   return [...merged.values()];
 }
+
+function summarizeSourcingFeedback(receipts: SourcingFeedbackReceipt[]): string {
+  if (receipts.length === 0) return "";
+  const byPlatform = new Map<string, number>();
+  let candidates = 0;
+  for (const receipt of receipts) {
+    candidates += receipt.candidateCount;
+    byPlatform.set(receipt.platform, (byPlatform.get(receipt.platform) ?? 0) + 1);
+  }
+  const platforms = [...byPlatform.entries()]
+    .map(([platform, count]) => (count === 1 ? platform : `${platform} ×${count}`))
+    .join(", ");
+  const searchLabel = receipts.length === 1 ? "1 search" : `${receipts.length} searches`;
+  const candLabel =
+    candidates === 1 ? "1 real candidate" : `${candidates} real candidates`;
+  return `${platforms}: ${candLabel} from ${searchLabel}`;
+}
 import {
   ArrowLeft,
   Banknote,
@@ -114,6 +132,7 @@ import {
   CalendarCheck,
   CalendarPlus,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Compass,
   Copy,
@@ -377,6 +396,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   }>({ campaignId: id, receipts: [] });
   const feedbackReceipts = feedbackState.campaignId === id ? feedbackState.receipts : [];
   const [feedbackSubmitting, setFeedbackSubmitting] = React.useState<Set<string>>(new Set());
+  const [feedbackExpanded, setFeedbackExpanded] = React.useState(false);
   const [sourcing, setSourcing] = React.useState(false);
   const [enrichingAll, setEnrichingAll] = React.useState(false);
   // The just-sourced batch, staged for the streaming reveal below — purely a
@@ -446,7 +466,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const jd = c.jobAnalysis;
   const strategy = c.sourcingStrategy;
   const health = campaignHealth(c);
-  const nextAction = nextActionForCampaign(c);
+  const tenureDeferred = candidates.filter((cand) => !isContactReadyByTenure(cand));
+  const contactReadyCount = candidates.filter((cand) => isContactReadyByTenure(cand)).length;
+  const nextAction = (() => {
+    const pendingDrafts = outreach.filter((mm) => mm.status === "Needs Approval").length;
+    if (c.status !== "Paused" && pendingDrafts > 0) {
+      return `Approve ${pendingDrafts} draft${pendingDrafts === 1 ? "" : "s"} to contact ${contactReadyCount} ready candidate${contactReadyCount === 1 ? "" : "s"}`;
+    }
+    if (tenureDeferred.length > 0 && pendingDrafts === 0 && candidates.length > 0) {
+      return `Hold ${tenureDeferred.length} early-tenure profile${tenureDeferred.length === 1 ? "" : "s"} · draft outreach for 6–12 mo in role`;
+    }
+    return nextActionForCampaign(c);
+  })();
   const scores = candidates.map((cand) => cand.matchScore);
   const campaignReplies = allReplies.filter((r) => r.campaignId === c.id);
   const campaignBookings = allBookings.filter((b) => b.campaignId === c.id);
@@ -567,7 +598,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
     const newlyAccepted = res.accepted.filter((cand) => !beforeIds.has(cand.id));
     let drafted = 0;
+    let deferredTenure = 0;
     for (const cand of newlyAccepted.slice(0, 8)) {
+      if (!isContactReadyByTenure(cand)) {
+        deferredTenure += 1;
+        continue;
+      }
       const msg = actions.generateOutreachFor(cand.id, undefined, "LinkedIn");
       if (msg) drafted += 1;
     }
@@ -587,12 +623,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       title: `Sourced ${res.accepted.length} via ${preferred ?? res.source}${isLive ? " (live)" : ""}`,
       description:
         drafted > 0
-          ? `${drafted} LinkedIn outreach draft${drafted === 1 ? "" : "s"} ready for review — ready to reach out.`
-          : res.skipped.length
-            ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-            : isLive
-              ? "Live LinkedIn/web results are in the pipeline."
-              : "All matched candidates accepted into the pipeline.",
+          ? `${drafted} LinkedIn draft${drafted === 1 ? "" : "s"} ready to review and contact${
+              deferredTenure > 0
+                ? ` · ${deferredTenure} deferred (<${6} mo in role)`
+                : ""
+            }.`
+          : deferredTenure > 0
+            ? `${deferredTenure} held back — wait until 6–12 months in role before outreach.`
+            : res.skipped.length
+              ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
+              : isLive
+                ? "Live LinkedIn/web results are in the pipeline."
+                : "All matched candidates accepted into the pipeline.",
       variant: "success",
     });
     if (drafted > 0) setTab("outreach");
@@ -660,11 +702,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
           : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
       description:
-        res.mode === "cloud"
-          ? "Real provider search and cloud-assisted drafts are ready for human review."
-          : "Real GitHub results and locally generated drafts are ready for human review. No cloud model ran.",
+        "Contact-ready drafts are queued for review — open Outreach to approve and reach out. People under 6 months in role are held back.",
       variant: "success",
     });
+    setTab("outreach");
   };
 
   const handleSourcingFeedback = async (
@@ -701,6 +742,35 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       title: "Sourcing feedback saved",
       description: "This aggregate result can inform a future human-reviewed sourcing lesson.",
       variant: "success",
+    });
+  };
+
+  const handleBulkSourcingFeedback = async (verdict: SourcingFeedbackVerdict) => {
+    if (feedbackReceipts.length === 0) return;
+    const pending = [...feedbackReceipts];
+    setFeedbackSubmitting(new Set(pending.map((r) => r.receiptId)));
+    const savedIds = new Set<string>();
+    for (const receipt of pending) {
+      const recorded = await actions.recordSourcingFeedback(receipt.receiptId, verdict);
+      if (recorded) savedIds.add(receipt.receiptId);
+    }
+    setFeedbackSubmitting(new Set());
+    setFeedbackState((current) =>
+      current.campaignId === c.id
+        ? {
+            campaignId: c.id,
+            receipts: current.receipts.filter((item) => !savedIds.has(item.receiptId)),
+          }
+        : current,
+    );
+    const saved = savedIds.size;
+    toast({
+      title: saved > 0 ? "Role learning saved" : "Feedback was not saved",
+      description:
+        saved > 0
+          ? `${saved} search outcome${saved === 1 ? "" : "s"} recorded.`
+          : "The learning receipts are unavailable or were already reviewed.",
+      variant: saved > 0 ? "success" : "error",
     });
   };
 
@@ -1008,55 +1078,103 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {feedbackReceipts.length > 0 && (
         <Card className="mb-6" aria-label="Sourcing lesson feedback">
-          <CardHeader>
-            <Eyebrow>Private role learning</Eyebrow>
-            <CardTitle className="mt-1">Were these real searches useful?</CardTitle>
+          <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <Eyebrow>Private role learning</Eyebrow>
+              <CardTitle className="mt-1 text-base sm:text-lg">
+                {summarizeSourcingFeedback(feedbackReceipts)} — useful?
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted">
+                Aggregate query outcomes only · never sends profiles to Graphify
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("useful")}
+              >
+                Useful
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("dead_end")}
+              >
+                Dead end
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("corrected")}
+              >
+                Needs correction
+              </Button>
+            </div>
           </CardHeader>
-          <CardBody className="space-y-3">
-            <p className="text-sm text-muted">
-              Feedback stores aggregate query outcomes only. It never sends candidate profiles to Graphify,
-              and no lesson can go live without a separate admin review.
-            </p>
-            {feedbackReceipts.map((receipt) => {
-              const submitting = feedbackSubmitting.has(receipt.receiptId);
-              return (
-                <div
-                  key={receipt.receiptId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3"
-                >
-                  <p className="text-sm font-medium text-ink">
-                    {receipt.platform}: {receipt.candidateCount} real candidate{receipt.candidateCount === 1 ? "" : "s"}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={submitting}
-                      onClick={() => void handleSourcingFeedback(receipt, "useful")}
-                    >
-                      Useful
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={submitting}
-                      onClick={() => void handleSourcingFeedback(receipt, "dead_end")}
-                    >
-                      Dead end
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={submitting}
-                      onClick={() => void handleSourcingFeedback(receipt, "corrected")}
-                    >
-                      Needs correction
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </CardBody>
+          {feedbackReceipts.length > 1 && (
+            <CardBody className="pt-0">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs font-medium text-ink-soft hover:text-ink"
+                aria-expanded={feedbackExpanded}
+                onClick={() => setFeedbackExpanded((v) => !v)}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform ${feedbackExpanded ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+                {feedbackExpanded ? "Hide per-search rows" : `Review ${feedbackReceipts.length} searches`}
+              </button>
+              {feedbackExpanded && (
+                <ul className="mt-3 space-y-2">
+                  {feedbackReceipts.map((receipt) => {
+                    const submitting = feedbackSubmitting.has(receipt.receiptId);
+                    return (
+                      <li
+                        key={receipt.receiptId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line/80 px-3 py-2 text-sm"
+                      >
+                        <span className="text-ink">
+                          {receipt.platform}: {receipt.candidateCount} candidate
+                          {receipt.candidateCount === 1 ? "" : "s"}
+                        </span>
+                        <div className="flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "useful")}
+                          >
+                            Useful
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "dead_end")}
+                          >
+                            Dead end
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "corrected")}
+                          >
+                            Fix
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          )}
         </Card>
       )}
 

@@ -64,6 +64,7 @@ import {
 } from "./sourcing/sourcing-agent-contract";
 import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
 import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
+import { isContactReadyByTenure } from "./sourcing/role-tenure";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import { findHeyReachMcpServer } from "./heyreach-mcp";
 import {
@@ -1759,9 +1760,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ).accepted;
         if (unique.length === 0) return prev;
         const dtoById = new Map(candidates.map((item) => [item.candidate.id, item.dto]));
-        const messages = unique.map((candidate) => {
+        const contactReady = unique.filter((candidate) => isContactReadyByTenure(candidate));
+        const preferredChannel =
+          latestCampaign.sourcingStrategy.primaryPlatforms.find((p) => p === "LinkedIn") != null
+            ? ("LinkedIn" as const)
+            : ("Email" as const);
+        const messages = contactReady.map((candidate) => {
           const dto = dtoById.get(candidate.id)!;
-          const generated = dto.draftSubject && dto.draftBody
+          const channel =
+            preferredChannel === "LinkedIn" && candidate.linkedinUrl.trim()
+              ? ("LinkedIn" as const)
+              : ("Email" as const);
+          const generated = dto.draftSubject && dto.draftBody && channel === "Email"
             ? {
                 subject: dto.draftSubject,
                 body: dto.draftBody,
@@ -1772,7 +1782,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 candidate,
                 latestCampaign,
                 finalTone,
-                "Email",
+                channel,
                 1,
                 undefined,
                 latestCampaign.jobAnalysis.language ?? prev.settings.defaultLanguage,
@@ -1899,6 +1909,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      if (!isContactReadyByTenure(candidate)) return null;
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills); // learned default tone
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
@@ -1941,6 +1952,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      if (!isContactReadyByTenure(candidate)) return null;
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
