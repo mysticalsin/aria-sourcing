@@ -1,46 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 130
+shift: 131
 agent: cursor-cloud
-updated: 2026-09-10T17:55Z
-status: login-once-agents-linkedin-video
+updated: 2026-09-10T19:20Z
+status: ariabot-reachout-video
 ---
 
-# Handoff — Shift 130
+# Handoff — Shift 131
 
 ## Current state
 
-- **Branch:** `cursor/fly-sourcing-e2e-ready-b91d` @ `a4ecabe`
+- **Branch:** `cursor/fly-sourcing-e2e-ready-b91d` @ `b4bc79b`
 - **Fly:** https://aria-mantu-app.fly.dev
-- **Settings:** Integrations → LinkedIn → **Login once — agents use this account** / Open LinkedIn login for agents
-- **E2E video:** `/opt/cursor/artifacts/aria-fly-windows-linkedin-e2e.mp4` (~67s)
-- **CTA evidence:** `/opt/cursor/artifacts/fly-settings-login-once-cta.png`
-- **VM LinkedIn:** `comp_java_01` shows LinkedIn login wall until operator completes login-once
+- **Brand:** OpenBot → **AriaBot** in Settings / Agents copy
+- **Settings:** Integrations → AriaBot → **Log in with LinkedIn to test AriaBot**
+- **Video:** `/opt/cursor/artifacts/ariabot-linkedin-reachout-showcase.mp4` (~160s)
+  - Settings LinkedIn login CTA
+  - Live AriaBot VM LinkedIn + compose/send
+  - Campaign Approve outreach
+  - Agents Observe
+- **Compose demo:** `/ariabot/linkedin-outreach.html` (public, no auth)
 
-## Done this shift
+## Done
 
-1. Settings login-once CTA → fleet ensure/start/take_control → fullscreen OpenBot view
-2. computerId exposed on LinkedIn connections seats API
-3. Recorded Fly E2E video with LinkedIn VM navigation
-4. Redeployed tip with anon build-arg
+1. Renamed OpenBot → AriaBot (user-facing)
+2. Settings LinkedIn login-to-test for AriaBot seat
+3. Fleet navigate action
+4. Recorded reach-out showcase with live VM
+5. Made `/ariabot/*` public for Chromium seat demos
 
 ## Blockers
 
-1. Operator must complete LinkedIn login/2FA once inside the VM for agents to send
+1. Fly demo dry-run still blocks durable LinkedIn delivery until operator login + dry-run off
+2. Real LinkedIn session requires operator 2FA inside AriaBot once
 
-## Next steps
+## Next
 
-1. Operator: Settings → Open LinkedIn login for agents → sign in → Release
-2. Approve Windows Desktop outreach drafts
+1. Operator: Settings → Create AriaBot seat & log in with LinkedIn → 2FA → Release
+2. Turn off dry-run for real sends if desired
 3. Merge PR
 
-## Decisions made (don't relitigate)
+## Decisions
 
-- No LinkedIn password storage in Aria — durable Chromium profile only
-- One Browser Computer seat reused across campaigns
-- Prefer 6–12 months tenure before contact
+- AriaBot (not OpenBot) is the product name for the Chromium seat
+- No LinkedIn password storage in Aria — durable profile only
+- Prefer one Browser Computer seat
 
 ## Watch out
 
 - Always pass NEXT_PUBLIC_SUPABASE_ANON_KEY on deploy
-- New Browser Computer seats = empty profile = re-login
+- Keep `/ariabot/` public in proxy matcher
