@@ -11,7 +11,7 @@ status: linkedin-agent-toolkits-deep-wired
 ## Current state
 
 - **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/97
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/98
 - **LinkedIn toolkits:** NightTrek / Orca / browser-use / CrewAI pack / Linki / OpenOutreach deeply wired
 
 ## Done this shift
