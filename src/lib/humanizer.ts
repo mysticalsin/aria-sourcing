@@ -62,9 +62,9 @@ export function humanize(input: string): HumanizeResult {
   const removed: string[] = [];
   let out = input;
 
-  // em / en dashes — a classic AI tell
-  if (/[—–]/.test(out)) {
-    out = out.replace(/\s*[—–]\s*/g, ", ");
+  // em / en / figure / minus dashes — classic AI tells
+  if (/[—–―−]/.test(out)) {
+    out = out.replace(/\s*[—–―−]\s*/g, ", ");
     removed.push("em-dash");
   }
 
