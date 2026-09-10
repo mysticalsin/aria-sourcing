@@ -56,8 +56,10 @@ function LoginInner() {
   const reducedMotion = usePrefersReducedMotion();
   const [videoPausedByUser, setVideoPausedByUser] = React.useState(false);
   const [showEmail, setShowEmail] = React.useState(true);
+  const demoPassword =
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEMO_ADMIN_PASSWORD) || "admin";
   const [email, setEmail] = React.useState(demoLoginEnabled ? "admin" : "");
-  const [password, setPassword] = React.useState(demoLoginEnabled ? "admin" : "");
+  const [password, setPassword] = React.useState(demoLoginEnabled ? demoPassword : "");
   const [authError, setAuthError] = React.useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const emailRef = React.useRef<HTMLInputElement>(null);
@@ -93,16 +95,15 @@ function LoginInner() {
     if (err) setLoading(false);
   };
 
-  // One-click demo sign-in: admin/admin is resolved SERVER-SIDE. This path is
-  // available only when NEXT_PUBLIC_ENABLE_DEMO_LOGIN explicitly marks the
-  // deployment as a synthetic public demo.
-  const runDemoLogin = async () => {
+  // One-click demo sign-in: admin + DEMO_ADMIN_PASSWORD is resolved SERVER-SIDE.
+  // Available only when NEXT_PUBLIC_ENABLE_DEMO_LOGIN marks a synthetic public demo.
+  const runDemoLogin = async (pwd: string) => {
     setLoading(true);
     setAuthError(null);
     const res = await fetch("/api/auth/demo-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "admin", password: "admin" }),
+      body: JSON.stringify({ username: "admin", password: pwd }),
     });
     if (res.ok) {
       window.location.href = safeRedirect(redirect);
@@ -116,12 +117,12 @@ function LoginInner() {
     e.preventDefault();
     setLoading(true);
     setAuthError(null);
-    if (email.trim() === "admin" && password === "admin" && demoLoginEnabled) {
-      await runDemoLogin();
+    if (email.trim() === "admin" && demoLoginEnabled) {
+      await runDemoLogin(password);
       return;
     }
     if (!supabaseEnabled) {
-      setAuthError("Use admin / admin to enter the demo.");
+      setAuthError("Use the demo admin credentials to enter.");
       setLoading(false);
       return;
     }
@@ -142,9 +143,8 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    // Explicit public demo: one-click admin/admin sign-in. runDemoLogin sets the
-    // demo-backed session and then redirects.
-    if (demoLoginEnabled) void runDemoLogin();
+    // Explicit public demo: one-click sign-in with the configured demo password.
+    if (demoLoginEnabled) void runDemoLogin(password || demoPassword);
     else if (supabaseEnabled && azureLoginEnabled) void signInWithMicrosoft();
     else if (supabaseEnabled) {
       setShowEmail(true);

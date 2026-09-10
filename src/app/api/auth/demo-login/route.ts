@@ -14,13 +14,13 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { demoAuthConfigured, mintDemoToken } from "@/lib/demo-auth";
 
 /**
- * One-click demo login for the `admin` / `admin` showcase shortcut.
+ * One-click demo login for the `admin` showcase shortcut.
  *
- *  - LIVE mode (Supabase): resolves admin/admin to the seeded account and signs in
- *    SERVER-SIDE, so the real account password never reaches the client bundle.
- *  - OPEN demo (no Supabase, NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true): mints a short-lived,
- *    HMAC-signed httpOnly cookie so the chat route can gate the env-resident LLM key
- *    behind this login instead of serving it to anonymous callers.
+ *  - Password is DEMO_ADMIN_PASSWORD from env (local default "admin" when unset).
+ *  - LIVE mode (Supabase): signs in SERVER-SIDE so the real password never
+ *    reaches the client bundle as a hard-coded constant.
+ *  - OPEN demo (no Supabase, NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true): mints a
+ *    short-lived HMAC-signed httpOnly cookie.
  *
  * Hard-disabled in production unless this is a deliberately public demo instance.
  */
@@ -36,7 +36,14 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json().catch(() => ({}))) as { username?: string; password?: string };
-  if (body.username !== "admin" || body.password !== "admin") {
+  // Password comes from DEMO_ADMIN_PASSWORD (never hard-code in source).
+  // Local/dev falls back to "admin" only when the env var is unset.
+  const demoPassword =
+    process.env.DEMO_ADMIN_PASSWORD ?? (isProduction ? null : "admin");
+  if (!demoPassword) {
+    return NextResponse.json({ ok: false, error: "Demo login is not configured." }, { status: 500 });
+  }
+  if (body.username !== "admin" || body.password !== demoPassword) {
     return NextResponse.json({ ok: false, error: "Invalid demo credentials." }, { status: 401 });
   }
 
@@ -58,15 +65,6 @@ export async function POST(req: Request) {
       maxAge: 12 * 60 * 60,
     });
     return NextResponse.json({ ok: true });
-  }
-
-  // LIVE mode (Supabase): the seeded account's real password MUST be set explicitly in
-  // a public production demo — never fall back to the well-known local default (it would
-  // let anyone sign in to the seeded account directly). Local/dev keeps the convenience default.
-  const demoPassword =
-    process.env.DEMO_ADMIN_PASSWORD ?? (isProduction ? null : "admindemo123");
-  if (!demoPassword) {
-    return NextResponse.json({ ok: false, error: "Demo login is not configured." }, { status: 500 });
   }
 
   const cookieStore = await cookies();

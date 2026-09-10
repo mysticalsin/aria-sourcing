@@ -7,6 +7,7 @@ import fs from "node:fs";
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3060";
+const DEMO_PASSWORD = process.env.DEMO_ADMIN_PASSWORD || "admin";
 const VIEW =
   process.env.OPENBOT_VIEW_URL ||
   "https://aria-mantu-computers.fly.dev/view/comp_java_01?fs=1";
@@ -72,14 +73,14 @@ async function main() {
   if (await cta.count()) {
     await cta.first().click();
   } else {
-    await page.evaluate(async () => {
+    await page.evaluate(async (demoPassword) => {
       await fetch("/api/auth/demo-login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ username: "admin", password: "admin" }),
+        body: JSON.stringify({ username: "admin", password: demoPassword }),
       });
-    });
+    }, DEMO_PASSWORD);
   }
   await page.waitForTimeout(2000);
 

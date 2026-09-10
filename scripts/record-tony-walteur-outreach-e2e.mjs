@@ -19,6 +19,7 @@ const COMPUTERS =
   process.env.OPENBOT_PUBLIC_BASE || "https://aria-mantu-computers.fly.dev";
 const BOT = process.env.OPENBOT_BOT_ID || "comp_java_01";
 const OUT = process.env.VIDEO_OUT || "/opt/cursor/artifacts";
+const DEMO_PASSWORD = process.env.DEMO_ADMIN_PASSWORD || "admin";
 fs.mkdirSync(OUT, { recursive: true });
 
 const dwell = (page, ms) => page.waitForTimeout(ms);
@@ -191,14 +192,14 @@ async function main() {
   const cta = page.getByRole("button", { name: /enter the (demo )?console/i });
   if (await cta.count()) await cta.first().click();
   else {
-    await page.evaluate(async () => {
+    await page.evaluate(async (demoPassword) => {
       await fetch("/api/auth/demo-login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ username: "admin", password: "admin" }),
+        body: JSON.stringify({ username: "admin", password: demoPassword }),
       });
-    });
+    }, DEMO_PASSWORD);
   }
   await dwell(page, 3000);
 
