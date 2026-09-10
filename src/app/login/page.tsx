@@ -97,21 +97,22 @@ function LoginInner() {
     if (err) setLoading(false);
   };
 
-  // One-click demo sign-in: admin + DEMO_ADMIN_PASSWORD is resolved SERVER-SIDE.
+  // One-click demo sign-in: configured username + password resolved SERVER-SIDE.
   // Available only when NEXT_PUBLIC_ENABLE_DEMO_LOGIN marks a synthetic public demo.
-  const runDemoLogin = async (pwd: string) => {
+  const runDemoLogin = async (pwd: string, user = demoUsername) => {
     setLoading(true);
     setAuthError(null);
     const res = await fetch("/api/auth/demo-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "admin", password: pwd }),
+      body: JSON.stringify({ username: user, password: pwd }),
     });
     if (res.ok) {
       window.location.href = safeRedirect(redirect);
       return;
     }
-    setAuthError("Demo login is unavailable.");
+    const detail = await res.json().catch(() => null) as { error?: string } | null;
+    setAuthError(detail?.error || "Demo login is unavailable.");
     setLoading(false);
   };
 
@@ -123,8 +124,20 @@ function LoginInner() {
       demoLoginEnabled &&
       email.trim().toLowerCase() === String(demoUsername).trim().toLowerCase()
     ) {
-      await runDemoLogin(password);
+      await runDemoLogin(password, email.trim());
       return;
+    }
+    // Also allow typing the configured demo email even if build-time prefill lagged.
+    if (demoLoginEnabled && email.includes("@")) {
+      const res = await fetch("/api/auth/demo-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: email.trim(), password }),
+      });
+      if (res.ok) {
+        window.location.href = safeRedirect(redirect);
+        return;
+      }
     }
     if (!supabaseEnabled) {
       setAuthError("Use the demo admin credentials to enter.");
@@ -148,8 +161,8 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    // Explicit public demo: one-click sign-in with the configured demo password.
-    if (demoLoginEnabled) void runDemoLogin(password || demoPassword);
+    // Explicit public demo: one-click sign-in with the configured demo identity.
+    if (demoLoginEnabled) void runDemoLogin(password || demoPassword, email.trim() || demoUsername);
     else if (supabaseEnabled && azureLoginEnabled) void signInWithMicrosoft();
     else if (supabaseEnabled) {
       setShowEmail(true);
