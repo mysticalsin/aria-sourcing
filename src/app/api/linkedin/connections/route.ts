@@ -54,7 +54,7 @@ async function linkedInProvidersForWorkspace(workspaceId?: string | null) {
 
 /**
  * List LinkedIn messaging seats + readiness. POST ensure_connect creates/picks
- * a Browser Computer (OpenBot), assisted-manual, or vendor seat, registers inbound route_key, optionally goes live.
+ * a Browser Computer (AriaBot), assisted-manual, or vendor seat, registers inbound route_key, optionally goes live.
  * Never asks for LinkedIn passwords or cookies.
  */
 export async function GET(req: NextRequest) {
@@ -305,7 +305,7 @@ async function ensureConnect(
       {
         ok: false,
         error:
-          "OpenBot computer supervisor is not configured. Set Computer Supervisor URL + token in Settings → LinkedIn (or COMPUTER_SUPERVISOR_URL / COMPUTER_SUPERVISOR_TOKEN).",
+          "AriaBot computer supervisor is not configured. Set Computer Supervisor URL + token in Settings → LinkedIn (or COMPUTER_SUPERVISOR_URL / COMPUTER_SUPERVISOR_TOKEN).",
       },
       { status: 503 },
     );
@@ -416,7 +416,7 @@ async function ensureConnect(
     routeKey: route.route_key,
     detail:
       provider === "LinkedIn Browser Computer"
-        ? "OpenBot Browser Computer seat live. Log into LinkedIn via Fleet → Computers → Observe / Take control, then Automatic sends run in the sandbox/VM."
+        ? "AriaBot Browser Computer seat live. Log into LinkedIn via Fleet → Computers → Observe / Take control, then Automatic sends run in the sandbox/VM."
         : provider === "LinkedIn Assisted Manual"
           ? "Assisted-manual LinkedIn connected. Draft → copy/paste in LinkedIn → Confirm in Aria."
           : "Vendor LinkedIn seat live. Outbound uses LINKEDIN_VENDOR_* APIs.",

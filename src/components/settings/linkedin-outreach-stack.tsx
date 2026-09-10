@@ -58,7 +58,7 @@ function DeliveryModeToggle() {
           <span>
             <span className="block text-sm font-semibold text-ink">Automatic outreach</span>
             <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-              Agents queue LinkedIn sends through an OpenBot Browser Computer sandbox/VM after approval — no paste/confirm per message.
+              Agents queue LinkedIn sends through an AriaBot Browser Computer sandbox/VM after approval — no paste/confirm per message.
             </span>
           </span>
         </button>
@@ -120,7 +120,7 @@ function LinkedInOutreachStackInner() {
       id={LINKEDIN_OUTREACH_STACK_ID}
       eyebrow="LinkedIn stack"
       title="Identity & outreach"
-      description="OpenBot Browser Computer is the Automatic path (sandbox/VM send). OIDC identity and Vendor API are optional. Optional HeyReach MCP. Delivery defaults to Automatic; Manual is an explicit toggle."
+      description="AriaBot Browser Computer is the Automatic path (sandbox/VM send). OIDC identity and Vendor API are optional. Optional HeyReach MCP. Delivery defaults to Automatic; Manual is an explicit toggle."
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
@@ -132,7 +132,7 @@ function LinkedInOutreachStackInner() {
           <span className="font-medium text-ink-soft">Open LinkedIn login for agents</span> — the VM
           keeps that session for Automatic sends.
           {deliveryMode === "automatic"
-            ? " Automatic mode queues OpenBot Browser Computer sends after approval (Postgres contact lease, DNC, and rate caps still apply)."
+            ? " Automatic mode queues AriaBot Browser Computer sends after approval (Postgres contact lease, DNC, and rate caps still apply)."
             : " Manual mode keeps assisted paste/confirm for each send."}
         </p>
       }

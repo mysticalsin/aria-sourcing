@@ -55,7 +55,7 @@ type Step = {
 };
 
 /**
- * Plug-and-play path for LinkedIn Browser Computer (OpenBot) happy path.
+ * Plug-and-play path for LinkedIn Browser Computer (AriaBot) happy path.
  * Dry-run stays on until Approval & Compliance flips it — nothing contacts candidates until then.
  */
 export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
@@ -168,7 +168,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-ink">LinkedIn OpenBot — setup path</p>
+            <p className="text-sm font-semibold text-ink">LinkedIn AriaBot — setup path</p>
             <p className="mt-1 text-xs text-muted">
               Connect email → Pick LLM → Create campaign → Attach agent → Take control login → Approve →
               Send. Dry-run is currently{" "}

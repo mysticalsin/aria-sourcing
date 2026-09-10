@@ -145,11 +145,13 @@ const BodySchema = z.object({
     "take_control",
     "release_control",
     "request_help",
+    "navigate",
   ]),
   computerId: z.string().min(1).max(120),
   seatId: z.string().min(1).max(120).optional(),
   campaignId: z.string().min(1).max(120).optional(),
   detail: z.string().max(500).optional(),
+  url: z.string().url().max(2_000).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -210,6 +212,32 @@ export async function POST(req: NextRequest) {
           body.detail ?? "Operator requested help",
         );
         break;
+      case "navigate": {
+        if (!body.url) {
+          return NextResponse.json({ error: "url required for navigate" }, { status: 400 });
+        }
+        // Ensure the seat exists, then enqueue a warmup_nav job (AriaBot Chromium).
+        defaultComputerSupervisor.ensureComputer({
+          workspaceId: workspaceId ?? "__local__",
+          seatId: (body.seatId ?? body.computerId).trim(),
+          computerId: body.computerId,
+          campaignId: body.campaignId,
+        });
+        await defaultComputerSupervisor.start(body.computerId, campaignOpts);
+        // If a human currently holds the mutex, release so AriaBot can navigate.
+        const current = defaultComputerSupervisor.get(body.computerId);
+        if (current?.control === "human") {
+          await defaultComputerSupervisor.releaseControl(body.computerId, campaignOpts);
+        }
+        await defaultComputerSupervisor.enqueueJob({
+          computerId: body.computerId,
+          kind: "warmup_nav",
+          payload: { url: body.url },
+        });
+        rec = defaultComputerSupervisor.get(body.computerId);
+        if (!rec) throw new Error("computer-not-found");
+        break;
+      }
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }

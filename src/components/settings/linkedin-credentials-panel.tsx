@@ -13,7 +13,7 @@ import {
 
 /**
  * Plug-and-play LinkedIn credential binding for Aria Settings.
- * Primary Automatic path = OpenBot Browser Computer (sandbox/VM supervisor).
+ * Primary Automatic path = AriaBot Browser Computer (sandbox/VM supervisor).
  * Vendor API and LinkedIn OIDC are optional / advanced — not required to send.
  */
 export function LinkedInCredentialsPanel() {
@@ -50,7 +50,7 @@ export function LinkedInCredentialsPanel() {
     return (
       <div className="border-b border-line/60 px-6 py-5 sm:px-8">
         <p className="text-xs text-muted">
-          Admins attach the OpenBot computer-supervisor URL and token in Aria Settings. LinkedIn
+          Admins attach the AriaBot computer-supervisor URL and token in Aria Settings. LinkedIn
           OIDC / Vendor API are optional.
         </p>
       </div>
@@ -61,11 +61,11 @@ export function LinkedInCredentialsPanel() {
     <div className="space-y-5 border-b border-line/60 px-6 py-5 sm:px-8">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-          OpenBot Browser Computer (primary)
+          AriaBot Browser Computer (primary)
         </p>
         <p className="mt-1 text-sm text-ink">
           Automatic LinkedIn outreach runs inside the{" "}
-          <span className="font-medium">sandbox / VM OpenBot creates</span>. Point Aria at your computer
+          <span className="font-medium">sandbox / VM AriaBot creates</span>. Point Aria at your computer
           supervisor, then use <span className="font-medium">Login once — agents use this account</span>{" "}
           below to sign into LinkedIn inside that VM. Agents reuse the durable Chromium session — Aria never
           stores your LinkedIn password.
@@ -73,10 +73,10 @@ export function LinkedInCredentialsPanel() {
       </div>
 
       <div className="rounded-xl border border-electric/25 bg-electric/5 px-3 py-3 text-xs text-muted">
-        <p className="font-medium text-ink-soft">How to connect OpenBot</p>
+        <p className="font-medium text-ink-soft">How to connect AriaBot</p>
         <ol className="mt-2 list-decimal space-y-1 pl-4">
           <li>
-            Run or open your OpenBot computer supervisor (isolated Chromium seats). Copy its base
+            Run or open your AriaBot computer supervisor (isolated Chromium seats). Copy its base
             URL and bearer token.
           </li>
           <li>
@@ -95,21 +95,21 @@ export function LinkedInCredentialsPanel() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
-          label="1. OpenBot supervisor URL"
+          label="1. AriaBot supervisor URL"
           htmlFor="computerSupervisorUrl"
-          hint="Base URL of the OpenBot computer supervisor that spawns sandbox/VM Chromium seats."
+          hint="Base URL of the AriaBot computer supervisor that spawns sandbox/VM Chromium seats."
         >
           <Input
             id="computerSupervisorUrl"
             value={settings.computerSupervisorUrl ?? ""}
             onChange={(e) => actions.updateSettings({ computerSupervisorUrl: e.target.value })}
             onBlur={(e) => patch({ computerSupervisorUrl: e.target.value })}
-            placeholder="https://computers.your-openbot-host.example"
+            placeholder="https://computers.your-ariabot-host.example"
             autoComplete="off"
           />
         </Field>
         <Field
-          label="1. OpenBot supervisor token"
+          label="1. AriaBot supervisor token"
           htmlFor="computerSupervisorTokenKeyId"
           hint={`API keys provider “${COMPUTER_SUPERVISOR_VAULT_PROVIDER}”.`}
         >
@@ -124,11 +124,11 @@ export function LinkedInCredentialsPanel() {
 
       <details className="rounded-xl border border-line/70 bg-surface px-3 py-3 text-xs text-muted">
         <summary className="cursor-pointer font-medium text-ink-soft">
-          Advanced — optional LinkedIn OIDC / Vendor API (not used for OpenBot send)
+          Advanced — optional LinkedIn OIDC / Vendor API (not used for AriaBot send)
         </summary>
         <p className="mt-2">
           Skip these unless you still need Sign-in-with-LinkedIn identity badges or a contracted
-          vendor messaging API. OpenBot send does not call LinkedIn OIDC or Vendor endpoints.
+          vendor messaging API. AriaBot send does not call LinkedIn OIDC or Vendor endpoints.
         </p>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <Field
@@ -161,7 +161,7 @@ export function LinkedInCredentialsPanel() {
           <Field
             label="Vendor send URL (optional)"
             htmlFor="linkedinVendorApiUrl"
-            hint="Legacy contracted messaging vendor. Prefer OpenBot Browser Computer."
+            hint="Legacy contracted messaging vendor. Prefer AriaBot Browser Computer."
           >
             <Input
               id="linkedinVendorApiUrl"
@@ -191,7 +191,7 @@ export function LinkedInCredentialsPanel() {
         <li className="flex items-start gap-2 rounded-xl border border-line/70 bg-surface px-3 py-2">
           <Monitor className="mt-0.5 h-3.5 w-3.5 shrink-0 text-electric" aria-hidden />
           <span>
-            <span className="font-medium text-ink-soft">Primary:</span> OpenBot supervisor URL + token
+            <span className="font-medium text-ink-soft">Primary:</span> AriaBot supervisor URL + token
             so Aria can dispatch sends into the sandbox/VM.
           </span>
         </li>
@@ -205,7 +205,7 @@ export function LinkedInCredentialsPanel() {
         <li className="flex items-start gap-2 rounded-xl border border-line/70 bg-surface px-3 py-2">
           <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-electric" aria-hidden />
           <span>
-            Login happens inside the OpenBot seat (Fleet Observe), not via LinkedIn OIDC for send.
+            Login happens inside the AriaBot seat (Fleet Observe), not via LinkedIn OIDC for send.
           </span>
         </li>
       </ul>

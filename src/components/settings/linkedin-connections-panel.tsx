@@ -264,7 +264,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       setConnectingBrowser(true);
       try {
         const seat = await actions.addSeat({
-          name: "OpenBot LinkedIn Computer",
+          name: "AriaBot LinkedIn Computer",
           operatorEmail: label.includes("@") ? label : "operator@demo.local",
           provider: "LinkedIn Browser Computer",
         });
@@ -273,13 +273,13 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           return;
         }
         actions.updateSeat(seat.id, {
-          connectedAccount: label.trim() || "OpenBot sandbox",
+          connectedAccount: label.trim() || "AriaBot sandbox",
           computerId: seat.computerId ?? `comp_demo_${seat.id}`,
           linkedinDeliveryBackend: "browser-computer",
         });
         const live = await actions.toggleSeatLive(seat.id);
         toast({
-          title: live.ok ? "OpenBot Browser Computer ready" : "Seat created",
+          title: live.ok ? "AriaBot Browser Computer ready" : "Seat created",
           description: live.ok
             ? "Open Fleet → Computers → Observe / Take control to log into LinkedIn inside the sandbox, then Automatic sends use this seat."
             : live.reason,
@@ -315,11 +315,11 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         return;
       }
       if (!json?.ok) {
-        toast({ title: "OpenBot seat failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
+        toast({ title: "AriaBot seat failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
         return;
       }
       toast({
-        title: "OpenBot Browser Computer ready",
+        title: "AriaBot Browser Computer ready",
         description: json.detail ?? "Log into LinkedIn via Fleet → Computers → Observe / Take control.",
         variant: "success",
       });
@@ -332,7 +332,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   }
 
   /**
-   * Login once for agents: ensure OpenBot Browser Computer seat → start VM →
+   * Login once for agents: ensure AriaBot Browser Computer seat → start VM →
    * Take control → open fullscreen sandbox on LinkedIn. Session persists in the
    * Chromium profile so later Automatic sends reuse this account.
    */
@@ -364,8 +364,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       const seat = browserSeats[0];
       if (!seat) {
         toast({
-          title: "No OpenBot seat",
-          description: "Create an OpenBot Browser Computer seat first, then try again.",
+          title: "No AriaBot seat",
+          description: "Create an AriaBot Browser Computer seat first, then try again.",
           variant: "error",
         });
         return;
@@ -380,7 +380,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         actions.updateSeat(seat.id, {
           computerId,
           linkedinDeliveryBackend: "browser-computer",
-          connectedAccount: seat.connectedAccount || label.trim() || "OpenBot LinkedIn",
+          connectedAccount: seat.connectedAccount || label.trim() || "AriaBot LinkedIn",
         });
       }
 
@@ -401,6 +401,18 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
 
       await fleetAct("ensure");
       await fleetAct("start");
+      // Navigate to LinkedIn login while AriaBot still holds the seat (before Take control).
+      await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "navigate",
+          computerId,
+          seatId: seat.id,
+          url: "https://www.linkedin.com/login",
+        }),
+      }).catch(() => null);
       const controlled = await fleetAct("take_control");
       const url = controlled?.viewUrl || controlled?.remoteUrl;
       if (url && /^https?:\/\//i.test(url)) {
@@ -410,16 +422,16 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         window.open("/fleet", "_blank", "noopener,noreferrer");
       }
       toast({
-        title: "LinkedIn login sandbox opened",
+        title: "AriaBot LinkedIn login opened",
         description:
-          "Sign in once inside the VM (including 2FA). Release control when done — agents reuse this session for sourcing outreach.",
+          "Sign in on LinkedIn inside AriaBot (including 2FA). Release when done — agents reuse this session to source and reach out.",
         variant: "success",
       });
       await load();
     } catch (err) {
       toast({
         title: "Could not open LinkedIn login",
-        description: err instanceof Error ? err.message : "OpenBot supervisor may be unavailable.",
+        description: err instanceof Error ? err.message : "AriaBot supervisor may be unavailable.",
         variant: "error",
       });
     } finally {
@@ -522,9 +534,9 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     ? [
         {
           id: "browser",
-          label: "OpenBot computer supervisor (required for Automatic)",
+          label: "AriaBot computer supervisor (required for Automatic)",
           ok: providers.browserComputerConfigured,
-          hint: "Attach Computer Supervisor URL + token in Settings → LinkedIn (or COMPUTER_SUPERVISOR_*). Automatic sends run in the OpenBot sandbox/VM — not via LinkedIn APIs.",
+          hint: "Attach Computer Supervisor URL + token in Settings → LinkedIn (or COMPUTER_SUPERVISOR_*). Automatic sends run in the AriaBot sandbox/VM — not via LinkedIn APIs.",
         },
         {
           id: "encryption",
@@ -536,14 +548,14 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           id: "oauth",
           label: "LinkedIn OAuth credentials (optional)",
           ok: providers.oauthConfigured,
-          hint: "Only if you still want Sign-in-with-LinkedIn identity badges. Not required for OpenBot send.",
+          hint: "Only if you still want Sign-in-with-LinkedIn identity badges. Not required for AriaBot send.",
           optional: true,
         },
         {
           id: "vendor",
           label: "Vendor API (legacy optional)",
           ok: providers.vendorApiConfigured,
-          hint: "Optional contracted messaging vendor. Prefer OpenBot Browser Computer for Automatic.",
+          hint: "Optional contracted messaging vendor. Prefer AriaBot Browser Computer for Automatic.",
           optional: true,
         },
         {
@@ -642,7 +654,7 @@ export function LinkedInIdentityStep({
       <div>
         <p className="text-xs font-medium text-ink">Manual / OAuth fallbacks (optional)</p>
         <p className="mt-1 text-xs text-muted">
-          Prefer OpenBot Browser Computer above. Assisted-manual and Sign-in-with-LinkedIn are only for identity badges or paste-confirm workflows.
+          Prefer AriaBot Browser Computer above. Assisted-manual and Sign-in-with-LinkedIn are only for identity badges or paste-confirm workflows.
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
           <Field label="Operator label" htmlFor="li-operator-label">
@@ -711,7 +723,7 @@ export function LinkedInIdentityStep({
   return (
     <ConnectionStep
       step={1}
-      title="OpenBot Browser Computer"
+      title="AriaBot Browser Computer"
       subtitle="Log into LinkedIn once in the agent VM. That session stays on this Browser Computer seat — Automatic outreach and campaign agents reuse it. Aria never stores your LinkedIn password."
       state={state}
       advanced={advanced}
@@ -721,11 +733,11 @@ export function LinkedInIdentityStep({
       {isAdmin && (
         <div className="space-y-3">
           <div className="rounded-2xl border border-electric/30 bg-electric/5 px-4 py-4">
-            <p className="text-sm font-semibold text-ink">Login once — agents use this account</p>
+            <p className="text-sm font-semibold text-ink">Log in with LinkedIn to test AriaBot</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">
-              Opens your OpenBot Chromium VM so you can sign in to LinkedIn (and complete 2FA). After you
-              Release control, sourcing outreach agents send from this same durable profile — you do not
-              log in again per campaign.
+              Opens your AriaBot Chromium VM on LinkedIn so you can sign in (and complete 2FA). After you
+              Release control, campaign agents source and reach out from this same durable profile — you do
+              not log in again per campaign.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button
@@ -734,7 +746,9 @@ export function LinkedInIdentityStep({
                 disabled={!providers?.browserComputerConfigured && supabaseEnabled}
                 onClick={() => void openAgentLinkedInLogin()}
               >
-                {hasBrowserSeat ? "Open LinkedIn login for agents" : "Create seat & open LinkedIn login"}
+                {hasBrowserSeat
+                  ? "Log in with LinkedIn (test AriaBot)"
+                  : "Create AriaBot seat & log in with LinkedIn"}
               </Button>
               <Button
                 size="sm"
@@ -749,7 +763,7 @@ export function LinkedInIdentityStep({
             </div>
             {!providers?.browserComputerConfigured && supabaseEnabled ? (
               <p className="mt-2 text-xs text-muted">
-                Attach the OpenBot computer supervisor URL + token under credentials above first.
+                Attach the AriaBot computer supervisor URL + token under credentials above first.
               </p>
             ) : (
               <p className="mt-2 text-xs text-muted">
@@ -792,7 +806,7 @@ export function LinkedInIdentityStep({
       {loading ? (
         <p className="text-xs text-muted">Loading LinkedIn connection…</p>
       ) : seats.length === 0 ? (
-        <p className="text-xs text-muted">No LinkedIn seat yet. Create an OpenBot Browser Computer seat above.</p>
+        <p className="text-xs text-muted">No LinkedIn seat yet. Create an AriaBot Browser Computer seat above.</p>
       ) : (
         <ul className="space-y-2">
           {seats.map((s, i) => {
@@ -812,7 +826,7 @@ export function LinkedInIdentityStep({
                     <>
                       {s.provider === "LinkedIn Browser Computer" && (
                         <Badge tone="electric" size="sm">
-                          OpenBot
+                          AriaBot
                         </Badge>
                       )}
                       {s.oauthConnected && (
