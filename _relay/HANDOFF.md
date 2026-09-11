@@ -10,7 +10,7 @@ status: probe-reclaim-orphan-shipped
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `8112232` (+ HANDOFF fix commit)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `7e192b3`
 - **Fly:** https://aria-mantu-app.fly.dev — redeploy tip for orphan import + `reclaim_healthy_orphan` (`/api/ready` still 503 / agent frameworks until deploy)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/122 → `integration/sourcing-enrichment-on-main` (draft)
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` (cookies on computers volume)
