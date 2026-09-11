@@ -508,5 +508,25 @@ try {
   else process.env.COMPUTER_SUPERVISOR_TOKEN = previousToken;
 }
 
+
+  // Route contract: reclaim must persist computer_id so the next GET hydrate
+  // cannot re-claim the login-wall twin from a stale agent_seats.computer_id FK.
+  {
+    const { readFileSync } = await import("node:fs");
+    const route = readFileSync("src/app/api/fleet/computers/route.ts", "utf8");
+    const reclaimIdx = route.indexOf('case "reclaim_healthy_orphan"');
+    const reclaimBlock = reclaimIdx >= 0 ? route.slice(reclaimIdx, reclaimIdx + 1800) : "";
+    ok(
+      "reclaim_healthy_orphan persists agent_seats.computer_id on claim",
+      reclaimBlock.includes(".from(\"agent_seats\")") &&
+        reclaimBlock.includes("computer_id: rec.computerId") &&
+        reclaimBlock.includes("reclaimed"),
+    );
+    ok(
+      "reclaim persist fails closed when DB write errors",
+      reclaimBlock.includes("computer_id persist failed"),
+    );
+  }
+
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

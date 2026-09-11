@@ -339,7 +339,9 @@ export async function POST(req: NextRequest) {
       }
       case "reclaim_healthy_orphan": {
         // Probe stored id; if unhealthy, probe host orphans and claim first healthy.
-        // Login persists computer_id via updateSeat — this action never invents healthy.
+        // Never invents healthy. When a claim happens, persist computer_id here so the
+        // next GET hydrate cannot re-attach the login-wall twin from a stale FK
+        // (Login updateSeat alone races the 5s floor/fleet poll).
         const seatId = (body.seatId ?? "").trim();
         const result = await defaultComputerSupervisor.reclaimHealthyOrphan({
           workspaceId: workspaceId ?? "__local__",
@@ -349,6 +351,25 @@ export async function POST(req: NextRequest) {
         });
         rec = result.computer;
         reclaimed = result.reclaimed;
+        if (
+          reclaimed &&
+          supabase &&
+          workspaceId &&
+          workspaceId !== "__local__" &&
+          seatId &&
+          rec?.computerId
+        ) {
+          const { error } = await supabase
+            .from("agent_seats")
+            .update({ computer_id: rec.computerId })
+            .eq("id", seatId)
+            .eq("workspace_id", workspaceId);
+          if (error) {
+            throw new Error(
+              `reclaim claimed ${rec.computerId} in-memory but computer_id persist failed: ${error.message}`,
+            );
+          }
+        }
         break;
       }
       default:
