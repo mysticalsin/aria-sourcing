@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 168
 agent: cursor-cloud
-updated: 2026-09-11T15:10Z
+updated: 2026-09-11T15:12Z
 status: probe-reclaim-orphan-shipped
 ---
 
@@ -10,15 +10,15 @@ status: probe-reclaim-orphan-shipped
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
-- **Fly:** https://aria-mantu-app.fly.dev — redeploy tip for orphan import + `reclaim_healthy_orphan`
-- **PR:** recreate/update → `integration/sourcing-enrichment-on-main`
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `8112232` (+ HANDOFF fix commit)
+- **Fly:** https://aria-mantu-app.fly.dev — redeploy tip for orphan import + `reclaim_healthy_orphan` (`/api/ready` still 503 / agent frameworks until deploy)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/122 → `integration/sourcing-enrichment-on-main` (draft)
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` (cookies on computers volume)
 - **Gap closed in code:** unhealthy seat `computerId` (e.g. `comp_tony_01`) can reclaim a probed-healthy host orphan on Login — no remint, no invented `sessionHealthy`
 
 ## Done this shift
 
-1. `hydrateFromHost` imports unmatched running host bots as `HOST_ORPHAN_SEAT_ID` orphans (`sessionHealthy` null until probe)
+1. `hydrateFromHost` imports unmatched running host bots as `HOST_ORPHAN_SEAT_ID` (`__orphan__`) orphans (`sessionHealthy` null until probe)
 2. `reclaimHealthyOrphan` + POST `reclaim_healthy_orphan` — probe stored id, else probe orphans, claim first healthy
 3. GET `/api/fleet/computers` lists orphans — still never mints
 4. Settings Login: empty id reclaim-before-mint; after unhealthy probe → reclaim → persist `computerId` → ensure/start
@@ -28,16 +28,16 @@ status: probe-reclaim-orphan-shipped
 
 1. LinkedIn remember-me / checkpoint may need one human Take control
 2. OPENBOT_MAX_COMPUTERS=5
-3. `/api/ready` agentFrameworks:false
+3. `/api/ready` agent frameworks still false / 503 until tip is live
 4. Operator prove Deploy→login→Release→floor distinct VMs + healthy still outstanding
 5. Seat DB may still point at `comp_tony_01` until Login reclaim runs post-deploy
 
 ## Next steps
 
-1. Deploy this tip to Fly (protected workflow / image digest)
+1. Deploy tip `8112232+` to Fly (protected workflow / image digest)
 2. Settings → Login on Tony seat — expect reclaim to UUID durable bot if probe healthy; else Take control once, confirm feed, Release
 3. Operator N-seat floor prove (distinct computerIds + sessionHealthy from probe only)
-4. Mark PR ready when operator E2E + stable session evidence lands
+4. Mark PR #122 ready when operator E2E + stable session evidence lands
 
 ## Decisions made (don't relitigate)
 
