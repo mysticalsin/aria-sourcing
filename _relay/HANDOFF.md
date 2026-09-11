@@ -12,7 +12,7 @@ status: n-agent-floor-prove-on-fly
 
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `963a337` (docs); **Fly code build** `820160e` (`820160ec6d152840af5c2d6534918419a6685e9b`)
 - **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches code commit · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true)
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/115 → `integration/sourcing-enrichment-on-main` (draft)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/116 → `integration/sourcing-enrichment-on-main` (draft)
 - **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
 
