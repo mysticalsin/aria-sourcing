@@ -173,5 +173,60 @@ const none = evaluateCampaignGoLive({
 });
 ok("browser_seat_attached fails with no seats", none.checks.find((c) => c.id === "browser_seat_attached")?.ok === false);
 
+
+const unscoped = evaluateCampaignGoLive({
+  campaignId,
+  settings: { dryRunMode: false, minScoreToContact: 80 },
+  seats: [liSeat({ assignedCampaignIds: [] })],
+  computers: [
+    {
+      computerId: "comp_java_01",
+      seatId: "seat_java_vm_01",
+      status: "ready",
+      control: "bot",
+      sessionHealthy: true,
+    },
+  ],
+});
+ok(
+  "unassigned Browser Computer is not attached",
+  unscoped.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
+);
+
+const multi = evaluateCampaignGoLive({
+  campaignId,
+  settings: { dryRunMode: false, minScoreToContact: 80 },
+  seats: [
+    liSeat(),
+    liSeat({
+      id: "seat_java_vm_02",
+      computerId: "comp_java_02",
+      assignedCampaignIds: [campaignId],
+    }),
+  ],
+  computers: [
+    {
+      computerId: "comp_java_01",
+      seatId: "seat_java_vm_01",
+      status: "ready",
+      control: "bot",
+      sessionHealthy: true,
+    },
+    {
+      computerId: "comp_java_02",
+      seatId: "seat_java_vm_02",
+      status: "ready",
+      control: "bot",
+      sessionHealthy: null,
+    },
+  ],
+  candidate: { matchScore: 88 },
+});
+ok(
+  "go-live requires every attached seat sessionHealthy",
+  multi.ready === false &&
+    multi.checks.find((c) => c.id === "session_healthy")?.ok === false,
+);
+
 console.log(`campaign-go-live: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

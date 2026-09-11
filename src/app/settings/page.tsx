@@ -232,7 +232,22 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = React.useState("setup");
+  const [hostVmMax, setHostVmMax] = React.useState<number | null>(null);
   const canResetSyntheticDemo = !supabaseEnabled;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/fleet/computers", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { hostCapacity?: { max?: number } | null } | null) => {
+        const max = data?.hostCapacity?.max;
+        if (!cancelled && typeof max === "number" && max > 0) setHostVmMax(max);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const goTab = React.useCallback((id: string) => {
     if (!VALID_TABS.has(id)) return;
@@ -956,15 +971,22 @@ export default function SettingsPage() {
                   <Field
                     label="Max agents (fleet ceiling)"
                     htmlFor="maxAgents"
-                    hint="Hard cap on deployable agents across the workspace."
+                    hint={
+                      hostVmMax
+                        ? `Hard cap on deployable agents. Fly Chromium host max is ${hostVmMax} (OPENBOT_MAX_COMPUTERS) — Deploy cannot boot more live VMs than that.`
+                        : "Hard cap on deployable agents across the workspace."
+                    }
                   >
                     <Input
                       id="maxAgents"
                       type="number"
                       min={1}
-                      max={1000}
+                      max={hostVmMax ?? 1000}
                       value={settings.fleet.maxAgents}
-                      onChange={(e) => patchFleet({ maxAgents: Math.max(1, Number(e.target.value) || 1) })}
+                      onChange={(e) => {
+                        const n = Math.max(1, Number(e.target.value) || 1);
+                        patchFleet({ maxAgents: hostVmMax ? Math.min(n, hostVmMax) : n });
+                      }}
                       onBlur={savedToast}
                     />
                   </Field>

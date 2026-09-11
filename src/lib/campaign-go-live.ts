@@ -48,9 +48,20 @@ function isBrowserComputerSeat(seat: AgentSeat): boolean {
 export function campaignBrowserSeats(seats: AgentSeat[], campaignId: string): AgentSeat[] {
   return seats.filter((s) => {
     if (!isBrowserComputerSeat(s)) return false;
-    const assigned = s.assignedCampaignIds ?? [];
-    return assigned.length === 0 || assigned.includes(campaignId);
+    // Explicit campaign membership only — unassigned seats are not "attached".
+    return (s.assignedCampaignIds ?? []).includes(campaignId);
   });
+}
+
+function computerForSeat(
+  computers: ComputerHealthLike[] | undefined,
+  seat: AgentSeat,
+): ComputerHealthLike | undefined {
+  if (!computers?.length) return undefined;
+  return (
+    computers.find((c) => seat.computerId && c.computerId === seat.computerId) ??
+    computers.find((c) => c.seatId === seat.id)
+  );
 }
 
 export function evaluateCampaignGoLive(input: GoLiveInput): {
@@ -59,16 +70,18 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
   nextAction?: GoLiveCheck;
 } {
   const attached = campaignBrowserSeats(input.seats, input.campaignId);
-  const primary = attached.find((s) => s.status === "active") ?? attached[0];
-  const computer =
-    input.computers?.find((c) => primary?.computerId && c.computerId === primary.computerId) ??
-    input.computers?.find((c) => primary && c.seatId === primary.id) ??
-    input.computers?.[0];
-
-  const humanHeld = computer?.control === "human";
-  const needsHelp = computer?.status === "help_requested" || computer?.status === "error";
+  const liveActive = attached.filter((s) => s.status === "active" && s.mode === "live");
+  const comps = attached.map((s) => ({ seat: s, computer: computerForSeat(input.computers, s) }));
+  const humanHeld = comps.some((x) => x.computer?.control === "human");
+  const needsHelp = comps.some(
+    (x) => x.computer?.status === "help_requested" || x.computer?.status === "error",
+  );
   // Never invent healthy from ready+bot — only Release /session-probe sets true.
-  const sessionHealthy = computer?.sessionHealthy === true;
+  // Every attached seat must have its own probed-healthy computer (no computers[0] fallback).
+  const allHealthy =
+    attached.length > 0 && comps.every((x) => x.computer?.sessionHealthy === true);
+  const missingComputer = comps.some((x) => !x.computer);
+  const healthyCount = comps.filter((x) => x.computer?.sessionHealthy === true).length;
 
   const floor = input.settings.minScoreToContact ?? 80;
   const scoreOk =
@@ -92,22 +105,21 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
       ok: attached.length > 0,
       detail:
         attached.length > 0
-          ? `${attached.length} LinkedIn Browser Computer seat(s) on this campaign.`
-          : "Attach a LinkedIn Browser Computer seat on the Agents tab.",
+          ? `${attached.length} LinkedIn Browser Computer seat(s) assigned to this campaign.`
+          : "Assign a LinkedIn Browser Computer seat on the Agents tab (explicit attach).",
       ctaLabel: "Open Agents",
       ctaHref: `/campaigns/${input.campaignId}?tab=agents`,
     },
     {
       id: "seat_live",
       label: "Seat live + active",
-      ok: Boolean(primary && primary.status === "active" && primary.mode === "live"),
-      detail: !primary
-        ? "No browser seat yet."
-        : primary.mode !== "live"
-          ? "Seat is still in mock mode — set it live in Fleet / Settings."
-          : primary.status !== "active"
-            ? `Seat status is ${primary.status}.`
-            : "Seat is live and active.",
+      ok: attached.length > 0 && liveActive.length === attached.length,
+      detail:
+        attached.length === 0
+          ? "No browser seat yet."
+          : liveActive.length < attached.length
+            ? `${liveActive.length}/${attached.length} attached seats are live+active — fix the rest in Fleet.`
+            : `${attached.length} seat(s) live and active.`,
       ctaLabel: "Open Fleet",
       ctaHref: "/fleet",
     },
@@ -116,7 +128,7 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
       label: "Not held by human",
       ok: attached.length > 0 && !humanHeld,
       detail: humanHeld
-        ? "You still have Take control — Release so the bot can send."
+        ? "A seat still has Take control — Release so the bot can send."
         : "Mutex clear for bot sends.",
       ctaLabel: "Open Agents",
       ctaHref: `/campaigns/${input.campaignId}?tab=agents`,
@@ -124,14 +136,14 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
     {
       id: "session_healthy",
       label: "LinkedIn session healthy",
-      ok: attached.length > 0 && sessionHealthy,
-      detail: !computer
-        ? "No computer status yet — Start the agent, then Take control to log in."
+      ok: allHealthy,
+      detail: missingComputer
+        ? "Missing computer status for an attached seat — Start the agent, then Take control to log in."
         : needsHelp
-          ? "Computer needs help (login / checkpoint). Take control, finish LinkedIn login, Release."
-          : sessionHealthy
-            ? "Session looks ready."
-            : "Session not confirmed — Take control and open linkedin.com once.",
+          ? "A computer needs help (login / checkpoint). Take control, finish LinkedIn login, Release."
+          : allHealthy
+            ? `${healthyCount}/${attached.length} sessions probed healthy.`
+            : `${healthyCount}/${attached.length} sessions healthy — Take control on each unverified seat.`,
       ctaLabel: "Take control",
       ctaHref: `/campaigns/${input.campaignId}?tab=agents`,
     },

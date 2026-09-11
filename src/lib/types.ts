@@ -625,6 +625,8 @@ export interface OutreachMessage {
   /** Carried over from a ClassifiedReply when this draft was created as a reply
    *  (see draftReplyResponse in store.ts), so a live send can thread correctly. */
   inboxThreadId?: string;
+  /** Seat chosen at allocate/draft time — send must use this VM/mailbox, not re-pick. */
+  seatId?: string;
 }
 
 /* ---- Replies ------------------------------------------------------------- */

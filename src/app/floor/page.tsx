@@ -182,7 +182,7 @@ export default function FloorPage() {
   }, []);
 
   const stateLike = { campaigns, candidates, ledger, suppression, seats, settings } as unknown as HermesState;
-  const rollup = floorRollup(seats, stateLike);
+  const rollup = floorRollup(seats, stateLike, Date.now(), computerHints);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
 
   const pulseNow = Date.now();
@@ -389,7 +389,7 @@ function Floor3DSection({
       const hint =
         computerHints?.get(seat.id) ??
         (seat.computerId ? computerHints?.get(seat.computerId) : undefined);
-      if (!hint || hint.status !== "ready") return a;
+      if (!hint || hint.status !== "ready" || hint.sessionHealthy !== true) return a;
     }
     return { ...a, status: "working" as const };
   });

@@ -187,6 +187,55 @@ try {
       delete process.env.COMPUTER_SUPERVISOR_URL;
       delete process.env.COMPUTER_SUPERVISOR_TOKEN;
     }
+    // Orphan: in-memory ready but absent from host listing → stopped.
+    const orphan = hydrateSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-orphan",
+      computerId: "comp_orphan_1",
+    });
+    const orphanRec = hydrateSup.get(orphan.computerId)!;
+    orphanRec.status = "ready";
+    orphanRec.sessionHealthy = true;
+    orphanRec.remoteUrl = "http://127.0.0.1:9999";
+    process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok_test";
+    const prevFetchOrphan = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/computers") && !url.includes("/ensure")) {
+        // Host lists only the first seat's bot — orphan is absent.
+        return new Response(
+          JSON.stringify({
+            computers: [
+              {
+                botId: seat.botId || seat.computerId,
+                status: "running",
+                url: "http://127.0.0.1:9222",
+                viewUrl: "http://127.0.0.1:6080",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    try {
+      await hydrateSup.hydrateFromHost("ws");
+      ok(
+        "hydrate marks absent host bot stopped",
+        hydrateSup.get(orphan.computerId)?.status === "stopped",
+      );
+      ok(
+        "hydrate clears stale sessionHealthy for absent bot",
+        hydrateSup.get(orphan.computerId)?.sessionHealthy == null,
+      );
+    } finally {
+      globalThis.fetch = prevFetchOrphan;
+      delete process.env.COMPUTER_SUPERVISOR_URL;
+      delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    }
+
     const noHost = await hydrateSup.hydrateFromHost("ws");
     ok("hydrate without host config is a no-op", noHost.matched === 0 && noHost.hostCount === 0);
   }

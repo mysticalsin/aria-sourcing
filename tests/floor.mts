@@ -106,6 +106,31 @@ ok("at least one paused (lucas)", roll.paused >= 1);
       "LinkedIn seat without VM row is idle",
       missing.status === "idle" && /Browser Computer|not on host/.test(missing.subtitle),
     );
+
+    const theatrical = floorRollup(s.seats, s, NOW);
+    const withEmptyHints = floorRollup(s.seats, s, NOW, new Map());
+    ok(
+      "rollup with empty computer map does not invent Browser Computer working",
+      withEmptyHints.working <= theatrical.working,
+    );
+    const readyMap = new Map([[liSeat.id, { status: "ready", sessionHealthy: true }]]);
+    const withReady = floorRollup([liSeat], s, NOW, readyMap);
+    const busyAlone = agentActivity(liSeat, s, NOW);
+    if (busyAlone.state !== "idle" && busyAlone.state !== "paused" && busyAlone.state !== "warming") {
+      ok("rollup counts ready+healthy Browser Computer as working", withReady.working === 1);
+      const readyUnverified = floorRollup(
+        [liSeat],
+        s,
+        NOW,
+        new Map([[liSeat.id, { status: "ready", sessionHealthy: null }]]),
+      );
+      ok("rollup ignores ready without sessionHealthy", readyUnverified.working === 0);
+    }
+    const stoppedMap = new Map([[liSeat.id, { status: "stopped" }]]);
+    const withStopped = floorRollup([liSeat], s, NOW, stoppedMap);
+    if (busyAlone.state !== "idle" && busyAlone.state !== "paused" && busyAlone.state !== "warming") {
+      ok("rollup ignores theatrical busy when VM stopped", withStopped.working === 0);
+    }
   }
 }
 

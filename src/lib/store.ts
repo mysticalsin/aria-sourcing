@@ -2764,8 +2764,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           : channel === "SMS"
             ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
             : channel === "LinkedIn"
-              ? pickLiveLinkedInSendSeat(s.seats, msg.campaignId)
-              : s.seats.find((x) => x.status === "active" && x.mode === "live");
+              ? pickLiveLinkedInSendSeat(s.seats, msg.campaignId, msg.seatId)
+              : msg.seatId
+                ? s.seats.find((x) => x.id === msg.seatId && x.status === "active" && x.mode === "live")
+                  ?? s.seats.find((x) => x.status === "active" && x.mode === "live")
+                : s.seats.find((x) => x.status === "active" && x.mode === "live");
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"
@@ -4950,8 +4953,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const seat = bySeat.get(a.seatId);
         const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
         const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
-        const gen = generateOutreach(candidate, campaign, finalTone, "Email", 1, voice, lang);
-        drafted.push(newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1));
+        const channel =
+          seat?.provider === "LinkedIn Browser Computer" || seat?.provider === "LinkedIn Vendor API"
+            ? "LinkedIn"
+            : "Email";
+        const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+        drafted.push({
+          ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+          seatId: a.seatId,
+        });
       }
       if (drafted.length === 0) return result;
 

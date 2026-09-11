@@ -116,15 +116,45 @@ export interface FloorRollup {
   contactedToday: number;
 }
 
-export function floorRollup(seats: AgentSeat[], state: HermesState, now = Date.now()): FloorRollup {
+/** Live VM hint — when provided, Browser Computer seats only count as working if ready+healthy. */
+export type FloorComputerHint = {
+  status: string;
+  sessionHealthy?: boolean | null;
+};
+
+export function floorRollup(
+  seats: AgentSeat[],
+  state: HermesState,
+  now = Date.now(),
+  computers?: ReadonlyMap<string, FloorComputerHint>,
+): FloorRollup {
   let working = 0,
     warming = 0,
     paused = 0;
   for (const seat of seats) {
     const a = agentActivity(seat, state, now);
-    if (a.state === "paused") paused++;
-    else if (a.state === "warming") warming++;
-    else if (a.state !== "idle") working++;
+    if (a.state === "paused") {
+      paused++;
+      continue;
+    }
+    if (a.state === "warming") {
+      warming++;
+      continue;
+    }
+    if (a.state === "idle") continue;
+
+    // With live computer hints loaded, don't count Browser Computer seats as
+    // "working" from theatrical activity alone — need ready + probed-healthy VM.
+    if (computers && seat.provider === "LinkedIn Browser Computer") {
+      const hint =
+        computers.get(seat.id) ??
+        (seat.computerId ? computers.get(seat.computerId) : undefined);
+      if (hint?.status === "ready" && hint.sessionHealthy === true) {
+        working++;
+      }
+      continue;
+    }
+    working++;
   }
   return {
     total: seats.length,

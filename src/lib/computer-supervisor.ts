@@ -302,20 +302,37 @@ export class ComputerSupervisor {
     for (const rec of this.list(workspaceId)) {
       const botId = rec.botId || toOpenBotBotId(rec.computerId);
       const host = byBot.get(botId);
-      if (!host) continue;
+      if (!host) {
+        // Successful host listing without this bot → not running. Don't leave stale ready.
+        if (rec.control !== "human" && rec.status !== "stopped") {
+          rec.status = "stopped";
+          rec.sessionHealthy = null;
+          rec.remoteUrl = null;
+          rec.viewUrl = null;
+          rec.updatedAt = isoNow();
+        }
+        continue;
+      }
       matched += 1;
       const raw = (host.status || "").toLowerCase();
       if (raw === "running" || raw === "ready" || raw === "idle") {
         if (rec.status === "stopped" || rec.status === "starting" || rec.status === "error") {
           rec.status = "ready";
           rec.lastError = null;
+          // Host proves process up — session health still requires /session-probe.
+          rec.sessionHealthy = null;
         }
       } else if (raw === "starting" || raw === "booting") {
         rec.status = "starting";
+        rec.sessionHealthy = null;
       } else if (raw === "error" || raw === "failed") {
         rec.status = "error";
+        rec.sessionHealthy = null;
       } else if (raw === "stopped" || raw === "exited") {
-        if (rec.control !== "human") rec.status = "stopped";
+        if (rec.control !== "human") {
+          rec.status = "stopped";
+          rec.sessionHealthy = null;
+        }
       }
       if (host.url) rec.remoteUrl = host.url;
       if (host.viewUrl || host.url) rec.viewUrl = host.viewUrl || host.url || rec.viewUrl;

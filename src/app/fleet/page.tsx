@@ -134,11 +134,19 @@ export default function FleetPage() {
       toast({ title: "Admins only", description: "Only an admin can deploy agents.", variant: "warning" });
       return;
     }
-    const hostSlots =
-      hostCapacity && hostCapacity.max > 0
-        ? Math.max(0, hostCapacity.max - hostCapacity.computers)
-        : maxAgents;
-    const deployCap = Math.max(1, Math.min(maxAgents, hostSlots || maxAgents));
+    const hostKnown = Boolean(hostCapacity && hostCapacity.max > 0);
+    const hostSlots = hostKnown
+      ? Math.max(0, hostCapacity!.max - hostCapacity!.computers)
+      : maxAgents;
+    if (hostKnown && hostSlots <= 0) {
+      toast({
+        title: "Host at VM capacity",
+        description: `Fly Chromium host is full (${hostCapacity!.computers}/${hostCapacity!.max}). Stop idle VMs or raise OPENBOT_MAX_COMPUTERS — Deploy will not create seats without a VM slot.`,
+        variant: "warning",
+      });
+      return;
+    }
+    const deployCap = Math.max(1, Math.min(maxAgents, hostSlots));
     const n = Math.max(1, Math.min(Number(deployN) || 0, deployCap));
     const res = await actions.deployAgents(n);
     if (res.created <= 0) {

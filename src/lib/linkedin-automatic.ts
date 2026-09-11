@@ -51,7 +51,19 @@ export function preferLinkedInAutomaticSeats(
 export function pickLiveLinkedInSendSeat(
   seats: AgentSeat[],
   campaignId: string | null | undefined,
+  preferredSeatId?: string | null,
 ): AgentSeat | undefined {
+  if (preferredSeatId) {
+    const preferred = seats.find(
+      (x) =>
+        x.id === preferredSeatId &&
+        x.status === "active" &&
+        x.mode === "live" &&
+        isLinkedInAutomaticProvider(x.provider),
+    );
+    if (preferred) return preferred;
+  }
+
   const campaignRank = (seat: AgentSeat): number => {
     const assigned = seat.assignedCampaignIds ?? [];
     if (campaignId && assigned.includes(campaignId)) return 0;
