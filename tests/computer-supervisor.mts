@@ -56,6 +56,22 @@ try {
   await supervisor.releaseControl(computer.computerId);
   ok("releaseControl returns bot", supervisor.get(computer.computerId)?.control === "bot");
 
+  // Release after help_requested must not invent a healthy LinkedIn session.
+  const needsHelp = supervisor.ensureComputer({ workspaceId: "ws", seatId: "seat-help" });
+  await supervisor.start(needsHelp.computerId);
+  supervisor.requestHelp(needsHelp.computerId, "login wall");
+  ok("requestHelp marks unhealthy", supervisor.get(needsHelp.computerId)?.sessionHealthy === false);
+  await supervisor.takeControl(needsHelp.computerId);
+  await supervisor.releaseControl(needsHelp.computerId);
+  ok(
+    "release after help leaves sessionHealthy unknown (not assumed true)",
+    supervisor.get(needsHelp.computerId)?.sessionHealthy == null,
+  );
+  ok(
+    "release after help clears help_requested to ready",
+    supervisor.get(needsHelp.computerId)?.status === "ready",
+  );
+
   const sent = await supervisor.enqueueJob({
     computerId: computer.computerId,
     kind: "linkedin_send",

@@ -432,11 +432,13 @@ export class ComputerSupervisor {
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     const correlationId = this.takeoverCorrelation.get(computerId) ?? null;
     rec.control = "bot";
-    // Operator finished login — clear help_requested so the bot may send again.
+    // Operator finished Take control — clear help_requested so the bot may act again.
+    // Do NOT invent sessionHealthy=true: login may have failed or been skipped.
+    // Leave null until a real LinkedIn probe (or a later help_requested) decides.
     if (rec.status === "help_requested") {
       rec.status = "ready";
       rec.lastError = null;
-      rec.sessionHealthy = true;
+      rec.sessionHealthy = null;
     }
     rec.updatedAt = isoNow();
     rec.lastAudit = "control_released";

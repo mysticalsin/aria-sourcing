@@ -227,7 +227,12 @@ const browserComputerAdapter: LinkedInAdapter = {
         const pace = evaluateSendPace({
           seat: req.seat,
           settings: req.fleetSettings ?? defaultFleetSettings(),
-          sessionHealthy: computer.status === "ready" || computer.status === "busy" ? true : undefined,
+          sessionHealthy:
+            computer.sessionHealthy === true
+              ? true
+              : computer.sessionHealthy === false
+                ? false
+                : undefined,
         });
         if (!pace.ok) {
           return {
