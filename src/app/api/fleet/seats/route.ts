@@ -161,7 +161,34 @@ export async function PATCH(req: NextRequest) {
     patch.assigned_campaign_ids = [...new Set(assignedCampaignIds)];
   }
   if (computerId !== undefined) {
-    patch.computer_id = computerId;
+    const nextComputerId = typeof computerId === "string" ? computerId.trim() : computerId;
+    if (nextComputerId) {
+      // Fail closed: never let seat A steal seat B's durable computer_id.
+      const { data: taken, error: takenErr } = await actor.supabase
+        .from("agent_seats")
+        .select("id")
+        .eq("workspace_id", actor.workspaceId)
+        .eq("computer_id", nextComputerId)
+        .neq("id", id)
+        .maybeSingle();
+      if (takenErr) {
+        safeLog("agent_seats computer_id ownership check error", {
+          message: takenErr.message,
+          code: takenErr.code,
+        });
+        return NextResponse.json(
+          { ok: false, error: "Could not verify computer ownership." },
+          { status: 403 },
+        );
+      }
+      if (taken?.id) {
+        return NextResponse.json(
+          { ok: false, error: "computerId already bound to another seat in this workspace." },
+          { status: 409 },
+        );
+      }
+    }
+    patch.computer_id = nextComputerId;
   }
 
   const { data, error } = await actor.supabase

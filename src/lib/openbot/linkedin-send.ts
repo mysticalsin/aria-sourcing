@@ -197,10 +197,29 @@ export async function openBotLinkedInSend(
         helpRequested: true,
       };
     }
+    if (sendBtn.disabled) {
+      return {
+        ok: false,
+        detail: "Send is disabled (InMail/gate) — not claiming LinkedIn message delivery.",
+        helpRequested: true,
+      };
+    }
     await openBotClick(cfg, sendBtn.ref, snap.snapshotId);
+    // Fail closed: a bare Send click is not proof the message left LinkedIn.
+    snap = await openBotSnapshot(cfg);
+    const proof = snap.elements.some((el) =>
+      /message sent|sent successfully|your message was sent|delivered/i.test(el.name),
+    );
+    if (!proof) {
+      return {
+        ok: false,
+        detail: "Clicked Send but no Message-sent proof in UI — operator must confirm delivery.",
+        helpRequested: true,
+      };
+    }
     return {
       ok: true,
-      detail: `OpenBot browser-computer send via ${normalize(sendBtn.name) || "Send"} on ${profileUrl}`,
+      detail: `OpenBot browser-computer send via ${normalize(sendBtn.name) || "Send"} on ${profileUrl} (sent proof confirmed)`,
     };
   }
 

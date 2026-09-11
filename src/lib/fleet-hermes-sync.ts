@@ -66,8 +66,9 @@ export function computerHealthOwnedBySeat(
   for (const c of computers) {
     if (c.computerId !== id) continue;
     const owner = typeof c.seatId === "string" ? c.seatId.trim() : "";
-    if (!owner || owner === ORPHAN || owner === seatId) return true;
-    return false;
+    // Orphan / empty owner must not paint every desk green — only the owning seat.
+    if (!owner || owner === ORPHAN) return false;
+    return owner === seatId;
   }
   // Not on fleet list — treat as unbound; caller may still show null health.
   return true;

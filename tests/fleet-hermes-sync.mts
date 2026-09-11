@@ -67,8 +67,8 @@ function ok(name: string, cond: boolean) {
 
 {
   ok(
-    "health allowed for unbound / orphan VM",
-    computerHealthOwnedBySeat("seat_a", "comp_x", [
+    "health blocked for orphan VM (no cross-desk green)",
+    !computerHealthOwnedBySeat("seat_a", "comp_x", [
       { seatId: "__orphan__", computerId: "comp_x" },
     ]),
   );

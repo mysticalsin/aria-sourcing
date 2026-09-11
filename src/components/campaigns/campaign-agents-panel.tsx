@@ -368,11 +368,13 @@ export function CampaignAgentsPanel({
             {campaignSeats.map((seat) => {
               const boundComputerId = seat.computerId?.trim() || null;
               const bySeat = computers.find((row) => row.seatId === seat.id);
+              // Ops (Start/Observe/Take control) only on seat-owned rows — never
+              // drive an __orphan__ VM from another desk's Hermes computerId.
               const byComp = boundComputerId
                 ? computers.find(
                     (row) =>
                       row.computerId === boundComputerId &&
-                      (!row.seatId || row.seatId === seat.id || row.seatId === "__orphan__"),
+                      row.seatId === seat.id,
                   )
                 : undefined;
               const c = bySeat ?? byComp;
