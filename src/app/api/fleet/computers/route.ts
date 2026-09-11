@@ -5,6 +5,7 @@ import {
   bindComputerSupervisorEndpoint,
   defaultComputerSupervisor,
 } from "@/lib/computer-supervisor";
+import { openBotHostHealth, type OpenBotSupervisorConfig } from "@/lib/openbot/supervisor-client";
 import { queryComputerAuditsDurable, summarizeFleetComputers } from "@/lib/computer-audit";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
@@ -35,6 +36,21 @@ async function bindWorkspaceSupervisor(workspaceId: string | null) {
     mockSend: creds.computerSupervisorMockSend,
   });
   return creds;
+}
+
+
+async function hostCapacityFromEnv(): Promise<{
+  computers: number;
+  max: number;
+  desktop?: boolean;
+} | null> {
+  const baseUrl = (process.env.COMPUTER_SUPERVISOR_URL ?? "").trim();
+  const token = (process.env.COMPUTER_SUPERVISOR_TOKEN ?? "").trim();
+  if (!baseUrl || !token) return null;
+  const cfg: OpenBotSupervisorConfig = { baseUrl, token };
+  const health = await openBotHostHealth(cfg);
+  if (!health || !health.max) return null;
+  return { computers: health.computers, max: health.max, desktop: health.desktop };
 }
 
 function enrichComputer(
@@ -80,10 +96,12 @@ export async function GET(req: NextRequest) {
           (a) => !("campaignId" in a) || !a.campaignId || a.campaignId === campaignId,
         );
       }
+      const hostCapacity = await hostCapacityFromEnv();
       return NextResponse.json({
         computers,
         summary: summarizeFleetComputers(computers),
         recentAudits,
+        hostCapacity,
       });
     } finally {
       bindComputerSupervisorEndpoint(null);
@@ -126,10 +144,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const hostCapacity = await hostCapacityFromEnv();
     return NextResponse.json({
       computers,
       summary: summarizeFleetComputers(computers),
       recentAudits,
+      hostCapacity,
     });
   } finally {
     bindComputerSupervisorEndpoint(null);

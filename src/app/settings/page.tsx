@@ -722,11 +722,17 @@ export default function SettingsPage() {
                     onCheckedChange={(v) => patchNotify("email", v)}
                   />
                 </div>
-                <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
-                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                  Toggling on records your preference. Delivery begins once you add the matching
-                  Slack/Telegram webhook or SMTP credential in Access &amp; Keys.
-                </p>
+                <div className="mt-3 rounded-2xl border border-dashed border-line bg-canvas/60 px-3 py-2.5 text-xs text-muted">
+                  <p className="flex items-start gap-1.5 font-semibold text-ink-soft">
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Preference only — not delivering yet
+                  </p>
+                  <p className="mt-1 leading-relaxed">
+                    These toggles save where you want alerts. No Slack, Telegram, or email messages
+                    are sent until you add the matching webhook / SMTP credential under Access &amp;
+                    Keys. Until then, watch Approvals and Replies in the app.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </Section>

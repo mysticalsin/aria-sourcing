@@ -164,3 +164,38 @@ export async function openBotListComputers(
   );
   return { computers };
 }
+
+export type OpenBotHostHealth = {
+  ok: boolean;
+  computers: number;
+  max: number;
+  desktop?: boolean;
+  headed?: boolean;
+};
+
+/** Probe OpenBot /health for host VM capacity (Fly computers service). */
+export async function openBotHostHealth(
+  cfg: OpenBotSupervisorConfig,
+): Promise<OpenBotHostHealth | null> {
+  try {
+    const res = await supervisorFetch(cfg, `/health`, { method: "GET", timeoutMs: 8_000 });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      ok?: boolean;
+      computers?: number;
+      max?: number;
+      desktop?: boolean;
+      headed?: boolean;
+    };
+    return {
+      ok: data.ok !== false,
+      computers: Number(data.computers ?? 0),
+      max: Number(data.max ?? 0),
+      desktop: data.desktop,
+      headed: data.headed,
+    };
+  } catch {
+    return null;
+  }
+}
+

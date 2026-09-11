@@ -203,6 +203,7 @@ export default function FleetPage() {
   const [opsSummary, setOpsSummary] = React.useState<FleetOpsSummary | null>(null);
   const [fleetAudits, setFleetAudits] = React.useState<FleetAuditEvent[]>([]);
   const [auditFocusId, setAuditFocusId] = React.useState<string | null>(null);
+  const [hostCapacity, setHostCapacity] = React.useState<{ computers: number; max: number; desktop?: boolean } | null>(null);
 
   const refreshComputers = React.useCallback(async () => {
     setComputersLoading(true);
@@ -227,10 +228,12 @@ export default function FleetPage() {
         computers?: FleetComputerRow[];
         summary?: FleetOpsSummary;
         recentAudits?: FleetAuditEvent[];
+        hostCapacity?: { computers: number; max: number; desktop?: boolean } | null;
       };
       const rows = data.computers ?? [];
       setOpsSummary(data.summary ?? null);
       setFleetAudits(data.recentAudits ?? []);
+      if (data.hostCapacity) setHostCapacity(data.hostCapacity);
       // In demo (no Supabase seats on the API), merge ensured local computers with seat names.
       if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {
         // ensure POSTs should have populated in-process map — re-GET after ensures
@@ -240,9 +243,11 @@ export default function FleetPage() {
             computers?: FleetComputerRow[];
             summary?: FleetOpsSummary;
             recentAudits?: FleetAuditEvent[];
+            hostCapacity?: { computers: number; max: number; desktop?: boolean } | null;
           };
           setOpsSummary(againData.summary ?? null);
           setFleetAudits(againData.recentAudits ?? []);
+          if (againData.hostCapacity) setHostCapacity(againData.hostCapacity);
           setComputers(
             (againData.computers ?? []).map((c) => {
               const seat = browserSeats.find(
@@ -742,7 +747,18 @@ export default function FleetPage() {
             onSelectComputer={setAuditFocusId}
             onRefresh={() => void refreshComputers()}
           />
-          <FleetComputersPanel
+          
+          {hostCapacity && hostCapacity.max > 0 && (
+            <div className="mb-4 rounded-2xl border border-line bg-canvas/70 px-4 py-3 text-sm text-ink-soft">
+              <span className="font-semibold text-ink">Fly Chromium host:</span>{" "}
+              {hostCapacity.computers}/{hostCapacity.max} VMs in use
+              {hostCapacity.desktop ? " · desktop Take control" : ""}.
+              {hostCapacity.computers >= hostCapacity.max
+                ? " At capacity — stop idle VMs or raise OPENBOT_MAX_COMPUTERS on Fly before deploying more."
+                : ` ${hostCapacity.max - hostCapacity.computers} slot${hostCapacity.max - hostCapacity.computers === 1 ? "" : "s"} free for new Browser Computer boots.`}
+            </div>
+          )}
+<FleetComputersPanel
             computers={computers}
             observingId={observingComputerId}
             onObservingChange={setObservingComputerId}

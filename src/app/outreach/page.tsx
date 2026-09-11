@@ -345,6 +345,22 @@ function OutreachView() {
               aria-label="Filter outreach by campaign"
               className="w-56"
             />
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-line bg-canvas/50 px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-ink">Need drafts assigned to agents?</p>
+          <p className="mt-0.5 text-xs text-muted">
+            Allocation fans ready candidates across Browser Computer seats. Approve here before anything sends.
+          </p>
+        </div>
+        <Link
+          href="/fleet"
+          className="inline-flex h-9 items-center rounded-full bg-ink px-4 text-sm font-semibold text-canvas hover:opacity-90"
+        >
+          Allocate on Fleet
+        </Link>
+      </div>
+
           </div>
         }
       />

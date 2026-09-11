@@ -227,7 +227,7 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
               leftIcon={<Send className="h-3.5 w-3.5" aria-hidden />}
               onClick={handleSendReply}
             >
-              Send reply
+              Queue draft reply
             </Button>
           )}
           <Button

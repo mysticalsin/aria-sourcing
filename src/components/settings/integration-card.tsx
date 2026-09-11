@@ -311,6 +311,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             )}
 
             <div className="flex gap-2">
+              {integration.real ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -320,6 +321,17 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               >
                 Configure
               </Button>
+              ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                disabled
+                title="Roadmap placeholder — not wired to a live adapter"
+              >
+                Coming soon
+              </Button>
+              )}
               {integration.real &&
                 (integration.id === "int_github" ||
                   integration.id === "int_outlook" ||

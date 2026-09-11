@@ -39,8 +39,8 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 | Applicants | `/applicants` | Partial | Status mutations; reject copy can overclaim email send |
 | Candidates | `/candidates` | Live/Demo | Source + draft; send lives on Outreach |
 | #Vivier | `/vivier` | Partial | Re-contact drafts → still need Outreach approve/send |
-| Outreach | `/outreach` | Live | Approve + Send; allocate mainly on Fleet |
-| Replies | `/replies` | Partial | “Send reply” often drafts; sync may dry-run in public demo |
+| Outreach | `/outreach` | Live | Approve + Send; **Allocate on Fleet** CTA |
+| Replies | `/replies` | Partial | Labelled **Queue draft reply**; sync may dry-run in public demo |
 | Calendar | `/calendar` | Partial | Bookings store-real; calendar provider event needs live mailbox |
 | Agent Fleet | `/fleet` | Live | Deploy / Computers / Take control — **core tangibility surface** |
 | Ops Floor | `/floor` | Live+overlay | Seats + computer status overlay; 3D render-capped |
@@ -67,7 +67,7 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 | Tab | Subsections | Wired? | Apple-bar gaps | Sev |
 |---|---|---|---|---|
 | Get started | Setup guide | Heuristic checklist | Login/send steps often never flip complete | P1 |
-| Integrations | Email OAuth, LinkedIn stack, Databricks, roadmap cards | Email/LinkedIn/Databricks real; many cards `real: false` | Roadmap still opens Configure; Notifications Slack/Telegram preference-only | P0 |
+| Integrations | Email OAuth, LinkedIn stack, Databricks, roadmap cards | Email/LinkedIn/Databricks real; many cards `real: false` | Roadmap Configure → **Coming soon** (disabled); Notifications banner: preference-only | fixed |
 | AI & Models | Providers, recruitment LLM, models, tools, MCP, Hermes, Dust | Keys + chat paths real when configured | Split across too many panels | P2 |
 | Fleet & Automation | Rate limits, notifications, guardrails, schedules | Prefs persist; schedules may lack runner | Schedules UI without fire feels broken | P1 |
 | Observability | Pulse + reply autopilot docs | In-memory / docs | Not durable ops telemetry | P2 |
@@ -91,10 +91,10 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 |---|---|---|---|
 | Intake | Create campaign | Works (live or demo source) | Demo overclaims “real search” |
 | Source | Fill candidates | Works under Live/Demo rules | — |
-| Allocate | Seat ↔ candidate | Prefer campaign-assigned seats; UI mainly on Fleet | Easy to miss from Outreach |
+| Allocate | Seat ↔ candidate | Prefer campaign-assigned seats; Outreach CTA → `/fleet` | Still easy to miss from Campaign detail |
 | Approve | Human gate | Works; dry-run can look like send | Confusing |
 | Send | Live channel | Needs live seat / mailbox; LinkedIn via Browser Computer | Fails closed without seat |
-| Reply | Inbound + respond | Paste classify works; sync/demo weak; “Send reply” mislabel | P1 |
+| Reply | Inbound + respond | Paste classify works; sync/demo weak; UI says Queue draft reply | fixed |
 | Book | Interview | Store booking; provider event optional | Emails often copy-only |
 
 ---
@@ -113,6 +113,11 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 - Take control / computer actions **fail closed** when API returns error status.
 - LinkedIn Automatic “Ready” no longer treats HeyReach-only as full automatic ready.
 - Research bot UA no longer advertises the Vercel demo host.
+- Fleet header shows live **Fly Chromium host** capacity (`computers/max` from `/health`).
+- Roadmap IntegrationCard Configure disabled → **Coming soon** when `real: false`.
+- Settings notifications: explicit **Preference only — not delivering yet**.
+- Replies: **Queue draft reply** (no false send).
+- Outreach: **Allocate on Fleet** link.
 
 ---
 
@@ -121,19 +126,19 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 ### P0 — blocks “feels real”
 1. Raise or shard `OPENBOT_MAX_COMPUTERS` on Fly before promising 16 concurrent VMs (8GB machine today).  
 2. Operator login every Browser Computer (2FA) — cannot automate.  
-3. Kill or clearly disable Connect on `real: false` integration cards / notification delivery theatre.  
+3. ~~Kill or clearly disable Connect on `real: false` integration cards / notification delivery theatre.~~ **done**  
 4. `/api/ready` `agentFrameworks: false` — fix production agent-framework probe or stop gating on it.  
 5. Keep COMPUTER_SUPERVISOR_* only on Fly app secrets (never Vercel).
 
 ### P1 — breaks seamless UX
-1. Allocate CTA on Campaign / Outreach (not only Fleet).  
-2. Rename Replies “Send reply” → “Draft reply”.  
+1. ~~Allocate CTA on Outreach.~~ **done** (Campaign detail still needs one)  
+2. ~~Rename Replies “Send reply” → “Queue draft reply”.~~ **done**  
 3. Applicants reject: don’t claim email send if status-only.  
 4. Schedules: hide or wire a real runner.  
 5. Setup guide: complete Take-control / first-send steps from real probes.  
 6. Emit `seatId` on source events when a Browser Computer ran search.  
 7. After Release, probe session health (don’t fake healthy).  
-8. Surface host VM remaining capacity in Fleet header always.
+8. ~~Surface host VM remaining capacity in Fleet header always.~~ **done**
 
 ### P2 — polish (Apple bar)
 1. Collapse Settings density (progressive disclosure).  
@@ -152,12 +157,14 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 | Deploy N | Seats created + VMs booted count + host-cap errors |
 | Take control | Error toast if VM failed / at capacity |
 | Release | Session probe before marking healthy |
-| Connect (integrations) | Only if `real: true` + live adapter |
+| Connect (integrations) | Only if `real: true` + live adapter — roadmap = Coming soon |
 | Test connection | Real probe or disabled |
 | Dry-run toggle | Visible in chrome when on |
 | Approve | Never implies delivered |
 | Send | Live seat required; clear failure |
+| Queue draft reply | Draft into outreach queue only — never claim delivered |
 | Sync replies | Say dry-run when demo-gated |
+| Fleet host strip | Always show live `computers/max` from Fly computers `/health` |
 
 ---
 
