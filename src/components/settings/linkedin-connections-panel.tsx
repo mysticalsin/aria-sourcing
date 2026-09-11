@@ -191,6 +191,9 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
 
   React.useEffect(() => {
     void load();
+    // Keep sessionHealthy / VM …last8 aligned with Floor/Fleet (same /api/fleet/computers).
+    const t = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(t);
   }, [load]);
 
   async function connectWithLinkedInOAuth() {
@@ -322,11 +325,18 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           toast({ title: "Connect failed", description: "Could not create a local Browser Computer seat.", variant: "error" });
           return;
         }
-        actions.updateSeat(seat.id, {
+        const saved = await actions.updateSeat(seat.id, {
           connectedAccount: accountLabel,
           computerId: seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`,
           linkedinDeliveryBackend: "browser-computer",
         });
+        if (!saved) {
+          toast({
+            title: "Seat created without computer id",
+            description: "computerId did not persist — open Fleet and assign a VM before login.",
+            variant: "warning",
+          });
+        }
         const live = await actions.toggleSeatLive(seat.id);
         toast({
           title: live.ok ? "AriaBot Browser Computer seat created" : "Seat created",
@@ -424,9 +434,21 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
             }));
         }
       }
+      // With N Browser Computers, hero Login without a seatId is ambiguous — each seat
+      // owns an isolated Chromium/LinkedIn profile. Per-row buttons pass seatId.
+      if (!opts?.seatId && browserSeats.length > 1 && !opts?.createIfMissing) {
+        toast({
+          title: "Pick a seat",
+          description:
+            "Several AriaBot seats exist — use Log in on the seat row below so the correct LinkedIn profile opens.",
+          variant: "warning",
+        });
+        return;
+      }
       const seat =
         (opts?.seatId ? browserSeats.find((s) => s.id === opts.seatId) : null) ||
-        browserSeats[browserSeats.length - 1] ||
+        // createIfMissing: prefer the newest seat (just minted).
+        (opts?.createIfMissing ? browserSeats[browserSeats.length - 1] : null) ||
         browserSeats[0];
       if (!seat) {
         toast({
@@ -442,13 +464,21 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         localSeats.find((s) => s.id === seat.id)?.computerId ||
         `comp_${globalThis.crypto.randomUUID()}`;
 
-      // Persist computer id on the seat so agents keep reusing the same VM profile.
+      // Persist computer id before ensure/start so N concurrent boots cannot race-mint twins.
       if (!seat.computerId || seat.computerId !== computerId) {
-        actions.updateSeat(seat.id, {
+        const saved = await actions.updateSeat(seat.id, {
           computerId,
           linkedinDeliveryBackend: "browser-computer",
           connectedAccount: seat.connectedAccount || label.trim() || "AriaBot LinkedIn",
         });
+        if (!saved) {
+          toast({
+            title: "Computer id not saved",
+            description: "Could not persist computerId before boot — fix Fleet, then retry Log in.",
+            variant: "error",
+          });
+          return;
+        }
       }
 
       async function fleetAct(action: "ensure" | "start" | "take_control") {

@@ -134,25 +134,26 @@ export async function GET(req: NextRequest) {
           computerId: seat.computer_id ?? undefined,
         });
       } catch (err) {
-        // Collision: seat row pointed at another seat's computer — mint a fresh id.
+        // Collision: seat row pointed at another seat's computer — bind by seatId only
+        // (reuse that seat's in-memory row or mint once). Never keep polling remints
+        // against a poisoned foreign computer_id.
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("computer-ownership-mismatch")) throw err;
-        console.warn("computer_id ownership mismatch; reminting", seat.id, msg);
+        console.warn("computer_id ownership mismatch; rebinding by seatId", seat.id, msg);
         rec = defaultComputerSupervisor.ensureComputer({
           workspaceId: String(wid),
           seatId: seat.id,
         });
       }
-      // Persist minted computer ids so floor/campaign filters stay stable across processes.
+      // Persist minted/rebound computer ids so floor/campaign filters stay stable.
+      // Await so a failed write cannot leave N GET polls minting twin VMs.
       if ((!hadId || rec.computerId !== seat.computer_id) && rec.computerId) {
-        void supabase
+        const { error } = await supabase
           .from("agent_seats")
           .update({ computer_id: rec.computerId })
           .eq("id", seat.id)
-          .eq("workspace_id", wid)
-          .then(({ error }) => {
-            if (error) console.warn("persist computer_id failed", error.message);
-          });
+          .eq("workspace_id", wid);
+        if (error) console.warn("persist computer_id failed", error.message);
       }
       computers.push(rec);
     }

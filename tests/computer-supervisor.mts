@@ -106,6 +106,30 @@ try {
     process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
   }
 
+  // Fly hard-refuse: COMPUTER_SUPERVISOR_MOCK_SEND must not theatrical-send on Fly
+  // unless ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND=1 (N agents stay fail-closed).
+  {
+    process.env.FLY_APP_NAME = "aria-mantu-app";
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+    delete process.env.ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND;
+    const flyGate = new ComputerSupervisor();
+    const seat = flyGate.ensureComputer({ workspaceId: "ws", seatId: "seat-fly-mock" });
+    const rec = flyGate.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.sessionHealthy = null;
+    const blocked = await flyGate.enqueueJob({
+      computerId: seat.computerId,
+      kind: "linkedin_send",
+      payload: { profileUrl: "https://linkedin.com/in/z" },
+    });
+    ok(
+      "Fly ignores COMPUTER_SUPERVISOR_MOCK_SEND without ALLOW_… (session unverified refuses)",
+      blocked.status === "refused" && blocked.detail === "session_unverified",
+    );
+    delete process.env.FLY_APP_NAME;
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+  }
+
   const sent = await supervisor.enqueueJob({
     computerId: computer.computerId,
     kind: "linkedin_send",

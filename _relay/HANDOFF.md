@@ -1,29 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 163
+shift: 164
 agent: cursor-cloud
-updated: 2026-09-11T11:42Z
-status: n-agent-send-fail-closed-on-fly
+updated: 2026-09-11T12:20Z
+status: n-agent-seat-login-fleet-poll-fly-mock-refuse
 ---
 
-# Handoff — Shift 163
+# Handoff — Shift 164
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `f855d00` (`f855d00c5c9a1894ae52b788fe33a35b0b662e48`)
-- **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches tip · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (pending this commit)
+- **Fly:** https://aria-mantu-app.fly.dev · computers https://aria-mantu-computers.fly.dev · max **5**
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/117 → `integration/sourcing-enrichment-on-main` (draft)
-- **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
 
 ## Done this shift
 
-1. Browser-computer send fails closed without durable `computerId` (channel + dispatch)
-2. Floor starts with empty `computerHints` Map; poll failure keeps empty Map (no theatrical working)
-3. Campaign attach: capacity + mint computerId **before** assign
-4. Settings LinkedIn list shows `VM …last8` / `VM unassigned`
-5. Tests: linkedin-channel-contract 23, floor 40, computer-supervisor 38; typecheck green
-6. Deployed Fly; `ARIA_RELEASE_SHA` = tip; ready build matches
+1. Settings hero LinkedIn Login refuses when N>1 seats without `seatId` (per-row only)
+2. `await updateSeat(computerId)` before ensure/start — no race-mint twins
+3. GET `/api/fleet/computers` ownership mismatch: rebind by seatId + **await** persist (no fire-and-forget twin VMs)
+4. Settings + Fleet poll computers every 5s (same truth as Floor)
+5. Fly hard-refuses `COMPUTER_SUPERVISOR_MOCK_SEND` unless `ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND=1`
+6. Tests: computer-supervisor 39, floor 40, linkedin-channel-contract 23; typecheck green
 
 ## Blockers (goal incomplete)
 
@@ -34,7 +33,7 @@ status: n-agent-send-fail-closed-on-fly
 
 ## Next steps
 
-1. Operator login/2FA ≤5 seats; confirm floor + Settings show distinct VM ids + healthy after Release
+1. Operator login/2FA ≤5 seats; confirm floor + Settings + Fleet show distinct VM ids + healthy after Release
 2. Plan host raise/shard for 16 concurrent VMs when needed
 3. Mark PR ready when operator E2E evidence lands
 
@@ -45,10 +44,12 @@ status: n-agent-send-fail-closed-on-fly
 - Never invent `computerId` from `seat.id`
 - Never mint ephemeral `computerId` on the LinkedIn send path
 - Unique `(workspace_id, computer_id)` enforced in DB (0084)
-- Host-full → refuse new Browser Computer seats (Settings + campaign attach)
+- Host-full → refuse new Browser Computer seats
+- Hero Login with N seats requires explicit seat row (no last-seat guess)
+- Mock send disabled on Fly unless explicitly allowed
 
 ## Watch out
 
-- Mock send still allows send without probe — production must not set it
 - Live prove stops bots unless `KEEP_LIVE=1`
 - `fly secrets set` rolls machines; verify `/api/ready` after
+- Do not set `ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND` on production Fly

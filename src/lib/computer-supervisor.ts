@@ -120,9 +120,20 @@ function resolveComputerToken(): string {
 }
 
 function supervisorMockSend(): boolean {
-  if (endpointOverride?.mockSend === true) return true;
-  if (endpointOverride?.mockSend === false) return false;
-  return process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1";
+  let wanted: boolean;
+  if (endpointOverride?.mockSend === true) wanted = true;
+  else if (endpointOverride?.mockSend === false) wanted = false;
+  else wanted = process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1";
+  // On Fly, never allow theatrical send-without-probe unless explicitly opted in.
+  // N campaign agents must fail closed on sessionHealthy — mock send would lie green.
+  if (
+    wanted &&
+    process.env.FLY_APP_NAME &&
+    process.env.ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND !== "1"
+  ) {
+    return false;
+  }
+  return wanted;
 }
 
 function isoNow() {

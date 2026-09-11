@@ -275,6 +275,9 @@ export default function FleetPage() {
   React.useEffect(() => {
     if (!hydrated) return;
     void refreshComputers();
+    // Same cadence as Floor / Campaign Agents — N seats' sessionHealthy must not go stale.
+    const t = window.setInterval(() => void refreshComputers(), 5000);
+    return () => window.clearInterval(t);
   }, [hydrated, refreshComputers]);
 
   async function computerAction(action: string, computerId: string) {
