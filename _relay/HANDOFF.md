@@ -10,7 +10,7 @@ status: packet-ensure-confirm-orphan-summary-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (PacketFX seatId-only; ensure refuses live/human retarget; confirmManual requires seatId for N LI; fleet summary excludes orphans)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `5b5493a` (PacketFX seatId-only; ensure refuses live/human retarget; confirmManual requires seatId for N LI; fleet summary excludes orphans)
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` build `8ea3370…` / `ok:false`
 - **Live fleet:** 1 computer, `sessionHealthy:false` until human LinkedIn login
 - **PR:** tip pushed; recreate when write tool available (prior #134 CLOSED)
