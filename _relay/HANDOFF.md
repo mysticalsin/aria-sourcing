@@ -2,26 +2,28 @@
 project: MSourcing / ARIA
 shift: 163
 agent: cursor-cloud
-updated: 2026-09-11T11:40Z
-status: n-agent-send-fail-closed-floor-honest
+updated: 2026-09-11T11:42Z
+status: n-agent-send-fail-closed-on-fly
 ---
 
 # Handoff — Shift 163
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (pending this commit)
-- **Fly:** https://aria-mantu-app.fly.dev · computers https://aria-mantu-computers.fly.dev · max **5**
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/116 → `integration/sourcing-enrichment-on-main` (draft)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `f855d00` (`f855d00c5c9a1894ae52b788fe33a35b0b662e48`)
+- **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches tip · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/117 → `integration/sourcing-enrichment-on-main` (draft)
+- **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
 
 ## Done this shift
 
-1. Browser-computer **send fails closed** without durable `computerId` (no ephemeral mint on deliver / dispatch)
-2. Floor starts with **empty computerHints Map** + empty Map on poll failure — no theatrical “working” before fleet truth
-3. Campaign attach: **capacity + mint computerId before assign** (full host never leaves attached seat without VM)
-4. Settings LinkedIn list shows `VM …last8` / `VM unassigned` for Browser Computer seats
+1. Browser-computer send fails closed without durable `computerId` (channel + dispatch)
+2. Floor starts with empty `computerHints` Map; poll failure keeps empty Map (no theatrical working)
+3. Campaign attach: capacity + mint computerId **before** assign
+4. Settings LinkedIn list shows `VM …last8` / `VM unassigned`
 5. Tests: linkedin-channel-contract 23, floor 40, computer-supervisor 38; typecheck green
+6. Deployed Fly; `ARIA_RELEASE_SHA` = tip; ready build matches
 
 ## Blockers (goal incomplete)
 
