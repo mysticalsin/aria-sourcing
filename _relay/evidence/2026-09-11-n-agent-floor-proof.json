@@ -1,0 +1,80 @@
+{
+  "at": "2026-09-11T10:52:01.363Z",
+  "offline": {
+    "mode": "offline",
+    "n": 3,
+    "rows": [
+      {
+        "id": "seat_prove_n_1",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …11111111",
+        "suffix": "11111111"
+      },
+      {
+        "id": "seat_prove_n_2",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …11113333",
+        "suffix": "11113333"
+      },
+      {
+        "id": "seat_prove_n_3",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …11115555",
+        "suffix": "11115555"
+      }
+    ],
+    "computerIds": [
+      "comp_prove_n_01_11111111",
+      "comp_prove_n_02_11113333",
+      "comp_prove_n_03_11115555"
+    ]
+  },
+  "live": {
+    "mode": "live",
+    "n": 3,
+    "host": "https://aria-mantu-computers.fly.dev",
+    "ensured": [
+      {
+        "computerId": "comp_bbea2408-3a80-4b6f-8f0c-781b675aa867",
+        "botId": "comp_bbea2408-3a80-4b6f-8f0c-781b675aa867",
+        "status": "running",
+        "viewUrl": "https://aria-mantu-computers.fly.dev/desktop/comp_bbea2408-3a80-4b6f-8f0c-781b675aa867"
+      },
+      {
+        "computerId": "comp_9967f604-12cd-4766-89e1-7e7fb6a901e4",
+        "botId": "comp_9967f604-12cd-4766-89e1-7e7fb6a901e4",
+        "status": "running",
+        "viewUrl": "https://aria-mantu-computers.fly.dev/desktop/comp_9967f604-12cd-4766-89e1-7e7fb6a901e4"
+      },
+      {
+        "computerId": "comp_b0f06446-c9d7-45a1-a2d6-3e7580f00e58",
+        "botId": "comp_b0f06446-c9d7-45a1-a2d6-3e7580f00e58",
+        "status": "running",
+        "viewUrl": "https://aria-mantu-computers.fly.dev/desktop/comp_b0f06446-c9d7-45a1-a2d6-3e7580f00e58"
+      }
+    ],
+    "rows": [
+      {
+        "id": "seat_live_n_1",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …675aa867",
+        "suffix": "675aa867"
+      },
+      {
+        "id": "seat_live_n_2",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …b6a901e4",
+        "suffix": "b6a901e4"
+      },
+      {
+        "id": "seat_live_n_3",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …80f00e58",
+        "suffix": "80f00e58"
+      }
+    ],
+    "stopped": true
+  },
+  "ok": true,
+  "note": "sessionHealthy remains human-gated (Take control + LinkedIn login/2FA)"
+}

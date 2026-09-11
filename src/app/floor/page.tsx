@@ -593,7 +593,7 @@ function AgentDetailDrawer({
               <Meta
                 icon={<Monitor className="h-4 w-4" />}
                 label="Browser Computer"
-                value={seat.computerId ?? "unassigned"}
+                value={boundComputerId ?? "unassigned"}
               />
               <Meta
                 icon={<Activity className="h-4 w-4" />}

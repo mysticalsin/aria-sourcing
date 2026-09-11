@@ -184,5 +184,68 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   }
 }
 
+// N LinkedIn Browser Computer seats → N distinct floor VM suffixes (no collapse).
+{
+  const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (template) {
+    const n = 5;
+    const seats = Array.from({ length: n }, (_, i) => ({
+      ...template,
+      id: `seat_n_agent_${i + 1}`,
+      name: `N-Agent ${i + 1}`,
+      // Last 8 chars must be unique — floor subtitles show …${computerId.slice(-8)}.
+      computerId: `comp_n_agent_${String(i + 1).padStart(2, "0")}_${(0x10000000 + i).toString(16)}`,
+    }));
+    const hints = new Map(
+      seats.map((seat) => [
+        seat.id,
+        {
+          status: "ready" as const,
+          sessionHealthy: null as boolean | null,
+          computerId: seat.computerId,
+        },
+      ]),
+    );
+    const agents = seatsToOfficeAgents(seats, s, hints);
+    ok("N-agent floor maps every seat", agents.length === n);
+    const suffixes = agents.map((a) => {
+      const m = /…([0-9a-f]{8})$/i.exec(a.subtitle || "");
+      return m?.[1] ?? null;
+    });
+    ok(
+      "N-agent floor subtitles each carry a VM suffix",
+      suffixes.every((x) => typeof x === "string" && x.length === 8),
+    );
+    ok(
+      "N-agent floor VM suffixes are distinct",
+      new Set(suffixes).size === n,
+    );
+    ok(
+      "N-agent floor does not invent sessionHealthy working",
+      agents.every((a) => a.status === "idle" && /unverified/i.test(a.subtitle || "")),
+    );
+    // Hint keyed only by computerId (fleet lag / seatId remap) still labels each agent.
+    const byCompOnly = new Map(
+      seats.map((seat) => [
+        seat.computerId!,
+        {
+          status: "ready" as const,
+          sessionHealthy: null as boolean | null,
+          computerId: seat.computerId,
+        },
+      ]),
+    );
+    const viaComp = seatsToOfficeAgents(seats, s, byCompOnly);
+    ok(
+      "N-agent floor resolves hints by computerId",
+      viaComp.every((a) => /…[0-9a-f]{8}/i.test(a.subtitle || "")),
+    );
+    ok(
+      "N-agent floor computerId hints stay distinct",
+      new Set(viaComp.map((a) => /…([0-9a-f]{8})/i.exec(a.subtitle || "")?.[1])).size === n,
+    );
+  }
+}
+
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
