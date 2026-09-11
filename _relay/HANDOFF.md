@@ -10,9 +10,9 @@ status: reclaim-persist-computer-id-shipped
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `0ae4ab9`
 - **Fly:** https://aria-mantu-app.fly.dev — still on older build `8ea3370…` (`agentFrameworks:false`); tip with reclaim persist + floor isolation **not live**
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/123 → `integration/sourcing-enrichment-on-main` (draft)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/124 → `integration/sourcing-enrichment-on-main` (draft)
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
 
 ## Done this shift
@@ -34,7 +34,7 @@ status: reclaim-persist-computer-id-shipped
 1. Deploy tip to Fly (protected `deploy-aria-mantu` / image digest) — confirm `/api/ready` build SHA matches tip
 2. Settings → Login on Tony seat — expect DB `computer_id` → UUID durable bot after reclaim; Take control if checkpoint
 3. Operator N-seat floor prove: distinct computerIds, no cross-desk bleed, sessionHealthy from probe only
-4. Mark PR #123 ready when operator E2E + stable session evidence lands
+4. Mark PR #124 ready when operator E2E + stable session evidence lands
 
 ## Decisions made (don't relitigate)
 
