@@ -432,5 +432,72 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   );
 }
 
+
+// Human Take control must not leave the desk green-working.
+{
+  const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (li) {
+    const hints = new Map([
+      [
+        li.id,
+        {
+          status: "ready" as const,
+          sessionHealthy: true as boolean | null,
+          computerId: "comp_human_ctrl_1",
+          seatId: li.id,
+          control: "human" as const,
+        },
+      ],
+    ]);
+    const agent = seatsToOfficeAgents([{ ...li, computerId: "comp_human_ctrl_1" }], s, hints)[0]!;
+    ok(
+      "human control overlays idle even when sessionHealthy true",
+      agent.status === "idle",
+    );
+    ok(
+      "human control subtitle says Operator",
+      /operator/i.test(agent.subtitle ?? ""),
+    );
+    const roll = floorRollup([{ ...li, computerId: "comp_human_ctrl_1" }], s, NOW, hints);
+    ok("human control is not counted as working in rollup", roll.working === 0);
+    const act = agentActivityWithComputers(
+      { ...li, computerId: "comp_human_ctrl_1" },
+      s,
+      NOW,
+      hints,
+    );
+    ok("2D overlay: human control is not busy", act.busy === false);
+    ok(
+      "2D overlay: human control label mentions Operator",
+      /operator/i.test(act.label),
+    );
+  }
+}
+
+// preferBrowserComputerAgents must rank base36-bound LI seats (not hex-only).
+{
+  const ranked = preferBrowserComputerAgents(
+    [
+      { id: "email-2", provider: "Google", position: "employee" as const, subtitle: "Outreach" },
+      {
+        id: "li-base36",
+        provider: "LinkedIn Browser Computer",
+        position: "employee" as const,
+        subtitle: "LinkedIn session healthy · …z9k2m4p1",
+      },
+      {
+        id: "li-unbound-2",
+        provider: "LinkedIn Browser Computer",
+        position: "employee" as const,
+        subtitle: "No Browser Computer",
+      },
+    ],
+    null,
+  );
+  ok("3D prefer ranks base36-bound LI before unbound", ranked[0]?.id === "li-base36");
+  ok("3D prefer ranks unbound LI before email (base36 case)", ranked[1]?.id === "li-unbound-2");
+  ok("3D prefer ranks email last (base36 case)", ranked[2]?.id === "email-2");
+}
+
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

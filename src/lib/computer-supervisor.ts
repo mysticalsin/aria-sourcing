@@ -507,21 +507,23 @@ export class ComputerSupervisor {
     host: { status?: string; url?: string | null; viewUrl?: string | null },
   ): void {
     const raw = (host.status || "").toLowerCase();
-    if (raw === "running" || raw === "ready" || raw === "idle") {
-      if (rec.status === "stopped" || rec.status === "starting" || rec.status === "error") {
-        rec.status = "ready";
-        rec.lastError = null;
-        // Host proves process up — session health still requires /session-probe.
+    // Human takeover owns status — host sync must not yank the desk to
+    // starting/error/stopped mid–Take control (operator is on the VM).
+    if (rec.control !== "human") {
+      if (raw === "running" || raw === "ready" || raw === "idle") {
+        if (rec.status === "stopped" || rec.status === "starting" || rec.status === "error") {
+          rec.status = "ready";
+          rec.lastError = null;
+          // Host proves process up — session health still requires /session-probe.
+          rec.sessionHealthy = null;
+        }
+      } else if (raw === "starting" || raw === "booting") {
+        rec.status = "starting";
         rec.sessionHealthy = null;
-      }
-    } else if (raw === "starting" || raw === "booting") {
-      rec.status = "starting";
-      rec.sessionHealthy = null;
-    } else if (raw === "error" || raw === "failed") {
-      rec.status = "error";
-      rec.sessionHealthy = null;
-    } else if (raw === "stopped" || raw === "exited") {
-      if (rec.control !== "human") {
+      } else if (raw === "error" || raw === "failed") {
+        rec.status = "error";
+        rec.sessionHealthy = null;
+      } else if (raw === "stopped" || raw === "exited") {
         rec.status = "stopped";
         rec.sessionHealthy = null;
       }
@@ -736,6 +738,9 @@ export class ComputerSupervisor {
     const correlationId = `takeover_${computerId}_${Date.now().toString(36)}`;
     this.takeoverCorrelation.set(computerId, correlationId);
     rec.control = "human";
+    // Operator may log in / change cookies — prior probe is no longer authoritative.
+    // Floor must not stay green-working while human holds the mutex.
+    rec.sessionHealthy = null;
     rec.updatedAt = isoNow();
     rec.lastAudit = "human_takeover";
     this.audit(
@@ -810,8 +815,9 @@ export class ComputerSupervisor {
     if (rec.status === "help_requested") {
       rec.status = "ready";
       rec.lastError = null;
-      rec.sessionHealthy = null;
     }
+    // Always invalidate until probe below (or leave null when no agent endpoint).
+    rec.sessionHealthy = null;
     rec.updatedAt = isoNow();
     rec.lastAudit = "control_released";
     this.audit(
@@ -863,6 +869,12 @@ export class ComputerSupervisor {
           { correlationId, campaignId: opts?.campaignId },
         );
       }
+    } else {
+      // No agent endpoint — cannot probe; never leave a stale healthy=true.
+      this.audit(computerId, "session_probe", "No agent endpoint — cannot probe after release", "system", {
+        correlationId,
+        campaignId: opts?.campaignId,
+      });
     }
 
     // Auto-retry only when LinkedIn is confirmed healthy — never on missing probe.

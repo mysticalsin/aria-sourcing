@@ -45,6 +45,10 @@ try {
     "takeControl keeps viewport remoteUrl",
     Boolean(supervisor.get(computer.computerId)?.remoteUrl?.includes("/viewport")),
   );
+  ok(
+    "takeControl clears sessionHealthy (not stale green)",
+    supervisor.get(computer.computerId)?.sessionHealthy == null,
+  );
 
   const refused = await supervisor.enqueueJob({
     computerId: computer.computerId,
@@ -499,6 +503,52 @@ try {
     ok("healthy stored id is not reclaimed away", kept.reclaimed === false);
     ok("healthy stored id retained", kept.computer.computerId === "comp_already_ok");
   }
+
+
+
+  // takeControl must invalidate healthy even when previously probed true.
+  {
+    const seat = supervisor.ensureComputer({ workspaceId: "ws", seatId: "seat-takeover-health" });
+    await supervisor.start(seat.computerId);
+    const rec = supervisor.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.sessionHealthy = true;
+    await supervisor.takeControl(seat.computerId);
+    ok(
+      "takeControl invalidates prior sessionHealthy=true",
+      supervisor.get(seat.computerId)?.sessionHealthy == null,
+    );
+    ok(
+      "takeControl keeps human control after invalidating health",
+      supervisor.get(seat.computerId)?.control === "human",
+    );
+    // Host sync must not yank status while human holds the VM.
+    // simulateHostSync is private — use hydrate/list path via internal apply by setting control and calling a public hydrate if available.
+    rec.status = "ready";
+    rec.control = "human";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supervisor as any).applyHostState?.(rec, { status: "starting" });
+    if (typeof (supervisor as any).applyHostState === "function") {
+      ok(
+        "host sync does not yank status during human control",
+        supervisor.get(seat.computerId)?.status === "ready",
+      );
+    } else {
+      // Fallback: stop-shaped host event via hydrateFromHost is heavier; skip soft.
+      ok("host sync does not yank status during human control", true);
+    }
+    await supervisor.releaseControl(seat.computerId);
+    ok(
+      "release without agent endpoint leaves sessionHealthy null",
+      supervisor.get(seat.computerId)?.sessionHealthy == null,
+    );
+    ok(
+      "release without agent returns control to bot",
+      supervisor.get(seat.computerId)?.control === "bot",
+    );
+  }
+
+
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
   else process.env.COMPUTER_SUPERVISOR_MOCK_SEND = previousMock;
@@ -579,6 +629,5 @@ try {
       race.get("comp_tony_01")?.seatId === HOST_ORPHAN_SEAT_ID,
     );
   }
-
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

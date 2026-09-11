@@ -127,6 +127,8 @@ export type FloorComputerHint = {
    * so a poisoned/stale seat.computerId cannot show another seat's VM on the floor.
    */
   seatId?: string | null;
+  /** Human takeover mutex — floor must not show working while operator holds control. */
+  control?: "bot" | "human" | null;
 };
 
 /**
@@ -172,7 +174,11 @@ export function floorRollup(
     if (a.state === "idle") {
       if (computers && seat.provider === "LinkedIn Browser Computer") {
         const hint = resolveComputerHint(seat, computers);
-        if (hint?.status === "ready" && hint.sessionHealthy === true) {
+        if (
+          hint?.control !== "human" &&
+          hint?.status === "ready" &&
+          hint.sessionHealthy === true
+        ) {
           working++;
         }
       }
@@ -180,12 +186,16 @@ export function floorRollup(
     }
 
     // With live computer hints loaded, "Working now" is VM-truth mode:
-    // Browser Computer seats need ready + probed-healthy; other seats need real
-    // sends today — never the theatrical activity lottery (masks unhealthy LI VMs).
+    // Browser Computer seats need ready + probed-healthy (bot control);
+    // other seats need real sends today — never theatrical lottery.
     if (computers) {
       if (seat.provider === "LinkedIn Browser Computer") {
         const hint = resolveComputerHint(seat, computers);
-        if (hint?.status === "ready" && hint.sessionHealthy === true) {
+        if (
+          hint?.control !== "human" &&
+          hint?.status === "ready" &&
+          hint.sessionHealthy === true
+        ) {
           working++;
         }
       } else if (seat.sentToday > 0) {
@@ -224,6 +234,16 @@ export function agentActivityWithComputers(
       detail: base.detail,
       busy: false,
       tone: "neutral",
+    };
+  }
+  if (hint.control === "human") {
+    return {
+      ...base,
+      state: "idle",
+      label: "Operator in control",
+      detail: base.detail,
+      busy: false,
+      tone: "warning",
     };
   }
   if (hint.status === "help_requested" || hint.status === "error") {

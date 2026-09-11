@@ -1,29 +1,30 @@
 ---
 project: MSourcing / ARIA
-shift: 180
+shift: 181
 agent: cursor-cloud
-updated: 2026-09-11T21:44Z
-status: fail-closed-message-orphan-patch-tip-not-released
+updated: 2026-09-11T22:35Z
+status: take-control-floor-honesty-tip-not-released
 ---
 
-# Handoff — Shift 180
+# Handoff — Shift 181
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (message fail-closed + orphan health/ops + PATCH ownership)
-- **Fly:** https://aria-mantu-app.fly.dev — build `8ea3370…` (**tip not live**); `/api/ready` `ok:false`
-- **Live fleet:** 1 computer `comp_7fe31958-…` seat `600e8afa-…` **`sessionHealthy:false`** (honest)
-- **PR:** recreate after push (prior #133 CLOSED)
-- **Exec video:** `/opt/cursor/artifacts/aria-exec-recruiting-e2e-walkthrough.mp4`
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (takeControl clears sessionHealthy; floor honors `control=human`; sticky clears on idle; prefer-rank accepts base36 VM ids)
+- **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` still old build / `ok:false`
+- **Live fleet:** 1 computer, `sessionHealthy:false` (honest) until human LinkedIn login
+- **PR:** recreate after push (prior #134 CLOSED)
 
 ## Done this shift
 
-1. LinkedIn **Message** path fail-closed: refuse disabled Send; require Message-sent UI proof (matches invite)
-2. `computerHealthOwnedBySeat`: orphan/empty owner no longer paints every desk green
-3. Campaign Agents ops match **seat-owned** rows only (no `__orphan__` drive-by Hermes id)
-4. Seats PATCH rejects `computerId` already bound to another workspace seat (409)
-5. Tests: fleet-hermes-sync 8, linkedin-send-contract 8, computer-supervisor 65; typecheck green
-6. Prior: invite ≤200 + Sent/Pending proof; campaign clear-foreign full fleet; exec E2E evidence pack
+1. `takeControl` clears `sessionHealthy` (no stale green during human mutex)
+2. `releaseControl` always invalidates healthy until probe; no-agent path stays null
+3. `applyHostState` no longer yanks status while `control=human`
+4. Floor/2D/3D treat `control=human` as idle "Operator in control" (even if healthy true)
+5. Floor poll + pulse pass/respect `control`; pulse never theatrical under human
+6. `preferBrowserComputerAgents` ranks `…[0-9a-zA-Z_-]{4,}` (base36 ids)
+7. agentTick clears sticky on non-working; `DESK_STICKY_MS` 10s → 1.5s
+8. Tests: floor 62, computer-supervisor 71; typecheck green; fleet-hermes-sync 8; linkedin-send-contract 8
 
 ## Blockers (goal incomplete)
 
@@ -36,7 +37,7 @@ status: fail-closed-message-orphan-patch-tip-not-released
 
 1. Human Take control → LinkedIn login/2FA → Release → session_probe healthy
 2. Land tip via protected release — `/api/ready` build SHA == tip
-3. Prove N distinct computerIds, no cross-desk bleed, floor only healthy/real-send
+3. Prove N distinct computerIds, no cross-desk bleed, floor only healthy/real-send (and never green under human control)
 4. Mark PR ready only with tip live + healthy session + N-seat evidence
 
 ## Decisions (don't relitigate)
@@ -45,6 +46,7 @@ status: fail-closed-message-orphan-patch-tip-not-released
 - Invite notes ≤ **200**; Message/Invite both fail-closed on disabled Send / missing proof
 - Orphan VMs must not green-badge or ops-drive other seats
 - PATCH must not steal another seat's computerId
+- Human `control` ⇒ floor idle (not working), even if a stale healthy lingered
 - Fly-only LinkedIn / OpenBot / computers
 - **Do not bypass protected Fly release guards**
 

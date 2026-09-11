@@ -32,9 +32,8 @@ export const EVENT_SOUND: Record<AgentEvent["kind"], SoundKind> = {
 };
 
 /** How long a seat's forced "working" pulse / glow lasts after it's chosen
- *  as an event's responder. agentTick's own DESK_STICKY_MS (10s) takes over
- *  the walk-to-desk animation after that, so this only needs to last long
- *  enough to be observed and to survive at least one render tick. */
+ *  as an event's responder. agentTick may briefly sticky-walk to desk while
+ *  status stays working; idle/error clears sticky immediately (no theater). */
 export const PULSE_MS = 4000;
 
 /** Flight duration for a packet sprite, source → hub (PacketFX.tsx). */

@@ -189,7 +189,12 @@ export function seatsToOfficeAgents(
     }
     const hint = resolveComputerHint(seat, computers);
     if (hint) {
-      if (hint.status === "help_requested" || hint.status === "error") {
+      // Human takeover mutex wins — never paint working while operator holds control
+      // (even if a stale sessionHealthy=true lingered on the wire).
+      if (hint.control === "human") {
+        status = "idle";
+        subtitle = "Operator in control";
+      } else if (hint.status === "help_requested" || hint.status === "error") {
         status = "error";
         subtitle = hint.status === "help_requested" ? "Needs Take control" : "VM error";
       } else if (hint.status === "busy" || hint.status === "starting") {
@@ -249,7 +254,8 @@ export function preferBrowserComputerAgents<T extends { provider?: string; subti
     if (a.position === "ceo") return 0;
     if (selectedId && a.id === selectedId) return 1;
     if (a.provider === "LinkedIn Browser Computer") {
-      return a.subtitle && /…[0-9a-fA-F_-]{4,}/.test(a.subtitle) ? 2 : 3;
+      // Bound VM suffix is …last8 — ids are hex or base36 (comp_…), not hex-only.
+      return a.subtitle && /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle) ? 2 : 3;
     }
     return 4;
   };

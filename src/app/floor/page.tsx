@@ -130,6 +130,7 @@ export default function FloorPage() {
             seatId: string;
             status: string;
             sessionHealthy?: boolean | null;
+            control?: "bot" | "human" | null;
           }[];
         };
         const map = new Map<string, ComputerFloorHint>();
@@ -141,6 +142,8 @@ export default function FloorPage() {
             // Bind hint to fleet seatId so a stale computerId on another desk
             // cannot inherit this VM after a poisoned FK clear / reclaim.
             seatId: c.seatId,
+            // Take control mutex — floor must not stay green while human holds VM.
+            control: c.control ?? null,
           };
           // Orphans are computerId-keyed only — never map.set("__orphan__", …)
           // (last orphan would overwrite and bleed onto unbound desks).
@@ -414,7 +417,14 @@ function Floor3DSection({
     if (computerHints) {
       if (seat.provider === "LinkedIn Browser Computer") {
         const hint = resolveComputerHint(seat, computerHints);
-        if (!hint || hint.status !== "ready" || hint.sessionHealthy !== true) return a;
+        if (
+          !hint ||
+          hint.control === "human" ||
+          hint.status !== "ready" ||
+          hint.sessionHealthy !== true
+        ) {
+          return a;
+        }
       } else if (!(seat.sentToday > 0)) {
         return a;
       }
