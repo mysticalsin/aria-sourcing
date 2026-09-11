@@ -10,10 +10,10 @@ status: take-control-floor-honesty-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (takeControl clears sessionHealthy; floor honors `control=human`; sticky clears on idle; prefer-rank accepts base36 VM ids)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `4cf06e3` (takeControl clears sessionHealthy; floor honors `control=human`; sticky clears on idle; prefer-rank accepts base36 VM ids)
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` still old build / `ok:false`
 - **Live fleet:** 1 computer, `sessionHealthy:false` (honest) until human LinkedIn login
-- **PR:** recreate after push (prior #134 CLOSED)
+- **PR:** tip pushed; recreate PR (ManagePullRequest/gh write unavailable this run; prior #134 CLOSED). Branch: `cursor/openbot-desktop-vm-b91d`
 
 ## Done this shift
 
