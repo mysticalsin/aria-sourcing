@@ -21,9 +21,18 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import { chromium } from "playwright";
 import { mapViewPoint } from "./lib/openbot-view-coords.mjs";
+import {
+  bridgeDesktopWebSocket,
+  desktopGeometry,
+  desktopModeEnabled,
+  desktopShellHtml,
+  maximizeChromeOnDisplay,
+  proxyDesktopHttp,
+  startDesktopSeat,
+} from "./lib/openbot-desktop-seat.mjs";
 
 /** Browser-side copy of mapViewPoint (no bundler — inject via Function.toString). */
 const MAP_VIEW_POINT_SRC = mapViewPoint.toString();
@@ -31,7 +40,8 @@ const MAP_VIEW_POINT_SRC = mapViewPoint.toString();
 const PORT = Number(process.env.PORT || process.env.OPENBOT_SUPERVISOR_PORT || 18765);
 const SUPERVISOR_TOKEN = (process.env.SUPERVISOR_TOKEN || "aria-supervisor-dev").trim();
 const COMPUTER_TOKEN = (process.env.COMPUTER_TOKEN || "aria-computer-dev").trim();
-const HEADED = process.env.OPENBOT_HEADED === "1";
+const DESKTOP = desktopModeEnabled();
+const HEADED = process.env.OPENBOT_HEADED === "1" || DESKTOP;
 const MAX = Number(process.env.OPENBOT_MAX_COMPUTERS || 10);
 const PROFILE_ROOT = process.env.OPENBOT_PROFILE_ROOT || "/tmp/aria-openbot/profiles";
 const PUBLIC_BASE = (process.env.OPENBOT_PUBLIC_BASE || `http://127.0.0.1:${PORT}`).replace(/\/$/, "");
@@ -120,9 +130,10 @@ function looksLikeLinkedInAuthWall(text, title = "", url = "") {
   );
 }
 
-function launchOptsBase() {
-  const jitterW = 1400 + randInt(-24, 24);
-  const jitterH = 900 + randInt(-16, 16);
+function launchOptsBase(desktopSeat = null) {
+  const geo = desktopGeometry();
+  const jitterW = DESKTOP ? geo.width : 1400 + randInt(-24, 24);
+  const jitterH = DESKTOP ? Math.max(700, geo.height - 56) : 900 + randInt(-16, 16);
   const opts = {
     headless: !HEADED,
     args: [
@@ -133,6 +144,7 @@ function launchOptsBase() {
       "--disable-background-timer-throttling",
       "--disable-renderer-backgrounding",
       "--disable-backgrounding-occluded-windows",
+      ...(DESKTOP ? ["--start-maximized", "--disable-infobars"] : []),
       ...(STEALTH
         ? [
             "--disable-features=IsolateOrigins,site-per-process",
@@ -140,14 +152,19 @@ function launchOptsBase() {
           ]
         : []),
     ],
-    viewport: { width: jitterW, height: jitterH },
+    // Desktop seats: null viewport so real Chrome chrome (tabs/omnibox) is visible.
+    viewport: DESKTOP ? null : { width: jitterW, height: jitterH },
     userAgent:
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
     locale: LOCALE,
     timezoneId: TIMEZONE,
     colorScheme: "light",
-    deviceScaleFactor: 1,
   };
+  // Playwright forbids deviceScaleFactor when viewport is null (desktop chrome UI mode).
+  if (!DESKTOP) opts.deviceScaleFactor = 1;
+  if (desktopSeat?.display) {
+    opts.env = { ...process.env, DISPLAY: desktopSeat.display };
+  }
   if (PROXY_SERVER) {
     opts.proxy = {
       server: PROXY_SERVER,
@@ -159,6 +176,8 @@ function launchOptsBase() {
 }
 
 function viewUrl(botId) {
+  // Desktop seats expose the real VM (Chrome + taskbar) as the primary Take control surface.
+  if (DESKTOP) return `${PUBLIC_BASE}/desktop/${encodeURIComponent(botId)}`;
   return `${PUBLIC_BASE}/view/${encodeURIComponent(botId)}`;
 }
 
@@ -348,7 +367,20 @@ async function ensureComputer(botId) {
   if (computers.size >= MAX) throw new Error(`Max computers (${MAX}) reached`);
   const profileDir = path.join(PROFILE_ROOT, botId);
   fs.mkdirSync(profileDir, { recursive: true });
-  const context = await chromium.launchPersistentContext(profileDir, launchOptsBase());
+
+  let desktop = null;
+  if (DESKTOP) {
+    desktop = await startDesktopSeat(botId);
+  }
+
+  let context;
+  try {
+    context = await chromium.launchPersistentContext(profileDir, launchOptsBase(desktop));
+  } catch (err) {
+    if (desktop) await desktop.stop().catch(() => {});
+    throw err;
+  }
+
   if (STEALTH) {
     await context.addInitScript(() => {
       try {
@@ -374,6 +406,7 @@ async function ensureComputer(botId) {
     cdp: null,
     streaming: false,
     streamClients: new Set(),
+    desktop,
   };
   rec.activeTabId = registerPage(rec, page);
   context.on("page", (p) => {
@@ -382,6 +415,9 @@ async function ensureComputer(botId) {
   });
   if (page.url() === "about:blank") {
     await page.goto("about:blank").catch(() => {});
+  }
+  if (desktop?.display) {
+    void maximizeChromeOnDisplay(desktop.display);
   }
   computers.set(botId, rec);
   return rec;
@@ -397,6 +433,10 @@ async function stopComputer(botId) {
   rec.streamClients.clear();
   await stopScreencast(rec);
   try { await rec.context.close(); } catch {}
+  if (rec.desktop) {
+    try { await rec.desktop.stop(); } catch {}
+    rec.desktop = null;
+  }
 }
 
 async function buildSnapshot(rec) {
@@ -1240,14 +1280,43 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/health") {
       return json(res, 200, {
         ok: true, computers: computers.size, headed: HEADED, max: MAX,
-        stream: "cdp-screencast-binary", multitab: true, liveView: "browserbase-style",
-        input: "websocket+cdp",
+        desktop: DESKTOP,
+        stream: DESKTOP ? "x11vnc+novnc" : "cdp-screencast-binary",
+        multitab: true,
+        liveView: DESKTOP ? "desktop-vm" : "browserbase-style",
+        input: DESKTOP ? "novnc+x11" : "websocket+cdp",
         sessions: true,
         stealth: STEALTH,
         proxy: Boolean(PROXY_SERVER),
         locale: LOCALE,
         timezone: TIMEZONE,
       });
+    }
+
+    // Real desktop VM (Chrome + OS taskbar) — primary Take control surface when OPENBOT_DESKTOP=1.
+    const desktopMatch = url.pathname.match(/^\/desktop\/([^/]+)(\/.*)?$/);
+    if (desktopMatch && method === "GET") {
+      const botId = decodeURIComponent(desktopMatch[1]);
+      const rest = desktopMatch[2] || "";
+      if (!computers.has(botId)) {
+        try { await ensureComputer(botId); }
+        catch (err) {
+          return html(res, 503, `<h1>Desktop ${botId} unavailable</h1><p>${err instanceof Error ? err.message : String(err)}</p>`);
+        }
+      }
+      const rec = computers.get(botId);
+      if (!rec?.desktop?.wsPort) {
+        return html(res, 503, `<h1>Desktop not ready</h1><p>Seat has no virtual display. Set OPENBOT_DESKTOP=1.</p>`);
+      }
+      if (!rest || rest === "/") {
+        return html(res, 200, desktopShellHtml({
+          botId,
+          publicBase: PUBLIC_BASE,
+          control: rec.control,
+        }));
+      }
+      const prefix = `/desktop/${encodeURIComponent(botId)}`;
+      return proxyDesktopHttp(req, res, rec.desktop.wsPort, prefix);
     }
 
     const viewMatch = url.pathname.match(/^\/view\/([^/]+)$/);
@@ -1288,8 +1357,8 @@ const server = http.createServer(async (req, res) => {
         status: rec.status,
         connectUrl: computerUrl(botId),
         viewUrl: viewUrl(botId) + "?fs=1",
-        stream: "cdp-screencast-binary",
-        liveView: "browserbase-style",
+        stream: DESKTOP ? "x11vnc+novnc" : "cdp-screencast-binary",
+        liveView: DESKTOP ? "desktop-vm" : "browserbase-style",
         pageUrl: rec.page.url(),
       });
     }
@@ -1354,13 +1423,30 @@ const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
   try {
     const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+
+    // noVNC ↔ websockify bridge for desktop seats
+    const desk = url.pathname.match(/^\/desktop\/([^/]+)\/websockify\/?$/);
+    if (desk) {
+      const botId = decodeURIComponent(desk[1]);
+      const rec = computers.get(botId);
+      if (!rec?.desktop?.wsPort) {
+        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        bridgeDesktopWebSocket(ws, rec.desktop.wsPort, WebSocket);
+      });
+      return;
+    }
+
     const m = url.pathname.match(/^\/c\/([^/]+)\/stream$/);
-    if (!m) { socket.write("HTTP/1.1 404 Not Found\\r\\n\\r\\n"); socket.destroy(); return; }
+    if (!m) { socket.write("HTTP/1.1 404 Not Found\r\n\r\n"); socket.destroy(); return; }
     const botId = decodeURIComponent(m[1]);
     const token = url.searchParams.get("token") || "";
-    if (token !== COMPUTER_TOKEN) { socket.write("HTTP/1.1 401 Unauthorized\\r\\n\\r\\n"); socket.destroy(); return; }
+    if (token !== COMPUTER_TOKEN) { socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n"); socket.destroy(); return; }
     const rec = computers.get(botId);
-    if (!rec) { socket.write("HTTP/1.1 404 Not Found\\r\\n\\r\\n"); socket.destroy(); return; }
+    if (!rec) { socket.write("HTTP/1.1 404 Not Found\r\n\r\n"); socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, (ws) => {
       rec.streamClients.add(ws);
       ws.send(JSON.stringify({
@@ -1395,9 +1481,12 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(JSON.stringify({
     event: "openbot_chromium_supervisor_ready",
-    port: PORT, headed: HEADED, max: MAX, publicBase: PUBLIC_BASE,
-    stream: "cdp-screencast-binary", multitab: true, liveView: "browserbase-style",
-    input: "websocket+cdp", sessions: true, stealth: STEALTH, proxy: Boolean(PROXY_SERVER),
+    port: PORT, headed: HEADED, desktop: DESKTOP, max: MAX, publicBase: PUBLIC_BASE,
+    stream: DESKTOP ? "x11vnc+novnc" : "cdp-screencast-binary",
+    multitab: true,
+    liveView: DESKTOP ? "desktop-vm" : "browserbase-style",
+    input: DESKTOP ? "novnc+x11" : "websocket+cdp",
+    sessions: true, stealth: STEALTH, proxy: Boolean(PROXY_SERVER),
     chrome: fs.existsSync(CHROME_PATH) ? CHROME_PATH : "playwright-default",
   }));
 });

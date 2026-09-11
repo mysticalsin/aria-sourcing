@@ -10,16 +10,18 @@ primary_region = "cdg"
   NODE_ENV                 = "production"
   PORT                     = "8080"
   OPENBOT_SUPERVISOR_PORT  = "8080"
-  OPENBOT_HEADED           = "0"
+  # Each seat = headed Chromium on its own Xvfb desktop (tabs + OS taskbar).
+  OPENBOT_HEADED           = "1"
+  OPENBOT_DESKTOP          = "1"
+  OPENBOT_DESKTOP_WIDTH    = "1600"
+  OPENBOT_DESKTOP_HEIGHT   = "1000"
   OPENBOT_MAX_COMPUTERS    = "5"
   OPENBOT_PROFILE_ROOT     = "/data/profiles"
   OPENBOT_PUBLIC_BASE      = "https://aria-mantu-computers.fly.dev"
-  # Fluid Take control (CDP screencast) + multi-tab Chromium
-  # Match viewport (1400×900) so stream isn't downscaled — click map still
-  # scales bitmap→device if max ever differs.
+  # CDP stream kept as page-view fallback; Take control primary is /desktop/:id (noVNC).
   OPENBOT_STREAM_QUALITY   = "50"
-  OPENBOT_STREAM_MAX_WIDTH = "1400"
-  OPENBOT_STREAM_MAX_HEIGHT = "900"
+  OPENBOT_STREAM_MAX_WIDTH = "1600"
+  OPENBOT_STREAM_MAX_HEIGHT = "1000"
   OPENBOT_STEALTH          = "1"
   OPENBOT_LOCALE           = "en-US"
   OPENBOT_TIMEZONE         = "America/Montreal"

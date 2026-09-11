@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Chrome
+Exec=xdotool search --onlyvisible --class Chromium windowactivate || true
+Icon=google-chrome
+Terminal=false
+Categories=Network;

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Exec=xterm -geometry 80x24 -bg '#1a1f2b' -fg '#e8eefc' -e bash -lc 'echo Aria computer workspace; ls -la $HOME; exec bash'
+Icon=system-file-manager
+Terminal=false
+Categories=Utility;
