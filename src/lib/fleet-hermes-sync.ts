@@ -70,6 +70,7 @@ export function computerHealthOwnedBySeat(
     if (!owner || owner === ORPHAN) return false;
     return owner === seatId;
   }
-  // Not on fleet list — treat as unbound; caller may still show null health.
-  return true;
+  // Not on fleet list — fail closed. Never green-badge a desk for a stale /
+  // unbound computerId that fleet does not currently expose.
+  return false;
 }

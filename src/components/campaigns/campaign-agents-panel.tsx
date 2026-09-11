@@ -128,18 +128,15 @@ export function CampaignAgentsPanel({
       const computerIds = new Set(
         campaignSeats.map((s) => s.computerId).filter(Boolean) as string[],
       );
-      // Seat ownership first — stale Hermes computerId must not pull another seat's VM.
+      // Seat-owned rows only — never ingest __orphan__ / foreign VMs into
+      // campaign badges or ops (Hermes twin after reclaim must not inflate counts).
       const rows = (data.computers ?? []).filter((c) => {
-        if (c.seatId && seatIds.has(c.seatId)) return true;
-        if (c.seatId && c.seatId !== "__orphan__") return false;
-        return Boolean(c.computerId && computerIds.has(c.computerId));
+        if (!c.seatId || c.seatId === "__orphan__") return false;
+        return seatIds.has(c.seatId);
       });
       setComputers(
         rows.map((c) => {
-          const seat = campaignSeats.find((s) => s.id === c.seatId) ??
-            (c.seatId && c.seatId !== "__orphan__"
-              ? undefined
-              : campaignSeats.find((s) => s.computerId && s.computerId === c.computerId));
+          const seat = campaignSeats.find((s) => s.id === c.seatId);
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );

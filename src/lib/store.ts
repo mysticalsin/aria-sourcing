@@ -2586,7 +2586,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      emit({ kind: "send", candidateName: candidate.name, campaignId: campaign.id });
+      emit({ kind: "send", candidateName: candidate.name, campaignId: campaign.id, seatId: msg.seatId });
       return result;
     },
     [commit, current, workspaceEffectAllowed, workspaceFetch],

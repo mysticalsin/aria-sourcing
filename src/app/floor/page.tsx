@@ -171,18 +171,21 @@ export default function FloorPage() {
     const now = Date.now();
     for (const e of recentEvents()) {
       if (e.at <= now - PULSE_MS) continue;
+      // No seatId → no desk pulse (hash would theatrical-paint a random LI VM).
+      if (!e.seatId) continue;
       const employees = seatsRef.current.slice(1); // index 0 = CEO (src/lib/floor3d.ts)
       if (employees.length === 0) continue;
       const seat = employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))];
-      pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
+      if (seat?.id === e.seatId) pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
     }
 
     const unsubscribe = subscribe((e) => {
       setTicker((prev) => [...prev, e].slice(-TICKER_CAP));
       const employees = seatsRef.current.slice(1);
-      if (employees.length > 0) {
-        const seat = employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))];
-        pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
+      // Fail-closed: only pulse the desk that owns the event (never hash-pick).
+      if (e.seatId && employees.length > 0) {
+        const seat = employees.find((s) => s.id === e.seatId);
+        if (seat) pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
       }
       if (fxSoundEnabled && soundEnabledRef.current) {
         playSound(EVENT_SOUND[e.kind], true);
@@ -480,7 +483,10 @@ function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentS
       ) : (
         <ul className="space-y-1.5">
           {items.map((e, i) => {
-            const seat = employees.length > 0 ? employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))] : null;
+            // Never hash-attribute a seatless event onto a random LI desk.
+            const seat = e.seatId
+              ? employees.find((s) => s.id === e.seatId) ?? null
+              : null;
             return (
               <li key={`${e.at}-${i}`} className="flex items-center gap-2 text-sm">
                 <span

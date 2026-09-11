@@ -86,5 +86,19 @@ function ok(name: string, cond: boolean) {
   );
 }
 
+
+{
+  ok(
+    "health blocked when computerId absent from fleet",
+    !computerHealthOwnedBySeat("seat_a", "comp_missing", [
+      { seatId: "seat_b", computerId: "comp_b" },
+    ]),
+  );
+  ok(
+    "health blocked on empty fleet list",
+    !computerHealthOwnedBySeat("seat_a", "comp_x", []),
+  );
+}
+
 console.log(`fleet-hermes-sync: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
