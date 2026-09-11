@@ -27,6 +27,7 @@ import {
   publicDemoAriaBotDisabled,
   publicDemoSideEffectsDisabled,
 } from "@/lib/server/demo-side-effects";
+import { openBotHostHealth } from "@/lib/openbot/supervisor-client";
 
 import { safeLog } from "@/lib/log-redact";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
@@ -355,6 +356,22 @@ async function ensureConnect(
       );
 
   if (!seat || seat.provider !== provider) {
+    if (provider === "LinkedIn Browser Computer") {
+      const baseUrl = (process.env.COMPUTER_SUPERVISOR_URL ?? "").trim();
+      const token = (process.env.COMPUTER_SUPERVISOR_TOKEN ?? "").trim();
+      if (baseUrl && token) {
+        const health = await openBotHostHealth({ baseUrl, token });
+        if (health?.max && health.computers >= health.max) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `Chromium host is full (${health.computers}/${health.max}). Stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS.`,
+            },
+            { status: 409 },
+          );
+        }
+      }
+    }
     const browserCount = seats.filter((s) => s.provider === "LinkedIn Browser Computer").length;
     const createdName =
       opts?.seatName?.trim() ||

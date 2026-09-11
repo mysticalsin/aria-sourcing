@@ -1544,6 +1544,26 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 return;
               }
               if (seat.provider === "LinkedIn Browser Computer") {
+                // Pre-check Chromium host capacity before mint/boot (same gate as Fleet Deploy).
+                try {
+                  const capRes = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+                  if (capRes.ok) {
+                    const cap = (await capRes.json()) as {
+                      hostCapacity?: { computers: number; max: number } | null;
+                    };
+                    const hc = cap.hostCapacity;
+                    if (hc && hc.max > 0 && hc.computers >= hc.max) {
+                      toast({
+                        title: "Host at capacity",
+                        description: `${hc.computers}/${hc.max} VMs in use — stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS before attaching.`,
+                        variant: "warning",
+                      });
+                      return;
+                    }
+                  }
+                } catch {
+                  /* boot path still fails closed if host is full */
+                }
                 // Mint a real computer id — never seat.id (that merges N VMs onto one profile).
                 const computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
                 if (!seat.computerId) {

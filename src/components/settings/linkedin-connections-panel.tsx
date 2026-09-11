@@ -55,6 +55,8 @@ type SeatRow = {
   operatorEmail?: string;
   connectedAccount?: string | null;
   computerId?: string | null;
+  /** From fleet supervisor /session-probe — never invent true. */
+  sessionHealthy?: boolean | null;
   adapterConfigured?: boolean;
   oauthConnected?: boolean;
   oauthProfile?: OAuthProfile | null;
@@ -100,6 +102,9 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const [simBody, setSimBody] = React.useState("Thanks — I'm interested. When can we talk?");
   const [simType, setSimType] = React.useState<LinkedInEventType>("reply");
   const [simulating, setSimulating] = React.useState(false);
+  const [hostCapacity, setHostCapacity] = React.useState<{ computers: number; max: number } | null>(
+    null,
+  );
 
   const load = React.useCallback(async () => {
     if (!enabled) {
@@ -130,13 +135,49 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           connectedAccount: s.connectedAccount,
           operatorEmail: s.operatorEmail,
           computerId: s.computerId ?? null,
+          sessionHealthy: null as boolean | null,
         }));
 
+      let nextSeats: SeatRow[] = localLinkedIn;
       if (json?.demo || !supabaseEnabled) {
-        setSeats(localLinkedIn);
+        nextSeats = localLinkedIn;
       } else if (Array.isArray(json?.seats)) {
-        setSeats(json.seats);
+        nextSeats = json.seats;
       }
+
+      // Overlay fleet sessionHealthy so Browser Computer badges aren't "green" without a probe.
+      try {
+        const fleetRes = await fetch("/api/fleet/computers", { credentials: "include" });
+        if (fleetRes.ok) {
+          const fleet = (await fleetRes.json()) as {
+            computers?: { seatId?: string; computerId?: string; sessionHealthy?: boolean | null }[];
+            hostCapacity?: { computers: number; max: number } | null;
+          };
+          if (fleet.hostCapacity) setHostCapacity(fleet.hostCapacity);
+          const bySeat = new Map(
+            (fleet.computers ?? [])
+              .filter((c) => c.seatId)
+              .map((c) => [c.seatId!, c.sessionHealthy ?? null] as const),
+          );
+          const byComp = new Map(
+            (fleet.computers ?? [])
+              .filter((c) => c.computerId)
+              .map((c) => [c.computerId!, c.sessionHealthy ?? null] as const),
+          );
+          nextSeats = nextSeats.map((s) => ({
+            ...s,
+            sessionHealthy:
+              (s.id ? (bySeat.get(s.id) ?? null) : null) ??
+              (s.computerId ? (byComp.get(s.computerId) ?? null) : null) ??
+              s.sessionHealthy ??
+              null,
+          }));
+        }
+      } catch {
+        /* seats still usable without fleet overlay */
+      }
+
+      setSeats(nextSeats);
 
       if (json?.error && !json.ok) {
         toast({ title: "LinkedIn status", description: json.error, variant: "error" });
@@ -283,7 +324,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         }
         actions.updateSeat(seat.id, {
           connectedAccount: accountLabel,
-          computerId: seat.computerId ?? `comp_demo_${seat.id}`,
+          computerId: seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`,
           linkedinDeliveryBackend: "browser-computer",
         });
         const live = await actions.toggleSeatLive(seat.id);
@@ -395,13 +436,14 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         });
         return;
       }
+      // Never invent computerId from seat.id — that collapses N Chromium profiles onto one id.
       const computerId =
         (seat.computerId && String(seat.computerId).trim()) ||
         localSeats.find((s) => s.id === seat.id)?.computerId ||
-        `comp_${seat.id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 24)}`;
+        `comp_${globalThis.crypto.randomUUID()}`;
 
       // Persist computer id on the seat so agents keep reusing the same VM profile.
-      if (!seat.computerId) {
+      if (!seat.computerId || seat.computerId !== computerId) {
         actions.updateSeat(seat.id, {
           computerId,
           linkedinDeliveryBackend: "browser-computer",
@@ -621,6 +663,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     simType,
     setSimType,
     simulating,
+    hostCapacity,
     oauthSeat,
     signedIn,
     readinessItems,
@@ -661,6 +704,7 @@ export function LinkedInIdentityStep({
     simType,
     setSimType,
     simulating,
+    hostCapacity,
     oauthSeat,
     signedIn,
     readinessItems,
@@ -673,6 +717,8 @@ export function LinkedInIdentityStep({
     actions,
     load,
   } = useLinkedInConnections();
+
+  const { toast } = useToast();
 
   const hasBrowserSeat = seats.some((s) => s.provider === "LinkedIn Browser Computer");
   const state: StepState =
@@ -809,8 +855,21 @@ export function LinkedInIdentityStep({
                 variant="outline"
                 leftIcon={<Plus className="h-4 w-4" />}
                 loading={connectingBrowser}
-                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
-                onClick={() => void openAgentLinkedInLogin({ createIfMissing: true, surface: "member" })}
+                disabled={
+                  (!providers?.browserComputerConfigured && supabaseEnabled) ||
+                  Boolean(hostCapacity && hostCapacity.max > 0 && hostCapacity.computers >= hostCapacity.max)
+                }
+                onClick={() => {
+                  if (hostCapacity && hostCapacity.max > 0 && hostCapacity.computers >= hostCapacity.max) {
+                    toast({
+                      title: "Chromium host full",
+                      description: `${hostCapacity.computers}/${hostCapacity.max} VMs in use — stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS.`,
+                      variant: "warning",
+                    });
+                    return;
+                  }
+                  void openAgentLinkedInLogin({ createIfMissing: true, surface: "member" });
+                }}
               >
                 Add another LinkedIn account
               </Button>
@@ -864,7 +923,10 @@ export function LinkedInIdentityStep({
       ) : (
         <ul className="space-y-2">
           {seats.map((s, i) => {
-            const ready = s.mode === "live" && s.status === "active";
+            const ready =
+              s.provider === "LinkedIn Browser Computer"
+                ? s.sessionHealthy === true
+                : s.mode === "live" && s.status === "active";
             return (
               <motion.li
                 key={s.id}
