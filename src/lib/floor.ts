@@ -169,11 +169,16 @@ export function floorRollup(
     }
     if (a.state === "idle") continue;
 
-    // With live computer hints loaded, don't count Browser Computer seats as
-    // "working" from theatrical activity alone — need ready + probed-healthy VM.
-    if (computers && seat.provider === "LinkedIn Browser Computer") {
-      const hint = resolveComputerHint(seat, computers);
-      if (hint?.status === "ready" && hint.sessionHealthy === true) {
+    // With live computer hints loaded, "Working now" is VM-truth mode:
+    // Browser Computer seats need ready + probed-healthy; other seats need real
+    // sends today — never the theatrical activity lottery (masks unhealthy LI VMs).
+    if (computers) {
+      if (seat.provider === "LinkedIn Browser Computer") {
+        const hint = resolveComputerHint(seat, computers);
+        if (hint?.status === "ready" && hint.sessionHealthy === true) {
+          working++;
+        }
+      } else if (seat.sentToday > 0) {
         working++;
       }
       continue;

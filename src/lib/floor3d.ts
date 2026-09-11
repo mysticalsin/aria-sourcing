@@ -178,14 +178,24 @@ export function seatsToOfficeAgents(
         ? "idle"
         : "error"; // "paused" / auto-paused → error
     let subtitle = activity.label;
+    // Live fleet poll active → suppress non-LI theatrical "working" (no real sends).
+    if (
+      computers &&
+      seat.provider !== "LinkedIn Browser Computer" &&
+      status === "working" &&
+      !(seat.sentToday > 0)
+    ) {
+      status = "idle";
+    }
     const hint = resolveComputerHint(seat, computers);
     if (hint) {
       if (hint.status === "help_requested" || hint.status === "error") {
         status = "error";
         subtitle = hint.status === "help_requested" ? "Needs Take control" : "VM error";
       } else if (hint.status === "busy" || hint.status === "starting") {
-        status = "working";
-        if (hint.status === "starting") subtitle = "Booting VM";
+        // Booting/busy is not a probed-healthy LinkedIn session — idle/warming copy only.
+        status = "idle";
+        subtitle = hint.status === "starting" ? "Booting VM" : "VM busy — session unverified";
       } else if (hint.status === "ready" && hint.sessionHealthy === false) {
         status = "error";
         subtitle = "LinkedIn session unhealthy";
@@ -229,3 +239,20 @@ export function seatsToOfficeAgents(
     };
   });
 }
+
+/** Prefer Browser Computer seats (esp. bound VMs) when the 3D view is capped. */
+export function preferBrowserComputerAgents<T extends { provider?: string; subtitle?: string | null; position?: string; id: string }>(
+  agents: T[],
+  selectedId?: string | null,
+): T[] {
+  const rank = (a: T) => {
+    if (a.position === "ceo") return 0;
+    if (selectedId && a.id === selectedId) return 1;
+    if (a.provider === "LinkedIn Browser Computer") {
+      return a.subtitle && /…[0-9a-fA-F_-]{4,}/.test(a.subtitle) ? 2 : 3;
+    }
+    return 4;
+  };
+  return [...agents].sort((a, b) => rank(a) - rank(b));
+}
+

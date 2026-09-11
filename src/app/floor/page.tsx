@@ -141,8 +141,10 @@ export default function FloorPage() {
             // cannot inherit this VM after a poisoned FK clear / reclaim.
             seatId: c.seatId,
           };
-          map.set(c.seatId, hint);
-          map.set(c.computerId, hint);
+          // Orphans are computerId-keyed only — never map.set("__orphan__", …)
+          // (last orphan would overwrite and bleed onto unbound desks).
+          if (c.seatId && c.seatId !== "__orphan__") map.set(c.seatId, hint);
+          if (c.computerId) map.set(c.computerId, hint);
           // Keep Hermes seat.computerId aligned with DB-backed fleet (post-reclaim),
           // same as Fleet/Campaign polls — floor hints alone do not fix send paths.
           if (c.seatId && c.computerId && c.seatId !== "__orphan__") {
@@ -410,9 +412,15 @@ function Floor3DSection({
   const office = seatsToOfficeAgents(seats, state, computerHints).map((a) => {
     if (!pulsingSeatIds.has(a.id) || a.status === "working") return a;
     const seat = seats.find((s) => s.id === a.id);
-    if (seat?.provider === "LinkedIn Browser Computer") {
-      const hint = resolveComputerHint(seat, computerHints);
-      if (!hint || hint.status !== "ready" || hint.sessionHealthy !== true) return a;
+    if (!seat) return a;
+    // Live fleet poll: never theatrical-pulse without real VM health / real sends.
+    if (computerHints) {
+      if (seat.provider === "LinkedIn Browser Computer") {
+        const hint = resolveComputerHint(seat, computerHints);
+        if (!hint || hint.status !== "ready" || hint.sessionHealthy !== true) return a;
+      } else if (!(seat.sentToday > 0)) {
+        return a;
+      }
     }
     return { ...a, status: "working" as const };
   });

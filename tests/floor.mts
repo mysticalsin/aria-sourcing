@@ -1,5 +1,5 @@
 import { agentActivity, agentActivityWithComputers, floorRollup } from "../src/lib/floor";
-import { pickResponderIndex, seatsToOfficeAgents } from "../src/lib/floor3d";
+import { pickResponderIndex, preferBrowserComputerAgents, seatsToOfficeAgents } from "../src/lib/floor3d";
 import { buildSeedState } from "../src/lib/seed";
 import { SEED_NOW } from "../src/lib/utils";
 
@@ -324,6 +324,111 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   ok(
     "poisoned computerId cannot inherit another seat's activity",
     actA.state === "idle" && /No Browser Computer|VM not on host/i.test(actA.label),
+  );
+}
+
+// Live computer map: non-LI theatrical busy with zero sends is not "Working now".
+{
+  const email = s.seats.find(
+    (x) => x.provider !== "LinkedIn Browser Computer" && x.sentToday === 0,
+  );
+  if (email) {
+    const theatrical = floorRollup([email], s, NOW);
+    const withHints = floorRollup([email], s, NOW, new Map());
+    if (theatrical.working > 0) {
+      ok(
+        "rollup suppresses non-LI theatrical working when computers map loaded",
+        withHints.working === 0,
+      );
+    }
+    const agents = seatsToOfficeAgents([email], s, new Map());
+    const agent = agents[0]!;
+    if (agent.status === "working") {
+      ok("non-LI theatrical working suppressed on 3D when computers map loaded", false);
+    } else {
+      ok("non-LI theatrical working suppressed on 3D when computers map loaded", true);
+    }
+  }
+}
+
+// Booting/busy VM is not probed-healthy — stay idle, not theatrical working.
+{
+  const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (li) {
+    const starting = seatsToOfficeAgents(
+      [{ ...li, computerId: "comp_boot_abc12345" }],
+      s,
+      new Map([
+        [
+          li.id,
+          {
+            status: "starting" as const,
+            computerId: "comp_boot_abc12345",
+            seatId: li.id,
+          },
+        ],
+      ]),
+    )[0]!;
+    ok("starting VM overlays idle (not working)", starting.status === "idle");
+    ok(
+      "starting VM subtitle is Booting VM",
+      (starting.subtitle ?? "").includes("Booting VM"),
+    );
+    const busy = seatsToOfficeAgents(
+      [{ ...li, computerId: "comp_busy_abc12345" }],
+      s,
+      new Map([
+        [
+          li.id,
+          {
+            status: "busy" as const,
+            computerId: "comp_busy_abc12345",
+            seatId: li.id,
+          },
+        ],
+      ]),
+    )[0]!;
+    ok("busy VM overlays idle (not working)", busy.status === "idle");
+    ok(
+      "busy VM subtitle stays unverified",
+      /unverified|busy/i.test(busy.subtitle ?? ""),
+    );
+  }
+}
+
+// 3D cap ranking keeps bound LinkedIn Browser Computers ahead of email theater.
+{
+  const ranked = preferBrowserComputerAgents(
+    [
+      { id: "email-1", provider: "Google", position: "employee" as const, subtitle: "Outreach" },
+      {
+        id: "li-bound",
+        provider: "LinkedIn Browser Computer",
+        position: "employee" as const,
+        subtitle: "LinkedIn session healthy · …abc12345",
+      },
+      { id: "ceo", provider: "ARIA", position: "ceo" as const, subtitle: "Lead" },
+      {
+        id: "li-unbound",
+        provider: "LinkedIn Browser Computer",
+        position: "employee" as const,
+        subtitle: "No Browser Computer",
+      },
+    ],
+    null,
+  );
+  ok("3D prefer keeps CEO first", ranked[0]?.id === "ceo");
+  ok("3D prefer ranks bound LI before unbound LI", ranked[1]?.id === "li-bound");
+  ok("3D prefer ranks unbound LI before email", ranked[2]?.id === "li-unbound");
+  ok("3D prefer ranks email last", ranked[3]?.id === "email-1");
+}
+
+// Seed LinkedIn Browser Computers leave computerId null until Deploy/Login.
+{
+  const li = s.seats.filter((x) => x.provider === "LinkedIn Browser Computer");
+  ok(
+    "seed LI seats start unbound (computerId null)",
+    li.length > 0 && li.every((x) => x.computerId == null),
   );
 }
 

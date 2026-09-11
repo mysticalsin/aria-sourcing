@@ -294,7 +294,7 @@ function seedSeats(): AgentSeat[] {
       warmupStartedAt: isoDaysBefore(10),
       sentToday: 0,
       health: { sentTotal: 12, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
-      computerId: "comp_java_01",
+      computerId: null, // bound on Deploy/Login reclaim-or-mint
       linkedinDeliveryBackend: "browser-computer" as const,
       assignedCampaignIds: ["camp_seed_backend"],
       persona:
@@ -310,7 +310,7 @@ function seedSeats(): AgentSeat[] {
       warmupStartedAt: isoDaysBefore(8),
       sentToday: 0,
       health: { sentTotal: 8, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
-      computerId: "comp_java_02",
+      computerId: null, // bound on Deploy/Login reclaim-or-mint
       linkedinDeliveryBackend: "browser-computer" as const,
       assignedCampaignIds: ["camp_seed_backend"],
       persona:
@@ -326,7 +326,7 @@ function seedSeats(): AgentSeat[] {
       warmupStartedAt: isoDaysBefore(6),
       sentToday: 0,
       health: { sentTotal: 4, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
-      computerId: "comp_java_03",
+      computerId: null, // bound on Deploy/Login reclaim-or-mint
       linkedinDeliveryBackend: "browser-computer" as const,
       assignedCampaignIds: ["camp_seed_backend"],
       persona:
