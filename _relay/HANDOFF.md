@@ -10,9 +10,9 @@ status: campaign-clear-foreign-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (campaign clear-foreign + seatId route contract + prior ownership stack)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `d08cc9b` (campaign clear-foreign + seatId contracts + ownership stack)
 - **Fly:** https://aria-mantu-app.fly.dev — build `8ea3370…` (**tip not live**); `/api/ready` `ok:false` (`agentFrameworks:false`)
-- **PR:** recreate after push (prior #131 CLOSED / branch often wiped)
+- **PR:** #132 → `integration/sourcing-enrichment-on-main` (draft; prior #131 CLOSED)
 - **Durable bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` ↔ seat `600e8afa-a7c4-40ef-91c8-f4854fa9e5fc`
 - **Host:** capacity often 3/5 computers
 
