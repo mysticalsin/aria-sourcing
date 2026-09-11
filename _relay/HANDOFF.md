@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 162
 agent: cursor-cloud
-updated: 2026-09-11T10:56Z
+updated: 2026-09-11T10:57Z
 status: n-agent-floor-prove-on-fly
 ---
 
@@ -10,8 +10,8 @@ status: n-agent-floor-prove-on-fly
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `820160e` (`820160ec6d152840af5c2d6534918419a6685e9b`)
-- **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches tip · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `963a337` (docs); **Fly code build** `820160e` (`820160ec6d152840af5c2d6534918419a6685e9b`)
+- **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches code commit · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/115 → `integration/sourcing-enrichment-on-main` (draft)
 - **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
@@ -22,7 +22,7 @@ status: n-agent-floor-prove-on-fly
 2. `tests/floor.mts`: N=5 seats → N distinct `…last8` floor suffixes; computerId-only hints; no invented `sessionHealthy`
 3. `scripts/prove-n-agent-floor.mts` offline + LIVE ensure/stop on Fly computers
 4. Evidence `_relay/evidence/2026-09-11-n-agent-floor-proof.json` — 3 distinct live `comp_*` UUIDs, distinct floor suffixes, stopped after
-5. Deployed Fly; set `ARIA_RELEASE_SHA` to tip; floor tests 37 passed
+5. Deployed Fly @ `820160e`; `ARIA_RELEASE_SHA` set; floor tests 37 passed
 
 ## Blockers (goal incomplete)
 
