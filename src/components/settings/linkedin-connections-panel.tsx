@@ -465,24 +465,25 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         localSeats.find((s) => s.id === seat.id)?.computerId ||
         "";
       if (!computerId) {
-        // Reuse an already-healthy Chromium profile before minting a blank one
+        // Prefer reclaiming a probed-healthy host orphan before minting a blank id
         // (minting is what forces LinkedIn login again after an app update).
         try {
-          const fleetRes = await fetch("/api/fleet/computers", { credentials: "include" });
-          const fleetJson = (await fleetRes.json().catch(() => null)) as {
-            computers?: Array<{
-              computerId?: string;
-              seatId?: string | null;
-              sessionHealthy?: boolean | null;
-            }>;
+          const reclaimRes = await fetch("/api/fleet/computers", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "reclaim_healthy_orphan", seatId: seat.id }),
+          });
+          const reclaimJson = (await reclaimRes.json().catch(() => null)) as {
+            sessionHealthy?: boolean | null;
+            computer?: { computerId?: string; sessionHealthy?: boolean | null };
           } | null;
-          const healthyOrphan = (fleetJson?.computers ?? []).find(
-            (c) =>
-              c.sessionHealthy === true &&
-              c.computerId &&
-              (!c.seatId || c.seatId === seat.id),
-          );
-          computerId = healthyOrphan?.computerId?.trim() || `comp_${globalThis.crypto.randomUUID()}`;
+          const healthy =
+            reclaimJson?.sessionHealthy === true ||
+            reclaimJson?.computer?.sessionHealthy === true;
+          const nextId = reclaimJson?.computer?.computerId?.trim();
+          computerId =
+            healthy && nextId ? nextId : `comp_${globalThis.crypto.randomUUID()}`;
         } catch {
           computerId = `comp_${globalThis.crypto.randomUUID()}`;
         }
@@ -505,16 +506,20 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         }
       }
 
-      async function fleetAct(action: "ensure" | "start" | "take_control" | "session_probe") {
+      async function fleetAct(
+        action: "ensure" | "start" | "take_control" | "session_probe" | "reclaim_healthy_orphan",
+        id: string = computerId,
+      ) {
         const res = await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, computerId, seatId: seat.id }),
+          body: JSON.stringify({ action, computerId: id || undefined, seatId: seat.id }),
         });
         const body = (await res.json().catch(() => null)) as {
           error?: string;
           computer?: {
+            computerId?: string;
             viewUrl?: string | null;
             remoteUrl?: string | null;
             status?: string;
@@ -522,6 +527,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
             sessionHealthy?: boolean | null;
           };
           sessionHealthy?: boolean | null;
+          reclaimed?: boolean;
         } | null;
         if (!res.ok) throw new Error(body?.error || res.statusText);
         return body;
@@ -531,6 +537,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       await fleetAct("start");
       // If LinkedIn cookies already live on this durable profile, open the feed —
       // do not bounce to /login and wipe the operator's session after every deploy.
+      // When the stored id is a login-wall twin, probe host orphans and reclaim a
+      // healthy durable profile instead of reminting (preserves cookies across deploys).
       let sessionHealthy = false;
       try {
         const probed = await fleetAct("session_probe");
@@ -538,6 +546,39 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           probed?.sessionHealthy === true || probed?.computer?.sessionHealthy === true;
       } catch {
         sessionHealthy = false;
+      }
+      if (!sessionHealthy) {
+        try {
+          const reclaimed = await fleetAct("reclaim_healthy_orphan");
+          const healthy =
+            reclaimed?.sessionHealthy === true ||
+            reclaimed?.computer?.sessionHealthy === true;
+          const nextId = reclaimed?.computer?.computerId?.trim();
+          if (healthy && nextId) {
+            sessionHealthy = true;
+            if (nextId !== computerId) {
+              computerId = nextId;
+              const saved = await actions.updateSeat(seat.id, {
+                computerId,
+                linkedinDeliveryBackend: "browser-computer",
+                connectedAccount: seat.connectedAccount || label.trim() || "AriaBot LinkedIn",
+              });
+              if (!saved) {
+                toast({
+                  title: "Reclaimed VM not saved",
+                  description:
+                    "Found a healthy host profile but could not persist computerId — fix Fleet, then retry Log in.",
+                  variant: "error",
+                });
+                return;
+              }
+              await fleetAct("ensure", computerId);
+              await fleetAct("start", computerId);
+            }
+          }
+        } catch {
+          // Keep sessionHealthy false — fall through to /login on the stored profile.
+        }
       }
       const loginUrl =
         surface === "recruiter"

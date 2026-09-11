@@ -95,6 +95,13 @@ export type ComputerSupervisorEndpoint = {
   mockSend?: boolean | null;
 };
 
+/**
+ * Seat id for host Chromiums that are running but not yet bound to an agent_seats row.
+ * hydrateFromHost imports them so Login/Fleet can probe+reclaim without minting twins.
+ * Never invent sessionHealthy for these — probe first.
+ */
+export const HOST_ORPHAN_SEAT_ID = "__orphan__";
+
 let endpointOverride: ComputerSupervisorEndpoint | null = null;
 
 /** Bind Aria Settings / vault-resolved supervisor endpoint for the current deliver call. */
@@ -237,8 +244,21 @@ export class ComputerSupervisor {
     if (opts.computerId) {
       const byId = this.computers.get(opts.computerId);
       if (byId) {
-        // Never share one Chromium profile across seats/workspaces.
-        if (byId.workspaceId !== opts.workspaceId || byId.seatId !== opts.seatId) {
+        // Never share one Chromium profile across seats/workspaces — except claiming
+        // a host orphan (imported by hydrateFromHost) onto a real agent seat.
+        if (byId.workspaceId !== opts.workspaceId) {
+          throw new Error(
+            `computer-ownership-mismatch: ${opts.computerId} belongs to seat ${byId.seatId} (workspace ${byId.workspaceId}), not seat ${opts.seatId}`,
+          );
+        }
+        if (byId.seatId !== opts.seatId) {
+          if (byId.seatId === HOST_ORPHAN_SEAT_ID && opts.seatId !== HOST_ORPHAN_SEAT_ID) {
+            return this.claimOrphan(opts.computerId, {
+              workspaceId: opts.workspaceId,
+              seatId: opts.seatId,
+              campaignId: opts.campaignId,
+            });
+          }
           throw new Error(
             `computer-ownership-mismatch: ${opts.computerId} belongs to seat ${byId.seatId} (workspace ${byId.workspaceId}), not seat ${opts.seatId}`,
           );
@@ -248,7 +268,10 @@ export class ComputerSupervisor {
       }
     }
     const existing = [...this.computers.values()].find(
-      (c) => c.workspaceId === opts.workspaceId && c.seatId === opts.seatId,
+      (c) =>
+        c.workspaceId === opts.workspaceId &&
+        c.seatId === opts.seatId &&
+        c.seatId !== HOST_ORPHAN_SEAT_ID,
     );
     if (existing) {
       // Prefer stable DB computer_id so OpenBot bot ids match across processes.
@@ -308,8 +331,67 @@ export class ComputerSupervisor {
     });
   }
 
+  /**
+   * Bind a host-imported orphan Chromium onto a real agent seat.
+   * Detaches any other computer still claiming that seat (marks it orphan again)
+   * so one seat never owns two profiles.
+   */
+  claimOrphan(
+    computerId: string,
+    opts: { workspaceId: string; seatId: string; campaignId?: string | null },
+  ): ComputerRecord {
+    const rec = this.require(computerId);
+    if (rec.workspaceId !== opts.workspaceId) {
+      throw new Error(
+        `computer-ownership-mismatch: ${computerId} belongs to workspace ${rec.workspaceId}, not ${opts.workspaceId}`,
+      );
+    }
+    if (rec.seatId !== HOST_ORPHAN_SEAT_ID && rec.seatId !== opts.seatId) {
+      throw new Error(
+        `computer-ownership-mismatch: ${computerId} belongs to seat ${rec.seatId}, not orphan/seat ${opts.seatId}`,
+      );
+    }
+    if (opts.seatId === HOST_ORPHAN_SEAT_ID) {
+      throw new Error("claim-orphan-requires-real-seat");
+    }
+    for (const other of this.computers.values()) {
+      if (
+        other.workspaceId === opts.workspaceId &&
+        other.seatId === opts.seatId &&
+        other.computerId !== computerId
+      ) {
+        other.seatId = HOST_ORPHAN_SEAT_ID;
+        other.profileVolume = `profiles/${opts.workspaceId}/${HOST_ORPHAN_SEAT_ID}`;
+        other.updatedAt = isoNow();
+        this.audit(
+          other.computerId,
+          "detach_seat",
+          `Detached seat ${opts.seatId} while reclaiming ${computerId}`,
+          "system",
+        );
+      }
+    }
+    rec.seatId = opts.seatId;
+    rec.profileVolume = `profiles/${opts.workspaceId}/${opts.seatId}`;
+    if (opts.campaignId) rec.campaignId = opts.campaignId;
+    rec.updatedAt = isoNow();
+    this.audit(
+      computerId,
+      "claim_orphan",
+      `Claimed host orphan onto seat ${opts.seatId}`,
+      "system",
+      { campaignId: opts.campaignId },
+    );
+    return rec;
+  }
+
   list(workspaceId: string): ComputerRecord[] {
     return [...this.computers.values()].filter((c) => c.workspaceId === workspaceId);
+  }
+
+  /** Host Chromiums imported by hydrateFromHost that are not bound to a real seat. */
+  listOrphans(workspaceId: string): ComputerRecord[] {
+    return this.list(workspaceId).filter((c) => c.seatId === HOST_ORPHAN_SEAT_ID);
   }
 
   get(computerId: string): ComputerRecord | undefined {
@@ -320,21 +402,30 @@ export class ComputerSupervisor {
    * Reconcile in-memory rows with live OpenBot host state after cold start.
    * Without this, ensureComputer leaves status=stopped even when Chromiums are up,
    * so Fleet/Floor look empty while Fly still has VMs.
+   *
+   * Also imports unmatched running host bots as orphans (seatId=__orphan__) so Login
+   * can probe+reclaim a durable healthy profile instead of reminting a login-wall twin.
+   * Never invents sessionHealthy — orphans stay null until /session-probe.
    */
-  async hydrateFromHost(workspaceId: string): Promise<{ matched: number; hostCount: number }> {
+  async hydrateFromHost(workspaceId: string): Promise<{
+    matched: number;
+    imported: number;
+    hostCount: number;
+  }> {
     const cfg = openBotSupervisorCfg();
-    if (!cfg) return { matched: 0, hostCount: 0 };
+    if (!cfg) return { matched: 0, imported: 0, hostCount: 0 };
     let hostComputers: Awaited<ReturnType<typeof openBotListComputers>>["computers"] = [];
     try {
       ({ computers: hostComputers } = await openBotListComputers(cfg));
     } catch {
-      return { matched: 0, hostCount: 0 };
+      return { matched: 0, imported: 0, hostCount: 0 };
     }
     const byBot = new Map(
       hostComputers
         .filter((c) => c.botId)
         .map((c) => [c.botId, c] as const),
     );
+    const matchedBotIds = new Set<string>();
     let matched = 0;
     for (const rec of this.list(workspaceId)) {
       const botId = rec.botId || toOpenBotBotId(rec.computerId);
@@ -351,31 +442,129 @@ export class ComputerSupervisor {
         continue;
       }
       matched += 1;
-      const raw = (host.status || "").toLowerCase();
-      if (raw === "running" || raw === "ready" || raw === "idle") {
-        if (rec.status === "stopped" || rec.status === "starting" || rec.status === "error") {
-          rec.status = "ready";
-          rec.lastError = null;
-          // Host proves process up — session health still requires /session-probe.
-          rec.sessionHealthy = null;
-        }
-      } else if (raw === "starting" || raw === "booting") {
-        rec.status = "starting";
-        rec.sessionHealthy = null;
-      } else if (raw === "error" || raw === "failed") {
-        rec.status = "error";
-        rec.sessionHealthy = null;
-      } else if (raw === "stopped" || raw === "exited") {
-        if (rec.control !== "human") {
-          rec.status = "stopped";
-          rec.sessionHealthy = null;
-        }
-      }
-      if (host.url) rec.remoteUrl = host.url;
-      if (host.viewUrl || host.url) rec.viewUrl = host.viewUrl || host.url || rec.viewUrl;
-      rec.updatedAt = isoNow();
+      matchedBotIds.add(botId);
+      this.applyHostState(rec, host);
     }
-    return { matched, hostCount: hostComputers.length };
+
+    let imported = 0;
+    for (const host of hostComputers) {
+      const botId = (host.botId || "").trim();
+      if (!botId || matchedBotIds.has(botId)) continue;
+      const raw = (host.status || "").toLowerCase();
+      // Only import live processes — stopped host slots are not reclaim candidates.
+      if (
+        raw &&
+        raw !== "running" &&
+        raw !== "ready" &&
+        raw !== "idle" &&
+        raw !== "starting" &&
+        raw !== "booting"
+      ) {
+        continue;
+      }
+      // Prefer botId as computerId when it is already a durable Aria id (comp_*).
+      const computerId = botId;
+      if (this.computers.has(computerId)) {
+        // Bound to another workspace — do not steal.
+        continue;
+      }
+      const orphan = this.ensureComputer({
+        workspaceId,
+        seatId: HOST_ORPHAN_SEAT_ID,
+        computerId,
+      });
+      this.applyHostState(orphan, host);
+      // Host proves process up only — LinkedIn health requires probe.
+      orphan.sessionHealthy = null;
+      imported += 1;
+      matchedBotIds.add(botId);
+      this.audit(
+        computerId,
+        "import_orphan",
+        `Imported unmatched host bot ${botId} as orphan`,
+        "system",
+      );
+    }
+    return { matched, imported, hostCount: hostComputers.length };
+  }
+
+  private applyHostState(
+    rec: ComputerRecord,
+    host: { status?: string; url?: string | null; viewUrl?: string | null },
+  ): void {
+    const raw = (host.status || "").toLowerCase();
+    if (raw === "running" || raw === "ready" || raw === "idle") {
+      if (rec.status === "stopped" || rec.status === "starting" || rec.status === "error") {
+        rec.status = "ready";
+        rec.lastError = null;
+        // Host proves process up — session health still requires /session-probe.
+        rec.sessionHealthy = null;
+      }
+    } else if (raw === "starting" || raw === "booting") {
+      rec.status = "starting";
+      rec.sessionHealthy = null;
+    } else if (raw === "error" || raw === "failed") {
+      rec.status = "error";
+      rec.sessionHealthy = null;
+    } else if (raw === "stopped" || raw === "exited") {
+      if (rec.control !== "human") {
+        rec.status = "stopped";
+        rec.sessionHealthy = null;
+      }
+    }
+    if (host.url) rec.remoteUrl = host.url;
+    if (host.viewUrl || host.url) rec.viewUrl = host.viewUrl || host.url || rec.viewUrl;
+    rec.updatedAt = isoNow();
+  }
+
+  /**
+   * When the seat's stored computerId is missing or probes unhealthy, probe host
+   * orphans and claim the first healthy durable profile. Never invents healthy=true.
+   */
+  async reclaimHealthyOrphan(opts: {
+    workspaceId: string;
+    seatId: string;
+    computerId?: string | null;
+    campaignId?: string | null;
+  }): Promise<{ computer: ComputerRecord; reclaimed: boolean }> {
+    await this.hydrateFromHost(opts.workspaceId);
+
+    const currentId = typeof opts.computerId === "string" ? opts.computerId.trim() : "";
+    if (currentId) {
+      this.ensureComputer({
+        workspaceId: opts.workspaceId,
+        seatId: opts.seatId,
+        computerId: currentId,
+        campaignId: opts.campaignId,
+      });
+      const current = await this.probeSession(currentId);
+      if (current.sessionHealthy === true) {
+        return { computer: current, reclaimed: false };
+      }
+    }
+
+    const candidates = this.list(opts.workspaceId).filter((c) => {
+      if (currentId && c.computerId === currentId) return false;
+      if (!c.remoteUrl) return false;
+      return c.seatId === HOST_ORPHAN_SEAT_ID;
+    });
+
+    for (const candidate of candidates) {
+      const probed = await this.probeSession(candidate.computerId);
+      if (probed.sessionHealthy !== true) continue;
+      const claimed = this.claimOrphan(candidate.computerId, {
+        workspaceId: opts.workspaceId,
+        seatId: opts.seatId,
+        campaignId: opts.campaignId,
+      });
+      return { computer: claimed, reclaimed: true };
+    }
+
+    if (currentId) {
+      const fallback = this.require(currentId);
+      return { computer: fallback, reclaimed: false };
+    }
+    throw new Error("no-healthy-orphan");
   }
 
   async start(

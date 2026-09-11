@@ -3,7 +3,7 @@
    OpenBot-shaped computer supervisor — takeover mutex, job refuse.
    ========================================================================== */
 
-import { ComputerSupervisor } from "../src/lib/computer-supervisor";
+import { ComputerSupervisor, HOST_ORPHAN_SEAT_ID } from "../src/lib/computer-supervisor";
 
 let pass = 0;
 let fail = 0;
@@ -389,6 +389,115 @@ try {
       "probeSession without agent endpoint leaves sessionHealthy null (not invented true)",
       probed.sessionHealthy == null,
     );
+  }
+
+  // Unmatched running host bots are imported as orphans (no mint, sessionHealthy null).
+  {
+    const importSup = new ComputerSupervisor();
+    process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok_test";
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/computers") && !url.includes("/ensure")) {
+        return new Response(
+          JSON.stringify({
+            computers: [
+              {
+                botId: "comp_durable_uuid",
+                status: "running",
+                url: "http://127.0.0.1:9333",
+                viewUrl: "http://127.0.0.1:6333",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    try {
+      const result = await importSup.hydrateFromHost("ws");
+      ok("hydrate imports unmatched host bot", result.imported === 1 && result.hostCount === 1);
+      const orphan = importSup.get("comp_durable_uuid");
+      ok("imported orphan uses HOST_ORPHAN_SEAT_ID", orphan?.seatId === HOST_ORPHAN_SEAT_ID);
+      ok(
+        "imported orphan stays sessionHealthy null until probe",
+        orphan?.sessionHealthy == null,
+      );
+      ok("imported orphan is ready from host running", orphan?.status === "ready");
+      ok(
+        "listOrphans surfaces unbound host VM",
+        importSup.listOrphans("ws").some((c) => c.computerId === "comp_durable_uuid"),
+      );
+    } finally {
+      globalThis.fetch = prevFetch;
+      delete process.env.COMPUTER_SUPERVISOR_URL;
+      delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    }
+  }
+
+  // Unhealthy seat computerId reclaims first probed-healthy host orphan.
+  {
+    const reclaimSup = new ComputerSupervisor();
+    const wall = reclaimSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_tony_01",
+    });
+    wall.remoteUrl = "http://127.0.0.1:9001";
+    const orphan = reclaimSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_durable_uuid",
+    });
+    orphan.remoteUrl = "http://127.0.0.1:9002";
+    orphan.status = "ready";
+
+    reclaimSup.probeSession = async (computerId: string) => {
+      const rec = reclaimSup.get(computerId)!;
+      rec.sessionHealthy = computerId === "comp_durable_uuid";
+      return rec;
+    };
+
+    const result = await reclaimSup.reclaimHealthyOrphan({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_tony_01",
+    });
+    ok("reclaimHealthyOrphan rebinds to healthy orphan", result.reclaimed === true);
+    ok(
+      "reclaimed computer is the durable uuid",
+      result.computer.computerId === "comp_durable_uuid",
+    );
+    ok(
+      "durable orphan claimed onto the real seat",
+      result.computer.seatId === "seat-tony",
+    );
+    ok(
+      "login-wall twin detached to orphan seat",
+      reclaimSup.get("comp_tony_01")?.seatId === HOST_ORPHAN_SEAT_ID,
+    );
+
+    // Already-healthy stored id must not steal another orphan.
+    const healthy = reclaimSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-ok",
+      computerId: "comp_already_ok",
+    });
+    healthy.remoteUrl = "http://127.0.0.1:9003";
+    reclaimSup.probeSession = async (computerId: string) => {
+      const rec = reclaimSup.get(computerId)!;
+      rec.sessionHealthy = computerId === "comp_already_ok" || computerId === "comp_durable_uuid";
+      return rec;
+    };
+    const kept = await reclaimSup.reclaimHealthyOrphan({
+      workspaceId: "ws",
+      seatId: "seat-ok",
+      computerId: "comp_already_ok",
+    });
+    ok("healthy stored id is not reclaimed away", kept.reclaimed === false);
+    ok("healthy stored id retained", kept.computer.computerId === "comp_already_ok");
   }
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;

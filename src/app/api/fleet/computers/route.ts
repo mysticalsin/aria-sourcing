@@ -4,6 +4,7 @@ import { getServerSupabase } from "@/lib/supabase/server";
 import {
   bindComputerSupervisorEndpoint,
   defaultComputerSupervisor,
+  HOST_ORPHAN_SEAT_ID,
 } from "@/lib/computer-supervisor";
 import { openBotHostHealth, type OpenBotSupervisorConfig } from "@/lib/openbot/supervisor-client";
 import { queryComputerAuditsDurable, summarizeFleetComputers } from "@/lib/computer-audit";
@@ -151,12 +152,25 @@ export async function GET(req: NextRequest) {
     }
 
     // Cold-start: pull live OpenBot host state so stopped in-memory rows flip to ready
-    // when Chromiums are already running on Fly.
+    // when Chromiums are already running on Fly. Also import unmatched host bots as
+    // orphans (visible for Login reclaim) — never mint, never invent sessionHealthy.
     await defaultComputerSupervisor.hydrateFromHost(String(wid));
+
+    const seenIds = new Set(computers.map((c) => c.computerId));
+    for (const orphan of defaultComputerSupervisor.listOrphans(String(wid))) {
+      if (seenIds.has(orphan.computerId)) continue;
+      computers.push(orphan);
+      seenIds.add(orphan.computerId);
+    }
 
     const enriched = computers.map((rec) => {
       const seat = (seats ?? []).find((s) => s.id === rec.seatId);
-      return enrichComputer(rec, { seatName: seat?.name, seatStatus: seat?.status });
+      return enrichComputer(rec, {
+        seatName:
+          seat?.name ??
+          (rec.seatId === HOST_ORPHAN_SEAT_ID ? "Unbound host VM" : undefined),
+        seatStatus: seat?.status,
+      });
     });
 
     const durable = await queryComputerAuditsDurable({
@@ -186,24 +200,45 @@ export async function GET(req: NextRequest) {
   }
 }
 
-const BodySchema = z.object({
-  action: z.enum([
-    "ensure",
-    "start",
-    "stop",
-    "reset",
-    "take_control",
-    "release_control",
-    "request_help",
-    "navigate",
-    "session_probe",
-  ]),
-  computerId: z.string().min(1).max(120),
-  seatId: z.string().min(1).max(120).optional(),
-  campaignId: z.string().min(1).max(120).optional(),
-  detail: z.string().max(500).optional(),
-  url: z.string().url().max(2_000).optional(),
-});
+const BodySchema = z
+  .object({
+    action: z.enum([
+      "ensure",
+      "start",
+      "stop",
+      "reset",
+      "take_control",
+      "release_control",
+      "request_help",
+      "navigate",
+      "session_probe",
+      "reclaim_healthy_orphan",
+    ]),
+    computerId: z.string().min(1).max(120).optional(),
+    seatId: z.string().min(1).max(120).optional(),
+    campaignId: z.string().min(1).max(120).optional(),
+    detail: z.string().max(500).optional(),
+    url: z.string().url().max(2_000).optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.action === "reclaim_healthy_orphan") {
+      if (!body.seatId?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "seatId required for reclaim_healthy_orphan",
+          path: ["seatId"],
+        });
+      }
+      return;
+    }
+    if (!body.computerId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "computerId required",
+        path: ["computerId"],
+      });
+    }
+  });
 
 export async function POST(req: NextRequest) {
   const supabase = await getServerSupabase();
@@ -230,36 +265,38 @@ export async function POST(req: NextRequest) {
   try {
     await bindWorkspaceSupervisor(workspaceId);
     const campaignOpts = { campaignId: body.campaignId };
+    const computerId = (body.computerId ?? "").trim();
     let rec;
+    let reclaimed = false;
     switch (body.action) {
       case "ensure": {
-        const seatId = (body.seatId ?? body.computerId).trim();
+        const seatId = (body.seatId ?? computerId).trim();
         rec = defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
           seatId,
-          computerId: body.computerId,
+          computerId,
           campaignId: body.campaignId,
         });
         break;
       }
       case "start":
-        rec = await defaultComputerSupervisor.start(body.computerId, campaignOpts);
+        rec = await defaultComputerSupervisor.start(computerId, campaignOpts);
         break;
       case "stop":
-        rec = await defaultComputerSupervisor.stop(body.computerId);
+        rec = await defaultComputerSupervisor.stop(computerId);
         break;
       case "reset":
-        rec = await defaultComputerSupervisor.reset(body.computerId);
+        rec = await defaultComputerSupervisor.reset(computerId);
         break;
       case "take_control":
-        rec = await defaultComputerSupervisor.takeControl(body.computerId, campaignOpts);
+        rec = await defaultComputerSupervisor.takeControl(computerId, campaignOpts);
         break;
       case "release_control":
-        rec = await defaultComputerSupervisor.releaseControl(body.computerId, campaignOpts);
+        rec = await defaultComputerSupervisor.releaseControl(computerId, campaignOpts);
         break;
       case "request_help":
         rec = defaultComputerSupervisor.requestHelp(
-          body.computerId,
+          computerId,
           body.detail ?? "Operator requested help",
         );
         break;
@@ -270,22 +307,22 @@ export async function POST(req: NextRequest) {
         // Ensure the seat exists, then enqueue a warmup_nav job (AriaBot Chromium).
         defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
-          seatId: (body.seatId ?? body.computerId).trim(),
-          computerId: body.computerId,
+          seatId: (body.seatId ?? computerId).trim(),
+          computerId,
           campaignId: body.campaignId,
         });
-        await defaultComputerSupervisor.start(body.computerId, campaignOpts);
+        await defaultComputerSupervisor.start(computerId, campaignOpts);
         // If a human currently holds the mutex, release so AriaBot can navigate.
-        const current = defaultComputerSupervisor.get(body.computerId);
+        const current = defaultComputerSupervisor.get(computerId);
         if (current?.control === "human") {
-          await defaultComputerSupervisor.releaseControl(body.computerId, campaignOpts);
+          await defaultComputerSupervisor.releaseControl(computerId, campaignOpts);
         }
         await defaultComputerSupervisor.enqueueJob({
-          computerId: body.computerId,
+          computerId,
           kind: "warmup_nav",
           payload: { url: body.url },
         });
-        rec = defaultComputerSupervisor.get(body.computerId);
+        rec = defaultComputerSupervisor.get(computerId);
         if (!rec) throw new Error("computer-not-found");
         break;
       }
@@ -293,11 +330,25 @@ export async function POST(req: NextRequest) {
         // Ensure in-memory row exists for durable computerId, then probe LinkedIn cookies.
         defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
-          seatId: (body.seatId ?? body.computerId).trim(),
-          computerId: body.computerId,
+          seatId: (body.seatId ?? computerId).trim(),
+          computerId,
           campaignId: body.campaignId,
         });
-        rec = await defaultComputerSupervisor.probeSession(body.computerId);
+        rec = await defaultComputerSupervisor.probeSession(computerId);
+        break;
+      }
+      case "reclaim_healthy_orphan": {
+        // Probe stored id; if unhealthy, probe host orphans and claim first healthy.
+        // Login persists computer_id via updateSeat — this action never invents healthy.
+        const seatId = (body.seatId ?? "").trim();
+        const result = await defaultComputerSupervisor.reclaimHealthyOrphan({
+          workspaceId: workspaceId ?? "__local__",
+          seatId,
+          computerId: computerId || null,
+          campaignId: body.campaignId,
+        });
+        rec = result.computer;
+        reclaimed = result.reclaimed;
         break;
       }
       default:
@@ -306,6 +357,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       computer: enrichComputer(rec),
       sessionHealthy: rec.sessionHealthy ?? null,
+      reclaimed,
       recentAudits: defaultComputerSupervisor.recentAudits(rec.computerId, 12),
     });
   } catch (err) {

@@ -1,43 +1,42 @@
 ---
 project: MSourcing / ARIA
-shift: 167
+shift: 168
 agent: cursor-cloud
-updated: 2026-09-11T14:18Z
-status: tony-invite-sent-session-persist-fix
+updated: 2026-09-11T15:10Z
+status: probe-reclaim-orphan-shipped
 ---
 
-# Handoff — Shift 167
+# Handoff — Shift 168
 
 ## Current state
 
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
-- **Fly:** https://aria-mantu-app.fly.dev — redeploy this tip for session_probe + outreach layout fix
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/120 → `integration/sourcing-enrichment-on-main`
-- **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` (human-logged profile; cookies on computers volume)
-- **Tony Walteur:** connection invite **sent today** with note (Pending on profile). Message/InMail blocked (3rd+ without Premium).
-- **Session now:** LinkedIn remember-me auto-login interstitial (cookies present; may need one Take control click if hung)
+- **Fly:** https://aria-mantu-app.fly.dev — redeploy tip for orphan import + `reclaim_healthy_orphan`
+- **PR:** recreate/update → `integration/sourcing-enrichment-on-main`
+- **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` (cookies on computers volume)
+- **Gap closed in code:** unhealthy seat `computerId` (e.g. `comp_tony_01`) can reclaim a probed-healthy host orphan on Login — no remint, no invented `sessionHealthy`
 
 ## Done this shift
 
-1. Found login lived on UUID bot, not `comp_tony_01` (remint/orphan identity leak)
-2. Sent LinkedIn **Connect + note** to https://www.linkedin.com/in/tonywalteur/ via durable bot
-3. Outreach Approvals: moved Fleet allocate banner **out of** `PageHeader` actions (broken layout/text)
-4. Login path: reuse durable `computerId`; prefer healthy orphan before mint; `session_probe` opens `/feed` when healthy (no forced re-login after deploy)
-5. Evidence: `_relay/evidence/2026-09-11-tonywalteur-connect-e2e.json`, artifacts `tonywalteur_invite_sent_proof.jpg`, `tonywalteur_profile_pending_proof.jpg`
+1. `hydrateFromHost` imports unmatched running host bots as `HOST_ORPHAN_SEAT_ID` orphans (`sessionHealthy` null until probe)
+2. `reclaimHealthyOrphan` + POST `reclaim_healthy_orphan` — probe stored id, else probe orphans, claim first healthy
+3. GET `/api/fleet/computers` lists orphans — still never mints
+4. Settings Login: empty id reclaim-before-mint; after unhealthy probe → reclaim → persist `computerId` → ensure/start
+5. Tests: import orphan + reclaim path green (`tests/computer-supervisor.mts` 57 passed); `npm run typecheck` green
 
 ## Blockers (goal incomplete)
 
-1. Remember-me interstitial may need one human Take control if LinkedIn hangs
+1. LinkedIn remember-me / checkpoint may need one human Take control
 2. OPENBOT_MAX_COMPUTERS=5
 3. `/api/ready` agentFrameworks:false
-4. Operator prove Deploy→login→Release→floor distinct VMs + healthy
-5. Seat DB row may still point at `comp_tony_01` — bind seat `computerId` to `comp_7fe31958-…` in Settings/Fleet after deploy
+4. Operator prove Deploy→login→Release→floor distinct VMs + healthy still outstanding
+5. Seat DB may still point at `comp_tony_01` until Login reclaim runs post-deploy
 
 ## Next steps
 
-1. Deploy this tip to Fly; bind seat computerId → `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
-2. If session interstitial hangs: Take control once on that bot, confirm feed, Release
-3. Operator N-seat floor prove
+1. Deploy this tip to Fly (protected workflow / image digest)
+2. Settings → Login on Tony seat — expect reclaim to UUID durable bot if probe healthy; else Take control once, confirm feed, Release
+3. Operator N-seat floor prove (distinct computerIds + sessionHealthy from probe only)
 4. Mark PR ready when operator E2E + stable session evidence lands
 
 ## Decisions made (don't relitigate)
@@ -47,14 +46,14 @@ status: tony-invite-sent-session-persist-fix
 - Never invent `computerId` from `seat.id`
 - Never mint on GET/list/poll
 - **Never remint a blank computerId when a durable/healthy profile already exists**
+- Unhealthy stored id → probe orphans → reclaim (not mint)
 - Unique `(workspace_id, computer_id)` in DB (0084)
 - Host-full → refuse new Browser Computer seats
 - Mock send disabled on Fly unless explicitly allowed
-- 3rd+ Message requires Premium — Connect+note is the honest free path
 
 ## Watch out
 
 - Demo-login ~5/min
 - Do not commit `/tmp/aria-e2e/*` secrets
 - Personalized invite notes free-tier max **200 characters**
-- `comp_tony_01` is a login-wall twin — do not send from it; use the UUID durable bot
+- `comp_tony_01` is often a login-wall twin — reclaim prefers the UUID durable bot after probe
