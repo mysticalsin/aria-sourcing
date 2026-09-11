@@ -2,27 +2,29 @@
 project: MSourcing / ARIA
 shift: 164
 agent: cursor-cloud
-updated: 2026-09-11T12:20Z
-status: n-agent-seat-login-fleet-poll-fly-mock-refuse
+updated: 2026-09-11T12:25Z
+status: n-agent-seat-login-fleet-poll-on-fly
 ---
 
 # Handoff — Shift 164
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (pending this commit)
-- **Fly:** https://aria-mantu-app.fly.dev · computers https://aria-mantu-computers.fly.dev · max **5**
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/117 → `integration/sourcing-enrichment-on-main` (draft)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `a5f4c73` (`a5f4c73f15ac721079f67f107858d1c7fec6d4b0`)
+- **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches tip · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/118 → `integration/sourcing-enrichment-on-main` (draft)
+- **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
 
 ## Done this shift
 
 1. Settings hero LinkedIn Login refuses when N>1 seats without `seatId` (per-row only)
 2. `await updateSeat(computerId)` before ensure/start — no race-mint twins
-3. GET `/api/fleet/computers` ownership mismatch: rebind by seatId + **await** persist (no fire-and-forget twin VMs)
+3. GET `/api/fleet/computers` ownership mismatch: rebind by seatId + **await** persist
 4. Settings + Fleet poll computers every 5s (same truth as Floor)
 5. Fly hard-refuses `COMPUTER_SUPERVISOR_MOCK_SEND` unless `ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND=1`
 6. Tests: computer-supervisor 39, floor 40, linkedin-channel-contract 23; typecheck green
+7. Deployed Fly; `ARIA_RELEASE_SHA` = tip; ready build matches
 
 ## Blockers (goal incomplete)
 
