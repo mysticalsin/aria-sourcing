@@ -1,48 +1,54 @@
 ---
 project: MSourcing / ARIA
-shift: 146
+shift: 147
 agent: cursor-cloud
-updated: 2026-09-11T02:52Z
-status: full-app-e2e-audit
+updated: 2026-09-11T03:05Z
+status: honesty-ux-fly-deploy
 ---
 
-# Handoff — Shift 146
+# Handoff — Shift 147
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d`
-- **Fly app:** https://aria-mantu-app.fly.dev healthy (login-gated)
-- **Fly computers:** https://aria-mantu-computers.fly.dev healthy — `max:5`, desktop VM
-- **Policy:** LinkedIn / AriaBot / OpenBot production = **Fly only** (not Vercel)
-- **Audits:** `_relay/full-app-e2e-audit.md` (full), `_relay/e2e-tangibility-audit.md` (fleet/floor)
+- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `bf024ca`
+- **Fly app:** https://aria-mantu-app.fly.dev (deploy of honesty UX in progress / pending verify)
+- **Fly computers:** https://aria-mantu-computers.fly.dev — `max:5`, desktop VM
+- **Policy:** LinkedIn / AriaBot / OpenBot = **Fly only**
+- **Audit:** `_relay/full-app-e2e-audit.md` updated (P0/P1 honesty items marked done)
 
 ## Done this shift
 
-1. Full-app E2E audit across 27 nav routes + Settings tabs (P0–P2 backlog)
-2. Deploy now ensure+start VMs and reports booted vs host-cap blocks
-3. Computer actions fail closed on `status=error` (no false “You have control”)
-4. LinkedIn Automatic Ready no longer treats HeyReach-only as fully ready
-5. Research UA host → `aria-mantu-app.fly.dev` (not Vercel demo)
+1. Roadmap IntegrationCard: Configure disabled → Coming soon when `!real`
+2. Settings notifications: “Preference only — not delivering yet”
+3. Replies: “Queue draft reply” (no false send)
+4. Fleet: live host capacity strip from OpenBot `/health`
+5. Outreach: “Allocate on Fleet” CTA
+6. `openBotHostHealth` + `hostCapacity` on GET `/api/fleet/computers`
 
 ## Blockers
 
 1. Human Take control + LinkedIn 2FA per seat
-2. `OPENBOT_MAX_COMPUTERS=5` on Fly — raise/shard before 16 concurrent VMs
-3. `/api/ready` reports `agentFrameworks: false`
+2. `OPENBOT_MAX_COMPUTERS=5` — raise/shard for 16 concurrent VMs
+3. `/api/ready` → `agentFrameworks: false`
+4. Application test group: 7 pre-existing Apollo/GitHub live-provider fails (unrelated to this UX)
 
 ## Next steps
 
-1. Operator: run prove script at bottom of `_relay/full-app-e2e-audit.md` on Fly
-2. Fly: raise `OPENBOT_MAX_COMPUTERS` (and RAM) if 16 concurrent desktops required
-3. P1: allocate CTA on Outreach/Campaign; rename misleading Send-reply; disable roadmap Connect
+1. Verify Fly deploy: `curl -fsS https://aria-mantu-app.fly.dev/api/health`
+2. Operator prove script in `_relay/full-app-e2e-audit.md` (Deploy ≤5 → Take control → Floor)
+3. Campaign detail: Allocate CTA (Outreach done)
+4. Applicants reject: don’t claim email send if status-only
+5. Release → session health probe
 
 ## Decisions (don't relitigate)
 
 - Fly-only for computers + LinkedIn automation
 - N seats = N Chromium profiles; Recruiter via Take control
 - Host VM cap must be surfaced honestly in Fleet UX
+- Roadmap integrations stay Coming soon until `real: true`
 
 ## Watch out
 
-- Never commit Fly tokens / demo passwords
+- Never commit Fly tokens / demo passwords / `.fly-secrets.env`
 - Do not point Vercel env at `COMPUTER_SUPERVISOR_*`
+- PR #105 was CLOSED — open a fresh PR for this branch if needed
