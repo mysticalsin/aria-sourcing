@@ -1,38 +1,53 @@
 ---
 project: MSourcing / ARIA
-shift: 158
+shift: 159
 agent: cursor-cloud
-updated: 2026-09-11T07:56Z
-status: floor-3d-vm-ids-on-fly
+updated: 2026-09-11T08:42Z
+status: session-fail-closed-on-fly
 ---
 
-# Handoff — Shift 158
+# Handoff — Shift 159
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `6a690a7` (`6a690a73031e6c9c12ce2dd7020d1e268cbadd89`)
+- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `b460a2b` (`b460a2bbd2a64d7269e91e0951339895920deb82`)
 - **Fly:** https://aria-mantu-app.fly.dev build matches tip
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/new/cursor/openbot-desktop-vm-b91d → `integration/sourcing-enrichment-on-main`
-- **Computers:** max 5
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/112 → `integration/sourcing-enrichment-on-main` (draft)
+- **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
 
 ## Done this shift
 
-1. 3D floor subtitles append `…last8` of `computerId` for LinkedIn Browser Computer seats (session state + VM id visible without drawer)
-2. Floor tests 31 green
-3. Prior: drawer VM/session meta, ownership isolation, unique computer_id 0084, refuse refuse fake ready, seatId allocate→send, go-live all healthy, hydrate, 2d/3d honesty, attach awaits PATCH
+1. Fail-closed LinkedIn send: `enqueueJob` refuses `linkedin_send` unless `sessionHealthy === true` (mock bypass for tests only)
+2. Clear `sessionHealthy` on start/stop; auto-retry only when probe healthy (no missing-agent escape)
+3. Pacing + LinkedIn channel pass through `null`/`false` — fail closed unless probed true
+4. Campaign agents + fleet computers UI: session healthy / unhealthy / unverified badges; header counts session-healthy not process-live
+5. Ops board labels for session_probe / refuse
+6. Tests: computer-supervisor 38, send-pacing 12, campaign-go-live 11, floor 31; typecheck green
+7. Deployed Fly; `/api/ready` build matches tip
 
 ## Blockers (goal incomplete)
 
 1. Human Take control + LinkedIn 2FA per seat
 2. OPENBOT_MAX_COMPUTERS=5
-3. /api/ready agentFrameworks:false (Deerflow/Flowise contract — not campaign VM path)
-4. Operator prove Deploy→login→Release→floor shows distinct VM ids
+3. `/api/ready` agentFrameworks:false (Deerflow/Flowise — not campaign VM path)
+4. Operator prove Deploy→login→Release→floor shows distinct VM ids + session healthy
 5. Apply migration 0084 on prod (ready still reports 0082)
-6. PR create ACL
 
 ## Next steps
 
-1. Human opens PR
-2. Operator prove ≤5 seats; confirm 3D labels + drawer show distinct VM ids
-3. Apply 0084; plan host raise/shard for 16 concurrent VMs
+1. Operator prove ≤5 seats: Deploy → Take control → LinkedIn login/2FA → Release → floor/drawer/campaign panel show distinct VM ids + session healthy
+2. Apply 0084 on prod; plan host raise/shard for 16 concurrent VMs
+3. Mark PR ready when operator E2E evidence lands
+
+## Decisions made (don't relitigate)
+
+- Fly-only for LinkedIn / OpenBot / computers
+- Never invent `sessionHealthy=true` without `/session-probe`
+- `ensure` ≠ boot; go-live requires all attached seats `sessionHealthy === true`
+- Send path fail-closed on unverified session (aligns with go-live)
+
+## Watch out
+
+- Mock send (`COMPUTER_SUPERVISOR_MOCK_SEND=1`) still allows send without probe — production must not set this
+- Secrets `set ARIA_RELEASE_SHA` rolls machines; verify `/api/ready` build after any secret change
