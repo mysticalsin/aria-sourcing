@@ -20,6 +20,7 @@ import {
   Linkedin,
   LogIn,
   Monitor,
+  Plus,
   Unplug,
   Wand2,
 } from "lucide-react";
@@ -259,12 +260,20 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   }
 
 
-  async function connectBrowserComputer() {
+  async function connectBrowserComputer(opts?: { additional?: boolean }) {
+    const existingBrowser = seats.filter((s) => s.provider === "LinkedIn Browser Computer").length;
+    const localBrowser = localSeats.filter((s) => s.provider === "LinkedIn Browser Computer").length;
+    const n = Math.max(existingBrowser, localBrowser) + (opts?.additional || existingBrowser > 0 ? 1 : 0);
+    const seatName =
+      n <= 1 ? "AriaBot LinkedIn Computer" : `AriaBot LinkedIn Account ${n}`;
+    const accountLabel =
+      label.trim() || (n <= 1 ? "AriaBot LinkedIn" : `LinkedIn account ${n}`);
+
     if (!supabaseEnabled) {
       setConnectingBrowser(true);
       try {
         const seat = await actions.addSeat({
-          name: "AriaBot LinkedIn Computer",
+          name: seatName,
           operatorEmail: label.includes("@") ? label : "operator@demo.local",
           provider: "LinkedIn Browser Computer",
         });
@@ -273,7 +282,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           return;
         }
         actions.updateSeat(seat.id, {
-          connectedAccount: label.trim() || "AriaBot sandbox",
+          connectedAccount: accountLabel,
           computerId: seat.computerId ?? `comp_demo_${seat.id}`,
           linkedinDeliveryBackend: "browser-computer",
         });
@@ -281,15 +290,15 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         toast({
           title: live.ok ? "AriaBot Browser Computer ready" : "Seat created",
           description: live.ok
-            ? "Open Fleet → Computers → Observe / Take control to log into LinkedIn inside the sandbox, then Automatic sends use this seat."
+            ? "Each seat is an isolated Chromium profile — log into a different LinkedIn (member or Recruiter) via Take control."
             : live.reason,
           variant: live.ok ? "success" : "warning",
         });
         await load();
+        return seat.id;
       } finally {
         setConnectingBrowser(false);
       }
-      return;
     }
     setConnectingBrowser(true);
     try {
@@ -300,8 +309,10 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         body: JSON.stringify({
           action: "ensure_connect",
           provider: "LinkedIn Browser Computer",
-          operatorLabel: label.trim() || undefined,
+          operatorLabel: accountLabel,
+          seatName,
           goLive: true,
+          forceNew: Boolean(opts?.additional),
         }),
       });
       const json = (await res.json().catch(() => null)) as {
@@ -309,6 +320,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         error?: string;
         detail?: string;
         status?: string;
+        seatId?: string;
       } | null;
       if (json?.status === "dry-run") {
         toast({ title: "Public demo only", description: json.detail, variant: "info" });
@@ -324,6 +336,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         variant: "success",
       });
       await load();
+      return json.seatId;
     } catch {
       toast({ title: "Connect failed", description: "Network error.", variant: "error" });
     } finally {
@@ -332,16 +345,22 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   }
 
   /**
-   * Login once for agents: ensure AriaBot Browser Computer seat → start VM →
-   * Take control → open fullscreen sandbox on LinkedIn. Session persists in the
-   * Chromium profile so later Automatic sends reuse this account.
+   * Login for agents on a specific Browser Computer seat (isolated Chromium profile).
+   * surface=member → linkedin.com/login; surface=recruiter → Recruiter/talent login.
    */
-  async function openAgentLinkedInLogin() {
+  async function openAgentLinkedInLogin(opts?: {
+    seatId?: string;
+    surface?: "member" | "recruiter";
+    createIfMissing?: boolean;
+  }) {
+    const surface = opts?.surface ?? "member";
     setOpeningAgentLogin(true);
     try {
       let browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
-      if (browserSeats.length === 0) {
-        await connectBrowserComputer();
+      if (browserSeats.length === 0 || opts?.createIfMissing) {
+        await connectBrowserComputer({
+          additional: browserSeats.length > 0 && opts?.createIfMissing,
+        });
         // Reload seats from API / local store after create.
         const res = await fetch("/api/linkedin/connections", { method: "GET", credentials: "include" });
         const json = (await res.json().catch(() => null)) as { seats?: SeatRow[] } | null;
@@ -358,10 +377,14 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
               status: s.status,
               mode: s.mode,
               computerId: s.computerId ?? null,
+              connectedAccount: s.connectedAccount ?? null,
             }));
         }
       }
-      const seat = browserSeats[0];
+      const seat =
+        (opts?.seatId ? browserSeats.find((s) => s.id === opts.seatId) : null) ||
+        browserSeats[browserSeats.length - 1] ||
+        browserSeats[0];
       if (!seat) {
         toast({
           title: "No AriaBot seat",
@@ -401,7 +424,11 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
 
       await fleetAct("ensure");
       await fleetAct("start");
-      // Navigate to LinkedIn login while AriaBot still holds the seat (before Take control).
+      const loginUrl =
+        surface === "recruiter"
+          ? "https://www.linkedin.com/uas/login?session_redirect=%2Ftalent%2Fhome"
+          : "https://www.linkedin.com/login";
+      // Navigate while AriaBot still holds the seat (before Take control).
       await fetch("/api/fleet/computers", {
         method: "POST",
         credentials: "include",
@@ -410,7 +437,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           action: "navigate",
           computerId,
           seatId: seat.id,
-          url: "https://www.linkedin.com/login",
+          url: loginUrl,
         }),
       }).catch(() => null);
       const controlled = await fleetAct("take_control");
@@ -422,9 +449,14 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         window.open("/fleet", "_blank", "noopener,noreferrer");
       }
       toast({
-        title: "AriaBot LinkedIn login opened",
+        title:
+          surface === "recruiter"
+            ? "LinkedIn Recruiter login opened"
+            : "AriaBot LinkedIn login opened",
         description:
-          "Sign in on LinkedIn inside AriaBot (including 2FA). Release when done — agents reuse this session to source and reach out.",
+          surface === "recruiter"
+            ? "Sign into LinkedIn Recruiter inside AriaBot like a normal browser (2FA ok). Release when done — this seat keeps that Recruiter session."
+            : "Sign in on LinkedIn inside AriaBot (including 2FA). Release when done — agents reuse this session to source and reach out.",
         variant: "success",
       });
       await load();
@@ -760,6 +792,26 @@ export function LinkedInIdentityStep({
               >
                 {hasBrowserSeat ? "Reconnect seat only" : "Create seat only"}
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<LogIn className="h-4 w-4" />}
+                loading={openingAgentLogin || connectingBrowser}
+                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+                onClick={() => void openAgentLinkedInLogin({ surface: "recruiter" })}
+              >
+                Log in to LinkedIn Recruiter
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Plus className="h-4 w-4" />}
+                loading={connectingBrowser}
+                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+                onClick={() => void openAgentLinkedInLogin({ createIfMissing: true, surface: "member" })}
+              >
+                Add another LinkedIn account
+              </Button>
             </div>
             {!providers?.browserComputerConfigured && supabaseEnabled ? (
               <p className="mt-2 text-xs text-muted">
@@ -767,7 +819,7 @@ export function LinkedInIdentityStep({
               </p>
             ) : (
               <p className="mt-2 text-xs text-muted">
-                Tip: keep one Browser Computer seat. New seats mean a fresh empty profile and another login.
+                Add another AriaBot seat for each LinkedIn login (member or Recruiter). Every seat keeps its own Chromium profile — like separate humans.
               </p>
             )}
           </div>
@@ -842,15 +894,26 @@ export function LinkedInIdentityStep({
                   actions={
                     <>
                       {s.provider === "LinkedIn Browser Computer" && isAdmin && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          leftIcon={<LogIn className="h-3.5 w-3.5" />}
-                          loading={openingAgentLogin}
-                          onClick={() => void openAgentLinkedInLogin()}
-                        >
-                          Login for agents
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            leftIcon={<LogIn className="h-3.5 w-3.5" />}
+                            loading={openingAgentLogin}
+                            onClick={() => void openAgentLinkedInLogin({ seatId: s.id, surface: "member" })}
+                          >
+                            Login (member)
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<LogIn className="h-3.5 w-3.5" />}
+                            loading={openingAgentLogin}
+                            onClick={() => void openAgentLinkedInLogin({ seatId: s.id, surface: "recruiter" })}
+                          >
+                            Login (Recruiter)
+                          </Button>
+                        </>
                       )}
                       <Button
                         size="sm"

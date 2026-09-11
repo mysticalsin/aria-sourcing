@@ -1,5 +1,6 @@
 /**
  * LinkedIn session health helpers — classify auth walls and probe results.
+ * Keep in sync with scripts/lib/openbot-session-health.mjs
  */
 
 export function looksLikeLinkedInAuthWall(text: string, title = "", url = ""): boolean {
@@ -16,6 +17,10 @@ export function looksLikeLinkedInAuthWall(text: string, title = "", url = ""): b
     blob.includes("verify your identity") ||
     blob.includes("suspicious activity")
   );
+}
+
+export function isLinkedInRecruiterUrl(url = ""): boolean {
+  return /linkedin\.com\/(?:talent|recruiter|cap\/)/i.test(url) || /talent\.linkedin\.com/i.test(url);
 }
 
 export type SessionProbeResult = {
@@ -40,12 +45,26 @@ export function classifySessionProbe(input: {
       url,
     };
   }
-  if (/linkedin\.com/i.test(url) && (/feed|messaging|in\//i.test(url) || /linkedin/i.test(title))) {
-    return { healthy: true, detail: "LinkedIn session appears logged in", url };
+  const onLinkedIn =
+    /(?:^|\.)linkedin\.com/i.test(url) || /talent\.linkedin\.com/i.test(url);
+  if (
+    onLinkedIn &&
+    (/\/(feed|messaging|talent|recruiter|cap\/|mypremium)/i.test(url) ||
+      /\/in\//i.test(url) ||
+      /linkedin|recruiter/i.test(title))
+  ) {
+    return {
+      healthy: true,
+      detail: isLinkedInRecruiterUrl(url)
+        ? "LinkedIn Recruiter session appears logged in"
+        : "LinkedIn session appears logged in",
+      url,
+    };
   }
   return {
     healthy: false,
-    detail: "Could not confirm LinkedIn session — Take control and open linkedin.com/feed",
+    detail:
+      "Could not confirm LinkedIn session — Take control and open linkedin.com/feed or LinkedIn Recruiter",
     url,
   };
 }

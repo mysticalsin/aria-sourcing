@@ -277,7 +277,10 @@ export class ComputerSupervisor {
     return this.computers.get(computerId);
   }
 
-  async start(computerId: string, opts?: { campaignId?: string | null }): Promise<ComputerRecord> {
+  async start(
+    computerId: string,
+    opts?: { campaignId?: string | null; warmupUrl?: string | null },
+  ): Promise<ComputerRecord> {
     const rec = this.computers.get(computerId);
     if (!rec) throw new Error("computer-not-found");
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
@@ -307,7 +310,11 @@ export class ComputerSupervisor {
         const agent = agentCfg(rec);
         if (agent) {
           try {
-            await openBotNavigate(agent, "https://www.linkedin.com/");
+            const warmupUrl =
+              typeof opts?.warmupUrl === "string" && opts.warmupUrl.trim()
+                ? opts.warmupUrl.trim()
+                : "https://www.linkedin.com/";
+            await openBotNavigate(agent, warmupUrl);
             this.audit(computerId, "warmup_navigate", "Opened LinkedIn after ensure", "system");
           } catch (navErr) {
             this.audit(

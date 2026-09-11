@@ -25,6 +25,13 @@ import { WebSocketServer, WebSocket } from "ws";
 import { chromium } from "playwright";
 import { mapViewPoint } from "./lib/openbot-view-coords.mjs";
 import {
+  classifySessionProbe,
+  defaultSessionProbeTarget,
+  LI_MEMBER_HOME,
+  LI_RECRUITER_HOME,
+  looksLikeLinkedInAuthWall,
+} from "./lib/openbot-session-health.mjs";
+import {
   bridgeDesktopWebSocket,
   desktopGeometry,
   desktopModeEnabled,
@@ -112,22 +119,6 @@ function sleep(ms) {
 
 async function dwell(minMs = 120, maxMs = 420) {
   await sleep(randInt(minMs, maxMs));
-}
-
-function looksLikeLinkedInAuthWall(text, title = "", url = "") {
-  const blob = `${url} ${title} ${text}`.toLowerCase();
-  return (
-    blob.includes("/login") ||
-    blob.includes("authwall") ||
-    blob.includes("checkpoint") ||
-    blob.includes("sign in") ||
-    blob.includes("join linkedin") ||
-    blob.includes("enter the code") ||
-    blob.includes("two-step") ||
-    blob.includes("2fa") ||
-    blob.includes("verify your identity") ||
-    blob.includes("suspicious activity")
-  );
 }
 
 function launchOptsBase(desktopSeat = null) {
@@ -633,6 +624,7 @@ body.fs #metaBar{opacity:1}
     <button type="button" class="secondary" onclick="release()">Release</button>
     <button type="button" class="secondary" onclick="newTab()">+ Tab</button>
     <button type="button" class="secondary" onclick="goLinkedIn()">LinkedIn</button>
+    <button type="button" class="secondary" onclick="goRecruiter()">Recruiter</button>
     <button type="button" class="secondary" onclick="toggleFs()">Fullscreen</button>
   </div>
 </div>
@@ -940,7 +932,8 @@ function connectStream() {
 
 async function take() { await api("/control/take", {}); human = true; await enterFullscreen(); connectStream(); }
 async function release() { await api("/control/release", {}); human = false; await exitFullscreen(); }
-async function goLinkedIn() { await api("/navigate", { url: "https://www.linkedin.com/" }); (useFallback ? shot : canvas).focus(); }
+async function goLinkedIn() { await api("/navigate", { url: ${JSON.stringify(LI_MEMBER_HOME)} }); (useFallback ? shot : canvas).focus(); }
+async function goRecruiter() { await api("/navigate", { url: ${JSON.stringify(LI_RECRUITER_HOME)} }); (useFallback ? shot : canvas).focus(); }
 async function newTab(url) { await api("/tabs/new", url ? { url } : {}); (useFallback ? shot : canvas).focus(); }
 async function activateTab(id) { await api("/tabs/activate", { id }); (useFallback ? shot : canvas).focus(); }
 async function closeTab(id) { try { await api("/tabs/close", { id }); } catch (e) { setErr(String(e.message || e)); } }
@@ -1147,19 +1140,17 @@ async function handleComputer(botId, req, res, pathname, method) {
   }
 
   if (pathname === "/session-probe" && method === "POST") {
-    await rec.page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded" });
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const preferred = String(body.url || "").trim();
+    const current = rec.page.url();
+    const target = preferred || defaultSessionProbeTarget(current);
+    await rec.page.goto(target, { waitUntil: "domcontentloaded" });
     await dwell(200, 600);
     const url = rec.page.url();
     const title = await rec.page.title().catch(() => "");
     const text = (await rec.page.locator("body").innerText().catch(() => "")).slice(0, 2000);
-    let healthy = false;
-    let detail = "Could not confirm LinkedIn session — Take control and open linkedin.com/feed";
-    if (looksLikeLinkedInAuthWall(text, title, url)) {
-      healthy = false; detail = "LinkedIn login/checkpoint wall detected";
-    } else if (/linkedin\\.com/i.test(url) && (/feed|messaging|in\\//i.test(url) || /linkedin/i.test(title))) {
-      healthy = true; detail = "LinkedIn session appears logged in";
-    }
-    return json(res, 200, { healthy, detail, url });
+    const result = classifySessionProbe({ url, title, text });
+    return json(res, 200, result);
   }
 
   if (pathname === "/click-xy" && method === "POST") {
@@ -1313,6 +1304,7 @@ const server = http.createServer(async (req, res) => {
           botId,
           publicBase: PUBLIC_BASE,
           control: rec.control,
+          computerToken: COMPUTER_TOKEN,
         }));
       }
       const prefix = `/desktop/${encodeURIComponent(botId)}`;
@@ -1383,7 +1375,9 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         botId: rec.botId, container: `openbot-chromium-${rec.botId}`,
         status: rec.status, url: computerUrl(botId), viewUrl: viewUrl(botId),
-        port: PORT, multitab: true, stream: "cdp-screencast",
+        port: PORT, multitab: true,
+        stream: DESKTOP ? "x11vnc+novnc" : "cdp-screencast",
+        liveView: DESKTOP ? "desktop-vm" : "browserbase-style",
       });
     }
 

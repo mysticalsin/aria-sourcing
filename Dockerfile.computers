@@ -27,6 +27,7 @@ RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY scripts/openbot-chromium-supervisor.mjs ./scripts/openbot-chromium-supervisor.mjs
 COPY scripts/lib/openbot-view-coords.mjs ./scripts/lib/openbot-view-coords.mjs
 COPY scripts/lib/openbot-desktop-seat.mjs ./scripts/lib/openbot-desktop-seat.mjs
+COPY scripts/lib/openbot-session-health.mjs ./scripts/lib/openbot-session-health.mjs
 COPY scripts/desktop ./scripts/desktop
 
 RUN mkdir -p /data/profiles && chown -R pwuser:pwuser /data /app

@@ -379,12 +379,12 @@ export function bridgeDesktopWebSocket(clientWs, wsPort, WebSocketCtor) {
 }
 
 /** Operator-facing desktop shell (full-bleed noVNC). */
-export function desktopShellHtml({ botId, publicBase, control }) {
+export function desktopShellHtml({ botId, publicBase, control, computerToken }) {
   const pathBase = `/desktop/${encodeURIComponent(botId)}`;
-  // noVNC path= is the websocket URL path on the public host
   const vncUrl =
     `${pathBase}/vnc.html?autoconnect=1&resize=scale&reconnect=1` +
     `&path=${encodeURIComponent(`desktop/${botId}/websockify`)}`;
+  const token = computerToken || "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -395,12 +395,13 @@ export function desktopShellHtml({ botId, publicBase, control }) {
   :root { color-scheme: dark; --bg:#0b0f17; --line:#243044; --text:#e8eefc; --muted:#8fa3c2; --accent:#5b8cff; }
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:"IBM Plex Sans",system-ui,sans-serif; overflow:hidden; }
-  #bar { display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--line); background:#121826; height:48px; }
-  #bar .title { font-weight:700; font-size:13px; }
+  #bar { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); background:#121826; height:48px; flex-wrap:wrap; }
+  #bar .title { font-weight:700; font-size:13px; white-space:nowrap; }
   #bar .chip { font:11px/1.2 ui-monospace,monospace; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:4px 10px; }
   #bar .chip b { color:var(--text); }
   #bar a, #bar button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:7px 11px; font-weight:600; cursor:pointer; font-size:12px; text-decoration:none; }
   #bar a.secondary, #bar button.secondary { background:#24314d; }
+  #bar button:disabled { opacity:.55; cursor:wait; }
   #frame { position:absolute; inset:48px 0 0 0; background:#000; }
   #frame iframe { border:0; width:100%; height:100%; }
   body.fs #bar { position:absolute; left:0; right:0; top:0; z-index:5; opacity:.55; transition:opacity .2s; }
@@ -414,12 +415,47 @@ export function desktopShellHtml({ botId, publicBase, control }) {
     <span class="chip">control <b>${control || "bot"}</b></span>
     <span class="chip">real Chrome + taskbar</span>
     <div style="flex:1"></div>
+    <button type="button" class="secondary" id="btnLi">LinkedIn</button>
+    <button type="button" class="secondary" id="btnRec">Recruiter</button>
     <a class="secondary" href="${publicBase}/view/${encodeURIComponent(botId)}?page=1">Page view</a>
     <button type="button" onclick="document.documentElement.requestFullscreen?.()">Fullscreen</button>
   </div>
   <div id="frame">
     <iframe id="vnc" allow="clipboard-read; clipboard-write; fullscreen" src="${vncUrl}" title="Desktop VNC"></iframe>
   </div>
+<script>
+const botId = ${JSON.stringify(botId)};
+const publicBase = ${JSON.stringify(publicBase)};
+const token = ${JSON.stringify(token)};
+const LI = "https://www.linkedin.com/";
+const REC = "https://www.linkedin.com/talent/home";
+async function navigate(url) {
+  const btnLi = document.getElementById("btnLi");
+  const btnRec = document.getElementById("btnRec");
+  btnLi.disabled = btnRec.disabled = true;
+  try {
+    const res = await fetch(publicBase + "/c/" + encodeURIComponent(botId) + "/navigate", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer " + token,
+        "x-openbot-computer-token": token,
+      },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || ("Navigate failed: " + res.status));
+    }
+  } catch (err) {
+    alert(String(err && err.message ? err.message : err));
+  } finally {
+    btnLi.disabled = btnRec.disabled = false;
+  }
+}
+document.getElementById("btnLi").onclick = () => void navigate(LI);
+document.getElementById("btnRec").onclick = () => void navigate(REC);
+</script>
 </body>
 </html>`;
 }

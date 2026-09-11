@@ -1,52 +1,68 @@
-# tint2 — bottom dock (Chrome / tools / terminal). Paths rewritten at seat start.
+# Aria OpenBot seat dock (tint2 v17)
 rounded = 12
 border_width = 0
-background_color = #2a2e35 90
+background_color = #2a2e35 92
 border_color = #000000 0
 
 rounded = 8
 border_width = 0
 background_color = #3d4450 80
+border_color = #000000 0
 
 rounded = 8
 border_width = 0
 background_color = #5b8cff 100
+border_color = #000000 0
 
 panel_monitor = all
 panel_position = bottom center horizontal
 panel_size = 100% 48
 panel_margin = 0 8
-panel_padding = 8 8 8
+panel_padding = 8 4 8
 panel_background_id = 1
 panel_layer = top
 panel_dock = 0
-panel_items = LTS
+panel_items = LTSC
 
 taskbar_mode = single_desktop
 taskbar_padding = 4 2 4
-taskbar_background_id = 0
-task_icon_size = 28
-task_maximum_size = 200 40
+task_maximum_size = 180 40
 task_centered = 1
-task_font = Sans 10
+task_font = sans 9
 task_font_color = #e8eefc 100
 task_background_id = 2
 task_active_background_id = 3
 task_icon = 1
 task_text = 0
+task_icon_asb = 100 0 0
 
 launcher_padding = 6 4 8
 launcher_background_id = 0
 launcher_icon_size = 28
+launcher_item_app = /opt/aria/desktop/app.desktop
+launcher_item_app = /opt/aria/desktop/app.desktop
+launcher_item_app = /opt/aria/desktop/app.desktop
 
 systray_padding = 4 0 4
-systray_icon_size = 22
+systray_icon_size = 20
 
-clock_format = %H:%M
-clock_font = Sans 10
+time1_format = %H:%M
+time1_font = sans 10
 clock_font_color = #c6d4ef 100
 clock_padding = 8 0
 clock_background_id = 0
 
 autohide = 0
 strut_policy = follow_size
+`;
+  const tint2rc = path.join(runtimeDir, "tint2rc");
+  fs.writeFileSync(tint2rc, body);
+  return tint2rc;
+}
+
+export async function startDesktopSeat(botId) {
+  const missing = ["Xvfb", "openbox", "x11vnc"].filter((c) => !which(c));
+  if (missing.length) throw new Error(`desktop seat missing binaries: /opt/aria/desktop/app.desktop`);
+
+  const displayNum = allocDisplayNum();
+  const display = `:/opt/aria/desktop/app.desktop

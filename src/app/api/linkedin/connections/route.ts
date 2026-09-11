@@ -37,6 +37,10 @@ const EnsureSchema = z.object({
   action: z.literal("ensure_connect"),
   provider: z.enum(["LinkedIn Assisted Manual", "LinkedIn Vendor API", "LinkedIn Browser Computer"]).default("LinkedIn Browser Computer"),
   operatorLabel: z.string().max(200).optional(),
+  /** Optional display name for a newly created seat (multi-account). */
+  seatName: z.string().max(120).optional(),
+  /** When true, always create a new Browser Computer seat instead of reusing one. */
+  forceNew: z.boolean().optional().default(false),
   goLive: z.boolean().optional().default(true),
 });
 
@@ -289,6 +293,10 @@ export async function POST(req: NextRequest) {
     body.provider ?? "LinkedIn Assisted Manual",
     body.operatorLabel?.trim() || user.email || "operator@aria.local",
     body.goLive !== false,
+    {
+      forceNew: body.action === "ensure_connect" ? Boolean(body.forceNew) : false,
+      seatName: body.action === "ensure_connect" ? body.seatName?.trim() : undefined,
+    },
   );
 }
 
@@ -298,6 +306,7 @@ async function ensureConnect(
   provider: LinkedInSeatProvider,
   operatorLabel: string,
   goLive: boolean,
+  opts?: { forceNew?: boolean; seatName?: string },
 ) {
   const readiness = await linkedInProvidersForWorkspace(workspaceId);
   if (provider === "LinkedIn Vendor API" && !readiness.vendorApiConfigured) {
@@ -329,25 +338,34 @@ async function ensureConnect(
   }
 
   const seats = (seatRows ?? []) as AgentSeatRow[];
-  let seat = pickLinkedInSeat(
-    seats.map((s) => ({
-      id: s.id,
-      name: s.name,
-      provider: s.provider,
-      status: s.status,
-      mode: s.mode,
-      connectedAccount: s.connected_account,
-      operatorEmail: s.operator_email,
-    })),
-    provider,
-  );
+  const forceNew = Boolean(opts?.forceNew) && provider === "LinkedIn Browser Computer";
+  let seat = forceNew
+    ? null
+    : pickLinkedInSeat(
+        seats.map((s) => ({
+          id: s.id,
+          name: s.name,
+          provider: s.provider,
+          status: s.status,
+          mode: s.mode,
+          connectedAccount: s.connected_account,
+          operatorEmail: s.operator_email,
+        })),
+        provider,
+      );
 
   if (!seat || seat.provider !== provider) {
+    const browserCount = seats.filter((s) => s.provider === "LinkedIn Browser Computer").length;
+    const createdName =
+      opts?.seatName?.trim() ||
+      (provider === "LinkedIn Browser Computer" && browserCount > 0
+        ? `AriaBot LinkedIn Account ${browserCount + 1}`
+        : defaultLinkedInSeatName(provider));
     const { data: created, error: createErr } = await supabase
       .from("agent_seats")
       .insert({
         workspace_id: workspaceId,
-        name: defaultLinkedInSeatName(provider),
+        name: createdName,
         operator_email: operatorLabel.includes("@") ? operatorLabel : `${operatorLabel.replace(/\s+/g, ".").toLowerCase()}@linkedin.aria`,
         provider,
         mode: goLive ? "live" : "mock",
