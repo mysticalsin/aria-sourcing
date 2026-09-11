@@ -10,8 +10,8 @@ status: session-fail-closed-on-fly
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `b460a2b` (`b460a2bbd2a64d7269e91e0951339895920deb82`)
-- **Fly:** https://aria-mantu-app.fly.dev build matches tip
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `38d5f19` (docs) · **Fly code build:** `b460a2b` (`b460a2bbd2a64d7269e91e0951339895920deb82`)
+- **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches code SHA above
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/112 → `integration/sourcing-enrichment-on-main` (draft)
 - **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
