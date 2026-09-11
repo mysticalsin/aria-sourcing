@@ -154,24 +154,39 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
             hostCapacity?: { computers: number; max: number } | null;
           };
           if (fleet.hostCapacity) setHostCapacity(fleet.hostCapacity);
-          const bySeat = new Map(
+          const bySeatHealth = new Map(
             (fleet.computers ?? [])
               .filter((c) => c.seatId)
               .map((c) => [c.seatId!, c.sessionHealthy ?? null] as const),
           );
-          const byComp = new Map(
+          const byCompHealth = new Map(
             (fleet.computers ?? [])
               .filter((c) => c.computerId)
               .map((c) => [c.computerId!, c.sessionHealthy ?? null] as const),
           );
-          nextSeats = nextSeats.map((s) => ({
-            ...s,
-            sessionHealthy:
-              (s.id ? (bySeat.get(s.id) ?? null) : null) ??
-              (s.computerId ? (byComp.get(s.computerId) ?? null) : null) ??
-              s.sessionHealthy ??
-              null,
-          }));
+          const bySeatComputer = new Map(
+            (fleet.computers ?? [])
+              .filter((c) => c.seatId && c.computerId && c.seatId !== "__orphan__")
+              .map((c) => [c.seatId!, c.computerId!] as const),
+          );
+          nextSeats = nextSeats.map((s) => {
+            const fleetComputerId = bySeatComputer.get(s.id);
+            if (fleetComputerId && fleetComputerId !== s.computerId) {
+              // Authoritative DB/fleet binding wins over stale Hermes after reclaim.
+              void actions.updateSeat(s.id, { computerId: fleetComputerId });
+            }
+            return {
+              ...s,
+              computerId: fleetComputerId || s.computerId,
+              sessionHealthy:
+                (s.id ? (bySeatHealth.get(s.id) ?? null) : null) ??
+                ((fleetComputerId || s.computerId)
+                  ? (byCompHealth.get(fleetComputerId || s.computerId!) ?? null)
+                  : null) ??
+                s.sessionHealthy ??
+                null,
+            };
+          });
         }
       } catch {
         /* seats still usable without fleet overlay */
@@ -459,11 +474,10 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         return;
       }
       // Never invent computerId from seat.id — that collapses N Chromium profiles onto one id.
-      // Prefer the durable seat computerId so app deploys / re-logins reuse cookies on disk.
-      let computerId =
-        (seat.computerId && String(seat.computerId).trim()) ||
-        localSeats.find((s) => s.id === seat.id)?.computerId ||
-        "";
+      // Prefer the durable API/DB seat computerId so app deploys / re-logins reuse cookies.
+      // Do NOT fall back to Hermes-only computerId: after reclaim the API may be empty or
+      // ahead of Hermes, and a stale local twin skips reclaim-before-mint.
+      let computerId = (seat.computerId && String(seat.computerId).trim()) || "";
       if (!computerId) {
         // Prefer reclaiming a probed-healthy host orphan before minting a blank id
         // (minting is what forces LinkedIn login again after an app update).

@@ -143,6 +143,14 @@ export default function FloorPage() {
           };
           map.set(c.seatId, hint);
           map.set(c.computerId, hint);
+          // Keep Hermes seat.computerId aligned with DB-backed fleet (post-reclaim),
+          // same as Fleet/Campaign polls — floor hints alone do not fix send paths.
+          if (c.seatId && c.computerId && c.seatId !== "__orphan__") {
+            const seat = seatsRef.current.find((s) => s.id === c.seatId);
+            if (seat && seat.computerId !== c.computerId) {
+              void actions.updateSeat(seat.id, { computerId: c.computerId });
+            }
+          }
         }
         if (!cancelled) setComputerHints(map);
       } catch {
@@ -155,7 +163,7 @@ export default function FloorPage() {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [seats.length]);
+  }, [actions, seats.length]);
 
   React.useEffect(() => {
     const now = Date.now();
