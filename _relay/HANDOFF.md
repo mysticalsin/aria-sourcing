@@ -10,7 +10,7 @@ status: honesty-ux-on-fly
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `90849bc`
+- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `68a0ef2`
 - **PR:** #106
 - **Fly app:** https://aria-mantu-app.fly.dev — deployed (health OK; `/api/ready` still `agentFrameworks: false`)
 - **Fly computers:** https://aria-mantu-computers.fly.dev — max 5
@@ -39,6 +39,8 @@ status: honesty-ux-on-fly
 4. Operator prove script in `_relay/full-app-e2e-audit.md`
 
 ## Decisions (don't relitigate)
+
+- **Every improvement is pushed to Fly** (`aria-mantu-app` / computers as needed) before the shift ends — no “merge then maybe deploy” gap
 
 - Fly-only for computers + LinkedIn automation
 - Host VM cap must be honest in Fleet UX
