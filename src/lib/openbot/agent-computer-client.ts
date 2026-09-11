@@ -156,6 +156,43 @@ export async function openBotReleaseControl(cfg: OpenBotAgentComputerConfig): Pr
   }
 }
 
+/** LinkedIn session probe — POST /session-probe on the Chromium computer (classifySessionProbe). */
+export type OpenBotSessionProbeResult = {
+  healthy: boolean;
+  detail: string;
+  url?: string;
+};
+
+export async function openBotSessionProbe(
+  cfg: OpenBotAgentComputerConfig,
+  url?: string,
+): Promise<OpenBotSessionProbeResult> {
+  const res = await computerFetch(cfg, "/session-probe", {
+    method: "POST",
+    body: JSON.stringify(url ? { url } : {}),
+    timeoutMs: 60_000,
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    healthy?: boolean;
+    detail?: string;
+    url?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(data.error || `OpenBot session probe ${res.status}`);
+  }
+  return {
+    healthy: data.healthy === true,
+    detail:
+      typeof data.detail === "string" && data.detail.trim()
+        ? data.detail
+        : data.healthy === true
+          ? "LinkedIn session appears logged in"
+          : "LinkedIn session not confirmed",
+    url: typeof data.url === "string" ? data.url : undefined,
+  };
+}
+
 export async function openBotReadPage(
   cfg: OpenBotAgentComputerConfig,
 ): Promise<{ url: string; title: string; text: string }> {

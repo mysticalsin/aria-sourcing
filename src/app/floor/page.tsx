@@ -68,9 +68,9 @@ export default function FloorPage() {
   const settings = useSettings();
   const actions = useActions();
   const soundEnabled = settings.soundEnabled;
-  const [computerHints, setComputerHints] = React.useState<ReadonlyMap<string, ComputerFloorHint>>(
-    () => new Map(),
-  );
+  const [computerHints, setComputerHints] = React.useState<
+    ReadonlyMap<string, ComputerFloorHint> | undefined
+  >(undefined);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   // Which panel the selection drawer shows — "overview" (AgentDetailDrawer,
   // unchanged) or "cortex" (3.2 Glass Cortex). Mutually exclusive so only one

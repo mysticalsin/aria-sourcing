@@ -194,10 +194,20 @@ export function seatsToOfficeAgents(
       } else if (hint.status === "ready" && hint.sessionHealthy === false) {
         status = "error";
         subtitle = "LinkedIn session unhealthy";
+      } else if (hint.status === "ready" && hint.sessionHealthy === true) {
+        status = "working";
+        subtitle = "LinkedIn session healthy";
+      } else if (hint.status === "ready" && hint.sessionHealthy == null) {
+        status = "idle";
+        subtitle = "LinkedIn unverified — Take control";
       } else if (hint.status === "stopped") {
         status = "idle";
         subtitle = "VM stopped";
       }
+    } else if (computers && seat.provider === "LinkedIn Browser Computer") {
+      // Floor polled fleet computers, but this LinkedIn seat has no live VM row.
+      status = "idle";
+      subtitle = seat.computerId ? "VM not on host" : "No Browser Computer";
     }
     return {
       id: seat.id,

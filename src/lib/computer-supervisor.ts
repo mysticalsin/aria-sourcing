@@ -14,6 +14,7 @@ import { toOpenBotBotId } from "@/lib/openbot/bot-id";
 import {
   openBotNavigate,
   openBotReleaseControl,
+  openBotSessionProbe,
   openBotTakeControl,
   type OpenBotAgentComputerConfig,
 } from "@/lib/openbot/agent-computer-client";
@@ -451,6 +452,7 @@ export class ComputerSupervisor {
     );
     this.takeoverCorrelation.delete(computerId);
     const agent = agentCfg(rec);
+    let probedHealthy: boolean | null = null;
     if (agent) {
       try {
         await openBotReleaseControl(agent);
@@ -463,34 +465,64 @@ export class ComputerSupervisor {
           { correlationId, campaignId: opts?.campaignId },
         );
       }
+      // Real LinkedIn probe — never invent healthy=true without this.
+      try {
+        const probe = await openBotSessionProbe(agent);
+        rec.sessionHealthy = probe.healthy;
+        probedHealthy = probe.healthy;
+        if (probe.healthy) {
+          rec.lastError = null;
+        } else {
+          rec.lastError = probe.detail;
+        }
+        rec.updatedAt = isoNow();
+        this.audit(computerId, "session_probe", probe.detail, "system", {
+          correlationId,
+          campaignId: opts?.campaignId,
+          meta: { healthy: probe.healthy, url: probe.url ?? null },
+        });
+      } catch (err) {
+        rec.sessionHealthy = null;
+        probedHealthy = null;
+        this.audit(
+          computerId,
+          "session_probe_failed",
+          err instanceof Error ? err.message : "session probe failed",
+          "system",
+          { correlationId, campaignId: opts?.campaignId },
+        );
+      }
     }
 
-    // Auto-retry up to N recently failed linkedin_send jobs for this computer.
-    const failed = [...this.jobs.values()]
-      .filter(
-        (j) =>
-          j.computerId === computerId &&
-          j.kind === "linkedin_send" &&
-          j.status === "failed" &&
-          !this.retriedJobIds.has(j.jobId),
-      )
-      .sort((a, b) => Date.parse(b.finishedAt ?? b.createdAt) - Date.parse(a.finishedAt ?? a.createdAt))
-      .slice(0, ComputerSupervisor.RELEASE_RETRY_CAP);
+    // Auto-retry only when LinkedIn is confirmed healthy (or no remote agent = local/mock).
+    const allowRetry = !agent || probedHealthy === true;
+    if (allowRetry) {
+      const failed = [...this.jobs.values()]
+        .filter(
+          (j) =>
+            j.computerId === computerId &&
+            j.kind === "linkedin_send" &&
+            j.status === "failed" &&
+            !this.retriedJobIds.has(j.jobId),
+        )
+        .sort((a, b) => Date.parse(b.finishedAt ?? b.createdAt) - Date.parse(a.finishedAt ?? a.createdAt))
+        .slice(0, ComputerSupervisor.RELEASE_RETRY_CAP);
 
-    for (const job of failed) {
-      this.retriedJobIds.add(job.jobId);
-      this.audit(
-        computerId,
-        "decide",
-        `Auto-retry linkedin_send after Release (${job.jobId})`,
-        "system",
-        { campaignId: opts?.campaignId, jobId: job.jobId },
-      );
-      void this.enqueueJob({
-        computerId,
-        kind: "linkedin_send",
-        payload: { ...job.payload, retryOf: job.jobId },
-      });
+      for (const job of failed) {
+        this.retriedJobIds.add(job.jobId);
+        this.audit(
+          computerId,
+          "decide",
+          `Auto-retry linkedin_send after Release (${job.jobId})`,
+          "system",
+          { campaignId: opts?.campaignId, jobId: job.jobId },
+        );
+        void this.enqueueJob({
+          computerId,
+          kind: "linkedin_send",
+          payload: { ...job.payload, retryOf: job.jobId },
+        });
+      }
     }
 
     return rec;

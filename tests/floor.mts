@@ -79,6 +79,34 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   const maya = hinted.find((a) => a.id === "seat_maya")!;
   ok("help_requested overlays error", maya.status === "error");
   ok("help_requested subtitle", maya.subtitle === "Needs Take control");
+
+  const healthy = seatsToOfficeAgents(
+    s.seats,
+    s,
+    new Map([["seat_maya", { status: "ready", sessionHealthy: true }]]),
+  ).find((a) => a.id === "seat_maya")!;
+  ok("ready+healthy overlays working", healthy.status === "working");
+  ok("ready+healthy subtitle", healthy.subtitle === "LinkedIn session healthy");
+
+  const unverified = seatsToOfficeAgents(
+    s.seats,
+    s,
+    new Map([["seat_maya", { status: "ready", sessionHealthy: null }]]),
+  ).find((a) => a.id === "seat_maya")!;
+  ok("ready+null overlays idle unverified", unverified.status === "idle");
+  ok(
+    "ready+null subtitle asks Take control",
+    unverified.subtitle.includes("unverified"),
+  );
+
+  const liSeat = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (liSeat) {
+    const missing = seatsToOfficeAgents(s.seats, s, new Map()).find((a) => a.id === liSeat.id)!;
+    ok(
+      "LinkedIn seat without VM row is idle",
+      missing.status === "idle" && /Browser Computer|not on host/.test(missing.subtitle),
+    );
+  }
 }
 
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);

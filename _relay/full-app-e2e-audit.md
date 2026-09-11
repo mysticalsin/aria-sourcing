@@ -118,6 +118,8 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 - Settings notifications: explicit **Preference only — not delivering yet**.
 - Replies: **Queue draft reply** (no false send).
 - Outreach: **Allocate on Fleet** link.
+- **Release runs real `/session-probe`** — sets `sessionHealthy` from Chromium classify; auto-retry sends only when healthy.
+- Floor overlays: healthy / unverified / unhealthy / missing VM (no theatrical “working” without a live computer hint).
 
 ---
 
