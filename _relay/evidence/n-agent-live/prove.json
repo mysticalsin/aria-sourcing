@@ -1,0 +1,54 @@
+{
+  "at": "2026-09-11T19:05Z",
+  "app": "https://aria-mantu-app.fly.dev",
+  "liveBuild": "8ea3370752651619ece931801c918678d545e4d2",
+  "tipSha": "1eba85a12ecdb2b7ef6529354b774cb3f1585b76",
+  "tipLive": false,
+  "hostCapacity": {
+    "computers": 3,
+    "max": 5,
+    "desktop": true
+  },
+  "boundComputers": [
+    {
+      "seatId": "600e8afa-a7c4-40ef-91c8-f4854fa9e5fc",
+      "computerId": "comp_7fe31958-589b-497f-8de7-c5083bf53ff5",
+      "status": "ready",
+      "sessionHealthy": false,
+      "control": "bot"
+    }
+  ],
+  "sessionProbe": {
+    "sessionHealthy": false,
+    "honest": true
+  },
+  "ui": {
+    "floor": "/opt/cursor/artifacts/floor-n-agent-live.png",
+    "fleet": "/opt/cursor/artifacts/fleet-computers-live.png",
+    "settings": "/opt/cursor/artifacts/settings-linkedin-live.png",
+    "notes": "Floor shows LinkedIn Computer with session unhealthy; Graph seats also listed. Tip create-null/reclaim-first not live yet."
+  },
+  "blockers": [
+    "Protected Fly release required for tip",
+    "LinkedIn sessionHealthy=false \u2014 needs human Take control / login",
+    "agentFrameworks false keeps /api/ready not_ready in production",
+    "OPENBOT_MAX_COMPUTERS=5 (host 3/5)"
+  ],
+  "pr": "https://github.com/mysticalsin/aria-sourcing/pull/129",
+  "reclaimOnLive": false,
+  "reclaimReason": "live build enum lacks reclaim_healthy_orphan; tip adds it",
+  "takeControl": {
+    "control": "human_then_released",
+    "viewUrl": "https://aria-mantu-computers.fly.dev/desktop/comp_7fe31958-589b-497f-8de7-c5083bf53ff5",
+    "linkedin": "login_wall",
+    "sessionHealthy": false,
+    "liCredentialsInE2eDir": false
+  },
+  "screenshots": [
+    "floor-n-agent-live.png",
+    "fleet-computers-live.png",
+    "settings-linkedin-live.png",
+    "linkedin-take-control-live.png",
+    "floor-after-take-control.png"
+  ]
+}
