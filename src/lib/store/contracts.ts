@@ -470,11 +470,11 @@ export interface HermesActions {
 
   // fleet — multi-seat coordination + anti-ban guardrails
   addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => Promise<AgentSeat | null>;
-  /** Seeds synthetic seats only when Supabase is disabled. Live workspaces use addSeat. */
+  /** Creates N LinkedIn Browser Computer seats (isolated Chromium/VM profiles each). */
   deployAgents: (
     n: number,
-    opts?: { language?: string; namePrefix?: string },
-  ) => { created: number; total: number; capped: boolean; max: number };
+    opts?: { language?: string; namePrefix?: string; campaignId?: string },
+  ) => Promise<{ created: number; total: number; capped: boolean; max: number }>;
   updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => Promise<{ ok: boolean; error?: string }>;

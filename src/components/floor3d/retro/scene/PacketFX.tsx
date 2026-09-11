@@ -94,7 +94,7 @@ export function PacketFX({ agentsRef, ceoId }: PacketFXProps) {
       const employees = ceoId ? agents.filter((a) => a.id !== ceoId) : agents;
       const source =
         (e.seatId ? agents.find((a) => a.id === e.seatId) : undefined) ??
-        (employees.length > 0 ? employees[pickResponderIndex(e, employees.length)] : undefined);
+        (employees.length > 0 ? employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))] : undefined);
 
       const hub = resolveHub();
       const fromXY = source ? { x: source.x, y: source.y } : hub;

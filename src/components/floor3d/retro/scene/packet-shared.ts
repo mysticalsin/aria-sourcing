@@ -51,8 +51,12 @@ export const PACKET_FLIGHT_MS = 850;
  * them. If a future store change starts populating `seatId`, callers should
  * prefer it directly and only fall back to this hash when it's absent.
  */
-export function pickResponderIndex(e: AgentEvent, n: number): number {
+export function pickResponderIndex(e: AgentEvent, n: number, seatIds?: string[]): number {
   if (n <= 0) return 0;
+  if (e.seatId && seatIds?.length) {
+    const idx = seatIds.indexOf(e.seatId);
+    if (idx >= 0) return idx % n;
+  }
   const key = `${e.kind}:${e.campaignId ?? ""}:${e.candidateName ?? ""}:${e.count ?? ""}:${e.at}`;
   let h = 0;
   for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;

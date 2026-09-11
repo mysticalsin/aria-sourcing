@@ -64,8 +64,13 @@ export const PULSE_MS = 4000;
 
 export const PACKET_FLIGHT_MS = 850;
 
-export function pickResponderIndex(e: AgentEvent, n: number): number {
+export function pickResponderIndex(e: AgentEvent, n: number, seatIds?: string[]): number {
   if (n <= 0) return 0;
+  // Prefer the seat that actually did the work when the event carries seatId.
+  if (e.seatId && seatIds?.length) {
+    const idx = seatIds.indexOf(e.seatId);
+    if (idx >= 0) return idx % n;
+  }
   const key = `${e.kind}:${e.campaignId ?? ""}:${e.candidateName ?? ""}:${e.count ?? ""}:${e.at}`;
   let h = 0;
   for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
@@ -157,21 +162,47 @@ const BUSY_STATES = new Set(["sourcing", "outreach", "booking", "warming"]);
  * rule). Status collapses the richer activity model into the three render
  * states the characters understand.
  */
+/** Live computer hint — overlays VM truth onto theatrical activity. */
+export type ComputerFloorHint = {
+  status: string;
+  sessionHealthy?: boolean | null;
+};
+
 export function seatsToOfficeAgents(
   seats: AgentSeat[],
   state: HermesState,
+  computers?: ReadonlyMap<string, ComputerFloorHint>,
 ): OfficeAgent[] {
   return seats.map((seat, index) => {
     const activity = agentActivity(seat, state);
-    const status: OfficeAgent["status"] = BUSY_STATES.has(activity.state)
+    let status: OfficeAgent["status"] = BUSY_STATES.has(activity.state)
       ? "working"
       : activity.state === "idle"
         ? "idle"
         : "error"; // "paused" / auto-paused → error
+    let subtitle = activity.label;
+    const hint =
+      computers?.get(seat.id) ??
+      (seat.computerId ? computers?.get(seat.computerId) : undefined);
+    if (hint) {
+      if (hint.status === "help_requested" || hint.status === "error") {
+        status = "error";
+        subtitle = hint.status === "help_requested" ? "Needs Take control" : "VM error";
+      } else if (hint.status === "busy" || hint.status === "starting") {
+        status = "working";
+        if (hint.status === "starting") subtitle = "Booting VM";
+      } else if (hint.status === "ready" && hint.sessionHealthy === false) {
+        status = "error";
+        subtitle = "LinkedIn session unhealthy";
+      } else if (hint.status === "stopped") {
+        status = "idle";
+        subtitle = "VM stopped";
+      }
+    }
     return {
       id: seat.id,
       name: seat.name,
-      subtitle: activity.label,
+      subtitle,
       status,
       // Honour a custom per-agent colour when set; otherwise auto-assign a
       // distinct colour by seat index — curated palette first (faithful to the

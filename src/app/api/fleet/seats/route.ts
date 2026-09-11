@@ -23,6 +23,10 @@ const CreateSeatSchema = z.object({
   minGapMinutes: z.number().int().min(0).max(1440).default(12),
   persona: z.string().max(2000).default(""),
   signature: z.string().max(2000).default(""),
+  /** Stable Chromium computer id — required for Browser Computer seats so VM ↔ seat stays 1:1 across processes. */
+  computerId: z.string().min(1).max(120).optional().nullable(),
+  linkedinDeliveryBackend: z.enum(["vendor-api", "browser-computer"]).optional().nullable(),
+  assignedCampaignIds: z.array(z.string().min(1).max(120)).max(50).optional(),
 });
 
 const PatchSeatSchema = z.object({
@@ -96,6 +100,14 @@ export async function POST(req: NextRequest) {
 
   if (!actor.supabase) return NextResponse.json({ ok: true, demo: true });
 
+  const isBrowserComputer = seat.provider === "LinkedIn Browser Computer";
+  const computerId =
+    seat.computerId?.trim() ||
+    (isBrowserComputer ? `comp_${globalThis.crypto.randomUUID()}` : null);
+  const linkedinDeliveryBackend =
+    seat.linkedinDeliveryBackend ??
+    (isBrowserComputer ? "browser-computer" : null);
+
   const { data, error } = await actor.supabase
     .from("agent_seats")
     .insert({
@@ -111,6 +123,11 @@ export async function POST(req: NextRequest) {
       min_gap_minutes: seat.minGapMinutes,
       persona: seat.persona,
       signature: seat.signature,
+      computer_id: computerId,
+      linkedin_delivery_backend: linkedinDeliveryBackend,
+      assigned_campaign_ids: seat.assignedCampaignIds
+        ? [...new Set(seat.assignedCampaignIds)]
+        : [],
     })
     .select(AGENT_SEAT_SELECT)
     .single();

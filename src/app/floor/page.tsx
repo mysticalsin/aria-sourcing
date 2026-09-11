@@ -38,6 +38,7 @@ import {
   pickResponderIndex,
   describeEvent,
   seatsToOfficeAgents,
+  type ComputerFloorHint,
 } from "@/lib/floor3d";
 import { getDeviceQuality, MAX_3D_AGENTS } from "@/lib/device";
 import {
@@ -67,6 +68,9 @@ export default function FloorPage() {
   const settings = useSettings();
   const actions = useActions();
   const soundEnabled = settings.soundEnabled;
+  const [computerHints, setComputerHints] = React.useState<ReadonlyMap<string, ComputerFloorHint>>(
+    () => new Map(),
+  );
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   // Which panel the selection drawer shows — "overview" (AgentDetailDrawer,
   // unchanged) or "cortex" (3.2 Glass Cortex). Mutually exclusive so only one
@@ -100,13 +104,50 @@ export default function FloorPage() {
     seatsRef.current = seats;
   }, [seats]);
 
+  // Live VM status for the 3D floor — same /api/fleet/computers source as Fleet.
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          computers?: {
+            computerId: string;
+            seatId: string;
+            status: string;
+            sessionHealthy?: boolean | null;
+          }[];
+        };
+        const map = new Map<string, ComputerFloorHint>();
+        for (const c of data.computers ?? []) {
+          const hint: ComputerFloorHint = {
+            status: c.status,
+            sessionHealthy: c.sessionHealthy,
+          };
+          map.set(c.seatId, hint);
+          map.set(c.computerId, hint);
+        }
+        if (!cancelled) setComputerHints(map);
+      } catch {
+        /* floor still works from seat activity alone */
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [seats.length]);
+
   React.useEffect(() => {
     const now = Date.now();
     for (const e of recentEvents()) {
       if (e.at <= now - PULSE_MS) continue;
       const employees = seatsRef.current.slice(1); // index 0 = CEO (src/lib/floor3d.ts)
       if (employees.length === 0) continue;
-      const seat = employees[pickResponderIndex(e, employees.length)];
+      const seat = employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))];
       pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
     }
 
@@ -114,7 +155,7 @@ export default function FloorPage() {
       setTicker((prev) => [...prev, e].slice(-TICKER_CAP));
       const employees = seatsRef.current.slice(1);
       if (employees.length > 0) {
-        const seat = employees[pickResponderIndex(e, employees.length)];
+        const seat = employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))];
         pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
       }
       if (fxSoundEnabled && soundEnabledRef.current) {
@@ -268,6 +309,7 @@ export default function FloorPage() {
               selectedId={selectedId}
               onSelect={(s) => selectAgent(s)}
               pulsingSeatIds={pulsingSeatIds}
+              computerHints={computerHints}
             />
           )
         ) : seats.length === 0 ? (
@@ -322,12 +364,14 @@ function Floor3DSection({
   selectedId,
   onSelect,
   pulsingSeatIds,
+  computerHints,
 }: {
   seats: AgentSeat[];
   state: HermesState;
   selectedId: string | null;
   onSelect: (id: string) => void;
   pulsingSeatIds: Set<string>;
+  computerHints?: ReadonlyMap<string, ComputerFloorHint>;
 }) {
   // Render-cap: a full procedural robot per agent is ~20 meshes; rendering the
   // whole fleet (up to 300) tanks the GPU. RetroOfficeScene itself caps at
@@ -338,7 +382,7 @@ function Floor3DSection({
   const cap = MAX_3D_AGENTS[deviceQuality];
   // Force a pulsing seat's status to "working" so agentTick's existing
   // status-flip → walk-to-desk mechanism fires for it (no agentTick edits).
-  const office = seatsToOfficeAgents(seats, state).map((a) =>
+  const office = seatsToOfficeAgents(seats, state, computerHints).map((a) =>
     pulsingSeatIds.has(a.id) && a.status !== "working" ? { ...a, status: "working" as const } : a,
   );
   const notShown = Math.max(0, office.length - cap);
@@ -390,7 +434,7 @@ function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentS
       ) : (
         <ul className="space-y-1.5">
           {items.map((e, i) => {
-            const seat = employees.length > 0 ? employees[pickResponderIndex(e, employees.length)] : null;
+            const seat = employees.length > 0 ? employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))] : null;
             return (
               <li key={`${e.at}-${i}`} className="flex items-center gap-2 text-sm">
                 <span

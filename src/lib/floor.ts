@@ -61,8 +61,14 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   const campaigns = state.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   if (campaigns.length === 0) return make("idle", "Standing by", "No active campaigns");
 
+  // Prefer campaigns this seat is actually attached to (Campaign Agents), not a hash lottery.
+  const assigned = seat.assignedCampaignIds ?? [];
+  const attached = assigned.length
+    ? campaigns.filter((c) => assigned.includes(c.id))
+    : campaigns;
+  const pool = attached.length > 0 ? attached : campaigns;
   const h = hash(seat.id);
-  const campaign = campaigns[h % campaigns.length];
+  const campaign = pool[h % pool.length];
   const cands = state.candidates.filter((c) => c.campaignId === campaign.id);
   const mode = h % 3;
 

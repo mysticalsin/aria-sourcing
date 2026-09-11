@@ -115,6 +115,9 @@ export async function createFleetSeatOnServer(
       persona: seat.persona,
       signature: seat.signature,
       mode: seat.mode,
+      computerId: seat.computerId ?? null,
+      linkedinDeliveryBackend: seat.linkedinDeliveryBackend ?? null,
+      assignedCampaignIds: seat.assignedCampaignIds ?? [],
     }),
   });
   const out = (await res.json().catch(() => null)) as

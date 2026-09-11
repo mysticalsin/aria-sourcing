@@ -1945,7 +1945,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaign.id,
         );
       });
-      emit({ kind: "allocate", candidateName: candidate.name, campaignId: campaign.id });
+      emit({ kind: "allocate", candidateName: candidate.name, campaignId: campaign.id, seatId: seat?.id ?? seatId });
       return msg;
     },
     [commit, current],
@@ -2928,6 +2928,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           msg.campaignId,
         );
         return next;
+      });
+      emit({
+        kind: "send",
+        candidateName: candidate.name,
+        campaignId: msg.campaignId,
+        seatId: seat.id,
       });
       return {
         ok: true,
@@ -4518,70 +4524,41 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
-  // Demo-only fleet seeding. Live workspaces require one real operator mailbox
-  // per normalized seat and use addSeat's server-persisted authority path.
+  // Spin up N LinkedIn Browser Computer seats (each = isolated Chromium profile / VM).
+  // Works in demo (in-memory) and live (persists via addSeat → /api/fleet/seats).
   const deployAgents = useCallback(
-    (n: number, opts?: { language?: string; namePrefix?: string }) => {
+    async (n: number, opts?: { language?: string; namePrefix?: string; campaignId?: string }) => {
       const s = stateRef.current;
       if (!s) return { created: 0, total: 0, capped: false, max: 0 };
       const max = s.settings.fleet.maxAgents || 300;
-      if (supabaseEnabled) {
-        return { created: 0, total: s.seats.length, capped: false, max };
-      }
       if (!can(s.currentRole, "manage_fleet")) {
         return { created: 0, total: s.seats.length, capped: false, max };
       }
       const room = Math.max(0, max - s.seats.length);
       const toCreate = Math.min(Math.max(0, Math.floor(n)), room);
       if (toCreate === 0) return { created: 0, total: s.seats.length, capped: room === 0, max };
-      const providers = ["Microsoft Graph", "Gmail API", "SendGrid", "Resend"] as const;
-      const now = new Date().toISOString();
-      const base = s.seats.length;
-      const newSeats: AgentSeat[] = Array.from({ length: toCreate }, (_, i) => {
-        const idx = base + i;
-        return {
-          id: genId("seat"),
-          name: `${opts?.namePrefix ?? "Aria Agent"} ${String(idx + 1).padStart(3, "0")}`,
-          operatorEmail: `agent${idx + 1}@hermes.example`,
-          provider: providers[idx % providers.length],
-          status: "active",
-          mode: "mock",
-          domainVerified: false,
-          dailyLimit: 40,
-          warmup: true,
-          warmupStartCap: 10,
-          warmupStepPerDay: 4,
-          warmupStartedAt: now,
-          minGapMinutes: 12,
-          sendWindow: defaultSendWindow(),
-          sentToday: 0,
-          lastSendAt: null,
-          health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
-          persona: "Warm, concise, peer-to-peer recruiter. Lead with the candidate's recent work, one genuine compliment, soft 15-minute ask. No AI slop.",
-          signature: "",
+
+      const prefix = opts?.namePrefix ?? "AriaBot";
+      let created = 0;
+      for (let i = 0; i < toCreate; i += 1) {
+        const idx = (stateRef.current?.seats.length ?? s.seats.length) + 1;
+        const seat = await addSeat({
+          name: `${prefix} ${String(idx).padStart(3, "0")}`,
+          operatorEmail: `agent${idx}@ariabot.local`,
+          provider: "LinkedIn Browser Computer",
           language: opts?.language ?? s.settings.defaultLanguage,
-          connectedAccount: "",
-          createdAt: now,
-        };
-      });
-      commit((prev) =>
-        withActivity(
-          { ...prev, seats: [...prev.seats, ...newSeats] },
-          makeActivity({
-            type: "system",
-            title: `Generated ${newSeats.length} demo agents`,
-            notes: `Synthetic demo fleet now ${s.seats.length + newSeats.length}/${max}; no mailbox or live sender was provisioned.`,
-            outcome: `${newSeats.length} demo agents generated`,
-            campaignId: null,
-            linkedEntityType: null,
-            linkedEntityId: null,
-          }),
-          null,
-        ),
-      );
-      return { created: newSeats.length, total: s.seats.length + newSeats.length, capped: toCreate < Math.floor(n), max };
+          assignedCampaignIds: opts?.campaignId ? [opts.campaignId] : undefined,
+        });
+        if (seat) created += 1;
+      }
+      return {
+        created,
+        total: stateRef.current?.seats.length ?? s.seats.length,
+        capped: created < toCreate,
+        max,
+      };
     },
-    [commit],
+    [addSeat],
   );
 
   const updateSeat = useCallback(
@@ -4940,10 +4917,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return c.matchScore >= s.settings.minScoreToContact && stageRank(c.stage) < 1;
       });
       const activeSeats = s.seats.filter((x) => x.status === "active");
+      // When allocating for a campaign, prefer seats attached to it (Campaign Agents).
+      // Seats with no assignment list stay eligible (shared pool); seats assigned
+      // only to other campaigns are excluded.
+      const campaignSeats = opts?.campaignId
+        ? activeSeats.filter((seat) => {
+            const assigned = seat.assignedCampaignIds ?? [];
+            return assigned.length === 0 || assigned.includes(opts.campaignId!);
+          })
+        : activeSeats;
+      const seatPool = campaignSeats.length > 0 ? campaignSeats : activeSeats;
       const orderedSeats =
         s.settings.fleet?.deliveryMode === "manual"
-          ? activeSeats
-          : preferLinkedInAutomaticSeats(activeSeats, pool);
+          ? seatPool
+          : preferLinkedInAutomaticSeats(seatPool, pool);
       const result = allocateBatch(pool, orderedSeats, s.ledger, s.suppression, s.settings.fleet, new Date());
       if (result.assignments.length === 0) return result;
 
@@ -4988,7 +4975,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      emit({ kind: "allocate", count: drafted.length, campaignId: opts?.campaignId });
+      emit({
+        kind: "allocate",
+        count: drafted.length,
+        campaignId: opts?.campaignId,
+        seatId: result.assignments[0]?.seatId,
+      });
       return result;
     },
     [commit, current],

@@ -1,4 +1,5 @@
 import { agentActivity, floorRollup } from "../src/lib/floor";
+import { pickResponderIndex, seatsToOfficeAgents } from "../src/lib/floor3d";
 import { buildSeedState } from "../src/lib/seed";
 import { SEED_NOW } from "../src/lib/utils";
 
@@ -39,6 +40,46 @@ ok("rollup total = seat count", roll.total === s.seats.length);
 ok("rollup buckets within total", roll.working + roll.warming + roll.paused <= roll.total);
 ok("contactedToday = sum of sentToday", roll.contactedToday === s.seats.reduce((a, x) => a + x.sentToday, 0));
 ok("at least one paused (lucas)", roll.paused >= 1);
+
+
+// Assigned-campaign preference (not a hash lottery across the whole fleet).
+{
+  const clone = structuredClone(s);
+  const mayaSeat = clone.seats.find((x) => x.id === "seat_maya")!;
+  mayaSeat.assignedCampaignIds = ["camp_seed_design"];
+  const act = agentActivity(mayaSeat, clone, NOW);
+  const design = clone.campaigns.find((c) => c.id === "camp_seed_design")!;
+  ok("assigned campaign title surfaces", act.detail === design.title);
+}
+
+{
+  const e = {
+    kind: "send" as const,
+    candidateName: "Ada",
+    campaignId: "camp_seed_backend",
+    seatId: "seat_diego",
+    at: NOW,
+  };
+  const ids = ["seat_maya", "seat_diego", "seat_aisha"];
+  ok("pulse prefers event seatId", pickResponderIndex(e, ids.length, ids) === 1);
+  ok(
+    "pulse falls back without seatId",
+    typeof pickResponderIndex({ ...e, seatId: undefined }, ids.length, ids) === "number",
+  );
+}
+
+{
+  const agents = seatsToOfficeAgents(s.seats, s);
+  ok("office agents = seat count", agents.length === s.seats.length);
+  const hinted = seatsToOfficeAgents(
+    s.seats,
+    s,
+    new Map([["seat_maya", { status: "help_requested" }]]),
+  );
+  const maya = hinted.find((a) => a.id === "seat_maya")!;
+  ok("help_requested overlays error", maya.status === "error");
+  ok("help_requested subtitle", maya.subtitle === "Needs Take control");
+}
 
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

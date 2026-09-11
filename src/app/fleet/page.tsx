@@ -100,7 +100,7 @@ export default function FleetPage() {
   const role = useRole();
   const canManage = hydrated && can(role, "manage_fleet");
 
-  const [deployN, setDeployN] = React.useState("25");
+  const [deployN, setDeployN] = React.useState("5");
 
   // Roster filters — the "Deploy" control can push a fleet past 100+ seats,
   // so search/status/provider narrow it and a "load more" cursor keeps the
@@ -128,26 +128,18 @@ export default function FleetPage() {
 
   const visibleSeats = filteredSeats.slice(0, rosterVisible);
   const rosterHasMore = filteredSeats.length > visibleSeats.length;
-  const handleDeploy = () => {
+  const handleDeploy = async () => {
     if (!canManage) {
       toast({ title: "Admins only", description: "Only an admin can deploy agents.", variant: "warning" });
       return;
     }
-    if (supabaseEnabled) {
-      toast({
-        title: "Verified accounts required",
-        description: "Use Add one to bind each live agent to its real operator mailbox.",
-        variant: "warning",
-      });
-      return;
-    }
     const n = Math.max(1, Math.min(Number(deployN) || 0, maxAgents));
-    const res = actions.deployAgents(n);
+    const res = await actions.deployAgents(n);
     toast({
-      title: res.created > 0 ? `Generated ${res.created} demo agents` : "Demo fleet at capacity",
+      title: res.created > 0 ? `Deployed ${res.created} AriaBot seats` : "Fleet at capacity",
       description:
         res.created > 0
-          ? `Synthetic demo fleet now ${res.total}/${res.max}. No mailbox or live sender was provisioned.${res.capped ? " (capped at max)" : ""}`
+          ? `${res.created} LinkedIn Browser Computer seats ready (${res.total}/${res.max}). Each seat gets its own Chromium VM — Take control to log in. Host VM cap is separate (OPENBOT_MAX_COMPUTERS; Fly default 5).`
           : `Already at the ${res.max}-agent ceiling.`,
       variant: res.created > 0 ? "success" : "warning",
     });
