@@ -196,6 +196,7 @@ const BodySchema = z.object({
     "release_control",
     "request_help",
     "navigate",
+    "session_probe",
   ]),
   computerId: z.string().min(1).max(120),
   seatId: z.string().min(1).max(120).optional(),
@@ -288,11 +289,23 @@ export async function POST(req: NextRequest) {
         if (!rec) throw new Error("computer-not-found");
         break;
       }
+      case "session_probe": {
+        // Ensure in-memory row exists for durable computerId, then probe LinkedIn cookies.
+        defaultComputerSupervisor.ensureComputer({
+          workspaceId: workspaceId ?? "__local__",
+          seatId: (body.seatId ?? body.computerId).trim(),
+          computerId: body.computerId,
+          campaignId: body.campaignId,
+        });
+        rec = await defaultComputerSupervisor.probeSession(body.computerId);
+        break;
+      }
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
     return NextResponse.json({
       computer: enrichComputer(rec),
+      sessionHealthy: rec.sessionHealthy ?? null,
       recentAudits: defaultComputerSupervisor.recentAudits(rec.computerId, 12),
     });
   } catch (err) {

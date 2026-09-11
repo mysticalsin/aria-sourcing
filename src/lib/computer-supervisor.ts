@@ -546,6 +546,43 @@ export class ComputerSupervisor {
     return rec;
   }
 
+  /**
+   * Probe LinkedIn session on a durable computer profile. Never invents healthy=true.
+   * Used by Login/Restore so we open /feed when cookies already work (survives app deploys).
+   */
+  async probeSession(computerId: string): Promise<ComputerRecord> {
+    const rec = this.require(computerId);
+    const agent = agentCfg(rec);
+    if (!agent) {
+      rec.sessionHealthy = null;
+      rec.updatedAt = isoNow();
+      this.audit(computerId, "session_probe", "No agent endpoint — cannot probe", "system");
+      return rec;
+    }
+    try {
+      const probe = await openBotSessionProbe(agent);
+      rec.sessionHealthy = probe.healthy;
+      if (probe.healthy) {
+        rec.lastError = null;
+      } else {
+        rec.lastError = probe.detail;
+      }
+      rec.updatedAt = isoNow();
+      this.audit(computerId, "session_probe", probe.detail, "system");
+    } catch (err) {
+      rec.sessionHealthy = null;
+      rec.lastError = err instanceof Error ? err.message : "session probe failed";
+      rec.updatedAt = isoNow();
+      this.audit(
+        computerId,
+        "session_probe_failed",
+        err instanceof Error ? err.message : "session probe failed",
+        "system",
+      );
+    }
+    return rec;
+  }
+
   async releaseControl(computerId: string, opts?: { campaignId?: string | null }): Promise<ComputerRecord> {
     const rec = this.require(computerId);
     if (opts?.campaignId) rec.campaignId = opts.campaignId;

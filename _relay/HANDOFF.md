@@ -1,58 +1,60 @@
 ---
 project: MSourcing / ARIA
-shift: 166
+shift: 167
 agent: cursor-cloud
-updated: 2026-09-11T13:25Z
-status: fleet-get-no-mint-unbound-honest
+updated: 2026-09-11T14:18Z
+status: tony-invite-sent-session-persist-fix
 ---
 
-# Handoff — Shift 166
+# Handoff — Shift 167
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `87f8068` (`87f80685ac13730c057efa51e2c591aa0dd1fce3`)
-- **Fly:** https://aria-mantu-app.fly.dev · `/api/ready` build **matches tip** · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true; `ok:false` only from agentFrameworks)
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/120 → `integration/sourcing-enrichment-on-main` (draft; #119 closed/superseded)
-- **Computers:** https://aria-mantu-computers.fly.dev · bot `comp_tony_01` · max 5
-- **Tony reach-out E2E:** video recorded prior shift; LinkedIn `healthy:false` (login wall)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
+- **Fly:** https://aria-mantu-app.fly.dev — redeploy this tip for session_probe + outreach layout fix
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/120 → `integration/sourcing-enrichment-on-main`
+- **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` (human-logged profile; cookies on computers volume)
+- **Tony Walteur:** connection invite **sent today** with note (Pending on profile). Message/InMail blocked (3rd+ without Premium).
+- **Session now:** LinkedIn remember-me auto-login interstitial (cookies present; may need one Take control click if hung)
 
 ## Done this shift
 
-1. **GET `/api/fleet/computers` no longer mints** — uses `hydrateComputer` only; unbound seats omitted from list
-2. Ownership-mismatch on GET **clears poisoned FK** (no remint on read)
-3. Campaign Agents panel: unbound seats show **No Browser Computer** and disable Start/Observe/Take control (no `"(unassigned)"` theater)
-4. Tests: `computer-supervisor` 45/45 (hydrateComputer null/whitespace/durable); floor 40; typecheck green
+1. Found login lived on UUID bot, not `comp_tony_01` (remint/orphan identity leak)
+2. Sent LinkedIn **Connect + note** to https://www.linkedin.com/in/tonywalteur/ via durable bot
+3. Outreach Approvals: moved Fleet allocate banner **out of** `PageHeader` actions (broken layout/text)
+4. Login path: reuse durable `computerId`; prefer healthy orphan before mint; `session_probe` opens `/feed` when healthy (no forced re-login after deploy)
+5. Evidence: `_relay/evidence/2026-09-11-tonywalteur-connect-e2e.json`, artifacts `tonywalteur_invite_sent_proof.jpg`, `tonywalteur_profile_pending_proof.jpg`
 
 ## Blockers (goal incomplete)
 
-1. Human Take control + LinkedIn 2FA on `comp_tony_01`
+1. Remember-me interstitial may need one human Take control if LinkedIn hangs
 2. OPENBOT_MAX_COMPUTERS=5
-3. `/api/ready` agentFrameworks:false (Deerflow/Flowise — not campaign VM path)
-4. Operator UI prove Deploy→login→Release→floor distinct VM ids + session healthy
-5. ~~Redeploy Fly so GET no-mint ships~~ — done @ `87f8068`
+3. `/api/ready` agentFrameworks:false
+4. Operator prove Deploy→login→Release→floor distinct VMs + healthy
+5. Seat DB row may still point at `comp_tony_01` — bind seat `computerId` to `comp_7fe31958-…` in Settings/Fleet after deploy
 
 ## Next steps
 
-1. Human login/2FA on `comp_tony_01`
-2. Operator prove N seats on Floor with distinct `…last8` VM ids after Release
-3. Re-run Tony reach-out recorder once session-probe healthy
-4. Mark PR ready when operator E2E evidence lands
+1. Deploy this tip to Fly; bind seat computerId → `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
+2. If session interstitial hangs: Take control once on that bot, confirm feed, Release
+3. Operator N-seat floor prove
+4. Mark PR ready when operator E2E + stable session evidence lands
 
 ## Decisions made (don't relitigate)
 
 - Fly-only for LinkedIn / OpenBot / computers
 - Never invent `sessionHealthy=true` without `/session-probe`
 - Never invent `computerId` from `seat.id`
-- Never mint ephemeral `computerId` on LinkedIn send path
-- **Never mint on GET/list/poll** — only Deploy/Login/POST ensure
-- Unique `(workspace_id, computer_id)` enforced in DB (0084)
+- Never mint on GET/list/poll
+- **Never remint a blank computerId when a durable/healthy profile already exists**
+- Unique `(workspace_id, computer_id)` in DB (0084)
 - Host-full → refuse new Browser Computer seats
-- Hero Login with N seats requires explicit seat row
 - Mock send disabled on Fly unless explicitly allowed
+- 3rd+ Message requires Premium — Connect+note is the honest free path
 
 ## Watch out
 
-- Demo-login rate limit ~5/min
+- Demo-login ~5/min
 - Do not commit `/tmp/aria-e2e/*` secrets
-- Live prove stops bots unless `KEEP_LIVE=1`
-- After deploy, confirm Floor/Settings/Campaign polls no longer create twin `comp_*` rows for unbound seats
+- Personalized invite notes free-tier max **200 characters**
+- `comp_tony_01` is a login-wall twin — do not send from it; use the UUID durable bot

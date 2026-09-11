@@ -459,10 +459,34 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         return;
       }
       // Never invent computerId from seat.id — that collapses N Chromium profiles onto one id.
-      const computerId =
+      // Prefer the durable seat computerId so app deploys / re-logins reuse cookies on disk.
+      let computerId =
         (seat.computerId && String(seat.computerId).trim()) ||
         localSeats.find((s) => s.id === seat.id)?.computerId ||
-        `comp_${globalThis.crypto.randomUUID()}`;
+        "";
+      if (!computerId) {
+        // Reuse an already-healthy Chromium profile before minting a blank one
+        // (minting is what forces LinkedIn login again after an app update).
+        try {
+          const fleetRes = await fetch("/api/fleet/computers", { credentials: "include" });
+          const fleetJson = (await fleetRes.json().catch(() => null)) as {
+            computers?: Array<{
+              computerId?: string;
+              seatId?: string | null;
+              sessionHealthy?: boolean | null;
+            }>;
+          } | null;
+          const healthyOrphan = (fleetJson?.computers ?? []).find(
+            (c) =>
+              c.sessionHealthy === true &&
+              c.computerId &&
+              (!c.seatId || c.seatId === seat.id),
+          );
+          computerId = healthyOrphan?.computerId?.trim() || `comp_${globalThis.crypto.randomUUID()}`;
+        } catch {
+          computerId = `comp_${globalThis.crypto.randomUUID()}`;
+        }
+      }
 
       // Persist computer id before ensure/start so N concurrent boots cannot race-mint twins.
       if (!seat.computerId || seat.computerId !== computerId) {
@@ -481,7 +505,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         }
       }
 
-      async function fleetAct(action: "ensure" | "start" | "take_control") {
+      async function fleetAct(action: "ensure" | "start" | "take_control" | "session_probe") {
         const res = await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "include",
@@ -490,18 +514,37 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         });
         const body = (await res.json().catch(() => null)) as {
           error?: string;
-          computer?: { viewUrl?: string | null; remoteUrl?: string | null; status?: string; lastError?: string | null };
+          computer?: {
+            viewUrl?: string | null;
+            remoteUrl?: string | null;
+            status?: string;
+            lastError?: string | null;
+            sessionHealthy?: boolean | null;
+          };
+          sessionHealthy?: boolean | null;
         } | null;
         if (!res.ok) throw new Error(body?.error || res.statusText);
-        return body?.computer ?? null;
+        return body;
       }
 
       await fleetAct("ensure");
       await fleetAct("start");
+      // If LinkedIn cookies already live on this durable profile, open the feed —
+      // do not bounce to /login and wipe the operator's session after every deploy.
+      let sessionHealthy = false;
+      try {
+        const probed = await fleetAct("session_probe");
+        sessionHealthy =
+          probed?.sessionHealthy === true || probed?.computer?.sessionHealthy === true;
+      } catch {
+        sessionHealthy = false;
+      }
       const loginUrl =
         surface === "recruiter"
           ? "https://www.linkedin.com/uas/login?session_redirect=%2Ftalent%2Fhome"
-          : "https://www.linkedin.com/login";
+          : sessionHealthy
+            ? "https://www.linkedin.com/feed/"
+            : "https://www.linkedin.com/login";
       // Navigate while AriaBot still holds the seat (before Take control).
       await fetch("/api/fleet/computers", {
         method: "POST",
@@ -514,7 +557,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           url: loginUrl,
         }),
       }).catch(() => null);
-      const controlled = await fleetAct("take_control");
+      const controlled = (await fleetAct("take_control"))?.computer ?? null;
       const url = controlled?.viewUrl || controlled?.remoteUrl;
       if (url && /^https?:\/\//i.test(url)) {
         const join = url.includes("?") ? "&" : "?";
@@ -523,12 +566,14 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         window.open("/fleet", "_blank", "noopener,noreferrer");
       }
       toast({
-        title:
-          surface === "recruiter"
+        title: sessionHealthy
+          ? "LinkedIn session restored"
+          : surface === "recruiter"
             ? "LinkedIn Recruiter login opened"
             : "AriaBot LinkedIn login opened",
-        description:
-          surface === "recruiter"
+        description: sessionHealthy
+          ? "Existing Chromium profile still has a healthy LinkedIn session — opened the feed. No re-login needed after this app update."
+          : surface === "recruiter"
             ? "Sign into LinkedIn Recruiter inside AriaBot like a normal browser (2FA ok). Release when done — this seat keeps that Recruiter session."
             : "Sign in on LinkedIn inside AriaBot (including 2FA). Release when done — agents reuse this session to source and reach out.",
         variant: "success",

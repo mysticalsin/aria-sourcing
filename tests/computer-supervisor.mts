@@ -375,6 +375,21 @@ try {
     ok("second unbound hydrate still null (no twin mint)", again === null);
     ok("only one computer after durable hydrate", listSup.list("ws").length === 1);
   }
+
+  // session_probe must never invent healthy=true without an OpenBot endpoint.
+  {
+    const probeSup = new ComputerSupervisor();
+    const durable = probeSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-probe",
+      computerId: "comp_probe_durable",
+    });
+    const probed = await probeSup.probeSession(durable.computerId);
+    ok(
+      "probeSession without agent endpoint leaves sessionHealthy null (not invented true)",
+      probed.sessionHealthy == null,
+    );
+  }
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
   else process.env.COMPUTER_SUPERVISOR_MOCK_SEND = previousMock;
