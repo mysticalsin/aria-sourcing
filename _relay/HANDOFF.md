@@ -10,9 +10,9 @@ status: fleet-get-no-mint-unbound-honest
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this shift push)
-- **Fly:** https://aria-mantu-app.fly.dev · `/api/ready` build still `a5f4c73f15ac721079f67f107858d1c7fec6d4b0` until redeploy · migration tip `0084_agent_seats_computer_id_unique.sql`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/119 → `integration/sourcing-enrichment-on-main` (draft)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `87f8068` (`87f80685ac13730c057efa51e2c591aa0dd1fce3`)
+- **Fly:** https://aria-mantu-app.fly.dev · `/api/ready` build **matches tip** · migration tip `0084_agent_seats_computer_id_unique.sql` (probe true; `ok:false` only from agentFrameworks)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/120 → `integration/sourcing-enrichment-on-main` (draft; #119 closed/superseded)
 - **Computers:** https://aria-mantu-computers.fly.dev · bot `comp_tony_01` · max 5
 - **Tony reach-out E2E:** video recorded prior shift; LinkedIn `healthy:false` (login wall)
 
@@ -29,14 +29,14 @@ status: fleet-get-no-mint-unbound-honest
 2. OPENBOT_MAX_COMPUTERS=5
 3. `/api/ready` agentFrameworks:false (Deerflow/Flowise — not campaign VM path)
 4. Operator UI prove Deploy→login→Release→floor distinct VM ids + session healthy
-5. Redeploy Fly so GET no-mint ships to production
+5. ~~Redeploy Fly so GET no-mint ships~~ — done @ `87f8068`
 
 ## Next steps
 
-1. `flyctl deploy -a aria-mantu-app` (or CI) with this tip; set release SHA
-2. Human login/2FA on `comp_tony_01`
-3. Operator prove N seats on Floor with distinct `…last8` VM ids after Release
-4. Re-run Tony reach-out recorder once session-probe healthy
+1. Human login/2FA on `comp_tony_01`
+2. Operator prove N seats on Floor with distinct `…last8` VM ids after Release
+3. Re-run Tony reach-out recorder once session-probe healthy
+4. Mark PR ready when operator E2E evidence lands
 
 ## Decisions made (don't relitigate)
 
