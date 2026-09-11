@@ -1,51 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 148
+shift: 149
 agent: cursor-cloud
-updated: 2026-09-11T03:12Z
+updated: 2026-09-11T03:20Z
 status: honesty-ux-on-fly
 ---
 
-# Handoff — Shift 148
+# Handoff — Shift 149
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `5792a42`
-- **PR:** #106 → `integration/sourcing-enrichment-on-main`
-- **Fly app:** https://aria-mantu-app.fly.dev — redeploy of `5792a42` in progress
-- **Fly computers:** https://aria-mantu-computers.fly.dev — `max:5`, desktop VM
-- **Policy:** LinkedIn / AriaBot / OpenBot = **Fly only**
-- **Audit:** `_relay/full-app-e2e-audit.md`
+- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `90849bc`
+- **PR:** #106
+- **Fly app:** https://aria-mantu-app.fly.dev — deployed (health OK; `/api/ready` still `agentFrameworks: false`)
+- **Fly computers:** https://aria-mantu-computers.fly.dev — max 5
+- **Policy:** every improvement pushed to Fly
 
 ## Done this shift
 
-1. Honesty UX on Fly (prior): Coming soon integrations, pref-only notifications, Queue draft reply, Fleet host capacity, Outreach Allocate CTA
-2. Applicant reject: no false “sends email” claim
-3. Campaign agents: **Allocate on Fleet** CTA + empty-state Fleet link
-4. Staged `ARIA_RELEASE_SHA` secret update (applies on next deploy)
+1. Honesty UX: Coming soon / pref-only notifications / Queue draft reply / Fleet capacity / Allocate CTAs
+2. Applicant reject: no false email claim
+3. Campaign **Allocate on Fleet**
+4. **Release** after `help_requested` leaves `sessionHealthy=null` (no invented healthy)
+5. LinkedIn pacing no longer treats ready/busy as session proof
+6. `computer-supervisor` tests: 23 pass
 
 ## Blockers
 
 1. Human Take control + LinkedIn 2FA per seat
-2. `OPENBOT_MAX_COMPUTERS=5` — raise/shard for 16 concurrent VMs
-3. `/api/ready` → `agentFrameworks: false` (prod always requires frameworks today)
+2. `OPENBOT_MAX_COMPUTERS=5`
+3. `/api/ready` agentFrameworks false in prod
 
 ## Next steps
 
-1. Finish Fly redeploy; verify `/api/health` + `/api/ready` `build` == `5792a42…`
-2. Operator prove script in `_relay/full-app-e2e-audit.md`
-3. Schedules honesty / setup-guide probes / Release → session health
-4. Keep pushing every improvement to Fly (user standing order)
+1. Wire real session probe on Release (navigate LinkedIn + classify)
+2. Schedules runner or keep preference-only banner
+3. Setup-guide completion from real probes
+4. Operator prove script in `_relay/full-app-e2e-audit.md`
 
 ## Decisions (don't relitigate)
 
 - Fly-only for computers + LinkedIn automation
-- N seats = N Chromium profiles; Recruiter via Take control
-- Host VM cap must be surfaced honestly in Fleet UX
-- Roadmap integrations stay Coming soon until `real: true`
-
-## Watch out
-
-- Never commit Fly tokens / demo passwords
-- Do not point Vercel env at `COMPUTER_SUPERVISOR_*`
-- `ARIA_RELEASE_SHA` is a Fly **secret** (overrides `--env`); update secret when releasing
+- Host VM cap must be honest in Fleet UX
+- Never invent sessionHealthy=true without a probe
