@@ -10,9 +10,9 @@ status: poll-ensure-reclaim-race-fixed
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `f1a2ee8`
 - **Fly:** https://aria-mantu-app.fly.dev — still on older build `8ea3370…` (`agentFrameworks:false`); tip **not live**
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/124 → `integration/sourcing-enrichment-on-main` (draft)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/125 → `integration/sourcing-enrichment-on-main` (draft)
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
 
 ## Done this shift
@@ -36,7 +36,7 @@ status: poll-ensure-reclaim-race-fixed
 1. Deploy tip to Fly (protected workflow / image digest) — confirm `/api/ready` build SHA matches tip
 2. Settings → Login on Tony seat — DB `computer_id` → UUID durable; Take control if checkpoint
 3. Leave Fleet/Campaign open during Login — durable must stay bound (no poll thrash)
-4. Operator N-seat floor prove; mark PR #124 ready when E2E evidence lands
+4. Operator N-seat floor prove; mark PR #125 ready when E2E evidence lands
 
 ## Decisions made (don't relitigate)
 
