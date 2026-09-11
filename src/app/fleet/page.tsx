@@ -206,20 +206,8 @@ export default function FleetPage() {
     setComputersLoading(true);
     try {
       const browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
-      for (const seat of browserSeats) {
-        // Skip seats without a real computerId — never ensure as seat.id (collapses N VMs).
-        if (!seat.computerId) continue;
-        await fetch("/api/fleet/computers", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "ensure",
-            computerId: seat.computerId,
-            seatId: seat.id,
-          }),
-        }).catch(() => null);
-      }
+      // GET-only like Floor — never poll-ensure with Hermes computerId. After reclaim,
+      // a stale login-wall id would re-claim the orphan twin and detach the durable VM.
       const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
       if (!res.ok) return;
       const data = (await res.json()) as {
@@ -232,9 +220,17 @@ export default function FleetPage() {
       setOpsSummary(data.summary ?? null);
       setFleetAudits(data.recentAudits ?? []);
       if (data.hostCapacity) setHostCapacity(data.hostCapacity);
-      // In demo (no Supabase seats on the API), merge ensured local computers with seat names.
+      // Keep Hermes seat.computerId aligned with DB-backed fleet rows (post-reclaim).
+      for (const row of rows) {
+        if (!row.seatId || !row.computerId || row.seatId === "__orphan__") continue;
+        const seat = browserSeats.find((s) => s.id === row.seatId);
+        if (seat && seat.computerId !== row.computerId) {
+          void actions.updateSeat(seat.id, { computerId: row.computerId });
+        }
+      }
+      // In demo (no Supabase seats on the API), re-GET once if the first list is empty.
       if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {
-        // ensure POSTs should have populated in-process map — re-GET after ensures
+        // Local demo may need a second list after cold hydrateFromHost.
         const again = await fetch("/api/fleet/computers", { credentials: "same-origin" });
         if (again.ok) {
           const againData = (await again.json()) as {
@@ -270,7 +266,7 @@ export default function FleetPage() {
     } finally {
       setComputersLoading(false);
     }
-  }, [seats]);
+  }, [actions, seats]);
 
   React.useEffect(() => {
     if (!hydrated) return;

@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import type { AgentSeat } from "@/lib/types";
 import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
 import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
-import { useSettings } from "@/lib/store";
+import { useActions, useSettings } from "@/lib/store";
 
 type AuditEvent = {
   id?: string;
@@ -103,42 +103,14 @@ export function CampaignAgentsPanel({
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
+  const actions = useActions();
   const refresh = React.useCallback(async () => {
     setLoading(true);
     try {
-      const ensureErrors: string[] = [];
-      // Only ensure seats that already have a real computerId. Never fall back to
-      // seat.id — that rebinds the Chromium profile and collapses N VMs onto one id.
-      for (const seat of campaignSeats) {
-        if (!seat.computerId) continue;
-        const ens = await fetch("/api/fleet/computers", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "ensure",
-            computerId: seat.computerId,
-            seatId: seat.id,
-            campaignId,
-          }),
-        }).catch(() => null);
-        if (ens && !ens.ok) {
-          const body = (await ens.json().catch(() => ({}))) as { error?: string };
-          const msg = body.error ?? `ensure failed (${ens.status})`;
-          ensureErrors.push(msg);
-          if (/max computers/i.test(msg)) {
-            ensureErrors.push(
-              "Chromium host is at capacity — stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS.",
-            );
-          }
-        }
-      }
-      if (ensureErrors.length) {
-        setError(ensureErrors[0]);
-      } else {
-        setError(null);
-      }
-
+      // GET-only like Floor/Fleet — never poll-ensure with Hermes computerId.
+      // After reclaim, a stale login-wall id would re-claim the orphan twin and
+      // detach the durable VM (even when Floor hints look healthy).
+      setError(null);
       const res = await fetch(
         `/api/fleet/computers?campaignId=${encodeURIComponent(campaignId)}`,
         { credentials: "same-origin" },
@@ -167,6 +139,14 @@ export function CampaignAgentsPanel({
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
+      // Align Hermes computerId with DB-backed fleet rows after reclaim.
+      for (const row of rows) {
+        if (!row.seatId || !row.computerId || row.seatId === "__orphan__") continue;
+        const seat = campaignSeats.find((s) => s.id === row.seatId);
+        if (seat && seat.computerId !== row.computerId) {
+          void actions.updateSeat(seat.id, { computerId: row.computerId });
+        }
+      }
 
       const campaignAudits = (data.recentAudits ?? []).filter(
         (a) =>
@@ -181,7 +161,7 @@ export function CampaignAgentsPanel({
     } finally {
       setLoading(false);
     }
-  }, [campaignSeats, campaignId]);
+  }, [actions, campaignSeats, campaignId]);
 
   React.useEffect(() => {
     void refresh();

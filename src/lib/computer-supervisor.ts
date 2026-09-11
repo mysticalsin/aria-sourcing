@@ -253,6 +253,20 @@ export class ComputerSupervisor {
         }
         if (byId.seatId !== opts.seatId) {
           if (byId.seatId === HOST_ORPHAN_SEAT_ID && opts.seatId !== HOST_ORPHAN_SEAT_ID) {
+            // Poll-time ensure with a stale login-wall id must not steal the seat
+            // back from a durable VM already bound (reclaim → detach twin → ensure race).
+            const seatOwner = [...this.computers.values()].find(
+              (c) =>
+                c.workspaceId === opts.workspaceId &&
+                c.seatId === opts.seatId &&
+                c.seatId !== HOST_ORPHAN_SEAT_ID &&
+                c.computerId !== opts.computerId,
+            );
+            if (seatOwner) {
+              throw new Error(
+                `computer-orphan-claim-blocked: seat ${opts.seatId} already bound to ${seatOwner.computerId}; refusing to claim orphan ${opts.computerId}`,
+              );
+            }
             return this.claimOrphan(opts.computerId, {
               workspaceId: opts.workspaceId,
               seatId: opts.seatId,

@@ -528,5 +528,46 @@ try {
     );
   }
 
+
+  // ensure must not re-claim a detached login-wall orphan onto a seat that
+  // already owns a durable VM (Fleet/Campaign poll race after reclaim).
+  {
+    const race = new ComputerSupervisor();
+    const durable = race.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_durable_uuid",
+    });
+    durable.remoteUrl = "http://127.0.0.1:9002";
+    durable.status = "ready";
+    durable.sessionHealthy = true;
+    const wall = race.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_tony_01",
+    });
+    wall.remoteUrl = "http://127.0.0.1:9001";
+    wall.status = "ready";
+    let blocked = false;
+    try {
+      race.ensureComputer({
+        workspaceId: "ws",
+        seatId: "seat-tony",
+        computerId: "comp_tony_01",
+      });
+    } catch (err) {
+      blocked = err instanceof Error && err.message.includes("computer-orphan-claim-blocked");
+    }
+    ok("ensure refuses orphan claim when seat already has durable VM", blocked);
+    ok(
+      "durable binding survives blocked orphan ensure",
+      race.get("comp_durable_uuid")?.seatId === "seat-tony",
+    );
+    ok(
+      "login-wall twin stays orphan after blocked ensure",
+      race.get("comp_tony_01")?.seatId === HOST_ORPHAN_SEAT_ID,
+    );
+  }
+
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

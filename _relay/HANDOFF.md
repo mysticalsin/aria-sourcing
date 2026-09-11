@@ -1,25 +1,27 @@
 ---
 project: MSourcing / ARIA
-shift: 170
+shift: 171
 agent: cursor-cloud
-updated: 2026-09-11T16:25Z
-status: reclaim-persist-computer-id-shipped
+updated: 2026-09-11T17:00Z
+status: poll-ensure-reclaim-race-fixed
 ---
 
-# Handoff — Shift 170
+# Handoff — Shift 171
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `0ae4ab9`
-- **Fly:** https://aria-mantu-app.fly.dev — still on older build `8ea3370…` (`agentFrameworks:false`); tip with reclaim persist + floor isolation **not live**
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
+- **Fly:** https://aria-mantu-app.fly.dev — still on older build `8ea3370…` (`agentFrameworks:false`); tip **not live**
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/124 → `integration/sourcing-enrichment-on-main` (draft)
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
 
 ## Done this shift
 
-1. **`reclaim_healthy_orphan` persists `agent_seats.computer_id`** on claim (fail-closed on DB error) — closes race where 5s fleet/floor GET re-hydrated the login-wall twin from a stale FK and stole the durable VM back via `claimOrphan`
-2. Prior tip still included: host orphan import, Login reclaim-before-mint, floor `resolveComputerHint` seatId isolation
-3. Tests: `tests/computer-supervisor.mts` 59 passed (incl. route persist contract); `npm run typecheck` green
+1. **Fleet + Campaign Agents polls are GET-only** (like Floor) — no more poll-`ensure` with Hermes `computerId`
+2. **Hermes sync:** fleet/campaign GET aligns `seat.computerId` to DB-backed fleet rows after reclaim
+3. **`ensureComputer` refuse:** cannot claim an orphan onto a seat that already owns a different durable VM (`computer-orphan-claim-blocked`)
+4. Prior tip: reclaim persists `agent_seats.computer_id`; floor seatId hint isolation; host orphan import
+5. Tests: `tests/computer-supervisor.mts` 62 passed; `npm run typecheck` green
 
 ## Blockers (goal incomplete)
 
@@ -31,10 +33,10 @@ status: reclaim-persist-computer-id-shipped
 
 ## Next steps
 
-1. Deploy tip to Fly (protected `deploy-aria-mantu` / image digest) — confirm `/api/ready` build SHA matches tip
-2. Settings → Login on Tony seat — expect DB `computer_id` → UUID durable bot after reclaim; Take control if checkpoint
-3. Operator N-seat floor prove: distinct computerIds, no cross-desk bleed, sessionHealthy from probe only
-4. Mark PR #124 ready when operator E2E + stable session evidence lands
+1. Deploy tip to Fly (protected workflow / image digest) — confirm `/api/ready` build SHA matches tip
+2. Settings → Login on Tony seat — DB `computer_id` → UUID durable; Take control if checkpoint
+3. Leave Fleet/Campaign open during Login — durable must stay bound (no poll thrash)
+4. Operator N-seat floor prove; mark PR #124 ready when E2E evidence lands
 
 ## Decisions made (don't relitigate)
 
@@ -44,10 +46,11 @@ status: reclaim-persist-computer-id-shipped
 - Never mint on GET/list/poll
 - Never remint blank computerId when durable/healthy profile exists
 - Unhealthy stored id → probe orphans → reclaim (not mint)
-- **Reclaim that claims an orphan must persist `agent_seats.computer_id` in the same request**
+- Reclaim that claims an orphan must persist `agent_seats.computer_id` in the same request
+- **Poll paths must not `ensure` with Hermes computerId (GET + sync only)**
+- **ensure must not reclaim an orphan onto a seat that already has a durable binding**
 - Floor computerId fallback must not cross seat ownership
 - Unique `(workspace_id, computer_id)` in DB (0084)
-- Host-full → refuse new Browser Computer seats
 
 ## Watch out
 
