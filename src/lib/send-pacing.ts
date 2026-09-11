@@ -54,7 +54,8 @@ export function evaluateSendPace(opts: {
   settings: FleetSettings;
   now?: Date;
   seed?: string;
-  sessionHealthy?: boolean;
+  /** When provided (Browser Computer path), only `true` may send. */
+  sessionHealthy?: boolean | null;
 }): PaceDecision {
   const now = opts.now ?? new Date();
   const { seat, settings } = opts;
@@ -63,11 +64,15 @@ export function evaluateSendPace(opts: {
     return { ok: false, reason: "seat_paused", detail: `Seat status is ${seat.status}.` };
   }
 
-  if (opts.sessionHealthy === false) {
+  // Caller passed an explicit session flag — fail closed unless probed healthy.
+  if (opts.sessionHealthy !== undefined && opts.sessionHealthy !== true) {
     return {
       ok: false,
       reason: "session_unhealthy",
-      detail: "LinkedIn session unhealthy — Take control and log in, then Release.",
+      detail:
+        opts.sessionHealthy === false
+          ? "LinkedIn session unhealthy — Take control and log in, then Release."
+          : "LinkedIn session unverified — Take control, log in, then Release to probe.",
     };
   }
 

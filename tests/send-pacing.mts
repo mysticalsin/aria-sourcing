@@ -83,6 +83,13 @@ ok("min_gap when last send too recent", gap.ok === false && gap.reason === "min_
 const unhealthy = evaluateSendPace({ seat, settings, now, sessionHealthy: false });
 ok("session_unhealthy when flagged", unhealthy.reason === "session_unhealthy");
 
+const unverified = evaluateSendPace({ seat, settings, now, sessionHealthy: null });
+ok("session_unhealthy when null (unverified)", unverified.reason === "session_unhealthy");
+ok(
+  "null session detail mentions unverified",
+  Boolean(unverified.detail?.toLowerCase().includes("unverified")),
+);
+
 const outside = baseSeat({
   sendWindow: { startHour: 8, endHour: 9, timezone: "UTC", days: [1, 2, 3, 4, 5] },
 });

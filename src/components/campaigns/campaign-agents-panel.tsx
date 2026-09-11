@@ -236,13 +236,17 @@ export function CampaignAgentsPanel({
             ? "You have control"
             : action === "release_control"
               ? "Control released"
-              : "Computer ready",
+              : action === "start"
+                ? "VM started"
+                : "Computer updated",
         description:
           action === "take_control"
             ? "Fullscreen sandbox opened — click LinkedIn fields and type your login, then Release when done."
             : action === "start"
-              ? "Live viewport opened — Observe to watch, or Take control to intervene."
-              : "Bot may act again on this seat.",
+              ? "Process up — Observe to watch, or Take control to log in / verify LinkedIn."
+              : action === "release_control"
+                ? "Bot may act again only after a healthy session probe."
+                : "Bot may act again on this seat.",
         variant: "success",
       });
     } catch {
@@ -288,7 +292,10 @@ export function CampaignAgentsPanel({
     (liveUrl!.startsWith("http://") || liveUrl!.startsWith("https://"));
 
   const humanCount = computers.filter((c) => c.control === "human").length;
-  const readyCount = computers.filter((c) => c.status === "ready" || c.status === "busy").length;
+  const healthyCount = computers.filter((c) => c.sessionHealthy === true).length;
+  const unverifiedCount = computers.filter(
+    (c) => (c.status === "ready" || c.status === "busy") && c.sessionHealthy !== true,
+  ).length;
 
   return (
     <div className="space-y-4">
@@ -318,9 +325,14 @@ export function CampaignAgentsPanel({
           <Badge size="sm" tone="electric">
             {campaignSeats.length} attached
           </Badge>
-          <Badge size="sm" tone={readyCount ? "electric" : "neutral"}>
-            {readyCount} live
+          <Badge size="sm" tone={healthyCount ? "success" : "neutral"}>
+            {healthyCount} session healthy
           </Badge>
+          {unverifiedCount > 0 ? (
+            <Badge size="sm" tone="warning">
+              {unverifiedCount} unverified
+            </Badge>
+          ) : null}
           <Badge size="sm" tone={humanCount ? "tangerine" : "neutral"}>
             {humanCount} human control
           </Badge>
@@ -376,6 +388,7 @@ export function CampaignAgentsPanel({
                   seatName: seat.name,
                   status: "stopped",
                   control: "bot" as const,
+                  sessionHealthy: null,
                   lastAudit: null,
                   lastError: null,
                   updatedAt: "",
@@ -383,6 +396,22 @@ export function CampaignAgentsPanel({
               const selected = observingId === computerId;
               const busy = busyId === computerId;
               const needsHelp = c.status === "help_requested";
+              const sessionTone =
+                c.sessionHealthy === true
+                  ? "success"
+                  : c.sessionHealthy === false || needsHelp || c.status === "error"
+                    ? "danger"
+                    : c.status === "ready" || c.status === "busy"
+                      ? "warning"
+                      : "neutral";
+              const sessionLabel =
+                c.sessionHealthy === true
+                  ? "Session healthy"
+                  : c.sessionHealthy === false
+                    ? "Session unhealthy"
+                    : c.status === "ready" || c.status === "busy"
+                      ? "Session unverified"
+                      : null;
               return (
                 <li
                   key={seat.id}
@@ -405,13 +434,20 @@ export function CampaignAgentsPanel({
                           tone={
                             needsHelp || c.status === "error"
                               ? "tangerine"
-                              : c.status === "ready" || c.status === "busy"
-                                ? "electric"
-                                : "neutral"
+                              : c.sessionHealthy === true
+                                ? "success"
+                                : c.status === "ready" || c.status === "busy"
+                                  ? "warning"
+                                  : "neutral"
                           }
                         >
                           {statusLabel(c.status)}
                         </Badge>
+                        {sessionLabel ? (
+                          <Badge size="sm" tone={sessionTone}>
+                            {sessionLabel}
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="mt-0.5 font-mono text-[11px] text-muted">{computerId}</p>
                       {c.lastAudit ? (

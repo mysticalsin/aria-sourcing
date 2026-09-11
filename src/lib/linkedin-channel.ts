@@ -227,12 +227,8 @@ const browserComputerAdapter: LinkedInAdapter = {
         const pace = evaluateSendPace({
           seat: req.seat,
           settings: req.fleetSettings ?? defaultFleetSettings(),
-          sessionHealthy:
-            computer.sessionHealthy === true
-              ? true
-              : computer.sessionHealthy === false
-                ? false
-                : undefined,
+          // Pass through null/false — pacing fails closed unless probed true.
+          sessionHealthy: computer.sessionHealthy ?? null,
         });
         if (!pace.ok) {
           return {

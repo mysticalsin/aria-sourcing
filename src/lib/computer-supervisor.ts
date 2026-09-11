@@ -355,6 +355,7 @@ export class ComputerSupervisor {
     if (!rec) throw new Error("computer-not-found");
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     rec.status = "starting";
+    rec.sessionHealthy = null;
     rec.updatedAt = isoNow();
     this.audit(computerId, "start", "Booting isolated Chromium via OpenBot ensure", "system", {
       campaignId: opts?.campaignId,
@@ -426,9 +427,16 @@ export class ComputerSupervisor {
 
     rec.status = "ready";
     rec.lastError = null;
+    // Process up ≠ LinkedIn login. Never carry a stale probe across stop→start.
+    rec.sessionHealthy = null;
     rec.updatedAt = isoNow();
     rec.lastAudit = "ready";
-    this.audit(computerId, "ready", "Computer ready for bot actions", "system");
+    this.audit(
+      computerId,
+      "ready",
+      "Computer process ready — LinkedIn session unverified",
+      "system",
+    );
     return rec;
   }
 
@@ -447,6 +455,7 @@ export class ComputerSupervisor {
     rec.control = "bot";
     rec.remoteUrl = null;
     rec.viewUrl = null;
+    rec.sessionHealthy = null;
     rec.updatedAt = isoNow();
     this.audit(computerId, "stop", "Computer stopped", "system");
     return rec;
@@ -572,8 +581,8 @@ export class ComputerSupervisor {
       }
     }
 
-    // Auto-retry only when LinkedIn is confirmed healthy (or no remote agent = local/mock).
-    const allowRetry = !agent || probedHealthy === true;
+    // Auto-retry only when LinkedIn is confirmed healthy — never on missing probe.
+    const allowRetry = probedHealthy === true;
     if (allowRetry) {
       const failed = [...this.jobs.values()]
         .filter(
@@ -648,17 +657,26 @@ export class ComputerSupervisor {
       return job;
     }
 
-    // Session gate: refuse LinkedIn sends while help_requested or session unhealthy.
+    // Session gate: LinkedIn sends require a probed-healthy session (align with go-live).
+    // Mock send may proceed without a probe so unit tests can exercise the act path.
     if (opts.kind === "linkedin_send") {
-      if (rec.status === "help_requested" || rec.sessionHealthy === false) {
+      const needsSession =
+        rec.status === "help_requested" ||
+        (!supervisorMockSend() && rec.sessionHealthy !== true);
+      if (needsSession) {
         job.status = "refused";
-        job.detail = "help_requested";
+        job.detail =
+          rec.status === "help_requested"
+            ? "help_requested"
+            : rec.sessionHealthy === false
+              ? "session_unhealthy"
+              : "session_unverified";
         job.finishedAt = isoNow();
         this.jobs.set(jobId, job);
         this.audit(
           opts.computerId,
           "act_refused",
-          "linkedin_send refused — session help_requested / unhealthy",
+          `linkedin_send refused — ${job.detail}`,
           "bot",
           { jobId },
         );

@@ -31,6 +31,10 @@ try {
   await supervisor.start(computer.computerId);
   ok("start flips to ready", supervisor.get(computer.computerId)?.status === "ready");
   ok(
+    "start leaves sessionHealthy unverified (not invented)",
+    supervisor.get(computer.computerId)?.sessionHealthy == null,
+  );
+  ok(
     "start without remote OpenBot sets Aria viewport remoteUrl",
     Boolean(supervisor.get(computer.computerId)?.remoteUrl?.includes("/viewport")),
   );
@@ -71,6 +75,36 @@ try {
     "release after help clears help_requested to ready",
     supervisor.get(needsHelp.computerId)?.status === "ready",
   );
+
+  // Production gate: without mock, ready+null session must refuse linkedin_send.
+  {
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "0";
+    const gate = new ComputerSupervisor();
+    const seat = gate.ensureComputer({ workspaceId: "ws", seatId: "seat-gate" });
+    // Bypass start (needs OpenBot when mock off) — stamp ready + unverified session.
+    const rec = gate.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.sessionHealthy = null;
+    const blocked = await gate.enqueueJob({
+      computerId: seat.computerId,
+      kind: "linkedin_send",
+      payload: { profileUrl: "https://linkedin.com/in/z" },
+    });
+    ok("linkedin_send refused when session unverified (no mock)", blocked.status === "refused");
+    ok(
+      "refuse detail is session_unverified",
+      blocked.detail === "session_unverified",
+    );
+    rec.sessionHealthy = false;
+    const unhealthy = await gate.enqueueJob({
+      computerId: seat.computerId,
+      kind: "linkedin_send",
+      payload: { profileUrl: "https://linkedin.com/in/z" },
+    });
+    ok("linkedin_send refused when session unhealthy", unhealthy.status === "refused");
+    ok("refuse detail is session_unhealthy", unhealthy.detail === "session_unhealthy");
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+  }
 
   const sent = await supervisor.enqueueJob({
     computerId: computer.computerId,
@@ -161,10 +195,13 @@ try {
 
 
   // Fail-closed path audits act_failed with jobId when mock send is off
+  // (session must be healthy so we exercise the act path, not the session gate).
   process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "0";
   const failSup = new ComputerSupervisor();
   const failComp = failSup.ensureComputer({ workspaceId: "ws", seatId: "seat-fail" });
-  await failSup.start(failComp.computerId);
+  const failRec = failSup.get(failComp.computerId)!;
+  failRec.status = "ready";
+  failRec.sessionHealthy = true;
   const failed = await failSup.enqueueJob({
     computerId: failComp.computerId,
     kind: "linkedin_send",

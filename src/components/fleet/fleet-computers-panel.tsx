@@ -11,12 +11,27 @@ export type FleetComputerRow = {
   seatName?: string;
   status: string;
   control: "bot" | "human";
+  /** From /session-probe after Release — never invent true. */
+  sessionHealthy?: boolean | null;
   lastAudit: string | null;
   lastError: string | null;
   updatedAt: string;
   remoteUrl?: string | null;
   viewUrl?: string | null;
 };
+
+function sessionBadge(c: FleetComputerRow): { label: string; className: string } | null {
+  if (c.sessionHealthy === true) {
+    return { label: "Session healthy", className: "bg-success/15 text-success" };
+  }
+  if (c.sessionHealthy === false) {
+    return { label: "Session unhealthy", className: "bg-danger/15 text-danger" };
+  }
+  if (c.status === "ready" || c.status === "busy") {
+    return { label: "Session unverified", className: "bg-warning/15 text-[hsl(32_90%_34%)]" };
+  }
+  return null;
+}
 
 function isAriaViewport(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -109,6 +124,19 @@ export function FleetComputersPanel({
                         {c.control === "human" ? "Human control" : "Bot control"}
                       </span>
                       <span className="text-xs text-muted">{c.status}</span>
+                      {(() => {
+                        const s = sessionBadge(c);
+                        return s ? (
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                              s.className,
+                            )}
+                          >
+                            {s.label}
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                     <p className="mt-1 font-mono text-[11px] text-muted">{c.computerId}</p>
                     {c.lastAudit ? (
