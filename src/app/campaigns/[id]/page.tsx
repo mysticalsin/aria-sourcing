@@ -30,7 +30,7 @@ import { HydrationGate } from "@/components/app/page-header";
 import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
 import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
 import { CampaignGoLiveChecklist } from "@/components/campaigns/campaign-go-live-checklist";
-import { bootBrowserComputer } from "@/lib/boot-browser-computer";
+import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
 import { CampaignFunnelSpine } from "@/components/campaigns/campaign-funnel-spine";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { staggerContainer } from "@/lib/dashboard-motion";
@@ -1554,11 +1554,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 } catch {
                   /* boot path still fails closed if host is full */
                 }
-                // Mint a real computer id — never seat.id (that merges N VMs onto one profile).
-                computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
-                if (!seat.computerId) {
-                  const minted = await actions.updateSeat(seatId, { computerId });
-                  if (!minted) {
+                // Reclaim a probed-healthy host orphan before minting — never seat.id
+                // (that merges N VMs onto one profile) and never burn a blank mint when
+                // a durable orphan already has LinkedIn cookies.
+                computerId = await resolveDurableComputerId({
+                  seatId,
+                  existingComputerId: seat.computerId,
+                });
+                if (!seat.computerId || seat.computerId !== computerId) {
+                  const saved = await actions.updateSeat(seatId, { computerId });
+                  if (!saved) {
                     toast({
                       title: "Attach blocked",
                       description: "computerId did not persist — fix Fleet before attaching.",

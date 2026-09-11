@@ -1,26 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 172
+shift: 173
 agent: cursor-cloud
-updated: 2026-09-11T17:40Z
-status: hermes-computerId-sync-login-reclaim
+updated: 2026-09-11T17:45Z
+status: reclaim-before-mint-all-boot-paths
 ---
 
-# Handoff — Shift 172
+# Handoff — Shift 173
 
 ## Current state
 
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
 - **Fly:** https://aria-mantu-app.fly.dev — still on older build `8ea3370…` (`agentFrameworks:false`); tip **not live**
-- **PR:** recreate after push (prior #125 closed) → `integration/sourcing-enrichment-on-main`
+- **PR:** #126 → `integration/sourcing-enrichment-on-main` (update after push)
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
 
 ## Done this shift
 
-1. **Settings Login** no longer falls back to Hermes-only `computerId` when API/DB seat is empty — empty → reclaim-before-mint
-2. **Settings + Floor fleet polls** sync Hermes `seat.computerId` from DB-backed fleet rows (same as Fleet/Campaign)
-3. Prior: poll-ensure removed; ensure blocks orphan steal; reclaim persists `computer_id`; floor seatId isolation
-4. Tests: floor 44, computer-supervisor 62; `npm run typecheck` green
+1. **`resolveDurableComputerId`** in `src/lib/boot-browser-computer.ts` — always probes `reclaim_healthy_orphan` before minting; never invents `sessionHealthy=true`
+2. **Fleet Deploy, Fleet Add agent, Campaign Attach, Settings Login** all use the shared helper (store pre-minted blank ids no longer skip reclaim)
+3. Floor subtitle null-safety; `typecheck:tests` green (demo-candidate-persistence + openbot-llm-auth casts)
+4. Tests: boot-browser-computer 8, floor 44, computer-supervisor 62; `npm run typecheck` + `typecheck:tests` green
 
 ## Blockers (goal incomplete)
 
@@ -35,7 +35,7 @@ status: hermes-computerId-sync-login-reclaim
 1. Deploy tip to Fly — confirm `/api/ready` build SHA matches tip
 2. Settings → Login on Tony — expect reclaim + Hermes/DB computerId → UUID durable
 3. Leave Floor/Fleet open — Hermes must stay synced, no twin thrash
-4. Operator N-seat floor prove; mark PR ready when E2E evidence lands
+4. Operator N-seat floor prove (distinct computerIds, no cross-desk bleed); mark PR ready when E2E evidence lands
 
 ## Decisions made (don't relitigate)
 
@@ -50,6 +50,7 @@ status: hermes-computerId-sync-login-reclaim
 - ensure must not reclaim orphan onto seat with existing durable binding
 - **Login must not trust Hermes-only computerId over empty API/DB seat**
 - Floor/Settings must sync Hermes computerId from fleet GET
+- **All boot paths (Deploy/Add/Attach/Login) reclaim-before-mint via shared helper**
 - Unique `(workspace_id, computer_id)` in DB (0084)
 
 ## Watch out

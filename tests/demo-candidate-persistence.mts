@@ -77,7 +77,8 @@ test("demo hydration keeps LinkedIn/live profiles and purges unknown provenance"
     values.set("hermes-sourcing:v1", JSON.stringify(polluted));
     const purged = loadState();
     assert.equal(purged.candidates.some((c) => c.provenance === undefined), false);
-    assert.ok(removed.includes("hermes-sourcing:v1"));
+    // Cast: assert.deepEqual(removed, []) above narrows removed to never[] under tsc.
+    assert.ok((removed as string[]).includes("hermes-sourcing:v1"));
   } finally {
     if (previousWindow === undefined) {
       Reflect.deleteProperty(globalThis, "window");

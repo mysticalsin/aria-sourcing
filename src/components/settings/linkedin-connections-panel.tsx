@@ -7,6 +7,7 @@ import { useActions, useRole, useSeats } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { isLinkedInSeatProvider } from "@/lib/linkedin-connections";
+import { resolveDurableComputerId } from "@/lib/boot-browser-computer";
 import {
   ConnectedIdentityBanner,
   ConnectionListItem,
@@ -474,34 +475,12 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         return;
       }
       // Never invent computerId from seat.id — that collapses N Chromium profiles onto one id.
-      // Prefer the durable API/DB seat computerId so app deploys / re-logins reuse cookies.
-      // Do NOT fall back to Hermes-only computerId: after reclaim the API may be empty or
-      // ahead of Hermes, and a stale local twin skips reclaim-before-mint.
-      let computerId = (seat.computerId && String(seat.computerId).trim()) || "";
-      if (!computerId) {
-        // Prefer reclaiming a probed-healthy host orphan before minting a blank id
-        // (minting is what forces LinkedIn login again after an app update).
-        try {
-          const reclaimRes = await fetch("/api/fleet/computers", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "reclaim_healthy_orphan", seatId: seat.id }),
-          });
-          const reclaimJson = (await reclaimRes.json().catch(() => null)) as {
-            sessionHealthy?: boolean | null;
-            computer?: { computerId?: string; sessionHealthy?: boolean | null };
-          } | null;
-          const healthy =
-            reclaimJson?.sessionHealthy === true ||
-            reclaimJson?.computer?.sessionHealthy === true;
-          const nextId = reclaimJson?.computer?.computerId?.trim();
-          computerId =
-            healthy && nextId ? nextId : `comp_${globalThis.crypto.randomUUID()}`;
-        } catch {
-          computerId = `comp_${globalThis.crypto.randomUUID()}`;
-        }
-      }
+      // Prefer durable API/DB binding; reclaim a probed-healthy host orphan before minting
+      // (including when store pre-minted a blank id). Do NOT trust Hermes-only computerId.
+      let computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId: seat.computerId,
+      });
 
       // Persist computer id before ensure/start so N concurrent boots cannot race-mint twins.
       if (!seat.computerId || seat.computerId !== computerId) {

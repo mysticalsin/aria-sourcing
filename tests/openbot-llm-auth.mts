@@ -23,7 +23,7 @@ function ok(name: string, cond: boolean, detail = "") {
 const env = {
   OPENAI_API_KEY: "sk-aria-openai",
   ANTHROPIC_API_KEY: "sk-aria-anthropic",
-} as NodeJS.ProcessEnv;
+} as unknown as NodeJS.ProcessEnv;
 
 ok("lists Aria provider keys", listAriaLlmProviders(env).length === 2);
 ok("default provider is openai (slug order)", resolveAriaLlmProvider(env)?.slug === "openai");
@@ -64,7 +64,7 @@ const cfEnv = {
   CLOUDFLARE_WORKERS_AI_SECRET: "cf-secret-test",
   CLOUDFLARE_WORKERS_AI_URL: "https://example.workers.dev",
   OPENBOT_LLM_PROVIDER: "cloudflare_workers_ai",
-} as NodeJS.ProcessEnv;
+} as unknown as NodeJS.ProcessEnv;
 ok(
   "lists Cloudflare Workers AI when secret+url set",
   listAriaLlmProviders(cfEnv).some((p) => p.slug === "cloudflare_workers_ai"),

@@ -96,7 +96,7 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   ok("ready+null overlays idle unverified", unverified.status === "idle");
   ok(
     "ready+null subtitle asks Take control",
-    unverified.subtitle.includes("unverified"),
+    (unverified.subtitle ?? "").includes("unverified"),
   );
 
   const liSeat = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
@@ -104,7 +104,8 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     const missing = seatsToOfficeAgents(s.seats, s, new Map()).find((a) => a.id === liSeat.id)!;
     ok(
       "LinkedIn seat without VM row is idle",
-      missing.status === "idle" && /Browser Computer|not on host/.test(missing.subtitle),
+      missing.status === "idle" &&
+        /Browser Computer|not on host/.test(missing.subtitle ?? ""),
     );
 
     const theatrical = floorRollup(s.seats, s, NOW);

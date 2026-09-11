@@ -38,7 +38,7 @@ import {
   useRole,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
-import { bootBrowserComputer } from "@/lib/boot-browser-computer";
+import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
@@ -164,8 +164,12 @@ export default function FleetPage() {
     let lastErr = "";
     for (const seat of res.seats) {
       // Never use seat.id as computerId — that collapses N Chromium profiles onto one id.
-      const computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
-      if (!seat.computerId) {
+      // Reclaim a probed-healthy host orphan before minting (store may have pre-minted a blank id).
+      const computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId: seat.computerId,
+      });
+      if (!seat.computerId || seat.computerId !== computerId) {
         await actions.updateSeat(seat.id, { computerId });
       }
       const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
@@ -437,8 +441,11 @@ export default function FleetPage() {
       return;
     }
     if (seat.provider === "LinkedIn Browser Computer") {
-      const computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
-      if (!seat.computerId) {
+      const computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId: seat.computerId,
+      });
+      if (!seat.computerId || seat.computerId !== computerId) {
         await actions.updateSeat(seat.id, { computerId });
       }
       const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
