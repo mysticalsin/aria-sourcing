@@ -162,5 +162,27 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   }
 }
 
+
+{
+  const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (li) {
+    const withId = { ...li, computerId: "comp_floor_visible_abc12345" };
+    const agents = seatsToOfficeAgents(
+      [withId],
+      s,
+      new Map([[withId.id, { status: "ready", sessionHealthy: true }]]),
+    );
+    const agent = agents.find((a) => a.id === withId.id);
+    ok(
+      "3D subtitle includes short VM id",
+      typeof agent?.subtitle === "string" && agent.subtitle.includes("…abc12345"),
+    );
+    ok(
+      "3D subtitle keeps session health when VM id shown",
+      typeof agent?.subtitle === "string" && /session healthy/i.test(agent.subtitle),
+    );
+  }
+}
+
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

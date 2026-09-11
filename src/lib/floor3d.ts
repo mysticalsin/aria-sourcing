@@ -209,6 +209,10 @@ export function seatsToOfficeAgents(
       status = "idle";
       subtitle = seat.computerId ? "VM not on host" : "No Browser Computer";
     }
+    // Surface the bound Chromium id so N agents are distinguishable on the floor.
+    if (seat.provider === "LinkedIn Browser Computer" && seat.computerId) {
+      subtitle = `${subtitle} · …${seat.computerId.slice(-8)}`;
+    }
     return {
       id: seat.id,
       name: seat.name,
