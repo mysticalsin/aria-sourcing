@@ -1,29 +1,27 @@
 ---
 project: MSourcing / ARIA
-shift: 151
+shift: 152
 agent: cursor-cloud
-updated: 2026-09-11T04:45Z
-status: live-deploy-boots-vms
+updated: 2026-09-11T05:16Z
+status: cold-start-hydrate-on-fly
 ---
 
-# Handoff — Shift 151
+# Handoff — Shift 152
 
 ## Current state
 
 - **Branch:** `cursor/openbot-desktop-vm-b91d`
-- **PR:** #109
-- **Fly app:** https://aria-mantu-app.fly.dev (deploy this tip)
+- **PR:** #110
+- **Fly app:** https://aria-mantu-app.fly.dev (deploying tip)
 - **Fly computers:** max 5
 - **Policy:** every improvement pushed to Fly
 
 ## Done this shift
 
-1. Live Fleet **Deploy + boot VMs** (no longer demo-only); cap by host free slots
-2. Add one / Campaign attach Browser Computer → `bootBrowserComputer` (ensure+start)
-3. Persist `computerId` via seat PATCH + mint-on-GET write-back
-4. Go-live: never invent `sessionHealthy` from ready+bot; checklist polls computers
-5. Floor: pulse cannot force “working” on Browser Computer seats without ready VM
-6. Release still runs `/session-probe` (prior shift)
+1. `hydrateFromHost` — reconcile in-memory computers with OpenBot `/computers` after cold start
+2. Fleet GET `/api/fleet/computers` calls hydrate so Floor/Fleet show live ready VMs, not fake stopped
+3. Tests: computer-supervisor 28 pass (hydrate matched + ready flip)
+4. Prior: live Deploy/attach boots, session probe on Release, honest go-live/floor
 
 ## Blockers
 
@@ -33,13 +31,13 @@ status: live-deploy-boots-vms
 
 ## Next steps
 
-1. Operator: Deploy ≤5 → Take control → login → Release → floor healthy/unhealthy
-2. Optional: hydrate supervisor from `openBotListComputers` after cold start
+1. Operator prove: Deploy ≤5 → Take control → login → Release → floor healthy/unhealthy
+2. Optional: restart app process and confirm Floor still shows ready via hydrate
 3. Raise/shard host if 16 concurrent VMs required
 
 ## Decisions (don't relitigate)
 
 - Every improvement pushed to Fly before shift ends
+- ensure ≠ start; hydrate restores truth after recycle
 - Never invent sessionHealthy=true without `/session-probe`
-- N seats = N Chromium profiles; Recruiter via Take control
-- Live Deploy must boot VMs (ensure ≠ start)
+- N seats = N Chromium profiles

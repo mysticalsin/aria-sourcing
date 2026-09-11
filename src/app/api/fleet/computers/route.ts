@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
   if (!supabase) {
     try {
       await bindWorkspaceSupervisor(null);
+      await defaultComputerSupervisor.hydrateFromHost("__local__");
       const computers = defaultComputerSupervisor
         .list("__local__")
         .map((rec) => enrichComputer(rec));
@@ -139,8 +140,17 @@ export async function GET(req: NextRequest) {
             if (error) console.warn("persist computer_id failed", error.message);
           });
       }
-      computers.push(enrichComputer(rec, { seatName: seat.name, seatStatus: seat.status }));
+      computers.push(rec);
     }
+
+    // Cold-start: pull live OpenBot host state so stopped in-memory rows flip to ready
+    // when Chromiums are already running on Fly.
+    await defaultComputerSupervisor.hydrateFromHost(String(wid));
+
+    const enriched = computers.map((rec) => {
+      const seat = (seats ?? []).find((s) => s.id === rec.seatId);
+      return enrichComputer(rec, { seatName: seat?.name, seatStatus: seat?.status });
+    });
 
     const durable = await queryComputerAuditsDurable({
       workspaceId: String(wid),
@@ -159,8 +169,8 @@ export async function GET(req: NextRequest) {
 
     const hostCapacity = await hostCapacityFromEnv();
     return NextResponse.json({
-      computers,
-      summary: summarizeFleetComputers(computers),
+      computers: enriched,
+      summary: summarizeFleetComputers(enriched),
       recentAudits,
       hostCapacity,
     });

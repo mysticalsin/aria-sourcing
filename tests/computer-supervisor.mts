@@ -138,6 +138,58 @@ try {
     failSup.recentAudits(failComp.computerId).some((a) => a.action === "act_failed" && a.jobId === failed.jobId),
   );
   process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+
+  // Cold-start hydrate: when OpenBot reports running, in-memory stopped → ready.
+  {
+    const hydrateSup = new ComputerSupervisor();
+    const seat = hydrateSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-hydrate",
+      computerId: "comp_hydrate_1",
+    });
+    ok("pre-hydrate status stopped", seat.status === "stopped");
+    const botId = seat.botId || seat.computerId;
+    process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok_test";
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/computers") && !url.includes("/ensure")) {
+        return new Response(
+          JSON.stringify({
+            computers: [
+              {
+                botId,
+                status: "running",
+                url: "http://127.0.0.1:9222",
+                viewUrl: "http://127.0.0.1:6080",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    try {
+      const result = await hydrateSup.hydrateFromHost("ws");
+      ok("hydrate matched one host computer", result.matched === 1 && result.hostCount === 1);
+      ok(
+        "hydrate flips stopped → ready from host running",
+        hydrateSup.get(seat.computerId)?.status === "ready",
+      );
+      ok(
+        "hydrate copies remoteUrl from host",
+        hydrateSup.get(seat.computerId)?.remoteUrl === "http://127.0.0.1:9222",
+      );
+    } finally {
+      globalThis.fetch = prevFetch;
+      delete process.env.COMPUTER_SUPERVISOR_URL;
+      delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    }
+    const noHost = await hydrateSup.hydrateFromHost("ws");
+    ok("hydrate without host config is a no-op", noHost.matched === 0 && noHost.hostCount === 0);
+  }
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
   else process.env.COMPUTER_SUPERVISOR_MOCK_SEND = previousMock;

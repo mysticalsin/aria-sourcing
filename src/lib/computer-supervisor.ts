@@ -21,6 +21,7 @@ import {
 import { openBotLinkedInSend } from "@/lib/openbot/linkedin-send";
 import {
   openBotEnsureComputer,
+  openBotListComputers,
   openBotResetComputer,
   openBotStopComputer,
   type OpenBotSupervisorConfig,
@@ -276,6 +277,51 @@ export class ComputerSupervisor {
 
   get(computerId: string): ComputerRecord | undefined {
     return this.computers.get(computerId);
+  }
+
+  /**
+   * Reconcile in-memory rows with live OpenBot host state after cold start.
+   * Without this, ensureComputer leaves status=stopped even when Chromiums are up,
+   * so Fleet/Floor look empty while Fly still has VMs.
+   */
+  async hydrateFromHost(workspaceId: string): Promise<{ matched: number; hostCount: number }> {
+    const cfg = openBotSupervisorCfg();
+    if (!cfg) return { matched: 0, hostCount: 0 };
+    let hostComputers: Awaited<ReturnType<typeof openBotListComputers>>["computers"] = [];
+    try {
+      ({ computers: hostComputers } = await openBotListComputers(cfg));
+    } catch {
+      return { matched: 0, hostCount: 0 };
+    }
+    const byBot = new Map(
+      hostComputers
+        .filter((c) => c.botId)
+        .map((c) => [c.botId, c] as const),
+    );
+    let matched = 0;
+    for (const rec of this.list(workspaceId)) {
+      const botId = rec.botId || toOpenBotBotId(rec.computerId);
+      const host = byBot.get(botId);
+      if (!host) continue;
+      matched += 1;
+      const raw = (host.status || "").toLowerCase();
+      if (raw === "running" || raw === "ready" || raw === "idle") {
+        if (rec.status === "stopped" || rec.status === "starting" || rec.status === "error") {
+          rec.status = "ready";
+          rec.lastError = null;
+        }
+      } else if (raw === "starting" || raw === "booting") {
+        rec.status = "starting";
+      } else if (raw === "error" || raw === "failed") {
+        rec.status = "error";
+      } else if (raw === "stopped" || raw === "exited") {
+        if (rec.control !== "human") rec.status = "stopped";
+      }
+      if (host.url) rec.remoteUrl = host.url;
+      if (host.viewUrl || host.url) rec.viewUrl = host.viewUrl || host.url || rec.viewUrl;
+      rec.updatedAt = isoNow();
+    }
+    return { matched, hostCount: hostComputers.length };
   }
 
   async start(
