@@ -69,7 +69,7 @@ export function defaultSkills(now = new Date("2026-06-26T09:00:00Z").toISOString
         "- For public web enrichment, use Aria's Scrapling adapter (stealth fetch, adaptive parsers); never raw unmanaged scrapers.",
         "- Prefer Scrapling session reuse + adaptive selectors when research pages change markup.",
         "- Use analyze_linkedin_profile (Orca-style) and qualify_lead_icp (Linki / OpenOutreach) before drafting outreach to a LinkedIn URL.",
-        "- Use search_candidates on LinkedIn so NightTrek-style linkedin_agent_tool can contribute metadata when enabled.",
+        "- Use search_candidates on LinkedIn so NightTrek-style linkedin_agent_tool contributes real profile hits (public web_search; never invented URLs).",
         "- Optional browser_use_navigate is for PUBLIC pages only (CrewAI browser-use skills pack). LinkedIn Connect/Message stays on AriaBot Take control.",
         "- Prefer safe ICP resolution (OpenOutreach / Linki) over aggressive scraping so primary seats stay ToS-safe.",
         "- When a specific LinkedIn profile URL is the target, prefer manual intake + AriaBot connect over bulk scrapers.",
