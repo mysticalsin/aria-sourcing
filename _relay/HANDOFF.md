@@ -1,29 +1,29 @@
 ---
 project: MSourcing / ARIA
-shift: 150
+shift: 151
 agent: cursor-cloud
-updated: 2026-09-11T03:55Z
-status: release-session-probe-on-fly
+updated: 2026-09-11T04:45Z
+status: live-deploy-boots-vms
 ---
 
-# Handoff — Shift 150
+# Handoff — Shift 151
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` (tip deploying)
-- **PR:** #107
-- **Fly app:** https://aria-mantu-app.fly.dev
-- **Fly computers:** https://aria-mantu-computers.fly.dev — max 5
+- **Branch:** `cursor/openbot-desktop-vm-b91d`
+- **PR:** #109
+- **Fly app:** https://aria-mantu-app.fly.dev (deploy this tip)
+- **Fly computers:** max 5
 - **Policy:** every improvement pushed to Fly
 
 ## Done this shift
 
-1. `openBotSessionProbe` → POST `/session-probe` on Chromium computer
-2. `releaseControl` probes LinkedIn after Release; sets `sessionHealthy` from classify (never invents true)
-3. Auto-retry linkedin_send after Release only when probe healthy (or local/mock)
-4. Floor: ready+healthy / unverified / unhealthy / missing VM labels (no theatrical working without VM hint)
-5. Floor `computerHints` starts `undefined` until first poll (avoids false “No Browser Computer”)
-6. Tests: floor 22, computer-supervisor 23
+1. Live Fleet **Deploy + boot VMs** (no longer demo-only); cap by host free slots
+2. Add one / Campaign attach Browser Computer → `bootBrowserComputer` (ensure+start)
+3. Persist `computerId` via seat PATCH + mint-on-GET write-back
+4. Go-live: never invent `sessionHealthy` from ready+bot; checklist polls computers
+5. Floor: pulse cannot force “working” on Browser Computer seats without ready VM
+6. Release still runs `/session-probe` (prior shift)
 
 ## Blockers
 
@@ -33,13 +33,13 @@ status: release-session-probe-on-fly
 
 ## Next steps
 
-1. Operator prove: Deploy ≤5 → Take control → login → Release → floor shows healthy/unhealthy from probe
-2. Setup-guide completion from real probes
-3. Raise/shard host cap if 16 concurrent VMs required
+1. Operator: Deploy ≤5 → Take control → login → Release → floor healthy/unhealthy
+2. Optional: hydrate supervisor from `openBotListComputers` after cold start
+3. Raise/shard host if 16 concurrent VMs required
 
 ## Decisions (don't relitigate)
 
-- **Every improvement is pushed to Fly** before the shift ends
-- Fly-only for computers + LinkedIn automation
+- Every improvement pushed to Fly before shift ends
 - Never invent sessionHealthy=true without `/session-probe`
 - N seats = N Chromium profiles; Recruiter via Take control
+- Live Deploy must boot VMs (ensure ≠ start)

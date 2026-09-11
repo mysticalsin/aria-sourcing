@@ -109,6 +109,26 @@ ok(
   help.checks.find((c) => c.id === "session_healthy")?.ok === false,
 );
 
+const unverified = evaluateCampaignGoLive({
+  campaignId,
+  settings: { dryRunMode: false, minScoreToContact: 80 },
+  seats: [liSeat()],
+  computers: [
+    {
+      computerId: "comp_java_01",
+      status: "ready",
+      control: "bot",
+      sessionHealthy: null,
+    },
+  ],
+  candidate: { matchScore: 88 },
+});
+ok(
+  "ready+bot with null sessionHealthy is not go-live ready",
+  unverified.ready === false &&
+    unverified.checks.find((c) => c.id === "session_healthy")?.ok === false,
+);
+
 const human = evaluateCampaignGoLive({
   campaignId,
   settings: { dryRunMode: false, minScoreToContact: 80 },

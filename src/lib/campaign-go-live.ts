@@ -67,17 +67,8 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
 
   const humanHeld = computer?.control === "human";
   const needsHelp = computer?.status === "help_requested" || computer?.status === "error";
-  const sessionHealthy =
-    computer?.sessionHealthy === true
-      ? true
-      : computer?.sessionHealthy === false
-        ? false
-        : Boolean(
-            computer &&
-              computer.status === "ready" &&
-              computer.control === "bot" &&
-              !needsHelp,
-          );
+  // Never invent healthy from ready+bot — only Release /session-probe sets true.
+  const sessionHealthy = computer?.sessionHealthy === true;
 
   const floor = input.settings.minScoreToContact ?? 80;
   const scoreOk =

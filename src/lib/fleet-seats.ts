@@ -135,6 +135,7 @@ export async function patchFleetSeatOnServer(
     operatorEmail?: string;
     mode?: IntegrationMode;
     assignedCampaignIds?: string[];
+    computerId?: string | null;
   },
 ): Promise<{ ok: true; seat?: AgentSeat } | { ok: false; error: string }> {
   const res = await fetch("/api/fleet/seats", {

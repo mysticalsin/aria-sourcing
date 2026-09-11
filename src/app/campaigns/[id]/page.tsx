@@ -30,6 +30,7 @@ import { HydrationGate } from "@/components/app/page-header";
 import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
 import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
 import { CampaignGoLiveChecklist } from "@/components/campaigns/campaign-go-live-checklist";
+import { bootBrowserComputer } from "@/lib/boot-browser-computer";
 import { CampaignFunnelSpine } from "@/components/campaigns/campaign-funnel-spine";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { staggerContainer } from "@/lib/dashboard-motion";
@@ -1527,18 +1528,40 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           <CampaignAgentsPanel
             campaignId={c.id}
             seats={seats}
-            onAssignSeat={(seatId) => {
+            onAssignSeat={async (seatId) => {
               const seat = seats.find((s) => s.id === seatId);
               if (!seat) return;
               const next = Array.from(
                 new Set([...(seat.assignedCampaignIds ?? []), c.id]),
               );
               actions.updateSeat(seatId, { assignedCampaignIds: next });
-              toast({
-                title: "Agent attached",
-                description: `${seat.name} can now work this campaign with Observe / Take control.`,
-                variant: "success",
-              });
+              if (seat.provider === "LinkedIn Browser Computer") {
+                const computerId = seat.computerId || seat.id;
+                if (!seat.computerId) {
+                  actions.updateSeat(seatId, { computerId });
+                }
+                const boot = await bootBrowserComputer({
+                  seatId,
+                  computerId,
+                  campaignId: c.id,
+                });
+                toast({
+                  title: boot.booted
+                    ? `${seat.name} attached · VM booting`
+                    : `${seat.name} attached · VM not booted`,
+                  description: boot.booted
+                    ? "Take control to finish LinkedIn login. Floor will show this seat once the host reports ready."
+                    : boot.error ||
+                      "Seat attached but Chromium did not start — check Fly host capacity.",
+                  variant: boot.booted ? "success" : "warning",
+                });
+              } else {
+                toast({
+                  title: "Agent attached",
+                  description: `${seat.name} is on this campaign. Browser Computer seats still need Take control after boot.`,
+                  variant: "success",
+                });
+              }
             }}
             onUnassignSeat={(seatId) => {
               const seat = seats.find((s) => s.id === seatId);

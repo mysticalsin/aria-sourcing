@@ -38,6 +38,7 @@ import {
   useRole,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import { bootBrowserComputer } from "@/lib/boot-browser-computer";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
@@ -133,7 +134,12 @@ export default function FleetPage() {
       toast({ title: "Admins only", description: "Only an admin can deploy agents.", variant: "warning" });
       return;
     }
-    const n = Math.max(1, Math.min(Number(deployN) || 0, maxAgents));
+    const hostSlots =
+      hostCapacity && hostCapacity.max > 0
+        ? Math.max(0, hostCapacity.max - hostCapacity.computers)
+        : maxAgents;
+    const deployCap = Math.max(1, Math.min(maxAgents, hostSlots || maxAgents));
+    const n = Math.max(1, Math.min(Number(deployN) || 0, deployCap));
     const res = await actions.deployAgents(n);
     if (res.created <= 0) {
       toast({
@@ -150,33 +156,12 @@ export default function FleetPage() {
     let lastErr = "";
     for (const seat of res.seats) {
       const computerId = seat.computerId || seat.id;
-      await fetch("/api/fleet/computers", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "ensure", computerId, seatId: seat.id }),
-      }).catch(() => null);
-      const startRes = await fetch("/api/fleet/computers", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start", computerId }),
-      }).catch(() => null);
-      if (!startRes) {
-        blocked += 1;
-        lastErr = "Computer host unreachable";
-        continue;
-      }
-      const body = (await startRes.json().catch(() => ({}))) as {
-        error?: string;
-        computer?: { status?: string; lastError?: string | null };
-      };
-      const err = body.error || body.computer?.lastError || "";
-      if (!startRes.ok || body.computer?.status === "error" || /max computers/i.test(err)) {
-        blocked += 1;
-        lastErr = err || `HTTP ${startRes.status}`;
-      } else {
+      const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
+      if (boot.booted) {
         booted += 1;
+      } else {
+        blocked += 1;
+        lastErr = boot.error || lastErr;
       }
     }
 
@@ -439,11 +424,28 @@ export default function FleetPage() {
       toast({ title: "Agent not added", description: "Your profile cannot manage the fleet.", variant: "error" });
       return;
     }
-    toast({
-      title: `Agent “${seat.name}” added`,
-      description: `${seat.provider} seat created in dry-run mode. Connect a mailbox and verify the domain before going live.`,
-      variant: "success",
-    });
+    if (seat.provider === "LinkedIn Browser Computer") {
+      const computerId = seat.computerId || seat.id;
+      if (!seat.computerId) {
+        actions.updateSeat(seat.id, { computerId });
+      }
+      const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
+      toast({
+        title: boot.booted ? `Agent “${seat.name}” added · VM booting` : `Agent “${seat.name}” added · VM not booted`,
+        description: boot.booted
+          ? "Take control to finish LinkedIn login. Floor shows this seat once the host reports ready."
+          : boot.error ||
+            "Seat created but Chromium did not start — check Fly host capacity (OPENBOT_MAX_COMPUTERS).",
+        variant: boot.booted ? "success" : "warning",
+      });
+      void refreshComputers();
+    } else {
+      toast({
+        title: `Agent “${seat.name}” added`,
+        description: `${seat.provider} seat created in dry-run mode. Connect a mailbox and verify the domain before going live.`,
+        variant: "success",
+      });
+    }
     setName("");
     setOperatorEmail("");
     setProvider("Microsoft Graph");
@@ -597,30 +599,34 @@ export default function FleetPage() {
                   </p>
               </div>
               {canManage && <div className="flex flex-wrap items-center gap-2">
-                {!supabaseEnabled && <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
+                <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
                   <label htmlFor="deploy-n" className="text-xs font-semibold text-muted">
-                    Demo agents
+                    {supabaseEnabled ? "Deploy" : "Demo agents"}
                   </label>
                   <Input
                     id="deploy-n"
                     type="number"
                     inputMode="numeric"
                     min={1}
-                    max={maxAgents}
+                    max={
+                      hostCapacity && hostCapacity.max > 0
+                        ? Math.max(1, Math.min(maxAgents, Math.max(0, hostCapacity.max - hostCapacity.computers) || hostCapacity.max))
+                        : maxAgents
+                    }
                     value={deployN}
                     onChange={(e) => setDeployN(e.target.value)}
                     className="h-8 w-16 px-2 text-center"
-                    aria-label="Number of demo agents to generate"
+                    aria-label="Number of Browser Computer agents to deploy"
                   />
                   <Button
                     variant="secondary"
                     size="sm"
                     leftIcon={<Bot className="h-4 w-4" />}
-                    onClick={handleDeploy}
+                    onClick={() => void handleDeploy()}
                   >
-                    Generate demo agents
+                    {supabaseEnabled ? "Deploy + boot VMs" : "Generate demo agents"}
                   </Button>
-                </div>}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"

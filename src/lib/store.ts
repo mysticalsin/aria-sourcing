@@ -4569,13 +4569,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         supabaseEnabled &&
         (patch.operatorEmail !== undefined ||
           patch.mode !== undefined ||
-          patch.assignedCampaignIds !== undefined)
+          patch.assignedCampaignIds !== undefined ||
+          patch.computerId !== undefined)
       ) {
         const attempt = runWorkspaceEffect(() =>
           patchFleetSeatOnServer(id, {
             operatorEmail: patch.operatorEmail,
             mode: patch.mode,
             assignedCampaignIds: patch.assignedCampaignIds,
+            computerId: patch.computerId,
           }),
         );
         if (!attempt.allowed) return;

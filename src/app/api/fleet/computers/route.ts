@@ -119,15 +119,28 @@ export async function GET(req: NextRequest) {
       .eq("workspace_id", wid)
       .eq("provider", "LinkedIn Browser Computer");
 
-    const computers = (seats ?? []).map((seat) => {
+    const computers = [];
+    for (const seat of seats ?? []) {
+      const hadId = Boolean(seat.computer_id);
       const rec = defaultComputerSupervisor.ensureComputer({
         workspaceId: String(wid),
         seatId: seat.id,
         computerId: seat.computer_id ?? undefined,
         campaignId,
       });
-      return enrichComputer(rec, { seatName: seat.name, seatStatus: seat.status });
-    });
+      // Persist minted computer ids so floor/campaign filters stay stable across processes.
+      if (!hadId && rec.computerId) {
+        void supabase
+          .from("agent_seats")
+          .update({ computer_id: rec.computerId })
+          .eq("id", seat.id)
+          .eq("workspace_id", wid)
+          .then(({ error }) => {
+            if (error) console.warn("persist computer_id failed", error.message);
+          });
+      }
+      computers.push(enrichComputer(rec, { seatName: seat.name, seatStatus: seat.status }));
+    }
 
     const durable = await queryComputerAuditsDurable({
       workspaceId: String(wid),

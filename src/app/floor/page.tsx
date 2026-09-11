@@ -380,11 +380,19 @@ function Floor3DSection({
   // what's on screen. The full fleet always lives on the Agent Fleet page.
   const [deviceQuality] = React.useState(() => getDeviceQuality());
   const cap = MAX_3D_AGENTS[deviceQuality];
-  // Force a pulsing seat's status to "working" so agentTick's existing
-  // status-flip → walk-to-desk mechanism fires for it (no agentTick edits).
-  const office = seatsToOfficeAgents(seats, state, computerHints).map((a) =>
-    pulsingSeatIds.has(a.id) && a.status !== "working" ? { ...a, status: "working" as const } : a,
-  );
+  // Pulse may force "working" for walk animation — but never for Browser
+  // Computer seats whose VM is not actually ready (no theatrical working).
+  const office = seatsToOfficeAgents(seats, state, computerHints).map((a) => {
+    if (!pulsingSeatIds.has(a.id) || a.status === "working") return a;
+    const seat = seats.find((s) => s.id === a.id);
+    if (seat?.provider === "LinkedIn Browser Computer") {
+      const hint =
+        computerHints?.get(seat.id) ??
+        (seat.computerId ? computerHints?.get(seat.computerId) : undefined);
+      if (!hint || hint.status !== "ready") return a;
+    }
+    return { ...a, status: "working" as const };
+  });
   const notShown = Math.max(0, office.length - cap);
   return (
     <div className="space-y-3">

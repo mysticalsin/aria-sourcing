@@ -21,16 +21,42 @@ export function CampaignGoLiveChecklist(props: {
   className?: string;
   compact?: boolean;
 }) {
+  const [polledComputers, setPolledComputers] = React.useState<ComputerHealthLike[] | undefined>();
+  React.useEffect(() => {
+    if (props.computers) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/fleet/computers?campaignId=${encodeURIComponent(props.campaignId)}`,
+          { credentials: "same-origin" },
+        );
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { computers?: ComputerHealthLike[] };
+        if (!cancelled) setPolledComputers(data.computers ?? []);
+      } catch {
+        /* checklist still works without live computer rows */
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [props.campaignId, props.computers]);
+
+  const computers = props.computers ?? polledComputers;
   const { ready, checks, nextAction } = React.useMemo(
     () =>
       evaluateCampaignGoLive({
         campaignId: props.campaignId,
         settings: props.settings,
         seats: props.seats,
-        computers: props.computers,
+        computers,
         candidate: props.candidate,
       }),
-    [props.campaignId, props.settings, props.seats, props.computers, props.candidate],
+    [props.campaignId, props.settings, props.seats, computers, props.candidate],
   );
 
   return (

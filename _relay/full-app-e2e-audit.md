@@ -139,7 +139,7 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 4. Schedules: hide or wire a real runner.  
 5. Setup guide: complete Take-control / first-send steps from real probes.  
 6. Emit `seatId` on source events when a Browser Computer ran search.  
-7. After Release, probe session health (don’t fake healthy).  
+7. ~~After Release, probe session health (don’t fake healthy).~~ **done** (`/session-probe`)  
 8. ~~Surface host VM remaining capacity in Fleet header always.~~ **done**
 
 ### P2 — polish (Apple bar)
