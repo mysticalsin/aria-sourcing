@@ -12,7 +12,7 @@ status: n-seat-vm-isolation-on-fly
 
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `949fb74` (`949fb7447a3afa5910d029d264172e9c6e455e0b`)
 - **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches tip
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/112 → `integration/sourcing-enrichment-on-main` (draft)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/113 → `integration/sourcing-enrichment-on-main` (draft)
 - **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
 
