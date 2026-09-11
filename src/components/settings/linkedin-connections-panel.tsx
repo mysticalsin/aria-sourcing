@@ -176,16 +176,24 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
               // Authoritative DB/fleet binding wins over stale Hermes after reclaim.
               void actions.updateSeat(s.id, { computerId: fleetComputerId });
             }
+            // Fleet overlay is authoritative: a present key with null must not
+            // fall through to a stale local sessionHealthy=true (no probe).
+            const fromSeat = s.id && bySeatHealth.has(s.id) ? bySeatHealth.get(s.id)! : undefined;
+            const compKey = fleetComputerId || s.computerId || "";
+            const fromComp =
+              fromSeat === undefined && compKey && byCompHealth.has(compKey)
+                ? byCompHealth.get(compKey)!
+                : undefined;
+            const sessionHealthy =
+              fromSeat !== undefined
+                ? fromSeat
+                : fromComp !== undefined
+                  ? fromComp
+                  : null;
             return {
               ...s,
               computerId: fleetComputerId || s.computerId,
-              sessionHealthy:
-                (s.id ? (bySeatHealth.get(s.id) ?? null) : null) ??
-                ((fleetComputerId || s.computerId)
-                  ? (byCompHealth.get(fleetComputerId || s.computerId!) ?? null)
-                  : null) ??
-                s.sessionHealthy ??
-                null,
+              sessionHealthy,
             };
           });
         }
@@ -341,9 +349,10 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           toast({ title: "Connect failed", description: "Could not create a local Browser Computer seat.", variant: "error" });
           return;
         }
+        // Leave computerId null — Login reclaim-or-mint binds a durable VM.
         const saved = await actions.updateSeat(seat.id, {
           connectedAccount: accountLabel,
-          computerId: seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`,
+          computerId: seat.computerId ?? null,
           linkedinDeliveryBackend: "browser-computer",
         });
         if (!saved) {

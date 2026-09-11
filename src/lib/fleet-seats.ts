@@ -72,7 +72,8 @@ export function agentSeatRowToSeat(row: AgentSeatRow, existing?: AgentSeat): Age
     color: existing?.color,
     language: existing?.language,
     connectedAccount: row.connected_account,
-    computerId: row.computer_id ?? existing?.computerId ?? null,
+    // Trust DB null after poisoned-FK clear — do not rehydrate stale Hermes computerId.
+    computerId: row.computer_id ?? null,
     linkedinDeliveryBackend:
       row.linkedin_delivery_backend === "vendor-api" ||
       row.linkedin_delivery_backend === "browser-computer"

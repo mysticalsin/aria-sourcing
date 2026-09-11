@@ -1,26 +1,27 @@
 ---
 project: MSourcing / ARIA
-shift: 173
+shift: 174
 agent: cursor-cloud
-updated: 2026-09-11T17:45Z
-status: reclaim-before-mint-all-boot-paths
+updated: 2026-09-11T18:23Z
+status: create-null-computerId-seat-ownership
 ---
 
-# Handoff — Shift 173
+# Handoff — Shift 174
 
 ## Current state
 
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
 - **Fly:** https://aria-mantu-app.fly.dev — still on older build `8ea3370…` (`agentFrameworks:false`); tip **not live**
-- **PR:** #126 → `integration/sourcing-enrichment-on-main` (update after push)
+- **PR:** recreate after push (prior #126 closed) → `integration/sourcing-enrichment-on-main`
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
 
 ## Done this shift
 
-1. **`resolveDurableComputerId`** in `src/lib/boot-browser-computer.ts` — always probes `reclaim_healthy_orphan` before minting; never invents `sessionHealthy=true`
-2. **Fleet Deploy, Fleet Add agent, Campaign Attach, Settings Login** all use the shared helper (store pre-minted blank ids no longer skip reclaim)
-3. Floor subtitle null-safety; `typecheck:tests` green (demo-candidate-persistence + openbot-llm-auth casts)
-4. Tests: boot-browser-computer 8, floor 44, computer-supervisor 62; `npm run typecheck` + `typecheck:tests` green
+1. **Create-null:** store `addSeat`, `POST /api/fleet/seats`, LinkedIn `ensure_connect`, Settings demo connect leave `computerId` null until Deploy/Login reclaim-or-mint
+2. **Seat ownership:** go-live `computerForSeat`, campaign agents filter/lookup, fleet naming — seatId first; computerId fallback only if unbound/same seat
+3. **Settings:** fleet `sessionHealthy: null` no longer falls through to stale local green
+4. **fleet-seats:** trusts DB `computer_id` null over Hermes
+5. Tests: campaign-go-live 13 (incl. bleed + email-seat), fleet-seats-assign 5; typecheck + typecheck:tests green
 
 ## Blockers (goal incomplete)
 
@@ -48,9 +49,11 @@ status: reclaim-before-mint-all-boot-paths
 - Reclaim must persist `agent_seats.computer_id` in the same request
 - Poll paths GET+sync only (no ensure with Hermes computerId)
 - ensure must not reclaim orphan onto seat with existing durable binding
-- **Login must not trust Hermes-only computerId over empty API/DB seat**
+- Login must not trust Hermes-only computerId over empty API/DB seat
 - Floor/Settings must sync Hermes computerId from fleet GET
-- **All boot paths (Deploy/Add/Attach/Login) reclaim-before-mint via shared helper**
+- All boot paths reclaim-before-mint via shared helper
+- **Seat create must not pre-mint blank computerId**
+- **computerId fallback must not cross seat ownership**
 - Unique `(workspace_id, computer_id)` in DB (0084)
 
 ## Watch out
@@ -60,3 +63,4 @@ status: reclaim-before-mint-all-boot-paths
 - Personalized invite notes free-tier max **200 characters**
 - `comp_tony_01` often login-wall twin — reclaim prefers UUID durable after probe
 - Production deploy is owner/protected — do not bypass release guards
+- Prior PRs on this branch often get closed — recreate after push

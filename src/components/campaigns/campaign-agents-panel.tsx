@@ -127,15 +127,18 @@ export function CampaignAgentsPanel({
       const computerIds = new Set(
         campaignSeats.map((s) => s.computerId).filter(Boolean) as string[],
       );
-      // Match by seatId first so a lagged client computerId still shows the live VM.
-      const rows = (data.computers ?? []).filter(
-        (c) => seatIds.has(c.seatId) || computerIds.has(c.computerId),
-      );
+      // Seat ownership first — stale Hermes computerId must not pull another seat's VM.
+      const rows = (data.computers ?? []).filter((c) => {
+        if (c.seatId && seatIds.has(c.seatId)) return true;
+        if (c.seatId && c.seatId !== "__orphan__") return false;
+        return Boolean(c.computerId && computerIds.has(c.computerId));
+      });
       setComputers(
         rows.map((c) => {
-          const seat = campaignSeats.find(
-            (s) => s.id === c.seatId || s.computerId === c.computerId,
-          );
+          const seat = campaignSeats.find((s) => s.id === c.seatId) ??
+            (c.seatId && c.seatId !== "__orphan__"
+              ? undefined
+              : campaignSeats.find((s) => s.computerId && s.computerId === c.computerId));
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
@@ -366,10 +369,15 @@ export function CampaignAgentsPanel({
           <ul className="divide-y divide-line/50">
             {campaignSeats.map((seat) => {
               const boundComputerId = seat.computerId?.trim() || null;
-              const c = boundComputerId
-                ? computers.find((row) => row.seatId === seat.id) ??
-                  computers.find((row) => row.computerId === boundComputerId)
-                : computers.find((row) => row.seatId === seat.id);
+              const bySeat = computers.find((row) => row.seatId === seat.id);
+              const byComp = boundComputerId
+                ? computers.find(
+                    (row) =>
+                      row.computerId === boundComputerId &&
+                      (!row.seatId || row.seatId === seat.id || row.seatId === "__orphan__"),
+                  )
+                : undefined;
+              const c = bySeat ?? byComp;
               // No durable computerId → seat is attached but VM not provisioned.
               // Do not invent "(unassigned)" and offer Start/Observe/Take control.
               if (!boundComputerId || !c || c.computerId === "(unassigned)") {

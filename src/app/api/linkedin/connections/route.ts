@@ -394,7 +394,8 @@ async function ensureConnect(
         persona: "Warm, specific LinkedIn outreach. One genuine compliment, soft ask. No automation language.",
         signature: "",
         connected_account: operatorLabel,
-        computer_id: provider === "LinkedIn Browser Computer" ? `comp_${globalThis.crypto.randomUUID()}` : null,
+        // Null until Login/Deploy reclaim-or-mint — never pre-mint a blank Chromium id.
+        computer_id: null,
         linkedin_delivery_backend:
           provider === "LinkedIn Browser Computer"
             ? "browser-computer"

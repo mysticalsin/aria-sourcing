@@ -228,5 +228,44 @@ ok(
     multi.checks.find((c) => c.id === "session_healthy")?.ok === false,
 );
 
+
+// Cross-seat bleed: stale Hermes computerId must not inherit another seat's healthy VM.
+{
+  const seatA = liSeat({ id: "seat_a", computerId: "comp_b_unique", assignedCampaignIds: [campaignId] });
+  const stolen = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [seatA],
+    computers: [
+      {
+        computerId: "comp_b_unique",
+        seatId: "seat_b",
+        status: "ready",
+        control: "bot",
+        sessionHealthy: true,
+      },
+    ],
+    candidate: { matchScore: 90 },
+  });
+  ok(
+    "stale computerId must not steal another seat's healthy VM",
+    stolen.ready === false &&
+      stolen.checks.find((c) => c.id === "session_healthy")?.ok === false,
+  );
+  ok(
+    "email seat with bare computerId is not a browser seat",
+    campaignBrowserSeats(
+      [
+        liSeat({
+          provider: "Gmail API",
+          computerId: "comp_x",
+          linkedinDeliveryBackend: null,
+        }),
+      ],
+      campaignId,
+    ).length === 0,
+  );
+}
+
 console.log(`campaign-go-live: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

@@ -39,6 +39,12 @@ ok("maps assigned_campaign_ids", seat.assignedCampaignIds?.includes("camp_seed_b
 ok("preserves multi-campaign", seat.assignedCampaignIds?.length === 2);
 ok("maps computer_id", seat.computerId === "comp_java_01");
 
+const cleared = agentSeatRowToSeat(
+  { ...row, computer_id: null },
+  { ...seat, computerId: "comp_stale_hermes" },
+);
+ok("trusts null computer_id over stale Hermes", cleared.computerId === null);
+
 const empty = agentSeatRowToSeat({ ...row, assigned_campaign_ids: null }, {
   ...seat,
   assignedCampaignIds: ["camp_fallback"],

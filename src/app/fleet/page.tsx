@@ -248,9 +248,8 @@ export default function FleetPage() {
           if (againData.hostCapacity) setHostCapacity(againData.hostCapacity);
           setComputers(
             (againData.computers ?? []).map((c) => {
-              const seat = browserSeats.find(
-                (s) => s.id === c.seatId || s.computerId === c.computerId,
-              );
+              // Name only on seatId ownership — computerId fallback mislabels orphans/twins.
+              const seat = browserSeats.find((s) => s.id === c.seatId);
               return seat ? { ...c, seatName: seat.name } : c;
             }),
           );
@@ -259,9 +258,7 @@ export default function FleetPage() {
       }
       setComputers(
         rows.map((c) => {
-          const seat = browserSeats.find(
-            (s) => s.id === c.seatId || s.computerId === c.computerId,
-          );
+          const seat = browserSeats.find((s) => s.id === c.seatId);
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );

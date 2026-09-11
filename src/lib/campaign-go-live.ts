@@ -38,10 +38,10 @@ export type GoLiveInput = {
 };
 
 function isBrowserComputerSeat(seat: AgentSeat): boolean {
+  // Provider/backend only — a bare computerId must not classify email seats as Browser Computers.
   return (
     seat.provider === "LinkedIn Browser Computer" ||
-    seat.linkedinDeliveryBackend === "browser-computer" ||
-    Boolean(seat.computerId)
+    seat.linkedinDeliveryBackend === "browser-computer"
   );
 }
 
@@ -58,10 +58,16 @@ function computerForSeat(
   seat: AgentSeat,
 ): ComputerHealthLike | undefined {
   if (!computers?.length) return undefined;
-  return (
-    computers.find((c) => seat.computerId && c.computerId === seat.computerId) ??
-    computers.find((c) => c.seatId === seat.id)
-  );
+  // Seat ownership first (same rule as resolveComputerHint) — a stale Hermes
+  // computerId must not pull another seat's / orphan VM into this desk's go-live.
+  const bySeat = computers.find((c) => c.seatId === seat.id);
+  if (bySeat) return bySeat;
+  const computerId = typeof seat.computerId === "string" ? seat.computerId.trim() : "";
+  if (!computerId) return undefined;
+  const byComputer = computers.find((c) => c.computerId === computerId);
+  if (!byComputer) return undefined;
+  if (byComputer.seatId && byComputer.seatId !== seat.id) return undefined;
+  return byComputer;
 }
 
 export function evaluateCampaignGoLive(input: GoLiveInput): {
