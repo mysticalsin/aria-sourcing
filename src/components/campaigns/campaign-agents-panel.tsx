@@ -505,7 +505,7 @@ export function CampaignAgentsPanel({
                     <div className="flex flex-wrap gap-2">
                       <a
                         className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 font-medium text-electric"
-                        href={liveUrl!}
+                        href={`${liveUrl!}${liveUrl!.includes("?") ? "&" : "?"}fs=1`}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -548,7 +548,7 @@ export function CampaignAgentsPanel({
                 {observing.control !== "human" ? (
                   <a
                     className="inline-flex items-center gap-1 text-xs font-medium text-electric"
-                    href={liveUrl!}
+                    href={`${liveUrl!}${liveUrl!.includes("?") ? "&" : "?"}fs=1`}
                     target="_blank"
                     rel="noreferrer"
                   >

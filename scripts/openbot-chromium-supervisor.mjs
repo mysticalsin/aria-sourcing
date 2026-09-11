@@ -23,6 +23,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 import { chromium } from "playwright";
+import { mapViewPoint } from "./lib/openbot-view-coords.mjs";
+
+/** Browser-side copy of mapViewPoint (no bundler — inject via Function.toString). */
+const MAP_VIEW_POINT_SRC = mapViewPoint.toString();
 
 const PORT = Number(process.env.PORT || process.env.OPENBOT_SUPERVISOR_PORT || 18765);
 const SUPERVISOR_TOKEN = (process.env.SUPERVISOR_TOKEN || "aria-supervisor-dev").trim();
@@ -248,10 +252,17 @@ async function startScreencast(rec) {
         await cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId });
       } catch {}
       // Binary JPEG frames (Browserbase-style) — much lower WS overhead than base64 JSON.
+      const vp = rec.page?.viewportSize?.() || null;
+      const metadata = {
+        ...(frame.metadata || {}),
+        // Prefer CDP device metrics; fall back to Playwright viewport (CSS DIPs).
+        deviceWidth: frame.metadata?.deviceWidth || vp?.width || STREAM_MAX_W,
+        deviceHeight: frame.metadata?.deviceHeight || vp?.height || STREAM_MAX_H,
+      };
       const jpeg = Buffer.from(frame.data, "base64");
       const meta = {
         type: "frame_meta",
-        metadata: frame.metadata || {},
+        metadata,
         tabId: rec.activeTabId,
         bytes: jpeg.length,
         ts: Date.now(),
@@ -521,9 +532,10 @@ function viewPage(botId) {
 html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 20% -10%,#18233a 0%,var(--bg) 55%);color:var(--text);font-family:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;overflow:hidden}
 body{display:flex;flex-direction:column}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);background:rgba(12,18,30,.92);backdrop-filter:blur(10px);flex:0 0 auto;z-index:5}
-body.fs .top{position:absolute;left:0;right:0;top:0}
-body.fs:not(:hover) .top,#tabs{transition:opacity .2s}
-body.fs:not(:hover) .top{opacity:.12}
+body.fs .top{position:absolute;left:0;right:0;top:0;z-index:6}
+body.fs .top,#tabs,body.fs #metaBar{transition:opacity .2s}
+/* Keep chrome usable for login/captcha — never hide tabs/omnibox completely */
+body.fs:not(:hover) .top{opacity:.55}
 body.fs:hover .top{opacity:1}
 .brand{display:flex;flex-direction:column;gap:2px;min-width:0}
 .brand .kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7eb6ff}
@@ -540,18 +552,19 @@ body.fs:hover .top{opacity:1}
 button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:600;cursor:pointer;font-size:13px}
 button.secondary{background:#24314d}button:disabled{opacity:.55;cursor:wait}
 #tabs{display:flex;gap:4px;align-items:center;padding:6px 10px 0;background:#0a1220;border-bottom:1px solid var(--line);overflow-x:auto;flex:0 0 auto}
-body.fs #tabs{padding-top:58px}
-body.fs:not(:hover) #tabs{opacity:.12}
+body.fs #tabs{padding-top:58px;position:relative;z-index:5}
+body.fs:not(:hover) #tabs{opacity:.85}
 body.fs:hover #tabs{opacity:1}
 .tab{display:flex;align-items:center;gap:6px;max-width:220px;padding:6px 10px;border-radius:8px 8px 0 0;background:#152038;color:#c6d4ef;border:1px solid #24314d;border-bottom:0;cursor:pointer;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tab.active{background:#1c2d52;color:#fff;box-shadow:inset 0 -2px 0 var(--accent)}
 .tab .x{opacity:.55;border:0;background:transparent;color:inherit;padding:0 2px;cursor:pointer;font-size:14px}
 .tab .x:hover{opacity:1;color:#ff8d9c}
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:#05070c}
-#frame{position:relative;flex:1 1 auto;min-height:0;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}
-#canvas,#shot{display:block;max-width:100%;max-height:100%;width:auto;height:auto;cursor:crosshair;outline:none;user-select:none;background:#000}
+#frame{position:relative;flex:1 1 auto;min-height:0;background:#000;overflow:hidden}
+#canvas,#shot{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;outline:none;user-select:none;background:#000;touch-action:none}
 #shot{display:none}
-#metaBar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 12px;font:12px "IBM Plex Mono",ui-monospace,Menlo,monospace;color:var(--muted);border-top:1px solid var(--line);background:rgba(12,18,30,.95);flex:0 0 auto}
+#metaBar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 12px;font:12px "IBM Plex Mono",ui-monospace,Menlo,monospace;color:var(--muted);border-top:1px solid var(--line);background:rgba(12,18,30,.95);flex:0 0 auto;z-index:5}
+body.fs #metaBar{opacity:1}
 #fps,#rtt{color:#7fd7ff}#err{color:#ff8d9c}
 .omnibox{flex:1 1 auto;display:flex;gap:8px;align-items:center;min-width:0}
 .omnibox input{flex:1 1 auto;min-width:0;background:#0a1220;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:7px 10px;font:12px "IBM Plex Mono",ui-monospace,monospace}
@@ -611,7 +624,9 @@ let human = ${control === "human" ? "true" : "false"};
 let ws = null;
 let frameCount = 0;
 let lastFpsAt = Date.now();
-let naturalW = 1400, naturalH = 900;
+/* device* = CDP CSS viewport (click target). bitmap* = JPEG/canvas pixels (display). */
+let deviceW = 1400, deviceH = 900;
+let bitmapW = 1400, bitmapH = 900;
 let useFallback = false;
 let fallbackTimer = null;
 let pendingKeys = [];
@@ -668,18 +683,17 @@ function setConn(state, label) {
   lab.textContent = label;
 }
 
+const mapViewPoint = ${MAP_VIEW_POINT_SRC};
 function mapPoint(ev, el) {
-  const rect = el.getBoundingClientRect();
-  const nw = naturalW || 1400, nh = naturalH || 900;
-  if (!rect.width || !rect.height) return null;
-  const scale = Math.min(rect.width / nw, rect.height / nh);
-  const drawW = nw * scale, drawH = nh * scale;
-  const ox = rect.left + (rect.width - drawW) / 2;
-  const oy = rect.top + (rect.height - drawH) / 2;
-  const x = Math.round((ev.clientX - ox) / scale);
-  const y = Math.round((ev.clientY - oy) / scale);
-  if (x < 0 || y < 0 || x >= nw || y >= nh) return null;
-  return { x, y };
+  return mapViewPoint({
+    clientX: ev.clientX,
+    clientY: ev.clientY,
+    rect: el.getBoundingClientRect(),
+    bitmapW,
+    bitmapH,
+    deviceW,
+    deviceH,
+  });
 }
 
 function renderTabs(tabs) {
@@ -727,11 +741,16 @@ function bumpFps() {
   }
 }
 
+function applyDeviceMeta(metadata) {
+  if (metadata?.deviceWidth) deviceW = metadata.deviceWidth;
+  if (metadata?.deviceHeight) deviceH = metadata.deviceHeight;
+}
 function paintBitmap(bitmap, metadata) {
-  naturalW = bitmap.width || metadata?.deviceWidth || naturalW;
-  naturalH = bitmap.height || metadata?.deviceHeight || naturalH;
-  if (canvas.width !== naturalW || canvas.height !== naturalH) {
-    canvas.width = naturalW; canvas.height = naturalH;
+  applyDeviceMeta(metadata);
+  bitmapW = bitmap.width || bitmapW;
+  bitmapH = bitmap.height || bitmapH;
+  if (canvas.width !== bitmapW || canvas.height !== bitmapH) {
+    canvas.width = bitmapW; canvas.height = bitmapH;
   }
   ctx.drawImage(bitmap, 0, 0);
   if (bitmap.close) bitmap.close();
@@ -753,10 +772,11 @@ async function paintBinary(buf) {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
-      naturalW = img.naturalWidth || naturalW;
-      naturalH = img.naturalHeight || naturalH;
-      if (canvas.width !== naturalW || canvas.height !== naturalH) {
-        canvas.width = naturalW; canvas.height = naturalH;
+      bitmapW = img.naturalWidth || bitmapW;
+      bitmapH = img.naturalHeight || bitmapH;
+      applyDeviceMeta(lastMeta?.metadata);
+      if (canvas.width !== bitmapW || canvas.height !== bitmapH) {
+        canvas.width = bitmapW; canvas.height = bitmapH;
       }
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
@@ -769,10 +789,11 @@ async function paintBinary(buf) {
 function paintFrameB64(b64, metadata) {
   const img = new Image();
   img.onload = () => {
-    naturalW = img.naturalWidth || metadata?.deviceWidth || naturalW;
-    naturalH = img.naturalHeight || metadata?.deviceHeight || naturalH;
-    if (canvas.width !== naturalW || canvas.height !== naturalH) {
-      canvas.width = naturalW; canvas.height = naturalH;
+    applyDeviceMeta(metadata);
+    bitmapW = img.naturalWidth || bitmapW;
+    bitmapH = img.naturalHeight || bitmapH;
+    if (canvas.width !== bitmapW || canvas.height !== bitmapH) {
+      canvas.width = bitmapW; canvas.height = bitmapH;
     }
     ctx.drawImage(img, 0, 0);
     bumpFps();
@@ -789,7 +810,13 @@ async function fallbackRefresh() {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const old = shot.src;
-    shot.onload = () => { naturalW = shot.naturalWidth || naturalW; naturalH = shot.naturalHeight || naturalH; };
+    shot.onload = () => {
+      bitmapW = shot.naturalWidth || bitmapW;
+      bitmapH = shot.naturalHeight || bitmapH;
+      // Full-page screenshots match device CSS size 1:1.
+      deviceW = bitmapW;
+      deviceH = bitmapH;
+    };
     shot.src = url;
     if (old && old.startsWith("blob:")) URL.revokeObjectURL(old);
     const tabs = await fetch(base + "/tabs", {
@@ -843,8 +870,7 @@ function connectStream() {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg.type === "frame_meta") {
       lastMeta = msg;
-      if (msg.metadata?.deviceWidth) naturalW = msg.metadata.deviceWidth;
-      if (msg.metadata?.deviceHeight) naturalH = msg.metadata.deviceHeight;
+      applyDeviceMeta(msg.metadata);
     } else if (msg.type === "frame") {
       paintFrameB64(msg.data, msg.metadata);
     } else if (msg.type === "tabs") {

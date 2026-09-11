@@ -14,6 +14,7 @@ ENV NODE_ENV=production \
 COPY services/computer-supervisor/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY scripts/openbot-chromium-supervisor.mjs ./scripts/openbot-chromium-supervisor.mjs
+COPY scripts/lib/openbot-view-coords.mjs ./scripts/lib/openbot-view-coords.mjs
 
 RUN mkdir -p /data/profiles && chown -R pwuser:pwuser /data /app
 USER pwuser
