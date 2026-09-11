@@ -164,3 +164,84 @@ export function floorRollup(
     contactedToday: seats.reduce((sum, s) => sum + s.sentToday, 0),
   };
 }
+
+/** Overlay live VM truth onto theatrical activity for 2D desks (same rules as 3D). */
+export function agentActivityWithComputers(
+  seat: AgentSeat,
+  state: HermesState,
+  now = Date.now(),
+  computers?: ReadonlyMap<string, FloorComputerHint>,
+): AgentActivity {
+  const base = agentActivity(seat, state, now);
+  if (!computers || seat.provider !== "LinkedIn Browser Computer") return base;
+
+  const hint =
+    computers.get(seat.id) ??
+    (seat.computerId ? computers.get(seat.computerId) : undefined);
+
+  if (!hint) {
+    return {
+      ...base,
+      state: "idle",
+      label: seat.computerId ? "VM not on host" : "No Browser Computer",
+      detail: base.detail,
+      busy: false,
+      tone: "neutral",
+    };
+  }
+  if (hint.status === "help_requested" || hint.status === "error") {
+    return {
+      ...base,
+      state: "paused",
+      label: hint.status === "help_requested" ? "Needs Take control" : "VM error",
+      busy: false,
+      tone: "danger",
+    };
+  }
+  if (hint.status === "starting" || hint.status === "busy") {
+    return {
+      ...base,
+      state: "warming",
+      label: hint.status === "starting" ? "Booting VM" : base.label,
+      busy: true,
+      tone: "warning",
+    };
+  }
+  if (hint.status === "ready" && hint.sessionHealthy === true) {
+    return {
+      ...base,
+      state: base.state === "idle" ? "sourcing" : base.state,
+      label: "LinkedIn session healthy",
+      busy: true,
+      tone: "electric",
+    };
+  }
+  if (hint.status === "ready" && hint.sessionHealthy === false) {
+    return {
+      ...base,
+      state: "paused",
+      label: "LinkedIn session unhealthy",
+      busy: false,
+      tone: "danger",
+    };
+  }
+  if (hint.status === "ready") {
+    return {
+      ...base,
+      state: "idle",
+      label: "LinkedIn unverified — Take control",
+      busy: false,
+      tone: "warning",
+    };
+  }
+  if (hint.status === "stopped") {
+    return {
+      ...base,
+      state: "idle",
+      label: "VM stopped",
+      busy: false,
+      tone: "neutral",
+    };
+  }
+  return base;
+}

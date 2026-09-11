@@ -1,4 +1,4 @@
-import { agentActivity, floorRollup } from "../src/lib/floor";
+import { agentActivity, agentActivityWithComputers, floorRollup } from "../src/lib/floor";
 import { pickResponderIndex, seatsToOfficeAgents } from "../src/lib/floor3d";
 import { buildSeedState } from "../src/lib/seed";
 import { SEED_NOW } from "../src/lib/utils";
@@ -130,6 +130,34 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     const withStopped = floorRollup([liSeat], s, NOW, stoppedMap);
     if (busyAlone.state !== "idle" && busyAlone.state !== "paused" && busyAlone.state !== "warming") {
       ok("rollup ignores theatrical busy when VM stopped", withStopped.working === 0);
+    }
+  }
+}
+
+
+{
+  const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (li) {
+    const theatrical = agentActivity(li, s, NOW);
+    const stopped = agentActivityWithComputers(
+      li,
+      s,
+      NOW,
+      new Map([[li.id, { status: "stopped" }]]),
+    );
+    ok("2D overlay: stopped VM is not busy", stopped.busy === false);
+    ok(
+      "2D overlay: stopped VM label mentions VM",
+      /VM stopped|not on host|Browser Computer/i.test(stopped.label),
+    );
+    if (theatrical.busy) {
+      const healthy = agentActivityWithComputers(
+        li,
+        s,
+        NOW,
+        new Map([[li.id, { status: "ready", sessionHealthy: true }]]),
+      );
+      ok("2D overlay: ready+healthy stays busy", healthy.busy === true);
     }
   }
 }

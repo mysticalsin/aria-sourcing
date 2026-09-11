@@ -30,7 +30,7 @@ import {
   useSettings,
   useActions,
 } from "@/lib/store";
-import { agentActivity, floorRollup } from "@/lib/floor";
+import { agentActivity, agentActivityWithComputers, floorRollup } from "@/lib/floor";
 import {
   EVENT_COLOR,
   EVENT_SOUND,
@@ -332,7 +332,7 @@ export default function FloorPage() {
               <AgentDesk
                 key={seat.id}
                 seat={seat}
-                activity={agentActivity(seat, stateLike)}
+                activity={agentActivityWithComputers(seat, stateLike, Date.now(), computerHints)}
                 onSelect={(s) => selectAgent(s.id)}
               />
             ))}
