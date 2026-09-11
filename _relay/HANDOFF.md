@@ -12,7 +12,7 @@ status: migration-0084-on-fly-settings-honest
 
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `758784c` (`758784ce587c7b835ddfd374406e2000013d4546`)
 - **Fly:** https://aria-mantu-app.fly.dev `/api/ready` build matches tip · **migration tip `0084_agent_seats_computer_id_unique.sql` (probe true)**
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/113 → `integration/sourcing-enrichment-on-main` (draft)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/114 → `integration/sourcing-enrichment-on-main` (draft)
 - **Computers:** max 5 · https://aria-mantu-computers.fly.dev
 - **Policy:** every improvement on Fly
 
