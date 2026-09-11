@@ -1,47 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 143
+shift: 144
 agent: cursor-cloud
-updated: 2026-09-11T01:16Z
-status: openbot-desktop-vm-deployed
+updated: 2026-09-11T02:15Z
+status: multi-linkedin-recruiter-ready
 ---
 
-# Handoff — Shift 143
+# Handoff — Shift 144
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d`
-- **Fly:** `aria-mantu-computers` healthy with `desktop:true`, `liveView:"desktop-vm"`, stream `x11vnc+novnc`
-- **Take control URL:** `/desktop/:botId` (noVNC of real headed Chrome + OS taskbar). CDP `/view/:botId` remains as page-only fallback.
+- **Branch:** `cursor/openbot-desktop-vm-b91d` (pushed)
+- **Fly:** `aria-mantu-computers` healthy — `desktop:true`, stream `x11vnc+novnc`, `liveView:"desktop-vm"`
+- **Take control:** `/desktop/:botId` (noVNC Chrome + dock). LinkedIn + Recruiter buttons on desktop bar.
+- **Multi-account:** Settings → AriaBot can create additional Browser Computer seats (`forceNew`) and open member or Recruiter login per seat. Each seat = isolated Chromium profile.
 
 ## Done this shift
 
-1. Per-seat virtual desktop: Xvfb + openbox + tint2 dock + x11vnc + websockify/noVNC
-2. Headed Chromium maximized on that display (real tabs + omnibox) — Métis Operator style
-3. `viewUrl` points to desktop stream when `OPENBOT_DESKTOP=1`
-4. Dockerfile.computers installs desktop stack; fly.computers.toml enables headed+desktop
-5. Local proof screenshot: `/opt/cursor/artifacts/desktop-vm-metis-style.png`
+1. Session probe accepts Recruiter/talent URLs; logged-out talent/home no longer false-healthy
+2. Desktop shell: LinkedIn + Recruiter navigate buttons + computer token
+3. CDP view: Recruiter button; ensure stream label `x11vnc+novnc`
+4. Dockerfile.computers copies `openbot-session-health.mjs`
+5. Live proof: `li_acct_alpha` + `li_acct_recruiter` ensure → separate profiles; Recruiter navigates to talent login; probe detects login wall
 
 ## Blockers
 
-1. Operator should Take control again — mouse maps 1:1 via noVNC to the real desktop; finish LinkedIn login/captcha
-2. Existing seats may need re-ensure after deploy to pick up a desktop display
+1. Human must Take control and complete LinkedIn/Recruiter login (2FA/captcha) per seat — cannot automate credentials
 
 ## Next steps
 
-1. Operator: Take control on a seat → confirm Chrome tabs + bottom dock visible → login
-2. Open/refresh PR for this branch vs `integration/sourcing-enrichment-on-main`
-3. Re-run Tony Walteur Connect E2E after session persists
+1. Operator: for each LinkedIn account, Settings → Add another LinkedIn account (or per-seat Login member / Login Recruiter) → sign in inside desktop VM → Release
+2. Confirm PR vs `integration/sourcing-enrichment-on-main` includes these commits
+3. Optional: stamp `connectedAccount` after healthy probe from Fleet UI
 
 ## Decisions (don't relitigate)
 
-- Take control primary surface = real desktop (noVNC), not CDP page screencast
-- Connect/Message stays AriaBot Take control only
-- Never invent LinkedIn profile URLs
+- Multi LinkedIn accounts = N Browser Computer seats / N Chromium profiles (not one shared profile)
+- Recruiter used like humans via Take control (no auto InMail send)
+- Take control primary surface = real desktop (noVNC)
 
 ## Watch out
 
-- Dockerfile must COPY `scripts/lib/openbot-desktop-seat.mjs` + `scripts/desktop/`
-- Playwright forbids `deviceScaleFactor` with `viewport: null` (desktop chrome UI mode)
-- tint2 v17 uses `time1_format` / `task_maximum_size` (not obsolete `clock_format` / `task_icon_size`)
-- Never commit Fly secrets / demo passwords / Tavily keys
+- Never commit Fly `SUPERVISOR_TOKEN` / `COMPUTER_TOKEN` / demo passwords
+- tint2 v17 keys only (`time1_format`, not obsolete `clock_format`)
+- Playwright forbids `deviceScaleFactor` with `viewport: null`
