@@ -51,7 +51,7 @@ import { languageLabel } from "@/lib/i18n";
 import { formatTimeAgo } from "@/lib/utils";
 import type { AgentSeat, HermesState } from "@/lib/types";
 import { subscribe, recentEvents, type AgentEvent } from "@/lib/agent-events";
-import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio, Brain } from "lucide-react";
+import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio, Brain, Monitor } from "lucide-react";
 
 /** Recent events shown in the 2D activity ticker (guaranteed fallback). */
 const TICKER_CAP = 8;
@@ -343,6 +343,7 @@ export default function FloorPage() {
       <AgentDetailDrawer
         seat={selected}
         state={stateLike}
+        computerHints={computerHints}
         open={selected !== null && drawerView === "overview"}
         onClose={closeDrawer}
         onOpenCortex={() => setDrawerView("cortex")}
@@ -466,12 +467,14 @@ function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentS
 function AgentDetailDrawer({
   seat,
   state,
+  computerHints,
   open,
   onClose,
   onOpenCortex,
 }: {
   seat: AgentSeat | null;
   state: HermesState;
+  computerHints?: ReadonlyMap<string, ComputerFloorHint>;
   open: boolean;
   onClose: () => void;
   onOpenCortex: () => void;
@@ -483,7 +486,25 @@ function AgentDetailDrawer({
       </Drawer>
     );
   }
-  const activity = agentActivity(seat, state);
+  const activity = agentActivityWithComputers(seat, state, Date.now(), computerHints);
+  const computerHint =
+    computerHints?.get(seat.id) ??
+    (seat.computerId ? computerHints?.get(seat.computerId) : undefined);
+  const vmLabel = seat.computerId
+    ? `VM …${seat.computerId.slice(-8)}`
+    : seat.provider === "LinkedIn Browser Computer"
+      ? "No VM bound"
+      : null;
+  const sessionLabel =
+    computerHint?.sessionHealthy === true
+      ? "LinkedIn session healthy"
+      : computerHint?.sessionHealthy === false
+        ? "LinkedIn session unhealthy"
+        : computerHint?.status === "ready"
+          ? "LinkedIn session unverified"
+          : computerHint?.status
+            ? `VM ${computerHint.status}`
+            : null;
   const cap = effectiveDailyCap(seat);
   const ws = warmupStage(seat);
   const health = seatHealthStatus(seat, state.settings.fleet);
@@ -502,7 +523,7 @@ function AgentDetailDrawer({
     });
 
   return (
-    <Drawer open={open} onClose={onClose} title={seat.name} description={`${seat.provider} · ${activity.label}`} width="max-w-xl">
+    <Drawer open={open} onClose={onClose} title={seat.name} description={`${seat.provider} · ${activity.label}${vmLabel ? ` · ${vmLabel}` : ""}`} width="max-w-xl">
       <div className="space-y-6 animate-fade-in">
         <div className="flex justify-center py-1">
           <AgentBot
@@ -519,6 +540,20 @@ function AgentDetailDrawer({
           </Badge>
           <Badge tone={seat.mode === "live" ? "success" : "neutral"}>{seat.mode}</Badge>
           <Badge tone={health.tone}>{health.label}</Badge>
+          {sessionLabel && (
+            <Badge
+              tone={
+                computerHint?.sessionHealthy === true
+                  ? "success"
+                  : computerHint?.sessionHealthy === false || computerHint?.status === "error"
+                    ? "danger"
+                    : "warning"
+              }
+            >
+              {sessionLabel}
+            </Badge>
+          )}
+          {vmLabel && <Badge tone="neutral">{vmLabel}</Badge>}
         </div>
 
         <button
@@ -551,6 +586,20 @@ function AgentDetailDrawer({
           <Meta icon={<Building2 className="h-4 w-4" />} label="Provider" value={seat.provider} />
           <Meta icon={<Languages className="h-4 w-4" />} label="Language" value={languageLabel(seat.language ?? "en")} />
           <Meta icon={<Clock className="h-4 w-4" />} label="Send window" value={`${seat.sendWindow.startHour}:00–${seat.sendWindow.endHour}:00 ${seat.sendWindow.timezone}`} />
+          {seat.provider === "LinkedIn Browser Computer" && (
+            <>
+              <Meta
+                icon={<Monitor className="h-4 w-4" />}
+                label="Browser Computer"
+                value={seat.computerId ?? "unassigned"}
+              />
+              <Meta
+                icon={<Activity className="h-4 w-4" />}
+                label="LinkedIn session"
+                value={sessionLabel ?? "No live VM status yet"}
+              />
+            </>
+          )}
         </dl>
 
         <div>
