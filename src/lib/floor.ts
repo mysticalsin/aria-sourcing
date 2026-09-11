@@ -122,7 +122,31 @@ export type FloorComputerHint = {
   sessionHealthy?: boolean | null;
   /** Bound Chromium id from fleet API — preferred over HermesState when present. */
   computerId?: string | null;
+  /**
+   * Fleet-bound seat for this Chromium. When set, computerId fallback must match
+   * so a poisoned/stale seat.computerId cannot show another seat's VM on the floor.
+   */
+  seatId?: string | null;
 };
+
+/**
+ * Resolve a live VM hint for a desk. Prefer seatId key; computerId fallback is
+ * allowed only when the hint is unbound (no seatId) or bound to this same seat.
+ */
+export function resolveComputerHint(
+  seat: { id: string; computerId?: string | null },
+  computers?: ReadonlyMap<string, FloorComputerHint>,
+): FloorComputerHint | undefined {
+  if (!computers) return undefined;
+  const bySeat = computers.get(seat.id);
+  if (bySeat) return bySeat;
+  const computerId = typeof seat.computerId === "string" ? seat.computerId.trim() : "";
+  if (!computerId) return undefined;
+  const byComputer = computers.get(computerId);
+  if (!byComputer) return undefined;
+  if (byComputer.seatId && byComputer.seatId !== seat.id) return undefined;
+  return byComputer;
+}
 
 export function floorRollup(
   seats: AgentSeat[],
@@ -148,9 +172,7 @@ export function floorRollup(
     // With live computer hints loaded, don't count Browser Computer seats as
     // "working" from theatrical activity alone — need ready + probed-healthy VM.
     if (computers && seat.provider === "LinkedIn Browser Computer") {
-      const hint =
-        computers.get(seat.id) ??
-        (seat.computerId ? computers.get(seat.computerId) : undefined);
+      const hint = resolveComputerHint(seat, computers);
       if (hint?.status === "ready" && hint.sessionHealthy === true) {
         working++;
       }
@@ -177,9 +199,7 @@ export function agentActivityWithComputers(
   const base = agentActivity(seat, state, now);
   if (!computers || seat.provider !== "LinkedIn Browser Computer") return base;
 
-  const hint =
-    computers.get(seat.id) ??
-    (seat.computerId ? computers.get(seat.computerId) : undefined);
+  const hint = resolveComputerHint(seat, computers);
 
   if (!hint) {
     return {

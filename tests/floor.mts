@@ -269,5 +269,62 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   }
 }
 
+
+// Poisoned/stale computerId must not let seat A display seat B's VM after FK clear.
+{
+  const a = {
+    ...s.seats.find((x) => x.provider === "LinkedIn Browser Computer")!,
+    id: "seat_poison_a",
+    computerId: "comp_seat_b_unique",
+  };
+  const b = {
+    ...a,
+    id: "seat_poison_b",
+    computerId: "comp_seat_b_unique",
+    name: "Seat B",
+  };
+  const hints = new Map([
+    [
+      b.id,
+      {
+        status: "ready" as const,
+        sessionHealthy: true as boolean | null,
+        computerId: "comp_seat_b_unique",
+        seatId: b.id,
+      },
+    ],
+    [
+      "comp_seat_b_unique",
+      {
+        status: "ready" as const,
+        sessionHealthy: true as boolean | null,
+        computerId: "comp_seat_b_unique",
+        seatId: b.id,
+      },
+    ],
+  ]);
+  const agents = seatsToOfficeAgents([a, b], s, hints);
+  const agentA = agents.find((x) => x.id === a.id)!;
+  const agentB = agents.find((x) => x.id === b.id)!;
+  ok(
+    "poisoned computerId cannot inherit another seat's healthy VM (status)",
+    agentA.status === "idle" && agentB.status === "working",
+  );
+  ok(
+    "poisoned computerId cannot inherit another seat's VM suffix",
+    !/…b_unique/i.test(agentA.subtitle || "") && /…b_unique/i.test(agentB.subtitle || ""),
+  );
+  ok(
+    "poisoned seat shows unbound host copy, not healthy session",
+    /VM not on host|No Browser Computer/i.test(agentA.subtitle || "") &&
+      !/session healthy/i.test(agentA.subtitle || ""),
+  );
+  const actA = agentActivityWithComputers(a, s, Date.now(), hints);
+  ok(
+    "poisoned computerId cannot inherit another seat's activity",
+    actA.state === "idle" && /No Browser Computer|VM not on host/i.test(actA.label),
+  );
+}
+
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

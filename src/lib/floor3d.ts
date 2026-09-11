@@ -1,5 +1,5 @@
 import type { AgentSeat, HermesState } from "@/lib/types";
-import { agentActivity } from "@/lib/floor";
+import { agentActivity, resolveComputerHint, type FloorComputerHint } from "@/lib/floor";
 import type { AgentEvent } from "@/lib/agent-events";
 import type { SoundKind } from "@/lib/sound";
 
@@ -163,11 +163,7 @@ const BUSY_STATES = new Set(["sourcing", "outreach", "booking", "warming"]);
  * states the characters understand.
  */
 /** Live computer hint — overlays VM truth onto theatrical activity. */
-export type ComputerFloorHint = {
-  status: string;
-  sessionHealthy?: boolean | null;
-  computerId?: string | null;
-};
+export type ComputerFloorHint = FloorComputerHint;
 
 export function seatsToOfficeAgents(
   seats: AgentSeat[],
@@ -182,9 +178,7 @@ export function seatsToOfficeAgents(
         ? "idle"
         : "error"; // "paused" / auto-paused → error
     let subtitle = activity.label;
-    const hint =
-      computers?.get(seat.id) ??
-      (seat.computerId ? computers?.get(seat.computerId) : undefined);
+    const hint = resolveComputerHint(seat, computers);
     if (hint) {
       if (hint.status === "help_requested" || hint.status === "error") {
         status = "error";
@@ -211,7 +205,13 @@ export function seatsToOfficeAgents(
       subtitle = seat.computerId ? "VM not on host" : "No Browser Computer";
     }
     // Surface the bound Chromium id so N agents are distinguishable on the floor.
-    const vmId = hint?.computerId || seat.computerId;
+    // Never advertise a computerId that fleet already binds to a different seat
+    // (poisoned/stale FK after reclaim or ownership clear).
+    let vmId = hint?.computerId || null;
+    if (!vmId && seat.computerId && seat.provider === "LinkedIn Browser Computer") {
+      const claimed = computers?.get(seat.computerId);
+      if (!claimed?.seatId || claimed.seatId === seat.id) vmId = seat.computerId;
+    }
     if (seat.provider === "LinkedIn Browser Computer" && vmId) {
       subtitle = `${subtitle} · …${vmId.slice(-8)}`;
     }

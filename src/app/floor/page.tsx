@@ -30,7 +30,12 @@ import {
   useSettings,
   useActions,
 } from "@/lib/store";
-import { agentActivity, agentActivityWithComputers, floorRollup } from "@/lib/floor";
+import {
+  agentActivity,
+  agentActivityWithComputers,
+  floorRollup,
+  resolveComputerHint,
+} from "@/lib/floor";
 import {
   EVENT_COLOR,
   EVENT_SOUND,
@@ -132,6 +137,9 @@ export default function FloorPage() {
             status: c.status,
             sessionHealthy: c.sessionHealthy,
             computerId: c.computerId,
+            // Bind hint to fleet seatId so a stale computerId on another desk
+            // cannot inherit this VM after a poisoned FK clear / reclaim.
+            seatId: c.seatId,
           };
           map.set(c.seatId, hint);
           map.set(c.computerId, hint);
@@ -395,9 +403,7 @@ function Floor3DSection({
     if (!pulsingSeatIds.has(a.id) || a.status === "working") return a;
     const seat = seats.find((s) => s.id === a.id);
     if (seat?.provider === "LinkedIn Browser Computer") {
-      const hint =
-        computerHints?.get(seat.id) ??
-        (seat.computerId ? computerHints?.get(seat.computerId) : undefined);
+      const hint = resolveComputerHint(seat, computerHints);
       if (!hint || hint.status !== "ready" || hint.sessionHealthy !== true) return a;
     }
     return { ...a, status: "working" as const };
@@ -495,9 +501,7 @@ function AgentDetailDrawer({
     );
   }
   const activity = agentActivityWithComputers(seat, state, Date.now(), computerHints);
-  const computerHint =
-    computerHints?.get(seat.id) ??
-    (seat.computerId ? computerHints?.get(seat.computerId) : undefined);
+  const computerHint = resolveComputerHint(seat, computerHints);
   const boundComputerId = computerHint?.computerId || seat.computerId;
   const vmLabel = boundComputerId
     ? `VM …${boundComputerId.slice(-8)}`
