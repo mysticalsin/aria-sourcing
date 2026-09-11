@@ -184,6 +184,43 @@ try {
   ok("ensureComputer rebinds to stable computerId", rebound.computerId === "comp_stable_db_id");
   ok("botId follows stable computerId", rebound.botId?.includes("comp") === true);
 
+  // Live / probed seats must not silently retarget to a stale client computerId.
+  {
+    const liveSup = new ComputerSupervisor();
+    const live = liveSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-live-bind",
+      computerId: "comp_live_durable",
+    });
+    live.status = "ready";
+    live.sessionHealthy = true;
+    const kept = liveSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-live-bind",
+      computerId: "comp_stale_client",
+    });
+    ok(
+      "ensureComputer refuses probed-healthy retarget to stale client id",
+      kept.computerId === "comp_live_durable",
+    );
+    ok(
+      "stale client id is not registered after refused retarget",
+      liveSup.get("comp_stale_client") == null,
+    );
+    live.sessionHealthy = null;
+    live.control = "human";
+    const keptHuman = liveSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-live-bind",
+      computerId: "comp_stale_human",
+    });
+    ok(
+      "ensureComputer refuses human-control retarget",
+      keptHuman.computerId === "comp_live_durable",
+    );
+  }
+
+
   // Ownership: one computerId must not be claimed by a second seat.
   {
     const ownSup = new ComputerSupervisor();

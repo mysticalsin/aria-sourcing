@@ -2608,17 +2608,31 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const profile = (candidate.linkedinUrl ?? "").trim();
       if (!profile) return { ok: false, error: "Candidate has no LinkedIn profile URL." };
 
-      const linkedInSeat =
-        s.seats.find(
-          (seat) =>
-            seat.status === "active" &&
-            (seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API" || seat.provider === "LinkedIn Browser Computer") &&
-            seat.mode === "live",
-        ) ??
-        s.seats.find(
-          (seat) =>
-            seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API" || seat.provider === "LinkedIn Browser Computer",
-        );
+      const isLinkedInSeat = (seat: (typeof s.seats)[number]) =>
+        seat.provider === "LinkedIn Assisted Manual" ||
+        seat.provider === "LinkedIn Vendor API" ||
+        seat.provider === "LinkedIn Browser Computer";
+      let linkedInSeat =
+        msg.seatId != null && msg.seatId !== ""
+          ? s.seats.find((seat) => seat.id === msg.seatId && isLinkedInSeat(seat))
+          : undefined;
+      if (msg.seatId && !linkedInSeat) {
+        return {
+          ok: false,
+          error: "Message seatId is not a LinkedIn seat — cannot confirm on another desk.",
+        };
+      }
+      if (!linkedInSeat) {
+        const liSeats = s.seats.filter(isLinkedInSeat);
+        if (liSeats.length > 1) {
+          return {
+            ok: false,
+            error: "Message has no seatId; cannot attribute confirm across N LinkedIn seats.",
+          };
+        }
+        linkedInSeat =
+          liSeats.find((seat) => seat.status === "active" && seat.mode === "live") ?? liSeats[0];
+      }
 
       if (supabaseEnabled) {
         if (!linkedInSeat) {

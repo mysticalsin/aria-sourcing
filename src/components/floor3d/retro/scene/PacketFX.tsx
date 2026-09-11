@@ -15,7 +15,7 @@ import { subscribe, type AgentEvent } from "@/lib/agent-events";
 import type { RenderAgent } from "../core/types";
 import { toWorld } from "../core/geometry";
 import { CANVAS_H, CANVAS_W } from "../core/constants";
-import { EVENT_COLOR, PACKET_FLIGHT_MS, PULSE_MS, pickResponderIndex } from "@/lib/floor3d";
+import { EVENT_COLOR, PACKET_FLIGHT_MS, PULSE_MS } from "@/lib/floor3d";
 
 export interface PacketFXProps {
   /** Live, ref-driven agent records (agentTick.ts). Read-only here. */
@@ -91,13 +91,13 @@ export function PacketFX({ agentsRef, ceoId }: PacketFXProps) {
   useEffect(() => {
     const unsubscribe = subscribe((e: AgentEvent) => {
       const agents = agentsRef.current ?? [];
-      const employees = ceoId ? agents.filter((a) => a.id !== ceoId) : agents;
-      const source =
-        (e.seatId ? agents.find((a) => a.id === e.seatId) : undefined) ??
-        (employees.length > 0 ? employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))] : undefined);
+      // Seatless events must not hash-paint a random LI desk (floor page already fail-closed).
+      if (!e.seatId) return;
+      const source = agents.find((a) => a.id === e.seatId);
+      if (!source) return;
 
       const hub = resolveHub();
-      const fromXY = source ? { x: source.x, y: source.y } : hub;
+      const fromXY = { x: source.x, y: source.y };
 
       const [fx, , fz] = toWorld(fromXY.x, fromXY.y);
       const [hx, , hz] = toWorld(hub.x, hub.y);

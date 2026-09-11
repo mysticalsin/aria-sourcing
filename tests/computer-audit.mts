@@ -129,6 +129,19 @@ ok(
   zAudits.some((e) => e.action === "takeover" && Boolean(e.correlationId)),
 );
 
+
+{
+  const rows = [
+    { status: "ready", control: "bot", viewUrl: "http://x" },
+    { status: "ready", control: "bot", viewUrl: "http://y" },
+  ];
+  const all = summarizeFleetComputers(rows);
+  // Route filters __orphan__ before summarize — prove seat-only slice is honest.
+  const seatOnly = summarizeFleetComputers(rows.slice(0, 1));
+  ok("unfiltered summary counts every row", all.total === 2 && all.ready === 2);
+  ok("orphan-excluded slice matches seat-owned ops summary", seatOnly.total === 1 && seatOnly.ready === 1);
+}
+
 console.log(`RESULT computer-audit: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
 

@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
       const hostCapacity = await hostCapacityFromEnv();
       return NextResponse.json({
         computers,
-        summary: summarizeFleetComputers(computers),
+        summary: summarizeFleetComputers(computers.filter((c) => c.seatId !== HOST_ORPHAN_SEAT_ID)),
         recentAudits,
         hostCapacity,
       });
@@ -191,7 +191,7 @@ export async function GET(req: NextRequest) {
     const hostCapacity = await hostCapacityFromEnv();
     return NextResponse.json({
       computers: enriched,
-      summary: summarizeFleetComputers(enriched),
+      summary: summarizeFleetComputers(enriched.filter((c) => c.seatId !== HOST_ORPHAN_SEAT_ID)),
       recentAudits,
       hostCapacity,
     });

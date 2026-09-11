@@ -288,15 +288,34 @@ export class ComputerSupervisor {
         c.seatId !== HOST_ORPHAN_SEAT_ID,
     );
     if (existing) {
-      // Prefer stable DB computer_id so OpenBot bot ids match across processes.
+      // Prefer stable DB computer_id so OpenBot bot ids match across processes —
+      // but never silently retarget a live / probed / human-held VM (stale poll race).
       if (opts.computerId && existing.computerId !== opts.computerId) {
-        this.computers.delete(existing.computerId);
-        existing.computerId = opts.computerId;
-        existing.botId = toOpenBotBotId(opts.computerId);
-        this.computers.set(opts.computerId, existing);
-        this.audit(opts.computerId, "ensure", `Rebound seat ${opts.seatId} to stable computer id`, "system", {
-          campaignId: opts.campaignId,
-        });
+        // Block only when retarget would steal a mutex / probed-green / in-flight VM.
+        // ready+remoteUrl alone must still allow stopped→stable-DB id migration.
+        const live =
+          existing.control === "human" ||
+          existing.sessionHealthy === true ||
+          existing.status === "busy" ||
+          existing.status === "starting" ||
+          existing.status === "help_requested";
+        if (live) {
+          this.audit(
+            existing.computerId,
+            "ensure",
+            `Refused client retarget to ${opts.computerId}; seat live on ${existing.computerId}`,
+            "system",
+            { campaignId: opts.campaignId },
+          );
+        } else {
+          this.computers.delete(existing.computerId);
+          existing.computerId = opts.computerId;
+          existing.botId = toOpenBotBotId(opts.computerId);
+          this.computers.set(opts.computerId, existing);
+          this.audit(opts.computerId, "ensure", `Rebound seat ${opts.seatId} to stable computer id`, "system", {
+            campaignId: opts.campaignId,
+          });
+        }
       }
       if (opts.campaignId) existing.campaignId = opts.campaignId;
       return existing;
