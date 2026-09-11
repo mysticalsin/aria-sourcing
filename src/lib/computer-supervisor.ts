@@ -226,6 +226,12 @@ export class ComputerSupervisor {
     if (opts.computerId) {
       const byId = this.computers.get(opts.computerId);
       if (byId) {
+        // Never share one Chromium profile across seats/workspaces.
+        if (byId.workspaceId !== opts.workspaceId || byId.seatId !== opts.seatId) {
+          throw new Error(
+            `computer-ownership-mismatch: ${opts.computerId} belongs to seat ${byId.seatId} (workspace ${byId.workspaceId}), not seat ${opts.seatId}`,
+          );
+        }
         if (opts.campaignId) byId.campaignId = opts.campaignId;
         return byId;
       }
@@ -396,17 +402,26 @@ export class ComputerSupervisor {
         this.audit(computerId, "start_failed", rec.lastError, "system");
         return rec;
       }
-    } else {
-      // No remote OpenBot host yet — still give operators an in-Aria control
-      // surface so Take control / Release work visibly in Fleet.
+    } else if (supervisorMockSend()) {
+      // Tests / local mock only — not a real Chromium. Never mark ready without
+      // OpenBot unless mock send is explicitly enabled.
       rec.remoteUrl = `/fleet/computers/${encodeURIComponent(computerId)}/viewport`;
       rec.viewUrl = rec.remoteUrl;
       this.audit(
         computerId,
         "start_local_viewport",
-        "OpenBot supervisor unset — using Aria operator viewport for Take control",
+        "OpenBot supervisor unset — mock viewport for tests (COMPUTER_SUPERVISOR_MOCK_SEND=1)",
         "system",
       );
+    } else {
+      rec.status = "error";
+      rec.lastError =
+        "OpenBot supervisor unset. Set COMPUTER_SUPERVISOR_URL + token (or COMPUTER_SUPERVISOR_MOCK_SEND=1 for tests).";
+      rec.remoteUrl = null;
+      rec.viewUrl = null;
+      rec.updatedAt = isoNow();
+      this.audit(computerId, "start_failed", rec.lastError, "system");
+      return rec;
     }
 
     rec.status = "ready";

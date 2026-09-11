@@ -122,6 +122,44 @@ try {
   ok("ensureComputer rebinds to stable computerId", rebound.computerId === "comp_stable_db_id");
   ok("botId follows stable computerId", rebound.botId?.includes("comp") === true);
 
+  // Ownership: one computerId must not be claimed by a second seat.
+  {
+    const ownSup = new ComputerSupervisor();
+    ownSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-owner",
+      computerId: "comp_owned",
+    });
+    let threw = false;
+    try {
+      ownSup.ensureComputer({
+        workspaceId: "ws",
+        seatId: "seat-thief",
+        computerId: "comp_owned",
+      });
+    } catch (err) {
+      threw = err instanceof Error && err.message.includes("computer-ownership-mismatch");
+    }
+    ok("ensureComputer rejects cross-seat computerId", threw);
+  }
+
+  // Without OpenBot + without mock, start must not invent ready.
+  {
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "0";
+    delete process.env.COMPUTER_SUPERVISOR_URL;
+    delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    const bare = new ComputerSupervisor();
+    const seat = bare.ensureComputer({ workspaceId: "ws", seatId: "seat-bare" });
+    const started = await bare.start(seat.computerId);
+    ok("start without OpenBot does not invent ready", started.status === "error");
+    ok(
+      "start without OpenBot explains supervisor unset",
+      /supervisor unset|COMPUTER_SUPERVISOR/i.test(started.lastError ?? ""),
+    );
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+  }
+
+
   // Fail-closed path audits act_failed with jobId when mock send is off
   process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "0";
   const failSup = new ComputerSupervisor();

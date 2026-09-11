@@ -123,14 +123,27 @@ export async function GET(req: NextRequest) {
     const computers = [];
     for (const seat of seats ?? []) {
       const hadId = Boolean(seat.computer_id);
-      const rec = defaultComputerSupervisor.ensureComputer({
-        workspaceId: String(wid),
-        seatId: seat.id,
-        computerId: seat.computer_id ?? undefined,
-        campaignId,
-      });
+      let rec;
+      try {
+        rec = defaultComputerSupervisor.ensureComputer({
+          workspaceId: String(wid),
+          seatId: seat.id,
+          computerId: seat.computer_id ?? undefined,
+          campaignId,
+        });
+      } catch (err) {
+        // Collision: seat row pointed at another seat's computer — mint a fresh id.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("computer-ownership-mismatch")) throw err;
+        console.warn("computer_id ownership mismatch; reminting", seat.id, msg);
+        rec = defaultComputerSupervisor.ensureComputer({
+          workspaceId: String(wid),
+          seatId: seat.id,
+          campaignId,
+        });
+      }
       // Persist minted computer ids so floor/campaign filters stay stable across processes.
-      if (!hadId && rec.computerId) {
+      if ((!hadId || rec.computerId !== seat.computer_id) && rec.computerId) {
         void supabase
           .from("agent_seats")
           .update({ computer_id: rec.computerId })
