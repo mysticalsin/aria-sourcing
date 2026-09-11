@@ -18,6 +18,7 @@ import type { AgentSeat } from "@/lib/types";
 import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
 import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
 import { useActions, useSettings } from "@/lib/store";
+import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
 
 type AuditEvent = {
   id?: string;
@@ -142,13 +143,9 @@ export function CampaignAgentsPanel({
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
-      // Align Hermes computerId with DB-backed fleet rows after reclaim.
-      for (const row of rows) {
-        if (!row.seatId || !row.computerId || row.seatId === "__orphan__") continue;
-        const seat = campaignSeats.find((s) => s.id === row.seatId);
-        if (seat && seat.computerId !== row.computerId) {
-          void actions.updateSeat(seat.id, { computerId: row.computerId });
-        }
+      // Write owned bindings + clear Hermes when computerId is owned by another seat.
+      for (const patch of fleetHermesComputerPatches(campaignSeats, rows)) {
+        void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
       }
 
       const campaignAudits = (data.recentAudits ?? []).filter(

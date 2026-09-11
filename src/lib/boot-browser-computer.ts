@@ -41,14 +41,26 @@ export async function resolveDurableComputerId(opts: {
       }),
     });
     const json = (await res.json().catch(() => null)) as {
+      error?: string;
       sessionHealthy?: boolean | null;
       computer?: { computerId?: string; sessionHealthy?: boolean | null };
     } | null;
-    const healthy =
-      json?.sessionHealthy === true || json?.computer?.sessionHealthy === true;
-    const nextId = json?.computer?.computerId?.trim();
-    // Never invent healthy — only accept ids the supervisor probed true.
-    if (healthy && nextId) return nextId;
+    if (!res.ok) {
+      const err = (json?.error ?? "").toLowerCase();
+      // Foreign Hermes id — mint rather than reuse another seat's VM.
+      if (
+        existing &&
+        /ownership-mismatch|orphan-claim-blocked|no-healthy-orphan/.test(err)
+      ) {
+        return `comp_${globalThis.crypto.randomUUID()}`;
+      }
+    } else {
+      const healthy =
+        json?.sessionHealthy === true || json?.computer?.sessionHealthy === true;
+      const nextId = json?.computer?.computerId?.trim();
+      // Never invent healthy — only accept ids the supervisor probed true.
+      if (healthy && nextId) return nextId;
+    }
   } catch {
     /* keep existing or mint below */
   }

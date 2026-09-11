@@ -9,6 +9,10 @@ import { supabaseEnabled } from "@/lib/supabase/config";
 import { isLinkedInSeatProvider } from "@/lib/linkedin-connections";
 import { resolveDurableComputerId } from "@/lib/boot-browser-computer";
 import {
+  fleetHermesComputerPatches,
+  computerHealthOwnedBySeat,
+} from "@/lib/fleet-hermes-sync";
+import {
   ConnectedIdentityBanner,
   ConnectionListItem,
   ConnectionStep,
@@ -155,33 +159,42 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
             hostCapacity?: { computers: number; max: number } | null;
           };
           if (fleet.hostCapacity) setHostCapacity(fleet.hostCapacity);
+          const computers = fleet.computers ?? [];
           const bySeatHealth = new Map(
-            (fleet.computers ?? [])
+            computers
               .filter((c) => c.seatId)
               .map((c) => [c.seatId!, c.sessionHealthy ?? null] as const),
           );
           const byCompHealth = new Map(
-            (fleet.computers ?? [])
+            computers
               .filter((c) => c.computerId)
               .map((c) => [c.computerId!, c.sessionHealthy ?? null] as const),
           );
           const bySeatComputer = new Map(
-            (fleet.computers ?? [])
+            computers
               .filter((c) => c.seatId && c.computerId && c.seatId !== "__orphan__")
               .map((c) => [c.seatId!, c.computerId!] as const),
           );
+          // Write owned bindings + clear Hermes when computerId is owned by another seat.
+          for (const patch of fleetHermesComputerPatches(nextSeats, computers)) {
+            void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
+          }
           nextSeats = nextSeats.map((s) => {
             const fleetComputerId = bySeatComputer.get(s.id);
-            if (fleetComputerId && fleetComputerId !== s.computerId) {
-              // Authoritative DB/fleet binding wins over stale Hermes after reclaim.
-              void actions.updateSeat(s.id, { computerId: fleetComputerId });
-            }
+            const patched = fleetHermesComputerPatches([s], computers)[0];
+            const computerId =
+              fleetComputerId ??
+              (patched && patched.computerId === null ? null : s.computerId);
             // Fleet overlay is authoritative: a present key with null must not
             // fall through to a stale local sessionHealthy=true (no probe).
             const fromSeat = s.id && bySeatHealth.has(s.id) ? bySeatHealth.get(s.id)! : undefined;
-            const compKey = fleetComputerId || s.computerId || "";
+            const compKey = computerId || "";
+            // computerId-keyed health only when that VM is unbound/orphan or ours.
             const fromComp =
-              fromSeat === undefined && compKey && byCompHealth.has(compKey)
+              fromSeat === undefined &&
+              compKey &&
+              byCompHealth.has(compKey) &&
+              computerHealthOwnedBySeat(s.id, compKey, computers)
                 ? byCompHealth.get(compKey)!
                 : undefined;
             const sessionHealthy =
@@ -192,7 +205,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
                   : null;
             return {
               ...s,
-              computerId: fleetComputerId || s.computerId,
+              computerId: computerId ?? null,
               sessionHealthy,
             };
           });

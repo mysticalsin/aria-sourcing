@@ -270,7 +270,10 @@ export async function POST(req: NextRequest) {
     let reclaimed = false;
     switch (body.action) {
       case "ensure": {
-        const seatId = (body.seatId ?? computerId).trim();
+        const seatId = (body.seatId ?? "").trim();
+        if (!seatId) {
+          return NextResponse.json({ error: "seatId required for ensure" }, { status: 400 });
+        }
         rec = defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
           seatId,
@@ -305,9 +308,13 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "url required for navigate" }, { status: 400 });
         }
         // Ensure the seat exists, then enqueue a warmup_nav job (AriaBot Chromium).
+        const navSeatId = (body.seatId ?? "").trim();
+        if (!navSeatId) {
+          return NextResponse.json({ error: "seatId required for navigate" }, { status: 400 });
+        }
         defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
-          seatId: (body.seatId ?? computerId).trim(),
+          seatId: navSeatId,
           computerId,
           campaignId: body.campaignId,
         });
@@ -328,9 +335,13 @@ export async function POST(req: NextRequest) {
       }
       case "session_probe": {
         // Ensure in-memory row exists for durable computerId, then probe LinkedIn cookies.
+        const probeSeatId = (body.seatId ?? "").trim();
+        if (!probeSeatId) {
+          return NextResponse.json({ error: "seatId required for session_probe" }, { status: 400 });
+        }
         defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
-          seatId: (body.seatId ?? computerId).trim(),
+          seatId: probeSeatId,
           computerId,
           campaignId: body.campaignId,
         });

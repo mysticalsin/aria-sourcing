@@ -101,6 +101,22 @@ try {
   ok("posts reclaim_healthy_orphan", body.action === "reclaim_healthy_orphan");
   ok("posts seatId", body.seatId === "seat_post");
   ok("posts existing computerId for probe", body.computerId === "comp_prev");
+
+  // Ownership mismatch on reclaim must mint — never keep another seat's VM id.
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "computer-ownership-mismatch: foreign" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+
+  const reminted = await resolveDurableComputerId({
+    seatId: "seat_foreign",
+    existingComputerId: "comp_other_seat",
+  });
+  ok(
+    "ownership mismatch mints new id",
+    reminted.startsWith("comp_") && reminted !== "comp_other_seat",
+  );
 } finally {
   globalThis.fetch = originalFetch;
 }

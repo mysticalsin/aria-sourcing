@@ -28,6 +28,7 @@ import {
   type FleetOpsSummary,
 } from "@/components/fleet/fleet-computer-ops-board";
 import { AllocationResultView } from "@/components/fleet/allocation-result";
+import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
 import {
   useHydrated,
   useSeats,
@@ -224,13 +225,9 @@ export default function FleetPage() {
       setOpsSummary(data.summary ?? null);
       setFleetAudits(data.recentAudits ?? []);
       if (data.hostCapacity) setHostCapacity(data.hostCapacity);
-      // Keep Hermes seat.computerId aligned with DB-backed fleet rows (post-reclaim).
-      for (const row of rows) {
-        if (!row.seatId || !row.computerId || row.seatId === "__orphan__") continue;
-        const seat = browserSeats.find((s) => s.id === row.seatId);
-        if (seat && seat.computerId !== row.computerId) {
-          void actions.updateSeat(seat.id, { computerId: row.computerId });
-        }
+      // Write owned bindings + clear Hermes when computerId is owned by another seat.
+      for (const patch of fleetHermesComputerPatches(browserSeats, rows)) {
+        void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
       }
       // In demo (no Supabase seats on the API), re-GET once if the first list is empty.
       if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {

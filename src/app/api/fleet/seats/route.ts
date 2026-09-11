@@ -103,8 +103,9 @@ export async function POST(req: NextRequest) {
   if (!actor.supabase) return NextResponse.json({ ok: true, demo: true });
 
   const isBrowserComputer = seat.provider === "LinkedIn Browser Computer";
-  // Null until Deploy/Login/Attach reclaim-or-mint — never pre-mint a blank Chromium id.
-  const computerId = seat.computerId?.trim() || null;
+  // Always null on create — Deploy/Login/Attach reclaim-or-mint binds a durable id.
+  // Ignore any client-supplied computerId (never pre-mint a blank Chromium profile).
+  const computerId = null;
   const linkedinDeliveryBackend =
     seat.linkedinDeliveryBackend ??
     (isBrowserComputer ? "browser-computer" : null);

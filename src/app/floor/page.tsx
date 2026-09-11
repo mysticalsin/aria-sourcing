@@ -36,6 +36,7 @@ import {
   floorRollup,
   resolveComputerHint,
 } from "@/lib/floor";
+import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
 import {
   EVENT_COLOR,
   EVENT_SOUND,
@@ -145,14 +146,10 @@ export default function FloorPage() {
           // (last orphan would overwrite and bleed onto unbound desks).
           if (c.seatId && c.seatId !== "__orphan__") map.set(c.seatId, hint);
           if (c.computerId) map.set(c.computerId, hint);
-          // Keep Hermes seat.computerId aligned with DB-backed fleet (post-reclaim),
-          // same as Fleet/Campaign polls — floor hints alone do not fix send paths.
-          if (c.seatId && c.computerId && c.seatId !== "__orphan__") {
-            const seat = seatsRef.current.find((s) => s.id === c.seatId);
-            if (seat && seat.computerId !== c.computerId) {
-              void actions.updateSeat(seat.id, { computerId: c.computerId });
-            }
-          }
+        }
+        // Write owned bindings + clear Hermes when computerId is owned by another seat.
+        for (const patch of fleetHermesComputerPatches(seatsRef.current, data.computers ?? [])) {
+          void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
         }
         if (!cancelled) setComputerHints(map);
       } catch {

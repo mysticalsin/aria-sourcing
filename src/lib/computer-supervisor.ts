@@ -545,15 +545,21 @@ export class ComputerSupervisor {
 
     const currentId = typeof opts.computerId === "string" ? opts.computerId.trim() : "";
     if (currentId) {
-      this.ensureComputer({
-        workspaceId: opts.workspaceId,
-        seatId: opts.seatId,
-        computerId: currentId,
-        campaignId: opts.campaignId,
-      });
-      const current = await this.probeSession(currentId);
-      if (current.sessionHealthy === true) {
-        return { computer: current, reclaimed: false };
+      try {
+        this.ensureComputer({
+          workspaceId: opts.workspaceId,
+          seatId: opts.seatId,
+          computerId: currentId,
+          campaignId: opts.campaignId,
+        });
+        const current = await this.probeSession(currentId);
+        if (current.sessionHealthy === true) {
+          return { computer: current, reclaimed: false };
+        }
+      } catch (err) {
+        // Foreign / blocked id — fall through to orphan reclaim (do not keep another seat's VM).
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/ownership-mismatch|orphan-claim-blocked/.test(msg)) throw err;
       }
     }
 
@@ -575,8 +581,15 @@ export class ComputerSupervisor {
     }
 
     if (currentId) {
-      const fallback = this.require(currentId);
-      return { computer: fallback, reclaimed: false };
+      const fallback = this.computers.get(currentId);
+      // Only keep the stored id when it is still ours (or unbound orphan we already probed unhealthy).
+      if (
+        fallback &&
+        fallback.workspaceId === opts.workspaceId &&
+        (fallback.seatId === opts.seatId || fallback.seatId === HOST_ORPHAN_SEAT_ID)
+      ) {
+        return { computer: fallback, reclaimed: false };
+      }
     }
     throw new Error("no-healthy-orphan");
   }

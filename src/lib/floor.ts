@@ -167,7 +167,17 @@ export function floorRollup(
       warming++;
       continue;
     }
-    if (a.state === "idle") continue;
+    // Theatrical idle still counts as working when the live VM is ready+healthy
+    // (otherwise 3D can show working while the rollup omits the desk).
+    if (a.state === "idle") {
+      if (computers && seat.provider === "LinkedIn Browser Computer") {
+        const hint = resolveComputerHint(seat, computers);
+        if (hint?.status === "ready" && hint.sessionHealthy === true) {
+          working++;
+        }
+      }
+      continue;
+    }
 
     // With live computer hints loaded, "Working now" is VM-truth mode:
     // Browser Computer seats need ready + probed-healthy; other seats need real
