@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   Bot,
   ExternalLink,
@@ -327,6 +328,12 @@ export function CampaignAgentsPanel({
             <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} aria-hidden />
             Refresh
           </Button>
+          <Link
+            href="/fleet"
+            className="inline-flex h-9 items-center rounded-full bg-ink px-3.5 text-sm font-semibold text-paper hover:bg-ink/90"
+          >
+            Allocate on Fleet
+          </Link>
         </div>
       </div>
 
@@ -336,7 +343,11 @@ export function CampaignAgentsPanel({
         <div className="px-5 py-8 text-sm text-muted">
           <p>
             No Browser Computer agents are attached to this campaign yet. Attach a LinkedIn Browser
-            Computer seat below (or create one in Settings → LinkedIn / Fleet).
+            Computer seat below, or open{" "}
+            <Link href="/fleet" className="font-medium text-electric underline-offset-2 hover:underline">
+              Fleet
+            </Link>{" "}
+            to deploy/boot VMs (host cap applies).
           </p>
           {availableToAttach.length > 0 && onAssignSeat ? (
             <ul className="mt-4 space-y-2">

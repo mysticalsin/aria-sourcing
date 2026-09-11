@@ -131,9 +131,9 @@ The product has a **real Fly spine** (app + Kong/Supabase + Chromium computers).
 5. Keep COMPUTER_SUPERVISOR_* only on Fly app secrets (never Vercel).
 
 ### P1 — breaks seamless UX
-1. ~~Allocate CTA on Outreach.~~ **done** (Campaign detail still needs one)  
+1. ~~Allocate CTA on Outreach.~~ **done** — Campaign agents panel also has **Allocate on Fleet**  
 2. ~~Rename Replies “Send reply” → “Queue draft reply”.~~ **done**  
-3. Applicants reject: don’t claim email send if status-only.  
+3. ~~Applicants reject: don’t claim email send if status-only.~~ **done** (Applicant inbox confirm + toast)  
 4. Schedules: hide or wire a real runner.  
 5. Setup guide: complete Take-control / first-send steps from real probes.  
 6. Emit `seatId` on source events when a Browser Computer ran search.  

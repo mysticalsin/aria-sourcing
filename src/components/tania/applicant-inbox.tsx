@@ -79,10 +79,23 @@ export function ApplicantInbox() {
   };
 
   const reject = async (s: ChatboxSubmission) => {
-    if (!(await confirm({ title: `Reject ${s.firstName} ${s.lastName}?`, description: "Sends a stage-appropriate rejection (batch-approved) and offers the talent pool.", confirmLabel: "Reject + pool", danger: true }))) return;
+    if (
+      !(await confirm({
+        title: `Reject ${s.firstName} ${s.lastName}?`,
+        description:
+          "Marks this application rejected and offers the talent pool. Does not send email yet — draft outreach separately if you want a written rejection.",
+        confirmLabel: "Reject + pool",
+        danger: true,
+      }))
+    )
+      return;
     actions.setChatboxSubmissionStatus(s.id, "rejected");
     setOpenId(null);
-    toast({ title: "Application rejected", description: "Candidate offered the talent pool.", variant: "warning" });
+    toast({
+      title: "Application rejected",
+      description: "Status updated + talent-pool offer recorded. No email was sent.",
+      variant: "warning",
+    });
   };
 
   const markReviewed = (s: ChatboxSubmission) => {
