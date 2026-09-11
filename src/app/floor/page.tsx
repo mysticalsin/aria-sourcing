@@ -68,9 +68,11 @@ export default function FloorPage() {
   const settings = useSettings();
   const actions = useActions();
   const soundEnabled = settings.soundEnabled;
+  // Empty Map (not undefined) so LinkedIn Browser Computer seats fail closed to
+  // "No Browser Computer" / idle until the first fleet poll — no theatrical working.
   const [computerHints, setComputerHints] = React.useState<
-    ReadonlyMap<string, ComputerFloorHint> | undefined
-  >(undefined);
+    ReadonlyMap<string, ComputerFloorHint>
+  >(() => new Map());
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   // Which panel the selection drawer shows — "overview" (AgentDetailDrawer,
   // unchanged) or "cortex" (3.2 Glass Cortex). Mutually exclusive so only one
@@ -110,7 +112,12 @@ export default function FloorPage() {
     const load = async () => {
       try {
         const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
-        if (!res.ok || cancelled) return;
+        if (!res.ok) {
+          // Keep an empty map so LI seats stay fail-closed (not theatrical).
+          if (!cancelled) setComputerHints(new Map());
+          return;
+        }
+        if (cancelled) return;
         const data = (await res.json()) as {
           computers?: {
             computerId: string;
@@ -131,7 +138,7 @@ export default function FloorPage() {
         }
         if (!cancelled) setComputerHints(map);
       } catch {
-        /* floor still works from seat activity alone */
+        if (!cancelled) setComputerHints(new Map());
       }
     };
     void load();

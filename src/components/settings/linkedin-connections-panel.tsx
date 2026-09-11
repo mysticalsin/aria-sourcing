@@ -936,7 +936,15 @@ export function LinkedInIdentityStep({
               >
                 <ConnectionListItem
                   title={s.name}
-                  meta={`${s.oauthProfile?.displayName || s.connectedAccount || s.operatorEmail || "No identity"} · ${s.inboundRoute?.active ? "inbound route OK" : "inbound route missing"}`}
+                  meta={`${s.oauthProfile?.displayName || s.connectedAccount || s.operatorEmail || "No identity"} · ${
+                    s.provider === "LinkedIn Browser Computer"
+                      ? s.computerId
+                        ? `VM …${s.computerId.slice(-8)}`
+                        : "VM unassigned"
+                      : s.inboundRoute?.active
+                        ? "inbound route OK"
+                        : "inbound route missing"
+                  }`}
                   healthy={ready}
                   badges={
                     <>

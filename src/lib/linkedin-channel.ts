@@ -178,6 +178,18 @@ const browserComputerAdapter: LinkedInAdapter = {
         detail: "seatId is required so the supervisor can bind 1 seat → 1 computer.",
       };
     }
+    // Never mint a throwaway computerId on the send path — that orphans the
+    // operator's logged-in Chromium and collapses N seats onto ephemeral bots.
+    const durableComputerId = (req.computerId || "").trim();
+    if (!durableComputerId) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail:
+          "computerId is required (agent_seats.computer_id). Deploy / attach the seat so it has a durable Browser Computer id before send.",
+      };
+    }
 
     const bind = {
       url: req.credentials?.computerSupervisorUrl,
@@ -204,7 +216,7 @@ const browserComputerAdapter: LinkedInAdapter = {
       const computer = defaultComputerSupervisor.ensureComputer({
         workspaceId: req.workspaceId,
         seatId: req.seatId,
-        computerId: req.computerId,
+        computerId: durableComputerId,
         campaignId: req.campaignId,
       });
       if (computer.control === "human") {

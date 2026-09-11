@@ -350,6 +350,17 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
           continue;
         }
+        // Browser Computer send must use the durable DB computer_id — never mint on dispatch.
+        if (
+          seat.provider === "LinkedIn Browser Computer" &&
+          !(typeof seat.computer_id === "string" && seat.computer_id.trim())
+        ) {
+          await finish("blocked", {
+            pass: false,
+            reasons: ["linkedin-computer-id-missing"],
+          });
+          continue;
+        }
         const linkedInRefs = await loadLinkedInCredentialRefsForWorkspace(msg.workspace_id);
         const linkedInCreds = await resolveLinkedInCredentialsForWorkspace(
           msg.workspace_id,

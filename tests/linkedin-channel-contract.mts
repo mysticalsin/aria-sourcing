@@ -154,8 +154,8 @@ ok(
     dispatch.indexOf("campaignId") > dispatch.indexOf('msg.channel === "LinkedIn"'),
 );
 ok(
-  "store picks campaign-scoped LinkedIn send seat",
-  /pickLiveLinkedInSendSeat\(s\.seats, msg\.campaignId\)/.test(
+  "store picks campaign-scoped LinkedIn send seat (prefers msg.seatId when set)",
+  /pickLiveLinkedInSendSeat\(s\.seats, msg\.campaignId,\s*msg\.seatId\)/.test(
     readFileSync("src/lib/store.ts", "utf8"),
   ),
 );
@@ -173,6 +173,31 @@ ok(
     );
     bindComputerSupervisorEndpoint({ mockSend: true });
     const browser = getLinkedInAdapter("browser-computer");
+
+    const missingComputer = await browser.deliver({
+      workspaceId: "ws-1",
+      messageId: "m-li-no-comp",
+      candidateId: "cand-1",
+      campaignId: "camp_seed_backend",
+      profileUrl: "https://www.linkedin.com/in/marco-rossi",
+      subject: "Java role",
+      body: "Hello from Aria",
+      attemptId: "11111111-1111-4111-8111-111111111111",
+      seatId: "seat_java_vm_01",
+      // computerId intentionally omitted — send must fail closed (no ephemeral mint).
+      credentials: { computerSupervisorMockSend: true },
+    });
+    ok(
+      "browser-computer deliver fails closed without durable computerId",
+      missingComputer.status === "error" &&
+        missingComputer.deliveryState === "not-sent" &&
+        /computerId is required/i.test(missingComputer.detail),
+    );
+    ok(
+      "browser-computer without computerId does not register an ephemeral computer",
+      defaultComputerSupervisor.list("ws-1").every((c) => c.seatId !== "seat_java_vm_01"),
+    );
+
     const outcome = await browser.deliver({
       workspaceId: "ws-1",
       messageId: "m-li",

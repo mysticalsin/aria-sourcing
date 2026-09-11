@@ -1531,20 +1531,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             onAssignSeat={async (seatId) => {
               const seat = seats.find((s) => s.id === seatId);
               if (!seat) return;
-              const next = Array.from(
-                new Set([...(seat.assignedCampaignIds ?? []), c.id]),
-              );
-              const assigned = await actions.updateSeat(seatId, { assignedCampaignIds: next });
-              if (!assigned) {
-                toast({
-                  title: "Attach failed",
-                  description: "Could not persist campaign assignment — VM not started.",
-                  variant: "warning",
-                });
-                return;
-              }
+              // Browser Computer: capacity + durable computerId BEFORE campaign assign,
+              // so a full host never leaves an "attached" seat without its own VM.
+              let computerId = seat.computerId ?? null;
               if (seat.provider === "LinkedIn Browser Computer") {
-                // Pre-check Chromium host capacity before mint/boot (same gate as Fleet Deploy).
                 try {
                   const capRes = await fetch("/api/fleet/computers", { credentials: "same-origin" });
                   if (capRes.ok) {
@@ -1565,18 +1555,32 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   /* boot path still fails closed if host is full */
                 }
                 // Mint a real computer id — never seat.id (that merges N VMs onto one profile).
-                const computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
+                computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
                 if (!seat.computerId) {
                   const minted = await actions.updateSeat(seatId, { computerId });
                   if (!minted) {
                     toast({
-                      title: "Attached without computer id",
-                      description: "Assignment saved but computerId did not persist — start from Fleet.",
+                      title: "Attach blocked",
+                      description: "computerId did not persist — fix Fleet before attaching.",
                       variant: "warning",
                     });
                     return;
                   }
                 }
+              }
+              const next = Array.from(
+                new Set([...(seat.assignedCampaignIds ?? []), c.id]),
+              );
+              const assigned = await actions.updateSeat(seatId, { assignedCampaignIds: next });
+              if (!assigned) {
+                toast({
+                  title: "Attach failed",
+                  description: "Could not persist campaign assignment — VM not started.",
+                  variant: "warning",
+                });
+                return;
+              }
+              if (seat.provider === "LinkedIn Browser Computer" && computerId) {
                 const boot = await bootBrowserComputer({
                   seatId,
                   computerId,

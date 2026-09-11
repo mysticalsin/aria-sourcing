@@ -247,5 +247,27 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   }
 }
 
+// Empty computer map (floor pre-poll / fetch fail) must not invent Browser Computer working.
+{
+  const li = s.seats.filter((x) => x.provider === "LinkedIn Browser Computer");
+  if (li.length > 0) {
+    const theatrical = floorRollup(li, s, NOW);
+    const emptyHints = floorRollup(li, s, NOW, new Map());
+    ok(
+      "empty computer map never invents Browser Computer working above theatrical baseline check",
+      emptyHints.working === 0 || emptyHints.working <= theatrical.working,
+    );
+    ok(
+      "empty computer map keeps Browser Computer seats out of working when hints are loaded",
+      emptyHints.working === 0,
+    );
+    const agents = seatsToOfficeAgents(li, s, new Map());
+    ok(
+      "empty computer map leaves Browser Computer agents idle (not theatrical working)",
+      agents.every((a) => a.status === "idle"),
+    );
+  }
+}
+
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
