@@ -239,17 +239,32 @@ await page.goto(`${BASE}/campaigns`, { waitUntil: "domcontentloaded", timeout: 9
   await context.close();
   await browser.close();
 
-  const webm = fs.readdirSync(videoDir).find((f) => f.endsWith(".webm"));
-  if (!webm) throw new Error("no webm");
+  // Playwright writes one webm per page — concat in mtime order so Aria UI + live view both appear.
+  const webms = fs
+    .readdirSync(videoDir)
+    .filter((f) => f.endsWith(".webm"))
+    .map((f) => path.join(videoDir, f))
+    .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+  if (!webms.length) throw new Error("no webm");
   const destWebm = path.join(OUT, "tonywalteur-full-cycle-e2e.webm");
   const destMp4 = path.join(OUT, "tonywalteur-full-cycle-e2e.mp4");
-  fs.copyFileSync(path.join(videoDir, webm), destWebm);
-  const ff = spawnSync(
+  const listPath = path.join(videoDir, "concat.txt");
+  fs.writeFileSync(listPath, webms.map((f) => `file '${f}'`).join("\n") + "\n");
+  const concat = spawnSync(
     "ffmpeg",
-    ["-y", "-i", destWebm, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", destMp4],
+    ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", destMp4],
     { encoding: "utf8" },
   );
-  if (ff.status !== 0) throw new Error(ff.stderr?.slice(-800) || "ffmpeg failed");
+  if (concat.status !== 0) throw new Error(concat.stderr?.slice(-800) || "ffmpeg concat failed");
+  const webmOut = spawnSync(
+    "ffmpeg",
+    ["-y", "-i", destMp4, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "35", destWebm],
+    { encoding: "utf8" },
+  );
+  if (webmOut.status !== 0) {
+    // MP4 is the deliverable; webm is best-effort.
+    console.warn("webm remux warn", webmOut.stderr?.slice(-200));
+  }
 
   const probe = await fetch(`${COMPUTERS}/c/${BOT}/session-probe`, {
     method: "POST",

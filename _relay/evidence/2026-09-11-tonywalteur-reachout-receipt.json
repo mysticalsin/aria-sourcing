@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-11T12:30:41.901Z",
+  "bot": "comp_tony_01",
+  "nav": {
+    "url": "https://www.linkedin.com/in/tonywalteur/",
+    "title": ""
+  },
+  "probe": {
+    "healthy": false,
+    "detail": "LinkedIn login/checkpoint wall detected",
+    "url": "https://www.linkedin.com/login/?session_redirect=https%3A%2F%2Fwww.linkedin.com%2Ffeed%2F"
+  },
+  "connectPossible": false
+}
