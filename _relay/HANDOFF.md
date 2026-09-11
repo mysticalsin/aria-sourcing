@@ -1,45 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 140
+shift: 141
 agent: cursor-cloud
-updated: 2026-09-10T23:28Z
-status: linkedin-agent-toolkits-deep-wired
+updated: 2026-09-11T00:35Z
+status: linkedin-toolkits-real-work-proven
 ---
 
-# Handoff — Shift 140
+# Handoff — Shift 141
 
 ## Current state
 
 - **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/98
-- **LinkedIn toolkits:** NightTrek / Orca / browser-use / CrewAI pack / Linki / OpenOutreach deeply wired
+- **Commit:** `3a877bd` — LinkedIn agent toolkits do real sourcing work
+- **PR:** recreate against `integration/sourcing-enrichment-on-main` (prior #98 was closed)
+- **Video:** `/opt/cursor/artifacts/tonywalteur-sourcing-toolkits-e2e.mp4` (~26s)
+- **Proof:** `_relay/evidence/2026-09-11-tonywalteur-toolkit-proof.json`
 
 ## Done this shift
 
-1. Agent tools: `analyze_linkedin_profile`, `qualify_lead_icp`, `browser_use_navigate` on sourcing loop
-2. Outreach live draft pulls Orca/ICP context via `/api/source/linkedin-research`
-3. Skills playbooks updated for toolkit usage
-4. Sidecar HTTP contracts smoked; Connect/Message still refused
-5. Unit tests expanded; `npm run typecheck` green
+1. Rewrote adapters so search/analyze/qualify/navigate do real work (no invented lead-N URLs)
+2. Provider always available + ICP boost; Connect/Message still AriaBot-only
+3. Sidecar server.py real-fetch/search path
+4. Live Tony Walteur proof: search hit #1 tonywalteur, analyze headline Amaris, ICP 76
+5. Recorded sourcing toolkit video + screenshots under `/opt/cursor/artifacts/`
 
 ## Blockers
 
-1. Operator LinkedIn login once on AriaBot seat for Connect E2E
-2. Sidecars not on Fly yet (enable via env locally)
+1. **OpenBot LinkedIn session lost** — `comp_tony_01` on authwall/Sign Up. Operator must Take control and sign in once for Connect E2E.
+2. Fly app not yet redeployed with this commit (local/toolkit proof used Tavily from Fly env).
 
 ## Next steps
 
-1. Operator Take control LinkedIn login
-2. Optionally deploy Scrapling + linkedin-browser-agents on Fly
-3. Re-run Tony Walteur Connect E2E after session persists
+1. Operator: Take control on `comp_tony_01` → LinkedIn login → Release
+2. Deploy `aria-mantu-app` from this branch so production uses always-on agent tool provider
+3. Re-run Connect+note E2E on Tony Walteur after session persists
+4. Optionally deploy linkedin-browser-agents sidecar on Fly
 
 ## Decisions (don't relitigate)
 
-- Scrapling = public web only
-- browser-use navigate optional; Connect/Message = AriaBot only
-- Toolkits fail-closed unless explicitly enabled
+- Scrapling / toolkit fetch = public web only
+- Connect/Message = AriaBot Take control only
+- Never invent LinkedIn profile URLs
+- Provider always available via built-in web_search (sidecars optional)
 
 ## Watch out
 
-- Never commit Fly secrets / demo password
+- Never commit Fly secrets / demo password / Tavily key
 - Pass Supabase anon key on app deploys
+- DDG HTML search is flaky from this IP; Tavily is the reliable search backend
