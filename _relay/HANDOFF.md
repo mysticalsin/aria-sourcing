@@ -1,50 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 141
+shift: 142
 agent: cursor-cloud
-updated: 2026-09-11T00:35Z
-status: linkedin-toolkits-real-work-proven
+updated: 2026-09-11T00:58Z
+status: openbot-click-accuracy-fixed-deployed
 ---
 
-# Handoff — Shift 141
+# Handoff — Shift 142
 
 ## Current state
 
 - **Branch:** `cursor/ariabot-vm-fluid-multitab-b91d`
-- **Commit:** `3a877bd` — LinkedIn agent toolkits do real sourcing work
-- **PR:** recreate against `integration/sourcing-enrichment-on-main` (prior #98 was closed)
-- **Video:** `/opt/cursor/artifacts/tonywalteur-sourcing-toolkits-e2e.mp4` (~26s)
-- **Proof:** `_relay/evidence/2026-09-11-tonywalteur-toolkit-proof.json`
+- **Commit:** `d911b81` — Take control click mapping scales JPEG→device DIPs
+- **Deployed:** `aria-mantu-computers` Fly machine healthy; `OPENBOT_STREAM_MAX_WIDTH=1400`
+- **Prior PR #99:** closed; recreate/open new PR for this branch vs `integration/sourcing-enrichment-on-main`
 
 ## Done this shift
 
-1. Rewrote adapters so search/analyze/qualify/navigate do real work (no invented lead-N URLs)
-2. Provider always available + ICP boost; Connect/Message still AriaBot-only
-3. Sidecar server.py real-fetch/search path
-4. Live Tony Walteur proof: search hit #1 tonywalteur, analyze headline Amaris, ICP 76
-5. Recorded sourcing toolkit video + screenshots under `/opt/cursor/artifacts/`
+1. Root-caused offset clicks: stream JPEG often 1280×800 while CDP expects ~1400×900 CSS pixels; `mapPoint` used bitmap size as device size
+2. Added `scripts/lib/openbot-view-coords.mjs` + unit test; live view injects same mapper
+3. Keep tabs + omnibox usable in Take control (no near-invisible chrome); canvas `object-fit:contain` fills stage
+4. Raised Fly stream max to 1400×900; redeployed computers app
+5. “Open full sandbox” links append `?fs=1`
 
 ## Blockers
 
-1. **OpenBot LinkedIn session lost** — `comp_tony_01` on authwall/Sign Up. Operator must Take control and sign in once for Connect E2E.
-2. Fly app not yet redeployed with this commit (local/toolkit proof used Tavily from Fly env).
+1. Operator still needs to Take control and complete LinkedIn login/captcha on the seat (session was on authwall)
+2. App deploy (`aria-mantu-app`) not required for mouse fix — computers supervisor already live
 
 ## Next steps
 
-1. Operator: Take control on `comp_tony_01` → LinkedIn login → Release
-2. Deploy `aria-mantu-app` from this branch so production uses always-on agent tool provider
-3. Re-run Connect+note E2E on Tony Walteur after session persists
-4. Optionally deploy linkedin-browser-agents sidecar on Fly
+1. Operator: Take control → verify cursor hits the same UI point → finish LinkedIn login → Release
+2. Open/refresh PR for this branch against `integration/sourcing-enrichment-on-main`
+3. Re-run Tony Walteur Connect E2E after session persists
 
 ## Decisions (don't relitigate)
 
-- Scrapling / toolkit fetch = public web only
-- Connect/Message = AriaBot Take control only
+- Click targets = CDP `deviceWidth/Height` (CSS DIPs); display = screencast bitmap pixels
+- Connect/Message stays AriaBot Take control only
 - Never invent LinkedIn profile URLs
-- Provider always available via built-in web_search (sidecars optional)
 
 ## Watch out
 
-- Never commit Fly secrets / demo password / Tavily key
-- Pass Supabase anon key on app deploys
-- DDG HTML search is flaky from this IP; Tavily is the reliable search backend
+- Dockerfile.computers must COPY `scripts/lib/openbot-view-coords.mjs`
+- Do not re-lower stream max without keeping the bitmap→device scale
+- Never commit Fly secrets / demo passwords / Tavily keys
