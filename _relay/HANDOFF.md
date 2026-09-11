@@ -1,45 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 153
+shift: 154
 agent: cursor-cloud
-updated: 2026-09-11T06:12Z
+updated: 2026-09-11T06:19Z
 status: seat-vm-binding-on-fly
 ---
 
-# Handoff — Shift 153
+# Handoff — Shift 154
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `047fd50`
-- **PR:** creating/updating (prior #110 closed)
-- **Fly app:** https://aria-mantu-app.fly.dev (deploy tip next)
-- **Fly computers:** max 5 — https://aria-mantu-computers.fly.dev
+- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `44b06a2` (`44b06a2a96b634a329a42b8a0f9221a725c6ae7d`)
+- **PR:** blocked for this token (`gh pr create` → Resource not accessible); open via https://github.com/mysticalsin/aria-sourcing/pull/new/cursor/openbot-desktop-vm-b91d (base `integration/sourcing-enrichment-on-main`). Prior #110 closed.
+- **Fly app:** https://aria-mantu-app.fly.dev — `/api/health` ok; `/api/ready` still `agentFrameworks:false` (known)
+- **Fly computers:** max 5
 - **Policy:** every improvement pushed to Fly
 
 ## Done this shift
 
-1. **Allocate → send seat binding:** `OutreachMessage.seatId` stamped at allocate; LinkedIn Browser Computer drafts use LinkedIn channel; send prefers `msg.seatId` via `pickLiveLinkedInSendSeat(..., preferredSeatId)`.
-2. **Go-live honesty:** only explicitly assigned Browser seats count; every attached seat must be live+active and `sessionHealthy === true` (no `computers[0]` fallback).
-3. **Hydrate truth:** successful host list with missing bot → `stopped` + clear `sessionHealthy`/URLs (no stale ready after cold start).
-4. **Floor rollup:** with computer hints loaded, Browser seats count as working only when `ready && sessionHealthy === true`; pulse cannot force working without that.
-5. **Deploy refuse:** when host capacity known and slots=0, Deploy stops (no seat theater without VM).
-6. **Settings:** Max agents hint/clamp from `/api/fleet/computers` `hostCapacity.max`.
-7. Tests: floor, campaign-go-live, computer-supervisor green.
+1. Allocate stamps `seatId`; LinkedIn Browser Computer → LinkedIn drafts; send prefers `msg.seatId`
+2. Go-live: explicit attach only; all attached seats must be live + `sessionHealthy`
+3. Hydrate: missing host bot → stopped (clear stale ready/sessionHealthy)
+4. Floor rollup + 3D pulse + **2D desks** require ready+sessionHealthy (no theatrical busy)
+5. Deploy refuses when host slots known and zero; Settings clamps max agents to host max
+6. Tests: floor 29, campaign-go-live 11, computer-supervisor 30
+7. Fly deploy tip `44b06a2`
 
 ## Blockers
 
 1. Human Take control + LinkedIn 2FA per seat
-2. `OPENBOT_MAX_COMPUTERS=5` (need raise/shard for 16 concurrent)
+2. `OPENBOT_MAX_COMPUTERS=5`
 3. `/api/ready` agentFrameworks false
+4. PR create permission denied for agent token — human/open URL above
 
 ## Next steps
 
-1. Fly deploy tip `047fd50`; verify `/api/health` build SHA
-2. Operator prove: Deploy ≤5 → Take control → login → Release → floor healthy/unhealthy
-3. Optional: await assign persistence before campaign attach boot toast
+1. Open/restore PR from branch URL above
+2. Operator prove: Deploy ≤5 → Take control → login → Release → floor probe state
+3. Raise/shard host if 16 concurrent VMs required
+4. Optional: await server persist before attach boot toast; unique computerId constraint
 
 ## Decisions (don't relitigate)
 
-- Every improvement pushed to Fly before shift end
-- Never invent `sessionHealthy=true` without `/session-probe`
-- Ensure ≠ boot; Deploy/Take control must hit OpenBot
+- Every improvement to Fly before shift end
+- Never invent sessionHealthy without /session-probe
+- Ensure ≠ boot
