@@ -10,7 +10,7 @@ status: isolation-honesty-pulse-orphan-failclosed-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (fail-closed unbound health; campaign seat-owned-only; floor pulse requires seatId; dead AgentModel/RobotAgent/packet-shared removed)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `562ad28` (fail-closed unbound health; campaign seat-owned-only; floor pulse requires seatId; dead AgentModel/RobotAgent/packet-shared removed)
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` build `8ea3370…` / `ok:false`
 - **Live fleet:** 1 computer, `sessionHealthy:false` until human LinkedIn login
 - **PR:** tip pushed; recreate when write tool available (prior #134 CLOSED)
