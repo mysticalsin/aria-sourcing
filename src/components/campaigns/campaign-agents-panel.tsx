@@ -385,22 +385,44 @@ export function CampaignAgentsPanel({
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <ul className="divide-y divide-line/50">
             {campaignSeats.map((seat) => {
-              const c =
-                computers.find((row) => row.seatId === seat.id) ??
-                (seat.computerId
-                  ? computers.find((row) => row.computerId === seat.computerId)
-                  : undefined) ??
-                ({
-                  computerId: seat.computerId ?? "(unassigned)",
-                  seatId: seat.id,
-                  seatName: seat.name,
-                  status: "stopped",
-                  control: "bot" as const,
-                  sessionHealthy: null,
-                  lastAudit: null,
-                  lastError: null,
-                  updatedAt: "",
-                } satisfies FleetComputerRow);
+              const boundComputerId = seat.computerId?.trim() || null;
+              const c = boundComputerId
+                ? computers.find((row) => row.seatId === seat.id) ??
+                  computers.find((row) => row.computerId === boundComputerId)
+                : computers.find((row) => row.seatId === seat.id);
+              // No durable computerId → seat is attached but VM not provisioned.
+              // Do not invent "(unassigned)" and offer Start/Observe/Take control.
+              if (!boundComputerId || !c || c.computerId === "(unassigned)") {
+                return (
+                  <li key={seat.id} className="px-5 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Monitor className="h-4 w-4 text-muted" aria-hidden />
+                          <span className="text-sm font-semibold text-ink">{seat.name}</span>
+                          <Badge size="sm" tone="neutral">
+                            No Browser Computer
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted">
+                          Deploy or Login from Settings to mint a durable VM id, then Start / Take
+                          control here.
+                        </p>
+                      </div>
+                      {onUnassignSeat ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onUnassignSeat(seat.id)}
+                        >
+                          Detach
+                        </Button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              }
               const computerId = c.computerId;
               const selected = observingId === computerId;
               const busy = busyId === computerId;

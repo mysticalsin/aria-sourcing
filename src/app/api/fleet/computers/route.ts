@@ -122,39 +122,31 @@ export async function GET(req: NextRequest) {
 
     const computers = [];
     for (const seat of seats ?? []) {
-      const hadId = Boolean(seat.computer_id);
+      // GET is list/hydrate only — never mint. Unbound seats stay unbound until
+      // Deploy / Login / POST ensure assigns a durable computer_id. Concurrent
+      // Floor+Settings+Campaign polls must not race-mint twin VMs.
       let rec;
       try {
-        // List/hydrate only — do NOT stamp campaignId here. A campaign-scoped GET
-        // would otherwise overwrite every workspace seat's campaign binding and
-        // collapse N agents' audits/filters onto whichever campaign was last polled.
-        rec = defaultComputerSupervisor.ensureComputer({
+        rec = defaultComputerSupervisor.hydrateComputer({
           workspaceId: String(wid),
           seatId: seat.id,
-          computerId: seat.computer_id ?? undefined,
+          computerId: seat.computer_id,
         });
       } catch (err) {
-        // Collision: seat row pointed at another seat's computer — bind by seatId only
-        // (reuse that seat's in-memory row or mint once). Never keep polling remints
-        // against a poisoned foreign computer_id.
+        // Poisoned FK: seat points at another seat's computer. Clear it — do not
+        // remint on read (that reintroduced twin ids across pollers).
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("computer-ownership-mismatch")) throw err;
-        console.warn("computer_id ownership mismatch; rebinding by seatId", seat.id, msg);
-        rec = defaultComputerSupervisor.ensureComputer({
-          workspaceId: String(wid),
-          seatId: seat.id,
-        });
-      }
-      // Persist minted/rebound computer ids so floor/campaign filters stay stable.
-      // Await so a failed write cannot leave N GET polls minting twin VMs.
-      if ((!hadId || rec.computerId !== seat.computer_id) && rec.computerId) {
+        console.warn("computer_id ownership mismatch; clearing poisoned FK", seat.id, msg);
         const { error } = await supabase
           .from("agent_seats")
-          .update({ computer_id: rec.computerId })
+          .update({ computer_id: null })
           .eq("id", seat.id)
           .eq("workspace_id", wid);
-        if (error) console.warn("persist computer_id failed", error.message);
+        if (error) console.warn("clear poisoned computer_id failed", error.message);
+        continue;
       }
+      if (!rec) continue;
       computers.push(rec);
     }
 

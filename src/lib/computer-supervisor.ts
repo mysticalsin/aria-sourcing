@@ -288,6 +288,26 @@ export class ComputerSupervisor {
     return rec;
   }
 
+  /**
+   * List/hydrate only — never mint. Poll/GET paths must call this so unbound
+   * seats stay unbound until Deploy/Login/ensure explicitly assigns a durable id.
+   */
+  hydrateComputer(opts: {
+    workspaceId: string;
+    seatId: string;
+    computerId: string | null | undefined;
+    campaignId?: string | null;
+  }): ComputerRecord | null {
+    const computerId = typeof opts.computerId === "string" ? opts.computerId.trim() : "";
+    if (!computerId) return null;
+    return this.ensureComputer({
+      workspaceId: opts.workspaceId,
+      seatId: opts.seatId,
+      computerId,
+      campaignId: opts.campaignId,
+    });
+  }
+
   list(workspaceId: string): ComputerRecord[] {
     return [...this.computers.values()].filter((c) => c.workspaceId === workspaceId);
   }

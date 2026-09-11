@@ -338,6 +338,43 @@ try {
     const noHost = await hydrateSup.hydrateFromHost("ws");
     ok("hydrate without host config is a no-op", noHost.matched === 0 && noHost.hostCount === 0);
   }
+
+  // GET/list must never mint — unbound seats stay unbound across concurrent polls.
+  {
+    const listSup = new ComputerSupervisor();
+    const skipped = listSup.hydrateComputer({
+      workspaceId: "ws",
+      seatId: "seat-unbound",
+      computerId: null,
+    });
+    ok("hydrateComputer(null) returns null (no mint)", skipped === null);
+    ok(
+      "hydrateComputer(null) leaves supervisor empty",
+      listSup.list("ws").length === 0,
+    );
+    const blank = listSup.hydrateComputer({
+      workspaceId: "ws",
+      seatId: "seat-blank",
+      computerId: "   ",
+    });
+    ok("hydrateComputer(whitespace) returns null", blank === null);
+    const durable = listSup.hydrateComputer({
+      workspaceId: "ws",
+      seatId: "seat-bound",
+      computerId: "comp_durable_db",
+    });
+    ok(
+      "hydrateComputer(durable id) registers that id",
+      durable?.computerId === "comp_durable_db",
+    );
+    const again = listSup.hydrateComputer({
+      workspaceId: "ws",
+      seatId: "seat-unbound",
+      computerId: null,
+    });
+    ok("second unbound hydrate still null (no twin mint)", again === null);
+    ok("only one computer after durable hydrate", listSup.list("ws").length === 1);
+  }
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
   else process.env.COMPUTER_SUPERVISOR_MOCK_SEND = previousMock;
