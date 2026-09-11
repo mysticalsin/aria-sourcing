@@ -1,29 +1,25 @@
 ---
 project: MSourcing / ARIA
-shift: 156
+shift: 157
 agent: cursor-cloud
-updated: 2026-09-11T07:04Z
-status: seat-vm-isolation-on-fly
+updated: 2026-09-11T07:41Z
+status: floor-vm-drawer-on-fly
 ---
 
-# Handoff — Shift 156
+# Handoff — Shift 157
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `b03fc63` (`b03fc630d08ca2d0ff25e2c7da66b0f6e3a11cac`)
+- **Branch:** `cursor/openbot-desktop-vm-b91d` @ `f0ee99a` (`f0ee99a50d5c952ba5961aa3cd433976a17fd56e`)
 - **Fly:** https://aria-mantu-app.fly.dev build matches tip
-- **PR:** agent cannot create (closed #110); open https://github.com/mysticalsin/aria-sourcing/pull/new/cursor/openbot-desktop-vm-b91d → base `integration/sourcing-enrichment-on-main`
-- **Computers:** max 5
+- **PR:** open https://github.com/mysticalsin/aria-sourcing/pull/new/cursor/openbot-desktop-vm-b91d → `integration/sourcing-enrichment-on-main`
+- **Computers:** max 5 (8gb performance-4x — do not raise without capacity plan)
 - **Policy:** every improvement on Fly
 
 ## Done this shift
 
-1. `ensureComputer` throws on cross-seat/workspace `computerId` (no shared Chromium)
-2. Fleet list remints + persists on ownership mismatch
-3. `start` without OpenBot refuses `ready` unless `COMPUTER_SUPERVISOR_MOCK_SEND=1`
-4. Migration `0084_agent_seats_computer_id_unique.sql` — unique `(workspace_id, computer_id)`
-5. Tests: computer-supervisor 33 pass
-6. Prior: seatId allocate→send, go-live all healthy, hydrate absent→stopped, floor 2d/3d honesty, deploy host-full refuse, attach awaits PATCH
+1. Floor agent drawer shows Browser Computer id + live LinkedIn session badge/meta (uses `computerHints`, not theatrical activity alone)
+2. Prior: seat VM ownership isolation, unique computer_id migration 0084, refuse refuse fake ready, seatId allocate→send, go-live all healthy, hydrate, floor 2d/3d honesty, attach awaits PATCH
 
 ## Blockers (goal incomplete)
 
@@ -31,11 +27,11 @@ status: seat-vm-isolation-on-fly
 2. OPENBOT_MAX_COMPUTERS=5
 3. /api/ready agentFrameworks:false
 4. Operator prove Deploy→login→Release→floor probe
-5. PR create ACL
+5. Apply migration 0084 on prod if not auto (ready still reports 0082)
+6. PR create ACL
 
 ## Next steps
 
-1. Human opens PR from branch URL
-2. Apply migration 0084 on prod if not auto
-3. Operator prove ≤5 seats E2E
-4. Raise/shard host for 16 concurrent VMs
+1. Human opens PR
+2. Operator prove ≤5 seats; confirm drawer shows distinct VM ids
+3. Apply 0084; plan host raise/shard for 16 concurrent VMs
