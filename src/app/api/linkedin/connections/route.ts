@@ -470,7 +470,7 @@ async function ensureConnect(
     routeKey: route.route_key,
     detail:
       provider === "LinkedIn Browser Computer"
-        ? "AriaBot Browser Computer seat live. Log into LinkedIn via Fleet → Computers → Observe / Take control, then Automatic sends run in the sandbox/VM."
+        ? "AriaBot Browser Computer seat created. Take control to log into LinkedIn — session stays unverified until Release probes healthy."
         : provider === "LinkedIn Assisted Manual"
           ? "Assisted-manual LinkedIn connected. Draft → copy/paste in LinkedIn → Confirm in Aria."
           : "Vendor LinkedIn seat live. Outbound uses LINKEDIN_VENDOR_* APIs.",

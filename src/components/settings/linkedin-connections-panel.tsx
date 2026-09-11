@@ -288,9 +288,9 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         });
         const live = await actions.toggleSeatLive(seat.id);
         toast({
-          title: live.ok ? "AriaBot Browser Computer ready" : "Seat created",
+          title: live.ok ? "AriaBot Browser Computer seat created" : "Seat created",
           description: live.ok
-            ? "Each seat is an isolated Chromium profile — log into a different LinkedIn (member or Recruiter) via Take control."
+            ? "Isolated Chromium profile reserved — Take control to log into LinkedIn (session not verified yet)."
             : live.reason,
           variant: live.ok ? "success" : "warning",
         });
@@ -331,8 +331,10 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         return;
       }
       toast({
-        title: "AriaBot Browser Computer ready",
-        description: json.detail ?? "Log into LinkedIn via Fleet → Computers → Observe / Take control.",
+        title: "AriaBot Browser Computer seat created",
+        description:
+          json.detail ??
+          "Isolated Chromium reserved — Take control to log into LinkedIn (session not verified yet).",
         variant: "success",
       });
       await load();

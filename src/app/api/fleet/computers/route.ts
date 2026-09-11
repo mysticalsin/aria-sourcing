@@ -125,11 +125,13 @@ export async function GET(req: NextRequest) {
       const hadId = Boolean(seat.computer_id);
       let rec;
       try {
+        // List/hydrate only — do NOT stamp campaignId here. A campaign-scoped GET
+        // would otherwise overwrite every workspace seat's campaign binding and
+        // collapse N agents' audits/filters onto whichever campaign was last polled.
         rec = defaultComputerSupervisor.ensureComputer({
           workspaceId: String(wid),
           seatId: seat.id,
           computerId: seat.computer_id ?? undefined,
-          campaignId,
         });
       } catch (err) {
         // Collision: seat row pointed at another seat's computer — mint a fresh id.
@@ -139,7 +141,6 @@ export async function GET(req: NextRequest) {
         rec = defaultComputerSupervisor.ensureComputer({
           workspaceId: String(wid),
           seatId: seat.id,
-          campaignId,
         });
       }
       // Persist minted computer ids so floor/campaign filters stay stable across processes.

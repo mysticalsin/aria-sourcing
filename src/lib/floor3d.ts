@@ -166,6 +166,7 @@ const BUSY_STATES = new Set(["sourcing", "outreach", "booking", "warming"]);
 export type ComputerFloorHint = {
   status: string;
   sessionHealthy?: boolean | null;
+  computerId?: string | null;
 };
 
 export function seatsToOfficeAgents(
@@ -210,8 +211,9 @@ export function seatsToOfficeAgents(
       subtitle = seat.computerId ? "VM not on host" : "No Browser Computer";
     }
     // Surface the bound Chromium id so N agents are distinguishable on the floor.
-    if (seat.provider === "LinkedIn Browser Computer" && seat.computerId) {
-      subtitle = `${subtitle} · …${seat.computerId.slice(-8)}`;
+    const vmId = hint?.computerId || seat.computerId;
+    if (seat.provider === "LinkedIn Browser Computer" && vmId) {
+      subtitle = `${subtitle} · …${vmId.slice(-8)}`;
     }
     return {
       id: seat.id,

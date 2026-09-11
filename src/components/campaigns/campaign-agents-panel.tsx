@@ -107,15 +107,17 @@ export function CampaignAgentsPanel({
     setLoading(true);
     try {
       const ensureErrors: string[] = [];
+      // Only ensure seats that already have a real computerId. Never fall back to
+      // seat.id — that rebinds the Chromium profile and collapses N VMs onto one id.
       for (const seat of campaignSeats) {
-        const computerId = seat.computerId || seat.id;
+        if (!seat.computerId) continue;
         const ens = await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "ensure",
-            computerId,
+            computerId: seat.computerId,
             seatId: seat.id,
             campaignId,
           }),
@@ -149,10 +151,14 @@ export function CampaignAgentsPanel({
         computers?: FleetComputerRow[];
         recentAudits?: AuditEvent[];
       };
-      const ids = new Set(
-        campaignSeats.map((s) => s.computerId || s.id).filter(Boolean) as string[],
+      const seatIds = new Set(campaignSeats.map((s) => s.id));
+      const computerIds = new Set(
+        campaignSeats.map((s) => s.computerId).filter(Boolean) as string[],
       );
-      const rows = (data.computers ?? []).filter((c) => ids.has(c.computerId));
+      // Match by seatId first so a lagged client computerId still shows the live VM.
+      const rows = (data.computers ?? []).filter(
+        (c) => seatIds.has(c.seatId) || computerIds.has(c.computerId),
+      );
       setComputers(
         rows.map((c) => {
           const seat = campaignSeats.find(
@@ -164,7 +170,7 @@ export function CampaignAgentsPanel({
 
       const campaignAudits = (data.recentAudits ?? []).filter(
         (a) =>
-          ids.has(a.computerId) &&
+          (computerIds.has(a.computerId) || rows.some((r) => r.computerId === a.computerId)) &&
           (!a.campaignId || a.campaignId === campaignId),
       );
       // Prefer campaign-tagged audits; fall back to computer-scoped when untagged.
@@ -379,11 +385,13 @@ export function CampaignAgentsPanel({
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <ul className="divide-y divide-line/50">
             {campaignSeats.map((seat) => {
-              const computerId = seat.computerId || seat.id;
               const c =
-                computers.find((row) => row.computerId === computerId) ??
+                computers.find((row) => row.seatId === seat.id) ??
+                (seat.computerId
+                  ? computers.find((row) => row.computerId === seat.computerId)
+                  : undefined) ??
                 ({
-                  computerId,
+                  computerId: seat.computerId ?? "(unassigned)",
                   seatId: seat.id,
                   seatName: seat.name,
                   status: "stopped",
@@ -393,6 +401,7 @@ export function CampaignAgentsPanel({
                   lastError: null,
                   updatedAt: "",
                 } satisfies FleetComputerRow);
+              const computerId = c.computerId;
               const selected = observingId === computerId;
               const busy = busyId === computerId;
               const needsHelp = c.status === "help_requested";

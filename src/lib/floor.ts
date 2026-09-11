@@ -120,6 +120,8 @@ export interface FloorRollup {
 export type FloorComputerHint = {
   status: string;
   sessionHealthy?: boolean | null;
+  /** Bound Chromium id from fleet API — preferred over HermesState when present. */
+  computerId?: string | null;
 };
 
 export function floorRollup(

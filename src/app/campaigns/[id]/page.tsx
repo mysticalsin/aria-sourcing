@@ -1544,7 +1544,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 return;
               }
               if (seat.provider === "LinkedIn Browser Computer") {
-                const computerId = seat.computerId || seat.id;
+                // Mint a real computer id — never seat.id (that merges N VMs onto one profile).
+                const computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
                 if (!seat.computerId) {
                   const minted = await actions.updateSeat(seatId, { computerId });
                   if (!minted) {

@@ -163,7 +163,11 @@ export default function FleetPage() {
     let blocked = 0;
     let lastErr = "";
     for (const seat of res.seats) {
-      const computerId = seat.computerId || seat.id;
+      // Never use seat.id as computerId — that collapses N Chromium profiles onto one id.
+      const computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
+      if (!seat.computerId) {
+        await actions.updateSeat(seat.id, { computerId });
+      }
       const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
       if (boot.booted) {
         booted += 1;
@@ -203,14 +207,15 @@ export default function FleetPage() {
     try {
       const browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
       for (const seat of browserSeats) {
-        const computerId = seat.computerId || seat.id;
+        // Skip seats without a real computerId — never ensure as seat.id (collapses N VMs).
+        if (!seat.computerId) continue;
         await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "ensure",
-            computerId,
+            computerId: seat.computerId,
             seatId: seat.id,
           }),
         }).catch(() => null);
@@ -433,9 +438,9 @@ export default function FleetPage() {
       return;
     }
     if (seat.provider === "LinkedIn Browser Computer") {
-      const computerId = seat.computerId || seat.id;
+      const computerId = seat.computerId ?? `comp_${globalThis.crypto.randomUUID()}`;
       if (!seat.computerId) {
-        actions.updateSeat(seat.id, { computerId });
+        await actions.updateSeat(seat.id, { computerId });
       }
       const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
       toast({

@@ -124,6 +124,7 @@ export default function FloorPage() {
           const hint: ComputerFloorHint = {
             status: c.status,
             sessionHealthy: c.sessionHealthy,
+            computerId: c.computerId,
           };
           map.set(c.seatId, hint);
           map.set(c.computerId, hint);
@@ -490,8 +491,9 @@ function AgentDetailDrawer({
   const computerHint =
     computerHints?.get(seat.id) ??
     (seat.computerId ? computerHints?.get(seat.computerId) : undefined);
-  const vmLabel = seat.computerId
-    ? `VM …${seat.computerId.slice(-8)}`
+  const boundComputerId = computerHint?.computerId || seat.computerId;
+  const vmLabel = boundComputerId
+    ? `VM …${boundComputerId.slice(-8)}`
     : seat.provider === "LinkedIn Browser Computer"
       ? "No VM bound"
       : null;
