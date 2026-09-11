@@ -238,7 +238,13 @@ export async function openBotLinkedInSend(
       };
     }
 
-    const note = body.length > 280 ? `${body.slice(0, 277)}...` : body;
+    // LinkedIn free-tier invite notes hard-cap at 200 chars — longer notes grey out
+    // Send and produce zero recipient notification (280 was a false allowance).
+    const LINKEDIN_INVITE_NOTE_MAX = 200;
+    const note =
+      body.length > LINKEDIN_INVITE_NOTE_MAX
+        ? `${body.slice(0, LINKEDIN_INVITE_NOTE_MAX - 1).trimEnd()}…`
+        : body;
     await openBotType(cfg, noteBox.ref, snap.snapshotId, note, false);
     snap = await openBotSnapshot(cfg);
 
@@ -254,10 +260,29 @@ export async function openBotLinkedInSend(
         helpRequested: true,
       };
     }
+    if (sendInvite.disabled) {
+      return {
+        ok: false,
+        detail: `Send invitation is disabled (note ${note.length}/${LINKEDIN_INVITE_NOTE_MAX} chars or LinkedIn gate) — not claiming delivery.`,
+        helpRequested: true,
+      };
+    }
     await openBotClick(cfg, sendInvite.ref, snap.snapshotId);
+    // Fail closed unless the UI shows Sent/Pending — a bare click is not a notification.
+    snap = await openBotSnapshot(cfg);
+    const proof = snap.elements.some((el) =>
+      /pending|invitation sent|invite sent|sent$/i.test(el.name),
+    );
+    if (!proof) {
+      return {
+        ok: false,
+        detail: "Clicked Send invitation but no Sent/Pending proof in UI — operator must confirm delivery.",
+        helpRequested: true,
+      };
+    }
     return {
       ok: true,
-      detail: `OpenBot browser-computer connection invite via ${normalize(sendInvite.name) || "Send"} on ${profileUrl}`,
+      detail: `OpenBot browser-computer connection invite via ${normalize(sendInvite.name) || "Send"} on ${profileUrl} (Sent/Pending confirmed)`,
     };
   }
 

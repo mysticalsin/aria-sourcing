@@ -1,63 +1,53 @@
 ---
 project: MSourcing / ARIA
-shift: 178
+shift: 179
 agent: cursor-cloud
-updated: 2026-09-11T20:35Z
-status: campaign-clear-foreign-tip-not-released
+updated: 2026-09-11T21:05Z
+status: exec-e2e-video-li-notify-diagnosed-tip-not-released
 ---
 
-# Handoff — Shift 178
+# Handoff — Shift 179
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `d08cc9b` (campaign clear-foreign + seatId contracts + ownership stack)
-- **Fly:** https://aria-mantu-app.fly.dev — build `8ea3370…` (**tip not live**); `/api/ready` `ok:false` (`agentFrameworks:false`)
-- **PR:** #132 → `integration/sourcing-enrichment-on-main` (draft; prior #131 CLOSED)
-- **Durable bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` ↔ seat `600e8afa-a7c4-40ef-91c8-f4854fa9e5fc`
-- **Host:** capacity often 3/5 computers
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (invite-note ≤200 + Sent/Pending proof + prior N-agent isolation)
+- **Fly:** https://aria-mantu-app.fly.dev — build `8ea3370…` (**tip not live**); `/api/ready` `ok:false`
+- **PR:** #132 → `integration/sourcing-enrichment-on-main` (draft; recreate if closed)
+- **Durable bot:** `comp_7fe31958-…` — **LinkedIn session unhealthy** on live Floor (0 sends today)
+- **Exec video:** `/opt/cursor/artifacts/aria-exec-recruiting-e2e-walkthrough.mp4` (~6.7 min)
 
 ## Done this shift
 
-1. Campaign Agents poll passes **full** fleet computers into `fleetHermesComputerPatches` (filtered rows missed foreign owners)
-2. Settings: single patch pass (no per-seat double call)
-3. Demo `addSeat` forces `computerId: null` (ignore client partial)
-4. `fleet-hermes-sync` registered in `tests/test-manifest.mjs` application gate
-5. Route contract tests: ensure/navigate/session_probe require seatId (no computerId fallback)
-6. Tests: fleet-hermes-sync 8, boot-browser-computer 9, computer-supervisor 65; typecheck green
+1. Diagnosed missing LinkedIn notification: primary = unhealthy LI Browser Computer / login wall (no delivery); secondary = invite vs Messaging surface; tertiary = note >200 chars greying Send; Message blocked for 3rd+ without InMail
+2. Proof a prior Connect invite DID send (Sent today + Pending) — recipient must check **My Network → Invitations**
+3. Tip fix: invite notes hard-cap **200** chars; refuse `ok` if Send disabled or Sent/Pending proof missing (`src/lib/openbot/linkedin-send.ts`)
+4. Recorded live Fly executive walkthrough: Intake/Command → Campaign → JD → Strategy → Candidates scores → Outreach drafts → Agents → Floor → unhealthy LI computer
+5. Evidence pack: `_relay/evidence/exec-recruiting-e2e/` (pngs + ROOT-CAUSE.md); mp4 kept in `/opt/cursor/artifacts/` (not committed)
 
 ## Blockers (goal incomplete)
 
-1. Tip not on protected Fly release / deploy pipeline
-2. LinkedIn login wall — needs human credentials / 2FA Take control
-3. OPENBOT_MAX_COMPUTERS=5
-4. `/api/ready` agentFrameworks:false
-5. Operator N-seat prove of tip features still outstanding on live
+1. Tip not on protected Fly release
+2. Human Take control + LinkedIn login/2FA on durable VM required for live notifications
+3. OPENBOT_MAX_COMPUTERS=5; `/api/ready` agentFrameworks:false
+4. Operator N-seat prove of tip features still outstanding on live
 
 ## Next steps
 
-1. Land tip via protected release — confirm `/api/ready` build SHA == tip
-2. Human Take control → LinkedIn login on durable VM → Release → `session_probe` true
-3. With tip live: prove N distinct computerIds, no cross-desk bleed, floor shows only healthy/real-send agents
-4. Mark PR ready only when tip SHA live + session prove + N-seat evidence
+1. Human Take control → LinkedIn login/2FA → Release → session_probe healthy
+2. Re-send Connect with ≤200 note; prove Sent + Pending; tell recipient to check Invitations
+3. Land tip via protected release
+4. Mark PR ready only with tip SHA live + healthy session + N-seat evidence
 
 ## Decisions (don't relitigate)
 
+- Never invent `sessionHealthy=true` / delivered LinkedIn without probe + UI proof
+- Invite notes ≤ **200** chars (LinkedIn free tier)
+- Fail closed if Send disabled or no Sent/Pending proof
 - Fly-only LinkedIn / OpenBot / computers
-- Never invent `sessionHealthy=true` without `/session_probe`
-- Never invent `computerId` from `seat.id`; never mint on GET/poll
-- Reclaim must persist `agent_seats.computer_id` same request
-- Poll GET+sync only; ensure must not steal durable bindings
-- Login must not trust Hermes-only computerId over empty API/DB
-- Floor/Settings/Fleet/Campaign sync Hermes from fleet GET (**including clear-foreign; Campaign uses full fleet list**)
-- All boot paths reclaim-before-mint; seat create leaves computerId null
-- computerId fallback must not cross seat ownership
-- Unique `(workspace_id, computer_id)` (0084)
-- Live computer map → floor "working" is VM/send truth, not theatrical activity
 - **Do not bypass protected Fly release guards**
 
 ## Watch out
 
-- Demo-login ~5/min; user `Twalteur@amaris.com` (password in `/tmp/aria-e2e/demo_pw.clean` — do not commit)
-- Closing PRs often deletes remote branch — push + recreate PR
-- `comp_tony_01` login-wall twin; prefer UUID durable after probe
-- Personalized invite notes free-tier max **200** chars
+- Demo-login uses `username` (not email); rate limit ~5/min; `Twalteur@amaris.com`
+- Closing PRs often deletes remote branch
+- Large mp4s stay under `/opt/cursor/artifacts/` — do not bloating-commit
