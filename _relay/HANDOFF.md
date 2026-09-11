@@ -12,7 +12,7 @@ status: tony-reachout-e2e-video-recorded-linkedin-wall
 
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this shift push)
 - **Fly:** https://aria-mantu-app.fly.dev · `/api/ready` build `a5f4c73f15ac721079f67f107858d1c7fec6d4b0` · migration tip `0084_agent_seats_computer_id_unique.sql`
-- **PR:** recreate after push (PR #118 was closed) → `integration/sourcing-enrichment-on-main`
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/119 → `integration/sourcing-enrichment-on-main` (draft; #118 closed)
 - **Computers:** https://aria-mantu-computers.fly.dev · bot `comp_tony_01` · max 5
 - **Tony reach-out E2E video:** `/opt/cursor/artifacts/tonywalteur_reachout_e2e_fly_demo.mp4` (~50s)
 - **Evidence:** `_relay/evidence/2026-09-11-tonywalteur-reachout-e2e.{json,mp4}`
