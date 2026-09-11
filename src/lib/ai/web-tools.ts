@@ -30,7 +30,7 @@ const FETCH_TIMEOUT_MS = 12_000;
 const MAX_BYTES = 1_500_000; // 1.5 MB cap on any fetched body
 const MAX_TEXT = 6_000; // chars of page text returned to the model
 const MAX_RESULTS = 8; // search results returned
-const USER_AGENT = "AriaResearchBot/1.0 (+read-only; https://aria-sourcing-demo.vercel.app)";
+const USER_AGENT = "AriaResearchBot/1.0 (+read-only; https://aria-mantu-app.fly.dev)";
 
 /** Tool definitions in the same shape MCP tools use, so the existing tool-def builders work unchanged. */
 export const WEB_TOOL_DEFS: McpTool[] = [

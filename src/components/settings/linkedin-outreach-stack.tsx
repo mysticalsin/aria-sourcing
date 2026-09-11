@@ -96,13 +96,31 @@ function LinkedInOutreachStackInner() {
   const deliveryMode: LinkedInDeliveryMode =
     settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic";
 
-  const stepsComplete = (signedIn ? 1 : 0) + (heyReachConnected ? 1 : 0);
+  // Automatic outreach is AriaBot Browser Computer (Take control login), not HeyReach.
+  // Keep HeyReach as an optional assisted path — never mark Automatic "Ready" on MCP alone.
+  const supervisorConfigured = Boolean(settings.computerSupervisorUrl?.trim());
+  const stepsComplete =
+    (signedIn ? 1 : 0) +
+    (deliveryMode === "automatic" ? (supervisorConfigured || heyReachConnected ? 1 : 0) : heyReachConnected ? 1 : 0);
   const progressPct = (stepsComplete / 2) * 100;
 
   let statusLabel = "Not started";
   let statusTone: "neutral" | "success" | "electric" = "neutral";
-  if (heyReachConnected && signedIn) {
-    statusLabel = deliveryMode === "automatic" ? "Ready · automatic" : "Ready · manual";
+  if (deliveryMode === "automatic") {
+    if (signedIn && (supervisorConfigured || heyReachConnected)) {
+      statusLabel = supervisorConfigured
+        ? "Ready · automatic (AriaBot)"
+        : "Partial · HeyReach only";
+      statusTone = supervisorConfigured ? "success" : "electric";
+    } else if (signedIn) {
+      statusLabel = "Identity connected — add AriaBot supervisor";
+      statusTone = "electric";
+    } else if (supervisorConfigured || heyReachConnected) {
+      statusLabel = "Delivery path set — sign in LinkedIn";
+      statusTone = "electric";
+    }
+  } else if (heyReachConnected && signedIn) {
+    statusLabel = "Ready · manual";
     statusTone = "success";
   } else if (signedIn) {
     statusLabel = "Identity connected";

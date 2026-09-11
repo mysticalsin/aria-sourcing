@@ -1,49 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 145
+shift: 146
 agent: cursor-cloud
-updated: 2026-09-11T02:35Z
-status: e2e-tangibility-wired
+updated: 2026-09-11T02:52Z
+status: full-app-e2e-audit
 ---
 
-# Handoff — Shift 145
+# Handoff — Shift 146
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` (ready to push)
-- **Fly:** `aria-mantu-computers` — `OPENBOT_MAX_COMPUTERS=5` (host VM cap ≠ fleet `maxAgents`)
-- **E2E wiring:** Deploy → LinkedIn Browser Computer seats with `computerId` → Fleet ensure VMs → Floor 3D overlays live computer status; pulses prefer `event.seatId`
-- **Audit:** `_relay/e2e-tangibility-audit.md`
+- **Branch:** `cursor/openbot-desktop-vm-b91d`
+- **Fly app:** https://aria-mantu-app.fly.dev healthy (login-gated)
+- **Fly computers:** https://aria-mantu-computers.fly.dev healthy — `max:5`, desktop VM
+- **Policy:** LinkedIn / AriaBot / OpenBot production = **Fly only** (not Vercel)
+- **Audits:** `_relay/full-app-e2e-audit.md` (full), `_relay/e2e-tangibility-audit.md` (fleet/floor)
 
 ## Done this shift
 
-1. Persist `computerId` / LinkedIn delivery backend / `assignedCampaignIds` on fleet seat create
-2. Floor `agentActivity` prefers `assignedCampaignIds`; 3D `pickResponderIndex` prefers `seatId`
-3. Outreach allocate prefers campaign-attached seats; allocate/send emit `seatId` when known
-4. `deployAgents` creates real LinkedIn Browser Computer seats (demo + live); Fleet default deploy = 5; toast mentions host VM cap
-5. Floor polls `/api/fleet/computers` and overlays `help_requested` / busy / starting / unhealthy onto office agents
-6. `tests/floor.mts` green; `tsc --noEmit` green; fixed broken `tests/test-manifest.mjs` entry
+1. Full-app E2E audit across 27 nav routes + Settings tabs (P0–P2 backlog)
+2. Deploy now ensure+start VMs and reports booted vs host-cap blocks
+3. Computer actions fail closed on `status=error` (no false “You have control”)
+4. LinkedIn Automatic Ready no longer treats HeyReach-only as fully ready
+5. Research UA host → `aria-mantu-app.fly.dev` (not Vercel demo)
 
 ## Blockers
 
-1. Human Take control + LinkedIn/Recruiter login (2FA/captcha) per seat
-2. Host VM cap (Fly=5) must be raised (or multi-host) before “16 agents on the map with 16 VMs” is literally true
+1. Human Take control + LinkedIn 2FA per seat
+2. `OPENBOT_MAX_COMPUTERS=5` on Fly — raise/shard before 16 concurrent VMs
+3. `/api/ready` reports `agentFrameworks: false`
 
 ## Next steps
 
-1. Operator: deploy ≤ host cap → Take control login each seat → assign to campaign → verify `/floor` shows N agents + VM status
-2. Optional: raise `OPENBOT_MAX_COMPUTERS` on Fly; stamp connected account after healthy probe
-3. Optional: emit `seatId` on source events when a Browser Computer seat ran the search
+1. Operator: run prove script at bottom of `_relay/full-app-e2e-audit.md` on Fly
+2. Fly: raise `OPENBOT_MAX_COMPUTERS` (and RAM) if 16 concurrent desktops required
+3. P1: allocate CTA on Outreach/Campaign; rename misleading Send-reply; disable roadmap Connect
 
 ## Decisions (don't relitigate)
 
-- N seats = N Chromium profiles / VMs
-- Recruiter via Take control (no auto InMail)
-- Take control primary = real desktop (noVNC)
-- Floor tangibility = assigned campaigns + live computer status + seatId pulses (not theatre-only)
+- Fly-only for computers + LinkedIn automation
+- N seats = N Chromium profiles; Recruiter via Take control
+- Host VM cap must be surfaced honestly in Fleet UX
 
 ## Watch out
 
-- Never commit Fly `SUPERVISOR_TOKEN` / `COMPUTER_TOKEN` / demo passwords
-- Fleet `maxAgents` can exceed host VM cap — surface ensure failures; don't pretend 300 VMs on one host
-- tint2 v17 keys only; Playwright forbids `deviceScaleFactor` with `viewport: null`
+- Never commit Fly tokens / demo passwords
+- Do not point Vercel env at `COMPUTER_SUPERVISOR_*`

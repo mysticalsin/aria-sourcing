@@ -4529,17 +4529,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const deployAgents = useCallback(
     async (n: number, opts?: { language?: string; namePrefix?: string; campaignId?: string }) => {
       const s = stateRef.current;
-      if (!s) return { created: 0, total: 0, capped: false, max: 0 };
+      if (!s) return { created: 0, total: 0, capped: false, max: 0, seats: [] };
       const max = s.settings.fleet.maxAgents || 300;
       if (!can(s.currentRole, "manage_fleet")) {
-        return { created: 0, total: s.seats.length, capped: false, max };
+        return { created: 0, total: s.seats.length, capped: false, max, seats: [] };
       }
       const room = Math.max(0, max - s.seats.length);
       const toCreate = Math.min(Math.max(0, Math.floor(n)), room);
-      if (toCreate === 0) return { created: 0, total: s.seats.length, capped: room === 0, max };
+      if (toCreate === 0) return { created: 0, total: s.seats.length, capped: room === 0, max, seats: [] };
 
       const prefix = opts?.namePrefix ?? "AriaBot";
-      let created = 0;
+      const createdSeats: AgentSeat[] = [];
       for (let i = 0; i < toCreate; i += 1) {
         const idx = (stateRef.current?.seats.length ?? s.seats.length) + 1;
         const seat = await addSeat({
@@ -4549,13 +4549,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           language: opts?.language ?? s.settings.defaultLanguage,
           assignedCampaignIds: opts?.campaignId ? [opts.campaignId] : undefined,
         });
-        if (seat) created += 1;
+        if (seat) createdSeats.push(seat);
       }
       return {
-        created,
+        created: createdSeats.length,
         total: stateRef.current?.seats.length ?? s.seats.length,
-        capped: created < toCreate,
+        capped: createdSeats.length < toCreate,
         max,
+        seats: createdSeats,
       };
     },
     [addSeat],

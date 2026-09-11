@@ -135,14 +135,62 @@ export default function FleetPage() {
     }
     const n = Math.max(1, Math.min(Number(deployN) || 0, maxAgents));
     const res = await actions.deployAgents(n);
+    if (res.created <= 0) {
+      toast({
+        title: "Fleet at capacity",
+        description: `Already at the ${res.max}-agent ceiling.`,
+        variant: "warning",
+      });
+      return;
+    }
+
+    // Boot real Chromium VMs on Fly (ensure alone only registers an in-process row).
+    let booted = 0;
+    let blocked = 0;
+    let lastErr = "";
+    for (const seat of res.seats) {
+      const computerId = seat.computerId || seat.id;
+      await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ensure", computerId, seatId: seat.id }),
+      }).catch(() => null);
+      const startRes = await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", computerId }),
+      }).catch(() => null);
+      if (!startRes) {
+        blocked += 1;
+        lastErr = "Computer host unreachable";
+        continue;
+      }
+      const body = (await startRes.json().catch(() => ({}))) as {
+        error?: string;
+        computer?: { status?: string; lastError?: string | null };
+      };
+      const err = body.error || body.computer?.lastError || "";
+      if (!startRes.ok || body.computer?.status === "error" || /max computers/i.test(err)) {
+        blocked += 1;
+        lastErr = err || `HTTP ${startRes.status}`;
+      } else {
+        booted += 1;
+      }
+    }
+
+    const hostNote =
+      blocked > 0
+        ? ` ${blocked} VM${blocked === 1 ? "" : "s"} blocked by host capacity or errors${lastErr ? ` (${lastErr})` : ""}. Raise OPENBOT_MAX_COMPUTERS on Fly (aria-mantu-computers) or stop idle VMs.`
+        : " Take control on each VM to finish LinkedIn login.";
     toast({
-      title: res.created > 0 ? `Deployed ${res.created} AriaBot seats` : "Fleet at capacity",
-      description:
-        res.created > 0
-          ? `${res.created} LinkedIn Browser Computer seats ready (${res.total}/${res.max}). Each seat gets its own Chromium VM — Take control to log in. Host VM cap is separate (OPENBOT_MAX_COMPUTERS; Fly default 5).`
-          : `Already at the ${res.max}-agent ceiling.`,
-      variant: res.created > 0 ? "success" : "warning",
+      title: `Deployed ${res.created} seats · ${booted} VM${booted === 1 ? "" : "s"} booted`,
+      description: `${res.created} LinkedIn Browser Computer seats (${res.total}/${res.max}).${hostNote}`,
+      variant: blocked > 0 ? "warning" : "success",
     });
+    // Refresh roster after boots (safe: only invoked on click, after refreshComputers exists).
+    void refreshComputers();
   };
 
   const [scopeId, setScopeId] = React.useState<string>("");
@@ -234,9 +282,17 @@ export default function FleetPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, computerId }),
       });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        toast({ title: "Computer action failed", description: data.error ?? res.statusText, variant: "error" });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        computer?: { status?: string; lastError?: string | null };
+      };
+      if (!res.ok || data.computer?.status === "error" || data.error) {
+        toast({
+          title: "Computer action failed",
+          description: data.error || data.computer?.lastError || res.statusText,
+          variant: "error",
+        });
+        await refreshComputers();
         return;
       }
       if (action === "take_control") setObservingComputerId(computerId);
