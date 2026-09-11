@@ -10,9 +10,9 @@ status: floor-hint-isolation-shipped
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (commit after this push)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `b6ad9ac`
 - **Fly:** https://aria-mantu-app.fly.dev — still on older build `8ea3370…` (`/api/ready` ok:false agentFrameworks); tip with orphan reclaim + floor isolation **not live yet**
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/122 → `integration/sourcing-enrichment-on-main` (draft)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/123 → `integration/sourcing-enrichment-on-main` (draft)
 - **Durable LinkedIn bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5`
 
 ## Done this shift
@@ -34,7 +34,7 @@ status: floor-hint-isolation-shipped
 1. Deploy tip to Fly (protected workflow / image digest) — confirm `/api/ready` build SHA matches tip
 2. Settings → Login on Tony seat — reclaim to UUID durable bot if probe healthy; else Take control once, feed, Release
 3. Operator N-seat floor prove: distinct computerIds, no cross-desk VM bleed, sessionHealthy from probe only
-4. Mark PR #122 ready when operator E2E + stable session evidence lands
+4. Mark PR #123 ready when operator E2E + stable session evidence lands
 
 ## Decisions made (don't relitigate)
 
