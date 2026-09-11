@@ -175,16 +175,18 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
               .filter((c) => c.seatId && c.computerId && c.seatId !== "__orphan__")
               .map((c) => [c.seatId!, c.computerId!] as const),
           );
-          // Write owned bindings + clear Hermes when computerId is owned by another seat.
-          for (const patch of fleetHermesComputerPatches(nextSeats, computers)) {
+          // One patch pass — write owned bindings + clear foreign Hermes computerIds.
+          const patches = fleetHermesComputerPatches(nextSeats, computers);
+          const clearedBySeat = new Map(
+            patches.filter((p) => p.computerId === null).map((p) => [p.seatId, true] as const),
+          );
+          for (const patch of patches) {
             void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
           }
           nextSeats = nextSeats.map((s) => {
             const fleetComputerId = bySeatComputer.get(s.id);
-            const patched = fleetHermesComputerPatches([s], computers)[0];
             const computerId =
-              fleetComputerId ??
-              (patched && patched.computerId === null ? null : s.computerId);
+              fleetComputerId ?? (clearedBySeat.has(s.id) ? null : s.computerId);
             // Fleet overlay is authoritative: a present key with null must not
             // fall through to a stale local sessionHealthy=true (no probe).
             const fromSeat = s.id && bySeatHealth.has(s.id) ? bySeatHealth.get(s.id)! : undefined;

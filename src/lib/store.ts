@@ -4489,9 +4489,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         signature: partial.signature ?? "",
         language: partial.language ?? current().settings.defaultLanguage,
         connectedAccount: "",
-        // Leave computerId null until Deploy/Login/Attach reclaim-or-mint — pre-minting
-        // a blank id skips healthy host orphans and forces LinkedIn login.
-        computerId: partial.computerId ?? null,
+        // Always null on create (ignore client) — Deploy/Login/Attach reclaim-or-mint.
+        // Pre-minting a blank id skips healthy host orphans and forces LinkedIn login.
+        computerId: null,
         linkedinDeliveryBackend:
           partial.linkedinDeliveryBackend ??
           (provider === "LinkedIn Browser Computer" ? "browser-computer" : null),

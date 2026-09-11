@@ -143,8 +143,9 @@ export function CampaignAgentsPanel({
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
-      // Write owned bindings + clear Hermes when computerId is owned by another seat.
-      for (const patch of fleetHermesComputerPatches(campaignSeats, rows)) {
+      // Use the full fleet list — campaign-filtered rows miss owners outside this
+      // campaign, so a foreign Hermes computerId would never get cleared.
+      for (const patch of fleetHermesComputerPatches(campaignSeats, data.computers ?? [])) {
         void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
       }
 

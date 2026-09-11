@@ -526,6 +526,17 @@ try {
       "reclaim persist fails closed when DB write errors",
       reclaimBlock.includes("computer_id persist failed"),
     );
+
+    // ensure / navigate / session_probe must require a real seatId (never
+    // default seatId to computerId — that registers comps as fake seats).
+    for (const action of ["ensure", "navigate", "session_probe"] as const) {
+      const idx = route.indexOf(`case "${action}"`);
+      const block = idx >= 0 ? route.slice(idx, idx + 700) : "";
+      ok(
+        `${action} requires seatId (no computerId fallback)`,
+        block.includes("seatId required") && !block.includes("body.seatId ?? computerId"),
+      );
+    }
   }
 
 
