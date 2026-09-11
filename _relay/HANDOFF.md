@@ -10,9 +10,9 @@ status: hermes-ownership-fail-closed-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (Hermes clear-foreign + ownership fail-closed on tip of floor anti-theater)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `59d160e` (Hermes clear-foreign + ownership fail-closed)
 - **Fly:** https://aria-mantu-app.fly.dev — build `8ea3370…` (**tip not live**); `/api/ready` `ok:false` (`agentFrameworks:false`)
-- **PR:** #130 → `integration/sourcing-enrichment-on-main` (draft; recreate if closed)
+- **PR:** #131 → `integration/sourcing-enrichment-on-main` (draft; prior #130 may be CLOSED)
 - **Durable bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` ↔ seat `600e8afa-a7c4-40ef-91c8-f4854fa9e5fc`
 - **Host:** capacity often 3/5 computers
 
