@@ -1,29 +1,31 @@
 ---
 project: MSourcing / ARIA
-shift: 176
+shift: 177
 agent: cursor-cloud
-updated: 2026-09-11T19:48Z
-status: floor-theater-killed-tip-not-released
+updated: 2026-09-11T19:59Z
+status: hermes-ownership-fail-closed-tip-not-released
 ---
 
-# Handoff — Shift 176
+# Handoff — Shift 177
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `abeb1e7` (floor anti-theater + create-null / reclaim-first)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (Hermes clear-foreign + ownership fail-closed on tip of floor anti-theater)
 - **Fly:** https://aria-mantu-app.fly.dev — build `8ea3370…` (**tip not live**); `/api/ready` `ok:false` (`agentFrameworks:false`)
-- **PR:** #130 → `integration/sourcing-enrichment-on-main` (draft; prior #129 CLOSED)
+- **PR:** #130 → `integration/sourcing-enrichment-on-main` (draft; recreate if closed)
 - **Durable bot:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` ↔ seat `600e8afa-a7c4-40ef-91c8-f4854fa9e5fc`
 - **Host:** capacity often 3/5 computers
 
 ## Done this shift
 
-1. Floor/3D anti-theater: with live computer map, "Working now" needs ready+healthy LI **or** `sentToday > 0` (no theatrical lottery)
-2. `seatsToOfficeAgents`: busy/starting → idle (not working); non-LI theatrical working suppressed without sends
-3. Orphan hints computerId-only (no `__orphan__` seat-key overwrite); pulse gated same rules
-4. `preferBrowserComputerAgents` for 3D cap (bound LI before email theater)
-5. Seed LI seats `computerId: null` until Deploy/Login
-6. `tests/floor.mts` green (54); typecheck + typecheck:tests green
+1. `fleetHermesComputerPatches` — Floor/Fleet/Campaign/Settings write owned bindings **and clear** Hermes when `computerId` is owned by another seat
+2. Settings health badge gated by `computerHealthOwnedBySeat` (no cross-desk green)
+3. Seat create always `computer_id: null` (ignore client body)
+4. `ensure` / `navigate` / `session_probe` require real `seatId` (never default to `computerId`)
+5. `reclaimHealthyOrphan` ownership-mismatch falls through; fallback only if still ours/orphan
+6. `resolveDurableComputerId` mints on ownership / no-healthy-orphan errors instead of keeping a foreign id
+7. Floor rollup counts ready+healthy LI even when theatrical activity is idle
+8. Tests: `fleet-hermes-sync` 8, `boot-browser-computer` 9, `floor` 54; `npm run typecheck` green
 
 ## Blockers (goal incomplete)
 
@@ -48,7 +50,7 @@ status: floor-theater-killed-tip-not-released
 - Reclaim must persist `agent_seats.computer_id` same request
 - Poll GET+sync only; ensure must not steal durable bindings
 - Login must not trust Hermes-only computerId over empty API/DB
-- Floor/Settings sync Hermes from fleet GET
+- Floor/Settings sync Hermes from fleet GET (**including clear-foreign**)
 - All boot paths reclaim-before-mint; seat create leaves computerId null
 - computerId fallback must not cross seat ownership
 - Unique `(workspace_id, computer_id)` (0084)
