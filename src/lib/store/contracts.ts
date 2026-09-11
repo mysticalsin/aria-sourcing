@@ -475,7 +475,7 @@ export interface HermesActions {
     n: number,
     opts?: { language?: string; namePrefix?: string; campaignId?: string },
   ) => Promise<{ created: number; total: number; capped: boolean; max: number; seats: AgentSeat[] }>;
-  updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
+  updateSeat: (id: string, patch: Partial<AgentSeat>) => Promise<boolean>;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => Promise<{ ok: boolean; error?: string }>;
   disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;

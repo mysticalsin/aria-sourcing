@@ -1534,11 +1534,27 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               const next = Array.from(
                 new Set([...(seat.assignedCampaignIds ?? []), c.id]),
               );
-              actions.updateSeat(seatId, { assignedCampaignIds: next });
+              const assigned = await actions.updateSeat(seatId, { assignedCampaignIds: next });
+              if (!assigned) {
+                toast({
+                  title: "Attach failed",
+                  description: "Could not persist campaign assignment — VM not started.",
+                  variant: "warning",
+                });
+                return;
+              }
               if (seat.provider === "LinkedIn Browser Computer") {
                 const computerId = seat.computerId || seat.id;
                 if (!seat.computerId) {
-                  actions.updateSeat(seatId, { computerId });
+                  const minted = await actions.updateSeat(seatId, { computerId });
+                  if (!minted) {
+                    toast({
+                      title: "Attached without computer id",
+                      description: "Assignment saved but computerId did not persist — start from Fleet.",
+                      variant: "warning",
+                    });
+                    return;
+                  }
                 }
                 const boot = await bootBrowserComputer({
                   seatId,

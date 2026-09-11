@@ -4566,8 +4566,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateSeat = useCallback(
-    (id: string, patch: Partial<AgentSeat>) => {
-      if (!workspaceEffectAllowed()) return;
+    async (id: string, patch: Partial<AgentSeat>): Promise<boolean> => {
+      if (!workspaceEffectAllowed()) return false;
       if (
         supabaseEnabled &&
         (patch.operatorEmail !== undefined ||
@@ -4583,10 +4583,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             computerId: patch.computerId,
           }),
         );
-        if (!attempt.allowed) return;
-        void attempt.value;
+        if (!attempt.allowed) return false;
+        const result = await attempt.value;
+        if (!result.ok) return false;
       }
       commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+      return true;
     },
     [commit, runWorkspaceEffect, workspaceEffectAllowed],
   );
