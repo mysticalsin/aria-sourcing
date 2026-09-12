@@ -13,7 +13,7 @@ status: n-agent-ownership-gates-tip-not-released
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` — N-agent ownership gates (boot ensure→start, start/take_control seat match, draft fail-closed, floor vmId, readiness honest frameworks bit) + prior isolation harden + sealed outreach
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` `ok:false`, `agentFrameworks:false` (honest — DeerFlow/Flowise not ready)
 - **Live fleet:** human LinkedIn login / `sessionHealthy` still outstanding — no invented delivery
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/140 (draft #140)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/141 (draft #141; #140 closed)
 
 ## Done this shift
 
