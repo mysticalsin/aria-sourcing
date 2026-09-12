@@ -13,7 +13,7 @@ status: ai-e2e-landing-calendar-fixes-shipped-tip-not-released
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` — AI e2e landing / humanizer / Teams calendar fixes on top of Settings plug-and-play
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` still stale / `ok:false`
 - **Live fleet:** human LinkedIn login / `sessionHealthy` still outstanding — no invented Tony Connect delivery
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/138 (draft #138)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/139 (draft #139; #138 closed)
 - **Audit:** `_relay/evidence/2026-09-12-ai-e2e-deep-audit.md`
 - **Walkthrough:** `/opt/cursor/artifacts/2026-09-12-tony-walteur-ai-e2e-walkthrough.mp4` + `_relay/evidence/2026-09-12-tony-ai-e2e/`
 
