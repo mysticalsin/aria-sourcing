@@ -175,14 +175,22 @@ try {
     supervisor.recentAudits("comp_camp").some((a) => a.action === "takeover" && a.campaignId === "camp_seed_backend"),
   );
 
-  // Stable DB computer_id rebinds in-process seat mapping
-  const rebound = supervisor.ensureComputer({
-    workspaceId: "ws",
-    seatId: "seat-1",
-    computerId: "comp_stable_db_id",
-  });
-  ok("ensureComputer rebinds to stable computerId", rebound.computerId === "comp_stable_db_id");
-  ok("botId follows stable computerId", rebound.botId?.includes("comp") === true);
+  // Stable DB computer_id rebinds only while stopped (not ready/live).
+  {
+    const bindSup = new ComputerSupervisor();
+    bindSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-bind",
+      computerId: "comp_ephemeral",
+    });
+    const rebound = bindSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-bind",
+      computerId: "comp_stable_db_id",
+    });
+    ok("ensureComputer rebinds to stable computerId", rebound.computerId === "comp_stable_db_id");
+    ok("botId follows stable computerId", rebound.botId?.includes("comp") === true);
+  }
 
   // Live / probed seats must not silently retarget to a stale client computerId.
   {
@@ -217,6 +225,19 @@ try {
     ok(
       "ensureComputer refuses human-control retarget",
       keptHuman.computerId === "comp_live_durable",
+    );
+    // ready + unverified (post-start, pre-probe) must also refuse retarget.
+    live.control = "bot";
+    live.status = "ready";
+    live.sessionHealthy = null;
+    const keptReady = liveSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-live-bind",
+      computerId: "comp_stale_ready",
+    });
+    ok(
+      "ensureComputer refuses ready/unverified retarget",
+      keptReady.computerId === "comp_live_durable",
     );
   }
 

@@ -222,6 +222,18 @@ export function agentActivityWithComputers(
   computers?: ReadonlyMap<string, FloorComputerHint>,
 ): AgentActivity {
   const base = agentActivity(seat, state, now);
+  // With a live computers map, non-LI desks stay idle unless they actually sent today —
+  // never keep the hash lottery busy theater after fleet poll.
+  if (computers && seat.provider !== "LinkedIn Browser Computer") {
+    if ((seat.sentToday ?? 0) > 0) return base;
+    return {
+      ...base,
+      state: "idle",
+      label: "Standing by",
+      busy: false,
+      tone: "neutral",
+    };
+  }
   if (!computers || seat.provider !== "LinkedIn Browser Computer") return base;
 
   const hint = resolveComputerHint(seat, computers);

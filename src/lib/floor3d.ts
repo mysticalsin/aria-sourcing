@@ -65,16 +65,11 @@ export const PULSE_MS = 4000;
 export const PACKET_FLIGHT_MS = 850;
 
 export function pickResponderIndex(e: AgentEvent, n: number, seatIds?: string[]): number {
-  if (n <= 0) return 0;
-  // Prefer the seat that actually did the work when the event carries seatId.
-  if (e.seatId && seatIds?.length) {
-    const idx = seatIds.indexOf(e.seatId);
-    if (idx >= 0) return idx % n;
-  }
-  const key = `${e.kind}:${e.campaignId ?? ""}:${e.candidateName ?? ""}:${e.count ?? ""}:${e.at}`;
-  let h = 0;
-  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h % n;
+  if (n <= 0) return -1;
+  // Fail-closed: only the seat that owns the event may light up — never hash-pick.
+  if (!e.seatId || !seatIds?.length) return -1;
+  const idx = seatIds.indexOf(e.seatId);
+  return idx >= 0 ? idx % n : -1;
 }
 
 export function describeEvent(e: AgentEvent, seatName?: string | null): string {

@@ -41,7 +41,6 @@ import {
   EVENT_COLOR,
   EVENT_SOUND,
   PULSE_MS,
-  pickResponderIndex,
   describeEvent,
   seatsToOfficeAgents,
   type ComputerFloorHint,
@@ -171,12 +170,11 @@ export default function FloorPage() {
     const now = Date.now();
     for (const e of recentEvents()) {
       if (e.at <= now - PULSE_MS) continue;
-      // No seatId → no desk pulse (hash would theatrical-paint a random LI VM).
+      // No seatId → no desk pulse (never hash-paint a random LI VM).
       if (!e.seatId) continue;
       const employees = seatsRef.current.slice(1); // index 0 = CEO (src/lib/floor3d.ts)
-      if (employees.length === 0) continue;
-      const seat = employees[pickResponderIndex(e, employees.length, employees.map((s) => s.id))];
-      if (seat?.id === e.seatId) pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
+      const seat = employees.find((s) => s.id === e.seatId);
+      if (seat) pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
     }
 
     const unsubscribe = subscribe((e) => {

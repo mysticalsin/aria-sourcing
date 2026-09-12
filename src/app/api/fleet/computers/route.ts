@@ -312,24 +312,26 @@ export async function POST(req: NextRequest) {
         if (!navSeatId) {
           return NextResponse.json({ error: "seatId required for navigate" }, { status: 400 });
         }
-        defaultComputerSupervisor.ensureComputer({
+        const navRec = defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
           seatId: navSeatId,
           computerId,
           campaignId: body.campaignId,
         });
-        await defaultComputerSupervisor.start(computerId, campaignOpts);
+        // Always drive the ensured id — never the raw request id after a rebound.
+        const navComputerId = navRec.computerId;
+        await defaultComputerSupervisor.start(navComputerId, campaignOpts);
         // If a human currently holds the mutex, release so AriaBot can navigate.
-        const current = defaultComputerSupervisor.get(computerId);
+        const current = defaultComputerSupervisor.get(navComputerId);
         if (current?.control === "human") {
-          await defaultComputerSupervisor.releaseControl(computerId, campaignOpts);
+          await defaultComputerSupervisor.releaseControl(navComputerId, campaignOpts);
         }
         await defaultComputerSupervisor.enqueueJob({
-          computerId,
+          computerId: navComputerId,
           kind: "warmup_nav",
           payload: { url: body.url },
         });
-        rec = defaultComputerSupervisor.get(computerId);
+        rec = defaultComputerSupervisor.get(navComputerId);
         if (!rec) throw new Error("computer-not-found");
         break;
       }
@@ -339,13 +341,13 @@ export async function POST(req: NextRequest) {
         if (!probeSeatId) {
           return NextResponse.json({ error: "seatId required for session_probe" }, { status: 400 });
         }
-        defaultComputerSupervisor.ensureComputer({
+        const probeRec = defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
           seatId: probeSeatId,
           computerId,
           campaignId: body.campaignId,
         });
-        rec = await defaultComputerSupervisor.probeSession(computerId);
+        rec = await defaultComputerSupervisor.probeSession(probeRec.computerId);
         break;
       }
       case "reclaim_healthy_orphan": {

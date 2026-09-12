@@ -2812,17 +2812,46 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // true), a live WhatsApp / SMS sender for the phone channels, or a live
       // LinkedIn Vendor API seat for automatic LinkedIn delivery.
       const channel = msg.channel;
+      const liveOf = (provider: string) =>
+        s.seats.filter((x) => x.status === "active" && x.mode === "live" && x.provider === provider);
+      const pickUniqueOrPreferred = (provider: string) => {
+        if (msg.seatId) {
+          return s.seats.find(
+            (x) =>
+              x.id === msg.seatId &&
+              x.status === "active" &&
+              x.mode === "live" &&
+              x.provider === provider,
+          );
+        }
+        const live = liveOf(provider);
+        return live.length === 1 ? live[0] : undefined;
+      };
       const seat =
         channel === "WhatsApp"
-          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
+          ? pickUniqueOrPreferred("WhatsApp Cloud")
           : channel === "SMS"
-            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
+            ? pickUniqueOrPreferred("Twilio SMS")
             : channel === "LinkedIn"
               ? pickLiveLinkedInSendSeat(s.seats, msg.campaignId, msg.seatId)
-              : msg.seatId
-                ? s.seats.find((x) => x.id === msg.seatId && x.status === "active" && x.mode === "live")
-                  ?? s.seats.find((x) => x.status === "active" && x.mode === "live")
-                : s.seats.find((x) => x.status === "active" && x.mode === "live");
+              : (() => {
+                  if (msg.seatId) {
+                    return s.seats.find(
+                      (x) => x.id === msg.seatId && x.status === "active" && x.mode === "live",
+                    );
+                  }
+                  const liveMail = s.seats.filter(
+                    (x) =>
+                      x.status === "active" &&
+                      x.mode === "live" &&
+                      x.provider !== "WhatsApp Cloud" &&
+                      x.provider !== "Twilio SMS" &&
+                      x.provider !== "LinkedIn Browser Computer" &&
+                      x.provider !== "LinkedIn Vendor API" &&
+                      x.provider !== "LinkedIn Assisted Manual",
+                  );
+                  return liveMail.length === 1 ? liveMail[0] : undefined;
+                })();
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"

@@ -45,7 +45,7 @@
    completely external one (the user closes the tab mid-run).
    ========================================================================== */
 
-import { pickResponderIndex } from "@/lib/floor3d";
+import { soleCampaignBrowserSeatId } from "@/lib/agent-event-seat";
 import type { HermesActions } from "@/lib/store";
 import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -256,12 +256,14 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   await sleep(1600);
   if (restoring) return;
 
-  // Same deterministic responder-selection the floor already uses (see
-  // src/lib/floor3d.ts) so the camera tracks whichever robot the floor's own
-  // 2D ticker / packet FX also lights up as "working" for this event.
-  const actingSeat = employees.length
-    ? employees[pickResponderIndex({ kind: "allocate", campaignId: campaign.id, candidateName: candidate.name, at: Date.now() }, employees.length)]
-    : undefined;
+  // Prefer the sole campaign Browser Computer seat (or the only employee). Never hash-pick a desk.
+  const soleId = soleCampaignBrowserSeatId(seats, campaign.id);
+  const actingSeat = soleId
+    ? employees.find((s) => s.id === soleId)
+    : employees.length === 1
+      ? employees[0]
+      : employees.find((s) => (s.assignedCampaignIds ?? []).includes(campaign.id))
+        ?? undefined;
   if (actingSeat) directorChannel.set({ seatId: actingSeat.id });
 
   setChapter("drafting", `${actingSeat?.name ?? "Aria"} is drafting outreach for ${candidate.name}…`, candidate.name);

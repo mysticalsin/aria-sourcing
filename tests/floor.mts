@@ -63,8 +63,12 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   const ids = ["seat_maya", "seat_diego", "seat_aisha"];
   ok("pulse prefers event seatId", pickResponderIndex(e, ids.length, ids) === 1);
   ok(
-    "pulse falls back without seatId",
-    typeof pickResponderIndex({ ...e, seatId: undefined }, ids.length, ids) === "number",
+    "pulse fails closed without seatId",
+    pickResponderIndex({ ...e, seatId: undefined }, ids.length, ids) === -1,
+  );
+  ok(
+    "pulse fails closed when seatId not in roster",
+    pickResponderIndex({ ...e, seatId: "seat_ghost" }, ids.length, ids) === -1,
   );
 }
 

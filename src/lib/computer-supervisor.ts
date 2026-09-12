@@ -293,9 +293,12 @@ export class ComputerSupervisor {
       if (opts.computerId && existing.computerId !== opts.computerId) {
         // Block only when retarget would steal a mutex / probed-green / in-flight VM.
         // ready+remoteUrl alone must still allow stopped→stable-DB id migration.
+        // ready counts as live even before sessionHealthy probe — otherwise a
+        // stale poll computerId can delete the durable binding mid-boot.
         const live =
           existing.control === "human" ||
           existing.sessionHealthy === true ||
+          existing.status === "ready" ||
           existing.status === "busy" ||
           existing.status === "starting" ||
           existing.status === "help_requested";
