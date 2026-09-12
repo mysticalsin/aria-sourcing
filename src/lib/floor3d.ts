@@ -2,7 +2,7 @@ import type { AgentSeat, HermesState } from "@/lib/types";
 import { agentActivity, resolveComputerHint, type FloorComputerHint } from "@/lib/floor";
 import type { AgentEvent } from "@/lib/agent-events";
 import type { SoundKind } from "@/lib/sound";
-import { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-supervisor";
+import { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-constants";
 
 /* ============================================================================
    Shared 3D-floor types and pure helpers. This module is deliberately free of

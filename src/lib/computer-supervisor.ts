@@ -29,6 +29,9 @@ import {
 import {
   recordComputerAudit,
 } from "@/lib/computer-audit";
+import { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-constants";
+
+export { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-constants";
 
 export type ComputerStatus =
   | "stopped"
@@ -100,8 +103,6 @@ export type ComputerSupervisorEndpoint = {
  * hydrateFromHost imports them so Login/Fleet can probe+reclaim without minting twins.
  * Never invent sessionHealthy for these — probe first.
  */
-export const HOST_ORPHAN_SEAT_ID = "__orphan__";
-
 let endpointOverride: ComputerSupervisorEndpoint | null = null;
 
 /** Bind Aria Settings / vault-resolved supervisor endpoint for the current deliver call. */
