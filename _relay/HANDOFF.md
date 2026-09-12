@@ -10,7 +10,7 @@ status: seat-attributed-source-reply-allocate-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (source/reply/allocate floor FX carry real seatId; sole-LI / latest-outreach helpers; per-desk allocate pulses)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `9f5f333` (source/reply/allocate floor FX carry real seatId; sole-LI / latest-outreach helpers; per-desk allocate pulses)
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` `8ea3370…` / `ok:false`
 - **Live fleet (demo-login):** 1 computer `comp_7fe31958-…` seat `600e8afa-…` `sessionHealthy:false` `control:bot` (honest)
 - **PR:** tip pushed; recreate when write tool available (prior #134 CLOSED)
