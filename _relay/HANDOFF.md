@@ -15,7 +15,7 @@ status: marketing-video-honest-gate-linkedin-captcha-second-brain-hardened
 - **Live VM:** Browser Computer reaches LinkedIn but hits **login / CAPTCHA checkpoint** (`/checkpoint/challenge…`). Profile authwall; Messaging “We’re signing you in”
 - **Marketing video:** `/opt/cursor/artifacts/2026-09-12-aria-marketing-n-agent-linkedin-e2e.mp4` (~5.0MB) + highlights (~486KB) — product path through live VM LinkedIn attempt; **does not claim Sent/Messaging**
 - **Evidence:** `_relay/evidence/2026-09-12-marketing-e2e-linkedin/`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/141
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/142
 - **Computer:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` · seat `600e8afa-a7c4-40ef-91c8-f4854fa9e5fc`
 
 ## Done this shift
