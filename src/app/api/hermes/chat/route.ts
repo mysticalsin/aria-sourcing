@@ -113,8 +113,10 @@ const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string>
   outreach:
     "You are a senior technical recruiter writing first-touch candidate outreach. " +
     "Lead with the candidate's specific recent work, give one genuine reason for reaching out, " +
-    "and end with a soft, low-pressure ask. Keep it under 120 words. No AI slop, no corporate filler, no em-dashes. " +
-    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble. " +
+    "and end with a soft, low-pressure ask. Sound warm and human — never robotic. " +
+    "For LinkedIn Connect notes: hard cap 200 characters (LinkedIn greys out Send above that); body only, no Subject line. " +
+    "For Email / longer LinkedIn Message: keep under 120 words. No AI slop, no corporate filler, no em-dashes. " +
+    "Reply with exactly: optional 'Subject: <subject>' then a blank line then the message body (omit Subject for Connect notes). No preamble. " +
     DISCLOSURE_SYSTEM,
   classify:
     "You are a reply-classification engine for recruiting outreach. Read the candidate reply and respond with " +

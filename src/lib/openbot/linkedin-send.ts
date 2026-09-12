@@ -156,8 +156,11 @@ export async function openBotLinkedInSend(
     };
   }
 
-  const composed = subject ? `${subject}\n\n${body}` : body;
+  // Free LinkedIn Messaging is body-only. Dumping Subject\\n\\nBody into the DM
+  // box is a common robotic failure mode (and wastes invite-note budget on Connect).
+  const composed = body;
   const preferConnect = input.preferConnect === true;
+  void subject; // subject reserved for InMail-capable seats; not typed into free DM.
 
   async function sendDirectMessage(): Promise<OpenBotLinkedInSendResult | null> {
     const messageBtn = await resolveRef(
@@ -258,12 +261,20 @@ export async function openBotLinkedInSend(
     }
 
     // LinkedIn free-tier invite notes hard-cap at 200 chars — longer notes grey out
-    // Send and produce zero recipient notification (280 was a false allowance).
-    const LINKEDIN_INVITE_NOTE_MAX = 200;
-    const note =
-      body.length > LINKEDIN_INVITE_NOTE_MAX
-        ? `${body.slice(0, LINKEDIN_INVITE_NOTE_MAX - 1).trimEnd()}…`
-        : body;
+    // Send and produce zero recipient notification. Fail closed rather than shipping
+    // a mid-sentence mutilation that looks robotic and still may not notify.
+    const { fitLinkedInInviteNote, LINKEDIN_INVITE_NOTE_MAX } = await import(
+      "@/lib/linkedin-invite-note"
+    );
+    const fitted = fitLinkedInInviteNote(body, LINKEDIN_INVITE_NOTE_MAX);
+    if (fitted.truncated && body.trim().length > LINKEDIN_INVITE_NOTE_MAX + 40) {
+      return {
+        ok: false,
+        detail: `Connect note is ${body.trim().length} chars (max ${LINKEDIN_INVITE_NOTE_MAX}). Rewrite a short invite note before send — refusing mid-sentence truncation that would grey Send or look robotic.`,
+        helpRequested: false,
+      };
+    }
+    const note = fitted.text;
     await openBotType(cfg, noteBox.ref, snap.snapshotId, note, false);
     snap = await openBotSnapshot(cfg);
 

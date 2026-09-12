@@ -246,11 +246,19 @@ export function createBookingReportActions({
     if (!candidate || !campaign) return { ok: false, error: "Candidate or campaign not found." };
 
     const activeInterviewers = state.interviewers.filter((item) => item.active);
+    // Prefer the campaign hiring manager (Mantu Microsoft calendar owner) when rostered.
+    const hmEmail = (campaign.hiringManagerEmail || "").trim().toLowerCase();
+    const hmMatch = hmEmail
+      ? activeInterviewers.find((item) => item.email.trim().toLowerCase() === hmEmail)
+      : undefined;
     const slot = resolveBookingSlot(
       state.bookings,
       activeInterviewers,
       state.bookings.length,
-      opts,
+      {
+        ...opts,
+        interviewerName: opts?.interviewerName || hmMatch?.name,
+      },
     );
     if ("error" in slot) return { ok: false, error: slot.error };
     const booking = createBooking(candidate, campaign, slot.interviewer, slot.start);

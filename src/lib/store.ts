@@ -400,8 +400,13 @@ async function attemptLiveFollowUpGen(opts: {
     skillPlaybook: getSkill(skills, "outreach_skill")?.content,
     linkedInAgentContext,
   });
-  const ariaPrompt = settings.guardrails?.ariaPrompt;
-  const guardrails = [ariaPrompt, touchNote].filter(Boolean).join("\n\n");
+    const ariaPrompt = settings.guardrails?.ariaPrompt;
+  const liGuard = channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
+  const inviteRules =
+    channel === "LinkedIn"
+      ? "LinkedIn Connect notes must stay ≤200 characters or Send greys out and the candidate never gets a notification."
+      : "";
+  const guardrails = [ariaPrompt, liGuard, inviteRules, touchNote].filter(Boolean).join("\n\n");
   const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
   let genInput: Parameters<typeof hermesGenerate>[0];
@@ -2075,7 +2080,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         // F-2: prepend ariaPrompt when set so it shapes the live generation.
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
         const liGuard = resolvedChannel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
-        const guardrails = [ariaPrompt, liGuard].filter(Boolean).join("\n\n");
+        const inviteRules =
+          resolvedChannel === "LinkedIn"
+            ? "LinkedIn Connect notes must stay ≤200 characters or Send greys out and the candidate never gets a notification."
+            : "";
+        const guardrails = [ariaPrompt, liGuard, inviteRules].filter(Boolean).join("\n\n");
         const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
         // Build input: cloud path when aiCfg resolved, hermes path otherwise.
@@ -2360,7 +2369,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         });
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
         const liGuard = msg.channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
-        const composed = [ariaPrompt, liGuard].filter(Boolean).join("\n\n");
+        const inviteRules =
+          msg.channel === "LinkedIn"
+            ? "LinkedIn Connect notes must stay ≤200 characters or Send greys out and the candidate never gets a notification."
+            : "";
+        const composed = [ariaPrompt, liGuard, inviteRules].filter(Boolean).join("\n\n");
         const prompt = composed ? `${composed}\n\n${basePrompt}` : basePrompt;
 
         let regenGenInput: Parameters<typeof hermesGenerate>[0];

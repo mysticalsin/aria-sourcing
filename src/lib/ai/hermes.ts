@@ -1,4 +1,5 @@
 import type { OutreachChannel, SystemSettings } from "@/lib/types";
+import { linkedInInviteDraftRules } from "@/lib/linkedin-invite-note";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -124,10 +125,19 @@ export function buildOutreachPrompt(opts: {
     opts.skillPlaybook
       ? ["Agent Skills playbook (must follow):", opts.skillPlaybook.trim(), ""].join("\n")
       : "",
-    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler. Never use em dashes (—) or en dashes (–); use commas or periods. The Humanizer will strip remaining AI tells.",
+    opts.channel === "LinkedIn"
+      ? [
+          "Rules (LinkedIn Connect-first):",
+          linkedInInviteDraftRules(),
+          "If drafting a Message/InMail instead of Connect, still stay under 90 words, body-only (no Subject line dumped into the DM box).",
+          "No AI slop, no corporate filler. Never use em dashes (—) or en dashes (–); use commas or periods. The Humanizer will strip remaining AI tells.",
+        ].join("\n")
+      : "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler. Never use em dashes (—) or en dashes (–); use commas or periods. The Humanizer will strip remaining AI tells.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",
     "",
-    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",
+    opts.channel === "LinkedIn"
+      ? "Reply with exactly the invite/message body only (no 'Subject:' line for Connect notes). No preamble, no commentary."
+      : "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",
   ];
   return lines.filter((l) => l !== "").join("\n");
 }

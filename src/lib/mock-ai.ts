@@ -1,6 +1,7 @@
 import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
+import { fitLinkedInInviteNote } from "./linkedin-invite-note";
 import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
@@ -1078,7 +1079,26 @@ export function generateOutreach(
     .filter(Boolean)
     .join(" ");
 
-  const body = channel === "WhatsApp" || channel === "SMS" ? phoneBody : emailBody;
+  // LinkedIn Connect notes must stay ≤200 chars or Send greys out (zero notification).
+  // Prefer a short invite note over a multi-paragraph email body that gets mutilated at send.
+  let body: string;
+  if (channel === "WhatsApp" || channel === "SMS") {
+    body = phoneBody;
+  } else if (channel === "LinkedIn") {
+    const evidenceBit = evidence[0] ? evidence[0].replace(/\.$/, "") : null;
+    const invite = [
+      `Hi ${firstName},`,
+      evidenceBit
+        ? `caught your work on ${evidenceBit.slice(0, 60)}.`
+        : topSkill
+          ? `your ${topSkill} depth stood out.`
+          : `your profile stood out for ${jd.title}.`,
+      `Open to a short chat about a ${jd.title} role?`,
+    ].join(" ");
+    body = fitLinkedInInviteNote(invite).text;
+  } else {
+    body = emailBody;
+  }
 
   // ALWAYS humanize — no AI slop ever.
   return {
@@ -1220,9 +1240,9 @@ const SUGGESTED_ACTION: Record<ReplyIntent, string> = {
 function draftFor(intent: ReplyIntent, first: string): string {
   switch (intent) {
     case "INTERESTED":
-      return `Brilliant, ${first}! Thank you. Here's my calendar so you can grab whatever suits: {{cal_link}}. I'll send a Teams invite the moment you pick a slot. Looking forward to it.`;
+      return `Brilliant, ${first}! Thank you. I'll book a Teams slot on the hiring manager's Outlook calendar and send you the invite — reply with a couple of windows that work this week. Looking forward to it.`;
     case "QUALIFIED_INTEREST":
-      return `Great questions, ${first}. Quick answers: comp and remote policy are both flexible within band, and the team is small and senior. If it's easier to talk it through, here's my calendar: {{cal_link}}.`;
+      return `Great questions, ${first}. Quick answers: comp and remote policy are both flexible within band, and the team is small and senior. Happy to jump on a Teams call booked on the hiring manager's Outlook calendar — share a couple of windows that work and I'll send the invite.`;
     case "NOT_INTERESTED":
       return `Completely understand, ${first}. Thanks for the quick reply. I'll close this out and won't keep nudging. If the timing ever changes, you know where to find me. All the best.`;
     case "REFERRAL":

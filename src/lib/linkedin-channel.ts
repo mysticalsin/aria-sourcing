@@ -1,3 +1,4 @@
+import { humanizeText } from "@/lib/humanizer";
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import { defaultComputerSupervisor, bindComputerSupervisorEndpoint } from "@/lib/computer-supervisor";
 import {
@@ -110,7 +111,7 @@ const vendorApiAdapter: LinkedInAdapter = {
           candidateId: req.candidateId,
           profileUrl: req.profileUrl,
           subject: req.subject,
-          body: req.body,
+          body: humanizeText(req.body),
           attemptId: req.attemptId,
         }),
         signal: AbortSignal.timeout(TIMEOUT),

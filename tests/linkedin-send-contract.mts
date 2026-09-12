@@ -16,8 +16,17 @@ function ok(name: string, cond: boolean) {
 }
 
 const src = readFileSync("src/lib/openbot/linkedin-send.ts", "utf8");
+const invite = readFileSync("src/lib/linkedin-invite-note.ts", "utf8");
 
-ok("invite note hard-cap is 200", /LINKEDIN_INVITE_NOTE_MAX\s*=\s*200/.test(src));
+ok(
+  "invite note hard-cap is 200",
+  /LINKEDIN_INVITE_NOTE_MAX\s*=\s*200/.test(invite) &&
+    /fitLinkedInInviteNote|LINKEDIN_INVITE_NOTE_MAX/.test(src),
+);
+ok(
+  "oversized invite notes fail closed (no silent mid-sentence mutilation)",
+  /Rewrite a short invite note before send|refusing mid-sentence truncation/.test(src),
+);
 ok(
   "invite refuses disabled Send",
   /Send invitation is disabled[\s\S]{0,80}not claiming delivery/.test(src),

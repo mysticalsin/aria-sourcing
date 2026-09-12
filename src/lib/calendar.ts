@@ -112,6 +112,9 @@ export async function createGraphCalendarEvent(
       emailAddress: { address },
       type: "required",
     })),
+    // Mantu Microsoft env: create a Teams meeting so the candidate gets a real join link.
+    isOnlineMeeting: true,
+    onlineMeetingProvider: "teamsForBusiness",
   };
   try {
     const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
@@ -128,14 +131,20 @@ export async function createGraphCalendarEvent(
         detail: `Graph calendar ${res.status}`,
       };
     }
-    const event = (await res.json().catch(() => ({}))) as { id?: string; webLink?: string };
+    const event = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      webLink?: string;
+      onlineMeeting?: { joinUrl?: string };
+    };
     return {
       ok: true,
       provider: "Microsoft Graph",
       eventId: event.id,
-      link: event.webLink,
+      link: event.onlineMeeting?.joinUrl || event.webLink,
       deliveryState: "accepted",
-      detail: "Event created.",
+      detail: event.onlineMeeting?.joinUrl
+        ? "Event created with Teams meeting."
+        : "Event created.",
     };
   } catch {
     // A timeout or disconnect after the request left this process may have

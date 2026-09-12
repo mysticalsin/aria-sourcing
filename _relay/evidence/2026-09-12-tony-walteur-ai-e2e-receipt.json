@@ -1,0 +1,54 @@
+{
+  "at": "2026-09-12T04:57:06.949Z",
+  "base": "https://aria-mantu-app.fly.dev",
+  "note": "Hi Tony, your Ultron / Mantu agentic ops work stood out. Open to a short chat on enterprise AI adoption this week?",
+  "noteLength": 114,
+  "steps": [
+    {
+      "step": "login",
+      "url": "https://aria-mantu-app.fly.dev/"
+    },
+    {
+      "step": "settings-setup",
+      "url": "https://aria-mantu-app.fly.dev/settings?tab=setup"
+    },
+    {
+      "step": "settings-integrations",
+      "url": "https://aria-mantu-app.fly.dev/settings?tab=integrations"
+    },
+    {
+      "step": "campaigns",
+      "url": "https://aria-mantu-app.fly.dev/campaigns"
+    },
+    {
+      "step": "campaign-detail",
+      "url": "https://aria-mantu-app.fly.dev/campaigns/camp_mor1jp00097605_enterprise-windows-desktop-engineer"
+    },
+    {
+      "step": "campaign-agents",
+      "url": "https://aria-mantu-app.fly.dev/campaigns/camp_mor1jp00097605_enterprise-windows-desktop-engineer"
+    },
+    {
+      "step": "outreach",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    },
+    {
+      "step": "draft-note",
+      "length": 114
+    },
+    {
+      "step": "fleet",
+      "url": "https://aria-mantu-app.fly.dev/fleet"
+    },
+    {
+      "step": "floor",
+      "url": "https://aria-mantu-app.fly.dev/floor"
+    },
+    {
+      "step": "closing-card"
+    }
+  ],
+  "videoWebm": "/opt/cursor/artifacts/2026-09-12-tony-walteur-ai-e2e-walkthrough.webm",
+  "videoMp4": "/opt/cursor/artifacts/2026-09-12-tony-walteur-ai-e2e-walkthrough.mp4",
+  "ffmpeg": 0
+}
