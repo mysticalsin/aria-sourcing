@@ -3,8 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Hand, Unlock, Monitor, ArrowLeft, ShieldAlert } from "lucide-react";
+import { Hand, Unlock, Monitor, ArrowLeft, ShieldAlert, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui";
+import {
+  FLUID_TAKEOVER,
+  fluidHotkeyAction,
+  isTypingTarget,
+  withFluidTakeQuery,
+} from "@/lib/fluid-takeover";
 
 type ComputerState = {
   computerId: string;
@@ -12,14 +18,14 @@ type ComputerState = {
   status: string;
   control: "bot" | "human";
   remoteUrl?: string | null;
+  viewUrl?: string | null;
   lastError?: string | null;
   lastAudit?: string | null;
 };
 
 /**
- * In-Aria operator viewport for Take control when a remote OpenBot Chromium
- * URL is not yet published. Real OpenBot hosts replace this with their own
- * remote desktop URL from ensure().
+ * In-Aria operator viewport — AgenticSeek watch + GrokBot jump-in/out.
+ * When OpenBot publishes a remote URL, we embed the live CDP stream here.
  */
 export default function FleetComputerViewportPage() {
   const params = useParams<{ computerId: string }>();
@@ -59,59 +65,78 @@ export default function FleetComputerViewportPage() {
     return () => window.clearInterval(t);
   }, [refresh]);
 
-  async function act(action: "take_control" | "release_control" | "start") {
-    setBusy(true);
-    setError(null);
-    try {
-      const seatId = (computer?.seatId ?? "").trim();
-      if (
-        (action === "start" || action === "take_control") &&
-        (!seatId || seatId === "__orphan__")
-      ) {
-        setError("Unbound host VM — reclaim/bind a seat before Start or Take control.");
-        return;
+  const act = React.useCallback(
+    async (action: "take_control" | "release_control" | "start") => {
+      setBusy(true);
+      setError(null);
+      try {
+        const seatId = (computer?.seatId ?? "").trim();
+        if (
+          (action === "start" || action === "take_control") &&
+          (!seatId || seatId === "__orphan__")
+        ) {
+          setError("Unbound host VM — reclaim/bind a seat before Start or Take control.");
+          return;
+        }
+        const res = await fetch("/api/fleet/computers", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            computerId,
+            ...(seatId ? { seatId } : {}),
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          computer?: ComputerState;
+        };
+        if (!res.ok) {
+          setError(data.error ?? res.statusText);
+          return;
+        }
+        if (data.computer) setComputer(data.computer);
+        else await refresh();
+      } catch {
+        setError("Computer action failed");
+      } finally {
+        setBusy(false);
       }
-      const res = await fetch("/api/fleet/computers", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          computerId,
-          ...(seatId ? { seatId } : {}),
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        computer?: ComputerState;
-      };
-      if (!res.ok) {
-        setError(data.error ?? res.statusText);
-        return;
-      }
-      if (data.computer) setComputer(data.computer);
-      else await refresh();
-    } catch {
-      setError("Computer action failed");
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    [computer?.seatId, computerId, refresh],
+  );
 
   const human = computer?.control === "human";
-  const ready = computer && computer.status !== "stopped" && computer.status !== "error";
+  const ready = Boolean(computer && computer.status !== "stopped" && computer.status !== "error");
+  const liveUrl = computer?.viewUrl || computer?.remoteUrl || null;
+
+  React.useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      const action = fluidHotkeyAction(ev.key, {
+        humanControl: human === true,
+        typingTarget: isTypingTarget(ev.target),
+      });
+      if (action === "ignore") return;
+      ev.preventDefault();
+      if (action === "release") void act("release_control");
+      if (action === "take") void act("take_control");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [human, act]);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#0b1220_0%,_#06080f_55%,_#05070c_100%)] text-slate-100">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
-              Aria operator viewport
+              Aria · AgenticSeek watch · GrokBot jump-in
             </p>
             <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Monitor className="h-6 w-6 text-cyan-300" aria-hidden />
-              Take control
+              Live computer
             </h1>
             <p className="mt-1 font-mono text-xs text-slate-400">{computerId}</p>
           </div>
@@ -134,8 +159,11 @@ export default function FleetComputerViewportPage() {
               <p className="mt-1 text-sm text-slate-300">
                 Control:{" "}
                 <span className={human ? "font-semibold text-amber-300" : "font-semibold text-cyan-300"}>
-                  {human ? "Human (you)" : "Bot"}
+                  {human ? FLUID_TAKEOVER.controllingChip : FLUID_TAKEOVER.watchingChip}
                 </span>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {human ? FLUID_TAKEOVER.controllingHint : FLUID_TAKEOVER.watchingHint}
               </p>
               {computer?.lastAudit ? (
                 <p className="mt-1 text-xs text-slate-500">Last audit: {computer.lastAudit}</p>
@@ -156,14 +184,25 @@ export default function FleetComputerViewportPage() {
                   onClick={() => void act("release_control")}
                 >
                   <Unlock className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-                  Release to bot
+                  {FLUID_TAKEOVER.releaseLabel}
                 </Button>
               ) : (
                 <Button type="button" size="sm" disabled={busy} onClick={() => void act("take_control")}>
                   <Hand className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-                  Take control
+                  {FLUID_TAKEOVER.takeLabel}
                 </Button>
               )}
+              {liveUrl ? (
+                <a
+                  href={human ? withFluidTakeQuery(liveUrl) : liveUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
+                >
+                  Pop out
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                </a>
+              ) : null}
             </div>
           </div>
           {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
@@ -174,34 +213,36 @@ export default function FleetComputerViewportPage() {
 
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#0a0f1a]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs text-slate-400">
-            <span>Sandbox surface</span>
-            <span>{human ? "Interactive — bot paused" : "Bot may act when Automatic runs"}</span>
+            <span>Live stream</span>
+            <span>{human ? "Interactive — bot paused · Esc to get out" : "Agent may act · T to jump in"}</span>
           </div>
-          <div className="relative min-h-[420px] bg-[linear-gradient(160deg,#10182a_0%,#0b1322_45%,#121a2e_100%)] p-6">
-            <div className="mx-auto max-w-lg rounded-xl border border-white/10 bg-black/35 p-6 backdrop-blur">
-              <div className="flex items-start gap-3">
-                <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden />
-                <div>
-                  <h2 className="text-base font-semibold text-white">
-                    {human ? "You hold the LinkedIn seat" : "Waiting for Take control"}
-                  </h2>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-300">
-                    {human
-                      ? "Automatic sends are refused while you hold control. Complete LinkedIn login / 2FA here when a real OpenBot Chromium URL is bound. Click Release to bot when finished."
-                      : "Click Take control to pause the bot mutex and operate this seat yourself. When COMPUTER_SUPERVISOR_URL points at OpenBot, this surface is replaced by the live Chromium remote URL."}
-                  </p>
-                  <ol className="mt-4 list-decimal space-y-1 pl-4 text-sm text-slate-400">
-                    <li>Take control (Human control badge on Fleet).</li>
-                    <li>Sign into LinkedIn in the sandbox / remote desktop.</li>
-                    <li>Release so Automatic can send again.</li>
-                  </ol>
+          {liveUrl ? (
+            <iframe
+              title={`Live computer ${computerId}`}
+              src={human ? withFluidTakeQuery(liveUrl) : liveUrl}
+              className="h-[min(70vh,720px)] w-full bg-black"
+              allow="fullscreen; clipboard-read; clipboard-write"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="relative min-h-[420px] bg-[linear-gradient(160deg,#10182a_0%,#0b1322_45%,#121a2e_100%)] p-6">
+              <div className="mx-auto max-w-lg rounded-xl border border-white/10 bg-black/35 p-6 backdrop-blur">
+                <div className="flex items-start gap-3">
+                  <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden />
+                  <div>
+                    <h2 className="text-base font-semibold text-white">
+                      {human ? "You hold the LinkedIn seat" : "Waiting for live OpenBot URL"}
+                    </h2>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                      {human
+                        ? "Automatic sends are refused while you hold control. Complete LinkedIn login / 2FA when a real OpenBot Chromium URL is bound. Press Esc or Get out · Release when finished."
+                        : "Start the computer and bind COMPUTER_SUPERVISOR_URL so this surface embeds the live CDP stream (AgenticSeek-style watch). Then Take control (T) whenever you need to jump in."}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-            {human ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-amber-400/10 to-transparent" />
-            ) : null}
-          </div>
+          )}
         </section>
 
         <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">

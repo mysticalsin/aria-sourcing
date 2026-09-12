@@ -603,12 +603,15 @@ body.fs #metaBar{opacity:1}
 #banner{display:none;position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:8;padding:8px 14px;border-radius:999px;background:rgba(20,28,48,.92);border:1px solid var(--line);font-size:12px;color:var(--muted);backdrop-filter:blur(8px)}
 #banner.show{display:block}
 #sessionChip b{color:#9ad0ff}
+#fluidHint{position:absolute;left:50%;bottom:56px;transform:translateX(-50%);z-index:9;padding:8px 14px;border-radius:999px;background:rgba(8,14,28,.88);border:1px solid var(--line);font-size:12px;color:var(--muted);backdrop-filter:blur(10px);pointer-events:none;max-width:min(920px,92vw);text-align:center}
+body.fs #fluidHint{bottom:24px}
+#fluidHint b{color:var(--text)}
 </style>
 </head>
 <body class="${control === "human" ? "fs" : ""}">
 <div class="top">
   <div class="brand">
-    <div class="kicker">Aria live session</div>
+    <div class="kicker">Aria live session · AgenticSeek watch · GrokBot jump-in</div>
     <div class="title">${botId}</div>
   </div>
   <div class="chiprow">
@@ -620,8 +623,8 @@ body.fs #metaBar{opacity:1}
     <span id="statusText" class="chip">${status}</span>
   </div>
   <div class="actions">
-    <button type="button" onclick="take()">Take control</button>
-    <button type="button" class="secondary" onclick="release()">Release</button>
+    <button type="button" id="takeBtn" onclick="take()">Take control</button>
+    <button type="button" class="secondary" id="releaseBtn" onclick="release()">Get out · Release</button>
     <button type="button" class="secondary" onclick="newTab()">+ Tab</button>
     <button type="button" class="secondary" onclick="goLinkedIn()">LinkedIn</button>
     <button type="button" class="secondary" onclick="goRecruiter()">Recruiter</button>
@@ -635,6 +638,7 @@ body.fs #metaBar{opacity:1}
     <img id="shot" tabindex="0" alt="Fallback screenshot"/>
   </div>
   <div id="banner">Reconnecting stream…</div>
+  <div id="fluidHint" role="status"></div>
 <div id="metaBar">
   <form class="omnibox" id="omniForm" autocomplete="off">
     <input id="omni" type="url" spellcheck="false" placeholder="https:// — navigate like Browserbase / Steel"/>
@@ -915,6 +919,7 @@ function connectStream() {
       setOmni(msg.url || "");
       human = msg.control === "human";
       if (human) document.body.classList.add("fs");
+      paintFluidHint();
     } else if (msg.type === "pong") {
       document.getElementById("rtt").textContent = Math.max(0, Date.now() - (msg.t || lastPingAt)) + "ms";
     } else if (msg.type === "error") {
@@ -930,8 +935,37 @@ function connectStream() {
   };
 }
 
-async function take() { await api("/control/take", {}); human = true; await enterFullscreen(); connectStream(); }
-async function release() { await api("/control/release", {}); human = false; await exitFullscreen(); }
+function paintFluidHint() {
+  const el = document.getElementById("fluidHint");
+  if (!el) return;
+  el.innerHTML = human
+    ? "<b>You have control</b> — bot paused. Press <b>Esc</b> (or R) to get out and let the agent resume."
+    : "<b>Agent working</b> — live watch. Click the stream or press <b>T</b> to Take control (GrokBot jump-in).";
+  const takeBtn = document.getElementById("takeBtn");
+  const releaseBtn = document.getElementById("releaseBtn");
+  if (takeBtn) takeBtn.disabled = human;
+  if (releaseBtn) releaseBtn.disabled = !human;
+}
+
+async function take(opts) {
+  const fullscreen = !opts || opts.fullscreen !== false;
+  await api("/control/take", {});
+  human = true;
+  paintFluidHint();
+  const badge = document.getElementById("controlBadge");
+  if (badge) { badge.textContent = "human"; badge.className = "badge human"; }
+  if (fullscreen) await enterFullscreen();
+  connectStream();
+  (useFallback ? shot : canvas).focus();
+}
+async function release() {
+  await api("/control/release", {});
+  human = false;
+  paintFluidHint();
+  const badge = document.getElementById("controlBadge");
+  if (badge) { badge.textContent = "bot"; badge.className = "badge bot"; }
+  await exitFullscreen();
+}
 async function goLinkedIn() { await api("/navigate", { url: ${JSON.stringify(LI_MEMBER_HOME)} }); (useFallback ? shot : canvas).focus(); }
 async function goRecruiter() { await api("/navigate", { url: ${JSON.stringify(LI_RECRUITER_HOME)} }); (useFallback ? shot : canvas).focus(); }
 async function newTab(url) { await api("/tabs/new", url ? { url } : {}); (useFallback ? shot : canvas).focus(); }
@@ -957,10 +991,18 @@ function bindPointer(el) {
     if (!pt) return;
     el.focus();
     const btn = ev.button === 2 ? "right" : "left";
-    if (!sendInput({ type: "click", x: pt.x, y: pt.y, button: btn })) {
-      void api("/click-xy", { x: pt.x, y: pt.y, button: btn, human: true })
-        .catch((e) => setErr(String(e.message || e)));
+    const fire = () => {
+      if (!sendInput({ type: "click", x: pt.x, y: pt.y, button: btn })) {
+        void api("/click-xy", { x: pt.x, y: pt.y, button: btn, human: true })
+          .catch((e) => setErr(String(e.message || e)));
+      }
+    };
+    // GrokBot jump-in: first click while watching takes control, then clicks.
+    if (!human) {
+      void take({ fullscreen: true }).then(fire).catch((e) => setErr(String(e.message || e)));
+      return;
     }
+    fire();
   });
   el.addEventListener("pointermove", (ev) => {
     if (!human) return;
@@ -969,6 +1011,7 @@ function bindPointer(el) {
   });
   el.addEventListener("contextmenu", (ev) => ev.preventDefault());
   el.addEventListener("wheel", (ev) => {
+    if (!human) return;
     ev.preventDefault();
     const pt = mapPoint(ev, el);
     if (!pt) return;
@@ -978,6 +1021,7 @@ function bindPointer(el) {
   }, { passive: false });
   el.addEventListener("keydown", (ev) => {
     const key = ev.key; if (!key) return;
+    if (!human) return;
     if ((ev.metaKey || ev.ctrlKey) && key.toLowerCase() === "t") { ev.preventDefault(); void newTab(); return; }
     if ((ev.metaKey || ev.ctrlKey) && key.toLowerCase() === "w") { ev.preventDefault(); void api("/tabs/close-active", {}).catch((e) => setErr(String(e.message || e))); return; }
     if ((ev.metaKey || ev.ctrlKey) && key === "Tab") { ev.preventDefault(); void api("/tabs/next", { reverse: ev.shiftKey }).catch(() => {}); return; }
@@ -989,6 +1033,22 @@ function bindPointer(el) {
     if (!keyFlushTimer) keyFlushTimer = setTimeout(flushKeys, 16);
   });
 }
+
+/** Hyper-fluid Esc get-out / T take — ignores omnibox typing. */
+document.addEventListener("keydown", (ev) => {
+  const t = ev.target;
+  const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+  if (typing) return;
+  if (human && (ev.key === "Escape" || ev.key === "r" || ev.key === "R")) {
+    ev.preventDefault();
+    void release().catch((e) => setErr(String(e.message || e)));
+    return;
+  }
+  if (!human && (ev.key === "t" || ev.key === "T") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+    ev.preventDefault();
+    void take().catch((e) => setErr(String(e.message || e)));
+  }
+}, true);
 
 async function flushKeys() {
   keyFlushTimer = null;
@@ -1025,6 +1085,7 @@ if (human || wantsFs) {
     await enterFullscreen().catch(() => {});
   })(); }, 40);
 }
+paintFluidHint();
 connectStream();
 fetch(base + "/tabs", { headers: { authorization: "Bearer " + token, "x-openbot-computer-token": token } })
   .then((r) => r.json()).then((d) => { if (d?.tabs) renderTabs(d.tabs); }).catch(() => {});

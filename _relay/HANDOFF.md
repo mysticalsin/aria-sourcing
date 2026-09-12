@@ -1,54 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 199
+shift: 200
 agent: cursor-cloud
-updated: 2026-09-12T09:00Z
-status: fly-app-tip-deployed-owner-run
+updated: 2026-09-12T09:10Z
+status: hyper-fluid-takeover-agenticseek-grokbot
 ---
 
-# Handoff — Shift 199
+# Handoff — Shift 200
 
 ## Current state
 
-- **Deployed Fly build SHA:** `21a42e7da6c271758ea4cade91c8d5658032832d` (docs-only commits may sit ahead)
-
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `da2204773d5bd76298afa700967b98783aad93ad`
-- **Fly app:** https://aria-mantu-app.fly.dev — owner-run `scripts/prod-deploy-app.sh` shipped tip image (machines v305). `/api/health` 200.
-- **Release identity:** `ARIA_RELEASE_SHA` secret set to tip; confirm `/api/ready.build == tip`.
-- **Still not_ready:** `agentFrameworks=false` (DeerFlow/Flowise host cap). Fleet LinkedIn `sessionHealthy` still CAPTCHA/login wall (unchanged).
-- **Deploy path used:** Fly only (no Vercel). App-only owner script after migrations already at `0084_*`. Fixed mirror to include `Dockerfile.prod` + client/server boundary for `HOST_ORPHAN_SEAT_ID`.
+- **Branch:** `cursor/openbot-desktop-vm-b91d` — hyper-fluid Take control / get-out (AgenticSeek watch + GrokBot jump-in)
+- **Fly tip:** still on deploy SHA from shift 199 (`21a42e7…`); this shift is UX/code — redeploy Fly when ready
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/143 (update with fluid takeover)
 
 ## Done this shift
 
-1. Fly-only deploy of tip via sanctioned `prod-deploy-app.sh` (local Fly token + reviewed confirm + clean tree)
-2. Fixed `prod-deploy-app.sh` mirror to copy `Dockerfile.prod` and stamp `ARIA_RELEASE_SHA`
-3. Fixed client import of `HOST_ORPHAN_SEAT_ID` via `src/lib/computer-constants.ts` so Fly Next build succeeds
-4. Set Fly secret `ARIA_RELEASE_SHA` to tip (secrets override deploy `--env`)
+1. `src/lib/fluid-takeover.ts` — Esc/R get-out, T take, typing-safe hotkeys, `?fs=1` jump-in helper
+2. OpenBot shell: watch-mode hint, click-to-take, Esc/R release, Get out · Release button
+3. Fleet computers panel: embedded live iframe (AgenticSeek-style watch) + hotkeys
+4. Viewport page: embed remote/live URL + same hotkeys
+5. Tests: `tests/fluid-takeover.mts` registered in manifest (application 185)
 
-## Blockers
+## Blockers (unchanged)
 
-1. Human Take control → LinkedIn CAPTCHA/login/2FA → Release → `sessionHealthy:true`
-2. Host cap / frameworks readiness (`agentFrameworks`)
-3. Tip not on protected `deploy/fly-github-actions` (non-FF; GHA protected path still blocked) — live tip used owner app-only path instead
-4. Live N-seat prove + sealed land with Messaging UI proof
+1. Human Take control on live Fly → LinkedIn CAPTCHA/login → Release → `sessionHealthy:true`
+2. Host cap / `agentFrameworks=false`
+3. Tip not on protected `deploy/fly-github-actions`
 
 ## Next steps
 
-1. Confirm `/api/ready.build == da2204773d5bd76298afa700967b98783aad93ad`
-2. Operator Take control on live computer → finish LinkedIn login → Release → probe healthy
-3. Re-run marketing recorder; claim Messaging only with UI proof
-4. Optionally FF/merge tip onto `deploy/fly-github-actions` for next protected full release
+1. Redeploy Fly app-only with this tip (owner `prod-deploy-app.sh`)
+2. Operator: Open view → watch agent → Take control (T) → finish LinkedIn → Esc get out
+3. Re-run marketing recorder with Messaging UI proof
 
 ## Decisions (don't relitigate)
 
 - Never invent `sessionHealthy=true` / LinkedIn delivered without probe + UI proof
-- Copy lessons stay separate from VM UI lessons
-- Sealed outreach copy is the only text bots type/post
-- **Do not bypass protected Fly release guards** — owner `prod-deploy-app.sh` with confirm is the sanctioned app-only path when DB ledger is current
-- Fly only for LinkedIn / OpenBot / computers (not Vercel)
+- AgenticSeek-style: agents keep acting while operator watches; GrokBot-style: instant take / Esc get-out
+- Do not bypass protected Fly release guards
+- Fly only for LinkedIn / OpenBot / computers
 
 ## Watch out
 
-- `fly secrets` `ARIA_RELEASE_SHA` overrides `fly deploy --env`
-- Mirror must include `Dockerfile.prod` (`fly.app.toml` dockerfile)
-- Demo-login username `Twalteur@amaris.com`; ~5/min
+- Hotkeys ignore typing targets (omnibox / LinkedIn inputs)
+- OpenBot `?fs=1` auto-takes + fullscreen on load
+- Iframe embed needs COMPUTER_SUPERVISOR_URL / remoteUrl bound for live CDP

@@ -4,6 +4,12 @@ import * as React from "react";
 import { Monitor, Eye, Hand, Unlock, RefreshCw, CircleHelp, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import {
+  FLUID_TAKEOVER,
+  fluidHotkeyAction,
+  isTypingTarget,
+  withFluidTakeQuery,
+} from "@/lib/fluid-takeover";
 
 export type FleetComputerRow = {
   computerId: string;
@@ -91,6 +97,28 @@ export function FleetComputersPanel({
   const setObservingId = onObservingChange ?? setObservingIdInternal;
   const [reclaimPick, setReclaimPick] = React.useState<Record<string, string>>({});
 
+  // GrokBot / AgenticSeek hotkeys while a live seat is in view.
+  React.useEffect(() => {
+    if (!observingId) return;
+    const observed = computers.find((c) => c.computerId === observingId);
+    if (!observed || isOrphanComputer(observed)) return;
+    const onKey = (ev: KeyboardEvent) => {
+      const action = fluidHotkeyAction(ev.key, {
+        humanControl: observed.control === "human",
+        typingTarget: isTypingTarget(ev.target),
+      });
+      if (action === "ignore") return;
+      ev.preventDefault();
+      if (action === "release") onRelease(observed.computerId);
+      if (action === "take") {
+        setObservingId(observed.computerId);
+        onTakeControl(observed.computerId);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [observingId, computers, onRelease, onTakeControl, setObservingId]);
+
   return (
     <section
       className="rounded-2xl border border-line bg-surface/80"
@@ -103,9 +131,8 @@ export function FleetComputersPanel({
             Isolated LinkedIn computers
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            One Chromium computer per seat. Live view stays closed until you click Open view or Take
-            control. While you hold control, the bot refuses actions — Release when LinkedIn login /
-            2FA is done.
+            One Chromium computer per seat. Live view is AgenticSeek-style: watch the agent work,
+            then Take control (T) like GrokBot and Esc / Release to get out — bot resumes.
           </p>
         </div>
         <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>
@@ -245,7 +272,7 @@ export function FleetComputersPanel({
                     {c.control === "human" ? (
                       <Button type="button" variant="secondary" size="sm" onClick={() => onRelease(c.computerId)}>
                         <Unlock className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-                        Release
+                        {FLUID_TAKEOVER.releaseLabel}
                       </Button>
                     ) : (
                       <Button
@@ -257,7 +284,7 @@ export function FleetComputersPanel({
                         }}
                       >
                         <Hand className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-                        Take control
+                        {FLUID_TAKEOVER.takeLabel}
                       </Button>
                     )}
                       </>
@@ -266,41 +293,60 @@ export function FleetComputersPanel({
                 </div>
                 {observing ? (
                   <div
-                    className="mt-3 space-y-3 rounded-xl border border-dashed border-line bg-ink/[0.03] px-4 py-4 text-xs text-muted"
+                    className="mt-3 space-y-3 rounded-xl border border-line bg-ink/[0.03] px-3 py-3 text-xs text-muted"
                     role="status"
                   >
                     {openUrl ? (
                       <>
-                        <p>
-                          {c.control === "human" ? (
-                            <span className="font-medium text-tangerine">You have control — bot paused. </span>
-                          ) : null}
-                          {ariaViewport
-                            ? "Operator viewport is ready inside Aria (bind COMPUTER_SUPERVISOR_URL for live Chromium)."
-                            : "Live Chromium computer is running."}{" "}
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                          <p className="text-sm text-ink">
+                            {c.control === "human" ? (
+                              <span className="font-medium text-tangerine">
+                                {FLUID_TAKEOVER.controllingChip}
+                              </span>
+                            ) : (
+                              <span className="font-medium text-electric">
+                                {FLUID_TAKEOVER.watchingChip}
+                              </span>
+                            )}
+                            <span className="mt-0.5 block text-xs text-muted">
+                              {c.control === "human"
+                                ? FLUID_TAKEOVER.controllingHint
+                                : FLUID_TAKEOVER.watchingHint}
+                            </span>
+                          </p>
                           <a
                             className="inline-flex items-center gap-1 font-medium text-electric underline-offset-2 hover:underline"
-                            href={openUrl}
+                            href={
+                              c.control === "human" ? withFluidTakeQuery(openUrl) : openUrl
+                            }
                             target="_blank"
                             rel="noreferrer"
                           >
-                            Open sandbox viewport
+                            Pop out
                             <ExternalLink className="h-3 w-3" aria-hidden />
                           </a>
-                        </p>
-                        <div className="rounded-lg border border-line bg-surface px-4 py-3 text-left text-sm text-ink">
-                          <p className="font-medium">
-                            {c.control === "human"
-                              ? "Complete LinkedIn login / 2FA in the sandbox, then Release."
-                              : "Click Take control whenever you need to intervene — Automatic refuses sends while you hold it."}
-                          </p>
-                          <p className="mt-1 text-xs text-muted">
-                            1 seat = 1 computer. Mutex is enforced server-side in ComputerSupervisor.
-                          </p>
                         </div>
+                        {/* AgenticSeek-style live browser pane — agent keeps acting until Take control. */}
+                        <div className="overflow-hidden rounded-lg border border-line bg-black shadow-inner">
+                          <iframe
+                            title={`Live computer ${c.computerId}`}
+                            src={
+                              c.control === "human" ? withFluidTakeQuery(openUrl) : openUrl
+                            }
+                            className="h-[min(62vh,560px)] w-full bg-black"
+                            allow="fullscreen; clipboard-read; clipboard-write"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                        {ariaViewport ? (
+                          <p className="px-1 text-[11px] text-muted">
+                            Sandbox viewport — bind COMPUTER_SUPERVISOR_URL for live OpenBot Chromium.
+                          </p>
+                        ) : null}
                       </>
                     ) : (
-                      <p>
+                      <p className="px-1">
                         Live stream stays closed until the computer is started. Click Start or Take
                         control (binds Settings → LinkedIn OpenBot supervisor). Activity here is
                         ephemeral — durable record is audit + contact lease.
