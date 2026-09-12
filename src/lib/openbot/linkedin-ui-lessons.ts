@@ -19,6 +19,7 @@ export type LinkedInUiLessonGoal =
   | "invite_note"
   | "send_invite"
   | "login_wall"
+  | "more_menu"
   | "path";
 
 export type LinkedInUiLesson = {
@@ -90,11 +91,24 @@ export function appendLinkedInUiLesson(
   return entry;
 }
 
+function scopedLessons(
+  goal: LinkedInUiLessonGoal,
+  seatId?: string | null,
+): LinkedInUiLesson[] {
+  const all = readLinkedInUiLessons().filter((l) => l.goal === goal || l.goal === "path");
+  if (!seatId) return all.slice(-12);
+  const seat = all.filter((l) => l.seatId === seatId);
+  // Prefer this desk's memory; fall back to workspace-wide if the seat is cold.
+  return (seat.length >= 2 ? seat : all).slice(-12);
+}
+
 /** Inject recent wins/fails into LLM element-pick goals (human-like memory). */
-export function linkedInUiLessonHints(goal: LinkedInUiLessonGoal, limit = 4): string {
-  const lessons = readLinkedInUiLessons()
-    .filter((l) => l.goal === goal || l.goal === "path")
-    .slice(-12);
+export function linkedInUiLessonHints(
+  goal: LinkedInUiLessonGoal,
+  limit = 4,
+  seatId?: string | null,
+): string {
+  const lessons = scopedLessons(goal, seatId);
   if (lessons.length === 0) return "";
   const wins = lessons.filter((l) => l.ok).slice(-limit);
   const fails = lessons.filter((l) => !l.ok).slice(-limit);
@@ -112,9 +126,53 @@ export function linkedInUiLessonHints(goal: LinkedInUiLessonGoal, limit = 4): st
   return bits.length ? ` Learned UI lessons: ${bits.join(" ")}` : "";
 }
 
-/** Prefer Message vs Connect from recent path outcomes. */
-export function preferConnectFromLessons(): boolean | null {
-  const paths = readLinkedInUiLessons().filter((l) => l.goal === "path").slice(-10);
+/** Preferred control names for a goal, strongest first (desk-scoped when possible). */
+export function preferredControlNames(
+  goal: LinkedInUiLessonGoal,
+  seatId?: string | null,
+  limit = 3,
+): string[] {
+  const wins = scopedLessons(goal, seatId)
+    .filter((l) => l.ok && l.preferredName)
+    .slice(-8);
+  const scores = new Map<string, number>();
+  for (const w of wins) {
+    const name = w.preferredName!.trim();
+    if (!name) continue;
+    scores.set(name, (scores.get(name) ?? 0) + 1);
+  }
+  return [...scores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name]) => name);
+}
+
+/**
+ * Soft-rank heuristic candidates so a control that worked before wins ties.
+ * Does not invent elements — only reorders matches already found.
+ */
+export function preferNamedHeuristic<T extends { name: string }>(
+  candidates: T[],
+  goal: LinkedInUiLessonGoal,
+  seatId?: string | null,
+): T | undefined {
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+  const preferred = preferredControlNames(goal, seatId).map((n) => n.toLowerCase());
+  if (preferred.length === 0) return candidates[0];
+  const scored = [...candidates].sort((a, b) => {
+    const ai = preferred.findIndex((p) => a.name.toLowerCase() === p || a.name.toLowerCase().includes(p));
+    const bi = preferred.findIndex((p) => b.name.toLowerCase() === p || b.name.toLowerCase().includes(p));
+    const as = ai === -1 ? 99 : ai;
+    const bs = bi === -1 ? 99 : bi;
+    return as - bs;
+  });
+  return scored[0];
+}
+
+/** Prefer Message vs Connect from recent path outcomes (desk-aware). */
+export function preferConnectFromLessons(seatId?: string | null): boolean | null {
+  const paths = scopedLessons("path", seatId).filter((l) => l.goal === "path");
   if (paths.length < 2) return null;
   const connectOk = paths.filter((l) => l.ok && /connect/i.test(l.detail)).length;
   const messageOk = paths.filter((l) => l.ok && /message/i.test(l.detail)).length;
@@ -122,4 +180,30 @@ export function preferConnectFromLessons(): boolean | null {
   if (connectOk > messageOk || messageFail > 0) return true;
   if (messageOk > connectOk) return false;
   return null;
+}
+
+/**
+ * Human-like pause between VM actions — LinkedIn antibot + operator realism.
+ * Deterministic jitter from time so tests stay stable within a narrow band.
+ */
+export function humanUiPaceMs(kind: "navigate" | "read" | "click" | "type" | "proof"): number {
+  const base =
+    kind === "navigate"
+      ? 900
+      : kind === "read"
+        ? 550
+        : kind === "click"
+          ? 420
+          : kind === "type"
+            ? 380
+            : 700;
+  const jitter = Math.floor((Date.now() % 17) * 18); // 0–288ms
+  return base + jitter;
+}
+
+export async function humanUiPause(
+  kind: "navigate" | "read" | "click" | "type" | "proof",
+): Promise<void> {
+  const ms = humanUiPaceMs(kind);
+  await new Promise((r) => setTimeout(r, ms));
 }

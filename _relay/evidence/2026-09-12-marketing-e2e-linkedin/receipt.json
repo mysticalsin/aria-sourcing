@@ -1,8 +1,14 @@
 {
-  "at": "2026-09-12T08:13:44.992Z",
+  "at": "2026-09-12T08:32:05.169Z",
   "base": "https://aria-mantu-app.fly.dev",
+  "computers": "https://aria-mantu-computers.fly.dev",
+  "botId": "comp_7fe31958-589b-497f-8de7-c5083bf53ff5",
   "sessionHealthy": false,
   "linkedInLandClaimed": false,
+  "learning": {
+    "uiLessons": "linkedin-ui-lessons second brain (seat-scoped hints + human pacing)",
+    "copyLessons": "outreach_skill (separate)"
+  },
   "videos": {
     "full": "/opt/cursor/artifacts/2026-09-12-aria-marketing-n-agent-linkedin-e2e.mp4",
     "highlights": "/opt/cursor/artifacts/2026-09-12-aria-marketing-highlights.mp4"
@@ -79,9 +85,53 @@
       "url": "https://aria-mantu-app.fly.dev/fleet"
     },
     {
+      "step": "fleet-probe",
+      "computers": 1,
+      "sessionHealthy": false,
+      "seats": [
+        {
+          "seatId": "600e8afa-a7c4-40ef-91c8-f4854fa9e5fc",
+          "computerId": "comp_7fe31958-589b-497f-8de7-c5083bf53ff5",
+          "sessionHealthy": false,
+          "control": "bot"
+        }
+      ]
+    },
+    {
       "step": "13-take-control",
       "file": "/opt/cursor/artifacts/2026-09-12-mkt-13-take-control.png",
       "url": "https://aria-mantu-app.fly.dev/fleet"
+    },
+    {
+      "step": "14-vm-title",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-14-vm-title.png",
+      "url": "https://aria-mantu-app.fly.dev/fleet"
+    },
+    {
+      "step": "bot-navigate-profile",
+      "title": "Tony Walteur - Amaris Consulting | LinkedIn",
+      "url": "https://www.linkedin.com/in/tonywalteur"
+    },
+    {
+      "step": "15-vm-profile",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-15-vm-profile.jpg",
+      "bytes": 66739
+    },
+    {
+      "step": "bot-navigate-messaging",
+      "title": "LinkedIn Login, Sign in | LinkedIn",
+      "url": "https://www.linkedin.com/uas/login?session_redirect=https%3A%2F%2Fwww.linkedin.com%2Fmessaging%2F",
+      "textPreview": "0 notifications\n\nWe’re signing you in\n\nIf you remain on this page, you’ll be signed in. Learn more\n\nLinkedIn User\n\nt*****@gmail.com\n\nCancel sign in\n\nLinkedIn Corporation © 2026\n\nUser Agreement\n\nPrivacy Policy\n\nCommunity Guidelines\n\nCookie Policy\n\nCopyright Policy\n\nSend Feedback\n\n"
+    },
+    {
+      "step": "16-vm-messaging",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-16-vm-messaging.jpg",
+      "bytes": 28422
+    },
+    {
+      "step": "17-live-view",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-17-live-view.png",
+      "url": "https://aria-mantu-computers.fly.dev/view/comp_7fe31958-589b-497f-8de7-c5083bf53ff5?fs=1"
     },
     {
       "step": "fleet-probe",
@@ -91,23 +141,29 @@
         {
           "seatId": "600e8afa-a7c4-40ef-91c8-f4854fa9e5fc",
           "computerId": "comp_7fe31958-589b-497f-8de7-c5083bf53ff5",
-          "sessionHealthy": false
+          "sessionHealthy": false,
+          "control": "bot"
         }
       ]
     },
     {
-      "step": "14-send-attempt",
-      "file": "/opt/cursor/artifacts/2026-09-12-mkt-14-send-attempt.png",
+      "step": "18-send-attempt",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-18-send-attempt.png",
       "url": "https://aria-mantu-app.fly.dev/outreach"
     },
     {
-      "step": "15-honest-gate",
-      "file": "/opt/cursor/artifacts/2026-09-12-mkt-15-honest-gate.png",
+      "step": "19-honest-gate",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-19-honest-gate.png",
       "url": "https://aria-mantu-app.fly.dev/outreach"
     },
     {
-      "step": "17-close",
-      "file": "/opt/cursor/artifacts/2026-09-12-mkt-17-close.png",
+      "step": "20-vm-wall-evidence",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-20-vm-wall-evidence.png",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    },
+    {
+      "step": "22-close",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-22-close.png",
       "url": "https://aria-mantu-app.fly.dev/outreach"
     }
   ]

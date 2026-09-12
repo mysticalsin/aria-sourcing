@@ -16,8 +16,10 @@ import { pickOpenBotElementWithAriaLlm } from "@/lib/openbot/llm-pick-element";
 import { LINKEDIN_INVITE_NOTE_MAX } from "@/lib/linkedin-invite-note";
 import {
   appendLinkedInUiLesson,
+  humanUiPause,
   linkedInUiLessonHints,
   preferConnectFromLessons,
+  preferNamedHeuristic,
 } from "@/lib/openbot/linkedin-ui-lessons";
 
 export type OpenBotLinkedInSendInput = {
@@ -129,14 +131,17 @@ async function resolveRef(
   heuristic: OpenBotSnapshotElement | undefined,
   goal: string,
   lessonGoal?: Parameters<typeof linkedInUiLessonHints>[0],
+  seatId?: string | null,
 ): Promise<OpenBotSnapshotElement | undefined> {
-  if (heuristic) {
-    if (lessonGoal && heuristic.name) {
-      // Soft prefer: heuristic already matched; remember name on success path later.
-    }
-    return heuristic;
+  let picked = heuristic;
+  if (picked && lessonGoal) {
+    // Soft re-rank if multiple near-matches already collapsed to one heuristic.
+    picked = preferNamedHeuristic([picked], lessonGoal, seatId) ?? picked;
   }
-  const enriched = lessonGoal ? `${goal}${linkedInUiLessonHints(lessonGoal)}` : goal;
+  if (picked) return picked;
+  const enriched = lessonGoal
+    ? `${goal}${linkedInUiLessonHints(lessonGoal, 4, seatId)}`
+    : goal;
   return pickOpenBotElementWithAriaLlm(elements, enriched);
 }
 
@@ -157,6 +162,7 @@ export async function openBotLinkedInSend(
   if (!body) return { ok: false, detail: "message body is required" };
 
   const nav = await openBotNavigate(cfg, profileUrl);
+  await humanUiPause("navigate");
   if (looksLikeLoginWall(nav.text ?? "", nav.title, nav.url)) {
     appendLinkedInUiLesson({
       goal: "login_wall",
@@ -184,7 +190,7 @@ export async function openBotLinkedInSend(
   // Free LinkedIn Messaging is body-only. Dumping Subject\\n\\nBody into the DM
   // box is a common robotic failure mode (and wastes invite-note budget on Connect).
   const composed = body;
-  const lessonPrefer = preferConnectFromLessons();
+  const lessonPrefer = preferConnectFromLessons(input.seatId);
   const preferConnect =
     input.preferConnect === true || (input.preferConnect !== false && lessonPrefer === true);
   void subject; // subject reserved for InMail-capable seats; not typed into free DM.
@@ -195,10 +201,12 @@ export async function openBotLinkedInSend(
       pickMessageButton(snap.elements),
       "Click the control that opens a LinkedIn direct message composer on this profile.",
       "message",
+      input.seatId,
     );
     if (!messageBtn) return null;
 
     await openBotClick(cfg, messageBtn.ref, snap.snapshotId);
+    await humanUiPause("click");
     snap = await openBotSnapshot(cfg);
 
     const box = await resolveRef(
@@ -206,6 +214,7 @@ export async function openBotLinkedInSend(
       pickMessageBox(snap.elements),
       "Select the LinkedIn message text box where the outreach body should be typed.",
       "message_box",
+      input.seatId,
     );
     if (!box) {
       return {
@@ -216,12 +225,14 @@ export async function openBotLinkedInSend(
     }
 
     await openBotType(cfg, box.ref, snap.snapshotId, composed, false);
+    await humanUiPause("type");
     snap = await openBotSnapshot(cfg);
     const sendBtn = await resolveRef(
       snap.elements,
       pickSendButton(snap.elements),
       "Click the control that sends the LinkedIn message (Send).",
       "send",
+      input.seatId,
     );
     if (!sendBtn) {
       return {
@@ -238,6 +249,7 @@ export async function openBotLinkedInSend(
       };
     }
     await openBotClick(cfg, sendBtn.ref, snap.snapshotId);
+    await humanUiPause("click");
     // Fail closed: a bare Send click is not proof the message left LinkedIn.
     snap = await openBotSnapshot(cfg);
     const proof = snap.elements.some((el) =>
@@ -278,10 +290,12 @@ export async function openBotLinkedInSend(
       pickConnectButton(snap.elements),
       "Click Connect on this LinkedIn profile to send a connection invitation.",
       "connect",
+      input.seatId,
     );
     if (!connectBtn) return null;
 
     await openBotClick(cfg, connectBtn.ref, snap.snapshotId);
+    await humanUiPause("click");
     snap = await openBotSnapshot(cfg);
 
     const addNote = await resolveRef(
@@ -289,9 +303,11 @@ export async function openBotLinkedInSend(
       pickAddNoteButton(snap.elements),
       "Click Add a note so the connection invite can include a personalized message.",
       "add_note",
+      input.seatId,
     );
     if (addNote) {
       await openBotClick(cfg, addNote.ref, snap.snapshotId);
+      await humanUiPause("click");
       snap = await openBotSnapshot(cfg);
     }
 
@@ -300,6 +316,7 @@ export async function openBotLinkedInSend(
       pickInviteNoteBox(snap.elements),
       "Select the invitation note text box for the LinkedIn connection request.",
       "invite_note",
+      input.seatId,
     );
     if (!noteBox) {
       return {
@@ -320,6 +337,7 @@ export async function openBotLinkedInSend(
     }
     const note = body;
     await openBotType(cfg, noteBox.ref, snap.snapshotId, note, false);
+    await humanUiPause("type");
     snap = await openBotSnapshot(cfg);
 
     const sendInvite = await resolveRef(
@@ -327,6 +345,7 @@ export async function openBotLinkedInSend(
       pickSendInviteButton(snap.elements),
       "Click Send / Send invitation to submit the LinkedIn connection request.",
       "send_invite",
+      input.seatId,
     );
     if (!sendInvite) {
       return {
@@ -343,6 +362,7 @@ export async function openBotLinkedInSend(
       };
     }
     await openBotClick(cfg, sendInvite.ref, snap.snapshotId);
+    await humanUiPause("click");
     // Fail closed unless the UI shows Sent/Pending — a bare click is not a notification.
     snap = await openBotSnapshot(cfg);
     const proof = snap.elements.some((el) =>
