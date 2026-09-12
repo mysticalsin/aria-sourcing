@@ -645,6 +645,12 @@ try {
       reclaimBlock.includes("releaseToOrphan") &&
         reclaimBlock.includes("computer_id persist failed"),
     );
+    ok(
+      "start/take_control require caller seatId match",
+      route.includes("seatId required for start/take_control") &&
+        route.includes("computer-ownership-mismatch"),
+    );
+
 
 
     // ensure / navigate / session_probe must require a real seatId (never

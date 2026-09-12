@@ -2,6 +2,7 @@ import type { AgentSeat, HermesState } from "@/lib/types";
 import { agentActivity, resolveComputerHint, type FloorComputerHint } from "@/lib/floor";
 import type { AgentEvent } from "@/lib/agent-events";
 import type { SoundKind } from "@/lib/sound";
+import { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-supervisor";
 
 /* ============================================================================
    Shared 3D-floor types and pure helpers. This module is deliberately free of
@@ -220,7 +221,11 @@ export function seatsToOfficeAgents(
     let vmId = hint?.computerId || null;
     if (!vmId && seat.computerId && seat.provider === "LinkedIn Browser Computer") {
       const claimed = computers?.get(seat.computerId);
-      if (!claimed?.seatId || claimed.seatId === seat.id) vmId = seat.computerId;
+      // Only advertise a VM id when fleet confirms this seat owns it — never
+      // Hermes-alone or __orphan__ rows (those look live on the floor while unbound).
+      if (claimed?.seatId === seat.id && claimed.seatId !== HOST_ORPHAN_SEAT_ID) {
+        vmId = seat.computerId;
+      }
     }
     if (seat.provider === "LinkedIn Browser Computer" && vmId) {
       subtitle = `${subtitle} · …${vmId.slice(-8)}`;

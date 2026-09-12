@@ -331,6 +331,23 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
+        // N-seat isolation: caller must name the owning seat — never Start / Take
+        // another desk's Chromium with only a computerId.
+        const callerSeatId = (body.seatId ?? "").trim();
+        if (!callerSeatId) {
+          return NextResponse.json(
+            { error: "seatId required for start/take_control" },
+            { status: 400 },
+          );
+        }
+        if (callerSeatId !== boundSeatId) {
+          return NextResponse.json(
+            {
+              error: `computer-ownership-mismatch: ${computerId} belongs to seat ${boundSeatId}, not ${callerSeatId}`,
+            },
+            { status: 409 },
+          );
+        }
         rec =
           body.action === "start"
             ? await defaultComputerSupervisor.start(computerId, campaignOpts)

@@ -113,7 +113,14 @@ const frameworksOptional = await evaluateReadiness(
   { ...readinessInput, agentFrameworksRequired: false },
   healthyProbes({ agentFrameworks: async () => false }),
 );
-ok("a deliberately framework-free deployment does not inherit the optional probe failure", frameworksOptional.ok && frameworksOptional.components.agentFrameworks);
+ok(
+  "framework-free deploy stays ready when frameworks are not required",
+  frameworksOptional.ok,
+);
+ok(
+  "optional deploy still reports honest agentFrameworks component bit",
+  !frameworksOptional.components.agentFrameworks,
+);
 
 /* A Hermes URL the SSRF allow-list refuses used to be invisible: every call fell
    back to the deterministic mock and readiness still reported healthy. The

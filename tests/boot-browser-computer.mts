@@ -3,7 +3,7 @@
    resolveDurableComputerId — reclaim-before-mint client contract.
    ========================================================================== */
 
-import { resolveDurableComputerId } from "../src/lib/boot-browser-computer";
+import { bootBrowserComputer, resolveDurableComputerId } from "../src/lib/boot-browser-computer";
 
 let pass = 0;
 let fail = 0;
@@ -144,6 +144,45 @@ try {
     existingComputerId: "comp_keep",
   });
   ok("persist failed keeps existing id", keptOnPersist === "comp_keep");
+
+
+  // no-healthy-orphan with existing must keep existing (no twin mint).
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "no-healthy-orphan" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  const keptUnhealthy = await resolveDurableComputerId({
+    seatId: "seat_keep",
+    existingComputerId: "comp_unhealthy_owned",
+  });
+  ok("no-healthy-orphan keeps existing", keptUnhealthy === "comp_unhealthy_owned");
+
+
+  // ensure failure must refuse start — never boot another seat's VM.
+  let started = false;
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string };
+    if (body.action === "ensure") {
+      return new Response(JSON.stringify({ error: "computer-ownership-mismatch: foreign" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (body.action === "start") {
+      started = true;
+      return new Response(JSON.stringify({ computer: { status: "ready" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  const bootFail = await bootBrowserComputer({
+    seatId: "seat_a",
+    computerId: "comp_foreign",
+  });
+  ok("ensure failure refuses start", bootFail.ok === false && started === false);
 
 } finally {
   globalThis.fetch = originalFetch;

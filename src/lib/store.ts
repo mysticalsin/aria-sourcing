@@ -1982,6 +1982,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         (resolvedChannel === "LinkedIn"
           ? soleCampaignBrowserSeatId(s.seats, campaign.id)
           : undefined);
+      // N Browser seats: never silently stamp the wrong desk — require explicit seatId.
+      if (
+        resolvedChannel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       // Compose in the seat's language, else the need's, else the workspace default.
@@ -2033,6 +2041,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         (resolvedChannel === "LinkedIn"
           ? soleCampaignBrowserSeatId(s.seats, campaign.id)
           : undefined);
+      // N Browser seats: never silently stamp the wrong desk — require explicit seatId.
+      if (
+        resolvedChannel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;

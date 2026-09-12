@@ -52,12 +52,13 @@ export async function resolveDurableComputerId(opts: {
         if (existing) return existing;
         throw new Error(json?.error ?? "computer_id persist failed");
       }
-      // Foreign / absent healthy orphan — mint rather than reuse another seat's VM.
-      if (
-        existing &&
-        /ownership-mismatch|orphan-claim-blocked|no-healthy-orphan/.test(err)
-      ) {
+      // Foreign id — mint; never keep another seat's VM.
+      if (existing && /ownership-mismatch|orphan-claim-blocked/.test(err)) {
         return `comp_${globalThis.crypto.randomUUID()}`;
+      }
+      // No healthy orphan: keep our unhealthy binding (do not mint a twin that burns a host slot).
+      if (existing && /no-healthy-orphan/.test(err)) {
+        return existing;
       }
       if (!existing && /no-healthy-orphan|ownership-mismatch|orphan-claim-blocked/.test(err)) {
         return `comp_${globalThis.crypto.randomUUID()}`;
@@ -92,7 +93,7 @@ export async function bootBrowserComputer(opts: {
     return { ok: false, booted: false, error: "seatId and computerId required" };
   }
 
-  await fetch("/api/fleet/computers", {
+  const ensureRes = await fetch("/api/fleet/computers", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -104,13 +105,39 @@ export async function bootBrowserComputer(opts: {
     }),
   }).catch(() => null);
 
+  if (!ensureRes) {
+    return { ok: false, booted: false, error: "Computer host unreachable (ensure)" };
+  }
+  const ensureBody = (await ensureRes.json().catch(() => ({}))) as {
+    error?: string;
+    computer?: { computerId?: string; seatId?: string };
+  };
+  if (!ensureRes.ok) {
+    return {
+      ok: false,
+      booted: false,
+      error: ensureBody.error || `ensure HTTP ${ensureRes.status}`,
+    };
+  }
+  const ensuredId = (ensureBody.computer?.computerId ?? "").trim() || computerId;
+  const ensuredSeat = (ensureBody.computer?.seatId ?? "").trim();
+  // Fail closed — never start a VM ensure bound to a different seat.
+  if (ensuredSeat && ensuredSeat !== seatId) {
+    return {
+      ok: false,
+      booted: false,
+      error: `computer-ownership-mismatch: ensure bound seat ${ensuredSeat}, not ${seatId}`,
+    };
+  }
+
   const startRes = await fetch("/api/fleet/computers", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action: "start",
-      computerId,
+      computerId: ensuredId,
+      seatId,
       campaignId: opts.campaignId,
     }),
   }).catch(() => null);

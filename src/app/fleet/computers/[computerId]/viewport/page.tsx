@@ -63,11 +63,23 @@ export default function FleetComputerViewportPage() {
     setBusy(true);
     setError(null);
     try {
+      const seatId = (computer?.seatId ?? "").trim();
+      if (
+        (action === "start" || action === "take_control") &&
+        (!seatId || seatId === "__orphan__")
+      ) {
+        setError("Unbound host VM — reclaim/bind a seat before Start or Take control.");
+        return;
+      }
       const res = await fetch("/api/fleet/computers", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, computerId }),
+        body: JSON.stringify({
+          action,
+          computerId,
+          ...(seatId ? { seatId } : {}),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;

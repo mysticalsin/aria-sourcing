@@ -336,7 +336,14 @@ export default function FleetPage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, computerId }),
+        body: JSON.stringify({
+          action,
+          computerId,
+          ...((action === "start" || action === "take_control" || action === "takeover") &&
+          row?.seatId
+            ? { seatId: row.seatId }
+            : {}),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
