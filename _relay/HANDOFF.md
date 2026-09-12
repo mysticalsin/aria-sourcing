@@ -10,10 +10,10 @@ status: settings-plug-and-play-shipped-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (Settings plug-and-play UX; commit pending/push this shift)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `2f16bd1` — Settings plug-and-play AriaBot connect UX
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` still stale / `ok:false`
 - **Live fleet:** human LinkedIn login / `sessionHealthy` still outstanding
-- **PR:** recreate/update via ManagePullRequest (prior drafts often closed + branch deleted)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/138 (draft #138)
 
 ## Done this shift
 
