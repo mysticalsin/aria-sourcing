@@ -1,4 +1,5 @@
 import { redactEmail, redactSecrets } from "../log-redact";
+import { soleCampaignBrowserSeatId } from "../agent-event-seat";
 import { sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
@@ -90,6 +91,7 @@ export interface SourcingActionDependencies {
     kind: "source";
     campaignId: string;
     count: number;
+    seatId?: string;
   }) => void;
 }
 
@@ -681,6 +683,16 @@ export function createSourcingActions({
   effectiveWeights,
   emitSource,
 }: SourcingActionDependencies): SourcingActions {
+  const emitCampaignSource = (campaignId: string, count: number) => {
+    const seats = currentState()?.seats ?? [];
+    emitSource({
+      kind: "source",
+      campaignId,
+      count,
+      seatId: soleCampaignBrowserSeatId(seats, campaignId),
+    });
+  };
+
   const sourceReviewedCampaignBatch = async (
     campaignId: string,
     count: number,
@@ -821,7 +833,7 @@ export function createSourcingActions({
       }
     }
     if (result.accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+      emitCampaignSource(campaignId, result.accepted.length);
     }
     return {
       ...result,
@@ -1155,7 +1167,7 @@ export function createSourcingActions({
     }
 
     if (result.accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+      emitCampaignSource(campaignId, result.accepted.length);
     }
     return { ...result, source, ok: true };
   };
@@ -1296,7 +1308,7 @@ export function createSourcingActions({
       };
     }
     if (accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: accepted.length });
+      emitCampaignSource(campaignId, accepted.length);
     }
     return {
       ok: true,
@@ -1432,7 +1444,7 @@ export function createSourcingActions({
       };
     }
     if (scored.length > 0) {
-      emitSource({ kind: "source", campaignId, count: scored.length });
+      emitCampaignSource(campaignId, scored.length);
     }
     return {
       ok: true,
@@ -1589,7 +1601,7 @@ export function createSourcingActions({
     }
     const result: SourceResult = committedResult;
     if (result.accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+      emitCampaignSource(campaignId, result.accepted.length);
     }
     return { ...result, source: "apollo" };
   };

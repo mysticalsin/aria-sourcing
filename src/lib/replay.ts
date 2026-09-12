@@ -232,20 +232,6 @@ function lowerBound(events: ReplayEvent[], t: number): number {
   return lo;
 }
 
-/** Deterministic hash of an event into [0, n) — used only as a last resort
- *  when an event has no real seatId (no ledger history for its candidate,
- *  or it's a candidate-less report/re-score event), so some robot still
- *  reacts instead of the floor staying silent. Mirrors the same
- *  hash-a-fallback-responder idea as pickResponderIndex in
- *  src/lib/floor3d.ts, kept local since the event shapes differ. */
-function hashEvent(e: ReplayEvent, n: number): number {
-  if (n <= 0) return 0;
-  const key = `${e.kind}:${e.candidateId ?? ""}:${e.label}:${e.at}`;
-  let h = 0;
-  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h % n;
-}
-
 export interface ReplayStateAt {
   revealedCandidateIds: Set<string>;
   /** All events revealed up to the cursor (`at <= cursorMs`), stream order. */
@@ -268,14 +254,13 @@ export function replayStateAt(state: ReplaySourceState, cursorMs: number): Repla
   const revealedCandidateIds = new Set<string>();
   for (const e of revealed) if (e.candidateId) revealedCandidateIds.add(e.candidateId);
 
-  const employees = state.seats.slice(1); // index 0 = CEO (src/lib/floor3d.ts convention)
   const workingSeatIds = new Set<string>();
   const lo = lowerBound(stream, cursorMs - WORKING_WINDOW_MS);
   const hi = upperBound(stream, cursorMs + WORKING_WINDOW_MS);
   for (let i = lo; i < hi; i += 1) {
     const e = stream[i];
-    const seatId = e.seatId ?? (employees.length > 0 ? employees[hashEvent(e, employees.length)].id : undefined);
-    if (seatId) workingSeatIds.add(seatId);
+    // Fail-closed: seatless events must not paint a random desk (N-agent isolation).
+    if (e.seatId) workingSeatIds.add(e.seatId);
   }
 
   const agents: OfficeAgent[] = state.seats.map((seat, index) => ({
@@ -283,6 +268,7 @@ export function replayStateAt(state: ReplaySourceState, cursorMs: number): Repla
     name: seat.name,
     status: workingSeatIds.has(seat.id) ? "working" : "idle",
     color: seat.color ?? colorForAgent(index),
+    // index 0 = CEO (src/lib/floor3d.ts convention)
     position: index === 0 ? "ceo" : "employee",
     provider: seat.provider,
   }));

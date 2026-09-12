@@ -4,6 +4,7 @@ import {
   generateWeeklyReport,
   interviewerPrepEmail,
 } from "../mock-ai";
+import { latestOutreachSeatId } from "../agent-event-seat";
 import { bookingCalendarSummary } from "../booking-status";
 import { withStage } from "../metrics";
 import {
@@ -56,6 +57,7 @@ export interface BookingReportActionDependencies {
     kind: "book";
     candidateName: string;
     campaignId: string;
+    seatId?: string;
   }) => void;
 }
 
@@ -444,7 +446,12 @@ export function createBookingReportActions({
     }
     const prepEmail = interviewerPrepEmail(booking, candidate);
     const confirmationEmail = candidateConfirmationEmail(booking);
-    emitBooking({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
+    emitBooking({
+      kind: "book",
+      candidateName: candidate.name,
+      campaignId: campaign.id,
+      seatId: latestOutreachSeatId(state.outreach, candidate.id),
+    });
     return { ok: true, booking, prepEmail, confirmationEmail };
   };
 

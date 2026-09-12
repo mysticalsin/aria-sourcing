@@ -47,6 +47,8 @@ export function preferLinkedInAutomaticSeats(
  * Pick the live seat used for Approve → Send LinkedIn delivery.
  * Prefer Browser Computer seats attached to the campaign (Campaign Agents),
  * then unscoped Browser Computer, then Vendor API with the same campaign bias.
+ * Fail-closed when preferred is missing/unusable or N seats tie at the best rank
+ * — never silently retarget another desk's VM/profile.
  */
 export function pickLiveLinkedInSendSeat(
   seats: AgentSeat[],
@@ -61,7 +63,8 @@ export function pickLiveLinkedInSendSeat(
         x.mode === "live" &&
         isLinkedInAutomaticProvider(x.provider),
     );
-    if (preferred) return preferred;
+    // Preferred was stamped on the draft — do not fall through to another seat.
+    return preferred;
   }
 
   const campaignRank = (seat: AgentSeat): number => {
@@ -71,17 +74,30 @@ export function pickLiveLinkedInSendSeat(
     return 2;
   };
 
-  const pickProvider = (provider: (typeof LINKEDIN_AUTOMATIC_PROVIDERS)[number]): AgentSeat | undefined => {
-    const live = seats
-      .filter((x) => x.status === "active" && x.mode === "live" && x.provider === provider)
-      .slice()
-      .sort((a, b) => campaignRank(a) - campaignRank(b) || a.id.localeCompare(b.id));
-    return live[0];
+  const pickProvider = (
+    provider: (typeof LINKEDIN_AUTOMATIC_PROVIDERS)[number],
+  ): AgentSeat | undefined => {
+    const live = seats.filter(
+      (x) => x.status === "active" && x.mode === "live" && x.provider === provider,
+    );
+    if (live.length === 0) return undefined;
+    let best = campaignRank(live[0]!);
+    for (let i = 1; i < live.length; i += 1) {
+      best = Math.min(best, campaignRank(live[i]!));
+    }
+    const winners = live.filter((x) => campaignRank(x) === best);
+    // Unique winner only — N desks at the same campaign rank must not hash/sort-pick.
+    return winners.length === 1 ? winners[0] : undefined;
   };
 
   for (const provider of LINKEDIN_AUTOMATIC_PROVIDERS) {
-    const seat = pickProvider(provider);
-    if (seat) return seat;
+    const liveForProvider = seats.some(
+      (x) => x.status === "active" && x.mode === "live" && x.provider === provider,
+    );
+    if (!liveForProvider) continue;
+    // Provider has live seats: return unique winner, or undefined on tie (do not
+    // fall through to a lower-ranked provider — that would silently change path).
+    return pickProvider(provider);
   }
   return undefined;
 }

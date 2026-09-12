@@ -1957,7 +1957,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Compose in the seat's language, else the need's, else the workspace default.
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       const gen = generateOutreach(candidate, campaign, finalTone, resolvedChannel, 1, voice, lang);
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      const msg = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        ...(seat?.id ? { seatId: seat.id } : {}),
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -2094,7 +2097,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!workspaceEffectAllowed()) return null;
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      const msg = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        ...(seat?.id ? { seatId: seat.id } : {}),
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -2164,6 +2170,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const msg = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep),
         createdAt: draftedAt,
+        ...(seat?.id ? { seatId: seat.id } : {}),
       };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -2223,7 +2230,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         runEffect: runWorkspaceEffect,
       });
       if (!workspaceEffectAllowed()) return null;
-      const msg = { ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1), createdAt: draftedAt };
+      const msg = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        createdAt: draftedAt,
+        ...(seat?.id ? { seatId: seat.id } : {}),
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -2563,7 +2574,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           id: genId("led"),
           candidateId: candidate.id,
           candidateEmail: candidate.email,
-          seatId: "",
+          seatId: msg.seatId ?? "",
           campaignId: campaign.id,
           channel: msg.channel,
           status: finalLedgerStatus,
@@ -3537,9 +3548,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const priorMaxStep = s.outreach
         .filter((m) => m.candidateId === candidate.id)
         .reduce((max, m) => Math.max(max, m.sequenceStep), 0);
+      const replySeatId = latestOutreachSeatId(s.outreach, candidate.id);
       const msg: OutreachMessage = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, priorMaxStep + 1),
         ...(reply.inboxThreadId ? { inboxThreadId: reply.inboxThreadId } : {}),
+        ...(replySeatId ? { seatId: replySeatId } : {}),
       };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };

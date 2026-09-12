@@ -101,6 +101,57 @@ ok(
     "camp_seed_backend",
   )?.id === "unscoped",
 );
+ok(
+  "pickLiveLinkedInSendSeat fails closed on N-way campaign-rank tie",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "desk_a",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+      seat({
+        id: "desk_b",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+    ],
+    "camp_seed_backend",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat fails closed when preferred seat is missing",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "other",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+    ],
+    "camp_seed_backend",
+    "missing_preferred",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat honors preferred when live + automatic",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "camp",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+      seat({
+        id: "preferred",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+    ],
+    "camp_seed_backend",
+    "preferred",
+  )?.id === "preferred",
+);
 
 const cand = {
   id: "c1",
@@ -122,6 +173,8 @@ const cand = {
   updatedAt: new Date().toISOString(),
 } as unknown as Candidate;
 
+// Weekday noon UTC — allocateBatch respects enforceBusinessHours/send windows.
+const weekdayNoon = new Date("2026-09-09T12:00:00Z");
 const plan = planShortlistAutomaticDeliver({
   pool: [cand],
   seats: [emailSeat, liSeat],
@@ -129,6 +182,7 @@ const plan = planShortlistAutomaticDeliver({
   suppression: [],
   fleet: defaultFleetSettings(),
   deliveryMode: "automatic",
+  now: weekdayNoon,
 });
 ok(
   "automatic plan routes to LinkedIn computer",
@@ -144,6 +198,7 @@ const manual = planShortlistAutomaticDeliver({
   suppression: [],
   fleet: defaultFleetSettings(),
   deliveryMode: "manual",
+  now: weekdayNoon,
 });
 ok("manual mode keeps automaticLinkedIn empty", manual.automaticLinkedIn.length === 0);
 
