@@ -10,7 +10,7 @@ status: ready-retarget-floor-send-fail-closed-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (pending commit: ready-retarget + floor/send fail-closed + dead floor3d delete)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (`78d4af7` (ready-retarget + floor/send fail-closed + dead floor3d delete))
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` older SHA / `ok:false`
 - **Live fleet:** still 1 computer, `sessionHealthy:false` (honest) — human LinkedIn login outstanding
 - **PR:** tip push next; recreate when write tool available (prior #134 CLOSED)
