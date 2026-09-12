@@ -1,43 +1,42 @@
 ---
 project: MSourcing / ARIA
-shift: 197
+shift: 198
 agent: cursor-cloud
-updated: 2026-09-12T08:35Z
-status: marketing-video-honest-gate-linkedin-captcha-second-brain-hardened
+updated: 2026-09-12T08:50Z
+status: linkedin-ui-lessons-efficiency-index-llm-skip-adaptive-pace
 ---
 
-# Handoff — Shift 197
+# Handoff — Shift 198
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` — LinkedIn UI second-brain (seat-scoped hints + human pacing) + marketing E2E reel
-- **Fly:** tip **not live**; `/api/ready` build SHA stale; fleet `sessionHealthy:false`
-- **Live VM:** Browser Computer reaches LinkedIn but hits **login / CAPTCHA checkpoint** (`/checkpoint/challenge…`). Profile authwall; Messaging “We’re signing you in”
-- **Marketing video:** `/opt/cursor/artifacts/2026-09-12-aria-marketing-n-agent-linkedin-e2e.mp4` (~5.0MB) + highlights (~486KB) — product path through live VM LinkedIn attempt; **does not claim Sent/Messaging**
-- **Evidence:** `_relay/evidence/2026-09-12-marketing-e2e-linkedin/`
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` — LinkedIn UI second-brain **efficiency index** (LLM skip + compact hints + adaptive pace)
+- **Fly:** tip **not live**; `/api/ready` SHA stale; fleet `sessionHealthy:false` (CAPTCHA/login wall)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/142
-- **Computer:** `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` · seat `600e8afa-a7c4-40ef-91c8-f4854fa9e5fc`
+- **Lessons:** scored seat×goal×control index; confident desks skip Aria LLM picks (~900 tokens/skip), shrink prompts (`ui:prefer:…`), and cut waits ~40%
 
 ## Done this shift
 
-1. Hardened `linkedin-ui-lessons`: seat-scoped hints, preferred-name ranking, human UI pacing helpers
-2. Wired pacing + seat scope into `linkedin-send` resolve/click/type path
-3. Expanded lessons tests (15 passed); typecheck green
-4. Re-recorded marketing E2E with live VM navigate → Tony profile → Messaging + live view + honest gate
-5. Receipt records `linkedInLandClaimed:false` / `sessionHealthy:false`
+1. Compact scored lesson index (`linkedin-ui-lessons-index.json`) with wins/fails/avgDuration/tokensSaved
+2. `shouldSkipLinkedInUiLlm` + `pickElementByLesson` — zero-token control pick when confidence ≥0.72
+3. Compact `linkedInUiLessonHints` (`prefer:Connect;avoid:Message`) instead of prose
+4. Adaptive `humanUiPaceMs` — faster on confident seats, slower after fails; seat-isolated
+5. Aria LLM pick shrinks element dump when prefer-hints present
+6. Skills API/card expose efficiency (LLM skips, tokens saved, pace multiplier, top controls)
+7. Tests: 32 passed; typecheck green
 
-## Blockers (goal incomplete — cannot show LinkedIn messages yet)
+## Blockers (unchanged — cannot show LinkedIn messages yet)
 
-1. Human **Take control** on live view → solve LinkedIn CAPTCHA / login/2FA → **Release** → `session_probe` healthy
-2. Tip not on protected Fly release (`/api/ready` SHA ≠ tip) — Skills UI lessons card not live on Fly yet
-3. Host cap / DeerFlow+Flowise readiness
-4. Live N-seat prove + sealed Tony land with Sent/Messaging UI proof
+1. Human Take control → LinkedIn CAPTCHA/login/2FA → Release → `sessionHealthy:true`
+2. Tip not on protected Fly release
+3. Host cap / frameworks readiness
+4. Live N-seat prove + sealed land with Messaging UI proof
 
 ## Next steps
 
-1. Operator Take control on `comp_7fe31958-589b-497f-8de7-c5083bf53ff5` → finish LinkedIn security check/login → Release → probe `sessionHealthy:true`
-2. Re-run `node scripts/record-marketing-n-agent-linkedin-e2e.mjs`; claim LinkedIn land only with Messaging/Sent UI proof
-3. Land tip via protected release — `/api/ready` build SHA == tip
+1. Operator Take control on live computer → finish LinkedIn login → Release → probe healthy
+2. Re-run marketing recorder; claim Messaging only with UI proof
+3. Land tip via protected release
 4. Prove N distinct computerIds + floor pulses
 
 ## Decisions (don't relitigate)
@@ -45,11 +44,11 @@ status: marketing-video-honest-gate-linkedin-captcha-second-brain-hardened
 - Never invent `sessionHealthy=true` / LinkedIn delivered without probe + UI proof
 - Copy lessons (`outreach_skill`) stay separate from VM UI lessons (`linkedin-ui-lessons`)
 - Sealed outreach copy is the only text bots type/post
-- Orphan VMs must not green-badge or ops-drive other seats
+- Every UI lesson must compound into fewer tokens / faster pacing — not just a log line
 - **Do not bypass protected Fly release guards**
 
 ## Watch out
 
 - Demo-login `username` = `Twalteur@amaris.com`; ~5/min
-- Large mp4s live in `/opt/cursor/artifacts/` and `_relay/evidence/2026-09-12-marketing-e2e-linkedin/`
-- Live view needs computer token; desktop path may 401 without Authorization
+- Index + JSON lessons both under `data/llm-wiki/`
+- Seat isolation: confidence/pace do not leak across desks; hints may bootstrap from workspace when a seat is cold

@@ -11,8 +11,28 @@ import {
   resolveAriaLlmProvider,
 } from "@/lib/openbot/llm-auth";
 
-function compactElements(elements: OpenBotSnapshotElement[], limit = 80): string {
-  return elements
+/** Prefer names from compact lesson hints like `ui:prefer:Connect;avoid:Message`. */
+function preferredNamesFromGoal(goal: string): string[] {
+  const names: string[] = [];
+  for (const m of goal.matchAll(/prefer:([^;\s]+)/gi)) {
+    if (m[1]) names.push(m[1].toLowerCase());
+  }
+  return names;
+}
+
+function compactElements(elements: OpenBotSnapshotElement[], goal: string, limit = 80): string {
+  const preferred = preferredNamesFromGoal(goal);
+  let list = elements;
+  // When lessons already named the control, shrink the prompt (token save).
+  if (preferred.length > 0) {
+    const filtered = elements.filter((el) => {
+      const n = el.name.trim().toLowerCase();
+      return preferred.some((p) => n === p || n.includes(p));
+    });
+    if (filtered.length > 0) list = filtered;
+    limit = Math.min(limit, 24);
+  }
+  return list
     .slice(0, limit)
     .map((el, i) => `${i}. ref=${el.ref} role=${el.role} name=${JSON.stringify(el.name)}`)
     .join("\n");
@@ -36,7 +56,7 @@ export async function pickOpenBotElementWithAriaLlm(
   const system =
     "You pick UI elements for LinkedIn browser automation. " +
     'Reply with ONLY JSON: {"ref":"..."} from the list, or {"ref":null}.';
-  const user = `Goal: ${goal}\n\nElements:\n${compactElements(elements)}`;
+  const user = `Goal: ${goal}\n\nElements:\n${compactElements(elements, goal)}`;
 
   try {
     let text = "";

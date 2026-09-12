@@ -18,8 +18,11 @@ import {
   appendLinkedInUiLesson,
   humanUiPause,
   linkedInUiLessonHints,
+  pickElementByLesson,
   preferConnectFromLessons,
   preferNamedHeuristic,
+  recordLinkedInUiLlmSkip,
+  shouldSkipLinkedInUiLlm,
 } from "@/lib/openbot/linkedin-ui-lessons";
 
 export type OpenBotLinkedInSendInput = {
@@ -133,14 +136,34 @@ async function resolveRef(
   lessonGoal?: Parameters<typeof linkedInUiLessonHints>[0],
   seatId?: string | null,
 ): Promise<OpenBotSnapshotElement | undefined> {
+  // 1) Lesson-first: confident desk memory → pick by preferred name (0 Aria tokens).
+  if (lessonGoal && shouldSkipLinkedInUiLlm(lessonGoal, seatId)) {
+    const byLesson = pickElementByLesson(elements, lessonGoal, seatId);
+    if (byLesson) {
+      recordLinkedInUiLlmSkip({
+        goal: lessonGoal,
+        preferredName: byLesson.name,
+        seatId,
+        tokensSaved: 900,
+      });
+      return byLesson;
+    }
+  }
+
+  // 2) Soft re-rank heuristic with preferred names from the index.
   let picked = heuristic;
   if (picked && lessonGoal) {
-    // Soft re-rank if multiple near-matches already collapsed to one heuristic.
     picked = preferNamedHeuristic([picked], lessonGoal, seatId) ?? picked;
   }
   if (picked) return picked;
+
+  // 3) Aria LLM only when lessons/heuristics miss — compact ui:prefer/avoid hints.
+  if (lessonGoal) {
+    const byLesson = pickElementByLesson(elements, lessonGoal, seatId);
+    if (byLesson) return byLesson;
+  }
   const enriched = lessonGoal
-    ? `${goal}${linkedInUiLessonHints(lessonGoal, 4, seatId)}`
+    ? `${goal}${linkedInUiLessonHints(lessonGoal, 3, seatId)}`
     : goal;
   return pickOpenBotElementWithAriaLlm(elements, enriched);
 }
@@ -162,7 +185,7 @@ export async function openBotLinkedInSend(
   if (!body) return { ok: false, detail: "message body is required" };
 
   const nav = await openBotNavigate(cfg, profileUrl);
-  await humanUiPause("navigate");
+  await humanUiPause("navigate", input.seatId);
   if (looksLikeLoginWall(nav.text ?? "", nav.title, nav.url)) {
     appendLinkedInUiLesson({
       goal: "login_wall",
@@ -206,7 +229,7 @@ export async function openBotLinkedInSend(
     if (!messageBtn) return null;
 
     await openBotClick(cfg, messageBtn.ref, snap.snapshotId);
-    await humanUiPause("click");
+    await humanUiPause("click", input.seatId);
     snap = await openBotSnapshot(cfg);
 
     const box = await resolveRef(
@@ -225,7 +248,7 @@ export async function openBotLinkedInSend(
     }
 
     await openBotType(cfg, box.ref, snap.snapshotId, composed, false);
-    await humanUiPause("type");
+    await humanUiPause("type", input.seatId);
     snap = await openBotSnapshot(cfg);
     const sendBtn = await resolveRef(
       snap.elements,
@@ -249,7 +272,7 @@ export async function openBotLinkedInSend(
       };
     }
     await openBotClick(cfg, sendBtn.ref, snap.snapshotId);
-    await humanUiPause("click");
+    await humanUiPause("click", input.seatId);
     // Fail closed: a bare Send click is not proof the message left LinkedIn.
     snap = await openBotSnapshot(cfg);
     const proof = snap.elements.some((el) =>
@@ -295,7 +318,7 @@ export async function openBotLinkedInSend(
     if (!connectBtn) return null;
 
     await openBotClick(cfg, connectBtn.ref, snap.snapshotId);
-    await humanUiPause("click");
+    await humanUiPause("click", input.seatId);
     snap = await openBotSnapshot(cfg);
 
     const addNote = await resolveRef(
@@ -307,7 +330,7 @@ export async function openBotLinkedInSend(
     );
     if (addNote) {
       await openBotClick(cfg, addNote.ref, snap.snapshotId);
-      await humanUiPause("click");
+      await humanUiPause("click", input.seatId);
       snap = await openBotSnapshot(cfg);
     }
 
@@ -337,7 +360,7 @@ export async function openBotLinkedInSend(
     }
     const note = body;
     await openBotType(cfg, noteBox.ref, snap.snapshotId, note, false);
-    await humanUiPause("type");
+    await humanUiPause("type", input.seatId);
     snap = await openBotSnapshot(cfg);
 
     const sendInvite = await resolveRef(
@@ -362,7 +385,7 @@ export async function openBotLinkedInSend(
       };
     }
     await openBotClick(cfg, sendInvite.ref, snap.snapshotId);
-    await humanUiPause("click");
+    await humanUiPause("click", input.seatId);
     // Fail closed unless the UI shows Sent/Pending — a bare click is not a notification.
     snap = await openBotSnapshot(cfg);
     const proof = snap.elements.some((el) =>
