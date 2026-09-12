@@ -43,6 +43,7 @@ import {
   validateCandidateBoundText,
 } from "./agent-disclosure-policy";
 import { emit } from "./agent-events";
+import { soleCampaignBrowserSeatId, latestOutreachSeatId } from "@/lib/agent-event-seat";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultTools, STATE_VERSION } from "./seed";
 import {
   computeCampaignMetrics,
@@ -197,6 +198,8 @@ export { appendWinRecord, deriveWinRecord, WIN_RECORD_LIMIT } from "./store/winl
 export type { HermesActions } from "./store/contracts";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
+
+
 const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
 const ARIA_PERFECT_RATING: StarRating = "TopGun";
 const ARIA_STEP_CANDIDATE_CAP = 10;
@@ -1174,7 +1177,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
+      if (accepted.length > 0) {
+        emit({
+          kind: "source",
+          campaignId,
+          count: accepted.length,
+          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
+        });
+      }
       return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
     },
     [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
@@ -1280,7 +1290,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           );
           return next;
         });
-        emit({ kind: "source", campaignId, count: result.accepted.length });
+        emit({
+          kind: "source",
+          campaignId,
+          count: result.accepted.length,
+          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
+        });
       }
       return { ...result, source, error };
     },
@@ -1492,7 +1507,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
+      if (accepted.length > 0) {
+        emit({
+          kind: "source",
+          campaignId,
+          count: accepted.length,
+          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
+        });
+      }
       return { ok: true, status: "completed", added: accepted.length };
     },
     [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
@@ -1834,7 +1856,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!persisted || !authorized) {
         return { ok: false, added: 0, error: "The sourcing result could not be saved. Retry safely." };
       }
-      if (added > 0) emit({ kind: "source", campaignId, count: added });
+      if (added > 0) {
+        emit({
+          kind: "source",
+          campaignId,
+          count: added,
+          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
+        });
+      }
       return {
         ok: true,
         added,
@@ -3241,7 +3270,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaignId,
         );
       });
-      emit({ kind: "reply", candidateName: candidate?.name, campaignId });
+      emit({
+        kind: "reply",
+        candidateName: candidate?.name,
+        campaignId,
+        seatId: candidate ? latestOutreachSeatId(s.outreach, candidate.id) : undefined,
+      });
       return { reply, classification };
     },
     [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
@@ -5003,12 +5037,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      emit({
-        kind: "allocate",
-        count: drafted.length,
-        campaignId: opts?.campaignId,
-        seatId: result.assignments[0]?.seatId,
-      });
+      // Pulse each drafting desk — never collapse N agents onto the first seatId.
+      for (const seatId of seatIds) {
+        const n = drafted.filter((m) => m.seatId === seatId).length;
+        if (n === 0) continue;
+        emit({
+          kind: "allocate",
+          count: n,
+          campaignId: opts?.campaignId,
+          seatId,
+        });
+      }
       return result;
     },
     [commit, current],

@@ -80,6 +80,7 @@ export const testManifest = {
     {"id":"source-demo-auth","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","tests/source-demo-auth.mts"]},
     {"id":"source-live-campaign-authority","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","tests/source-live-campaign-authority.mts"]},
     {"id":"floor","executable":"tsx","argv":["tests/floor.mts"]},
+    {"id":"agent-event-seat","executable":"tsx","argv":["tests/agent-event-seat.mts"]},
     {"id":"guardrails","executable":"tsx","argv":["tests/guardrails.mts"]},
     {"id":"admin-config","executable":"tsx","argv":["tests/admin-config.mts"]},
     {"id":"hermes-live","executable":"tsx","argv":["tests/hermes-live.mts"]},
