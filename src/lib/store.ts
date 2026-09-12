@@ -2003,7 +2003,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!isContactReadyByTenure(candidate)) return null;
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills);
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const resolvedSeatId =
+        seatId ??
+        (resolvedChannel === "LinkedIn"
+          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
+          : undefined);
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
 
@@ -2148,11 +2153,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
-      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
-      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Keep following up on whichever channel the candidate was originally reached on.
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
+      const resolvedSeatId =
+        seatId ??
+        (channel === "LinkedIn"
+          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
+          : undefined);
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Mock is the canonical fallback (and the source of personalization evidence).
       const mockGen = generateOutreach(candidate, campaign, finalTone, channel, due.nextSequenceStep, voice, lang);
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
@@ -2212,10 +2222,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
+      const resolvedSeatId =
+        seatId ??
+        (channel === "LinkedIn"
+          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
+          : undefined);
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
-      const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
       // Mock is the canonical fallback (and the source of personalization evidence).
       const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
@@ -2772,7 +2787,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           reason: "Operator confirmed manual send on LinkedIn.",
           at: now,
         };
-        let next: HermesState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
+        const seats = linkedInSeat
+          ? prev.seats.map((s) =>
+              s.id === linkedInSeat.id
+                ? {
+                    ...s,
+                    lastSendAt: now,
+                    sentToday: (s.sentToday ?? 0) + 1,
+                  }
+                : s,
+            )
+          : prev.seats;
+        let next: HermesState = {
+          ...prev,
+          outreach,
+          candidates,
+          seats,
+          ledger: [ledgerEntry, ...prev.ledger],
+        };
         next = {
           ...next,
           campaigns: next.campaigns.map((c) =>

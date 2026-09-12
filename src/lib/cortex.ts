@@ -208,7 +208,13 @@ export function agentCortexTrace(
 
   // ---- Working: replicate floor.ts's exact campaign/candidate selection so
   // the cortex always narrates the same focus candidate the floor tile shows. --
-  const campaign = campaigns[h % campaigns.length];
+  // Prefer campaigns this seat is actually attached to (Campaign Agents), not a hash lottery.
+  const assigned = seat.assignedCampaignIds ?? [];
+  const attached = assigned.length
+    ? campaigns.filter((c) => assigned.includes(c.id))
+    : campaigns;
+  const pool = attached.length > 0 ? attached : campaigns;
+  const campaign = pool[h % pool.length]!;
   const cands = state.candidates.filter((c) => c.campaignId === campaign.id);
   const mode = h % 3;
   const role = roleProfile(campaign.jobAnalysis).label;

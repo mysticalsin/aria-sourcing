@@ -283,16 +283,30 @@ export async function POST(req: NextRequest) {
         break;
       }
       case "start":
-        rec = await defaultComputerSupervisor.start(computerId, campaignOpts);
+      case "take_control": {
+        // Orphans stay reclaim-only — never Start / Take without a real seat bind.
+        const owned = defaultComputerSupervisor.get(computerId);
+        const boundSeatId = (owned?.seatId ?? "").trim();
+        if (!boundSeatId || boundSeatId === HOST_ORPHAN_SEAT_ID) {
+          return NextResponse.json(
+            {
+              error:
+                "Unbound host VM — reclaim/bind a seat before Start or Take control.",
+            },
+            { status: 400 },
+          );
+        }
+        rec =
+          body.action === "start"
+            ? await defaultComputerSupervisor.start(computerId, campaignOpts)
+            : await defaultComputerSupervisor.takeControl(computerId, campaignOpts);
         break;
+      }
       case "stop":
         rec = await defaultComputerSupervisor.stop(computerId);
         break;
       case "reset":
         rec = await defaultComputerSupervisor.reset(computerId);
-        break;
-      case "take_control":
-        rec = await defaultComputerSupervisor.takeControl(computerId, campaignOpts);
         break;
       case "release_control":
         rec = await defaultComputerSupervisor.releaseControl(computerId, campaignOpts);

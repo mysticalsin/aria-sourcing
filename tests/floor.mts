@@ -1,4 +1,5 @@
 import { agentActivity, agentActivityWithComputers, floorRollup } from "../src/lib/floor";
+import { agentCortexTrace } from "../src/lib/cortex";
 import { pickResponderIndex, preferBrowserComputerAgents, seatsToOfficeAgents } from "../src/lib/floor3d";
 import { buildSeedState } from "../src/lib/seed";
 import { SEED_NOW } from "../src/lib/utils";
@@ -501,6 +502,21 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   ok("3D prefer ranks base36-bound LI before unbound", ranked[0]?.id === "li-base36");
   ok("3D prefer ranks unbound LI before email (base36 case)", ranked[1]?.id === "li-unbound-2");
   ok("3D prefer ranks email last (base36 case)", ranked[2]?.id === "email-2");
+}
+
+// Cortex must prefer assignedCampaignIds — same pool as floor.ts (no fleet-wide hash bleed).
+{
+  const clone = structuredClone(s);
+  const mayaSeat = clone.seats.find((x) => x.id === "seat_maya")!;
+  mayaSeat.assignedCampaignIds = ["camp_seed_design"];
+  const floorAct = agentActivity(mayaSeat, clone, NOW);
+  const cortex = agentCortexTrace(mayaSeat, clone, NOW);
+  const design = clone.campaigns.find((c) => c.id === "camp_seed_design")!;
+  ok("cortex assigned campaign matches floor detail", floorAct.detail === design.title);
+  ok(
+    "cortex narrates assigned campaign (not foreign hash pick)",
+    cortex.lines.some((line) => line.includes(design.title)),
+  );
 }
 
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);
