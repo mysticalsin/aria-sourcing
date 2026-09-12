@@ -10,10 +10,10 @@ status: approve-confirm-simulate-packet-hub-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` — approve/confirm fail-closed + simulate seat + PacketFX LI hub (this commit)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `ad805c4` — approve/confirm fail-closed + simulate seat + PacketFX LI hub
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` build `8ea3370…` / `ok:false`
 - **Live fleet:** still 1 computer, `sessionHealthy:false` (honest) — human LinkedIn login outstanding
-- **PR:** recreate after tip push (prior #136 CLOSED)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/137 (draft #137)
 
 ## Done this shift
 
