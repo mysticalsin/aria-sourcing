@@ -1,6 +1,6 @@
 /* ==========================================================================
    tests/linkedin-send-contract.mts
-   Fail-closed LinkedIn delivery contracts (invite ≤200, message proof).
+   Fail-closed LinkedIn delivery: sealed approve copy, invite ≤200, send proof.
    ========================================================================== */
 
 import { readFileSync } from "node:fs";
@@ -17,19 +17,36 @@ function ok(name: string, cond: boolean) {
 
 const src = readFileSync("src/lib/openbot/linkedin-send.ts", "utf8");
 const invite = readFileSync("src/lib/linkedin-invite-note.ts", "utf8");
+const channel = readFileSync("src/lib/linkedin-channel.ts", "utf8");
+const approve = readFileSync("src/app/api/outreach/approve/route.ts", "utf8");
 
 ok(
   "invite note hard-cap is 200",
   /LINKEDIN_INVITE_NOTE_MAX\s*=\s*200/.test(invite) &&
-    /fitLinkedInInviteNote|LINKEDIN_INVITE_NOTE_MAX/.test(src),
+    /LINKEDIN_INVITE_NOTE_MAX/.test(src),
 );
 ok(
-  "oversized invite notes fail closed (no silent mid-sentence mutilation)",
-  /Rewrite a short invite note before send|refusing mid-sentence truncation/.test(src),
+  "OpenBot types sealed body verbatim (no last-mile humanize)",
+  /never re-humanize/.test(src) &&
+    !/humanizeText\(input\.messageBody\)/.test(src) &&
+    /const body = \(input\.messageBody \?\? ""\)\.trim\(\)/.test(src),
+);
+ok(
+  "oversized sealed Connect notes fail closed (no silent rewrite)",
+  /Re-approve a short note in Outreach|refusing to rewrite sealed copy at send/.test(src),
+);
+ok(
+  "vendor LinkedIn channel posts sealed body (no re-humanize)",
+  /Exact recruiter-approved body/.test(channel) &&
+    !/body:\s*humanizeText\(req\.body\)/.test(channel),
+);
+ok(
+  "approve API echoes sealed subject/body for client persistence",
+  /sealed:\s*true/.test(approve) && /subject,\s*body/.test(approve),
 );
 ok(
   "invite refuses disabled Send",
-  /Send invitation is disabled[\s\S]{0,80}not claiming delivery/.test(src),
+  /Send invitation is disabled[\s\S]{0,120}not claiming delivery/.test(src),
 );
 ok(
   "invite requires Sent/Pending UI proof",

@@ -326,9 +326,9 @@ function OutreachView() {
   return (
     <>
       <PageHeader
-        eyebrow="Outreach approvals"
-        title="Human approval. Machine speed."
-        description="Every message is drafted by the system and held here for your sign-off. Nothing reaches a candidate without your approval."
+        eyebrow="Enterprise outreach"
+        title="Review, seal, deliver."
+        description="Agents draft with the outreach skill and humanizer. You seal the exact copy. Bots send that sealed text on LinkedIn — nothing else."
         actions={
           <div className="flex items-center gap-2">
             <label
@@ -348,6 +348,27 @@ function OutreachView() {
           </div>
         }
       />
+
+
+      <ol className="mb-5 grid gap-3 sm:grid-cols-4" aria-label="Outreach delivery pipeline">
+        {[
+          { n: "1", t: "Draft", d: "Skill + humanizer write a short, empathic note" },
+          { n: "2", t: "Seal", d: "You approve the exact copy bots may send" },
+          { n: "3", t: "Deliver", d: "Browser Computer types sealed text on LinkedIn" },
+          { n: "4", t: "Learn", d: "Positive replies refine the outreach skill" },
+        ].map((step) => (
+          <li
+            key={step.n}
+            className="rounded-2xl border border-line bg-surface px-4 py-3 shadow-soft"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted">
+              Step {step.n}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-ink">{step.t}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted">{step.d}</p>
+          </li>
+        ))}
+      </ol>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-line bg-canvas/50 px-4 py-3">
         <div>

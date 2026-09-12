@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
 
   // Approvals must persist for AriaBot Browser Computer E2E on the Fly showcase.
   if (publicDemoAriaBotDisabled()) {
-    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL, subject, body, sealed: true });
   }
 
   const { data: recorded, error } = await supabase.rpc("record_outreach_approval", {
@@ -157,5 +157,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ ok: false, error: "Failed to record approval." }, { status: 500 });
   }
-  return NextResponse.json({ ok: true });
+  // Echo the sealed copy so the client stores byte-identical text for send.
+  return NextResponse.json({ ok: true, subject, body, sealed: true });
 }
+

@@ -82,12 +82,28 @@ export function OutreachMessageCard({
   const a = useActions();
   const { toast } = useToast();
 
-  const [subject, setSubject] = React.useState(() => humanizeText(message.subject));
-  const [body, setBody] = React.useState(() => humanizeText(message.body));
+  const sealedSubject = message.approvedSubject ?? message.subject;
+  const sealedBody = message.approvedBody ?? message.body;
+  const isSealed =
+    message.status === "Approved" ||
+    message.status === "Pending Manual Send" ||
+    message.status === "Scheduled";
+
+  const [subject, setSubject] = React.useState(() =>
+    isSealed ? sealedSubject : humanizeText(message.subject),
+  );
+  const [body, setBody] = React.useState(() =>
+    isSealed ? sealedBody : humanizeText(message.body),
+  );
 
   // Re-sync local editor whenever the underlying message changes (regenerate / tone swap).
-  // Always re-run Humanizer so legacy drafts with em dashes never reach the editor.
+  // Sealed (approved) copy is never re-humanized — bots must send exactly what was signed off.
   React.useEffect(() => {
+    if (isSealed) {
+      setSubject(sealedSubject);
+      setBody(sealedBody);
+      return;
+    }
     const nextSubject = humanizeText(message.subject);
     const nextBody = humanizeText(message.body);
     setSubject(nextSubject);
@@ -95,7 +111,18 @@ export function OutreachMessageCard({
     if (nextSubject !== message.subject || nextBody !== message.body) {
       a.updateOutreach(message.id, { subject: nextSubject, body: nextBody });
     }
-  }, [message.subject, message.body, message.id, a]);
+  }, [
+    message.subject,
+    message.body,
+    message.approvedSubject,
+    message.approvedBody,
+    message.status,
+    message.id,
+    a,
+    isSealed,
+    sealedSubject,
+    sealedBody,
+  ]);
 
   const dirty = subject !== message.subject || body !== message.body;
   const ChannelIcon = message.channel === "Email" ? Mail : Linkedin;
@@ -388,7 +415,7 @@ export function OutreachMessageCard({
               id={toneId}
               value={message.tone}
               onChange={handleToneChange}
-              disabled={settled || regenerating || approving || rejecting}
+              disabled={isSealed || regenerating || approving || rejecting}
               options={OUTREACH_TONES.map((t) => ({ value: t, label: t }))}
             />
           </Field>
@@ -401,7 +428,7 @@ export function OutreachMessageCard({
               id={subjectId}
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              disabled={settled || approving || rejecting}
+              disabled={isSealed || approving || rejecting}
               placeholder="Subject line"
             />
           </Field>
@@ -413,7 +440,7 @@ export function OutreachMessageCard({
             id={bodyId}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            disabled={settled || approving || rejecting}
+            disabled={isSealed || approving || rejecting}
             className="min-h-[160px]"
             placeholder="Message body"
           />
@@ -472,17 +499,26 @@ export function OutreachMessageCard({
                 {message.dryRun
                   ? "Approved under dry-run — nothing contacted"
                   : approvedPendingSend
-                    ? "Approved, ready to send"
+                    ? "Sealed for delivery"
                     : "Approved / Sent"}
               </p>
               <p className="mt-0.5 text-success/80">
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
+                {message.approvedAt ? ` · sealed ${formatTimeAgo(message.approvedAt)}` : ""}
                 {message.scheduledFor ? ` · ${formatTimeAgo(message.scheduledFor)}` : ""}
                 {message.dryRun
                   ? " · Dry-run is on: this is a rehearsal queue, not a live send."
                   : ""}
-                {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
+                {approvedPendingSend
+                  ? " · Bots will send this exact copy on LinkedIn — no rewrites after seal."
+                  : ""}
               </p>
+              {approvedPendingSend && (
+                <p className="mt-2 rounded-xl bg-white/50 px-3 py-2 font-mono text-xs leading-relaxed text-success ring-1 ring-inset ring-success/15">
+                  {(message.approvedBody ?? message.body).slice(0, 280)}
+                  {(message.approvedBody ?? message.body).length > 280 ? "…" : ""}
+                </p>
+              )}
             </div>
             {approvedPendingSend && (
               <Button size="sm" disabled={sending} onClick={handleSend}>
@@ -557,7 +593,7 @@ export function OutreachMessageCard({
               variant="outline"
               leftIcon={<Save className="h-4 w-4" />}
               onClick={handleSave}
-              disabled={!dirty || approving || rejecting}
+              disabled={isSealed || !dirty || approving || rejecting}
             >
               Save edits
             </Button>
@@ -572,7 +608,7 @@ export function OutreachMessageCard({
                 loading={approving}
                 disabled={approving || rejecting}
               >
-                {approving ? "Recording approval…" : "Approve"}
+                {approving ? "Sealing…" : "Approve & seal"}
               </Button>
               <Button
                 size="sm"

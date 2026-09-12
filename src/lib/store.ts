@@ -2513,6 +2513,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ],
             };
           }
+          // Server may soft-fit LinkedIn ≤200 / humanize — adopt the sealed echo so
+          // bots send byte-identical copy to what the approval hash covers.
+          if (typeof persisted.subject === "string" || typeof persisted.body === "string") {
+            msg = {
+              ...msg,
+              subject: typeof persisted.subject === "string" ? persisted.subject : msg.subject,
+              body: typeof persisted.body === "string" ? persisted.body : msg.body,
+            };
+            commit((state) => ({
+              ...state,
+              outreach: state.outreach.map((m) =>
+                m.id === messageId ? { ...m, subject: msg.subject, body: msg.body } : m,
+              ),
+            }));
+          }
           const revokeStaleApproval = async (blocker: string): Promise<ApprovalResult> => {
             // The approval POST already succeeded. Its idempotent rollback must
             // remain available if hydration changes readiness before revalidation.
@@ -2529,7 +2544,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           const refreshedCandidate = s.candidates.find((c) => c.id === refreshedMessage.candidateId);
           const refreshedCampaign = s.campaigns.find((c) => c.id === refreshedMessage.campaignId);
           if (!refreshedCandidate || !refreshedCampaign) return revokeStaleApproval("Linked candidate/campaign missing.");
-          msg = refreshedMessage;
+          // Prefer sealed subject/body already applied above; keep seat/other fields from refresh.
+          msg = {
+            ...refreshedMessage,
+            subject: msg.subject,
+            body: msg.body,
+          };
           candidate = refreshedCandidate;
           campaign = refreshedCampaign;
 
@@ -2537,9 +2557,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           if (
             msg.candidateId !== approvalSnapshot.candidateId ||
             msg.channel !== approvalSnapshot.channel ||
-            refreshedRecipient !== approvalSnapshot.recipient ||
-            msg.subject !== approvalSnapshot.subject ||
-            msg.body !== approvalSnapshot.body
+            refreshedRecipient !== approvalSnapshot.recipient
           ) {
             return revokeStaleApproval("Draft changed while approval was being recorded. Review and approve the current copy again.");
           }
@@ -2622,8 +2640,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           m.id === messageId
             ? {
                 ...m,
+                subject: msg.subject,
+                body: msg.body,
                 status: finalStatus,
                 approvedBy: prev.settings.operatorName,
+                approvedAt: now,
+                approvedSubject: msg.subject,
+                approvedBody: msg.body,
                 scheduledFor: isPendingSend ? null : now,
                 sentAt: isPendingSend ? null : now,
                 dryRun: prev.settings.dryRunMode,
@@ -2992,8 +3015,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             candidateEmail: candidate.email,
             profileUrl: candidate.linkedinUrl,
             campaignId: msg.campaignId,
-            subject: msg.subject,
-            body: msg.body,
+            subject: msg.approvedSubject ?? msg.subject,
+            body: msg.approvedBody ?? msg.body,
             channel,
             phone: candidate.phone,
             confirmLive: true,
@@ -3427,6 +3450,75 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         campaignId,
         seatId: candidate ? latestOutreachSeatId(s.outreach, candidate.id) : undefined,
       });
+
+      // Learning loop: positive replies refine outreach_skill using the sealed copy that landed.
+      if (candidate && ["INTERESTED", "QUALIFIED_INTEREST"].includes(classification.intent)) {
+        commit((prev) => {
+          const lastOutbound = [...prev.outreach]
+            .filter((m) => m.candidateId === candidate.id && (m.approvedBody || m.body))
+            .sort((a, b) =>
+              (b.approvedAt ?? b.sentAt ?? b.createdAt).localeCompare(
+                a.approvedAt ?? a.sentAt ?? a.createdAt,
+              ),
+            )[0];
+          const proposals = proposeSkillUpdates(prev);
+          let next: HermesState = {
+            ...prev,
+            campaigns: prev.campaigns.map((c) =>
+              c.id === campaignId
+                ? { ...c, skillUpdates: [...proposals, ...c.skillUpdates] }
+                : c,
+            ),
+          };
+          if (lastOutbound) {
+            const sealed = (lastOutbound.approvedBody ?? lastOutbound.body).trim();
+            const lesson = [
+              "",
+              `## Learned from positive reply (${classification.intent})`,
+              `- Tone that landed: ${lastOutbound.tone}`,
+              `- Channel: ${lastOutbound.channel}`,
+              `- Sealed length: ${sealed.length} chars`,
+              "- Keep using specific work references + one soft ask; Connect notes stay ≤200.",
+              sealed.length <= 200 && lastOutbound.channel === "LinkedIn"
+                ? `- Winning note shape (~${sealed.length}c): "${sealed.slice(0, 120)}${sealed.length > 120 ? "…" : ""}"`
+                : null,
+            ]
+              .filter(Boolean)
+              .join("\n");
+            next = {
+              ...next,
+              skills: next.skills.map((sk) =>
+                sk.key === "outreach_skill"
+                  ? {
+                      ...sk,
+                      content: `${sk.content}\n${lesson}`.slice(0, 12_000),
+                      metrics: {
+                        ...sk.metrics,
+                        applied: (sk.metrics?.applied ?? 0) + 1,
+                        outcomeSignal: (sk.metrics?.outcomeSignal ?? 0) + 1,
+                      },
+                      updatedAt: new Date().toISOString(),
+                    }
+                  : sk,
+              ),
+            };
+          }
+          return withActivity(
+            next,
+            makeActivity({
+              type: "learning",
+              title: `Outreach skill learned from ${candidate.name}`,
+              notes: `Positive ${classification.intent} reply — sealed copy and tone fed back into outreach_skill.`,
+              outcome: "Skill reinforced",
+              campaignId,
+              linkedEntityType: "skill",
+              linkedEntityId: "outreach_skill",
+            }),
+            campaignId,
+          );
+        });
+      }
+
       return { reply, classification };
     },
     [commit, current, runWorkspaceEffect, workspaceEffectAllowed],

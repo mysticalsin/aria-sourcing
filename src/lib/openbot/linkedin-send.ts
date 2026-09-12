@@ -1,7 +1,7 @@
 /**
  * LinkedIn message / connection send driven through an OpenBot agent-computer.
  * Heuristic element picking first; optional Aria LLM assist for ambiguous UIs.
- * Humanizer always runs last-mile before any text is typed into LinkedIn.
+ * Types recruiter-approved Outreach copy verbatim — never re-humanize after seal.
  */
 
 import {
@@ -13,10 +13,11 @@ import {
   type OpenBotSnapshotElement,
 } from "@/lib/openbot/agent-computer-client";
 import { pickOpenBotElementWithAriaLlm } from "@/lib/openbot/llm-pick-element";
-import { humanizeText } from "@/lib/humanizer";
+import { LINKEDIN_INVITE_NOTE_MAX } from "@/lib/linkedin-invite-note";
 
 export type OpenBotLinkedInSendInput = {
   profileUrl: string;
+  /** Exact recruiter-approved body — typed verbatim; never re-humanized here. */
   messageBody: string;
   subject?: string;
   /** Prefer Connect + note when Message is unavailable (1st-degree gate). */
@@ -126,15 +127,17 @@ async function resolveRef(
 
 /**
  * Navigate to a LinkedIn profile and either Message or Connect+note.
- * Humanizer always runs before any text is typed.
+ * Types the recruiter-approved body verbatim — humanizer/gate run at approve,
+ * not here, so bots cannot silently rewrite sealed copy.
  */
 export async function openBotLinkedInSend(
   cfg: OpenBotAgentComputerConfig,
   input: OpenBotLinkedInSendInput,
 ): Promise<OpenBotLinkedInSendResult> {
   const profileUrl = input.profileUrl.trim();
-  const body = humanizeText(input.messageBody).trim();
-  const subject = input.subject ? humanizeText(input.subject).trim() : "";
+  // Exact sealed copy from Outreach approve — never re-humanize on the wire.
+  const body = (input.messageBody ?? "").trim();
+  const subject = (input.subject ?? "").trim();
   if (!profileUrl) return { ok: false, detail: "profileUrl is required" };
   if (!body) return { ok: false, detail: "message body is required" };
 
@@ -260,21 +263,16 @@ export async function openBotLinkedInSend(
       };
     }
 
-    // LinkedIn free-tier invite notes hard-cap at 200 chars — longer notes grey out
-    // Send and produce zero recipient notification. Fail closed rather than shipping
-    // a mid-sentence mutilation that looks robotic and still may not notify.
-    const { fitLinkedInInviteNote, LINKEDIN_INVITE_NOTE_MAX } = await import(
-      "@/lib/linkedin-invite-note"
-    );
-    const fitted = fitLinkedInInviteNote(body, LINKEDIN_INVITE_NOTE_MAX);
-    if (fitted.truncated && body.trim().length > LINKEDIN_INVITE_NOTE_MAX + 40) {
+    // Sealed approve copy must already be ≤200. Never soft-truncate here — that
+    // would send different text than the recruiter validated.
+    if (body.length > LINKEDIN_INVITE_NOTE_MAX) {
       return {
         ok: false,
-        detail: `Connect note is ${body.trim().length} chars (max ${LINKEDIN_INVITE_NOTE_MAX}). Rewrite a short invite note before send — refusing mid-sentence truncation that would grey Send or look robotic.`,
+        detail: `Connect note is ${body.length} chars (max ${LINKEDIN_INVITE_NOTE_MAX}). Re-approve a short note in Outreach — refusing to rewrite sealed copy at send.`,
         helpRequested: false,
       };
     }
-    const note = fitted.text;
+    const note = body;
     await openBotType(cfg, noteBox.ref, snap.snapshotId, note, false);
     snap = await openBotSnapshot(cfg);
 

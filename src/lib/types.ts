@@ -620,6 +620,12 @@ export interface OutreachMessage {
   scheduledFor: string | null;
   sentAt: string | null;
   approvedBy: string | null;
+  /** ISO timestamp when a human sealed this copy for bot delivery. */
+  approvedAt?: string | null;
+  /** Exact subject sealed at approve — bots must send this verbatim. */
+  approvedSubject?: string | null;
+  /** Exact body sealed at approve — bots must send this verbatim. */
+  approvedBody?: string | null;
   dryRun: boolean;
   createdAt: string;
   /** Carried over from a ClassifiedReply when this draft was created as a reply
