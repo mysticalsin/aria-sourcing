@@ -14,6 +14,11 @@ import {
 } from "@/lib/openbot/agent-computer-client";
 import { pickOpenBotElementWithAriaLlm } from "@/lib/openbot/llm-pick-element";
 import { LINKEDIN_INVITE_NOTE_MAX } from "@/lib/linkedin-invite-note";
+import {
+  appendLinkedInUiLesson,
+  linkedInUiLessonHints,
+  preferConnectFromLessons,
+} from "@/lib/openbot/linkedin-ui-lessons";
 
 export type OpenBotLinkedInSendInput = {
   profileUrl: string;
@@ -22,6 +27,9 @@ export type OpenBotLinkedInSendInput = {
   subject?: string;
   /** Prefer Connect + note when Message is unavailable (1st-degree gate). */
   preferConnect?: boolean;
+  /** Optional seat/campaign scope for per-desk UI lessons (N-agent isolation). */
+  seatId?: string | null;
+  campaignId?: string | null;
 };
 
 export type OpenBotLinkedInSendResult = {
@@ -120,9 +128,16 @@ async function resolveRef(
   elements: OpenBotSnapshotElement[],
   heuristic: OpenBotSnapshotElement | undefined,
   goal: string,
+  lessonGoal?: Parameters<typeof linkedInUiLessonHints>[0],
 ): Promise<OpenBotSnapshotElement | undefined> {
-  if (heuristic) return heuristic;
-  return pickOpenBotElementWithAriaLlm(elements, goal);
+  if (heuristic) {
+    if (lessonGoal && heuristic.name) {
+      // Soft prefer: heuristic already matched; remember name on success path later.
+    }
+    return heuristic;
+  }
+  const enriched = lessonGoal ? `${goal}${linkedInUiLessonHints(lessonGoal)}` : goal;
+  return pickOpenBotElementWithAriaLlm(elements, enriched);
 }
 
 /**
@@ -143,6 +158,13 @@ export async function openBotLinkedInSend(
 
   const nav = await openBotNavigate(cfg, profileUrl);
   if (looksLikeLoginWall(nav.text ?? "", nav.title, nav.url)) {
+    appendLinkedInUiLesson({
+      goal: "login_wall",
+      ok: false,
+      detail: "Hit LinkedIn login/2FA wall — need Take control",
+      seatId: input.seatId,
+      campaignId: input.campaignId,
+    });
     return {
       ok: false,
       detail: "LinkedIn login/2FA wall — open Fleet → Computers → Observe / Take control",
@@ -162,7 +184,9 @@ export async function openBotLinkedInSend(
   // Free LinkedIn Messaging is body-only. Dumping Subject\\n\\nBody into the DM
   // box is a common robotic failure mode (and wastes invite-note budget on Connect).
   const composed = body;
-  const preferConnect = input.preferConnect === true;
+  const lessonPrefer = preferConnectFromLessons();
+  const preferConnect =
+    input.preferConnect === true || (input.preferConnect !== false && lessonPrefer === true);
   void subject; // subject reserved for InMail-capable seats; not typed into free DM.
 
   async function sendDirectMessage(): Promise<OpenBotLinkedInSendResult | null> {
@@ -170,6 +194,7 @@ export async function openBotLinkedInSend(
       snap.elements,
       pickMessageButton(snap.elements),
       "Click the control that opens a LinkedIn direct message composer on this profile.",
+      "message",
     );
     if (!messageBtn) return null;
 
@@ -180,6 +205,7 @@ export async function openBotLinkedInSend(
       snap.elements,
       pickMessageBox(snap.elements),
       "Select the LinkedIn message text box where the outreach body should be typed.",
+      "message_box",
     );
     if (!box) {
       return {
@@ -195,6 +221,7 @@ export async function openBotLinkedInSend(
       snap.elements,
       pickSendButton(snap.elements),
       "Click the control that sends the LinkedIn message (Send).",
+      "send",
     );
     if (!sendBtn) {
       return {
@@ -223,6 +250,22 @@ export async function openBotLinkedInSend(
         helpRequested: true,
       };
     }
+    appendLinkedInUiLesson({
+      goal: "path",
+      ok: true,
+      detail: "Message path landed with sent proof",
+      preferredName: sendBtn.name,
+      seatId: input.seatId,
+      campaignId: input.campaignId,
+    });
+    appendLinkedInUiLesson({
+      goal: "send",
+      ok: true,
+      detail: "Send control confirmed delivery proof",
+      preferredName: sendBtn.name,
+      seatId: input.seatId,
+      campaignId: input.campaignId,
+    });
     return {
       ok: true,
       detail: `OpenBot browser-computer send via ${normalize(sendBtn.name) || "Send"} on ${profileUrl} (sent proof confirmed)`,
@@ -234,6 +277,7 @@ export async function openBotLinkedInSend(
       snap.elements,
       pickConnectButton(snap.elements),
       "Click Connect on this LinkedIn profile to send a connection invitation.",
+      "connect",
     );
     if (!connectBtn) return null;
 
@@ -244,6 +288,7 @@ export async function openBotLinkedInSend(
       snap.elements,
       pickAddNoteButton(snap.elements),
       "Click Add a note so the connection invite can include a personalized message.",
+      "add_note",
     );
     if (addNote) {
       await openBotClick(cfg, addNote.ref, snap.snapshotId);
@@ -254,6 +299,7 @@ export async function openBotLinkedInSend(
       snap.elements,
       pickInviteNoteBox(snap.elements),
       "Select the invitation note text box for the LinkedIn connection request.",
+      "invite_note",
     );
     if (!noteBox) {
       return {
@@ -280,6 +326,7 @@ export async function openBotLinkedInSend(
       snap.elements,
       pickSendInviteButton(snap.elements),
       "Click Send / Send invitation to submit the LinkedIn connection request.",
+      "send_invite",
     );
     if (!sendInvite) {
       return {
@@ -308,6 +355,22 @@ export async function openBotLinkedInSend(
         helpRequested: true,
       };
     }
+    appendLinkedInUiLesson({
+      goal: "path",
+      ok: true,
+      detail: "Connect+note path landed with Sent/Pending proof",
+      preferredName: connectBtn.name,
+      seatId: input.seatId,
+      campaignId: input.campaignId,
+    });
+    appendLinkedInUiLesson({
+      goal: "send_invite",
+      ok: true,
+      detail: "Send invitation confirmed Sent/Pending",
+      preferredName: sendInvite.name,
+      seatId: input.seatId,
+      campaignId: input.campaignId,
+    });
     return {
       ok: true,
       detail: `OpenBot browser-computer connection invite via ${normalize(sendInvite.name) || "Send"} on ${profileUrl} (Sent/Pending confirmed)`,
@@ -326,6 +389,13 @@ export async function openBotLinkedInSend(
     if (connected) return connected;
   }
 
+  appendLinkedInUiLesson({
+    goal: "path",
+    ok: false,
+    detail: "Neither Message nor Connect found — Take control to finish login/composer",
+    seatId: input.seatId,
+    campaignId: input.campaignId,
+  });
   return {
     ok: false,
     detail:

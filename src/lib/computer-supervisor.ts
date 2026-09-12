@@ -1180,6 +1180,8 @@ export class ComputerSupervisor {
             messageBody,
             subject,
             preferConnect,
+            seatId: rec.seatId,
+            campaignId,
           });
 
           if (result.helpRequested) {

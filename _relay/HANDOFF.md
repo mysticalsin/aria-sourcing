@@ -1,62 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 195
+shift: 196
 agent: cursor-cloud
-updated: 2026-09-12T07:36Z
-status: n-agent-ownership-gates-tip-not-released
+updated: 2026-09-12T08:14Z
+status: linkedin-ui-second-brain-shipped-marketing-video-honest-gate
 ---
 
-# Handoff — Shift 195
+# Handoff — Shift 196
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` — N-agent ownership gates (boot ensure→start, start/take_control seat match, draft fail-closed, floor vmId, readiness honest frameworks bit) + prior isolation harden + sealed outreach
-- **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` `ok:false`, `agentFrameworks:false` (honest — DeerFlow/Flowise not ready)
-- **Live fleet:** human LinkedIn login / `sessionHealthy` still outstanding — no invented delivery
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/141 (draft #141; #140 closed)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` — LinkedIn UI second-brain lessons + prior N-seat ownership gates + sealed outreach
+- **Fly:** tip **not live**; `/api/ready` stale; fleet computer `sessionHealthy:false` (LinkedIn checkpoint wall)
+- **Marketing video:** `/opt/cursor/artifacts/2026-09-12-aria-marketing-n-agent-linkedin-e2e.mp4` (+ highlights) — honest gate, **does not claim LinkedIn Sent**
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/141
 
 ## Done this shift
 
-1. `bootBrowserComputer` fail-closes on ensure failure / seat mismatch before `start`
-2. POST `start`/`take_control` require caller `seatId` == bound seat (409 on mismatch)
-3. FE callers (fleet page, campaign agents, viewport) pass `seatId` on start/take_control
-4. `resolveDurableComputerId`: `no-healthy-orphan` keeps owned unhealthy id (no twin mint); ownership mismatch still mints
-5. LinkedIn draft generation fail-closes when N Browser seats and no explicit `seatId`
-6. Floor `vmId` only from fleet-confirmed seat ownership (never Hermes-alone / orphan)
-7. Readiness always probes `agentFrameworks` component bit; top-level `ok` ignores it only when not required
-8. Tests: boot 13, computer-supervisor 82, readiness 15; typecheck + typecheck:tests green
+1. `linkedin-ui-lessons` store under `data/llm-wiki` (JSON + markdown second brain)
+2. OpenBot `linkedin-send` injects lesson hints into LLM picks; appends win/fail lessons; preferConnect from path memory
+3. Computer supervisor passes `seatId`/`campaignId` into send for per-desk lessons
+4. Skills page shows **LinkedIn UI lessons** card; API `GET/POST /api/knowledge/linkedin-ui-lessons`
+5. Marketing recorder + E2E video (floor → campaign → outreach → skills → fleet Take control → honest LinkedIn gate)
+6. Tests: linkedin-ui-lessons 9; typecheck green
 
 ## Blockers (goal incomplete)
 
-1. Tip not on protected Fly release (`/api/ready` build SHA ≠ tip)
-2. Human Take control + LinkedIn login/2FA (`sessionHealthy` still false)
-3. Host cap / DeerFlow+Flowise readiness on Fly (`agentFrameworks:false`)
-4. Operator N-seat prove on live (distinct computerIds + floor pulses)
-5. Graph free-busy + INTERESTED auto-book still next
+1. Tip not on protected Fly release
+2. Human Take control + LinkedIn login/2FA (`sessionHealthy` still false) — **blocks seeing messages in LinkedIn**
+3. Host cap / DeerFlow+Flowise readiness
+4. Live N-seat prove + sealed Tony land with UI proof
 
 ## Next steps
 
-1. Land tip via protected release — `/api/ready` build SHA == tip
-2. Human Take control → LinkedIn login/2FA → Release → session probe healthy
-3. Prove N distinct computerIds + floor pulses on live
-4. Prove sealed Tony Walteur Connect land with UI proof
-5. Mark PR ready only with tip live + healthy session + N-seat evidence
+1. Land tip via protected release
+2. Operator Take control on unhealthy computer → LinkedIn login/2FA → Release → probe healthy
+3. Re-run marketing recorder; claim LinkedIn land only with Sent/Pending UI proof
+4. Prove N distinct computerIds + floor pulses
 
 ## Decisions (don't relitigate)
 
 - Never invent `sessionHealthy=true` / LinkedIn delivered without probe + UI proof
-- Recruiter-sealed Outreach copy is the only text bots may type/post — no last-mile rewrite
-- Invite notes ≤ **200**; Message/Invite fail-closed on disabled Send / missing proof
+- Copy lessons (`outreach_skill`) stay separate from VM UI lessons (`linkedin-ui-lessons`)
+- Sealed outreach copy is the only text bots type/post
 - Orphan VMs must not green-badge or ops-drive other seats
-- Ambiguous N-seat send/approve/draft ⇒ fail-closed
-- Cold reclaim/ensure must pre-hydrate DB seat bindings; persist fail rolls back claim
-- Start/Take require caller seatId ownership match
-- Fly-only LinkedIn / OpenBot / computers
 - **Do not bypass protected Fly release guards**
 
 ## Watch out
 
-- Demo-login `username` field; ~5/min; `Twalteur@amaris.com`
-- Closing PRs often deletes remote branch
-- Large mp4s stay in `/opt/cursor/artifacts/`
-- Naming drift across tools — verify on-disk symbols with `rg` before editing
+- Demo-login `username` = `Twalteur@amaris.com`; ~5/min
+- Large mp4s live in `/opt/cursor/artifacts/` (full marketing E2E ~4.8MB)

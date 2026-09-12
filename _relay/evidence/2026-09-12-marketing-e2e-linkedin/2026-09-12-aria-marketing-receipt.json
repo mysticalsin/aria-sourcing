@@ -1,0 +1,114 @@
+{
+  "at": "2026-09-12T08:13:44.992Z",
+  "base": "https://aria-mantu-app.fly.dev",
+  "sessionHealthy": false,
+  "linkedInLandClaimed": false,
+  "videos": {
+    "full": "/opt/cursor/artifacts/2026-09-12-aria-marketing-n-agent-linkedin-e2e.mp4",
+    "highlights": "/opt/cursor/artifacts/2026-09-12-aria-marketing-highlights.mp4"
+  },
+  "steps": [
+    {
+      "step": "00-title",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-00-title.png",
+      "url": "about:blank"
+    },
+    {
+      "step": "demo-login",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "step": "01-home",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-01-home.png",
+      "url": "https://aria-mantu-app.fly.dev/"
+    },
+    {
+      "step": "02-floor",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-02-floor.png",
+      "url": "https://aria-mantu-app.fly.dev/floor"
+    },
+    {
+      "step": "03-campaigns",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-03-campaigns.png",
+      "url": "https://aria-mantu-app.fly.dev/campaigns"
+    },
+    {
+      "step": "04-campaign-agents",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-04-campaign-agents.png",
+      "url": "https://aria-mantu-app.fly.dev/campaigns/camp_mor1jp00097605_enterprise-windows-desktop-engineer"
+    },
+    {
+      "step": "05-seal-title",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-05-seal-title.png",
+      "url": "https://aria-mantu-app.fly.dev/campaigns/camp_mor1jp00097605_enterprise-windows-desktop-engineer"
+    },
+    {
+      "step": "06-outreach",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-06-outreach.png",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    },
+    {
+      "step": "07-outreach-sealed",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-07-outreach-sealed.png",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    },
+    {
+      "step": "08-brain-title",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-08-brain-title.png",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    },
+    {
+      "step": "09-skills-learning",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-09-skills-learning.png",
+      "url": "https://aria-mantu-app.fly.dev/skills"
+    },
+    {
+      "step": "10-ui-lessons",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-10-ui-lessons.png",
+      "url": "https://aria-mantu-app.fly.dev/skills"
+    },
+    {
+      "step": "11-fleet-title",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-11-fleet-title.png",
+      "url": "https://aria-mantu-app.fly.dev/skills"
+    },
+    {
+      "step": "12-fleet",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-12-fleet.png",
+      "url": "https://aria-mantu-app.fly.dev/fleet"
+    },
+    {
+      "step": "13-take-control",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-13-take-control.png",
+      "url": "https://aria-mantu-app.fly.dev/fleet"
+    },
+    {
+      "step": "fleet-probe",
+      "computers": 1,
+      "sessionHealthy": false,
+      "seats": [
+        {
+          "seatId": "600e8afa-a7c4-40ef-91c8-f4854fa9e5fc",
+          "computerId": "comp_7fe31958-589b-497f-8de7-c5083bf53ff5",
+          "sessionHealthy": false
+        }
+      ]
+    },
+    {
+      "step": "14-send-attempt",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-14-send-attempt.png",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    },
+    {
+      "step": "15-honest-gate",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-15-honest-gate.png",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    },
+    {
+      "step": "17-close",
+      "file": "/opt/cursor/artifacts/2026-09-12-mkt-17-close.png",
+      "url": "https://aria-mantu-app.fly.dev/outreach"
+    }
+  ]
+}
