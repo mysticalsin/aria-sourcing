@@ -47,11 +47,19 @@ export async function resolveDurableComputerId(opts: {
     } | null;
     if (!res.ok) {
       const err = (json?.error ?? "").toLowerCase();
-      // Foreign Hermes id — mint rather than reuse another seat's VM.
+      // Half-applied reclaim — never mint a twin while durable bind may be inconsistent.
+      if (/persist failed|computer_id persist failed/.test(err)) {
+        if (existing) return existing;
+        throw new Error(json?.error ?? "computer_id persist failed");
+      }
+      // Foreign / absent healthy orphan — mint rather than reuse another seat's VM.
       if (
         existing &&
         /ownership-mismatch|orphan-claim-blocked|no-healthy-orphan/.test(err)
       ) {
+        return `comp_${globalThis.crypto.randomUUID()}`;
+      }
+      if (!existing && /no-healthy-orphan|ownership-mismatch|orphan-claim-blocked/.test(err)) {
         return `comp_${globalThis.crypto.randomUUID()}`;
       }
     } else {
@@ -61,7 +69,11 @@ export async function resolveDurableComputerId(opts: {
       // Never invent healthy — only accept ids the supervisor probed true.
       if (healthy && nextId) return nextId;
     }
-  } catch {
+  } catch (err) {
+    // Persist failure with no existing id must surface — do not mint a twin.
+    if (err instanceof Error && /persist failed|computer_id persist failed/i.test(err.message)) {
+      throw err;
+    }
     /* keep existing or mint below */
   }
 

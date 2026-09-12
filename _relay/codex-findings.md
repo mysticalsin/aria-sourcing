@@ -1065,3 +1065,43 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
 **Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
 **Status:** open; browser-agent capability remains NO-GO
+
+## 2026-09-12 — Cold-start reclaim steals DB-bound VMs (N-seat isolation)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:367
+**Issue:** `reclaim_healthy_orphan` calls `hydrateFromHost` without first hydrating `agent_seats.computer_id` rows into the supervisor. Every running host bot is imported as `__orphan__`, then claimOrphan binds the first probed-healthy profile onto the requesting seat. If another seat already owns that `computer_id` in DB, persist hits the unique index and throws — but the in-memory claim is not rolled back. Next GET hydrates the victim seat, hits ownership-mismatch, and clears the victim's durable FK; fleetHermes then writes the stolen id onto the attacker seat.
+**Repro/evidence:** Cold supervisor process; seat B has `computer_id=X` with healthy LinkedIn cookies; seat A Login/Deploy with null computerId → reclaim imports X as orphan → claim A → persist unique fail → memory A owns X → GET clears B → PATCH A gets X.
+**Suggested fix:** Before import/claim, load workspace `agent_seats.computer_id` into supervisor (or skip host bots already bound in DB); on persist failure roll back claimOrphan to `__orphan__`.
+**Status:** fixed (bfbb0f4)
+
+## 2026-09-12 — ensure/session_probe/navigate bind foreign computerId without DB check
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:272
+**Issue:** POST `ensure` / `session_probe` / `navigate` call `ensureComputer` with client `computerId` without consulting `agent_seats`. On a cold map, a foreign durable id is registered onto the caller seat and can be Started — ops-driving another desk's Chromium even when PATCH would 409.
+**Repro/evidence:** Empty supervisor memory; POST ensure `{seatId:A, computerId:B_owned}` succeeds in-memory; start boots that botId.
+**Suggested fix:** Same pre-hydrate of seat bindings; refuse ensure when DB shows computer_id owned by another seat (mirror PATCH 409).
+**Status:** fixed (bfbb0f4)
+
+## 2026-09-12 — resolveDurableComputerId mints after reclaim persist steal
+**Severity:** correctness
+**File:** src/lib/boot-browser-computer.ts:49
+**Issue:** When reclaim returns `computer_id persist failed` (or other unclassified 400) and `existing` is empty, the helper falls through to mint a new `comp_*` instead of fail-closed. The failed reclaim's in-memory steal remains; mint + ensure/start then races the poisoned supervisor state.
+**Repro/evidence:** Login after seat create (`computerId=null`); reclaim unique-constraint error string does not match `/ownership-mismatch|orphan-claim-blocked|no-healthy-orphan/`; returns fresh UUID.
+**Suggested fix:** Fail closed (throw/return error) on persist-failed / unknown reclaim errors; never mint after a partial claim.
+**Status:** fixed (bfbb0f4)
+
+## 2026-09-12 — Ops Ready filter lists orphan ready VMs
+**Severity:** spec-mismatch
+**File:** src/components/fleet/fleet-computer-ops-board.tsx:157
+**Issue:** API `summary` correctly excludes `__orphan__`, but the Ready filter uses the raw `computers` array, so unbound host VMs appear as ready fleet rows and inflate the filtered list vs the StatCard.
+**Repro/evidence:** GET returns orphans with status=ready; StatCard Ready = summary.ready (no orphans); filter Ready shows orphan rows labeled "Unbound host VM".
+**Suggested fix:** Exclude `seatId === "__orphan__"` (or missing seat) from ops board filters/counts the same way as `summarizeFleetComputers`.
+**Status:** fixed (bfbb0f4)
+
+## 2026-09-12 — Send route paces LinkedIn without sessionHealthy
+**Severity:** spec-mismatch
+**File:** src/app/api/outreach/send/route.ts:282
+**Issue:** `evaluateSendPace` is called without `sessionHealthy`, so the undefined-skip branch allows enqueue while Browser Computer deliver later refuses `session_unverified`. UI can show queued success theater for an unhealthy/unprobed desk.
+**Repro/evidence:** Live Browser Computer seat, `sessionHealthy` null/false; send returns queued; dispatcher/adapter refuses at job gate.
+**Suggested fix:** Pass probed sessionHealthy (or fail closed when Browser Computer and not probed true) before enqueue.
+**Status:** fixed (bfbb0f4)

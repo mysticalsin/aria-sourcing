@@ -421,6 +421,58 @@ export class ComputerSupervisor {
     return rec;
   }
 
+  /**
+   * Undo an in-memory orphan claim when durable agent_seats.computer_id persist fails.
+   * Optionally restore a previously detached seat binding so cold GET cannot steal.
+   */
+  releaseToOrphan(
+    computerId: string,
+    opts?: {
+      workspaceId?: string;
+      restoreComputerId?: string | null;
+      restoreSeatId?: string | null;
+    },
+  ): ComputerRecord {
+    const rec = this.require(computerId);
+    if (rec.seatId === HOST_ORPHAN_SEAT_ID) return rec;
+    const workspaceId = opts?.workspaceId ?? rec.workspaceId;
+    const restoreSeatId = (opts?.restoreSeatId ?? "").trim();
+    const restoreComputerId = (opts?.restoreComputerId ?? "").trim();
+    rec.seatId = HOST_ORPHAN_SEAT_ID;
+    rec.profileVolume = `profiles/${workspaceId}/${HOST_ORPHAN_SEAT_ID}`;
+    rec.updatedAt = isoNow();
+    this.audit(
+      computerId,
+      "release_orphan",
+      `Rolled back claim — computer_id persist failed`,
+      "system",
+    );
+    if (
+      restoreComputerId &&
+      restoreSeatId &&
+      restoreSeatId !== HOST_ORPHAN_SEAT_ID &&
+      restoreComputerId !== computerId
+    ) {
+      const prev = this.computers.get(restoreComputerId);
+      if (
+        prev &&
+        prev.workspaceId === workspaceId &&
+        (prev.seatId === HOST_ORPHAN_SEAT_ID || prev.seatId === restoreSeatId)
+      ) {
+        prev.seatId = restoreSeatId;
+        prev.profileVolume = `profiles/${workspaceId}/${restoreSeatId}`;
+        prev.updatedAt = isoNow();
+        this.audit(
+          restoreComputerId,
+          "restore_seat",
+          `Restored seat ${restoreSeatId} after failed reclaim of ${computerId}`,
+          "system",
+        );
+      }
+    }
+    return rec;
+  }
+
   list(workspaceId: string): ComputerRecord[] {
     return [...this.computers.values()].filter((c) => c.workspaceId === workspaceId);
   }

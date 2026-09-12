@@ -15,7 +15,10 @@ import {
 } from "lucide-react";
 import { Button, Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
+import {
+  isOrphanComputer,
+  type FleetComputerRow,
+} from "@/components/fleet/fleet-computers-panel";
 
 export type FleetAuditEvent = {
   id?: string;
@@ -156,6 +159,8 @@ export function FleetComputerOpsBoard({
 
   const filteredComputers = React.useMemo(() => {
     return computers.filter((c) => {
+      // Match GET summary — unbound host VMs must not inflate Ready / seat filters.
+      if (isOrphanComputer(c)) return false;
       if (filter === "human" && c.control !== "human") return false;
       if (filter === "help" && c.status !== "help_requested") return false;
       if (filter === "error" && c.status !== "error") return false;

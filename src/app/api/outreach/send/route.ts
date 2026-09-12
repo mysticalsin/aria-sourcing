@@ -23,6 +23,7 @@ import {
   resolveLinkedInCredentials,
 } from "@/lib/linkedin-credentials";
 import { evaluateSendPace } from "@/lib/send-pacing";
+import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
 import { defaultFleetSettings } from "@/lib/fleet";
 import type { AgentSeat } from "@/lib/types";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
@@ -245,7 +246,7 @@ export async function POST(req: NextRequest) {
     }
     const { data: liSeat } = await supabase
       .from("agent_seats")
-      .select("id, provider, status, mode")
+      .select("id, provider, status, mode, computer_id")
       .eq("id", seatId)
       .maybeSingle();
     if (!liSeat) {
@@ -269,7 +270,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Human pacing — refuse before queue so deferred sends never look like success.
+        if (liSeat.provider === "LinkedIn Browser Computer") {
+      const boundId = String(liSeat.computer_id ?? "").trim();
+      if (boundId) {
+        try {
+          defaultComputerSupervisor.hydrateComputer({
+            workspaceId: String(approvalWid),
+            seatId,
+            computerId: boundId,
+          });
+        } catch {
+          /* ownership mismatch — pace below fails closed on null health */
+        }
+      }
+    }
+
+// Human pacing — refuse before queue so deferred sends never look like success.
     const seatsArr = Array.isArray(stateRec?.seats) ? (stateRec.seats as unknown[]) : [];
     const seatState = seatsArr
       .map((item) => record(item))
@@ -282,6 +298,11 @@ export async function POST(req: NextRequest) {
       const pace = evaluateSendPace({
         seat: seatState,
         settings: fleetSettings,
+        // Browser Computer: fail closed unless probed true (undefined would skip the check).
+        sessionHealthy:
+          liSeat.provider === "LinkedIn Browser Computer"
+            ? (defaultComputerSupervisor.get(String(liSeat.computer_id ?? "").trim())?.sessionHealthy ?? null)
+            : undefined,
       });
       if (!pace.ok) {
         return NextResponse.json(

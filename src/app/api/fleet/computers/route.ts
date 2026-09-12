@@ -240,6 +240,33 @@ const BodySchema = z
     }
   });
 
+
+/** Load durable seat→computer bindings before host orphan import / ensure / reclaim.
+ * Cold POST without this imports DB-bound VMs as __orphan__ and can steal them. */
+async function hydrateWorkspaceSeatBindings(
+  supabase: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>,
+  workspaceId: string,
+): Promise<void> {
+  const { data: seats } = await supabase
+    .from("agent_seats")
+    .select("id, computer_id")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "LinkedIn Browser Computer");
+  for (const seat of seats ?? []) {
+    try {
+      defaultComputerSupervisor.hydrateComputer({
+        workspaceId,
+        seatId: seat.id,
+        computerId: seat.computer_id,
+      });
+    } catch (err) {
+      // Poisoned FK — skip; do not clear here (GET owns clear-on-read).
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("computer-ownership-mismatch")) throw err;
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await getServerSupabase();
   const parsed = await validateBody(req, BodySchema);
@@ -264,6 +291,14 @@ export async function POST(req: NextRequest) {
 
   try {
     await bindWorkspaceSupervisor(workspaceId);
+    // Pre-hydrate DB bindings before ensure/reclaim/navigate so cold host import
+    // cannot treat another seat's VM as an orphan and steal it.
+    if (supabase && workspaceId && workspaceId !== "__local__") {
+      await hydrateWorkspaceSeatBindings(supabase, workspaceId);
+      await defaultComputerSupervisor.hydrateFromHost(workspaceId);
+    } else if (workspaceId) {
+      await defaultComputerSupervisor.hydrateFromHost(workspaceId);
+    }
     const campaignOpts = { campaignId: body.campaignId };
     const computerId = (body.computerId ?? "").trim();
     let rec;
@@ -392,6 +427,12 @@ export async function POST(req: NextRequest) {
             .eq("id", seatId)
             .eq("workspace_id", workspaceId);
           if (error) {
+            // Roll back in-memory claim so cold GET cannot keep a stolen binding.
+            defaultComputerSupervisor.releaseToOrphan(rec.computerId, {
+              workspaceId,
+              restoreComputerId: computerId || null,
+              restoreSeatId: seatId,
+            });
             throw new Error(
               `reclaim claimed ${rec.computerId} in-memory but computer_id persist failed: ${error.message}`,
             );

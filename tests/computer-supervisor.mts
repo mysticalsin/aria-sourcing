@@ -635,6 +635,18 @@ try {
       reclaimBlock.includes("computer_id persist failed"),
     );
 
+    ok(
+      "POST pre-hydrates seat bindings before ensure/reclaim",
+      route.includes("hydrateWorkspaceSeatBindings") &&
+        route.includes("hydrateFromHost"),
+    );
+    ok(
+      "reclaim persist failure rolls back in-memory claim",
+      reclaimBlock.includes("releaseToOrphan") &&
+        reclaimBlock.includes("computer_id persist failed"),
+    );
+
+
     // ensure / navigate / session_probe must require a real seatId (never
     // default seatId to computerId — that registers comps as fake seats).
     for (const action of ["ensure", "navigate", "session_probe"] as const) {
@@ -687,5 +699,36 @@ try {
       race.get("comp_tony_01")?.seatId === HOST_ORPHAN_SEAT_ID,
     );
   }
+
+
+  // releaseToOrphan undoes claim + restores prior seat binding (persist-fail rollback).
+  {
+    const roll = new ComputerSupervisor();
+    const wall = roll.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-a",
+      computerId: "comp_wall",
+    });
+    wall.status = "ready";
+    const healthy = roll.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_healthy",
+    });
+    healthy.status = "ready";
+    healthy.sessionHealthy = true;
+    healthy.remoteUrl = "http://127.0.0.1:9";
+    roll.claimOrphan("comp_healthy", { workspaceId: "ws", seatId: "seat-a" });
+    ok("claim binds healthy onto seat-a", roll.get("comp_healthy")?.seatId === "seat-a");
+    ok("claim orphans prior wall twin", roll.get("comp_wall")?.seatId === HOST_ORPHAN_SEAT_ID);
+    roll.releaseToOrphan("comp_healthy", {
+      workspaceId: "ws",
+      restoreComputerId: "comp_wall",
+      restoreSeatId: "seat-a",
+    });
+    ok("releaseToOrphan returns claim to orphan", roll.get("comp_healthy")?.seatId === HOST_ORPHAN_SEAT_ID);
+    ok("releaseToOrphan restores prior seat binding", roll.get("comp_wall")?.seatId === "seat-a");
+  }
+
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

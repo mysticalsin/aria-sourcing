@@ -43,7 +43,8 @@ function sessionBadge(c: FleetComputerRow): { label: string; className: string }
   return null;
 }
 
-function isOrphanComputer(c: FleetComputerRow): boolean {
+/** Host-imported unbound VMs — must not drive seat filters / green badges. */
+export function isOrphanComputer(c: Pick<FleetComputerRow, "seatId">): boolean {
   return !c.seatId || c.seatId === "__orphan__";
 }
 

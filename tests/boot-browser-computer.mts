@@ -117,6 +117,34 @@ try {
     "ownership mismatch mints new id",
     reminted.startsWith("comp_") && reminted !== "comp_other_seat",
   );
+
+
+  // Persist failure with no existing id must fail closed — never mint a twin.
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "reclaim claimed x in-memory but computer_id persist failed: uniq" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  let threw = false;
+  try {
+    await resolveDurableComputerId({ seatId: "seat_persist" });
+  } catch (err) {
+    threw = err instanceof Error && /persist failed/i.test(err.message);
+  }
+  ok("persist failed does not mint", threw);
+
+  // Persist failure with existing keeps existing (no mint).
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "computer_id persist failed: uniq" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  const keptOnPersist = await resolveDurableComputerId({
+    seatId: "seat_persist2",
+    existingComputerId: "comp_keep",
+  });
+  ok("persist failed keeps existing id", keptOnPersist === "comp_keep");
+
 } finally {
   globalThis.fetch = originalFetch;
 }
