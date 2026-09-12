@@ -317,16 +317,25 @@ export default function FleetPage() {
   }
 
   async function computerAction(action: string, computerId: string) {
-    // Orphans stay reclaim-only — never Start / Take control without a seat bind.
+    // Orphans stay reclaim-only — never mutate Chromium without a seat bind.
     const row = computers.find((c) => c.computerId === computerId);
+    const mutating = new Set([
+      "start",
+      "take_control",
+      "takeover",
+      "stop",
+      "reset",
+      "release_control",
+      "request_help",
+    ]);
     if (
       row &&
       (!row.seatId || row.seatId === "__orphan__") &&
-      (action === "start" || action === "take_control" || action === "takeover")
+      mutating.has(action)
     ) {
       toast({
         title: "Seat required",
-        description: "Unbound host VM — reclaim/bind a seat before Start or Take control.",
+        description: "Unbound host VM — reclaim/bind a seat before Start, Take control, Stop, or Release.",
         variant: "warning",
       });
       return;
@@ -339,10 +348,8 @@ export default function FleetPage() {
         body: JSON.stringify({
           action,
           computerId,
-          ...((action === "start" || action === "take_control" || action === "takeover") &&
-          row?.seatId
-            ? { seatId: row.seatId }
-            : {}),
+          // N-seat isolation: always name the owning seat for mutating actions.
+          ...(row?.seatId && row.seatId !== "__orphan__" ? { seatId: row.seatId } : {}),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {

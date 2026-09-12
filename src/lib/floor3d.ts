@@ -220,11 +220,16 @@ export function seatsToOfficeAgents(
     // (poisoned/stale FK after reclaim or ownership clear).
     let vmId = hint?.computerId || null;
     if (!vmId && seat.computerId && seat.provider === "LinkedIn Browser Computer") {
-      const claimed = computers?.get(seat.computerId);
-      // Only advertise a VM id when fleet confirms this seat owns it — never
-      // Hermes-alone or __orphan__ rows (those look live on the floor while unbound).
-      if (claimed?.seatId === seat.id && claimed.seatId !== HOST_ORPHAN_SEAT_ID) {
+      if (hint) {
+        // Hint already resolved for this seat — safe to show the seat FK.
         vmId = seat.computerId;
+      } else {
+        const claimed = computers?.get(seat.computerId);
+        // Only advertise a VM id when fleet confirms this seat owns it — never
+        // Hermes-alone or __orphan__ rows (those look live on the floor while unbound).
+        if (claimed?.seatId === seat.id && claimed.seatId !== HOST_ORPHAN_SEAT_ID) {
+          vmId = seat.computerId;
+        }
       }
     }
     if (seat.provider === "LinkedIn Browser Computer" && vmId) {

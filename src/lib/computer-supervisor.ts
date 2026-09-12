@@ -61,6 +61,12 @@ export type ComputerRecord = {
   campaignId?: string | null;
   /** Last LinkedIn session probe result (null = unknown). */
   sessionHealthy?: boolean | null;
+  /**
+   * When seatId is HOST_ORPHAN, the seat this Chromium last belonged to.
+   * null/undefined = never bound (fresh host import) — first claim OK.
+   * Set on detach so auto-reclaim cannot steal another seat's LinkedIn cookies.
+   */
+  priorSeatId?: string | null;
 };
 
 export type ComputerJobKind = "linkedin_send" | "warmup_nav" | "login_assist";
@@ -397,6 +403,7 @@ export class ComputerSupervisor {
         other.seatId === opts.seatId &&
         other.computerId !== computerId
       ) {
+        other.priorSeatId = opts.seatId;
         other.seatId = HOST_ORPHAN_SEAT_ID;
         other.profileVolume = `profiles/${opts.workspaceId}/${HOST_ORPHAN_SEAT_ID}`;
         other.updatedAt = isoNow();
@@ -409,6 +416,7 @@ export class ComputerSupervisor {
       }
     }
     rec.seatId = opts.seatId;
+    rec.priorSeatId = null;
     rec.profileVolume = `profiles/${opts.workspaceId}/${opts.seatId}`;
     if (opts.campaignId) rec.campaignId = opts.campaignId;
     rec.updatedAt = isoNow();
@@ -439,6 +447,7 @@ export class ComputerSupervisor {
     const workspaceId = opts?.workspaceId ?? rec.workspaceId;
     const restoreSeatId = (opts?.restoreSeatId ?? "").trim();
     const restoreComputerId = (opts?.restoreComputerId ?? "").trim();
+    rec.priorSeatId = rec.seatId;
     rec.seatId = HOST_ORPHAN_SEAT_ID;
     rec.profileVolume = `profiles/${workspaceId}/${HOST_ORPHAN_SEAT_ID}`;
     rec.updatedAt = isoNow();
@@ -461,6 +470,7 @@ export class ComputerSupervisor {
         (prev.seatId === HOST_ORPHAN_SEAT_ID || prev.seatId === restoreSeatId)
       ) {
         prev.seatId = restoreSeatId;
+        prev.priorSeatId = null;
         prev.profileVolume = `profiles/${workspaceId}/${restoreSeatId}`;
         prev.updatedAt = isoNow();
         this.audit(
@@ -610,7 +620,9 @@ export class ComputerSupervisor {
 
   /**
    * When the seat's stored computerId is missing or probes unhealthy, probe host
-   * orphans and claim the first healthy durable profile. Never invents healthy=true.
+   * orphans and claim a healthy durable profile that is safe for this seat.
+   * Auto-claim only: never-bound host imports, or orphans previously detached
+   * from this same seat. Never steals another seat's LinkedIn cookies / invents healthy.
    */
   async reclaimHealthyOrphan(opts: {
     workspaceId: string;
@@ -643,7 +655,10 @@ export class ComputerSupervisor {
     const candidates = this.list(opts.workspaceId).filter((c) => {
       if (currentId && c.computerId === currentId) return false;
       if (!c.remoteUrl) return false;
-      return c.seatId === HOST_ORPHAN_SEAT_ID;
+      if (c.seatId !== HOST_ORPHAN_SEAT_ID) return false;
+      // Never-bound host import (no priorSeatId) OR previously ours — not another desk's.
+      const prior = (c.priorSeatId ?? "").trim();
+      return !prior || prior === opts.seatId;
     });
 
     for (const candidate of candidates) {

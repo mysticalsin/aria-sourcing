@@ -318,25 +318,31 @@ export async function POST(req: NextRequest) {
         break;
       }
       case "start":
-      case "take_control": {
-        // Orphans stay reclaim-only — never Start / Take without a real seat bind.
+      case "take_control":
+      case "stop":
+      case "reset":
+      case "release_control":
+      case "request_help": {
+        // Orphans stay reclaim-only — never mutate without a real seat bind.
         const owned = defaultComputerSupervisor.get(computerId);
         const boundSeatId = (owned?.seatId ?? "").trim();
         if (!boundSeatId || boundSeatId === HOST_ORPHAN_SEAT_ID) {
           return NextResponse.json(
             {
               error:
-                "Unbound host VM — reclaim/bind a seat before Start or Take control.",
+                "Unbound host VM — reclaim/bind a seat before Start, Take control, Stop, Reset, or Release.",
             },
             { status: 400 },
           );
         }
-        // N-seat isolation: caller must name the owning seat — never Start / Take
+        // N-seat isolation: caller must name the owning seat — never drive
         // another desk's Chromium with only a computerId.
         const callerSeatId = (body.seatId ?? "").trim();
         if (!callerSeatId) {
           return NextResponse.json(
-            { error: "seatId required for start/take_control" },
+            {
+              error: `seatId required for ${body.action}`,
+            },
             { status: 400 },
           );
         }
@@ -348,27 +354,24 @@ export async function POST(req: NextRequest) {
             { status: 409 },
           );
         }
-        rec =
-          body.action === "start"
-            ? await defaultComputerSupervisor.start(computerId, campaignOpts)
-            : await defaultComputerSupervisor.takeControl(computerId, campaignOpts);
+        if (body.action === "start") {
+          rec = await defaultComputerSupervisor.start(computerId, campaignOpts);
+        } else if (body.action === "take_control") {
+          rec = await defaultComputerSupervisor.takeControl(computerId, campaignOpts);
+        } else if (body.action === "stop") {
+          rec = await defaultComputerSupervisor.stop(computerId);
+        } else if (body.action === "reset") {
+          rec = await defaultComputerSupervisor.reset(computerId);
+        } else if (body.action === "release_control") {
+          rec = await defaultComputerSupervisor.releaseControl(computerId, campaignOpts);
+        } else {
+          rec = defaultComputerSupervisor.requestHelp(
+            computerId,
+            body.detail ?? "Operator requested help",
+          );
+        }
         break;
       }
-      case "stop":
-        rec = await defaultComputerSupervisor.stop(computerId);
-        break;
-      case "reset":
-        rec = await defaultComputerSupervisor.reset(computerId);
-        break;
-      case "release_control":
-        rec = await defaultComputerSupervisor.releaseControl(computerId, campaignOpts);
-        break;
-      case "request_help":
-        rec = defaultComputerSupervisor.requestHelp(
-          computerId,
-          body.detail ?? "Operator requested help",
-        );
-        break;
       case "navigate": {
         if (!body.url) {
           return NextResponse.json({ error: "url required for navigate" }, { status: 400 });

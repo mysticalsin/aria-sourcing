@@ -562,6 +562,66 @@ try {
     ok("healthy stored id retained", kept.computer.computerId === "comp_already_ok");
   }
 
+  // Auto-reclaim must not steal another seat's detached LinkedIn profile.
+  {
+    const iso = new ComputerSupervisor();
+    const wall = iso.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_tony_wall",
+    });
+    wall.remoteUrl = "http://127.0.0.1:9101";
+    const foreign = iso.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_foreign_healthy",
+    });
+    foreign.remoteUrl = "http://127.0.0.1:9102";
+    foreign.status = "ready";
+    foreign.priorSeatId = "seat-other";
+    iso.probeSession = async (computerId: string) => {
+      const rec = iso.get(computerId)!;
+      rec.sessionHealthy = computerId === "comp_foreign_healthy";
+      return rec;
+    };
+    const refused = await iso.reclaimHealthyOrphan({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_tony_wall",
+    });
+    ok(
+      "auto-reclaim refuses foreign priorSeatId orphan",
+      refused.reclaimed === false && refused.computer.computerId === "comp_tony_wall",
+    );
+    ok(
+      "foreign orphan still unbound",
+      iso.get("comp_foreign_healthy")?.seatId === HOST_ORPHAN_SEAT_ID,
+    );
+
+    // Same-seat prior: detach then reclaim is allowed.
+    const mine = iso.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_tony_prior",
+    });
+    mine.remoteUrl = "http://127.0.0.1:9103";
+    mine.status = "ready";
+    mine.priorSeatId = "seat-tony";
+    iso.probeSession = async (computerId: string) => {
+      const rec = iso.get(computerId)!;
+      rec.sessionHealthy = computerId === "comp_tony_prior";
+      return rec;
+    };
+    const same = await iso.reclaimHealthyOrphan({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_tony_wall",
+    });
+    ok("auto-reclaim allows same priorSeatId orphan", same.reclaimed === true);
+    ok("same-prior orphan rebound to seat", same.computer.seatId === "seat-tony");
+    ok("claimed clears priorSeatId", same.computer.priorSeatId == null);
+  }
+
 
 
   // takeControl must invalidate healthy even when previously probed true.
@@ -646,9 +706,12 @@ try {
         reclaimBlock.includes("computer_id persist failed"),
     );
     ok(
-      "start/take_control require caller seatId match",
-      route.includes("seatId required for start/take_control") &&
-        route.includes("computer-ownership-mismatch"),
+      "mutating computer actions require caller seatId match",
+      route.includes("seatId required for") &&
+        route.includes("computer-ownership-mismatch") &&
+        route.includes('case "stop"') &&
+        route.includes('case "release_control"') &&
+        route.includes('case "request_help"'),
     );
 
 

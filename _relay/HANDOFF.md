@@ -1,48 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 200
+shift: 201
 agent: cursor-cloud
-updated: 2026-09-12T09:10Z
-status: hyper-fluid-takeover-agenticseek-grokbot
+updated: 2026-09-12T09:48Z
+status: n-agent-isolation-harden
 ---
 
-# Handoff — Shift 200
+# Handoff — Shift 201
 
 ## Current state
 
-- **Branch:** `cursor/openbot-desktop-vm-b91d` — hyper-fluid Take control / get-out (AgenticSeek watch + GrokBot jump-in)
-- **Fly tip:** still on deploy SHA from shift 199 (`21a42e7…`); this shift is UX/code — redeploy Fly when ready
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/143 (update with fluid takeover)
+- **Branch:** `cursor/n-agent-isolation-harden-b91d` (from openbot-desktop-vm tip)
+- **Goal:** N campaign agents real + floor-visible + FE↔BE wired (ponytail) — isolation harden landed; goal not complete until Fly proof of N distinct healthy seats
+- **PR:** open/update for this branch → base `integration/sourcing-enrichment-on-main` (or openbot PR #143 stack)
 
 ## Done this shift
 
-1. `src/lib/fluid-takeover.ts` — Esc/R get-out, T take, typing-safe hotkeys, `?fs=1` jump-in helper
-2. OpenBot shell: watch-mode hint, click-to-take, Esc/R release, Get out · Release button
-3. Fleet computers panel: embedded live iframe (AgenticSeek-style watch) + hotkeys
-4. Viewport page: embed remote/live URL + same hotkeys
-5. Tests: `tests/fluid-takeover.mts` registered in manifest (application 185)
+1. Fleet POST: `stop` / `reset` / `release_control` / `request_help` require caller `seatId` ownership match (same as start/take_control)
+2. `priorSeatId` on detach; `reclaimHealthyOrphan` auto-claims only never-bound or same-prior orphans (no cookie steal)
+3. FE always sends `seatId` on mutating computer actions (fleet page, viewport, campaign agents)
+4. Floor: VM suffix when seat-keyed hint lacks `computerId` (N agents distinguishable); poison FK still fail-closed
+5. Tests: `computer-supervisor` 87/87; `floor` 65/65
 
-## Blockers (unchanged)
+## Blockers
 
-1. Human Take control on live Fly → LinkedIn CAPTCHA/login → Release → `sessionHealthy:true`
-2. Host cap / `agentFrameworks=false`
-3. Tip not on protected `deploy/fly-github-actions`
+1. Human Take control on live Fly → LinkedIn CAPTCHA/login → Release → `sessionHealthy:true` still required for green floor
+2. Host cap / `agentFrameworks=false` on `/api/ready`
+3. Tip not on protected `deploy/fly-github-actions` without merge strategy
 
 ## Next steps
 
-1. Redeploy Fly app-only with this tip (owner `prod-deploy-app.sh`)
-2. Operator: Open view → watch agent → Take control (T) → finish LinkedIn → Esc get out
-3. Re-run marketing recorder with Messaging UI proof
+1. Push branch + open/update PR; run full `npm run typecheck && npm run typecheck:tests && npm test`
+2. Redeploy Fly app-only with tip including isolation + fluid takeover
+3. Prove floor shows N distinct computers with real status (no invented healthy)
+4. Operator: Take control → LinkedIn login → Release → `sessionHealthy:true` per seat
 
 ## Decisions (don't relitigate)
 
 - Never invent `sessionHealthy=true` / LinkedIn delivered without probe + UI proof
-- AgenticSeek-style: agents keep acting while operator watches; GrokBot-style: instant take / Esc get-out
+- Auto-reclaim must not steal another seat's detached LinkedIn profile (`priorSeatId` gate)
+- Mutating computer actions always require caller seat ownership
 - Do not bypass protected Fly release guards
 - Fly only for LinkedIn / OpenBot / computers
 
 ## Watch out
 
-- Hotkeys ignore typing targets (omnibox / LinkedIn inputs)
-- OpenBot `?fs=1` auto-takes + fullscreen on load
-- Iframe embed needs COMPUTER_SUPERVISOR_URL / remoteUrl bound for live CDP
+- FE must keep sending `seatId` for stop/release or API returns 400
+- Never-bound host orphans remain first-claimable (bootstrap) — only prior-bound orphans are seat-scoped
+- Floor green = `ready && sessionHealthy === true` only

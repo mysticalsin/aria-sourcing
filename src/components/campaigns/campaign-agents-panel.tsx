@@ -219,11 +219,8 @@ export function CampaignAgentsPanel({
     try {
       const row = computers.find((c) => c.computerId === computerId);
       const seatId = (row?.seatId ?? "").trim();
-      if (
-        (action === "start" || action === "take_control") &&
-        (!seatId || seatId === "__orphan__")
-      ) {
-        const msg = "Unbound host VM — reclaim/bind a seat before Start or Take control.";
+      if (!seatId || seatId === "__orphan__") {
+        const msg = "Unbound host VM — reclaim/bind a seat before Start, Take control, or Release.";
         setError(msg);
         toast({ title: "Seat required", description: msg, variant: "error" });
         return;
@@ -236,7 +233,7 @@ export function CampaignAgentsPanel({
           action,
           computerId,
           campaignId,
-          ...(seatId ? { seatId } : {}),
+          seatId,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
