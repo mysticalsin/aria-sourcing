@@ -1135,5 +1135,5 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** `stop` / `reset` / `release_control` / `request_help` accepted computerId alone (seat A could stop seat B). `reclaimHealthyOrphan` auto-claimed the first healthy host orphan, so seat A could inherit seat B's detached LinkedIn cookies.
 **Repro/evidence:** POST stop with foreign computerId succeeded; reclaim with unhealthy twin + foreign priorSeatId orphan rebound the foreign VM.
 **Suggested fix:** Require caller seatId match for all mutating actions; track priorSeatId on detach; auto-reclaim only never-bound or same-prior orphans.
-**Status:** fixed (pending commit on cursor/n-agent-isolation-harden-b91d)
+**Status:** fixed (246cdd9)
 
