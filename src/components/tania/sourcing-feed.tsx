@@ -6,7 +6,6 @@ import { RevealStream } from "@/components/reveal/reveal-stream";
 import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
-import { emit } from "@/lib/agent-events";
 import type { Candidate } from "@/lib/types";
 import { initialsFrom, scoreTone, toneForStage } from "@/lib/utils";
 
@@ -26,19 +25,9 @@ function SourcedCandidateCard({
 }) {
   const { text: typedName, done: nameTyped } = useTypewriter(candidate.name, { speed: 28 });
   const displayScore = useCountUp(Math.round(candidate.matchScore), { durationMs: 900 });
-  const emittedRef = React.useRef(false);
-
-  // Fire a lightweight per-card bus event the instant this candidate
-  // materializes, so the 3D floor / HUD can react per-candidate as the feed
-  // streams. This carries no `count` field — `sourceNextBatch` already
-  // emitted the one authoritative batch-total `source` event the moment it
-  // committed (store.ts, right after the commit()) — so nothing here can
-  // double-count a real total, it only adds a per-card ping for animation.
-  React.useEffect(() => {
-    if (emittedRef.current) return;
-    emittedRef.current = true;
-    emit({ kind: "source", candidateName: candidate.name, campaignId });
-  }, [candidate.name, campaignId]);
+  // No seatless `source` bus ping here — store already pulses every attached
+  // LI Browser desk via campaignBrowserSeatIds. A seatId-less emit is dead air
+  // for PacketFX/floor (fail-closed) and looks like FX is broken under N seats.
 
   const initials = candidate.avatarInitials || initialsFrom(candidate.name);
 

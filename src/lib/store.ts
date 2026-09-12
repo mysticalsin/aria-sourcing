@@ -2548,23 +2548,28 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       // N LinkedIn desks: refuse empty seat attribution on the authoritative ledger.
       if (msg.channel === "LinkedIn" && !(msg.seatId ?? "").trim()) {
-        const sole = soleCampaignBrowserSeatId(s.seats, campaign.id);
-        if (sole) {
-          msg = { ...msg, seatId: sole };
+        const soleBrowser = soleCampaignBrowserSeatId(s.seats, campaign.id);
+        const liLive = s.seats.filter(
+          (x) => x.status === "active" && isLinkedInAutomaticProvider(x.provider),
+        );
+        const soleAuto = soleBrowser ?? (liLive.length === 1 ? liLive[0]!.id : undefined);
+        if (soleAuto) {
+          msg = { ...msg, seatId: soleAuto };
           commit((prev) => ({
             ...prev,
-            outreach: prev.outreach.map((m) => (m.id === messageId ? { ...m, seatId: sole } : m)),
+            outreach: prev.outreach.map((m) =>
+              m.id === messageId ? { ...m, seatId: soleAuto } : m,
+            ),
           }));
           s = current();
-        } else {
-          const liLive = s.seats.filter(
-            (x) => x.status === "active" && isLinkedInAutomaticProvider(x.provider),
+        } else if (liLive.length > 1) {
+          return approvalBlocked(
+            "Message has no seatId; cannot approve across N LinkedIn seats without a drafting desk.",
           );
-          if (liLive.length > 1) {
-            return approvalBlocked(
-              "Message has no seatId; cannot approve across N LinkedIn seats without a drafting desk.",
-            );
-          }
+        } else {
+          return approvalBlocked(
+            "No LinkedIn automatic seat to attribute this approval — attach a Browser Computer or Vendor API desk.",
+          );
         }
       }
 
@@ -2710,22 +2715,36 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const profile = (candidate.linkedinUrl ?? "").trim();
       if (!profile) return { ok: false, error: "Candidate has no LinkedIn profile URL." };
 
-      const isLinkedInSeat = (seat: (typeof s.seats)[number]) =>
+      // Match record_linkedin_assisted_manual_send allowlist — Browser Computer
+      // uses automatic send / Take control, not paste-confirm.
+      const isManualConfirmSeat = (seat: (typeof s.seats)[number]) =>
         seat.provider === "LinkedIn Assisted Manual" ||
-        seat.provider === "LinkedIn Vendor API" ||
-        seat.provider === "LinkedIn Browser Computer";
+        seat.provider === "LinkedIn Vendor API";
+      if (
+        msg.seatId &&
+        s.seats.some(
+          (seat) =>
+            seat.id === msg.seatId && seat.provider === "LinkedIn Browser Computer",
+        )
+      ) {
+        return {
+          ok: false,
+          error:
+            "Browser Computer desks send automatically after Take control / Release — use Send Approved, not manual confirm.",
+        };
+      }
       let linkedInSeat =
         msg.seatId != null && msg.seatId !== ""
-          ? s.seats.find((seat) => seat.id === msg.seatId && isLinkedInSeat(seat))
+          ? s.seats.find((seat) => seat.id === msg.seatId && isManualConfirmSeat(seat))
           : undefined;
       if (msg.seatId && !linkedInSeat) {
         return {
           ok: false,
-          error: "Message seatId is not a LinkedIn seat — cannot confirm on another desk.",
+          error: "Message seatId is not a LinkedIn Assisted/Vendor seat — cannot confirm on another desk.",
         };
       }
       if (!linkedInSeat) {
-        const liSeats = s.seats.filter(isLinkedInSeat);
+        const liSeats = s.seats.filter(isManualConfirmSeat);
         if (liSeats.length > 1) {
           return {
             ok: false,

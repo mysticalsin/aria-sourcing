@@ -107,6 +107,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const [simBody, setSimBody] = React.useState("Thanks — I'm interested. When can we talk?");
   const [simType, setSimType] = React.useState<LinkedInEventType>("reply");
   const [simulating, setSimulating] = React.useState(false);
+  const [simSeatId, setSimSeatId] = React.useState<string>("");
   const [hostCapacity, setHostCapacity] = React.useState<{ computers: number; max: number } | null>(
     null,
   );
@@ -796,6 +797,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
     simType,
     setSimType,
     simulating,
+    simSeatId,
+    setSimSeatId,
     hostCapacity,
     oauthSeat,
     signedIn,
@@ -837,6 +840,8 @@ export function LinkedInIdentityStep({
     simType,
     setSimType,
     simulating,
+    simSeatId,
+    setSimSeatId,
     hostCapacity,
     oauthSeat,
     signedIn,
@@ -854,6 +859,23 @@ export function LinkedInIdentityStep({
   const { toast } = useToast();
 
   const hasBrowserSeat = seats.some((s) => s.provider === "LinkedIn Browser Computer");
+  const linkedInSimSeats = React.useMemo(
+    () =>
+      seats.filter((s) =>
+        [
+          "LinkedIn Browser Computer",
+          "LinkedIn Assisted Manual",
+          "LinkedIn Vendor API",
+        ].includes(s.provider),
+      ),
+    [seats],
+  );
+  React.useEffect(() => {
+    if (!simSeatId && linkedInSimSeats[0]?.id) setSimSeatId(linkedInSimSeats[0].id);
+    if (simSeatId && !linkedInSimSeats.some((s) => s.id === simSeatId)) {
+      setSimSeatId(linkedInSimSeats[0]?.id ?? "");
+    }
+  }, [linkedInSimSeats, simSeatId]);
   const state: StepState =
     stepState ??
     (hasBrowserSeat || signedIn
@@ -918,13 +940,32 @@ export function LinkedInIdentityStep({
               <Input id="li-sim-body" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
             </Field>
           )}
+          <Field label="Attribute to seat" htmlFor="li-sim-seat" className="mt-3">
+            <select
+              id="li-sim-seat"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
+              value={simSeatId}
+              onChange={(e) => setSimSeatId(e.target.value)}
+            >
+              {linkedInSimSeats.length === 0 ? (
+                <option value="">No LinkedIn seat</option>
+              ) : (
+                linkedInSimSeats.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} · {s.provider.replace("LinkedIn ", "")}
+                  </option>
+                ))
+              )}
+            </select>
+          </Field>
           <Button
             size="sm"
             variant="subtle"
             className="mt-3"
             leftIcon={<Wand2 className="h-3.5 w-3.5" />}
             loading={simulating}
-            onClick={() => void simulateEvent(seats[0]?.id)}
+            disabled={!simSeatId}
+            onClick={() => void simulateEvent(simSeatId)}
           >
             Simulate event
           </Button>
@@ -937,7 +978,7 @@ export function LinkedInIdentityStep({
     <ConnectionStep
       step={1}
       title="AriaBot Browser Computer"
-      subtitle="Log into LinkedIn once in the agent VM. That session stays on this Browser Computer seat — Automatic outreach and campaign agents reuse it. Aria never stores your LinkedIn password."
+      subtitle="Log into LinkedIn once in the agent VM. That session stays on this Browser Computer seat — Automatic outreach and campaign agents reuse it. Aria never stores credentials — never your password."
       state={state}
       advanced={advanced}
     >
@@ -1084,6 +1125,24 @@ export function LinkedInIdentityStep({
                       {s.provider === "LinkedIn Browser Computer" && (
                         <Badge tone="electric" size="sm">
                           AriaBot
+                        </Badge>
+                      )}
+                      {s.provider === "LinkedIn Browser Computer" && (
+                        <Badge
+                          tone={
+                            s.sessionHealthy === true
+                              ? "success"
+                              : s.sessionHealthy === false
+                                ? "danger"
+                                : "warning"
+                          }
+                          size="sm"
+                        >
+                          {s.sessionHealthy === true
+                            ? "Session healthy"
+                            : s.sessionHealthy === false
+                              ? "Session unhealthy"
+                              : "Session unverified"}
                         </Badge>
                       )}
                       {s.oauthConnected && (

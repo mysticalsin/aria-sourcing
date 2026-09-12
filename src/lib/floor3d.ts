@@ -234,8 +234,26 @@ export function seatsToOfficeAgents(
       // distinct colour by seat index — curated palette first (faithful to the
       // reference lineup), then generated hues for any number of new agents.
       color: seat.color ?? colorForAgent(index),
-      position: index === 0 ? "ceo" : "employee",
+      // Provisional — hub reassigned below to a real LI Browser desk when present.
+      position: "employee" as OfficeAgent["position"],
       provider: seat.provider,
+    };
+  }).map((agent, index, all) => {
+    // PacketFX hub: prefer a bound LinkedIn Browser Computer over roster[0]
+    // email theater so packets don't fly to a non-LI desk.
+    const hubId =
+      all.find(
+        (a) =>
+          a.provider === "LinkedIn Browser Computer" &&
+          typeof a.subtitle === "string" &&
+          /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
+      )?.id ??
+      all.find((a) => a.provider === "LinkedIn Browser Computer")?.id ??
+      all.find((a) => (a.provider ?? "").startsWith("LinkedIn"))?.id ??
+      all[0]?.id;
+    return {
+      ...agent,
+      position: agent.id === hubId ? ("ceo" as const) : ("employee" as const),
     };
   });
 }
