@@ -10,7 +10,7 @@ status: orphan-ops-cortex-approve-fail-closed-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` (pending: orphan fleet ops gate + cortex computer truth + LI approve/draft seatId)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `0e73d8b` (orphan fleet ops + cortex VM-truth + LI approve/draft seatId)
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` `8ea3370…` / `ok:false`
 - **Live fleet:** still 1 computer, `sessionHealthy:false` (honest) — human LinkedIn login outstanding
 - **PR:** tip push next; recreate when write tool available (prior #134 CLOSED)
