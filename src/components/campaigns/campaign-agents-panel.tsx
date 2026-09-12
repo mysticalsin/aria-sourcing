@@ -19,6 +19,7 @@ import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel"
 import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
 import { useActions, useSettings } from "@/lib/store";
 import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
+import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
 
 type AuditEvent = {
   id?: string;
@@ -166,6 +167,48 @@ export function CampaignAgentsPanel({
     const t = window.setInterval(() => void refresh(), 4000);
     return () => window.clearInterval(t);
   }, [refresh]);
+
+  async function deploySeat(seat: AgentSeat) {
+    setBusyId(seat.id);
+    setError(null);
+    try {
+      const computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId: seat.computerId,
+      });
+      const ok = await actions.updateSeat(seat.id, { computerId });
+      if (!ok) {
+        setError("Could not save computer id on seat.");
+        toast({ title: "Deploy failed", description: "Seat update refused.", variant: "error" });
+        return;
+      }
+      const boot = await bootBrowserComputer({
+        seatId: seat.id,
+        computerId,
+        campaignId,
+      });
+      if (!boot.ok) {
+        const msg = boot.error ?? "Boot failed";
+        setError(msg);
+        toast({ title: "Deploy partially saved", description: msg, variant: "warning" });
+      } else {
+        toast({
+          title: "Browser computer ready",
+          description: boot.booted
+            ? "VM bound and started — Take control to finish LinkedIn login if needed."
+            : "VM bound. Start or Take control when ready.",
+          variant: "success",
+        });
+      }
+      await refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Deploy failed";
+      setError(msg);
+      toast({ title: "Deploy failed", description: msg, variant: "error" });
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function act(
     action: "start" | "take_control" | "release_control",
@@ -390,20 +433,30 @@ export function CampaignAgentsPanel({
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted">
-                          Deploy or Login from Settings to mint a durable VM id, then Start / Take
-                          control here.
+                          No durable VM yet — Deploy reclaims a healthy unbound host if one exists,
+                          otherwise mints a seat-owned computer id.
                         </p>
                       </div>
-                      {onUnassignSeat ? (
+                      <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
                           size="sm"
-                          variant="ghost"
-                          onClick={() => onUnassignSeat(seat.id)}
+                          disabled={busyId === seat.id}
+                          onClick={() => void deploySeat(seat)}
                         >
-                          Detach
+                          {busyId === seat.id ? "Deploying…" : "Deploy computer"}
                         </Button>
-                      ) : null}
+                        {onUnassignSeat ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => onUnassignSeat(seat.id)}
+                          >
+                            Detach
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   </li>
                 );

@@ -1,5 +1,5 @@
 import { redactEmail, redactSecrets } from "../log-redact";
-import { soleCampaignBrowserSeatId } from "../agent-event-seat";
+import { campaignBrowserSeatIds } from "../agent-event-seat";
 import { sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
@@ -685,12 +685,15 @@ export function createSourcingActions({
 }: SourcingActionDependencies): SourcingActions {
   const emitCampaignSource = (campaignId: string, count: number) => {
     const seats = currentState()?.seats ?? [];
-    emitSource({
-      kind: "source",
-      campaignId,
-      count,
-      seatId: soleCampaignBrowserSeatId(seats, campaignId),
-    });
+    const seatIds = campaignBrowserSeatIds(seats, campaignId);
+    // Pulse each attached LI desk (same pattern as allocate) — never hash-pick one.
+    if (seatIds.length === 0) {
+      emitSource({ kind: "source", campaignId, count });
+      return;
+    }
+    for (const seatId of seatIds) {
+      emitSource({ kind: "source", campaignId, count, seatId });
+    }
   };
 
   const sourceReviewedCampaignBatch = async (

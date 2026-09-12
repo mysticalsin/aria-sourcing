@@ -202,6 +202,7 @@ export default function FleetPage() {
   const [computers, setComputers] = React.useState<FleetComputerRow[]>([]);
   const [computersLoading, setComputersLoading] = React.useState(false);
   const [observingComputerId, setObservingComputerId] = React.useState<string | null>(null);
+  const [reclaimingComputerId, setReclaimingComputerId] = React.useState<string | null>(null);
   const [opsSummary, setOpsSummary] = React.useState<FleetOpsSummary | null>(null);
   const [fleetAudits, setFleetAudits] = React.useState<FleetAuditEvent[]>([]);
   const [auditFocusId, setAuditFocusId] = React.useState<string | null>(null);
@@ -273,6 +274,47 @@ export default function FleetPage() {
     const t = window.setInterval(() => void refreshComputers(), 5000);
     return () => window.clearInterval(t);
   }, [hydrated, refreshComputers]);
+
+  async function reclaimOrphan(computerId: string, seatId: string) {
+    setReclaimingComputerId(computerId);
+    try {
+      const res = await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reclaim_healthy_orphan",
+          computerId,
+          seatId,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        computer?: { computerId?: string };
+        reclaimed?: boolean;
+      };
+      if (!res.ok || data.error) {
+        toast({
+          title: "Reclaim failed",
+          description: data.error || res.statusText,
+          variant: "error",
+        });
+        return;
+      }
+      const boundId = data.computer?.computerId?.trim() || computerId;
+      await actions.updateSeat(seatId, { computerId: boundId });
+      await refreshComputers();
+      toast({
+        title: "VM reclaimed",
+        description: "Seat now owns this host. Start or Take control to continue LinkedIn login.",
+        variant: "success",
+      });
+    } catch {
+      toast({ title: "Reclaim failed", variant: "error" });
+    } finally {
+      setReclaimingComputerId(null);
+    }
+  }
 
   async function computerAction(action: string, computerId: string) {
     // Orphans stay reclaim-only — never Start / Take control without a seat bind.
@@ -803,6 +845,15 @@ export default function FleetPage() {
             }}
             onRelease={(id) => void computerAction("release_control", id)}
             onObserve={(id) => void computerAction("start", id)}
+            reclaimSeats={seats
+              .filter(
+                (s) =>
+                  s.provider === "LinkedIn Browser Computer" &&
+                  !(s.computerId ?? "").trim(),
+              )
+              .map((s) => ({ id: s.id, name: s.name }))}
+            onReclaim={(computerId, seatId) => void reclaimOrphan(computerId, seatId)}
+            reclaimingId={reclaimingComputerId}
           />
           {computersLoading ? null : null}
           <SuppressionPanel />

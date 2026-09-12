@@ -1,23 +1,35 @@
 /**
  * Floor FX seat attribution for N Browser Computer desks.
- * Campaign-level source only attributes when exactly one LI Browser seat owns
- * the campaign; replies use the latest outreach seat. Omit otherwise — PacketFX
- * and the floor page already fail-closed without seatId (no hash bleed).
+ * Source waves pulse every attached LI Browser desk (allocate-style) so N-seat
+ * campaigns stay visible without hash-picking a single owner. Draft/send still
+ * use soleCampaignBrowserSeatId / msg.seatId. PacketFX and the floor page
+ * fail-closed without seatId (no hash bleed).
  */
 
 import type { AgentSeat, OutreachMessage } from "@/lib/types";
 
+/** Active LinkedIn Browser Computer seats that own (or share) this campaign. */
+export function campaignBrowserSeatIds(
+  seats: AgentSeat[],
+  campaignId: string,
+): string[] {
+  return seats
+    .filter((seat) => {
+      if (seat.status !== "active") return false;
+      if (seat.provider !== "LinkedIn Browser Computer") return false;
+      const assigned = seat.assignedCampaignIds ?? [];
+      return assigned.length === 0 || assigned.includes(campaignId);
+    })
+    .map((seat) => seat.id);
+}
+
+/** Exactly one LI Browser seat → safe sole stamp; otherwise undefined (fail-closed). */
 export function soleCampaignBrowserSeatId(
   seats: AgentSeat[],
   campaignId: string,
 ): string | undefined {
-  const li = seats.filter((seat) => {
-    if (seat.status !== "active") return false;
-    if (seat.provider !== "LinkedIn Browser Computer") return false;
-    const assigned = seat.assignedCampaignIds ?? [];
-    return assigned.length === 0 || assigned.includes(campaignId);
-  });
-  return li.length === 1 ? li[0]!.id : undefined;
+  const li = campaignBrowserSeatIds(seats, campaignId);
+  return li.length === 1 ? li[0] : undefined;
 }
 
 export function latestOutreachSeatId(

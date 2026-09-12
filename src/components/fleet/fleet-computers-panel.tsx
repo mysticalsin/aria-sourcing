@@ -56,6 +56,8 @@ function isAriaViewport(url: string | null | undefined): boolean {
  * Fleet → Computers panel. Observe / Take control are CLOSED by default —
  * operators must click to open a live view (never auto-pop LinkedIn windows).
  */
+export type ReclaimSeatOption = { id: string; name: string };
+
 export function FleetComputersPanel({
   computers,
   onRefresh,
@@ -65,6 +67,9 @@ export function FleetComputersPanel({
   onStart,
   observingId: observingIdProp,
   onObservingChange,
+  reclaimSeats = [],
+  onReclaim,
+  reclaimingId = null,
 }: {
   computers: FleetComputerRow[];
   onRefresh: () => void;
@@ -75,10 +80,15 @@ export function FleetComputersPanel({
   /** Controlled observe target (e.g. after Take control). */
   observingId?: string | null;
   onObservingChange?: (computerId: string | null) => void;
+  /** Browser seats with no computerId — targets for orphan reclaim. */
+  reclaimSeats?: ReclaimSeatOption[];
+  onReclaim?: (computerId: string, seatId: string) => void;
+  reclaimingId?: string | null;
 }) {
   const [observingIdInternal, setObservingIdInternal] = React.useState<string | null>(null);
   const observingId = observingIdProp !== undefined ? observingIdProp : observingIdInternal;
   const setObservingId = onObservingChange ?? setObservingIdInternal;
+  const [reclaimPick, setReclaimPick] = React.useState<Record<string, string>>({});
 
   return (
     <section
@@ -162,9 +172,53 @@ export function FleetComputersPanel({
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {isOrphanComputer(c) ? (
-                      <p className="text-xs text-muted">
-                        Unbound host VM — reclaim from Campaign Agents / seat Deploy. Start and Take control stay closed until a seat owns this computer.
-                      </p>
+                      <div className="flex max-w-md flex-col gap-2">
+                        <p className="text-xs text-muted">
+                          Unbound host VM — reclaim onto a Browser seat before Start / Take control.
+                        </p>
+                        {onReclaim && reclaimSeats.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="sr-only" htmlFor={`reclaim-${c.computerId}`}>
+                              Seat for reclaim
+                            </label>
+                            <select
+                              id={`reclaim-${c.computerId}`}
+                              className="h-8 min-w-[10rem] rounded-md border border-line bg-surface px-2 text-xs text-ink"
+                              value={reclaimPick[c.computerId] ?? ""}
+                              onChange={(e) =>
+                                setReclaimPick((prev) => ({
+                                  ...prev,
+                                  [c.computerId]: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">Choose seat…</option>
+                              {reclaimSeats.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={
+                                !reclaimPick[c.computerId] || reclaimingId === c.computerId
+                              }
+                              onClick={() => {
+                                const seatId = reclaimPick[c.computerId];
+                                if (seatId) onReclaim(c.computerId, seatId);
+                              }}
+                            >
+                              {reclaimingId === c.computerId ? "Reclaiming…" : "Reclaim onto seat"}
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted">
+                            Add a LinkedIn Browser Computer seat with no VM, then reclaim here — or use Deploy on Campaign Agents.
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <>
                     {(c.status === "stopped" || c.status === "error") && onStart ? (

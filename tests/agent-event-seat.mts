@@ -5,6 +5,7 @@
 import {
   soleCampaignBrowserSeatId,
   latestOutreachSeatId,
+  campaignBrowserSeatIds,
 } from "../src/lib/agent-event-seat";
 import type { AgentSeat, OutreachMessage } from "../src/lib/types";
 
@@ -41,8 +42,13 @@ const baseSeat = {
     { ...baseSeat, id: "seat_b", assignedCampaignIds: ["camp_1"] },
   ] as unknown as AgentSeat[];
   ok(
-    "N LI seats on campaign omit source seatId (no hash bleed)",
+    "N LI seats on campaign omit sole stamp (no hash bleed)",
     soleCampaignBrowserSeatId(seats, "camp_1") === undefined,
+  );
+  ok(
+    "N LI seats still list every desk for source pulses",
+    JSON.stringify(campaignBrowserSeatIds(seats, "camp_1")) ===
+      JSON.stringify(["seat_a", "seat_b"]),
   );
 }
 

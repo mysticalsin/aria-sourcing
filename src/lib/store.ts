@@ -43,7 +43,11 @@ import {
   validateCandidateBoundText,
 } from "./agent-disclosure-policy";
 import { emit } from "./agent-events";
-import { soleCampaignBrowserSeatId, latestOutreachSeatId } from "@/lib/agent-event-seat";
+import {
+  soleCampaignBrowserSeatId,
+  latestOutreachSeatId,
+  campaignBrowserSeatIds,
+} from "@/lib/agent-event-seat";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultTools, STATE_VERSION } from "./seed";
 import {
   computeCampaignMetrics,
@@ -1178,12 +1182,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       if (accepted.length > 0) {
-        emit({
-          kind: "source",
-          campaignId,
-          count: accepted.length,
-          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
-        });
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: accepted.length });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: accepted.length, seatId });
+            }
+          }
+        }
       }
       return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
     },
@@ -1290,12 +1298,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           );
           return next;
         });
-        emit({
-          kind: "source",
-          campaignId,
-          count: result.accepted.length,
-          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
-        });
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: result.accepted.length });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: result.accepted.length, seatId });
+            }
+          }
+        }
       }
       return { ...result, source, error };
     },
@@ -1508,12 +1520,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       if (accepted.length > 0) {
-        emit({
-          kind: "source",
-          campaignId,
-          count: accepted.length,
-          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
-        });
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: accepted.length });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: accepted.length, seatId });
+            }
+          }
+        }
       }
       return { ok: true, status: "completed", added: accepted.length };
     },
@@ -1857,12 +1873,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, added: 0, error: "The sourcing result could not be saved. Retry safely." };
       }
       if (added > 0) {
-        emit({
-          kind: "source",
-          campaignId,
-          count: added,
-          seatId: soleCampaignBrowserSeatId(s.seats, campaignId),
-        });
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: added });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: added, seatId });
+            }
+          }
+        }
       }
       return {
         ok: true,

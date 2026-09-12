@@ -172,17 +172,16 @@ export default function FloorPage() {
       if (e.at <= now - PULSE_MS) continue;
       // No seatId → no desk pulse (never hash-paint a random LI VM).
       if (!e.seatId) continue;
-      const employees = seatsRef.current.slice(1); // index 0 = CEO (src/lib/floor3d.ts)
-      const seat = employees.find((s) => s.id === e.seatId);
+      // Resolve by seatId across the full roster — desk 0 can be a real LI Browser seat.
+      const seat = seatsRef.current.find((s) => s.id === e.seatId);
       if (seat) pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
     }
 
     const unsubscribe = subscribe((e) => {
       setTicker((prev) => [...prev, e].slice(-TICKER_CAP));
-      const employees = seatsRef.current.slice(1);
       // Fail-closed: only pulse the desk that owns the event (never hash-pick).
-      if (e.seatId && employees.length > 0) {
-        const seat = employees.find((s) => s.id === e.seatId);
+      if (e.seatId) {
+        const seat = seatsRef.current.find((s) => s.id === e.seatId);
         if (seat) pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
       }
       if (fxSoundEnabled && soundEnabledRef.current) {
@@ -464,7 +463,6 @@ function Floor3DSection({
  *  Living Floor on every device, tier, and view mode (see PacketFX.tsx /
  *  RetroOfficeScene.tsx for the 3D-only packet+sound layer this backs up). */
 function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentSeat[] }) {
-  const employees = seats.slice(1); // index 0 = CEO (src/lib/floor3d.ts convention)
   const items = [...events].slice(-TICKER_CAP).reverse();
   return (
     <Card className="mb-4 p-4">
@@ -484,7 +482,7 @@ function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentS
           {items.map((e, i) => {
             // Never hash-attribute a seatless event onto a random LI desk.
             const seat = e.seatId
-              ? employees.find((s) => s.id === e.seatId) ?? null
+              ? seats.find((s) => s.id === e.seatId) ?? null
               : null;
             return (
               <li key={`${e.at}-${i}`} className="flex items-center gap-2 text-sm">

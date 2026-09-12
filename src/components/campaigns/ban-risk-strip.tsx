@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import type { AgentSeat } from "@/lib/types";
+import type { AgentSeat, FleetSettings } from "@/lib/types";
 import { effectiveMinGapMinutes } from "@/lib/send-pacing";
-import type { FleetSettings } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type AuditLike = {
@@ -16,10 +15,11 @@ type AuditLike = {
 function seatPacingLine(
   seat: AgentSeat,
   fleet?: Pick<FleetSettings, "jitter" | "enforceBusinessHours">,
+  lastHelp?: AuditLike | null,
 ): string {
   const gap = effectiveMinGapMinutes(seat, { jitter: fleet?.jitter ?? true });
   const sendsPerHour =
-    gap != null && gap > 0 ? Math.max(0.1, Math.round((60 / gap) * 10) / 10) : null;
+    gap > 0 ? Math.max(0.1, Math.round((60 / gap) * 10) / 10) : null;
   const bits = [
     `${seat.name}: gap ~${gap}m`,
     sendsPerHour != null ? `~${sendsPerHour}/hr` : null,
@@ -27,14 +27,16 @@ function seatPacingLine(
     seat.lastSendAt
       ? `last ${new Date(seat.lastSendAt).toLocaleString()}`
       : "no sends yet",
+    lastHelp
+      ? `help ${new Date(lastHelp.at).toLocaleString()}`
+      : null,
   ].filter(Boolean);
   return bits.join(" · ");
 }
 
 /**
  * Ban-risk strip — honest pacing signal for LinkedIn Browser Computer agents.
- * Shows sends/hour estimate, last help_requested, and effective gap per seat
- * (never collapses N desks onto seats[0]).
+ * Per-desk help_requested (matched by computerId) — never collapses N desks onto seats[0].
  */
 export function BanRiskStrip(props: {
   seats: AgentSeat[];
@@ -43,11 +45,18 @@ export function BanRiskStrip(props: {
   className?: string;
 }) {
   const seats = props.seats;
-  const lastHelp = React.useMemo(() => {
+  const helpByComputer = React.useMemo(() => {
+    const map = new Map<string, AuditLike>();
     const helps = (props.audits ?? [])
-      .filter((a) => a.action === "help_requested" || /help_requested|authwall|login/i.test(a.detail))
+      .filter(
+        (a) => a.action === "help_requested" || /help_requested|authwall|login/i.test(a.detail),
+      )
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-    return helps[0] ?? null;
+    for (const h of helps) {
+      const id = (h.computerId ?? "").trim();
+      if (id && !map.has(id)) map.set(id, h);
+    }
+    return map;
   }, [props.audits]);
 
   if (seats.length === 0) return null;
@@ -62,15 +71,12 @@ export function BanRiskStrip(props: {
     >
       <p className="font-semibold text-ink">Ban-risk pacing</p>
       <ul className="mt-1 space-y-0.5">
-        {seats.map((seat) => (
-          <li key={seat.id}>{seatPacingLine(seat, props.fleet)}</li>
-        ))}
+        {seats.map((seat) => {
+          const cid = (seat.computerId ?? "").trim();
+          const help = cid ? helpByComputer.get(cid) ?? null : null;
+          return <li key={seat.id}>{seatPacingLine(seat, props.fleet, help)}</li>;
+        })}
       </ul>
-      <p className="mt-1 text-muted">
-        {lastHelp
-          ? `Last help_requested: ${new Date(lastHelp.at).toLocaleString()} — ${lastHelp.detail.slice(0, 120)}`
-          : "No help_requested audits in the recent trail."}
-      </p>
     </div>
   );
 }
