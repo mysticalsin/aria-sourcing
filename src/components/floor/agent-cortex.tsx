@@ -211,6 +211,8 @@ export interface AgentCortexProps {
   seat: AgentSeat | null;
   state: HermesState;
   open: boolean;
+  /** Live VM hints from fleet poll — cortex must not narrate theatrical busy for unhealthy LI desks. */
+  computerHints?: ReadonlyMap<string, import("@/lib/floor").FloorComputerHint>;
   /** Full close — deselects the agent (X / Escape / backdrop), same semantics
    *  as AgentDetailDrawer's onClose. */
   onClose: () => void;
@@ -222,8 +224,8 @@ export interface AgentCortexProps {
  *  AgentDetailDrawer) opened from the floor page's existing `selectedId`.
  *  Read-only: computes the trace via a pure lib call, never touches the
  *  store, never sends anything. */
-export function AgentCortex({ seat, state, open, onClose, onBack }: AgentCortexProps) {
-  const trace = seat ? agentCortexTrace(seat, state) : null;
+export function AgentCortex({ seat, state, open, onClose, onBack, computerHints }: AgentCortexProps) {
+  const trace = seat ? agentCortexTrace(seat, state, Date.now(), computerHints) : null;
   const { text, streaming } = useCortexStream(trace, open && trace !== null);
 
   if (!seat || !trace) {

@@ -21,6 +21,16 @@ export type FleetComputerRow = {
 };
 
 function sessionBadge(c: FleetComputerRow): { label: string; className: string } | null {
+  if (isOrphanComputer(c)) {
+    // Orphans must not look like a seat-owned healthy desk.
+    if (c.sessionHealthy === true) {
+      return { label: "Unbound · session probed", className: "bg-warning/15 text-[hsl(32_90%_34%)]" };
+    }
+    if (c.sessionHealthy === false) {
+      return { label: "Unbound · unhealthy", className: "bg-danger/15 text-danger" };
+    }
+    return { label: "Unbound host VM", className: "bg-muted/40 text-muted" };
+  }
   if (c.sessionHealthy === true) {
     return { label: "Session healthy", className: "bg-success/15 text-success" };
   }
@@ -31,6 +41,10 @@ function sessionBadge(c: FleetComputerRow): { label: string; className: string }
     return { label: "Session unverified", className: "bg-warning/15 text-[hsl(32_90%_34%)]" };
   }
   return null;
+}
+
+function isOrphanComputer(c: FleetComputerRow): boolean {
+  return !c.seatId || c.seatId === "__orphan__";
 }
 
 function isAriaViewport(url: string | null | undefined): boolean {
@@ -147,6 +161,12 @@ export function FleetComputersPanel({
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {isOrphanComputer(c) ? (
+                      <p className="text-xs text-muted">
+                        Unbound host VM — reclaim from Campaign Agents / seat Deploy. Start and Take control stay closed until a seat owns this computer.
+                      </p>
+                    ) : (
+                      <>
                     {(c.status === "stopped" || c.status === "error") && onStart ? (
                       <Button type="button" variant="secondary" size="sm" onClick={() => onStart(c.computerId)}>
                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
@@ -184,6 +204,8 @@ export function FleetComputersPanel({
                         <Hand className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                         Take control
                       </Button>
+                    )}
+                      </>
                     )}
                   </div>
                 </div>

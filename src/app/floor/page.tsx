@@ -378,6 +378,7 @@ export default function FloorPage() {
       <AgentCortex
         seat={selected}
         state={stateLike}
+        computerHints={computerHints}
         open={selected !== null && drawerView === "cortex"}
         onClose={closeDrawer}
         onBack={() => setDrawerView("overview")}

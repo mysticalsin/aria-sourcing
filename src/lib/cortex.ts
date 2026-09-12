@@ -1,5 +1,5 @@
 import type { AgentSeat, Candidate, HermesState, MatchBreakdownItem } from "./types";
-import { agentActivity, type AgentActivityState } from "./floor";
+import { agentActivity, agentActivityWithComputers, type AgentActivityState, type FloorComputerHint } from "./floor";
 import { applyConfidentiality, hasOutreachPurpose } from "./confidential";
 import {
   ledgerHasActiveContact,
@@ -99,8 +99,15 @@ function healthChip(seat: AgentSeat, state: HermesState): CortexChip {
 
 /** Builds the deterministic cortex trace for one seat. Same seat+state (at a
  *  given `now`) always yields the same trace — no randomness, only real facts. */
-export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date.now()): CortexTrace {
-  const activity = agentActivity(seat, state, now);
+export function agentCortexTrace(
+  seat: AgentSeat,
+  state: HermesState,
+  now = Date.now(),
+  computers?: ReadonlyMap<string, FloorComputerHint>,
+): CortexTrace {
+  const activity = computers
+    ? agentActivityWithComputers(seat, state, now, computers)
+    : agentActivity(seat, state, now);
   const h = hash(seat.id);
   const base = {
     seatId: seat.id,

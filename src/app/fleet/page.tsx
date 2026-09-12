@@ -275,6 +275,20 @@ export default function FleetPage() {
   }, [hydrated, refreshComputers]);
 
   async function computerAction(action: string, computerId: string) {
+    // Orphans stay reclaim-only — never Start / Take control without a seat bind.
+    const row = computers.find((c) => c.computerId === computerId);
+    if (
+      row &&
+      (!row.seatId || row.seatId === "__orphan__") &&
+      (action === "start" || action === "take_control" || action === "takeover")
+    ) {
+      toast({
+        title: "Seat required",
+        description: "Unbound host VM — reclaim/bind a seat before Start or Take control.",
+        variant: "warning",
+      });
+      return;
+    }
     try {
       const res = await fetch("/api/fleet/computers", {
         method: "POST",

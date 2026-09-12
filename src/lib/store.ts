@@ -169,7 +169,7 @@ import {
 } from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
 import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "./send-pacing";
-import { pickLiveLinkedInSendSeat, preferLinkedInAutomaticSeats } from "./linkedin-automatic";
+import { pickLiveLinkedInSendSeat, preferLinkedInAutomaticSeats, isLinkedInAutomaticProvider } from "./linkedin-automatic";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyLearning,
@@ -1952,7 +1952,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!isContactReadyByTenure(candidate)) return null;
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills); // learned default tone
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const resolvedSeatId =
+        seatId ??
+        (resolvedChannel === "LinkedIn"
+          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
+          : undefined);
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       // Compose in the seat's language, else the need's, else the workspace default.
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
@@ -2503,6 +2508,28 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
         } finally {
           pendingOutreachApprovals.current.delete(messageId);
+        }
+      }
+
+      // N LinkedIn desks: refuse empty seat attribution on the authoritative ledger.
+      if (msg.channel === "LinkedIn" && !(msg.seatId ?? "").trim()) {
+        const sole = soleCampaignBrowserSeatId(s.seats, campaign.id);
+        if (sole) {
+          msg = { ...msg, seatId: sole };
+          commit((prev) => ({
+            ...prev,
+            outreach: prev.outreach.map((m) => (m.id === messageId ? { ...m, seatId: sole } : m)),
+          }));
+          s = current();
+        } else {
+          const liLive = s.seats.filter(
+            (x) => x.status === "active" && isLinkedInAutomaticProvider(x.provider),
+          );
+          if (liLive.length > 1) {
+            return approvalBlocked(
+              "Message has no seatId; cannot approve across N LinkedIn seats without a drafting desk.",
+            );
+          }
         }
       }
 
