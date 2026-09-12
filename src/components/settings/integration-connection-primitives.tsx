@@ -208,8 +208,10 @@ export function SystemReadiness({
 }) {
   if (items.length === 0) return null;
 
-  const readyCount = items.filter((i) => i.ok || i.optional).length;
-  const allRequiredOk = items.filter((i) => !i.optional).every((i) => i.ok);
+  const required = items.filter((i) => !i.optional);
+  const optional = items.filter((i) => i.optional);
+  const requiredReady = required.filter((i) => i.ok).length;
+  const allRequiredOk = required.every((i) => i.ok);
   const tone: Tone = allRequiredOk ? "success" : "warning";
 
   return (
@@ -228,13 +230,13 @@ export function SystemReadiness({
         </span>
         <span className="flex items-center gap-2 text-xs text-muted">
           <Badge tone={tone} size="sm">
-            {readyCount}/{items.length} ready
+            {requiredReady}/{required.length || items.length} required
           </Badge>
           <ChevronDown className="h-4 w-4 shrink-0 opacity-60" aria-hidden />
         </span>
       </summary>
       <ul className="space-y-0 border-t border-line/60 px-4 py-2">
-        {items.map((item) => (
+        {required.map((item) => (
           <li
             key={item.id}
             className="flex items-start justify-between gap-3 border-b border-line/40 py-2.5 last:border-0"
@@ -248,8 +250,6 @@ export function SystemReadiness({
             <span className="shrink-0 pt-0.5">
               {item.ok ? (
                 <Check className="h-4 w-4 text-success" aria-label="Ready" />
-              ) : item.optional ? (
-                <Circle className="h-3 w-3 text-muted/50" aria-label="Optional" />
               ) : (
                 <AlertCircle className="h-4 w-4 text-warning" aria-label="Needs attention" />
               )}
@@ -257,6 +257,35 @@ export function SystemReadiness({
           </li>
         ))}
       </ul>
+      {optional.length > 0 ? (
+        <details className="border-t border-line/60 px-4 py-2">
+          <summary className="cursor-pointer list-none py-1.5 text-xs font-medium text-muted [&::-webkit-details-marker]:hidden">
+            Optional checks ({optional.filter((i) => i.ok).length}/{optional.length})
+          </summary>
+          <ul className="space-y-0 pb-1">
+            {optional.map((item) => (
+              <li
+                key={item.id}
+                className="flex items-start justify-between gap-3 border-b border-line/40 py-2.5 last:border-0"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm text-ink">{item.label}</p>
+                  {item.hint && !item.ok ? (
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted">{item.hint}</p>
+                  ) : null}
+                </div>
+                <span className="shrink-0 pt-0.5">
+                  {item.ok ? (
+                    <Check className="h-4 w-4 text-success" aria-label="Ready" />
+                  ) : (
+                    <Circle className="h-3 w-3 text-muted/50" aria-label="Optional" />
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </details>
   );
 }

@@ -133,5 +133,17 @@ const oauthCb = readFileSync("src/app/auth/linkedin/callback/route.ts", "utf8");
 ok("auth linkedin callback userinfo", /LINKEDIN_USERINFO_URL|userinfo/.test(oauthCb));
 ok("auth linkedin encrypts tokens", /encryptSecret/.test(oauthCb));
 
+
+ok("settings stack plug-and-play 2-step title", /Connect AriaBot in 2 steps/.test(stack));
+ok(
+  "settings panel primary CTA Open LinkedIn login for agents",
+  /Open LinkedIn login for agents/.test(panel),
+);
+
+const setupGuide = readFileSync("src/components/settings/setup-guide-panel.tsx", "utf8");
+ok("setup guide deep-links AriaBot stack", /linkedin-outreach-stack/.test(setupGuide));
+ok("setup guide Connect AriaBot Browser Computer step", /Connect AriaBot Browser Computer/.test(setupGuide));
+ok("setup guide login done from computerId", /computerId/.test(setupGuide));
+
 console.log(`RESULT linkedin-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

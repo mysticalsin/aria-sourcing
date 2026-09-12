@@ -32,10 +32,10 @@ function DeliveryModeToggle() {
   }
 
   return (
-    <div className="border-b border-line/60 px-6 py-5 sm:px-8">
+    <div className="py-2">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">Delivery mode</p>
       <p className="mt-1 text-sm text-ink">
-        Default is automatic outreach. Switch to manual when you want approve-and-paste.
+        Leave Automatic for AriaBot VM sends. Switch to Manual only for paste-confirm workflows.
       </p>
       <div
         className="mt-4 grid gap-2 sm:grid-cols-2"
@@ -58,7 +58,8 @@ function DeliveryModeToggle() {
           <span>
             <span className="block text-sm font-semibold text-ink">Automatic outreach</span>
             <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-              Agents queue LinkedIn sends through an AriaBot Browser Computer sandbox/VM after approval — no paste/confirm per message.
+              Agents queue LinkedIn sends through an AriaBot Browser Computer sandbox/VM after
+              approval — no paste/confirm per message.
             </span>
           </span>
         </button>
@@ -88,7 +89,7 @@ function DeliveryModeToggle() {
 }
 
 function LinkedInOutreachStackInner() {
-  const { signedIn } = useLinkedInConnections();
+  const { seats, providers } = useLinkedInConnections();
   const settings = useSettings();
   const mcpServers = useMcpServers();
   const heyReach = findHeyReachMcpServer(mcpServers);
@@ -96,49 +97,64 @@ function LinkedInOutreachStackInner() {
   const deliveryMode: LinkedInDeliveryMode =
     settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic";
 
-  // Automatic outreach is AriaBot Browser Computer (Take control login), not HeyReach.
-  // Keep HeyReach as an optional assisted path — never mark Automatic "Ready" on MCP alone.
-  const supervisorConfigured = Boolean(settings.computerSupervisorUrl?.trim());
-  const stepsComplete =
-    (signedIn ? 1 : 0) +
-    (deliveryMode === "automatic" ? (supervisorConfigured || heyReachConnected ? 1 : 0) : heyReachConnected ? 1 : 0);
+  // Plug-and-play Ready = AriaBot supervisor + Browser Computer seat (not OIDC / HeyReach theater).
+  const supervisorConfigured = Boolean(
+    settings.computerSupervisorUrl?.trim() || providers?.browserComputerConfigured,
+  );
+  const browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
+  const hasBrowserSeat = browserSeats.length > 0;
+  const browserHealthy = browserSeats.some((s) => s.sessionHealthy === true);
+  const browserBound = browserSeats.some((s) => Boolean(s.computerId?.trim()));
+
+  const step1Done = supervisorConfigured;
+  const step2Done =
+    deliveryMode === "automatic" ? hasBrowserSeat && browserBound : heyReachConnected;
+  const stepsComplete = (step1Done ? 1 : 0) + (step2Done ? 1 : 0);
   const progressPct = (stepsComplete / 2) * 100;
 
   let statusLabel = "Not started";
   let statusTone: "neutral" | "success" | "electric" = "neutral";
   if (deliveryMode === "automatic") {
-    if (signedIn && (supervisorConfigured || heyReachConnected)) {
-      statusLabel = supervisorConfigured
-        ? "Ready · automatic (AriaBot)"
-        : "Partial · HeyReach only";
-      statusTone = supervisorConfigured ? "success" : "electric";
-    } else if (signedIn) {
-      statusLabel = "Identity connected — add AriaBot supervisor";
+    if (supervisorConfigured && hasBrowserSeat && browserHealthy) {
+      statusLabel = "Ready · AriaBot session healthy";
+      statusTone = "success";
+    } else if (supervisorConfigured && hasBrowserSeat && browserBound) {
+      statusLabel = "Seat ready — open LinkedIn login to finish session";
       statusTone = "electric";
-    } else if (supervisorConfigured || heyReachConnected) {
-      statusLabel = "Delivery path set — sign in LinkedIn";
+    } else if (supervisorConfigured && hasBrowserSeat) {
+      statusLabel = "Seat created — open LinkedIn login for agents";
+      statusTone = "electric";
+    } else if (supervisorConfigured) {
+      statusLabel = "Supervisor set — create seat & log in";
+      statusTone = "electric";
+    } else if (hasBrowserSeat) {
+      statusLabel = "Seat waiting — attach AriaBot supervisor URL";
+      statusTone = "electric";
+    } else if (heyReachConnected) {
+      statusLabel = "HeyReach only (optional) — AriaBot path incomplete";
       statusTone = "electric";
     }
-  } else if (heyReachConnected && signedIn) {
-    statusLabel = "Ready · manual";
-    statusTone = "success";
-  } else if (signedIn) {
-    statusLabel = "Identity connected";
-    statusTone = "electric";
   } else if (heyReachConnected) {
-    statusLabel = "MCP connected";
+    statusLabel = "Ready · manual HeyReach";
+    statusTone = "success";
+  } else {
+    statusLabel = "Manual mode — connect HeyReach MCP";
     statusTone = "electric";
   }
 
-  const identityState = signedIn ? "complete" : "active";
-  const outreachState = heyReachConnected ? "complete" : signedIn ? "active" : "pending";
+  const identityState =
+    !supervisorConfigured
+      ? ("blocked" as const)
+      : hasBrowserSeat && browserBound
+        ? ("complete" as const)
+        : ("active" as const);
 
   return (
     <ConnectionStackShell
       id={LINKEDIN_OUTREACH_STACK_ID}
-      eyebrow="LinkedIn stack"
-      title="Identity & outreach"
-      description="AriaBot Browser Computer is the Automatic path (sandbox/VM send). OIDC identity and Vendor API are optional. Optional HeyReach MCP. Delivery defaults to Automatic; Manual is an explicit toggle."
+      eyebrow="LinkedIn · plug and play"
+      title="Connect AriaBot in 2 steps"
+      description="1) Point Aria at the computer supervisor. 2) Open LinkedIn login for agents — sign in once inside the VM. Automatic sends reuse that session. OIDC, Vendor API, and HeyReach stay optional under Advanced."
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
@@ -146,19 +162,37 @@ function LinkedInOutreachStackInner() {
       footer={
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          No scrape grey-market bots and no LinkedIn password storage in Aria. Log in once via{" "}
+          Aria never stores your LinkedIn password. Log in once via{" "}
           <span className="font-medium text-ink-soft">Open LinkedIn login for agents</span> — the VM
-          keeps that session for Automatic sends.
-          {deliveryMode === "automatic"
-            ? " Automatic mode queues AriaBot Browser Computer sends after approval (Postgres contact lease, DNC, and rate caps still apply)."
-            : " Manual mode keeps assisted paste/confirm for each send."}
+          keeps that session for Automatic sends after you Release control.
         </p>
       }
     >
-      <DeliveryModeToggle />
       <LinkedInCredentialsPanel />
-      <LinkedInIdentityStep stepState={identityState} />
-      <HeyReachOutreachStep stepState={outreachState} identityComplete={signedIn} />
+      <LinkedInIdentityStep stepState={identityState} hideAdvanced />
+      <details className="border-b border-line/60 px-6 py-4 sm:px-8">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted">
+          Advanced — delivery mode &amp; optional HeyReach
+        </summary>
+        <div className="mt-3 space-y-4">
+          <DeliveryModeToggle />
+          {deliveryMode === "manual" || heyReachConnected ? (
+            <HeyReachOutreachStep
+              stepState={heyReachConnected ? "complete" : "active"}
+              identityComplete={hasBrowserSeat || heyReachConnected}
+            />
+          ) : (
+            <details className="rounded-xl border border-line/70 bg-surface px-3 py-2 text-xs text-muted">
+              <summary className="cursor-pointer font-medium text-ink-soft">
+                Optional — HeyReach MCP (not required for AriaBot Automatic)
+              </summary>
+              <div className="mt-3">
+                <HeyReachOutreachStep stepState="pending" identityComplete={hasBrowserSeat} />
+              </div>
+            </details>
+          )}
+        </div>
+      </details>
     </ConnectionStackShell>
   );
 }

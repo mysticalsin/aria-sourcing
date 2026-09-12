@@ -976,22 +976,27 @@ export function LinkedInIdentityStep({
 
   return (
     <ConnectionStep
-      step={1}
-      title="AriaBot Browser Computer"
-      subtitle="Log into LinkedIn once in the agent VM. That session stays on this Browser Computer seat — Automatic outreach and campaign agents reuse it. Aria never stores credentials — never your password."
+      step={2}
+      title="Open LinkedIn login for agents"
+      subtitle="One click opens the AriaBot Chromium VM on LinkedIn. Sign in once (and 2FA), then Release — Automatic outreach and campaign agents reuse that durable session. Aria never stores credentials — never your password."
       state={state}
       advanced={advanced}
     >
-      {readinessItems.length > 0 ? <SystemReadiness items={readinessItems} /> : null}
+      {readinessItems.length > 0 ? (
+        <SystemReadiness
+          items={readinessItems}
+          defaultOpen={!providers?.browserComputerConfigured}
+        />
+      ) : null}
 
       {isAdmin && (
         <div className="space-y-3">
           <div className="rounded-2xl border border-electric/30 bg-electric/5 px-4 py-4">
-            <p className="text-sm font-semibold text-ink">Log in with LinkedIn to test AriaBot</p>
+            <p className="text-sm font-semibold text-ink">Connect LinkedIn for AriaBot</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">
-              Opens your AriaBot Chromium VM on LinkedIn so you can sign in (and complete 2FA). After you
-              Release control, campaign agents source and reach out from this same durable profile — you do
-              not log in again per campaign.
+              One click creates a Browser Computer seat if needed and opens Take control so you can sign in
+              (and complete 2FA). After Release, campaign agents reuse this durable profile — you do not log
+              in again per campaign.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button
@@ -1001,9 +1006,24 @@ export function LinkedInIdentityStep({
                 onClick={() => void openAgentLinkedInLogin()}
               >
                 {hasBrowserSeat
-                  ? "Log in with LinkedIn (test AriaBot)"
-                  : "Create AriaBot seat & log in with LinkedIn"}
+                  ? "Open LinkedIn login for agents"
+                  : "Create seat & open LinkedIn login for agents"}
               </Button>
+            </div>
+            {!providers?.browserComputerConfigured && supabaseEnabled ? (
+              <p className="mt-2 text-xs text-muted">
+                Attach the AriaBot computer supervisor URL + token under step 1 above first.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-muted">
+                Prefer one seat per LinkedIn login. Recruiter, seat-only reconnect, and extra accounts live
+                under More seat options.
+              </p>
+            )}
+          </div>
+          <details className="rounded-xl border border-line/70 bg-surface px-3 py-2 text-xs text-muted">
+            <summary className="cursor-pointer font-medium text-ink-soft">More seat options</summary>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button
                 size="sm"
                 variant="outline"
@@ -1048,16 +1068,11 @@ export function LinkedInIdentityStep({
                 Add another LinkedIn account
               </Button>
             </div>
-            {!providers?.browserComputerConfigured && supabaseEnabled ? (
-              <p className="mt-2 text-xs text-muted">
-                Attach the AriaBot computer supervisor URL + token under credentials above first.
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-muted">
-                Add another AriaBot seat for each LinkedIn login (member or Recruiter). Every seat keeps its own Chromium profile — like separate humans.
-              </p>
-            )}
-          </div>
+            <p className="mt-2 text-xs text-muted">
+              Add another AriaBot seat for each LinkedIn login (member or Recruiter). Every seat keeps its own
+              Chromium profile — like separate humans.
+            </p>
+          </details>
           <details className="rounded-xl border border-line/70 bg-surface px-3 py-2 text-xs text-muted">
             <summary className="cursor-pointer font-medium text-ink-soft">
               Optional — Sign in with LinkedIn (OIDC identity only)

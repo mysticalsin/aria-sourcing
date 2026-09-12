@@ -427,7 +427,7 @@ export default function SettingsPage() {
             n="00"
             eyebrow="Start here"
             title="Get started"
-            description="Connect Outlook, pick the recruitment LLM, then pull open needs into sourcing."
+            description="Connect email, pick the recruitment LLM, attach an AriaBot Browser Computer, then pull open needs into sourcing."
           >
             <SetupGuidePanel onGoAi={() => goTab("ai")} />
           </Section>

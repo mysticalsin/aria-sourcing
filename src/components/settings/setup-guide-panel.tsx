@@ -15,6 +15,7 @@ import {
 import { seatHasOutlookMailbox } from "@/lib/outlook-needs";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
+import { LINKEDIN_OUTREACH_STACK_ID } from "@/components/settings/linkedin-outreach-stack";
 import {
   Check,
   Circle,
@@ -112,6 +113,15 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       icon: <Cpu className="h-4 w-4" aria-hidden />,
     },
     {
+      id: "ariabot",
+      title: "Connect AriaBot Browser Computer",
+      body: "Attach the computer supervisor, then Open LinkedIn login for agents — one VM seat per LinkedIn profile.",
+      done: Boolean(settings.computerSupervisorUrl?.trim()) && browserSeats.length > 0,
+      ctaLabel: browserSeats.length > 0 ? "Open AriaBot stack" : "Connect AriaBot",
+      href: `/settings?tab=integrations#${LINKEDIN_OUTREACH_STACK_ID}`,
+      icon: <Monitor className="h-4 w-4" aria-hidden />,
+    },
+    {
       id: "campaign",
       title: "Create campaign",
       body: "On Intake, pull open needs from Outlook, parse the brief, and create the campaign.",
@@ -129,13 +139,17 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       href: agentsHref,
       icon: <Monitor className="h-4 w-4" aria-hidden />,
     },
-    {
+        {
       id: "take-control",
-      title: "Take control · login",
-      body: "Start the agent, Take control, log into LinkedIn (and 2FA), then Release so the bot can send.",
-      done: false,
-      ctaLabel: "Take control",
-      href: agentsHref,
+      title: "Take control · LinkedIn login",
+      body: browserSeats.some((s) => Boolean(s.computerId?.trim()))
+        ? "VM bound — finish LinkedIn login + 2FA in the sandbox if the session is still unverified, then Release."
+        : "Open LinkedIn login for agents, sign in (and 2FA) inside the AriaBot VM, then Release so the bot can send.",
+      done: browserSeats.some((s) => Boolean(s.computerId?.trim())),
+      ctaLabel: browserSeats.some((s) => Boolean(s.computerId?.trim()))
+        ? "Open AriaBot stack"
+        : "Open LinkedIn login",
+      href: `/settings?tab=integrations#${LINKEDIN_OUTREACH_STACK_ID}`,
       icon: <Hand className="h-4 w-4" aria-hidden />,
     },
     {
@@ -160,7 +174,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
     },
   ];
 
-  const foundationDone = [outlookOk, llmOk].filter(Boolean).length;
+  const foundationDone = [outlookOk, llmOk, Boolean(settings.computerSupervisorUrl?.trim()) && browserSeats.length > 0].filter(Boolean).length;
   const doneCount = steps.filter((s) => s.done).length;
 
   return (
@@ -170,7 +184,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
           <div>
             <p className="text-sm font-semibold text-ink">LinkedIn AriaBot — setup path</p>
             <p className="mt-1 text-xs text-muted">
-              Connect email → Pick LLM → Create campaign → Attach agent → Take control login → Approve →
+              Connect email → Pick LLM → Connect AriaBot Browser Computer → Create campaign → Attach agent → LinkedIn login → Approve →
               Send. Dry-run is currently{" "}
               <span className="font-semibold text-ink-soft">{settings.dryRunMode ? "on" : "off"}</span>
               {settings.dryRunMode
@@ -178,8 +192,8 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
                 : "."}
             </p>
           </div>
-          <Badge tone={foundationDone >= 2 ? "success" : "electric"} size="sm">
-            {doneCount}/{steps.length} steps · {foundationDone}/2 foundations
+          <Badge tone={foundationDone >= 3 ? "success" : "electric"} size="sm">
+            {doneCount}/{steps.length} steps · {foundationDone}/3 foundations
           </Badge>
         </div>
 

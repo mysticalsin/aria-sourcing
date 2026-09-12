@@ -61,12 +61,12 @@ export function LinkedInCredentialsPanel() {
     <div className="space-y-5 border-b border-line/60 px-6 py-5 sm:px-8">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-          AriaBot Browser Computer (primary)
+          Step 1 · AriaBot supervisor
         </p>
         <p className="mt-1 text-sm text-ink">
           Automatic LinkedIn outreach runs inside the{" "}
           <span className="font-medium">sandbox / VM AriaBot creates</span>. Point Aria at your computer
-          supervisor, then use <span className="font-medium">Login once — agents use this account</span>{" "}
+          supervisor, then use <span className="font-medium">Open LinkedIn login for agents</span>{" "}
           below to sign into LinkedIn inside that VM. Agents reuse the durable Chromium session — Aria never
           stores your LinkedIn password.
         </p>
