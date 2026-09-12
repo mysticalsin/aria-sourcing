@@ -10,7 +10,9 @@ status: fly-app-tip-deployed-owner-run
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `21a42e7da6c271758ea4cade91c8d5658032832d`
+- **Deployed Fly build SHA:** `21a42e7da6c271758ea4cade91c8d5658032832d` (docs-only commits may sit ahead)
+
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `da2204773d5bd76298afa700967b98783aad93ad`
 - **Fly app:** https://aria-mantu-app.fly.dev — owner-run `scripts/prod-deploy-app.sh` shipped tip image (machines v305). `/api/health` 200.
 - **Release identity:** `ARIA_RELEASE_SHA` secret set to tip; confirm `/api/ready.build == tip`.
 - **Still not_ready:** `agentFrameworks=false` (DeerFlow/Flowise host cap). Fleet LinkedIn `sessionHealthy` still CAPTCHA/login wall (unchanged).
@@ -32,7 +34,7 @@ status: fly-app-tip-deployed-owner-run
 
 ## Next steps
 
-1. Confirm `/api/ready.build == 21a42e7da6c271758ea4cade91c8d5658032832d`
+1. Confirm `/api/ready.build == da2204773d5bd76298afa700967b98783aad93ad`
 2. Operator Take control on live computer → finish LinkedIn login → Release → probe healthy
 3. Re-run marketing recorder; claim Messaging only with UI proof
 4. Optionally FF/merge tip onto `deploy/fly-github-actions` for next protected full release
