@@ -13,7 +13,7 @@ status: n-agent-isolation-hardened-tip-not-released
 - **Branch tip:** `cursor/openbot-desktop-vm-b91d` — N-agent isolation harden (cold reclaim/ensure steal, persist rollback, ops orphan filter, send sessionHealthy pace) + sealed outreach
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` still stale
 - **Live fleet:** human LinkedIn login / `sessionHealthy` still outstanding — no invented delivery
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/139 (draft #139)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/140 (draft #140; #139 closed)
 
 ## Done this shift
 
