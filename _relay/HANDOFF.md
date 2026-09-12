@@ -10,10 +10,10 @@ status: reclaim-deploy-ux-n-source-pulses-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` — reclaim/Deploy UX + N-seat source pulses (this commit)
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `6459ee2` — reclaim/Deploy UX + N-seat source pulses
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` build `8ea3370…` / `ok:false`
 - **Live fleet:** still 1 computer, `sessionHealthy:false` (honest) — human LinkedIn login outstanding
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/135 (draft)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/136 (draft #136)
 
 ## Done this shift
 
