@@ -33,7 +33,7 @@ rsync -a --delete \
 rsync -a --delete "$repo/scripts/" "$mirror/scripts/"
 rsync -a --delete "$repo/public/" "$mirror/public/" 2>/dev/null || true
 # Root files fly build needs (configs, lockfile, next/ts config, etc.)
-for f in package.json package-lock.json pnpm-lock.yaml next.config.js next.config.mjs next.config.ts tsconfig.json fly.app.toml Dockerfile .dockerignore server.js middleware.ts postcss.config.js postcss.config.mjs tailwind.config.js tailwind.config.ts components.json; do
+for f in package.json package-lock.json pnpm-lock.yaml next.config.js next.config.mjs next.config.ts tsconfig.json fly.app.toml Dockerfile Dockerfile.prod .dockerignore server.js middleware.ts postcss.config.js postcss.config.mjs tailwind.config.js tailwind.config.ts components.json; do
   [ -f "$repo/$f" ] && cp "$repo/$f" "$mirror/$f"
 done
 [ -f "$mirror/fly.app.toml" ] || { echo "FATAL: fly.app.toml missing from mirror"; exit 1; }
