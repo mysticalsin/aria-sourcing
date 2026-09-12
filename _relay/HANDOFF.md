@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 188
 agent: cursor-cloud
-updated: 2026-09-12T02:59Z
+updated: 2026-09-12T03:04Z
 status: followup-cortex-orphan-api-manual-counters-tip-not-released
 ---
 
@@ -10,10 +10,10 @@ status: followup-cortex-orphan-api-manual-counters-tip-not-released
 
 ## Current state
 
-- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `c7de0ca` (`c7de0ca530bf`) — isolation follow-ups landed
+- **Branch tip:** `cursor/openbot-desktop-vm-b91d` @ `c7de0ca` + docs `4c3cd55`
 - **Fly:** https://aria-mantu-app.fly.dev — tip **not live**; `/api/ready` build `8ea3370…` / `ok:false`
 - **Live fleet:** still 1 computer, `sessionHealthy:false` (honest) — human LinkedIn login outstanding
-- **PR:** tip push next; recreate when write tool available (prior #134 CLOSED)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/135 (draft)
 
 ## Done this shift
 
@@ -31,7 +31,6 @@ status: followup-cortex-orphan-api-manual-counters-tip-not-released
 2. Human Take control + LinkedIn login/2FA (`sessionHealthy` still false)
 3. `OPENBOT_MAX_COMPUTERS=5`; agent frameworks not ready on Fly
 4. Operator N-seat prove of tip features outstanding on live
-5. PR recreate when write tool available
 
 ## Next steps
 
