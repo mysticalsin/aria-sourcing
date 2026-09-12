@@ -1,0 +1,40 @@
+{
+  "at": "2026-09-12T05:32:20.048Z",
+  "base": "http://127.0.0.1:3060",
+  "note": "Hi Tony, your Ultron / Mantu agentic ops work stood out. Open to a short chat on enterprise AI adoption this week?",
+  "noteLength": 114,
+  "steps": [
+    {
+      "step": "01-home",
+      "file": "/opt/cursor/artifacts/2026-09-12-sealed-01-home.png"
+    },
+    {
+      "step": "02-logged-in",
+      "file": "/opt/cursor/artifacts/2026-09-12-sealed-02-logged-in.png"
+    },
+    {
+      "step": "03-outreach-pipeline",
+      "file": "/opt/cursor/artifacts/2026-09-12-sealed-03-outreach-pipeline.png"
+    },
+    {
+      "step": "04-queue-empty",
+      "file": "/opt/cursor/artifacts/2026-09-12-sealed-04-queue-empty.png"
+    },
+    {
+      "step": "07-fleet",
+      "file": "/opt/cursor/artifacts/2026-09-12-sealed-07-fleet.png"
+    },
+    {
+      "step": "08-floor",
+      "file": "/opt/cursor/artifacts/2026-09-12-sealed-08-floor.png"
+    },
+    {
+      "step": "09-closing",
+      "file": "/opt/cursor/artifacts/2026-09-12-sealed-09-closing.png"
+    }
+  ],
+  "videoMp4": "/opt/cursor/artifacts/2026-09-12-sealed-outreach-tony-walkthrough.mp4",
+  "videoWebm": "/opt/cursor/artifacts/page@eb74e5f6529317d0bc56652ace47dd5a.webm",
+  "ffmpeg": 0,
+  "honest": "Shows sealed Outreach UX path. Does not invent LinkedIn Connect delivery without healthy session + tip release."
+}
