@@ -42,7 +42,8 @@ echo "  mirror ready: $(du -sh "$mirror" | awk '{print $1}')"
 
 echo "=== 2/2 deploy the app from the local mirror ==="
 ( cd "$mirror" && flyctl deploy --config fly.app.toml --remote-only \
-    --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$FLY_SUPABASE_ANON_KEY" )
+    --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$FLY_SUPABASE_ANON_KEY" \
+    --env ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" )
 
 echo
 echo "================ APP DEPLOYED ================"
