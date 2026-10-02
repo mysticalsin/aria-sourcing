@@ -1,26 +1,25 @@
 ---
 project: MSourcing / ARIA
-shift: 212
+shift: 213
 agent: cursor-cloud
-updated: 2026-10-02T21:55Z
-status: tip-ci-sourcing-agent-fixed-fly-stale
+updated: 2026-10-02T22:05Z
+status: tip-ci-java-fixtures-fly-stale
 ---
 
-# Handoff — Shift 212
+# Handoff — Shift 213
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **Local N-agent wire:** Campaign Agents + Floor 2D/3D + GET refresh proved; never invents sessionHealthy=true
-- **Tip CI suites:** store-sourcing-actions 43; apollo-enrichment-authority 47; sourcing-agent-route-authority 23
-- **Sourcing-agent tip fix:** deterministic path restores promoted-lesson queries before baseline; tests mock orchestrator/apify/server-only
+- **Tip CI fixtures:** retargeted remaining Go/role-unbound queries to Senior Java (`source-demo-auth`, `source-apify-auth`, `sourcing-query-policy`, `sourcing-agent`)
 - **Fly live:** still build `21a42e7…`, `agentFrameworks:false` (no deploy token)
 
 ## Done this shift
 
-1. sourcing-agent-route-authority green (server-only + orchestrator mocks; lesson-first forcedQueries)
-2. Prior: Campaign Agents UI prove; Apollo/Senior Java fixture binds; Fly tip staleness evidence
+1. source-demo-auth + apify/query-policy/sourcing-agent Java fixture binds
+2. Prior: sourcing-agent lesson-first; apollo authority; Campaign Agents UI prove
 
 ## Blockers
 
@@ -31,17 +30,15 @@ status: tip-ci-sourcing-agent-fixed-fly-stale
 
 1. Owner Fly redeploy tip to `aria-mantu-app`
 2. Confirm `/api/ready` build == tip SHA
-3. Operator login on N desks; Floor + Campaign Agents paint healthy within TTL
-4. Watch CI Quality on tip after this push
+3. Operator login on N desks
+4. Confirm CI Quality after this push (base-wide gitleaks/audit/schema may remain)
 
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Apollo/sourcing titles must share role tokens with seed Senior Java
-- Deterministic sourcing prepends validated promoted GitHub lessons before baseline queries
-- LinkedIn-first CAMPAIGN_NOT_READY needs empty githubQueries AND empty linkedinBoolean
+- Any seed-bound sourcing query fixture must share a Senior Java role token
+- Deterministic sourcing prepends validated promoted GitHub lessons before baseline
 
 ## Watch out
 
 - Broader CI (gitleaks, audit, schema fingerprint) may stay base-wide
-- Onboarding tour blocks Playwright unless `hermes:onboarded:v2`

@@ -42,16 +42,16 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
       email: "alice@corp.io",
       company: "zzz-unique-co",
       location: "London",
-      bio: "Senior Go Kubernetes PostgreSQL gRPC Distributed Systems engineer",
+      bio: "Senior Java Spring Boot PostgreSQL Kafka Microservices engineer",
       html_url: "https://github.com/alice",
       public_repos: 40,
       followers: 200,
       created_at: "2018-01-01T00:00:00Z",
-      topLanguage: "Go",
+      topLanguage: "Java",
     });
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
-  const result = await runner.run("search_candidates", { platform: "GitHub", query: "language:Go", count: 3 });
+  const result = await runner.run("search_candidates", { platform: "GitHub", query: "language:Java", count: 3 });
   globalThis.fetch = originalFetch;
 
   ok("GitHub search_candidates call succeeds", result.ok === true);
@@ -69,21 +69,21 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
     jsonResponse({
       items: [{ login: "bob" }],
       login: "bob",
-      name: "Bob Go",
+      name: "Bob Java",
       email: null,
       company: "Acme Labs",
       location: "Berlin",
-      bio: "Go Kubernetes PostgreSQL gRPC Distributed Systems",
+      bio: "Java Spring Boot PostgreSQL Kafka Microservices",
       html_url: "https://github.com/bob",
       public_repos: 25,
       followers: 80,
       created_at: "2019-01-01T00:00:00Z",
-      topLanguage: "Go",
+      topLanguage: "Java",
     });
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
-  await runner.run("search_candidates", { platform: "GitHub", query: "language:Go", count: 1 });
-  await runner.run("search_candidates", { platform: "GitHub", query: "language:Go followers:>1", count: 1 });
+  await runner.run("search_candidates", { platform: "GitHub", query: "language:Java", count: 1 });
+  await runner.run("search_candidates", { platform: "GitHub", query: "language:Java followers:>1", count: 1 });
   globalThis.fetch = originalFetch;
 
   ok("same real person found twice across calls is deduped, not double-counted", runner.getFound().length === 1);
@@ -121,7 +121,7 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
   );
   const denied = await runner.run("search_candidates", {
     platform: "GitHub",
-    query: "language:Go",
+    query: "language:Java",
     count: 1,
   });
   globalThis.fetch = originalFetch;
