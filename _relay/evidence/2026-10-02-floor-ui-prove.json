@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-02T21:00:04.394Z",
+  "mode": "floor-ui",
+  "app": "http://127.0.0.1:3000",
+  "n": 3,
+  "started": [
+    {
+      "seatId": "seat_ui_n_1",
+      "computerId": "comp_pfhzdvn5"
+    },
+    {
+      "seatId": "seat_ui_n_2",
+      "computerId": "comp_xmrdysnv"
+    },
+    {
+      "seatId": "seat_ui_n_3",
+      "computerId": "comp_o46h2nnr"
+    }
+  ],
+  "liveVmCopy": "3 with live VM",
+  "screenshotPath": "/opt/cursor/artifacts/floor-n-agent-ui.png",
+  "ok": true,
+  "note": "UI floor wired to GET /api/fleet/computers; sessionHealthy remains human-gated"
+}

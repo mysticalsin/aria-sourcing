@@ -237,6 +237,9 @@ export function agentActivityWithComputers(
   if (!computers || seat.provider !== "LinkedIn Browser Computer") return base;
 
   const hint = resolveComputerHint(seat, computers);
+  const vmId = hint?.computerId || null;
+  const withVm = (label: string) =>
+    vmId ? `${label} · …${vmId.slice(-8)}` : label;
 
   if (!hint) {
     return {
@@ -252,7 +255,7 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: "idle",
-      label: "Operator in control",
+      label: withVm("Operator in control"),
       detail: base.detail,
       busy: false,
       tone: "warning",
@@ -262,7 +265,7 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: "paused",
-      label: hint.status === "help_requested" ? "Needs Take control" : "VM error",
+      label: withVm(hint.status === "help_requested" ? "Needs Take control" : "VM error"),
       busy: false,
       tone: "danger",
     };
@@ -271,7 +274,7 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: "warming",
-      label: hint.status === "starting" ? "Booting VM" : base.label,
+      label: withVm(hint.status === "starting" ? "Booting VM" : base.label),
       busy: true,
       tone: "warning",
     };
@@ -280,7 +283,7 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: base.state === "idle" ? "sourcing" : base.state,
-      label: "LinkedIn session healthy",
+      label: withVm("LinkedIn session healthy"),
       busy: true,
       tone: "electric",
     };
@@ -289,7 +292,7 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: "paused",
-      label: "LinkedIn session unhealthy",
+      label: withVm("LinkedIn session unhealthy"),
       busy: false,
       tone: "danger",
     };
@@ -298,7 +301,7 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: "idle",
-      label: "LinkedIn unverified — Take control",
+      label: withVm("LinkedIn unverified — Take control"),
       busy: false,
       tone: "warning",
     };
@@ -307,7 +310,7 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: "idle",
-      label: "VM stopped",
+      label: withVm("VM stopped"),
       busy: false,
       tone: "neutral",
     };

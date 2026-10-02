@@ -325,6 +325,16 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     /VM not on host|No Browser Computer/i.test(agentA.subtitle || "") &&
       !/session healthy/i.test(agentA.subtitle || ""),
   );
+
+{
+  const seat = { ...s.seats.find((x) => x.provider === "LinkedIn Browser Computer")!, id: "seat_vm_sfx", computerId: "comp_abcd1234" };
+  const hints = new Map([
+    ["seat_vm_sfx", { status: "ready" as const, sessionHealthy: null, computerId: "comp_abcd1234" }],
+  ]);
+  const act = agentActivityWithComputers(seat, s, Date.now(), hints);
+  ok("2D activity label includes VM suffix", /…abcd1234/.test(act.label));
+}
+
   const actA = agentActivityWithComputers(a, s, Date.now(), hints);
   ok(
     "poisoned computerId cannot inherit another seat's activity",

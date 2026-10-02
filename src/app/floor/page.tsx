@@ -353,15 +353,29 @@ export default function FloorPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {seats.map((seat) => (
-              <AgentDesk
-                key={seat.id}
-                seat={seat}
-                activity={agentActivityWithComputers(seat, stateLike, Date.now(), computerHints)}
-                onSelect={(s) => selectAgent(s.id)}
-              />
-            ))}
+          <div className="space-y-3">
+            {computerHints ? (
+              <p className="text-xs text-muted">
+                {seats.length} seats on the floor ·{" "}
+                {
+                  seats.filter((seat) => {
+                    if (seat.provider !== "LinkedIn Browser Computer") return false;
+                    return Boolean(resolveComputerHint(seat, computerHints)?.computerId);
+                  }).length
+                }{" "}
+                with live VM
+              </p>
+            ) : null}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {seats.map((seat) => (
+                <AgentDesk
+                  key={seat.id}
+                  seat={seat}
+                  activity={agentActivityWithComputers(seat, stateLike, Date.now(), computerHints)}
+                  onSelect={(s) => selectAgent(s.id)}
+                />
+              ))}
+            </div>
           </div>
         )}
       </HydrationGate>

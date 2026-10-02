@@ -1,45 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 206
+shift: 207
 agent: cursor-cloud
-updated: 2026-10-02T20:55Z
-status: n-agent-fleet-api-floor-prove
+updated: 2026-10-02T21:05Z
+status: n-agent-floor-ui-prove
 ---
 
-# Handoff — Shift 206
+# Handoff — Shift 207
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Local FE↔BE:** Next `:3000` + OpenBot `:18765` — POST ensure/start → GET → floor map proved for N=3
-- **Bug closed:** BodySchema required computerId on ensure (blocked server mint / boot path)
-- **Live Fly:** still old build; LinkedIn healthy still human-gated
+- **UI prove:** `/floor` shows `3 seats · 3 with live VM` + distinct `…xxxxxxxx` desk labels from live GET fleet API
+- **Screenshot:** `/opt/cursor/artifacts/floor-n-agent-ui.png` + `_relay/evidence/2026-10-02-floor-n-agent-ui.png`
+- **Live Fly + LinkedIn healthy:** still open
 
 ## Done this shift
 
-1. Fixed ensure POST to allow omit computerId (server makeId)
-2. `scripts/prove-fleet-api-floor.mts` evidence: 3 ready VMs, distinct floor suffixes, no invent healthy
-3. Evidence `_relay/evidence/2026-10-02-fleet-api-floor-prove.json`
-4. floor-fleet-wire schema assert for ensure omit
+1. 2D floor desks append VM suffix (same as 3D) so N agents are distinguishable
+2. 2D floor copy: seats + live VM count
+3. `scripts/prove-floor-ui.mts` Playwright evidence (N=3)
+4. Prior API→floor + OpenBot LIVE proves remain
 
 ## Blockers
 
-1. No production Fly deploy token
-2. LinkedIn sessionHealthy needs Take control + login
+1. No Fly deploy token
+2. LinkedIn sessionHealthy needs human Take→login→Release
 
 ## Next steps
 
 1. Owner Fly redeploy tip
-2. Operator N seats Take→login→Release
-3. Optional: browser screenshot of /floor against local Hermes seats bound to API computers
+2. Operator login on N seats; confirm working only when probe fresh within TTL
 
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- ensure without computerId is the server-mint path (required for no client UUID twins)
+- 2D and 3D floor both advertise VM suffix from fleet computerId
 
 ## Watch out
 
-- Local Next must export COMPUTER_SUPERVISOR_URL/TOKEN to reach OpenBot
-- Process-local supervisor Map is per Next worker
+- First-run tour can cover floor — prove script clicks Skip tour
