@@ -1142,5 +1142,5 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Process-local sessionHealthy=true could paint Floor/Fleet green forever; resolveDurableComputerId minted client UUIDs that could twin-race; go-live "attached" counted seats without computerId.
 **Repro/evidence:** set sessionHealthy true without probedAt → get() still returned true before TTL; mint when no orphan used crypto.randomUUID.
 **Suggested fix:** sessionProbedAt + 120s TTL expire; mint via ensure; go-live requires computerId.
-**Status:** fixed (pending commit)
+**Status:** fixed (2ece420)
 
