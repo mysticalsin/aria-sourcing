@@ -218,6 +218,13 @@ async function main() {
         text: "Open to work",
       });
     }
+    if (url.pathname === "/session-probe" && req.method === "POST") {
+      return json(res, 200, {
+        healthy: true,
+        detail: "LinkedIn session looks signed-in",
+        url: "https://www.linkedin.com/feed/",
+      });
+    }
     if (url.pathname === "/snapshot" && req.method === "POST") {
       state.snapshotId += 1;
       if (state.stage === "profile") {
@@ -226,6 +233,17 @@ async function main() {
           url: "https://www.linkedin.com/in/x",
           title: "Profile",
           elements: [{ ref: "e1", role: "button", name: "Message", disabled: false }],
+        });
+      }
+      if (state.stage === "sent") {
+        return json(res, 200, {
+          snapshotId: state.snapshotId,
+          url: "https://www.linkedin.com/messaging/thread/abc",
+          title: "Messaging",
+          elements: [
+            { ref: "e30", role: "status", name: "Message sent" },
+            { ref: "e31", role: "button", name: "Send", disabled: false },
+          ],
         });
       }
       return json(res, 200, {
@@ -320,6 +338,14 @@ async function main() {
     ok(
       "all computers ready",
       records.every((r) => svc.get(r.computerId)?.status === "ready"),
+    );
+
+    // Probe LinkedIn session on every desk before send — never invent healthy.
+    const probed = await Promise.all(records.map((r) => svc.probeSession(r.computerId)));
+    ok(
+      `all ${N} sessions probed healthy`,
+      probed.every((r) => r.sessionHealthy === true),
+      probed.filter((r) => r.sessionHealthy !== true).map((r) => r.lastError).join(" | "),
     );
 
     // --- 5) Concurrent contact: ask if open to opportunities ---
