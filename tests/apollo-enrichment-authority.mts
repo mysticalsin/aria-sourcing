@@ -60,13 +60,13 @@ let claimResult: Record<string, unknown> = {
 const rawSearchPerson = {
   id: "raw-apollo-person-id",
   name: "Ada Lovelace",
-  title: "Engineer",
+  title: "Senior Java Developer",
   company: "Analytical Engines",
   linkedinUrl: "https://www.linkedin.com/in/ada-lovelace",
   city: "London",
   state: "",
   country: "United Kingdom",
-  headline: "Engineer",
+  headline: "Senior Java Developer · Spring Boot",
   seniority: "senior",
   departments: ["engineering"],
 };
@@ -221,7 +221,8 @@ function searchRequest(origin = "http://localhost", contentType = "application/j
   return new NextRequest("http://localhost/api/source/apollo/search", {
     method: "POST",
     headers: { "content-type": contentType, origin, "x-request-id": crypto.randomUUID() },
-    body: JSON.stringify({ campaignId: "campaign-1", titles: ["Engineer"], count: 1 }),
+    // Titles must share a role token with seed camp_seed_backend (Senior Java Developer).
+    body: JSON.stringify({ campaignId: "campaign-1", titles: ["Senior Java Developer"], count: 1 }),
   });
 }
 
