@@ -1,0 +1,413 @@
+{
+  "at": "2026-10-02T20:49:56.854Z",
+  "mode": "fleet-api-floor",
+  "app": "http://127.0.0.1:3000",
+  "n": 3,
+  "hostCapacity": {
+    "computers": 3,
+    "max": 5,
+    "desktop": false
+  },
+  "started": [
+    {
+      "seatId": "seat_api_n_1",
+      "computerId": "comp_rdap1gmi",
+      "status": "ready",
+      "sessionHealthy": null
+    },
+    {
+      "seatId": "seat_api_n_2",
+      "computerId": "comp_awo9xhpd",
+      "status": "ready",
+      "sessionHealthy": null
+    },
+    {
+      "seatId": "seat_api_n_3",
+      "computerId": "comp_ivt5umkg",
+      "status": "ready",
+      "sessionHealthy": null
+    }
+  ],
+  "getRows": [
+    {
+      "computerId": "comp_22qzh16t",
+      "seatId": "seat_api_n_smoke",
+      "workspaceId": "__local__",
+      "status": "stopped",
+      "control": "bot",
+      "lastAudit": "ensure: Seat seat_api_n_smoke computer registered",
+      "lastError": null,
+      "updatedAt": "2026-10-02T20:49:45.171Z",
+      "botId": "comp_22qzh16t",
+      "remoteUrl": null,
+      "viewUrl": null,
+      "campaignId": null,
+      "sessionHealthy": null,
+      "sessionProbedAt": null,
+      "recentAudits": [
+        {
+          "id": "caud_s7f15jgcmurfsdlf",
+          "at": "2026-10-02T20:49:45.171Z",
+          "computerId": "comp_22qzh16t",
+          "action": "ensure",
+          "detail": "Seat seat_api_n_smoke computer registered",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_smoke",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        }
+      ]
+    },
+    {
+      "computerId": "comp_rdap1gmi",
+      "seatId": "seat_api_n_1",
+      "workspaceId": "__local__",
+      "status": "ready",
+      "control": "bot",
+      "lastAudit": "ready: Computer process ready — LinkedIn session unverified",
+      "lastError": null,
+      "updatedAt": "2026-10-02T20:49:56.618Z",
+      "botId": "comp_rdap1gmi",
+      "remoteUrl": "http://127.0.0.1:18765/c/comp_rdap1gmi",
+      "viewUrl": "http://127.0.0.1:18765/view/comp_rdap1gmi",
+      "campaignId": null,
+      "sessionHealthy": null,
+      "sessionProbedAt": null,
+      "recentAudits": [
+        {
+          "id": "caud_5ggv7vjemurfsdxd",
+          "at": "2026-10-02T20:49:45.601Z",
+          "computerId": "comp_rdap1gmi",
+          "action": "ensure",
+          "detail": "Seat seat_api_n_1 computer registered",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_1",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_63qwkm7fmurfsdxu",
+          "at": "2026-10-02T20:49:45.618Z",
+          "computerId": "comp_rdap1gmi",
+          "action": "start",
+          "detail": "Booting isolated Chromium via OpenBot ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_1",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_za0pm80fmurfse8g",
+          "at": "2026-10-02T20:49:46.000Z",
+          "computerId": "comp_rdap1gmi",
+          "action": "warmup_navigate",
+          "detail": "Opened LinkedIn after ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_1",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_1jrf2uoomurfse8g",
+          "at": "2026-10-02T20:49:46.000Z",
+          "computerId": "comp_rdap1gmi",
+          "action": "ready",
+          "detail": "Computer process ready — LinkedIn session unverified",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_1",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_2qq99hfvmurfsm9p",
+          "at": "2026-10-02T20:49:56.413Z",
+          "computerId": "comp_rdap1gmi",
+          "action": "start",
+          "detail": "Booting isolated Chromium via OpenBot ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_1",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_xsnw5sh8murfsmb8",
+          "at": "2026-10-02T20:49:56.468Z",
+          "computerId": "comp_rdap1gmi",
+          "action": "warmup_navigate",
+          "detail": "Opened LinkedIn after ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_1",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_7bqvp07hmurfsmb8",
+          "at": "2026-10-02T20:49:56.468Z",
+          "computerId": "comp_rdap1gmi",
+          "action": "ready",
+          "detail": "Computer process ready — LinkedIn session unverified",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_1",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        }
+      ]
+    },
+    {
+      "computerId": "comp_awo9xhpd",
+      "seatId": "seat_api_n_2",
+      "workspaceId": "__local__",
+      "status": "ready",
+      "control": "bot",
+      "lastAudit": "ready: Computer process ready — LinkedIn session unverified",
+      "lastError": null,
+      "updatedAt": "2026-10-02T20:49:56.618Z",
+      "botId": "comp_awo9xhpd",
+      "remoteUrl": "http://127.0.0.1:18765/c/comp_awo9xhpd",
+      "viewUrl": "http://127.0.0.1:18765/view/comp_awo9xhpd",
+      "campaignId": null,
+      "sessionHealthy": null,
+      "sessionProbedAt": null,
+      "recentAudits": [
+        {
+          "id": "caud_fc8sny5emurfse8s",
+          "at": "2026-10-02T20:49:46.012Z",
+          "computerId": "comp_awo9xhpd",
+          "action": "ensure",
+          "detail": "Seat seat_api_n_2 computer registered",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_2",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_7bi5zkqwmurfse91",
+          "at": "2026-10-02T20:49:46.021Z",
+          "computerId": "comp_awo9xhpd",
+          "action": "start",
+          "detail": "Booting isolated Chromium via OpenBot ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_2",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_ln6pwrcxmurfsegd",
+          "at": "2026-10-02T20:49:46.285Z",
+          "computerId": "comp_awo9xhpd",
+          "action": "warmup_navigate",
+          "detail": "Opened LinkedIn after ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_2",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_uza2bop4murfsegd",
+          "at": "2026-10-02T20:49:46.285Z",
+          "computerId": "comp_awo9xhpd",
+          "action": "ready",
+          "detail": "Computer process ready — LinkedIn session unverified",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_2",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_e3hoc7t9murfsmbs",
+          "at": "2026-10-02T20:49:56.488Z",
+          "computerId": "comp_awo9xhpd",
+          "action": "start",
+          "detail": "Booting isolated Chromium via OpenBot ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_2",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_e2atiiynmurfsmd8",
+          "at": "2026-10-02T20:49:56.540Z",
+          "computerId": "comp_awo9xhpd",
+          "action": "warmup_navigate",
+          "detail": "Opened LinkedIn after ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_2",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_08kkj383murfsmd8",
+          "at": "2026-10-02T20:49:56.541Z",
+          "computerId": "comp_awo9xhpd",
+          "action": "ready",
+          "detail": "Computer process ready — LinkedIn session unverified",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_2",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        }
+      ]
+    },
+    {
+      "computerId": "comp_ivt5umkg",
+      "seatId": "seat_api_n_3",
+      "workspaceId": "__local__",
+      "status": "ready",
+      "control": "bot",
+      "lastAudit": "ready: Computer process ready — LinkedIn session unverified",
+      "lastError": null,
+      "updatedAt": "2026-10-02T20:49:56.618Z",
+      "botId": "comp_ivt5umkg",
+      "remoteUrl": "http://127.0.0.1:18765/c/comp_ivt5umkg",
+      "viewUrl": "http://127.0.0.1:18765/view/comp_ivt5umkg",
+      "campaignId": null,
+      "sessionHealthy": null,
+      "sessionProbedAt": null,
+      "recentAudits": [
+        {
+          "id": "caud_bp4u6vwdmurfsegq",
+          "at": "2026-10-02T20:49:46.298Z",
+          "computerId": "comp_ivt5umkg",
+          "action": "ensure",
+          "detail": "Seat seat_api_n_3 computer registered",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_3",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_4ao3ue7smurfsegy",
+          "at": "2026-10-02T20:49:46.306Z",
+          "computerId": "comp_ivt5umkg",
+          "action": "start",
+          "detail": "Booting isolated Chromium via OpenBot ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_3",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_wmy4dtqlmurfseoo",
+          "at": "2026-10-02T20:49:46.584Z",
+          "computerId": "comp_ivt5umkg",
+          "action": "warmup_navigate",
+          "detail": "Opened LinkedIn after ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_3",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_9yf41szxmurfseoo",
+          "at": "2026-10-02T20:49:46.584Z",
+          "computerId": "comp_ivt5umkg",
+          "action": "ready",
+          "detail": "Computer process ready — LinkedIn session unverified",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_3",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_pqwc1d6lmurfsmdr",
+          "at": "2026-10-02T20:49:56.559Z",
+          "computerId": "comp_ivt5umkg",
+          "action": "start",
+          "detail": "Booting isolated Chromium via OpenBot ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_3",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_ewi2lerbmurfsmez",
+          "at": "2026-10-02T20:49:56.603Z",
+          "computerId": "comp_ivt5umkg",
+          "action": "warmup_navigate",
+          "detail": "Opened LinkedIn after ensure",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_3",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        },
+        {
+          "id": "caud_z3d3bpmomurfsmez",
+          "at": "2026-10-02T20:49:56.603Z",
+          "computerId": "comp_ivt5umkg",
+          "action": "ready",
+          "detail": "Computer process ready — LinkedIn session unverified",
+          "actor": "system",
+          "workspaceId": "__local__",
+          "seatId": "seat_api_n_3",
+          "campaignId": null,
+          "correlationId": null,
+          "jobId": null
+        }
+      ]
+    }
+  ],
+  "floor": [
+    {
+      "id": "seat_api_n_1",
+      "status": "idle",
+      "subtitle": "LinkedIn unverified — Take control · …rdap1gmi",
+      "suffix": "rdap1gmi"
+    },
+    {
+      "id": "seat_api_n_2",
+      "status": "idle",
+      "subtitle": "LinkedIn unverified — Take control · …awo9xhpd",
+      "suffix": "awo9xhpd"
+    },
+    {
+      "id": "seat_api_n_3",
+      "status": "idle",
+      "subtitle": "LinkedIn unverified — Take control · …ivt5umkg",
+      "suffix": "ivt5umkg"
+    }
+  ],
+  "ok": true,
+  "note": "FE API wire proven locally; LinkedIn sessionHealthy remains human-gated"
+}

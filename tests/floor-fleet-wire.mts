@@ -168,5 +168,16 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
   );
 }
 
+
+{
+  const route = readFileSync("src/app/api/fleet/computers/route.ts", "utf8");
+  const refine = route.slice(route.indexOf("superRefine"), route.indexOf("hydrateWorkspaceSeatBindings"));
+  ok(
+    "ensure may omit computerId (server mint)",
+    refine.includes('body.action === "ensure"') &&
+      refine.includes("server makeId"),
+  );
+}
+
 console.log(`floor-fleet-wire: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

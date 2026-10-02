@@ -221,14 +221,15 @@ const BodySchema = z
     url: z.string().url().max(2_000).optional(),
   })
   .superRefine((body, ctx) => {
-    if (body.action === "reclaim_healthy_orphan") {
+    if (body.action === "reclaim_healthy_orphan" || body.action === "ensure") {
       if (!body.seatId?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "seatId required for reclaim_healthy_orphan",
+          message: `seatId required for ${body.action}`,
           path: ["seatId"],
         });
       }
+      // ensure may omit computerId — server makeId (no client UUID twin races).
       return;
     }
     if (!body.computerId?.trim()) {
@@ -312,7 +313,7 @@ export async function POST(req: NextRequest) {
         rec = defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
           seatId,
-          computerId,
+          computerId: computerId || undefined,
           campaignId: body.campaignId,
         });
         // Persist seat↔computer so cold GET / floor poll cannot orphan a live bind.
@@ -401,7 +402,7 @@ export async function POST(req: NextRequest) {
         const navRec = defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
           seatId: navSeatId,
-          computerId,
+          computerId: computerId || undefined,
           campaignId: body.campaignId,
         });
         // Always drive the ensured id — never the raw request id after a rebound.
@@ -430,7 +431,7 @@ export async function POST(req: NextRequest) {
         const probeRec = defaultComputerSupervisor.ensureComputer({
           workspaceId: workspaceId ?? "__local__",
           seatId: probeSeatId,
-          computerId,
+          computerId: computerId || undefined,
           campaignId: body.campaignId,
         });
         rec = await defaultComputerSupervisor.probeSession(probeRec.computerId);

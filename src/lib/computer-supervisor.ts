@@ -337,7 +337,7 @@ export class ComputerSupervisor {
       if (opts.campaignId) existing.campaignId = opts.campaignId;
       return existing;
     }
-    const computerId = opts.computerId ?? makeId("comp");
+    const computerId = (opts.computerId ?? "").trim() || makeId("comp");
     const rec: ComputerRecord = {
       computerId,
       seatId: opts.seatId,

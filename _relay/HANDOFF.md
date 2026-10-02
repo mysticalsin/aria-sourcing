@@ -1,46 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 205
+shift: 206
 agent: cursor-cloud
-updated: 2026-10-02T20:45Z
-status: n-agent-local-live-prove
+updated: 2026-10-02T20:55Z
+status: n-agent-fleet-api-floor-prove
 ---
 
-# Handoff — Shift 205
+# Handoff — Shift 206
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Local OpenBot:** proved N=3 Chromium VMs → distinct floor suffixes (no invented healthy)
-- **Live Fly app:** still `21a42e7…`, `agentFrameworks:false` — tip not deployed
-- **Goal:** VMs+floor FE↔BE path proven locally; **Fly + LinkedIn-healthy desks still open**
+- **Local FE↔BE:** Next `:3000` + OpenBot `:18765` — POST ensure/start → GET → floor map proved for N=3
+- **Bug closed:** BodySchema required computerId on ensure (blocked server mint / boot path)
+- **Live Fly:** still old build; LinkedIn healthy still human-gated
 
 ## Done this shift
 
-1. Started local `openbot-chromium-supervisor.mjs` (Chrome + `ws` dep)
-2. `LIVE=1 prove-n-agent-floor` → 3 running bots, distinct `…xxxxxxxx`, idle/unverified
-3. `prove-supervisor-floor-live` → ComputerSupervisor ensure/start → N profile dirs → floor map
-4. Evidence: `_relay/evidence/2026-10-02-local-n-agent-supervisor-floor.json` + refreshed n-agent-floor-proof.json
-5. Added root `ws` dependency (supervisor import)
+1. Fixed ensure POST to allow omit computerId (server makeId)
+2. `scripts/prove-fleet-api-floor.mts` evidence: 3 ready VMs, distinct floor suffixes, no invent healthy
+3. Evidence `_relay/evidence/2026-10-02-fleet-api-floor-prove.json`
+4. floor-fleet-wire schema assert for ensure omit
 
 ## Blockers
 
-1. No Fly deploy / production COMPUTER_SUPERVISOR_TOKEN in this env
-2. LinkedIn `sessionHealthy:true` still requires human Take control + login/2FA
+1. No production Fly deploy token
+2. LinkedIn sessionHealthy needs Take control + login
 
 ## Next steps
 
-1. Owner redeploy tip to Fly app + computers host
-2. Operator: N seats Take→login→Release; confirm floor paints working only when probe fresh (TTL)
-3. Optional: keep local supervisor recipe in README for CI smoke
+1. Owner Fly redeploy tip
+2. Operator N seats Take→login→Release
+3. Optional: browser screenshot of /floor against local Hermes seats bound to API computers
 
 ## Decisions (don't relitigate)
 
-- Never invent `sessionHealthy=true`
-- Local LIVE prove of isolated VMs is valid evidence for VM isolation + floor wire; LinkedIn health stays human-gated
+- Never invent sessionHealthy=true
+- ensure without computerId is the server-mint path (required for no client UUID twins)
 
 ## Watch out
 
-- Local prove uses `SUPERVISOR_TOKEN=aria-supervisor-dev` — not production
-- `ws` must be installable at repo root for `node scripts/openbot-chromium-supervisor.mjs`
+- Local Next must export COMPUTER_SUPERVISOR_URL/TOKEN to reach OpenBot
+- Process-local supervisor Map is per Next worker
