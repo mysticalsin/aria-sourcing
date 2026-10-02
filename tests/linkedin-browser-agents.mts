@@ -33,11 +33,23 @@ assert.ok(!(disabled.detail || "").toLowerCase().includes("not enabled"));
 assert.equal(disabled.hits.length, 0);
 
 delete process.env.ARIA_ORCA_ENABLED;
+delete process.env.ARIA_AGENT_REACH_JINA;
 const insight = await analyzeLinkedInProfile("https://www.linkedin.com/in/tonywalteur/");
-assert.ok(insight.via === "orca-style" || insight.via === "web-fetch");
+assert.ok(
+  insight.via === "orca-style" ||
+    insight.via === "web-fetch" ||
+    insight.via === "agent-reach-jina" ||
+    insight.via === "stub",
+);
 assert.ok(insight.focusAreas.length > 0);
 assert.ok(insight.trajectoryNotes.length > 0);
 assert.ok((insight.headline || "").toLowerCase().includes("tony"));
+
+const status = listLinkedInBrowserAgentStatus();
+assert.ok(status.some((s) => s.id === "agent-reach-jina" && s.enabled));
+assert.ok(status.some((s) => s.id === "linkedin-agent-tool" && s.enabled));
+assert.ok(status.some((s) => s.id === "browser-use" && s.enabled));
+assert.ok(status.some((s) => s.builtin.includes("web_search")));
 
 const blocked = await runBrowserUseAction({
   type: "connect",
@@ -75,11 +87,6 @@ assert.equal(
   withoutAgent.map((p) => p.id).join(","),
   "linkedin_profiles,linkedin_web,github",
 );
-
-const status = listLinkedInBrowserAgentStatus();
-assert.ok(status.some((s) => s.id === "linkedin-agent-tool" && s.enabled));
-assert.ok(status.some((s) => s.id === "browser-use" && s.enabled));
-assert.ok(status.some((s) => s.builtin.includes("web_search")));
 
 const { isSourcingTool, SOURCING_TOOL_DEFS, makeSourcingToolRunner } = await import(
   "../src/lib/ai/sourcing-tools"

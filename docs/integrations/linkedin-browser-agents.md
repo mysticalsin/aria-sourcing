@@ -9,11 +9,15 @@ They are referenced from **Agent Skills** (`sourcing_skill`) and wired into:
 
 | Capability | Upstream | Env flags |
 |---|---|---|
+| Agent Reach / Jina read | [Agent-Reach](https://github.com/Panniantong/Agent-Reach) → Jina Reader | `ARIA_AGENT_REACH_JINA` (default on; set `0` to disable) |
 | Profile analysis | [orca](https://github.com/DimiMikadze/orca) | `ARIA_ORCA_ENABLED`, `ARIA_ORCA_URL` (local slug heuristic always on) |
 | LinkedIn search metadata | [Linkedin_Agent_Tool](https://github.com/NightTrek/Linkedin_Agent_Tool) | `ARIA_LINKEDIN_AGENT_TOOL_ENABLED`, `ARIA_LINKEDIN_AGENT_TOOL_URL` |
 | Browser actions | [browser-use](https://github.com/browser-use/browser-use) (+ [CrewAI skills pack](https://github.com/KennyWayn3/crewai-browser-automation-skills-pack)) | `ARIA_BROWSER_USE_ENABLED`, `ARIA_BROWSER_USE_URL` |
 | ICP qualify / SDR | [linki](https://github.com/moaljumaa/linki), [OpenOutreach](https://github.com/eracle/OpenOutreach) | `ARIA_LINKI_*` / `ARIA_OPENOUTREACH_*` |
 | Public web research | [Scrapling](https://github.com/D4Vinci/Scrapling) | `ARIA_SCRAPLING_*` |
+
+See also: [`docs/superpowers/specs/2026-10-02-agent-reach-human-linkedin-loop.md`](../superpowers/specs/2026-10-02-agent-reach-human-linkedin-loop.md).
+
 
 ## Local sidecar
 

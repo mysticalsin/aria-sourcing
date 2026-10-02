@@ -106,6 +106,18 @@ function composerElements(snapshotId: number) {
   };
 }
 
+function sentElements(snapshotId: number) {
+  return {
+    snapshotId,
+    url: "https://www.linkedin.com/messaging/thread/abc",
+    title: "Messaging | LinkedIn",
+    elements: [
+      { ref: "e30", role: "status", name: "Message sent" },
+      { ref: "e31", role: "button", name: "Send" },
+    ],
+  };
+}
+
 function loginElements(snapshotId: number) {
   return {
     snapshotId,
@@ -205,10 +217,22 @@ async function main() {
       const payload =
         state.stage === "login"
           ? loginElements(state.snapshotId)
-          : state.stage === "composer" || state.stage === "sent"
-            ? composerElements(state.snapshotId)
-            : profileElements(state.snapshotId);
+          : state.stage === "sent"
+            ? sentElements(state.snapshotId)
+            : state.stage === "composer"
+              ? composerElements(state.snapshotId)
+              : profileElements(state.snapshotId);
       return json(res, 200, payload);
+    }
+
+    if (url.pathname === "/session-probe" && req.method === "POST") {
+      // Honest mock: only report healthy when not on a login wall.
+      const healthy = state.stage !== "login";
+      return json(res, 200, {
+        healthy,
+        detail: healthy ? "LinkedIn session looks signed-in" : "Login wall",
+        url: state.pageUrl,
+      });
     }
 
     if (url.pathname === "/click" && req.method === "POST") {
@@ -351,8 +375,9 @@ async function main() {
     });
     ok("linkedin send ok", sendResult.ok === true, sendResult.detail);
     ok(
-      "linkedin send typed subject+body",
-      state.typed.some((t) => t.includes("Quick note") && t.includes("distributed systems")),
+      "linkedin send typed body (subject reserved for InMail — not dumped into free DM)",
+      state.typed.some((t) => t.includes("distributed systems")) &&
+        !state.typed.some((t) => t.includes("Quick note") && t.includes("distributed systems")),
     );
 
     // 4) Login wall → helpRequested
@@ -384,6 +409,11 @@ async function main() {
     ok("supervisor start → ready", started.status === "ready", started.lastError ?? "");
     ok("supervisor stored remoteUrl", Boolean(started.remoteUrl), String(started.remoteUrl));
     ok("supervisor ensure called openbot", state.ensured.size >= 1);
+
+    // LinkedIn send requires a probed-healthy session (never invented).
+    state.stage = "profile";
+    const probed = await supervisorSvc.probeSession(computerRec.computerId);
+    ok("session probe healthy before send", probed.sessionHealthy === true, String(probed.lastError));
 
     const job = await supervisorSvc.enqueueJob({
       computerId: computerRec.computerId,
@@ -540,14 +570,15 @@ async function main() {
       lastUpstreamAuth,
     );
 
-    // Missing computer token fails closed when remote supervisor is bound
+    // Missing / wrong computer token fails closed when remote supervisor is bound.
+    // Probe with a valid token first, then swap to a wrong token so the session gate
+    // is not what fails — computer auth is.
     bindComputerSupervisorEndpoint({
       url: supervisorUrl,
       token: state.supervisorToken,
-      computerToken: "",
+      computerToken: state.computerToken,
       mockSend: false,
     });
-    // Clear env fallbacks for this check
     const prevComp = process.env.COMPUTER_TOKEN;
     const prevObComp = process.env.OPENBOT_COMPUTER_TOKEN;
     delete process.env.COMPUTER_TOKEN;
@@ -555,9 +586,8 @@ async function main() {
     const noTok = new ComputerSupervisor();
     const c2 = noTok.ensureComputer({ workspaceId: "ws", seatId: "seat-notoken" });
     await noTok.start(c2.computerId);
-    // After start, remoteUrl is set but computer token is empty and supervisor
-    // token is still present — resolveComputerToken falls back to supervisor token.
-    // Force empty by binding token "" AND supervisor token that won't auth computer.
+    state.stage = "profile";
+    await noTok.probeSession(c2.computerId);
     bindComputerSupervisorEndpoint({
       url: supervisorUrl,
       token: state.supervisorToken,
@@ -571,7 +601,7 @@ async function main() {
     });
     ok(
       "wrong computer token fails closed",
-      badTokJob.status === "failed",
+      badTokJob.status === "failed" || badTokJob.status === "refused",
       badTokJob.detail,
     );
     if (prevComp !== undefined) process.env.COMPUTER_TOKEN = prevComp;

@@ -1,48 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 216
+shift: 217
 agent: cursor-cloud
-updated: 2026-10-02T22:25Z
-status: tip-ci-memory-soul-fly-stale
+updated: 2026-10-02T22:40Z
+status: agent-reach-slice1-openbot-e2e-fly-stale
 ---
 
-# Handoff — Shift 216
+# Handoff — Shift 217
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip fix:** memory-soul updateSeat isolation must compare each seat to its own persona (N Java Browser seats differ)
-- **Fly live:** still build `21a42e7…`, `agentFrameworks:false`; computers host up, 0 VMs
+- **PRD:** `docs/superpowers/specs/2026-10-02-agent-reach-human-linkedin-loop.md`
+- **Slice 1:** Agent Reach → Jina LinkedIn read wired into `analyzeLinkedInProfile` (`via: agent-reach-jina`)
+- **Tip CI:** openbot-e2e updated for Message-sent proof + session probe gate
+- **Fly live:** still build `21a42e7…`, `agentFrameworks:false`
 
 ## Done this shift
 
-1. security-audit noreferrer token + applicants Link (green)
-2. memory-soul updateSeat isolation for distinct seed personas
+1. Gap analysis vs Agent-Reach (eyes) + Aria OpenBot (hands)
+2. PRD for human LinkedIn loop + booking tracking in Aria
+3. Jina adapter + tests + skills + manifest
+4. openbot-e2e fixtures for sent proof + probe before send
 
 ## Blockers
 
 1. No Fly deploy / supervisor production tokens
 2. `sessionHealthy:true` needs human Take→login→Release after tip deploy
-3. Base-wide CI (gitleaks, npm audit, schema, supply chain) may remain red
+3. Base-wide CI may remain red
+4. Slice 2+ (MCP LinkedIn, interest→booking propose) not started
 
 ## Next steps
 
-1. Confirm CI Quality after memory-soul fix
-2. Owner Fly redeploy tip to `aria-mantu-app`
-3. Confirm `/api/ready` build == tip SHA + `agentFrameworks`
-4. Operator login on N desks
+1. Confirm CI Quality after this push
+2. Slice 2: optional mcp-server-linkedin sidecar
+3. Slice 3: INTERESTED → booking propose receipts
+4. Owner Fly redeploy tip + operator login on N desks
 
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Any seed-bound sourcing query fixture must share a Senior Java role token
-- Deterministic sourcing prepends validated promoted GitHub lessons before baseline
-- Live `deployAgents` creates durable LinkedIn Browser Computer seats via addSeat
-- `rel` may be `noreferrer` or `noopener noreferrer`
-- Seed Java Browser seats may have distinct personas
+- Agent Reach = eyes (Jina/MCP); OpenBot = hands (Connect/Message)
+- "Jev" = Jina Reader
+- Outreach stays approval-gated; free DM does not type subject into body
+- Live deployAgents → durable addSeat (not demo-only block)
 
 ## Watch out
 
-- Broader CI may stay base-wide
-- Do not re-add `if (supabaseEnabled) return created:0` in deployAgents
+- Do not re-add subject\n\nbody into free LinkedIn DM composer
+- Do not invent Agent Reach "installed" without doctor/read path
