@@ -687,12 +687,13 @@ try {
       supervisor.get(seat.computerId)?.control === "human",
     );
     // Host sync must not yank status while human holds the VM.
-    // simulateHostSync is private — use hydrate/list path via internal apply by setting control and calling a public hydrate if available.
     rec.status = "ready";
     rec.control = "human";
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supervisor as any).applyHostState?.(rec, { status: "starting" });
-    if (typeof (supervisor as any).applyHostState === "function") {
+    const hostSync = supervisor as unknown as {
+      applyHostState?: (r: typeof rec, host: { status: string }) => void;
+    };
+    if (typeof hostSync.applyHostState === "function") {
+      hostSync.applyHostState(rec, { status: "starting" });
       ok(
         "host sync does not yank status during human control",
         supervisor.get(seat.computerId)?.status === "ready",

@@ -116,7 +116,7 @@ export default function FleetComputerViewportPage() {
         setBusy(false);
       }
     },
-    [computer?.seatId, computerId, refresh],
+    [computer, computerId, refresh],
   );
 
   const human = computer?.control === "human";
