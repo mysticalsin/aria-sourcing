@@ -121,6 +121,30 @@ async function dwell(minMs = 120, maxMs = 420) {
   await sleep(randInt(minMs, maxMs));
 }
 
+/**
+ * Human-like keystrokes: variable inter-key delay, longer pauses after
+ * punctuation / occasional spaces. Operator takeover uses delay:0 (humanFast).
+ * Not fingerprint spoofing — just cadence that matches a careful recruiter.
+ */
+async function humanTypeText(page, text, { humanFast = false } = {}) {
+  const value = String(text ?? "");
+  if (!value) return;
+  if (humanFast) {
+    await page.keyboard.type(value, { delay: 0 });
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    await page.keyboard.type(ch, { delay: 0 });
+    let pause = randInt(48, 115);
+    if (/[.,;!?]/.test(ch)) pause += randInt(90, 240);
+    if (ch === "\n") pause += randInt(120, 300);
+    // Rare "re-read" pause mid-sentence (~6% on spaces).
+    if (ch === " " && Math.random() < 0.06) pause += randInt(140, 420);
+    await sleep(pause);
+  }
+}
+
 function launchOptsBase(desktopSeat = null) {
   const geo = desktopGeometry();
   const jitterW = DESKTOP ? geo.width : 1400 + randInt(-24, 24);
@@ -520,6 +544,7 @@ async function handleStreamInput(rec, msg) {
       const text = String(msg.text ?? "");
       if (!text) return;
       await page.keyboard.type(text, { delay: 0 });
+      // Operator live input stays instant — humanFast path.
       return;
     }
     if (type === "key") {
@@ -1194,7 +1219,7 @@ async function handleComputer(botId, req, res, pathname, method) {
     const text = String(body.text || "");
     await loc.click({ timeout: 15_000 });
     await dwell(80, 220);
-    await rec.page.keyboard.type(text, { delay: randInt(40, 120) });
+    await humanTypeText(rec.page, text, { humanFast: false });
     await dwell();
     if (body.submit) await loc.press("Enter");
     return json(res, 200, { action: "type", ref: body.ref, characters: text.length });
@@ -1285,7 +1310,7 @@ async function handleComputer(botId, req, res, pathname, method) {
     const text = String(body.text ?? "");
     if (!text) return json(res, 400, { error: "text required" });
     const humanFast = body.human === true || rec.control === "human";
-    await rec.page.keyboard.type(text, { delay: humanFast ? 0 : randInt(40, 120) });
+    await humanTypeText(rec.page, text, { humanFast });
     if (!humanFast) await dwell();
     if (body.submit) await rec.page.keyboard.press("Enter");
     return json(res, 200, { action: "type-text", characters: text.length });

@@ -1,50 +1,44 @@
 ---
 project: MSourcing / ARIA
-shift: 201
+shift: 202
 agent: cursor-cloud
-updated: 2026-09-12T09:48Z
-status: n-agent-isolation-harden
+updated: 2026-10-02T19:49Z
+status: linkedin-human-claude-chrome
 ---
 
-# Handoff — Shift 201
+# Handoff — Shift 202
 
 ## Current state
 
-- **Branch:** `cursor/n-agent-isolation-harden-b91d` (from openbot-desktop-vm tip)
-- **Goal:** N campaign agents real + floor-visible + FE↔BE wired (ponytail) — isolation harden landed; goal not complete until Fly proof of N distinct healthy seats
-- **PR:** open/update for this branch → base `integration/sourcing-enrichment-on-main` (or openbot PR #143 stack)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (from PR #144 / n-agent isolation tip)
+- **Goal:** N agents + human LinkedIn + Claude-in-Chrome feel — permission options + human typing landed; live Fly proof still open
 
 ## Done this shift
 
-1. Fleet POST: `stop` / `reset` / `release_control` / `request_help` require caller `seatId` ownership match (same as start/take_control)
-2. `priorSeatId` on detach; `reclaimHealthyOrphan` auto-claims only never-bound or same-prior orphans (no cookie steal)
-3. FE always sends `seatId` on mutating computer actions (fleet page, viewport, campaign agents)
-4. Floor: VM suffix when seat-keyed hint lacks `computerId` (N agents distinguishable); poison FK still fail-closed
-5. Tests: `computer-supervisor` 87/87; `floor` 65/65
+1. Claude-in-Chrome permissions model (`src/lib/browser-agent-permissions.ts`) — Manual / Auto / Skip + LinkedIn host allowlist
+2. Options page `/fleet/computers/options` (options.html parity) + viewport side panel + Fleet Permissions link
+3. Human typing cadence in OpenBot supervisor (`humanTypeText` variable delays / thinking pauses)
+4. Broader CAPTCHA/checkpoint detection in session-health (TS + mjs) wired into linkedin-send
+5. Tests: `browser-agent-permissions` 16/16; manifest counts 189/242; typechecks green
 
 ## Blockers
 
-1. Human Take control on live Fly → LinkedIn CAPTCHA/login → Release → `sessionHealthy:true` still required for green floor
-2. Host cap / `agentFrameworks=false` on `/api/ready`
-3. Tip not on protected `deploy/fly-github-actions` without merge strategy
+1. Live Fly Take control → LinkedIn login → Release → `sessionHealthy:true` still required
+2. Host capacity / agentFrameworks readiness
 
 ## Next steps
 
-1. Push branch + open/update PR; run full `npm run typecheck && npm run typecheck:tests && npm test`
-2. Redeploy Fly app-only with tip including isolation + fluid takeover
-3. Prove floor shows N distinct computers with real status (no invented healthy)
-4. Operator: Take control → LinkedIn login → Release → `sessionHealthy:true` per seat
+1. Push + open PR for this branch
+2. Redeploy Fly with tip
+3. Operator: set Permissions to Auto, Take control on a seat, login, Release, Approve→Send
 
 ## Decisions (don't relitigate)
 
-- Never invent `sessionHealthy=true` / LinkedIn delivered without probe + UI proof
-- Auto-reclaim must not steal another seat's detached LinkedIn profile (`priorSeatId` gate)
-- Mutating computer actions always require caller seat ownership
-- Do not bypass protected Fly release guards
-- Fly only for LinkedIn / OpenBot / computers
+- Never invent `sessionHealthy=true`
+- No residential proxy farms / unbannable claims — honest human cadence + caps only
+- Claude Chrome parity = watch + Take/Esc + permission modes, not spoofing Anthropic’s extension ID
 
 ## Watch out
 
-- FE must keep sending `seatId` for stop/release or API returns 400
-- Never-bound host orphans remain first-claimable (bootstrap) — only prior-bound orphans are seat-scoped
-- Floor green = `ready && sessionHealthy === true` only
+- Options persist in localStorage (this browser) — not yet durable seat DB field
+- Operator live typing stays delay:0; bot path uses humanTypeText

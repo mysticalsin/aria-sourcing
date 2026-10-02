@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Hand, Unlock, Monitor, ArrowLeft, ShieldAlert, ExternalLink } from "lucide-react";
+import { Hand, Unlock, Monitor, ArrowLeft, ShieldAlert, ExternalLink, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import {
   FLUID_TAKEOVER,
@@ -11,6 +11,15 @@ import {
   isTypingTarget,
   withFluidTakeQuery,
 } from "@/lib/fluid-takeover";
+import {
+  BROWSER_AGENT_PERMISSION_MODES,
+  loadBrowserAgentPermissions,
+  permissionModeHint,
+  permissionModeLabel,
+  saveBrowserAgentPermissions,
+  type BrowserAgentPermissionMode,
+  type BrowserAgentPermissions,
+} from "@/lib/browser-agent-permissions";
 
 type ComputerState = {
   computerId: string;
@@ -36,6 +45,11 @@ export default function FleetComputerViewportPage() {
   const [audits, setAudits] = React.useState<
     Array<{ at: string; action: string; detail: string; actor: string }>
   >([]);
+  const [perms, setPerms] = React.useState<BrowserAgentPermissions | null>(null);
+
+  React.useEffect(() => {
+    setPerms(loadBrowserAgentPermissions());
+  }, []);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -129,7 +143,7 @@ export default function FleetComputerViewportPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
-              Aria · AgenticSeek watch · GrokBot jump-in
+              Aria · Claude-in-Chrome feel · Take control
             </p>
             <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Monitor className="h-6 w-6 text-cyan-300" aria-hidden />
@@ -137,13 +151,22 @@ export default function FleetComputerViewportPage() {
             </h1>
             <p className="mt-1 font-mono text-xs text-slate-400">{computerId}</p>
           </div>
-          <Link
-            href="/fleet"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-            Back to Fleet
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/fleet/computers/options"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
+            >
+              <Settings2 className="h-3.5 w-3.5" aria-hidden />
+              Permissions
+            </Link>
+            <Link
+              href="/fleet"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              Back to Fleet
+            </Link>
+          </div>
         </div>
 
         <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
@@ -208,6 +231,7 @@ export default function FleetComputerViewportPage() {
           ) : null}
         </section>
 
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#0a0f1a]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs text-slate-400">
             <span>Live stream</span>
@@ -241,6 +265,62 @@ export default function FleetComputerViewportPage() {
             </div>
           )}
         </section>
+
+        <aside className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">
+            Side panel · Claude Chrome feel
+          </p>
+          <h2 className="mt-1 text-sm font-semibold text-white">Permissions</h2>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">
+            Same modes as Claude in Chrome. LinkedIn challenges still force Take control.
+          </p>
+          <div className="mt-3 space-y-1.5">
+            {BROWSER_AGENT_PERMISSION_MODES.map((mode) => {
+              const selected = (perms?.mode ?? "auto") === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    const saved = saveBrowserAgentPermissions({
+                      ...(perms ?? loadBrowserAgentPermissions()),
+                      mode: mode as BrowserAgentPermissionMode,
+                    });
+                    setPerms(saved);
+                  }}
+                  className={`w-full rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                    selected
+                      ? "border-cyan-400/40 bg-cyan-400/10 text-white"
+                      : "border-white/10 bg-black/20 text-slate-300 hover:border-white/20"
+                  }`}
+                >
+                  <span className="font-semibold">{permissionModeLabel(mode)}</span>
+                </button>
+              );
+            })}
+          </div>
+          {perms ? (
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+              {permissionModeHint(perms.mode)}
+            </p>
+          ) : null}
+          <div className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-slate-400">
+            <p>
+              <kbd className="text-slate-200">T</kbd> take · <kbd className="text-slate-200">Esc</kbd>{" "}
+              get out
+            </p>
+            <p className="mt-2">
+              Human typing uses variable key delays; caps + session probe stay fail-closed.
+            </p>
+            <Link
+              href="/fleet/computers/options"
+              className="mt-3 inline-flex font-semibold text-cyan-300 hover:text-cyan-200"
+            >
+              Open full options →
+            </Link>
+          </div>
+        </aside>
+        </div>
 
         <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
           <h2 className="text-sm font-semibold text-white">Audit trail</h2>

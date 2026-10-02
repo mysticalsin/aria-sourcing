@@ -24,6 +24,7 @@ import {
   recordLinkedInUiLlmSkip,
   shouldSkipLinkedInUiLlm,
 } from "@/lib/openbot/linkedin-ui-lessons";
+import { looksLikeLinkedInAuthWall } from "@/lib/session-health";
 
 export type OpenBotLinkedInSendInput = {
   profileUrl: string;
@@ -116,17 +117,9 @@ function pickAddNoteButton(elements: OpenBotSnapshotElement[]): OpenBotSnapshotE
   ]);
 }
 
+/** Login / CAPTCHA / checkpoint — always fail closed for Take control. */
 function looksLikeLoginWall(text: string, title: string, url: string): boolean {
-  const blob = `${url} ${title} ${text}`.toLowerCase();
-  return (
-    blob.includes("/login") ||
-    blob.includes("sign in") ||
-    blob.includes("authwall") ||
-    blob.includes("checkpoint") ||
-    blob.includes("enter the code") ||
-    blob.includes("two-step") ||
-    blob.includes("2fa")
-  );
+  return looksLikeLinkedInAuthWall(text, title, url);
 }
 
 async function resolveRef(

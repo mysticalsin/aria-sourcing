@@ -22,9 +22,13 @@
 
 ## Anti-bot posture (honest)
 
-Aria reduces ban risk with **caps, warmup, min-gap + jitter, business hours, durable Chrome profiles, human-like typing, and session health gates**.
+Aria reduces ban risk with **caps, warmup, min-gap + jitter, business hours, durable Chrome profiles, human-like typing (variable key delays), adaptive UI pauses, and session health gates**.
 
-Aria does **not** ship stealth fingerprint spoofing, residential proxy farms, or “unbannable” guarantees. LinkedIn ToS risk remains; operators must stay conservative.
+Login / CAPTCHA / checkpoint always pause for **Take control** — Aria never invents `sessionHealthy=true`.
+
+**Claude-in-Chrome feel:** Fleet → Computers → **Permissions** (`/fleet/computers/options`) mirrors Claude’s extension options (Manually approve / Automatically approve / Skip). Live viewport side panel uses the same modes; watch the desk, press **T** to jump in, **Esc** to get out.
+
+Aria does **not** ship residential proxy farms or “unbannable” guarantees. LinkedIn ToS risk remains; operators must stay conservative.
 
 ## Demoted / advanced
 

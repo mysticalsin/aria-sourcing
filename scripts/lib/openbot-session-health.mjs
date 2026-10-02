@@ -10,6 +10,7 @@ export function looksLikeLinkedInAuthWall(text = "", title = "", url = "") {
     blob.includes("login-cap") ||
     blob.includes("authwall") ||
     blob.includes("checkpoint") ||
+    blob.includes("/check/add") ||
     blob.includes("sign in") ||
     blob.includes("s’identifier") ||
     blob.includes("s'identifier") ||
@@ -21,7 +22,14 @@ export function looksLikeLinkedInAuthWall(text = "", title = "", url = "") {
     blob.includes("2fa") ||
     blob.includes("verify your identity") ||
     blob.includes("suspicious activity") ||
-    blob.includes("session_redirect") && blob.includes("login")
+    blob.includes("unusual activity") ||
+    blob.includes("security verification") ||
+    blob.includes("are you a robot") ||
+    blob.includes("captcha") ||
+    blob.includes("let's do a quick security check") ||
+    blob.includes("quick security check") ||
+    blob.includes("confirm you're a real person") ||
+    (blob.includes("session_redirect") && blob.includes("login"))
   );
 }
 

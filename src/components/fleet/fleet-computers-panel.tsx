@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Monitor, Eye, Hand, Unlock, RefreshCw, CircleHelp, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -131,14 +132,22 @@ export function FleetComputersPanel({
             Isolated LinkedIn computers
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            One Chromium computer per seat. Live view is AgenticSeek-style: watch the agent work,
-            then Take control (T) like GrokBot and Esc / Release to get out — bot resumes.
+            One Chromium computer per seat. Watch like Claude in Chrome, Take control (T) to
+            finish login/CAPTCHA, Esc / Release to get out — bot resumes with human-like typing.
           </p>
         </div>
-        <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/fleet/computers/options"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink hover:bg-surface"
+          >
+            Permissions
+          </Link>
+          <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {computers.length === 0 ? (
