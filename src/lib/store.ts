@@ -4836,7 +4836,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   // Spin up N LinkedIn Browser Computer seats (each = isolated Chromium profile / VM).
-  // Works in demo (in-memory) and live (persists via addSeat → /api/fleet/seats).
+  // Demo: in-memory via addSeat. Live (supabaseEnabled): durable via addSeat →
+  // createFleetSeatOnServer. Never invents sessionHealthy — Fleet boots VMs separately.
   const deployAgents = useCallback(
     async (n: number, opts?: { language?: string; namePrefix?: string; campaignId?: string }) => {
       const s = stateRef.current;

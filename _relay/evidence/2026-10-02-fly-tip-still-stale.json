@@ -1,5 +1,7 @@
 {
-  "at": "2026-10-02T21:44:55.909Z",
+  "probedAt": "2026-10-02T22:10:00.000Z",
+  "tipShaExpected": "812f40753a64c1c94cd65e1652856db911ca199d",
+  "appReadyHttp": 503,
   "appReady": {
     "ok": false,
     "status": "not_ready",
@@ -31,7 +33,10 @@
     "locale": "en-US",
     "timezone": "America/Montreal"
   },
+  "fleetComputersHttp": 401,
+  "fleetComputersBody": "{\"error\":\"No workspace\"}",
+  "flyDeployTokensPresent": false,
   "ok": false,
-  "blocker": "Fly app still on build 21a42e7 with agentFrameworks=false; no deploy token in this env. Computers host is up.",
+  "blocker": "Fly app still on build 21a42e7 with agentFrameworks=false; HTTP 503 not_ready; no deploy token in this env. Computers host is up with 0 VMs.",
   "note": "sessionHealthy:true still requires operator Take→login→Release after tip deploy"
 }
