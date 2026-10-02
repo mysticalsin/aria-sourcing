@@ -363,7 +363,8 @@ export function CampaignAgentsPanel({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge size="sm" tone="electric">
-            {campaignSeats.length} attached
+            {campaignSeats.filter((s) => (s.computerId ?? "").trim()).length}/
+            {campaignSeats.length} with VM
           </Badge>
           <Badge size="sm" tone={healthyCount ? "success" : "neutral"}>
             {healthyCount} session healthy

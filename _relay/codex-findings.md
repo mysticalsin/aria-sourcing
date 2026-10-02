@@ -1136,3 +1136,11 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** FleetSettings.browserAgentPermissionMode BE gate; delete profileVolume; persist ensure.
 **Status:** fixed (47ddefd)
 
+## 2026-10-02 — Stale sessionHealthy green + client UUID mint twins
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts; src/lib/boot-browser-computer.ts; src/lib/campaign-go-live.ts
+**Issue:** Process-local sessionHealthy=true could paint Floor/Fleet green forever; resolveDurableComputerId minted client UUIDs that could twin-race; go-live "attached" counted seats without computerId.
+**Repro/evidence:** set sessionHealthy true without probedAt → get() still returned true before TTL; mint when no orphan used crypto.randomUUID.
+**Suggested fix:** sessionProbedAt + 120s TTL expire; mint via ensure; go-live requires computerId.
+**Status:** fixed (pending commit)
+

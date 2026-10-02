@@ -193,6 +193,18 @@ ok(
   unscoped.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
 );
 
+{
+  const noVm = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [liSeat({ computerId: undefined as unknown as string, assignedCampaignIds: [campaignId] })],
+  });
+  ok(
+    "campaign seat without computerId is not attached for go-live",
+    noVm.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
+  );
+}
+
 const multi = evaluateCampaignGoLive({
   campaignId,
   settings: { dryRunMode: false, minScoreToContact: 80 },

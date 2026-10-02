@@ -202,6 +202,7 @@ try {
     });
     live.status = "ready";
     live.sessionHealthy = true;
+    live.sessionProbedAt = new Date().toISOString();
     const kept = liveSup.ensureComputer({
       workspaceId: "ws",
       seatId: "seat-live-bind",
@@ -288,6 +289,7 @@ try {
   const failRec = failSup.get(failComp.computerId)!;
   failRec.status = "ready";
   failRec.sessionHealthy = true;
+  failRec.sessionProbedAt = new Date().toISOString();
   const failed = await failSup.enqueueJob({
     computerId: failComp.computerId,
     kind: "linkedin_send",
@@ -299,6 +301,24 @@ try {
     failSup.recentAudits(failComp.computerId).some((a) => a.action === "act_failed" && a.jobId === failed.jobId),
   );
   process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+
+  // Stale sessionHealthy=true without a fresh probe must expire (no durable green lie).
+  {
+    const { SESSION_HEALTH_TTL_MS } = await import("../src/lib/computer-supervisor");
+    const ttl = new ComputerSupervisor();
+    const seat = ttl.ensureComputer({ workspaceId: "ws", seatId: "seat-ttl" });
+    const rec = ttl.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.sessionHealthy = true;
+    rec.sessionProbedAt = null;
+    ok("true without probedAt expires to null", ttl.get(seat.computerId)?.sessionHealthy == null);
+    rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date(Date.now() - SESSION_HEALTH_TTL_MS - 1_000).toISOString();
+    ok("stale sessionHealthy expires to null", ttl.get(seat.computerId)?.sessionHealthy == null);
+    rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date().toISOString();
+    ok("fresh sessionHealthy remains true", ttl.get(seat.computerId)?.sessionHealthy === true);
+  }
 
   // Cold-start hydrate: when OpenBot reports running, in-memory stopped → ready.
   {
@@ -357,6 +377,7 @@ try {
     const orphanRec = hydrateSup.get(orphan.computerId)!;
     orphanRec.status = "ready";
     orphanRec.sessionHealthy = true;
+    orphanRec.sessionProbedAt = new Date().toISOString();
     orphanRec.remoteUrl = "http://127.0.0.1:9999";
     process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
     process.env.COMPUTER_SUPERVISOR_TOKEN = "tok_test";
@@ -634,6 +655,7 @@ try {
     const rec = manual.get(seat.computerId)!;
     rec.status = "ready";
     rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date().toISOString();
     const job = await manual.enqueueJob({
       computerId: seat.computerId,
       kind: "linkedin_send",
@@ -654,6 +676,7 @@ try {
     const rec = supervisor.get(seat.computerId)!;
     rec.status = "ready";
     rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date().toISOString();
     await supervisor.takeControl(seat.computerId);
     ok(
       "takeControl invalidates prior sessionHealthy=true",
@@ -764,6 +787,7 @@ try {
     durable.remoteUrl = "http://127.0.0.1:9002";
     durable.status = "ready";
     durable.sessionHealthy = true;
+    durable.sessionProbedAt = new Date().toISOString();
     const wall = race.ensureComputer({
       workspaceId: "ws",
       seatId: HOST_ORPHAN_SEAT_ID,
@@ -809,6 +833,7 @@ try {
     });
     healthy.status = "ready";
     healthy.sessionHealthy = true;
+    healthy.sessionProbedAt = new Date().toISOString();
     healthy.remoteUrl = "http://127.0.0.1:9";
     roll.claimOrphan("comp_healthy", { workspaceId: "ws", seatId: "seat-a" });
     ok("claim binds healthy onto seat-a", roll.get("comp_healthy")?.seatId === "seat-a");

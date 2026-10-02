@@ -50,16 +50,30 @@ try {
   });
   ok("unhealthy reclaim keeps existing computerId", kept === "comp_blank_mint");
 
-  // No existing + failed reclaim mints a fresh id (never invents healthy).
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ error: "no-healthy-orphan" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    })) as typeof fetch;
+  // No existing + failed reclaim mints via server ensure (never client UUID twins).
+  let mintActions: string[] = [];
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string; seatId?: string };
+    mintActions.push(body.action ?? "");
+    if (body.action === "reclaim_healthy_orphan") {
+      return new Response(JSON.stringify({ error: "no-healthy-orphan" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (body.action === "ensure") {
+      return new Response(
+        JSON.stringify({ computer: { computerId: "comp_server_mint_01", seatId: body.seatId } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
 
   const minted = await resolveDurableComputerId({ seatId: "seat_2" });
-  ok("mint when no orphan", minted.startsWith("comp_") && minted.length > 10);
+  ok("mint when no orphan uses server ensure id", minted === "comp_server_mint_01");
   ok("mint does not invent durable orphan id", minted !== "comp_durable_orphan");
+  ok("mint posts reclaim then ensure", mintActions.join(",") === "reclaim_healthy_orphan,ensure");
 
   // Never invent sessionHealthy=true from a non-healthy payload with an id.
   globalThis.fetch = (async () =>
@@ -102,12 +116,23 @@ try {
   ok("posts seatId", body.seatId === "seat_post");
   ok("posts existing computerId for probe", body.computerId === "comp_prev");
 
-  // Ownership mismatch on reclaim must mint — never keep another seat's VM id.
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ error: "computer-ownership-mismatch: foreign" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    })) as typeof fetch;
+  // Ownership mismatch on reclaim must mint via ensure — never keep another seat's VM id.
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const req = JSON.parse(String(init?.body ?? "{}")) as { action?: string; seatId?: string };
+    if (req.action === "reclaim_healthy_orphan") {
+      return new Response(JSON.stringify({ error: "computer-ownership-mismatch: foreign" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (req.action === "ensure") {
+      return new Response(
+        JSON.stringify({ computer: { computerId: "comp_server_remint", seatId: req.seatId } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
 
   const reminted = await resolveDurableComputerId({
     seatId: "seat_foreign",
@@ -115,7 +140,7 @@ try {
   });
   ok(
     "ownership mismatch mints new id",
-    reminted.startsWith("comp_") && reminted !== "comp_other_seat",
+    reminted === "comp_server_remint",
   );
 
 

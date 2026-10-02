@@ -61,12 +61,20 @@ export type ComputerRecord = {
   /** Last LinkedIn session probe result (null = unknown). */
   sessionHealthy?: boolean | null;
   /**
+   * ISO time of the last /session-probe that set sessionHealthy.
+   * Stale `true` is expired to null (never invent durable green).
+   */
+  sessionProbedAt?: string | null;
+  /**
    * When seatId is HOST_ORPHAN, the seat this Chromium last belonged to.
    * null/undefined = never bound (fresh host import) — first claim OK.
    * Set on detach so auto-reclaim cannot steal another seat's LinkedIn cookies.
    */
   priorSeatId?: string | null;
 };
+
+/** Process-local green must not outlive a short TTL — Floor/Fleet/send pace fail closed. */
+export const SESSION_HEALTH_TTL_MS = 120_000;
 
 export type ComputerJobKind = "linkedin_send" | "warmup_nav" | "login_assist";
 
@@ -344,6 +352,7 @@ export class ComputerSupervisor {
       viewUrl: null,
       campaignId: opts.campaignId ?? null,
       sessionHealthy: null,
+      sessionProbedAt: null,
     };
     this.computers.set(computerId, rec);
     this.audit(computerId, "ensure", `Seat ${opts.seatId} computer registered`, "system", {
@@ -478,8 +487,24 @@ export class ComputerSupervisor {
     return rec;
   }
 
+  /**
+   * Fail-closed: a probed-true session older than SESSION_HEALTH_TTL_MS becomes null.
+   * Never invents true — only clears stale green so Floor/Fleet cannot paint working from memory.
+   */
+  expireStaleSessionHealth(rec: ComputerRecord, now = Date.now()): ComputerRecord {
+    if (rec.sessionHealthy !== true) return rec;
+    const at = rec.sessionProbedAt ? Date.parse(rec.sessionProbedAt) : NaN;
+    if (!Number.isFinite(at) || now - at > SESSION_HEALTH_TTL_MS) {
+      rec.sessionHealthy = null;
+      // Keep sessionProbedAt so audits can see last probe time; health itself is unverified.
+    }
+    return rec;
+  }
+
   list(workspaceId: string): ComputerRecord[] {
-    return [...this.computers.values()].filter((c) => c.workspaceId === workspaceId);
+    return [...this.computers.values()]
+      .filter((c) => c.workspaceId === workspaceId)
+      .map((c) => this.expireStaleSessionHealth(c));
   }
 
   /** Host Chromiums imported by hydrateFromHost that are not bound to a real seat. */
@@ -488,7 +513,8 @@ export class ComputerSupervisor {
   }
 
   get(computerId: string): ComputerRecord | undefined {
-    return this.computers.get(computerId);
+    const rec = this.computers.get(computerId);
+    return rec ? this.expireStaleSessionHealth(rec) : undefined;
   }
 
   /**
@@ -860,6 +886,7 @@ export class ComputerSupervisor {
     const agent = agentCfg(rec);
     if (!agent) {
       rec.sessionHealthy = null;
+      rec.sessionProbedAt = null;
       rec.updatedAt = isoNow();
       this.audit(computerId, "session_probe", "No agent endpoint — cannot probe", "system");
       return rec;
@@ -867,6 +894,7 @@ export class ComputerSupervisor {
     try {
       const probe = await openBotSessionProbe(agent);
       rec.sessionHealthy = probe.healthy;
+      rec.sessionProbedAt = isoNow();
       if (probe.healthy) {
         rec.lastError = null;
       } else {
@@ -876,6 +904,7 @@ export class ComputerSupervisor {
       this.audit(computerId, "session_probe", probe.detail, "system");
     } catch (err) {
       rec.sessionHealthy = null;
+      rec.sessionProbedAt = isoNow();
       rec.lastError = err instanceof Error ? err.message : "session probe failed";
       rec.updatedAt = isoNow();
       this.audit(
@@ -902,6 +931,7 @@ export class ComputerSupervisor {
     }
     // Always invalidate until probe below (or leave null when no agent endpoint).
     rec.sessionHealthy = null;
+    rec.sessionProbedAt = null;
     rec.updatedAt = isoNow();
     rec.lastAudit = "control_released";
     this.audit(
@@ -930,6 +960,7 @@ export class ComputerSupervisor {
       try {
         const probe = await openBotSessionProbe(agent);
         rec.sessionHealthy = probe.healthy;
+        rec.sessionProbedAt = isoNow();
         probedHealthy = probe.healthy;
         if (probe.healthy) {
           rec.lastError = null;
@@ -944,6 +975,7 @@ export class ComputerSupervisor {
         });
       } catch (err) {
         rec.sessionHealthy = null;
+        rec.sessionProbedAt = isoNow();
         probedHealthy = null;
         this.audit(
           computerId,
@@ -1014,6 +1046,7 @@ export class ComputerSupervisor {
     payload: Record<string, unknown>;
   }): Promise<ComputerJob> {
     const rec = this.require(opts.computerId);
+    this.expireStaleSessionHealth(rec);
     const jobId = makeId("job");
     const job: ComputerJob = {
       jobId,
@@ -1395,7 +1428,7 @@ export class ComputerSupervisor {
   private require(computerId: string): ComputerRecord {
     const rec = this.computers.get(computerId);
     if (!rec) throw new Error("computer-not-found");
-    return rec;
+    return this.expireStaleSessionHealth(rec);
   }
 }
 

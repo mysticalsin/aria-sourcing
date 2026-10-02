@@ -5,6 +5,9 @@
  * resolveDurableComputerId always probes reclaim_healthy_orphan first so Deploy /
  * Add / Attach / Login reuse a probed-healthy host orphan (or a healthy stored id)
  * instead of minting a blank profile that forces LinkedIn login and burns host slots.
+ *
+ * When a new id is required, mint via POST ensure (server makeId) — never client
+ * crypto.randomUUID twins that can race and burn host slots.
  */
 
 export type BootBrowserComputerResult = {
@@ -13,6 +16,25 @@ export type BootBrowserComputerResult = {
   error?: string;
   status?: string;
 };
+
+/** Server-owned id mint — one ensure row per seat, no client UUID race. */
+async function mintComputerIdViaEnsure(seatId: string): Promise<string> {
+  const res = await fetch("/api/fleet/computers", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "ensure", seatId }),
+  });
+  const json = (await res.json().catch(() => null)) as {
+    error?: string;
+    computer?: { computerId?: string };
+  } | null;
+  const id = (json?.computer?.computerId ?? "").trim();
+  if (!res.ok || !id) {
+    throw new Error(json?.error || `ensure mint HTTP ${res.status}`);
+  }
+  return id;
+}
 
 /**
  * Prefer a probed-healthy durable profile before minting.
@@ -26,7 +48,8 @@ export async function resolveDurableComputerId(opts: {
   const seatId = opts.seatId.trim();
   const existing = (opts.existingComputerId ?? "").trim();
   if (!seatId) {
-    return existing || `comp_${globalThis.crypto.randomUUID()}`;
+    if (existing) return existing;
+    throw new Error("seatId required to mint a Browser Computer");
   }
 
   try {
@@ -52,16 +75,16 @@ export async function resolveDurableComputerId(opts: {
         if (existing) return existing;
         throw new Error(json?.error ?? "computer_id persist failed");
       }
-      // Foreign id — mint; never keep another seat's VM.
+      // Foreign id — server mint; never keep another seat's VM.
       if (existing && /ownership-mismatch|orphan-claim-blocked/.test(err)) {
-        return `comp_${globalThis.crypto.randomUUID()}`;
+        return mintComputerIdViaEnsure(seatId);
       }
       // No healthy orphan: keep our unhealthy binding (do not mint a twin that burns a host slot).
       if (existing && /no-healthy-orphan/.test(err)) {
         return existing;
       }
       if (!existing && /no-healthy-orphan|ownership-mismatch|orphan-claim-blocked/.test(err)) {
-        return `comp_${globalThis.crypto.randomUUID()}`;
+        return mintComputerIdViaEnsure(seatId);
       }
     } else {
       const healthy =
@@ -75,11 +98,14 @@ export async function resolveDurableComputerId(opts: {
     if (err instanceof Error && /persist failed|computer_id persist failed/i.test(err.message)) {
       throw err;
     }
+    if (err instanceof Error && /ensure mint/i.test(err.message)) {
+      throw err;
+    }
     /* keep existing or mint below */
   }
 
   if (existing) return existing;
-  return `comp_${globalThis.crypto.randomUUID()}`;
+  return mintComputerIdViaEnsure(seatId);
 }
 
 export async function bootBrowserComputer(opts: {

@@ -437,7 +437,18 @@ function Floor3DSection({
     <div className="space-y-3">
       {office.length > 0 && (
         <p className="text-xs text-muted">
-          {office.length} agents on the floor in 3D.
+          {office.length} seats on the floor
+          {computerHints
+            ? ` · ${
+                office.filter((a) => {
+                  const seat = seats.find((s) => s.id === a.id);
+                  if (!seat || seat.provider !== "LinkedIn Browser Computer") return false;
+                  const hint = resolveComputerHint(seat, computerHints);
+                  return Boolean(hint?.computerId);
+                }).length
+              } with live VM`
+            : ""}
+          {" "}in 3D.
           {notShown > 0 &&
             ` Nearest ${cap} fully animated at this device tier; ${notShown} more not shown here.`}{" "}
           <Link href="/fleet" className="font-semibold text-electric hover:underline">
