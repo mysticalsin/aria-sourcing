@@ -81,7 +81,7 @@ function seat(i: number): AgentSeat {
     warmupStepPerDay: 2,
     warmupStartedAt: new Date().toISOString(),
     minGapMinutes: 5,
-    sendWindow: { startHour: 0, endHour: 23, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
+    sendWindow: { startHour: 0, endHour: 24, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
     sentToday: 0,
     lastSendAt: null,
     health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
