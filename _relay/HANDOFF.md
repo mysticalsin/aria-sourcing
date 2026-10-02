@@ -1,52 +1,49 @@
 ---
 project: MSourcing / ARIA
-shift: 219
+shift: 220
 agent: cursor-cloud
-updated: 2026-10-02T22:50Z
-status: tip-ci-sourcing-fixture-fix-fly-stale
+updated: 2026-10-02T23:13Z
+status: tip-ci-fly-window-fix-fly-stale
 ---
 
-# Handoff — Shift 219
+# Handoff — Shift 220
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `19fbcf9`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip fix just pushed:** `tests/sourcing.mts` Senior Java skill-rich fixtures (clears 80% floor; local 52/0)
-- **Prior tip:** openbot-e2e + openbot-fly-workflow-e2e session probe + Message-sent proof
-- **Agent Reach slice 1:** Jina LinkedIn eyes + PRD shipped (`c5c5c4e`)
-- **Local N-agent wire:** Floor/Campaign Agents fail-closed; never invents `sessionHealthy=true`
-- **Fly live:** still build `21a42e7…`, `agentFrameworks:false`; computers 0 VMs
+- **Tip CI whittle:** sourcing.mts + apify-sourcing Senior Java fixtures green locally; openbot-fly-workflow endHour:24 fix (hour-23 allocateBatch zero-capacity flake)
+- **Agent Reach slice 1:** shipped
+- **Fly live:** build `21a42e7…`, `agentFrameworks:false`; computers 0 VMs; no deploy token
 
 ## Done this shift
 
-1. Diagnosed Quality fail on `ccab908`: `tests/sourcing.mts` GitHub fixtures rejected under Senior Java quality floor → empty accepted → dedupe crash
-2. Retargeted GitHub/Apollo/web fixtures to skill-rich `JAVA_BIO`; local `RESULT sourcing: 52 passed, 0 failed`
-3. Pushed `19fbcf9`
+1. `tests/sourcing.mts` skill-rich JAVA_BIO (52/0)
+2. `tests/apify-sourcing.mts` mapper Senior Java (68/0)
+3. `tests/openbot-fly-workflow-e2e.mts` sendWindow endHour 24 (22/0)
+4. Fly re-probe still stale
 
 ## Blockers
 
-1. No Fly deploy / supervisor production tokens
-2. `sessionHealthy:true` needs human Take→login→Release after tip deploy
-3. Base-wide CI (gitleaks/audit/schema/supply-chain) may remain red — not tip-owned
+1. No Fly deploy token
+2. Operator Take→login→Release for sessionHealthy
+3. Base-wide CI red (gitleaks/audit/schema/supply-chain)
 
 ## Next steps
 
-1. Confirm tip CI Quality green on `19fbcf9`
-2. Owner Fly redeploy tip until `/api/ready` build SHA == tip + `agentFrameworks:true`
-3. Operator Take→login→Release on N desks; prove `sessionHealthy:true` within TTL
-4. Agent Reach slice 2/3 (MCP LinkedIn + interest→booking tracking) after tip Quality green
+1. Confirm tip CI Quality green
+2. Owner Fly redeploy tip
+3. Operator LI login on N desks
+4. Agent Reach slice 2/3 after Quality green
 
-## Decisions made (don't relitigate)
+## Decisions (don't relitigate)
 
-- Never invent `sessionHealthy=true`
-- Agent Reach = eyes (Jina/optional MCP); OpenBot = hands (Connect/Message)
-- `linkedin_send` requires probed-healthy session when `mockSend=false`
-- Free DM does not type subject into body
-- Seed campaign role is Senior Java Developer; fixtures must share role/skill tokens
+- Never invent sessionHealthy=true
+- Agent Reach = eyes; OpenBot = hands
+- linkedin_send requires probed-healthy when mockSend=false
+- Send window is half-open [start,end) — fixtures needing 24h must use endHour 24
 
 ## Watch out
 
-- GitHub mapper leaves `currentTitle` blank — bio must carry required skills for floor
-- E2E mocks must implement `/session-probe` + Message-sent after Send click
-- Do not mark N-agent goal complete until Fly tip SHA + LI healthy verified
+- GitHub mapper blank title → bios need required skills for 80% floor
+- E2E mocks need /session-probe + Message-sent
