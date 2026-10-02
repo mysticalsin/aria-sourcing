@@ -1,47 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 204
+shift: 205
 agent: cursor-cloud
-updated: 2026-10-02T20:35Z
-status: n-agent-stale-health-ttl
+updated: 2026-10-02T20:45Z
+status: n-agent-local-live-prove
 ---
 
-# Handoff — Shift 204
+# Handoff — Shift 205
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Live Fly app:** build `21a42e7…`, `agentFrameworks:false` (tip not deployed)
-- **Live computers host:** `ok`, `computers:0`, `max:5`, desktop/multitab true — needs token for LIVE prove
-- **Goal:** N agents real + floor + FE↔BE — stale-green + mint twin theater closed; **live N healthy desks still unproven**
+- **Local OpenBot:** proved N=3 Chromium VMs → distinct floor suffixes (no invented healthy)
+- **Live Fly app:** still `21a42e7…`, `agentFrameworks:false` — tip not deployed
+- **Goal:** VMs+floor FE↔BE path proven locally; **Fly + LinkedIn-healthy desks still open**
 
 ## Done this shift
 
-1. `sessionProbedAt` + `SESSION_HEALTH_TTL_MS` (120s) — stale `sessionHealthy=true` expires to null on get/list/enqueue
-2. Client mint via server `ensure` (no `crypto.randomUUID` twins)
-3. Go-live `browser_seat_attached` requires durable `computerId`
-4. Campaign Agents badge: `N/M with VM`; Floor copy: seats + live VM count
-5. Suites: computer-supervisor 93, boot 14, go-live 14, floor-fleet-wire 9
+1. Started local `openbot-chromium-supervisor.mjs` (Chrome + `ws` dep)
+2. `LIVE=1 prove-n-agent-floor` → 3 running bots, distinct `…xxxxxxxx`, idle/unverified
+3. `prove-supervisor-floor-live` → ComputerSupervisor ensure/start → N profile dirs → floor map
+4. Evidence: `_relay/evidence/2026-10-02-local-n-agent-supervisor-floor.json` + refreshed n-agent-floor-proof.json
+5. Added root `ws` dependency (supervisor import)
 
 ## Blockers
 
-1. No Fly/supervisor tokens in this cloud env — cannot LIVE=1 prove or redeploy
-2. Operator Take control → LinkedIn login still required for real healthy sessions
+1. No Fly deploy / production COMPUTER_SUPERVISOR_TOKEN in this env
+2. LinkedIn `sessionHealthy:true` still requires human Take control + login/2FA
 
 ## Next steps
 
-1. Owner: deploy tip + provide COMPUTER_SUPERVISOR_TOKEN for LIVE prove
-2. `LIVE=1 N=3 npx tsx scripts/prove-n-agent-floor.mts` against computers host
-3. Per seat: Take → login → Release → floor paints working only when probe fresh within TTL
+1. Owner redeploy tip to Fly app + computers host
+2. Operator: N seats Take→login→Release; confirm floor paints working only when probe fresh (TTL)
+3. Optional: keep local supervisor recipe in README for CI smoke
 
 ## Decisions (don't relitigate)
 
 - Never invent `sessionHealthy=true`
-- Stale process-local green expires (TTL) rather than durable shared store (ponytail)
-- New computer ids mint server-side via ensure
+- Local LIVE prove of isolated VMs is valid evidence for VM isolation + floor wire; LinkedIn health stays human-gated
 
 ## Watch out
 
-- Tests that set `sessionHealthy=true` must also set fresh `sessionProbedAt`
-- TTL is 120s — Floor poll at 5s will show unverified after expiry until next probe/Release
+- Local prove uses `SUPERVISOR_TOKEN=aria-supervisor-dev` — not production
+- `ws` must be installable at repo root for `node scripts/openbot-chromium-supervisor.mjs`

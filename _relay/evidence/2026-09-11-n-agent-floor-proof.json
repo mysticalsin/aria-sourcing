@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-02T20:21:28.463Z",
+  "at": "2026-10-02T20:40:58.728Z",
   "offline": {
     "mode": "offline",
     "n": 3,
@@ -29,7 +29,52 @@
       "comp_prove_n_03_11115555"
     ]
   },
-  "live": null,
+  "live": {
+    "mode": "live",
+    "n": 3,
+    "host": "http://127.0.0.1:18765",
+    "ensured": [
+      {
+        "computerId": "comp_e7efe123-df0f-48b6-ad75-3bbfd2269e02",
+        "botId": "comp_e7efe123-df0f-48b6-ad75-3bbfd2269e02",
+        "status": "running",
+        "viewUrl": "http://127.0.0.1:18765/view/comp_e7efe123-df0f-48b6-ad75-3bbfd2269e02"
+      },
+      {
+        "computerId": "comp_6da2db4e-adf2-469d-9f2e-3fecf88fb2b9",
+        "botId": "comp_6da2db4e-adf2-469d-9f2e-3fecf88fb2b9",
+        "status": "running",
+        "viewUrl": "http://127.0.0.1:18765/view/comp_6da2db4e-adf2-469d-9f2e-3fecf88fb2b9"
+      },
+      {
+        "computerId": "comp_a2fa5133-c844-43ba-9746-885fb1aa9cea",
+        "botId": "comp_a2fa5133-c844-43ba-9746-885fb1aa9cea",
+        "status": "running",
+        "viewUrl": "http://127.0.0.1:18765/view/comp_a2fa5133-c844-43ba-9746-885fb1aa9cea"
+      }
+    ],
+    "rows": [
+      {
+        "id": "seat_live_n_1",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …d2269e02",
+        "suffix": "d2269e02"
+      },
+      {
+        "id": "seat_live_n_2",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …f88fb2b9",
+        "suffix": "f88fb2b9"
+      },
+      {
+        "id": "seat_live_n_3",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …b1aa9cea",
+        "suffix": "b1aa9cea"
+      }
+    ],
+    "stopped": true
+  },
   "ok": true,
   "note": "sessionHealthy remains human-gated (Take control + LinkedIn login/2FA)"
 }

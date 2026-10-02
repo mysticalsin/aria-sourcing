@@ -1144,3 +1144,11 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** sessionProbedAt + 120s TTL expire; mint via ensure; go-live requires computerId.
 **Status:** fixed (2ece420)
 
+## 2026-10-02 — Local LIVE prove: N=3 Chromium → floor (no invent healthy)
+**Severity:** test-gap
+**File:** scripts/prove-n-agent-floor.mts; scripts/prove-supervisor-floor-live.mts
+**Issue:** Goal required N isolated VMs visible on floor; Fly tokens absent so production host unproven.
+**Repro/evidence:** Local supervisor :18765; LIVE prove + supervisor-floor evidence JSON show 3 distinct profile dirs and floor suffixes; sessionHealthy stays null/unverified.
+**Suggested fix:** Owner Fly redeploy + LinkedIn login for healthy green; local prove closes VM isolation gap.
+**Status:** fixed (local evidence); Fly/LinkedIn healthy still open
+
