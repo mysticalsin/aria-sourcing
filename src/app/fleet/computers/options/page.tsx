@@ -4,45 +4,62 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowLeft, Shield, Monitor, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { useActions, useSettings } from "@/lib/store";
 import {
   BROWSER_AGENT_PERMISSION_MODES,
   LINKEDIN_DEFAULT_ALLOWED_HOSTS,
-  loadBrowserAgentPermissions,
   normalizeAllowedHost,
   permissionModeHint,
   permissionModeLabel,
   saveBrowserAgentPermissions,
   type BrowserAgentPermissionMode,
-  type BrowserAgentPermissions,
 } from "@/lib/browser-agent-permissions";
+import { defaultFleetSettings } from "@/lib/fleet";
 
 /**
  * Claude-in-Chrome options parity
  * (chrome-extension://fcoeoabgfenejglbffodgkkbkcdhcgfn/options.html).
- * Permission mode + LinkedIn host allowlist for Browser Computer seats.
+ * Mode is durable on FleetSettings (BE gates linkedin_send when Manual).
  */
 export default function BrowserComputerOptionsPage() {
-  const [perms, setPerms] = React.useState<BrowserAgentPermissions | null>(null);
+  const settings = useSettings();
+  const actions = useActions();
+  const fleet = settings.fleet ?? defaultFleetSettings();
+  const mode: BrowserAgentPermissionMode =
+    fleet.browserAgentPermissionMode === "manual" || fleet.browserAgentPermissionMode === "skip"
+      ? fleet.browserAgentPermissionMode
+      : "auto";
+
+  const [allowedHosts, setAllowedHosts] = React.useState<string[]>([
+    ...LINKEDIN_DEFAULT_ALLOWED_HOSTS,
+  ]);
+  const [pauseOnChallenge, setPauseOnChallenge] = React.useState(true);
   const [hostDraft, setHostDraft] = React.useState("");
   const [savedFlash, setSavedFlash] = React.useState(false);
 
   React.useEffect(() => {
-    setPerms(loadBrowserAgentPermissions());
+    // Host allowlist stays browser-local (navigation UX); mode is workspace-durable.
+    const cached = saveBrowserAgentPermissions({
+      mode,
+      allowedHosts,
+      pauseOnChallenge,
+    });
+    setAllowedHosts(cached.allowedHosts);
+    setPauseOnChallenge(cached.pauseOnChallenge);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate once from durable mode
   }, []);
 
-  function persist(next: Partial<BrowserAgentPermissions> & { mode: BrowserAgentPermissionMode }) {
-    const saved = saveBrowserAgentPermissions(next);
-    setPerms(saved);
+  function flash() {
     setSavedFlash(true);
     window.setTimeout(() => setSavedFlash(false), 1600);
   }
 
-  if (!perms) {
-    return (
-      <main className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#0b1220_0%,_#06080f_55%,_#05070c_100%)] px-4 py-10 text-slate-100">
-        <p className="mx-auto max-w-2xl text-sm text-slate-400">Loading permissions…</p>
-      </main>
-    );
+  function setMode(next: BrowserAgentPermissionMode) {
+    actions.updateSettings({
+      fleet: { ...fleet, browserAgentPermissionMode: next },
+    });
+    saveBrowserAgentPermissions({ mode: next, allowedHosts, pauseOnChallenge });
+    flash();
   }
 
   return (
@@ -58,9 +75,8 @@ export default function BrowserComputerOptionsPage() {
               Permissions
             </h1>
             <p className="mt-2 max-w-prose text-sm leading-relaxed text-slate-400">
-              Same idea as Claude’s Chrome extension options: choose how Aria may act on LinkedIn
-              seats you already own, and which hosts the bot may open. Login/CAPTCHA still always
-              pause for Take control — we never invent a healthy session.
+              Action approval is saved on the workspace fleet settings and enforced when Aria queues
+              a LinkedIn Browser Computer send. Login/CAPTCHA still always pause for Take control.
             </p>
           </div>
           <Link
@@ -74,7 +90,7 @@ export default function BrowserComputerOptionsPage() {
 
         {savedFlash ? (
           <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-            Saved on this browser.
+            Saved — Manual mode is enforced on the server for linkedin_send.
           </p>
         ) : null}
 
@@ -84,22 +100,22 @@ export default function BrowserComputerOptionsPage() {
             Matches Claude in Chrome’s Manually approve / Automatically approve / Skip approvals.
           </p>
           <div className="mt-4 space-y-2">
-            {BROWSER_AGENT_PERMISSION_MODES.map((mode) => {
-              const selected = perms.mode === mode;
+            {BROWSER_AGENT_PERMISSION_MODES.map((m) => {
+              const selected = mode === m;
               return (
                 <button
-                  key={mode}
+                  key={m}
                   type="button"
-                  onClick={() => persist({ ...perms, mode })}
+                  onClick={() => setMode(m)}
                   className={`flex w-full flex-col rounded-xl border px-4 py-3 text-left transition ${
                     selected
                       ? "border-cyan-400/50 bg-cyan-400/10"
                       : "border-white/10 bg-black/20 hover:border-white/20"
                   }`}
                 >
-                  <span className="text-sm font-semibold text-white">{permissionModeLabel(mode)}</span>
+                  <span className="text-sm font-semibold text-white">{permissionModeLabel(m)}</span>
                   <span className="mt-1 text-xs leading-relaxed text-slate-400">
-                    {permissionModeHint(mode)}
+                    {permissionModeHint(m)}
                   </span>
                 </button>
               );
@@ -110,10 +126,10 @@ export default function BrowserComputerOptionsPage() {
         <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
           <h2 className="text-sm font-semibold text-white">Approved sites</h2>
           <p className="mt-1 text-xs text-slate-400">
-            Bot navigation stays on these hosts. Defaults cover LinkedIn member + Recruiter.
+            Hosts the live desk may open while you watch. Defaults cover LinkedIn member + Recruiter.
           </p>
           <ul className="mt-3 space-y-2">
-            {perms.allowedHosts.map((host) => (
+            {allowedHosts.map((host) => (
               <li
                 key={host}
                 className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm"
@@ -124,12 +140,13 @@ export default function BrowserComputerOptionsPage() {
                   className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-rose-300"
                   aria-label={`Remove ${host}`}
                   onClick={() => {
-                    const next = perms.allowedHosts.filter((h) => h !== host);
-                    persist({
-                      ...perms,
-                      allowedHosts:
-                        next.length > 0 ? next : [...LINKEDIN_DEFAULT_ALLOWED_HOSTS],
-                    });
+                    const next =
+                      allowedHosts.filter((h) => h !== host).length > 0
+                        ? allowedHosts.filter((h) => h !== host)
+                        : [...LINKEDIN_DEFAULT_ALLOWED_HOSTS];
+                    setAllowedHosts(next);
+                    saveBrowserAgentPermissions({ mode, allowedHosts: next, pauseOnChallenge });
+                    flash();
                   }}
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -143,12 +160,15 @@ export default function BrowserComputerOptionsPage() {
               ev.preventDefault();
               const host = normalizeAllowedHost(hostDraft);
               if (!host) return;
-              if (perms.allowedHosts.includes(host)) {
+              if (allowedHosts.includes(host)) {
                 setHostDraft("");
                 return;
               }
-              persist({ ...perms, allowedHosts: [...perms.allowedHosts, host] });
+              const next = [...allowedHosts, host];
+              setAllowedHosts(next);
+              saveBrowserAgentPermissions({ mode, allowedHosts: next, pauseOnChallenge });
               setHostDraft("");
+              flash();
             }}
           >
             <input
@@ -169,8 +189,16 @@ export default function BrowserComputerOptionsPage() {
             <input
               type="checkbox"
               className="mt-1"
-              checked={perms.pauseOnChallenge}
-              onChange={(e) => persist({ ...perms, pauseOnChallenge: e.target.checked })}
+              checked={pauseOnChallenge}
+              onChange={(e) => {
+                setPauseOnChallenge(e.target.checked);
+                saveBrowserAgentPermissions({
+                  mode,
+                  allowedHosts,
+                  pauseOnChallenge: e.target.checked,
+                });
+                flash();
+              }}
             />
             <span>
               <span className="block text-sm font-semibold text-white">
@@ -193,7 +221,7 @@ export default function BrowserComputerOptionsPage() {
                 <li>Open a seat’s live viewport (Fleet → Computers → Observe).</li>
                 <li>Watch the agent work; press <kbd className="text-slate-200">T</kbd> to Take control.</li>
                 <li>Finish LinkedIn login / CAPTCHA yourself; press Esc to Get out · Release.</li>
-                <li>Approve outreach in Aria — Automatic mode types like a careful human on that seat.</li>
+                <li>Approve outreach — Automatic mode types like a careful human on that seat.</li>
               </ol>
               <Link
                 href="/fleet"

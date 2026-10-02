@@ -1,0 +1,172 @@
+/* ==========================================================================
+   tests/floor-fleet-wire.mts
+   Prove FE floor paints N agents from the same /api/fleet/computers shape
+   Fleet uses — no invented sessionHealthy working.
+   ========================================================================== */
+
+import { seatsToOfficeAgents } from "../src/lib/floor3d";
+import { HOST_ORPHAN_SEAT_ID } from "../src/lib/computer-constants";
+import { buildSeedState } from "../src/lib/seed";
+import type { AgentSeat } from "../src/lib/types";
+import { readFileSync } from "node:fs";
+
+let pass = 0;
+let fail = 0;
+function ok(name: string, cond: boolean) {
+  if (cond) pass++;
+  else {
+    fail++;
+    console.log("FAIL:", name);
+  }
+}
+
+type ApiComputer = {
+  computerId: string;
+  seatId: string;
+  status: string;
+  control?: "bot" | "human";
+  sessionHealthy?: boolean | null;
+};
+
+/** Same mapping floor/page.tsx uses after GET /api/fleet/computers. */
+function computerHintsFromFleetApi(rows: ApiComputer[]) {
+  const map = new Map<
+    string,
+    {
+      status: string;
+      sessionHealthy?: boolean | null;
+      control?: "bot" | "human";
+      computerId?: string;
+      seatId?: string;
+    }
+  >();
+  for (const c of rows) {
+    if (!c.seatId || c.seatId === HOST_ORPHAN_SEAT_ID) continue;
+    const hint = {
+      status: c.status,
+      sessionHealthy: c.sessionHealthy,
+      control: c.control ?? "bot",
+      computerId: c.computerId,
+      seatId: c.seatId,
+    };
+    map.set(c.seatId, hint);
+    map.set(c.computerId, hint);
+  }
+  return map;
+}
+
+const s = buildSeedState();
+const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer") ?? s.seats[0];
+
+{
+  const seats: AgentSeat[] = [
+    {
+      ...template,
+      id: "seat_a",
+      name: "A",
+      computerId: "comp_aaaa1111",
+      provider: "LinkedIn Browser Computer",
+      sentToday: 0,
+    },
+    {
+      ...template,
+      id: "seat_b",
+      name: "B",
+      computerId: "comp_bbbb2222",
+      provider: "LinkedIn Browser Computer",
+      sentToday: 0,
+    },
+    {
+      ...template,
+      id: "seat_c",
+      name: "C",
+      computerId: "comp_cccc3333",
+      provider: "LinkedIn Browser Computer",
+      sentToday: 0,
+    },
+  ];
+  const apiRows: ApiComputer[] = [
+    {
+      computerId: "comp_aaaa1111",
+      seatId: "seat_a",
+      status: "ready",
+      sessionHealthy: true,
+      control: "bot",
+    },
+    {
+      computerId: "comp_bbbb2222",
+      seatId: "seat_b",
+      status: "ready",
+      sessionHealthy: null,
+      control: "bot",
+    },
+    {
+      computerId: "comp_cccc3333",
+      seatId: "seat_c",
+      status: "ready",
+      sessionHealthy: false,
+      control: "bot",
+    },
+    {
+      computerId: "comp_orphan",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      status: "ready",
+      sessionHealthy: true,
+      control: "bot",
+    },
+  ];
+  const hints = computerHintsFromFleetApi(apiRows);
+  const agents = seatsToOfficeAgents(seats, s, hints);
+
+  ok("N seats → N floor agents", agents.length === 3);
+  ok(
+    "only probed-healthy paints working",
+    agents.find((a) => a.id === "seat_a")?.status === "working" &&
+      agents.find((a) => a.id === "seat_b")?.status === "idle" &&
+      agents.find((a) => a.id === "seat_c")?.status === "error",
+  );
+  ok(
+    "orphan healthy VM does not paint any seat working",
+    !agents.some((a) => a.id !== "seat_a" && a.status === "working"),
+  );
+  const suffixes = agents.map((a) => /…([0-9a-zA-Z_-]{4,})/.exec(a.subtitle || "")?.[1] ?? "");
+  ok(
+    "N distinct VM suffixes from fleet computerIds",
+    new Set(suffixes.filter(Boolean)).size === 3,
+  );
+  ok(
+    "healthy seat subtitle carries its own computer suffix",
+    (agents.find((a) => a.id === "seat_a")?.subtitle || "").includes("aaaa1111"),
+  );
+}
+
+{
+  const floorPage = readFileSync("src/app/floor/page.tsx", "utf8");
+  ok(
+    "floor polls /api/fleet/computers",
+    floorPage.includes('fetch("/api/fleet/computers"'),
+  );
+  ok(
+    "floor skips __orphan__ when building hints",
+    floorPage.includes('c.seatId !== "__orphan__"'),
+  );
+  ok(
+    "floor never invents sessionHealthy true",
+    !/sessionHealthy:\s*true/.test(floorPage),
+  );
+}
+
+{
+  const route = readFileSync("src/app/api/fleet/computers/route.ts", "utf8");
+  const ensureIdx = route.indexOf('case "ensure"');
+  const ensureBlock = ensureIdx >= 0 ? route.slice(ensureIdx, ensureIdx + 1200) : "";
+  ok(
+    "ensure persists agent_seats.computer_id",
+    ensureBlock.includes('.from("agent_seats")') &&
+      ensureBlock.includes("computer_id: rec.computerId") &&
+      ensureBlock.includes("ensure computer_id persist failed"),
+  );
+}
+
+console.log(`floor-fleet-wire: ${pass} passed, ${fail} failed`);
+if (fail > 0) process.exit(1);

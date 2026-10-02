@@ -624,6 +624,29 @@ try {
 
 
 
+
+  // Manual Claude-in-Chrome mode must BE-refuse linkedin_send (not localStorage theater).
+  {
+    const manual = new ComputerSupervisor();
+    const seat = manual.ensureComputer({ workspaceId: "ws", seatId: "seat-manual" });
+    process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+    await manual.start(seat.computerId);
+    const rec = manual.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.sessionHealthy = true;
+    const job = await manual.enqueueJob({
+      computerId: seat.computerId,
+      kind: "linkedin_send",
+      payload: { permissionMode: "manual", body: "hi", profileUrl: "https://www.linkedin.com/in/x" },
+    });
+    ok("manual permission mode refuses linkedin_send", job.status === "refused");
+    ok("manual permission detail is manual_permission_mode", job.detail === "manual_permission_mode");
+    ok(
+      "manual permission raises help_requested",
+      manual.get(seat.computerId)?.status === "help_requested",
+    );
+  }
+
   // takeControl must invalidate healthy even when previously probed true.
   {
     const seat = supervisor.ensureComputer({ workspaceId: "ws", seatId: "seat-takeover-health" });

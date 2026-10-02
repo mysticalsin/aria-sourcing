@@ -13,13 +13,12 @@ import {
 } from "@/lib/fluid-takeover";
 import {
   BROWSER_AGENT_PERMISSION_MODES,
-  loadBrowserAgentPermissions,
   permissionModeHint,
   permissionModeLabel,
-  saveBrowserAgentPermissions,
   type BrowserAgentPermissionMode,
-  type BrowserAgentPermissions,
 } from "@/lib/browser-agent-permissions";
+import { useActions, useSettings } from "@/lib/store";
+import { defaultFleetSettings } from "@/lib/fleet";
 
 type ComputerState = {
   computerId: string;
@@ -45,11 +44,13 @@ export default function FleetComputerViewportPage() {
   const [audits, setAudits] = React.useState<
     Array<{ at: string; action: string; detail: string; actor: string }>
   >([]);
-  const [perms, setPerms] = React.useState<BrowserAgentPermissions | null>(null);
-
-  React.useEffect(() => {
-    setPerms(loadBrowserAgentPermissions());
-  }, []);
+  const settings = useSettings();
+  const actions = useActions();
+  const fleet = settings.fleet ?? defaultFleetSettings();
+  const permissionMode: BrowserAgentPermissionMode =
+    fleet.browserAgentPermissionMode === "manual" || fleet.browserAgentPermissionMode === "skip"
+      ? fleet.browserAgentPermissionMode
+      : "auto";
 
   const refresh = React.useCallback(async () => {
     try {
@@ -276,17 +277,15 @@ export default function FleetComputerViewportPage() {
           </p>
           <div className="mt-3 space-y-1.5">
             {BROWSER_AGENT_PERMISSION_MODES.map((mode) => {
-              const selected = (perms?.mode ?? "auto") === mode;
+              const selected = permissionMode === mode;
               return (
                 <button
                   key={mode}
                   type="button"
                   onClick={() => {
-                    const saved = saveBrowserAgentPermissions({
-                      ...(perms ?? loadBrowserAgentPermissions()),
-                      mode: mode as BrowserAgentPermissionMode,
+                    actions.updateSettings({
+                      fleet: { ...fleet, browserAgentPermissionMode: mode },
                     });
-                    setPerms(saved);
                   }}
                   className={`w-full rounded-lg border px-2.5 py-2 text-left text-xs transition ${
                     selected
@@ -299,11 +298,9 @@ export default function FleetComputerViewportPage() {
               );
             })}
           </div>
-          {perms ? (
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-              {permissionModeHint(perms.mode)}
-            </p>
-          ) : null}
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            {permissionModeHint(permissionMode)}
+          </p>
           <div className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-slate-400">
             <p>
               <kbd className="text-slate-200">T</kbd> take · <kbd className="text-slate-200">Esc</kbd>{" "}

@@ -7089,6 +7089,7 @@ function buildLiveEmptyState(): HermesState {
         recontactWindowDays: 90, bounceRatePauseThreshold: 0.05, complaintRatePauseThreshold: 0.001,
         enforceBusinessHours: true, jitter: true, globalDailyCap: null, maxAgents: 300,
         deliveryMode: "automatic",
+        browserAgentPermissionMode: "auto",
       },
       confidentialityMode: true,
       defaultLanguage: "en",

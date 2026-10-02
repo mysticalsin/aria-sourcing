@@ -31,6 +31,7 @@ export function defaultFleetSettings(): FleetSettings {
     globalDailyCap: null,
     maxAgents: 300,
     deliveryMode: "automatic",
+    browserAgentPermissionMode: "auto",
   };
 }
 

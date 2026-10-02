@@ -14,7 +14,7 @@ Upstream project: [CopilotKit/openbot](https://github.com/CopilotKit/openbot)
 
 ## Contract
 
-- **1 seat = 1 Chromium computer** (persistent `profileVolume`)
+- **1 seat = 1 Chromium computer** (persistent OpenBot profile dir `PROFILE_ROOT/<botId>`)
 - **decide → audit → act**; bot actions **refuse** while `control === "human"`
 - Login/2FA raises `help_requested` — operator opens Observe / Take control
 - Contact permission is **never** decided here — Postgres `claim_contact` is sole authority

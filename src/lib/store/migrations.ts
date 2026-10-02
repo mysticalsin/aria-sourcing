@@ -162,6 +162,11 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
         ...(parsed.settings.fleet ?? {}),
         deliveryMode:
           parsed.settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic",
+        browserAgentPermissionMode:
+          parsed.settings.fleet?.browserAgentPermissionMode === "manual" ||
+          parsed.settings.fleet?.browserAgentPermissionMode === "skip"
+            ? parsed.settings.fleet.browserAgentPermissionMode
+            : "auto",
       },
     },
     seats: (() => {
@@ -197,6 +202,11 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
         ...defs.fleet,
         ...(settings.fleet ?? {}),
         deliveryMode: settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic",
+        browserAgentPermissionMode:
+          settings.fleet?.browserAgentPermissionMode === "manual" ||
+          settings.fleet?.browserAgentPermissionMode === "skip"
+            ? settings.fleet.browserAgentPermissionMode
+            : "auto",
       },
     },
   };

@@ -1175,6 +1175,12 @@ export interface FleetSettings {
    * `manual`: assisted-manual — human copies/pastes in LinkedIn, then Confirms.
    */
   deliveryMode: LinkedInDeliveryMode;
+  /**
+   * Claude-in-Chrome–style Browser Computer action approval.
+   * `manual` refuses bot linkedin_send until operator Takes control (BE-gated).
+   * `auto` / `skip` run after Outreach Approve with sessionHealthy fail-closed.
+   */
+  browserAgentPermissionMode?: "manual" | "auto" | "skip";
 }
 
 export interface AllocationAssignment {

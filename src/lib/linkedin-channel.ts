@@ -269,6 +269,12 @@ const browserComputerAdapter: LinkedInAdapter = {
           body: req.body,
           attemptId: req.attemptId,
           preferConnect: req.preferConnect !== false,
+          // Durable FleetSettings mode — Manual is BE-gated (not localStorage theater).
+          permissionMode:
+            req.fleetSettings?.browserAgentPermissionMode === "manual" ||
+            req.fleetSettings?.browserAgentPermissionMode === "skip"
+              ? req.fleetSettings.browserAgentPermissionMode
+              : "auto",
         },
       });
 

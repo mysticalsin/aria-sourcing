@@ -103,5 +103,18 @@ ok(
   ),
 );
 
+
+const supervisorSrc = readFileSync("src/lib/computer-supervisor.ts", "utf8");
+ok(
+  "computer supervisor BE-gates manual permissionMode",
+  supervisorSrc.includes("manual_permission_mode") &&
+    supervisorSrc.includes('permissionMode === "manual"'),
+);
+const channelSrc = readFileSync("src/lib/linkedin-channel.ts", "utf8");
+ok(
+  "linkedin-channel passes browserAgentPermissionMode into enqueue payload",
+  channelSrc.includes("browserAgentPermissionMode") && channelSrc.includes("permissionMode"),
+);
+
 console.log(`browser-agent-permissions: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

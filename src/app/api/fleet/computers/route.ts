@@ -315,6 +315,23 @@ export async function POST(req: NextRequest) {
           computerId,
           campaignId: body.campaignId,
         });
+        // Persist seat↔computer so cold GET / floor poll cannot orphan a live bind.
+        if (
+          supabase &&
+          workspaceId &&
+          workspaceId !== "__local__" &&
+          rec?.computerId &&
+          seatId !== HOST_ORPHAN_SEAT_ID
+        ) {
+          const { error } = await supabase
+            .from("agent_seats")
+            .update({ computer_id: rec.computerId })
+            .eq("id", seatId)
+            .eq("workspace_id", workspaceId);
+          if (error) {
+            throw new Error(`ensure computer_id persist failed: ${error.message}`);
+          }
+        }
         break;
       }
       case "start":

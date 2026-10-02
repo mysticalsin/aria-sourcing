@@ -51,7 +51,6 @@ export type ComputerRecord = {
   control: ComputerControl;
   lastAudit: string | null;
   lastError: string | null;
-  profileVolume: string;
   updatedAt: string;
   botId?: string;
   remoteUrl?: string | null;
@@ -339,7 +338,6 @@ export class ComputerSupervisor {
       control: "bot",
       lastAudit: null,
       lastError: null,
-      profileVolume: `profiles/${opts.workspaceId}/${opts.seatId}`,
       updatedAt: isoNow(),
       botId: toOpenBotBotId(computerId),
       remoteUrl: null,
@@ -405,7 +403,6 @@ export class ComputerSupervisor {
       ) {
         other.priorSeatId = opts.seatId;
         other.seatId = HOST_ORPHAN_SEAT_ID;
-        other.profileVolume = `profiles/${opts.workspaceId}/${HOST_ORPHAN_SEAT_ID}`;
         other.updatedAt = isoNow();
         this.audit(
           other.computerId,
@@ -417,7 +414,6 @@ export class ComputerSupervisor {
     }
     rec.seatId = opts.seatId;
     rec.priorSeatId = null;
-    rec.profileVolume = `profiles/${opts.workspaceId}/${opts.seatId}`;
     if (opts.campaignId) rec.campaignId = opts.campaignId;
     rec.updatedAt = isoNow();
     this.audit(
@@ -449,7 +445,6 @@ export class ComputerSupervisor {
     const restoreComputerId = (opts?.restoreComputerId ?? "").trim();
     rec.priorSeatId = rec.seatId;
     rec.seatId = HOST_ORPHAN_SEAT_ID;
-    rec.profileVolume = `profiles/${workspaceId}/${HOST_ORPHAN_SEAT_ID}`;
     rec.updatedAt = isoNow();
     this.audit(
       computerId,
@@ -471,7 +466,6 @@ export class ComputerSupervisor {
       ) {
         prev.seatId = restoreSeatId;
         prev.priorSeatId = null;
-        prev.profileVolume = `profiles/${workspaceId}/${restoreSeatId}`;
         prev.updatedAt = isoNow();
         this.audit(
           restoreComputerId,
@@ -1046,6 +1040,29 @@ export class ComputerSupervisor {
     // Session gate: LinkedIn sends require a probed-healthy session (align with go-live).
     // Mock send may proceed without a probe so unit tests can exercise the act path.
     if (opts.kind === "linkedin_send") {
+      const permissionMode =
+        typeof opts.payload.permissionMode === "string"
+          ? opts.payload.permissionMode
+          : "auto";
+      // Claude-in-Chrome Manual: BE refuses bot send — operator must Take control.
+      if (permissionMode === "manual") {
+        job.status = "refused";
+        job.detail = "manual_permission_mode";
+        job.finishedAt = isoNow();
+        this.jobs.set(jobId, job);
+        this.requestHelp(
+          opts.computerId,
+          "Manual permission mode — Take control to send on LinkedIn, then Release.",
+        );
+        this.audit(
+          opts.computerId,
+          "act_refused",
+          "linkedin_send refused — manual_permission_mode",
+          "bot",
+          { jobId },
+        );
+        return job;
+      }
       const needsSession =
         rec.status === "help_requested" ||
         (!supervisorMockSend() && rec.sessionHealthy !== true);

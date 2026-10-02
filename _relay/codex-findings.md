@@ -1137,3 +1137,11 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** Require caller seatId match for all mutating actions; track priorSeatId on detach; auto-reclaim only never-bound or same-prior orphans.
 **Status:** fixed (246cdd9)
 
+## 2026-10-02 — Manual permissions were localStorage theater; profileVolume unused
+**Severity:** spec-mismatch
+**File:** src/lib/browser-agent-permissions.ts; src/lib/computer-supervisor.ts
+**Issue:** Claude Manual mode never reached enqueueJob; profileVolume was assigned and never used (real isolate is PROFILE_ROOT/botId). ensure did not persist agent_seats.computer_id.
+**Repro/evidence:** Manual mode only wrote localStorage; linkedin_send still ran on Auto path; ensure left cold GET orphans.
+**Suggested fix:** FleetSettings.browserAgentPermissionMode BE gate; delete profileVolume; persist ensure.
+**Status:** fixed (pending commit)
+
