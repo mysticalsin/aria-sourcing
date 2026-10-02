@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
     try {
       await bindWorkspaceSupervisor(null);
       await defaultComputerSupervisor.hydrateFromHost("__local__");
+      await defaultComputerSupervisor.refreshSessionHealthForList("__local__");
       const computers = defaultComputerSupervisor
         .list("__local__")
         .map((rec) => enrichComputer(rec));
@@ -161,6 +162,17 @@ export async function GET(req: NextRequest) {
       if (seenIds.has(orphan.computerId)) continue;
       computers.push(orphan);
       seenIds.add(orphan.computerId);
+    }
+
+    // Refresh LinkedIn health for Floor/Fleet polls — fail closed, never invent true.
+    await defaultComputerSupervisor.refreshSessionHealthForList(String(wid));
+    // Re-read after probes (TTL + probe results).
+    const refreshed = new Map(
+      defaultComputerSupervisor.list(String(wid)).map((c) => [c.computerId, c]),
+    );
+    for (let i = 0; i < computers.length; i++) {
+      const next = refreshed.get(computers[i]!.computerId);
+      if (next) computers[i] = next;
     }
 
     const enriched = computers.map((rec) => {

@@ -847,5 +847,49 @@ try {
     ok("releaseToOrphan restores prior seat binding", roll.get("comp_wall")?.seatId === "seat-a");
   }
 
+
+  // GET refresh re-probes null health; never invents true without probe.healthy.
+  {
+    const refresh = new ComputerSupervisor();
+    const seat = refresh.ensureComputer({ workspaceId: "ws", seatId: "seat-refresh" });
+    const rec = refresh.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.sessionHealthy = null;
+    rec.remoteUrl = "http://openbot.test/view/seat-refresh";
+    process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok";
+    process.env.OPENBOT_COMPUTER_TOKEN = "comp_tok";
+    const prevFetch = globalThis.fetch;
+    let probed = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("session-probe")) {
+        probed++;
+        return new Response(JSON.stringify({ healthy: false, detail: "auth wall" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ computers: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    const listed = await refresh.refreshSessionHealthForList("ws");
+    globalThis.fetch = prevFetch;
+    ok("refreshSessionHealthForList probed", probed >= 1);
+    ok(
+      "refresh never invents healthy true",
+      listed.every((c) => c.sessionHealthy !== true),
+    );
+    ok(
+      "refresh records probed-false",
+      refresh.get(seat.computerId)?.sessionHealthy === false,
+    );
+    delete process.env.COMPUTER_SUPERVISOR_URL;
+    delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    delete process.env.OPENBOT_COMPUTER_TOKEN;
+  }
+
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

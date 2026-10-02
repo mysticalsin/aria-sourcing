@@ -179,5 +179,20 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
   );
 }
 
+
+{
+  const route = readFileSync("src/app/api/fleet/computers/route.ts", "utf8");
+  ok(
+    "GET refreshes session health for floor polls",
+    route.includes("refreshSessionHealthForList"),
+  );
+  const supervisor = readFileSync("src/lib/computer-supervisor.ts", "utf8");
+  ok(
+    "refreshSessionHealthForList never invents true",
+    supervisor.includes("Never invents healthy=true") &&
+      supervisor.includes("refreshSessionHealthForList"),
+  );
+}
+
 console.log(`floor-fleet-wire: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

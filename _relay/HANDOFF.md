@@ -1,43 +1,42 @@
 ---
 project: MSourcing / ARIA
-shift: 208
+shift: 209
 agent: cursor-cloud
-updated: 2026-10-02T21:10Z
-status: n-agent-3d-ui-prove
+updated: 2026-10-02T21:20Z
+status: n-agent-get-session-refresh
 ---
 
-# Handoff — Shift 208
+# Handoff — Shift 209
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **3D UI prove:** canvas + `3 seats · 3 with live VM` against Next+OpenBot
-- **Audit:** `_relay/evidence/2026-10-02-n-agent-goal-audit.md` — local path met; Fly + LI healthy open
-- **Goal:** still open (production + LinkedIn login)
+- **GET refresh:** Floor/Fleet polls re-probe ready seats — local evidence `sessionHealthy:false` + probedAt (auth wall), never invents true
+- **Fly / LI healthy green:** still open (no deploy token)
 
 ## Done this shift
 
-1. `scripts/prove-floor-3d-ui.mts` + evidence/screenshot
-2. Honest requirement audit table committed
+1. `refreshSessionHealthForList` on ComputerSupervisor + GET `/api/fleet/computers`
+2. Tests: computer-supervisor 96; floor-fleet-wire 12
+3. Live local GET proved probed-false for N seats after start
 
 ## Blockers
 
-1. No Fly deploy token in this env
-2. LinkedIn `sessionHealthy:true` needs human Take→login→Release
+1. No Fly deploy / supervisor production tokens
+2. `sessionHealthy:true` needs human LinkedIn login
 
 ## Next steps
 
-1. Owner: deploy tip to Fly app (+ computers host if needed)
-2. Operator: N seats Take control → LinkedIn login → Release
-3. Re-run floor UI against production; confirm working only when probe fresh (TTL)
+1. Owner Fly redeploy tip
+2. Operator Take→login→Release; Floor poll should paint working when probe returns true within TTL
 
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Local LIVE proves count for VM isolation + FE↔BE; production LinkedIn health is separate gate
+- GET may re-probe null/stale seats; orphans + human-held skipped
 
 ## Watch out
 
-- Host max=5 — stop leftover prove VMs before N=3 starts
-- Seat names must not collide with "3D floor" toggle in Playwright
+- GET latency grows with N probes (capped at 5)
+- Orphans stay null until reclaim+probe

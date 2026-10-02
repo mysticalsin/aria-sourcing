@@ -518,6 +518,28 @@ export class ComputerSupervisor {
   }
 
   /**
+   * Opportunistic LinkedIn probes for Floor/Fleet GET freshness.
+   * Re-probes ready/busy bot-held seats when health is null or TTL-stale.
+   * Never invents healthy=true — only openBotSessionProbe can set true.
+   */
+  async refreshSessionHealthForList(
+    workspaceId: string,
+    opts?: { limit?: number },
+  ): Promise<ComputerRecord[]> {
+    const limit = Math.max(1, Math.min(opts?.limit ?? 5, 10));
+    const candidates = this.list(workspaceId).filter((c) => {
+      if (c.seatId === HOST_ORPHAN_SEAT_ID) return false;
+      if (c.control === "human") return false;
+      if (c.status !== "ready" && c.status !== "busy") return false;
+      if (c.sessionHealthy === true) return false; // list() already TTL-expired stale true→null
+      return true;
+    });
+    const batch = candidates.slice(0, limit);
+    await Promise.allSettled(batch.map((c) => this.probeSession(c.computerId)));
+    return this.list(workspaceId);
+  }
+
+  /**
    * Reconcile in-memory rows with live OpenBot host state after cold start.
    * Without this, ensureComputer leaves status=stopped even when Chromiums are up,
    * so Fleet/Floor look empty while Fly still has VMs.
