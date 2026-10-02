@@ -1,0 +1,28 @@
+{
+  "at": "2026-10-02T21:23:17.498Z",
+  "mode": "healthy-floor-path-unit",
+  "agents": [
+    {
+      "id": "seat_healthy_1",
+      "status": "working",
+      "subtitle": "LinkedIn session healthy · …_1aabbcc"
+    },
+    {
+      "id": "seat_healthy_2",
+      "status": "working",
+      "subtitle": "LinkedIn session healthy · …_2aabbcc"
+    },
+    {
+      "id": "seat_healthy_3",
+      "status": "working",
+      "subtitle": "LinkedIn session healthy · …_3aabbcc"
+    }
+  ],
+  "labels": [
+    "LinkedIn session healthy · …_1aabbcc",
+    "LinkedIn session healthy · …_2aabbcc",
+    "LinkedIn session healthy · …_3aabbcc"
+  ],
+  "ok": true,
+  "note": "When probe returns healthy=true, floor paints working + VM suffixes (no runtime invent)"
+}
