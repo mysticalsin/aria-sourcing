@@ -126,6 +126,8 @@ const session = {
   from: () => query,
 };
 
+// Tip sourcing-agent route imports orchestrator → server-only. Mock before route load.
+mock.module("server-only", { namedExports: {} });
 mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   namedExports: {
     DEMO_COOKIE_NAME: "aria_demo",
@@ -135,7 +137,10 @@ mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   },
 });
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
-  namedExports: { getServerSupabase: async () => session },
+  namedExports: {
+    getServerSupabase: async () => session,
+    getServiceSupabase: () => null,
+  },
 });
 mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   namedExports: {
@@ -151,6 +156,65 @@ mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
 });
 mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
   namedExports: { resolveStoredTavilyKey: async () => null },
+});
+mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
+  namedExports: { resolveStoredApifyKey: async () => null },
+});
+mock.module(moduleUrl("src/lib/sourcing/orchestrator.ts"), {
+  namedExports: {
+    mergePreferringRicher: (batches: unknown) => batches,
+    runMultiProviderSourcing: async (input: {
+      campaign: Campaign;
+      count: number;
+      forcedQueries?: Array<{ platform: string; query: string }>;
+      beforeExternalCall?: () => Promise<boolean>;
+    }) => {
+      runnerCalls += 1;
+      eventOrder.push("runner");
+      const queries =
+        input.forcedQueries && input.forcedQueries.length > 0
+          ? input.forcedQueries
+          : (input.campaign.sourcingStrategy.githubQueries ?? [])
+              .map((item) => ({ platform: "GitHub", query: item.query }))
+              .filter((item) => item.query.trim());
+      const executions = [];
+      for (const item of queries.slice(0, 3)) {
+        const allowed = input.beforeExternalCall ? await input.beforeExternalCall() : true;
+        runnerQueries.push({ platform: item.platform, query: item.query });
+        mutateDuringRunner?.();
+        if (runnerCandidatesAfterRun.length > 0) {
+          foundCandidates = runnerCandidatesAfterRun;
+        }
+        executions.push({
+          providerId: "github",
+          platform: item.platform,
+          query: item.query,
+          ok: allowed,
+          candidateCount: allowed ? foundCandidates.length : 0,
+          skippedCount: 0,
+          error: allowed ? undefined : "authority revoked",
+        });
+        if (!allowed) break;
+      }
+      if (executions.length === 0) {
+        executions.push({
+          providerId: "github",
+          platform: "GitHub",
+          query: "",
+          ok: false,
+          candidateCount: 0,
+          skippedCount: 0,
+          error: "no reviewed query",
+        });
+      }
+      return {
+        accepted: foundCandidates,
+        skipped: [],
+        executions,
+        providersUsed: ["github"],
+      };
+    },
+  },
 });
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
@@ -278,6 +342,22 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         candidateCount: foundCandidates.length,
         skippedCount: 0,
       })),
+      seedFromOrchestrator: (result: {
+        accepted: unknown[];
+        executions: Array<{
+          platform: string;
+          query: string;
+          ok: boolean;
+          candidateCount: number;
+          skippedCount: number;
+        }>;
+      }) => {
+        foundCandidates = result.accepted;
+        runnerQueries = result.executions.map((execution) => ({
+          platform: execution.platform,
+          query: execution.query,
+        }));
+      },
     }),
   },
 });
@@ -698,6 +778,8 @@ test("deterministic mode requires a reviewed persisted query and never invents o
   reset();
   cloudConfigured = false;
   campaign.sourcingStrategy.githubQueries = [];
+  // LinkedIn-first seed keeps a reviewed boolean — clear it so readiness fails closed.
+  campaign.sourcingStrategy.linkedinBoolean = "";
 
   const response = await post(request());
   const body = await response.json();
@@ -777,10 +859,12 @@ test("deterministic sourcing applies a human-promoted role lesson before baselin
   reset();
   cloudConfigured = false;
   const lessonId = "66666666-6666-4666-8666-666666666666";
+  // Lesson query must share a role token with seed Senior Java (validateSourcingQuery).
+  const lessonQuery = "language:Java followers:>10";
   promotedLessons = [{
     lessonId,
     platform: "GitHub",
-    query: "language:Go followers:>10",
+    query: lessonQuery,
     graphifyClusterRef: "community:0",
     graphifyClusterRank: 1,
     evidenceRunCount: 2,
@@ -794,7 +878,7 @@ test("deterministic sourcing applies a human-promoted role lesson before baselin
   const body = await response.json();
 
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(runnerQueries[0]?.query, "language:Go followers:>10");
+  assert.equal(runnerQueries[0]?.query, lessonQuery);
   assert.deepEqual(body.appliedLessonIds, [lessonId]);
   assert.equal(completeCalls, 1);
 });

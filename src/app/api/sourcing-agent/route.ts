@@ -574,9 +574,28 @@ async function handlePost(req: NextRequest, correlationId: string) {
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
       const searchSignal = AbortSignal.timeout(120_000);
+      // Framework: exact reviewed query only. Otherwise prepend human-promoted
+      // GitHub lessons before campaign baseline queries (never invent from skills).
       const forcedQueries = frameworkAuthorization
         ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
-        : undefined;
+        : [
+            ...promotedLessons
+              .filter((lesson) => lesson.platform === "GitHub")
+              .map((lesson) => ({
+                platform: "GitHub" as const,
+                query: lesson.query,
+              })),
+            ...configuredQueries.map((query) => ({
+              platform: "GitHub" as const,
+              query,
+            })),
+          ]
+            .filter(
+              (item, index, all) =>
+                item.query.trim().length > 0 &&
+                all.findIndex((other) => other.query === item.query) === index,
+            )
+            .slice(0, 3);
       const multi = await runMultiProviderSourcing({
         campaign: initial.value.campaign,
         existing: initial.value.existing,
@@ -587,7 +606,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         linkedInProfileToken,
         signal: searchSignal,
         beforeExternalCall: async () => (await currentAuthority()).ok,
-        forcedQueries,
+        forcedQueries: forcedQueries.length > 0 ? forcedQueries : undefined,
       });
       const afterQuery = await readWorkspace(session, workspaceId, campaignId);
       if (
