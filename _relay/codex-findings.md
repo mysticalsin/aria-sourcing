@@ -1112,14 +1112,14 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Adversarial audit of N campaign agents × isolated Chromium/LinkedIn. Architecture is largely real and fail-closed on sessionHealthy; remaining theater/gaps listed below.
 **Repro/evidence:** Code review of computer-supervisor, fleet API, floor3d, boot-browser-computer, openbot-chromium-supervisor; tests/computer-supervisor.mts + tests/floor.mts.
 **Suggested fix:** See ordered gaps — prefer seatId ownership on stop/reset/release; drop unused profileVolume claims; persist ensure; constrain orphan reclaim.
-**Status:** open
+**Status:** partially fixed — gaps 1–2 closed in 246cdd9; gaps 3–5 + new Manual/localStorage gap still open (see 2026-10-02 entry)
 
 ### Gaps (severity → surgical fix)
-1. **high** `src/app/api/fleet/computers/route.ts:357-370` — stop/reset/release_control/request_help accept computerId only (no seat ownership). Fix: same seatId match gate as start/take_control.
-2. **high** `src/lib/computer-supervisor.ts:643-657` — reclaimHealthyOrphan first-healthy-orphan wins across seats (can attach seat A LinkedIn cookies to seat B after detach). Fix: reclaim only orphans previously bound to this seat, or require explicit operator pick (Fleet reclaim UI already has pick).
-3. **medium** `src/lib/computer-supervisor.ts:336` + `supervisor-client.ts:73-76` — profileVolume is in-memory theater; OpenBot isolate is `PROFILE_ROOT/botId` only; ensure body `{}`. Fix: delete field or pass profile hint; stop README claiming Aria profileVolume.
-4. **medium** `src/app/api/fleet/computers/route.ts:307-318` — POST ensure does not persist agent_seats.computer_id (client updateSeat only). Fix: persist on ensure when seatId+computerId like reclaim.
-5. **medium** `src/lib/computer-supervisor.ts:173-174` — process-local Map; cold multi-instance loses control/sessionHealthy until probe. Fix: durable control mutex or always probe on GET hydrate.
+1. **high** `src/app/api/fleet/computers/route.ts:357-370` — stop/reset/release_control/request_help accept computerId only (no seat ownership). Fix: same seatId match gate as start/take_control. **FIXED (246cdd9)**
+2. **high** `src/lib/computer-supervisor.ts:643-657` — reclaimHealthyOrphan first-healthy-orphan wins across seats (can attach seat A LinkedIn cookies to seat B after detach). Fix: reclaim only orphans previously bound to this seat, or require explicit operator pick (Fleet reclaim UI already has pick). **FIXED (246cdd9 priorSeatId)**
+3. **medium** `src/lib/computer-supervisor.ts:336` + `supervisor-client.ts:73-76` — profileVolume is in-memory theater; OpenBot isolate is `PROFILE_ROOT/botId` only; ensure body `{}`. Fix: delete field or pass profile hint; stop README claiming Aria profileVolume. **OPEN**
+4. **medium** `src/app/api/fleet/computers/route.ts:307-318` — POST ensure does not persist agent_seats.computer_id (client updateSeat only). Fix: persist on ensure when seatId+computerId like reclaim. **OPEN**
+5. **medium** `src/lib/computer-supervisor.ts:173-174` — process-local Map; cold multi-instance loses control/sessionHealthy until probe. Fix: durable control mutex or always probe on GET hydrate. **OPEN** (fail-closed: never invents true)
 6. **medium** `src/lib/computer-supervisor.ts:1325-1327` — mockSend invents act_done without LinkedIn (Fly gated unless ALLOW). Keep; never enable on prod.
 7. **ops blocker** Live Fly LinkedIn still CAPTCHA/login → sessionHealthy stays false/null (not invented). Not a code theater bug.
 
@@ -1128,6 +1128,37 @@ Historical and current findings follow. The current consolidated audit is
 - Cross-seat ensure throws; start/take require seatId match; GET never mints; sessionHealthy only probe `healthy===true`
 - Floor polls `/api/fleet/computers`; working only ready+sessionHealthy===true; poisoned FK cleared
 - Tests: tests/computer-supervisor.mts, tests/floor.mts, tests/boot-browser-computer.mts, tests/campaign-go-live.mts
+
+## 2026-10-02 — N-agent floor / FE↔BE gap audit (linkedin-human-claude-chrome tip)
+**Severity:** correctness | spec-mismatch | test-gap
+**File:** multi (table below)
+**Issue:** Re-audit vs goal “N campaign agents + isolated VMs real on 3D floor, FE↔BE wired, no sessionHealthy theater.” Floor green paths and mutating seatId gates look solid; largest remaining theater is Manual permissions localStorage-only (BE never reads). profileVolume + ensure-without-persist still open.
+**Repro/evidence:** Branch `cursor/linkedin-human-claude-chrome-b91d` @ 4de692b; grep/read of floor3d, floor page poll, fleet computers route, browser-agent-permissions, boot-browser-computer, openbot supervisor PROFILE_ROOT/botId.
+**Suggested fix:** Best next ponytail — wire Manual into `enqueueJob(linkedin_send)` via durable seat/workspace setting (or strip Manual UI until BE-gated). Second: delete `profileVolume` + README claim.
+**Status:** open
+
+### Remaining HIGH/MED (ranked)
+
+| Sev | File:line | Gap |
+|-----|-----------|-----|
+| HIGH | `src/lib/browser-agent-permissions.ts:88-115` + `shouldPauseForOperator:134-141` | Manual/Auto/Skip only in localStorage; never imported by send/enqueue/linkedin-channel. Manual mode is FE theater — bot still sends on Approve. |
+| HIGH | `src/app/fleet/computers/options/page.tsx` + `viewport/page.tsx` (perms UI) | Options pages write localStorage only; HANDOFF already notes not durable seat DB. |
+| MED | `src/lib/computer-supervisor.ts:54,342,408,420,452,474` | `profileVolume` assigned, never read; real isolate is `scripts/openbot-chromium-supervisor.mjs:53,383` `PROFILE_ROOT/botId`. |
+| MED | `services/computer-supervisor/README.md:17` | Docs claim persistent `profileVolume` — lies vs OpenBot. |
+| MED | `src/app/api/fleet/computers/route.ts:307-318` | POST `ensure` does not persist `agent_seats.computer_id` (only reclaim does ~444-458). Mint+start without client `updateSeat` can host-import as orphan. |
+| MED | `src/lib/computer-supervisor.ts` (in-memory Map) | `sessionHealthy`/control process-local; multi-instance fail-closed to null (good) but floor green / send gate not shared until re-probe. |
+| MED | `src/lib/boot-browser-computer.ts:57-64,82` | Client still mints `comp_${uuid}` when reclaim fails unclassified paths — intentional deploy bootstrap; races two Deploys before unique index. |
+| MED | `tests/floor.mts:218` | N-agent suffix assert uses `[0-9a-f]{8}` only; live ids / `makeId` base36 (`computer-supervisor.ts:157-158`) + `prove-n-agent-floor.mts:52` use broader charset — test under-proves real suffixes. |
+| OPS | Live Fly Take→login→Release | Still required for real `sessionHealthy:true` (not invented). |
+
+### Checklist answers (concrete)
+1. **Floor invent working/green?** No for LI desks when `computerHints` Map present (floor always starts empty Map). `seatsToOfficeAgents` working only `ready && sessionHealthy===true` (`floor3d.ts:203-205`); pulse gated same (`floor/page.tsx:417-428`). Non-LI theatrical working suppressed when map present (`floor3d.ts:178-185`).
+2. **Campaign↔fleet↔seats races?** Polls GET-only + `fleetHermesComputerPatches` write/clear; reclaim persist+rollback exists. Residual: ensure no DB persist; multi-tab `updateSeat` noise.
+3. **ensure/start/navigate fake seats / steal?** start/stop/take/release require seat ownership match (`route.ts:320-356`). ensure/navigate/probe require seatId, no computerId-as-seat fallback. Cross-seat ensure throws; orphan re-claim blocked when seat already bound. Cold GET never mints.
+4. **profileVolume theater?** Yes — delete candidate.
+5. **browser-agent-permissions BE unwired?** Yes — Manual does not pause linkedin_send.
+6. **FE posts without seatId?** Mutating UIs send seatId (fleet page, viewport, campaign agents, boot, login navigate). Missing seatId → 400 fail-closed, not steal.
+7. **N distinct floor agents tests?** Yes: `tests/floor.mts:193-252` (offline hints); `scripts/prove-n-agent-floor.mts` (LIVE=1 host bots). Not an integration test that hits `/api/fleet/computers` → floor together.
 
 ## 2026-09-12 — N-agent stop/release lacked seat ownership; orphan reclaim stole LinkedIn profiles
 **Severity:** security
