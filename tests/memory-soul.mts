@@ -150,6 +150,7 @@ ok("seed has seats", seed.seats.length > 0);
 
 if (firstSeat) {
   const newPersona = "Technical, data-driven, brief. Lead with GitHub metrics.";
+  const originalById = new Map(seed.seats.map((seat) => [seat.id, seat.persona]));
   const seatUpdated: HermesState = {
     ...seed,
     seats: seed.seats.map((x) =>
@@ -157,7 +158,13 @@ if (firstSeat) {
     ),
   };
   ok("updateSeat changes persona", seatUpdated.seats.find((x) => x.id === firstSeat.id)?.persona === newPersona);
-  ok("updateSeat does not affect other seats", seatUpdated.seats.filter((x) => x.id !== firstSeat.id).every((x) => x.persona === firstSeat.persona));
+  // Other seats keep their own personas (N LinkedIn Browser seats intentionally differ).
+  ok(
+    "updateSeat does not affect other seats",
+    seatUpdated.seats
+      .filter((x) => x.id !== firstSeat.id)
+      .every((x) => x.persona === originalById.get(x.id)),
+  );
 }
 
 /* ---- memoryCapacity setting ---------------------------------------------- */
