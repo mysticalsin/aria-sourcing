@@ -1158,5 +1158,5 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** After client mint moved to POST ensure without id, Zod still required computerId — Validation failed; FE could not mint durable VMs.
 **Repro/evidence:** POST {action:ensure,seatId} → 400 computerId required; prove-fleet-api-floor failed until schema fixed.
 **Suggested fix:** allow ensure/reclaim without computerId; pass computerId||undefined into ensureComputer.
-**Status:** fixed (pending commit)
+**Status:** fixed (6cbc99a)
 
