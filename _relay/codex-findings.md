@@ -1112,16 +1112,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Adversarial audit of N campaign agents × isolated Chromium/LinkedIn. Architecture is largely real and fail-closed on sessionHealthy; remaining theater/gaps listed below.
 **Repro/evidence:** Code review of computer-supervisor, fleet API, floor3d, boot-browser-computer, openbot-chromium-supervisor; tests/computer-supervisor.mts + tests/floor.mts.
 **Suggested fix:** See ordered gaps — prefer seatId ownership on stop/reset/release; drop unused profileVolume claims; persist ensure; constrain orphan reclaim.
-**Status:** open
-
-### Gaps (severity → surgical fix)
-1. **high** `src/app/api/fleet/computers/route.ts:357-370` — stop/reset/release_control/request_help accept computerId only (no seat ownership). Fix: same seatId match gate as start/take_control.
-2. **high** `src/lib/computer-supervisor.ts:643-657` — reclaimHealthyOrphan first-healthy-orphan wins across seats (can attach seat A LinkedIn cookies to seat B after detach). Fix: reclaim only orphans previously bound to this seat, or require explicit operator pick (Fleet reclaim UI already has pick).
-3. **medium** `src/lib/computer-supervisor.ts:336` + `supervisor-client.ts:73-76` — profileVolume is in-memory theater; OpenBot isolate is `PROFILE_ROOT/botId` only; ensure body `{}`. Fix: delete field or pass profile hint; stop README claiming Aria profileVolume.
-4. **medium** `src/app/api/fleet/computers/route.ts:307-318` — POST ensure does not persist agent_seats.computer_id (client updateSeat only). Fix: persist on ensure when seatId+computerId like reclaim.
-5. **medium** `src/lib/computer-supervisor.ts:173-174` — process-local Map; cold multi-instance loses control/sessionHealthy until probe. Fix: durable control mutex or always probe on GET hydrate.
-6. **medium** `src/lib/computer-supervisor.ts:1325-1327` — mockSend invents act_done without LinkedIn (Fly gated unless ALLOW). Keep; never enable on prod.
-7. **ops blocker** Live Fly LinkedIn still CAPTCHA/login → sessionHealthy stays false/null (not invented). Not a code theater bug.
+**Status:** fixed (246cdd9 seat ownership + priorSeatId; 47ddefd profileVolume delete + ensure persist). Remaining: process-local Map (#5), mockSend (#6), live Fly login (#7).
 
 ### What is real (not theater)
 - 1 seat → 1 computerId → OpenBot botId → `launchPersistentContext(PROFILE_ROOT/botId)` (`scripts/openbot-chromium-supervisor.mjs:352-369`)
@@ -1143,5 +1134,5 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Claude Manual mode never reached enqueueJob; profileVolume was assigned and never used (real isolate is PROFILE_ROOT/botId). ensure did not persist agent_seats.computer_id.
 **Repro/evidence:** Manual mode only wrote localStorage; linkedin_send still ran on Auto path; ensure left cold GET orphans.
 **Suggested fix:** FleetSettings.browserAgentPermissionMode BE gate; delete profileVolume; persist ensure.
-**Status:** fixed (pending commit)
+**Status:** fixed (47ddefd)
 
