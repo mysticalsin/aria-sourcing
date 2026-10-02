@@ -1,6 +1,6 @@
 # Production Readiness Status
 
-**Date:** 2026-08-25
+**Date:** 2026-10-02
 
 This page describes source and release-gate status. It is not evidence that a
 particular production deployment is healthy.
