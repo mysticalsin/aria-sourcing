@@ -321,23 +321,26 @@ try {
 }
 
 // --- mapApifyCandidates: scored, deduped Candidates with compliance ---------
+// Seed campaign is Senior Java Developer — profile must clear the 80% quality floor.
 {
+  const JAVA_BIO =
+    "Senior Java Developer · Spring Boot · PostgreSQL · Kafka · Microservices";
   const profile: ApifyProfile = {
     id: "abc123",
     publicIdentifier: "test-candidate-dev",
     linkedinUrl: "https://www.linkedin.com/in/test-candidate-dev",
     firstName: "Test",
     lastName: "Candidate",
-    headline: "Senior Go Engineer at Acme Corp",
-    about: "Distributed systems engineer working on Kubernetes and gRPC platforms.",
+    headline: "Senior Java Developer at Acme Corp",
+    about: JAVA_BIO,
     location: { text: "Paris, France", countryCode: "FR" },
     connectionsCount: 500,
     followerCount: 1200,
-    currentPosition: [{ title: "Senior Go Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
-    experience: [{ title: "Senior Go Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
+    currentPosition: [{ title: "Senior Java Developer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
+    experience: [{ title: "Senior Java Developer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
     education: [{ schoolName: "EPITA", degree: "MSc Computer Science", dateRange: "2012 - 2017" }],
-    topSkills: ["Go", "Kubernetes"],
-    skills: ["Go", "Kubernetes", "gRPC", "Distributed Systems"],
+    topSkills: ["Java", "Spring Boot", "PostgreSQL", "Kafka", "Microservices"],
+    skills: ["Java", "Spring Boot", "PostgreSQL", "Kafka", "Microservices", "Kubernetes", "gRPC"],
     languages: ["English", "French"],
     openToWork: false,
     hiring: false,
@@ -345,17 +348,20 @@ try {
     email: "test@example.com",
   };
 
-  const result = mapApifyCandidates([profile], campaign, "Senior Go Engineer", [], W);
+  const result = mapApifyCandidates([profile], campaign, "Senior Java Developer", [], W);
   const c = result.accepted[0];
   ok("mapApifyCandidates accepts the profile", result.accepted.length === 1);
   ok("name built from first+last", c?.name === "Test Candidate");
   ok("linkedinUrl carried through", c?.linkedinUrl === "https://www.linkedin.com/in/test-candidate-dev");
   ok("sourcePlatform is LinkedIn (operator-facing; vendor stays internal)", c?.sourcePlatform === "LinkedIn");
-  ok("sourceQuery is the search criteria", c?.sourceQuery === "Senior Go Engineer");
+  ok("sourceQuery is the search criteria", c?.sourceQuery === "Senior Java Developer");
   ok("currentCompany from currentPosition[0]", c?.currentCompany === "Acme Corp");
-  ok("currentTitle from headline", c?.currentTitle === "Senior Go Engineer at Acme Corp");
+  ok("currentTitle from headline", c?.currentTitle === "Senior Java Developer at Acme Corp");
   ok("location from nested location.text", c?.location === "Paris, France");
-  ok("techStack picked up from job skills present in the profile's skills/topSkills", !!c?.techStack.includes("Go") && !!c?.techStack.includes("Kubernetes"));
+  ok(
+    "techStack picked up from job skills present in the profile's skills/topSkills",
+    !!c?.techStack.includes("Java") && !!c?.techStack.includes("Kubernetes"),
+  );
   ok("candidate is scored", typeof c?.matchScore === "number" && c.matchScore >= 0);
   ok("stage is Sourced", c?.stage === "Sourced");
   ok("email carried through from the normalized profile (emails[] resolved upstream)", c?.email === "test@example.com");
@@ -369,7 +375,7 @@ try {
   ok("compliance note records LinkedIn profile search third-party provenance", note.toLowerCase().includes("linkedin profile search") && note.toLowerCase().includes("third-party"));
   ok("compliance note records the GDPR/lawful-basis responsibility", note.toLowerCase().includes("gdpr") && note.toLowerCase().includes("recruiter"));
 
-  const legacy = mapApifyCandidates([profile], campaign, "Senior Go Engineer", [], W, {
+  const legacy = mapApifyCandidates([profile], campaign, "Senior Java Developer", [], W, {
     displayPlatform: "Apify",
   });
   ok("legacy displayPlatform Apify still available for fixtures", legacy.accepted[0]?.sourcePlatform === "Apify");
@@ -377,7 +383,7 @@ try {
   ok("complianceFlags initialized honestly (not pre-suppressed)", c?.complianceFlags.doNotContact === false && c?.complianceFlags.suppressed === false);
 
   // --- dedupe: same linkedinUrl across two mapping calls is skipped ---------
-  const second = mapApifyCandidates([profile], campaign, "Senior Go Engineer", result.accepted, W);
+  const second = mapApifyCandidates([profile], campaign, "Senior Java Developer", result.accepted, W);
   ok("re-sourcing the same profile is deduped by linkedinUrl", second.accepted.length === 0 && second.skipped.length === 1);
 
   // --- honest blank email/name fallback for a Short-mode-shaped sparse profile
