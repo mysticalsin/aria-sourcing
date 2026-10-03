@@ -171,20 +171,16 @@ export default function FleetPage() {
       const staleTwin =
         !computers.length ||
         isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
-      const scopeCampaign = scopeId.trim() || undefined;
+      // New seats from Deploy are not campaign-attached yet — omit campaignId
+      // so refuseUnattached does not block ensure/reclaim. Scope only gates Take.
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId: staleTwin ? null : seat.computerId,
-        campaignId: scopeCampaign,
       });
       if (!seat.computerId || seat.computerId !== computerId) {
         await actions.updateSeat(seat.id, { computerId });
       }
-      const boot = await bootBrowserComputer({
-        seatId: seat.id,
-        computerId,
-        campaignId: scopeCampaign,
-      });
+      const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
       if (boot.booted) {
         booted += 1;
       } else {
