@@ -1261,4 +1261,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Floor still computerId-indexed __orphan__ rows; drawer used Hermes computerId as bound after hint refuse; fleet summary kept empty seatIds in Ready; go-live required Hermes computerId before fleet bySeat could attach.
 **Repro/evidence:** orphan host botId overwrites seat hint; Hermes twin shows VM …xxxx in drawer; StatCard Ready > filtered list; Hermes-null + fleet bind → browser_seat_attached false.
 **Suggested fix:** skip orphan/empty before map.set; bound=hint only; summary filter !seatId||orphan; withComputer includes computerForSeat.
-**Status:** fixed (pending tip SHA)
+**Status:** fixed (8dcc17c) — Floor orphan skip; drawer hint-bound; summary empty filter; go-live fleet bind

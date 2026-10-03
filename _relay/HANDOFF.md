@@ -10,7 +10,7 @@ status: floor-orphan-skip-drawer-fleet-golive-shipped-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `8dcc17c` (orphan-skip / drawer / go-live)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** Floor skips orphan hint index; drawer bound=fleet hint only; fleet summary excludes empty seatIds; go-live attaches on fleet bySeat with null Hermes
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
