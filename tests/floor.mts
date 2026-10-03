@@ -74,38 +74,38 @@ ok("at least one paused (lucas)", roll.paused >= 1);
 }
 
 {
+  const liSeat = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")!;
   const agents = seatsToOfficeAgents(s.seats, s);
   ok("office agents = seat count", agents.length === s.seats.length);
   const hinted = seatsToOfficeAgents(
     s.seats,
     s,
-    new Map([["seat_maya", { status: "help_requested" }]]),
+    new Map([[liSeat.id, { status: "help_requested", seatId: liSeat.id }]]),
   );
-  const maya = hinted.find((a) => a.id === "seat_maya")!;
-  ok("help_requested overlays error", maya.status === "error");
-  ok("help_requested subtitle", maya.subtitle === "Needs Take control");
+  const helped = hinted.find((a) => a.id === liSeat.id)!;
+  ok("help_requested overlays error", helped.status === "error");
+  ok("help_requested subtitle", /Needs Take control/i.test(helped.subtitle ?? ""));
 
   const healthy = seatsToOfficeAgents(
     s.seats,
     s,
-    new Map([["seat_maya", { status: "ready", sessionHealthy: true }]]),
-  ).find((a) => a.id === "seat_maya")!;
+    new Map([[liSeat.id, { status: "ready", sessionHealthy: true, seatId: liSeat.id }]]),
+  ).find((a) => a.id === liSeat.id)!;
   ok("ready+healthy overlays working", healthy.status === "working");
-  ok("ready+healthy subtitle", healthy.subtitle === "LinkedIn session healthy");
+  ok("ready+healthy subtitle", /LinkedIn session healthy/i.test(healthy.subtitle ?? ""));
 
   const unverified = seatsToOfficeAgents(
     s.seats,
     s,
-    new Map([["seat_maya", { status: "ready", sessionHealthy: null }]]),
-  ).find((a) => a.id === "seat_maya")!;
+    new Map([[liSeat.id, { status: "ready", sessionHealthy: null, seatId: liSeat.id }]]),
+  ).find((a) => a.id === liSeat.id)!;
   ok("ready+null overlays idle unverified", unverified.status === "idle");
   ok(
     "ready+null subtitle asks Take control",
     (unverified.subtitle ?? "").includes("unverified"),
   );
 
-  const liSeat = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
-  if (liSeat) {
+  {
     const missing = seatsToOfficeAgents(s.seats, s, new Map()).find((a) => a.id === liSeat.id)!;
     ok(
       "LinkedIn seat without VM row is idle",
@@ -377,7 +377,7 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   }
 }
 
-// Booting/busy VM is not probed-healthy — stay idle, not theatrical working.
+// Booting/busy VM is not probed-healthy — warming status (matches rollup), never working.
 {
   const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
   if (li) {
@@ -395,7 +395,7 @@ ok("at least one paused (lucas)", roll.paused >= 1);
         ],
       ]),
     )[0]!;
-    ok("starting VM overlays idle (not working)", starting.status === "idle");
+    ok("starting VM overlays warming (not working)", starting.status === "warming");
     ok(
       "starting VM subtitle is Booting VM",
       (starting.subtitle ?? "").includes("Booting VM"),
@@ -414,10 +414,29 @@ ok("at least one paused (lucas)", roll.paused >= 1);
         ],
       ]),
     )[0]!;
-    ok("busy VM overlays idle (not working)", busy.status === "idle");
+    ok("busy VM overlays warming (not working)", busy.status === "warming");
     ok(
       "busy VM subtitle stays unverified",
       /unverified|busy/i.test(busy.subtitle ?? ""),
+    );
+    const rollBusy = floorRollup(
+      [{ ...li, computerId: "comp_busy_abc12345" }],
+      s,
+      NOW,
+      new Map([
+        [
+          li.id,
+          {
+            status: "busy" as const,
+            computerId: "comp_busy_abc12345",
+            seatId: li.id,
+          },
+        ],
+      ]),
+    );
+    ok(
+      "3D warming status matches floorRollup warming count",
+      busy.status === "warming" && rollBusy.warming === 1 && rollBusy.working === 0,
     );
   }
 }

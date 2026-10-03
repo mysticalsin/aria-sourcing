@@ -1,8 +1,7 @@
 import type { AgentSeat, HermesState } from "@/lib/types";
-import { agentActivity, resolveComputerHint, type FloorComputerHint } from "@/lib/floor";
+import { agentActivityWithComputers, type FloorComputerHint } from "@/lib/floor";
 import type { AgentEvent } from "@/lib/agent-events";
 import type { SoundKind } from "@/lib/sound";
-import { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-constants";
 
 /* ============================================================================
    Shared 3D-floor types and pure helpers. This module is deliberately free of
@@ -10,7 +9,8 @@ import { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-constants";
    can share the floor contract without pulling in the 3D subsystem.
    ========================================================================== */
 
-export type AgentStatus = "working" | "idle" | "error";
+/** working = probed-healthy LI (or real sends); warming = VM busy/starting; idle; error = paused/unhealthy */
+export type AgentStatus = "working" | "warming" | "idle" | "error";
 
 /** Org position. Everyone is an employee; the first seat is treated as CEO. */
 export type AgentPosition = "employee" | "ceo";
@@ -149,14 +149,13 @@ export function colorForAgent(index: number): string {
   return hslToHex(hue, 0.78, lightness);
 }
 
-// Activity states that mean the agent is actively doing work.
-const BUSY_STATES = new Set(["sourcing", "outreach", "booking", "warming"]);
+// Activity states that mean the agent is actively doing probed work (not VM boot).
+const WORKING_STATES = new Set(["sourcing", "outreach", "booking"]);
 
 /**
- * Map real seats to 3D-floor agents. The FIRST seat (index 0) is treated as the
- * lead/CEO (AgentSeat has no lead field — first-seat-as-lead is the agreed
- * rule). Status collapses the richer activity model into the three render
- * states the characters understand.
+ * Map real seats to 3D-floor agents. Uses the same overlay as 2D desks /
+ * floorRollup (`agentActivityWithComputers`) so Warming / Working counts match
+ * the robots. Never invents sessionHealthy=true.
  */
 /** Live computer hint — overlays VM truth onto theatrical activity. */
 export type ComputerFloorHint = FloorComputerHint;
@@ -167,84 +166,23 @@ export function seatsToOfficeAgents(
   computers?: ReadonlyMap<string, ComputerFloorHint>,
 ): OfficeAgent[] {
   return seats.map((seat, index) => {
-    const activity = agentActivity(seat, state);
-    let status: OfficeAgent["status"] = BUSY_STATES.has(activity.state)
-      ? "working"
-      : activity.state === "idle"
-        ? "idle"
-        : "error"; // "paused" / auto-paused → error
-    let subtitle = activity.label;
-    // Live fleet poll active → suppress non-LI theatrical "working" (no real sends).
-    if (
-      computers &&
-      seat.provider !== "LinkedIn Browser Computer" &&
-      status === "working" &&
-      !(seat.sentToday > 0)
-    ) {
-      status = "idle";
-    }
-    const hint = resolveComputerHint(seat, computers);
-    if (hint) {
-      // Human takeover mutex wins — never paint working while operator holds control
-      // (even if a stale sessionHealthy=true lingered on the wire).
-      if (hint.control === "human") {
-        status = "idle";
-        subtitle = "Operator in control";
-      } else if (hint.status === "help_requested" || hint.status === "error") {
-        status = "error";
-        subtitle = hint.status === "help_requested" ? "Needs Take control" : "VM error";
-      } else if (hint.status === "busy" || hint.status === "starting") {
-        // Booting/busy is not a probed-healthy LinkedIn session — idle/warming copy only.
-        status = "idle";
-        subtitle = hint.status === "starting" ? "Booting VM" : "VM busy — session unverified";
-      } else if (hint.status === "ready" && hint.sessionHealthy === false) {
-        status = "error";
-        subtitle = "LinkedIn session unhealthy";
-      } else if (hint.status === "ready" && hint.sessionHealthy === true) {
-        status = "working";
-        subtitle = "LinkedIn session healthy";
-      } else if (hint.status === "ready" && hint.sessionHealthy == null) {
-        status = "idle";
-        subtitle = "LinkedIn unverified — Take control";
-      } else if (hint.status === "stopped") {
-        status = "idle";
-        subtitle = "VM stopped";
-      }
-    } else if (computers && seat.provider === "LinkedIn Browser Computer") {
-      // Floor polled fleet computers, but this LinkedIn seat has no live VM row.
-      status = "idle";
-      subtitle = seat.computerId ? "VM not on host" : "No Browser Computer";
-    }
-    // Surface the bound Chromium id so N agents are distinguishable on the floor.
-    // Never advertise a computerId that fleet already binds to a different seat
-    // (poisoned/stale FK after reclaim or ownership clear).
-    let vmId = hint?.computerId || null;
-    if (!vmId && seat.computerId && seat.provider === "LinkedIn Browser Computer") {
-      if (hint) {
-        // Hint already resolved for this seat — safe to show the seat FK.
-        vmId = seat.computerId;
-      } else {
-        const claimed = computers?.get(seat.computerId);
-        // Only advertise a VM id when fleet confirms this seat owns it — never
-        // Hermes-alone or __orphan__ rows (those look live on the floor while unbound).
-        if (claimed?.seatId === seat.id && claimed.seatId !== HOST_ORPHAN_SEAT_ID) {
-          vmId = seat.computerId;
-        }
-      }
-    }
-    if (seat.provider === "LinkedIn Browser Computer" && vmId) {
-      subtitle = `${subtitle} · …${vmId.slice(-8)}`;
-    }
+    const activity = agentActivityWithComputers(seat, state, Date.now(), computers);
+    let status: OfficeAgent["status"];
+    if (activity.state === "warming") status = "warming";
+    else if (activity.state === "paused") status = "error";
+    else if (activity.state === "idle") status = "idle";
+    else if (WORKING_STATES.has(activity.state)) status = "working";
+    else status = "idle";
+
+    // Label already includes VM suffix when computers map is present.
+    const subtitle = activity.label;
+
     return {
       id: seat.id,
       name: seat.name,
       subtitle,
       status,
-      // Honour a custom per-agent colour when set; otherwise auto-assign a
-      // distinct colour by seat index — curated palette first (faithful to the
-      // reference lineup), then generated hues for any number of new agents.
       color: seat.color ?? colorForAgent(index),
-      // Provisional — hub reassigned below to a real LI Browser desk when present.
       position: "employee" as OfficeAgent["position"],
       provider: seat.provider,
     };

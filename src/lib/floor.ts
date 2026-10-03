@@ -231,7 +231,9 @@ export function agentActivityWithComputers(
   if (!computers || seat.provider !== "LinkedIn Browser Computer") return base;
 
   const hint = resolveComputerHint(seat, computers);
-  const vmId = hint?.computerId || null;
+  // Prefer fleet computerId; when the hint is already resolved for this seat,
+  // seat.computerId is a safe display fallback (never foreign/orphan binding).
+  const vmId = hint?.computerId || (hint ? seat.computerId : null) || null;
   const withVm = (label: string) =>
     vmId ? `${label} · …${vmId.slice(-8)}` : label;
 

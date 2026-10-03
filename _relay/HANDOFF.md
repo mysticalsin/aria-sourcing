@@ -1,27 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 234
+shift: 235
 agent: cursor-cloud
-updated: 2026-10-03T01:55Z
-status: floor-rollup-honest-fly-stale
+updated: 2026-10-03T02:05Z
+status: floor-3d-warming-aligned-fly-stale
 ---
 
-# Handoff — Shift 234
+# Handoff — Shift 235
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `80160d6`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (pending 3D warming commit)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** FE↔BE↔Floor rollup now matches overlays; Floor copy is healthy/unverified (not bound≠live theater)
-- **Agent Reach:** slices 1–3.7 ✅; Jina key local-only
-- **Fly live:** build `21a42e7…`, `agentFrameworks:false`; computers 401
-- **Tip CI:** pending/churn on tip SHAs
+- **N-agent local:** 2D + rollup + 3D share `agentActivityWithComputers`; busy/starting → `warming` (not idle theater)
+- **Fly live:** build `21a42e7…`, `agentFrameworks:false`
+- **Tip CI:** pending/churn
 
 ## Done this shift
 
-1. `floorRollup` uses `agentActivityWithComputers` when fleet hints loaded — no theatrical warming while desks show unverified
-2. `floorBrowserVmTruth` — Floor 2D/3D copy: `N session healthy · M unverified` (never invent healthy from computerId)
-3. floor tests 77/77; tsc clean
+1. `seatsToOfficeAgents` driven by `agentActivityWithComputers` (one truth with 2D/rollup)
+2. `AgentStatus` adds `warming`; 3D tick never seats warming as working
+3. floor tests 78/78; tsc clean
 
 ## Blockers
 
@@ -30,7 +29,7 @@ status: floor-rollup-honest-fly-stale
 
 ## Next steps
 
-1. Owner Fly redeploy tip + set `ARIA_JINA_API_KEY` secret
+1. Owner Fly redeploy tip + `ARIA_JINA_API_KEY` secret
 2. Operator LI login; prove sessionHealthy on Floor + Campaign Agents
 3. Confirm tip Quality when CI runners pick up tip
 
@@ -38,8 +37,8 @@ status: floor-rollup-honest-fly-stale
 
 - Never invent sessionHealthy=true
 - Bound computerId ≠ live/healthy
-- Floor rollup must match 2D/3D overlays when computers map present
-- Agent Reach = eyes; OpenBot = hands
+- Floor rollup + 2D + 3D must share overlay truth when computers map present
+- busy/starting → warming (not working, not silent idle mismatch with rollup)
 
 ## Watch out
 
