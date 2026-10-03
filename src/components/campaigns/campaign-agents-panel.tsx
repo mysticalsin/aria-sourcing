@@ -99,6 +99,9 @@ export function CampaignAgentsPanel({
   );
 
   const [computers, setComputers] = React.useState<FleetComputerRow[]>([]);
+  // Full fleet rows (incl. __orphan__) for staleTwin / Hermes honesty — badge
+  // list above stays seat-filtered so orphans never inflate campaign ops.
+  const [fleetComputers, setFleetComputers] = React.useState<FleetComputerRow[]>([]);
   const [audits, setAudits] = React.useState<AuditEvent[]>([]);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [observingId, setObservingId] = React.useState<string | null>(null);
@@ -178,7 +181,9 @@ export function CampaignAgentsPanel({
       }
       // Seat-owned rows only — never ingest __orphan__ / foreign VMs into
       // campaign badges or ops (Hermes twin after reclaim must not inflate counts).
-      const rows = (data.computers ?? []).filter((c) => {
+      const allRows = data.computers ?? [];
+      setFleetComputers(allRows);
+      const rows = allRows.filter((c) => {
         if (!c.seatId || c.seatId === "__orphan__") return false;
         return seatIds.has(c.seatId);
       });
@@ -192,7 +197,7 @@ export function CampaignAgentsPanel({
       );
       // Use the full fleet list — campaign-filtered rows miss owners outside this
       // campaign, so a foreign Hermes computerId would never get cleared.
-      for (const patch of fleetHermesComputerPatches(campaignSeats, data.computers ?? [])) {
+      for (const patch of fleetHermesComputerPatches(campaignSeats, allRows)) {
         void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
       }
 
@@ -224,7 +229,8 @@ export function CampaignAgentsPanel({
       const hermesId = (seat.computerId ?? "").trim();
       // Omit stale twin when fleet shows orphan/absent/foreign — never feed
       // login-wall computerId into reclaim before Hermes poll clears it.
-      const staleTwin = isStaleHermesComputerTwin(seat.id, hermesId, computers);
+      // Use full fleet rows (incl. orphans), not badge-filtered computers.
+      const staleTwin = isStaleHermesComputerTwin(seat.id, hermesId, fleetComputers);
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId: staleTwin ? null : seat.computerId,

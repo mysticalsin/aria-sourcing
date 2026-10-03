@@ -91,8 +91,29 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     s,
     new Map([[liSeat.id, { status: "ready", sessionHealthy: true, seatId: liSeat.id }]]),
   ).find((a) => a.id === liSeat.id)!;
-  ok("ready+healthy overlays working", healthy.status === "working");
+  // Seed LI seats are theatrically busy — healthy overlay must not invent a
+  // different lane; it only stamps the healthy label.
+  ok(
+    "ready+healthy keeps theatrical base as working (not inventing a new lane)",
+    healthy.status === "working",
+  );
   ok("ready+healthy subtitle", /LinkedIn session healthy/i.test(healthy.subtitle ?? ""));
+
+  // Truly idle desk + healthy session must stay idle (no sourcing theater).
+  const idleSeat = { ...liSeat, id: "seat_idle_li_healthy", status: "disabled" as const };
+  const idleHealthy = seatsToOfficeAgents(
+    [idleSeat],
+    s,
+    new Map([[idleSeat.id, { status: "ready", sessionHealthy: true, seatId: idleSeat.id }]]),
+  ).find((a) => a.id === idleSeat.id)!;
+  ok(
+    "ready+healthy on idle desk stays idle (no invent working)",
+    idleHealthy.status === "idle",
+  );
+  ok(
+    "idle+healthy still shows session healthy label",
+    /LinkedIn session healthy/i.test(idleHealthy.subtitle ?? ""),
+  );
 
   const unverified = seatsToOfficeAgents(
     s.seats,
@@ -335,6 +356,10 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     "poisoned seat shows unbound host copy, not healthy session",
     /VM not on host|No Browser Computer/i.test(agentA.subtitle || "") &&
       !/session healthy/i.test(agentA.subtitle || ""),
+  );
+  ok(
+    "owned ready+healthy seat shows healthy label",
+    /session healthy/i.test(agentB.subtitle || ""),
   );
 
 {

@@ -268,25 +268,12 @@ export class ComputerSupervisor {
         }
         if (byId.seatId !== opts.seatId) {
           if (byId.seatId === HOST_ORPHAN_SEAT_ID && opts.seatId !== HOST_ORPHAN_SEAT_ID) {
-            // Poll-time ensure with a stale login-wall id must not steal the seat
-            // back from a durable VM already bound (reclaim → detach twin → ensure race).
-            const seatOwner = [...this.computers.values()].find(
-              (c) =>
-                c.workspaceId === opts.workspaceId &&
-                c.seatId === opts.seatId &&
-                c.seatId !== HOST_ORPHAN_SEAT_ID &&
-                c.computerId !== opts.computerId,
+            // Never claim orphans via ensure — only reclaimHealthyOrphan
+            // (probe-before-claim + priorSeatId). Poll/boot ensure with a
+            // login-wall twin must not rebind cookies onto the seat.
+            throw new Error(
+              `computer-orphan-claim-blocked: ${opts.computerId} is __orphan__; use reclaim_healthy_orphan`,
             );
-            if (seatOwner) {
-              throw new Error(
-                `computer-orphan-claim-blocked: seat ${opts.seatId} already bound to ${seatOwner.computerId}; refusing to claim orphan ${opts.computerId}`,
-              );
-            }
-            return this.claimOrphan(opts.computerId, {
-              workspaceId: opts.workspaceId,
-              seatId: opts.seatId,
-              campaignId: opts.campaignId,
-            });
           }
           throw new Error(
             `computer-ownership-mismatch: ${opts.computerId} belongs to seat ${byId.seatId} (workspace ${byId.workspaceId}), not seat ${opts.seatId}`,

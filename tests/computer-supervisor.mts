@@ -956,7 +956,7 @@ try {
       priorGate.get("comp_foreign_cookies")?.seatId === HOST_ORPHAN_SEAT_ID,
     );
 
-    // Same-seat prior still allowed via ensure (operator re-bind).
+    // Same-seat prior: ensure still refuses — only reclaimHealthyOrphan claims.
     const mine = priorGate.ensureComputer({
       workspaceId: "ws",
       seatId: HOST_ORPHAN_SEAT_ID,
@@ -964,13 +964,29 @@ try {
     });
     mine.remoteUrl = "http://127.0.0.1:9302";
     mine.priorSeatId = "seat-tony";
-    const claimed = priorGate.ensureComputer({
+    let samePriorBlocked = false;
+    try {
+      priorGate.ensureComputer({
+        workspaceId: "ws",
+        seatId: "seat-tony",
+        computerId: "comp_mine_prior",
+      });
+    } catch (err) {
+      samePriorBlocked =
+        err instanceof Error && err.message.includes("computer-orphan-claim-blocked");
+    }
+    ok("ensureComputer refuses even same-prior orphan (reclaim-only claim)", samePriorBlocked);
+    ok(
+      "same-prior orphan stays __orphan__ after ensure refuse",
+      priorGate.get("comp_mine_prior")?.seatId === HOST_ORPHAN_SEAT_ID,
+    );
+    // claimOrphan itself still allows same prior (reclaim path).
+    const claimed = priorGate.claimOrphan("comp_mine_prior", {
       workspaceId: "ws",
       seatId: "seat-tony",
-      computerId: "comp_mine_prior",
     });
-    ok("ensureComputer allows same priorSeatId orphan claim", claimed.seatId === "seat-tony");
-    ok("same-prior ensure clears priorSeatId", claimed.priorSeatId == null);
+    ok("claimOrphan allows same priorSeatId", claimed.seatId === "seat-tony");
+    ok("same-prior claimOrphan clears priorSeatId", claimed.priorSeatId == null);
   }
 
   // releaseToOrphan undoes claim + restores prior seat binding (persist-fail rollback).

@@ -31,6 +31,7 @@ import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
 import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
 import { CampaignGoLiveChecklist } from "@/components/campaigns/campaign-go-live-checklist";
 import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
+import { isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import { CampaignFunnelSpine } from "@/components/campaigns/campaign-funnel-spine";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { staggerContainer } from "@/lib/dashboard-motion";
@@ -1535,12 +1536,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               // so a full host never leaves an "attached" seat without its own VM.
               let computerId = seat.computerId ?? null;
               if (seat.provider === "LinkedIn Browser Computer") {
+                let fleetRows: Array<{ seatId?: string | null; computerId?: string | null }> = [];
                 try {
                   const capRes = await fetch("/api/fleet/computers", { credentials: "same-origin" });
                   if (capRes.ok) {
                     const cap = (await capRes.json()) as {
                       hostCapacity?: { computers: number; max: number } | null;
+                      computers?: Array<{ seatId?: string | null; computerId?: string | null }>;
                     };
+                    fleetRows = cap.computers ?? [];
                     const hc = cap.hostCapacity;
                     if (hc && hc.max > 0 && hc.computers >= hc.max) {
                       toast({
@@ -1557,9 +1561,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 // Reclaim a probed-healthy host orphan before minting — never seat.id
                 // (that merges N VMs onto one profile) and never burn a blank mint when
                 // a durable orphan already has LinkedIn cookies.
+                // Omit stale twin when fleet shows orphan/absent/foreign.
+                const staleTwin = isStaleHermesComputerTwin(
+                  seatId,
+                  seat.computerId,
+                  fleetRows,
+                );
                 computerId = await resolveDurableComputerId({
                   seatId,
-                  existingComputerId: seat.computerId,
+                  existingComputerId: staleTwin ? null : seat.computerId,
                 });
                 if (!seat.computerId || seat.computerId !== computerId) {
                   const saved = await actions.updateSeat(seatId, { computerId });

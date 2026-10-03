@@ -79,9 +79,11 @@ export async function resolveDurableComputerId(opts: {
       if (existing && /ownership-mismatch|orphan-claim-blocked/.test(err)) {
         return mintComputerIdViaEnsure(seatId);
       }
-      // No healthy orphan: keep our unhealthy binding (do not mint a twin that burns a host slot).
+      // no-healthy-orphan means the stored id was not seat-bound healthy
+      // (orphan twin / foreign / absent). Never keep it — mint a blank desk
+      // rather than feed a login-wall twin into ensure→claim.
       if (existing && /no-healthy-orphan/.test(err)) {
-        return existing;
+        return mintComputerIdViaEnsure(seatId);
       }
       if (!existing && /no-healthy-orphan|ownership-mismatch|orphan-claim-blocked/.test(err)) {
         return mintComputerIdViaEnsure(seatId);

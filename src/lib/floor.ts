@@ -279,10 +279,12 @@ export function agentActivityWithComputers(
   if (hint.status === "ready" && hint.sessionHealthy === true) {
     return {
       ...base,
-      state: base.state === "idle" ? "sourcing" : base.state,
+      // Healthy LinkedIn is ready — not automatic "working". Keep base activity
+      // (idle stays idle); only real sources/sends flip to sourcing/busy.
+      state: base.state,
       label: withVm("LinkedIn session healthy"),
-      busy: true,
-      tone: "electric",
+      busy: base.state !== "idle",
+      tone: base.state === "idle" ? "electric" : base.tone,
     };
   }
   if (hint.status === "ready" && hint.sessionHealthy === false) {

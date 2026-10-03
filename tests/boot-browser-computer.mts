@@ -171,17 +171,35 @@ try {
   ok("persist failed keeps existing id", keptOnPersist === "comp_keep");
 
 
-  // no-healthy-orphan with existing must keep existing (no twin mint).
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ error: "no-healthy-orphan" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    })) as typeof fetch;
-  const keptUnhealthy = await resolveDurableComputerId({
+  // no-healthy-orphan with existing must mint — existing was not seat-bound
+  // healthy (orphan twin / refused). Keeping it would feed ensure→login wall.
+  let mintOnRefuse: string[] = [];
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string };
+    mintOnRefuse.push(body.action ?? "");
+    if (body.action === "reclaim_healthy_orphan") {
+      return new Response(JSON.stringify({ error: "no-healthy-orphan" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (body.action === "ensure") {
+      return new Response(
+        JSON.stringify({ computer: { computerId: "comp_fresh_mint", seatId: "seat_keep" } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
+  const mintedUnhealthy = await resolveDurableComputerId({
     seatId: "seat_keep",
-    existingComputerId: "comp_unhealthy_owned",
+    existingComputerId: "comp_unhealthy_orphan_twin",
   });
-  ok("no-healthy-orphan keeps existing", keptUnhealthy === "comp_unhealthy_owned");
+  ok("no-healthy-orphan mints instead of keeping twin", mintedUnhealthy === "comp_fresh_mint");
+  ok(
+    "no-healthy-orphan posts reclaim then ensure mint",
+    mintOnRefuse.join(",") === "reclaim_healthy_orphan,ensure",
+  );
 
 
   // ensure failure must refuse start — never boot another seat's VM.
