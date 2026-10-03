@@ -122,6 +122,11 @@ export default function FleetComputerViewportPage() {
   const human = computer?.control === "human";
   const ready = Boolean(computer && computer.status !== "stopped" && computer.status !== "error");
   const liveUrl = computer?.viewUrl || computer?.remoteUrl || null;
+  const seatId = (computer?.seatId ?? "").trim();
+  const unboundOrphan = !seatId || seatId === "__orphan__";
+  // Orphan / empty seat must not stream or mutate — reclaim/bind first.
+  const canDrive = !unboundOrphan;
+  const streamUrl = canDrive ? liveUrl : null;
 
   React.useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -191,12 +196,12 @@ export default function FleetComputerViewportPage() {
               ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              {!ready ? (
+              {!ready && canDrive ? (
                 <Button type="button" size="sm" disabled={busy} onClick={() => void act("start")}>
                   Start computer
                 </Button>
               ) : null}
-              {human ? (
+              {canDrive && human ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -207,15 +212,16 @@ export default function FleetComputerViewportPage() {
                   <Unlock className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                   {FLUID_TAKEOVER.releaseLabel}
                 </Button>
-              ) : (
+              ) : null}
+              {canDrive && !human ? (
                 <Button type="button" size="sm" disabled={busy} onClick={() => void act("take_control")}>
                   <Hand className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                   {FLUID_TAKEOVER.takeLabel}
                 </Button>
-              )}
-              {liveUrl ? (
+              ) : null}
+              {streamUrl ? (
                 <a
-                  href={human ? withFluidTakeQuery(liveUrl) : liveUrl}
+                  href={human ? withFluidTakeQuery(streamUrl) : streamUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
@@ -226,6 +232,11 @@ export default function FleetComputerViewportPage() {
               ) : null}
             </div>
           </div>
+          {unboundOrphan ? (
+            <p className="mt-3 text-sm text-amber-300">
+              Unbound host VM — reclaim/bind a seat on Fleet before Start, Take control, or live stream.
+            </p>
+          ) : null}
           {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
           {computer?.lastError ? (
             <p className="mt-3 text-sm text-rose-300">Error: {computer.lastError}</p>
@@ -238,10 +249,10 @@ export default function FleetComputerViewportPage() {
             <span>Live stream</span>
             <span>{human ? "Interactive — bot paused · Esc to get out" : "Agent may act · T to jump in"}</span>
           </div>
-          {liveUrl ? (
+          {streamUrl ? (
             <iframe
               title={`Live computer ${computerId}`}
-              src={human ? withFluidTakeQuery(liveUrl) : liveUrl}
+              src={human ? withFluidTakeQuery(streamUrl) : streamUrl}
               className="h-[min(70vh,720px)] w-full bg-black"
               allow="fullscreen; clipboard-read; clipboard-write"
               referrerPolicy="no-referrer"
@@ -253,12 +264,18 @@ export default function FleetComputerViewportPage() {
                   <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden />
                   <div>
                     <h2 className="text-base font-semibold text-white">
-                      {human ? "You hold the LinkedIn seat" : "Waiting for live OpenBot URL"}
+                      {unboundOrphan
+                        ? "Unbound host VM"
+                        : human
+                          ? "You hold the LinkedIn seat"
+                          : "Waiting for live OpenBot URL"}
                     </h2>
                     <p className="mt-2 text-sm leading-relaxed text-slate-300">
-                      {human
-                        ? "Automatic sends are refused while you hold control. Complete LinkedIn login / 2FA when a real OpenBot Chromium URL is bound. Press Esc or Get out · Release when finished."
-                        : "Start the computer and bind COMPUTER_SUPERVISOR_URL so this surface embeds the live CDP stream (AgenticSeek-style watch). Then Take control (T) whenever you need to jump in."}
+                      {unboundOrphan
+                        ? "This Chromium is not bound to a campaign seat. Reclaim/bind on Fleet before streaming or Take control — never drive an __orphan__ profile from this URL."
+                        : human
+                          ? "Automatic sends are refused while you hold control. Complete LinkedIn login / 2FA when a real OpenBot Chromium URL is bound. Press Esc or Get out · Release when finished."
+                          : "Start the computer and bind COMPUTER_SUPERVISOR_URL so this surface embeds the live CDP stream (AgenticSeek-style watch). Then Take control (T) whenever you need to jump in."}
                     </p>
                   </div>
                 </div>

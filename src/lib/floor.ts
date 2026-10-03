@@ -240,9 +240,9 @@ export function agentActivityWithComputers(
   if (!computers || seat.provider !== "LinkedIn Browser Computer") return base;
 
   const hint = resolveComputerHint(seat, computers);
-  // Prefer fleet computerId; when the hint is already resolved for this seat,
-  // seat.computerId is a safe display fallback (never foreign/orphan binding).
-  const vmId = hint?.computerId || (hint ? seat.computerId : null) || null;
+  // Bound VM suffix = fleet hint only. Never fall back to Hermes seat.computerId
+  // (stale twin / foreign id can paint the wrong …suffix on a healthy desk).
+  const vmId = hint?.computerId?.trim() || null;
   const withVm = (label: string) =>
     vmId ? `${label} · …${vmId.slice(-8)}` : label;
 

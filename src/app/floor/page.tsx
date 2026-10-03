@@ -429,10 +429,12 @@ function Floor3DSection({
   // what's on screen. The full fleet always lives on the Agent Fleet page.
   const [deviceQuality] = React.useState(() => getDeviceQuality());
   const cap = MAX_3D_AGENTS[deviceQuality];
-  // Pulse may force "working" for walk animation — but never for Browser
-  // Computer seats whose VM is not actually ready (no theatrical working).
+  // Pulse may force "working" for walk animation — but never invent working
+  // from idle+healthy (session ready ≠ actively sourcing/sending).
   const office = seatsToOfficeAgents(seats, state, computerHints, now).map((a) => {
     if (!pulsingSeatIds.has(a.id) || a.status === "working") return a;
+    // Idle / warming / error stay put — pulse is FX for desks already working.
+    if (a.status === "idle" || a.status === "warming" || a.status === "error") return a;
     const seat = seats.find((s) => s.id === a.id);
     if (!seat) return a;
     // Live fleet poll: never theatrical-pulse without real VM health / real sends.

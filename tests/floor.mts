@@ -205,10 +205,20 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
   if (li) {
     const withId = { ...li, computerId: "comp_floor_visible_abc12345" };
+    // Fleet hint must carry computerId — Hermes seat.computerId alone must not paint suffix.
     const agents = seatsToOfficeAgents(
       [withId],
       s,
-      new Map([[withId.id, { status: "ready", sessionHealthy: true }]]),
+      new Map([
+        [
+          withId.id,
+          {
+            status: "ready" as const,
+            sessionHealthy: true as boolean | null,
+            computerId: "comp_floor_visible_abc12345",
+          },
+        ],
+      ]),
     );
     const agent = agents.find((a) => a.id === withId.id);
     ok(
@@ -218,6 +228,18 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     ok(
       "3D subtitle keeps session health when VM id shown",
       typeof agent?.subtitle === "string" && /session healthy/i.test(agent.subtitle),
+    );
+    const hermesOnly = seatsToOfficeAgents(
+      [withId],
+      s,
+      new Map([[withId.id, { status: "ready" as const, sessionHealthy: true as boolean | null }]]),
+    );
+    const hermesAgent = hermesOnly.find((a) => a.id === withId.id);
+    ok(
+      "3D subtitle refuses Hermes-only VM suffix without fleet computerId",
+      typeof hermesAgent?.subtitle === "string" &&
+        /session healthy/i.test(hermesAgent.subtitle) &&
+        !hermesAgent.subtitle.includes("…abc12345"),
     );
   }
 }
@@ -433,6 +455,34 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   ]);
   const act = agentActivityWithComputers(seat, s, Date.now(), hints);
   ok("2D activity label includes VM suffix", /…abcd1234/.test(act.label));
+}
+
+// Fleet hint without computerId must not paint Hermes seat.computerId suffix.
+{
+  const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (li) {
+    const seat = {
+      ...li,
+      id: "seat_hermes_sfx_bleed",
+      computerId: "comp_stale_hermes_twin_deadbeef",
+    };
+    const hints = new Map([
+      [
+        "seat_hermes_sfx_bleed",
+        {
+          status: "ready" as const,
+          sessionHealthy: true as boolean | null,
+          // intentional: fleet hint present but no computerId field
+          seatId: "seat_hermes_sfx_bleed",
+        },
+      ],
+    ]);
+    const act = agentActivityWithComputers(seat, s, NOW, hints);
+    ok(
+      "hint-only withVm never falls back to Hermes seat.computerId suffix",
+      /session healthy/i.test(act.label) && !/…deadbeef/i.test(act.label),
+    );
+  }
 }
 
 // Live computer map: non-LI theatrical busy with zero sends is not "Working now".
