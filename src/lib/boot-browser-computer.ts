@@ -8,6 +8,10 @@
  *
  * When a new id is required, mint via POST ensure (server makeId) — never client
  * crypto.randomUUID twins that can race and burn host slots.
+ *
+ * Pass campaignId only when the seat is already campaign-attached — otherwise
+ * refuseUnattached will block ensure/reclaim for N-agent isolation. Pre-attach
+ * flows (campaign page attach-before-assign) must omit it.
  */
 
 export type BootBrowserComputerResult = {
@@ -18,12 +22,19 @@ export type BootBrowserComputerResult = {
 };
 
 /** Server-owned id mint — one ensure row per seat, no client UUID race. */
-async function mintComputerIdViaEnsure(seatId: string): Promise<string> {
+async function mintComputerIdViaEnsure(
+  seatId: string,
+  campaignId?: string,
+): Promise<string> {
   const res = await fetch("/api/fleet/computers", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "ensure", seatId }),
+    body: JSON.stringify({
+      action: "ensure",
+      seatId,
+      ...(campaignId ? { campaignId } : {}),
+    }),
   });
   const json = (await res.json().catch(() => null)) as {
     error?: string;
@@ -44,9 +55,12 @@ async function mintComputerIdViaEnsure(seatId: string): Promise<string> {
 export async function resolveDurableComputerId(opts: {
   seatId: string;
   existingComputerId?: string | null;
+  /** Only when seat is already attached — gates refuseUnattached. */
+  campaignId?: string | null;
 }): Promise<string> {
   const seatId = opts.seatId.trim();
   const existing = (opts.existingComputerId ?? "").trim();
+  const campaignId = (opts.campaignId ?? "").trim() || undefined;
   if (!seatId) {
     if (existing) return existing;
     throw new Error("seatId required to mint a Browser Computer");
@@ -61,6 +75,7 @@ export async function resolveDurableComputerId(opts: {
         action: "reclaim_healthy_orphan",
         seatId,
         ...(existing ? { computerId: existing } : {}),
+        ...(campaignId ? { campaignId } : {}),
       }),
     });
     const json = (await res.json().catch(() => null)) as {
@@ -77,16 +92,16 @@ export async function resolveDurableComputerId(opts: {
       }
       // Foreign id — server mint; never keep another seat's VM.
       if (existing && /ownership-mismatch|orphan-claim-blocked/.test(err)) {
-        return mintComputerIdViaEnsure(seatId);
+        return mintComputerIdViaEnsure(seatId, campaignId);
       }
       // no-healthy-orphan means the stored id was not seat-bound healthy
       // (orphan twin / foreign / absent). Never keep it — mint a blank desk
       // rather than feed a login-wall twin into ensure→claim.
       if (existing && /no-healthy-orphan/.test(err)) {
-        return mintComputerIdViaEnsure(seatId);
+        return mintComputerIdViaEnsure(seatId, campaignId);
       }
       if (!existing && /no-healthy-orphan|ownership-mismatch|orphan-claim-blocked/.test(err)) {
-        return mintComputerIdViaEnsure(seatId);
+        return mintComputerIdViaEnsure(seatId, campaignId);
       }
     } else {
       const healthy =
@@ -107,7 +122,7 @@ export async function resolveDurableComputerId(opts: {
   }
 
   if (existing) return existing;
-  return mintComputerIdViaEnsure(seatId);
+  return mintComputerIdViaEnsure(seatId, campaignId);
 }
 
 export async function bootBrowserComputer(opts: {
@@ -129,7 +144,7 @@ export async function bootBrowserComputer(opts: {
       action: "ensure",
       computerId,
       seatId,
-      campaignId: opts.campaignId,
+      ...(opts.campaignId?.trim() ? { campaignId: opts.campaignId.trim() } : {}),
     }),
   }).catch(() => null);
 
@@ -166,7 +181,7 @@ export async function bootBrowserComputer(opts: {
       action: "start",
       computerId: ensuredId,
       seatId,
-      campaignId: opts.campaignId,
+      ...(opts.campaignId?.trim() ? { campaignId: opts.campaignId.trim() } : {}),
     }),
   }).catch(() => null);
 

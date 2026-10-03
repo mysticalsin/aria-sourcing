@@ -539,6 +539,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       let computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId: staleTwin ? null : seat.computerId,
+        // Only when already campaign-attached — bootstrap login before attach omits.
+        campaignId: (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim())),
       });
 
       // Persist computer id before ensure/start so N concurrent boots cannot race-mint twins.
