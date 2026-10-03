@@ -10,7 +10,7 @@ status: busy-healthy-clear-theater-attach-empty-omit-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `cdf2279`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** busy+healthy clears hash theater; Attach/Fleet omit Hermes on empty fleet; 3D hub/prefer require session healthy; prove-healthy expects idle
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
