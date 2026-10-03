@@ -121,9 +121,13 @@ export function CampaignAgentsPanel({
   const [observingId, setObservingId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  // Soft-nav: bump to invalidate in-flight refresh so a late prior-campaign
+  // success/fail cannot paint foreign durableSeats or wipe the new campaign.
+  const pollGeneration = React.useRef(0);
 
   const actions = useActions();
   const refresh = React.useCallback(async () => {
+    const gen = pollGeneration.current;
     setLoading(true);
     try {
       // GET-only like Floor/Fleet — never poll-ensure with Hermes computerId.
@@ -134,6 +138,7 @@ export function CampaignAgentsPanel({
         `/api/fleet/computers?campaignId=${encodeURIComponent(campaignId)}`,
         { credentials: "same-origin" },
       );
+      if (gen !== pollGeneration.current) return;
       if (!res.ok) {
         setError(`Fleet computers unavailable (${res.status})`);
         // Settled fail-closed: clear badge rows + Deploy fleet so paint cannot stay green.
@@ -161,6 +166,7 @@ export function CampaignAgentsPanel({
           assignedCampaignIds?: string[];
         }>;
       };
+      if (gen !== pollGeneration.current) return;
       // Durable DB campaign bindings win over Hermes-only attach (cold load / multi-tab).
       // Only sync when campaignSeats is present (successful authority). Error responses
       // omit the key — never detach-all on error-shaped [].
@@ -234,18 +240,20 @@ export function CampaignAgentsPanel({
       const tagged = campaignAudits.filter((a) => a.campaignId === campaignId);
       setAudits((tagged.length ? tagged : campaignAudits).slice(-40));
     } catch (e) {
+      if (gen !== pollGeneration.current) return;
       setError(e instanceof Error ? e.message : "Failed to load campaign agents");
       setFleetComputers([]);
       setComputers([]);
       setDurableSeats(undefined);
       setFleetLoaded(true);
     } finally {
-      setLoading(false);
+      if (gen === pollGeneration.current) setLoading(false);
     }
   }, [actions, hermesCampaignSeats, campaignId, seats]);
 
   React.useEffect(() => {
     // Soft-nav campaign change: clear prior campaign fleet paint before poll.
+    pollGeneration.current += 1;
     setComputers([]);
     setFleetComputers([]);
     setDurableSeats(undefined);
@@ -253,7 +261,10 @@ export function CampaignAgentsPanel({
     setAudits([]);
     void refresh();
     const t = window.setInterval(() => void refresh(), 4000);
-    return () => window.clearInterval(t);
+    return () => {
+      pollGeneration.current += 1;
+      window.clearInterval(t);
+    };
   }, [refresh]);
 
   async function deploySeat(seat: AgentSeat) {
