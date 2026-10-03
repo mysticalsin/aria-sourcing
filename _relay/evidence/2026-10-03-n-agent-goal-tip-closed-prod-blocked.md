@@ -1,10 +1,10 @@
 # N-agent goal completion audit — tip closed / production blocked
 
-**Tip:** `cursor/linkedin-human-claude-chrome-b91d` @ `ca8cf40`  
+**Tip:** `cursor/linkedin-human-claude-chrome-b91d` @ `ca8cf40` (CI+CodeQL green)  
 **Fly probe:** `21a42e7…` / migration `0084` / `agentFrameworks:false` (HTTP 503)  
 **Deploy divergence:** tip≠deploy ancestry (657 ahead / 2 behind `f5868fa`)  
 **Residual hunt:** NONE (`bc-930dd13f`)  
-**Verdict:** tip N-agent class **complete** / production **incomplete** — **do not UpdateGoal complete**
+**Verdict:** tip N-agent class **complete** + tip CI green / production **incomplete** — **do not UpdateGoal complete**
 
 ## Goal requirements vs evidence
 
