@@ -82,5 +82,12 @@ ok(
     !(/__orphan__[\s\S]{0,40}byComp|byComp[\s\S]{0,120}__orphan__/.test(campaign)),
 );
 
+ok(
+  "Browser Computer pace uses get() after ensure (TTL expire stale true)",
+  /SESSION_HEALTH_TTL/.test(channel) &&
+    /defaultComputerSupervisor\.get\(computer\.computerId\)\?\.sessionHealthy/.test(channel) &&
+    !/sessionHealthy: computer\.sessionHealthy/.test(channel),
+);
+
 console.log(`linkedin-send-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

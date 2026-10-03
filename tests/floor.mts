@@ -608,6 +608,10 @@ ok("at least one paused (lucas)", roll.paused >= 1);
       busyHealthy.status !== "warming",
     );
     ok(
+      "busy+healthy with zero sends is idle (not working theater)",
+      busyHealthy.status === "idle",
+    );
+    ok(
       "busy+healthy subtitle says session healthy",
       /session healthy/i.test(busyHealthy.subtitle ?? "") &&
         !/unverified/i.test(busyHealthy.subtitle ?? ""),

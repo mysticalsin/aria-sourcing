@@ -245,11 +245,15 @@ const browserComputerAdapter: LinkedInAdapter = {
             "seat snapshot required for Browser Computer pacing (daily cap / gap / sessionHealthy).",
         };
       }
+      // get() applies SESSION_HEALTH_TTL — ensure()'s raw record can still hold
+      // stale sessionHealthy=true that expireStaleSessionHealth would null.
+      const pacedHealthy =
+        defaultComputerSupervisor.get(computer.computerId)?.sessionHealthy ?? null;
       const pace = evaluateSendPace({
         seat: req.seat,
         settings: req.fleetSettings ?? defaultFleetSettings(),
         // Pass through null/false — pacing fails closed unless probed true.
-        sessionHealthy: computer.sessionHealthy ?? null,
+        sessionHealthy: pacedHealthy,
       });
       if (!pace.ok) {
         return {

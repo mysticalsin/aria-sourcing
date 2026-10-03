@@ -294,15 +294,16 @@ export function agentActivityWithComputers(
     // activity, never lie "session unverified". Unverified/null stays warming.
     if (hint.status === "busy" && healthyBusy) {
       // VM busy + probed healthy is real host work — never keep hash campaign theater
-      // when the desk has zero sends (detail/focusName would invent a Working-on cycle).
+      // when the desk has zero sends (sourcing would invent Working/3D working).
       const realSends = (seat.sentToday ?? 0) > 0;
       return {
         ...base,
-        state: realSends && base.state !== "idle" ? base.state : "sourcing",
+        // Match ready+healthy: zero sends ⇒ idle (not sourcing theater).
+        state: realSends && base.state !== "idle" ? base.state : "idle",
         label: withVm("VM busy — LinkedIn session healthy"),
         detail: realSends ? base.detail : "VM busy",
         focusName: realSends ? base.focusName : null,
-        busy: true,
+        busy: realSends,
         tone: realSends && base.state !== "idle" ? base.tone : "electric",
       };
     }

@@ -160,6 +160,13 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
     "floor never invents sessionHealthy true",
     !/sessionHealthy:\s*true/.test(floorPage),
   );
+  const floorLib = readFileSync("src/lib/floor.ts", "utf8");
+  ok(
+    "busy+healthy with zero sends is idle not sourcing theater",
+    /hint\.status === "busy" && healthyBusy/.test(floorLib) &&
+      /zero sends ⇒ idle/.test(floorLib) &&
+      !/state: realSends && base\.state !== "idle" \? base\.state : "sourcing"/.test(floorLib),
+  );
   ok(
     "floor caption includes bound count from floorBrowserVmTruth",
     floorPage.includes("floorBrowserVmTruth") && floorPage.includes("${t.bound} bound"),
