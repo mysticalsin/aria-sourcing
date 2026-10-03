@@ -40,8 +40,9 @@ Deploy SHA must itself have green CI — after landing tip on deploy, re-verify 
 
 ## Owner checklist (ordered)
 
-1. **Land tip on deploy branch** (pick one):
-   - Preferred: merge `cursor/linkedin-human-claude-chrome-b91d` → `deploy/fly-github-actions`, resolve the ~8 “changed in both” files by **keeping tip** (`winlog`, `web-tools`, channel/obscura/tavily/winlog tests, HANDOFF/codex-findings).
+0. **Merge PR #150** (`cursor/fly-deploy-land-n-agent-b91d` → `deploy/fly-github-actions`), preferring tip on conflicted files — or land tip another way.
+1. **Land tip on deploy branch** (if not via #150):
+   - Preferred: merge tip → `deploy/fly-github-actions`, resolve the ~8 “changed in both” files by **keeping tip** (`winlog`, `web-tools`, channel/obscura/tavily/winlog tests, HANDOFF/codex-findings).
    - Alt: if policy allows, reset/fast-forward deploy to tip (tip already has CI-fix equivalent).
 2. Record `RELEASE_SHA=$(git rev-parse origin/deploy/fly-github-actions)` after the land.
 3. Wait until `gh run list --commit $RELEASE_SHA --workflow ci.yml` and `codeql.yml` both show `completed success`.
@@ -61,4 +62,4 @@ curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq -e --arg tip "$TIP" \
 
 ## Verdict
 
-Tip N-agent class closed. Production goal remains **blocked on owner steps 1–6**. Do not UpdateGoal complete until Fly build==tip + migration≥0087 + LI desks healthy.
+Tip N-agent class closed. Production goal remains **blocked on owner steps 0–6**. Do not UpdateGoal complete until Fly build==tip + migration≥0087 + LI desks healthy.

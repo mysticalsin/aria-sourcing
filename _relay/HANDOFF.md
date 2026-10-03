@@ -1,40 +1,37 @@
 ---
 project: MSourcing / ARIA
-shift: 301
+shift: 302
 agent: cursor-cloud
-updated: 2026-10-03T13:42Z
+updated: 2026-10-03T13:50Z
 status: tip-n-agent-closed-fly-blocks-goal
 ---
 
-# Handoff — Shift 301
+# Handoff — Shift 302
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip:** `6c8cfca` (docs); last code+CI-proven green `ca8cf40` — N-agent residual **NONE**
+- **Feature branch:** `cursor/linkedin-human-claude-chrome-b91d` — PR https://github.com/mysticalsin/aria-sourcing/pull/148
+- **Deploy-land branch:** `cursor/fly-deploy-land-n-agent-b91d` — PR https://github.com/mysticalsin/aria-sourcing/pull/150 → base `deploy/fly-github-actions`
+- **Tip:** `c65c71c` (docs); last code+CI-proven green `ca8cf40` — residual hunt **NONE** (reconfirmed)
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false` (HTTP 503)
-- **Deploy divergence:** `deploy/fly-github-actions` @ `f5868fa` — tip **657** ahead / **2** behind (ee0cee9+f5868fa); tip already has CI-fix via `8a63a8f`
-- **Audit/checklist:** `_relay/evidence/2026-10-03-n-agent-goal-tip-closed-prod-blocked.md`, `_relay/evidence/2026-10-03-fly-owner-deploy-path.md`
+- **Deploy divergence:** tip ~657 ahead / 2 behind `f5868fa`; tip has CI-fix via `8a63a8f`
+- **Checklist:** `_relay/evidence/2026-10-03-fly-owner-deploy-path.md`
 - **Goal:** **open** until Fly tip SHA + LI desks healthy
 
 ## Done this shift
 
-1. Reprobed Fly — still stale 21a42e7/0084
-2. Mapped tip↔deploy divergence + merge-tree conflicts (~8 files; tip wins)
-3. Wrote owner deploy-path checklist (land tip → green CI → workflow_dispatch → LI proof)
-4. Refreshed blocker JSON + completion audit to `ca8cf40`
-5. Confirmed tip `ca8cf40` CI+CodeQL success (Quality+Release)
+1. Reconfirmed tip residual hunt NONE
+2. Reprobed Fly — still stale
+3. Opened deploy-land PR #150 (tip → protected `deploy/fly-github-actions`) for owner merge
 
 ## Blockers
 
-1. Owner: land tip on `deploy/fly-github-actions` + dispatch Deploy Aria Mantu + Take→login→Release LI healthy
+1. Owner: merge PR #150 (prefer tip on conflicts) → green CI on merge SHA → workflow_dispatch Deploy Aria Mantu + Take→login→Release LI healthy
 
 ## Next steps
 
-1. Owner Fly tip SHA + LI healthy — **do not UpdateGoal complete**
+1. Owner merge #150 + dispatch + LI healthy — **do not UpdateGoal complete**
 2. After deploy: prove `/api/ready` build==deploy tip && agentFrameworks && migration≥0087
-3. After land, confirm **deploy HEAD** (may be new merge SHA) has CI+CodeQL green before dispatch
 
 ## Decisions (don't relitigate)
 
@@ -43,10 +40,11 @@ status: tip-n-agent-closed-fly-blocks-goal
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - Protected deploy: `deploy/fly-github-actions`
-- Deploy-only `ee0cee9` already covered on tip by `8a63a8f` — keep tip on merge conflicts
+- Deploy-only `ee0cee9` covered on tip by `8a63a8f` — keep tip on merge conflicts
+- Same tip may track via #148 (integration) and #150 (deploy land)
 
 ## Watch out
 
 - No agent `FLY_API_TOKEN` — owner-only deploy
 - Docs pushes cancel prior CI; dispatch only a SHA with completed success ci.yml+codeql.yml
-- Same head can have PR to integration (#148) and separately to deploy — do not confuse bases
+- ManagePullRequest cannot open a second PR from the same head branch — use `cursor/fly-deploy-land-n-agent-b91d` for deploy base
