@@ -164,9 +164,10 @@ export function seatsToOfficeAgents(
   seats: AgentSeat[],
   state: HermesState,
   computers?: ReadonlyMap<string, ComputerFloorHint>,
+  now = Date.now(),
 ): OfficeAgent[] {
   return seats.map((seat, index) => {
-    const activity = agentActivityWithComputers(seat, state, Date.now(), computers);
+    const activity = agentActivityWithComputers(seat, state, now, computers);
     let status: OfficeAgent["status"];
     if (activity.state === "warming") status = "warming";
     else if (activity.state === "paused") status = "error";

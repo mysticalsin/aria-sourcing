@@ -152,7 +152,10 @@ function computerForSeat(
   if (!computerId) return undefined;
   const byComputer = computers.find((c) => c.computerId === computerId);
   if (!byComputer) return undefined;
-  if (byComputer.seatId && byComputer.seatId !== seat.id) return undefined;
+  // Match resolveComputerHint / computerHealthOwnedBySeat — empty or
+  // __orphan__ owners must not green go-live via Hermes twin computerId.
+  const owner = typeof byComputer.seatId === "string" ? byComputer.seatId.trim() : "";
+  if (!owner || owner === "__orphan__" || owner !== seat.id) return undefined;
   return byComputer;
 }
 

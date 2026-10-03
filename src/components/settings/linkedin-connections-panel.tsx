@@ -616,6 +616,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           url: loginUrl,
         }),
       }).catch(() => null);
+      // Capture pre-take probe — Take control clears sessionHealthy on BE.
+      const probedHealthyBeforeTake = sessionHealthy;
       const controlled = (await fleetAct("take_control"))?.computer ?? null;
       const url = controlled?.viewUrl || controlled?.remoteUrl;
       if (url && /^https?:\/\//i.test(url)) {
@@ -624,17 +626,24 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       } else {
         window.open("/fleet", "_blank", "noopener,noreferrer");
       }
+      // Take control clears sessionHealthy on the supervisor — never toast
+      // "session restored" / "no re-login" from the pre-take probe flag.
+      const afterTakeHealthy = controlled?.sessionHealthy === true;
       toast({
-        title: sessionHealthy
-          ? "LinkedIn session restored"
-          : surface === "recruiter"
-            ? "LinkedIn Recruiter login opened"
-            : "AriaBot LinkedIn login opened",
-        description: sessionHealthy
-          ? "Existing Chromium profile still has a healthy LinkedIn session — opened the feed. No re-login needed after this app update."
-          : surface === "recruiter"
-            ? "Sign into LinkedIn Recruiter inside AriaBot like a normal browser (2FA ok). Release when done — this seat keeps that Recruiter session."
-            : "Sign in on LinkedIn inside AriaBot (including 2FA). Release when done — agents reuse this session to source and reach out.",
+        title: afterTakeHealthy
+          ? "LinkedIn session still healthy"
+          : probedHealthyBeforeTake
+            ? "AriaBot opened LinkedIn feed"
+            : surface === "recruiter"
+              ? "LinkedIn Recruiter login opened"
+              : "AriaBot LinkedIn login opened",
+        description: afterTakeHealthy
+          ? "Supervisor still reports a healthy session after Take control."
+          : probedHealthyBeforeTake
+            ? "Chromium had a LinkedIn session before Take control. Finish any check, then Release — Floor stays unverified until the next probe."
+            : surface === "recruiter"
+              ? "Sign into LinkedIn Recruiter inside AriaBot like a normal browser (2FA ok). Release when done — this seat keeps that Recruiter session."
+              : "Sign in on LinkedIn inside AriaBot (including 2FA). Release when done — agents reuse this session to source and reach out.",
         variant: "success",
       });
       await load();

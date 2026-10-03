@@ -1246,3 +1246,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** dispatch LinkedIn Browser Computer send without seat → pace skipped; Hermes twin orphan hint painted Floor healthy; fleet bind + null Hermes → Deploy CTA.
 **Suggested fix:** pass agentSeatRowToSeat + defaultFleetSettings; refuse empty/orphan in resolveComputerHint; ops on bySeat??byComp only.
 **Status:** fixed (ee91d34) — dispatch seat pacing; Floor refuse orphan/empty; Campaign ops fleet bind
+
+## 2026-10-03 — go-live empty-owner green; Take toast restored theater; Floor now desync
+**Severity:** correctness
+**File:** src/lib/campaign-go-live.ts:155; linkedin-connections-panel.tsx:628; floor3d.ts:169
+**Issue:** computerForSeat allowed empty seatId to green go-live. Take control toast used pre-take sessionHealthy as "session restored". seatsToOfficeAgents hard-coded Date.now desyncing 3D vs rollup.
+**Repro/evidence:** computerId hint with seatId:"" + sessionHealthy true → session_healthy ok; toast after take claimed no re-login while BE cleared probe.
+**Suggested fix:** refuse empty/orphan in computerForSeat; toast from after-take health; injectable now on seatsToOfficeAgents + Floor page clock.
+**Status:** fixed (pending tip SHA)

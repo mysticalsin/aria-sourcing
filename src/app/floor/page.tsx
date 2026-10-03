@@ -209,10 +209,11 @@ export default function FloorPage() {
   }, []);
 
   const stateLike = { campaigns, candidates, ledger, suppression, seats, settings } as unknown as HermesState;
-  const rollup = floorRollup(seats, stateLike, Date.now(), computerHints);
+  const floorNow = Date.now();
+  const rollup = floorRollup(seats, stateLike, floorNow, computerHints);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
 
-  const pulseNow = Date.now();
+  const pulseNow = floorNow;
   const pulsingSeatIds = new Set<string>();
   for (const [seatId, until] of pulseUntilRef.current) {
     if (until > pulseNow) pulsingSeatIds.add(seatId);
@@ -337,6 +338,7 @@ export default function FloorPage() {
               onSelect={(s) => selectAgent(s)}
               pulsingSeatIds={pulsingSeatIds}
               computerHints={computerHints}
+              now={floorNow}
             />
           )
         ) : seats.length === 0 ? (
@@ -369,7 +371,7 @@ export default function FloorPage() {
                 <AgentDesk
                   key={seat.id}
                   seat={seat}
-                  activity={agentActivityWithComputers(seat, stateLike, Date.now(), computerHints)}
+                  activity={agentActivityWithComputers(seat, stateLike, floorNow, computerHints)}
                   onSelect={(s) => selectAgent(s.id)}
                 />
               ))}
@@ -382,6 +384,7 @@ export default function FloorPage() {
         seat={selected}
         state={stateLike}
         computerHints={computerHints}
+        now={floorNow}
         open={selected !== null && drawerView === "overview"}
         onClose={closeDrawer}
         onOpenCortex={() => setDrawerView("cortex")}
@@ -390,6 +393,7 @@ export default function FloorPage() {
         seat={selected}
         state={stateLike}
         computerHints={computerHints}
+        now={floorNow}
         open={selected !== null && drawerView === "cortex"}
         onClose={closeDrawer}
         onBack={() => setDrawerView("overview")}
@@ -405,6 +409,7 @@ function Floor3DSection({
   onSelect,
   pulsingSeatIds,
   computerHints,
+  now,
 }: {
   seats: AgentSeat[];
   state: HermesState;
@@ -412,6 +417,7 @@ function Floor3DSection({
   onSelect: (id: string) => void;
   pulsingSeatIds: Set<string>;
   computerHints?: ReadonlyMap<string, ComputerFloorHint>;
+  now: number;
 }) {
   // Render-cap: a full procedural robot per agent is ~20 meshes; rendering the
   // whole fleet (up to 300) tanks the GPU. RetroOfficeScene itself caps at
@@ -422,7 +428,7 @@ function Floor3DSection({
   const cap = MAX_3D_AGENTS[deviceQuality];
   // Pulse may force "working" for walk animation — but never for Browser
   // Computer seats whose VM is not actually ready (no theatrical working).
-  const office = seatsToOfficeAgents(seats, state, computerHints).map((a) => {
+  const office = seatsToOfficeAgents(seats, state, computerHints, now).map((a) => {
     if (!pulsingSeatIds.has(a.id) || a.status === "working") return a;
     const seat = seats.find((s) => s.id === a.id);
     if (!seat) return a;
@@ -532,6 +538,7 @@ function AgentDetailDrawer({
   seat,
   state,
   computerHints,
+  now = Date.now(),
   open,
   onClose,
   onOpenCortex,
@@ -539,6 +546,7 @@ function AgentDetailDrawer({
   seat: AgentSeat | null;
   state: HermesState;
   computerHints?: ReadonlyMap<string, ComputerFloorHint>;
+  now?: number;
   open: boolean;
   onClose: () => void;
   onOpenCortex: () => void;
@@ -550,7 +558,7 @@ function AgentDetailDrawer({
       </Drawer>
     );
   }
-  const activity = agentActivityWithComputers(seat, state, Date.now(), computerHints);
+  const activity = agentActivityWithComputers(seat, state, now, computerHints);
   const computerHint = resolveComputerHint(seat, computerHints);
   const boundComputerId = computerHint?.computerId || seat.computerId;
   const vmLabel = boundComputerId

@@ -98,6 +98,7 @@ const help = evaluateCampaignGoLive({
   computers: [
     {
       computerId: "comp_java_01",
+      seatId: "seat_java_vm_01",
       status: "help_requested",
       control: "bot",
       sessionHealthy: false,
@@ -116,6 +117,7 @@ const unverified = evaluateCampaignGoLive({
   computers: [
     {
       computerId: "comp_java_01",
+      seatId: "seat_java_vm_01",
       status: "ready",
       control: "bot",
       sessionHealthy: null,
@@ -136,6 +138,7 @@ const human = evaluateCampaignGoLive({
   computers: [
     {
       computerId: "comp_java_01",
+      seatId: "seat_java_vm_01",
       status: "ready",
       control: "human",
       sessionHealthy: true,
@@ -154,6 +157,7 @@ const low = evaluateCampaignGoLive({
   computers: [
     {
       computerId: "comp_java_01",
+      seatId: "seat_java_vm_01",
       status: "ready",
       control: "bot",
       sessionHealthy: true,
@@ -263,6 +267,48 @@ ok(
     "stale computerId must not steal another seat's healthy VM",
     stolen.ready === false &&
       stolen.checks.find((c) => c.id === "session_healthy")?.ok === false,
+  );
+
+  // Empty / __orphan__ owner must not green go-live (same as Floor resolveComputerHint).
+  const orphanOwner = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [liSeat({ id: "seat_orphan_gl", computerId: "comp_orphan_gl", assignedCampaignIds: [campaignId] })],
+    computers: [
+      {
+        computerId: "comp_orphan_gl",
+        seatId: "__orphan__",
+        status: "ready",
+        control: "bot",
+        sessionHealthy: true,
+      },
+    ],
+    candidate: { matchScore: 90 },
+  });
+  ok(
+    "orphan-owned computerId does not pass session_healthy",
+    orphanOwner.ready === false &&
+      orphanOwner.checks.find((c) => c.id === "session_healthy")?.ok === false,
+  );
+  const emptyOwner = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [liSeat({ id: "seat_empty_gl", computerId: "comp_empty_gl", assignedCampaignIds: [campaignId] })],
+    computers: [
+      {
+        computerId: "comp_empty_gl",
+        seatId: "",
+        status: "ready",
+        control: "bot",
+        sessionHealthy: true,
+      },
+    ],
+    candidate: { matchScore: 90 },
+  });
+  ok(
+    "empty-owner computerId does not pass session_healthy",
+    emptyOwner.ready === false &&
+      emptyOwner.checks.find((c) => c.id === "session_healthy")?.ok === false,
   );
   ok(
     "email seat with bare computerId is not a browser seat",

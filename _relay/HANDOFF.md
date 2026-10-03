@@ -1,28 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 242
+shift: 243
 agent: cursor-cloud
-updated: 2026-10-03T02:22Z
-status: pacing-orphan-hint-ops-shipped-fly-stale
+updated: 2026-10-03T02:28Z
+status: golive-take-toast-floor-now-shipped-fly-stale
 ---
 
-# Handoff — Shift 242
+# Handoff — Shift 243
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `ee91d34` (pacing + orphan hint)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** dispatch passes seat for Browser Computer pacing; Floor refuses empty/orphan computerId hints; Campaign ops use fleet bind without Hermes
+- **N-agent local:** go-live refuses empty/orphan owners; Take toast honest after probe clear; Floor 2D/3D/rollup share one now
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
 
 ## Done this shift
 
-1. dispatch-outbound: AGENT_SEAT_SELECT + seat/fleetSettings on deliver
-2. linkedin-channel requires seat for Browser Computer pace
-3. evaluateSendPace: Browser Computer requires sessionHealthy===true (no undefined skip)
-4. resolveComputerHint refuses empty/`__orphan__` owners
-5. Campaign Agents ops on fleet seat-owned row even when Hermes null
-6. Tests: floor 86, send-pacing 13, floor-fleet-wire 12
+1. campaign-go-live computerForSeat matches resolveComputerHint ownership
+2. LinkedIn login toast no longer claims "session restored" after Take clears health
+3. seatsToOfficeAgents(now) + Floor page floorNow threaded to desks/3D/drawers/cortex
+4. Tests: campaign-go-live 21, floor 86
 
 ## Blockers
 
@@ -41,9 +39,9 @@ status: pacing-orphan-hint-ops-shipped-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Browser Computer pacing always requires seat + sessionHealthy===true
-- Floor computerId hints require matching non-orphan seatId
-- Campaign ops gate on fleet bind, not Hermes alone
+- Empty/`__orphan__` owners never green Floor or go-live
+- Take control always clears health — UI must not claim restored
+- Floor surfaces share one `now` clock
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out
