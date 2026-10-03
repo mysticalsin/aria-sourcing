@@ -1,36 +1,34 @@
 ---
 project: MSourcing / ARIA
-shift: 268
+shift: 269
 agent: cursor-cloud
-updated: 2026-10-03T06:55Z
-status: allocate-approve-attach-fly-stale
+updated: 2026-10-03T07:20Z
+status: tip-audit-send-attach-bleed
 ---
 
-# Handoff — Shift 268
+# Handoff — Shift 269
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Shipping:** allocateOutreach no all-seats fallback; approve LI stamp only seatAttachedToCampaign
-- **Prior tip CI:** green on `7cf2b3d`
-- **Fly:** still `21a42e7…` / `agentFrameworks:false`
+- **Tip:** `b9677dd` — allocate/approve attach fail-closed
+- **Audit:** empty-BC bleed remains on send/dispatch/enqueue (+ preferred stamp bypass)
+- **Fly:** still stale — skip (owner)
 
 ## Done this shift
 
-1. Closed wire-audit F1: allocate `seatPool = campaignSeats` (empty stays empty)
-2. Approve empty seatId: only attached automatic LI (no liLive.length===1)
-3. Contract `tests/campaign-allocate-approve-attach.mts`; evidence updated
+1. Read-only tip audit after `b9677dd` (six gap classes)
+2. Evidence: `_relay/evidence/2026-10-03-n-agent-wire-audit.md`
 
 ## Blockers
 
-1. Owner Fly tip redeploy + LI healthy
+1. Owner Fly tip redeploy + LI healthy (unchanged)
 
 ## Next steps
 
-1. Confirm tip CI green
-2. Owner Fly tip SHA + LI healthy
-3. Do not UpdateGoal complete until then
+1. Gate BC send: `send/route.ts` + `dispatch-outbound.ts` + `enqueue_linkedin_outbound` require `assigned_campaign_ids` includes campaign
+2. Harden `pickLiveLinkedInSendSeat` preferred path for BC attach (update preferred test)
+3. Do not UpdateGoal complete until Fly tip + LI healthy
 
 ## Decisions (don't relitigate)
 
@@ -38,7 +36,9 @@ status: allocate-approve-attach-fly-stale
 - Campaign-scoped allocate never falls back to all desks
 - Never invent sessionHealthy=true
 - Never commit ARIA_JINA_API_KEY
+- Go-live requires computerForSeat (never Hermes-only)
 
 ## Watch out
 
+- Client allocate/approve green ≠ durable send attach enforced
 - Tip CI green ≠ production N-agent goal complete
