@@ -79,16 +79,51 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const campaign = campaigns[0];
   const campaignOk = campaigns.length > 0;
   const browserSeats = seats.filter(isBrowserComputerSeat);
+  // Explicit campaign membership only — empty assignedCampaignIds is NOT attached
+  // (matches evaluateCampaignGoLive / Campaign Agents).
   const attachedOk =
     Boolean(campaign) &&
-    browserSeats.some((s) => {
-      const assigned = s.assignedCampaignIds ?? [];
-      return assigned.length === 0 || assigned.includes(campaign!.id);
-    });
+    browserSeats.some((s) => (s.assignedCampaignIds ?? []).includes(campaign!.id));
   const agentsHref = campaign
     ? `/campaigns/${campaign.id}?tab=agents`
     : "/campaigns";
   const dryRunOff = !settings.dryRunMode;
+
+  // Take→login→Release done only after fleet probe paints sessionHealthy=true.
+  const [liSessionHealthy, setLiSessionHealthy] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    const seatIds = new Set(
+      seats.filter(isBrowserComputerSeat).map((s) => s.id),
+    );
+    const load = async () => {
+      try {
+        const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+        if (!res.ok || cancelled) {
+          if (!cancelled) setLiSessionHealthy(false);
+          return;
+        }
+        const data = (await res.json()) as {
+          computers?: { seatId?: string | null; sessionHealthy?: boolean | null }[];
+        };
+        const healthy = (data.computers ?? []).some(
+          (c) =>
+            c.sessionHealthy === true &&
+            typeof c.seatId === "string" &&
+            seatIds.has(c.seatId.trim()),
+        );
+        if (!cancelled) setLiSessionHealthy(healthy);
+      } catch {
+        if (!cancelled) setLiSessionHealthy(false);
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [seats]);
 
   const steps: Step[] = [
     {
@@ -141,15 +176,12 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
         {
       id: "take-control",
       title: "Take control · LinkedIn login",
-      body: browserSeats.some((s) => Boolean(s.computerId?.trim()))
-        ? "VM id on seat — finish LinkedIn login + 2FA in the sandbox if the session is still unverified, then Release."
+      body: liSessionHealthy
+        ? "LinkedIn session probed healthy on a Browser Computer seat — Release holds; bot may send after go-live."
         : "Open LinkedIn login for agents, sign in (and 2FA) inside the AriaBot VM, then Release so the bot can send.",
-      // Done only after a real LinkedIn Browser Computer seat exists — Hermes
-      // computerId alone is not Take→login proof (fleet probe still required).
-      done: browserSeats.length > 0 && Boolean(settings.computerSupervisorUrl?.trim()),
-      ctaLabel: browserSeats.some((s) => Boolean(s.computerId?.trim()))
-        ? "Open AriaBot stack"
-        : "Open LinkedIn login",
+      // Done only after fleet sessionHealthy===true on an attached Browser Computer seat.
+      done: liSessionHealthy,
+      ctaLabel: liSessionHealthy ? "Open AriaBot stack" : "Open LinkedIn login",
       href: `/settings?tab=integrations#${LINKEDIN_OUTREACH_STACK_ID}`,
       icon: <Hand className="h-4 w-4" aria-hidden />,
     },

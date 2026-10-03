@@ -124,8 +124,9 @@ export function CampaignAgentsPanel({
       );
       if (!res.ok) {
         setError(`Fleet computers unavailable (${res.status})`);
-        // Settled fail-closed: empty fleet so Deploy omits Hermes twin.
+        // Settled fail-closed: clear badge rows + Deploy fleet so paint cannot stay green.
         setFleetComputers([]);
+        setComputers([]);
         setFleetLoaded(true);
         return;
       }
@@ -218,6 +219,7 @@ export function CampaignAgentsPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load campaign agents");
       setFleetComputers([]);
+      setComputers([]);
       setFleetLoaded(true);
     } finally {
       setLoading(false);

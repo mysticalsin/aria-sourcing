@@ -460,10 +460,13 @@ export async function POST(req: NextRequest) {
         // Always drive the ensured id — never the raw request id after a rebound.
         const navComputerId = navRec.computerId;
         await defaultComputerSupervisor.start(navComputerId, campaignOpts);
-        // If a human currently holds the mutex, release so AriaBot can navigate.
+        // Never silently Release Take control — navigate refuses while operator holds the desk.
         const current = defaultComputerSupervisor.get(navComputerId);
         if (current?.control === "human") {
-          await defaultComputerSupervisor.releaseControl(navComputerId, campaignOpts);
+          return NextResponse.json(
+            { error: "computer-human-held", detail: "Release Take control before navigate." },
+            { status: 409 },
+          );
         }
         await defaultComputerSupervisor.enqueueJob({
           computerId: navComputerId,

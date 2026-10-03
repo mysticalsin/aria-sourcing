@@ -621,6 +621,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
             ? "https://www.linkedin.com/feed/"
             : "https://www.linkedin.com/login";
       // Navigate while AriaBot still holds the seat (before Take control).
+      // If operator already holds Take, navigate refuses (computer-human-held) —
+      // skip warm-nav and open the viewport instead of stealing the mutex.
       await fetch("/api/fleet/computers", {
         method: "POST",
         credentials: "include",

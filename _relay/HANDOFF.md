@@ -1,28 +1,27 @@
 ---
 project: MSourcing / ARIA
-shift: 251
+shift: 252
 agent: cursor-cloud
-updated: 2026-10-03T03:15Z
-status: observe-no-health-wipe-setup-guide-banrisk-fly-stale
+updated: 2026-10-03T03:20Z
+status: setup-attach-probe-poll-failclear-navigate-mutex-fly-stale
 ---
 
-# Handoff — Shift 251
+# Handoff — Shift 252
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `c5e90c0`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** Fleet Observe only starts when stopped/error (no healthy wipe); human-held UX copy; Setup Guide no Hermes twin done; BanRisk fleet-only; 3D hub no unverified ceo
+- **N-agent local:** Setup attach requires explicit campaign assign; take-control done = sessionHealthy; poll fail clears Agents/Fleet/HealthStrip paint; navigate refuses human-held
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
 
 ## Done this shift
 
-1. Fleet Observe matches Campaign Agents — start only when stopped/error; open view after success
-2. computer-human-held → operator-facing toast on Fleet / Campaign Agents / viewport
-3. Setup Guide: isBrowserComputerSeat ignores Hermes computerId; take-control done ≠ twin id
-4. BanRiskStrip: fleet bind only (no Hermes help fallback)
-5. Floor3D hub: no ceo when no probed-healthy LI
-6. Tests: floor 89, floor-fleet-wire 14, fleet-hermes-sync 18
+1. Setup Guide attachedOk requires assignedCampaignIds.includes(campaign)
+2. Setup Guide take-control done only when fleet sessionHealthy=true
+3. Campaign Agents + FleetHealthStrip + Fleet page clear paint on GET fail
+4. POST navigate returns 409 computer-human-held (no silent Release)
+5. Tests: floor 89, fleet-hermes-sync 18, campaign-go-live 25; tsc clean
 
 ## Blockers
 
@@ -41,9 +40,9 @@ status: observe-no-health-wipe-setup-guide-banrisk-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Observe must not wipe probed healthy on ready desks
-- Setup Guide never greens from Hermes computerId alone
-- Ban-risk help matches fleet bind only
+- Empty assignedCampaignIds ≠ attached
+- Poll failure clears healthy paint (Floor/Agents/Fleet strip)
+- navigate never steals Take control
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out

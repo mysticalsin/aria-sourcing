@@ -220,7 +220,12 @@ export default function FleetPage() {
       // GET-only like Floor — never poll-ensure with Hermes computerId. After reclaim,
       // a stale login-wall id would re-claim the orphan twin and detach the durable VM.
       const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Fail closed: clear roster paint so stale healthy/orphan rows cannot linger.
+        setComputers([]);
+        setOpsSummary(null);
+        return;
+      }
       const data = (await res.json()) as {
         computers?: FleetComputerRow[];
         summary?: FleetOpsSummary;

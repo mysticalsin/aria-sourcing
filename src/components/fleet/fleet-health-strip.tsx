@@ -21,7 +21,12 @@ export function FleetHealthStrip() {
     const load = async () => {
       try {
         const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          // Fail closed: clear probed-true so strip cannot stay green while BE is down.
+          setLiHealthyBySeat(new Map());
+          return;
+        }
         const data = (await res.json()) as {
           computers?: { seatId?: string | null; sessionHealthy?: boolean | null }[];
         };
@@ -34,7 +39,7 @@ export function FleetHealthStrip() {
         }
         if (!cancelled) setLiHealthyBySeat(m);
       } catch {
-        /* strip stays fail-closed for LI (no invent healthy) */
+        if (!cancelled) setLiHealthyBySeat(new Map());
       }
     };
     void load();
