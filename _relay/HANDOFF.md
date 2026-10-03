@@ -1,35 +1,34 @@
 ---
 project: MSourcing / ARIA
-shift: 292
+shift: 293
 agent: cursor-cloud
-updated: 2026-10-03T11:53Z
-status: tip-residual-fixed-fly-stale
+updated: 2026-10-03T12:11Z
+status: tip-agents-tab-durable-fly-stale
 ---
 
-# Handoff — Shift 292
+# Handoff — Shift 293
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip:** `5a01024` — durable `[]` authority on go-live + Setup durable LI healthy + Agents cards from durable⊇
-- **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false` — `_relay/evidence/2026-10-03-fly-owner-deploy-blocker.json`
-- **Goal:** open until Fly tip SHA (0085–0087) + LI desks healthy via Take→login→Release
+- **Tip:** `4c4a53a` — Agents tab badge prefers durable campaignSeats length
+- **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
+- **Goal:** open until Fly tip SHA (0085–0087) + LI desks healthy
 
 ## Done this shift
 
-1. Reprobed Fly; refreshed owner deploy blocker JSON
-2. Tip residual hunt → 3 gaps; fixed all three
-3. `npx tsc --noEmit` + targeted suites + `npm test` green
+1. Reprobed Fly — still stale; no `FLY_API_TOKEN`
+2. Post-5a01024 residual hunt → Agents tab Hermes-only badge; fixed
+3. `tsc` + soft-nav + `npm test` green
 
 ## Blockers
 
-1. Owner Fly tip redeploy (0085–0087) + LI healthy — no agent `FLY_API_TOKEN`
+1. Owner Fly tip redeploy + LI healthy
 
 ## Next steps
 
 1. Owner Fly tip SHA + LI healthy — do not UpdateGoal complete
-2. After deploy: prove `/api/ready` build==tip && agentFrameworks && migration≥0087
 
 ## Decisions (don't relitigate)
 
@@ -37,8 +36,8 @@ status: tip-residual-fixed-fly-stale
 - Shared isBrowserComputerSeat / seatAttachedToCampaign
 - Never invent sessionHealthy=true
 - Tip CI green ≠ production N-agent goal complete
+- Ignore Vercel-only CI when Quality/Release pass
 
 ## Watch out
 
 - Protected deploy: `deploy/fly-github-actions`
-- Ignore Vercel-only CI when Quality/Release pass
