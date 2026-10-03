@@ -1,38 +1,39 @@
 ---
 project: MSourcing / ARIA
-shift: 288
+shift: 289
 agent: cursor-cloud
-updated: 2026-10-03T11:05Z
-status: tip-ci-green-floor-honest-fly-stale
+updated: 2026-10-03T11:10Z
+status: tip-ponytail-attach-unify-fly-stale
 ---
 
-# Handoff — Shift 288
+# Handoff — Shift 289
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **Tip:** `fe35a39` — CI green (floor idle theater + attributed pulse)
+- **Shipping:** ponytail — go-live / Campaign Agents / Setup Guide use `seatAttachedToCampaign` / `isBrowserComputerSeat`
+- **Prior green:** `fe35a39` floor honesty
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
+- **Audit:** `_relay/evidence/2026-10-03-n-agent-goal-completion-audit.md` — tip OK / prod incomplete
 
 ## Done this shift
 
-1. Floor attributed pulse walks idle healthy BC
-2. Floor never upgrades idle→sourcing (disabled/no-campaign ceo hub closed)
-3. Tip CI green on `fe35a39`
+1. Completion audit written (goal blocked on Fly)
+2. Unified attach helpers in go-live + Campaign Agents + Setup Guide
 
 ## Blockers
 
-1. Owner Fly tip redeploy (0085–0087) + LI desks healthy
+1. Owner Fly tip redeploy (0085–0087) + LI healthy
 
 ## Next steps
 
-1. Owner Fly tip SHA + LI healthy — do not UpdateGoal complete
+1. Confirm tip CI; triage final tip sweep if findings
+2. Owner Fly tip SHA + LI healthy — do not UpdateGoal complete
 
 ## Decisions (don't relitigate)
 
-- ready+healthy+sends never upgrades idle base to sourcing
-- Attributed pulse on healthy BC is real FX
+- Shared `seatAttachedToCampaign` is the single attach truth
 - Never invent sessionHealthy=true
 - Tip CI green ≠ production N-agent goal complete
 

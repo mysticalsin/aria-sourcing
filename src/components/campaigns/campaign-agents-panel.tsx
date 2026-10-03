@@ -18,6 +18,7 @@ import type { AgentSeat } from "@/lib/types";
 import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
 import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
 import { useActions, useSettings } from "@/lib/store";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { fleetHermesComputerPatches, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
 
@@ -82,18 +83,14 @@ export function CampaignAgentsPanel({
   const campaignSeats = React.useMemo(
     () =>
       seats.filter(
-        (s) =>
-          s.provider === "LinkedIn Browser Computer" &&
-          (s.assignedCampaignIds ?? []).includes(campaignId),
+        (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, campaignId),
       ),
     [seats, campaignId],
   );
   const availableToAttach = React.useMemo(
     () =>
       seats.filter(
-        (s) =>
-          s.provider === "LinkedIn Browser Computer" &&
-          !(s.assignedCampaignIds ?? []).includes(campaignId),
+        (s) => isBrowserComputerSeat(s) && !seatAttachedToCampaign(s, campaignId),
       ),
     [seats, campaignId],
   );

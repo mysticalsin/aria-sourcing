@@ -4,6 +4,7 @@
 
 import type { AgentSeat, Candidate, SystemSettings } from "@/lib/types";
 import { defaultSendWindow } from "@/lib/fleet";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "@/lib/send-pacing";
 
 export type GoLiveCheckId =
@@ -125,19 +126,11 @@ export function mergeDurableCampaignSeatsForGoLive(
   return out;
 }
 
-function isBrowserComputerSeat(seat: AgentSeat): boolean {
-  // Provider/backend only — a bare computerId must not classify email seats as Browser Computers.
-  return (
-    seat.provider === "LinkedIn Browser Computer" ||
-    seat.linkedinDeliveryBackend === "browser-computer"
-  );
-}
-
 export function campaignBrowserSeats(seats: AgentSeat[], campaignId: string): AgentSeat[] {
   return seats.filter((s) => {
     if (!isBrowserComputerSeat(s)) return false;
     // Explicit campaign membership only — unassigned seats are not "attached".
-    return (s.assignedCampaignIds ?? []).includes(campaignId);
+    return seatAttachedToCampaign(s, campaignId);
   });
 }
 

@@ -12,6 +12,7 @@ import {
   useSeats,
   useSettings,
 } from "@/lib/store";
+import { isBrowserComputerSeat } from "@/lib/campaign-seat-attach";
 import { seatHasOutlookMailbox } from "@/lib/outlook-needs";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
@@ -31,17 +32,6 @@ import {
 function seatHasOauthMailbox(seat: { provider?: string; connectedAccount?: string }): boolean {
   if (seatHasOutlookMailbox(seat)) return true;
   return seat.provider === "Gmail API" && Boolean(seat.connectedAccount?.trim());
-}
-
-function isBrowserComputerSeat(seat: {
-  provider?: string;
-  linkedinDeliveryBackend?: string | null;
-}): boolean {
-  // Never classify via Hermes computerId alone — that greens Setup Guide from a twin.
-  return (
-    seat.provider === "LinkedIn Browser Computer" ||
-    seat.linkedinDeliveryBackend === "browser-computer"
-  );
 }
 
 type Step = {
