@@ -10,7 +10,7 @@ status: observe-no-health-wipe-setup-guide-banrisk-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `c5e90c0`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** Fleet Observe only starts when stopped/error (no healthy wipe); human-held UX copy; Setup Guide no Hermes twin done; BanRisk fleet-only; 3D hub no unverified ceo
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
