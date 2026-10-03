@@ -1,8 +1,10 @@
-# N-agent goal completion audit — 2026-10-03T15:35Z
+# N-agent goal completion audit — 2026-10-03T16:15Z
 
-**Tip:** `cursor/fly-deploy-land-n-agent-b91d` @ `40338ce` (also mirrored on feature PR #148)  
+**Tip:** `cursor/fly-deploy-land-n-agent-b91d` @ `81d3d8d` (proof script + prior attach honesty)  
 **Deploy PR:** https://github.com/mysticalsin/aria-sourcing/pull/150 — `MERGEABLE`, squash auto-merge on, **`REVIEW_REQUIRED`**  
+**CI tip:** Quality+Release+CodeQL green on `81d3d8d` (run `37134790600`); Vercel rate-limit ignore  
 **Fly:** `https://aria-mantu-app.fly.dev/api/ready` → build `21a42e7…`, migration `0084`, `agentFrameworks:false`, status `not_ready`  
+**Proof:** `bash scripts/fly-n-agent-proof.sh 81d3d8d50ea389047fe7290918360781f1a325e0` → exit 1 (build≠tip, migration≠0087, frameworks false)  
 **Residual hunt:** **NONE**  
 **Verdict:** tip requirements **satisfied** / production **incomplete** — **do not UpdateGoal complete**
 
@@ -15,15 +17,16 @@
 | Visible on 3D floor | `ingestDurableBrowserBindings`; pulse/PacketFX/ticker LI attach-gated | Unproven — not tip SHA |
 | Fully wired FE↔BE | Floor/Fleet/Agents/Setup/go-live/LI/viewport/Attention/Settings ingest; campaignSeats fail-closed | Unproven |
 | No theater | never invent `sessionHealthy=true`; `liveSeats` excludes LI BC; Take won't send stale campaignId | Unproven |
-| Ponytail | shared attach helpers + boot resolve campaignId optional | — |
+| Ponytail | shared attach helpers + boot resolve campaignId optional; `scripts/fly-n-agent-proof.sh` | — |
 
-## Tip closures this thread (post tip-closed)
+## Tip closures this thread
 
 - Viewport/Fleet Take: `campaignId` only if `seatAttachedToCampaign`
 - `resolveDurableComputerId` optional `campaignId` when already attached
 - Fleet Deploy omits `campaignId` for new seats (refuseUnattached false-fail fixed)
 - Attention + Settings ingest durable bindings
 - Drift tests in `tests/campaign-soft-nav-attach.mts`
+- Post-deploy proof script `scripts/fly-n-agent-proof.sh`
 
 ## Production blocker (ordered)
 

@@ -1,7 +1,8 @@
 # Owner: approve #150 → deploy → LI healthy
 
-**As of:** 2026-10-03T14:55Z  
+**As of:** 2026-10-03T16:00Z  
 **PR:** https://github.com/mysticalsin/aria-sourcing/pull/150 (`MERGEABLE`, squash auto-merge on, `REVIEW_REQUIRED`)  
+**Tip SHA:** `81d3d8d50ea389047fe7290918360781f1a325e0`  
 **Fly now:** `21a42e7…` / `0084` / `agentFrameworks:false`
 
 ## 1. Approve PR #150
