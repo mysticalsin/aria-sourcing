@@ -11,7 +11,7 @@ import type {
 import { normalizeSuppressionValue } from "./manual-suppression";
 import { isBrowserComputerSeat } from "./campaign-seat-attach";
 import type { Tone } from "./utils";
-import { clamp } from "./utils";
+import { clamp, ianaForAbbrev } from "./utils";
 
 /* ============================================================================
    FLEET GUARDRAIL ENGINE
@@ -77,11 +77,58 @@ export function warmupStage(seat: AgentSeat, now = Date.now()): { day: number; c
 
 /* ---- Send window ---------------------------------------------------------- */
 
+const WEEKDAY_SHORT_TO_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/** Resolve seat window labels (CET) or IANA ids to a zone Intl accepts. */
+export function resolveSendWindowTimeZone(timezone: string): string {
+  const trimmed = (timezone ?? "").trim();
+  if (!trimmed) return "UTC";
+  if (trimmed.toUpperCase() === "UTC") return "UTC";
+  const fromAbbrev = ianaForAbbrev(trimmed.toUpperCase());
+  if (fromAbbrev !== "UTC") return fromAbbrev;
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: trimmed }).format(new Date(0));
+    return trimmed;
+  } catch {
+    return "UTC";
+  }
+}
+
+/** Wall-clock day (0=Sun) + hour (0–23) in the seat send-window timezone. */
+export function sendWindowWallClock(
+  now: Date,
+  timezone: string,
+): { day: number; hour: number } {
+  const timeZone = resolveSendWindowTimeZone(timezone);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hourRaw = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const day = WEEKDAY_SHORT_TO_INDEX[weekday];
+  const hour = Number.parseInt(hourRaw, 10);
+  if (day == null || !Number.isFinite(hour) || hour < 0 || hour > 23) {
+    // Fail closed for malformed Intl output — treat as outside window via day=-1.
+    return { day: -1, hour: -1 };
+  }
+  return { day, hour };
+}
+
 export function isWithinSendWindow(seat: AgentSeat, now = new Date(), enforce = true): boolean {
   if (!enforce) return true;
   const w = seat.sendWindow;
-  const day = now.getDay();
-  const hour = now.getHours();
+  const { day, hour } = sendWindowWallClock(now, w.timezone);
   return w.days.includes(day) && hour >= w.startHour && hour < w.endHour;
 }
 

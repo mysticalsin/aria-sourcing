@@ -110,18 +110,21 @@ export function evaluateSendPace(opts: {
 
   if (settings.enforceBusinessHours && !isWithinSendWindow(seat, now, true)) {
     const w = seat.sendWindow;
-    const next = new Date(now);
-    next.setMinutes(0, 0, 0);
-    next.setHours(w.startHour);
-    if (next <= now) next.setDate(next.getDate() + 1);
-    while (!w.days.includes(next.getDay())) {
-      next.setDate(next.getDate() + 1);
+    // Scan forward in real time; isWithinSendWindow owns timezone wall-clock.
+    let nextEligibleAt: string | undefined;
+    let probe = new Date(now.getTime());
+    for (let i = 0; i < 24 * 8; i++) {
+      probe = new Date(probe.getTime() + 60 * 60 * 1000);
+      if (isWithinSendWindow(seat, probe, true)) {
+        nextEligibleAt = probe.toISOString();
+        break;
+      }
     }
     return {
       ok: false,
       reason: "business_hours",
       detail: `Outside send window (${w.startHour}:00–${w.endHour}:00 ${w.timezone}).`,
-      nextEligibleAt: next.toISOString(),
+      ...(nextEligibleAt ? { nextEligibleAt } : {}),
     };
   }
 

@@ -8,7 +8,7 @@ import {
   LINKEDIN_BROWSER_SEAT_DEFAULTS,
   pacingJitterMinutes,
 } from "../src/lib/send-pacing";
-import { defaultFleetSettings, defaultSendWindow } from "../src/lib/fleet";
+import { defaultFleetSettings, defaultSendWindow, isWithinSendWindow } from "../src/lib/fleet";
 import type { AgentSeat } from "../src/lib/types";
 
 let pass = 0;
@@ -122,6 +122,32 @@ const bh = evaluateSendPace({
   sessionHealthy: true,
 });
 ok("business_hours when outside window", bh.ok === false && bh.reason === "business_hours");
+
+// Timezone honesty: wall clock must use seat.sendWindow.timezone, not machine local.
+// 2026-06-26T06:30Z = 08:30 Europe/Berlin (CEST) — inside CET 8–18 weekday window.
+const cetSeat = baseSeat({
+  sendWindow: { startHour: 8, endHour: 18, timezone: "CET", days: [1, 2, 3, 4, 5] },
+});
+const berlinMorningUtc = new Date("2026-06-26T06:30:00.000Z");
+ok(
+  "CET window includes Berlin morning (06:30Z → 08:30 CEST)",
+  isWithinSendWindow(cetSeat, berlinMorningUtc, true) === true,
+);
+ok(
+  "pace ok in CET morning via timezone wall-clock",
+  evaluateSendPace({
+    seat: cetSeat,
+    settings: { ...settings, enforceBusinessHours: true },
+    now: berlinMorningUtc,
+    sessionHealthy: true,
+  }).ok === true,
+);
+// 16:30Z = 18:30 Berlin — outside exclusive endHour 18.
+const berlinEveningUtc = new Date("2026-06-26T16:30:00.000Z");
+ok(
+  "CET window excludes Berlin evening (16:30Z → 18:30 CEST)",
+  isWithinSendWindow(cetSeat, berlinEveningUtc, true) === false,
+);
 
 ok("jitter is deterministic", pacingJitterMinutes("abc", 5) === pacingJitterMinutes("abc", 5));
 ok(
