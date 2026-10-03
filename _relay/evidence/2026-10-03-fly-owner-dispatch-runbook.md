@@ -56,7 +56,7 @@ gh workflow run "Deploy Aria Mantu (Fly)" \
   -f recovery_receipt_sha256="$RECEIPT_SHA256"
 ```
 
-**Expect:** deploy acceptance now passes when `/api/ready` is HTTP 503 with only `agentFrameworks:false` (tip SHA + Hermes data plane green). DeerFlow/Flowise sidecars are not required for N-agent land.
+**Expect:** deploy acceptance passes when `/api/ready` is HTTP 503 with only `agentFrameworks:false`, and when framework heartbeat is `degraded` solely due to missing adapters/inventory. `worker_exception` still fails.
 
 ## 5. Post-deploy proof (N-agent goal gate)
 
