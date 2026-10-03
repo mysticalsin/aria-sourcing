@@ -1,53 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 344
+shift: 345
 agent: cursor-cloud
-updated: 2026-10-03T23:08Z
-status: tip-ci-green-awaiting-owner-approve-for-fly
+updated: 2026-10-03T23:57Z
+status: tip-residuals-open-after-tz-fixes
 ---
 
-# Handoff — Shift 344
+# Handoff — Shift 345
 
 ## Current state
 
-- **Branch tip:** `ecec555` on `cursor/fly-deploy-land-n-agent-b91d` (docs after #150 tip `8a4410e`)
-- Tip N-agent FE↔BE residuals: **NONE** (adversarial re-hunt this shift)
-- **#150:** merge **BLOCKED** solely by `REVIEW_REQUIRED` (only mysticalsin can approve; agent 403)
-- **#151 MERGED** onto `vercel-demo`: Deploy Aria Mantu (Fly) workflow active again
-- Agent still **cannot** `workflow_dispatch` (403) or supply FLY_API_TOKEN / recovery receipt
-- **Fly:** `21a42e7…` / `0084` / hermesRuntime true — proof fails build==tip + migration≥0087
+- **Branch tip:** `3df0f5b` on `cursor/fly-deploy-land-n-agent-b91d` (sendWindow TZ + endHour=24 fixes)
+- Adversarial residual hunt **after** those fixes: **OPEN residuals** (not NONE)
+- Prior shift-344 NONE verdict is superseded — hunt found durable LI claim + pacing gaps
+- `gate.ts` `inQuietHours`/`nextSendTime` (`getHours`) are **dead code** — not on LI Browser Computer send path (omit)
+- Floor/PacketFX/pulse/go-live all-N / fail-closed sessionHealthy: reconfirmed closed
 
 ## Done this shift
 
-1. Adversarial residual hunt vs N-agent invariants (sessionHealthy invent, all-N go-live/strip/setup/stack/agents, send fail-closed, 1:1 VM, floor attach/pulse/PacketFX, Hermes-only OK)
-2. Reconfirmed tip code closed: `evaluateCampaignGoLive` all-N; setup/stack/agents every-desk healthy; fleet strip success=all send-ready; probe-only true; send pacing fail-closed; PacketFX/pulse attach-gated
-3. Verdict: `TIP_RESIDUALS: NONE`
+1. Adversarial hunt focus: gate quiet hours, SESSION_HEALTH_TTL clocks, Floor/PacketFX, nextEligibleAt, getHours/getDay on LI path
+2. Wrote open findings to `_relay/codex-findings.md` (claim BC exclusion, dispatch seat counter/window, nextEligibleAt, future probedAt, queued commit, UTC day cap)
+3. Archived shift 344 → `_relay/archive/2026-10-03-2357-cursor-cloud.md`
 
 ## Blockers
 
-1. **Owner approve #150** → squash auto-merge → wait deploy HEAD CI
-2. Owner `workflow_dispatch` Deploy Aria Mantu on `deploy/fly-github-actions` (agent 403)
-3. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+1. Open tip residuals must be fixed before N-agent LI durable send is honest
+2. Owner approve #150 / Fly dispatch still blocked (unchanged from shift 344)
 
 ## Next steps
 
-1. Owner approve #150 (only remaining tip gate)
-2. After squash: wait CI green on `deploy/fly-github-actions` HEAD
-3. Owner dispatch Deploy Aria Mantu (`release_sha` + `recovery_receipt_sha256`)
-4. `bash scripts/fly-n-agent-proof.sh <deploy-head>` → build==tip, migration≥0087, hermesRuntime
-5. LI Take→login→Release; confirm sessionHealthy via probe (never invent)
-6. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
+1. Triage/fix open findings — priority: `claim_linkedin_outbound_queued` allowlist for `LinkedIn Browser Computer`
+2. Wire dispatch seat pacing from durable ledger / persisted send_window (not `sentToday=0` + `defaultSendWindow()`)
+3. Fix nextEligibleAt boundary + future `sessionProbedAt` expire/restore
+4. Re-run adversarial hunt → expect `TIP_RESIDUALS: NONE` only after claim+pacing closed
+5. Then owner approve #150 / Fly proof (do not UpdateGoal complete until tip+0087+LI desks)
 
 ## Decisions made (don't relitigate)
 
 - Probe remoteUrl + sessionProbedAt rotate; durable adopt; hermes local-only
 - Never invent sessionHealthy=true; ignore Vercel-only when Quality/Release pass
-- N-agent deploy does not require agentFrameworks:true
 - All-N for go-live/strip/setup/stack/agents; send remains per-seat fail-closed
-- Deploy workflow must exist on default branch `vercel-demo` or Actions marks it deleted
+- `gate.ts` quiet hours unused on LI path — do not treat as send-path residual unless wired
+- isWithinSendWindow timezone via Intl + ianaForAbbrev; endHour exclusive / 24 all-day
 
 ## Watch out
 
-- No agent review/approve / FLY_API_TOKEN / request-reviewers / workflow_dispatch
-- Do not push tip churn that cancels green CI unless a real residual appears
-- After #150 lands, dispatch uses workflow file from `deploy/fly-github-actions` ref
+- openbot e2e calls `enqueueJob` directly and **misses** claim_linkedin BC exclusion
+- Do not re-clear Floor/PacketFX invent-healthy (closed)
+- No agent review/approve / FLY_API_TOKEN / workflow_dispatch
