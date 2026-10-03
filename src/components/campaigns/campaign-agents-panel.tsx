@@ -227,6 +227,11 @@ export function CampaignAgentsPanel({
   }, [actions, campaignSeats, campaignId, seats]);
 
   React.useEffect(() => {
+    // Soft-nav campaign change: clear prior campaign fleet paint before poll.
+    setComputers([]);
+    setFleetComputers([]);
+    setFleetLoaded(false);
+    setAudits([]);
     void refresh();
     const t = window.setInterval(() => void refresh(), 4000);
     return () => window.clearInterval(t);
@@ -419,9 +424,16 @@ export function CampaignAgentsPanel({
     Boolean(liveUrl) &&
     (liveUrl!.startsWith("http://") || liveUrl!.startsWith("https://"));
 
-  const humanCount = computers.filter((c) => c.control === "human").length;
-  const healthyCount = computers.filter((c) => c.sessionHealthy === true).length;
-  const unverifiedCount = computers.filter(
+  const campaignSeatIds = React.useMemo(
+    () => new Set(campaignSeats.map((s) => s.id)),
+    [campaignSeats],
+  );
+  const campaignComputers = computers.filter(
+    (c) => c.seatId && campaignSeatIds.has(c.seatId),
+  );
+  const humanCount = campaignComputers.filter((c) => c.control === "human").length;
+  const healthyCount = campaignComputers.filter((c) => c.sessionHealthy === true).length;
+  const unverifiedCount = campaignComputers.filter(
     (c) => (c.status === "ready" || c.status === "busy") && c.sessionHealthy !== true,
   ).length;
   // Fleet seat-owned bindings only — Hermes computerId alone is not a live VM.

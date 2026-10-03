@@ -365,16 +365,18 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           });
           continue;
         }
-        // BC empty/foreign assigned ≠ this campaign (match allocate/approve attach).
+        // BC requires campaign_id (match enqueue 0086) — blank must not skip attach.
         const attachCampaignId =
           (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) || "";
-        if (
-          attachCampaignId &&
-          seat.provider === "LinkedIn Browser Computer" &&
-          !seatAttachedToCampaign(seat, attachCampaignId)
-        ) {
-          await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-attached"] });
-          continue;
+        if (seat.provider === "LinkedIn Browser Computer") {
+          if (!attachCampaignId) {
+            await finish("blocked", { pass: false, reasons: ["campaign-required"] });
+            continue;
+          }
+          if (!seatAttachedToCampaign(seat, attachCampaignId)) {
+            await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-attached"] });
+            continue;
+          }
         }
         const linkedInRefs = await loadLinkedInCredentialRefsForWorkspace(msg.workspace_id);
         const linkedInCreds = await resolveLinkedInCredentialsForWorkspace(

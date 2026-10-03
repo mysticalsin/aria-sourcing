@@ -68,7 +68,6 @@ export function mergeDurableCampaignSeatsForGoLive(
       new Set([
         ...(local?.assignedCampaignIds ?? []),
         ...(Array.isArray(row.assignedCampaignIds) ? row.assignedCampaignIds : []),
-        campaignId,
       ]),
     );
     if (local) {

@@ -28,6 +28,9 @@ export function CampaignGoLiveChecklist(props: {
   React.useEffect(() => {
     if (props.computers) return;
     let cancelled = false;
+    // Soft-nav campaign change: clear prior campaign paint before the next poll.
+    setPolledComputers([]);
+    setDurableSeats(undefined);
     const load = async () => {
       try {
         const res = await fetch(
@@ -38,6 +41,7 @@ export function CampaignGoLiveChecklist(props: {
         if (!res.ok) {
           // Fail closed: empty fleet poll — Hermes twin alone must not green attach.
           setPolledComputers([]);
+          setDurableSeats(undefined);
           return;
         }
         const data = (await res.json()) as {
@@ -61,12 +65,13 @@ export function CampaignGoLiveChecklist(props: {
             });
         if (!cancelled) {
           setPolledComputers(scoped);
-          if (Array.isArray(data.campaignSeats)) {
-            setDurableSeats(data.campaignSeats);
-          }
+          setDurableSeats(Array.isArray(data.campaignSeats) ? data.campaignSeats : undefined);
         }
       } catch {
-        if (!cancelled) setPolledComputers([]);
+        if (!cancelled) {
+          setPolledComputers([]);
+          setDurableSeats(undefined);
+        }
       }
     };
     void load();

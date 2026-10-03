@@ -431,6 +431,15 @@ ok(
     patched[0].computerId === "comp_java_01" &&
       (patched[0].assignedCampaignIds ?? []).includes(campaignId),
   );
+  const noInject = mergeDurableCampaignSeatsForGoLive(
+    [liSeat({ id: "seat_no_inject", assignedCampaignIds: [], computerId: null })],
+    [{ id: "seat_no_inject", computerId: "comp_x", assignedCampaignIds: [] }],
+    campaignId,
+  );
+  ok(
+    "merge does not inject campaignId into empty durable assigned",
+    !(noInject[0].assignedCampaignIds ?? []).includes(campaignId),
+  );
   const cleared = mergeDurableCampaignSeatsForGoLive(
     [liSeat({ id: "seat_clear_twin", computerId: "comp_stale_twin", assignedCampaignIds: [] })],
     [{ id: "seat_clear_twin", computerId: null, assignedCampaignIds: [campaignId] }],

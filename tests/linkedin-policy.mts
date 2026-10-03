@@ -110,6 +110,10 @@ ok(
   "dispatch blocks unattached Browser Computer",
   /linkedin-seat-not-attached/.test(dispatch) && /seatAttachedToCampaign/.test(dispatch),
 );
+ok(
+  "dispatch fails closed when BC message has blank campaign_id",
+  /campaign-required/.test(dispatch),
+);
 
 console.log(`RESULT linkedin-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
