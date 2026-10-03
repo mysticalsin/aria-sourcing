@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import { HealthStrip } from "@/components/settings/integration-connection-primitives";
-import { useSeats, useFleetSummary } from "@/lib/store";
+import { useSeats, useFleetSummary, useActions } from "@/lib/store";
+import { isBrowserComputerSeat } from "@/lib/campaign-seat-attach";
+import { hermesPatchesFromBrowserSeatBindings } from "@/lib/fleet-hermes-sync";
 import type { Tone } from "@/lib/utils";
 
 /**
@@ -12,6 +14,7 @@ import type { Tone } from "@/lib/utils";
 export function FleetHealthStrip() {
   const seats = useSeats();
   const s = useFleetSummary();
+  const actions = useActions();
   const [liHealthyBySeat, setLiHealthyBySeat] = React.useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );
@@ -29,6 +32,11 @@ export function FleetHealthStrip() {
         }
         const data = (await res.json()) as {
           computers?: { seatId?: string | null; sessionHealthy?: boolean | null }[];
+          browserSeatBindings?: Array<{
+            id: string;
+            computerId?: string | null;
+            assignedCampaignIds?: string[];
+          }>;
         };
         const m = new Map<string, boolean>();
         for (const c of data.computers ?? []) {
@@ -38,6 +46,13 @@ export function FleetHealthStrip() {
           m.set(sid, c.sessionHealthy === true);
         }
         if (!cancelled) setLiHealthyBySeat(m);
+        for (const patch of hermesPatchesFromBrowserSeatBindings(
+          seats,
+          data.browserSeatBindings,
+        )) {
+          const { seatId, ...rest } = patch;
+          void actions.updateSeat(seatId, rest);
+        }
       } catch {
         if (!cancelled) setLiHealthyBySeat(new Map());
       }
@@ -48,21 +63,17 @@ export function FleetHealthStrip() {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, []);
-
-  const isBrowserComputer = (seat: (typeof seats)[number]) =>
-    seat.provider === "LinkedIn Browser Computer" ||
-    seat.linkedinDeliveryBackend === "browser-computer";
+  }, [actions, seats]);
 
   const needsMailbox = seats.filter(
-    (seat) => !isBrowserComputer(seat) && !seat.connectedAccount,
+    (seat) => !isBrowserComputerSeat(seat) && !seat.connectedAccount,
   ).length;
   const needsVerify = seats.filter(
     (seat) =>
-      !isBrowserComputer(seat) && seat.connectedAccount && !seat.domainVerified,
+      !isBrowserComputerSeat(seat) && seat.connectedAccount && !seat.domainVerified,
   ).length;
   const liveReady = seats.filter((seat) => {
-    if (isBrowserComputer(seat)) {
+    if (isBrowserComputerSeat(seat)) {
       // LI desks: live mode + probed healthy only — never mailbox theater.
       return seat.mode === "live" && liHealthyBySeat.get(seat.id) === true;
     }
@@ -70,19 +81,20 @@ export function FleetHealthStrip() {
   }).length;
   const liUnverified = seats.filter(
     (seat) =>
-      isBrowserComputer(seat) &&
+      isBrowserComputerSeat(seat) &&
       seat.mode === "live" &&
       liHealthyBySeat.get(seat.id) !== true,
   ).length;
 
   const readyPct = s.seats ? (liveReady / s.seats) * 100 : 0;
-  let tone: Tone = liveReady > 0 ? "success" : needsMailbox > 0 || liUnverified > 0 ? "warning" : "neutral";
+  let tone: Tone =
+    liveReady > 0 ? "success" : needsMailbox > 0 || liUnverified > 0 ? "warning" : "neutral";
   if (s.pausedSeats > s.seats / 2 && s.seats > 0) tone = "warning";
 
   return (
     <HealthStrip
       title="Fleet readiness"
-      primary={`${s.liveSeats} live · ${s.activeSeats} active`}
+      primary={`${liveReady} send-ready · ${s.activeSeats} active`}
       secondary={[
         needsMailbox > 0 ? `${needsMailbox} need mailbox` : "",
         needsVerify > 0 ? `${needsVerify} need domain verify` : "",

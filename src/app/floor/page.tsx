@@ -37,7 +37,7 @@ import {
   floorRollup,
   resolveComputerHint,
 } from "@/lib/floor";
-import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
+import { fleetHermesComputerPatches, hermesPatchesFromBrowserSeatBindings } from "@/lib/fleet-hermes-sync";
 import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import {
   EVENT_COLOR,
@@ -165,35 +165,12 @@ export default function FloorPage() {
         }
         // Durable agent_seats attach/computerId → Hermes so floor labels/FX match DB
         // (N desks visible without requiring Campaign Agents tab open first).
-        if (Array.isArray(data.browserSeatBindings)) {
-          for (const row of data.browserSeatBindings) {
-            if (!row?.id) continue;
-            const local = seatsRef.current.find((s) => s.id === row.id);
-            if (!local || !isBrowserComputerSeat(local)) continue;
-            const patch: {
-              assignedCampaignIds?: string[];
-              computerId?: string | null;
-            } = {};
-            const durableAssigned = Array.isArray(row.assignedCampaignIds)
-              ? row.assignedCampaignIds
-              : [];
-            const localAssigned = local.assignedCampaignIds ?? [];
-            const sameAssign =
-              durableAssigned.length === localAssigned.length &&
-              durableAssigned.every((id) => localAssigned.includes(id));
-            if (!sameAssign) patch.assignedCampaignIds = durableAssigned;
-            if (row.computerId && row.computerId !== local.computerId) {
-              patch.computerId = row.computerId;
-            } else if (
-              (row.computerId == null || String(row.computerId).trim() === "") &&
-              Boolean((local.computerId ?? "").trim())
-            ) {
-              patch.computerId = null;
-            }
-            if (Object.keys(patch).length > 0) {
-              void actions.updateSeat(row.id, patch);
-            }
-          }
+        for (const patch of hermesPatchesFromBrowserSeatBindings(
+          seatsRef.current,
+          data.browserSeatBindings,
+        )) {
+          const { seatId, ...rest } = patch;
+          void actions.updateSeat(seatId, rest);
         }
         if (!cancelled) setComputerHints(map);
       } catch {

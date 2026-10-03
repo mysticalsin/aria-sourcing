@@ -176,6 +176,12 @@ ok(
     /setFleetComputers\(\[\]\)/.test(liPanel) &&
     /HTTP fail: clear prior fleet paint/.test(liPanel),
 );
+ok(
+  "linkedin login fleetAct passes campaignId when seat attached",
+  /assignedCampaignIds \?\? \[\]\)\.find/.test(liPanel) &&
+    /\.\.\.\(campaignId \? \{ campaignId \} : \{\}\)/.test(liPanel) &&
+    /gateCampaignId \? \{ campaignId: gateCampaignId \}/.test(liPanel),
+);
 
 console.log(`RESULT linkedin-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

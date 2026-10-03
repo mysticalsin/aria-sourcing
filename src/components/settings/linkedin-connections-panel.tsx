@@ -61,6 +61,7 @@ type SeatRow = {
   operatorEmail?: string;
   connectedAccount?: string | null;
   computerId?: string | null;
+  assignedCampaignIds?: string[];
   /** From fleet supervisor /session-probe — never invent true. */
   sessionHealthy?: boolean | null;
   adapterConfigured?: boolean;
@@ -147,6 +148,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           connectedAccount: s.connectedAccount,
           operatorEmail: s.operatorEmail,
           computerId: s.computerId ?? null,
+          assignedCampaignIds: s.assignedCampaignIds ?? [],
           sessionHealthy: null as boolean | null,
         }));
 
@@ -488,6 +490,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
               mode: s.mode,
               computerId: s.computerId ?? null,
               connectedAccount: s.connectedAccount ?? null,
+              assignedCampaignIds: s.assignedCampaignIds ?? [],
             }));
         }
       }
@@ -550,11 +553,19 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
         action: "ensure" | "start" | "take_control" | "session_probe" | "reclaim_healthy_orphan",
         id: string = computerId,
       ) {
+        // When seat is campaign-attached, pass campaignId so refuseUnattachedCampaignSeat
+        // gates Take/probe/navigate. Empty assign omits (bootstrap login before attach).
+        const campaignId = (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
         const res = await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, computerId: id || undefined, seatId: seat.id }),
+          body: JSON.stringify({
+            action,
+            computerId: id || undefined,
+            seatId: seat.id,
+            ...(campaignId ? { campaignId } : {}),
+          }),
         });
         const body = (await res.json().catch(() => null)) as {
           error?: string;
@@ -629,6 +640,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       // Navigate while AriaBot still holds the seat (before Take control).
       // If operator already holds Take, navigate refuses (computer-human-held) —
       // skip warm-nav and open the viewport instead of stealing the mutex.
+      const gateCampaignId = (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
       await fetch("/api/fleet/computers", {
         method: "POST",
         credentials: "include",
@@ -638,6 +650,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           computerId,
           seatId: seat.id,
           url: loginUrl,
+          ...(gateCampaignId ? { campaignId: gateCampaignId } : {}),
         }),
       }).catch(() => null);
       // Capture pre-take probe — Take control clears sessionHealthy on BE.

@@ -28,7 +28,7 @@ import {
   type FleetOpsSummary,
 } from "@/components/fleet/fleet-computer-ops-board";
 import { AllocationResultView } from "@/components/fleet/allocation-result";
-import { fleetHermesComputerPatches, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
+import { fleetHermesComputerPatches, hermesPatchesFromBrowserSeatBindings, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import {
   useHydrated,
   useSeats,
@@ -231,6 +231,11 @@ export default function FleetPage() {
         summary?: FleetOpsSummary;
         recentAudits?: FleetAuditEvent[];
         hostCapacity?: { computers: number; max: number; desktop?: boolean } | null;
+        browserSeatBindings?: Array<{
+          id: string;
+          computerId?: string | null;
+          assignedCampaignIds?: string[];
+        }>;
       };
       const rows = data.computers ?? [];
       setOpsSummary(data.summary ?? null);
@@ -239,6 +244,11 @@ export default function FleetPage() {
       // Write owned bindings + clear Hermes when computerId is owned by another seat.
       for (const patch of fleetHermesComputerPatches(browserSeats, rows)) {
         void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
+      }
+      // Durable agent_seats → Hermes attach (same authority as Floor).
+      for (const patch of hermesPatchesFromBrowserSeatBindings(seats, data.browserSeatBindings)) {
+        const { seatId, ...rest } = patch;
+        void actions.updateSeat(seatId, rest);
       }
       // In demo (no Supabase seats on the API), re-GET once if the first list is empty.
       if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {
@@ -250,10 +260,22 @@ export default function FleetPage() {
             summary?: FleetOpsSummary;
             recentAudits?: FleetAuditEvent[];
             hostCapacity?: { computers: number; max: number; desktop?: boolean } | null;
+            browserSeatBindings?: Array<{
+              id: string;
+              computerId?: string | null;
+              assignedCampaignIds?: string[];
+            }>;
           };
           setOpsSummary(againData.summary ?? null);
           setFleetAudits(againData.recentAudits ?? []);
           if (againData.hostCapacity) setHostCapacity(againData.hostCapacity);
+          for (const patch of hermesPatchesFromBrowserSeatBindings(
+            seats,
+            againData.browserSeatBindings,
+          )) {
+            const { seatId, ...rest } = patch;
+            void actions.updateSeat(seatId, rest);
+          }
           setComputers(
             (againData.computers ?? []).map((c) => {
               // Name only on seatId ownership — computerId fallback mislabels orphans/twins.

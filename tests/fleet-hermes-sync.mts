@@ -7,6 +7,7 @@ import {
   fleetHermesComputerPatches,
   computerHealthOwnedBySeat,
   isStaleHermesComputerTwin,
+  hermesPatchesFromBrowserSeatBindings,
 } from "../src/lib/fleet-hermes-sync";
 
 let pass = 0;
@@ -160,6 +161,45 @@ function ok(name: string, cond: boolean) {
     !isStaleHermesComputerTwin("seat_a", null, [
       { seatId: "__orphan__", computerId: "comp_x" },
     ]),
+  );
+}
+
+{
+  const seats = [
+    {
+      id: "seat_a",
+      provider: "LinkedIn Browser Computer" as const,
+      assignedCampaignIds: ["camp_old"],
+      computerId: "comp_stale",
+    },
+    {
+      id: "seat_mail",
+      provider: "Gmail API" as const,
+      assignedCampaignIds: ["camp_x"],
+      computerId: null,
+    },
+  ];
+  const patches = hermesPatchesFromBrowserSeatBindings(seats as never, [
+    { id: "seat_a", assignedCampaignIds: ["camp_new"], computerId: "comp_new" },
+    { id: "seat_mail", assignedCampaignIds: [], computerId: null },
+    { id: "seat_missing", assignedCampaignIds: ["camp_z"], computerId: "c" },
+  ]);
+  ok(
+    "browserSeatBindings patches BC attach + computerId",
+    patches.length === 1 &&
+      patches[0]!.seatId === "seat_a" &&
+      patches[0]!.assignedCampaignIds?.[0] === "camp_new" &&
+      patches[0]!.computerId === "comp_new",
+  );
+  ok(
+    "browserSeatBindings empty assigned clears Hermes attach",
+    hermesPatchesFromBrowserSeatBindings(seats as never, [
+      { id: "seat_a", assignedCampaignIds: [], computerId: "comp_stale" },
+    ])[0]?.assignedCampaignIds?.length === 0,
+  );
+  ok(
+    "browserSeatBindings omitted → no patches",
+    hermesPatchesFromBrowserSeatBindings(seats as never, undefined).length === 0,
   );
 }
 

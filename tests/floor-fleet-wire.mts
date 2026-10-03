@@ -259,6 +259,17 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
     "fleet page clears computers on poll throw (not only !res.ok)",
     /catch \{[\s\S]*setComputers\(\[\]\)[\s\S]*setOpsSummary\(null\)/.test(fleetPage),
   );
+  ok(
+    "fleet page syncs durable browserSeatBindings",
+    fleetPage.includes("hermesPatchesFromBrowserSeatBindings") &&
+      fleetPage.includes("browserSeatBindings"),
+  );
+  ok(
+    "fleet health strip headline uses send-ready (not domain liveSeats theater)",
+    healthStrip.includes("send-ready") &&
+      healthStrip.includes("hermesPatchesFromBrowserSeatBindings") &&
+      !/\$\{s\.liveSeats\} live/.test(healthStrip),
+  );
 }
 
 console.log(`floor-fleet-wire: ${pass} passed, ${fail} failed`);
