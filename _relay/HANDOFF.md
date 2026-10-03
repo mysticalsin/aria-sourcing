@@ -1,40 +1,41 @@
 ---
 project: MSourcing / ARIA
-shift: 267
+shift: 268
 agent: cursor-cloud
-updated: 2026-10-03T06:50Z
-status: tip-ci-green-fly-stale
+updated: 2026-10-03T06:55Z
+status: allocate-approve-attach-fly-stale
 ---
 
-# Handoff — Shift 267
+# Handoff — Shift 268
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip:** `7cf2b3d` — LI Browser empty assigned ≠ attached (allocate/send/FX); typecheck fix
-- **Tip CI:** green (ignore Vercel rate-limit)
+- **Shipping:** allocateOutreach no all-seats fallback; approve LI stamp only seatAttachedToCampaign
+- **Prior tip CI:** green on `7cf2b3d`
 - **Fly:** still `21a42e7…` / `agentFrameworks:false`
 
 ## Done this shift
 
-1. Shipped `campaign-seat-attach` + wire into allocate / pickLive / campaignBrowserSeatIds
-2. Fixed `typecheck:tests` provider literal; tip CI green on `7cf2b3d`
-3. Confirmed Fly deploy path is owner-only (protected branch + recovery receipt)
+1. Closed wire-audit F1: allocate `seatPool = campaignSeats` (empty stays empty)
+2. Approve empty seatId: only attached automatic LI (no liLive.length===1)
+3. Contract `tests/campaign-allocate-approve-attach.mts`; evidence updated
 
 ## Blockers
 
-1. Owner: Deploy Aria Mantu from `deploy/fly-github-actions` with tip SHA + receipt
-2. `ARIA_JINA_API_KEY` + Take→login→Release
+1. Owner Fly tip redeploy + LI healthy
 
 ## Next steps
 
-1. Owner Fly tip SHA + LI healthy
-2. Do not UpdateGoal complete until then
+1. Confirm tip CI green
+2. Owner Fly tip SHA + LI healthy
+3. Do not UpdateGoal complete until then
 
 ## Decisions (don't relitigate)
 
-- LI Browser Computer empty assigned ≠ attached / ≠ send fallback
+- LI Browser empty assigned ≠ attached
+- Campaign-scoped allocate never falls back to all desks
 - Never invent sessionHealthy=true
 - Never commit ARIA_JINA_API_KEY
 

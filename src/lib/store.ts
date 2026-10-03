@@ -2603,12 +2603,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       // N LinkedIn desks: refuse empty seat attribution on the authoritative ledger.
       if (msg.channel === "LinkedIn" && !(msg.seatId ?? "").trim()) {
-        const soleBrowser = soleCampaignBrowserSeatId(s.seats, campaign.id);
-        const liLive = s.seats.filter(
-          (x) => x.status === "active" && isLinkedInAutomaticProvider(x.provider),
+        // Only seats attached to this campaign (BC empty ≠ attached; Vendor empty = shared).
+        const attachedLi = s.seats.filter(
+          (x) =>
+            x.status === "active" &&
+            isLinkedInAutomaticProvider(x.provider) &&
+            seatAttachedToCampaign(x, campaign.id),
         );
-        const soleAuto = soleBrowser ?? (liLive.length === 1 ? liLive[0]!.id : undefined);
-        if (soleAuto) {
+        if (attachedLi.length === 1) {
+          const soleAuto = attachedLi[0]!.id;
           msg = { ...msg, seatId: soleAuto };
           commit((prev) => ({
             ...prev,
@@ -2617,13 +2620,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             ),
           }));
           s = current();
-        } else if (liLive.length > 1) {
+        } else if (attachedLi.length > 1) {
           return approvalBlocked(
             "Message has no seatId; cannot approve across N LinkedIn seats without a drafting desk.",
           );
         } else {
           return approvalBlocked(
-            "No LinkedIn automatic seat to attribute this approval — attach a Browser Computer or Vendor API desk.",
+            "No LinkedIn automatic seat attached to this campaign — attach a Browser Computer or Vendor API desk.",
           );
         }
       }
@@ -5263,13 +5266,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return c.matchScore >= s.settings.minScoreToContact && stageRank(c.stage) < 1;
       });
       const activeSeats = s.seats.filter((x) => x.status === "active");
-      // When allocating for a campaign, prefer seats attached to it (Campaign Agents).
-      // Seats with no assignment list stay eligible (shared pool); seats assigned
-      // only to other campaigns are excluded.
+      // Campaign-scoped allocate: only seats attached to that campaign (BC empty ≠ attached).
+      // Never fall back to all active desks — that drafts onto foreign LI VMs.
       const campaignSeats = opts?.campaignId
         ? activeSeats.filter((seat) => seatAttachedToCampaign(seat, opts.campaignId!))
         : activeSeats;
-      const seatPool = campaignSeats.length > 0 ? campaignSeats : activeSeats;
+      const seatPool = campaignSeats;
       const orderedSeats =
         s.settings.fleet?.deliveryMode === "manual"
           ? seatPool

@@ -6,15 +6,15 @@ Scope: campaign multi-seat attach, seatId↔computerId, floor↔fleet, go-live/o
 
 Physical VM isolation + fleet poll↔floor/ops computer targeting are wired fail-closed.
 `0771ad8` closed empty≠attach for source pulses / send-seat pick / allocate **filter**.
-**Still open:** allocate fallback to all seats when none attached, and approve `liLive.length===1` soleAuto bypass.
+**Still open:** ~~allocate fallback to all seats when none attached, and approve `liLive.length===1` soleAuto bypass.~~ **Fixed** — campaign-scoped `seatPool = campaignSeats` (empty stays empty); approve stamps only `seatAttachedToCampaign` automatic LI seats.
 
 ## Findings
 
 ### F1 — Remaining campaign-attach holes (after `0771ad8`)
 | File:line | Issue | One-line fix |
 |---|---|---|
-| `src/lib/store.ts:5272` | `seatPool = campaignSeats.length > 0 ? campaignSeats : activeSeats` — no attach ⇒ drafts on every active desk (incl. LI Browser) | If `opts.campaignId` and `campaignSeats` empty, use `[]` (fail closed), never fall back to all |
-| `src/lib/store.ts:2610` | `soleAuto = soleBrowser ?? (liLive.length===1 ? liLive[0].id : …)` stamps sole live LI with no campaign attach | Drop `liLive.length===1` fallback; only `soleCampaignBrowserSeatId` or block |
+| `src/lib/store.ts` allocate | ~~seatPool falls back to activeSeats~~ | **Fixed:** `seatPool = campaignSeats` (fail closed) |
+| `src/lib/store.ts` approve | ~~`liLive.length===1` soleAuto bypass~~ | **Fixed:** only `seatAttachedToCampaign` automatic LI |
 
 Fixed in `0771ad8` (not re-open): `agent-event-seat.ts` + `linkedin-automatic.ts` + allocate filter via `seatAttachedToCampaign` / `campaign-seat-attach.ts`.
 
