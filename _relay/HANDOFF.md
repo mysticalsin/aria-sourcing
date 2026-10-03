@@ -10,12 +10,12 @@ status: booking-trail-seat-computer-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (pending commit)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `0edafb3`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **Agent Reach:** slices 1–3.5 ✅; slice 4 ❌ Fly+LI
 - **N-agent:** singleton + durable probe + campaignSeats + Floor busy honest + booking.proposed seat/computer trail + go-live durable seat merge
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`; no deploy token
-- **Tip CI:** pending/queued on `f24d680` (pre this commit)
+- **Tip CI:** triggered on `0edafb3`
 
 ## Done this shift
 
