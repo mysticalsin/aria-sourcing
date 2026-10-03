@@ -10,7 +10,7 @@ status: reclaim-probe-before-claim-shipped-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `4f50a02` (reclaim probe-before-claim)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `c6ac494` (reclaim probe-before-claim)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** `reclaimHealthyOrphan` probes orphan/currentId before `claimOrphan`; Deploy omits staleTwin `existingComputerId`; tests 116/0
 - **Jina (JEV):** portal `apikey_…` in `.env.local` only — Reader prove HTTP 200; Search stays Reader-only for this key kind
@@ -23,7 +23,7 @@ status: reclaim-probe-before-claim-shipped-fly-stale
 3. Campaign Agents Deploy omits stale twin when fleet orphan/absent/foreign
 4. Tests: unhealthy orphan twin, foreign prior as currentId, same-prior healthy twin claim
 5. Jina Reader prove refreshed (`_relay/evidence/2026-10-03-jina-reader-auth-prove.json`); key never committed
-6. Marked reclaim ensure-before-probe finding fixed (`4f50a02`)
+6. Marked reclaim ensure-before-probe finding fixed (`c6ac494`)
 
 ## Blockers
 
