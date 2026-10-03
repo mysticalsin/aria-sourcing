@@ -74,9 +74,8 @@ export function BanRiskStrip(props: {
       <p className="font-semibold text-ink">Ban-risk pacing</p>
       <ul className="mt-1 space-y-0.5">
         {seats.map((seat) => {
-          const fleetId = props.boundComputerIdBySeat?.get(seat.id)?.trim() || "";
-          const hermesId = (seat.computerId ?? "").trim();
-          const cid = fleetId || hermesId;
+          // Fleet bind only — never fall back to Hermes twin (wrong-desk help paint).
+          const cid = props.boundComputerIdBySeat?.get(seat.id)?.trim() || "";
           const help = cid ? helpByComputer.get(cid) ?? null : null;
           return <li key={seat.id}>{seatPacingLine(seat, props.fleet, help)}</li>;
         })}

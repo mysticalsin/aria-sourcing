@@ -105,7 +105,12 @@ export default function FleetComputerViewportPage() {
           computer?: ComputerState;
         };
         if (!res.ok) {
-          setError(data.error ?? res.statusText);
+          const raw = data.error ?? res.statusText;
+          setError(
+            /computer-human-held/i.test(raw)
+              ? "Release Take control before Start — bot warm-start is blocked while you hold the desk."
+              : raw,
+          );
           return;
         }
         if (data.computer) setComputer(data.computer);

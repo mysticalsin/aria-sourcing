@@ -36,12 +36,11 @@ function seatHasOauthMailbox(seat: { provider?: string; connectedAccount?: strin
 function isBrowserComputerSeat(seat: {
   provider?: string;
   linkedinDeliveryBackend?: string | null;
-  computerId?: string | null;
 }): boolean {
+  // Never classify via Hermes computerId alone — that greens Setup Guide from a twin.
   return (
     seat.provider === "LinkedIn Browser Computer" ||
-    seat.linkedinDeliveryBackend === "browser-computer" ||
-    Boolean(seat.computerId)
+    seat.linkedinDeliveryBackend === "browser-computer"
   );
 }
 
@@ -143,9 +142,11 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       id: "take-control",
       title: "Take control · LinkedIn login",
       body: browserSeats.some((s) => Boolean(s.computerId?.trim()))
-        ? "VM bound — finish LinkedIn login + 2FA in the sandbox if the session is still unverified, then Release."
+        ? "VM id on seat — finish LinkedIn login + 2FA in the sandbox if the session is still unverified, then Release."
         : "Open LinkedIn login for agents, sign in (and 2FA) inside the AriaBot VM, then Release so the bot can send.",
-      done: browserSeats.some((s) => Boolean(s.computerId?.trim())),
+      // Done only after a real LinkedIn Browser Computer seat exists — Hermes
+      // computerId alone is not Take→login proof (fleet probe still required).
+      done: browserSeats.length > 0 && Boolean(settings.computerSupervisorUrl?.trim()),
       ctaLabel: browserSeats.some((s) => Boolean(s.computerId?.trim()))
         ? "Open AriaBot stack"
         : "Open LinkedIn login",

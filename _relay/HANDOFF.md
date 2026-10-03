@@ -1,28 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 250
+shift: 251
 agent: cursor-cloud
-updated: 2026-10-03T03:10Z
-status: stale-empty-failclosed-start-mutex-hud-dryrun-fly-stale
+updated: 2026-10-03T03:15Z
+status: observe-no-health-wipe-setup-guide-banrisk-fly-stale
 ---
 
-# Handoff — Shift 250
+# Handoff — Shift 251
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `074e54e`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** empty fleet = staleTwin; outreach browserBound needs probed health; start refuses human-held; HUD excludes dry-run drafts; 3D hub never elects unverified LI
+- **N-agent local:** Fleet Observe only starts when stopped/error (no healthy wipe); human-held UX copy; Setup Guide no Hermes twin done; BanRisk fleet-only; 3D hub no unverified ceo
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
 
 ## Done this shift
 
-1. `isStaleHermesComputerTwin([], hermesId)` → true (fail-closed)
-2. LinkedIn outreach stack: browserBound requires sessionHealthy true|false (not Hermes-only)
-3. computerSupervisor.start throws `computer-human-held` when Take holds desk
-4. missionControlHudValues live drafted/approved exclude dryRun
-5. Floor3D hub: no unverified LI as ceo fallback
-6. Tests: fleet-hermes-sync 18, metrics-canonical 23, computer-supervisor 124, floor 89
+1. Fleet Observe matches Campaign Agents — start only when stopped/error; open view after success
+2. computer-human-held → operator-facing toast on Fleet / Campaign Agents / viewport
+3. Setup Guide: isBrowserComputerSeat ignores Hermes computerId; take-control done ≠ twin id
+4. BanRiskStrip: fleet bind only (no Hermes help fallback)
+5. Floor3D hub: no ceo when no probed-healthy LI
+6. Tests: floor 89, floor-fleet-wire 14, fleet-hermes-sync 18
 
 ## Blockers
 
@@ -41,9 +41,9 @@ status: stale-empty-failclosed-start-mutex-hud-dryrun-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Empty fleet + Hermes id = stale twin (omit existingComputerId)
-- Observe/start must not override Take control
-- Live HUD never counts dry-run drafts as live
+- Observe must not wipe probed healthy on ready desks
+- Setup Guide never greens from Hermes computerId alone
+- Ban-risk help matches fleet bind only
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out

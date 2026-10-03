@@ -320,8 +320,16 @@ export function CampaignAgentsPanel({
       };
       if (!res.ok) {
         const msg = body.error ?? res.statusText;
-        setError(msg);
-        toast({ title: "Computer action failed", description: msg, variant: "error" });
+        const humanHeld = /computer-human-held/i.test(msg);
+        const detail = humanHeld
+          ? "Release Take control before Start / Observe — bot warm-start is blocked while you hold the desk."
+          : msg;
+        setError(detail);
+        toast({
+          title: humanHeld ? "Operator has control" : "Computer action failed",
+          description: detail,
+          variant: "error",
+        });
         return;
       }
       if (body.computer?.status === "error") {

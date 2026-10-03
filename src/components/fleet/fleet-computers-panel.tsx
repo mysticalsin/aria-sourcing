@@ -270,9 +270,13 @@ export function FleetComputersPanel({
                       size="sm"
                       aria-pressed={observing}
                       onClick={() => {
-                        const next = observing ? null : c.computerId;
-                        setObservingId(next);
-                        if (next) onObserve(c.computerId);
+                        if (observing) {
+                          setObservingId(null);
+                          return;
+                        }
+                        // Parent decides when to open view (may start VM first;
+                        // never mark observing before start succeeds / health wipe).
+                        onObserve(c.computerId);
                       }}
                     >
                       <Eye className="mr-1.5 h-3.5 w-3.5" aria-hidden />

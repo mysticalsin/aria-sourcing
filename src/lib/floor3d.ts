@@ -188,7 +188,8 @@ export function seatsToOfficeAgents(
       provider: seat.provider,
     };
   }).map((agent, index, all) => {
-    // PacketFX hub: only probed-healthy bound LI — never unverified LI as ceo.
+    // PacketFX hub: only probed-healthy bound LI. No hub CEO when none are healthy
+    // (never elect unverified/non-LI as packet theater center).
     const hubId =
       all.find(
         (a) =>
@@ -205,10 +206,10 @@ export function seatsToOfficeAgents(
           /session healthy/i.test(a.subtitle) &&
           /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
       )?.id ??
-      all[0]?.id;
+      null;
     return {
       ...agent,
-      position: agent.id === hubId ? ("ceo" as const) : ("employee" as const),
+      position: hubId && agent.id === hubId ? ("ceo" as const) : ("employee" as const),
     };
   });
 }

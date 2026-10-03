@@ -321,7 +321,7 @@ export default function FleetPage() {
     }
   }
 
-  async function computerAction(action: string, computerId: string) {
+  async function computerAction(action: string, computerId: string): Promise<boolean> {
     // Orphans stay reclaim-only — never mutate Chromium without a seat bind.
     const row = computers.find((c) => c.computerId === computerId);
     const mutating = new Set([
@@ -343,7 +343,7 @@ export default function FleetPage() {
         description: "Unbound host VM — reclaim/bind a seat before Start, Take control, Stop, or Release.",
         variant: "warning",
       });
-      return;
+      return false;
     }
     try {
       const res = await fetch("/api/fleet/computers", {
@@ -362,13 +362,17 @@ export default function FleetPage() {
         computer?: { status?: string; lastError?: string | null };
       };
       if (!res.ok || data.computer?.status === "error" || data.error) {
+        const raw = data.error || data.computer?.lastError || res.statusText;
+        const humanHeld = /computer-human-held/i.test(String(raw));
         toast({
-          title: "Computer action failed",
-          description: data.error || data.computer?.lastError || res.statusText,
+          title: humanHeld ? "Operator has control" : "Computer action failed",
+          description: humanHeld
+            ? "Release Take control before Start / Observe — bot warm-start is blocked while you hold the desk."
+            : raw,
           variant: "error",
         });
         await refreshComputers();
-        return;
+        return false;
       }
       if (action === "take_control") setObservingComputerId(computerId);
       await refreshComputers();
@@ -385,8 +389,10 @@ export default function FleetPage() {
             : undefined,
         variant: "success",
       });
+      return true;
     } catch {
       toast({ title: "Computer action failed", variant: "error" });
+      return false;
     }
   }
 
@@ -866,7 +872,18 @@ export default function FleetPage() {
               void computerAction("take_control", id);
             }}
             onRelease={(id) => void computerAction("release_control", id)}
-            onObserve={(id) => void computerAction("start", id)}
+            onObserve={(id) => {
+              void (async () => {
+                const row = computers.find((c) => c.computerId === id);
+                // Match Campaign Agents: only start when stopped/error — never
+                // wipe sessionHealthy on an already-ready/busy/human-held desk.
+                if (!row || row.status === "stopped" || row.status === "error") {
+                  const ok = await computerAction("start", id);
+                  if (!ok) return;
+                }
+                setObservingComputerId(id);
+              })();
+            }}
             reclaimSeats={seats
               .filter(
                 (s) =>
