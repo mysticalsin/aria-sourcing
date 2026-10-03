@@ -9,7 +9,7 @@ import type { SoundKind } from "@/lib/sound";
    can share the floor contract without pulling in the 3D subsystem.
    ========================================================================== */
 
-/** working = probed-healthy LI (or real sends); warming = VM busy/starting; idle; error = paused/unhealthy */
+/** working = real sends/outreach activity; warming = VM busy/starting; idle includes ready+healthy zero-sends; error = paused/unhealthy */
 export type AgentStatus = "working" | "warming" | "idle" | "error";
 
 /** Org position. Everyone is an employee; the first seat is treated as CEO. */
