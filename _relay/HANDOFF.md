@@ -1,48 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 280
+shift: 281
 agent: cursor-cloud
-updated: 2026-10-03T09:35Z
-status: post-r16-high-gaps-fixed-fly-stale
+updated: 2026-10-03T09:45Z
+status: tip-ci-green-confirm-attach-fly-stale
 ---
 
-# Handoff — Shift 280
+# Handoff — Shift 281
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **Shipping:** post-R16 high tip gaps (Aria allocate draft, floor unattached idle, reply/follow-up attach, bulk/run seat round-robin)
+- **Tip CI green:** `2c52ae8` (post-R16 highs); confirm-manual attach shipping next
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Fly:** still `21a42e7…` / migration `0084` / `agentFrameworks:false`
-- **Evidence:** `_relay/evidence/2026-10-03-n-agent-tip-gaps-after-r16.md`, `_relay/evidence/2026-10-03-fly-tip-still-stale-post-r16.json`
+- **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
 
 ## Done this shift
 
-1. Aria `draft` verb → `allocateOutreach({ campaignId })`
-2. Floor: unattached BC stays idle under ready+healthy+sends
-3. draftReplyResponse / follow-up / recontact attach gates
-4. agent-run-stream + candidates bulk: round-robin attached BC seatId
-5. generateOutreach foreign seatId refuse (prior commit)
+1. Post-R16 highs closed + CI green on `2c52ae8`
+2. confirmManualSend + `/api/outreach/confirm-manual` require `seatAttachedToCampaign`
 
 ## Blockers
 
 1. Owner Fly tip redeploy (0085–0087) + LI healthy
-2. Med gaps still open: fleet POST campaign attach; confirm-manual Vendor attach
+2. Med: fleet POST campaignId attach gate still open
 
 ## Next steps
 
-1. Confirm tip CI green
-2. Optionally close med gaps (fleet POST / confirm-manual)
+1. Confirm tip CI after confirm-manual attach
+2. Optionally fleet POST campaign attach
 3. Owner Fly tip SHA + LI healthy — do not UpdateGoal complete
 
 ## Decisions (don't relitigate)
 
-- Aria draft uses allocateOutreach (N>1 distribution)
-- Unattached BC never upgrades idle→sourcing from sentToday
+- Aria draft uses allocateOutreach
+- Unattached BC never idle→sourcing from sentToday
+- Manual confirm refuses foreign Vendor/Assisted
 - Never invent sessionHealthy=true
 - Tip CI green ≠ production N-agent goal complete
 
 ## Watch out
 
-- Protected deploy ref is `deploy/fly-github-actions`
-- Ignore Vercel preview rate-limit when Quality/Release pass
+- Protected deploy: `deploy/fly-github-actions`
+- Ignore Vercel rate-limit when Quality/Release pass

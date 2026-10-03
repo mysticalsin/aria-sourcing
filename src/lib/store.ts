@@ -2868,8 +2868,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           error: "Message seatId is not a LinkedIn Assisted/Vendor seat — cannot confirm on another desk.",
         };
       }
+      if (linkedInSeat && !seatAttachedToCampaign(linkedInSeat, campaign.id)) {
+        return {
+          ok: false,
+          error:
+            "LinkedIn seat is not attached to this campaign — attach it under Campaign Agents before confirming.",
+        };
+      }
       if (!linkedInSeat) {
-        const liSeats = s.seats.filter(isManualConfirmSeat);
+        const liSeats = s.seats.filter(
+          (seat) => isManualConfirmSeat(seat) && seatAttachedToCampaign(seat, campaign.id),
+        );
         if (liSeats.length > 1) {
           return {
             ok: false,

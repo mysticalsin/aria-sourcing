@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -71,6 +72,38 @@ export async function POST(req: NextRequest) {
       changed: false,
       detail: PUBLIC_DEMO_DRY_RUN_DETAIL,
     });
+  }
+
+  const { data: seatRow, error: seatErr } = await supabase
+    .from("agent_seats")
+    .select("id, provider, assigned_campaign_ids")
+    .eq("id", body.seatId)
+    .maybeSingle();
+  if (seatErr) {
+    safeLog("confirm-manual seat lookup error", { message: seatErr.message });
+    return NextResponse.json({ ok: false, error: "Seat lookup failed." }, { status: 500 });
+  }
+  if (!seatRow) {
+    return NextResponse.json({ ok: false, error: "Seat not found." }, { status: 404 });
+  }
+  const attached = seatAttachedToCampaign(
+    {
+      provider: String(seatRow.provider ?? ""),
+      assignedCampaignIds: Array.isArray(seatRow.assigned_campaign_ids)
+        ? (seatRow.assigned_campaign_ids as string[])
+        : [],
+    },
+    body.campaignId,
+  );
+  if (!attached) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "linkedin-seat-not-attached",
+        detail: "Seat is not attached to this campaign.",
+      },
+      { status: 409 },
+    );
   }
 
   const { data, error } = await supabase.rpc("record_linkedin_assisted_manual_send", {

@@ -86,5 +86,12 @@ ok(
   /const draftReplyResponse[\s\S]*?seatAttachedToCampaign\(x,\s*campaign\.id\)/.test(store),
 );
 
+ok(
+  "confirmManualSend requires seatAttachedToCampaign for Vendor/Assisted",
+  /const confirmManualSend = useCallback[\s\S]*?seatAttachedToCampaign\(linkedInSeat,\s*campaign\.id\)/.test(
+    store,
+  ),
+);
+
 console.log(`RESULT campaign-allocate-approve-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
