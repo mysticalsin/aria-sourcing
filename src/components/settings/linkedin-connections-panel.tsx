@@ -166,11 +166,20 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           const fleet = (await fleetRes.json()) as {
             computers?: { seatId?: string; computerId?: string; sessionHealthy?: boolean | null }[];
             hostCapacity?: { computers: number; max: number } | null;
+            browserSeatBindings?: Array<{
+              id: string;
+              name?: string;
+              computerId?: string | null;
+              status?: string;
+              assignedCampaignIds?: string[];
+            }>;
           };
           if (fleet.hostCapacity) setHostCapacity(fleet.hostCapacity);
           const computers = fleet.computers ?? [];
           setFleetComputers(computers);
           setFleetLoaded(true);
+          // Durable LI roster → Hermes (append missing desks + patch attach).
+          actions.ingestDurableBrowserBindings(fleet.browserSeatBindings);
           const bySeatHealth = new Map(
             computers
               .filter((c) => c.seatId && c.seatId !== "__orphan__")

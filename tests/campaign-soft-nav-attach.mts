@@ -47,11 +47,15 @@ ok(
   /new Set\(data\.campaignSeats\.map\(\(s\) => s\.id\)\)/.test(agents) &&
     /Only sync when campaignSeats is present/.test(agents),
 );
-ok(
-  "campaign agents cards use mergeDurable when campaignSeats present",
-  /mergeDurableCampaignSeatsForGoLive/.test(agents) &&
-    /setDurableSeats/.test(agents),
-);
+  ok(
+    "campaign agents cards use mergeDurable when campaignSeats present",
+    /mergeDurableCampaignSeatsForGoLive/.test(agents) &&
+      /setDurableSeats/.test(agents),
+  );
+  ok(
+    "campaign agents ingest durable browserSeatBindings / campaignSeats",
+    /ingestDurableBrowserBindings/.test(agents),
+  );
 
 const setup = readFileSync(
   new URL("../src/components/settings/setup-guide-panel.tsx", import.meta.url),

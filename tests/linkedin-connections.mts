@@ -182,6 +182,11 @@ ok(
     /\.\.\.\(campaignId \? \{ campaignId \} : \{\}\)/.test(liPanel) &&
     /gateCampaignId \? \{ campaignId: gateCampaignId \}/.test(liPanel),
 );
+ok(
+  "linkedin connections ingests durable browserSeatBindings",
+  /ingestDurableBrowserBindings/.test(liPanel) &&
+    /browserSeatBindings/.test(liPanel),
+);
 
 console.log(`RESULT linkedin-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

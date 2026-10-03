@@ -153,35 +153,25 @@ export function CampaignAgentsPanel({
           status?: string;
           assignedCampaignIds?: string[];
         }>;
+        browserSeatBindings?: Array<{
+          id: string;
+          name?: string;
+          computerId?: string | null;
+          status?: string;
+          assignedCampaignIds?: string[];
+        }>;
       };
       // Durable DB campaign bindings win over Hermes-only attach (cold load / multi-tab).
       // Only sync when campaignSeats is present (successful authority). Error responses
       // omit the key — never detach-all on error-shaped [].
       if (Array.isArray(data.campaignSeats)) {
         setDurableSeats(data.campaignSeats);
+        // Append durable-only desks + patch attach locally (Floor/Fleet same path).
+        actions.ingestDurableBrowserBindings(
+          data.browserSeatBindings ?? data.campaignSeats,
+        );
         const authIds = new Set(data.campaignSeats.map((s) => s.id));
-        for (const row of data.campaignSeats) {
-          const local = seats.find((s) => s.id === row.id);
-          if (!local) continue;
-          const patch: { assignedCampaignIds?: string[]; computerId?: string | null } = {};
-          if (!(local.assignedCampaignIds ?? []).includes(campaignId)) {
-            patch.assignedCampaignIds = Array.from(
-              new Set([...(local.assignedCampaignIds ?? []), campaignId]),
-            );
-          }
-          if (row.computerId && row.computerId !== local.computerId) {
-            patch.computerId = row.computerId;
-          } else if (
-            (row.computerId == null || String(row.computerId).trim() === "") &&
-            Boolean((local.computerId ?? "").trim())
-          ) {
-            // Durable unbound wins — clear Hermes twin so Deploy cannot reclaim a login wall.
-            patch.computerId = null;
-          }
-          if (Object.keys(patch).length > 0) {
-            void actions.updateSeat(row.id, patch);
-          }
-        }
+        // Detach Hermes-only attaches not in durable authority (server write).
         for (const local of hermesCampaignSeats) {
           if (authIds.has(local.id)) continue;
           const next = (local.assignedCampaignIds ?? []).filter((id) => id !== campaignId);
@@ -191,6 +181,9 @@ export function CampaignAgentsPanel({
         }
       } else {
         setDurableSeats(undefined);
+        if (Array.isArray(data.browserSeatBindings)) {
+          actions.ingestDurableBrowserBindings(data.browserSeatBindings);
+        }
       }
       // Badge seat set: durable⊇ when campaignSeats present; else Hermes local only.
       const seatIds = Array.isArray(data.campaignSeats)
