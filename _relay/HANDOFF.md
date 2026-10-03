@@ -12,7 +12,7 @@ status: tip-residual-fixed-fly-stale
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip work:** durable `[]` authority on go-live + Setup durable LI healthy + Agents cards from durable⊇ (tests green locally)
+- **Tip:** `5a01024` — durable `[]` authority on go-live + Setup durable LI healthy + Agents cards from durable⊇
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false` — `_relay/evidence/2026-10-03-fly-owner-deploy-blocker.json`
 - **Goal:** open until Fly tip SHA (0085–0087) + LI desks healthy via Take→login→Release
 
