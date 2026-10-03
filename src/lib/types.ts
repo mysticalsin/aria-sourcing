@@ -1052,7 +1052,7 @@ export type SeatStatus = (typeof SEAT_STATUSES)[number];
 
 export interface SendWindow {
   startHour: number; // 0-23, local to timezone
-  endHour: number; // 0-23
+  endHour: number; // exclusive upper bound (hour < endHour); use 24 for all-day
   timezone: string;
   days: number[]; // 0=Sun .. 6=Sat
 }

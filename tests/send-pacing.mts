@@ -53,7 +53,8 @@ function baseSeat(partial: Partial<AgentSeat> = {}): AgentSeat {
 const settings = { ...defaultFleetSettings(), enforceBusinessHours: true, jitter: false };
 // Noon UTC Friday — inside default 8–18 window if local hours match; force window days + hours via seat.
 const seat = baseSeat({
-  sendWindow: { startHour: 0, endHour: 23, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
+  // endHour exclusive — 24 covers hour 23 (CI often runs near UTC midnight).
+  sendWindow: { startHour: 0, endHour: 24, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
 });
 const now = new Date("2026-06-26T12:00:00.000Z");
 

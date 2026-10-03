@@ -217,7 +217,8 @@ ok(
       warmupStepPerDay: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStepPerDay,
       warmupStartedAt: nowIso,
       minGapMinutes: LINKEDIN_BROWSER_SEAT_DEFAULTS.minGapMinutes,
-      sendWindow: { startHour: 0, endHour: 23, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
+      // endHour is exclusive (hour < endHour). 24 = all-day; 23 fails at UTC 23:00–23:59.
+      sendWindow: { startHour: 0, endHour: 24, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
       sentToday: 0,
       lastSendAt: null,
       health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
