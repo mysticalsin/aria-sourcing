@@ -245,10 +245,14 @@ export async function readLinkedInViaAgentReachJina(
       redirect: "manual",
     });
     if (!res.ok) {
+      const errBody = (await res.text().catch(() => "")).trim().slice(0, 400);
+      const alleviation = /AbuseAlleviationError/i.test(errBody)
+        ? " Jina temporarily blocked this domain (AbuseAlleviation); retry after the stated unlock time — key is fine."
+        : "";
       return {
         ok: false,
         url: clean,
-        detail: `Jina Reader returned HTTP ${res.status}.`,
+        detail: `Jina Reader returned HTTP ${res.status}.${alleviation}${errBody ? ` ${errBody}` : ""}`.trim(),
         via: "agent-reach-jina",
       };
     }
