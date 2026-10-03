@@ -33,6 +33,7 @@ import {
 import {
   agentActivity,
   agentActivityWithComputers,
+  floorBrowserVmTruth,
   floorRollup,
   resolveComputerHint,
 } from "@/lib/floor";
@@ -357,13 +358,10 @@ export default function FloorPage() {
             {computerHints ? (
               <p className="text-xs text-muted">
                 {seats.length} seats on the floor ·{" "}
-                {
-                  seats.filter((seat) => {
-                    if (seat.provider !== "LinkedIn Browser Computer") return false;
-                    return Boolean(resolveComputerHint(seat, computerHints)?.computerId);
-                  }).length
-                }{" "}
-                with live VM
+                {(() => {
+                  const t = floorBrowserVmTruth(seats, computerHints);
+                  return `${t.healthy} session healthy · ${t.unverified} unverified`;
+                })()}
               </p>
             ) : null}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -453,14 +451,15 @@ function Floor3DSection({
         <p className="text-xs text-muted">
           {office.length} seats on the floor
           {computerHints
-            ? ` · ${
-                office.filter((a) => {
-                  const seat = seats.find((s) => s.id === a.id);
-                  if (!seat || seat.provider !== "LinkedIn Browser Computer") return false;
-                  const hint = resolveComputerHint(seat, computerHints);
-                  return Boolean(hint?.computerId);
-                }).length
-              } with live VM`
+            ? (() => {
+                const t = floorBrowserVmTruth(
+                  office
+                    .map((a) => seats.find((s) => s.id === a.id))
+                    .filter((s): s is NonNullable<typeof s> => Boolean(s)),
+                  computerHints,
+                );
+                return ` · ${t.healthy} session healthy · ${t.unverified} unverified`;
+              })()
             : ""}
           {" "}in 3D.
           {notShown > 0 &&

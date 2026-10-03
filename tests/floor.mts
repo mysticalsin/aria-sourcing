@@ -1,4 +1,4 @@
-import { agentActivity, agentActivityWithComputers, floorRollup } from "../src/lib/floor";
+import { agentActivity, agentActivityWithComputers, floorBrowserVmTruth, floorRollup } from "../src/lib/floor";
 import { agentCortexTrace } from "../src/lib/cortex";
 import { pickResponderIndex, preferBrowserComputerAgents, seatsToOfficeAgents } from "../src/lib/floor3d";
 import { buildSeedState } from "../src/lib/seed";
@@ -538,6 +538,114 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     "cortex narrates assigned campaign (not foreign hash pick)",
     cortex.lines.some((line) => line.includes(design.title)),
   );
+}
+
+// Rollup must match overlay — theatrical warmup + unverified VM is not "Warming up" theater.
+{
+  const baseLi = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")!;
+  const warmLi = {
+    ...baseLi,
+    id: "seat_warm_li_rollup",
+    warmup: true,
+    warmupStartCap: 5,
+    warmupStepPerDay: 2,
+    dailyLimit: 40,
+    warmupStartedAt: new Date(NOW - 2 * 86_400_000).toISOString(),
+    sentToday: 0,
+    computerId: "comp_warm_li",
+    status: "active" as const,
+  };
+  ok("fixture warm LI seat is theatrical warming", agentActivity(warmLi, s, NOW).state === "warming");
+  const unverifiedMap = new Map([
+    [
+      warmLi.id,
+      {
+        status: "ready" as const,
+        sessionHealthy: null as boolean | null,
+        computerId: "comp_warm_li",
+        seatId: warmLi.id,
+      },
+    ],
+  ]);
+  const rollUnverified = floorRollup([warmLi], s, NOW, unverifiedMap);
+  const overlayUnverified = agentActivityWithComputers(warmLi, s, NOW, unverifiedMap);
+  ok(
+    "rollup: warmup-day + ready/unverified is not warming",
+    rollUnverified.warming === 0 && overlayUnverified.state === "idle",
+  );
+  ok(
+    "rollup: warmup-day + ready/unverified is not working",
+    rollUnverified.working === 0,
+  );
+
+  const busyMap = new Map([
+    [
+      warmLi.id,
+      {
+        status: "busy" as const,
+        sessionHealthy: null as boolean | null,
+        computerId: "comp_warm_li_busy",
+        seatId: warmLi.id,
+      },
+    ],
+  ]);
+  const rollBusy = floorRollup([warmLi], s, NOW, busyMap);
+  const overlayBusy = agentActivityWithComputers(warmLi, s, NOW, busyMap);
+  ok("rollup: busy VM counts warming like overlay", rollBusy.warming === 1 && overlayBusy.state === "warming");
+  ok("rollup: busy VM is not working", rollBusy.working === 0);
+
+  const healthyMap = new Map([
+    [
+      warmLi.id,
+      {
+        status: "ready" as const,
+        sessionHealthy: true as boolean | null,
+        computerId: "comp_warm_li_ok",
+        seatId: warmLi.id,
+      },
+    ],
+  ]);
+  // ready+healthy keeps theatrical warming state in overlay — rollup must match, not invent working.
+  const rollHealthyWarm = floorRollup([warmLi], s, NOW, healthyMap);
+  const overlayHealthyWarm = agentActivityWithComputers(warmLi, s, NOW, healthyMap);
+  ok(
+    "rollup buckets match overlay for healthy warmup seat",
+    rollHealthyWarm.warming === (overlayHealthyWarm.state === "warming" ? 1 : 0) &&
+      rollHealthyWarm.working ===
+        (["sourcing", "outreach", "booking"].includes(overlayHealthyWarm.state) ? 1 : 0) &&
+      rollHealthyWarm.paused === (overlayHealthyWarm.state === "paused" ? 1 : 0),
+  );
+
+  const twinId = "seat_warm_li_healthy_twin";
+  const truth = floorBrowserVmTruth(
+    [
+      warmLi,
+      { ...warmLi, id: twinId, computerId: "comp_ok" },
+    ],
+    new Map([
+      [
+        warmLi.id,
+        {
+          status: "ready" as const,
+          sessionHealthy: null as boolean | null,
+          computerId: "comp_warm_li",
+          seatId: warmLi.id,
+        },
+      ],
+      [
+        twinId,
+        {
+          status: "ready" as const,
+          sessionHealthy: true as boolean | null,
+          computerId: "comp_ok",
+          seatId: twinId,
+        },
+      ],
+    ]),
+  );
+  ok("floorBrowserVmTruth: bound=2", truth.bound === 2);
+  ok("floorBrowserVmTruth: healthy=1 (never invent from computerId)", truth.healthy === 1);
+  ok("floorBrowserVmTruth: unverified=1", truth.unverified === 1);
 }
 
 console.log(`RESULT floor: ${pass} passed, ${fail} failed`);

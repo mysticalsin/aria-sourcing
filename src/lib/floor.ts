@@ -160,7 +160,11 @@ export function floorRollup(
     warming = 0,
     paused = 0;
   for (const seat of seats) {
-    const a = agentActivity(seat, state, now);
+    // When fleet hints are loaded, rollup must match 2D/3D overlays — never keep
+    // theatrical warmup/working while desks show unverified / unhealthy / idle.
+    const a = computers
+      ? agentActivityWithComputers(seat, state, now, computers)
+      : agentActivity(seat, state, now);
     if (a.state === "paused") {
       paused++;
       continue;
@@ -169,40 +173,8 @@ export function floorRollup(
       warming++;
       continue;
     }
-    // Theatrical idle still counts as working when the live VM is ready+healthy
-    // (otherwise 3D can show working while the rollup omits the desk).
-    if (a.state === "idle") {
-      if (computers && seat.provider === "LinkedIn Browser Computer") {
-        const hint = resolveComputerHint(seat, computers);
-        if (
-          hint?.control !== "human" &&
-          hint?.status === "ready" &&
-          hint.sessionHealthy === true
-        ) {
-          working++;
-        }
-      }
-      continue;
-    }
-
-    // With live computer hints loaded, "Working now" is VM-truth mode:
-    // Browser Computer seats need ready + probed-healthy (bot control);
-    // other seats need real sends today — never theatrical lottery.
-    if (computers) {
-      if (seat.provider === "LinkedIn Browser Computer") {
-        const hint = resolveComputerHint(seat, computers);
-        if (
-          hint?.control !== "human" &&
-          hint?.status === "ready" &&
-          hint.sessionHealthy === true
-        ) {
-          working++;
-        }
-      } else if (seat.sentToday > 0) {
-        working++;
-      }
-      continue;
-    }
+    if (a.state === "idle") continue;
+    // sourcing | outreach | booking — real working buckets only
     working++;
   }
   return {
@@ -212,6 +184,28 @@ export function floorRollup(
     paused,
     contactedToday: seats.reduce((sum, s) => sum + s.sentToday, 0),
   };
+}
+
+/**
+ * Honest Floor browser-desk counts: bound VM ≠ probed healthy.
+ * Never invent healthy from computerId alone.
+ */
+export function floorBrowserVmTruth(
+  seats: AgentSeat[],
+  computers: ReadonlyMap<string, FloorComputerHint>,
+): { bound: number; healthy: number; unverified: number } {
+  let bound = 0;
+  let healthy = 0;
+  let unverified = 0;
+  for (const seat of seats) {
+    if (seat.provider !== "LinkedIn Browser Computer") continue;
+    const hint = resolveComputerHint(seat, computers);
+    if (!hint?.computerId) continue;
+    bound++;
+    if (hint.sessionHealthy === true) healthy++;
+    else unverified++;
+  }
+  return { bound, healthy, unverified };
 }
 
 /** Overlay live VM truth onto theatrical activity for 2D desks (same rules as 3D). */
