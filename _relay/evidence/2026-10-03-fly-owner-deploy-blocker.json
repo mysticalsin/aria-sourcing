@@ -37,7 +37,13 @@
       "f5868fa"
     ],
     "tipAlreadyHasCiFixVia": "8a63a8f",
-    "openPrsToDeployBase": [],
+    "openPrsToDeployBase": [
+      {
+        "number": 150,
+        "url": "https://github.com/mysticalsin/aria-sourcing/pull/150",
+        "head": "cursor/fly-deploy-land-n-agent-b91d"
+      }
+    ],
     "requires": [
       "land tip onto deploy/fly-github-actions",
       "ARIA_RELEASE_SHA == deploy HEAD (40 hex)",
