@@ -12,7 +12,7 @@ status: tip-packetfx-attach-fly-stale
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip work:** PacketFX + ActivityTicker LI attach gate; viewport ingest; roster no LI mode=live step
+- **Tip:** `9d6d50a` — PacketFX/ticker LI attach gate; viewport ingest
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
 - **Goal:** open until Fly tip SHA + LI desks healthy
 
