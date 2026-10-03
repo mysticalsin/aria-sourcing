@@ -132,6 +132,30 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     unassignedHealthy.status !== "working",
   );
 
+  // Disabled + sends + healthy must stay idle (never idle→sourcing theater).
+  const disabledSent = {
+    ...liSeat,
+    id: "seat_li_disabled_sent",
+    status: "disabled" as const,
+    sentToday: 4,
+    assignedCampaignIds: ["camp_any"],
+  };
+  const disabledHealthy = seatsToOfficeAgents(
+    [disabledSent],
+    s,
+    new Map([
+      [disabledSent.id, { status: "ready", sessionHealthy: true, seatId: disabledSent.id }],
+    ]),
+  ).find((a) => a.id === disabledSent.id)!;
+  ok(
+    "disabled BC ready+healthy+sends stays idle (no sourcing theater)",
+    disabledHealthy.status === "idle",
+  );
+  ok(
+    "disabled BC is never PacketFX ceo hub",
+    disabledHealthy.position !== "ceo",
+  );
+
   // Truly idle desk + healthy session must stay idle (no sourcing theater).
   const idleSeat = { ...liSeat, id: "seat_idle_li_healthy", status: "disabled" as const };
   const idleHealthy = seatsToOfficeAgents(

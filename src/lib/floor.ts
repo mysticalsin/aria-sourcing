@@ -321,8 +321,8 @@ export function agentActivityWithComputers(
   }
   if (hint.status === "ready" && hint.sessionHealthy === true) {
     // Healthy LinkedIn is ready — not automatic "working". Only real sends
-    // (or VM status=busy above) count as working; never keep hash theater.
-    // Unattached BC idle must stay idle even with sentToday (no campaign assign).
+    // on a non-idle base (sourcing/outreach/booking) count as working.
+    // Never upgrade idle bases (disabled, no campaigns, unattached) → sourcing.
     if (base.detail === "No campaign assigned") {
       return {
         ...base,
@@ -335,12 +335,13 @@ export function agentActivityWithComputers(
       };
     }
     const realSends = (seat.sentToday ?? 0) > 0;
-    if (!realSends) {
+    const activeWork = realSends && base.state !== "idle";
+    if (!activeWork) {
       return {
         ...base,
         state: "idle",
         label: withVm("LinkedIn session healthy"),
-        detail: "Standing by",
+        detail: base.state === "idle" ? base.detail : "Standing by",
         focusName: null,
         busy: false,
         tone: "electric",
@@ -348,10 +349,10 @@ export function agentActivityWithComputers(
     }
     return {
       ...base,
-      state: base.state === "idle" ? "sourcing" : base.state,
+      state: base.state,
       label: withVm("LinkedIn session healthy"),
       busy: true,
-      tone: base.state !== "idle" ? base.tone : "electric",
+      tone: base.tone,
     };
   }
   if (hint.status === "ready" && hint.sessionHealthy === false) {

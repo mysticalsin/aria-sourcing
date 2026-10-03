@@ -168,6 +168,11 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
       !/state: realSends && base\.state !== "idle" \? base\.state : "sourcing"/.test(floorLib),
   );
   ok(
+    "ready+healthy never upgrades idle base to sourcing",
+    /Never upgrade idle bases/.test(floorLib) &&
+      !/state: base\.state === "idle" \? "sourcing"/.test(floorLib),
+  );
+  ok(
     "floor caption includes bound count from floorBrowserVmTruth",
     floorPage.includes("floorBrowserVmTruth") && floorPage.includes("${t.bound} bound"),
   );
