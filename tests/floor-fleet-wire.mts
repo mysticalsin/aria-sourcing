@@ -246,6 +246,11 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
       /never-probed \/ oldest first|Rotates by sessionProbedAt/.test(supervisor),
   );
   ok(
+    "refreshSessionHealthForList skips desks without remoteUrl",
+    /No remoteUrl/.test(supervisor) &&
+      /!\(c\.remoteUrl \?\? ""\)\.trim\(\)/.test(supervisor),
+  );
+  ok(
     "refreshSessionHealthForList never invents true",
     supervisor.includes("Never invents healthy=true") &&
       supervisor.includes("refreshSessionHealthForList"),

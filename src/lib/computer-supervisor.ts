@@ -593,6 +593,9 @@ export class ComputerSupervisor {
       if (c.control === "human") return false;
       if (c.status !== "ready" && c.status !== "busy") return false;
       if (c.sessionHealthy === true) return false; // list() already TTL-expired stale true→null
+      // No remoteUrl ⇒ probeSession cannot HTTP-probe (sets probedAt null) and would
+      // monopolize never-probed sort forever — starve real Floor desks.
+      if (!(c.remoteUrl ?? "").trim()) return false;
       return true;
     });
     const probedAtMs = (c: ComputerRecord) => {

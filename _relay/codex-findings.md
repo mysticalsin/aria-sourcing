@@ -1326,3 +1326,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** 8 ready VMs; desks 1–5 false; 6–8 null → 3 polls never probe 6–8.
 **Suggested fix:** sort by sessionProbedAt ascending (never-probed first) before slice.
 **Status:** fixed (tip #150)
+
+## 2026-10-03 — no-remoteUrl desks starve session probe budget
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:591
+**Issue:** refreshSessionHealthForList admitted ready desks with empty remoteUrl; probeSession left sessionProbedAt null so they forever won never-probed sort and consumed limit=5.
+**Repro/evidence:** ≥5 ready null-URL desks + 1 false+URL desk → HTTP probes=0.
+**Suggested fix:** filter !(remoteUrl||"").trim().
+**Status:** fixed (tip #148)
