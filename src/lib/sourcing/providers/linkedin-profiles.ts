@@ -15,7 +15,7 @@ import {
 } from "@/lib/sourcing/candidate-fit";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import type { Campaign } from "@/lib/types";
-import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
+import type { ProviderContext, ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
 
 const POLL_MS = 3_000;
 const DEFAULT_BUDGET_MS = 75_000;
@@ -45,7 +45,7 @@ export const linkedinProfilesProvider = {
   id: "linkedin_profiles",
   displayPlatform: "LinkedIn",
   richness: "profile",
-  isAvailable(ctx) {
+  isAvailable(ctx: ProviderContext) {
     return Boolean(ctx.linkedInProfileToken?.trim());
   },
   async search({ query, count, ctx }: ProviderSearchInput): Promise<ProviderSearchResult> {

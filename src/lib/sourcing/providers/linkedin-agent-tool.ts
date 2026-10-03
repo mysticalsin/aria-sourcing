@@ -10,7 +10,7 @@ import {
   qualifyLeadAgainstIcp,
   searchLinkedInProfiles,
 } from "@/lib/integrations/linkedin-browser-agents";
-import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
+import type { ProviderContext, ProviderSearchInput, ProviderSearchResult, SourcingProvider } from "./types";
 
 /**
  * NightTrek LinkedIn_Agent_Tool bridge — real LinkedIn profile discovery via
@@ -23,7 +23,7 @@ export const linkedinAgentToolProvider = {
   id: "linkedin_agent_tool",
   displayPlatform: "LinkedIn",
   richness: "serp",
-  isAvailable() {
+  isAvailable(_ctx: ProviderContext) {
     return true;
   },
   async search({ query, count, ctx }: ProviderSearchInput): Promise<ProviderSearchResult> {
