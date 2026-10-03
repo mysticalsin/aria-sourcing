@@ -77,6 +77,14 @@ ok(
     /Array\.isArray\(data\.campaignSeats\) \? data\.campaignSeats\.length/.test(campaignPage) &&
     /isBrowserComputerSeat\(s\) && seatAttachedToCampaign\(s, c\.id\)/.test(campaignPage),
 );
+ok(
+  "campaign page Agents badge poll ingests durable bindings",
+  /ingestDurableBrowserBindings/.test(campaignPage),
+);
+ok(
+  "go-live checklist ingests durable bindings on fleet poll",
+  /ingestDurableBrowserBindings/.test(checklist),
+);
 
 console.log(`RESULT campaign-soft-nav-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

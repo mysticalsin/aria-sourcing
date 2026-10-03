@@ -158,6 +158,10 @@ ok(
     /Array\.isArray\(data\.campaignSeats\)/.test(setupGuide),
 );
 ok(
+  "setup guide ingests durable browserSeatBindings",
+  /ingestDurableBrowserBindings/.test(setupGuide),
+);
+ok(
   "setup guide never classifies Browser Computer via computerId alone",
   /from "@\/lib\/campaign-seat-attach"/.test(setupGuide) &&
     /isBrowserComputerSeat/.test(setupGuide) &&

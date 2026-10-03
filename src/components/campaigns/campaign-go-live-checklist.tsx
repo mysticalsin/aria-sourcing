@@ -13,6 +13,7 @@ import {
   type GoLiveCheck,
 } from "@/lib/campaign-go-live";
 import type { AgentSeat, Candidate, SystemSettings } from "@/lib/types";
+import { useActions } from "@/lib/store";
 
 export function CampaignGoLiveChecklist(props: {
   campaignId: string;
@@ -23,6 +24,7 @@ export function CampaignGoLiveChecklist(props: {
   className?: string;
   compact?: boolean;
 }) {
+  const actions = useActions();
   const [polledComputers, setPolledComputers] = React.useState<ComputerHealthLike[]>([]);
   const [durableSeats, setDurableSeats] = React.useState<DurableCampaignSeatLike[] | undefined>();
   React.useEffect(() => {
@@ -47,7 +49,17 @@ export function CampaignGoLiveChecklist(props: {
         const data = (await res.json()) as {
           computers?: ComputerHealthLike[];
           campaignSeats?: DurableCampaignSeatLike[];
+          browserSeatBindings?: Array<{
+            id: string;
+            name?: string;
+            computerId?: string | null;
+            status?: string;
+            assignedCampaignIds?: string[];
+          }>;
         };
+        actions.ingestDurableBrowserBindings(
+          data.browserSeatBindings ?? data.campaignSeats,
+        );
         const comps = data.computers ?? [];
         // Scope to durable campaign seats when Fleet returns them — never paint
         // foreign desk health into this campaign's go-live checklist.
@@ -80,7 +92,7 @@ export function CampaignGoLiveChecklist(props: {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [props.campaignId, props.computers, props.seats]);
+  }, [props.campaignId, props.computers, props.seats, actions]);
 
   // props.computers wins; otherwise fail-closed [] until/after poll (never undefined Hermes-only path).
   const computers = props.computers ?? polledComputers;

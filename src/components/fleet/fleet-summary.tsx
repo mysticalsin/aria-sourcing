@@ -33,7 +33,7 @@ export function FleetSummary() {
       <MetricCard
         label="Live agents"
         value={`${s.liveSeats}`}
-        hint="Verified domain + live mode"
+        hint="Email seats: verified domain + live mode (LI = Take→login→Release)"
         icon={<Radio />}
         tone="tangerine"
       />

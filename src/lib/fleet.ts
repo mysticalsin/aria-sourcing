@@ -9,6 +9,7 @@ import type {
   SuppressionEntry,
 } from "./types";
 import { normalizeSuppressionValue } from "./manual-suppression";
+import { isBrowserComputerSeat } from "./campaign-seat-attach";
 import type { Tone } from "./utils";
 import { clamp } from "./utils";
 
@@ -294,7 +295,12 @@ export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = 
   return {
     seats: seats.length,
     activeSeats: active.length,
-    liveSeats: seats.filter((s) => s.mode === "live" && s.domainVerified).length,
+    liveSeats: seats.filter((s) => {
+      // LI Browser Computer readiness is sessionHealthy (health strip / Floor) —
+      // never count domainVerified theater as "live" for AriaBot desks.
+      if (isBrowserComputerSeat(s)) return false;
+      return s.mode === "live" && s.domainVerified;
+    }).length,
     sentToday: sent,
     capacityToday: capacity,
     remainingToday: remaining,

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Badge, Card, CardContent, Button } from "@/components/ui";
 import {
+  useActions,
   useCampaigns,
   useDefaultModels,
   useLlmProviders,
@@ -52,6 +53,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const seats = useSeats();
   const settings = useSettings();
   const campaigns = useCampaigns();
+  const actions = useActions();
   const providers = useLlmProviders();
   const models = useSavedModels();
   const defaults = useDefaultModels();
@@ -124,7 +126,17 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
         const data = (await res.json()) as {
           computers?: { seatId?: string | null; sessionHealthy?: boolean | null }[];
           campaignSeats?: { id: string }[];
+          browserSeatBindings?: Array<{
+            id: string;
+            name?: string;
+            computerId?: string | null;
+            status?: string;
+            assignedCampaignIds?: string[];
+          }>;
         };
+        actions.ingestDurableBrowserBindings(
+          data.browserSeatBindings ?? data.campaignSeats,
+        );
         // Prefer durable campaignSeats when present; else Hermes attach set.
         const attachedSeatIds = Array.isArray(data.campaignSeats)
           ? new Set(data.campaignSeats.map((s) => s.id))
@@ -154,7 +166,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [seats, campaign]);
+  }, [seats, campaign, actions]);
 
   const steps: Step[] = [
     {

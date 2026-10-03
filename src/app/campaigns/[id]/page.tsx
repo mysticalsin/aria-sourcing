@@ -432,7 +432,22 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           if (!cancelled) setDurableAgentCount(null);
           return;
         }
-        const data = (await res.json()) as { campaignSeats?: unknown[] };
+        const data = (await res.json()) as {
+          campaignSeats?: unknown[];
+          browserSeatBindings?: Array<{
+            id: string;
+            name?: string;
+            computerId?: string | null;
+            status?: string;
+            assignedCampaignIds?: string[];
+          }>;
+        };
+        actions.ingestDurableBrowserBindings(
+          data.browserSeatBindings ??
+            (Array.isArray(data.campaignSeats)
+              ? (data.campaignSeats as Array<{ id: string }>)
+              : undefined),
+        );
         if (!cancelled) {
           setDurableAgentCount(
             Array.isArray(data.campaignSeats) ? data.campaignSeats.length : null,
@@ -448,7 +463,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [id]);
+  }, [id, actions]);
 
   React.useEffect(() => {
     if (!hydrated) return;

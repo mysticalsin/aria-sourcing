@@ -270,6 +270,13 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
       healthStrip.includes("ingestDurableBrowserBindings") &&
       !/\$\{s\.liveSeats\} live/.test(healthStrip),
   );
+  const fleetLib = readFileSync("src/lib/fleet.ts", "utf8");
+  ok(
+    "fleetSummary liveSeats excludes Browser Computer (sessionHealthy path)",
+    fleetLib.includes("isBrowserComputerSeat") &&
+      fleetLib.includes("never count domainVerified theater") &&
+      /liveSeats: seats\.filter/.test(fleetLib),
+  );
 }
 
 console.log(`floor-fleet-wire: ${pass} passed, ${fail} failed`);
