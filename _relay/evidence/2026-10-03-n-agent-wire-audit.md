@@ -1,34 +1,38 @@
-# N-agent FE↔BE wire audit — tip through `0771ad8` / audit commit (2026-10-03)
+# N-agent FE↔BE wire audit — tip `b9677dd` (2026-10-03)
 
-Scope: campaign multi-seat attach, seatId↔computerId, floor↔fleet, go-live/ops targeting, Hermes↔fleet, N>1 isolation. Skip Fly/owner deploy.
+Scope: empty BC shared-pool bleed, wrong computer ops, floor theater, sessionHealthy invent, Hermes-only go-live, poll stale paint. Skip Fly/owner.
 
 ## Verdict
 
-Physical VM isolation + fleet poll↔floor/ops computer targeting are wired fail-closed.
-`0771ad8` closed empty≠attach for source pulses / send-seat pick / allocate **filter**.
-**Still open:** ~~allocate fallback to all seats when none attached, and approve `liLive.length===1` soleAuto bypass.~~ **Fixed** — campaign-scoped `seatPool = campaignSeats` (empty stays empty); approve stamps only `seatAttachedToCampaign` automatic LI seats.
+Client allocate/approve attach holes from prior audit are closed on tip (`b9677dd`).
+**Still open:** durable LinkedIn send authority (API + dispatch + enqueue RPC) does not enforce BC `assigned_campaign_ids`; preferred send-seat stamp can still bypass attach.
 
-## Findings
+## Findings by gap class
 
-### F1 — Remaining campaign-attach holes (after `0771ad8`)
+### Empty BC shared-pool bleed
 | File:line | Issue | One-line fix |
 |---|---|---|
-| `src/lib/store.ts` allocate | ~~seatPool falls back to activeSeats~~ | **Fixed:** `seatPool = campaignSeats` (fail closed) |
-| `src/lib/store.ts` approve | ~~`liLive.length===1` soleAuto bypass~~ | **Fixed:** only `seatAttachedToCampaign` automatic LI |
+| `src/app/api/outreach/send/route.ts:249` | LI seat select omits `assigned_campaign_ids`; any live BC `seatId` can enqueue for any `campaignId` | Select `assigned_campaign_ids`; refuse BC when `!(assigned ?? []).includes(campaignId)` |
+| `src/lib/dispatch-outbound.ts:356` | After seat load, BC send proceeds without `seatAttachedToCampaign(seat, campaignId)` | Block with `linkedin-seat-not-attached` when BC and campaignId set but not attached |
+| `supabase/migrations/0080_contact_lease_and_browser_computer.sql:341` (live `enqueue_linkedin_outbound`) | RPC allows BC enqueue with empty/foreign `assigned_campaign_ids` | New migration: for `LinkedIn Browser Computer`, require `p_campaign_id = any(seat.assigned_campaign_ids)` |
+| `src/lib/linkedin-automatic.ts:60` | `preferredSeatId` returns live automatic seat without attach check (empty/foreign BC still wins if stamped) | For BC + campaignId, require `seatAttachedToCampaign` else `undefined` (update preferred test) |
 
-Fixed in `0771ad8` (not re-open): `agent-event-seat.ts` + `linkedin-automatic.ts` + allocate filter via `seatAttachedToCampaign` / `campaign-seat-attach.ts`.
+Allocate/approve client paths: **closed** (`store.ts` `seatPool = campaignSeats`; approve only `seatAttachedToCampaign`).
 
-### F2 — seatId↔computerId mismatch in API→UI
-**NONE** (high confidence). GET enrich preserves supervisor `seatId`/`computerId`; Floor/Campaign/Fleet index by seatId and refuse `__orphan__`/empty/foreign; POST mutating actions require `callerSeatId === boundSeatId`.
+### Wrong computer ops
+**NONE.** POST ownership (`callerSeatId === boundSeatId`); Campaign/Fleet/viewport ops send owning `seatId`; floor/go-live refuse orphan/foreign.
 
-### F3 — 3D floor missing seats fleet has
-**NONE as wiring bug** (high confidence). Device cap `MAX_3D_AGENTS` (`device.ts:36-39`, `RetroOfficeScene.tsx:61-66`) with honest “not shown” copy; `preferBrowserComputerAgents` keeps LI VMs inside cap. 2D grid shows full roster.
+### Floor theater
+**NONE.** Empty `computerHints` Map fail-closed; busy+healthy zero-sends → idle; pulse cannot invent working from idle+healthy; cortex short-circuits idle/paused/warming.
 
-### F4 — Go-live / ops drive wrong computer
-**NONE** (high confidence). `computerForSeat` seat-owned first; Campaign Agents `act` / Fleet `computerAction` send owning `seatId`; `bootBrowserComputer` refuses ensure seat mismatch.
+### sessionHealthy invent
+**NONE.** Probe/`meta.healthy===true` only; GET refresh / durable restore fail-closed; UI overlays null on miss.
 
-### F5 — Hermes vs fleet poll divergence
-**NONE** (high confidence). `fleetHermesComputerPatches` on Floor/Fleet/Campaign Agents/LinkedIn Settings clears foreign/orphan/absent and writes owned binds.
+### Hermes-only go-live
+**NONE.** `evaluateCampaignGoLive` always `computerForSeat(fleet)` with `computers ?? []`; checklist poll fail → `[]`.
 
-### F6 — N>1 seats share one VM / lose profile isolation
-**NONE for Chromium profile sharing** (high confidence). `ensureComputer` ownership mismatch; reclaim probe-before-claim + `priorSeatId`; OpenBot `PROFILE_ROOT/botId`. Remaining logical bleed is F1 fallbacks only.
+### Poll stale paint
+**NONE.** Floor/Fleet/Agents/HealthStrip/Setup clear on `!ok`/catch; LinkedIn Settings HTTP-fail nulls health (catch rebuilds seats without fleet overlay).
+
+## Prior F1–F6 (still hold except send-authority bleed above)
+F2–F5 remain NONE. F1 allocate/approve fixed in `b9677dd`. F6 Chromium isolation still NONE; remaining logical bleed is send-authority attach above.
