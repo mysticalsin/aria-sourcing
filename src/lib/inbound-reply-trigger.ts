@@ -83,7 +83,7 @@ export function decideReplyDraftSuccessor(input: {
 
 /**
  * After positive interest: propose a booking (operator confirms) — never silent calendar create.
- * Pure helper; store emits activity + receipts. createBookingFor stays operator-gated.
+ * Pure helper; store + loop worker emit activity + receipts. createBookingFor stays operator-gated.
  */
 export function decideBookingProposeFromInterest(input: {
   intent: string;
@@ -91,6 +91,7 @@ export function decideBookingProposeFromInterest(input: {
   candidateId?: string;
   seatId?: string;
   computerId?: string;
+  channel?: string;
 }): null | {
   kind: "booking_propose";
   idempotencyKey: string;
@@ -99,6 +100,7 @@ export function decideBookingProposeFromInterest(input: {
     candidateId: string;
     seatId?: string;
     computerId?: string;
+    channel?: string;
     intent: string;
     trigger: "inbound_interest";
   };
@@ -111,6 +113,8 @@ export function decideBookingProposeFromInterest(input: {
   if (!campaignId || !candidateId) return null;
   const seatId = input.seatId?.trim() || undefined;
   const computerId = input.computerId?.trim() || undefined;
+  const channel = input.channel?.trim() || undefined;
+  const channelNote = channel ? ` channel=${channel}` : "";
   return {
     kind: "booking_propose",
     idempotencyKey: `booking:propose:${campaignId}:${candidateId}`,
@@ -119,11 +123,35 @@ export function decideBookingProposeFromInterest(input: {
       candidateId,
       seatId,
       computerId,
+      channel,
       intent: input.intent,
       trigger: "inbound_interest",
     },
     activityTitle: "Booking proposed from interested reply",
     activityNotes:
-      "Positive interest — propose a meeting in Calendar (operator confirms). No silent calendar create.",
+      `Positive interest — propose a meeting in Calendar (operator confirms). No silent calendar create.${channelNote}`,
+  };
+}
+
+/** Workspace activity row for a booking propose (id/createdAt filled by caller). */
+export function bookingProposeActivityFields(propose: NonNullable<
+  ReturnType<typeof decideBookingProposeFromInterest>
+>): {
+  type: "booking";
+  title: string;
+  notes: string;
+  outcome: string;
+  campaignId: string;
+  linkedEntityType: "candidate";
+  linkedEntityId: string;
+} {
+  return {
+    type: "booking",
+    title: propose.activityTitle,
+    notes: `${propose.activityNotes} [${propose.idempotencyKey}] seat=${propose.payload.seatId ?? "—"} computer=${propose.payload.computerId ?? "—"}`,
+    outcome: "Proposed — confirm in Calendar",
+    campaignId: propose.payload.campaignId,
+    linkedEntityType: "candidate",
+    linkedEntityId: propose.payload.candidateId,
   };
 }

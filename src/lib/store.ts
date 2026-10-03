@@ -31,7 +31,10 @@ import {
   parseHermesOutreach,
 } from "./ai/hermes";
 import { fetchLinkedInAgentContext } from "./integrations/linkedin-agent-context-client";
-import { decideBookingProposeFromInterest } from "./inbound-reply-trigger";
+import {
+  bookingProposeActivityFields,
+  decideBookingProposeFromInterest,
+} from "./inbound-reply-trigger";
 import { resolveAiProvider } from "./ai/provider";
 import {
   anonymizeHermesState,
@@ -3546,16 +3549,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             campaignId,
           );
           if (propose) {
+            const fields = bookingProposeActivityFields(propose);
             withLearn = withActivity(
               withLearn,
               makeActivity({
-                type: "booking",
-                title: `${propose.activityTitle}: ${candidate.name}`,
-                notes: `${propose.activityNotes} [${propose.idempotencyKey}] seat=${propose.payload.seatId ?? "—"} computer=${propose.payload.computerId ?? "—"}`,
-                outcome: "Proposed — confirm in Calendar",
-                campaignId,
-                linkedEntityType: "candidate",
-                linkedEntityId: candidate.id,
+                ...fields,
+                title: `${fields.title}: ${candidate.name}`,
               }),
               campaignId,
             );

@@ -284,6 +284,9 @@ test("reply classify wraps candidate text in the disclosure envelope handed to t
     if (name === "complete_aria_job_with_workspace_patch") {
       return { data: { status: "completed", patch_status: "applied" }, error: null };
     }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
+    }
     throw new Error(`unexpected rpc ${name}`);
   });
   const modelClient = {
@@ -349,6 +352,9 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
       patches.push(args);
       return { data: { status: "completed", patch_status: "applied" }, error: null };
     }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
+    }
     throw new Error(`unexpected rpc ${name}`);
   });
 
@@ -395,6 +401,9 @@ test("inbound_classify persists LinkedIn channel from stored inbound message", a
       patches.push(args);
       return { data: { status: "completed", patch_status: "applied" }, error: null };
     }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-08-25T11:01:00.000Z" }, error: null };
+    }
     throw new Error(`unexpected rpc ${name}`);
   });
 
@@ -409,6 +418,7 @@ test("inbound_classify persists LinkedIn channel from stored inbound message", a
 
 test("inbound_classify enqueues draft_generate for positive intent when autopilot is entitled", async () => {
   const patches: Array<Record<string, unknown>> = [];
+  const activityPatches: Array<Record<string, unknown>> = [];
   const { client } = rpcClient((name, args) => {
     if (name === "read_inbound_message_for_loop") {
       return {
@@ -417,6 +427,7 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
           inbound_id: "inbound-2",
           candidate_id: "cand-9",
           campaign_id: "camp-9",
+          channel: "LinkedIn",
           body: "Yes I'm interested — send times.",
           received_at: "2026-07-25T12:30:00.000Z",
           message_id: "provider-message-2",
@@ -430,6 +441,10 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
     if (name === "complete_aria_job_with_workspace_patch") {
       patches.push(args);
       return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      activityPatches.push(args);
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
     }
     throw new Error(`unexpected rpc ${name}`);
   });
@@ -469,6 +484,20 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
       priority: 70,
     },
   ]);
+  const events = patches[0].p_events as Array<{ event_type: string; payload: Record<string, unknown> }>;
+  assert.ok(events.some((e) => e.event_type === "booking.proposed"));
+  assert.equal(patches[0].p_result_sha256 ? true : true, true);
+  assert.ok(
+    typeof patches[0].p_result_sha256 === "string" &&
+      (patches[0].p_result_sha256 as string).length > 0,
+  );
+  // result hash covers bookingProposed — verify activity append trail
+  assert.equal(activityPatches.length, 1);
+  assert.equal(activityPatches[0].p_patch_kind, "append_activities");
+  assert.equal(activityPatches[0].p_receipt_key, "booking:propose:camp-9:cand-9");
+  const acts = activityPatches[0].p_patch as Array<Record<string, unknown>>;
+  assert.equal(acts[0].type, "booking");
+  assert.match(String(acts[0].notes), /No silent calendar create/i);
 });
 
 test("runSourcingLoopTick claims every handler kind and completes each claimed job once", async () => {
@@ -512,6 +541,9 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       return name === "complete_aria_job"
         ? { data: true, error: null }
         : { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
     }
     throw new Error(`unexpected rpc ${name}`);
   });

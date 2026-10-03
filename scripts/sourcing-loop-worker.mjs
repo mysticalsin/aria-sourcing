@@ -856,10 +856,20 @@ async function handleInboundClassify(job, context) {
 
   // Positive intent → optional draft follow-up for entitled autopilot (still
   // approval-gated before send). No re-source; sourcing continues on its own jobs.
+  // Booking propose is always recorded for positive interest (operator confirms
+  // calendar) — never silent createBookingFor.
   const successors = [];
   let draftQueued = false;
+  let bookingProposed = false;
   const positive =
     classification.intent === "INTERESTED" || classification.intent === "QUALIFIED_INTEREST";
+  const events = [
+    event("reply.classified", "inbound_email", inboundId, {
+      intent: classification.intent,
+      classifier,
+      channel: reply.channel,
+    }),
+  ];
   if (positive && campaignId && candidateId) {
     try {
       const entitled = await context.client
@@ -892,9 +902,22 @@ async function handleInboundClassify(job, context) {
     } catch {
       draftQueued = false;
     }
+    events.push(
+      event("booking.proposed", "candidate", candidateId, {
+        campaignId,
+        candidateId,
+        intent: classification.intent,
+        channel: reply.channel,
+        trigger: "inbound_interest",
+        idempotencyKey: `booking:propose:${campaignId}:${candidateId}`,
+      }),
+    );
+    bookingProposed = true;
+    reply.suggestedAction =
+      "Propose a meeting in Calendar (operator confirms). No silent calendar create.";
   }
 
-  return completeJobWithWorkspacePatch(
+  const classifyResult = await completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_reply", value: [reply], receiptKey: `reply-classify:${inboundId}` },
@@ -903,14 +926,51 @@ async function handleInboundClassify(job, context) {
       intent: classification.intent,
       classifier,
       draftQueued,
+      bookingProposed,
     },
-    [event("reply.classified", "inbound_email", inboundId, {
-      intent: classification.intent,
-      classifier,
-      draftQueued,
-    })],
+    events,
     successors,
   );
+
+  // Durable activity trail scoped in Aria (fail-soft: loop event already recorded).
+  if (bookingProposed) {
+    try {
+      const activity = {
+        id: `act-booking-propose-${campaignId}-${candidateId}`.slice(0, 120),
+        type: "booking",
+        title: "Booking proposed from interested reply",
+        notes:
+          `Positive interest — propose a meeting in Calendar (operator confirms). No silent calendar create. channel=${reply.channel} [booking:propose:${campaignId}:${candidateId}] seat=— computer=—`,
+        outcome: "Proposed — confirm in Calendar",
+        campaignId,
+        linkedEntityType: "candidate",
+        linkedEntityId: candidateId,
+        createdAt: new Date().toISOString(),
+      };
+      const snap = await readWorkspaceSnapshot(context.client, job.workspace_id);
+      const patch = await context.client.rpc("apply_workspace_patch", {
+        p_workspace_id: job.workspace_id,
+        p_expected_updated_at: snap.updated_at,
+        p_patch_kind: "append_activities",
+        p_patch: [activity],
+        p_receipt_key: `booking:propose:${campaignId}:${candidateId}`,
+      });
+      if (patch.error) {
+        // Activity is best-effort; booking.proposed loop event is the durable receipt.
+      } else if (
+        isRecord(patch.data) &&
+        typeof patch.data.status === "string" &&
+        patch.data.status !== "applied" &&
+        patch.data.status !== "already_applied"
+      ) {
+        // stale_token / invalid — leave loop event as authority
+      }
+    } catch {
+      // fail soft
+    }
+  }
+
+  return classifyResult;
 }
 
 const HANDLERS = Object.freeze({

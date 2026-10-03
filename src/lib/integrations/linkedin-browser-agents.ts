@@ -490,7 +490,7 @@ export async function qualifyLeadAgainstIcp(input: {
   ok: boolean;
   score: number;
   reasons: string[];
-  via: "openoutreach" | "linki" | "web-fetch" | "stub";
+  via: "openoutreach" | "linki" | "web-fetch" | "agent-reach-jina" | "agent-reach-mcp" | "stub";
 }> {
   const icp = input.icp.trim();
   if (!icp) return { ok: false, score: 0, reasons: ["icp is required"], via: "stub" };
@@ -530,12 +530,28 @@ export async function qualifyLeadAgainstIcp(input: {
   }
 
   let evidence = `${input.profileUrl || ""}\n${input.snippet || ""}`;
-  let via: "web-fetch" | "stub" = "stub";
+  let via:
+    | "openoutreach"
+    | "linki"
+    | "web-fetch"
+    | "agent-reach-jina"
+    | "agent-reach-mcp"
+    | "stub" = "stub";
   const profileUrl = (input.profileUrl || "").trim();
   if (profileUrl && isLinkedInProfileUrl(profileUrl)) {
     const insight = await analyzeLinkedInProfile(profileUrl);
     evidence += `\n${insight.headline || ""}\n${insight.focusAreas.join(" ")}\n${insight.evidenceText || ""}\n${insight.trajectoryNotes.join(" ")}`;
-    if (insight.evidenceText) via = "web-fetch";
+    // Preserve Agent Reach / Orca provenance — never collapse eyes to generic web-fetch.
+    if (insight.evidenceText || insight.via !== "stub") {
+      via =
+        insight.via === "agent-reach-jina" || insight.via === "agent-reach-mcp"
+          ? insight.via
+          : insight.via === "orca-style"
+            ? "web-fetch"
+            : insight.via === "web-fetch"
+              ? "web-fetch"
+              : "stub";
+    }
   } else if (profileUrl) {
     const page = await readPublicPage(profileUrl);
     if (page) {

@@ -1,29 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 226
+shift: 227
 agent: cursor-cloud
-updated: 2026-10-03T01:10Z
-status: agent-reach-23-quality-green-fly-stale
+updated: 2026-10-03T01:20Z
+status: agent-reach-35-booking-trail-fly-stale
 ---
 
-# Handoff — Shift 226
+# Handoff — Shift 227
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (includes `5a30365` Agent Reach 2/3)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (Agent Reach slice 3.5)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip CI Quality:** GREEN on `e27e948` (run 37083790302) — includes Agent Reach MCP + booking propose. Secret scan + Dependency audit also SUCCESS on that run.
-- **Still red (base/infra):** Database security, Production image supply chain, Release gate
-- **Agent Reach:** slices 1–3 shipped (Jina, optional MCP sidecar, INTERESTED→booking_propose activity)
-- **Fly live:** build `21a42e7…`, `agentFrameworks:false`, computers 0 VMs; no deploy token
+- **Agent Reach:** slices 1–3.5 shipped; slice 4 still Fly+LI
+- **Fly live:** build `21a42e7…`, `agentFrameworks:false`, computers Unauthorized/0 VMs; no deploy token
+- **Tip CI:** Quality was green on `e27e948`; run on prior tip `2c4dbaf` was still queued at shift start
 - **N-agent local:** FE↔BE↔Floor proven fail-closed; never invents sessionHealthy
 
 ## Done this shift
 
-1. Agent Reach slice 2: `ARIA_AGENT_REACH_LINKEDIN_MCP_URL` → POST `/linkedin/profile` fail-closed + status
-2. Agent Reach slice 3: `decideBookingProposeFromInterest` + store activity on INTERESTED (no silent create)
-3. Fly re-probe still stale; N-agent theater audit already filed
-4. Parallel tip: gitleaks/schema/image + claim_contact privilege fixes
+1. Slice 3.5: `inbound_classify` emits durable `booking.proposed` loop event + `append_activities` booking trail (no silent calendar create)
+2. ICP qualify provenance preserves `agent-reach-jina` / `agent-reach-mcp` (no collapse to web-fetch)
+3. `GET /api/source/agent-reach/status` doctor (Jina + MCP + sibling agents)
+4. PRD updated; `bookingProposeActivityFields` shared helper; tests green (inbound-reply-trigger, sourcing-loop-worker, agent-reach-linkedin, linkedin-browser-agents)
 
 ## Blockers
 
@@ -34,7 +33,8 @@ status: agent-reach-23-quality-green-fly-stale
 
 1. Owner Fly redeploy tip until `/api/ready` build == tip SHA + `agentFrameworks:true`
 2. Operator LI login on N desks; prove sessionHealthy within TTL on Floor + Campaign Agents
-3. Optional: durable multi-instance computer-supervisor Maps
+3. Confirm tip Quality green on this slice commit
+4. Optional: durable multi-instance computer-supervisor Maps
 
 ## Decisions (don't relitigate)
 
@@ -42,7 +42,9 @@ status: agent-reach-23-quality-green-fly-stale
 - Agent Reach = eyes; OpenBot = hands
 - Booking propose ≠ silent createBookingFor
 - MCP sidecar optional; Jina zero-config fallback
+- Loop worker booking activity is fail-soft after `booking.proposed` event
 
 ## Watch out
 
 - Do not mark N-agent goal complete until Fly tip SHA + LI healthy verified
+- `apply_workspace_patch` after classify is best-effort; receipt key `booking:propose:camp:cand` is idempotent

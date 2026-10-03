@@ -1,4 +1,5 @@
 import {
+  bookingProposeActivityFields,
   decideBookingProposeFromInterest,
   decideInboundClassifyEnqueue,
   decideReplyDraftSuccessor,
@@ -99,6 +100,18 @@ ok(
 );
 ok("booking carries seat+computer", booking?.payload.seatId === "seat-1" && booking?.payload.computerId === "comp_1");
 ok("booking notes forbid silent create", /No silent calendar create/i.test(booking?.activityNotes ?? ""));
+
+const withChannel = decideBookingProposeFromInterest({
+  intent: "QUALIFIED_INTEREST",
+  campaignId: "camp-2",
+  candidateId: "cand-2",
+  channel: "LinkedIn",
+});
+ok("booking carries channel", withChannel?.payload.channel === "LinkedIn");
+const fields = withChannel ? bookingProposeActivityFields(withChannel) : null;
+ok("activity type booking", fields?.type === "booking");
+ok("activity links candidate", fields?.linkedEntityId === "cand-2");
+ok("activity outcome propose", /Proposed/i.test(fields?.outcome ?? ""));
 
 console.log(`RESULT inbound-reply-trigger: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
