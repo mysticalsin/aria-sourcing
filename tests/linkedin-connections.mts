@@ -157,8 +157,14 @@ ok(
 );
 ok(
   "setup guide never classifies Browser Computer via computerId alone",
-  /Never classify via Hermes computerId alone/.test(setupGuide) &&
-    !/Boolean\(seat\.computerId\)/.test(setupGuide),
+  /from "@\/lib\/campaign-seat-attach"/.test(setupGuide) &&
+    /isBrowserComputerSeat/.test(setupGuide) &&
+    !/Boolean\(seat\.computerId\)/.test(setupGuide) &&
+    !/computerId/.test(
+      readFileSync("src/lib/campaign-seat-attach.ts", "utf8").match(
+        /export function isBrowserComputerSeat[\s\S]*?^\}/m,
+      )?.[0] ?? "computerId",
+    ),
 );
 
 const liPanel = readFileSync("src/components/settings/linkedin-connections-panel.tsx", "utf8");
