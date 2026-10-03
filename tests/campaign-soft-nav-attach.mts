@@ -62,6 +62,14 @@ ok(
     /gen !== pollGeneration\.current/.test(agents) &&
     /pollGeneration\.current \+= 1/.test(agents),
 );
+ok(
+  "campaign agents seatsRef — seats churn must not remount poll / clear durable",
+  /seatsRef/.test(agents) &&
+    /hermesCampaignSeatsRef/.test(agents) &&
+    /\[actions, campaignId\]/.test(agents) &&
+    /\[campaignId, refresh\]/.test(agents) &&
+    !/\}, \[actions, hermesCampaignSeats, campaignId, seats\]\)/.test(agents),
+);
 
 const setup = readFileSync(
   new URL("../src/components/settings/setup-guide-panel.tsx", import.meta.url),

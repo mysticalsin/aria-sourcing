@@ -1294,3 +1294,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `saveApiKey` never copies `input.value`; `/api/keys` encrypts the raw value server-side and returns only ID/last-four metadata. Alert `13` predates PR `#3`.
 **Suggested fix:** Preserve the metadata contract and document the verified false positive instead of breaking provider references.
 **Status:** wontfix (CodeQL alert 13 dismissed as false positive on 2026-07-14 with audit comment)
+
+## 2026-10-03 — Agents pollGeneration clears durable on seats churn
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-agents-panel.tsx:254
+**Issue:** Soft-nav `pollGeneration` + effect clear run whenever `refresh` identity changes. `refresh` depends on `seats` / `hermesCampaignSeats`, so Floor ingest / Hermes computerId patches / detach `updateSeat` remount the effect: bump gen (drop in-flight same-campaign poll), `setDurableSeats(undefined)`, `setFleetLoaded(false)`, clear computers. Authoritative durable `[]` falls back to Hermes; Deploy disables; session badges vanish until the next poll — FE↔BE flap after tip soft-nav fix.
+**Repro/evidence:** Campaign A Agents open with durable `campaignSeats` painted; Floor `/api/fleet/computers` ingest patches any seat → Agents `seats` prop changes → effect cleanup invalidates in-flight refresh → durable cleared. Empty-campaign durable `[]` briefly reverts to Hermes attaches. Pre-pollGeneration late apply could recover same-campaign; gen bump discards it.
+**Suggested fix:** Bump `pollGeneration` + clear durable/fleet paint only when `campaignId` changes; keep seats in a ref for merge; do not tie effect reset to every seats identity change.
+**Status:** fixed (pending commit) — seatsRef/hermesCampaignSeatsRef; refresh deps `[actions, campaignId]`; effect `[campaignId, refresh]`
