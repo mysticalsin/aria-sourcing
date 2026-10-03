@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
   }
   const attached = seatAttachedToCampaign(
     {
-      provider: String(seatRow.provider ?? ""),
+      provider: seatRow.provider as import("@/lib/types").AgentSeat["provider"],
       assignedCampaignIds: Array.isArray(seatRow.assigned_campaign_ids)
         ? (seatRow.assigned_campaign_ids as string[])
         : [],
