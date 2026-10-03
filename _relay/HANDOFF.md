@@ -12,7 +12,7 @@ status: tip-durable-roster-ingest-fly-stale
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip work:** `ingestDurableBrowserBindings` appends durable-only LI stubs to Hermes so Floor shows N desks
+- **Tip:** `d2accd2` — durable-only LI desks ingest into Hermes for Floor
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
 - **Goal:** open until Fly tip SHA + LI desks healthy
 
