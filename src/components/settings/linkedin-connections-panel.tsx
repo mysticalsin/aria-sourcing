@@ -1,0 +1,1303 @@
+"use client";
+
+import * as React from "react";
+import { motion } from "framer-motion";
+import { Badge, Button, Input, Field, useToast } from "@/components/ui";
+import { useActions, useRole, useSeats } from "@/lib/store";
+import { can } from "@/lib/rbac";
+import { supabaseEnabled } from "@/lib/supabase/config";
+import { isLinkedInSeatProvider } from "@/lib/linkedin-connections";
+import { resolveDurableComputerId } from "@/lib/boot-browser-computer";
+import {
+  fleetHermesComputerPatches,
+  computerHealthOwnedBySeat,
+  isStaleHermesComputerTwin,
+} from "@/lib/fleet-hermes-sync";
+import {
+  ConnectedIdentityBanner,
+  ConnectionListItem,
+  ConnectionStep,
+  SystemReadiness,
+  type ReadinessItem,
+  type StepState,
+} from "@/components/settings/integration-connection-primitives";
+import {
+  Activity,
+  Linkedin,
+  LogIn,
+  Monitor,
+  Plus,
+  Unplug,
+  Wand2,
+} from "lucide-react";
+import { LINKEDIN_EVENT_TYPES, type LinkedInEventType } from "@/lib/linkedin-events";
+import {
+  appendLinkedInDemoEvent,
+  type LinkedInDemoChannelEvent,
+} from "@/lib/linkedin-demo-events-store";
+
+type ProviderReadiness = {
+  oauthConfigured: boolean;
+  encryptionReady: boolean;
+  assistedManual: boolean;
+  vendorApiConfigured: boolean;
+  browserComputerConfigured: boolean;
+  inboundWebhookSecret: boolean;
+};
+
+type OAuthProfile = {
+  displayName: string;
+  email: string | null;
+  pictureUrl: string | null;
+  connectedAt: string;
+};
+
+type SeatRow = {
+  id: string;
+  name: string;
+  provider: string;
+  status: string;
+  mode: string;
+  operatorEmail?: string;
+  connectedAccount?: string | null;
+  computerId?: string | null;
+  assignedCampaignIds?: string[];
+  /** From fleet supervisor /session-probe — never invent true. */
+  sessionHealthy?: boolean | null;
+  adapterConfigured?: boolean;
+  oauthConnected?: boolean;
+  oauthProfile?: OAuthProfile | null;
+  inboundRoute?: { routeKey: string; operatorLabel: string; active: boolean } | null;
+};
+
+type LinkedInConnectionsValue = ReturnType<typeof useLinkedInConnectionsState>;
+
+const LinkedInConnectionsContext = React.createContext<LinkedInConnectionsValue | null>(null);
+
+export function LinkedInConnectionsProvider({ children }: { children: React.ReactNode }) {
+  const value = useLinkedInConnectionsState();
+  return (
+    <LinkedInConnectionsContext.Provider value={value}>{children}</LinkedInConnectionsContext.Provider>
+  );
+}
+
+export function useLinkedInConnections(): LinkedInConnectionsValue {
+  const ctx = React.useContext(LinkedInConnectionsContext);
+  // Always call the standalone hook so Rules of Hooks stay stable; prefer
+  // the provider value when present (avoids double-fetch in the stack).
+  const standalone = useLinkedInConnectionsState({ enabled: !ctx });
+  return ctx ?? standalone;
+}
+
+function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
+  const enabled = opts?.enabled !== false;
+  const actions = useActions();
+  const role = useRole();
+  const localSeats = useSeats();
+  // localSeatsRef + pollGeneration: Hermes ingest must not remount load / wipe LI healthy.
+  const localSeatsRef = React.useRef(localSeats);
+  localSeatsRef.current = localSeats;
+  const pollGeneration = React.useRef(0);
+  const { toast } = useToast();
+  const isAdmin = can(role, "manage_fleet");
+  const [loading, setLoading] = React.useState(enabled);
+  const [connectingOAuth, setConnectingOAuth] = React.useState(false);
+  const [connectingAssisted, setConnectingAssisted] = React.useState(false);
+  const [connectingBrowser, setConnectingBrowser] = React.useState(false);
+  const [openingAgentLogin, setOpeningAgentLogin] = React.useState(false);
+  const [testingSeat, setTestingSeat] = React.useState<string | null>(null);
+  const [label, setLabel] = React.useState("");
+  const [providers, setProviders] = React.useState<ProviderReadiness | null>(null);
+  const [seats, setSeats] = React.useState<SeatRow[]>([]);
+  const [simProfile, setSimProfile] = React.useState("https://www.linkedin.com/in/example-candidate");
+  const [simBody, setSimBody] = React.useState("Thanks — I'm interested. When can we talk?");
+  const [simType, setSimType] = React.useState<LinkedInEventType>("reply");
+  const [simulating, setSimulating] = React.useState(false);
+  const [simSeatId, setSimSeatId] = React.useState<string>("");
+  const [hostCapacity, setHostCapacity] = React.useState<{ computers: number; max: number } | null>(
+    null,
+  );
+  /** Latest fleet rows for Login staleTwin — never feed orphan/foreign Hermes id. */
+  const [fleetComputers, setFleetComputers] = React.useState<
+    { seatId?: string; computerId?: string; sessionHealthy?: boolean | null }[]
+  >([]);
+  const [fleetLoaded, setFleetLoaded] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    const gen = pollGeneration.current;
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const seatsNow = localSeatsRef.current;
+      const res = await fetch("/api/linkedin/connections", { method: "GET", credentials: "include" });
+      if (gen !== pollGeneration.current) return;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        demo?: boolean;
+        detail?: string;
+        error?: string;
+        providers?: ProviderReadiness;
+        seats?: SeatRow[];
+      } | null;
+      if (json?.providers) setProviders(json.providers);
+
+      const localLinkedIn = seatsNow
+        .filter((s) => isLinkedInSeatProvider(s.provider))
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          provider: s.provider,
+          status: s.status,
+          mode: s.mode,
+          connectedAccount: s.connectedAccount,
+          operatorEmail: s.operatorEmail,
+          computerId: s.computerId ?? null,
+          assignedCampaignIds: s.assignedCampaignIds ?? [],
+          sessionHealthy: null as boolean | null,
+        }));
+
+      let nextSeats: SeatRow[] = localLinkedIn;
+      if (json?.demo || !supabaseEnabled) {
+        nextSeats = localLinkedIn;
+      } else if (Array.isArray(json?.seats)) {
+        nextSeats = json.seats;
+      }
+
+      // Overlay fleet sessionHealthy so Browser Computer badges aren't "green" without a probe.
+      try {
+        const fleetRes = await fetch("/api/fleet/computers", { credentials: "include" });
+        if (gen !== pollGeneration.current) return;
+        if (fleetRes.ok) {
+          const fleet = (await fleetRes.json()) as {
+            computers?: { seatId?: string; computerId?: string; sessionHealthy?: boolean | null }[];
+            hostCapacity?: { computers: number; max: number } | null;
+            browserSeatBindings?: Array<{
+              id: string;
+              name?: string;
+              computerId?: string | null;
+              status?: string;
+              assignedCampaignIds?: string[];
+            }>;
+          };
+          if (gen !== pollGeneration.current) return;
+          if (fleet.hostCapacity) setHostCapacity(fleet.hostCapacity);
+          const computers = fleet.computers ?? [];
+          setFleetComputers(computers);
+          setFleetLoaded(true);
+          // Durable LI roster → Hermes (append missing desks + patch attach).
+          actions.ingestDurableBrowserBindings(fleet.browserSeatBindings);
+          const bySeatHealth = new Map(
+            computers
+              .filter((c) => c.seatId && c.seatId !== "__orphan__")
+              .map((c) => [c.seatId!, c.sessionHealthy ?? null] as const),
+          );
+          const byCompHealth = new Map(
+            computers
+              .filter((c) => c.computerId)
+              .map((c) => [c.computerId!, c.sessionHealthy ?? null] as const),
+          );
+          const bySeatComputer = new Map(
+            computers
+              .filter((c) => c.seatId && c.computerId && c.seatId !== "__orphan__")
+              .map((c) => [c.seatId!, c.computerId!] as const),
+          );
+          // One local patch pass — write owned bindings + clear foreign Hermes computerIds.
+          // Never PATCH agent_seats from poll (races reclaim/ensure persist).
+          const patches = fleetHermesComputerPatches(nextSeats, computers);
+          const clearedBySeat = new Map(
+            patches.filter((p) => p.computerId === null).map((p) => [p.seatId, true] as const),
+          );
+          actions.applyFleetHermesComputerPatches(patches);
+          nextSeats = nextSeats.map((s) => {
+            const fleetComputerId = bySeatComputer.get(s.id);
+            const computerId =
+              fleetComputerId ?? (clearedBySeat.has(s.id) ? null : s.computerId);
+            // Fleet overlay is authoritative: a present key with null must not
+            // fall through to a stale local sessionHealthy=true (no probe).
+            const fromSeat = s.id && bySeatHealth.has(s.id) ? bySeatHealth.get(s.id)! : undefined;
+            const compKey = computerId || "";
+            // computerId-keyed health only when that VM is unbound/orphan or ours.
+            const fromComp =
+              fromSeat === undefined &&
+              compKey &&
+              byCompHealth.has(compKey) &&
+              computerHealthOwnedBySeat(s.id, compKey, computers)
+                ? byCompHealth.get(compKey)!
+                : undefined;
+            const sessionHealthy =
+              fromSeat !== undefined
+                ? fromSeat
+                : fromComp !== undefined
+                  ? fromComp
+                  : null;
+            return {
+              ...s,
+              computerId: computerId ?? null,
+              sessionHealthy,
+            };
+          });
+        } else {
+          // HTTP fail: clear prior fleet paint (same as catch) so Login cannot
+          // treat a stale Hermes id as owned while BE is down.
+          setFleetComputers([]);
+          setFleetLoaded(true);
+          nextSeats = nextSeats.map((s) => ({ ...s, sessionHealthy: null }));
+        }
+      } catch {
+        if (gen !== pollGeneration.current) return;
+        setFleetComputers([]);
+        setFleetLoaded(true);
+        /* seats still usable without fleet overlay */
+      }
+
+      if (gen !== pollGeneration.current) return;
+      setSeats(nextSeats);
+
+      if (json?.error && !json.ok) {
+        toast({ title: "LinkedIn status", description: json.error, variant: "error" });
+      }
+    } catch {
+      if (gen !== pollGeneration.current) return;
+      toast({ title: "LinkedIn status failed", description: "Network error.", variant: "error" });
+    } finally {
+      if (gen === pollGeneration.current) setLoading(false);
+    }
+  }, [enabled, actions, toast]);
+
+  React.useEffect(() => {
+    pollGeneration.current += 1;
+    void load();
+    // Keep sessionHealthy / VM …last8 aligned with Floor/Fleet (same /api/fleet/computers).
+    const t = window.setInterval(() => void load(), 5000);
+    return () => {
+      pollGeneration.current += 1;
+      window.clearInterval(t);
+    };
+  }, [load]);
+
+  async function connectWithLinkedInOAuth() {
+    if (!supabaseEnabled) {
+      toast({
+        title: "Live mode required",
+        description: "Configure Supabase, then Sign in with LinkedIn here.",
+        variant: "error",
+      });
+      return;
+    }
+    setConnectingOAuth(true);
+    try {
+      const res = await fetch("/api/linkedin/connections", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ensure_oauth", goLive: true }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+        status?: string;
+        authorizeUrl?: string;
+      } | null;
+      if (json?.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
+        return;
+      }
+      if (!json?.ok || !json.authorizeUrl) {
+        toast({
+          title: "LinkedIn Sign In unavailable",
+          description: json?.error ?? `HTTP ${res.status}`,
+          variant: "error",
+        });
+        return;
+      }
+      window.location.href = json.authorizeUrl;
+    } catch {
+      toast({ title: "Connect failed", description: "Network error.", variant: "error" });
+      setConnectingOAuth(false);
+    }
+  }
+
+  async function connectAssisted() {
+    if (!supabaseEnabled) {
+      setConnectingAssisted(true);
+      try {
+        const seat = await actions.addSeat({
+          name: "My LinkedIn (assisted)",
+          operatorEmail: label.includes("@") ? label : "operator@demo.local",
+          provider: "LinkedIn Assisted Manual",
+        });
+        if (!seat) {
+          toast({ title: "Connect failed", description: "Could not create a local LinkedIn seat.", variant: "error" });
+          return;
+        }
+        actions.updateSeat(seat.id, { connectedAccount: label.trim() || "Operator LinkedIn" });
+        const live = await actions.toggleSeatLive(seat.id);
+        toast({
+          title: live.ok ? "Assisted-manual seat ready" : "Seat created",
+          description: live.ok
+            ? "Draft → copy into LinkedIn → Confirm send in Aria. (Demo has no durable OAuth.)"
+            : live.reason,
+          variant: live.ok ? "success" : "warning",
+        });
+        await load();
+      } finally {
+        setConnectingAssisted(false);
+      }
+      return;
+    }
+    setConnectingAssisted(true);
+    try {
+      const res = await fetch("/api/linkedin/connections", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ensure_connect",
+          provider: "LinkedIn Assisted Manual",
+          operatorLabel: label.trim() || undefined,
+          goLive: true,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+        status?: string;
+      } | null;
+      if (json?.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
+        return;
+      }
+      if (!json?.ok) {
+        toast({ title: "Connect failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
+        return;
+      }
+      toast({ title: "Assisted-manual seat ready", description: json.detail, variant: "success" });
+      await load();
+    } catch {
+      toast({ title: "Connect failed", description: "Network error.", variant: "error" });
+    } finally {
+      setConnectingAssisted(false);
+    }
+  }
+
+
+  async function connectBrowserComputer(opts?: { additional?: boolean }) {
+    const existingBrowser = seats.filter((s) => s.provider === "LinkedIn Browser Computer").length;
+    const localBrowser = localSeats.filter((s) => s.provider === "LinkedIn Browser Computer").length;
+    const n = Math.max(existingBrowser, localBrowser) + (opts?.additional || existingBrowser > 0 ? 1 : 0);
+    const seatName =
+      n <= 1 ? "AriaBot LinkedIn Computer" : `AriaBot LinkedIn Account ${n}`;
+    const accountLabel =
+      label.trim() || (n <= 1 ? "AriaBot LinkedIn" : `LinkedIn account ${n}`);
+
+    if (!supabaseEnabled) {
+      setConnectingBrowser(true);
+      try {
+        const seat = await actions.addSeat({
+          name: seatName,
+          operatorEmail: label.includes("@") ? label : "operator@demo.local",
+          provider: "LinkedIn Browser Computer",
+        });
+        if (!seat) {
+          toast({ title: "Connect failed", description: "Could not create a local Browser Computer seat.", variant: "error" });
+          return;
+        }
+        // Leave computerId null — Login reclaim-or-mint binds a durable VM.
+        const saved = await actions.updateSeat(seat.id, {
+          connectedAccount: accountLabel,
+          computerId: seat.computerId ?? null,
+          linkedinDeliveryBackend: "browser-computer",
+        });
+        if (!saved) {
+          toast({
+            title: "Seat created without computer id",
+            description: "computerId did not persist — open Fleet and assign a VM before login.",
+            variant: "warning",
+          });
+        }
+        const live = await actions.toggleSeatLive(seat.id);
+        toast({
+          title: live.ok ? "AriaBot Browser Computer seat created" : "Seat created",
+          description: live.ok
+            ? "Isolated Chromium profile reserved — Take control to log into LinkedIn (session not verified yet)."
+            : live.reason,
+          variant: live.ok ? "success" : "warning",
+        });
+        await load();
+        return seat.id;
+      } finally {
+        setConnectingBrowser(false);
+      }
+    }
+    setConnectingBrowser(true);
+    try {
+      const res = await fetch("/api/linkedin/connections", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ensure_connect",
+          provider: "LinkedIn Browser Computer",
+          operatorLabel: accountLabel,
+          seatName,
+          goLive: true,
+          forceNew: Boolean(opts?.additional),
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+        status?: string;
+        seatId?: string;
+      } | null;
+      if (json?.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
+        return;
+      }
+      if (!json?.ok) {
+        toast({ title: "AriaBot seat failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
+        return;
+      }
+      toast({
+        title: "AriaBot Browser Computer seat created",
+        description:
+          json.detail ??
+          "Isolated Chromium reserved — Take control to log into LinkedIn (session not verified yet).",
+        variant: "success",
+      });
+      await load();
+      return json.seatId;
+    } catch {
+      toast({ title: "Connect failed", description: "Network error.", variant: "error" });
+    } finally {
+      setConnectingBrowser(false);
+    }
+  }
+
+  /**
+   * Login for agents on a specific Browser Computer seat (isolated Chromium profile).
+   * surface=member → linkedin.com/login; surface=recruiter → Recruiter/talent login.
+   */
+  async function openAgentLinkedInLogin(opts?: {
+    seatId?: string;
+    surface?: "member" | "recruiter";
+    createIfMissing?: boolean;
+  }) {
+    const surface = opts?.surface ?? "member";
+    setOpeningAgentLogin(true);
+    try {
+      let browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
+      if (browserSeats.length === 0 || opts?.createIfMissing) {
+        await connectBrowserComputer({
+          additional: browserSeats.length > 0 && opts?.createIfMissing,
+        });
+        // Reload seats from API / local store after create.
+        const res = await fetch("/api/linkedin/connections", { method: "GET", credentials: "include" });
+        const json = (await res.json().catch(() => null)) as { seats?: SeatRow[] } | null;
+        if (Array.isArray(json?.seats) && json.seats.length > 0) {
+          browserSeats = json.seats.filter((s) => s.provider === "LinkedIn Browser Computer");
+          setSeats(json.seats);
+        } else {
+          browserSeats = localSeats
+            .filter((s) => s.provider === "LinkedIn Browser Computer")
+            .map((s) => ({
+              id: s.id,
+              name: s.name,
+              provider: s.provider,
+              status: s.status,
+              mode: s.mode,
+              computerId: s.computerId ?? null,
+              connectedAccount: s.connectedAccount ?? null,
+              assignedCampaignIds: s.assignedCampaignIds ?? [],
+            }));
+        }
+      }
+      // With N Browser Computers, hero Login without a seatId is ambiguous — each seat
+      // owns an isolated Chromium/LinkedIn profile. Per-row buttons pass seatId.
+      if (!opts?.seatId && browserSeats.length > 1 && !opts?.createIfMissing) {
+        toast({
+          title: "Pick a seat",
+          description:
+            "Several AriaBot seats exist — use Log in on the seat row below so the correct LinkedIn profile opens.",
+          variant: "warning",
+        });
+        return;
+      }
+      const seat =
+        (opts?.seatId ? browserSeats.find((s) => s.id === opts.seatId) : null) ||
+        // createIfMissing: prefer the newest seat (just minted).
+        (opts?.createIfMissing ? browserSeats[browserSeats.length - 1] : null) ||
+        browserSeats[0];
+      if (!seat) {
+        toast({
+          title: "No AriaBot seat",
+          description: "Create an AriaBot Browser Computer seat first, then try again.",
+          variant: "error",
+        });
+        return;
+      }
+      // Never invent computerId from seat.id — that collapses N Chromium profiles onto one id.
+      // Prefer durable API/DB binding; reclaim a probed-healthy host orphan before minting
+      // (including when store pre-minted a blank id). Do NOT trust Hermes-only computerId.
+      // When fleet not loaded yet, omit existing — empty poll cannot detect stale twins.
+      const hermesId = (seat.computerId ?? "").trim();
+      const staleTwin =
+        !fleetLoaded ||
+        !fleetComputers.length ||
+        isStaleHermesComputerTwin(seat.id, hermesId, fleetComputers);
+      let computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId: staleTwin ? null : seat.computerId,
+        // Only when already campaign-attached — bootstrap login before attach omits.
+        campaignId: (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim())),
+      });
+
+      // Persist computer id before ensure/start so N concurrent boots cannot race-mint twins.
+      if (!seat.computerId || seat.computerId !== computerId) {
+        const saved = await actions.updateSeat(seat.id, {
+          computerId,
+          linkedinDeliveryBackend: "browser-computer",
+          connectedAccount: seat.connectedAccount || label.trim() || "AriaBot LinkedIn",
+        });
+        if (!saved) {
+          toast({
+            title: "Computer id not saved",
+            description: "Could not persist computerId before boot — fix Fleet, then retry Log in.",
+            variant: "error",
+          });
+          return;
+        }
+      }
+
+      async function fleetAct(
+        action: "ensure" | "start" | "take_control" | "session_probe" | "reclaim_healthy_orphan",
+        id: string = computerId,
+      ) {
+        // When seat is campaign-attached, pass campaignId so refuseUnattachedCampaignSeat
+        // gates Take/probe/navigate. Empty assign omits (bootstrap login before attach).
+        const campaignId = (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
+        const res = await fetch("/api/fleet/computers", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            computerId: id || undefined,
+            seatId: seat.id,
+            ...(campaignId ? { campaignId } : {}),
+          }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+          computer?: {
+            computerId?: string;
+            viewUrl?: string | null;
+            remoteUrl?: string | null;
+            status?: string;
+            lastError?: string | null;
+            sessionHealthy?: boolean | null;
+          };
+          sessionHealthy?: boolean | null;
+          reclaimed?: boolean;
+        } | null;
+        if (!res.ok) throw new Error(body?.error || res.statusText);
+        return body;
+      }
+
+      await fleetAct("ensure");
+      await fleetAct("start");
+      // If LinkedIn cookies already live on this durable profile, open the feed —
+      // do not bounce to /login and wipe the operator's session after every deploy.
+      // When the stored id is a login-wall twin, probe host orphans and reclaim a
+      // healthy durable profile instead of reminting (preserves cookies across deploys).
+      let sessionHealthy = false;
+      try {
+        const probed = await fleetAct("session_probe");
+        sessionHealthy =
+          probed?.sessionHealthy === true || probed?.computer?.sessionHealthy === true;
+      } catch {
+        sessionHealthy = false;
+      }
+      if (!sessionHealthy) {
+        try {
+          const reclaimed = await fleetAct("reclaim_healthy_orphan");
+          const healthy =
+            reclaimed?.sessionHealthy === true ||
+            reclaimed?.computer?.sessionHealthy === true;
+          const nextId = reclaimed?.computer?.computerId?.trim();
+          if (healthy && nextId) {
+            sessionHealthy = true;
+            if (nextId !== computerId) {
+              computerId = nextId;
+              const saved = await actions.updateSeat(seat.id, {
+                computerId,
+                linkedinDeliveryBackend: "browser-computer",
+                connectedAccount: seat.connectedAccount || label.trim() || "AriaBot LinkedIn",
+              });
+              if (!saved) {
+                toast({
+                  title: "Reclaimed VM not saved",
+                  description:
+                    "Found a healthy host profile but could not persist computerId — fix Fleet, then retry Log in.",
+                  variant: "error",
+                });
+                return;
+              }
+              await fleetAct("ensure", computerId);
+              await fleetAct("start", computerId);
+            }
+          }
+        } catch {
+          // Keep sessionHealthy false — fall through to /login on the stored profile.
+        }
+      }
+      const loginUrl =
+        surface === "recruiter"
+          ? "https://www.linkedin.com/uas/login?session_redirect=%2Ftalent%2Fhome"
+          : sessionHealthy
+            ? "https://www.linkedin.com/feed/"
+            : "https://www.linkedin.com/login";
+      // Navigate while AriaBot still holds the seat (before Take control).
+      // If operator already holds Take, navigate refuses (computer-human-held) —
+      // skip warm-nav and open the viewport instead of stealing the mutex.
+      const gateCampaignId = (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
+      await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "navigate",
+          computerId,
+          seatId: seat.id,
+          url: loginUrl,
+          ...(gateCampaignId ? { campaignId: gateCampaignId } : {}),
+        }),
+      }).catch(() => null);
+      // Capture pre-take probe — Take control clears sessionHealthy on BE.
+      const probedHealthyBeforeTake = sessionHealthy;
+      const controlled = (await fleetAct("take_control"))?.computer ?? null;
+      const url = controlled?.viewUrl || controlled?.remoteUrl;
+      if (url && /^https?:\/\//i.test(url)) {
+        const join = url.includes("?") ? "&" : "?";
+        window.open(`${url}${join}fs=1`, "_blank", "noopener,noreferrer");
+      } else {
+        window.open("/fleet", "_blank", "noopener,noreferrer");
+      }
+      // Take control clears sessionHealthy on the supervisor — never toast
+      // "session restored" / "no re-login" from the pre-take probe flag.
+      const afterTakeHealthy = controlled?.sessionHealthy === true;
+      toast({
+        title: afterTakeHealthy
+          ? "LinkedIn session still healthy"
+          : probedHealthyBeforeTake
+            ? "AriaBot opened LinkedIn feed"
+            : surface === "recruiter"
+              ? "LinkedIn Recruiter login opened"
+              : "AriaBot LinkedIn login opened",
+        description: afterTakeHealthy
+          ? "Supervisor still reports a healthy session after Take control."
+          : probedHealthyBeforeTake
+            ? "Chromium had a LinkedIn session before Take control. Finish any check, then Release — Floor stays unverified until the next probe."
+            : surface === "recruiter"
+              ? "Sign into LinkedIn Recruiter inside AriaBot like a normal browser (2FA ok). Release when done — this seat keeps that Recruiter session."
+              : "Sign in on LinkedIn inside AriaBot (including 2FA). Release when done — agents reuse this session to source and reach out.",
+        variant: "success",
+      });
+      await load();
+    } catch (err) {
+      toast({
+        title: "Could not open LinkedIn login",
+        description: err instanceof Error ? err.message : "AriaBot supervisor may be unavailable.",
+        variant: "error",
+      });
+    } finally {
+      setOpeningAgentLogin(false);
+    }
+  }
+
+  async function simulateEvent(seatId?: string) {
+    setSimulating(true);
+    try {
+      const uuidSeat =
+        typeof seatId === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(seatId)
+          ? seatId
+          : undefined;
+      const res = await fetch("/api/linkedin/simulate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventType: simType,
+          profileUrl: simProfile,
+          body: simType === "reply" ? simBody : "",
+          seatId: uuidSeat,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        status?: string;
+        detail?: string;
+        error?: string;
+        classifyQueued?: boolean;
+        duplicate?: boolean;
+        eventType?: string;
+        demo?: boolean;
+        event?: LinkedInDemoChannelEvent;
+      } | null;
+      if (json?.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
+        return;
+      }
+      if (!json?.ok) {
+        toast({ title: "Simulate failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
+        return;
+      }
+      let duplicate = Boolean(json.duplicate);
+      if ((json.demo || !supabaseEnabled) && json.event) {
+        const written = appendLinkedInDemoEvent(json.event);
+        duplicate = written.duplicate;
+      }
+      toast({
+        title: `Simulated ${json.eventType ?? simType}`,
+        description: duplicate
+          ? "Duplicate event (idempotent)."
+          : json.classifyQueued
+            ? "Reply recorded — classify queued."
+            : json.demo || !supabaseEnabled
+              ? "Event written — open Replies → LinkedIn inbox."
+              : "Event recorded.",
+        variant: "success",
+      });
+    } catch {
+      toast({ title: "Simulate failed", description: "Network error.", variant: "error" });
+    } finally {
+      setSimulating(false);
+    }
+  }
+
+  async function testSeat(seatId: string) {
+    setTestingSeat(seatId);
+    try {
+      const res = await fetch("/api/linkedin/test", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seatId }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      } | null;
+      toast({
+        title: json?.ok ? "LinkedIn validated" : "LinkedIn needs attention",
+        description: json?.message ?? json?.error ?? `HTTP ${res.status}`,
+        variant: json?.ok ? "success" : "error",
+      });
+      await load();
+    } catch {
+      toast({ title: "Validate failed", description: "Network error.", variant: "error" });
+    } finally {
+      setTestingSeat(null);
+    }
+  }
+
+  const oauthSeat = seats.find((s) => s.oauthConnected);
+  const signedIn = Boolean(oauthSeat?.oauthProfile);
+
+  const readinessItems: ReadinessItem[] = providers
+    ? [
+        {
+          id: "browser",
+          label: "AriaBot computer supervisor (required for Automatic)",
+          ok: providers.browserComputerConfigured,
+          hint: "Attach Computer Supervisor URL + token in Settings → LinkedIn (or COMPUTER_SUPERVISOR_*). Automatic sends run in the AriaBot sandbox/VM — not via LinkedIn APIs.",
+        },
+        {
+          id: "encryption",
+          label: "Token encryption",
+          ok: providers.encryptionReady,
+          hint: "DATA_ENCRYPTION_KEY (≥32 chars) must be configured.",
+        },
+        {
+          id: "oauth",
+          label: "LinkedIn OAuth credentials (optional)",
+          ok: providers.oauthConfigured,
+          hint: "Only if you still want Sign-in-with-LinkedIn identity badges. Not required for AriaBot send.",
+          optional: true,
+        },
+        {
+          id: "vendor",
+          label: "Vendor API (legacy optional)",
+          ok: providers.vendorApiConfigured,
+          hint: "Optional contracted messaging vendor. Prefer AriaBot Browser Computer for Automatic.",
+          optional: true,
+        },
+        {
+          id: "webhook",
+          label: "Inbound webhook secret",
+          ok: providers.inboundWebhookSecret,
+          hint: "Required for vendor reply events.",
+          optional: true,
+        },
+      ]
+    : [];
+
+  return {
+    isAdmin,
+    loading,
+    connectingOAuth,
+    connectingAssisted,
+    connectingBrowser,
+    openingAgentLogin,
+    testingSeat,
+    label,
+    setLabel,
+    providers,
+    seats,
+    simProfile,
+    setSimProfile,
+    simBody,
+    setSimBody,
+    simType,
+    setSimType,
+    simulating,
+    simSeatId,
+    setSimSeatId,
+    hostCapacity,
+    oauthSeat,
+    signedIn,
+    readinessItems,
+    connectWithLinkedInOAuth,
+    connectAssisted,
+    connectBrowserComputer,
+    openAgentLinkedInLogin,
+    simulateEvent,
+    testSeat,
+    actions,
+    load,
+  };
+}
+
+export function LinkedInIdentityStep({
+  stepState,
+  hideAdvanced,
+}: {
+  stepState?: StepState;
+  hideAdvanced?: boolean;
+}) {
+  const {
+    isAdmin,
+    loading,
+    connectingOAuth,
+    connectingAssisted,
+    connectingBrowser,
+    openingAgentLogin,
+    testingSeat,
+    label,
+    setLabel,
+    providers,
+    seats,
+    simProfile,
+    setSimProfile,
+    simBody,
+    setSimBody,
+    simType,
+    setSimType,
+    simulating,
+    simSeatId,
+    setSimSeatId,
+    hostCapacity,
+    oauthSeat,
+    signedIn,
+    readinessItems,
+    connectWithLinkedInOAuth,
+    connectAssisted,
+    connectBrowserComputer,
+    openAgentLinkedInLogin,
+    simulateEvent,
+    testSeat,
+    actions,
+    load,
+  } = useLinkedInConnections();
+
+  const { toast } = useToast();
+
+  const hasBrowserSeat = seats.some((s) => s.provider === "LinkedIn Browser Computer");
+  const linkedInSimSeats = React.useMemo(
+    () =>
+      seats.filter((s) =>
+        [
+          "LinkedIn Browser Computer",
+          "LinkedIn Assisted Manual",
+          "LinkedIn Vendor API",
+        ].includes(s.provider),
+      ),
+    [seats],
+  );
+  React.useEffect(() => {
+    if (!simSeatId && linkedInSimSeats[0]?.id) setSimSeatId(linkedInSimSeats[0].id);
+    if (simSeatId && !linkedInSimSeats.some((s) => s.id === simSeatId)) {
+      setSimSeatId(linkedInSimSeats[0]?.id ?? "");
+    }
+  }, [linkedInSimSeats, simSeatId]);
+  const state: StepState =
+    stepState ??
+    (hasBrowserSeat || signedIn
+      ? "complete"
+      : providers?.browserComputerConfigured === false && supabaseEnabled
+        ? "blocked"
+        : "active");
+
+  const advanced = hideAdvanced ? undefined : (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-medium text-ink">Manual / OAuth fallbacks (optional)</p>
+        <p className="mt-1 text-xs text-muted">
+          Prefer AriaBot Browser Computer above. Assisted-manual and Sign-in-with-LinkedIn are only for identity badges or paste-confirm workflows.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <Field label="Operator label" htmlFor="li-operator-label">
+            <Input
+              id="li-operator-label"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Alex Recruiter"
+            />
+          </Field>
+          <Button size="sm" variant="outline" loading={connectingAssisted} onClick={() => void connectAssisted()}>
+            Create assisted seat
+          </Button>
+        </div>
+      </div>
+      {isAdmin && (
+        <div>
+          <p className="text-xs font-medium text-ink">Simulate inbound event</p>
+          <p className="mt-1 text-[11px] text-muted">
+            Proves webhook → classify without a vendor. Does not call linkedin.com.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Event type" htmlFor="li-sim-type">
+              <select
+                id="li-sim-type"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
+                value={simType}
+                onChange={(e) => setSimType(e.target.value as LinkedInEventType)}
+              >
+                {LINKEDIN_EVENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Profile URL" htmlFor="li-sim-profile">
+              <Input
+                id="li-sim-profile"
+                value={simProfile}
+                onChange={(e) => setSimProfile(e.target.value)}
+                placeholder="https://www.linkedin.com/in/…"
+              />
+            </Field>
+          </div>
+          {simType === "reply" && (
+            <Field label="Reply body" htmlFor="li-sim-body" className="mt-3">
+              <Input id="li-sim-body" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
+            </Field>
+          )}
+          <Field label="Attribute to seat" htmlFor="li-sim-seat" className="mt-3">
+            <select
+              id="li-sim-seat"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
+              value={simSeatId}
+              onChange={(e) => setSimSeatId(e.target.value)}
+            >
+              {linkedInSimSeats.length === 0 ? (
+                <option value="">No LinkedIn seat</option>
+              ) : (
+                linkedInSimSeats.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} · {s.provider.replace("LinkedIn ", "")}
+                  </option>
+                ))
+              )}
+            </select>
+          </Field>
+          <Button
+            size="sm"
+            variant="subtle"
+            className="mt-3"
+            leftIcon={<Wand2 className="h-3.5 w-3.5" />}
+            loading={simulating}
+            disabled={!simSeatId}
+            onClick={() => void simulateEvent(simSeatId)}
+          >
+            Simulate event
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <ConnectionStep
+      step={2}
+      title="Open LinkedIn login for agents"
+      subtitle="One click opens the AriaBot Chromium VM on LinkedIn. Sign in once (and 2FA), then Release — Automatic outreach and campaign agents reuse that durable session. Aria never stores credentials — never your password."
+      state={state}
+      advanced={advanced}
+    >
+      {readinessItems.length > 0 ? (
+        <SystemReadiness
+          items={readinessItems}
+          defaultOpen={!providers?.browserComputerConfigured}
+        />
+      ) : null}
+
+      {isAdmin && (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-electric/30 bg-electric/5 px-4 py-4">
+            <p className="text-sm font-semibold text-ink">Connect LinkedIn for AriaBot</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              One click creates a Browser Computer seat if needed and opens Take control so you can sign in
+              (and complete 2FA). After Release, campaign agents reuse this durable profile — you do not log
+              in again per campaign.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button
+                leftIcon={<LogIn className="h-4 w-4" />}
+                loading={openingAgentLogin || connectingBrowser}
+                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+                onClick={() => void openAgentLinkedInLogin()}
+              >
+                {hasBrowserSeat
+                  ? "Open LinkedIn login for agents"
+                  : "Create seat & open LinkedIn login for agents"}
+              </Button>
+            </div>
+            {!providers?.browserComputerConfigured && supabaseEnabled ? (
+              <p className="mt-2 text-xs text-muted">
+                Attach the AriaBot computer supervisor URL + token under step 1 above first.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-muted">
+                Prefer one seat per LinkedIn login. Recruiter, seat-only reconnect, and extra accounts live
+                under More seat options.
+              </p>
+            )}
+          </div>
+          <details className="rounded-xl border border-line/70 bg-surface px-3 py-2 text-xs text-muted">
+            <summary className="cursor-pointer font-medium text-ink-soft">More seat options</summary>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Monitor className="h-4 w-4" />}
+                loading={connectingBrowser}
+                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+                onClick={() => void connectBrowserComputer()}
+              >
+                {hasBrowserSeat ? "Reconnect seat only" : "Create seat only"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<LogIn className="h-4 w-4" />}
+                loading={openingAgentLogin || connectingBrowser}
+                disabled={!providers?.browserComputerConfigured && supabaseEnabled}
+                onClick={() => void openAgentLinkedInLogin({ surface: "recruiter" })}
+              >
+                Log in to LinkedIn Recruiter
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Plus className="h-4 w-4" />}
+                loading={connectingBrowser}
+                disabled={
+                  (!providers?.browserComputerConfigured && supabaseEnabled) ||
+                  Boolean(hostCapacity && hostCapacity.max > 0 && hostCapacity.computers >= hostCapacity.max)
+                }
+                onClick={() => {
+                  if (hostCapacity && hostCapacity.max > 0 && hostCapacity.computers >= hostCapacity.max) {
+                    toast({
+                      title: "Chromium host full",
+                      description: `${hostCapacity.computers}/${hostCapacity.max} VMs in use — stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS.`,
+                      variant: "warning",
+                    });
+                    return;
+                  }
+                  void openAgentLinkedInLogin({ createIfMissing: true, surface: "member" });
+                }}
+              >
+                Add another LinkedIn account
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              Add another AriaBot seat for each LinkedIn login (member or Recruiter). Every seat keeps its own
+              Chromium profile — like separate humans.
+            </p>
+          </details>
+          <details className="rounded-xl border border-line/70 bg-surface px-3 py-2 text-xs text-muted">
+            <summary className="cursor-pointer font-medium text-ink-soft">
+              Optional — Sign in with LinkedIn (OIDC identity only)
+            </summary>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Linkedin className="h-4 w-4" />}
+                loading={connectingOAuth}
+                disabled={!providers?.oauthConfigured && supabaseEnabled}
+                onClick={() => void connectWithLinkedInOAuth()}
+              >
+                {signedIn ? "Reconnect LinkedIn OIDC" : "Sign in with LinkedIn"}
+              </Button>
+              <p className="max-w-md text-xs text-muted">
+                Does not send messages and never asks for your LinkedIn password. Use only if you want an OIDC identity badge on a seat.
+              </p>
+            </div>
+          </details>
+        </div>
+      )}
+
+      {signedIn && oauthSeat?.oauthProfile ? (
+        <ConnectedIdentityBanner
+          displayName={oauthSeat.oauthProfile.displayName}
+          secondary={`${oauthSeat.oauthProfile.email ?? "No email from LinkedIn"} · connected ${new Date(oauthSeat.oauthProfile.connectedAt).toLocaleString()}`}
+          imageUrl={oauthSeat.oauthProfile.pictureUrl}
+          icon={<Linkedin className="h-5 w-5" aria-hidden />}
+        />
+      ) : null}
+
+      {loading ? (
+        <p className="text-xs text-muted">Loading LinkedIn connection…</p>
+      ) : seats.length === 0 ? (
+        <p className="text-xs text-muted">No LinkedIn seat yet. Create an AriaBot Browser Computer seat above.</p>
+      ) : (
+        <ul className="space-y-2">
+          {seats.map((s, i) => {
+            const ready =
+              s.provider === "LinkedIn Browser Computer"
+                ? s.sessionHealthy === true
+                : s.mode === "live" && s.status === "active";
+            return (
+              <motion.li
+                key={s.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+              >
+                <ConnectionListItem
+                  title={s.name}
+                  meta={`${s.oauthProfile?.displayName || s.connectedAccount || s.operatorEmail || "No identity"} · ${
+                    s.provider === "LinkedIn Browser Computer"
+                      ? s.computerId
+                        ? `VM …${s.computerId.slice(-8)}`
+                        : "VM unassigned"
+                      : s.inboundRoute?.active
+                        ? "inbound route OK"
+                        : "inbound route missing"
+                  }`}
+                  healthy={ready}
+                  badges={
+                    <>
+                      {s.provider === "LinkedIn Browser Computer" && (
+                        <Badge tone="electric" size="sm">
+                          AriaBot
+                        </Badge>
+                      )}
+                      {s.provider === "LinkedIn Browser Computer" && (
+                        <Badge
+                          tone={
+                            s.sessionHealthy === true
+                              ? "success"
+                              : s.sessionHealthy === false
+                                ? "danger"
+                                : "warning"
+                          }
+                          size="sm"
+                        >
+                          {s.sessionHealthy === true
+                            ? "Session healthy"
+                            : s.sessionHealthy === false
+                              ? "Session unhealthy"
+                              : "Session unverified"}
+                        </Badge>
+                      )}
+                      {s.oauthConnected && (
+                        <Badge tone="electric" size="sm">
+                          OIDC
+                        </Badge>
+                      )}
+                      <Badge tone="neutral" size="sm">
+                        {s.provider}
+                      </Badge>
+                    </>
+                  }
+                  actions={
+                    <>
+                      {s.provider === "LinkedIn Browser Computer" && isAdmin && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            leftIcon={<LogIn className="h-3.5 w-3.5" />}
+                            loading={openingAgentLogin}
+                            onClick={() => void openAgentLinkedInLogin({ seatId: s.id, surface: "member" })}
+                          >
+                            Login (member)
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<LogIn className="h-3.5 w-3.5" />}
+                            loading={openingAgentLogin}
+                            onClick={() => void openAgentLinkedInLogin({ seatId: s.id, surface: "recruiter" })}
+                          >
+                            Login (Recruiter)
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="subtle"
+                        leftIcon={<Activity className="h-3.5 w-3.5" />}
+                        loading={testingSeat === s.id}
+                        onClick={() => void testSeat(s.id)}
+                      >
+                        Validate
+                      </Button>
+                      {isAdmin && s.mode === "live" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          leftIcon={<Unplug className="h-3.5 w-3.5" />}
+                          onClick={() => void actions.toggleSeatLive(s.id).then(() => load())}
+                        >
+                          Pause
+                        </Button>
+                      )}
+                    </>
+                  }
+                />
+              </motion.li>
+            );
+          })}
+        </ul>
+      )}
+    </ConnectionStep>
+  );
+}
+
+/** @deprecated Prefer LinkedInOutreachStack — kept for direct import compatibility */
+export function LinkedInConnectionsPanel() {
+  return <LinkedInIdentityStep />;
+}

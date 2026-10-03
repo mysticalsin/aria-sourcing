@@ -1,12 +1,23 @@
 name: CodeQL
 
+# Same dual-trigger discipline as CI: avoid push+PR double spend on feature branches.
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+      - vercel-demo
+      - integration/**
+      - deploy/**
+      - consolidate/**
   pull_request:
     branches: ["**"]
   schedule:
     - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:

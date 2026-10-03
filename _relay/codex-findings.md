@@ -1065,3 +1065,272 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
 **Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
 **Status:** open; browser-agent capability remains NO-GO
+
+## 2026-09-12 — Cold-start reclaim steals DB-bound VMs (N-seat isolation)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:367
+**Issue:** `reclaim_healthy_orphan` calls `hydrateFromHost` without first hydrating `agent_seats.computer_id` rows into the supervisor. Every running host bot is imported as `__orphan__`, then claimOrphan binds the first probed-healthy profile onto the requesting seat. If another seat already owns that `computer_id` in DB, persist hits the unique index and throws — but the in-memory claim is not rolled back. Next GET hydrates the victim seat, hits ownership-mismatch, and clears the victim's durable FK; fleetHermes then writes the stolen id onto the attacker seat.
+**Repro/evidence:** Cold supervisor process; seat B has `computer_id=X` with healthy LinkedIn cookies; seat A Login/Deploy with null computerId → reclaim imports X as orphan → claim A → persist unique fail → memory A owns X → GET clears B → PATCH A gets X.
+**Suggested fix:** Before import/claim, load workspace `agent_seats.computer_id` into supervisor (or skip host bots already bound in DB); on persist failure roll back claimOrphan to `__orphan__`.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — ensure/session_probe/navigate bind foreign computerId without DB check
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:272
+**Issue:** POST `ensure` / `session_probe` / `navigate` call `ensureComputer` with client `computerId` without consulting `agent_seats`. On a cold map, a foreign durable id is registered onto the caller seat and can be Started — ops-driving another desk's Chromium even when PATCH would 409.
+**Repro/evidence:** Empty supervisor memory; POST ensure `{seatId:A, computerId:B_owned}` succeeds in-memory; start boots that botId.
+**Suggested fix:** Same pre-hydrate of seat bindings; refuse ensure when DB shows computer_id owned by another seat (mirror PATCH 409).
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — resolveDurableComputerId mints after reclaim persist steal
+**Severity:** correctness
+**File:** src/lib/boot-browser-computer.ts:49
+**Issue:** When reclaim returns `computer_id persist failed` (or other unclassified 400) and `existing` is empty, the helper falls through to mint a new `comp_*` instead of fail-closed. The failed reclaim's in-memory steal remains; mint + ensure/start then races the poisoned supervisor state.
+**Repro/evidence:** Login after seat create (`computerId=null`); reclaim unique-constraint error string does not match `/ownership-mismatch|orphan-claim-blocked|no-healthy-orphan/`; returns fresh UUID.
+**Suggested fix:** Fail closed (throw/return error) on persist-failed / unknown reclaim errors; never mint after a partial claim.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — Ops Ready filter lists orphan ready VMs
+**Severity:** spec-mismatch
+**File:** src/components/fleet/fleet-computer-ops-board.tsx:157
+**Issue:** API `summary` correctly excludes `__orphan__`, but the Ready filter uses the raw `computers` array, so unbound host VMs appear as ready fleet rows and inflate the filtered list vs the StatCard.
+**Repro/evidence:** GET returns orphans with status=ready; StatCard Ready = summary.ready (no orphans); filter Ready shows orphan rows labeled "Unbound host VM".
+**Suggested fix:** Exclude `seatId === "__orphan__"` (or missing seat) from ops board filters/counts the same way as `summarizeFleetComputers`.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — Send route paces LinkedIn without sessionHealthy
+**Severity:** spec-mismatch
+**File:** src/app/api/outreach/send/route.ts:282
+**Issue:** `evaluateSendPace` is called without `sessionHealthy`, so the undefined-skip branch allows enqueue while Browser Computer deliver later refuses `session_unverified`. UI can show queued success theater for an unhealthy/unprobed desk.
+**Repro/evidence:** Live Browser Computer seat, `sessionHealthy` null/false; send returns queued; dispatcher/adapter refuses at job gate.
+**Suggested fix:** Pass probed sessionHealthy (or fail closed when Browser Computer and not probed true) before enqueue.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — N-seat VM isolation audit (ponytail / theater lens)
+**Severity:** security | correctness | spec-mismatch
+**File:** multi (see HANDOFF / this entry)
+**Issue:** Adversarial audit of N campaign agents × isolated Chromium/LinkedIn. Architecture is largely real and fail-closed on sessionHealthy; remaining theater/gaps listed below.
+**Repro/evidence:** Code review of computer-supervisor, fleet API, floor3d, boot-browser-computer, openbot-chromium-supervisor; tests/computer-supervisor.mts + tests/floor.mts.
+**Suggested fix:** See ordered gaps — prefer seatId ownership on stop/reset/release; drop unused profileVolume claims; persist ensure; constrain orphan reclaim.
+**Status:** fixed (246cdd9 seat ownership + priorSeatId; 47ddefd profileVolume delete + ensure persist). Remaining: process-local Map (#5), mockSend (#6), live Fly login (#7).
+
+### What is real (not theater)
+- 1 seat → 1 computerId → OpenBot botId → `launchPersistentContext(PROFILE_ROOT/botId)` (`scripts/openbot-chromium-supervisor.mjs:352-369`)
+- Cross-seat ensure throws; start/take require seatId match; GET never mints; sessionHealthy only probe `healthy===true`
+- Floor polls `/api/fleet/computers`; working only ready+sessionHealthy===true; poisoned FK cleared
+- Tests: tests/computer-supervisor.mts, tests/floor.mts, tests/boot-browser-computer.mts, tests/campaign-go-live.mts
+
+## 2026-09-12 — N-agent stop/release lacked seat ownership; orphan reclaim stole LinkedIn profiles
+**Severity:** security
+**File:** src/app/api/fleet/computers/route.ts; src/lib/computer-supervisor.ts
+**Issue:** `stop` / `reset` / `release_control` / `request_help` accepted computerId alone (seat A could stop seat B). `reclaimHealthyOrphan` auto-claimed the first healthy host orphan, so seat A could inherit seat B's detached LinkedIn cookies.
+**Repro/evidence:** POST stop with foreign computerId succeeded; reclaim with unhealthy twin + foreign priorSeatId orphan rebound the foreign VM.
+**Suggested fix:** Require caller seatId match for all mutating actions; track priorSeatId on detach; auto-reclaim only never-bound or same-prior orphans.
+**Status:** fixed (246cdd9)
+
+## 2026-10-02 — Manual permissions were localStorage theater; profileVolume unused
+**Severity:** spec-mismatch
+**File:** src/lib/browser-agent-permissions.ts; src/lib/computer-supervisor.ts
+**Issue:** Claude Manual mode never reached enqueueJob; profileVolume was assigned and never used (real isolate is PROFILE_ROOT/botId). ensure did not persist agent_seats.computer_id.
+**Repro/evidence:** Manual mode only wrote localStorage; linkedin_send still ran on Auto path; ensure left cold GET orphans.
+**Suggested fix:** FleetSettings.browserAgentPermissionMode BE gate; delete profileVolume; persist ensure.
+**Status:** fixed (47ddefd)
+
+## 2026-10-02 — Stale sessionHealthy green + client UUID mint twins
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts; src/lib/boot-browser-computer.ts; src/lib/campaign-go-live.ts
+**Issue:** Process-local sessionHealthy=true could paint Floor/Fleet green forever; resolveDurableComputerId minted client UUIDs that could twin-race; go-live "attached" counted seats without computerId.
+**Repro/evidence:** set sessionHealthy true without probedAt → get() still returned true before TTL; mint when no orphan used crypto.randomUUID.
+**Suggested fix:** sessionProbedAt + 120s TTL expire; mint via ensure; go-live requires computerId.
+**Status:** fixed (2ece420)
+
+## 2026-10-02 — Local LIVE prove: N=3 Chromium → floor (no invent healthy)
+**Severity:** test-gap
+**File:** scripts/prove-n-agent-floor.mts; scripts/prove-supervisor-floor-live.mts
+**Issue:** Goal required N isolated VMs visible on floor; Fly tokens absent so production host unproven.
+**Repro/evidence:** Local supervisor :18765; LIVE prove + supervisor-floor evidence JSON show 3 distinct profile dirs and floor suffixes; sessionHealthy stays null/unverified.
+**Suggested fix:** Owner Fly redeploy + LinkedIn login for healthy green; local prove closes VM isolation gap.
+**Status:** fixed (local evidence); Fly/LinkedIn healthy still open
+
+## 2026-10-02 — ensure BodySchema required computerId (blocked server mint)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:BodySchema
+**Issue:** After client mint moved to POST ensure without id, Zod still required computerId — Validation failed; FE could not mint durable VMs.
+**Repro/evidence:** POST {action:ensure,seatId} → 400 computerId required; prove-fleet-api-floor failed until schema fixed.
+**Suggested fix:** allow ensure/reclaim without computerId; pass computerId||undefined into ensureComputer.
+**Status:** fixed (6cbc99a)
+
+## 2026-10-03 — Hermes computerId reclaim drift (orphan / null durable)
+**Severity:** correctness
+**File:** src/lib/fleet-hermes-sync.ts:48
+**Issue:** After reclaim/detach, a login-wall twin becomes `__orphan__` (or durable `computer_id` is cleared) but `fleetHermesComputerPatches` only clears Hermes when another seat owns the id — orphan-only / absent fleet rows leave the stale `seat.computerId`. Campaign Agents durable merge (`campaign-agents-panel.tsx:146`) only writes when durable is non-null, never nulls Hermes. Deploy then passes that stale id into `resolveDurableComputerId` → `reclaimHealthyOrphan` `ensureComputer`s the twin back onto the seat and can return the unhealthy binding.
+**Repro/evidence:** `tests/fleet-hermes-sync.mts:65` asserts `keeps Hermes when only orphan-bound on fleet` (patches.length === 0). Seat A Hermes=`comp_twin`, fleet=`{seatId:__orphan__, computerId:comp_twin}` + durable null → poll leaves Hermes; Deploy reclaims twin.
+**Suggested fix:** Clear Hermes when fleet owner is missing/orphan or durable campaignSeats.computerId is null; flip the locked test.
+**Status:** fixed (580d0c3) — residual Deploy/reclaim race tracked below
+
+## 2026-10-03 — reclaimHealthyOrphan ensureComputer claims orphan before healthy probe
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:681
+**Issue:** `reclaimHealthyOrphan` still `ensureComputer`s the caller `computerId` before proving `sessionHealthy===true`. For a `__orphan__` login-wall twin that path hits `ensureComputer`→`claimOrphan` (line 285) with no `priorSeatId` gate and no health gate. Hermes poll clear (580d0c3) does not close the race: Campaign Agents Deploy (`campaign-agents-panel.tsx:226`) can pass stale `seat.computerId` before the next poll, rebinding the twin onto the seat; when probe is null/false and no other healthy orphan exists, fallback (718–727) returns that seat-bound unhealthy binding and `resolveDurableComputerId` keeps `existing` (boot-browser-computer.ts:107). Contrast the other-orphan loop (707–715) which correctly probes before `claimOrphan`.
+**Repro/evidence:** Seat A Hermes=`comp_twin` still (pre-poll); fleet row `{seatId:__orphan__, computerId:comp_twin}` with `sessionHealthy` null/false and no other healthy orphan; Deploy → `resolveDurableComputerId({existingComputerId:comp_twin})` → reclaim `ensureComputer` claims twin → probe fails → returns twin on seat A. Foreign `priorSeatId` orphan passed as `existingComputerId` is also claimable via ensure (candidates filter never runs).
+**Suggested fix:** For orphan/foreign `currentId`, probe in place and `claimOrphan` only when `sessionHealthy===true` and priorSeatId is empty/same-seat; on unhealthy leave orphan and fall through; never ensure-claim before healthy proof.
+**Status:** fixed (c6ac494) — probe-before-claim in reclaimHealthyOrphan; Deploy omits staleTwin existingComputerId; tests: unhealthy orphan twin + foreign prior as currentId
+
+## 2026-10-03 — ensureComputer claimOrphan lacked priorSeatId gate
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:285
+**Issue:** `ensureComputer` still called `claimOrphan` for `__orphan__` ids with no `priorSeatId` check. Fleet ensure/nav/probe (or any client) could bind another desk's detached LinkedIn cookies onto the caller seat. Reclaim was gated; ensure was not.
+**Repro/evidence:** Orphan `comp_x` with `priorSeatId=seat-other`; `ensureComputer({seatId:seat-tony, computerId:comp_x})` claimed onto seat-tony.
+**Suggested fix:** Gate in `claimOrphan` — refuse when priorSeatId set and ≠ caller seat; share `isStaleHermesComputerTwin` for Fleet+Campaign Agents Deploy.
+**Status:** fixed (b68d304) — claimOrphan priorSeatId gate; isStaleHermesComputerTwin on Fleet+Campaign Agents Deploy
+
+## 2026-10-03 — ensureComputer claimed orphans without health; Deploy used filtered fleet
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:285; campaign-agents-panel.tsx:227; boot-browser-computer.ts:83
+**Issue:** `ensureComputer` still claimed `__orphan__` ids (health unchecked). Campaign Agents Deploy passed badge-filtered `computers` (orphans stripped) into `isStaleHermesComputerTwin`, so an orphan-only fleet looked empty → staleTwin false → Hermes login-wall id fed to reclaim. `no-healthy-orphan` then kept that twin id for boot→ensure→claim. Floor idle+healthy forced `sourcing` theater.
+**Repro/evidence:** Deploy with Hermes=orphan twin + filtered computers=[]; reclaim throws no-healthy-orphan; resolve keeps twin; ensure claims.
+**Suggested fix:** ensure refuses all orphan claims; resolve mints on no-healthy-orphan; Deploy uses full fleetRows; floor keeps base state on healthy.
+**Status:** fixed (bebf179) — ensure refuse orphan; mint on no-healthy-orphan; Deploy full fleet; floor idle+healthy
+## 2026-10-03 — Floor busy/starting label lies "session unverified" while healthy
+**Severity:** spec-mismatch
+**File:** src/lib/floor.ts:269
+**Issue:** `agentActivityWithComputers` short-circuits `status===starting|busy` before the `ready && sessionHealthy===true` branch. During a real `linkedin_send` the supervisor sets `status=busy` but leaves `sessionHealthy=true`; Floor overlays force `warming` and hardcode label "VM busy — session unverified". Campaign Agents still badges "Session healthy" for the same row — FE↔BE desk honesty split.
+**Repro/evidence:** Seat ready+sessionHealthy true; enqueueJob sets rec.status=busy (computer-supervisor.ts:1294); Floor poll paints warming/unverified; Campaign Agents panel sessionLabel stays healthy.
+**Suggested fix:** If sessionHealthy===true under busy, label "VM busy" (keep base/working); only say unverified when sessionHealthy!==true.
+**Status:** open
+
+## 2026-10-03 — Campaign Agents "with VM" counts Hermes, not fleet-owned row
+**Severity:** spec-mismatch
+**File:** src/components/campaigns/campaign-agents-panel.tsx:425
+**Issue:** Header badge `N/M with VM` counts seats with non-empty Hermes `seat.computerId`. Row rendering requires a seat-owned fleet row (`bySeat ?? byComp` with `row.seatId===seat.id`); stale twin / durable-null / orphan fleet leaves the row at "No Browser Computer" while the badge still claims a VM.
+**Repro/evidence:** Campaign seat Hermes=`comp_twin`, fleet owner `__orphan__` or absent; list shows Deploy/No Browser Computer; badge shows `1/1 with VM`.
+**Suggested fix:** Count seats where `computers.some(c => c.seatId===seat.id && c.computerId)` (same ownership as ops row).
+**Status:** open
+
+## 2026-10-03 — mockSend skips sessionHealthy; dispatch never paces it
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:1222
+**Issue:** `linkedin_send` gate is `(!supervisorMockSend() && rec.sessionHealthy !== true)` — mock path accepts send with null/false health. Comment admits "mock send would lie green". `dispatch-outbound.ts:407` calls `adapter.deliver` without `seat`/`fleetSettings`, so `linkedin-channel.ts:239` `if (req.seat)` skips `evaluateSendPace({sessionHealthy})` entirely; enqueue mock is the only gate and it is open. Fly blocks mock unless `ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND=1`, but local/demo credentials with `computerSupervisorMockSend` still return `status:sent`.
+**Repro/evidence:** COMPUTER_SUPERVISOR_MOCK_SEND=1 (non-Fly); computer sessionHealthy null; dispatch deliver → enqueueJob succeeds → "mock browser-computer send accepted".
+**Suggested fix:** Always require `sessionHealthy===true` for linkedin_send; mock may only fake remote ACK after probe. Pass seat+sessionHealthy into deliver pace on dispatch.
+**Status:** open
+
+## 2026-10-03 — resolveComputerHint ignores computerHealthOwnedBySeat empty-owner rule
+**Severity:** spec-mismatch
+**File:** src/lib/floor.ts:149
+**Issue:** Settings gates computerId-keyed health with `computerHealthOwnedBySeat` (empty/`__orphan__` → false). Floor `resolveComputerHint` only rejects when `byComputer.seatId` is truthy and ≠ seat — empty seatId falls through and can paint sessionHealthy green from a computerId-only map entry. Helper unused on Floor/Campaign go-live (`computerForSeat` same empty-owner allow).
+**Repro/evidence:** Hint map key=`comp_x` with `{seatId:"", sessionHealthy:true, computerId:comp_x}`; seat.computerId=comp_x → Floor healthy; `computerHealthOwnedBySeat(seat,comp_x,[{seatId:"",computerId:comp_x}])` === false.
+**Suggested fix:** Refuse empty/`__orphan__` owner in resolveComputerHint (and computerForSeat); reuse computerHealthOwnedBySeat.
+**Status:** open
+
+## 2026-10-03 — seatsToOfficeAgents hardcodes Date.now (warmup desync)
+**Severity:** test-gap
+**File:** src/lib/floor3d.ts:169
+**Issue:** `seatsToOfficeAgents` calls `agentActivityWithComputers(..., Date.now(), ...)` with no injectable `now`. Floor rollup/2D desks can pass a clock; near warmup boundaries 3D status ≠ rollup working count; seed tests using SEED_NOW flake.
+**Repro/evidence:** HANDOFF watch-out; floor.mts passes NOW into floorRollup but seatsToOfficeAgents always wall-clock.
+**Suggested fix:** Add `now?: number` param; thread from floor page / tests.
+**Status:** open
+
+## 2026-10-03 — Floor busy lied unverified; mockSend skipped sessionHealthy; VM badge Hermes theater
+**Severity:** correctness
+**File:** src/lib/floor.ts:269; computer-supervisor.ts:1220; campaign-agents-panel.tsx:425
+**Issue:** busy/starting overlay always said "session unverified" even when sessionHealthy===true (real linkedin_send). mockSend bypassed sessionHealthy gate so null health could fake sent. Campaign Agents "N/M with VM" counted Hermes computerId, not fleet seat-owned rows.
+**Repro/evidence:** status=busy + sessionHealthy=true → Floor warming/unverified while Campaign Agents green; MOCK_SEND=1 + null health → succeeded; Hermes twin id inflated with-VM badge.
+**Suggested fix:** busy+healthy keep base + healthy label; always require sessionHealthy===true for linkedin_send; badge counts fleet computers by seatId.
+**Status:** fixed (212759b) — busy+healthy Floor; mockSend requires healthy; with-VM fleet count
+
+## 2026-10-03 — dispatch skipped Browser Computer pacing; Floor empty-owner green
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts:407; src/lib/floor.ts:149; campaign-agents-panel.tsx:499
+**Issue:** `adapter.deliver` omitted seat/fleetSettings so linkedin-channel skipped evaluateSendPace. Floor resolveComputerHint allowed empty/`__orphan__` owners via computerId map. Campaign Agents ops required Hermes computerId even when fleet had seat-owned bind.
+**Repro/evidence:** dispatch LinkedIn Browser Computer send without seat → pace skipped; Hermes twin orphan hint painted Floor healthy; fleet bind + null Hermes → Deploy CTA.
+**Suggested fix:** pass agentSeatRowToSeat + defaultFleetSettings; refuse empty/orphan in resolveComputerHint; ops on bySeat??byComp only.
+**Status:** fixed (ee91d34) — dispatch seat pacing; Floor refuse orphan/empty; Campaign ops fleet bind
+
+## 2026-10-03 — go-live empty-owner green; Take toast restored theater; Floor now desync
+**Severity:** correctness
+**File:** src/lib/campaign-go-live.ts:155; linkedin-connections-panel.tsx:628; floor3d.ts:169
+**Issue:** computerForSeat allowed empty seatId to green go-live. Take control toast used pre-take sessionHealthy as "session restored". seatsToOfficeAgents hard-coded Date.now desyncing 3D vs rollup.
+**Repro/evidence:** computerId hint with seatId:"" + sessionHealthy true → session_healthy ok; toast after take claimed no re-login while BE cleared probe.
+**Suggested fix:** refuse empty/orphan in computerForSeat; toast from after-take health; injectable now on seatsToOfficeAgents + Floor page clock.
+**Status:** fixed (8fb3eec) — go-live empty-owner refuse; Take toast honest; Floor shared now
+
+## 2026-10-03 — Floor indexed orphan computerIds; drawer Hermes-bound theater; summary empty seatIds
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:151; page.tsx:563; api/fleet/computers/route.ts:106; campaign-go-live.ts:166
+**Issue:** Floor still computerId-indexed __orphan__ rows; drawer used Hermes computerId as bound after hint refuse; fleet summary kept empty seatIds in Ready; go-live required Hermes computerId before fleet bySeat could attach.
+**Repro/evidence:** orphan host botId overwrites seat hint; Hermes twin shows VM …xxxx in drawer; StatCard Ready > filtered list; Hermes-null + fleet bind → browser_seat_attached false.
+**Suggested fix:** skip orphan/empty before map.set; bound=hint only; summary filter !seatId||orphan; withComputer includes computerForSeat.
+**Status:** fixed (8dcc17c) — Floor orphan skip; drawer hint-bound; summary empty filter; go-live fleet bind
+
+## 2026-10-03 — Go-live / setup-guide wiped durable on seats churn
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-go-live-checklist.tsx:95; src/components/settings/setup-guide-panel.tsx:169
+**Issue:** Effect deps included seats (and campaign object), so Floor Hermes patches cleared durable authority and briefly re-painted Hermes-only attach.
+**Repro/evidence:** Durable campaignSeats=[] then seats identity churn → durable wiped to undefined/null → Hermes attach greens go-live/setup until re-poll.
+**Suggested fix:** seatsRef; deps campaignId (+ computers/actions) only.
+**Status:** fixed (tip #148; port #150)
+
+## 2026-10-03 — Fleet/LI/campaign-badge seats-churn wipe + soft-nav foreign count
+**Severity:** correctness
+**File:** src/app/fleet/page.tsx:296; src/components/settings/linkedin-connections-panel.tsx:257; src/app/campaigns/[id]/page.tsx:419
+**Issue:** Fleet/LI poll remounted on seats churn and could clear healthy roster; campaign Agents badge reused prior campaign durable count for one paint on soft-nav.
+**Repro/evidence:** Soft-nav A→B keeps A durable count; Fleet Hermes patch remounts refresh while in-flight fail clears computers.
+**Suggested fix:** seatsRef+pollGeneration; durableAgentAuthority stamped by campaignId.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — ownership-mismatch re-poisons durable bindings
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:205-301
+**Issue:** After clearing a poisoned computer_id FK in DB, campaignSeats/browserSeatBindings still emitted the old computerId from the seats snapshot, so Floor ingest rewrote the foreign VM onto Hermes.
+**Repro/evidence:** Seat A FK = B's computer → GET clears A → bindings still have B's id → ingestDurableBrowserBindings re-poisons.
+**Suggested fix:** clearedPoisonedComputerIds → force null in binding maps.
+**Status:** fixed (tip #148)
+
+## 2026-10-03 — Floor cancel race + stale-Map ownership clear destroys durable bind
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:128; src/components/fleet/fleet-health-strip.tsx:51; src/app/api/fleet/computers/route.ts:200
+**Issue:** Floor/health-strip could ingest/updateSeat after cancel; GET ownership-mismatch nulling always cleared the hydrating seat even when no other DB seat claimed the computer (stale Map), unbinding Floor desks.
+**Repro/evidence:** Multi-instance Map has X→seatB while DB has seatA.computer_id=X → GET clears seatA; Floor remount mid-poll writes stale computerId.
+**Suggested fix:** cancel-before-write + deps [actions]; adoptDurableComputerBinding when !claimedByOtherSeat.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — Poll updateSeat(computerId) races reclaim/ensure
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:164; src/app/fleet/page.tsx:257; campaign-agents-panel; linkedin-connections-panel
+**Issue:** GET pollers PATCHed agent_seats.computer_id via updateSeat from fleetHermesComputerPatches, including null clears that could unbind a desk just persisted by reclaim/ensure.
+**Repro/evidence:** Floor clear patch in flight → reclaim persists Z → late PATCH null → Floor unbound.
+**Suggested fix:** applyFleetHermesComputerPatches local-only; never updateSeat computerId from poll.
+**Status:** fixed (tip #148)
+
+## 2026-10-03 — Agents detach LWW wipe + viewport loading unbound theater
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-agents-panel.tsx:188; src/app/fleet/computers/[computerId]/viewport/page.tsx:154
+**Issue:** Hermes-derived detach PATCH could clear other-campaign assignedCampaignIds; viewport showed unbound reclaim UI while computer still loading.
+**Repro/evidence:** Seat durable [B], Hermes [A] on Agents A poll → PATCH []; open bound viewport → first paint Unbound host VM.
+**Suggested fix:** skip detach when durableById.has(seat); unboundOrphan requires computer!=null.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — orphan-claim-blocked aborts fleet GET (N desks wipe)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:204; hydrateWorkspaceSeatBindings:425
+**Issue:** hydrateComputer throws computer-orphan-claim-blocked when durable FK hits Map __orphan__; GET only caught ownership-mismatch → 500 → Floor/Agents empty.
+**Repro/evidence:** Instance imports host bot as orphan; other instance persists computer_id; this instance GET 500s.
+**Suggested fix:** treat orphan-claim-blocked like ownership-mismatch → adoptDurable.
+**Status:** fixed (tip #148)
+
+## 2026-10-03 — session probe budget starves N desks
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:590
+**Issue:** refreshSessionHealthForList sliced Map-order ready desks (limit 5); first seats stuck at probed-false monopolized every Floor GET; later desks stayed sessionHealthy=null.
+**Repro/evidence:** 8 ready VMs; desks 1–5 false; 6–8 null → 3 polls never probe 6–8.
+**Suggested fix:** sort by sessionProbedAt ascending (never-probed first) before slice.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — no-remoteUrl desks starve session probe budget
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:591
+**Issue:** refreshSessionHealthForList admitted ready desks with empty remoteUrl; probeSession left sessionProbedAt null so they forever won never-probed sort and consumed limit=5.
+**Repro/evidence:** ≥5 ready null-URL desks + 1 false+URL desk → HTTP probes=0.
+**Suggested fix:** filter !(remoteUrl||"").trim().
+**Status:** fixed (tip #148)

@@ -1,6 +1,7 @@
 import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
+import { fitLinkedInInviteNote } from "./linkedin-invite-note";
 import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
@@ -55,6 +56,48 @@ export {
   mapSeamlessCandidates,
   mapWebSearchCandidates,
 } from "./sourcing/candidate-mappers";
+
+/** Parse experience floors like "8 years +", "5+ years", "minimum 6 years". */
+export function extractMinYearsExperience(text: string): number | null {
+  const patterns = [
+    /\bminimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years?\b/i,
+    /\bat\s+least\s+(\d{1,2})\s*\+?\s*years?\b/i,
+    /\b(\d{1,2})\s*\+\s*years?\b/i,
+    /\b(\d{1,2})\s*years?\s*\+/i,
+    /\b(\d{1,2})\s*-\s*\d{1,2}\s*years?\b/i,
+    /\b(\d{1,2})\+?\s*years?\s+(?:of\s+)?(?:relevant\s+)?experience\b/i,
+    /\b(\d{1,2})\s*(?:years?|yrs)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern)?.[1];
+    if (match) {
+      const years = parseInt(match, 10);
+      if (Number.isFinite(years) && years >= 0 && years <= 50) return years;
+    }
+  }
+  return null;
+}
+
+export function seniorityFromTitle(title: string): Seniority {
+  if (/principal/i.test(title)) return "Principal";
+  if (/staff/i.test(title)) return "Staff";
+  if (/lead/i.test(title)) return "Lead";
+  if (/director|head of/i.test(title)) return "Director";
+  if (/junior|graduate|entry/i.test(title)) return "Junior";
+  if (/\bmid\b|intermediate/i.test(title)) return "Mid";
+  if (/\bsenior\b/i.test(title)) return "Senior";
+  return "Unspecified";
+}
+
+/** Map stated years-of-experience floors to seniority when the title is silent. */
+export function seniorityFromYears(minYears: number | null): Seniority {
+  if (minYears == null) return "Unspecified";
+  if (minYears >= 8) return "Senior";
+  if (minYears >= 5) return "Senior";
+  if (minYears >= 3) return "Mid";
+  if (minYears >= 1) return "Junior";
+  return "Unspecified";
+}
 
 /* ============================================================================
    MOCK AI — deterministic stand-ins for the real Aria pipeline.
@@ -143,7 +186,7 @@ Hi Aria,
 One of our senior backend engineers just resigned and we need to backfill this
 role critically, ideally someone in seat within 8 weeks. This is high priority.
 
-We're hiring a Senior Backend Engineer, fully remote across the EU (CET-ish
+We're hiring a full-time Senior Backend Engineer, fully remote across the EU (CET-ish
 overlap). Core stack is Go, Kubernetes, PostgreSQL and gRPC: they'll own
 distributed systems at the heart of the platform. Nice to have: Kafka,
 OpenTelemetry, Terraform. We want 5+ years of experience, ideally from a
@@ -228,7 +271,9 @@ export function isMantuNeedEmail(text: string): boolean {
  *  false positive here would parse a random email into a job brief. */
 export function isNeedEmail(subject: string, body: string): boolean {
   if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
-  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open position)\b/i.test(subject);
+  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open (position|need|role)|platform need|requisition)\b/i.test(
+    subject,
+  );
 }
 
 /** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */
@@ -262,18 +307,23 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   const intent: IntakeIntent = urgency === "Critical" ? "Urgent Hire" : "New Role";
 
-  // Skills — the explicit "Skills:" line is authoritative; augment from bullets.
+  // Skills — explicit "Skills:" line is authoritative; augment from profile block + dictionary.
   const skillsLine = field("Skills");
   const lineSkills = skillsLine
     ? skillsLine.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
     : [];
+  const profileSkills = extractProfileDescriptionSkills(text);
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
   );
-  const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
+  const requiredSkills = Array.from(new Set([...lineSkills, ...profileSkills, ...dictSkills])).slice(0, 8);
 
-  const minYears = text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1];
-  const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
+  const minYearsExperience = extractMinYearsExperience(text);
+
+  let seniority: Seniority = seniorityFromTitle(title);
+  if (seniority === "Unspecified") {
+    seniority = seniorityFromYears(minYearsExperience);
+  }
 
   const niceToHaveSkills: string[] = [];
   if (/offshore/i.test(text)) niceToHaveSkills.push("Offshore experience");
@@ -290,12 +340,14 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   const industryExperience = /financial markets|bonds|trading|finance|murex|pricing/i.test(text)
     ? ["Fintech"]
-    : [];
+    : /medical device|pharma|healthcare|fda|iso 13485/i.test(text)
+      ? ["Healthtech"]
+      : [];
 
   const jobAnalysis: JobAnalysis = {
     title,
-    department: typeRaw,
-    seniority: "Unspecified",
+    department: client.replace(/\s+Ltd\.?$/i, "").trim() || typeRaw,
+    seniority,
     employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw)
       ? "Contract"
       : /part[- ]time/i.test(typeRaw)
@@ -309,7 +361,12 @@ export function parseMantuNeed(text: string): ParsedIntake {
         ? "Hybrid"
         : /on-?site|in office|in-person/i.test(text)
           ? "On-site"
-          : "Unspecified",
+          : // Mantu need emails always carry a city Location for consulting seats;
+            // treat a stated city with no remote/hybrid cue as On-site so the
+            // brief can authorize sourcing without a second confirmation step.
+            loc
+            ? "On-site"
+            : "Unspecified",
     regions,
     timezone: tz,
     salaryMin: null,
@@ -464,15 +521,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     "";
   const title = titleMatch.trim().replace(/\s+/g, " ");
 
-  // Seniority
-  let seniority: Seniority = "Unspecified";
-  if (/principal/i.test(title)) seniority = "Principal";
-  else if (/staff/i.test(title)) seniority = "Staff";
-  else if (/lead/i.test(title)) seniority = "Lead";
-  else if (/director|head of/i.test(title)) seniority = "Director";
-  else if (/junior|graduate|entry/i.test(title)) seniority = "Junior";
-  else if (/\bmid\b|intermediate/i.test(title)) seniority = "Mid";
-  else if (/\bsenior\b/i.test(title)) seniority = "Senior";
+  // Seniority — title first, then years floors ("8 years +", "5+ years").
+  let seniority: Seniority = seniorityFromTitle(title);
 
   // Department (specific signals first; word-boundaries to avoid false hits like
   // "design and operate" or "service contracts")
@@ -516,8 +566,12 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
 
   // Years
   const yearsMatch = [...text.matchAll(/(\d{1,2})[\s+]{0,6}(?:years|yrs)/gi)].map((m) => parseInt(m[1], 10));
-  const minYearsExperience = yearsMatch.length ? Math.min(...yearsMatch) : null;
+  const minYearsExperience =
+    extractMinYearsExperience(text) ?? (yearsMatch.length ? Math.min(...yearsMatch) : null);
   const maxYearsExperience = yearsMatch.length > 1 ? Math.max(...yearsMatch) : null;
+  if (seniority === "Unspecified") {
+    seniority = seniorityFromYears(minYearsExperience);
+  }
 
   // Skills
   const requiredSkills = SKILL_DICTIONARY.filter((s) =>
@@ -642,6 +696,129 @@ Aria Sourcing`;
 // good query. Only apply the qualifier for a region that's an actual place.
 const NON_LOCATION_REGIONS = new Set(["EU", "APAC", "LATAM", "Remote", "Global"]);
 
+/** Extract role-relevant phrases from Mantu "Profile description:" blocks. */
+function extractProfileDescriptionSkills(text: string): string[] {
+  const block =
+    text.match(/profile description\s*:\s*([\s\S]*?)(?:\n\s*(?:skills|key required|rate)\s*:|\n\s*$)/i)?.[1] ??
+    "";
+  if (!block.trim()) return [];
+  const found: string[] = [];
+  const patterns: [RegExp, string][] = [
+    [/system design(?:ing)?/i, "system design"],
+    [/product development/i, "product development"],
+    [/medical device/i, "medical device"],
+    [/validation engineer/i, "validation engineering"],
+    [/requirements?(?:\s+management)?/i, "requirements management"],
+    [/\b(uml|sysml)\b/i, "UML"],
+    [/architect/i, "systems architecture"],
+  ];
+  for (const [re, label] of patterns) {
+    if (re.test(block) && !found.includes(label)) found.push(label);
+  }
+  return found;
+}
+
+/** Keyword query for site:linkedin.com web search (Tavily/DDG). */
+export function buildLinkedInKeywords(jd: JobAnalysis): string {
+  const title = jd.title.trim();
+  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const industry = jd.industryExperience[0]?.trim() ?? "";
+  const skillKeywords = jd.requiredSkills.slice(0, 3).map((skill) => {
+    const lower = skill.toLowerCase();
+    if (/medical device/i.test(lower)) return "medical device";
+    if (/fda/i.test(lower)) return "FDA";
+    if (/quality systems/i.test(lower)) return "quality systems";
+    if (/mttf|mean time to failure/i.test(lower)) return "reliability engineering";
+    if (/system design/i.test(lower)) return "system design";
+    const short = skill.split(/[,;/]/)[0]?.trim() ?? skill;
+    return short.split(/\s+/).slice(0, 3).join(" ");
+  });
+  return [title, jd.seniority !== "Unspecified" ? jd.seniority : "", ...skillKeywords, region, industry]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 256);
+}
+
+/**
+ * Deep LinkedIn search variants — title aliases, skills, location, industry —
+ * so the sourcing agent can cast a wide net and keep only 80%+ fits.
+ */
+export function roleTitleSearchAliases(title: string): string[] {
+  const t = title.trim();
+  if (!t) return [];
+  const aliases = new Set<string>([t, `"${t}"`]);
+  if (/system designer/i.test(t)) {
+    for (const a of [
+      "Systems Designer",
+      "System Architect",
+      "Systems Architect",
+      "Systems Engineer",
+      "System Design Engineer",
+      "Systems Design Engineer",
+      "Product Development Engineer",
+      "R&D System Designer",
+      "Medical Device System Designer",
+      "Senior System Designer",
+      "Senior Systems Designer",
+    ]) {
+      aliases.add(a);
+      aliases.add(`"${a}"`);
+    }
+  }
+  if (/murex/i.test(t)) {
+    for (const a of ["Murex Consultant", "Murex Support", "Front Office Support"]) aliases.add(a);
+  }
+  return [...aliases];
+}
+
+export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 12): string[] {
+  const title = jd.title.trim();
+  if (!title) return [];
+  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const industry = jd.industryExperience[0]?.trim() ?? "";
+  const seniority = jd.seniority !== "Unspecified" ? jd.seniority : "";
+  const skills = jd.requiredSkills.slice(0, 5).map((skill) => {
+    const lower = skill.toLowerCase();
+    if (/medical device/i.test(lower)) return "medical device";
+    if (/fda/i.test(lower)) return "FDA";
+    if (/mttf|mean time to failure/i.test(lower)) return "MTTF";
+    if (/system design/i.test(lower)) return "system design";
+    if (/quality systems/i.test(lower)) return "quality systems";
+    const acronym = skill.match(/\(([A-Za-z0-9+.#]{2,})\)/)?.[1];
+    if (acronym) return acronym;
+    return (skill.split(/[,;/]/)[0]?.trim() ?? skill).split(/\s+/).slice(0, 3).join(" ");
+  });
+
+  const titleAliases = roleTitleSearchAliases(title);
+  const geos = Array.from(
+    new Set(
+      [region, region && /montreal/i.test(region) ? "Quebec" : "", region ? "Canada" : "", "Montreal"]
+        .filter(Boolean)
+        .map((g) => String(g)),
+    ),
+  );
+  const variants: string[] = [buildLinkedInKeywords(jd)];
+  for (const alias of titleAliases.slice(0, 6)) {
+    for (const geo of geos.slice(0, 2)) {
+      variants.push([seniority, alias, geo].filter(Boolean).join(" "));
+      variants.push([alias, skills[0], geo].filter(Boolean).join(" "));
+    }
+    variants.push([alias, industry || "medical device", geos[0] || region].filter(Boolean).join(" "));
+  }
+  if (skills[1]) variants.push([titleAliases[0], skills[1], geos[0] || region || industry].filter(Boolean).join(" "));
+  if (skills[2]) variants.push([titleAliases[0], skills[2], geos[0] || region].filter(Boolean).join(" "));
+
+  return Array.from(
+    new Set(
+      variants
+        .map((q) => q.replace(/\s+/g, " ").trim().slice(0, 256))
+        .filter((q) => q.length >= 3),
+    ),
+  ).slice(0, max);
+}
+
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const region = jd.regions[0];
@@ -657,9 +834,7 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     estimatedResults: 120 + i * 60,
   }));
 
-  const linkedinBoolean = `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
-    .map((s) => `"${s}"`)
-    .join(" OR ")}) AND (${jd.regions.map((r) => `"${r}"`).join(" OR ")}) NOT "recruiter"`;
+  const linkedinBoolean = buildLinkedInKeywords(jd);
 
   const profile = roleProfile(jd);
   return {
@@ -904,7 +1079,26 @@ export function generateOutreach(
     .filter(Boolean)
     .join(" ");
 
-  const body = channel === "WhatsApp" || channel === "SMS" ? phoneBody : emailBody;
+  // LinkedIn Connect notes must stay ≤200 chars or Send greys out (zero notification).
+  // Prefer a short invite note over a multi-paragraph email body that gets mutilated at send.
+  let body: string;
+  if (channel === "WhatsApp" || channel === "SMS") {
+    body = phoneBody;
+  } else if (channel === "LinkedIn") {
+    const evidenceBit = evidence[0] ? evidence[0].replace(/\.$/, "") : null;
+    const invite = [
+      `Hi ${firstName},`,
+      evidenceBit
+        ? `caught your work on ${evidenceBit.slice(0, 60)}.`
+        : topSkill
+          ? `your ${topSkill} depth stood out.`
+          : `your profile stood out for ${jd.title}.`,
+      `Open to a short chat about a ${jd.title} role?`,
+    ].join(" ");
+    body = fitLinkedInInviteNote(invite).text;
+  } else {
+    body = emailBody;
+  }
 
   // ALWAYS humanize — no AI slop ever.
   return {
@@ -1046,9 +1240,9 @@ const SUGGESTED_ACTION: Record<ReplyIntent, string> = {
 function draftFor(intent: ReplyIntent, first: string): string {
   switch (intent) {
     case "INTERESTED":
-      return `Brilliant, ${first}! Thank you. Here's my calendar so you can grab whatever suits: {{cal_link}}. I'll send a Teams invite the moment you pick a slot. Looking forward to it.`;
+      return `Brilliant, ${first}! Thank you. I'll book a Teams slot on the hiring manager's Outlook calendar and send you the invite — reply with a couple of windows that work this week. Looking forward to it.`;
     case "QUALIFIED_INTEREST":
-      return `Great questions, ${first}. Quick answers: comp and remote policy are both flexible within band, and the team is small and senior. If it's easier to talk it through, here's my calendar: {{cal_link}}.`;
+      return `Great questions, ${first}. Quick answers: comp and remote policy are both flexible within band, and the team is small and senior. Happy to jump on a Teams call booked on the hiring manager's Outlook calendar — share a couple of windows that work and I'll send the invite.`;
     case "NOT_INTERESTED":
       return `Completely understand, ${first}. Thanks for the quick reply. I'll close this out and won't keep nudging. If the timing ever changes, you know where to find me. All the best.`;
     case "REFERRAL":

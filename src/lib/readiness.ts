@@ -60,7 +60,9 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     booleanProbe(probes.database),
     booleanProbe(probes.auth),
     booleanProbe(probes.queue),
-    input.agentFrameworksRequired ? booleanProbe(probes.agentFrameworks) : Promise.resolve(true),
+    // Always probe the component bit — skipping it painted local "ready" theater.
+    // Top-level ok still ignores frameworks when agentFrameworksRequired is false.
+    booleanProbe(probes.agentFrameworks),
     migrationProbe(probes.migration),
   ]);
 
@@ -70,8 +72,16 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     migration.count === input.expectedMigrationCount &&
     migration.ledgerSha256 === input.expectedLedgerSha256;
   const hermesRuntime = !input.hermesRuntimeMisconfigured;
+  // Component bit is always probed above; only gate ok on it when required
+  // (otherwise local/dev painted frameworks green without a real probe).
   const ok =
-    metadata && database && auth && queue && agentFrameworks && migrationMatches && hermesRuntime;
+    metadata &&
+    database &&
+    auth &&
+    queue &&
+    (!input.agentFrameworksRequired || agentFrameworks) &&
+    migrationMatches &&
+    hermesRuntime;
 
   return {
     ok,

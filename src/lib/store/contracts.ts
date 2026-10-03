@@ -361,9 +361,17 @@ export interface HermesActions {
    *  mock. Status is still set by the human approval gate — never auto-sent. */
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
   approveOutreach: (messageId: string) => Promise<ApprovalResult>;
-  confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
+  confirmManualSend: (messageId: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
   /** The deliberate gated send for a live-approved email — calls the server send route. */
-  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
+  sendApprovedOutreach: (messageId: string) => Promise<{
+    ok: boolean;
+    error?: string;
+    queued?: boolean;
+    status?: string;
+    detail?: string;
+    paceReason?: string;
+    dryRun?: boolean;
+  }>;
   rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Drafts the next sequence-step follow-up for a candidate who has gone quiet
    *  past the configured gap (see deriveFollowUpsDue). Lands in the approval
@@ -462,12 +470,26 @@ export interface HermesActions {
 
   // fleet — multi-seat coordination + anti-ban guardrails
   addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => Promise<AgentSeat | null>;
-  /** Seeds synthetic seats only when Supabase is disabled. Live workspaces use addSeat. */
+  /** Creates N LinkedIn Browser Computer seats (isolated Chromium/VM profiles each). */
   deployAgents: (
     n: number,
-    opts?: { language?: string; namePrefix?: string },
-  ) => { created: number; total: number; capped: boolean; max: number };
-  updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
+    opts?: { language?: string; namePrefix?: string; campaignId?: string },
+  ) => Promise<{ created: number; total: number; capped: boolean; max: number; seats: AgentSeat[] }>;
+  updateSeat: (id: string, patch: Partial<AgentSeat>) => Promise<boolean>;
+  /** Durable browserSeatBindings → Hermes (append missing stubs + patch; local-only). */
+  ingestDurableBrowserBindings: (
+    bindings: Array<{
+      id: string;
+      name?: string;
+      computerId?: string | null;
+      status?: string;
+      assignedCampaignIds?: string[];
+    }> | null | undefined,
+  ) => void;
+  /** Fleet ownership patches → Hermes computerId (local-only; never PATCH from poll). */
+  applyFleetHermesComputerPatches: (
+    patches: ReadonlyArray<{ seatId: string; computerId: string | null }>,
+  ) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => Promise<{ ok: boolean; error?: string }>;
   disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
@@ -489,13 +511,31 @@ export interface HermesActions {
 
   // confidentiality
   recordPiiReveal: (candidateId: string) => void;
+  /** Operator records consent or legitimate interest on the consent passport.
+   *  Required before outreach approval for both manual and provider-sourced leads. */
+  recordCandidateLawfulBasis: (
+    candidateId: string,
+    basis: CandidateLawfulBasis,
+  ) => { ok: true } | { ok: false; error: string };
+  /** Operator endorses role fit for a below-floor live lead so Approve can proceed
+   *  with a match-score warning (does not rewrite matchScore). */
+  endorseCandidateFit: (
+    candidateId: string,
+  ) => { ok: true } | { ok: false; error: string };
 
   // API keys + access control
   saveApiKey: (input: {
     name: string;
     provider: ApiKeyProvider;
     value: string;
-  }) => Promise<{ ok: boolean; key?: ApiKey; demo?: boolean; error?: string }>;
+  }) => Promise<{
+    ok: boolean;
+    key?: ApiKey;
+    demo?: boolean;
+    valid?: boolean;
+    detail?: string;
+    error?: string;
+  }>;
   testApiKey: (id: string) => Promise<{ ok: boolean; valid: boolean; detail: string }>;
   removeApiKey: (id: string) => Promise<{ ok: boolean; error?: string }>;
   setCurrentRole: (role: Role) => void;
@@ -561,6 +601,8 @@ export interface HermesActions {
   // misc
   logActivity: (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) => void;
   resetDemo: () => void;
+  /** Live mode: flush debounced workspace state to Supabase before server reads. */
+  flushWorkspaceSave: () => Promise<boolean>;
 
   // chat
   createChatThread: (seatId: string) => ChatThread;
@@ -590,6 +632,9 @@ export interface HermesContextValue {
   workspaceStatus: WorkspaceStatus;
   retryWorkspace: () => Promise<void>;
   retrySave: () => Promise<void>;
+  /** Immediately persist the current workspace snapshot (live mode). Call before
+   *  server-authoritative actions that read campaign state from Supabase. */
+  flushWorkspaceSave: () => Promise<boolean>;
   actions: HermesActions;
   /** Computed once per state change (not per consumer) — the TopBar bell and
    *  the dashboard AttentionPanel both read this instead of independently

@@ -12,7 +12,9 @@ function isPublicPath(path: string): boolean {
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
     path.startsWith("/careers") ||
-    path.startsWith("/unsubscribe")
+    path.startsWith("/unsubscribe") ||
+    // AriaBot Chromium seats load these static LinkedIn compose demos without a session.
+    path.startsWith("/ariabot/")
   );
 }
 
@@ -159,6 +161,6 @@ export const config = {
   // bypass the organization gate. Static assets and image files stay excluded.
   matcher: [
     "/api/:path*",
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|ariabot/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|html)$).*)",
   ],
 };

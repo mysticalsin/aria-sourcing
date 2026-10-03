@@ -16,15 +16,18 @@ primary_region = "cdg"
   dockerfile = "Dockerfile.prod"
   [build.args]
     NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
+    NEXT_PUBLIC_SITE_URL             = "https://aria-mantu-app.fly.dev"    # browser Origin for CSRF checks
     NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
-    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "true"                        # public showcase: demo-login ON
     NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
+    NEXT_PUBLIC_DEMO_ADMIN_USERNAME  = "Twalteur@amaris.com"         # showcase login identity (password is a runtime secret)
     # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
 
 [env]
   NODE_ENV                      = "production"
   PORT                          = "3000"
   HOSTNAME                      = "0.0.0.0"
+  NEXT_PUBLIC_SITE_URL          = "https://aria-mantu-app.fly.dev"
   NEXT_TELEMETRY_DISABLED       = "1"
   # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
@@ -34,9 +37,15 @@ primary_region = "cdg"
   # "loop" process for its minute-level outbound drain; harmless elsewhere.
   ARIA_WEB_INTERNAL_URL         = "http://web.process.aria-mantu-app.internal:3000"
   # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
-  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
-  # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
-
+  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET),
+  #   COMPUTER_SUPERVISOR_TOKEN, COMPUTER_TOKEN / OPENBOT_COMPUTER_TOKEN.
+  # Showcase secrets (fly secrets set): DEMO_ADMIN_PASSWORD, NEXT_PUBLIC_DEMO_ADMIN_PASSWORD,
+  #   ENABLE_DEMO_LOGIN=true (runtime gate), NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true.
+  # Do NOT copy those onto a separate real-tenant Fly app.
+  # Do NOT set COMPUTER_SUPERVISOR_MOCK_SEND on production.
+  # OpenBot Chromium supervisor (Fly-only — never Vercel):
+  COMPUTER_SUPERVISOR_URL       = "https://aria-mantu-computers.fly.dev"
+  NEXT_PUBLIC_COMPUTER_SUPERVISOR_URL = "https://aria-mantu-computers.fly.dev"
 [http_service]
   processes            = ["web"]
   internal_port        = 3000

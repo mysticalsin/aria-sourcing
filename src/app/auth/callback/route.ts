@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
+import { publicOrigin } from "@/lib/public-origin";
 
 /** Normalize an OAuth continuation to an unambiguous path on this origin.
  * WHATWG treats backslashes as slashes for special schemes, so a string such
@@ -33,20 +34,21 @@ function sameOriginRedirect(raw: string, origin: string): string {
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
+  const origin = publicOrigin(req.headers);
   // Only allow same-origin relative paths — never an absolute or protocol-relative
   // URL (open-redirect guard).
   const rawRedirect = url.searchParams.get("redirect") || "/";
-  const redirect = sameOriginRedirect(rawRedirect, url.origin);
+  const redirect = sameOriginRedirect(rawRedirect, origin);
   const supabase = await getServerSupabase();
 
   if (code && supabase) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      const fail = new URL("/login", url.origin);
+      const fail = new URL("/login", origin);
       fail.searchParams.set("error", "Sign-in failed. Please try again.");
       return NextResponse.redirect(fail);
     }
   }
 
-  return NextResponse.redirect(new URL(redirect, url.origin));
+  return NextResponse.redirect(new URL(redirect, origin));
 }

@@ -25,6 +25,7 @@ import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/l
 import { SourceBadge, StarBadge } from "@/components/tania/badges";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
+import { assessRoleTenure } from "@/lib/sourcing/role-tenure";
 import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
 
 interface FlagDescriptor {
@@ -183,6 +184,24 @@ export function CandidateTable({
                       {[c.currentTitle, c.currentCompany].filter(Boolean).join(" @ ") ||
                         "Role not provided"}
                     </p>
+                    {(() => {
+                      const tenure = assessRoleTenure(c);
+                      if (tenure.timing === "too_early") {
+                        return (
+                          <p className="mt-0.5 truncate text-[11px] font-medium text-tangerine" title={tenure.detail}>
+                            Too early · wait 6–12 mo in role
+                          </p>
+                        );
+                      }
+                      if (tenure.timing === "preferred") {
+                        return (
+                          <p className="mt-0.5 truncate text-[11px] text-muted" title={tenure.detail}>
+                            Contact window · ~{tenure.monthsInRole} mo in role
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
               </TD>

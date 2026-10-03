@@ -24,7 +24,7 @@ const BRIEF = { title: "Staff Backend Engineer", seniority: "Staff", requiredSki
 const POOL: Record<string, CandidateLite[]> = {
   GitHub: [
     { id: "gh-1", name: "Ana Ruiz", matchScore: 88, currentTitle: "Staff Eng", currentCompany: "Acme" },
-    { id: "gh-2", name: "Ben Kol", matchScore: 74 },
+    { id: "gh-2", name: "Ben Kol", matchScore: 82 },
     { id: "gh-3", name: "Cy Duma", matchScore: 55 },
   ],
   "Stack Overflow": [
@@ -191,7 +191,7 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
   ok("run: within step budget", result.steps < MAX_STEPS);
   ok("run: plan parsed through fences", result.state.plan?.steps.length === 2);
   ok("run: candidates deduped across platforms", result.state.candidates.length === 4);
-  ok("run: screener drops sub-70 scores", result.state.screened.every((c) => c.matchScore >= 70));
+  ok("run: screener drops sub-80 scores", result.state.screened.every((c) => c.matchScore >= 80));
   ok("run: screener sorts best-first", result.state.screened[0]?.id === "gh-1");
   ok("run: caps at draftCount", result.state.screened.length === 3);
   ok("run: one draft per screened candidate", result.state.drafts.length === 3);

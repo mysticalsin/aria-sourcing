@@ -3,6 +3,7 @@
 /.localbin/
 /.rocket-fuel/
 /graphify-out/
+/data/llm-wiki/
 /.pnp
 .pnp.js
 

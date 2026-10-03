@@ -109,6 +109,10 @@ export default function LaunchPage() {
     if (launchSeqRef.current !== seq) return null;
     setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: true }]);
 
+    if (supabaseEnabled) {
+      await actions.flushWorkspaceSave();
+    }
+
     let sourcedCount = 0;
     for (let wave = 0; wave < SOURCING_WAVES; wave++) {
       if (launchSeqRef.current !== seq) return null;

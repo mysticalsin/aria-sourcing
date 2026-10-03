@@ -1,4 +1,5 @@
 import { redactEmail, redactSecrets } from "../log-redact";
+import { campaignBrowserSeatIds } from "../agent-event-seat";
 import { sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
@@ -66,6 +67,7 @@ export type SourcingActivityDraft = Omit<Activity, "id" | "createdAt"> & {
 export interface SourcingActionDependencies {
   commit: (update: (state: HermesState) => HermesState) => boolean;
   commitPersisted: (update: (state: HermesState) => HermesState) => Promise<boolean>;
+  flushWorkspaceSave: () => Promise<boolean>;
   currentState: () => HermesState | null;
   sourcingMutationAllowed: () => boolean;
   workspaceEffectAllowed: () => boolean;
@@ -89,6 +91,7 @@ export interface SourcingActionDependencies {
     kind: "source";
     campaignId: string;
     count: number;
+    seatId?: string;
   }) => void;
 }
 
@@ -667,6 +670,7 @@ function manualIntakeUnavailable(status: CampaignStatus): string {
 
 export function createSourcingActions({
   commitPersisted,
+  flushWorkspaceSave,
   currentState,
   sourcingMutationAllowed,
   workspaceEffectAllowed,
@@ -679,18 +683,47 @@ export function createSourcingActions({
   effectiveWeights,
   emitSource,
 }: SourcingActionDependencies): SourcingActions {
+  const emitCampaignSource = (campaignId: string, count: number) => {
+    const seats = currentState()?.seats ?? [];
+    const seatIds = campaignBrowserSeatIds(seats, campaignId);
+    // Pulse each attached LI desk (same pattern as allocate) — never hash-pick one.
+    if (seatIds.length === 0) {
+      emitSource({ kind: "source", campaignId, count });
+      return;
+    }
+    for (const seatId of seatIds) {
+      emitSource({ kind: "source", campaignId, count, seatId });
+    }
+  };
+
   const sourceReviewedCampaignBatch = async (
     campaignId: string,
     count: number,
     initialFingerprint: string,
     agentFramework?: { runId: string; capabilityToken: string; query: string },
   ): Promise<SourceNextBatchResult> => {
-    const reviewed = await requestReviewedSourcing(
+    let reviewed = await requestReviewedSourcing(
       workspaceFetch,
       campaignId,
       count,
       agentFramework,
     );
+    for (
+      let persistAttempt = 0;
+      !reviewed.ok &&
+      reviewed.error === "Campaign not found." &&
+      persistAttempt < 4;
+      persistAttempt++
+    ) {
+      if (!(await flushWorkspaceSave())) break;
+      await new Promise((resolve) => setTimeout(resolve, 150 * (persistAttempt + 1)));
+      reviewed = await requestReviewedSourcing(
+        workspaceFetch,
+        campaignId,
+        count,
+        agentFramework,
+      );
+    }
     if (!reviewed.ok) {
       return { ok: false, error: reviewed.error, source: "unavailable" };
     }
@@ -803,7 +836,7 @@ export function createSourcingActions({
       }
     }
     if (result.accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+      emitCampaignSource(campaignId, result.accepted.length);
     }
     return {
       ...result,
@@ -871,8 +904,8 @@ export function createSourcingActions({
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
     }
-    const count = opts?.count ?? 6;
-    const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;
+    const count = opts?.count ?? 10;
+    const maxCount = MAX_SOURCE_COUNT;
     if (!Number.isInteger(count) || count < 1 || count > maxCount) {
       return invalidRequest(
         `Source count must be an integer between 1 and ${maxCount}.`,
@@ -898,6 +931,7 @@ export function createSourcingActions({
     }
 
     if (!demoSourcing) {
+      await flushWorkspaceSave();
       return await sourceReviewedCampaignBatch(
         campaignId,
         count,
@@ -1022,9 +1056,22 @@ export function createSourcingActions({
       }
       return { ok: false, error: "Campaign is paused.", source: "paused" };
     }
+    if (!evaluateNeedReadiness(campaign.jobAnalysis).ready) {
+      return invalidRequest("Campaign authority changed during sourcing. Review the current brief and retry.");
+    }
+    // Demo localStorage can remigrate strategy platforms mid-request (LinkedIn-first
+    // patch). Keep the brief stable; do not fail the whole LinkedIn batch on
+    // strategy-order fingerprint churn.
     if (
-      !evaluateNeedReadiness(campaign.jobAnalysis).ready ||
+      !demoSourcing &&
       sourcingAgentCampaignFingerprint(campaign) !== initialFingerprint
+    ) {
+      return invalidRequest("Campaign authority changed during sourcing. Review the current brief and retry.");
+    }
+    if (
+      demoSourcing &&
+      (campaign.id !== initialCampaign.id ||
+        campaign.jobAnalysis.title !== initialCampaign.jobAnalysis.title)
     ) {
       return invalidRequest("Campaign authority changed during sourcing. Review the current brief and retry.");
     }
@@ -1070,9 +1117,17 @@ export function createSourcingActions({
       if (
         !currentCampaign ||
         !campaignAllowsLiveSourcing(currentCampaign.status) ||
-        !evaluateNeedReadiness(currentCampaign.jobAnalysis).ready ||
-        sourcingAgentCampaignFingerprint(currentCampaign) !== initialFingerprint
+        !evaluateNeedReadiness(currentCampaign.jobAnalysis).ready
       ) {
+        return previous;
+      }
+      if (demoSourcing) {
+        if (
+          currentCampaign.jobAnalysis.title !== initialCampaign.jobAnalysis.title
+        ) {
+          return previous;
+        }
+      } else if (sourcingAgentCampaignFingerprint(currentCampaign) !== initialFingerprint) {
         return previous;
       }
       authorized = true;
@@ -1115,7 +1170,7 @@ export function createSourcingActions({
     }
 
     if (result.accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+      emitCampaignSource(campaignId, result.accepted.length);
     }
     return { ...result, source, ok: true };
   };
@@ -1256,7 +1311,7 @@ export function createSourcingActions({
       };
     }
     if (accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: accepted.length });
+      emitCampaignSource(campaignId, accepted.length);
     }
     return {
       ok: true,
@@ -1295,6 +1350,7 @@ export function createSourcingActions({
     if (!fields) return { ok: false, error: "Candidate details are invalid." };
 
     const now = new Date().toISOString();
+    const profileIsLinkedIn = /linkedin\.com\/in\//i.test(fields.profileUrl);
     const raw: Candidate = {
       id: genId("cand"),
       campaignId,
@@ -1305,7 +1361,8 @@ export function createSourcingActions({
       currentCompany: "",
       location: fields.location,
       timezone: "",
-      linkedinUrl: "",
+      // LinkedIn Connect/Message needs linkedinUrl, not only sourceUrl.
+      linkedinUrl: profileIsLinkedIn ? fields.profileUrl : "",
       githubUrl: "",
       sourceUrl: fields.profileUrl || undefined,
       sourcePlatform: "Manual",
@@ -1390,7 +1447,7 @@ export function createSourcingActions({
       };
     }
     if (scored.length > 0) {
-      emitSource({ kind: "source", campaignId, count: scored.length });
+      emitCampaignSource(campaignId, scored.length);
     }
     return {
       ok: true,
@@ -1547,7 +1604,7 @@ export function createSourcingActions({
     }
     const result: SourceResult = committedResult;
     if (result.accepted.length > 0) {
-      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+      emitCampaignSource(campaignId, result.accepted.length);
     }
     return { ...result, source: "apollo" };
   };

@@ -19,6 +19,7 @@ import {
 } from "@/lib/whatsapp-template-queue";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const dynamic = "force-dynamic";
 
@@ -188,7 +189,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Expected a JSON request." }, { status: 415 });
   }
   const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) {
     return NextResponse.json({ ok: false, error: "Cross-origin template queueing is not allowed." }, { status: 403 });
   }
 

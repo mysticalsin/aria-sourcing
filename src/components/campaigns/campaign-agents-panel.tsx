@@ -1,0 +1,935 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import {
+  Bot,
+  ExternalLink,
+  Eye,
+  Hand,
+  Monitor,
+  RefreshCw,
+  Unlock,
+  Link2,
+} from "lucide-react";
+import { Badge, Button, useToast } from "@/components/ui";
+import { cn } from "@/lib/utils";
+import type { AgentSeat } from "@/lib/types";
+import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
+import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
+import { useActions, useSettings } from "@/lib/store";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import {
+  mergeDurableCampaignSeatsForGoLive,
+  type DurableCampaignSeatLike,
+} from "@/lib/campaign-go-live";
+import { fleetHermesComputerPatches, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
+import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
+
+type AuditEvent = {
+  id?: string;
+  at: string;
+  computerId: string;
+  action: string;
+  detail: string;
+  actor: string;
+  correlationId?: string | null;
+  jobId?: string | null;
+  campaignId?: string | null;
+};
+
+function relativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso;
+  const sec = Math.round((Date.now() - t) / 1000);
+  if (sec < 45) return "just now";
+  if (sec < 3600) return `${Math.max(1, Math.round(sec / 60))}m ago`;
+  if (sec < 86400) return `${Math.round(sec / 3600)}h ago`;
+  return `${Math.round(sec / 86400)}d ago`;
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "ready":
+      return "ready";
+    case "busy":
+      return "busy";
+    case "starting":
+      return "starting";
+    case "stopped":
+      return "stopped";
+    case "error":
+      return "error";
+    case "help_requested":
+      return "needs help";
+    default:
+      return status;
+  }
+}
+
+/**
+ * Per-campaign Browser Computer agents: live Chromium VMs with Observe /
+ * Take control / Release — same mutex as Fleet, scoped to this campaign.
+ */
+export function CampaignAgentsPanel({
+  campaignId,
+  seats,
+  onAssignSeat,
+  onUnassignSeat,
+}: {
+  campaignId: string;
+  seats: AgentSeat[];
+  onAssignSeat?: (seatId: string) => void;
+  onUnassignSeat?: (seatId: string) => void;
+}) {
+  const { toast } = useToast();
+  const settings = useSettings();
+  const hermesCampaignSeats = React.useMemo(
+    () =>
+      seats.filter(
+        (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, campaignId),
+      ),
+    [seats, campaignId],
+  );
+  const availableToAttach = React.useMemo(
+    () =>
+      seats.filter(
+        (s) => isBrowserComputerSeat(s) && !seatAttachedToCampaign(s, campaignId),
+      ),
+    [seats, campaignId],
+  );
+
+  const [computers, setComputers] = React.useState<FleetComputerRow[]>([]);
+  // Full fleet rows (incl. __orphan__) for staleTwin / Hermes honesty — badge
+  // list above stays seat-filtered so orphans never inflate campaign ops.
+  const [fleetComputers, setFleetComputers] = React.useState<FleetComputerRow[]>([]);
+  /** Durable Fleet campaignSeats — undefined until successful authority (or omitted on error). */
+  const [durableSeats, setDurableSeats] = React.useState<
+    DurableCampaignSeatLike[] | undefined
+  >(undefined);
+  // Cards + counts: durable⊇ when present (incl. authoritative []); else Hermes local.
+  const campaignSeats = React.useMemo(() => {
+    if (!Array.isArray(durableSeats)) return hermesCampaignSeats;
+    return mergeDurableCampaignSeatsForGoLive(seats, durableSeats, campaignId).filter(
+      (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, campaignId),
+    );
+  }, [durableSeats, hermesCampaignSeats, seats, campaignId]);
+  /** First successful fleet poll settled — Deploy must wait (empty=[] is ambiguous for staleTwin). */
+  const [fleetLoaded, setFleetLoaded] = React.useState(false);
+  const [audits, setAudits] = React.useState<AuditEvent[]>([]);
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [observingId, setObservingId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  // Soft-nav: bump only on campaignId change so a late prior-campaign
+  // success/fail cannot paint foreign durableSeats or wipe the new campaign.
+  // Do NOT bump on seats/Hermes patches — Floor ingest must not flap durable paint.
+  const pollGeneration = React.useRef(0);
+  const seatsRef = React.useRef(seats);
+  const hermesCampaignSeatsRef = React.useRef(hermesCampaignSeats);
+  seatsRef.current = seats;
+  hermesCampaignSeatsRef.current = hermesCampaignSeats;
+
+  const actions = useActions();
+  const refresh = React.useCallback(async () => {
+    const gen = pollGeneration.current;
+    const hermesNow = hermesCampaignSeatsRef.current;
+    const seatsNow = seatsRef.current;
+    setLoading(true);
+    try {
+      // GET-only like Floor/Fleet — never poll-ensure with Hermes computerId.
+      // After reclaim, a stale login-wall id would re-claim the orphan twin and
+      // detach the durable VM (even when Floor hints look healthy).
+      setError(null);
+      const res = await fetch(
+        `/api/fleet/computers?campaignId=${encodeURIComponent(campaignId)}`,
+        { credentials: "same-origin" },
+      );
+      if (gen !== pollGeneration.current) return;
+      if (!res.ok) {
+        setError(`Fleet computers unavailable (${res.status})`);
+        // Settled fail-closed: clear badge rows + Deploy fleet so paint cannot stay green.
+        setFleetComputers([]);
+        setComputers([]);
+        setDurableSeats(undefined);
+        setFleetLoaded(true);
+        return;
+      }
+      const data = (await res.json()) as {
+        computers?: FleetComputerRow[];
+        recentAudits?: AuditEvent[];
+        campaignSeats?: Array<{
+          id: string;
+          name: string;
+          computerId?: string | null;
+          status?: string;
+          assignedCampaignIds?: string[];
+        }>;
+        browserSeatBindings?: Array<{
+          id: string;
+          name?: string;
+          computerId?: string | null;
+          status?: string;
+          assignedCampaignIds?: string[];
+        }>;
+      };
+      if (gen !== pollGeneration.current) return;
+      // Durable DB campaign bindings win over Hermes-only attach (cold load / multi-tab).
+      // Only sync when campaignSeats is present (successful authority). Error responses
+      // omit the key — never detach-all on error-shaped [].
+      if (Array.isArray(data.campaignSeats)) {
+        setDurableSeats(data.campaignSeats);
+        // Append durable-only desks + patch attach locally (Floor/Fleet same path).
+        const durableBindings = data.browserSeatBindings ?? data.campaignSeats;
+        actions.ingestDurableBrowserBindings(durableBindings);
+        const authIds = new Set(data.campaignSeats.map((s) => s.id));
+        const durableById = new Map(
+          (Array.isArray(durableBindings) ? durableBindings : []).map((b) => [b.id, b] as const),
+        );
+        // Hermes-only attaches not in durable campaignSeats for this campaign:
+        // if durable bindings exist for the seat, ingest already applied them —
+        // never PATCH a Hermes-derived assigned list (LWW can wipe other campaigns).
+        for (const local of hermesNow) {
+          if (authIds.has(local.id)) continue;
+          if (durableById.has(local.id)) continue;
+          const next = (local.assignedCampaignIds ?? []).filter((id) => id !== campaignId);
+          if (next.length !== (local.assignedCampaignIds ?? []).length) {
+            void actions.updateSeat(local.id, { assignedCampaignIds: next });
+          }
+        }
+      } else {
+        setDurableSeats(undefined);
+        if (Array.isArray(data.browserSeatBindings)) {
+          actions.ingestDurableBrowserBindings(data.browserSeatBindings);
+        }
+      }
+      // Badge seat set: durable⊇ when campaignSeats present; else Hermes local only.
+      const seatIds = Array.isArray(data.campaignSeats)
+        ? new Set(data.campaignSeats.map((s) => s.id))
+        : new Set(hermesNow.map((s) => s.id));
+      const computerIds = new Set<string>();
+      if (Array.isArray(data.campaignSeats)) {
+        for (const row of data.campaignSeats) {
+          if (row.computerId) computerIds.add(row.computerId);
+        }
+      } else {
+        for (const s of hermesNow) {
+          if (s.computerId) computerIds.add(s.computerId);
+        }
+      }
+      // Seat-owned rows only — never ingest __orphan__ / foreign VMs into
+      // campaign badges or ops (Hermes twin after reclaim must not inflate counts).
+      const allRows = data.computers ?? [];
+      setFleetComputers(allRows);
+      setFleetLoaded(true);
+      const displaySeats = Array.isArray(data.campaignSeats)
+        ? mergeDurableCampaignSeatsForGoLive(seatsNow, data.campaignSeats, campaignId)
+        : hermesNow;
+      const rows = allRows.filter((c) => {
+        if (!c.seatId || c.seatId === "__orphan__") return false;
+        return seatIds.has(c.seatId);
+      });
+      setComputers(
+        rows.map((c) => {
+          const seat =
+            displaySeats.find((s) => s.id === c.seatId) ||
+            data.campaignSeats?.find((s) => s.id === c.seatId);
+          return seat ? { ...c, seatName: seat.name } : c;
+        }),
+      );
+      // Local-only Hermes align — never PATCH computerId from poll (races reclaim/ensure).
+      actions.applyFleetHermesComputerPatches(
+        fleetHermesComputerPatches(hermesNow, allRows),
+      );
+
+      const campaignAudits = (data.recentAudits ?? []).filter(
+        (a) =>
+          (computerIds.has(a.computerId) || rows.some((r) => r.computerId === a.computerId)) &&
+          (!a.campaignId || a.campaignId === campaignId),
+      );
+      // Prefer campaign-tagged audits; fall back to computer-scoped when untagged.
+      const tagged = campaignAudits.filter((a) => a.campaignId === campaignId);
+      setAudits((tagged.length ? tagged : campaignAudits).slice(-40));
+    } catch (e) {
+      if (gen !== pollGeneration.current) return;
+      setError(e instanceof Error ? e.message : "Failed to load campaign agents");
+      setFleetComputers([]);
+      setComputers([]);
+      setDurableSeats(undefined);
+      setFleetLoaded(true);
+    } finally {
+      if (gen === pollGeneration.current) setLoading(false);
+    }
+  }, [actions, campaignId]);
+
+  React.useEffect(() => {
+    // Soft-nav campaign change only: clear prior campaign fleet paint before poll.
+    // seatsRef keeps refresh current — do not remount/clear on Floor Hermes patches.
+    pollGeneration.current += 1;
+    setComputers([]);
+    setFleetComputers([]);
+    setDurableSeats(undefined);
+    setFleetLoaded(false);
+    setAudits([]);
+    void refresh();
+    const t = window.setInterval(() => void refresh(), 4000);
+    return () => {
+      pollGeneration.current += 1;
+      window.clearInterval(t);
+    };
+  }, [campaignId, refresh]);
+
+  async function deploySeat(seat: AgentSeat) {
+    if (!fleetLoaded) {
+      toast({
+        title: "Fleet not loaded",
+        description: "Wait for the fleet poll before Deploy — empty list cannot detect stale Hermes twins.",
+        variant: "warning",
+      });
+      return;
+    }
+    setBusyId(seat.id);
+    setError(null);
+    try {
+      const hermesId = (seat.computerId ?? "").trim();
+      // Omit stale twin when fleet shows orphan/absent/foreign — never feed
+      // login-wall computerId into reclaim before Hermes poll clears it.
+      // Use full fleet rows (incl. orphans), not badge-filtered computers.
+      const staleTwin = isStaleHermesComputerTwin(seat.id, hermesId, fleetComputers);
+      // Empty fleet after load: still omit Hermes id (ambiguous ≠ own).
+      const existingComputerId =
+        !fleetComputers.length || staleTwin ? null : seat.computerId;
+      const computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId,
+        campaignId,
+      });
+      const ok = await actions.updateSeat(seat.id, { computerId });
+      if (!ok) {
+        setError("Could not save computer id on seat.");
+        toast({ title: "Deploy failed", description: "Seat update refused.", variant: "error" });
+        return;
+      }
+      const boot = await bootBrowserComputer({
+        seatId: seat.id,
+        computerId,
+        campaignId,
+      });
+      if (!boot.ok) {
+        const msg = boot.error ?? "Boot failed";
+        setError(msg);
+        toast({ title: "Deploy partially saved", description: msg, variant: "warning" });
+      } else {
+        toast({
+          title: "Browser computer ready",
+          description: boot.booted
+            ? "VM bound and started — Take control to finish LinkedIn login if needed."
+            : "VM bound. Start or Take control when ready.",
+          variant: "success",
+        });
+      }
+      await refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Deploy failed";
+      setError(msg);
+      toast({ title: "Deploy failed", description: msg, variant: "error" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function act(
+    action: "start" | "take_control" | "release_control",
+    computerId: string,
+  ) {
+    setBusyId(computerId);
+    setError(null);
+    try {
+      const row = computers.find((c) => c.computerId === computerId);
+      const seatId = (row?.seatId ?? "").trim();
+      if (!seatId || seatId === "__orphan__") {
+        const msg = "Unbound host VM — reclaim/bind a seat before Start, Take control, or Release.";
+        setError(msg);
+        toast({ title: "Seat required", description: msg, variant: "error" });
+        return;
+      }
+      const res = await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          computerId,
+          campaignId,
+          seatId,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        computer?: FleetComputerRow;
+      };
+      if (!res.ok) {
+        const msg = body.error ?? res.statusText;
+        const humanHeld = /computer-human-held/i.test(msg);
+        const detail = humanHeld
+          ? "Release Take control before Start / Observe — bot warm-start is blocked while you hold the desk."
+          : msg;
+        setError(detail);
+        toast({
+          title: humanHeld ? "Operator has control" : "Computer action failed",
+          description: detail,
+          variant: "error",
+        });
+        return;
+      }
+      if (body.computer?.status === "error") {
+        const msg =
+          body.computer.lastError ||
+          "Computer entered error state — check Chromium supervisor capacity.";
+        setError(msg);
+        toast({ title: "Computer action failed", description: msg, variant: "error" });
+        await refresh();
+        return;
+      }
+      if (action === "take_control" || action === "start") {
+        setObservingId(computerId);
+      }
+      if (action === "take_control" && typeof window !== "undefined") {
+        // Prefer the dedicated full-sandbox tab for LinkedIn login (keyboard + fullscreen).
+        const url =
+          body.computer?.viewUrl ||
+          body.computer?.remoteUrl ||
+          computers.find((c) => c.computerId === computerId)?.viewUrl ||
+          computers.find((c) => c.computerId === computerId)?.remoteUrl;
+        if (url && /^https?:\/\//i.test(url)) {
+          window.open(`${url}${url.includes("?") ? "&" : "?"}fs=1`, "_blank", "noopener,noreferrer");
+        }
+      }
+      await refresh();
+      toast({
+        title:
+          action === "take_control"
+            ? "You have control"
+            : action === "release_control"
+              ? "Control released"
+              : action === "start"
+                ? "VM started"
+                : "Computer updated",
+        description:
+          action === "take_control"
+            ? "Fullscreen sandbox opened — click LinkedIn fields and type your login, then Release when done."
+            : action === "start"
+              ? "Process up — Observe to watch, or Take control to log in / verify LinkedIn."
+              : action === "release_control"
+                ? "Bot may act again only after a healthy session probe."
+                : "Bot may act again on this seat.",
+        variant: "success",
+      });
+    } catch {
+      toast({ title: "Computer action failed", variant: "error" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function observe(computerId: string, selected: boolean) {
+    if (selected) {
+      setObservingId(null);
+      return;
+    }
+    const row = computers.find((c) => c.computerId === computerId);
+    if (!row || row.status === "stopped" || row.status === "error") {
+      await act("start", computerId);
+      return;
+    }
+    setObservingId(computerId);
+  }
+
+  function detachSeat(seat: AgentSeat, computer: FleetComputerRow) {
+    if (!onUnassignSeat) return;
+    const live =
+      computer.control === "human" ||
+      computer.status === "ready" ||
+      computer.status === "busy" ||
+      computer.status === "help_requested";
+    if (live) {
+      const ok = window.confirm(
+        `${seat.name} is still ${computer.control === "human" ? "under human control" : "live"}. Detach from this campaign only? The Chromium VM stays running on Fleet.`,
+      );
+      if (!ok) return;
+    }
+    onUnassignSeat(seat.id);
+  }
+
+  const observing = computers.find((c) => c.computerId === observingId) ?? null;
+  const liveUrl = observing?.viewUrl || observing?.remoteUrl || null;
+  const isRemoteLive =
+    Boolean(liveUrl) &&
+    (liveUrl!.startsWith("http://") || liveUrl!.startsWith("https://"));
+
+  const campaignSeatIds = React.useMemo(
+    () => new Set(campaignSeats.map((s) => s.id)),
+    [campaignSeats],
+  );
+  const campaignComputers = computers.filter(
+    (c) => c.seatId && campaignSeatIds.has(c.seatId),
+  );
+  const humanCount = campaignComputers.filter((c) => c.control === "human").length;
+  const healthyCount = campaignComputers.filter((c) => c.sessionHealthy === true).length;
+  const unverifiedCount = campaignComputers.filter(
+    (c) => (c.status === "ready" || c.status === "busy") && c.sessionHealthy !== true,
+  ).length;
+  // Fleet seat-owned bindings only — Hermes computerId alone is not a live VM.
+  const withVmCount = campaignSeats.filter((s) =>
+    computers.some((c) => c.seatId === s.id && Boolean((c.computerId ?? "").trim())),
+  ).length;
+  const boundComputerIdBySeat = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of computers) {
+      const sid = (c.seatId ?? "").trim();
+      const cid = (c.computerId ?? "").trim();
+      if (!sid || sid === "__orphan__" || !cid) continue;
+      m.set(sid, cid);
+    }
+    return m;
+  }, [computers]);
+
+  return (
+    <div className="space-y-4">
+    <BanRiskStrip
+      seats={campaignSeats}
+      audits={audits}
+      fleet={settings.fleet}
+      boundComputerIdBySeat={boundComputerIdBySeat}
+    />
+    <section
+      className="rounded-2xl border border-line bg-surface/80"
+      aria-labelledby="campaign-agents-heading"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line/60 px-5 py-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Campaign agents
+          </p>
+          <h2
+            id="campaign-agents-heading"
+            className="mt-0.5 flex items-center gap-2 text-base font-semibold text-ink"
+          >
+            <Bot className="h-4 w-4 text-electric" aria-hidden />
+            Agents on this campaign
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
+            LinkedIn AriaBot Browser Computer seats attached here — one Chromium VM each. Observe starts the
+            VM if needed; Take control pauses the bot until you Release.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge size="sm" tone="electric">
+            {withVmCount}/{campaignSeats.length} with VM
+          </Badge>
+          <Badge
+            size="sm"
+            tone={
+              campaignSeats.length > 0 && healthyCount === campaignSeats.length
+                ? "success"
+                : healthyCount > 0
+                  ? "warning"
+                  : "neutral"
+            }
+          >
+            {healthyCount}/{campaignSeats.length} session healthy
+          </Badge>
+          {unverifiedCount > 0 ? (
+            <Badge size="sm" tone="warning">
+              {unverifiedCount} unverified
+            </Badge>
+          ) : null}
+          <Badge size="sm" tone={humanCount ? "tangerine" : "neutral"}>
+            {humanCount} human control
+          </Badge>
+          <Button type="button" size="sm" variant="secondary" onClick={() => void refresh()} disabled={loading}>
+            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} aria-hidden />
+            Refresh
+          </Button>
+          <Link
+            href="/fleet"
+            className="inline-flex h-9 items-center rounded-full bg-ink px-3.5 text-sm font-semibold text-paper hover:bg-ink/90"
+          >
+            Allocate on Fleet
+          </Link>
+        </div>
+      </div>
+
+      {error ? <p className="px-5 pt-3 text-sm text-danger">{error}</p> : null}
+
+      {campaignSeats.length === 0 ? (
+        <div className="px-5 py-8 text-sm text-muted">
+          <p>
+            No Browser Computer agents are attached to this campaign yet. Attach a LinkedIn Browser
+            Computer seat below, or open{" "}
+            <Link href="/fleet" className="font-medium text-electric underline-offset-2 hover:underline">
+              Fleet
+            </Link>{" "}
+            to deploy/boot VMs (host cap applies).
+          </p>
+          {availableToAttach.length > 0 && onAssignSeat ? (
+            <ul className="mt-4 space-y-2">
+              {availableToAttach.map((s) => (
+                <li key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2">
+                  <span className="text-sm font-medium text-ink">{s.name}</span>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => onAssignSeat(s.id)}>
+                    <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                    Attach to campaign
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : (
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <ul className="divide-y divide-line/50">
+            {campaignSeats.map((seat) => {
+              const bySeat = computers.find((row) => row.seatId === seat.id);
+              // Ops (Start/Observe/Take control) only on seat-owned fleet rows —
+              // never drive an __orphan__ VM from another desk's Hermes computerId.
+              const hermesId = seat.computerId?.trim() || null;
+              const byComp = hermesId
+                ? computers.find(
+                    (row) =>
+                      row.computerId === hermesId &&
+                      row.seatId === seat.id,
+                  )
+                : undefined;
+              const c = bySeat ?? byComp;
+              // Fleet seat-owned bind is enough — Hermes null after reclaim clear
+              // must not force Deploy theater when the VM is already on fleet.
+              if (!c || c.computerId === "(unassigned)") {
+                return (
+                  <li key={seat.id} className="px-5 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Monitor className="h-4 w-4 text-muted" aria-hidden />
+                          <span className="text-sm font-semibold text-ink">{seat.name}</span>
+                          <Badge size="sm" tone="neutral">
+                            No Browser Computer
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted">
+                          No durable VM yet — Deploy reclaims a healthy unbound host if one exists,
+                          otherwise mints a seat-owned computer id.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={busyId === seat.id || !fleetLoaded}
+                          onClick={() => void deploySeat(seat)}
+                        >
+                          {busyId === seat.id
+                            ? "Deploying…"
+                            : !fleetLoaded
+                              ? "Loading fleet…"
+                              : "Deploy computer"}
+                        </Button>
+                        {onUnassignSeat ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => onUnassignSeat(seat.id)}
+                          >
+                            Detach
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+              const computerId = c.computerId;
+              const selected = observingId === computerId;
+              const busy = busyId === computerId;
+              const needsHelp = c.status === "help_requested";
+              const sessionTone =
+                c.sessionHealthy === true
+                  ? "success"
+                  : c.sessionHealthy === false || needsHelp || c.status === "error"
+                    ? "danger"
+                    : c.status === "ready" || c.status === "busy"
+                      ? "warning"
+                      : "neutral";
+              const sessionLabel =
+                c.sessionHealthy === true
+                  ? "Session healthy"
+                  : c.sessionHealthy === false
+                    ? "Session unhealthy"
+                    : c.status === "ready" || c.status === "busy"
+                      ? "Session unverified"
+                      : null;
+              return (
+                <li
+                  key={seat.id}
+                  className={cn(
+                    "px-5 py-4",
+                    selected && "bg-electric/5",
+                    needsHelp && "bg-tangerine/5",
+                  )}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Monitor className="h-4 w-4 text-electric" aria-hidden />
+                        <span className="text-sm font-semibold text-ink">{seat.name}</span>
+                        <Badge size="sm" tone={c.control === "human" ? "tangerine" : "electric"}>
+                          {c.control === "human" ? "Human control" : "Bot"}
+                        </Badge>
+                        <Badge
+                          size="sm"
+                          tone={
+                            needsHelp || c.status === "error"
+                              ? "tangerine"
+                              : c.sessionHealthy === true
+                                ? "success"
+                                : c.status === "ready" || c.status === "busy"
+                                  ? "warning"
+                                  : "neutral"
+                          }
+                        >
+                          {statusLabel(c.status)}
+                        </Badge>
+                        {sessionLabel ? (
+                          <Badge size="sm" tone={sessionTone}>
+                            {sessionLabel}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-0.5 font-mono text-[11px] text-muted">{computerId}</p>
+                      {c.lastAudit ? (
+                        <p className="mt-1 truncate text-xs text-muted">{c.lastAudit}</p>
+                      ) : null}
+                      {c.lastError ? (
+                        <p className="mt-1 text-xs text-danger">{c.lastError}</p>
+                      ) : null}
+                      {needsHelp ? (
+                        <p className="mt-1 text-xs font-medium text-tangerine">
+                          Needs operator help — Take control to finish LinkedIn login / 2FA.
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(c.status === "stopped" || c.status === "error") && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => void act("start", computerId)}
+                        >
+                          Start VM
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        aria-pressed={selected}
+                        disabled={busy}
+                        onClick={() => void observe(computerId, selected)}
+                      >
+                        <Eye className="mr-1.5 h-3.5 w-3.5" />
+                        {selected ? "Hide view" : "Observe"}
+                      </Button>
+                      {c.control === "human" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => void act("release_control", computerId)}
+                        >
+                          <Unlock className="mr-1.5 h-3.5 w-3.5" />
+                          Release
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void act("take_control", computerId)}
+                        >
+                          <Hand className="mr-1.5 h-3.5 w-3.5" />
+                          Take control
+                        </Button>
+                      )}
+                      {onUnassignSeat ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => detachSeat(seat, c)}
+                        >
+                          Detach
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="border-t border-line/60 lg:border-l lg:border-t-0">
+            <div className="border-b border-line/50 px-4 py-3 text-sm font-semibold text-ink">
+              Live viewport
+              {observing ? (
+                <span className="ml-2 font-mono text-xs font-normal text-muted">
+                  {observing.computerId}
+                </span>
+              ) : (
+                <span className="ml-2 text-xs font-normal text-muted">Select Observe</span>
+              )}
+            </div>
+            {observing && isRemoteLive ? (
+              <div
+                className={cn(
+                  "space-y-2 p-3",
+                  observing.control === "human" &&
+                    "fixed inset-0 z-50 flex flex-col bg-ink p-0 sm:p-0",
+                )}
+              >
+                {observing.control === "human" ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#0c1424] px-3 py-2 text-xs text-paper">
+                    <p>
+                      <span className="font-medium text-tangerine">You have control — bot paused. </span>
+                      Click and type in the sandbox to finish LinkedIn login / 2FA, then Release.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 font-medium text-electric"
+                        href={`${liveUrl!}${liveUrl!.includes("?") ? "&" : "?"}fs=1`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open full sandbox
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={busyId === observing.computerId}
+                        onClick={() => void act("release_control", observing.computerId)}
+                      >
+                        <Unlock className="mr-1.5 h-3.5 w-3.5" />
+                        Release
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">
+                    Observe mode — Take control for fullscreen interactive login.
+                  </p>
+                )}
+                <iframe
+                  title={`Live view ${observing.computerId}`}
+                  src={
+                    observing.control === "human"
+                      ? `${liveUrl!}${liveUrl!.includes("?") ? "&" : "?"}fs=1`
+                      : liveUrl!
+                  }
+                  className={cn(
+                    "w-full rounded-lg border border-line bg-ink/5",
+                    observing.control === "human"
+                      ? "min-h-0 flex-1 rounded-none border-0"
+                      : "aspect-video",
+                  )}
+                  allow="clipboard-read; clipboard-write; fullscreen"
+                  allowFullScreen
+                />
+                {observing.control !== "human" ? (
+                  <a
+                    className="inline-flex items-center gap-1 text-xs font-medium text-electric"
+                    href={`${liveUrl!}${liveUrl!.includes("?") ? "&" : "?"}fs=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open full sandbox
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : null}
+              </div>
+            ) : observing && liveUrl ? (
+              <div className="space-y-2 p-4 text-sm text-muted">
+                {observing.control === "human" ? (
+                  <p className="rounded-lg border border-tangerine/40 bg-tangerine/10 px-3 py-2 text-xs text-ink">
+                    <span className="font-medium text-tangerine">You have control — bot paused. </span>
+                    Open the sandbox to finish LinkedIn login / 2FA, then Release.
+                  </p>
+                ) : null}
+                <p>
+                  Operator viewport ready.{" "}
+                  <a className="font-medium text-electric underline" href={liveUrl} target="_blank" rel="noreferrer">
+                    Open sandbox viewport
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <div className="px-4 py-10 text-center text-sm text-muted">
+                Click Observe to start (if needed) and watch this campaign&apos;s agent — or Take
+                control to intervene.
+              </div>
+            )}
+
+            <div className="border-t border-line/50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Recent audits
+              </p>
+              <ol className="mt-2 max-h-48 space-y-2 overflow-auto">
+                {[...audits].reverse().slice(0, 12).map((e, i) => {
+                  const hot =
+                    e.action === "takeover" ||
+                    e.action === "help_requested" ||
+                    e.action.includes("failed");
+                  return (
+                    <li
+                      key={e.id ?? `${e.at}-${i}`}
+                      className={cn("text-xs text-muted", hot && "text-ink")}
+                    >
+                      <span className="font-medium text-ink">{e.action}</span> · {e.detail}
+                      <span className="mt-0.5 block font-mono text-[10px]">
+                        {relativeTime(e.at)} · {e.computerId} · {e.actor}
+                        {e.correlationId ? ` · ${e.correlationId}` : ""}
+                        {e.jobId ? ` · job ${e.jobId}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
+                {audits.length === 0 ? (
+                  <li className="text-xs text-muted">No audits yet — Start or Take control to begin.</li>
+                ) : null}
+              </ol>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {availableToAttach.length > 0 && campaignSeats.length > 0 && onAssignSeat ? (
+        <div className="border-t border-line/60 px-5 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Attach more agents</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {availableToAttach.map((s) => (
+              <Button key={s.id} type="button" size="sm" variant="secondary" onClick={() => onAssignSeat(s.id)}>
+                <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                {s.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+    </div>
+  );
+}

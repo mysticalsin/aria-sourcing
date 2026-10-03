@@ -24,7 +24,10 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     GRAPHIFY_QUERY_LOG_DISABLE=1
 
-RUN groupadd --gid 10001 graphify \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 graphify \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin graphify
 
 WORKDIR /app

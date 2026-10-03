@@ -18,6 +18,11 @@ const bearer = applyMcpAuth("https://mcp.example.com/mcp", "SEKRET");
 ok("bearer leaves url unchanged", bearer.url === "https://mcp.example.com/mcp");
 ok("bearer returns token", bearer.token === "SEKRET");
 
+const xAuth = applyMcpAuth("https://mcp.heyreach.io/ws", "hr_secret", { authStyle: "x-api-key" });
+ok("x-api-key keeps url clean", xAuth.url === "https://mcp.heyreach.io/ws");
+ok("x-api-key returns token", xAuth.token === "hr_secret");
+ok("x-api-key auth style tagged", xAuth.authStyle === "x-api-key");
+
 const query = applyMcpAuth("https://mcp.tavily.com/mcp/", "SEKRET", {
   authStyle: "query",
   authQueryParam: "tavilyApiKey",

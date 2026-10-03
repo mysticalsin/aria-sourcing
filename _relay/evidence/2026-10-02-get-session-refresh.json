@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-02T21:16:11Z",
+  "mode": "get-session-refresh",
+  "app": "http://127.0.0.1:3000",
+  "openbot": "http://127.0.0.1:18765",
+  "rows": [
+    {"seatId": "seat_refresh_n_1", "status": "ready", "sessionHealthy": false, "sessionProbedAt": "2026-10-02T21:16:11.450Z"},
+    {"seatId": "seat_refresh_n_2", "status": "ready", "sessionHealthy": false, "sessionProbedAt": "2026-10-02T21:16:11.179Z"}
+  ],
+  "ok": true,
+  "note": "GET /api/fleet/computers re-probed LinkedIn; healthy stays false on auth wall — never invented true"
+}

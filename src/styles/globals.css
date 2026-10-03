@@ -62,6 +62,8 @@ html {
   scroll-behavior: smooth;
   /* Base paper color lives on html so body can be transparent for the fixed gradient pseudo */
   background-color: hsl(var(--paper));
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {
@@ -73,6 +75,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 /* Subtle purple ambient mesh — position: fixed avoids full-page repaint on scroll */

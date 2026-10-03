@@ -647,7 +647,7 @@ const LOOP_SENDS_ENABLED: Row = {
   const stats = await dispatchDue(db.client, 10);
   ok("legacy approval: blocked", stats.blocked === 1 && stats.sent === 0);
   ok("legacy approval: claim never ran", db.rpcCalls.length === 0);
-  ok("legacy approval: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-not-human"));
+  ok("legacy approval: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-not-authorized"));
 }
 
 // ---------------------------------------------------------------------------
@@ -739,7 +739,8 @@ const LOOP_SENDS_ENABLED: Row = {
   }) as typeof fetch;
   try {
     const db = makeFakeDb({
-      outbound: [baseLinkedInMsg()],
+      // campaign_id required so Vendor attach gate passes before unconfigured check
+      outbound: [baseLinkedInMsg({ campaign_id: "camp-1" })],
       approvals: [
         {
           workspace_id: "ws-1",

@@ -9,6 +9,7 @@ import type {
   SuppressionEntry,
 } from "./types";
 import { normalizeSuppressionValue } from "./manual-suppression";
+import { isBrowserComputerSeat } from "./campaign-seat-attach";
 import type { Tone } from "./utils";
 import { clamp } from "./utils";
 
@@ -30,6 +31,8 @@ export function defaultFleetSettings(): FleetSettings {
     jitter: true,
     globalDailyCap: null,
     maxAgents: 300,
+    deliveryMode: "automatic",
+    browserAgentPermissionMode: "auto",
   };
 }
 
@@ -45,8 +48,9 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   Resend: "Respect plan limits; verify domain (SPF/DKIM/DMARC) before sending.",
   "WhatsApp Cloud": "Cold WhatsApp needs a pre-approved Meta template; keep volume low and honor opt-out.",
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
-  "LinkedIn Assisted Manual": "Assisted-manual only: draft, profile deep-link, human copy/paste/send, then record outcome.",
-  "LinkedIn Vendor API": "Licensed vendor API only; fails closed until credentials and a signed provider contract exist.",
+  "LinkedIn Assisted Manual": "Manual mode: draft, profile deep-link, human copy/paste/send, then Confirm.",
+  "LinkedIn Vendor API": "Automatic mode path: licensed vendor API; fails closed until LINKEDIN_VENDOR_* credentials exist.",
+  "LinkedIn Browser Computer": "Automatic mode path: isolated Chromium computer per seat (AriaBot-shaped); fails closed until computer supervisor is ready.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */
@@ -190,10 +194,12 @@ export function allocateBatch(
   const nowMs = now.getTime();
   const remaining = new Map<string, number>();
   for (const seat of seats) {
-    // Planning/claiming respects status, auto-pause health and daily caps.
-    // The send WINDOW governs when a claimed send actually fires, not whether we
-    // can plan it — so allocation works any hour; sends still wait for the window.
-    const blocked = seat.status !== "active" || seatHealthStatus(seat, settings).shouldPause;
+    // Planning respects status, auto-pause health, daily caps, and (when
+    // enforceBusinessHours) the seat send window via isWithinSendWindow.
+    const blocked =
+      seat.status !== "active" ||
+      seatHealthStatus(seat, settings).shouldPause ||
+      (settings.enforceBusinessHours && !isWithinSendWindow(seat, now, true));
     remaining.set(seat.id, blocked ? 0 : seatRemainingToday(seat, nowMs));
   }
 
@@ -289,7 +295,12 @@ export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = 
   return {
     seats: seats.length,
     activeSeats: active.length,
-    liveSeats: seats.filter((s) => s.mode === "live" && s.domainVerified).length,
+    liveSeats: seats.filter((s) => {
+      // LI Browser Computer readiness is sessionHealthy (health strip / Floor) —
+      // never count domainVerified theater as "live" for AriaBot desks.
+      if (isBrowserComputerSeat(s)) return false;
+      return s.mode === "live" && s.domainVerified;
+    }).length,
     sentToday: sent,
     capacityToday: capacity,
     remainingToday: remaining,

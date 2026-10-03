@@ -10,6 +10,7 @@ import {
   assertDeclaredTransitionProducers,
   buildReplyClassificationPrompt,
   handleAriaJob,
+  resolveInboundSeatComputer,
   runSourcingLoopForever,
   runSourcingLoopTick,
 } from "../scripts/sourcing-loop-worker.mjs";
@@ -27,6 +28,36 @@ function job(kind: string, payload: Record<string, unknown>) {
   };
 }
 
+/** Fluent supabase-ish from() that resolves maybeSingle by table + eq filters. */
+function tableFrom(rowsByTable: Record<string, Array<Record<string, unknown>>>) {
+  return (table: string) => {
+    const filters: Record<string, unknown> = {};
+    const api = {
+      select() {
+        return api;
+      },
+      eq(col: string, val: unknown) {
+        filters[col] = val;
+        return api;
+      },
+      in() {
+        return api;
+      },
+      limit() {
+        return api;
+      },
+      async maybeSingle() {
+        const rows = rowsByTable[table] ?? [];
+        const match = rows.find((row) =>
+          Object.entries(filters).every(([k, v]) => row[k] === v),
+        );
+        return { data: match ?? null, error: null };
+      },
+    };
+    return api;
+  };
+}
+
 function rpcClient(handler: (name: string, args: Record<string, unknown>) => unknown) {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   return {
@@ -35,6 +66,25 @@ function rpcClient(handler: (name: string, args: Record<string, unknown>) => unk
       async rpc(name: string, args: Record<string, unknown>) {
         calls.push({ name, args });
         return handler(name, args) as { data: unknown; error: { code: string } | null };
+      },
+      from() {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          in() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          async maybeSingle() {
+            return { data: null, error: null };
+          },
+        };
       },
     },
   };
@@ -107,7 +157,12 @@ test("shortlist handler reads provider candidates by run id and commits through 
     { client, providerPoller },
   );
 
-  assert.deepEqual(result, { status: "shortlist_committed", campaignId: "camp-1", candidateCount: 2 });
+  assert.deepEqual(result, {
+    status: "shortlist_committed",
+    campaignId: "camp-1",
+    candidateCount: 2,
+    autoApproved: 0,
+  });
   const completion = calls.find((call) => call.name === "complete_aria_job_with_workspace_patch");
   assert.ok(completion);
   assert.equal(completion.args.p_patch_kind, "append_candidates");
@@ -240,7 +295,7 @@ test("provider_poll resumes a persisted run and enqueues shortlist_build with id
 test("reply classify wraps candidate text in the disclosure envelope handed to the model", async () => {
   const prompts: Array<{ system: string; prompt: string }> = [];
   const { client, calls } = rpcClient((name) => {
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",
@@ -259,6 +314,9 @@ test("reply classify wraps candidate text in the disclosure envelope handed to t
     }
     if (name === "complete_aria_job_with_workspace_patch") {
       return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
     }
     throw new Error(`unexpected rpc ${name}`);
   });
@@ -304,7 +362,7 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
       completions.push(args);
       return { data: true, error: null };
     }
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",
@@ -325,6 +383,9 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
       patches.push(args);
       return { data: { status: "completed", patch_status: "applied" }, error: null };
     }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
+    }
     throw new Error(`unexpected rpc ${name}`);
   });
 
@@ -343,6 +404,200 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
   assert.equal(reply.campaignId, "camp-1");
   assert.equal(reply.body, "Interested, please send the details.");
   assert.equal(reply.intent, "INTERESTED");
+});
+
+test("inbound_classify persists LinkedIn channel from stored inbound message", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-li-1",
+          channel: "LinkedIn",
+          candidate_id: "cand-li",
+          campaign_id: "camp-li",
+          body: "Sounds good — send me the JD.",
+          received_at: "2026-08-25T12:00:00.000Z",
+          message_id: "li-msg-1",
+          from_address: "https://www.linkedin.com/in/jane",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-08-25T11:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-08-25T11:01:00.000Z" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-li-1" }), { client });
+  assert.equal(patches.length, 1);
+  const reply = (patches[0].p_patch as Array<Record<string, unknown>>)[0];
+  assert.equal(reply.channel, "LinkedIn");
+  assert.equal(reply.candidateId, "cand-li");
+  assert.equal(reply.body, "Sounds good — send me the JD.");
+  assert.equal(reply.intent, "INTERESTED");
+});
+
+test("inbound_classify enqueues draft_generate for positive intent when autopilot is entitled", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const activityPatches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-2",
+          candidate_id: "cand-9",
+          campaign_id: "camp-9",
+          channel: "LinkedIn",
+          body: "Yes I'm interested — send times.",
+          received_at: "2026-07-25T12:30:00.000Z",
+          message_id: "provider-message-2",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      activityPatches.push(args);
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  // Profiles (autopilot) + LinkedIn seat → computer trail for booking.proposed.
+  (client as { from: (table: string) => unknown }).from = tableFrom({
+    profiles: [{ id: "user-autopilot-1", workspace_id: WORKSPACE_ID, autopilot_enabled: true }],
+    linkedin_channel_events: [
+      {
+        workspace_id: WORKSPACE_ID,
+        inbound_id: "inbound-2",
+        seat_id: "seat-li-9",
+      },
+    ],
+    agent_seats: [
+      {
+        workspace_id: WORKSPACE_ID,
+        id: "seat-li-9",
+        computer_id: "comp-li-9",
+      },
+    ],
+  });
+  // tableFrom ignores .in() filters — profiles maybeSingle still needs entitled id.
+  // Override profiles path: tableFrom returns first match on eq filters only;
+  // profiles row matches workspace_id when eq'd. Autopilot select also uses .in/.eq
+  // for autopilot_enabled — add those columns so filters match.
+  // (Already set on profiles row above.)
+
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-2" }), { client });
+  assert.equal(patches.length, 1);
+  assert.deepEqual(patches[0].p_enqueue, [
+    {
+      kind: "draft_generate",
+      idempotency_key: "draft:reply:camp-9:cand-9",
+      payload: {
+        campaignId: "camp-9",
+        candidateId: "cand-9",
+        approvedBy: "user-autopilot-1",
+        approvalSource: "autopilot_reply",
+        trigger: "inbound_classify",
+        intent: "INTERESTED",
+      },
+      priority: 70,
+    },
+  ]);
+  const events = patches[0].p_events as Array<{ event_type: string; payload: Record<string, unknown> }>;
+  const booking = events.find((e) => e.event_type === "booking.proposed");
+  assert.ok(booking);
+  assert.equal(booking?.payload.seatId, "seat-li-9");
+  assert.equal(booking?.payload.computerId, "comp-li-9");
+  assert.equal(patches[0].p_result_sha256 ? true : true, true);
+  assert.ok(
+    typeof patches[0].p_result_sha256 === "string" &&
+      (patches[0].p_result_sha256 as string).length > 0,
+  );
+  // result hash covers bookingProposed — verify activity append trail
+  assert.equal(activityPatches.length, 1);
+  assert.equal(activityPatches[0].p_patch_kind, "append_activities");
+  assert.equal(activityPatches[0].p_receipt_key, "booking:propose:camp-9:cand-9");
+  const acts = activityPatches[0].p_patch as Array<Record<string, unknown>>;
+  assert.equal(acts[0].type, "booking");
+  assert.match(String(acts[0].notes), /No silent calendar create/i);
+  assert.match(String(acts[0].notes), /seat=seat-li-9/);
+  assert.match(String(acts[0].notes), /computer=comp-li-9/);
+});
+
+test("resolveInboundSeatComputer prefers RPC seat_id and looks up computer", async () => {
+  const client = {
+    from: tableFrom({
+      agent_seats: [
+        { workspace_id: WORKSPACE_ID, id: "seat-rpc", computer_id: "comp-rpc" },
+      ],
+    }),
+  };
+  const trail = await resolveInboundSeatComputer(client, WORKSPACE_ID, "inbound-x", {
+    seat_id: "seat-rpc",
+  });
+  assert.equal(trail.seatId, "seat-rpc");
+  assert.equal(trail.computerId, "comp-rpc");
+});
+
+test("resolveInboundSeatComputer omits when unresolved (never invents)", async () => {
+  const client = { from: tableFrom({}) };
+  const trail = await resolveInboundSeatComputer(client, WORKSPACE_ID, "inbound-missing", {
+    status: "ok",
+  });
+  assert.equal(trail.seatId, undefined);
+  assert.equal(trail.computerId, undefined);
+});
+
+test("inbound_classify booking notes honest dashes when seat unresolved", async () => {
+  const activityPatches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-bare",
+          candidate_id: "cand-bare",
+          campaign_id: "camp-bare",
+          channel: "Email",
+          body: "Yes interested please",
+          received_at: "2026-07-25T12:30:00.000Z",
+          message_id: "mid-bare",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      activityPatches.push(args);
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-bare" }), { client });
+  assert.equal(activityPatches.length, 1);
+  assert.match(String((activityPatches[0].p_patch as Array<Record<string, unknown>>)[0].notes), /seat=— computer=—/);
 });
 
 test("runSourcingLoopTick claims every handler kind and completes each claimed job once", async () => {
@@ -368,7 +623,7 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
     if (name === "read_workspace_state_for_loop") {
       return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
     }
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",
@@ -386,6 +641,9 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       return name === "complete_aria_job"
         ? { data: true, error: null }
         : { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied", new_updated_at: "2026-07-25T12:01:00.000Z" }, error: null };
     }
     throw new Error(`unexpected rpc ${name}`);
   });
@@ -468,7 +726,7 @@ test("runSourcingLoopForever passes the configured model client into the tick", 
     if (name === "read_workspace_state_for_loop") {
       return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
     }
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",

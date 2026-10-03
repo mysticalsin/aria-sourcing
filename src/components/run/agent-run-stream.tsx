@@ -7,7 +7,8 @@ import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { executePrimaryAgentSourcing } from "@/lib/agents/studio-runner";
-import { useActions, useCampaign, useCampaignOutreach, useSettings } from "@/lib/store";
+import { campaignBrowserSeatIds } from "@/lib/agent-event-seat";
+import { useActions, useCampaign, useCampaignOutreach, useSeats, useSettings } from "@/lib/store";
 import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, OutreachMessage } from "@/lib/types";
 import { initialsFrom, scoreTone, toneForOutreachStatus } from "@/lib/utils";
@@ -140,6 +141,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
   const settings = useSettings();
   const campaign = useCampaign(campaignId);
   const campaignOutreach = useCampaignOutreach(campaignId);
+  const seats = useSeats();
   const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
   const [phase, setPhase] = React.useState<RunPhase>("idle");
@@ -180,7 +182,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     const result = await executePrimaryAgentSourcing({
       campaignId,
       campaignTitle: campaign.jobAnalysis.title,
-      count: 6,
+      count: 10,
       demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
       idempotencyMemory: pendingRunIdempotencyKeys.current,
       retryStorage,
@@ -200,10 +202,18 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     }
 
     setPhase("drafting");
+    // Stamp attached Browser Computer desks round-robin (N>1 safe). Seatless
+    // generateOutreachFor returns null when multiple BC desks are attached.
+    const attachedDesks = campaignBrowserSeatIds(seats, campaignId);
     const pairs: DraftedPair[] = [];
+    let deskCursor = 0;
     for (const candidate of sourced) {
       try {
-        const msg = actions.generateOutreachFor(candidate.id);
+        const seatId =
+          attachedDesks.length === 0
+            ? undefined
+            : attachedDesks[deskCursor++ % attachedDesks.length];
+        const msg = actions.generateOutreachFor(candidate.id, undefined, undefined, seatId);
         if (msg) pairs.push({ candidate, message: msg });
       } catch {
         // Degrade gracefully — a single failed draft never aborts the run.
@@ -218,7 +228,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     setRunKey((k) => k + 1);
     // phase flips to "done" from the RevealStream's onDone once every card
     // has materialized (or instantly, on Skip / prefers-reduced-motion).
-  }, [phase, campaignId, campaign, campaignOutreach, actions]);
+  }, [phase, campaignId, campaign, campaignOutreach, actions, seats]);
 
   const autoStartedRef = React.useRef(false);
   React.useEffect(() => {

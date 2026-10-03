@@ -1,0 +1,41 @@
+{
+  "at": "2026-10-02T20:41:26.080Z",
+  "mode": "supervisor-floor-live",
+  "n": 3,
+  "host": "http://127.0.0.1:18765",
+  "computerIds": [
+    "comp_kxqib94d",
+    "comp_p7hhivvv",
+    "comp_mzpfkvhm"
+  ],
+  "suffixes": [
+    "kxqib94d",
+    "p7hhivvv",
+    "mzpfkvhm"
+  ],
+  "statuses": [
+    {
+      "id": "seat_sup_n_1",
+      "status": "idle",
+      "subtitle": "LinkedIn unverified — Take control · …kxqib94d"
+    },
+    {
+      "id": "seat_sup_n_2",
+      "status": "idle",
+      "subtitle": "LinkedIn unverified — Take control · …p7hhivvv"
+    },
+    {
+      "id": "seat_sup_n_3",
+      "status": "idle",
+      "subtitle": "LinkedIn unverified — Take control · …mzpfkvhm"
+    }
+  ],
+  "profileDirs": [
+    "/tmp/aria-openbot/profiles/comp_kxqib94d",
+    "/tmp/aria-openbot/profiles/comp_p7hhivvv",
+    "/tmp/aria-openbot/profiles/comp_mzpfkvhm"
+  ],
+  "inventedWorking": false,
+  "ok": true,
+  "note": "sessionHealthy remains human-gated; VMs real + floor wired"
+}

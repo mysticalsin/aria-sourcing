@@ -38,7 +38,7 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
 
   return (
     <ConfirmProvider>
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen max-w-full overflow-x-hidden">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>

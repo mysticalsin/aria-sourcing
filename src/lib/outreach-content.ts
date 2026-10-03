@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
+import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
 
 /**
  * Subjects enter email headers, so they are always reduced to one printable
@@ -36,7 +37,9 @@ export function approvalScopeHash(input: ApprovalScopeInput): string | null {
   const recipient =
     channel === "WhatsApp" || channel === "SMS"
       ? normalizeWhatsAppAddress(input.recipient)
-      : input.recipient.trim().toLocaleLowerCase();
+      : channel === "LinkedIn"
+        ? normalizeLinkedInProfileUrl(input.recipient)
+        : input.recipient.trim().toLocaleLowerCase();
   if (!recipient) return null;
   return createHash("sha256").update(`${candidateId}\n${channel}\n${recipient}`, "utf8").digest("hex");
 }

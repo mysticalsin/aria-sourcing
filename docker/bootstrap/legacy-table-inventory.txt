@@ -24,7 +24,9 @@ apollo_enrichment_quota
 apollo_enrichment_reconciliation_events
 apollo_enrichment_targets
 aria_jobs
+autopilot_entitlement_audit
 calendar_booking_ledger
+campaign_knowledge_notes
 candidate_erasure_obligations
 candidate_erasure_receipts
 candidate_erasure_requests
@@ -33,6 +35,8 @@ candidate_identities
 candidate_legal_holds
 candidate_outcome_events
 candidates
+computer_audits
+contact_leases
 databricks_connection_events
 databricks_connections
 dust_connection_events
@@ -44,8 +48,12 @@ email_ledger_delivery_receipts
 enrichment_budgets
 enrichment_spend_ledger
 inbound_mailbox_routes
+linkedin_channel_events
+linkedin_inbound_routes
+linkedin_oauth_connections
 loop_events
 loop_worker_heartbeats
+mcp_server_allowlist
 messages_inbound
 messages_outbound
 outbound_content_cache
@@ -57,6 +65,7 @@ outreach_sequence_credit_ledger
 outreach_sequence_refusals
 outreach_sequence_steps
 outreach_sequences
+outreach_templates
 owner_recovery_receipts
 persons
 profiles

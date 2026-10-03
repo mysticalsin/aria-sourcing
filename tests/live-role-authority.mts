@@ -86,8 +86,17 @@ ok("viewer cannot manage fleet", !can("viewer", "manage_fleet"));
 ok("member cannot manage fleet", !can("member", "manage_fleet"));
 
 const panelSource = readFileSync(new URL("../src/components/settings/roles-panel.tsx", import.meta.url), "utf8");
-ok("live roles panel is informational rather than switchable", /supabaseEnabled[\s\S]{0,1500}assigned to your signed-in profile/.test(panelSource));
+ok(
+  "live roles panel is informational rather than switchable",
+  /assigned to your signed-in profile/.test(panelSource) &&
+    /identity directory/.test(panelSource) &&
+    !/supabaseEnabled[\s\S]{0,800}actions\.setCurrentRole/.test(panelSource),
+);
 ok("demo role switcher is explicitly labelled preview", /preview/i.test(panelSource));
+ok(
+  "live autopilot entitlement toggles are admin-gated separately from role switching",
+  /manage_autopilot/.test(panelSource) && /\/api\/admin\/members/.test(panelSource),
+);
 
 const fleetSource = readFileSync(new URL("../src/app/fleet/page.tsx", import.meta.url), "utf8");
 ok("fleet add controls are conditionally absent for non-admin profiles", /actions=\{canManage \?/.test(fleetSource) && /\{canManage && <div/.test(fleetSource));

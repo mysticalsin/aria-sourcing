@@ -95,27 +95,28 @@ const githubUser = {
   email: null,
   company: "Example",
   location: "Toronto",
-  bio: "TypeScript engineer",
+  // Must clear the 80% sourcing quality floor against seed Senior Java Developer.
+  bio: "Senior Java Developer · Spring Boot · PostgreSQL · Kafka · Microservices",
   blog: null,
   htmlUrl: "https://github.com/live-user",
   publicRepos: 12,
   followers: 34,
   createdAt: "2020-01-01T00:00:00.000Z",
-  topLanguage: "TypeScript",
+  topLanguage: "Java",
 };
 
 const apolloProfile = {
   targetId: "11111111-1111-4111-8111-111111111111",
   candidateId: "99999999-9999-4999-8999-999999999999",
   name: "Apollo Candidate",
-  title: "Staff Platform Engineer",
+  title: "Senior Java Developer",
   company: "Example",
   linkedinUrl: "https://www.linkedin.com/in/apollo-candidate",
   city: "Toronto",
   state: "Ontario",
   country: "Canada",
-  headline: "Staff Platform Engineer",
-  seniority: "staff",
+  headline: "Senior Java Developer · Spring Boot · PostgreSQL · Kafka · Microservices",
+  seniority: "senior",
   departments: ["Engineering"],
 };
 
@@ -140,6 +141,16 @@ function createHarness(options: {
   if (state.campaigns[0]) {
     state.campaigns[0] = { ...state.campaigns[0], status: "Sourcing" };
   }
+  // Sourcing unit tests assert a single source pulse. Detach LI Browser desks
+  // (empty or foreign assign) so campaignBrowserSeatIds does not stamp N pulses.
+  state = {
+    ...state,
+    seats: state.seats.map((seat) =>
+      seat.provider === "LinkedIn Browser Computer"
+        ? { ...seat, assignedCampaignIds: ["camp_harness_unattached"] }
+        : seat,
+    ),
+  };
   let mutationAllowed = options.mutationAllowed ?? true;
   let workspaceAllowed = options.workspaceAllowed ?? true;
   let commitCalls = 0;
@@ -165,6 +176,7 @@ function createHarness(options: {
       state = update(state);
       return true;
     },
+    flushWorkspaceSave: async () => true,
     currentState: () => state,
     sourcingMutationAllowed: () => mutationAllowed,
     workspaceEffectAllowed: () => workspaceAllowed,
@@ -286,7 +298,7 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
           id: "reviewed-candidate-1",
           campaignId: campaign.id,
           name: "Reviewed Candidate",
-          currentTitle: "Staff Platform Engineer",
+          currentTitle: "Senior Java Developer",
           currentCompany: "Example",
           location: "Toronto",
           linkedinUrl: "",
@@ -296,7 +308,7 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
           sourceQuery: campaign.sourcingStrategy.githubQueries[0]?.query ?? "",
           matchScore: 88,
           matchBreakdown: [],
-          techStack: ["TypeScript"],
+          techStack: ["Java", "Spring Boot", "PostgreSQL", "Kafka"],
           recentActivity: "Verified public GitHub work.",
           createdAt: "2026-07-14T12:00:00.000Z",
         },
@@ -339,7 +351,7 @@ test("a lost framework acknowledgement is typed for reconciliation and the stage
     id: "reviewed-framework-candidate",
     campaignId: campaign.id,
     name: "Reviewed Framework Candidate",
-    currentTitle: "Staff Platform Engineer",
+    currentTitle: "Senior Java Developer",
     currentCompany: "Example",
     location: "Toronto",
     linkedinUrl: "",
@@ -349,7 +361,7 @@ test("a lost framework acknowledgement is typed for reconciliation and the stage
     sourceQuery: query,
     matchScore: 88,
     matchBreakdown: [],
-    techStack: ["TypeScript"],
+    techStack: ["Java", "Spring Boot", "PostgreSQL", "Kafka"],
     recentActivity: "Verified public GitHub work.",
     createdAt: "2026-07-14T12:00:00.000Z",
   };
@@ -1112,6 +1124,10 @@ test("unknown experience never becomes a false score, prompt fact, or UI consent
   assert.match(prompt, /Experience: not provided/i);
   assert.match(consentPassportSource, /candidate\.provenance === "manual"/);
   assert.match(consentPassportSource, /Lawful basis not recorded/i);
+  assert.match(consentPassportSource, /recordCandidateLawfulBasis/);
+  assert.match(consentPassportSource, /Save lawful basis/);
+  assert.match(consentPassportSource, /endorseCandidateFit/);
+  assert.match(consentPassportSource, /Endorse role fit for outreach/);
   assert.match(candidateDrawerSource, /yearsExperience == null/);
   assert.match(outreachPageSource, /yearsExperience == null/);
 
@@ -1374,10 +1390,11 @@ test("web sourcing scopes the query and never falls back to synthetic profiles",
       leads: [
         {
           name: "Web Person",
-          title: "Product Designer",
+          title: "Senior Java Developer",
           company: "Example",
           url: "https://dribbble.com/web-person",
-          snippet: "Figma designer",
+          snippet:
+            "Senior Java Developer with Spring Boot, PostgreSQL, Kafka, Microservices in Toronto Canada",
         },
       ],
     },
@@ -1703,11 +1720,11 @@ test("Apollo search commits only exact validated profiles through the sourcing b
   const campaignId = harness.state.campaigns[0].id;
 
   const result = await harness.actions.sourceFromApollo(campaignId, {
-    titles: [" Staff Platform Engineer "],
-    seniorities: ["staff"],
+    titles: [" Senior Java Developer "],
+    seniorities: ["senior"],
     locations: ["Toronto"],
     organizationDomains: ["example.com"],
-    keywords: " platform ",
+    keywords: " java ",
     count: 1,
   });
 
@@ -1724,11 +1741,11 @@ test("Apollo search commits only exact validated profiles through the sourcing b
   assert.equal(harness.state.candidates[0]?.sourceExternalId, undefined);
   assert.deepEqual(JSON.parse(String(harness.requests[0].init?.body)), {
     campaignId,
-    titles: ["Staff Platform Engineer"],
-    seniorities: ["staff"],
+    titles: ["Senior Java Developer"],
+    seniorities: ["senior"],
     locations: ["Toronto"],
     organizationDomains: ["example.com"],
-    keywords: "platform",
+    keywords: "java",
     count: 1,
   });
 });

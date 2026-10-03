@@ -21,6 +21,7 @@ import { runWebTool } from "@/lib/ai/web-tools";
 import { buildSeedState } from "@/lib/seed";
 import { clearDiscoveryCriteria, clearIdentityResolution, clearProviderProbe } from "@/lib/sourcing/provider-egress";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const runtime = "nodejs";
 
@@ -68,7 +69,7 @@ function publicDemoSourceDenied(req: NextRequest): Response | null {
 function liveOriginDenied(req: NextRequest): Response | null {
   if (!supabaseEnabled) return null;
   const origin = req.headers.get("origin");
-  if (origin === req.nextUrl.origin) return null;
+  if (isTrustedBrowserOrigin(origin, req.nextUrl.origin)) return null;
   return NextResponse.json(
     { ok: false, code: "CROSS_ORIGIN_REQUEST", error: "Cross-origin sourcing is not allowed." },
     { status: 403 },

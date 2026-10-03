@@ -1,0 +1,58 @@
+# aria-mantu-computers — OpenBot Chromium supervisor for campaign Agents / Fleet.
+# Fly-only production path. Do not point Vercel at this service.
+app            = "aria-mantu-computers"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile.computers"
+
+[env]
+  NODE_ENV                 = "production"
+  PORT                     = "8080"
+  OPENBOT_SUPERVISOR_PORT  = "8080"
+  # Each seat = headed Chromium on its own Xvfb desktop (tabs + OS taskbar).
+  OPENBOT_HEADED           = "1"
+  OPENBOT_DESKTOP          = "1"
+  OPENBOT_DESKTOP_WIDTH    = "1600"
+  OPENBOT_DESKTOP_HEIGHT   = "1000"
+  OPENBOT_MAX_COMPUTERS    = "5"
+  OPENBOT_PROFILE_ROOT     = "/data/profiles"
+  OPENBOT_PUBLIC_BASE      = "https://aria-mantu-computers.fly.dev"
+  # CDP stream kept as page-view fallback; Take control primary is /desktop/:id (noVNC).
+  OPENBOT_STREAM_QUALITY   = "50"
+  OPENBOT_STREAM_MAX_WIDTH = "1600"
+  OPENBOT_STREAM_MAX_HEIGHT = "1000"
+  OPENBOT_STEALTH          = "1"
+  OPENBOT_LOCALE           = "en-US"
+  OPENBOT_TIMEZONE         = "America/Montreal"
+  # Optional sticky egress (Browserbase / Steel style):
+  # OPENBOT_PROXY_SERVER = "http://user:pass@proxy:port"
+  # Secrets (fly secrets set -a aria-mantu-computers):
+  #   SUPERVISOR_TOKEN, COMPUTER_TOKEN
+  #   OPENBOT_PROXY_SERVER / OPENBOT_PROXY_USERNAME / OPENBOT_PROXY_PASSWORD
+[http_service]
+  internal_port        = 8080
+  force_https          = true
+  auto_stop_machines   = "off"
+  auto_start_machines  = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 50
+    hard_limit = 80
+  [[http_service.checks]]
+    method       = "GET"
+    path         = "/health"
+    interval     = "15s"
+    timeout      = "5s"
+    grace_period = "30s"
+
+# Persist Chromium profiles (LinkedIn login/cookies) across deploys.
+[mounts]
+  source = "openbot_profiles"
+  destination = "/data"
+
+[[vm]]
+  # Screencast encode + multi-tab Chromium needs headroom; 2x/4gb felt laggy.
+  size   = "performance-4x"
+  memory = "8gb"

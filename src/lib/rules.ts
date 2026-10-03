@@ -8,12 +8,15 @@ import type {
 } from "./types";
 import type { Tone } from "./utils";
 import { recordedCandidateLawfulBasis } from "./candidate-lawful-basis";
+import { recordedCandidateFitEndorsement } from "./candidate-fit-endorsement";
+import { assessRoleTenure } from "./sourcing/role-tenure";
 
 /* ============================================================================
    Business rules — the guardrails Aria enforces before acting.
    ========================================================================== */
 
-export const MIN_SCORE_FLOOR = 70;
+/** Contact / sourcing quality floor — only 80%+ matches proceed without endorsement. */
+export const MIN_SCORE_FLOOR = 80;
 export const DEDUPE_WINDOW_DAYS = 90;
 
 /* ---- Rule 2 + 3 + 4: outreach approval gate ------------------------------ */
@@ -55,17 +58,38 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   const warnings: string[] = [];
   const checks: ApprovalCheck[] = [];
 
-  // Rule 2 — score before contacting
+  // Rule 2 — score before contacting (operator fit endorsement may warn-through)
   if (candidate.matchScore < settings.minScoreToContact) {
-    const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
-    blockers.push(detail);
-    checks.push({ rule: "Match score", status: "block", detail });
+    if (recordedCandidateFitEndorsement(candidate)) {
+      const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor; operator endorsed role fit for outreach.`;
+      warnings.push(detail);
+      checks.push({ rule: "Match score", status: "warn", detail });
+    } else {
+      const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
+      blockers.push(detail);
+      checks.push({ rule: "Match score", status: "block", detail });
+    }
   } else {
     checks.push({
       rule: "Match score",
       status: "pass",
       detail: `Match score ${candidate.matchScore} meets the ${settings.minScoreToContact} contact floor.`,
     });
+  }
+
+  // Role tenure — skip people who just started; prefer 6–12 months in role.
+  const tenure = assessRoleTenure(candidate);
+  if (tenure.timing === "too_early") {
+    blockers.push(tenure.detail);
+    checks.push({ rule: "Role tenure", status: "block", detail: tenure.detail });
+  } else if (tenure.timing === "preferred") {
+    checks.push({ rule: "Role tenure", status: "pass", detail: tenure.detail });
+  } else if (tenure.timing === "established") {
+    warnings.push(tenure.detail);
+    checks.push({ rule: "Role tenure", status: "warn", detail: tenure.detail });
+  } else {
+    warnings.push(tenure.detail);
+    checks.push({ rule: "Role tenure", status: "warn", detail: tenure.detail });
   }
 
   // Rule 3 — personalize every message
@@ -121,8 +145,8 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     checks.push({ rule: "Suppressed", status: "pass", detail: "Contact is not suppressed." });
   }
 
-  // LinkedIn assisted-manual: we cannot send automatically, but we can draft
-  // the message and ask the operator to paste it on the candidate's profile.
+  // LinkedIn: Automatic mode queues vendor delivery after approval; Manual mode
+  // drafts for operator paste/confirm. Either path still needs a profile URL.
   if (message.channel === "SMS") {
     const detail = "SMS delivery is disabled until recorded consent, opt-out, suppression, and durable dispatch controls are implemented.";
     blockers.push(detail);

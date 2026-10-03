@@ -10,7 +10,7 @@ import {
 } from "./types";
 
 export const AGENT_SEAT_SELECT =
-  "id, workspace_id, name, operator_email, provider, status, mode, domain_verified, daily_limit, warmup, warmup_start_cap, warmup_step_per_day, warmup_started_at, min_gap_minutes, persona, signature, connected_account, created_at";
+  "id, workspace_id, name, operator_email, provider, status, mode, domain_verified, daily_limit, warmup, warmup_start_cap, warmup_step_per_day, warmup_started_at, min_gap_minutes, persona, signature, connected_account, computer_id, linkedin_delivery_backend, assigned_campaign_ids, created_at";
 
 export interface AgentSeatRow {
   id: string;
@@ -30,6 +30,9 @@ export interface AgentSeatRow {
   persona: string;
   signature: string;
   connected_account: string;
+  computer_id?: string | null;
+  linkedin_delivery_backend?: string | null;
+  assigned_campaign_ids?: string[] | null;
   created_at: string;
 }
 
@@ -69,6 +72,16 @@ export function agentSeatRowToSeat(row: AgentSeatRow, existing?: AgentSeat): Age
     color: existing?.color,
     language: existing?.language,
     connectedAccount: row.connected_account,
+    // Trust DB null after poisoned-FK clear — do not rehydrate stale Hermes computerId.
+    computerId: row.computer_id ?? null,
+    linkedinDeliveryBackend:
+      row.linkedin_delivery_backend === "vendor-api" ||
+      row.linkedin_delivery_backend === "browser-computer"
+        ? row.linkedin_delivery_backend
+        : (existing?.linkedinDeliveryBackend ?? null),
+    assignedCampaignIds: Array.isArray(row.assigned_campaign_ids)
+      ? row.assigned_campaign_ids.filter((id): id is string => typeof id === "string")
+      : (existing?.assignedCampaignIds ?? []),
     createdAt: row.created_at,
     providerId: existing?.providerId,
     modelId: existing?.modelId,
@@ -103,6 +116,9 @@ export async function createFleetSeatOnServer(
       persona: seat.persona,
       signature: seat.signature,
       mode: seat.mode,
+      computerId: seat.computerId ?? null,
+      linkedinDeliveryBackend: seat.linkedinDeliveryBackend ?? null,
+      assignedCampaignIds: seat.assignedCampaignIds ?? [],
     }),
   });
   const out = (await res.json().catch(() => null)) as
@@ -116,7 +132,12 @@ export async function createFleetSeatOnServer(
 
 export async function patchFleetSeatOnServer(
   id: string,
-  patch: { operatorEmail?: string; mode?: IntegrationMode },
+  patch: {
+    operatorEmail?: string;
+    mode?: IntegrationMode;
+    assignedCampaignIds?: string[];
+    computerId?: string | null;
+  },
 ): Promise<{ ok: true; seat?: AgentSeat } | { ok: false; error: string }> {
   const res = await fetch("/api/fleet/seats", {
     method: "PATCH",

@@ -1,0 +1,82 @@
+{
+  "probedAt": "2026-10-03T13:35Z",
+  "tipSha": "ca8cf40e6e222280e25d59dc846f364bf97e7a49",
+  "tipShort": "ca8cf40",
+  "tipBranch": "cursor/linkedin-human-claude-chrome-b91d",
+  "appReady": {
+    "url": "https://aria-mantu-app.fly.dev/api/ready",
+    "http": 503,
+    "ok": false,
+    "status": "not_ready",
+    "build": "21a42e7da6c271758ea4cade91c8d5658032832d",
+    "migration": "0084_agent_seats_computer_id_unique.sql",
+    "components": {
+      "database": true,
+      "auth": true,
+      "queue": true,
+      "agentFrameworks": false,
+      "hermesRuntime": true,
+      "migration": true,
+      "releaseIdentity": true
+    }
+  },
+  "pendingMigrationsOnFly": [
+    "0085_claim_contact_authenticated_only.sql",
+    "0086_enqueue_linkedin_browser_campaign_attach.sql",
+    "0087_enqueue_linkedin_vendor_campaign_attach.sql"
+  ],
+  "deploy": {
+    "path": "protected workflow .github/workflows/deploy-aria-mantu.yml",
+    "ref": "deploy/fly-github-actions",
+    "refSha": "f5868fabe1468f1f606c650baf9804cc817c68f5",
+    "mergeBaseWithTip": "128b03678fc4619fdf4572e0579b1a80994e2493",
+    "commitsTipNotInDeploy": 657,
+    "commitsDeployNotInTip": 2,
+    "deployOnlyShas": [
+      "ee0cee9",
+      "f5868fa"
+    ],
+    "tipAlreadyHasCiFixVia": "8a63a8f",
+    "openPrsToDeployBase": [
+      {
+        "number": 150,
+        "url": "https://github.com/mysticalsin/aria-sourcing/pull/150",
+        "head": "cursor/fly-deploy-land-n-agent-b91d",
+        "mergeable": "MERGEABLE",
+        "note": "deploy base merged into head; sole conflict was codex-findings"
+      }
+    ],
+    "requires": [
+      "land tip onto deploy/fly-github-actions",
+      "ARIA_RELEASE_SHA == deploy HEAD (40 hex)",
+      "ci.yml + codeql.yml completed success for that SHA",
+      "recovery_receipt_sha256",
+      "Production environment secrets",
+      "FLY_API_TOKEN"
+    ],
+    "agentEnvHasToken": false,
+    "checklist": "_relay/evidence/2026-10-03-fly-owner-deploy-path.md"
+  },
+  "ciAtProbe": {
+    "ca8cf40": {
+      "codeql": "success",
+      "ci": "success",
+      "jobs": [
+        "Dependency audit",
+        "Production image supply chain",
+        "Quality",
+        "Secret scan",
+        "Database security",
+        "Release gate"
+      ]
+    },
+    "lastFullGreenOnTipLineage": "ca8cf40e6e222280e25d59dc846f364bf97e7a49",
+    "lastCodeFixWithGreenCi": "5a01024"
+  },
+  "postDeployProof": [
+    "curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq -e --arg tip 'ca8cf40e6e222280e25d59dc846f364bf97e7a49' '.build==$tip and .components.agentFrameworks==true'",
+    "migration filename includes 0087",
+    "Take→login→Release on each campaign LI desk; sessionHealthy===true only after probe"
+  ],
+  "verdict": "Tip N-agent class closed + tip CI green; production goal blocked on owner land-tip-on-deploy + workflow_dispatch + LI healthy"
+}

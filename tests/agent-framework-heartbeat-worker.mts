@@ -376,6 +376,22 @@ test("target inventory parsing is exact, bounded, duplicate-safe, and fail close
   assert.equal(records, 0);
 });
 
+test("empty framework inventory is degraded (Hermes-only tenant), not ok with targets:0", async () => {
+  const result = await heartbeatAgentFrameworksOnce(
+    {
+      async listTargets() { return { data: { status: "ok", targets: [] }, error: null }; },
+      async recordReadiness() { throw new Error("must not record"); },
+    },
+    loadAgentFrameworkHeartbeatConfiguration(baseEnvironment),
+    async () => { throw new Error("must not egress"); },
+  );
+  assert.equal(result.status, "degraded");
+  assert.equal(result.targets, 0);
+  assert.equal(result.ready, 0);
+  assert.equal(result.recorded, 0);
+  assert.deepEqual(result.failureCodes, ["target_inventory_unavailable"]);
+});
+
 test("one target failure cannot suppress another target readiness record", async () => {
   const records: Array<Record<string, unknown>> = [];
   const client = {

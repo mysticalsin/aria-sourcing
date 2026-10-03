@@ -13,6 +13,7 @@ import { registerApolloEnrichmentTargets } from "@/lib/sourcing/source-authority
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 const ApolloSearchSchema = z
   .object({
@@ -99,7 +100,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
   }
   const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) {
     return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin sourcing is not allowed.");
   }
   if (!supabaseEnabled) {

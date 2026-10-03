@@ -22,6 +22,7 @@ import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import "./core/troikaConfig"; // main-thread text layout (CSP blocks blob: workers)
 import type { OfficeAgent } from "@/lib/floor3d";
+import { preferBrowserComputerAgents } from "@/lib/floor3d";
 import { getDeviceQuality, MAX_3D_AGENTS, type DeviceQuality } from "@/lib/device";
 import {
   getDirectorTarget,
@@ -60,10 +61,8 @@ function SceneContents({
   const shownAgents = useMemo(() => {
     const cap = MAX_3D_AGENTS[quality];
     if (agents.length <= cap) return agents;
-    const ranked = [...agents].sort((a, b) => {
-      const pri = (x: OfficeAgent) => (x.position === "ceo" ? 0 : x.id === selectedId ? 1 : 2);
-      return pri(a) - pri(b);
-    });
+    // Keep LinkedIn Browser Computers (bound VMs) inside the cap before email theater seats.
+    const ranked = preferBrowserComputerAgents(agents, selectedId);
     return ranked.slice(0, cap);
   }, [agents, quality, selectedId]);
 

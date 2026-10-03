@@ -1,10 +1,22 @@
 name: CI
 
+# Push runs only on long-lived integration/release refs. Feature branches are
+# covered by pull_request so a PR push does not burn two full suites.
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+      - vercel-demo
+      - integration/**
+      - deploy/**
+      - consolidate/**
   pull_request:
     branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -93,8 +105,13 @@ jobs:
       - name: Install dependency graph without lifecycle scripts
         run: npm ci --ignore-scripts
 
-      - name: Audit high and critical advisories
-        run: npm audit --audit-level=high
+      # Production runtime graph only. Dev-only braces (via tailwindcss@3 /
+      # eslint-config-next → micromatch/chokidar) is GHSA-vfj7-8cjw-p6xm with
+      # first_patched_version=null; npm's suggested fix is breaking tailwind@4.
+      # Revisit when braces publishes a patch or Tailwind 4 lands. Matches the
+      # enterprise production gate (`npm audit --omit=dev --audit-level=high`).
+      - name: Audit high and critical advisories (production deps)
+        run: npm audit --omit=dev --audit-level=high
 
   secret-scan:
     name: Secret scan

@@ -56,8 +56,12 @@ function LoginInner() {
   const reducedMotion = usePrefersReducedMotion();
   const [videoPausedByUser, setVideoPausedByUser] = React.useState(false);
   const [showEmail, setShowEmail] = React.useState(true);
-  const [email, setEmail] = React.useState(demoLoginEnabled ? "admin" : "");
-  const [password, setPassword] = React.useState(demoLoginEnabled ? "admin" : "");
+  const demoUsername =
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEMO_ADMIN_USERNAME) || "admin";
+  const demoPassword =
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEMO_ADMIN_PASSWORD) || "admin";
+  const [email, setEmail] = React.useState(demoLoginEnabled ? demoUsername : "");
+  const [password, setPassword] = React.useState(demoLoginEnabled ? demoPassword : "");
   const [authError, setAuthError] = React.useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const emailRef = React.useRef<HTMLInputElement>(null);
@@ -93,35 +97,31 @@ function LoginInner() {
     if (err) setLoading(false);
   };
 
-  // One-click demo sign-in: admin/admin is resolved SERVER-SIDE. This path is
-  // available only when NEXT_PUBLIC_ENABLE_DEMO_LOGIN explicitly marks the
-  // deployment as a synthetic public demo.
-  const runDemoLogin = async () => {
+  // One-click demo sign-in: configured username + password resolved SERVER-SIDE.
+  // Available only when NEXT_PUBLIC_ENABLE_DEMO_LOGIN marks a synthetic public demo.
+  const runDemoLogin = async (pwd: string, user = demoUsername) => {
     setLoading(true);
     setAuthError(null);
     const res = await fetch("/api/auth/demo-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "admin", password: "admin" }),
+      body: JSON.stringify({ username: user, password: pwd }),
     });
     if (res.ok) {
       window.location.href = safeRedirect(redirect);
       return;
     }
-    setAuthError("Demo login is unavailable.");
+    const detail = await res.json().catch(() => null) as { error?: string } | null;
+    setAuthError(detail?.error || "Demo login is unavailable.");
     setLoading(false);
   };
 
-  const signInWithEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const signInWithEmail = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setLoading(true);
     setAuthError(null);
-    if (email.trim() === "admin" && password === "admin" && demoLoginEnabled) {
-      await runDemoLogin();
-      return;
-    }
     if (!supabaseEnabled) {
-      setAuthError("Use admin / admin to enter the demo.");
+      setAuthError("Live sign-in is unavailable.");
       setLoading(false);
       return;
     }
@@ -130,8 +130,17 @@ function LoginInner() {
       setLoading(false);
       return;
     }
-    const loginEmail = email.includes("@") ? email : `${email}@hermes.local`;
-    const { error: err } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+    const loginEmail = email.includes("@") ? email.trim() : `${email.trim()}@hermes.local`;
+    if (!loginEmail || !password) {
+      setAuthError("Email and password are required.");
+      setLoading(false);
+      setShowEmail(true);
+      return;
+    }
+    const { error: err } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password,
+    });
     if (err) {
       setAuthError(err.message);
       setLoading(false);
@@ -142,27 +151,40 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    // Explicit public demo: one-click admin/admin sign-in. runDemoLogin sets the
-    // demo-backed session and then redirects.
-    if (demoLoginEnabled) void runDemoLogin();
-    else if (supabaseEnabled && azureLoginEnabled) void signInWithMicrosoft();
-    else if (supabaseEnabled) {
-      setShowEmail(true);
-      window.requestAnimationFrame(() => emailRef.current?.focus());
+    // Fly / live: password sign-in is the real path. Keep email form visible and
+    // submit GoTrue credentials — do not use one-click demo-login for the CTA.
+    if (supabaseEnabled && azureLoginEnabled && !email.trim()) {
+      void signInWithMicrosoft();
+      return;
     }
-    else router.push(safeRedirect(redirect));
+    if (supabaseEnabled) {
+      setShowEmail(true);
+      if (email.trim() && password) {
+        void signInWithEmail();
+        return;
+      }
+      window.requestAnimationFrame(() => emailRef.current?.focus());
+      return;
+    }
+    if (demoLoginEnabled) {
+      void runDemoLogin(password || demoPassword, email.trim() || demoUsername);
+      return;
+    }
+    router.push(safeRedirect(redirect));
   };
 
   const ctaText = loading
     ? "Signing in…"
-    : demoLoginEnabled
-      ? "Enter the demo console"
-      : supabaseEnabled
-        ? azureLoginEnabled ? "Sign in with Microsoft" : "Sign in with email"
+    : supabaseEnabled
+      ? azureLoginEnabled && !email.trim()
+        ? "Sign in with Microsoft"
+        : "Sign in"
+      : demoLoginEnabled
+        ? "Enter the demo console"
         : "Enter the console";
 
   return (
-    <div className="login-hero relative flex h-screen w-screen flex-col overflow-hidden bg-[#010101] text-white">
+    <div className="login-hero relative flex h-screen w-full flex-col overflow-hidden bg-[#010101] text-white">
       {/* Background video */}
       <video
         ref={videoRef}
@@ -255,7 +277,7 @@ function LoginInner() {
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder={demoLoginEnabled ? "admin" : "name@company.com"}
+                    placeholder="name@company.com"
                     className="rounded-full bg-white/5 px-5 py-3 text-sm text-white placeholder-white/40 outline-none ring-1 ring-inset ring-white/15 transition focus:ring-white/40"
                   />
                   <label htmlFor="login-password" className="sr-only">
@@ -334,7 +356,7 @@ function LoginInner() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="h-screen w-screen bg-[#010101]" />}>
+    <Suspense fallback={<div className="h-screen w-full bg-[#010101]" />}>
       <LoginInner />
     </Suspense>
   );

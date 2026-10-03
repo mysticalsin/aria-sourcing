@@ -61,15 +61,17 @@ ok("proxy blocks arbitrary path", isAllowedHermesPath(["admin", "users"]).ok ===
 ok("proxy blocks traversal", isAllowedHermesPath(["..", "etc", "passwd"]).ok === false);
 ok("proxy allows status", isAllowedHermesPath(["api", "status"]).ok === true);
 
-// 6) External links use rel="noreferrer".
+// 6) External links use rel with noreferrer (alone or with noopener).
 const targetBlankMatches = combined.match(/target=["']_blank["']/g) ?? [];
+const hasNoreferrerRel = (tag: string) =>
+  /rel=["'][^"']*\bnoreferrer\b[^"']*["']/.test(tag);
 const relMissing = sourceFiles.some((p) => {
   const content = readFileSync(p, "utf-8");
-  // Find <a ... target="_blank" ...> tags and ensure they include rel="noreferrer".
-  const anchorRe = /<a\b[^>]*?target=["']_blank["'][^>]*?>/g;
+  // Anchors and Next <Link> that open a new tab must carry noreferrer.
+  const openersRe = /<(?:a|Link)\b[^>]*?target=["']_blank["'][^>]*?>/g;
   let m: RegExpExecArray | null;
-  while ((m = anchorRe.exec(content)) !== null) {
-    if (!/rel=["']noreferrer["']/.test(m[0])) return true;
+  while ((m = openersRe.exec(content)) !== null) {
+    if (!hasNoreferrerRel(m[0])) return true;
   }
   return false;
 });

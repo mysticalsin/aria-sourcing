@@ -4,7 +4,10 @@ import {
   getLinkedInAdapter,
   linkedInAdapterForProvider,
   linkedInBackendForProvider,
+  isLinkedInAutomaticProvider,
 } from "../src/lib/linkedin-channel";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "../src/lib/send-pacing";
+import type { AgentSeat } from "../src/lib/types";
 
 const migration = readFileSync("supabase/migrations/0054_linkedin_channel_adapter_authority.sql", "utf8");
 const whatsappMigration = readFileSync("supabase/migrations/0013_outreach_approval_race_safety.sql", "utf8");
@@ -83,12 +86,16 @@ ok(
 );
 ok(
   "dispatcher fails dark vendor credentials before claim or delivery",
-  dispatch.indexOf("!adapter.configured()") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
-    dispatch.indexOf("!adapter.configured()") < dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
-    /linkedin-provider-unconfigured/.test(dispatch),
+  dispatch.indexOf("!adapter.configured(linkedInCreds)") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    dispatch.indexOf("!adapter.configured(linkedInCreds)") <
+      dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
+    /linkedin-provider-unconfigured/.test(dispatch) &&
+    /resolveLinkedInCredentialsForWorkspace/.test(dispatch),
 );
 ok("adapter maps assisted-manual by provider", linkedInBackendForProvider("LinkedIn Assisted Manual") === "assisted-manual");
 ok("adapter maps vendor-api by provider", linkedInBackendForProvider("LinkedIn Vendor API") === "vendor-api");
+ok("adapter maps browser-computer by provider", linkedInBackendForProvider("LinkedIn Browser Computer") === "browser-computer");
+ok("browser-computer is an automatic provider", isLinkedInAutomaticProvider("LinkedIn Browser Computer") === true);
 ok("unknown provider has no adapter", linkedInAdapterForProvider("LinkedIn Bot Fleet") === null);
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
@@ -111,13 +118,159 @@ try {
     "vendor adapter fails closed without credentials",
     result.status === "error" &&
       result.deliveryState === "not-sent" &&
-      /not set/i.test(result.detail),
+      /not configured|Aria Settings|LINKEDIN_VENDOR/i.test(result.detail),
+  );
+  const withVault = await vendor.deliver({
+    workspaceId: "ws-1",
+    messageId: "m-1",
+    candidateId: "cand-1",
+    profileUrl: "https://www.linkedin.com/in/marco-rossi",
+    subject: "Quick note",
+    body: "Hello",
+    attemptId: "11111111-1111-4111-8111-111111111111",
+    credentials: {
+      vendorApiUrl: "https://vendor.example/send",
+      vendorApiKey: "vault-key",
+    },
+  });
+  // Without a live vendor host this still errors, but must not be the unconfigured path.
+  ok(
+    "vendor adapter accepts Aria vault credentials without env",
+    vendor.configured({
+      vendorApiUrl: "https://vendor.example/send",
+      vendorApiKey: "vault-key",
+    }) === true &&
+      !(withVault.status === "error" && /not configured in Aria Settings/i.test(withVault.detail)),
   );
 } finally {
   if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
   else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
   if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
   else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
+}
+
+ok(
+  "dispatcher selects campaign_id and passes campaignId into LinkedIn deliver",
+  /campaign_id/.test(dispatch) &&
+    /campaignId,/.test(dispatch) &&
+    dispatch.indexOf("campaignId") > dispatch.indexOf('msg.channel === "LinkedIn"'),
+);
+ok(
+  "store picks campaign-scoped LinkedIn send seat (prefers msg.seatId when set)",
+  /pickLiveLinkedInSendSeat\(s\.seats, msg\.campaignId,\s*msg\.seatId\)/.test(
+    readFileSync("src/lib/store.ts", "utf8"),
+  ),
+);
+
+{
+  const previousMock = process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
+  const previousUrl = process.env.COMPUTER_SUPERVISOR_URL;
+  const previousToken = process.env.COMPUTER_SUPERVISOR_TOKEN;
+  process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "1";
+  delete process.env.COMPUTER_SUPERVISOR_URL;
+  delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+  try {
+    const { bindComputerSupervisorEndpoint, defaultComputerSupervisor } = await import(
+      "../src/lib/computer-supervisor"
+    );
+    bindComputerSupervisorEndpoint({ mockSend: true });
+    const browser = getLinkedInAdapter("browser-computer");
+
+    const missingComputer = await browser.deliver({
+      workspaceId: "ws-1",
+      messageId: "m-li-no-comp",
+      candidateId: "cand-1",
+      campaignId: "camp_seed_backend",
+      profileUrl: "https://www.linkedin.com/in/marco-rossi",
+      subject: "Java role",
+      body: "Hello from Aria",
+      attemptId: "11111111-1111-4111-8111-111111111111",
+      seatId: "seat_java_vm_01",
+      // computerId intentionally omitted — send must fail closed (no ephemeral mint).
+      credentials: { computerSupervisorMockSend: true },
+    });
+    ok(
+      "browser-computer deliver fails closed without durable computerId",
+      missingComputer.status === "error" &&
+        missingComputer.deliveryState === "not-sent" &&
+        /computerId is required/i.test(missingComputer.detail),
+    );
+    ok(
+      "browser-computer without computerId does not register an ephemeral computer",
+      defaultComputerSupervisor.list("ws-1").every((c) => c.seatId !== "seat_java_vm_01"),
+    );
+
+    // Honesty: mock send still requires seat snapshot + probed sessionHealthy.
+    // Never invent healthy inside the adapter — the test seeds a fresh probe.
+    const nowIso = new Date().toISOString();
+    const seatSnapshot: AgentSeat = {
+      id: "seat_java_vm_01",
+      name: "Java VM",
+      operatorEmail: "java@example.test",
+      provider: "LinkedIn Browser Computer",
+      status: "active",
+      mode: "live",
+      domainVerified: true,
+      dailyLimit: LINKEDIN_BROWSER_SEAT_DEFAULTS.dailyLimit,
+      warmup: false,
+      warmupStartCap: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStartCap,
+      warmupStepPerDay: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStepPerDay,
+      warmupStartedAt: nowIso,
+      minGapMinutes: LINKEDIN_BROWSER_SEAT_DEFAULTS.minGapMinutes,
+      sendWindow: { startHour: 0, endHour: 23, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
+      sentToday: 0,
+      lastSendAt: null,
+      health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      persona: "",
+      signature: "",
+      connectedAccount: "",
+      createdAt: nowIso,
+      linkedinDeliveryBackend: "browser-computer",
+    };
+    const bound = defaultComputerSupervisor.ensureComputer({
+      workspaceId: "ws-1",
+      seatId: "seat_java_vm_01",
+      computerId: "comp_java_campaign_send",
+      campaignId: "camp_seed_backend",
+    });
+    bound.status = "ready";
+    bound.sessionHealthy = true;
+    bound.sessionProbedAt = nowIso;
+
+    const outcome = await browser.deliver({
+      workspaceId: "ws-1",
+      messageId: "m-li",
+      candidateId: "cand-1",
+      campaignId: "camp_seed_backend",
+      profileUrl: "https://www.linkedin.com/in/marco-rossi",
+      subject: "Java role",
+      body: "Hello from Aria",
+      attemptId: "11111111-1111-4111-8111-111111111111",
+      seatId: "seat_java_vm_01",
+      computerId: "comp_java_campaign_send",
+      seat: seatSnapshot,
+      credentials: { computerSupervisorMockSend: true },
+    });
+    ok(
+      "browser-computer deliver succeeds with campaignId under mock",
+      outcome.status === "sent" && outcome.deliveryState === "accepted",
+    );
+    ok(
+      "browser-computer tags computer + act_done audit with campaignId",
+      defaultComputerSupervisor.get("comp_java_campaign_send")?.campaignId === "camp_seed_backend" &&
+        defaultComputerSupervisor
+          .recentAudits("comp_java_campaign_send")
+          .some((a) => a.action === "act_done" && a.campaignId === "camp_seed_backend"),
+    );
+    bindComputerSupervisorEndpoint(null);
+  } finally {
+    if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
+    else process.env.COMPUTER_SUPERVISOR_MOCK_SEND = previousMock;
+    if (previousUrl === undefined) delete process.env.COMPUTER_SUPERVISOR_URL;
+    else process.env.COMPUTER_SUPERVISOR_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    else process.env.COMPUTER_SUPERVISOR_TOKEN = previousToken;
+  }
 }
 
 console.log(`RESULT linkedin-channel-contract: ${pass} passed, ${fail} failed`);

@@ -32,11 +32,21 @@ import {
 } from "@/lib/whatsapp-template-queue";
 import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-policy";
 import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
-import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import {
+  publicDemoAriaBotEnabled,
+  publicDemoSideEffectsDisabled,
+} from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import {
+  loadLinkedInCredentialRefsForWorkspace,
+  resolveLinkedInCredentialsForWorkspace,
+} from "@/lib/linkedin-credentials";
+import { AGENT_SEAT_SELECT, agentSeatRowToSeat, type AgentSeatRow } from "@/lib/fleet-seats";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import { defaultFleetSettings } from "@/lib/fleet";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -129,15 +139,22 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
   const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0, unconfigured: 0 };
 
   // A public demo may still use a real Supabase database. Never let a queued
-  // row from that shared environment reach a provider, regardless of caller.
-  if (publicDemoSideEffectsDisabled()) return stats;
+  // row from that shared environment reach a third-party provider. AriaBot
+  // LinkedIn Browser Computer is allowed when ENABLE_PUBLIC_DEMO_ARIABOT=true.
+  const demoBlocked = publicDemoSideEffectsDisabled();
+  const ariaBotLive = publicDemoAriaBotEnabled();
+  if (demoBlocked && !ariaBotLive) return stats;
 
   let dueQuery = supabase
     .from("messages_outbound")
-    .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
+    .select("id, workspace_id, spec_id, campaign_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
     .eq("status", "queued")
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
+  // Showcase escape hatch: only LinkedIn (AriaBot) may leave the outbox.
+  if (demoBlocked && ariaBotLive) {
+    dueQuery = dueQuery.eq("channel", "LinkedIn");
+  }
   const { data: due, error: dueErr } = await dueQuery
     .order("scheduled_at", { ascending: true })
     .limit(limit);
@@ -256,18 +273,35 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       const approvalMessageId = msg.approval_message_id ?? msg.id;
       const { data: approval } = await supabase
         .from("outreach_approvals")
-        .select("body_hash, approval_source, revoked_at")
+        .select("body_hash, approval_source, revoked_at, approved_by, template_id")
         .eq("workspace_id", msg.workspace_id)
         .eq("message_id", approvalMessageId)
         .maybeSingle();
-      if (!approval || approval.revoked_at || approval.body_hash !== bodyHash || approval.approval_source !== "human") {
+      const approvalSource =
+        approval && typeof approval.approval_source === "string" ? approval.approval_source : null;
+      let approvalOk = false;
+      if (approval && !approval.revoked_at && approval.body_hash === bodyHash) {
+        if (approvalSource === "human") {
+          approvalOk = true;
+        } else if (approvalSource === "template_bound") {
+          const authorized = await supabase.rpc("outbound_approval_authorizes_send", {
+            p_workspace_id: msg.workspace_id,
+            p_approval_source: approvalSource,
+            p_approved_by: approval.approved_by,
+            p_template_id: approval.template_id,
+            p_revoked_at: approval.revoked_at,
+          });
+          approvalOk = authorized.error == null && authorized.data === true;
+        }
+      }
+      if (!approvalOk) {
         const reason = !approval
           ? "no-approval"
           : approval.revoked_at
             ? "approval-revoked"
             : approval.body_hash !== bodyHash
             ? "approval-hash-mismatch"
-            : "approval-not-human";
+            : "approval-not-authorized";
         await finish("blocked", { pass: false, reasons: [reason] });
         continue;
       }
@@ -303,9 +337,9 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       }
 
       if (msg.channel === "LinkedIn") {
-        const { data: seat, error: seatErr } = await supabase
+        const { data: seatRow, error: seatErr } = await supabase
           .from("agent_seats")
-          .select("id, provider, status, mode")
+          .select(AGENT_SEAT_SELECT)
           .eq("id", msg.seat_id ?? "")
           .eq("workspace_id", msg.workspace_id)
           .maybeSingle();
@@ -314,12 +348,42 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-store-unavailable"] });
           continue;
         }
+        const seat = seatRow ? agentSeatRowToSeat(seatRow as AgentSeatRow) : null;
         const adapter = linkedInAdapterForProvider(seat?.provider);
         if (!seat || seat.status !== "active" || seat.mode !== "live" || !adapter) {
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
           continue;
         }
-        if (!adapter.configured()) {
+        // Browser Computer send must use the durable DB computer_id — never mint on dispatch.
+        if (
+          seat.provider === "LinkedIn Browser Computer" &&
+          !(typeof seat.computerId === "string" && seat.computerId.trim())
+        ) {
+          await finish("blocked", {
+            pass: false,
+            reasons: ["linkedin-computer-id-missing"],
+          });
+          continue;
+        }
+        // Automatic LI requires campaign attach (BC empty ≠ shared; Vendor empty = shared).
+        const attachCampaignId =
+          (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) || "";
+        if (seat.provider === "LinkedIn Browser Computer" || seat.provider === "LinkedIn Vendor API") {
+          if (!attachCampaignId) {
+            await finish("blocked", { pass: false, reasons: ["campaign-required"] });
+            continue;
+          }
+          if (!seatAttachedToCampaign(seat, attachCampaignId)) {
+            await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-attached"] });
+            continue;
+          }
+        }
+        const linkedInRefs = await loadLinkedInCredentialRefsForWorkspace(msg.workspace_id);
+        const linkedInCreds = await resolveLinkedInCredentialsForWorkspace(
+          msg.workspace_id,
+          linkedInRefs,
+        );
+        if (!adapter.configured(linkedInCreds)) {
           await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
           continue;
         }
@@ -353,14 +417,26 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           continue;
         }
 
+        const campaignId =
+          (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) ||
+          (typeof msg.spec_id === "string" && msg.spec_id.trim()) ||
+          undefined;
         const outcome = await adapter.deliver({
           workspaceId: msg.workspace_id,
           messageId: msg.id,
           candidateId: msg.candidate_id,
+          campaignId,
           profileUrl: claimObj.profile_url,
           subject: msg.subject ?? "",
           body: msg.body,
           attemptId: deliveryAttemptId,
+          seatId: msg.seat_id ?? undefined,
+          computerId: seat.computerId ?? undefined,
+          credentials: linkedInCreds,
+          // Pass full seat + fleet defaults so Browser Computer pacing
+          // (sessionHealthy / gap / cap) cannot be skipped.
+          seat,
+          fleetSettings: defaultFleetSettings(),
         });
         const outcomeKind =
           outcome.status === "sent" && outcome.deliveryState === "accepted"

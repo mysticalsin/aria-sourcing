@@ -1,6 +1,15 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
+import { defaultComputerSupervisor, bindComputerSupervisorEndpoint } from "@/lib/computer-supervisor";
+import {
+  browserComputerConfigured,
+  vendorApiConfigured,
+  type LinkedInResolvedCredentials,
+} from "@/lib/linkedin-credentials";
+import { evaluateSendPace } from "@/lib/send-pacing";
+import { defaultFleetSettings } from "@/lib/fleet";
+import type { AgentSeat, FleetSettings } from "@/lib/types";
 
-export type LinkedInBackendKind = "assisted-manual" | "vendor-api";
+export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "browser-computer";
 
 export interface LinkedInDeliveryRequest {
   workspaceId: string;
@@ -10,6 +19,20 @@ export interface LinkedInDeliveryRequest {
   subject: string;
   body: string;
   attemptId: string;
+  /** Campaign id — tags computer audits / job trail for Campaign Agents. */
+  campaignId?: string;
+  /** Seat id — required for browser-computer path (1 seat = 1 computer). */
+  seatId?: string;
+  /** Stable OpenBot computer id from agent_seats.computer_id (1 seat = 1 bot). */
+  computerId?: string;
+  /** Aria vault / Settings-resolved credentials (env fallback inside helpers). */
+  credentials?: Partial<LinkedInResolvedCredentials>;
+  /** Optional seat snapshot for pacing (dispatch / send route). */
+  seat?: AgentSeat;
+  /** Optional fleet settings for pacing. */
+  fleetSettings?: FleetSettings;
+  /** Prefer Connect + note when Message is unavailable (default true for AriaBot). */
+  preferConnect?: boolean;
 }
 
 export interface LinkedInDeliveryOutcome {
@@ -23,7 +46,7 @@ export interface LinkedInDeliveryOutcome {
 export interface LinkedInAdapter {
   kind: LinkedInBackendKind;
   provider: string;
-  configured(): boolean;
+  configured(credentials?: Partial<LinkedInResolvedCredentials>): boolean;
   deliver(req: LinkedInDeliveryRequest): Promise<LinkedInDeliveryOutcome>;
 }
 
@@ -60,16 +83,17 @@ const assistedManualAdapter: LinkedInAdapter = {
 const vendorApiAdapter: LinkedInAdapter = {
   kind: "vendor-api",
   provider: "LinkedIn Vendor API",
-  configured: () => Boolean(process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY),
+  configured: (credentials) => vendorApiConfigured(credentials),
   async deliver(req) {
-    const endpoint = process.env.LINKEDIN_VENDOR_API_URL ?? "";
-    const token = process.env.LINKEDIN_VENDOR_API_KEY ?? "";
+    const creds = req.credentials;
+    const endpoint = (creds?.vendorApiUrl ?? process.env.LINKEDIN_VENDOR_API_URL ?? "").trim();
+    const token = (creds?.vendorApiKey ?? process.env.LINKEDIN_VENDOR_API_KEY ?? "").trim();
     if (!endpoint || !token) {
       return {
         status: "error",
         deliveryState: "not-sent",
         provider: "LinkedIn Vendor API",
-        detail: "LINKEDIN_VENDOR_API_URL / LINKEDIN_VENDOR_API_KEY not set, LinkedIn vendor delivery refused.",
+        detail: "LinkedIn Vendor API is not configured in Aria Settings (or LINKEDIN_VENDOR_* env). Delivery refused.",
       };
     }
 
@@ -86,6 +110,7 @@ const vendorApiAdapter: LinkedInAdapter = {
           candidateId: req.candidateId,
           profileUrl: req.profileUrl,
           subject: req.subject,
+          // Exact recruiter-approved body — never re-humanize after seal.
           body: req.body,
           attemptId: req.attemptId,
         }),
@@ -127,15 +152,229 @@ const vendorApiAdapter: LinkedInAdapter = {
   },
 };
 
+/**
+ * OpenBot-shaped browser computer: isolated Chromium per seat.
+ * Research browser tools must NEVER be reused for LinkedIn send.
+ * Contact permission is already enforced by claim_contact before dispatch.
+ */
+const browserComputerAdapter: LinkedInAdapter = {
+  kind: "browser-computer",
+  provider: "LinkedIn Browser Computer",
+  configured: (credentials) => browserComputerConfigured(credentials),
+  async deliver(req) {
+    const profileUrl = req.profileUrl.trim();
+    if (!profileUrl) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail: "LinkedIn profile URL is required for browser-computer delivery.",
+      };
+    }
+    if (!req.seatId) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail: "seatId is required so the supervisor can bind 1 seat → 1 computer.",
+      };
+    }
+    // Never mint a throwaway computerId on the send path — that orphans the
+    // operator's logged-in Chromium and collapses N seats onto ephemeral bots.
+    const durableComputerId = (req.computerId || "").trim();
+    if (!durableComputerId) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail:
+          "computerId is required (agent_seats.computer_id). Deploy / attach the seat so it has a durable Browser Computer id before send.",
+      };
+    }
+
+    const bind = {
+      url: req.credentials?.computerSupervisorUrl,
+      token: req.credentials?.computerSupervisorToken,
+      // Same secret OpenBot injects into agent-computers (COMPUTER_TOKEN).
+      computerToken:
+        process.env.OPENBOT_COMPUTER_TOKEN?.trim() ||
+        process.env.COMPUTER_TOKEN?.trim() ||
+        undefined,
+      mockSend: req.credentials?.computerSupervisorMockSend,
+    };
+    if (!browserComputerConfigured(req.credentials)) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail:
+          "OpenBot supervisor URL + token are required in Settings → LinkedIn (or COMPUTER_SUPERVISOR_URL / COMPUTER_SUPERVISOR_TOKEN).",
+      };
+    }
+
+    bindComputerSupervisorEndpoint(bind);
+    try {
+      const computer = defaultComputerSupervisor.ensureComputer({
+        workspaceId: req.workspaceId,
+        seatId: req.seatId,
+        computerId: durableComputerId,
+        campaignId: req.campaignId,
+      });
+      if (computer.control === "human") {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: "Human has control of this computer — bot send refused until Release.",
+        };
+      }
+      if (computer.status === "help_requested") {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: "help_requested — Take control, finish LinkedIn login, then Release.",
+        };
+      }
+      if (!req.seat) {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail:
+            "seat snapshot required for Browser Computer pacing (daily cap / gap / sessionHealthy).",
+        };
+      }
+      // get() applies SESSION_HEALTH_TTL — ensure()'s raw record can still hold
+      // stale sessionHealthy=true that expireStaleSessionHealth would null.
+      const pacedHealthy =
+        defaultComputerSupervisor.get(computer.computerId)?.sessionHealthy ?? null;
+      const pace = evaluateSendPace({
+        seat: req.seat,
+        settings: req.fleetSettings ?? defaultFleetSettings(),
+        // Pass through null/false — pacing fails closed unless probed true.
+        sessionHealthy: pacedHealthy,
+      });
+      if (!pace.ok) {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: pace.detail ?? `Deferred: ${pace.reason}`,
+        };
+      }
+      if (computer.status === "stopped" || computer.status === "error") {
+        await defaultComputerSupervisor.start(computer.computerId, { campaignId: req.campaignId });
+      }
+
+      const job = await defaultComputerSupervisor.enqueueJob({
+        computerId: computer.computerId,
+        kind: "linkedin_send",
+        payload: {
+          workspaceId: req.workspaceId,
+          messageId: req.messageId,
+          candidateId: req.candidateId,
+          campaignId: req.campaignId,
+          profileUrl,
+          subject: req.subject,
+          body: req.body,
+          attemptId: req.attemptId,
+          preferConnect: req.preferConnect !== false,
+          // Durable FleetSettings mode — Manual is BE-gated (not localStorage theater).
+          permissionMode:
+            req.fleetSettings?.browserAgentPermissionMode === "manual" ||
+            req.fleetSettings?.browserAgentPermissionMode === "skip"
+              ? req.fleetSettings.browserAgentPermissionMode
+              : "auto",
+        },
+      });
+
+      if (job.status === "refused") {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: job.detail || "Computer refused job (human mutex or not ready).",
+        };
+      }
+      if (job.status === "failed") {
+        return {
+          status: "error",
+          deliveryState: "unknown",
+          provider: "LinkedIn Browser Computer",
+          detail: job.detail || "Browser-computer job failed.",
+        };
+      }
+      if (job.status !== "succeeded") {
+        return {
+          status: "error",
+          deliveryState: "unknown",
+          provider: "LinkedIn Browser Computer",
+          detail: `Browser-computer job ended in ${job.status}.`,
+        };
+      }
+
+      // Mock path is an explicit ops opt-in; remote OpenBot ACK is required otherwise.
+      const mock =
+        req.credentials?.computerSupervisorMockSend === true ||
+        process.env.COMPUTER_SUPERVISOR_MOCK_SEND === "1";
+      const remoteAck = Boolean(job.detail && !job.detail.includes("queued on local"));
+      if (mock || remoteAck) {
+        return {
+          status: "sent",
+          deliveryState: "accepted",
+          provider: "LinkedIn Browser Computer",
+          detail: job.detail,
+          id: job.jobId,
+        };
+      }
+
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "LinkedIn Browser Computer",
+        detail:
+          "OpenBot remote computer did not acknowledge send. Check COMPUTER_SUPERVISOR_URL / token and Fleet → Computers → Open view.",
+      };
+    } catch (err) {
+      return {
+        status: "error",
+        deliveryState: "unknown",
+        provider: "LinkedIn Browser Computer",
+        detail: err instanceof Error ? err.message : "Browser-computer delivery failed.",
+      };
+    } finally {
+      bindComputerSupervisorEndpoint(null);
+    }
+  },
+};
+
 const adapters: Record<LinkedInBackendKind, LinkedInAdapter> = {
   "assisted-manual": assistedManualAdapter,
   "vendor-api": vendorApiAdapter,
+  "browser-computer": browserComputerAdapter,
 };
+
+export {
+  LINKEDIN_AUTOMATIC_PROVIDERS,
+  isLinkedInAutomaticProvider,
+} from "@/lib/linkedin-automatic";
 
 export function linkedInBackendForProvider(provider: string | null | undefined): LinkedInBackendKind | null {
   const normalized = normalizeProvider(provider);
-  if (normalized === "linkedin assisted manual" || normalized === "linkedin assisted-manual") return "assisted-manual";
-  if (normalized === "linkedin vendor api" || normalized === "linkedin vendor-api") return "vendor-api";
+  if (normalized === "linkedin assisted manual" || normalized === "linkedin assisted-manual") {
+    return "assisted-manual";
+  }
+  if (normalized === "linkedin vendor api" || normalized === "linkedin vendor-api") {
+    return "vendor-api";
+  }
+  if (
+    normalized === "linkedin browser computer" ||
+    normalized === "linkedin browser-computer" ||
+    normalized === "linkedin computer"
+  ) {
+    return "browser-computer";
+  }
   return null;
 }
 

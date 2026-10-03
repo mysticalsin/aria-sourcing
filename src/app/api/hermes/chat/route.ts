@@ -7,8 +7,7 @@ import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { getHermesBaseUrl } from "@/lib/api/hermes-proxy";
 import { can } from "@/lib/rbac";
-import { AUTH_QUERY_PARAMS } from "@/lib/types";
-import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
+import { AUTH_QUERY_PARAMS, MCP_AUTH_STYLES, type Campaign, type Candidate, type McpAuthStyle, type Role, type ScoringWeights } from "@/lib/types";
 import {
   buildCloudRequest,
   parseCloudResponse,
@@ -26,11 +25,12 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { DISCLOSURE_SYSTEM, sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
 
 export const runtime = "nodejs";
 
-const McpAuthStyleSchema = z.enum(["bearer", "query"]);
+const McpAuthStyleSchema = z.enum(MCP_AUTH_STYLES);
 const McpAuthQueryParamSchema = z.enum(AUTH_QUERY_PARAMS);
 const McpServerPayloadSchema = z
   .object({
@@ -81,12 +81,17 @@ const HermesChatSchema = z.object({
   hermesApiKeyId: z.string().uuid().optional(),
   /** Cloud provider to route through. "hermes" = existing self-hosted path. */
   provider: z
-    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi"])
+    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "deepseek", "nvidia"])
     .default("hermes"),
   /** ApiKey.id for the cloud provider — raw secret resolved server-side only. */
   apiKeyId: z.string().uuid().optional(),
-  // Reject path-traversal / injection in the model id; allow valid model slugs.
-  model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).default("hermes"),
+  // Reject path-traversal / injection in the model id; allow valid model slugs
+  // including NVIDIA NIM org/model ids (e.g. meta/llama-3.3-70b-instruct).
+  model: z
+    .string()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._\/-]{0,119}$/)
+    .refine((s) => !s.includes(".."), "Model id must not contain '..'")
+    .default("hermes"),
   /** Enabled MCP servers to expose to the model as tools (chat task only). The raw
    *  secret is resolved server-side from the vault, so the browser never holds it. */
   mcpServers: z
@@ -108,8 +113,10 @@ const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string>
   outreach:
     "You are a senior technical recruiter writing first-touch candidate outreach. " +
     "Lead with the candidate's specific recent work, give one genuine reason for reaching out, " +
-    "and end with a soft, low-pressure ask. Keep it under 120 words. No AI slop, no corporate filler, no em-dashes. " +
-    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble. " +
+    "and end with a soft, low-pressure ask. Sound warm and human — never robotic. " +
+    "For LinkedIn Connect notes: hard cap 200 characters (LinkedIn greys out Send above that); body only, no Subject line. " +
+    "For Email / longer LinkedIn Message: keep under 120 words. No AI slop, no corporate filler, no em-dashes. " +
+    "Reply with exactly: optional 'Subject: <subject>' then a blank line then the message body (omit Subject for Connect notes). No preamble. " +
     DISCLOSURE_SYSTEM,
   classify:
     "You are a reply-classification engine for recruiting outreach. Read the candidate reply and respond with " +
@@ -170,15 +177,15 @@ async function gatherMcpServers(
     }
     if (parsed.protocol !== "https:") continue;
     const secret = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
-    let auth: { url: string; token: string };
+    let auth: { url: string; token: string; authStyle: McpAuthStyle };
     try {
       auth = applyMcpAuth(s.url, secret, { authStyle: s.authStyle, authQueryParam: s.authQueryParam });
     } catch {
       continue;
     }
-    const conn = await connectAndListTools(auth.url, auth.token);
+    const conn = await connectAndListTools(auth.url, auth.token, { authStyle: auth.authStyle });
     if (conn.ok && conn.tools && conn.tools.length) {
-      resolved.push({ url: auth.url, token: auth.token, tools: conn.tools });
+      resolved.push({ url: auth.url, token: auth.token, authStyle: auth.authStyle, tools: conn.tools });
     }
   }
   return resolved;
@@ -315,10 +322,11 @@ export async function POST(req: NextRequest) {
     if (task === "chat" && slug !== "kimi" && (webResearch || usableMcpServers || sourcingCampaign)) {
       const resolvedServers: ResolvedMcpServer[] = [];
       const tavilyKey = canSourceInChat && supabase ? await resolveStoredTavilyKey(supabase) : null;
+      const linkedInProfileToken = canSourceInChat && supabase ? await resolveStoredApifyKey(supabase) : null;
       // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
       if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS, tavilyKey: tavilyKey ?? undefined });
-      // Compliant sourcing tool: real search (GitHub Search API / site:-scoped web
-      // search), real dedupe, real deterministic scoring — never a stealth browser.
+      // Compliant sourcing tool: real multi-provider search (GitHub, LinkedIn profiles
+      // when connected, site-scoped web), real dedupe, real deterministic scoring.
       if (sourcingCampaign) {
         const githubToken = process.env.GITHUB_TOKEN ?? "";
         const runner = makeSourcingToolRunner(
@@ -326,7 +334,10 @@ export async function POST(req: NextRequest) {
           (existing ?? []) as unknown as Candidate[],
           sourcingCampaign.scoringWeights as ScoringWeights,
           githubToken,
-          tavilyKey ?? undefined,
+          {
+            tavilyKey: tavilyKey ?? undefined,
+            linkedInProfileToken,
+          },
         );
         resolvedServers.push({ url: "builtin:sourcing-chat", token: "", tools: SOURCING_TOOL_DEFS, run: runner.run });
       }
@@ -360,7 +371,12 @@ export async function POST(req: NextRequest) {
       }
       if (!upstream.ok) {
         logUpstream("error", "Cloud provider upstream error", { provider, status: upstream.status });
-        return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
+        return NextResponse.json({
+          ok: false,
+          reason: `Upstream error ${upstream.status}`,
+          // Client drafts always fall back to templates — make that explicit for UI/ops.
+          useTemplateFallback: true,
+        });
       }
       const json = await upstream.json().catch(() => null);
       const text = parseCloudResponse(slug, json);
@@ -455,7 +471,12 @@ export async function POST(req: NextRequest) {
         const err = await upstream.text().catch(() => "");
         logUpstream("error", "Aria upstream error", { status: upstream.status, err: err.slice(0, 500) });
         // Generic message to the client; the (redacted) detail is logged above.
-        return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
+        return NextResponse.json({
+          ok: false,
+          reason: `Upstream error ${upstream.status}`,
+          // Client drafts always fall back to templates — make that explicit for UI/ops.
+          useTemplateFallback: true,
+        });
       }
       return new Response(upstream.body, {
         status: 200,
@@ -491,7 +512,11 @@ export async function POST(req: NextRequest) {
       logUpstream("error", "Aria upstream error", { status: upstream.status, err: err.slice(0, 500) });
       // Generic message to the client; the (redacted) detail is logged above —
       // matches the streaming path, never leaks the raw upstream error body.
-      return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
+      return NextResponse.json({
+        ok: false,
+        reason: `Upstream error ${upstream.status}`,
+        useTemplateFallback: true,
+      });
     }
     const json = (await upstream.json().catch(() => null)) as
       | { choices?: { message?: { content?: string }; delta?: { content?: string } }[] }

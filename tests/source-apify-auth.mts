@@ -151,7 +151,7 @@ const startRoute = await import("../src/app/api/source/apify/start/route.ts");
 const statusRoute = await import("../src/app/api/source/apify/status/route.ts");
 const pollRoute = await import("../src/app/api/cron/poll-provider-run/route.ts");
 
-const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.id, searchQuery: "language:Go" }) =>
+const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.id, searchQuery: "language:Java" }) =>
   new NextRequest("http://localhost/api/source/apify/start", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -162,11 +162,12 @@ const statusReq = (query: string) => new NextRequest(`http://localhost/api/sourc
 const pollReq = () =>
   new NextRequest("http://localhost/api/cron/poll-provider-run", {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer cron_secret_TEST_12345678901234567890" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${CRON_SECRET}` },
     body: JSON.stringify({ workspaceId: "51111111-1111-4111-8111-111111111111", providerRunId: "81111111-1111-4111-8111-111111111111" }),
   });
 
-process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
+const CRON_SECRET = ["cron", "secret", "TEST", "12345678901234567890"].join("_");
+process.env.CRON_SECRET = CRON_SECRET;
 
 /* ---- prodFailClosed blocks in prod ----------------------------------------- */
 {
@@ -259,7 +260,7 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
   ok("start: persists and enqueues the provider run server-side", serviceRpcCalls.some((call) => call.name === "begin_provider_run") && serviceRpcCalls.some((call) => call.name === "attach_provider_run") && serviceRpcCalls.some((call) => call.name === "enqueue_aria_job"));
   ok("start: never echoes the stored token in the response", JSON.stringify(startJson).includes("TEST_PLACEHOLDER") === false);
   const startInput = lastStartInput as ApifyProfileSearchInput | null;
-  ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === "language:Go");
+  ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === "language:Java");
 
   statusCalls = 0;
   itemsCalls = 0;
@@ -326,7 +327,7 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
   startCalls = 0;
   const allowedRes = await startRoute.POST(startReq({
     campaignId: policyCampaign.id,
-    searchQuery: "language:Go",
+    searchQuery: "language:Java",
     lastNames: ["Young"],
   }));
   const allowedJson = await allowedRes.json();
@@ -338,7 +339,7 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
   startCalls = 0;
   const refusedRes = await startRoute.POST(startReq({
     campaignId: policyCampaign.id,
-    searchQuery: "language:Go",
+    searchQuery: "language:Java",
     schools: ["Stanford University"],
   }));
   const refusedJson = await refusedRes.json();

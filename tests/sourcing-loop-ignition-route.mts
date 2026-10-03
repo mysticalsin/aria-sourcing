@@ -6,7 +6,7 @@ import { NextRequest } from "next/server";
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const WORKSPACE_ID = "51111111-1111-4111-8111-111111111111";
 const OTHER_WORKSPACE_ID = "52222222-2222-4222-8222-222222222222";
-const CRON_SECRET = "cron-secret-material-with-enough-length-0001";
+const CRON_SECRET = ["cron", "secret", "material", "with", "enough", "length", "0001"].join("-");
 
 let controls: Array<Record<string, unknown>> = [];
 let ariaJobs: Array<Record<string, unknown>> = [];

@@ -30,6 +30,9 @@ begin
       ('public.revoke_outreach_approval(text,text)',                          'authenticated', true),
       ('public.claim_email_outbound(text,text,text,text,text,text,uuid)',      'authenticated', true),
       ('public.review_whatsapp_outbound(uuid,text)',                          'authenticated', true),
+      ('public.enqueue_linkedin_outbound(text,text,text,uuid,text,text,text)', 'authenticated', true),
+      ('public.claim_contact(text,text,uuid,int)', 'authenticated', true),
+      ('public.complete_contact_lease(uuid,text,text)', 'authenticated', true),
       ('public.enqueue_whatsapp_outbound(text,text,text,uuid,text,text,text,text,uuid,jsonb)', 'authenticated', true),
       ('public.claim_and_record(text,text,text,uuid,text,integer)',            'service_role',  true),
       ('public.claim_agent_framework_run(uuid,uuid,uuid,uuid,text,text,uuid,text,text)', 'service_role', true),
@@ -128,6 +131,14 @@ begin
       ('public.record_loop_worker_heartbeat(text,text)',                      'service_role',  true),
       ('public.read_workspace_state_for_loop(uuid)',                          'service_role',  true),
       ('public.read_inbound_email_for_loop(uuid,uuid)',                       'service_role',  true),
+      ('public.read_inbound_message_for_loop(uuid,uuid)',                     'service_role',  true),
+      ('public.correlate_linkedin_inbound(uuid)',                             'service_role',  true),
+      ('public.resolve_linkedin_inbound_conversation(uuid,text)',             'service_role',  true),
+      ('public.record_linkedin_channel_event(uuid,uuid,text,text,text,text,text,text,jsonb,timestamptz)', 'service_role', true),
+      ('public.upsert_linkedin_inbound_route(uuid,text,uuid)',                'authenticated,service_role', true),
+      ('public.resolve_linkedin_inbound_route(text)',                         'service_role',  true),
+      ('public.record_linkedin_inbound(uuid,text,text,text)',                 'service_role',  true),
+      ('public.record_linkedin_assisted_manual_send(text,text,text,text,uuid)', 'authenticated', true),
       ('public.complete_aria_job_with_workspace_patch(uuid,uuid,timestamp with time zone,text,jsonb,text,text,jsonb,jsonb)', 'service_role', true),
       ('public.reject_loop_event_mutation()',                                 'owner_only',    false),
       ('public.redact_loop_events_for_candidate_erasure(uuid,text,text[],text[])', 'service_role', true),
@@ -142,6 +153,16 @@ begin
       ('public.enforce_active_linkedin_approval()',                           'owner_only',    true),
       ('public.claim_linkedin_outbound_queued(uuid)',                         'service_role',  true),
       ('public.record_linkedin_delivery_outcome(uuid,uuid,text,text,text)',    'service_role',  true),
+      ('public.outbound_approval_authorizes_send(uuid,text,uuid,uuid,timestamptz)', 'service_role', true),
+      ('public.mint_template_bound_approval(uuid,text,text,text,uuid,uuid)',  'service_role',  true),
+      ('public.mcp_allowlist_permits(uuid,text,text)',                        'service_role',  true),
+      ('public.set_member_autopilot(uuid,boolean)',                           'authenticated', true),
+      ('public.list_workspace_members()',                                     'authenticated', true),
+      ('public.approve_outreach_template(uuid)',                              'authenticated', true),
+      ('public.revoke_outreach_template(uuid)',                               'authenticated', true),
+      ('public.upsert_mcp_allowlist_entry(text,text,text,uuid,integer,boolean)', 'authenticated', true),
+      ('public.disable_mcp_allowlist_entry(uuid)',                            'authenticated', true),
+      ('public.profile_has_autopilot(uuid,uuid)',                             'authenticated,service_role', true),
       ('public.resolve_inbound_mailbox_route(text)',                          'service_role',  true),
       ('public.record_inbound_email(uuid,text,text,text)',                    'service_role',  true),
       ('public.correlate_inbound_email(uuid,text)',                           'service_role',  true),
@@ -193,7 +214,7 @@ begin
 
     foreach role_name in array array['anon', 'authenticator', 'authenticated', 'service_role']
     loop
-      expected := role_name = item.allowed_role;
+      expected := role_name = any(string_to_array(item.allowed_role, ','));
       execute format('select has_function_privilege(%L, %L, %L)', role_name, item.signature, 'EXECUTE') into actual;
       if actual is distinct from expected then
         raise exception 'Unexpected EXECUTE privilege for role % on %: expected %, got %',
@@ -307,7 +328,21 @@ begin
       ('public.get_sourcing_loop_controls(uuid)'),
       ('public.record_loop_worker_heartbeat(text,text)'),
       ('public.read_workspace_state_for_loop(uuid)'),
-      ('public.read_inbound_email_for_loop(uuid,uuid)'),
+      -- read_inbound_email_for_loop is a 0059 thin wrapper. The service_role
+      -- gate lives on read_inbound_message_for_loop (SECURITY DEFINER still
+      -- sees the invoker's auth.role()). Do not add a duplicate in-body
+      -- assertion via a new migration — that would change the reviewed
+      -- schema fingerprint (pg_dump includes function bodies).
+      ('public.read_inbound_message_for_loop(uuid,uuid)'),
+      ('public.correlate_linkedin_inbound(uuid)'),
+      ('public.resolve_linkedin_inbound_conversation(uuid,text)'),
+      ('public.record_linkedin_channel_event(uuid,uuid,text,text,text,text,text,text,jsonb,timestamptz)'),
+      ('public.upsert_linkedin_inbound_route(uuid,text,uuid)'),
+      ('public.resolve_linkedin_inbound_route(text)'),
+      ('public.record_linkedin_inbound(uuid,text,text,text)'),
+      -- record_linkedin_assisted_manual_send is authenticated-member (auth.uid()),
+      -- not service_role. Privilege matrix above already expects authenticated EXECUTE.
+      -- Do not require an in-body service_role assertion here.
       ('public.complete_aria_job_with_workspace_patch(uuid,uuid,timestamp with time zone,text,jsonb,text,text,jsonb,jsonb)'),
       ('public.redact_loop_events_for_candidate_erasure(uuid,text,text[],text[])'),
       ('public.claim_email_outbound_queued(uuid)'),

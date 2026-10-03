@@ -7,7 +7,6 @@ import {
   CardContent,
   CardTitle,
   Eyebrow,
-  SectionNumeral,
   Button,
   Field,
   Select,
@@ -20,8 +19,16 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { SeatCard } from "@/components/fleet/seat-card";
 import { FleetSummary } from "@/components/fleet/fleet-summary";
+import { FleetRosterStack } from "@/components/fleet/fleet-roster-stack";
 import { SuppressionPanel } from "@/components/fleet/suppression-panel";
+import { FleetComputersPanel, type FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
+import {
+  FleetComputerOpsBoard,
+  type FleetAuditEvent,
+  type FleetOpsSummary,
+} from "@/components/fleet/fleet-computer-ops-board";
 import { AllocationResultView } from "@/components/fleet/allocation-result";
+import { fleetHermesComputerPatches, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import {
   useHydrated,
   useSeats,
@@ -32,6 +39,8 @@ import {
   useRole,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
@@ -86,6 +95,10 @@ const GUARDRAILS = [
 export default function FleetPage() {
   const hydrated = useHydrated();
   const seats = useSeats();
+  // seatsRef + pollGeneration: Hermes ingest must not remount refresh / wipe roster.
+  const seatsRef = React.useRef(seats);
+  seatsRef.current = seats;
+  const pollGeneration = React.useRef(0);
   const campaigns = useCampaigns();
   const activeId = useActiveCampaignId();
   const actions = useActions();
@@ -94,7 +107,7 @@ export default function FleetPage() {
   const role = useRole();
   const canManage = hydrated && can(role, "manage_fleet");
 
-  const [deployN, setDeployN] = React.useState("25");
+  const [deployN, setDeployN] = React.useState("5");
 
   // Roster filters — the "Deploy" control can push a fleet past 100+ seats,
   // so search/status/provider narrow it and a "load more" cursor keeps the
@@ -122,35 +135,318 @@ export default function FleetPage() {
 
   const visibleSeats = filteredSeats.slice(0, rosterVisible);
   const rosterHasMore = filteredSeats.length > visibleSeats.length;
-  const handleDeploy = () => {
+  const handleDeploy = async () => {
     if (!canManage) {
       toast({ title: "Admins only", description: "Only an admin can deploy agents.", variant: "warning" });
       return;
     }
-    if (supabaseEnabled) {
+    const hostKnown = Boolean(hostCapacity && hostCapacity.max > 0);
+    const hostSlots = hostKnown
+      ? Math.max(0, hostCapacity!.max - hostCapacity!.computers)
+      : maxAgents;
+    if (hostKnown && hostSlots <= 0) {
       toast({
-        title: "Verified accounts required",
-        description: "Use Add one to bind each live agent to its real operator mailbox.",
+        title: "Host at VM capacity",
+        description: `Fly Chromium host is full (${hostCapacity!.computers}/${hostCapacity!.max}). Stop idle VMs or raise OPENBOT_MAX_COMPUTERS — Deploy will not create seats without a VM slot.`,
         variant: "warning",
       });
       return;
     }
-    const n = Math.max(1, Math.min(Number(deployN) || 0, maxAgents));
-    const res = actions.deployAgents(n);
+    const deployCap = Math.max(1, Math.min(maxAgents, hostSlots));
+    const n = Math.max(1, Math.min(Number(deployN) || 0, deployCap));
+    const res = await actions.deployAgents(n);
+    if (res.created <= 0) {
+      toast({
+        title: "Fleet at capacity",
+        description: `Already at the ${res.max}-agent ceiling.`,
+        variant: "warning",
+      });
+      return;
+    }
+
+    // Boot real Chromium VMs on Fly (ensure alone only registers an in-process row).
+    let booted = 0;
+    let blocked = 0;
+    let lastErr = "";
+    for (const seat of res.seats) {
+      // Never use seat.id as computerId — that collapses N Chromium profiles onto one id.
+      // Reclaim a probed-healthy host orphan before minting (store may have pre-minted a blank id).
+      // Omit stale twin when fleet shows orphan/absent/foreign — same belt as Campaign Agents.
+      // Empty fleet list cannot detect twins — omit Hermes existingComputerId (fail closed).
+      const staleTwin =
+        !computers.length ||
+        isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
+      // New seats from Deploy are not campaign-attached yet — omit campaignId
+      // so refuseUnattached does not block ensure/reclaim. Scope only gates Take.
+      const computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId: staleTwin ? null : seat.computerId,
+      });
+      if (!seat.computerId || seat.computerId !== computerId) {
+        await actions.updateSeat(seat.id, { computerId });
+      }
+      const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
+      if (boot.booted) {
+        booted += 1;
+      } else {
+        blocked += 1;
+        lastErr = boot.error || lastErr;
+      }
+    }
+
+    const hostNote =
+      blocked > 0
+        ? ` ${blocked} VM${blocked === 1 ? "" : "s"} blocked by host capacity or errors${lastErr ? ` (${lastErr})` : ""}. Raise OPENBOT_MAX_COMPUTERS on Fly (aria-mantu-computers) or stop idle VMs.`
+        : " Take control on each VM to finish LinkedIn login.";
     toast({
-      title: res.created > 0 ? `Generated ${res.created} demo agents` : "Demo fleet at capacity",
-      description:
-        res.created > 0
-          ? `Synthetic demo fleet now ${res.total}/${res.max}. No mailbox or live sender was provisioned.${res.capped ? " (capped at max)" : ""}`
-          : `Already at the ${res.max}-agent ceiling.`,
-      variant: res.created > 0 ? "success" : "warning",
+      title: `Deployed ${res.created} seats · ${booted} VM${booted === 1 ? "" : "s"} booted`,
+      description: `${res.created} LinkedIn Browser Computer seats (${res.total}/${res.max}).${hostNote}`,
+      variant: blocked > 0 ? "warning" : "success",
     });
+    // Refresh roster after boots (safe: only invoked on click, after refreshComputers exists).
+    void refreshComputers();
   };
 
   const [scopeId, setScopeId] = React.useState<string>("");
   const [allocation, setAllocation] = React.useState<AllocationResult | null>(null);
   const [sourcing, setSourcing] = React.useState(false);
   const [allocating, setAllocating] = React.useState(false);
+  const [computers, setComputers] = React.useState<FleetComputerRow[]>([]);
+  const [computersLoading, setComputersLoading] = React.useState(false);
+  const [observingComputerId, setObservingComputerId] = React.useState<string | null>(null);
+  const [reclaimingComputerId, setReclaimingComputerId] = React.useState<string | null>(null);
+  const [opsSummary, setOpsSummary] = React.useState<FleetOpsSummary | null>(null);
+  const [fleetAudits, setFleetAudits] = React.useState<FleetAuditEvent[]>([]);
+  const [auditFocusId, setAuditFocusId] = React.useState<string | null>(null);
+  const [hostCapacity, setHostCapacity] = React.useState<{ computers: number; max: number; desktop?: boolean } | null>(null);
+
+  const refreshComputers = React.useCallback(async () => {
+    const gen = pollGeneration.current;
+    setComputersLoading(true);
+    try {
+      const browserSeats = seatsRef.current.filter(
+        (s) => s.provider === "LinkedIn Browser Computer",
+      );
+      // GET-only like Floor — never poll-ensure with Hermes computerId. After reclaim,
+      // a stale login-wall id would re-claim the orphan twin and detach the durable VM.
+      const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+      if (gen !== pollGeneration.current) return;
+      if (!res.ok) {
+        // Fail closed: clear roster paint so stale healthy/orphan rows cannot linger.
+        setComputers([]);
+        setOpsSummary(null);
+        return;
+      }
+      const data = (await res.json()) as {
+        computers?: FleetComputerRow[];
+        summary?: FleetOpsSummary;
+        recentAudits?: FleetAuditEvent[];
+        hostCapacity?: { computers: number; max: number; desktop?: boolean } | null;
+        browserSeatBindings?: Array<{
+          id: string;
+          computerId?: string | null;
+          assignedCampaignIds?: string[];
+        }>;
+      };
+      if (gen !== pollGeneration.current) return;
+      const rows = data.computers ?? [];
+      setOpsSummary(data.summary ?? null);
+      setFleetAudits(data.recentAudits ?? []);
+      if (data.hostCapacity) setHostCapacity(data.hostCapacity);
+      // Local-only Hermes align — never PATCH computerId from poll (races reclaim/ensure).
+      actions.applyFleetHermesComputerPatches(
+        fleetHermesComputerPatches(browserSeats, rows),
+      );
+      // Durable agent_seats → Hermes (append missing + patch); local-only.
+      actions.ingestDurableBrowserBindings(data.browserSeatBindings);
+      // In demo (no Supabase seats on the API), re-GET once if the first list is empty.
+      if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {
+        // Local demo may need a second list after cold hydrateFromHost.
+        const again = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+        if (gen !== pollGeneration.current) return;
+        if (again.ok) {
+          const againData = (await again.json()) as {
+            computers?: FleetComputerRow[];
+            summary?: FleetOpsSummary;
+            recentAudits?: FleetAuditEvent[];
+            hostCapacity?: { computers: number; max: number; desktop?: boolean } | null;
+            browserSeatBindings?: Array<{
+              id: string;
+              computerId?: string | null;
+              assignedCampaignIds?: string[];
+            }>;
+          };
+          if (gen !== pollGeneration.current) return;
+          setOpsSummary(againData.summary ?? null);
+          setFleetAudits(againData.recentAudits ?? []);
+          if (againData.hostCapacity) setHostCapacity(againData.hostCapacity);
+          actions.ingestDurableBrowserBindings(againData.browserSeatBindings);
+          setComputers(
+            (againData.computers ?? []).map((c) => {
+              // Name only on seatId ownership — computerId fallback mislabels orphans/twins.
+              const seat = browserSeats.find((s) => s.id === c.seatId);
+              return seat ? { ...c, seatName: seat.name } : c;
+            }),
+          );
+          return;
+        }
+      }
+      setComputers(
+        rows.map((c) => {
+          const seat = browserSeats.find((s) => s.id === c.seatId);
+          return seat ? { ...c, seatName: seat.name } : c;
+        }),
+      );
+    } catch {
+      if (gen !== pollGeneration.current) return;
+      // Fail closed on throw after a green poll — clear stale healthy/orphan paint.
+      setComputers([]);
+      setOpsSummary(null);
+    } finally {
+      if (gen === pollGeneration.current) setComputersLoading(false);
+    }
+  }, [actions]);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    pollGeneration.current += 1;
+    void refreshComputers();
+    // Same cadence as Floor / Campaign Agents — N seats' sessionHealthy must not go stale.
+    const t = window.setInterval(() => void refreshComputers(), 5000);
+    return () => {
+      pollGeneration.current += 1;
+      window.clearInterval(t);
+    };
+  }, [hydrated, refreshComputers]);
+
+  async function reclaimOrphan(computerId: string, seatId: string) {
+    setReclaimingComputerId(computerId);
+    try {
+      const res = await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reclaim_healthy_orphan",
+          computerId,
+          seatId,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        computer?: { computerId?: string };
+        reclaimed?: boolean;
+      };
+      if (!res.ok || data.error) {
+        toast({
+          title: "Reclaim failed",
+          description: data.error || res.statusText,
+          variant: "error",
+        });
+        return;
+      }
+      const boundId = data.computer?.computerId?.trim() || computerId;
+      await actions.updateSeat(seatId, { computerId: boundId });
+      await refreshComputers();
+      toast({
+        title: "VM reclaimed",
+        description: "Seat now owns this host. Start or Take control to continue LinkedIn login.",
+        variant: "success",
+      });
+    } catch {
+      toast({ title: "Reclaim failed", variant: "error" });
+    } finally {
+      setReclaimingComputerId(null);
+    }
+  }
+
+  async function computerAction(action: string, computerId: string): Promise<boolean> {
+    // Orphans stay reclaim-only — never mutate Chromium without a seat bind.
+    const row = computers.find((c) => c.computerId === computerId);
+    const mutating = new Set([
+      "start",
+      "take_control",
+      "takeover",
+      "stop",
+      "reset",
+      "release_control",
+      "request_help",
+    ]);
+    if (
+      row &&
+      (!row.seatId || row.seatId === "__orphan__") &&
+      mutating.has(action)
+    ) {
+      toast({
+        title: "Seat required",
+        description: "Unbound host VM — reclaim/bind a seat before Start, Take control, Stop, or Release.",
+        variant: "warning",
+      });
+      return false;
+    }
+    try {
+      const res = await fetch("/api/fleet/computers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          computerId,
+          // N-seat isolation: always name the owning seat for mutating actions.
+          ...(row?.seatId && row.seatId !== "__orphan__" ? { seatId: row.seatId } : {}),
+          // CampaignId only when the desk is actually attached — scope alone must not
+          // force refuseUnattached on post-Deploy Take before campaign assign.
+          ...(() => {
+            const seat = seats.find((s) => s.id === row?.seatId);
+            if (!seat) return {};
+            const fromScope = scopeId.trim();
+            if (fromScope && seatAttachedToCampaign(seat, fromScope)) {
+              return { campaignId: fromScope };
+            }
+            const fromSeat = (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
+            return fromSeat ? { campaignId: fromSeat } : {};
+          })(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        computer?: { status?: string; lastError?: string | null };
+      };
+      if (!res.ok || data.computer?.status === "error" || data.error) {
+        const raw = data.error || data.computer?.lastError || res.statusText;
+        const humanHeld = /computer-human-held/i.test(String(raw));
+        toast({
+          title: humanHeld ? "Operator has control" : "Computer action failed",
+          description: humanHeld
+            ? "Release Take control before Start / Observe — bot warm-start is blocked while you hold the desk."
+            : raw,
+          variant: "error",
+        });
+        await refreshComputers();
+        return false;
+      }
+      if (action === "take_control") setObservingComputerId(computerId);
+      await refreshComputers();
+      toast({
+        title:
+          action === "take_control"
+            ? "You have control"
+            : action === "release_control"
+              ? "Control released"
+              : "Computer updated",
+        description:
+          action === "take_control"
+            ? "Open the sandbox viewport to finish LinkedIn login / 2FA. Automatic sends pause until you Release."
+            : undefined,
+        variant: "success",
+      });
+      return true;
+    } catch {
+      toast({ title: "Computer action failed", variant: "error" });
+      return false;
+    }
+  }
+
 
   // Add-agent modal
   const [addOpen, setAddOpen] = React.useState(false);
@@ -270,11 +566,34 @@ export default function FleetPage() {
       toast({ title: "Agent not added", description: "Your profile cannot manage the fleet.", variant: "error" });
       return;
     }
-    toast({
-      title: `Agent “${seat.name}” added`,
-      description: `${seat.provider} seat created in dry-run mode. Connect a mailbox and verify the domain before going live.`,
-      variant: "success",
-    });
+    if (seat.provider === "LinkedIn Browser Computer") {
+      const staleTwin =
+        !computers.length ||
+        isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
+      const computerId = await resolveDurableComputerId({
+        seatId: seat.id,
+        existingComputerId: staleTwin ? null : seat.computerId,
+      });
+      if (!seat.computerId || seat.computerId !== computerId) {
+        await actions.updateSeat(seat.id, { computerId });
+      }
+      const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
+      toast({
+        title: boot.booted ? `Agent “${seat.name}” added · VM booting` : `Agent “${seat.name}” added · VM not booted`,
+        description: boot.booted
+          ? "Take control to finish LinkedIn login. Floor shows this seat once the host reports ready."
+          : boot.error ||
+            "Seat created but Chromium did not start — check Fly host capacity (OPENBOT_MAX_COMPUTERS).",
+        variant: boot.booted ? "success" : "warning",
+      });
+      void refreshComputers();
+    } else {
+      toast({
+        title: `Agent “${seat.name}” added`,
+        description: `${seat.provider} seat created in dry-run mode. Connect a mailbox and verify the domain before going live.`,
+        variant: "success",
+      });
+    }
     setName("");
     setOperatorEmail("");
     setProvider("Microsoft Graph");
@@ -318,24 +637,25 @@ export default function FleetPage() {
           {/* 1 — Fleet summary */}
           <FleetSummary />
 
-          {/* 2 — Guardrail strip */}
-          <Card>
-            <CardContent>
+          {/* 2 — Guardrail strip (collapsed) */}
+          <details className="rounded-2xl border border-line/80 bg-surface shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-5 sm:px-8 [&::-webkit-details-marker]:hidden">
               <div className="flex items-start gap-3">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-success-soft text-success">
                   <ShieldCheck className="h-5 w-5" aria-hidden />
                 </span>
                 <div>
-                  <Eyebrow>Live guardrails</Eyebrow>
+                  <Eyebrow>Live pacing &amp; caps</Eyebrow>
                   <CardTitle>Speed without the footguns</CardTitle>
                   <p className="mt-1 text-sm text-muted">
-                    Every agent runs under the same enforced rules. These are not suggestions: the
-                    fleet physically cannot step outside them.
+                    Every agent runs under enforced rules — not suggestions.
                   </p>
                 </div>
               </div>
-
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <span className="text-xs font-medium text-muted">Expand</span>
+            </summary>
+            <div className="border-t border-line/60 px-6 pb-6 pt-4 sm:px-8">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {GUARDRAILS.map((g) => {
                   const Icon = g.icon;
                   return (
@@ -354,8 +674,15 @@ export default function FleetPage() {
                   );
                 })}
               </div>
-            </CardContent>
-          </Card>
+              <p className="mt-4 text-xs text-muted">
+                Edit thresholds in{" "}
+                <Link href="/settings" className="font-medium text-ink underline-offset-2 hover:underline">
+                  Settings → Fleet guardrails
+                </Link>
+                .
+              </p>
+            </div>
+          </details>
 
           {/* 3 — Action bar + allocation result */}
           <Card>
@@ -404,49 +731,50 @@ export default function FleetPage() {
                 {" "}and rechecks the shared suppression ledger before delivery.
               </p>
 
-              <AllocationResultView result={allocation} />
+              <AllocationResultView result={allocation} embedded />
             </CardContent>
           </Card>
 
           {/* 4 — Seats grid */}
+          <FleetRosterStack>
           <section>
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <SectionNumeral n="04" />
-                <div>
+              <div>
                   <Eyebrow>The roster</Eyebrow>
                   <CardTitle>Agents · {seats.length}/{maxAgents}</CardTitle>
                   <p className="mt-1 text-sm text-muted">
-                    {seats.length} of up to {maxAgents} agents · each tied to one official mailbox,
-                    warmed and rate-limited independently. Scale wide; the guardrails scale with you.
+                    Each agent is one official mailbox, warmed and rate-limited independently.
                   </p>
-                </div>
               </div>
               {canManage && <div className="flex flex-wrap items-center gap-2">
-                {!supabaseEnabled && <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
+                <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
                   <label htmlFor="deploy-n" className="text-xs font-semibold text-muted">
-                    Demo agents
+                    {supabaseEnabled ? "Deploy" : "Demo agents"}
                   </label>
                   <Input
                     id="deploy-n"
                     type="number"
                     inputMode="numeric"
                     min={1}
-                    max={maxAgents}
+                    max={
+                      hostCapacity && hostCapacity.max > 0
+                        ? Math.max(1, Math.min(maxAgents, Math.max(0, hostCapacity.max - hostCapacity.computers) || hostCapacity.max))
+                        : maxAgents
+                    }
                     value={deployN}
                     onChange={(e) => setDeployN(e.target.value)}
                     className="h-8 w-16 px-2 text-center"
-                    aria-label="Number of demo agents to generate"
+                    aria-label="Number of Browser Computer agents to deploy"
                   />
                   <Button
                     variant="secondary"
                     size="sm"
                     leftIcon={<Bot className="h-4 w-4" />}
-                    onClick={handleDeploy}
+                    onClick={() => void handleDeploy()}
                   >
-                    Generate demo agents
+                    {supabaseEnabled ? "Deploy + boot VMs" : "Generate demo agents"}
                   </Button>
-                </div>}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -562,8 +890,62 @@ export default function FleetPage() {
               </>
             )}
           </section>
+          </FleetRosterStack>
 
-          {/* 5 — Suppression */}
+          {/* 5 — Computer ops / audit */}
+          <FleetComputerOpsBoard
+            computers={computers}
+            summary={opsSummary}
+            recentAudits={fleetAudits}
+            selectedComputerId={auditFocusId}
+            onSelectComputer={setAuditFocusId}
+            onRefresh={() => void refreshComputers()}
+          />
+          
+          {hostCapacity && hostCapacity.max > 0 && (
+            <div className="mb-4 rounded-2xl border border-line bg-canvas/70 px-4 py-3 text-sm text-ink-soft">
+              <span className="font-semibold text-ink">Fly Chromium host:</span>{" "}
+              {hostCapacity.computers}/{hostCapacity.max} VMs in use
+              {hostCapacity.desktop ? " · desktop Take control" : ""}.
+              {hostCapacity.computers >= hostCapacity.max
+                ? " At capacity — stop idle VMs or raise OPENBOT_MAX_COMPUTERS on Fly before deploying more."
+                : ` ${hostCapacity.max - hostCapacity.computers} slot${hostCapacity.max - hostCapacity.computers === 1 ? "" : "s"} free for new Browser Computer boots.`}
+            </div>
+          )}
+<FleetComputersPanel
+            computers={computers}
+            observingId={observingComputerId}
+            onObservingChange={setObservingComputerId}
+            onRefresh={() => void refreshComputers()}
+            onStart={(id) => void computerAction("start", id)}
+            onTakeControl={(id) => {
+              setAuditFocusId(id);
+              void computerAction("take_control", id);
+            }}
+            onRelease={(id) => void computerAction("release_control", id)}
+            onObserve={(id) => {
+              void (async () => {
+                const row = computers.find((c) => c.computerId === id);
+                // Match Campaign Agents: only start when stopped/error — never
+                // wipe sessionHealthy on an already-ready/busy/human-held desk.
+                if (!row || row.status === "stopped" || row.status === "error") {
+                  const ok = await computerAction("start", id);
+                  if (!ok) return;
+                }
+                setObservingComputerId(id);
+              })();
+            }}
+            reclaimSeats={seats
+              .filter(
+                (s) =>
+                  s.provider === "LinkedIn Browser Computer" &&
+                  !(s.computerId ?? "").trim(),
+              )
+              .map((s) => ({ id: s.id, name: s.name }))}
+            onReclaim={(computerId, seatId) => void reclaimOrphan(computerId, seatId)}
+            reclaimingId={reclaimingComputerId}
+          />
+          {computersLoading ? null : null}
           <SuppressionPanel />
         </div>
       </HydrationGate>

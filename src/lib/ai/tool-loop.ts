@@ -15,9 +15,12 @@ import {
   remoteMcpExecutionEnabled,
   type McpTool,
 } from "@/lib/mcp-client";
+import type { McpAuthStyle } from "@/lib/types";
 import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
-import { BUILTIN_BROWSER_URL, runBrowserTool } from "@/lib/ai/browser-tools";
+// Keep the browser sentinel as a plain string here so sourcing/chat routes do
+// not statically import playwright-backed browser-tools at module load.
+export const BUILTIN_BROWSER_URL = "builtin:browser-research";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 export const MAX_TOTAL_TOOL_DEFINITIONS = 32;
@@ -148,6 +151,7 @@ function toolResultForModel(server: ResolvedMcpServer | undefined, output: ToolE
 export interface ResolvedMcpServer {
   url: string;
   token: string;
+  authStyle?: McpAuthStyle;
   tools: McpTool[];
   /** Optional workspace-scoped Tavily key for the in-process web_search tool. */
   tavilyKey?: string;
@@ -186,8 +190,14 @@ async function execTool(
 ): Promise<ToolExecutionResult> {
   if (server.run) return server.run(name, args, signal);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey, signal });
-  if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
-  return callMcpTool(server.url, server.token, name, args, { signal });
+  if (server.url === BUILTIN_BROWSER_URL) {
+    const { runBrowserTool } = await import("@/lib/ai/browser-tools");
+    return runBrowserTool(name, args);
+  }
+  return callMcpTool(server.url, server.token, name, args, {
+    signal,
+    authStyle: server.authStyle,
+  });
 }
 
 interface NormalizedToolDefinition {

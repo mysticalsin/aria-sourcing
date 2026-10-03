@@ -30,14 +30,22 @@ import {
   useSettings,
   useActions,
 } from "@/lib/store";
-import { agentActivity, floorRollup } from "@/lib/floor";
+import {
+  agentActivity,
+  agentActivityWithComputers,
+  floorBrowserVmTruth,
+  floorRollup,
+  resolveComputerHint,
+} from "@/lib/floor";
+import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import {
   EVENT_COLOR,
   EVENT_SOUND,
   PULSE_MS,
-  pickResponderIndex,
   describeEvent,
   seatsToOfficeAgents,
+  type ComputerFloorHint,
 } from "@/lib/floor3d";
 import { getDeviceQuality, MAX_3D_AGENTS } from "@/lib/device";
 import {
@@ -50,7 +58,7 @@ import { languageLabel } from "@/lib/i18n";
 import { formatTimeAgo } from "@/lib/utils";
 import type { AgentSeat, HermesState } from "@/lib/types";
 import { subscribe, recentEvents, type AgentEvent } from "@/lib/agent-events";
-import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio, Brain } from "lucide-react";
+import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio, Brain, Monitor } from "lucide-react";
 
 /** Recent events shown in the 2D activity ticker (guaranteed fallback). */
 const TICKER_CAP = 8;
@@ -67,6 +75,11 @@ export default function FloorPage() {
   const settings = useSettings();
   const actions = useActions();
   const soundEnabled = settings.soundEnabled;
+  // Empty Map (not undefined) so LinkedIn Browser Computer seats fail closed to
+  // "No Browser Computer" / idle until the first fleet poll — no theatrical working.
+  const [computerHints, setComputerHints] = React.useState<
+    ReadonlyMap<string, ComputerFloorHint>
+  >(() => new Map());
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   // Which panel the selection drawer shows — "overview" (AgentDetailDrawer,
   // unchanged) or "cortex" (3.2 Glass Cortex). Mutually exclusive so only one
@@ -100,22 +113,105 @@ export default function FloorPage() {
     seatsRef.current = seats;
   }, [seats]);
 
+  // Live VM status for the 3D floor — same /api/fleet/computers source as Fleet.
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+        if (!res.ok) {
+          // Keep an empty map so LI seats stay fail-closed (not theatrical).
+          if (!cancelled) setComputerHints(new Map());
+          return;
+        }
+        const data = (await res.json()) as {
+          computers?: {
+            computerId: string;
+            seatId: string;
+            status: string;
+            sessionHealthy?: boolean | null;
+            control?: "bot" | "human" | null;
+          }[];
+          browserSeatBindings?: Array<{
+            id: string;
+            computerId?: string | null;
+            assignedCampaignIds?: string[];
+          }>;
+        };
+        // Soft-nav / seats.length remount: do not write stale Hermes patches after cancel.
+        if (cancelled) return;
+        const map = new Map<string, ComputerFloorHint>();
+        for (const c of data.computers ?? []) {
+          const seatId = typeof c.seatId === "string" ? c.seatId.trim() : "";
+          // Never index orphans / empty owners — resolveComputerHint refuses them,
+          // and computerId-keyed orphans can overwrite a seat's hint entry.
+          if (!seatId || seatId === "__orphan__") continue;
+          if (!c.computerId) continue;
+          const hint: ComputerFloorHint = {
+            status: c.status,
+            sessionHealthy: c.sessionHealthy,
+            computerId: c.computerId,
+            // Bind hint to fleet seatId so a stale computerId on another desk
+            // cannot inherit this VM after a poisoned FK clear / reclaim.
+            seatId,
+            // Take control mutex — floor must not stay green while human holds VM.
+            control: c.control ?? null,
+          };
+          map.set(seatId, hint);
+          map.set(c.computerId, hint);
+        }
+        // Local-only Hermes align — never PATCH computerId from poll (races reclaim/ensure).
+        actions.applyFleetHermesComputerPatches(
+          fleetHermesComputerPatches(seatsRef.current, data.computers ?? []),
+        );
+        // Durable agent_seats → Hermes roster (append missing desks + patch attach).
+        // Local-only ingest — N desks visible without Agents tab / without server write storms.
+        actions.ingestDurableBrowserBindings(data.browserSeatBindings);
+        if (!cancelled) setComputerHints(map);
+      } catch {
+        if (!cancelled) setComputerHints(new Map());
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+    // seatsRef keeps patches current — do not remount on Hermes seat churn.
+  }, [actions]);
+
   React.useEffect(() => {
     const now = Date.now();
     for (const e of recentEvents()) {
       if (e.at <= now - PULSE_MS) continue;
-      const employees = seatsRef.current.slice(1); // index 0 = CEO (src/lib/floor3d.ts)
-      if (employees.length === 0) continue;
-      const seat = employees[pickResponderIndex(e, employees.length)];
+      // No seatId → no desk pulse (never hash-paint a random LI VM).
+      if (!e.seatId) continue;
+      // Resolve by seatId across the full roster — desk 0 can be a real LI Browser seat.
+      const seat = seatsRef.current.find((s) => s.id === e.seatId);
+      if (!seat) continue;
+      // LI desks: only pulse when the event's campaign matches durable/Hermes attach.
+      if (isBrowserComputerSeat(seat)) {
+        if (!e.campaignId || !seatAttachedToCampaign(seat, e.campaignId)) continue;
+      }
       pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
     }
 
     const unsubscribe = subscribe((e) => {
       setTicker((prev) => [...prev, e].slice(-TICKER_CAP));
-      const employees = seatsRef.current.slice(1);
-      if (employees.length > 0) {
-        const seat = employees[pickResponderIndex(e, employees.length)];
-        pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
+      // Fail-closed: only pulse the desk that owns the event (never hash-pick).
+      if (e.seatId) {
+        const seat = seatsRef.current.find((s) => s.id === e.seatId);
+        if (seat) {
+          if (
+            isBrowserComputerSeat(seat) &&
+            (!e.campaignId || !seatAttachedToCampaign(seat, e.campaignId))
+          ) {
+            // Unattached / foreign campaign — no walk theater.
+          } else {
+            pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
+          }
+        }
       }
       if (fxSoundEnabled && soundEnabledRef.current) {
         playSound(EVENT_SOUND[e.kind], true);
@@ -141,10 +237,11 @@ export default function FloorPage() {
   }, []);
 
   const stateLike = { campaigns, candidates, ledger, suppression, seats, settings } as unknown as HermesState;
-  const rollup = floorRollup(seats, stateLike);
+  const floorNow = Date.now();
+  const rollup = floorRollup(seats, stateLike, floorNow, computerHints);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
 
-  const pulseNow = Date.now();
+  const pulseNow = floorNow;
   const pulsingSeatIds = new Set<string>();
   for (const [seatId, until] of pulseUntilRef.current) {
     if (until > pulseNow) pulsingSeatIds.add(seatId);
@@ -268,6 +365,8 @@ export default function FloorPage() {
               selectedId={selectedId}
               onSelect={(s) => selectAgent(s)}
               pulsingSeatIds={pulsingSeatIds}
+              computerHints={computerHints}
+              now={floorNow}
             />
           )
         ) : seats.length === 0 ? (
@@ -285,15 +384,26 @@ export default function FloorPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {seats.map((seat) => (
-              <AgentDesk
-                key={seat.id}
-                seat={seat}
-                activity={agentActivity(seat, stateLike)}
-                onSelect={(s) => selectAgent(s.id)}
-              />
-            ))}
+          <div className="space-y-3">
+            {computerHints ? (
+              <p className="text-xs text-muted">
+                {seats.length} seats on the floor ·{" "}
+                {(() => {
+                  const t = floorBrowserVmTruth(seats, computerHints);
+                  return `${t.bound} bound · ${t.healthy} session healthy · ${t.unverified} unverified`;
+                })()}
+              </p>
+            ) : null}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {seats.map((seat) => (
+                <AgentDesk
+                  key={seat.id}
+                  seat={seat}
+                  activity={agentActivityWithComputers(seat, stateLike, floorNow, computerHints)}
+                  onSelect={(s) => selectAgent(s.id)}
+                />
+              ))}
+            </div>
           </div>
         )}
       </HydrationGate>
@@ -301,6 +411,8 @@ export default function FloorPage() {
       <AgentDetailDrawer
         seat={selected}
         state={stateLike}
+        computerHints={computerHints}
+        now={floorNow}
         open={selected !== null && drawerView === "overview"}
         onClose={closeDrawer}
         onOpenCortex={() => setDrawerView("cortex")}
@@ -308,6 +420,8 @@ export default function FloorPage() {
       <AgentCortex
         seat={selected}
         state={stateLike}
+        computerHints={computerHints}
+        now={floorNow}
         open={selected !== null && drawerView === "cortex"}
         onClose={closeDrawer}
         onBack={() => setDrawerView("overview")}
@@ -322,12 +436,16 @@ function Floor3DSection({
   selectedId,
   onSelect,
   pulsingSeatIds,
+  computerHints,
+  now,
 }: {
   seats: AgentSeat[];
   state: HermesState;
   selectedId: string | null;
   onSelect: (id: string) => void;
   pulsingSeatIds: Set<string>;
+  computerHints?: ReadonlyMap<string, ComputerFloorHint>;
+  now: number;
 }) {
   // Render-cap: a full procedural robot per agent is ~20 meshes; rendering the
   // whole fleet (up to 300) tanks the GPU. RetroOfficeScene itself caps at
@@ -336,17 +454,53 @@ function Floor3DSection({
   // what's on screen. The full fleet always lives on the Agent Fleet page.
   const [deviceQuality] = React.useState(() => getDeviceQuality());
   const cap = MAX_3D_AGENTS[deviceQuality];
-  // Force a pulsing seat's status to "working" so agentTick's existing
-  // status-flip → walk-to-desk mechanism fires for it (no agentTick edits).
-  const office = seatsToOfficeAgents(seats, state).map((a) =>
-    pulsingSeatIds.has(a.id) && a.status !== "working" ? { ...a, status: "working" as const } : a,
-  );
+  // Pulse may force "working" for walk animation when an event is attributed
+  // to this desk — never invent sessionHealthy; never hash-pick a seatId.
+  // Idle+healthy BC with a real seatId pulse (source/allocate on attached desks)
+  // may walk; unverified / human-held / unattached-without-event stay idle.
+  const office = seatsToOfficeAgents(seats, state, computerHints, now).map((a) => {
+    if (!pulsingSeatIds.has(a.id) || a.status === "working") return a;
+    if (a.status === "warming" || a.status === "error") return a;
+    const seat = seats.find((s) => s.id === a.id);
+    if (!seat) return a;
+    // Without fleet poll, do not invent working from pulse alone.
+    if (!computerHints) return a;
+    if (seat.provider === "LinkedIn Browser Computer") {
+      const hint = resolveComputerHint(seat, computerHints);
+      if (
+        !hint ||
+        hint.control === "human" ||
+        hint.status !== "ready" ||
+        hint.sessionHealthy !== true
+      ) {
+        return a;
+      }
+      // Fail-closed: unattached LI desk must not walk from a foreign pulse.
+      if (!(seat.assignedCampaignIds ?? []).length) return a;
+      return { ...a, status: "working" as const };
+    }
+    // Non-LI: only pulse when the desk already has real send activity.
+    if (!(seat.sentToday > 0)) return a;
+    return { ...a, status: "working" as const };
+  });
   const notShown = Math.max(0, office.length - cap);
   return (
     <div className="space-y-3">
       {office.length > 0 && (
         <p className="text-xs text-muted">
-          {office.length} agents on the floor in 3D.
+          {office.length} seats on the floor
+          {computerHints
+            ? (() => {
+                const t = floorBrowserVmTruth(
+                  office
+                    .map((a) => seats.find((s) => s.id === a.id))
+                    .filter((s): s is NonNullable<typeof s> => Boolean(s)),
+                  computerHints,
+                );
+                return ` · ${t.healthy} session healthy · ${t.unverified} unverified`;
+              })()
+            : ""}
+          {" "}in 3D.
           {notShown > 0 &&
             ` Nearest ${cap} fully animated at this device tier; ${notShown} more not shown here.`}{" "}
           <Link href="/fleet" className="font-semibold text-electric hover:underline">
@@ -372,8 +526,16 @@ function Floor3DSection({
  *  Living Floor on every device, tier, and view mode (see PacketFX.tsx /
  *  RetroOfficeScene.tsx for the 3D-only packet+sound layer this backs up). */
 function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentSeat[] }) {
-  const employees = seats.slice(1); // index 0 = CEO (src/lib/floor3d.ts convention)
-  const items = [...events].slice(-TICKER_CAP).reverse();
+  const items = [...events]
+    .filter((e) => {
+      if (!e.seatId) return true;
+      const seat = seats.find((s) => s.id === e.seatId);
+      if (!seat || !isBrowserComputerSeat(seat)) return true;
+      // LI: hide foreign/unattached campaign events (match Floor pulse / PacketFX).
+      return Boolean(e.campaignId && seatAttachedToCampaign(seat, e.campaignId));
+    })
+    .slice(-TICKER_CAP)
+    .reverse();
   return (
     <Card className="mb-4 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -390,7 +552,10 @@ function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentS
       ) : (
         <ul className="space-y-1.5">
           {items.map((e, i) => {
-            const seat = employees.length > 0 ? employees[pickResponderIndex(e, employees.length)] : null;
+            // Never hash-attribute a seatless event onto a random LI desk.
+            const seat = e.seatId
+              ? seats.find((s) => s.id === e.seatId) ?? null
+              : null;
             return (
               <li key={`${e.at}-${i}`} className="flex items-center gap-2 text-sm">
                 <span
@@ -414,12 +579,16 @@ function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentS
 function AgentDetailDrawer({
   seat,
   state,
+  computerHints,
+  now = Date.now(),
   open,
   onClose,
   onOpenCortex,
 }: {
   seat: AgentSeat | null;
   state: HermesState;
+  computerHints?: ReadonlyMap<string, ComputerFloorHint>;
+  now?: number;
   open: boolean;
   onClose: () => void;
   onOpenCortex: () => void;
@@ -431,7 +600,32 @@ function AgentDetailDrawer({
       </Drawer>
     );
   }
-  const activity = agentActivity(seat, state);
+  const activity = agentActivityWithComputers(seat, state, now, computerHints);
+  const computerHint = resolveComputerHint(seat, computerHints);
+  // Only fleet-owned hint counts as bound — Hermes seat.computerId alone is
+  // stale-twin theater after resolveComputerHint refused orphan/missing.
+  const boundComputerId = computerHint?.computerId?.trim() || null;
+  const hermesStale =
+    !boundComputerId &&
+    Boolean((seat.computerId ?? "").trim()) &&
+    seat.provider === "LinkedIn Browser Computer";
+  const vmLabel = boundComputerId
+    ? `VM …${boundComputerId.slice(-8)}`
+    : seat.provider === "LinkedIn Browser Computer"
+      ? hermesStale
+        ? "Hermes twin stale — no fleet VM"
+        : "No VM bound"
+      : null;
+  const sessionLabel =
+    computerHint?.sessionHealthy === true
+      ? "LinkedIn session healthy"
+      : computerHint?.sessionHealthy === false
+        ? "LinkedIn session unhealthy"
+        : computerHint?.status === "ready"
+          ? "LinkedIn session unverified"
+          : computerHint?.status
+            ? `VM ${computerHint.status}`
+            : null;
   const cap = effectiveDailyCap(seat);
   const ws = warmupStage(seat);
   const health = seatHealthStatus(seat, state.settings.fleet);
@@ -450,7 +644,7 @@ function AgentDetailDrawer({
     });
 
   return (
-    <Drawer open={open} onClose={onClose} title={seat.name} description={`${seat.provider} · ${activity.label}`} width="max-w-xl">
+    <Drawer open={open} onClose={onClose} title={seat.name} description={`${seat.provider} · ${activity.label}${vmLabel ? ` · ${vmLabel}` : ""}`} width="max-w-xl">
       <div className="space-y-6 animate-fade-in">
         <div className="flex justify-center py-1">
           <AgentBot
@@ -467,6 +661,20 @@ function AgentDetailDrawer({
           </Badge>
           <Badge tone={seat.mode === "live" ? "success" : "neutral"}>{seat.mode}</Badge>
           <Badge tone={health.tone}>{health.label}</Badge>
+          {sessionLabel && (
+            <Badge
+              tone={
+                computerHint?.sessionHealthy === true
+                  ? "success"
+                  : computerHint?.sessionHealthy === false || computerHint?.status === "error"
+                    ? "danger"
+                    : "warning"
+              }
+            >
+              {sessionLabel}
+            </Badge>
+          )}
+          {vmLabel && <Badge tone="neutral">{vmLabel}</Badge>}
         </div>
 
         <button
@@ -480,7 +688,7 @@ function AgentDetailDrawer({
 
         <Card className="bg-canvas/40">
           <CardContent className="space-y-1">
-            <Eyebrow>Working on</Eyebrow>
+            <Eyebrow>{activity.busy || activity.state !== "idle" ? "Working on" : "Status"}</Eyebrow>
             <p className="text-sm font-semibold text-ink">{activity.detail}</p>
             {activity.focusName && <p className="text-sm text-muted">Current focus: {activity.focusName}</p>}
           </CardContent>
@@ -499,6 +707,20 @@ function AgentDetailDrawer({
           <Meta icon={<Building2 className="h-4 w-4" />} label="Provider" value={seat.provider} />
           <Meta icon={<Languages className="h-4 w-4" />} label="Language" value={languageLabel(seat.language ?? "en")} />
           <Meta icon={<Clock className="h-4 w-4" />} label="Send window" value={`${seat.sendWindow.startHour}:00–${seat.sendWindow.endHour}:00 ${seat.sendWindow.timezone}`} />
+          {seat.provider === "LinkedIn Browser Computer" && (
+            <>
+              <Meta
+                icon={<Monitor className="h-4 w-4" />}
+                label="Browser Computer"
+                value={boundComputerId ?? "unassigned"}
+              />
+              <Meta
+                icon={<Activity className="h-4 w-4" />}
+                label="LinkedIn session"
+                value={sessionLabel ?? "No live VM status yet"}
+              />
+            </>
+          )}
         </dl>
 
         <div>

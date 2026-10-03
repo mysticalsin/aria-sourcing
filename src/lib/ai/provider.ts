@@ -11,7 +11,15 @@
 
 import type { LlmProviderKind, ModelTask, SystemSettings } from "@/lib/types";
 
-export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi";
+export type AiProviderSlug =
+  | "anthropic"
+  | "openai"
+  | "groq"
+  | "xai"
+  | "mistral"
+  | "kimi"
+  | "deepseek"
+  | "nvidia";
 
 /** Maps LlmProviderKind → AiProviderSlug. Absent = not directly callable. */
 export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
@@ -21,6 +29,8 @@ export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
   xAI: "xai",
   Mistral: "mistral",
   Kimi: "kimi",
+  DeepSeek: "deepseek",
+  "NVIDIA NIM": "nvidia",
   // Google, OpenRouter, and "Local/Custom" intentionally absent —
   // they require different auth schemes or a user-supplied base URL.
 };
@@ -35,6 +45,10 @@ export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
   // Kimi (Moonshot) is OpenAI-compatible. moonshot-v1-8k is the cheap, always-available
   // default; override per-workspace with a SavedModel (e.g. kimi-k2-0711-preview).
   kimi: "moonshot-v1-8k",
+  deepseek: "deepseek-chat",
+  // Hosted NIM catalog id. Prefer models that still require auth on chat
+  // (public GET /models does not). Override via SavedModel / NVIDIA_NIM_BASE_URL.
+  nvidia: "nvidia/llama-3.1-nemotron-70b-instruct",
 };
 
 export interface AiResolved {
@@ -131,6 +145,12 @@ export function aiProviderConfigured(settings: SystemSettings): boolean {
 // non-NEXT_PUBLIC env is undefined in the browser bundle, but CLOUD_ENDPOINT is only
 // read server-side (buildCloudRequest / tool-loop), so the default applies there.
 const KIMI_BASE = (process.env.KIMI_BASE_URL || "https://api.moonshot.ai/v1").replace(/\/+$/, "");
+const DEEPSEEK_BASE = (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, "");
+const NVIDIA_NIM_BASE = (
+  process.env.NVIDIA_NIM_BASE_URL ||
+  process.env.NIM_BASE_URL ||
+  "https://integrate.api.nvidia.com/v1"
+).replace(/\/+$/, "");
 
 export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   anthropic: "https://api.anthropic.com/v1/messages",
@@ -139,6 +159,8 @@ export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   xai: "https://api.x.ai/v1/chat/completions",
   mistral: "https://api.mistral.ai/v1/chat/completions",
   kimi: `${KIMI_BASE}/chat/completions`,
+  deepseek: `${DEEPSEEK_BASE}/chat/completions`,
+  nvidia: `${NVIDIA_NIM_BASE}/chat/completions`,
 };
 
 export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
@@ -148,6 +170,8 @@ export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
   xai: "XAI_API_KEY",
   mistral: "MISTRAL_API_KEY",
   kimi: "KIMI_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  nvidia: "NVIDIA_API_KEY",
 };
 
 /** Canonical api_keys.provider value for each callable cloud provider. The
@@ -160,6 +184,8 @@ export const VAULT_PROVIDER: Record<AiProviderSlug, string> = {
   xai: "xAI",
   mistral: "Mistral",
   kimi: "Kimi (Moonshot)",
+  deepseek: "DeepSeek",
+  nvidia: "NVIDIA NIM",
 };
 
 /**

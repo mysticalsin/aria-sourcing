@@ -417,6 +417,10 @@ export interface Candidate {
   lawfulBasis?: CandidateLawfulBasis;
   lawfulBasisRecordedAt?: string;
   lawfulBasisSource?: "operator_selection";
+  /** Operator reviewed a below-floor live lead and endorsed role fit for outreach.
+   *  Does not change matchScore; the approval gate accepts it with a warning. */
+  fitEndorsedAt?: string;
+  fitEndorsedSource?: "operator_selection";
   /** Free-text recruiter notes, newest first. Absent/empty = none yet. */
   notes?: CandidateNote[];
   /** Why this candidate was rejected — captured alongside the "Rejected" stage.
@@ -616,11 +620,19 @@ export interface OutreachMessage {
   scheduledFor: string | null;
   sentAt: string | null;
   approvedBy: string | null;
+  /** ISO timestamp when a human sealed this copy for bot delivery. */
+  approvedAt?: string | null;
+  /** Exact subject sealed at approve — bots must send this verbatim. */
+  approvedSubject?: string | null;
+  /** Exact body sealed at approve — bots must send this verbatim. */
+  approvedBody?: string | null;
   dryRun: boolean;
   createdAt: string;
   /** Carried over from a ClassifiedReply when this draft was created as a reply
    *  (see draftReplyResponse in store.ts), so a live send can thread correctly. */
   inboxThreadId?: string;
+  /** Seat chosen at allocate/draft time — send must use this VM/mailbox, not re-pick. */
+  seatId?: string;
 }
 
 /* ---- Replies ------------------------------------------------------------- */
@@ -994,6 +1006,21 @@ export interface SystemSettings {
   hermesApiUrl?: string;
   /** References an ApiKey.id (provider "Aria Agent") holding the bearer token. */
   hermesApiKeyId?: string;
+  /**
+   * LinkedIn OpenID Connect client id (public). Pair with `linkedinClientSecretKeyId`
+   * from the Aria key vault for plug-and-play OIDC — env `LINKEDIN_CLIENT_*` remains a fallback.
+   */
+  linkedinClientId?: string;
+  /** ApiKey.id under provider "LinkedIn OIDC" (client secret). */
+  linkedinClientSecretKeyId?: string;
+  /** Entitled LinkedIn vendor messaging API base URL. */
+  linkedinVendorApiUrl?: string;
+  /** ApiKey.id under provider "LinkedIn Vendor API". */
+  linkedinVendorApiKeyId?: string;
+  /** Browser-computer supervisor base URL (OpenBot-shaped Chromium pool). */
+  computerSupervisorUrl?: string;
+  /** ApiKey.id under provider "Computer Supervisor" (bearer token). */
+  computerSupervisorTokenKeyId?: string;
   /** Maximum number of memory entries stored across all agents. */
   memoryCapacity?: number;
   /** Base URL of the hermes-agent web_server / management API (e.g. http://127.0.0.1:8643).
@@ -1016,6 +1043,7 @@ export const SEAT_PROVIDERS = [
   "Twilio SMS",
   "LinkedIn Assisted Manual",
   "LinkedIn Vendor API",
+  "LinkedIn Browser Computer",
 ] as const;
 export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 
@@ -1079,6 +1107,15 @@ export interface AgentSeat {
   modelId?: string;
   /** Tool IDs enabled for this agent (overrides workspace defaults when set). */
   toolIds?: ToolId[];
+  /** Isolated Chromium computer id (LinkedIn Browser Computer seats). */
+  computerId?: string | null;
+  /**
+   * Campaigns this seat/agent is attached to for Observe / Take control.
+   * Workspace seats can serve multiple campaigns; UI filters by this list.
+   */
+  assignedCampaignIds?: string[];
+  /** Automatic LinkedIn backend for this seat. */
+  linkedinDeliveryBackend?: "vendor-api" | "browser-computer" | null;
 }
 
 export const SUPPRESSION_TYPES = ["email", "domain", "phone", "linkedin"] as const;
@@ -1120,6 +1157,10 @@ export interface OutreachLedgerEntry {
   at: string;
 }
 
+/** LinkedIn outreach delivery: automatic (default) queues entitled vendor/API sends; manual keeps assisted approve-and-paste. */
+export const LINKEDIN_DELIVERY_MODES = ["automatic", "manual"] as const;
+export type LinkedInDeliveryMode = (typeof LINKEDIN_DELIVERY_MODES)[number];
+
 export interface FleetSettings {
   recontactWindowDays: number; // global re-contact suppression window (default 90)
   bounceRatePauseThreshold: number; // auto-pause a seat above this (e.g. 0.05)
@@ -1128,6 +1169,18 @@ export interface FleetSettings {
   jitter: boolean;
   globalDailyCap: number | null; // optional org-wide ceiling across all seats
   maxAgents: number; // hard ceiling on deployable agents (e.g. 300)
+  /**
+   * LinkedIn delivery mode for the workspace fleet.
+   * `automatic` (default): agent queues sends via entitled vendor-api or browser-computer without per-message paste/confirm.
+   * `manual`: assisted-manual — human copies/pastes in LinkedIn, then Confirms.
+   */
+  deliveryMode: LinkedInDeliveryMode;
+  /**
+   * Claude-in-Chrome–style Browser Computer action approval.
+   * `manual` refuses bot linkedin_send until operator Takes control (BE-gated).
+   * `auto` / `skip` run after Outreach Approve with sessionHealthy fail-closed.
+   */
+  browserAgentPermissionMode?: "manual" | "auto" | "skip";
 }
 
 export interface AllocationAssignment {
@@ -1166,6 +1219,8 @@ export const API_KEY_PROVIDERS = [
   "OpenRouter",
   "Mistral",
   "Kimi (Moonshot)",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Resend",
   "SendGrid",
   "Aria Agent",
@@ -1175,7 +1230,11 @@ export const API_KEY_PROVIDERS = [
   "Seamless",
   "Apify",
   "Tavily",
+  "HeyReach",
   "Databricks",
+  "LinkedIn OIDC",
+  "LinkedIn Vendor API",
+  "Computer Supervisor",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -1191,6 +1250,8 @@ export const LLM_PROVIDERS = [
   "Groq",
   "Mistral",
   "Kimi",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Local/Custom",
 ] as const;
 export type LlmProviderKind = (typeof LLM_PROVIDERS)[number];
@@ -1244,6 +1305,9 @@ export interface ToolDef {
 
 export type McpServerStatus = "untested" | "connected" | "error";
 
+export const MCP_AUTH_STYLES = ["bearer", "query", "x-api-key"] as const;
+export type McpAuthStyle = (typeof MCP_AUTH_STYLES)[number];
+
 export const AUTH_QUERY_PARAMS = ["tavilyApiKey"] as const;
 export type AuthQueryParam = (typeof AUTH_QUERY_PARAMS)[number];
 
@@ -1256,7 +1320,7 @@ export interface McpServerConfig {
   /** The MCP server's HTTP(S) endpoint (streamable-HTTP / SSE transport). */
   url: string;
   /** How the resolved vault secret is sent to the MCP server. Defaults to bearer. */
-  authStyle?: "bearer" | "query";
+  authStyle?: McpAuthStyle;
   /** Closed-list query parameter for query-auth MCP servers. */
   authQueryParam?: AuthQueryParam;
   /** References an ApiKey.id; the raw secret never lives here. */
@@ -1268,6 +1332,8 @@ export interface McpServerConfig {
   toolCount?: number;
   /** Names of those tools (for display), captured on the last successful test. */
   toolNames?: string[];
+  /** Known integration preset — used for HeyReach funnel wiring in Settings. */
+  preset?: "heyreach";
 }
 
 /** Recruiting tasks that can be delegated to a locked Dust agent. A Record (not an

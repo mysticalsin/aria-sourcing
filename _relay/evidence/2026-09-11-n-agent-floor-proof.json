@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-03T01:28:54.638Z",
+  "offline": {
+    "mode": "offline",
+    "n": 3,
+    "rows": [
+      {
+        "id": "seat_prove_n_1",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …11111111",
+        "suffix": "11111111"
+      },
+      {
+        "id": "seat_prove_n_2",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …11113333",
+        "suffix": "11113333"
+      },
+      {
+        "id": "seat_prove_n_3",
+        "status": "idle",
+        "subtitle": "LinkedIn unverified — Take control · …11115555",
+        "suffix": "11115555"
+      }
+    ],
+    "computerIds": [
+      "comp_prove_n_01_11111111",
+      "comp_prove_n_02_11113333",
+      "comp_prove_n_03_11115555"
+    ]
+  },
+  "live": null,
+  "ok": true,
+  "note": "sessionHealthy remains human-gated (Take control + LinkedIn login/2FA)"
+}

@@ -12,6 +12,7 @@ import { DEFAULT_SCORING_WEIGHTS } from "./scoring";
 import { firstInterviewElapsedHours } from "./metrics";
 import { slaDueFor } from "./rules";
 import { defaultFleetSettings, defaultSendWindow } from "./fleet";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "./send-pacing";
 import { defaultSkills } from "./skills";
 import type {
   Activity,
@@ -34,6 +35,7 @@ import type {
   PrequalRecord,
   ReplyIntent,
   SavedModel,
+  SeatProvider,
   StarRating,
   SuppressionEntry,
   SystemSettings,
@@ -61,7 +63,11 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // connected/lastSync state after the default seed became honest.
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
-export const STATE_VERSION = 17;
+// STATE_VERSION 19 — LinkedIn fleet.deliveryMode (automatic default; manual optional).
+// STATE_VERSION 21 — Senior Java campaign (camp_seed_backend) moved to Sourcing so
+// campaignAllowsLiveSourcing enables the Source button for LLM-wiki Java demos.
+// STATE_VERSION 24 — fleet.browserAgentPermissionMode (Claude-in-Chrome Manual/Auto/Skip).
+export const STATE_VERSION = 24;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -143,7 +149,7 @@ export function defaultSettings(): SystemSettings {
     humanApprovalGate: true,
     dryRunMode: true,
     webResearch: true,
-    minScoreToContact: 70,
+    minScoreToContact: 80,
     starRatingThresholds: { topGun: 88, a: 80, b: 65, c: 50 },
     slaMinutes: 15,
     operatorName: "Jordan Bryce",
@@ -184,6 +190,12 @@ export function defaultSettings(): SystemSettings {
     hermesLiveMode: false,
     hermesApiUrl: "",
     hermesApiKeyId: "",
+    linkedinClientId: "",
+    linkedinClientSecretKeyId: "",
+    linkedinVendorApiUrl: "",
+    linkedinVendorApiKeyId: "",
+    computerSupervisorUrl: "",
+    computerSupervisorTokenKeyId: "",
     memoryCapacity: 200,
     hermesWebUrl: "",
   };
@@ -197,7 +209,7 @@ export function defaultGuardrails(): GuardrailConfig {
       "Lead with the candidate's recent, specific work; one genuine reason you're reaching out; a soft, low-pressure ask. " +
       "Be warm, concise, peer-to-peer. Never write AI slop. Respect every guardrail below without exception.",
     rules: [
-      { id: genId("gr"), text: "Official APIs and authorized mailboxes only: never scrape, never automate LinkedIn DMs or logins. LinkedIn outreach uses assisted-manual copy/paste or an official LinkedIn Recruiter System Connect integration.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Official APIs and authorized mailboxes only: never scrape LinkedIn, never log in with recruiter cookies or session bots (no PhantomBuster clones). LinkedIn outreach defaults to Automatic via an entitled vendor/API seat; operators may switch to Manual approve-and-send.", enabled: true, locked: true },
       { id: genId("gr"), text: "Human approval required before any real send; dry-run is the default.", enabled: true, locked: true },
       { id: genId("gr"), text: "Honor per-seat daily caps, warm-up ramps, send windows, and the shared suppression + de-dupe ledger: no one is contacted twice.", enabled: true, locked: true },
       { id: genId("gr"), text: "Candidate PII is purpose-limited to active outreach and masked everywhere else; every reveal is audited.", enabled: true, locked: true },
@@ -272,6 +284,55 @@ function seedSeats(): AgentSeat[] {
       // Elevated bounce rate → auto-paused by the guardrail engine (demo).
       health: { sentTotal: 280, bounces: 19, complaints: 0, bounceRate: 0.068, complaintRate: 0 },
     },
+    // LinkedIn Browser Computer agents attached to the Senior Java Developer campaign.
+    {
+      ...base,
+      ...LINKEDIN_BROWSER_SEAT_DEFAULTS,
+      id: "seat_java_vm_01",
+      name: "Java · Agent 01",
+      operatorEmail: "java.agent01@hermes.example",
+      provider: "LinkedIn Browser Computer" as SeatProvider,
+      warmupStartedAt: isoDaysBefore(10),
+      sentToday: 0,
+      health: { sentTotal: 12, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      computerId: null, // bound on Deploy/Login reclaim-or-mint
+      linkedinDeliveryBackend: "browser-computer" as const,
+      assignedCampaignIds: ["camp_seed_backend"],
+      persona:
+        "LinkedIn outreach agent for Senior Java Developer. Warm peer-to-peer tone. Never invent experience.",
+    },
+    {
+      ...base,
+      ...LINKEDIN_BROWSER_SEAT_DEFAULTS,
+      id: "seat_java_vm_02",
+      name: "Java · Agent 02",
+      operatorEmail: "java.agent02@hermes.example",
+      provider: "LinkedIn Browser Computer" as SeatProvider,
+      warmupStartedAt: isoDaysBefore(8),
+      sentToday: 0,
+      health: { sentTotal: 8, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      computerId: null, // bound on Deploy/Login reclaim-or-mint
+      linkedinDeliveryBackend: "browser-computer" as const,
+      assignedCampaignIds: ["camp_seed_backend"],
+      persona:
+        "LinkedIn outreach agent for Senior Java Developer. Concise, specific compliments on JVM work.",
+    },
+    {
+      ...base,
+      ...LINKEDIN_BROWSER_SEAT_DEFAULTS,
+      id: "seat_java_vm_03",
+      name: "Java · Agent 03",
+      operatorEmail: "java.agent03@hermes.example",
+      provider: "LinkedIn Browser Computer" as SeatProvider,
+      warmupStartedAt: isoDaysBefore(6),
+      sentToday: 0,
+      health: { sentTotal: 4, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      computerId: null, // bound on Deploy/Login reclaim-or-mint
+      linkedinDeliveryBackend: "browser-computer" as const,
+      assignedCampaignIds: ["camp_seed_backend"],
+      persona:
+        "LinkedIn outreach agent for Senior Java Developer. Soft ask, no corporate fluff.",
+    },
   ];
 }
 
@@ -300,7 +361,7 @@ export function seedInterviewers(): Interviewer[] {
 
 function backendJob(): JobAnalysis {
   return {
-    title: "Senior Backend Engineer",
+    title: "Senior Java Developer",
     department: "Platform",
     seniority: "Senior",
     employmentType: "Full-time",
@@ -311,8 +372,8 @@ function backendJob(): JobAnalysis {
     salaryMax: 120000,
     currency: "EUR",
     equity: true,
-    requiredSkills: ["Go", "Kubernetes", "PostgreSQL", "gRPC", "Distributed Systems"],
-    niceToHaveSkills: ["Kafka", "OpenTelemetry", "Terraform"],
+    requiredSkills: ["Java", "Spring Boot", "PostgreSQL", "Kafka", "Microservices"],
+    niceToHaveSkills: ["Kubernetes", "gRPC", "OpenTelemetry"],
     minYearsExperience: 5,
     maxYearsExperience: 10,
     education: "No formal requirement",
@@ -406,7 +467,8 @@ const SPECS: CampaignSpec[] = [
     job: backendJob(),
     hiringManager: "Daniela Brandt",
     hiringManagerEmail: "daniela.brandt@northwind.example",
-    status: "Interviewing",
+    // Sourcing so campaignAllowsLiveSourcing enables UI Source for Java wiki demo
+    status: "Sourcing",
     count: 22,
     stagePlan: [
       "Interviewed", "Booked", "Booked", "Interested", "Interested", "Interested",

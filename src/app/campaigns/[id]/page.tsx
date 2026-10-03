@@ -25,8 +25,18 @@ import {
   useToast,
   type TabItem,
 } from "@/components/ui";
+import { motion } from "framer-motion";
 import { HydrationGate } from "@/components/app/page-header";
+import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
+import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
+import { CampaignGoLiveChecklist } from "@/components/campaigns/campaign-go-live-checklist";
+import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import { isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
+import { CampaignFunnelSpine } from "@/components/campaigns/campaign-funnel-spine";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { staggerContainer } from "@/lib/dashboard-motion";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { ScoreDistribution } from "@/components/charts/score-distribution";
@@ -36,7 +46,6 @@ import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog
 import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
 import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
 import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
-import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
@@ -59,11 +68,14 @@ import {
   useReplies,
   useReportForCampaign,
   useRole,
+  useSeats,
+  useSettings,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import { isContactReadyByTenure } from "@/lib/sourcing/role-tenure";
 import type {
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
@@ -99,6 +111,23 @@ function mergeSourcingFeedbackReceipts(
   }
   return [...merged.values()];
 }
+
+function summarizeSourcingFeedback(receipts: SourcingFeedbackReceipt[]): string {
+  if (receipts.length === 0) return "";
+  const byPlatform = new Map<string, number>();
+  let candidates = 0;
+  for (const receipt of receipts) {
+    candidates += receipt.candidateCount;
+    byPlatform.set(receipt.platform, (byPlatform.get(receipt.platform) ?? 0) + 1);
+  }
+  const platforms = [...byPlatform.entries()]
+    .map(([platform, count]) => (count === 1 ? platform : `${platform} ×${count}`))
+    .join(", ");
+  const searchLabel = receipts.length === 1 ? "1 search" : `${receipts.length} searches`;
+  const candLabel =
+    candidates === 1 ? "1 real candidate" : `${candidates} real candidates`;
+  return `${platforms}: ${candLabel} from ${searchLabel}`;
+}
 import {
   ArrowLeft,
   Banknote,
@@ -106,6 +135,7 @@ import {
   CalendarCheck,
   CalendarPlus,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Compass,
   Copy,
@@ -348,11 +378,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const allBookings = useBookings();
   const report = useReportForCampaign(id);
   const actions = useActions();
+  const seats = useSeats();
+  const settings = useSettings();
   const role = useRole();
   const hermesState = useHermes().state;
   const { toast } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
+  const reducedMotion = usePrefersReducedMotion();
 
   const [tab, setTab] = React.useState("overview");
   const [selected, setSelected] = React.useState<Candidate | null>(null);
@@ -366,6 +399,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   }>({ campaignId: id, receipts: [] });
   const feedbackReceipts = feedbackState.campaignId === id ? feedbackState.receipts : [];
   const [feedbackSubmitting, setFeedbackSubmitting] = React.useState<Set<string>>(new Set());
+  const [feedbackExpanded, setFeedbackExpanded] = React.useState(false);
   const [sourcing, setSourcing] = React.useState(false);
   const [enrichingAll, setEnrichingAll] = React.useState(false);
   // The just-sourced batch, staged for the streaming reveal below — purely a
@@ -381,6 +415,60 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
   const [runToken, setRunToken] = React.useState(0);
+  /** Durable Fleet campaignSeats length when present; null until poll / on omit.
+   * Stamp campaignId so soft-nav A→B cannot paint A's count before the effect clears. */
+  const [durableAgentAuthority, setDurableAgentAuthority] = React.useState<{
+    campaignId: string;
+    count: number | null;
+  } | null>(null);
+
+  React.useEffect(() => {
+    // Soft-nav: clear durable badge until campaign-scoped fleet authority lands.
+    setDurableAgentAuthority({ campaignId: id, count: null });
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/fleet/computers?campaignId=${encodeURIComponent(id)}`,
+          { credentials: "same-origin" },
+        );
+        if (!res.ok || cancelled) {
+          if (!cancelled) setDurableAgentAuthority({ campaignId: id, count: null });
+          return;
+        }
+        const data = (await res.json()) as {
+          campaignSeats?: unknown[];
+          browserSeatBindings?: Array<{
+            id: string;
+            name?: string;
+            computerId?: string | null;
+            status?: string;
+            assignedCampaignIds?: string[];
+          }>;
+        };
+        actions.ingestDurableBrowserBindings(
+          data.browserSeatBindings ??
+            (Array.isArray(data.campaignSeats)
+              ? (data.campaignSeats as Array<{ id: string }>)
+              : undefined),
+        );
+        if (!cancelled) {
+          setDurableAgentAuthority({
+            campaignId: id,
+            count: Array.isArray(data.campaignSeats) ? data.campaignSeats.length : null,
+          });
+        }
+      } catch {
+        if (!cancelled) setDurableAgentAuthority({ campaignId: id, count: null });
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [id, actions]);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -435,7 +523,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const jd = c.jobAnalysis;
   const strategy = c.sourcingStrategy;
   const health = campaignHealth(c);
-  const nextAction = nextActionForCampaign(c);
+  const tenureDeferred = candidates.filter((cand) => !isContactReadyByTenure(cand));
+  const contactReadyCount = candidates.filter((cand) => isContactReadyByTenure(cand)).length;
+  const nextAction = (() => {
+    const pendingDrafts = outreach.filter((mm) => mm.status === "Needs Approval").length;
+    if (c.status !== "Paused" && pendingDrafts > 0) {
+      return `Approve ${pendingDrafts} draft${pendingDrafts === 1 ? "" : "s"} to contact ${contactReadyCount} ready candidate${contactReadyCount === 1 ? "" : "s"}`;
+    }
+    if (tenureDeferred.length > 0 && pendingDrafts === 0 && candidates.length > 0) {
+      return `Hold ${tenureDeferred.length} early-tenure profile${tenureDeferred.length === 1 ? "" : "s"} · draft outreach for 6–12 mo in role`;
+    }
+    return nextActionForCampaign(c);
+  })();
   const scores = candidates.map((cand) => cand.matchScore);
   const campaignReplies = allReplies.filter((r) => r.campaignId === c.id);
   const campaignBookings = allBookings.filter((b) => b.campaignId === c.id);
@@ -486,10 +585,26 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const enrichmentSpend = (hermesState?.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
   const enrichmentBudget = hermesState?.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
 
+  const hermesAgentCount = seats.filter(
+    (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, c.id),
+  ).length;
+  // Prefer durable Fleet campaignSeats length when present (incl. authoritative 0).
+  // Soft-nav: ignore foreign-campaign stamp until this id's authority lands.
+  const durableAgentCount =
+    durableAgentAuthority?.campaignId === c.id ? durableAgentAuthority.count : null;
+  const agentsTabCount =
+    durableAgentCount !== null ? durableAgentCount : hermesAgentCount;
+
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
     { value: "jd", label: "JD Analysis", icon: <FileSearch className="h-4 w-4" /> },
     { value: "strategy", label: "Sourcing Strategy", icon: <Compass className="h-4 w-4" /> },
+    {
+      value: "agents",
+      label: "Agents",
+      icon: <Bot className="h-4 w-4" />,
+      count: agentsTabCount,
+    },
     { value: "candidates", label: "Candidates", icon: <Users className="h-4 w-4" />, count: candidates.length },
     { value: "outreach", label: "Outreach", icon: <Send className="h-4 w-4" />, count: outreach.length },
     { value: "replies", label: "Replies", icon: <MessageSquare className="h-4 w-4" />, count: campaignReplies.length },
@@ -511,7 +626,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const handleSource = async () => {
     if (sourcing) return;
     setSourcing(true);
-    const res = await actions.sourceNextBatch(c.id);
+    const beforeIds = new Set(candidates.map((cand) => cand.id));
+    // LinkedIn-first: prefer LinkedIn when the strategy lists it first (or at all).
+    const preferred =
+      c.sourcingStrategy.primaryPlatforms.find((p) => p === "LinkedIn") ??
+      c.sourcingStrategy.primaryPlatforms[0];
+    const res = await actions.sourceNextBatch(c.id, preferred ? { platform: preferred } : undefined);
     setSourcing(false);
     if (!res.ok) {
       toast({
@@ -538,6 +658,19 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     setJustSourced(res.accepted);
     setSourceBatchKey((k) => k + 1);
     if (res.accepted.length > 0) setTab("candidates");
+
+    const newlyAccepted = res.accepted.filter((cand) => !beforeIds.has(cand.id));
+    let deferredTenure = 0;
+    for (const cand of newlyAccepted) {
+      if (!isContactReadyByTenure(cand)) deferredTenure += 1;
+    }
+    // Fleet allocate stamps attached campaign desks (N>1 safe) — never generateOutreachFor
+    // without seatId (that returns null when multiple Browser Computers are attached).
+    const allocation = actions.allocateOutreach({ campaignId: c.id });
+    const drafted = allocation.assignments.filter((a) =>
+      newlyAccepted.some((cand) => cand.id === a.candidateId),
+    ).length;
+
     const isLive = res.source === "github" || res.source === "web";
     if (res.accepted.length === 0) {
       toast({
@@ -550,14 +683,24 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       return;
     }
     toast({
-      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
-      description: res.skipped.length
-        ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-        : isLive
-          ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
-          : "All matched candidates accepted into the pipeline.",
+      title: `Sourced ${res.accepted.length} via ${preferred ?? res.source}${isLive ? " (live)" : ""}`,
+      description:
+        drafted > 0
+          ? `${drafted} LinkedIn draft${drafted === 1 ? "" : "s"} ready to review and contact${
+              deferredTenure > 0
+                ? ` · ${deferredTenure} deferred (<${6} mo in role)`
+                : ""
+            }.`
+          : deferredTenure > 0
+            ? `${deferredTenure} held back — wait until 6–12 months in role before outreach.`
+            : res.skipped.length
+              ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
+              : isLive
+                ? "Live LinkedIn/web results are in the pipeline."
+                : "All matched candidates accepted into the pipeline.",
       variant: "success",
     });
+    if (drafted > 0) setTab("outreach");
   };
 
   // Batch variant of the drawer's unified enrichment waterfall (docs/
@@ -622,11 +765,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
           : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
       description:
-        res.mode === "cloud"
-          ? "Real provider search and cloud-assisted drafts are ready for human review."
-          : "Real GitHub results and locally generated drafts are ready for human review. No cloud model ran.",
+        "Contact-ready drafts are queued for review — open Outreach to approve and reach out. People under 6 months in role are held back.",
       variant: "success",
     });
+    setTab("outreach");
   };
 
   const handleSourcingFeedback = async (
@@ -663,6 +805,35 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       title: "Sourcing feedback saved",
       description: "This aggregate result can inform a future human-reviewed sourcing lesson.",
       variant: "success",
+    });
+  };
+
+  const handleBulkSourcingFeedback = async (verdict: SourcingFeedbackVerdict) => {
+    if (feedbackReceipts.length === 0) return;
+    const pending = [...feedbackReceipts];
+    setFeedbackSubmitting(new Set(pending.map((r) => r.receiptId)));
+    const savedIds = new Set<string>();
+    for (const receipt of pending) {
+      const recorded = await actions.recordSourcingFeedback(receipt.receiptId, verdict);
+      if (recorded) savedIds.add(receipt.receiptId);
+    }
+    setFeedbackSubmitting(new Set());
+    setFeedbackState((current) =>
+      current.campaignId === c.id
+        ? {
+            campaignId: c.id,
+            receipts: current.receipts.filter((item) => !savedIds.has(item.receiptId)),
+          }
+        : current,
+    );
+    const saved = savedIds.size;
+    toast({
+      title: saved > 0 ? "Role learning saved" : "Feedback was not saved",
+      description:
+        saved > 0
+          ? `${saved} search outcome${saved === 1 ? "" : "s"} recorded.`
+          : "The learning receipts are unavailable or were already reviewed.",
+      variant: saved > 0 ? "success" : "error",
     });
   };
 
@@ -922,7 +1093,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApifyButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
@@ -971,55 +1141,103 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {feedbackReceipts.length > 0 && (
         <Card className="mb-6" aria-label="Sourcing lesson feedback">
-          <CardHeader>
-            <Eyebrow>Private role learning</Eyebrow>
-            <CardTitle className="mt-1">Were these real searches useful?</CardTitle>
+          <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <Eyebrow>Private role learning</Eyebrow>
+              <CardTitle className="mt-1 text-base sm:text-lg">
+                {summarizeSourcingFeedback(feedbackReceipts)} — useful?
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted">
+                Aggregate query outcomes only · never sends profiles to Graphify
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("useful")}
+              >
+                Useful
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("dead_end")}
+              >
+                Dead end
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("corrected")}
+              >
+                Needs correction
+              </Button>
+            </div>
           </CardHeader>
-          <CardBody className="space-y-3">
-            <p className="text-sm text-muted">
-              Feedback stores aggregate query outcomes only. It never sends candidate profiles to Graphify,
-              and no lesson can go live without a separate admin review.
-            </p>
-            {feedbackReceipts.map((receipt) => {
-              const submitting = feedbackSubmitting.has(receipt.receiptId);
-              return (
-                <div
-                  key={receipt.receiptId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3"
-                >
-                  <p className="text-sm font-medium text-ink">
-                    {receipt.platform}: {receipt.candidateCount} real candidate{receipt.candidateCount === 1 ? "" : "s"}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={submitting}
-                      onClick={() => void handleSourcingFeedback(receipt, "useful")}
-                    >
-                      Useful
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={submitting}
-                      onClick={() => void handleSourcingFeedback(receipt, "dead_end")}
-                    >
-                      Dead end
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={submitting}
-                      onClick={() => void handleSourcingFeedback(receipt, "corrected")}
-                    >
-                      Needs correction
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </CardBody>
+          {feedbackReceipts.length > 1 && (
+            <CardBody className="pt-0">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs font-medium text-ink-soft hover:text-ink"
+                aria-expanded={feedbackExpanded}
+                onClick={() => setFeedbackExpanded((v) => !v)}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform ${feedbackExpanded ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+                {feedbackExpanded ? "Hide per-search rows" : `Review ${feedbackReceipts.length} searches`}
+              </button>
+              {feedbackExpanded && (
+                <ul className="mt-3 space-y-2">
+                  {feedbackReceipts.map((receipt) => {
+                    const submitting = feedbackSubmitting.has(receipt.receiptId);
+                    return (
+                      <li
+                        key={receipt.receiptId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line/80 px-3 py-2 text-sm"
+                      >
+                        <span className="text-ink">
+                          {receipt.platform}: {receipt.candidateCount} candidate
+                          {receipt.candidateCount === 1 ? "" : "s"}
+                        </span>
+                        <div className="flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "useful")}
+                          >
+                            Useful
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "dead_end")}
+                          >
+                            Dead end
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "corrected")}
+                          >
+                            Fix
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          )}
         </Card>
       )}
 
@@ -1038,13 +1256,24 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Overview */}
       <TabPanel value="overview" active={tab === "overview"} idBase={idBase}>
         <div className="space-y-6">
+          <CampaignFunnelSpine
+            candidates={candidates}
+            outreach={outreach}
+            replies={allReplies.filter((r) => r.campaignId === c.id)}
+            bookings={allBookings.filter((b) => b.campaignId === c.id)}
+          />
           <StagePipeline metrics={m} />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <motion.div
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+            variants={staggerContainer}
+            initial={reducedMotion ? false : "hidden"}
+            animate="show"
+          >
             {overviewMetrics.map((mc) => (
               <MetricCard key={mc.label} label={mc.label} value={mc.value} hint={mc.hint} icon={mc.icon} tone={mc.tone} />
             ))}
-          </div>
+          </motion.div>
 
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
@@ -1188,6 +1417,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Sourcing Strategy */}
       <TabPanel value="strategy" active={tab === "strategy"} idBase={idBase}>
         <div className="space-y-6">
+          <CampaignWikiPanel campaignId={c.id} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <Eyebrow>Where Aria looks</Eyebrow>
@@ -1347,6 +1577,132 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </TabPanel>
 
+      <TabPanel value="agents" active={tab === "agents"} idBase={idBase}>
+        <div className="space-y-6">
+          <CampaignGoLiveChecklist
+            campaignId={c.id}
+            settings={{
+              dryRunMode: settings.dryRunMode,
+              minScoreToContact: settings.minScoreToContact,
+            }}
+            seats={seats}
+          />
+          <CampaignAgentsPanel
+            campaignId={c.id}
+            seats={seats}
+            onAssignSeat={async (seatId) => {
+              const seat = seats.find((s) => s.id === seatId);
+              if (!seat) return;
+              // Browser Computer: capacity + durable computerId BEFORE campaign assign,
+              // so a full host never leaves an "attached" seat without its own VM.
+              let computerId = seat.computerId ?? null;
+              if (seat.provider === "LinkedIn Browser Computer") {
+                let fleetRows: Array<{ seatId?: string | null; computerId?: string | null }> = [];
+                let fleetOk = false;
+                try {
+                  const capRes = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+                  if (capRes.ok) {
+                    fleetOk = true;
+                    const cap = (await capRes.json()) as {
+                      hostCapacity?: { computers: number; max: number } | null;
+                      computers?: Array<{ seatId?: string | null; computerId?: string | null }>;
+                    };
+                    fleetRows = cap.computers ?? [];
+                    const hc = cap.hostCapacity;
+                    if (hc && hc.max > 0 && hc.computers >= hc.max) {
+                      toast({
+                        title: "Host at capacity",
+                        description: `${hc.computers}/${hc.max} VMs in use — stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS before attaching.`,
+                        variant: "warning",
+                      });
+                      return;
+                    }
+                  }
+                } catch {
+                  /* boot path still fails closed if host is full */
+                }
+                // Reclaim a probed-healthy host orphan before minting — never seat.id
+                // (that merges N VMs onto one profile) and never burn a blank mint when
+                // a durable orphan already has LinkedIn cookies.
+                // Fail closed like Campaign Agents Deploy: empty/failed fleet omits Hermes twin.
+                const staleTwin =
+                  !fleetOk ||
+                  fleetRows.length === 0 ||
+                  isStaleHermesComputerTwin(seatId, seat.computerId, fleetRows);
+                computerId = await resolveDurableComputerId({
+                  seatId,
+                  existingComputerId: staleTwin ? null : seat.computerId,
+                });
+                if (!seat.computerId || seat.computerId !== computerId) {
+                  const saved = await actions.updateSeat(seatId, { computerId });
+                  if (!saved) {
+                    toast({
+                      title: "Attach blocked",
+                      description: "computerId did not persist — fix Fleet before attaching.",
+                      variant: "warning",
+                    });
+                    return;
+                  }
+                }
+              }
+              const next = Array.from(
+                new Set([...(seat.assignedCampaignIds ?? []), c.id]),
+              );
+              const assigned = await actions.updateSeat(seatId, { assignedCampaignIds: next });
+              if (!assigned) {
+                toast({
+                  title: "Attach failed",
+                  description: "Could not persist campaign assignment — VM not started.",
+                  variant: "warning",
+                });
+                return;
+              }
+              if (seat.provider === "LinkedIn Browser Computer" && computerId) {
+                const boot = await bootBrowserComputer({
+                  seatId,
+                  computerId,
+                  campaignId: c.id,
+                });
+                toast({
+                  title: boot.booted
+                    ? `${seat.name} attached · VM booting`
+                    : `${seat.name} attached · VM not booted`,
+                  description: boot.booted
+                    ? "Take control to finish LinkedIn login. Floor will show this seat once the host reports ready."
+                    : boot.error ||
+                      "Seat attached but Chromium did not start — check Fly host capacity.",
+                  variant: boot.booted ? "success" : "warning",
+                });
+              } else {
+                toast({
+                  title: "Agent attached",
+                  description: `${seat.name} is on this campaign. Browser Computer seats still need Take control after boot.`,
+                  variant: "success",
+                });
+              }
+            }}
+            onUnassignSeat={(seatId) => {
+              const seat = seats.find((s) => s.id === seatId);
+              if (!seat) return;
+              const next = (seat.assignedCampaignIds ?? []).filter((id) => id !== c.id);
+              actions.updateSeat(seatId, { assignedCampaignIds: next });
+              toast({
+                title: "Agent detached",
+                description: `${seat.name} removed from this campaign’s VM panel.`,
+                variant: "info",
+              });
+            }}
+          />
+          <p className="text-xs text-muted">
+            Same Chromium mutex as{" "}
+            <Link href="/fleet" className="font-medium text-electric underline-offset-2 hover:underline">
+              Fleet
+            </Link>
+            — this tab only shows agents attached to {c.title}.
+          </p>
+        </div>
+      </TabPanel>
+
       {/* Candidates */}
       <TabPanel value="candidates" active={tab === "candidates"} idBase={idBase}>
         <div className="space-y-6">
@@ -1390,6 +1746,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
+          <Card className="overflow-x-auto">
+            <CardBody>
+              <CandidateTable candidates={filteredCandidates} onSelect={openCandidate} />
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1424,12 +1786,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 />
               </div>
               <Meter label="Workspace enrichment spend" used={enrichmentSpend} limit={enrichmentBudget} tone="electric" />
-            </CardBody>
-          </Card>
-
-          <Card className="overflow-x-auto">
-            <CardBody>
-              <CandidateTable candidates={filteredCandidates} onSelect={openCandidate} />
             </CardBody>
           </Card>
         </div>

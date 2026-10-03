@@ -21,12 +21,19 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
+import { EmailConnectionsPanel } from "@/components/settings/email-connections-panel";
+import { LinkedInOutreachStack } from "@/components/settings/linkedin-outreach-stack";
+import { IntegrationsHealthStrip } from "@/components/settings/integration-connection-primitives";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
+import { RecruitmentLlmPanel } from "@/components/settings/recruitment-llm-panel";
+import { SetupGuidePanel } from "@/components/settings/setup-guide-panel";
+import { ObservabilityPanel } from "@/components/settings/observability-panel";
+import { ReplyAutopilotPanel } from "@/components/settings/reply-autopilot-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
@@ -36,7 +43,7 @@ import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { integrationHealthSummary } from "@/lib/integrations";
+import { realIntegrationSummary } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -57,16 +64,33 @@ import {
   BrainCircuit,
   Wrench,
   Info,
+  Rocket,
+  Activity,
 } from "lucide-react";
 
 /* ---- tabbed navigation -------------------------------------------------- */
 
-const SettingsTabContext = React.createContext("integrations");
+const SettingsTabContext = React.createContext("setup");
+
+const VALID_TABS = new Set([
+  "setup",
+  "integrations",
+  "ai",
+  "fleet",
+  "observe",
+  "compliance",
+  "voice",
+  "access",
+  "workspace",
+]);
 
 /** Maps each numbered section to the tab it lives under. */
 const N_TO_TAB: Record<string, string> = {
+  "00": "setup",
+  "20": "observe",
+  "21": "observe",
   "04": "integrations",
-  "14": "ai", "15": "ai", "16": "ai", "17": "ai", "19": "ai",
+  "14": "ai", "15": "ai", "15a": "ai", "16": "ai", "17": "ai", "19": "ai",
   "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
   "02": "compliance", "05": "compliance", "07": "compliance",
   "08": "voice", "13": "voice",
@@ -75,9 +99,11 @@ const N_TO_TAB: Record<string, string> = {
 };
 
 const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
+  { id: "setup", label: "Get started", icon: <Rocket className="h-4 w-4" /> },
   { id: "integrations", label: "Integrations", icon: <Plug2 className="h-4 w-4" /> },
   { id: "ai", label: "AI & Models", icon: <Cpu className="h-4 w-4" /> },
   { id: "fleet", label: "Fleet & Automation", icon: <Clock className="h-4 w-4" /> },
+  { id: "observe", label: "Observability", icon: <Activity className="h-4 w-4" /> },
   { id: "compliance", label: "Approval & Compliance", icon: <ShieldCheck className="h-4 w-4" /> },
   { id: "voice", label: "Brand Voice", icon: <Sparkles className="h-4 w-4" /> },
   { id: "access", label: "Access & Keys", icon: <Lock className="h-4 w-4" /> },
@@ -205,26 +231,84 @@ export default function SettingsPage() {
   const actions = useActions();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [activeTab, setActiveTab] = React.useState("integrations");
+  const [activeTab, setActiveTab] = React.useState("setup");
+  const [hostVmMax, setHostVmMax] = React.useState<number | null>(null);
   const canResetSyntheticDemo = !supabaseEnabled;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/fleet/computers", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (
+          data: {
+            hostCapacity?: { max?: number } | null;
+            browserSeatBindings?: Array<{
+              id: string;
+              computerId?: string | null;
+              assignedCampaignIds?: string[];
+            }>;
+          } | null,
+        ) => {
+          if (cancelled || !data) return;
+          actions.ingestDurableBrowserBindings(data.browserSeatBindings);
+          const max = data.hostCapacity?.max;
+          if (typeof max === "number" && max > 0) setHostVmMax(max);
+        },
+      )
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [actions]);
+
+  const goTab = React.useCallback((id: string) => {
+    if (!VALID_TABS.has(id)) return;
+    setActiveTab(id);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", id);
+      window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}`);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab && VALID_TABS.has(tab)) setActiveTab(tab);
     const oauth = params.get("oauth");
     const message = params.get("message");
     if (oauth === "success") {
-      toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      const linkedIn = /linkedin/i.test(message ?? "");
+      toast({
+        title: linkedIn ? "LinkedIn connected" : "Mailbox connected",
+        description: message ?? "",
+        variant: "success",
+      });
+      goTab("integrations");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     } else if (oauth === "error") {
-      toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      const linkedIn = /linkedin/i.test(message ?? "");
+      toast({
+        title: linkedIn ? "LinkedIn connection failed" : "Mailbox connection failed",
+        description: message ?? "",
+        variant: "error",
+      });
+      goTab("integrations");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     }
-  }, [toast]);
+  }, [toast, goTab]);
 
-  const summary = integrationHealthSummary(integrations);
+  const summary = realIntegrationSummary(integrations);
+  const roadmapIntegrations = React.useMemo(
+    () => integrations.filter((i) => !i.real),
+    [integrations],
+  );
+  const liveIntegrations = React.useMemo(
+    () => integrations.filter((i) => i.real),
+    [integrations],
+  );
 
   function savedToast() {
     toast({ title: "Settings saved", variant: "success" });
@@ -286,7 +370,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Control"
         title="Settings"
-        description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Aria runs against lives here."
+        description="Plug-and-play setup, recruitment LLMs, Outlook, observability, and the guardrails Aria runs against."
         actions={
           canResetSyntheticDemo ? (
             <Button
@@ -328,7 +412,7 @@ export default function SettingsPage() {
                   id={`settings-tab-${t.id}`}
                   aria-selected={activeTab === t.id}
                   aria-controls="settings-panel"
-                  onClick={() => setActiveTab(t.id)}
+                  onClick={() => goTab(t.id)}
                   className={cn(
                     "inline-flex shrink-0 snap-start items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 lg:w-full",
                     activeTab === t.id
@@ -351,6 +435,36 @@ export default function SettingsPage() {
               aria-labelledby={`settings-tab-${activeTab}`}
               tabIndex={0}
             >
+          {/* 00 — Plug and play */}
+          <Section
+            n="00"
+            eyebrow="Start here"
+            title="Get started"
+            description="Connect email, pick the recruitment LLM, attach an AriaBot Browser Computer, then pull open needs into sourcing."
+          >
+            <SetupGuidePanel onGoAi={() => goTab("ai")} />
+          </Section>
+
+          {/* 20 — Observability */}
+          <Section
+            n="20"
+            eyebrow="Pulse"
+            title="Observability"
+            description="See what the fleet is doing — event mix, activity log, and links to Floor / replay."
+          >
+            <ObservabilityPanel />
+          </Section>
+
+          {/* 21 — Reply autopilot */}
+          <Section
+            n="21"
+            eyebrow="Replies"
+            title="Candidate answers (webhook)"
+            description="Event-driven classify: no idle inbox polling, no token burn waiting for silence."
+          >
+            <ReplyAutopilotPanel />
+          </Section>
+
           {/* 01 — System identity */}
           <Section
             n="01"
@@ -426,17 +540,17 @@ export default function SettingsPage() {
                   <Field
                     label="Minimum score to contact"
                     htmlFor="minScoreToContact"
-                    hint="Candidates below this match score are never contacted (0–100)."
+                    hint="Only 80%+ matches may be contacted. Raise higher for a stricter bar (80–100)."
                   >
                     <Input
                       id="minScoreToContact"
                       type="number"
-                      min={0}
+                      min={80}
                       max={100}
                       value={settings.minScoreToContact}
                       onChange={(e) =>
                         actions.updateSettings({
-                          minScoreToContact: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                          minScoreToContact: Math.min(100, Math.max(80, Number(e.target.value) || 80)),
                         })
                       }
                       onBlur={savedToast}
@@ -545,45 +659,49 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
+            description="Real connections only: email OAuth, LinkedIn identity + HeyReach outreach stack, then Apify and the rest. No fake skeletons."
           >
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="success" size="sm" dot>
-                {summary.connected} connected
-              </Badge>
-              {summary.degraded > 0 && (
-                <Badge tone="warning" size="sm" dot>
-                  {summary.degraded} degraded
-                </Badge>
-              )}
-              {summary.error > 0 && (
-                <Badge tone="danger" size="sm" dot>
-                  {summary.error} error
-                </Badge>
-              )}
-              {summary.notConfigured > 0 && (
-                <Badge tone="neutral" size="sm" dot>
-                  {summary.notConfigured} not configured
-                </Badge>
-              )}
-              <span className="text-xs text-muted">of {summary.total} total · mock is the safe default</span>
-            </div>
+            <EmailConnectionsPanel />
+            <LinkedInOutreachStack />
+            <IntegrationsHealthStrip
+              connected={summary.connected}
+              degraded={summary.degraded}
+              error={summary.error}
+              notConfigured={summary.notConfigured}
+              total={summary.total}
+            />
 
-            {integrations.length === 0 ? (
+            {liveIntegrations.length === 0 ? (
               <EmptyState
                 icon={<Plug2 className="h-7 w-7" />}
-                title="No integrations configured"
-                description="Integrations appear here once Aria is provisioned with its tool connections."
+                title="No live integrations"
+                description="Connect email or LinkedIn above to get started."
               />
             ) : (
-              <>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  {integrations.map((i) => (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {liveIntegrations.map((i) => (
+                  <IntegrationCard key={i.id} integration={i} />
+                ))}
+              </div>
+            )}
+
+            <DatabricksPanel />
+
+            {roadmapIntegrations.length > 0 && (
+              <details className="rounded-2xl border border-dashed border-line p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-ink">
+                  Roadmap placeholders ({roadmapIntegrations.length}) — not wired
+                </summary>
+                <p className="mt-2 text-xs text-muted">
+                  These cards are product backlog only. They cannot connect and never report a fake
+                  “connected” state.
+                </p>
+                <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {roadmapIntegrations.map((i) => (
                     <IntegrationCard key={i.id} integration={i} />
                   ))}
                 </div>
-                <DatabricksPanel />
-              </>
+              </details>
             )}
           </Section>
 
@@ -632,11 +750,17 @@ export default function SettingsPage() {
                     onCheckedChange={(v) => patchNotify("email", v)}
                   />
                 </div>
-                <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
-                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                  Toggling on records your preference. Delivery begins once you add the matching
-                  Slack/Telegram webhook or SMTP credential in Access &amp; Keys.
-                </p>
+                <div className="mt-3 rounded-2xl border border-dashed border-line bg-canvas/60 px-3 py-2.5 text-xs text-muted">
+                  <p className="flex items-start gap-1.5 font-semibold text-ink-soft">
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Preference only — not delivering yet
+                  </p>
+                  <p className="mt-1 leading-relaxed">
+                    These toggles save where you want alerts. No Slack, Telegram, or email messages
+                    are sent until you add the matching webhook / SMTP credential under Access &amp;
+                    Keys. Until then, watch Approvals and Replies in the app.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </Section>
@@ -860,15 +984,22 @@ export default function SettingsPage() {
                   <Field
                     label="Max agents (fleet ceiling)"
                     htmlFor="maxAgents"
-                    hint="Hard cap on deployable agents across the workspace."
+                    hint={
+                      hostVmMax
+                        ? `Hard cap on deployable agents. Fly Chromium host max is ${hostVmMax} (OPENBOT_MAX_COMPUTERS) — Deploy cannot boot more live VMs than that.`
+                        : "Hard cap on deployable agents across the workspace."
+                    }
                   >
                     <Input
                       id="maxAgents"
                       type="number"
                       min={1}
-                      max={1000}
+                      max={hostVmMax ?? 1000}
                       value={settings.fleet.maxAgents}
-                      onChange={(e) => patchFleet({ maxAgents: Math.max(1, Number(e.target.value) || 1) })}
+                      onChange={(e) => {
+                        const n = Math.max(1, Number(e.target.value) || 1);
+                        patchFleet({ maxAgents: hostVmMax ? Math.min(n, hostVmMax) : n });
+                      }}
                       onBlur={savedToast}
                     />
                   </Field>
@@ -941,10 +1072,20 @@ export default function SettingsPage() {
           <Section
             n="14"
             eyebrow="AI backbone"
-            title="LLM providers"
-            description="Connect the language model backends the sourcing fleet runs on. Each provider links to a saved API key (secrets never leave the server). Admin only."
+            title="LLM providers & keys"
+            description="Paste an API key once. We encrypt it at rest, verify it live with the provider, and never show the secret again — only ••••last4. Admin only."
           >
             <ProvidersPanel />
+          </Section>
+
+          {/* 15a — Recruitment LLM picker */}
+          <Section
+            n="15a"
+            eyebrow="Recruitment"
+            title="Which LLM runs recruitment"
+            description="One dropdown per job: sourcing, intake parse, outreach, reply classification. Plug-and-play — no config files."
+          >
+            <RecruitmentLlmPanel />
           </Section>
 
           {/* 15 — Models */}

@@ -25,6 +25,11 @@ const providerProbeAllowlist = [
     path: "src/app/api/keys/test/route.ts",
     justification: "Uses probe clearances only for fixed provider API-key authentication checks.",
   },
+  {
+    path: "src/app/api/keys/route.ts",
+    justification:
+      "Uses probe clearances only for fixed provider API-key authentication checks on encrypt-then-verify save (mirrors /api/keys/test).",
+  },
 ] as const;
 const prohibitedTransportModules = [
   "@/lib/api/public-fetch",
@@ -79,7 +84,7 @@ test("provider egress chokepoint owns provider sockets", () => {
     ["Tavily", "api.tavily.com"],
     ["DuckDuckGo", "api.duckduckgo.com"],
   ]) {
-    assert.match(providerTransport, new RegExp(`${provider}: "${host.replaceAll(".", "\\.")}"`));
+    assert.ok(providerTransport.includes(`${provider}: "${host}"`));
   }
 
   const scannedFiles = [
@@ -136,11 +141,13 @@ test("provider probe clearance is confined to fixed-endpoint credential checks",
       providerEgressPath,
       "src/app/api/source/route.ts",
       "src/app/api/keys/test/route.ts",
+      "src/app/api/keys/route.ts",
     ],
   );
   assert.match(providerProbeAllowlist[0].justification, /Defines the probe clearance helper/);
   assert.match(providerProbeAllowlist[1].justification, /fixed GitHub rate-limit and authenticated-user credential checks/);
   assert.match(providerProbeAllowlist[2].justification, /fixed provider API-key authentication checks/);
+  assert.match(providerProbeAllowlist[3].justification, /encrypt-then-verify save/);
 
   const allowed = new Set<string>(providerProbeAllowlist.map((entry) => entry.path));
   const probeReferences = walk("src")

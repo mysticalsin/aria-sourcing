@@ -16,6 +16,7 @@ ok("admin can manage settings", can("admin", "manage_settings"));
 ok("admin can manage keys", can("admin", "manage_keys"));
 ok("admin can manage fleet", can("admin", "manage_fleet"));
 ok("admin can manage roles", can("admin", "manage_roles"));
+ok("admin can manage autopilot", can("admin", "manage_autopilot"));
 ok("member can source", can("member", "source"));
 ok("member can outreach", can("member", "outreach"));
 ok("member CANNOT manage keys", !can("member", "manage_keys"));

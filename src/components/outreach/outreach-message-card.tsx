@@ -16,7 +16,11 @@ import {
   useToast,
 } from "@/components/ui";
 import { useActions, useCandidate, useCampaign, useSettings } from "@/lib/store";
+import { checkOutreachApproval } from "@/lib/rules";
+import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import type { CandidateLawfulBasis } from "@/lib/types";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
+import { humanizeText } from "@/lib/humanizer";
 import {
   initialsFrom,
   formatTimeAgo,
@@ -41,6 +45,7 @@ import {
   ExternalLink,
   Clock,
 } from "lucide-react";
+import { SendOutcomeChip } from "@/components/outreach/send-outcome-chip";
 
 /** "waiting 3d" style label for how long a draft has sat in the queue — reuses
  *  formatTimeAgo's tested duration math, just drops the trailing "ago" so it
@@ -77,14 +82,47 @@ export function OutreachMessageCard({
   const a = useActions();
   const { toast } = useToast();
 
-  const [subject, setSubject] = React.useState(message.subject);
-  const [body, setBody] = React.useState(message.body);
+  const sealedSubject = message.approvedSubject ?? message.subject;
+  const sealedBody = message.approvedBody ?? message.body;
+  const isSealed =
+    message.status === "Approved" ||
+    message.status === "Pending Manual Send" ||
+    message.status === "Scheduled";
+
+  const [subject, setSubject] = React.useState(() =>
+    isSealed ? sealedSubject : humanizeText(message.subject),
+  );
+  const [body, setBody] = React.useState(() =>
+    isSealed ? sealedBody : humanizeText(message.body),
+  );
 
   // Re-sync local editor whenever the underlying message changes (regenerate / tone swap).
+  // Sealed (approved) copy is never re-humanized — bots must send exactly what was signed off.
   React.useEffect(() => {
-    setSubject(message.subject);
-    setBody(message.body);
-  }, [message.subject, message.body]);
+    if (isSealed) {
+      setSubject(sealedSubject);
+      setBody(sealedBody);
+      return;
+    }
+    const nextSubject = humanizeText(message.subject);
+    const nextBody = humanizeText(message.body);
+    setSubject(nextSubject);
+    setBody(nextBody);
+    if (nextSubject !== message.subject || nextBody !== message.body) {
+      a.updateOutreach(message.id, { subject: nextSubject, body: nextBody });
+    }
+  }, [
+    message.subject,
+    message.body,
+    message.approvedSubject,
+    message.approvedBody,
+    message.status,
+    message.id,
+    a,
+    isSealed,
+    sealedSubject,
+    sealedBody,
+  ]);
 
   const dirty = subject !== message.subject || body !== message.body;
   const ChannelIcon = message.channel === "Email" ? Mail : Linkedin;
@@ -106,6 +144,20 @@ export function OutreachMessageCard({
   const [regenerating, setRegenerating] = React.useState(false);
   const [approving, setApproving] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
+  const [showBasisPrompt, setShowBasisPrompt] = React.useState(false);
+
+  const preflight = React.useMemo(() => {
+    if (!candidate || !campaign || !actionable) return null;
+    return checkOutreachApproval({
+      candidate,
+      message: { ...message, subject, body },
+      settings,
+      emailsSentToday: campaign.metrics.emailsSentToday,
+      linkedinSentToday: campaign.metrics.linkedinSentToday,
+    });
+  }, [candidate, campaign, actionable, message, subject, body, settings]);
+
+  const missingLawfulBasis = Boolean(candidate && !recordedCandidateLawfulBasis(candidate));
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const tone = e.target.value as OutreachTone;
@@ -134,15 +186,23 @@ export function OutreachMessageCard({
     const res = await a.approveOutreach(message.id);
     setApproving(false);
     if (!res.allowed) {
+      const lawfulBlocked = res.blockers.some((b) => /lawful basis/i.test(b));
       toast({
-        title: "Approval blocked",
+        title: "Approval held — human gate",
         description: res.blockers.join(" "),
         variant: "error",
       });
+      if (lawfulBlocked) setShowBasisPrompt(true);
       return;
     }
     if (res.dryRun) {
-      toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      toast({
+        title: "Approved under dry-run",
+        description:
+          res.warnings.join(" ") ||
+          "Nothing was contacted. Dry-run keeps every approval as a rehearsal until you turn it off.",
+        variant: "success",
+      });
       return;
     }
     toast({
@@ -150,6 +210,21 @@ export function OutreachMessageCard({
       description: res.warnings.length
         ? res.warnings.join(" ")
         : "Goes live once the agent seat is connected and its sending domain is verified.",
+      variant: "success",
+    });
+  }
+
+  function handleRecordBasis(basis: CandidateLawfulBasis) {
+    if (!candidate) return;
+    const result = a.recordCandidateLawfulBasis(candidate.id, basis);
+    if (!result.ok) {
+      toast({ title: "Could not record lawful basis", description: result.error, variant: "error" });
+      return;
+    }
+    setShowBasisPrompt(false);
+    toast({
+      title: "Lawful basis recorded",
+      description: "You can Approve again — nothing sends without that second click.",
       variant: "success",
     });
   }
@@ -183,6 +258,12 @@ export function OutreachMessageCard({
 
   const [copied, setCopied] = React.useState(false);
   const [sending, setSending] = React.useState(false);
+  const [sendResult, setSendResult] = React.useState<{
+    status?: string;
+    detail?: string;
+    paceReason?: string;
+    dryRun?: boolean;
+  } | null>(null);
   async function handleCopyMessage() {
     try {
       await navigator.clipboard.writeText(`${subject}\n\n${body}`);
@@ -204,37 +285,53 @@ export function OutreachMessageCard({
   }
 
   function handleConfirmManualSend() {
-    const res = a.confirmManualSend(message.id);
-    if (!res.ok) {
-      toast({ title: "Could not confirm", description: res.error, variant: "error" });
-      return;
-    }
-    toast({
-      title: "LinkedIn send confirmed",
-      description: "Ledger updated. The candidate is marked as contacted.",
-      variant: "success",
-    });
+    void (async () => {
+      const res = await a.confirmManualSend(message.id);
+      if (!res.ok) {
+        toast({ title: "Could not confirm", description: res.error, variant: "error" });
+        return;
+      }
+      if (res.dryRun) {
+        toast({ title: "Public demo only", description: res.error, variant: "info" });
+        return;
+      }
+      toast({
+        title: "LinkedIn send confirmed",
+        description: "Ledger updated. The candidate is marked as contacted.",
+        variant: "success",
+      });
+    })();
   }
 
   async function handleSend() {
     setSending(true);
+    setSendResult(null);
     const res = await a.sendApprovedOutreach(message.id);
     setSending(false);
+    setSendResult({
+      status: res.status ?? (res.ok ? (res.queued ? "queued" : "sent") : "error"),
+      detail: res.detail ?? res.error,
+      paceReason: res.paceReason,
+      dryRun: res.dryRun,
+    });
     if (!res.ok) {
       toast({ title: "Send blocked", description: res.error, variant: "error" });
       return;
     }
     if (res.queued) {
       toast({
-        title: "WhatsApp queued",
+        title: message.channel === "LinkedIn" ? "LinkedIn queued" : "WhatsApp queued",
         description: "ARIA will re-check consent, do-not-contact status, the reply window, and your approval before delivery.",
         variant: "success",
       });
       return;
     }
     toast({
-      title: "Email sent",
-      description: "Delivered from the live mailbox. The candidate is now marked as contacted.",
+      title: message.channel === "LinkedIn" ? "LinkedIn sent" : "Email sent",
+      description:
+        message.channel === "LinkedIn"
+          ? "Delivered via the automatic LinkedIn adapter. The candidate is now marked as contacted."
+          : "Delivered from the live mailbox. The candidate is now marked as contacted.",
       variant: "success",
     });
   }
@@ -318,7 +415,7 @@ export function OutreachMessageCard({
               id={toneId}
               value={message.tone}
               onChange={handleToneChange}
-              disabled={settled || regenerating || approving || rejecting}
+              disabled={isSealed || regenerating || approving || rejecting}
               options={OUTREACH_TONES.map((t) => ({ value: t, label: t }))}
             />
           </Field>
@@ -331,7 +428,7 @@ export function OutreachMessageCard({
               id={subjectId}
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              disabled={settled || approving || rejecting}
+              disabled={isSealed || approving || rejecting}
               placeholder="Subject line"
             />
           </Field>
@@ -343,7 +440,7 @@ export function OutreachMessageCard({
             id={bodyId}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            disabled={settled || approving || rejecting}
+            disabled={isSealed || approving || rejecting}
             className="min-h-[160px]"
             placeholder="Message body"
           />
@@ -357,7 +454,9 @@ export function OutreachMessageCard({
               <div>
                 <p className="font-semibold">LinkedIn message ready: manual send required</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  Aria cannot send LinkedIn messages automatically. Copy the draft, open the candidate&apos;s profile, paste it, then confirm here.
+                  This workspace is in Manual LinkedIn mode. Copy the draft, open the candidate&apos;s
+                  profile, paste it, then confirm here — or switch Settings → LinkedIn to Automatic
+                  outreach.
                 </p>
               </div>
             </div>
@@ -398,17 +497,28 @@ export function OutreachMessageCard({
             <div className="min-w-0 flex-1">
               <p className="font-semibold">
                 {message.dryRun
-                  ? "Approved / Queued for send"
+                  ? "Approved under dry-run — nothing contacted"
                   : approvedPendingSend
-                    ? "Approved, ready to send"
+                    ? "Sealed for delivery"
                     : "Approved / Sent"}
               </p>
               <p className="mt-0.5 text-success/80">
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
+                {message.approvedAt ? ` · sealed ${formatTimeAgo(message.approvedAt)}` : ""}
                 {message.scheduledFor ? ` · ${formatTimeAgo(message.scheduledFor)}` : ""}
-                {message.dryRun ? " · Nothing sent live." : ""}
-                {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
+                {message.dryRun
+                  ? " · Dry-run is on: this is a rehearsal queue, not a live send."
+                  : ""}
+                {approvedPendingSend
+                  ? " · Bots will send this exact copy on LinkedIn — no rewrites after seal."
+                  : ""}
               </p>
+              {approvedPendingSend && (
+                <p className="mt-2 rounded-xl bg-white/50 px-3 py-2 font-mono text-xs leading-relaxed text-success ring-1 ring-inset ring-success/15">
+                  {(message.approvedBody ?? message.body).slice(0, 280)}
+                  {(message.approvedBody ?? message.body).length > 280 ? "…" : ""}
+                </p>
+              )}
             </div>
             {approvedPendingSend && (
               <Button size="sm" disabled={sending} onClick={handleSend}>
@@ -419,6 +529,16 @@ export function OutreachMessageCard({
           </div>
         )}
 
+        {sendResult ? (
+          <SendOutcomeChip
+            dryRun={sendResult.dryRun}
+            status={sendResult.status}
+            detail={sendResult.detail}
+            paceReason={sendResult.paceReason}
+            showNextAction
+          />
+        ) : null}
+
         {/* Follow-up sequence hint */}
         <div className="flex items-center gap-2 text-xs text-muted">
           <Repeat className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -428,6 +548,43 @@ export function OutreachMessageCard({
           </span>
         </div>
 
+        {/* Human approval gate — show blockers before the click so Approve never looks dead */}
+        {actionable && preflight && !preflight.allowed && (
+          <div className="space-y-2 rounded-2xl bg-warning-soft px-3.5 py-3 text-sm text-[hsl(32_90%_28%)] ring-1 ring-inset ring-warning/25">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-semibold">Held for human review</p>
+                <ul className="list-disc space-y-0.5 pl-4 text-[hsl(32_90%_28%)]/90">
+                  {preflight.blockers.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            {(missingLawfulBasis || showBasisPrompt) && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleRecordBasis("legitimate_interest")}
+                >
+                  Record legitimate interest
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleRecordBasis("consent")}
+                >
+                  Record consent
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
           {!settled && (
@@ -436,7 +593,7 @@ export function OutreachMessageCard({
               variant="outline"
               leftIcon={<Save className="h-4 w-4" />}
               onClick={handleSave}
-              disabled={!dirty || approving || rejecting}
+              disabled={isSealed || !dirty || approving || rejecting}
             >
               Save edits
             </Button>
@@ -451,7 +608,7 @@ export function OutreachMessageCard({
                 loading={approving}
                 disabled={approving || rejecting}
               >
-                {approving ? "Recording approval…" : "Approve"}
+                {approving ? "Sealing…" : "Approve & seal"}
               </Button>
               <Button
                 size="sm"

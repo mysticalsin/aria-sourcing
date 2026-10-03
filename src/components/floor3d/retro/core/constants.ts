@@ -8,7 +8,7 @@ export const AGENT_RADIUS = 20;
 export const SEPARATION_STRENGTH = 3;
 export const BUMP_FREEZE_MS = 1500;
 export const BUMP_RECOVERY_MS = 1200;
-export const DESK_STICKY_MS = 10_000;
+export const DESK_STICKY_MS = 1_500;
 
 // World-Z distance in front of the desk's front edge where the chair sits and
 // a "working" agent is seated. Tuned so chair + seated robot tuck to the desk

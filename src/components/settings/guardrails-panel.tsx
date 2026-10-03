@@ -123,7 +123,7 @@ export function GuardrailsPanel() {
             <ShieldCheck className="h-4 w-4 text-success" />
             <p className="text-sm font-bold text-ink">Safety rails (locked)</p>
             <Badge tone="success" size="sm">
-              anti-ban
+              pacing + caps
             </Badge>
           </div>
           <ul className="space-y-2">
@@ -134,7 +134,10 @@ export function GuardrailsPanel() {
               </li>
             ))}
           </ul>
-          <p className="text-xs text-muted">These keep the fleet compliant and un-bannable. They cannot be turned off.</p>
+          <p className="text-xs text-muted">
+            These enforce approval, caps, warmup, and human pacing. They reduce ban risk — they do not make accounts
+            “unbannable.” They cannot be turned off.
+          </p>
         </CardContent>
       </Card>
 

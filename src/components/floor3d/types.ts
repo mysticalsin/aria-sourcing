@@ -4,7 +4,7 @@
    electron/vite coupling.
    ========================================================================== */
 
-export type AgentStatus = "working" | "idle" | "error";
+export type AgentStatus = "working" | "warming" | "idle" | "error";
 
 /** Org position. Everyone is an employee; the first seat is treated as CEO. */
 export type AgentPosition = "employee" | "ceo";

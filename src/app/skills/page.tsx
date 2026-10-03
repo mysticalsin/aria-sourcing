@@ -16,6 +16,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { SkillCard } from "@/components/skills/skill-card";
 import { LearningSession } from "@/components/skills/learning-session";
+import { LinkedInUiLessonsCard } from "@/components/skills/linkedin-ui-lessons-card";
 import {
   useHydrated,
   useActiveCampaign,
@@ -309,6 +310,8 @@ export default function SkillsPage() {
       >
         <div className="space-y-8">
           <LoopExplainer />
+
+          <LinkedInUiLessonsCard />
 
           {/* Watch it learn — a streamed, narrated review of one skill's real,
               most-recent proposal (metrics + reply outcomes + word-diff). */}

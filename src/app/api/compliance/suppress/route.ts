@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  * letting arbitrary browser clients write the shared table.
  */
 const SuppressSchema = z.object({
-  type: z.enum(["email", "domain", "phone"]).default("email"),
+  type: z.enum(["email", "domain", "phone", "linkedin"]).default("email"),
   value: z.string().min(3).max(255),
   reason: z.string().max(200).default(""),
   expiresAt: z.string().datetime().nullable().optional(),

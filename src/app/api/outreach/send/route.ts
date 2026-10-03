@@ -12,12 +12,26 @@ import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
-import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
+import {
+  getOutboundChannelPolicy,
+  resolveLinkedInDeliveryMode,
+} from "@/lib/linkedin-policy";
+import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
+import { isLinkedInAutomaticProvider, linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import {
+  extractLinkedInCredentialRefs,
+  resolveLinkedInCredentials,
+} from "@/lib/linkedin-credentials";
+import { evaluateSendPace } from "@/lib/send-pacing";
+import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
+import { defaultFleetSettings } from "@/lib/fleet";
+import type { AgentSeat } from "@/lib/types";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
-import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoAriaBotDisabled, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import type { LinkedInDeliveryMode } from "@/lib/types";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -25,6 +39,8 @@ const OutreachSendSchema = z.object({
   candidateId: z.string().min(1).max(120),
   candidateEmail: z.string().email().max(255).optional(),
   to: z.string().email().max(255).optional(),
+  /** LinkedIn profile URL for automatic LinkedIn delivery (scope + enqueue recipient). */
+  profileUrl: z.string().max(500).optional(),
   campaignId: z.string().min(1).max(120),
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),
@@ -69,16 +85,6 @@ export async function POST(req: NextRequest) {
   const payload = validated.data;
   const channel = payload.channel ?? "Email";
 
-  // LinkedIn is always an assisted-manual channel unless a separately approved
-  // official integration is implemented. Reject before any provider, approval,
-  // claim, or email fallback can make this look like a deliverable send.
-  const channelPolicy = getOutboundChannelPolicy(channel);
-  if (!channelPolicy.ok) {
-    return NextResponse.json(
-      { status: "manual-required", detail: channelPolicy.reason },
-      { status: 409 },
-    );
-  }
   if (channel === "SMS") {
     return NextResponse.json(
       {
@@ -99,6 +105,8 @@ export async function POST(req: NextRequest) {
   const { confirmLive } = payload;
 
   // DEMO mode: no server-side guardrails → never send.
+  // LinkedIn Manual still returns 409 below once we can read workspace deliveryMode;
+  // without Supabase we cannot resolve mode, so dry-run (nothing sent).
   if (!supabaseEnabled || !confirmLive) {
     return NextResponse.json({
       status: "dry-run",
@@ -139,8 +147,24 @@ export async function POST(req: NextRequest) {
     .select("state")
     .eq("workspace_id", approvalWid)
     .maybeSingle();
-  const campaigns = Array.isArray(record(workspaceState?.state)?.campaigns)
-    ? record(workspaceState?.state)?.campaigns as unknown[]
+  const stateRec = record(workspaceState?.state);
+  const fleetRec = record(record(stateRec?.settings)?.fleet);
+  const linkedInDeliveryMode: LinkedInDeliveryMode = resolveLinkedInDeliveryMode(
+    typeof fleetRec?.deliveryMode === "string" ? fleetRec.deliveryMode : undefined,
+  );
+
+  // LinkedIn Manual → assisted paste/confirm (409). Automatic (default) continues
+  // to the entitled vendor/API queue path below — never scrape/session bots.
+  const channelPolicy = getOutboundChannelPolicy(channel, { deliveryMode: linkedInDeliveryMode });
+  if (!channelPolicy.ok) {
+    return NextResponse.json(
+      { status: "manual-required", detail: channelPolicy.reason },
+      { status: 409 },
+    );
+  }
+
+  const campaigns = Array.isArray(stateRec?.campaigns)
+    ? stateRec?.campaigns as unknown[]
     : [];
   const campaign = campaigns.find((item) => record(item)?.id === campaignId);
   const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
@@ -152,10 +176,26 @@ export async function POST(req: NextRequest) {
     );
   }
   const approvedContentHash = approvalHash(subject, body);
+  const linkedInProfile =
+    channel === "LinkedIn"
+      ? normalizeLinkedInProfileUrl(
+          (payload.profileUrl ?? "").trim() ||
+            (() => {
+              const candidates = Array.isArray(stateRec?.candidates) ? (stateRec.candidates as unknown[]) : [];
+              const cand = candidates.find((item) => record(item)?.id === candidateId);
+              return String(record(cand)?.linkedinUrl ?? "");
+            })(),
+        )
+      : null;
   const approvedScopeHash = approvalScopeHash({
     candidateId,
     channel,
-    recipient: channel === "WhatsApp" ? payload.phone ?? "" : candidateEmail,
+    recipient:
+      channel === "WhatsApp"
+        ? payload.phone ?? ""
+        : channel === "LinkedIn"
+          ? linkedInProfile ?? ""
+          : candidateEmail,
   });
   if (!approvedScopeHash) {
     return NextResponse.json({ status: "error", detail: "Invalid approved recipient." }, { status: 400 });
@@ -193,6 +233,234 @@ export async function POST(req: NextRequest) {
 
   if (!seatId) {
     return NextResponse.json({ status: "error", detail: "Missing seatId." }, { status: 400 });
+  }
+
+  // LinkedIn Automatic: durable outbox + vendor-api dispatcher (same shape as WhatsApp).
+  // Manual mode already returned 409 above. Never falls back to assisted-manual paste.
+  if (channel === "LinkedIn") {
+    if (!linkedInProfile) {
+      return NextResponse.json(
+        { status: "error", detail: "A valid LinkedIn profile URL is required for automatic delivery." },
+        { status: 400 },
+      );
+    }
+    const { data: liSeat } = await supabase
+      .from("agent_seats")
+      .select("id, provider, status, mode, computer_id, assigned_campaign_ids")
+      .eq("id", seatId)
+      .maybeSingle();
+    if (!liSeat) {
+      return NextResponse.json({ status: "error", detail: "Seat not found in your workspace." }, { status: 403 });
+    }
+    if (liSeat.status !== "active") {
+      return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
+    }
+    if (liSeat.mode !== "live") {
+      return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
+    }
+    if (liSeat.provider !== "LinkedIn Vendor API" && liSeat.provider !== "LinkedIn Browser Computer") {
+      return NextResponse.json(
+        {
+          status: "error",
+          detail:
+            "Automatic LinkedIn delivery requires a live LinkedIn Vendor API or LinkedIn Browser Computer seat. Connect an entitled adapter in Settings → LinkedIn, or switch to Manual approve-and-send.",
+          settingsPath: "/settings?tab=integrations#linkedin-outreach-stack",
+        },
+        { status: 503 },
+      );
+    }
+    // Browser Computer + Vendor: campaign attach required (empty BC ≠ shared pool;
+    // Vendor empty remains shared; foreign assigned refuses both).
+    if (liSeat.provider === "LinkedIn Browser Computer" || liSeat.provider === "LinkedIn Vendor API") {
+      const assigned = Array.isArray(liSeat.assigned_campaign_ids)
+        ? liSeat.assigned_campaign_ids.filter((id): id is string => typeof id === "string")
+        : [];
+      const attached =
+        liSeat.provider === "LinkedIn Browser Computer"
+          ? Boolean(campaignId && assigned.includes(campaignId))
+          : !campaignId
+            ? false
+            : assigned.length === 0 || assigned.includes(campaignId);
+      if (!attached) {
+        return NextResponse.json(
+          {
+            status: "error",
+            detail:
+              liSeat.provider === "LinkedIn Browser Computer"
+                ? "This Browser Computer seat is not attached to the campaign. Attach it under Campaign Agents before send."
+                : "This LinkedIn Vendor API seat is not attached to the campaign. Attach it under Campaign Agents before send.",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    let browserSessionHealthy: boolean | null = null;
+    if (liSeat.provider === "LinkedIn Browser Computer") {
+      const boundId = String(liSeat.computer_id ?? "").trim();
+      if (boundId) {
+        try {
+          const hydrated = defaultComputerSupervisor.hydrateComputer({
+            workspaceId: String(approvalWid),
+            seatId,
+            computerId: boundId,
+          });
+          // Only trust health from a successful seat-owned hydrate. Never
+          // get(computer_id) after ownership/orphan throw — that can pick up a
+          // foreign/orphan sessionHealthy=true and green pace theater.
+          browserSessionHealthy = hydrated
+            ? (defaultComputerSupervisor.get(hydrated.computerId)?.sessionHealthy ?? null)
+            : null;
+        } catch {
+          browserSessionHealthy = null;
+        }
+      }
+    }
+
+    // Human pacing — refuse before queue so deferred sends never look like success.
+    const seatsArr = Array.isArray(stateRec?.seats) ? (stateRec.seats as unknown[]) : [];
+    const seatState = seatsArr
+      .map((item) => record(item))
+      .find((item) => item?.id === seatId) as AgentSeat | undefined;
+    if (
+      liSeat.provider === "LinkedIn Browser Computer" &&
+      !seatState
+    ) {
+      // Fail closed: Browser Computer pacing needs the Hermes seat snapshot.
+      return NextResponse.json(
+        {
+          status: "deferred",
+          detail:
+            "Seat snapshot required for Browser Computer pacing (daily cap / gap / sessionHealthy).",
+          paceReason: "seat_missing",
+          nextEligibleAt: null,
+        },
+        { status: 429 },
+      );
+    }
+    if (seatState) {
+      const fleetSettings = {
+        ...defaultFleetSettings(),
+        ...(fleetRec as Record<string, unknown>),
+      };
+      const pace = evaluateSendPace({
+        seat: seatState,
+        settings: fleetSettings,
+        // Browser Computer: fail closed unless probed true (undefined would skip the check).
+        sessionHealthy:
+          liSeat.provider === "LinkedIn Browser Computer" ? browserSessionHealthy : undefined,
+      });
+      if (!pace.ok) {
+        return NextResponse.json(
+          {
+            status: "deferred",
+            detail: pace.detail ?? "Send deferred by pacing.",
+            paceReason: pace.reason,
+            nextEligibleAt: pace.nextEligibleAt ?? null,
+          },
+          { status: 429 },
+        );
+      }
+    }
+
+    const adapter = linkedInAdapterForProvider(liSeat.provider);
+    const linkedInCreds = await resolveLinkedInCredentials(
+      extractLinkedInCredentialRefs(stateRec?.settings),
+    );
+    if (!adapter?.configured(linkedInCreds)) {
+      return NextResponse.json(
+        {
+          status: "error",
+          detail:
+            "No live LinkedIn automatic adapter is configured for this seat (add Vendor API / Computer Supervisor keys in Settings → LinkedIn, or set LINKEDIN_VENDOR_* / COMPUTER_SUPERVISOR_*). Automatic send refused.",
+          settingsPath: "/settings?tab=integrations#linkedin-outreach-stack",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (publicDemoAriaBotDisabled()) {
+      return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+    }
+
+    const { data: queuedData, error: queueErr } = await supabase.rpc("enqueue_linkedin_outbound", {
+      p_message_id: payload.messageId,
+      p_candidate_id: candidateId,
+      p_campaign_id: campaignId,
+      p_seat_id: seatId,
+      p_profile_url: linkedInProfile,
+      p_subject: subject,
+      p_body: body,
+    });
+    const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
+    if (queueErr || queued?.ok !== true || queued.status !== "queued" || !queued.id) {
+      if (queued?.reason === "duplicate") {
+        return NextResponse.json({ status: "skipped", detail: "This LinkedIn message is already queued or was sent." });
+      }
+      if (queued?.reason === "suppressed") {
+        return NextResponse.json({ status: "skipped", detail: "Recipient is on the LinkedIn suppression / do-not-contact list." });
+      }
+      safeLog("linkedin outbox queue error", {
+        message: queueErr?.message ?? queued?.reason ?? "no result",
+        code: queueErr?.code,
+      });
+      return NextResponse.json(
+        { status: "error", detail: queued?.reason ?? "Could not queue the LinkedIn message." },
+        { status: 500 },
+      );
+    }
+    const dispatcher = getServiceSupabase();
+    if (dispatcher) {
+      try {
+        await dispatchDue(dispatcher, 1, queued.id);
+      } catch (err) {
+        safeLog("linkedin immediate dispatch error", { message: err instanceof Error ? err.message : "unknown" });
+      }
+
+      const { data: dispatched, error: dispatchedErr } = await dispatcher
+        .from("messages_outbound")
+        .select("status")
+        .eq("id", queued.id)
+        .maybeSingle();
+      if (dispatched?.status === "sent") {
+        return NextResponse.json({ status: "sent", detail: "Sent through the policy-checked LinkedIn vendor dispatcher." });
+      }
+      if (dispatched?.status === "blocked") {
+        return NextResponse.json({ status: "skipped", detail: "LinkedIn policy blocked this message before delivery." });
+      }
+      if (dispatched?.status === "failed") {
+        return NextResponse.json({ status: "error", detail: "LinkedIn delivery failed after the policy checks." }, { status: 502 });
+      }
+      if (dispatched?.status === "dispatching") {
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "linkedin-reconciliation-required",
+            messageId: queued.id,
+            detail: "LinkedIn provider acceptance is not yet reconciled. Do not retry this message.",
+          },
+          { status: 502 },
+        );
+      }
+      if (dispatchedErr || !dispatched || dispatched.status !== "queued") {
+        safeLog("linkedin immediate dispatch state unavailable", { message: dispatchedErr?.message ?? "no outbox row" });
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "linkedin-reconciliation-required",
+            messageId: queued.id,
+            detail: "LinkedIn delivery state could not be confirmed. Do not retry this message.",
+          },
+          { status: 502 },
+        );
+      }
+    }
+    return NextResponse.json({
+      status: "queued",
+      delivery: "linkedin-delivery-queued",
+      messageId: queued.id,
+      detail: "Queued for policy-checked LinkedIn vendor delivery. No message was sent by this request.",
+    }, { status: 202 });
   }
 
   // WhatsApp never calls Meta from this request handler. The approved message

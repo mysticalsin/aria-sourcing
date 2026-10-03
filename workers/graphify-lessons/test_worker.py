@@ -246,7 +246,9 @@ class GraphifyLessonsWorkerTests(unittest.TestCase):
         self.assertGreaterEqual(dockerfile.count("--require-hashes"), 2)
         self.assertIn("--no-deps", dockerfile)
         self.assertIn("pip check", dockerfile)
-        self.assertNotIn("apt-get", dockerfile)
+        # OS CVE patches may run `apt-get update && apt-get upgrade`. Extra
+        # packages stay forbidden — this image is a pinned venv, not a depot.
+        self.assertNotRegex(dockerfile, r"apt-get\s+install")
         self.assertNotIn("git+", requirements)
         self.assertIn("GRAPHIFY_QUERY_LOG_DISABLE=1", dockerfile)
         self.assertIn("USER 10001:10001", dockerfile)

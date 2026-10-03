@@ -89,6 +89,12 @@ test("every external import in src/ and scripts/ resolves to a declared dependen
       if (spec.startsWith("node:") || spec.includes("://")) continue;
       const base = basePackage(spec);
       if (builtins.has(base) || declared.has(base)) continue;
+      // DefinitelyTyped: `import … from "geojson"` is satisfied by `@types/geojson`.
+      if (!base.startsWith("@") && declared.has(`@types/${base}`)) continue;
+      if (base.startsWith("@")) {
+        const [scope, name] = base.slice(1).split("/");
+        if (scope && name && declared.has(`@types/${scope}__${name}`)) continue;
+      }
       const files = offenders.get(base) ?? [];
       if (!files.includes(file)) files.push(file);
       offenders.set(base, files);

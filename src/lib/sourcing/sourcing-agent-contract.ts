@@ -37,35 +37,37 @@ const ValidationWarningSchema = z
   })
   .strict();
 
-const JobAnalysisSchema = z
-  .object({
-    title: bounded(200),
-    department: bounded(200),
-    seniority: z.enum(SENIORITY_LEVELS),
-    employmentType: z.enum(EMPLOYMENT_TYPES),
-    locationType: z.enum(LOCATION_TYPES),
-    location: bounded(200).optional(),
-    regions: boundedArray(50, 200),
-    timezone: bounded(100),
-    salaryMin: z.number().finite().nonnegative().nullable(),
-    salaryMax: z.number().finite().nonnegative().nullable(),
-    currency: bounded(20),
-    equity: z.boolean(),
-    requiredSkills: boundedArray(100, 100),
-    niceToHaveSkills: boundedArray(100, 100),
-    minYearsExperience: z.number().finite().nonnegative().nullable(),
-    maxYearsExperience: z.number().finite().nonnegative().nullable(),
-    education: bounded(500),
-    industryExperience: boundedArray(50, 100),
-    companyStageTarget: z.array(z.enum(COMPANY_STAGES)).max(20),
-    teamSize: bounded(100),
-    reportingTo: bounded(200),
-    urgency: z.enum(URGENCY_LEVELS),
-    language: bounded(20).optional(),
-    expectedStartDate: bounded(100).nullable().optional(),
-    validationWarnings: z.array(ValidationWarningSchema).max(100),
-  })
-  .strict();
+// Strip unknown keys (do not .strict()): live workspace_state often carries
+// legacy / wiki / intake extras on jobAnalysis (searchBoolean, localeContext,
+// missionDescription, …). Projection must authorize sourcing from the known
+// fields rather than 503 "Campaign authority is unavailable."
+const JobAnalysisSchema = z.object({
+  title: bounded(200),
+  department: bounded(200),
+  seniority: z.enum(SENIORITY_LEVELS),
+  employmentType: z.enum(EMPLOYMENT_TYPES),
+  locationType: z.enum(LOCATION_TYPES),
+  location: bounded(200).optional(),
+  regions: boundedArray(50, 200),
+  timezone: bounded(100),
+  salaryMin: z.number().finite().nonnegative().nullable(),
+  salaryMax: z.number().finite().nonnegative().nullable(),
+  currency: bounded(20),
+  equity: z.boolean(),
+  requiredSkills: boundedArray(100, 100),
+  niceToHaveSkills: boundedArray(100, 100),
+  minYearsExperience: z.number().finite().nonnegative().nullable(),
+  maxYearsExperience: z.number().finite().nonnegative().nullable(),
+  education: bounded(500),
+  industryExperience: boundedArray(50, 100),
+  companyStageTarget: z.array(z.enum(COMPANY_STAGES)).max(20),
+  teamSize: bounded(100),
+  reportingTo: bounded(200),
+  urgency: z.enum(URGENCY_LEVELS),
+  language: bounded(20).optional(),
+  expectedStartDate: bounded(100).nullable().optional(),
+  validationWarnings: z.array(ValidationWarningSchema).max(100),
+});
 
 const ScoringWeightsSchema = z
   .object({
@@ -86,15 +88,45 @@ const CampaignProjectionSchema = z.object({
   scoringWeights: ScoringWeightsSchema,
   sourcingStrategy: z.object({
     excludedCompanies: boundedArray(500, 200),
+    primaryPlatforms: z
+      .array(
+        z.enum([
+          "GitHub",
+          "LinkedIn",
+          "Stack Overflow",
+          "Dribbble",
+          "Behance",
+          "Sillage",
+          "Apollo",
+          "Seamless",
+          "Manual",
+          "Apify",
+          "Referral",
+          "Talent Pool",
+        ]),
+      )
+      .min(1)
+      .max(8),
+    linkedinBoolean: bounded(2_000),
+    // Live workspaces sometimes store wiki/agent query rows as
+    // {id,query,rationale,estimatedResults} without `label`. Accept those,
+    // strip unknowns, and default label from the query text.
     githubQueries: z
       .array(
         z
           .object({
-            label: bounded(200),
+            label: bounded(200).optional(),
             query: bounded(500).min(1),
-            estimatedResults: z.number().finite().nonnegative(),
+            estimatedResults: z.number().finite().nonnegative().optional(),
           })
-          .strict(),
+          .transform((row) => ({
+            label: (row.label && row.label.trim()) || row.query.slice(0, 200),
+            query: row.query,
+            estimatedResults:
+              typeof row.estimatedResults === "number" && Number.isFinite(row.estimatedResults)
+                ? row.estimatedResults
+                : 0,
+          })),
       )
       .max(100),
   }),
@@ -114,7 +146,7 @@ const DedupeIdentitySchema = z
 export const SourcingAgentRequestSchema = z
   .object({
     campaignId: bounded(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
-    count: z.number().int().min(1).max(8).default(5),
+    count: z.number().int().min(1).max(20).default(10),
     agentFrameworkRunId: z.string().uuid().optional(),
     agentFrameworkCapabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
     agentFrameworkQuery: z.string().trim().min(3).max(256).optional(),
@@ -168,7 +200,7 @@ export type SourcingAgentCampaign = CandidateMappingCampaign &
   Pick<Campaign, "status"> & {
     sourcingStrategy: Pick<
       Campaign["sourcingStrategy"],
-      "excludedCompanies" | "githubQueries"
+      "excludedCompanies" | "githubQueries" | "primaryPlatforms" | "linkedinBoolean"
     >;
   };
 
@@ -180,17 +212,38 @@ export type SourcingAgentWorkspace = {
   fingerprint: string;
 };
 
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
+}
+
+/**
+ * Authority fingerprint shared by the sourcing-agent route and the browser
+ * commit path. Always canonicalizes through CampaignProjectionSchema and a
+ * key-sorted JSON encoding so client-held Campaign objects (key order / stray
+ * undefineds) match the server projection of workspace_state.
+ */
 export function sourcingAgentCampaignFingerprint(
-  campaign: SourcingAgentCampaign,
+  campaign: SourcingAgentCampaign | Record<string, unknown>,
 ): string {
-  return JSON.stringify({
-    id: campaign.id,
-    status: campaign.status,
-    jobAnalysis: campaign.jobAnalysis,
-    scoringWeights: campaign.scoringWeights,
+  const projected = CampaignProjectionSchema.safeParse(campaign);
+  const value = projected.success
+    ? projected.data
+    : (campaign as SourcingAgentCampaign);
+  return stableJson({
+    id: value.id,
+    status: value.status,
+    jobAnalysis: value.jobAnalysis,
+    scoringWeights: value.scoringWeights,
     sourcingStrategy: {
-      excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-      githubQueries: campaign.sourcingStrategy.githubQueries,
+      excludedCompanies: value.sourcingStrategy.excludedCompanies,
+      primaryPlatforms: value.sourcingStrategy.primaryPlatforms,
+      linkedinBoolean: value.sourcingStrategy.linkedinBoolean,
+      githubQueries: value.sourcingStrategy.githubQueries,
     },
   });
 }
@@ -267,6 +320,8 @@ export function projectSourcingAgentWorkspace(
     scoringWeights: projected.scoringWeights,
     sourcingStrategy: {
       excludedCompanies: [...projected.sourcingStrategy.excludedCompanies],
+      primaryPlatforms: [...projected.sourcingStrategy.primaryPlatforms],
+      linkedinBoolean: projected.sourcingStrategy.linkedinBoolean,
       githubQueries: projected.sourcingStrategy.githubQueries.map((query) => ({ ...query })),
     },
   };
@@ -339,7 +394,7 @@ const SourcingAgentSuccessResponseSchema = z
     mode: z.enum(["cloud", "deterministic"]),
     campaignId: bounded(100),
     campaignFingerprint: bounded(100_000).min(1),
-    candidates: z.array(SourcingAgentCandidateDtoSchema).max(8),
+    candidates: z.array(SourcingAgentCandidateDtoSchema).max(20),
     totalFound: z.number().int().min(0).max(100_000),
     requestId: bounded(100).regex(/^[A-Za-z0-9._:-]{1,100}$/),
     idempotencyKey: z.string().uuid(),

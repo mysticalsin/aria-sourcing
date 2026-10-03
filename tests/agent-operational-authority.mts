@@ -91,9 +91,19 @@ test("Fleet sourcing uses the reviewed real-provider path and never the syntheti
   assert.match(fleetPage, /Select one reviewed campaign before sourcing/i);
 });
 
-test("Fleet bulk demo seeding is unreachable in a live workspace", () => {
-  assert.match(store, /const deployAgents[\s\S]+if \(supabaseEnabled\)[\s\S]+created:\s*0/i);
-  assert.match(fleetPage, /!supabaseEnabled[\s\S]+Generate demo agents/i);
+test("Fleet bulk deploy persists durable Browser Computer seats — never invents live-only local agents", () => {
+  // N-agent live path: deployAgents creates LinkedIn Browser Computer seats via
+  // addSeat → createFleetSeatOnServer when supabaseEnabled (durable), then Fleet
+  // boots real VMs. Demo bulk seeding remains the non-supabase UI branch only.
+  assert.match(
+    store,
+    /const deployAgents[\s\S]+await addSeat\(\{[\s\S]+provider:\s*"LinkedIn Browser Computer"/i,
+  );
+  assert.match(store, /if \(supabaseEnabled\)[\s\S]+createFleetSeatOnServer/i);
+  assert.match(
+    fleetPage,
+    /supabaseEnabled \? "Deploy \+ boot VMs" : "Generate demo agents"/i,
+  );
   assert.doesNotMatch(fleetPage, />\s*Deploy agents\s*</i);
 });
 

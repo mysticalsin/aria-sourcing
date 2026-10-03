@@ -73,6 +73,88 @@ test("workspace projection owns campaign and dedupe context while stripping unre
   assert.equal(JSON.stringify(projected.value).includes("private"), false);
 });
 
+test("workspace projection strips legacy jobAnalysis extras instead of invalid_state", () => {
+  const state = {
+    campaigns: [
+      {
+        ...campaign,
+        jobAnalysis: {
+          ...campaign.jobAnalysis,
+          searchBoolean: null,
+          localeContext: "Montreal",
+          missionDescription: "Support Calypso",
+          linkedinBoolean: "(legacy misplaced field)",
+          requiredLanguages: ["English", "French"],
+        },
+      },
+    ],
+    candidates: [],
+    settings: {
+      llmProviders: seed.settings.llmProviders,
+      savedModels: seed.settings.savedModels,
+      defaultModels: seed.settings.defaultModels,
+    },
+  };
+  const projected = projectSourcingAgentWorkspace(state, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(
+    JSON.stringify(projected.value.campaign.jobAnalysis).includes("searchBoolean"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(projected.value.campaign.jobAnalysis).includes("missionDescription"),
+    false,
+  );
+});
+
+test("workspace projection accepts githubQueries without label and strips rationale/id extras", () => {
+  const state = {
+    campaigns: [
+      {
+        ...campaign,
+        sourcingStrategy: {
+          ...campaign.sourcingStrategy,
+          githubQueries: [
+            {
+              id: "gq_legacy",
+              query: "Calypso location:Montreal",
+              rationale: "wiki signal",
+              estimatedResults: 8,
+            },
+            {
+              label: "Labeled",
+              query: "language:Python",
+              estimatedResults: 12,
+            },
+          ],
+        },
+      },
+    ],
+    candidates: [],
+    settings: {
+      llmProviders: seed.settings.llmProviders,
+      savedModels: seed.settings.savedModels,
+      defaultModels: seed.settings.defaultModels,
+    },
+  };
+  const projected = projectSourcingAgentWorkspace(state, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.deepEqual(projected.value.campaign.sourcingStrategy.githubQueries, [
+    {
+      label: "Calypso location:Montreal",
+      query: "Calypso location:Montreal",
+      estimatedResults: 8,
+    },
+    {
+      label: "Labeled",
+      query: "language:Python",
+      estimatedResults: 12,
+    },
+  ]);
+});
+
 test("campaign fingerprint changes when the persisted need or search strategy changes", () => {
   const initial = sourcingAgentCampaignFingerprint(campaign);
   const changedRole = sourcingAgentCampaignFingerprint({
@@ -91,6 +173,43 @@ test("campaign fingerprint changes when the persisted need or search strategy ch
   });
   assert.notEqual(initial, changedRole);
   assert.notEqual(initial, changedQuery);
+});
+
+test("campaign fingerprint is stable across key order and matches CampaignProjectionSchema output", () => {
+  const shuffled = {
+    scoringWeights: campaign.scoringWeights,
+    sourcingStrategy: campaign.sourcingStrategy,
+    status: campaign.status,
+    jobAnalysis: {
+      validationWarnings: campaign.jobAnalysis.validationWarnings,
+      requiredSkills: campaign.jobAnalysis.requiredSkills,
+      title: campaign.jobAnalysis.title,
+      department: campaign.jobAnalysis.department,
+      seniority: campaign.jobAnalysis.seniority,
+      employmentType: campaign.jobAnalysis.employmentType,
+      locationType: campaign.jobAnalysis.locationType,
+      regions: campaign.jobAnalysis.regions,
+      timezone: campaign.jobAnalysis.timezone,
+      salaryMin: campaign.jobAnalysis.salaryMin,
+      salaryMax: campaign.jobAnalysis.salaryMax,
+      currency: campaign.jobAnalysis.currency,
+      equity: campaign.jobAnalysis.equity,
+      niceToHaveSkills: campaign.jobAnalysis.niceToHaveSkills,
+      minYearsExperience: campaign.jobAnalysis.minYearsExperience,
+      maxYearsExperience: campaign.jobAnalysis.maxYearsExperience,
+      education: campaign.jobAnalysis.education,
+      industryExperience: campaign.jobAnalysis.industryExperience,
+      companyStageTarget: campaign.jobAnalysis.companyStageTarget,
+      teamSize: campaign.jobAnalysis.teamSize,
+      reportingTo: campaign.jobAnalysis.reportingTo,
+      urgency: campaign.jobAnalysis.urgency,
+    },
+    id: campaign.id,
+  };
+  assert.equal(
+    sourcingAgentCampaignFingerprint(campaign),
+    sourcingAgentCampaignFingerprint(shuffled),
+  );
 });
 
 test("strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads", () => {

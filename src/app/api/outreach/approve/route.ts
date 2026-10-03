@@ -7,8 +7,11 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
-import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoAriaBotDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { humanizeText } from "@/lib/humanizer";
+import { gateOutbound } from "@/lib/gate";
+import { fitLinkedInInviteNote, LINKEDIN_INVITE_NOTE_MAX } from "@/lib/linkedin-invite-note";
 
 /**
  * Record a human approval for a SPECIFIC outbound message.
@@ -62,7 +65,45 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, ApproveSchema, { maxBytes: 100_000 });
   if (!validated.ok) return validated.response;
-  const { messageId, candidateId, channel, recipient, subject, body } = validated.data;
+  const raw = validated.data;
+  let subject = humanizeText(raw.subject);
+  let body = humanizeText(raw.body);
+  const { messageId, candidateId, channel, recipient } = raw;
+
+  // Humanizer soft-clean is not enough — hard-block robotic / leaked / placeholder text at approve.
+  const gate = gateOutbound(body);
+  if (!gate.pass) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "outreach-failed-humanizer-gate",
+        detail: `Message blocked by humanizer gate: ${gate.reasons.join(", ")}. Rewrite so it reads like a human recruiter.`,
+        reasons: gate.reasons,
+      },
+      { status: 422 },
+    );
+  }
+  body = gate.text;
+
+  // LinkedIn Connect notes that exceed 200 chars never notify the recipient (Send stays grey).
+  if (channel === "LinkedIn") {
+    const fitted = fitLinkedInInviteNote(body);
+    if (fitted.truncated && body.trim().length > LINKEDIN_INVITE_NOTE_MAX + 40) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "linkedin-invite-note-too-long",
+          detail: `LinkedIn Connect notes must be ≤ ${LINKEDIN_INVITE_NOTE_MAX} characters (got ${body.trim().length}). Shorten before approve — long notes grey out Send and never land.`,
+          max: LINKEDIN_INVITE_NOTE_MAX,
+          length: body.trim().length,
+        },
+        { status: 422 },
+      );
+    }
+    body = fitted.text;
+    // Connect notes don't use email-style subjects.
+    if (subject.trim().length > 80) subject = subject.slice(0, 80).trim();
+  }
 
   const { data: wid } = await supabase.rpc("current_workspace_id");
   if (!wid) return NextResponse.json({ ok: false, error: "Workspace not found." }, { status: 400 });
@@ -99,8 +140,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (publicDemoSideEffectsDisabled()) {
-    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  // Approvals must persist for AriaBot Browser Computer E2E on the Fly showcase.
+  if (publicDemoAriaBotDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL, subject, body, sealed: true });
   }
 
   const { data: recorded, error } = await supabase.rpc("record_outreach_approval", {
@@ -115,5 +157,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ ok: false, error: "Failed to record approval." }, { status: 500 });
   }
-  return NextResponse.json({ ok: true });
+  // Echo the sealed copy so the client stores byte-identical text for send.
+  return NextResponse.json({ ok: true, subject, body, sealed: true });
 }
+

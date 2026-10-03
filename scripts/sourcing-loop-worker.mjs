@@ -49,7 +49,7 @@ const CLASSIFY_SYSTEM =
 
 export const PIPELINE_STAGE_TRANSITIONS = Object.freeze({
   email_sync: Object.freeze(["inbound_classify"]),
-  inbound_classify: Object.freeze([]),
+  inbound_classify: Object.freeze(["draft_generate"]),
   requisition_parse: Object.freeze(["campaign_create"]),
   campaign_create: Object.freeze([]),
   sourcing_batch: Object.freeze(["shortlist_build"]),
@@ -63,11 +63,17 @@ export const PIPELINE_STAGE_TRANSITIONS = Object.freeze({
 
 export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "email_sync->inbound_classify": Object.freeze(["handleEmailSync"]),
+  "inbound_classify->draft_generate": Object.freeze([
+    "handleInboundClassify (positive intent + entitled autopilot)",
+  ]),
   "requisition_parse->campaign_create": Object.freeze(["handleRequisitionParse"]),
   "sourcing_batch->shortlist_build": Object.freeze(["handleSourcingBatch"]),
   "provider_poll->shortlist_build": Object.freeze(["handleProviderPoll"]),
   "enrich_candidate->shortlist_build": Object.freeze(["handleEnrichCandidate"]),
-  "shortlist_build->draft_generate": Object.freeze(["POST /api/shortlist/approve"]),
+  "shortlist_build->draft_generate": Object.freeze([
+    "POST /api/shortlist/approve",
+    "handleShortlistBuild (entitled auto-approve)",
+  ]),
   "delivery_reconcile->outcome_feedback": Object.freeze(["handleDeliveryReconcile"]),
 });
 
@@ -89,6 +95,93 @@ class HandlerError extends Error {
     this.code = code;
     this.retryable = retryable;
   }
+}
+
+/**
+ * Resolve seatId + computerId for an inbound classify → booking.proposed trail.
+ * Prefer fields already on read_inbound_message_for_loop when present; else look up
+ * linkedin_channel_events / outreach_ledger → agent_seats. Fail-closed: omit, never invent.
+ */
+export async function resolveInboundSeatComputer(client, workspaceId, inboundId, storedInbound) {
+  const fromStored = (key) => {
+    if (!isRecord(storedInbound)) return undefined;
+    const raw = storedInbound[key];
+    return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+  };
+  let seatId = fromStored("seat_id") ?? fromStored("seatId");
+  let computerId = fromStored("computer_id") ?? fromStored("computerId");
+
+  if (!seatId && inboundId && client?.from) {
+    try {
+      const li = await client
+        .from("linkedin_channel_events")
+        .select("seat_id")
+        .eq("workspace_id", workspaceId)
+        .eq("inbound_id", inboundId)
+        .limit(1)
+        .maybeSingle();
+      const sid = isRecord(li?.data) && typeof li.data.seat_id === "string" ? li.data.seat_id.trim() : "";
+      if (sid) seatId = sid;
+    } catch {
+      /* fail-soft */
+    }
+  }
+
+  if (!seatId && inboundId && client?.from) {
+    try {
+      const msg = await client
+        .from("messages_inbound")
+        .select("correlated_ledger_id")
+        .eq("workspace_id", workspaceId)
+        .eq("id", inboundId)
+        .limit(1)
+        .maybeSingle();
+      const ledgerId =
+        isRecord(msg?.data) && typeof msg.data.correlated_ledger_id === "string"
+          ? msg.data.correlated_ledger_id.trim()
+          : "";
+      if (ledgerId) {
+        const ledger = await client
+          .from("outreach_ledger")
+          .select("seat_id")
+          .eq("workspace_id", workspaceId)
+          .eq("id", ledgerId)
+          .limit(1)
+          .maybeSingle();
+        const sid =
+          isRecord(ledger?.data) && typeof ledger.data.seat_id === "string"
+            ? ledger.data.seat_id.trim()
+            : "";
+        if (sid) seatId = sid;
+      }
+    } catch {
+      /* fail-soft */
+    }
+  }
+
+  if (seatId && !computerId && client?.from) {
+    try {
+      const seat = await client
+        .from("agent_seats")
+        .select("computer_id")
+        .eq("workspace_id", workspaceId)
+        .eq("id", seatId)
+        .limit(1)
+        .maybeSingle();
+      const cid =
+        isRecord(seat?.data) && typeof seat.data.computer_id === "string"
+          ? seat.data.computer_id.trim()
+          : "";
+      if (cid) computerId = cid;
+    } catch {
+      /* fail-soft */
+    }
+  }
+
+  return {
+    seatId: seatId || undefined,
+    computerId: computerId || undefined,
+  };
 }
 
 function boundedInteger(value, fallback, minimum, maximum, name) {
@@ -696,13 +789,71 @@ async function handleShortlistBuild(job, context) {
   const receiptKey = typeof payload.receiptKey === "string" && payload.receiptKey.trim()
     ? payload.receiptKey.trim()
     : `shortlist:${campaignId}:${batchId}`;
+
+  // Entitled auto-approve: only when an autopilot-enabled profile exists in the
+  // workspace and the candidate match score clears the workspace threshold.
+  // Non-entitled workspaces keep the human POST /api/shortlist/approve gate.
+  let successors = [];
+  let autoApproved = 0;
+  try {
+    const controls = await context.client
+      .from("sourcing_loop_controls")
+      .select("auto_shortlist_min_score, kill_switch, sourcing_enabled")
+      .eq("workspace_id", job.workspace_id)
+      .maybeSingle();
+    const minScore = Number(controls.data?.auto_shortlist_min_score ?? 70);
+    const loopLive = controls.data?.kill_switch === false && controls.data?.sourcing_enabled === true;
+    if (loopLive && Number.isFinite(minScore)) {
+      const entitled = await context.client
+        .from("profiles")
+        .select("id")
+        .eq("workspace_id", job.workspace_id)
+        .eq("autopilot_enabled", true)
+        .in("role", ["admin", "member"])
+        .limit(1)
+        .maybeSingle();
+      const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+      if (entitledId) {
+        successors = candidates
+          .filter((candidate) => {
+            const score = Number(
+              candidate.matchScore ?? candidate.match_score ?? candidate.score ?? Number.NaN,
+            );
+            return Number.isFinite(score) && score >= minScore && typeof candidate.id === "string";
+          })
+          .slice(0, 50)
+          .map((candidate) =>
+            successorJob(
+              "draft_generate",
+              `draft:${campaignId}:${candidate.id}`,
+              {
+                campaignId,
+                candidateId: candidate.id,
+                approvedBy: entitledId,
+                approvalSource: "autopilot_shortlist",
+                matchScore: Number(candidate.matchScore ?? candidate.match_score ?? candidate.score),
+              },
+              80,
+            ),
+          );
+        autoApproved = successors.length;
+      }
+    }
+  } catch {
+    successors = [];
+    autoApproved = 0;
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_candidates", value: candidates, receiptKey },
-    { status: "shortlist_committed", campaignId, candidateCount: candidates.length },
-    [event("shortlist.committed", "campaign", campaignId, { candidateCount: candidates.length })],
-    [],
+    { status: "shortlist_committed", campaignId, candidateCount: candidates.length, autoApproved },
+    [event("shortlist.committed", "campaign", campaignId, {
+      candidateCount: candidates.length,
+      autoApproved,
+    })],
+    successors,
   );
 }
 
@@ -725,7 +876,8 @@ async function handleInboundClassify(job, context) {
   if (payload.replyText !== undefined || payload.body !== undefined || payload.text !== undefined) {
     throw new HandlerError("payload_contract_violation");
   }
-  const inbound = await context.client.rpc("read_inbound_email_for_loop", {
+  // Email OR LinkedIn (HeyReach-parity). Legacy Email-only RPC remains for older callers.
+  const inbound = await context.client.rpc("read_inbound_message_for_loop", {
     p_workspace_id: job.workspace_id,
     p_inbound_id: inboundId,
   });
@@ -740,10 +892,16 @@ async function handleInboundClassify(job, context) {
   const campaignId = typeof storedInbound.campaign_id === "string" ? storedInbound.campaign_id.trim() : "";
   const candidateId = typeof storedInbound.candidate_id === "string" ? storedInbound.candidate_id.trim() : "";
   const replyText = boundedText(storedInbound.body, 20_000, "reply_text_required");
+  const storedChannel =
+    typeof storedInbound.channel === "string" && storedInbound.channel.trim()
+      ? storedInbound.channel.trim()
+      : "";
   const fallback = deterministicClassification(replyText);
   const prompt = buildReplyClassificationPrompt(replyText);
   let classification = fallback;
   let classifier = "deterministic_fallback";
+  // LLM runs ONLY when this job was claimed — webhook/email_sync enqueue is the
+  // sole trigger. Idle loop ticks never invent inbound_classify jobs.
   if (context.modelClient?.classifyReply) {
     const modelResult = await context.modelClient.classifyReply(prompt);
     if (modelResult?.ok && typeof modelResult.text === "string") {
@@ -759,7 +917,10 @@ async function handleInboundClassify(job, context) {
     id: typeof payload.replyId === "string" && payload.replyId.trim() ? payload.replyId.trim() : `rep-${inboundId}`,
     candidateId,
     campaignId,
-    channel: typeof payload.channel === "string" && payload.channel.trim() ? payload.channel.trim() : "Email",
+    channel:
+      typeof payload.channel === "string" && payload.channel.trim()
+        ? payload.channel.trim()
+        : storedChannel || "Email",
     body: replyText,
     intent: classification.intent,
     confidence: classification.confidence,
@@ -779,14 +940,138 @@ async function handleInboundClassify(job, context) {
       ? storedInbound.message_id.trim()
       : undefined,
   };
-  return completeJobWithWorkspacePatch(
+
+  // Positive intent → optional draft follow-up for entitled autopilot (still
+  // approval-gated before send). No re-source; sourcing continues on its own jobs.
+  // Booking propose is always recorded for positive interest (operator confirms
+  // calendar) — never silent createBookingFor.
+  const successors = [];
+  let draftQueued = false;
+  let bookingProposed = false;
+  const positive =
+    classification.intent === "INTERESTED" || classification.intent === "QUALIFIED_INTEREST";
+  const events = [
+    event("reply.classified", "inbound_email", inboundId, {
+      intent: classification.intent,
+      classifier,
+      channel: reply.channel,
+    }),
+  ];
+  let bookingSeatId;
+  let bookingComputerId;
+  if (positive && campaignId && candidateId) {
+    const trail = await resolveInboundSeatComputer(
+      context.client,
+      job.workspace_id,
+      inboundId,
+      storedInbound,
+    );
+    bookingSeatId = trail.seatId;
+    bookingComputerId = trail.computerId;
+    try {
+      const entitled = await context.client
+        .from("profiles")
+        .select("id")
+        .eq("workspace_id", job.workspace_id)
+        .eq("autopilot_enabled", true)
+        .in("role", ["admin", "member"])
+        .limit(1)
+        .maybeSingle();
+      const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+      if (entitledId) {
+        successors.push(
+          successorJob(
+            "draft_generate",
+            `draft:reply:${campaignId}:${candidateId}`,
+            {
+              campaignId,
+              candidateId,
+              approvedBy: entitledId,
+              approvalSource: "autopilot_reply",
+              trigger: "inbound_classify",
+              intent: classification.intent,
+            },
+            70,
+          ),
+        );
+        draftQueued = true;
+      }
+    } catch {
+      draftQueued = false;
+    }
+    events.push(
+      event("booking.proposed", "candidate", candidateId, {
+        campaignId,
+        candidateId,
+        intent: classification.intent,
+        channel: reply.channel,
+        trigger: "inbound_interest",
+        idempotencyKey: `booking:propose:${campaignId}:${candidateId}`,
+        ...(bookingSeatId ? { seatId: bookingSeatId } : {}),
+        ...(bookingComputerId ? { computerId: bookingComputerId } : {}),
+      }),
+    );
+    bookingProposed = true;
+    reply.suggestedAction =
+      "Propose a meeting in Calendar (operator confirms). No silent calendar create.";
+  }
+
+  const classifyResult = await completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_reply", value: [reply], receiptKey: `reply-classify:${inboundId}` },
-    { status: "reply_classified", intent: classification.intent, classifier },
-    [event("reply.classified", "inbound_email", inboundId, { intent: classification.intent, classifier })],
-    [],
+    {
+      status: "reply_classified",
+      intent: classification.intent,
+      classifier,
+      draftQueued,
+      bookingProposed,
+    },
+    events,
+    successors,
   );
+
+  // Durable activity trail scoped in Aria (fail-soft: loop event already recorded).
+  // Notes match bookingProposeActivityFields (Hermes path) — seat/computer from trail, else —.
+  if (bookingProposed) {
+    try {
+      const channelNote = reply.channel ? ` channel=${reply.channel}` : "";
+      const activity = {
+        id: `act-booking-propose-${campaignId}-${candidateId}`.slice(0, 120),
+        type: "booking",
+        title: "Booking proposed from interested reply",
+        notes:
+          `Positive interest — propose a meeting in Calendar (operator confirms). No silent calendar create.${channelNote} [booking:propose:${campaignId}:${candidateId}] seat=${bookingSeatId ?? "—"} computer=${bookingComputerId ?? "—"}`,
+        outcome: "Proposed — confirm in Calendar",
+        campaignId,
+        linkedEntityType: "candidate",
+        linkedEntityId: candidateId,
+        createdAt: new Date().toISOString(),
+      };
+      const snap = await readWorkspaceSnapshot(context.client, job.workspace_id);
+      const patch = await context.client.rpc("apply_workspace_patch", {
+        p_workspace_id: job.workspace_id,
+        p_expected_updated_at: snap.updated_at,
+        p_patch_kind: "append_activities",
+        p_patch: [activity],
+        p_receipt_key: `booking:propose:${campaignId}:${candidateId}`,
+      });
+      if (patch.error) {
+        // Activity is best-effort; booking.proposed loop event is the durable receipt.
+      } else if (
+        isRecord(patch.data) &&
+        typeof patch.data.status === "string" &&
+        patch.data.status !== "applied" &&
+        patch.data.status !== "already_applied"
+      ) {
+        // stale_token / invalid — leave loop event as authority
+      }
+    } catch {
+      // fail soft
+    }
+  }
+
+  return classifyResult;
 }
 
 const HANDLERS = Object.freeze({

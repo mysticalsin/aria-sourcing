@@ -23,15 +23,28 @@ const CreateSeatSchema = z.object({
   minGapMinutes: z.number().int().min(0).max(1440).default(12),
   persona: z.string().max(2000).default(""),
   signature: z.string().max(2000).default(""),
+  /** Stable Chromium computer id — required for Browser Computer seats so VM ↔ seat stays 1:1 across processes. */
+  computerId: z.string().min(1).max(120).optional().nullable(),
+  linkedinDeliveryBackend: z.enum(["vendor-api", "browser-computer"]).optional().nullable(),
+  assignedCampaignIds: z.array(z.string().min(1).max(120)).max(50).optional(),
 });
 
 const PatchSeatSchema = z.object({
   id: z.string().uuid(),
   operatorEmail: z.string().email().max(255).optional(),
   mode: z.enum(INTEGRATION_MODES).optional(),
-}).refine((value) => value.operatorEmail !== undefined || value.mode !== undefined, {
-  message: "Provide operatorEmail or mode.",
-});
+  assignedCampaignIds: z.array(z.string().min(1).max(120)).max(50).optional(),
+  computerId: z.string().min(1).max(120).optional().nullable(),
+}).refine(
+  (value) =>
+    value.operatorEmail !== undefined ||
+    value.mode !== undefined ||
+    value.assignedCampaignIds !== undefined ||
+    value.computerId !== undefined,
+  {
+    message: "Provide operatorEmail, mode, assignedCampaignIds, or computerId.",
+  },
+);
 
 async function requireFleetManager(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -89,6 +102,14 @@ export async function POST(req: NextRequest) {
 
   if (!actor.supabase) return NextResponse.json({ ok: true, demo: true });
 
+  const isBrowserComputer = seat.provider === "LinkedIn Browser Computer";
+  // Always null on create — Deploy/Login/Attach reclaim-or-mint binds a durable id.
+  // Ignore any client-supplied computerId (never pre-mint a blank Chromium profile).
+  const computerId = null;
+  const linkedinDeliveryBackend =
+    seat.linkedinDeliveryBackend ??
+    (isBrowserComputer ? "browser-computer" : null);
+
   const { data, error } = await actor.supabase
     .from("agent_seats")
     .insert({
@@ -104,6 +125,11 @@ export async function POST(req: NextRequest) {
       min_gap_minutes: seat.minGapMinutes,
       persona: seat.persona,
       signature: seat.signature,
+      computer_id: computerId,
+      linkedin_delivery_backend: linkedinDeliveryBackend,
+      assigned_campaign_ids: seat.assignedCampaignIds
+        ? [...new Set(seat.assignedCampaignIds)]
+        : [],
     })
     .select(AGENT_SEAT_SELECT)
     .single();
@@ -124,13 +150,46 @@ export async function PATCH(req: NextRequest) {
 
   const validated = await validateBody(req, PatchSeatSchema, { maxBytes: 2_000 });
   if (!validated.ok) return validated.response;
-  const { id, operatorEmail, mode } = validated.data;
+  const { id, operatorEmail, mode, assignedCampaignIds, computerId } = validated.data;
 
   if (!actor.supabase) return NextResponse.json({ ok: true, demo: true });
 
-  const patch: Record<string, string> = {};
+  const patch: Record<string, unknown> = {};
   if (operatorEmail !== undefined) patch.operator_email = operatorEmail;
   if (mode !== undefined) patch.mode = mode;
+  if (assignedCampaignIds !== undefined) {
+    patch.assigned_campaign_ids = [...new Set(assignedCampaignIds)];
+  }
+  if (computerId !== undefined) {
+    const nextComputerId = typeof computerId === "string" ? computerId.trim() : computerId;
+    if (nextComputerId) {
+      // Fail closed: never let seat A steal seat B's durable computer_id.
+      const { data: taken, error: takenErr } = await actor.supabase
+        .from("agent_seats")
+        .select("id")
+        .eq("workspace_id", actor.workspaceId)
+        .eq("computer_id", nextComputerId)
+        .neq("id", id)
+        .maybeSingle();
+      if (takenErr) {
+        safeLog("agent_seats computer_id ownership check error", {
+          message: takenErr.message,
+          code: takenErr.code,
+        });
+        return NextResponse.json(
+          { ok: false, error: "Could not verify computer ownership." },
+          { status: 403 },
+        );
+      }
+      if (taken?.id) {
+        return NextResponse.json(
+          { ok: false, error: "computerId already bound to another seat in this workspace." },
+          { status: 409 },
+        );
+      }
+    }
+    patch.computer_id = nextComputerId;
+  }
 
   const { data, error } = await actor.supabase
     .from("agent_seats")
