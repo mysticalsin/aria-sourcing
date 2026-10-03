@@ -947,7 +947,12 @@ try {
       "GET ownership-mismatch adopts durable when no other seat claims computer_id",
       route.includes("adoptDurableComputerBinding") &&
         route.includes("claimedByOtherSeat") &&
-        /Stale in-memory Map/.test(route),
+        /Stale\/orphan Map|Stale in-memory Map/.test(route),
+    );
+    ok(
+      "GET/POST hydrate treat orphan-claim-blocked like ownership-mismatch (no fleet 500)",
+      (route.match(/computer-orphan-claim-blocked/g) ?? []).length >= 2 &&
+        /durableConflict/.test(route),
     );
 
     ok(

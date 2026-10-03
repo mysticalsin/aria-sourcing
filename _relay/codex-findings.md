@@ -1349,3 +1349,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Seat durable [B], Hermes [A] on Agents A poll → PATCH []; open bound viewport → first paint Unbound host VM.
 **Suggested fix:** skip detach when durableById.has(seat); unboundOrphan requires computer!=null.
 **Status:** fixed (tip #150)
+
+## 2026-10-03 — orphan-claim-blocked aborts fleet GET (N desks wipe)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:204; hydrateWorkspaceSeatBindings:425
+**Issue:** hydrateComputer throws computer-orphan-claim-blocked when durable FK hits Map __orphan__; GET only caught ownership-mismatch → 500 → Floor/Agents empty.
+**Repro/evidence:** Instance imports host bot as orphan; other instance persists computer_id; this instance GET 500s.
+**Suggested fix:** treat orphan-claim-blocked like ownership-mismatch → adoptDurable.
+**Status:** fixed (tip #148)
