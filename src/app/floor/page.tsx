@@ -160,10 +160,10 @@ export default function FloorPage() {
           map.set(seatId, hint);
           map.set(c.computerId, hint);
         }
-        // Write owned bindings + clear Hermes when computerId is owned by another seat.
-        for (const patch of fleetHermesComputerPatches(seatsRef.current, data.computers ?? [])) {
-          void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
-        }
+        // Local-only Hermes align — never PATCH computerId from poll (races reclaim/ensure).
+        actions.applyFleetHermesComputerPatches(
+          fleetHermesComputerPatches(seatsRef.current, data.computers ?? []),
+        );
         // Durable agent_seats → Hermes roster (append missing desks + patch attach).
         // Local-only ingest — N desks visible without Agents tab / without server write storms.
         actions.ingestDurableBrowserBindings(data.browserSeatBindings);

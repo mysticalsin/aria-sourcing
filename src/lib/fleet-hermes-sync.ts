@@ -85,6 +85,24 @@ export function fleetHermesComputerPatches(
   return patches;
 }
 
+/** Apply fleetHermesComputerPatches locally — never PATCH agent_seats from pollers. */
+export function applyHermesComputerPatchesToSeats(
+  seats: readonly AgentSeat[],
+  patches: readonly HermesComputerPatch[],
+): AgentSeat[] {
+  if (!patches.length) return seats as AgentSeat[];
+  const byId = new Map(patches.map((p) => [p.seatId, p.computerId] as const));
+  let changed = false;
+  const next = seats.map((seat) => {
+    if (!byId.has(seat.id)) return seat;
+    const computerId = byId.get(seat.id) ?? null;
+    if ((seat.computerId ?? null) === computerId) return seat;
+    changed = true;
+    return { ...seat, computerId };
+  });
+  return changed ? next : (seats as AgentSeat[]);
+}
+
 /** Fail-closed Hermes stub for a durable LI desk missing from local roster. */
 export function durableBrowserSeatStub(row: BrowserSeatBinding): AgentSeat {
   const status =

@@ -277,6 +277,11 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
       /\}, \[actions\]\);/.test(floorPage) &&
       !/\}, \[actions, seats\.length\]\)/.test(floorPage),
   );
+  ok(
+    "floor poll applies fleetHermes patches locally — never updateSeat computerId",
+    floorPage.includes("applyFleetHermesComputerPatches") &&
+      !/updateSeat\(patch\.seatId, \{ computerId: patch\.computerId \}\)/.test(floorPage),
+  );
   const fleetPage = readFileSync("src/app/fleet/page.tsx", "utf8");
   ok(
     "fleet page clears computers on GET fail",

@@ -204,14 +204,13 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
               .filter((c) => c.seatId && c.computerId && c.seatId !== "__orphan__")
               .map((c) => [c.seatId!, c.computerId!] as const),
           );
-          // One patch pass — write owned bindings + clear foreign Hermes computerIds.
+          // One local patch pass — write owned bindings + clear foreign Hermes computerIds.
+          // Never PATCH agent_seats from poll (races reclaim/ensure persist).
           const patches = fleetHermesComputerPatches(nextSeats, computers);
           const clearedBySeat = new Map(
             patches.filter((p) => p.computerId === null).map((p) => [p.seatId, true] as const),
           );
-          for (const patch of patches) {
-            void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
-          }
+          actions.applyFleetHermesComputerPatches(patches);
           nextSeats = nextSeats.map((s) => {
             const fleetComputerId = bySeatComputer.get(s.id);
             const computerId =

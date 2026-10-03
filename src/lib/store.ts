@@ -182,7 +182,9 @@ import { seatAttachedToCampaign } from "./campaign-seat-attach";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyBrowserSeatBindingsToHermes,
+  applyHermesComputerPatchesToSeats,
   type BrowserSeatBinding,
+  type HermesComputerPatch,
 } from "./fleet-hermes-sync";
 import {
   applyLearning,
@@ -5050,6 +5052,23 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, workspaceEffectAllowed],
   );
 
+  /**
+   * Align Hermes computerId with fleet GET ownership (write + clear foreign/orphan).
+   * Local-only — pollers must not PATCH agent_seats.computer_id (races reclaim/ensure).
+   */
+  const applyFleetHermesComputerPatches = useCallback(
+    (patches: readonly HermesComputerPatch[]) => {
+      if (!patches.length) return;
+      if (!workspaceEffectAllowed()) return;
+      commit((s) => {
+        const next = applyHermesComputerPatchesToSeats(s.seats, patches);
+        if (next === s.seats) return s;
+        return { ...s, seats: next };
+      });
+    },
+    [commit, workspaceEffectAllowed],
+  );
+
   const setSeatStatus = useCallback(
     (id: string, status: AgentSeat["status"]) =>
       commit((s) => {
@@ -7064,6 +7083,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       deployAgents,
       updateSeat,
       ingestDurableBrowserBindings,
+      applyFleetHermesComputerPatches,
       setSeatStatus,
       connectSeatAccount,
       disconnectSeatAccount,
@@ -7138,7 +7158,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       suppressCandidate, markDoNotContact, restoreCandidateContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
-      addSeat, deployAgents, updateSeat, ingestDurableBrowserBindings, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
+      addSeat, deployAgents, updateSeat, ingestDurableBrowserBindings, applyFleetHermesComputerPatches, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
       addSuppression, removeSuppression, allocateOutreach,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis, endorseCandidateFit,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,

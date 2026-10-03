@@ -1333,3 +1333,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Multi-instance Map has X→seatB while DB has seatA.computer_id=X → GET clears seatA; Floor remount mid-poll writes stale computerId.
 **Suggested fix:** cancel-before-write + deps [actions]; adoptDurableComputerBinding when !claimedByOtherSeat.
 **Status:** fixed (tip #150)
+
+## 2026-10-03 — Poll updateSeat(computerId) races reclaim/ensure
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:164; src/app/fleet/page.tsx:257; campaign-agents-panel; linkedin-connections-panel
+**Issue:** GET pollers PATCHed agent_seats.computer_id via updateSeat from fleetHermesComputerPatches, including null clears that could unbind a desk just persisted by reclaim/ensure.
+**Repro/evidence:** Floor clear patch in flight → reclaim persists Z → late PATCH null → Floor unbound.
+**Suggested fix:** applyFleetHermesComputerPatches local-only; never updateSeat computerId from poll.
+**Status:** fixed (tip #148)

@@ -232,11 +232,10 @@ export function CampaignAgentsPanel({
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
-      // Use the full fleet list — campaign-filtered rows miss owners outside this
-      // campaign, so a foreign Hermes computerId would never get cleared.
-      for (const patch of fleetHermesComputerPatches(hermesNow, allRows)) {
-        void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
-      }
+      // Local-only Hermes align — never PATCH computerId from poll (races reclaim/ensure).
+      actions.applyFleetHermesComputerPatches(
+        fleetHermesComputerPatches(hermesNow, allRows),
+      );
 
       const campaignAudits = (data.recentAudits ?? []).filter(
         (a) =>

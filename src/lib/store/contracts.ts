@@ -486,6 +486,10 @@ export interface HermesActions {
       assignedCampaignIds?: string[];
     }> | null | undefined,
   ) => void;
+  /** Fleet ownership patches → Hermes computerId (local-only; never PATCH from poll). */
+  applyFleetHermesComputerPatches: (
+    patches: ReadonlyArray<{ seatId: string; computerId: string | null }>,
+  ) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => Promise<{ ok: boolean; error?: string }>;
   disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
