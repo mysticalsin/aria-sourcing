@@ -5,6 +5,7 @@
 
 import {
   fleetHermesComputerPatches,
+  applyHermesComputerPatchesToSeats,
   computerHealthOwnedBySeat,
   isStaleHermesComputerTwin,
   hermesPatchesFromBrowserSeatBindings,
@@ -218,6 +219,21 @@ function ok(name: string, cond: boolean) {
       hydrated[0]!.mode === "mock" &&
       hydrated[0]!.computerId === "comp_db" &&
       (hydrated[0]!.assignedCampaignIds ?? []).includes("camp_1"),
+  );
+  const patched = applyHermesComputerPatchesToSeats(
+    [
+      { id: "seat_a", computerId: "comp_stale" } as never,
+      { id: "seat_b", computerId: "comp_b" } as never,
+    ],
+    [
+      { seatId: "seat_a", computerId: null },
+      { seatId: "seat_b", computerId: "comp_b2" },
+    ],
+  );
+  ok(
+    "applyHermesComputerPatchesToSeats clears + rewrites locally",
+    patched.find((s) => s.id === "seat_a")?.computerId == null &&
+      patched.find((s) => s.id === "seat_b")?.computerId === "comp_b2",
   );
 }
 

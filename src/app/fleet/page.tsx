@@ -253,10 +253,10 @@ export default function FleetPage() {
       setOpsSummary(data.summary ?? null);
       setFleetAudits(data.recentAudits ?? []);
       if (data.hostCapacity) setHostCapacity(data.hostCapacity);
-      // Write owned bindings + clear Hermes when computerId is owned by another seat.
-      for (const patch of fleetHermesComputerPatches(browserSeats, rows)) {
-        void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
-      }
+      // Local-only Hermes align — never PATCH computerId from poll (races reclaim/ensure).
+      actions.applyFleetHermesComputerPatches(
+        fleetHermesComputerPatches(browserSeats, rows),
+      );
       // Durable agent_seats → Hermes (append missing + patch); local-only.
       actions.ingestDurableBrowserBindings(data.browserSeatBindings);
       // In demo (no Supabase seats on the API), re-GET once if the first list is empty.

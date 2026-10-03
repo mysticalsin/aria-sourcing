@@ -76,6 +76,11 @@ ok(
     /\[campaignId, refresh\]/.test(agents) &&
     !/\}, \[actions, hermesCampaignSeats, campaignId, seats\]\)/.test(agents),
 );
+ok(
+  "campaign agents apply fleetHermes patches locally — never updateSeat computerId",
+  /applyFleetHermesComputerPatches/.test(agents) &&
+    !/updateSeat\(patch\.seatId, \{ computerId: patch\.computerId \}\)/.test(agents),
+);
 
 const setup = readFileSync(
   new URL("../src/components/settings/setup-guide-panel.tsx", import.meta.url),
@@ -134,6 +139,11 @@ ok(
     /\}, \[actions\]\)/.test(fleetPage) &&
     !/\}, \[actions, seats\]\)/.test(fleetPage),
 );
+ok(
+  "fleet poll applies fleetHermes patches locally — never updateSeat computerId",
+  /applyFleetHermesComputerPatches/.test(fleetPage) &&
+    !/updateSeat\(patch\.seatId, \{ computerId: patch\.computerId \}\)/.test(fleetPage),
+);
 
 const linkedinPanel = readFileSync(
   new URL("../src/components/settings/linkedin-connections-panel.tsx", import.meta.url),
@@ -145,6 +155,11 @@ ok(
     /pollGeneration/.test(linkedinPanel) &&
     /\}, \[enabled, actions, toast\]\)/.test(linkedinPanel) &&
     !/\}, \[enabled, localSeats, toast\]\)/.test(linkedinPanel),
+);
+ok(
+  "linkedin connections apply fleetHermes patches locally — never updateSeat computerId",
+  /applyFleetHermesComputerPatches/.test(linkedinPanel) &&
+    !/updateSeat\(patch\.seatId, \{ computerId: patch\.computerId \}\)/.test(linkedinPanel),
 );
 
 const viewport = readFileSync(
