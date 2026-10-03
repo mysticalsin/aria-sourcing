@@ -580,6 +580,8 @@ export class ComputerSupervisor {
    * Opportunistic LinkedIn probes for Floor/Fleet GET freshness.
    * Re-probes ready/busy bot-held seats when health is null or TTL-stale.
    * Never invents healthy=true — only openBotSessionProbe can set true.
+   * Rotates by sessionProbedAt (never-probed / oldest first) so N desks are
+   * not starved by the first ≤limit Map-order seats stuck at false.
    */
   async refreshSessionHealthForList(
     workspaceId: string,
@@ -593,6 +595,11 @@ export class ComputerSupervisor {
       if (c.sessionHealthy === true) return false; // list() already TTL-expired stale true→null
       return true;
     });
+    const probedAtMs = (c: ComputerRecord) => {
+      const at = c.sessionProbedAt ? Date.parse(c.sessionProbedAt) : NaN;
+      return Number.isFinite(at) ? at : 0; // never-probed first
+    };
+    candidates.sort((a, b) => probedAtMs(a) - probedAtMs(b));
     const batch = candidates.slice(0, limit);
     await Promise.allSettled(batch.map((c) => this.probeSession(c.computerId)));
     return this.list(workspaceId);
