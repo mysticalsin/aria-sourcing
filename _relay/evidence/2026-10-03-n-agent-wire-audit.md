@@ -20,8 +20,9 @@ Client allocate/approve attach + durable send authority attach are closed on tip
 | preferred send-seat requires attach | **Fixed** |
 
 ### Wrong computer ops / Floor theater / sessionHealthy invent / Hermes-only go-live / Poll stale paint
-**NONE** (unchanged from prior audit).
+Superseded by `_relay/evidence/2026-10-03-n-agent-tip-gaps-after-send-attach.md` (G1–G4 remaining on tip).
 
 ## Watch out
 
 - Tip CI green ≠ production N-agent goal complete until Fly tip + LI healthy
+- Soft-nav go-live stale durable + merge inject campaignId (see tip-gaps evidence)
