@@ -310,6 +310,38 @@ ok(
     emptyOwner.ready === false &&
       emptyOwner.checks.find((c) => c.id === "session_healthy")?.ok === false,
   );
+
+  // Hermes null after reclaim clear — fleet seat-owned bind still counts as attached.
+  const fleetOnly = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [
+      liSeat({
+        id: "seat_fleet_only",
+        computerId: null,
+        assignedCampaignIds: [campaignId],
+      }),
+    ],
+    computers: [
+      {
+        computerId: "comp_fleet_only",
+        seatId: "seat_fleet_only",
+        status: "ready",
+        control: "bot",
+        sessionHealthy: true,
+      },
+    ],
+    candidate: { matchScore: 90 },
+  });
+  ok(
+    "fleet seat-owned bind with null Hermes still attaches for go-live",
+    fleetOnly.checks.find((c) => c.id === "browser_seat_attached")?.ok === true,
+  );
+  ok(
+    "fleet seat-owned bind can pass session_healthy",
+    fleetOnly.checks.find((c) => c.id === "session_healthy")?.ok === true,
+  );
+
   ok(
     "email seat with bare computerId is not a browser seat",
     campaignBrowserSeats(

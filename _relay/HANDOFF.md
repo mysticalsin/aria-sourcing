@@ -1,26 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 243
+shift: 244
 agent: cursor-cloud
-updated: 2026-10-03T02:28Z
-status: golive-take-toast-floor-now-shipped-fly-stale
+updated: 2026-10-03T02:32Z
+status: floor-orphan-skip-drawer-fleet-golive-shipped-fly-stale
 ---
 
-# Handoff — Shift 243
+# Handoff — Shift 244
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `8fb3eec` (go-live/Take/Floor now)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** go-live refuses empty/orphan owners; Take toast honest after probe clear; Floor 2D/3D/rollup share one now
+- **N-agent local:** Floor skips orphan hint index; drawer bound=fleet hint only; fleet summary excludes empty seatIds; go-live attaches on fleet bySeat with null Hermes
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
 
 ## Done this shift
 
-1. campaign-go-live computerForSeat matches resolveComputerHint ownership
-2. LinkedIn login toast no longer claims "session restored" after Take clears health
-3. seatsToOfficeAgents(now) + Floor page floorNow threaded to desks/3D/drawers/cortex
-4. Tests: campaign-go-live 21, floor 86
+1. Floor computerHints: continue before any set for empty/`__orphan__`
+2. Drawer boundComputerId from resolveComputerHint only (Hermes stale copy)
+3. floorBrowserVmTruth caption shows bound count
+4. Fleet GET summary filters empty seatId like FE isOrphanComputer
+5. go-live withComputer includes fleet seat-owned bind without Hermes id
+6. Tests: go-live 23, floor-fleet-wire 13, floor 86
 
 ## Blockers
 
@@ -39,9 +41,9 @@ status: golive-take-toast-floor-now-shipped-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Empty/`__orphan__` owners never green Floor or go-live
-- Take control always clears health — UI must not claim restored
-- Floor surfaces share one `now` clock
+- Never index orphan/empty into Floor computerHints
+- Bound VM = fleet hint only, not Hermes id
+- Go-live attach accepts fleet bySeat with null Hermes
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out

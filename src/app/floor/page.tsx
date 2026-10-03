@@ -135,20 +135,23 @@ export default function FloorPage() {
         };
         const map = new Map<string, ComputerFloorHint>();
         for (const c of data.computers ?? []) {
+          const seatId = typeof c.seatId === "string" ? c.seatId.trim() : "";
+          // Never index orphans / empty owners — resolveComputerHint refuses them,
+          // and computerId-keyed orphans can overwrite a seat's hint entry.
+          if (!seatId || seatId === "__orphan__") continue;
+          if (!c.computerId) continue;
           const hint: ComputerFloorHint = {
             status: c.status,
             sessionHealthy: c.sessionHealthy,
             computerId: c.computerId,
             // Bind hint to fleet seatId so a stale computerId on another desk
             // cannot inherit this VM after a poisoned FK clear / reclaim.
-            seatId: c.seatId,
+            seatId,
             // Take control mutex — floor must not stay green while human holds VM.
             control: c.control ?? null,
           };
-          // Orphans are computerId-keyed only — never map.set("__orphan__", …)
-          // (last orphan would overwrite and bleed onto unbound desks).
-          if (c.seatId && c.seatId !== "__orphan__") map.set(c.seatId, hint);
-          if (c.computerId) map.set(c.computerId, hint);
+          map.set(seatId, hint);
+          map.set(c.computerId, hint);
         }
         // Write owned bindings + clear Hermes when computerId is owned by another seat.
         for (const patch of fleetHermesComputerPatches(seatsRef.current, data.computers ?? [])) {
@@ -362,7 +365,7 @@ export default function FloorPage() {
                 {seats.length} seats on the floor ·{" "}
                 {(() => {
                   const t = floorBrowserVmTruth(seats, computerHints);
-                  return `${t.healthy} session healthy · ${t.unverified} unverified`;
+                  return `${t.bound} bound · ${t.healthy} session healthy · ${t.unverified} unverified`;
                 })()}
               </p>
             ) : null}
@@ -560,11 +563,19 @@ function AgentDetailDrawer({
   }
   const activity = agentActivityWithComputers(seat, state, now, computerHints);
   const computerHint = resolveComputerHint(seat, computerHints);
-  const boundComputerId = computerHint?.computerId || seat.computerId;
+  // Only fleet-owned hint counts as bound — Hermes seat.computerId alone is
+  // stale-twin theater after resolveComputerHint refused orphan/missing.
+  const boundComputerId = computerHint?.computerId?.trim() || null;
+  const hermesStale =
+    !boundComputerId &&
+    Boolean((seat.computerId ?? "").trim()) &&
+    seat.provider === "LinkedIn Browser Computer";
   const vmLabel = boundComputerId
     ? `VM …${boundComputerId.slice(-8)}`
     : seat.provider === "LinkedIn Browser Computer"
-      ? "No VM bound"
+      ? hermesStale
+        ? "Hermes twin stale — no fleet VM"
+        : "No VM bound"
       : null;
   const sessionLabel =
     computerHint?.sessionHealthy === true

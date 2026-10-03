@@ -148,11 +148,17 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
   );
   ok(
     "floor skips __orphan__ when building hints",
-    floorPage.includes('c.seatId !== "__orphan__"'),
+    floorPage.includes('seatId === "__orphan__"') &&
+      floorPage.includes("continue") &&
+      !/if \(c\.computerId\) map\.set\(c\.computerId/.test(floorPage),
   );
   ok(
     "floor never invents sessionHealthy true",
     !/sessionHealthy:\s*true/.test(floorPage),
+  );
+  ok(
+    "floor caption includes bound count from floorBrowserVmTruth",
+    floorPage.includes("floorBrowserVmTruth") && floorPage.includes("${t.bound} bound"),
   );
 }
 

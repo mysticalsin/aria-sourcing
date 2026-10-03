@@ -165,8 +165,12 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
   nextAction?: GoLiveCheck;
 } {
   const attached = campaignBrowserSeats(input.seats, input.campaignId);
-  // Attached without a durable computerId is campaign membership theater — not a real VM desk.
-  const withComputer = attached.filter((s) => (s.computerId ?? "").trim().length > 0);
+  // Attached with durable Hermes computerId OR a fleet seat-owned bind (Hermes
+  // may be null after reclaim clear — still a real VM desk).
+  const withComputer = attached.filter((s) => {
+    if ((s.computerId ?? "").trim().length > 0) return true;
+    return Boolean(computerForSeat(input.computers, s));
+  });
   const liveActive = withComputer.filter((s) => s.status === "active" && s.mode === "live");
   const comps = withComputer.map((s) => ({ seat: s, computer: computerForSeat(input.computers, s) }));
   const humanHeld = comps.some((x) => x.computer?.control === "human");

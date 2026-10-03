@@ -1254,3 +1254,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** computerId hint with seatId:"" + sessionHealthy true → session_healthy ok; toast after take claimed no re-login while BE cleared probe.
 **Suggested fix:** refuse empty/orphan in computerForSeat; toast from after-take health; injectable now on seatsToOfficeAgents + Floor page clock.
 **Status:** fixed (8fb3eec) — go-live empty-owner refuse; Take toast honest; Floor shared now
+
+## 2026-10-03 — Floor indexed orphan computerIds; drawer Hermes-bound theater; summary empty seatIds
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:151; page.tsx:563; api/fleet/computers/route.ts:106; campaign-go-live.ts:166
+**Issue:** Floor still computerId-indexed __orphan__ rows; drawer used Hermes computerId as bound after hint refuse; fleet summary kept empty seatIds in Ready; go-live required Hermes computerId before fleet bySeat could attach.
+**Repro/evidence:** orphan host botId overwrites seat hint; Hermes twin shows VM …xxxx in drawer; StatCard Ready > filtered list; Hermes-null + fleet bind → browser_seat_attached false.
+**Suggested fix:** skip orphan/empty before map.set; bound=hint only; summary filter !seatId||orphan; withComputer includes computerForSeat.
+**Status:** fixed (pending tip SHA)

@@ -103,7 +103,12 @@ export async function GET(req: NextRequest) {
       const hostCapacity = await hostCapacityFromEnv();
       return NextResponse.json({
         computers,
-        summary: summarizeFleetComputers(computers.filter((c) => c.seatId !== HOST_ORPHAN_SEAT_ID)),
+        summary: summarizeFleetComputers(
+          computers.filter((c) => {
+            const seatId = typeof c.seatId === "string" ? c.seatId.trim() : "";
+            return Boolean(seatId) && seatId !== HOST_ORPHAN_SEAT_ID;
+          }),
+        ),
         recentAudits,
         hostCapacity,
       });
@@ -228,7 +233,12 @@ export async function GET(req: NextRequest) {
       : undefined;
     return NextResponse.json({
       computers: enriched,
-      summary: summarizeFleetComputers(enriched.filter((c) => c.seatId !== HOST_ORPHAN_SEAT_ID)),
+      summary: summarizeFleetComputers(
+        enriched.filter((c) => {
+          const seatId = typeof c.seatId === "string" ? c.seatId.trim() : "";
+          return Boolean(seatId) && seatId !== HOST_ORPHAN_SEAT_ID;
+        }),
+      ),
       recentAudits,
       hostCapacity,
       ...(campaignId
