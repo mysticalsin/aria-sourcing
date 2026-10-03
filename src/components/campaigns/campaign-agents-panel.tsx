@@ -279,6 +279,7 @@ export function CampaignAgentsPanel({
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId,
+        campaignId,
       });
       const ok = await actions.updateSeat(seat.id, { computerId });
       if (!ok) {

@@ -171,14 +171,20 @@ export default function FleetPage() {
       const staleTwin =
         !computers.length ||
         isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
+      const scopeCampaign = scopeId.trim() || undefined;
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId: staleTwin ? null : seat.computerId,
+        campaignId: scopeCampaign,
       });
       if (!seat.computerId || seat.computerId !== computerId) {
         await actions.updateSeat(seat.id, { computerId });
       }
-      const boot = await bootBrowserComputer({ seatId: seat.id, computerId });
+      const boot = await bootBrowserComputer({
+        seatId: seat.id,
+        computerId,
+        campaignId: scopeCampaign,
+      });
       if (boot.booted) {
         booted += 1;
       } else {
