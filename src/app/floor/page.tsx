@@ -124,7 +124,6 @@ export default function FloorPage() {
           if (!cancelled) setComputerHints(new Map());
           return;
         }
-        if (cancelled) return;
         const data = (await res.json()) as {
           computers?: {
             computerId: string;
@@ -139,6 +138,8 @@ export default function FloorPage() {
             assignedCampaignIds?: string[];
           }>;
         };
+        // Soft-nav / seats.length remount: do not write stale Hermes patches after cancel.
+        if (cancelled) return;
         const map = new Map<string, ComputerFloorHint>();
         for (const c of data.computers ?? []) {
           const seatId = typeof c.seatId === "string" ? c.seatId.trim() : "";
@@ -177,7 +178,8 @@ export default function FloorPage() {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [actions, seats.length]);
+    // seatsRef keeps patches current — do not remount on Hermes seat churn.
+  }, [actions]);
 
   React.useEffect(() => {
     const now = Date.now();

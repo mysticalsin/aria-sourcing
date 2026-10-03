@@ -432,6 +432,69 @@ export class ComputerSupervisor {
   }
 
   /**
+   * Reconcile in-memory Map to durable agent_seats.computer_id when hydrate
+   * throws ownership-mismatch but no other DB seat claims that computer.
+   * Multi-instance stale Map must not force a GET to null the rightful FK.
+   */
+  adoptDurableComputerBinding(opts: {
+    workspaceId: string;
+    seatId: string;
+    computerId: string;
+    campaignId?: string | null;
+  }): ComputerRecord {
+    const computerId = opts.computerId.trim();
+    const seatId = opts.seatId.trim();
+    if (!computerId || !seatId || seatId === HOST_ORPHAN_SEAT_ID) {
+      throw new Error("adopt-durable-requires-real-seat-and-computer");
+    }
+    const existing = this.computers.get(computerId);
+    if (existing && existing.workspaceId !== opts.workspaceId) {
+      throw new Error(
+        `computer-ownership-mismatch: ${computerId} belongs to seat ${existing.seatId} (workspace ${existing.workspaceId}), not seat ${seatId}`,
+      );
+    }
+    for (const other of this.computers.values()) {
+      if (
+        other.workspaceId === opts.workspaceId &&
+        other.seatId === seatId &&
+        other.computerId !== computerId
+      ) {
+        other.priorSeatId = seatId;
+        other.seatId = HOST_ORPHAN_SEAT_ID;
+        other.updatedAt = isoNow();
+        this.audit(
+          other.computerId,
+          "detach_seat",
+          `Detached seat ${seatId} while adopting durable ${computerId}`,
+          "system",
+        );
+      }
+    }
+    if (!existing) {
+      return this.ensureComputer({
+        workspaceId: opts.workspaceId,
+        seatId,
+        computerId,
+        campaignId: opts.campaignId,
+      });
+    }
+    if (existing.seatId !== seatId) {
+      this.audit(
+        computerId,
+        "adopt_durable",
+        `Rebound from ${existing.seatId} to durable seat ${seatId}`,
+        "system",
+        { campaignId: opts.campaignId },
+      );
+      existing.seatId = seatId;
+      existing.priorSeatId = null;
+      if (opts.campaignId) existing.campaignId = opts.campaignId;
+      existing.updatedAt = isoNow();
+    }
+    return existing;
+  }
+
+  /**
    * Undo an in-memory orphan claim when durable agent_seats.computer_id persist fails.
    * Optionally restore a previously detached seat binding so cold GET cannot steal.
    */

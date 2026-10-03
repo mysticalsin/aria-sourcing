@@ -263,6 +263,20 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
     healthStrip.includes("setLiHealthyBySeat(new Map())") &&
       healthStrip.includes("!res.ok"),
   );
+  ok(
+    "fleet health strip seats churn must not remount poll / ingest after cancel",
+    /\}, \[actions\]\)/.test(healthStrip) &&
+      !/\}, \[actions, seats\]\)/.test(healthStrip) &&
+      /if \(cancelled\) return/.test(healthStrip),
+  );
+  const floorPage = readFileSync("src/app/floor/page.tsx", "utf8");
+  ok(
+    "floor fleet poll seatsRef — cancel before Hermes write; deps [actions] only",
+    floorPage.includes("seatsRef") &&
+      /do not write stale Hermes patches after cancel/.test(floorPage) &&
+      /\}, \[actions\]\);/.test(floorPage) &&
+      !/\}, \[actions, seats\.length\]\)/.test(floorPage),
+  );
   const fleetPage = readFileSync("src/app/fleet/page.tsx", "utf8");
   ok(
     "fleet page clears computers on GET fail",
