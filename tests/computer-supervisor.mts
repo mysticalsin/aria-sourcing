@@ -907,6 +907,13 @@ try {
     );
 
     ok(
+      "GET ownership-mismatch clears must not re-emit poisoned computerId in bindings",
+      route.includes("clearedPoisonedComputerIds") &&
+        /clearedPoisonedComputerIds\.has\(s\.id\) \? null/.test(route) &&
+        (route.match(/clearedPoisonedComputerIds\.has\(s\.id\) \? null/g) ?? []).length >= 2,
+    );
+
+    ok(
       "mutating computer actions require caller seatId match",
       route.includes("seatId required for") &&
         route.includes("computer-ownership-mismatch") &&
