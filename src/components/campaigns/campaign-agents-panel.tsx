@@ -527,8 +527,17 @@ export function CampaignAgentsPanel({
           <Badge size="sm" tone="electric">
             {withVmCount}/{campaignSeats.length} with VM
           </Badge>
-          <Badge size="sm" tone={healthyCount ? "success" : "neutral"}>
-            {healthyCount} session healthy
+          <Badge
+            size="sm"
+            tone={
+              campaignSeats.length > 0 && healthyCount === campaignSeats.length
+                ? "success"
+                : healthyCount > 0
+                  ? "warning"
+                  : "neutral"
+            }
+          >
+            {healthyCount}/{campaignSeats.length} session healthy
           </Badge>
           {unverifiedCount > 0 ? (
             <Badge size="sm" tone="warning">
