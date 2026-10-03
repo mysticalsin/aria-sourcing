@@ -1,32 +1,31 @@
 ---
 project: MSourcing / ARIA
-shift: 305
+shift: 306
 agent: cursor-cloud
-updated: 2026-10-03T14:55Z
+updated: 2026-10-03T15:15Z
 status: tip-n-agent-closed-fly-blocks-goal
 ---
 
-# Handoff — Shift 305
+# Handoff — Shift 306
 
 ## Current state
 
-- **Deploy-land:** `cursor/fly-deploy-land-n-agent-b91d` @ `49b20bb` — PR https://github.com/mysticalsin/aria-sourcing/pull/150 → `deploy/fly-github-actions`
-- **#150:** `MERGEABLE`, **CI+CodeQL green** @ `7a63905`, squash **auto-merge enabled**, blocked only on **`REVIEW_REQUIRED`**
-- **Dispatch runbook:** `_relay/evidence/2026-10-03-fly-owner-dispatch-runbook.md`
-- **Tip residual:** **NONE**
+- **Deploy-land:** `cursor/fly-deploy-land-n-agent-b91d` — PR https://github.com/mysticalsin/aria-sourcing/pull/150 → `deploy/fly-github-actions`
+- **#150:** `MERGEABLE`, squash auto-merge on, blocked on **`REVIEW_REQUIRED`**
+- **Tip residual:** viewport/fleet Take now pass campaignId when attached; Attention/Settings ingest durable bindings
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
+- **Dispatch runbook:** `_relay/evidence/2026-10-03-fly-owner-dispatch-runbook.md`
 - **Goal:** **open** until Fly tip SHA + LI desks healthy
 
 ## Done this shift
 
-1. Residual hunt NONE
-2. Enabled squash auto-merge on #150
-3. Confirmed tip CI+CodeQL success
-4. Wrote owner dispatch runbook (approve → receipt digest → workflow_dispatch → LI proof)
+1. Viewport + Fleet page: pass campaignId on Take/Start when desk attached / scoped
+2. Attention panel + Settings: ingestDurableBrowserBindings on fleet poll
+3. tsc clean
 
 ## Blockers
 
-1. Owner: **approve PR #150** (auto-merge will land) → green CI on deploy merge SHA → workflow_dispatch + Take→login→Release LI healthy
+1. Owner: approve #150 → auto-merge → dispatch + LI healthy
 
 ## Next steps
 
@@ -35,14 +34,12 @@ status: tip-n-agent-closed-fly-blocks-goal
 
 ## Decisions (don't relitigate)
 
-- Tip N-agent class closed on tip
-- Tip CI green ≠ production goal complete
+- Tip N-agent class closed; remaining gap is production deploy
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - Protected deploy: `deploy/fly-github-actions`
 
 ## Watch out
 
-- No agent `FLY_API_TOKEN` / cannot request reviews (integration 403)
-- After land, re-verify CI+CodeQL on **new deploy HEAD** before workflow_dispatch
-- Docs pushes cancel CI; last proven green before this baton: `49b20bb`
+- No agent review/approve / FLY_API_TOKEN
+- Docs pushes cancel CI; re-verify green before owner relies on tip SHA
