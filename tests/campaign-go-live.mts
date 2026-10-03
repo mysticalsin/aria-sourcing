@@ -207,6 +207,28 @@ ok(
     "campaign seat without computerId is not attached for go-live",
     noVm.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
   );
+
+  const hermesOnly = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [liSeat({ computerId: "comp_hermes_only", assignedCampaignIds: [campaignId] })],
+    // computers omitted — must not green attach from Hermes id alone
+  });
+  ok(
+    "Hermes computerId alone without fleet computers is not attached",
+    hermesOnly.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
+  );
+
+  const hermesEmptyFleet = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [liSeat({ computerId: "comp_hermes_empty", assignedCampaignIds: [campaignId] })],
+    computers: [],
+  });
+  ok(
+    "Hermes computerId with empty fleet poll is not attached",
+    hermesEmptyFleet.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
+  );
 }
 
 const multi = evaluateCampaignGoLive({

@@ -1,51 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 259
+shift: 260
 agent: cursor-cloud
-updated: 2026-10-03T04:30Z
-status: tip-ci-green-fly-stale
+updated: 2026-10-03T04:50Z
+status: n-agent-honesty-gaps-closed-fly-stale
 ---
 
-# Handoff — Shift 259
+# Handoff — Shift 260
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip SHA:** `e1e3b74` — **CI fully green** (Quality, Database security, Dependency audit, Secret scan, supply chain, Release gate, CodeQL)
-- **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale) — owner redeploy required
-- **JEV:** `ARIA_JINA_API_KEY` portal `apikey_…` in `.env.local` only; Reader best Aria uses; Search fail-closed until `jina_…` Bearer
-- **N-agent goal:** keep open until Fly tip SHA + LI healthy after Take→login→Release
+- **Shipping:** remaining tip honesty gaps from explore audit
+- **Prior tip CI:** green on `e1e3b74` (docs `1d4540c` may still be running)
+- **Fly:** `21a42e7…` / `agentFrameworks:false` — owner redeploy required
+- **JEV:** portal key local Reader best uses; never committed
 
 ## Done this shift
 
-1. Tip CI green on `e1e3b74` (erasure race assert uses portable `grep`)
-2. Prior: channel-contract session honesty; audit `--omit=dev`; privilege-list fixes without fingerprint retouch
+1. Setup take-control `done` = attached campaign seat + `sessionHealthy`
+2. Fleet page catch clears computers/opsSummary (not only `!res.ok`)
+3. LinkedIn connections clears `fleetComputers` on HTTP fail
+4. Navigate checks human before `start` → real 409; outer catch maps human-held → 409
+5. `evaluateCampaignGoLive` always requires `computerForSeat` (no Hermes-only provisional)
+6. Regression contracts updated (linkedin-connections, floor-fleet-wire, computer-supervisor, campaign-go-live)
 
 ## Blockers
 
 1. No Fly deploy token
-2. Owner: tip redeploy until `/api/ready` build == `e1e3b74…` + `agentFrameworks:true`
-3. Owner: `fly secrets set ARIA_JINA_API_KEY=…`
-4. Operator Take→login→Release; prove `sessionHealthy` within TTL
+2. Owner tip redeploy + ARIA_JINA_API_KEY + Take→login→Release
 
 ## Next steps
 
-1. Owner Fly redeploy tip + set JEV secret
-2. Operator Take→login→Release on LI desks
-3. Verify `/api/ready` build matches tip SHA and desks healthy
-4. Only then UpdateGoal complete
+1. Confirm tip CI green on this SHA
+2. Owner Fly tip SHA match + LI healthy
+3. Do not UpdateGoal complete until Fly tip SHA + LI healthy
 
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
 - Mock send does not bypass sessionHealthy
+- Hermes computerId alone never greens go-live attach
+- navigate human-held is 409 before start
 - Never commit ARIA_JINA_API_KEY
-- Portal `apikey_…` → Reader (X-API-Key); Search needs `jina_…` Bearer
-- No function-body migrations without fingerprint dump
-- CI audit `--omit=dev` until braces patches or Tailwind 4
 
 ## Watch out
 
-- Do not mark N-agent goal complete until Fly tip SHA + LI healthy verified
-- Leave tip quiet while green unless a new red appears
+- Leave tip quiet after this push unless CI red

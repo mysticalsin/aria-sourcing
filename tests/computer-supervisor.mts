@@ -911,12 +911,18 @@ try {
     }
     {
       const idx = route.indexOf('case "navigate"');
-      const block = idx >= 0 ? route.slice(idx, idx + 1800) : "";
+      const block = idx >= 0 ? route.slice(idx, idx + 2200) : "";
+      const humanIdx = block.indexOf('control === "human"');
+      const startIdx = block.indexOf(".start(navComputerId");
       ok(
         "navigate refuses human-held (no silent releaseControl)",
         block.includes("computer-human-held") &&
           block.includes("status: 409") &&
           !block.includes("releaseControl(navComputerId"),
+      );
+      ok(
+        "navigate checks human before start (409 not outer 400)",
+        humanIdx >= 0 && startIdx >= 0 && humanIdx < startIdx,
       );
     }
   }

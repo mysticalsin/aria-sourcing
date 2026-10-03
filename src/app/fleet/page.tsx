@@ -271,7 +271,9 @@ export default function FleetPage() {
         }),
       );
     } catch {
-      /* ignore — panel stays empty */
+      // Fail closed on throw after a green poll — clear stale healthy/orphan paint.
+      setComputers([]);
+      setOpsSummary(null);
     } finally {
       setComputersLoading(false);
     }

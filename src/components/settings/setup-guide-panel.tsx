@@ -89,12 +89,18 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
     : "/campaigns";
   const dryRunOff = !settings.dryRunMode;
 
-  // Take→login→Release done only after fleet probe paints sessionHealthy=true.
+  // Take→login→Release done only after fleet probe paints sessionHealthy=true
+  // on a seat attached to this campaign (not any random healthy Browser Computer).
   const [liSessionHealthy, setLiSessionHealthy] = React.useState(false);
   React.useEffect(() => {
     let cancelled = false;
-    const seatIds = new Set(
-      seats.filter(isBrowserComputerSeat).map((s) => s.id),
+    const attachedSeatIds = new Set(
+      seats
+        .filter(isBrowserComputerSeat)
+        .filter((s) =>
+          Boolean(campaign && (s.assignedCampaignIds ?? []).includes(campaign.id)),
+        )
+        .map((s) => s.id),
     );
     const load = async () => {
       try {
@@ -110,7 +116,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
           (c) =>
             c.sessionHealthy === true &&
             typeof c.seatId === "string" &&
-            seatIds.has(c.seatId.trim()),
+            attachedSeatIds.has(c.seatId.trim()),
         );
         if (!cancelled) setLiSessionHealthy(healthy);
       } catch {
@@ -123,7 +129,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [seats]);
+  }, [seats, campaign]);
 
   const steps: Step[] = [
     {
@@ -176,12 +182,12 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
         {
       id: "take-control",
       title: "Take control · LinkedIn login",
-      body: liSessionHealthy
-        ? "LinkedIn session probed healthy on a Browser Computer seat — Release holds; bot may send after go-live."
-        : "Open LinkedIn login for agents, sign in (and 2FA) inside the AriaBot VM, then Release so the bot can send.",
-      // Done only after fleet sessionHealthy===true on an attached Browser Computer seat.
-      done: liSessionHealthy,
-      ctaLabel: liSessionHealthy ? "Open AriaBot stack" : "Open LinkedIn login",
+      body: liSessionHealthy && attachedOk
+        ? "LinkedIn session probed healthy on an attached Browser Computer seat — Release holds; bot may send after go-live."
+        : "Attach a Browser Computer seat, then Open LinkedIn login for agents, sign in (and 2FA) inside the AriaBot VM, then Release so the bot can send.",
+      // Done only after attach + fleet sessionHealthy===true on that campaign seat.
+      done: attachedOk && liSessionHealthy,
+      ctaLabel: liSessionHealthy && attachedOk ? "Open AriaBot stack" : "Open LinkedIn login",
       href: `/settings?tab=integrations#${LINKEDIN_OUTREACH_STACK_ID}`,
       icon: <Hand className="h-4 w-4" aria-hidden />,
     },

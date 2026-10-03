@@ -459,15 +459,16 @@ export async function POST(req: NextRequest) {
         });
         // Always drive the ensured id — never the raw request id after a rebound.
         const navComputerId = navRec.computerId;
-        await defaultComputerSupervisor.start(navComputerId, campaignOpts);
-        // Never silently Release Take control — navigate refuses while operator holds the desk.
-        const current = defaultComputerSupervisor.get(navComputerId);
-        if (current?.control === "human") {
+        // Never silently Release Take control — check human before start() so we
+        // return 409 (not start()'s computer-human-held → outer 400).
+        const held = defaultComputerSupervisor.get(navComputerId);
+        if (held?.control === "human") {
           return NextResponse.json(
             { error: "computer-human-held", detail: "Release Take control before navigate." },
             { status: 409 },
           );
         }
+        await defaultComputerSupervisor.start(navComputerId, campaignOpts);
         await defaultComputerSupervisor.enqueueJob({
           computerId: navComputerId,
           kind: "warmup_nav",
@@ -543,10 +544,9 @@ export async function POST(req: NextRequest) {
       recentAudits: defaultComputerSupervisor.recentAudits(rec.computerId, 12),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "computer action failed" },
-      { status: 400 },
-    );
+    const message = err instanceof Error ? err.message : "computer action failed";
+    const status = message === "computer-human-held" ? 409 : 400;
+    return NextResponse.json({ error: message }, { status });
   } finally {
     bindComputerSupervisorEndpoint(null);
   }

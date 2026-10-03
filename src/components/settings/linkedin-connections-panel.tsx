@@ -220,6 +220,12 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
               sessionHealthy,
             };
           });
+        } else {
+          // HTTP fail: clear prior fleet paint (same as catch) so Login cannot
+          // treat a stale Hermes id as owned while BE is down.
+          setFleetComputers([]);
+          setFleetLoaded(true);
+          nextSeats = nextSeats.map((s) => ({ ...s, sessionHealthy: null }));
         }
       } catch {
         setFleetComputers([]);

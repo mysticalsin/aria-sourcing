@@ -168,17 +168,12 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
   nextAction?: GoLiveCheck;
 } {
   const attached = campaignBrowserSeats(input.seats, input.campaignId);
-  // When fleet has been polled (computers defined, incl. []), only seat-owned
-  // fleet binds count — Hermes computerId alone must not green attach via a
-  // refused orphan/foreign twin. Pre-poll (computers undefined): provisional
-  // Hermes durable id only.
-  const fleetPolled = input.computers !== undefined;
-  const withComputer = attached.filter((s) => {
-    if (fleetPolled) return Boolean(computerForSeat(input.computers, s));
-    return (s.computerId ?? "").trim().length > 0;
-  });
+  // Always require a seat-owned fleet bind via computerForSeat. Missing/undefined
+  // computers is fail-closed [] — Hermes computerId alone must never green attach.
+  const fleet = input.computers ?? [];
+  const withComputer = attached.filter((s) => Boolean(computerForSeat(fleet, s)));
   const liveActive = withComputer.filter((s) => s.status === "active" && s.mode === "live");
-  const comps = withComputer.map((s) => ({ seat: s, computer: computerForSeat(input.computers, s) }));
+  const comps = withComputer.map((s) => ({ seat: s, computer: computerForSeat(fleet, s) }));
   const humanHeld = comps.some((x) => x.computer?.control === "human");
   const needsHelp = comps.some(
     (x) => x.computer?.status === "help_requested" || x.computer?.status === "error",
@@ -214,9 +209,7 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
         withComputer.length > 0
           ? `${withComputer.length} LinkedIn Browser Computer seat(s) with a fleet-bound VM on this campaign.`
           : attached.length > 0
-            ? fleetPolled
-              ? "Campaign seats are assigned but none have a seat-owned fleet VM — Start / Deploy or reclaim on Agents or Fleet."
-              : "Campaign seats are assigned but none have a computerId yet — Start / Deploy on Agents or Fleet."
+            ? "Campaign seats are assigned but none have a seat-owned fleet VM — Start / Deploy or reclaim on Agents or Fleet."
             : "Assign a LinkedIn Browser Computer seat on the Agents tab (explicit attach).",
       ctaLabel: "Open Agents",
       ctaHref: `/campaigns/${input.campaignId}?tab=agents`,

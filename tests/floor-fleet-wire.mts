@@ -226,6 +226,10 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
     fleetPage.includes("if (!res.ok)") &&
       fleetPage.includes("setComputers([])"),
   );
+  ok(
+    "fleet page clears computers on poll throw (not only !res.ok)",
+    /catch \{[\s\S]*setComputers\(\[\]\)[\s\S]*setOpsSummary\(null\)/.test(fleetPage),
+  );
 }
 
 console.log(`floor-fleet-wire: ${pass} passed, ${fail} failed`);

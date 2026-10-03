@@ -150,14 +150,23 @@ ok(
     !/assigned\.length === 0 \|\| assigned\.includes/.test(setupGuide),
 );
 ok(
-  "setup guide take-control done from fleet sessionHealthy (not Hermes computerId)",
-  /done: liSessionHealthy/.test(setupGuide) &&
-    /sessionHealthy === true/.test(setupGuide),
+  "setup guide take-control done requires attach + fleet sessionHealthy",
+  /done: attachedOk && liSessionHealthy/.test(setupGuide) &&
+    /sessionHealthy === true/.test(setupGuide) &&
+    /attachedSeatIds\.has\(c\.seatId\.trim\(\)\)/.test(setupGuide),
 );
 ok(
   "setup guide never classifies Browser Computer via computerId alone",
   /Never classify via Hermes computerId alone/.test(setupGuide) &&
     !/Boolean\(seat\.computerId\)/.test(setupGuide),
+);
+
+const liPanel = readFileSync("src/components/settings/linkedin-connections-panel.tsx", "utf8");
+ok(
+  "linkedin connections clears fleetComputers on fleet GET fail",
+  /!fleetRes\.ok|else \{/.test(liPanel) &&
+    /setFleetComputers\(\[\]\)/.test(liPanel) &&
+    /HTTP fail: clear prior fleet paint/.test(liPanel),
 );
 
 console.log(`RESULT linkedin-connections: ${pass} passed, ${fail} failed`);
