@@ -889,6 +889,13 @@ try {
         reclaimBlock.includes("computer_id persist failed"),
     );
     ok(
+      "POST campaignId refuses unattached durable seat (BC empty ≠ attached)",
+      route.includes("refuseUnattachedCampaignSeat") &&
+        route.includes("linkedin-seat-not-attached") &&
+        route.includes("seatAttachedToCampaign"),
+    );
+
+    ok(
       "mutating computer actions require caller seatId match",
       route.includes("seatId required for") &&
         route.includes("computer-ownership-mismatch") &&

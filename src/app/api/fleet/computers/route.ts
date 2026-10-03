@@ -8,8 +8,9 @@ import {
 } from "@/lib/computer-supervisor";
 import { openBotHostHealth, type OpenBotSupervisorConfig } from "@/lib/openbot/supervisor-client";
 import { queryComputerAuditsDurable, summarizeFleetComputers } from "@/lib/computer-audit";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { can } from "@/lib/rbac";
-import type { Role } from "@/lib/types";
+import type { AgentSeat, Role } from "@/lib/types";
 import { validateBody } from "@/lib/api/validate";
 import {
   loadLinkedInCredentialRefsForWorkspace,
@@ -67,6 +68,53 @@ function enrichComputer(
     viewUrl: rec.viewUrl ?? rec.remoteUrl ?? null,
     recentAudits: defaultComputerSupervisor.recentAudits(rec.computerId, 8),
   };
+}
+
+/**
+ * When POST names a campaignId, refuse desks not durably attached to it
+ * (BC empty ≠ attached). Skipped in local/demo (no durable assigned_campaign_ids).
+ */
+async function refuseUnattachedCampaignSeat(input: {
+  supabase: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
+  workspaceId: string;
+  seatId: string;
+  campaignId: string;
+}): Promise<NextResponse | null> {
+  const { data, error } = await input.supabase
+    .from("agent_seats")
+    .select("provider, assigned_campaign_ids, linkedin_delivery_backend")
+    .eq("id", input.seatId)
+    .eq("workspace_id", input.workspaceId)
+    .maybeSingle();
+  if (error) {
+    return NextResponse.json({ error: "seat-lookup-failed", detail: error.message }, { status: 500 });
+  }
+  if (!data) {
+    return NextResponse.json({ error: "seat-not-found" }, { status: 404 });
+  }
+  const attached = seatAttachedToCampaign(
+    {
+      provider: data.provider as AgentSeat["provider"],
+      linkedinDeliveryBackend:
+        typeof data.linkedin_delivery_backend === "string"
+          ? (data.linkedin_delivery_backend as AgentSeat["linkedinDeliveryBackend"])
+          : null,
+      assignedCampaignIds: Array.isArray(data.assigned_campaign_ids)
+        ? (data.assigned_campaign_ids as string[])
+        : [],
+    },
+    input.campaignId,
+  );
+  if (!attached) {
+    return NextResponse.json(
+      {
+        error: "linkedin-seat-not-attached",
+        detail: "Seat is not attached to this campaign.",
+      },
+      { status: 409 },
+    );
+  }
+  return null;
 }
 
 /**
@@ -351,6 +399,25 @@ export async function POST(req: NextRequest) {
     } else if (workspaceId) {
       await defaultComputerSupervisor.hydrateFromHost(workspaceId);
       await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(workspaceId);
+    }
+    // N-agent: campaign-scoped Take/nav/ensure/release must name an attached desk.
+    const gateCampaignId = (body.campaignId ?? "").trim();
+    const gateSeatId = (body.seatId ?? "").trim();
+    if (
+      gateCampaignId &&
+      gateSeatId &&
+      gateSeatId !== HOST_ORPHAN_SEAT_ID &&
+      supabase &&
+      workspaceId &&
+      workspaceId !== "__local__"
+    ) {
+      const refused = await refuseUnattachedCampaignSeat({
+        supabase,
+        workspaceId,
+        seatId: gateSeatId,
+        campaignId: gateCampaignId,
+      });
+      if (refused) return refused;
     }
     const campaignOpts = { campaignId: body.campaignId };
     const computerId = (body.computerId ?? "").trim();
