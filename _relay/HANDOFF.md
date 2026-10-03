@@ -10,7 +10,7 @@ status: checklist-failclosed-fleet-li-health-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `38101f4`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** Go-live checklist fails closed on `computers=[]` (never Hermes-only attach race); durable null clears twin; Floor idle clears theatrical detail; FleetHealthStrip LI needs sessionHealthy; Fleet add-seat uses staleTwin
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
