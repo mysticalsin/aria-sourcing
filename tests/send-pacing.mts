@@ -59,10 +59,21 @@ const now = new Date("2026-06-26T12:00:00.000Z");
 
 ok("defaults dailyLimit is conservative (15)", LINKEDIN_BROWSER_SEAT_DEFAULTS.dailyLimit === 15);
 ok("defaults minGapMinutes is 18", LINKEDIN_BROWSER_SEAT_DEFAULTS.minGapMinutes === 18);
-ok("ok when fresh seat", evaluateSendPace({ seat, settings, now }).ok === true);
+ok(
+  "Browser Computer omits sessionHealthy → refuse (no undefined skip)",
+  evaluateSendPace({ seat, settings, now }).ok === false &&
+    evaluateSendPace({ seat, settings, now }).reason === "session_unhealthy",
+);
+ok(
+  "ok when fresh seat + sessionHealthy true",
+  evaluateSendPace({ seat, settings, now, sessionHealthy: true }).ok === true,
+);
 
 const paused = baseSeat({ status: "paused", sendWindow: seat.sendWindow });
-ok("seat_paused when not active", evaluateSendPace({ seat: paused, settings, now }).reason === "seat_paused");
+ok(
+  "seat_paused when not active",
+  evaluateSendPace({ seat: paused, settings, now, sessionHealthy: true }).reason === "seat_paused",
+);
 
 const capped = baseSeat({
   sentToday: 100,
@@ -70,14 +81,22 @@ const capped = baseSeat({
   dailyLimit: 15,
   sendWindow: seat.sendWindow,
 });
-ok("daily_cap when sentToday >= cap", evaluateSendPace({ seat: capped, settings, now }).reason === "daily_cap");
+ok(
+  "daily_cap when sentToday >= cap",
+  evaluateSendPace({ seat: capped, settings, now, sessionHealthy: true }).reason === "daily_cap",
+);
 
 const recent = baseSeat({
   lastSendAt: new Date(now.getTime() - 5 * 60_000).toISOString(),
   minGapMinutes: 18,
   sendWindow: seat.sendWindow,
 });
-const gap = evaluateSendPace({ seat: recent, settings: { ...settings, jitter: false }, now });
+const gap = evaluateSendPace({
+  seat: recent,
+  settings: { ...settings, jitter: false },
+  now,
+  sessionHealthy: true,
+});
 ok("min_gap when last send too recent", gap.ok === false && gap.reason === "min_gap");
 
 const unhealthy = evaluateSendPace({ seat, settings, now, sessionHealthy: false });
@@ -99,6 +118,7 @@ const bh = evaluateSendPace({
   seat: outside,
   settings: { ...settings, enforceBusinessHours: true },
   now: sat,
+  sessionHealthy: true,
 });
 ok("business_hours when outside window", bh.ok === false && bh.reason === "business_hours");
 

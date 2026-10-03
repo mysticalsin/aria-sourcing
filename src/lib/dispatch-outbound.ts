@@ -44,6 +44,8 @@ import {
   loadLinkedInCredentialRefsForWorkspace,
   resolveLinkedInCredentialsForWorkspace,
 } from "@/lib/linkedin-credentials";
+import { AGENT_SEAT_SELECT, agentSeatRowToSeat, type AgentSeatRow } from "@/lib/fleet-seats";
+import { defaultFleetSettings } from "@/lib/fleet";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -334,9 +336,9 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       }
 
       if (msg.channel === "LinkedIn") {
-        const { data: seat, error: seatErr } = await supabase
+        const { data: seatRow, error: seatErr } = await supabase
           .from("agent_seats")
-          .select("id, provider, status, mode, computer_id")
+          .select(AGENT_SEAT_SELECT)
           .eq("id", msg.seat_id ?? "")
           .eq("workspace_id", msg.workspace_id)
           .maybeSingle();
@@ -345,6 +347,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-store-unavailable"] });
           continue;
         }
+        const seat = seatRow ? agentSeatRowToSeat(seatRow as AgentSeatRow) : null;
         const adapter = linkedInAdapterForProvider(seat?.provider);
         if (!seat || seat.status !== "active" || seat.mode !== "live" || !adapter) {
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
@@ -353,7 +356,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         // Browser Computer send must use the durable DB computer_id — never mint on dispatch.
         if (
           seat.provider === "LinkedIn Browser Computer" &&
-          !(typeof seat.computer_id === "string" && seat.computer_id.trim())
+          !(typeof seat.computerId === "string" && seat.computerId.trim())
         ) {
           await finish("blocked", {
             pass: false,
@@ -414,8 +417,12 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           body: msg.body,
           attemptId: deliveryAttemptId,
           seatId: msg.seat_id ?? undefined,
-          computerId: seat.computer_id ?? undefined,
+          computerId: seat.computerId ?? undefined,
           credentials: linkedInCreds,
+          // Pass full seat + fleet defaults so Browser Computer pacing
+          // (sessionHealthy / gap / cap) cannot be skipped.
+          seat,
+          fleetSettings: defaultFleetSettings(),
         });
         const outcomeKind =
           outcome.status === "sent" && outcome.deliveryState === "accepted"

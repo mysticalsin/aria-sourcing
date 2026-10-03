@@ -1238,3 +1238,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** status=busy + sessionHealthy=true → Floor warming/unverified while Campaign Agents green; MOCK_SEND=1 + null health → succeeded; Hermes twin id inflated with-VM badge.
 **Suggested fix:** busy+healthy keep base + healthy label; always require sessionHealthy===true for linkedin_send; badge counts fleet computers by seatId.
 **Status:** fixed (212759b) — busy+healthy Floor; mockSend requires healthy; with-VM fleet count
+
+## 2026-10-03 — dispatch skipped Browser Computer pacing; Floor empty-owner green
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts:407; src/lib/floor.ts:149; campaign-agents-panel.tsx:499
+**Issue:** `adapter.deliver` omitted seat/fleetSettings so linkedin-channel skipped evaluateSendPace. Floor resolveComputerHint allowed empty/`__orphan__` owners via computerId map. Campaign Agents ops required Hermes computerId even when fleet had seat-owned bind.
+**Repro/evidence:** dispatch LinkedIn Browser Computer send without seat → pace skipped; Hermes twin orphan hint painted Floor healthy; fleet bind + null Hermes → Deploy CTA.
+**Suggested fix:** pass agentSeatRowToSeat + defaultFleetSettings; refuse empty/orphan in resolveComputerHint; ops on bySeat??byComp only.
+**Status:** fixed (pending tip SHA)

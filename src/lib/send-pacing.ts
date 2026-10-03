@@ -64,8 +64,21 @@ export function evaluateSendPace(opts: {
     return { ok: false, reason: "seat_paused", detail: `Seat status is ${seat.status}.` };
   }
 
-  // Caller passed an explicit session flag — fail closed unless probed healthy.
-  if (opts.sessionHealthy !== undefined && opts.sessionHealthy !== true) {
+  // Browser Computer: sessionHealthy must be probed true — omitting the flag
+  // must not skip the gate (dispatch used to omit seat → undefined → send theater).
+  if (seat.provider === "LinkedIn Browser Computer") {
+    if (opts.sessionHealthy !== true) {
+      return {
+        ok: false,
+        reason: "session_unhealthy",
+        detail:
+          opts.sessionHealthy === false
+            ? "LinkedIn session unhealthy — Take control and log in, then Release."
+            : "LinkedIn session unverified — Take control, log in, then Release to probe.",
+      };
+    }
+  } else if (opts.sessionHealthy !== undefined && opts.sessionHealthy !== true) {
+    // Caller passed an explicit session flag — fail closed unless probed healthy.
     return {
       ok: false,
       reason: "session_unhealthy",

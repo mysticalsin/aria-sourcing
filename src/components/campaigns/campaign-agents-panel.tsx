@@ -482,21 +482,21 @@ export function CampaignAgentsPanel({
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <ul className="divide-y divide-line/50">
             {campaignSeats.map((seat) => {
-              const boundComputerId = seat.computerId?.trim() || null;
               const bySeat = computers.find((row) => row.seatId === seat.id);
-              // Ops (Start/Observe/Take control) only on seat-owned rows — never
-              // drive an __orphan__ VM from another desk's Hermes computerId.
-              const byComp = boundComputerId
+              // Ops (Start/Observe/Take control) only on seat-owned fleet rows —
+              // never drive an __orphan__ VM from another desk's Hermes computerId.
+              const hermesId = seat.computerId?.trim() || null;
+              const byComp = hermesId
                 ? computers.find(
                     (row) =>
-                      row.computerId === boundComputerId &&
+                      row.computerId === hermesId &&
                       row.seatId === seat.id,
                   )
                 : undefined;
               const c = bySeat ?? byComp;
-              // No durable computerId → seat is attached but VM not provisioned.
-              // Do not invent "(unassigned)" and offer Start/Observe/Take control.
-              if (!boundComputerId || !c || c.computerId === "(unassigned)") {
+              // Fleet seat-owned bind is enough — Hermes null after reclaim clear
+              // must not force Deploy theater when the VM is already on fleet.
+              if (!c || c.computerId === "(unassigned)") {
                 return (
                   <li key={seat.id} className="px-5 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">

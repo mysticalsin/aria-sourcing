@@ -133,7 +133,8 @@ export type FloorComputerHint = {
 
 /**
  * Resolve a live VM hint for a desk. Prefer seatId key; computerId fallback is
- * allowed only when the hint is unbound (no seatId) or bound to this same seat.
+ * allowed only when the hint is bound to this same seat — never empty/`__orphan__`
+ * owners (those paint cross-desk green via Hermes twin ids).
  */
 export function resolveComputerHint(
   seat: { id: string; computerId?: string | null },
@@ -141,12 +142,20 @@ export function resolveComputerHint(
 ): FloorComputerHint | undefined {
   if (!computers) return undefined;
   const bySeat = computers.get(seat.id);
-  if (bySeat) return bySeat;
+  if (bySeat) {
+    const owner = typeof bySeat.seatId === "string" ? bySeat.seatId.trim() : "";
+    // Seat-keyed hint must still be owned by this seat (or unbound legacy).
+    if (owner && owner !== seat.id && owner !== "__orphan__") return undefined;
+    if (owner === "__orphan__") return undefined;
+    return bySeat;
+  }
   const computerId = typeof seat.computerId === "string" ? seat.computerId.trim() : "";
   if (!computerId) return undefined;
   const byComputer = computers.get(computerId);
   if (!byComputer) return undefined;
-  if (byComputer.seatId && byComputer.seatId !== seat.id) return undefined;
+  const owner = typeof byComputer.seatId === "string" ? byComputer.seatId.trim() : "";
+  // Empty / orphan owner must not paint this desk — match computerHealthOwnedBySeat.
+  if (!owner || owner === "__orphan__" || owner !== seat.id) return undefined;
   return byComputer;
 }
 

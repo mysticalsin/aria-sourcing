@@ -262,7 +262,7 @@ ok("at least one paused (lucas)", roll.paused >= 1);
       "N-agent floor does not invent sessionHealthy working",
       agents.every((a) => a.status === "idle" && /unverified/i.test(a.subtitle || "")),
     );
-    // Hint keyed only by computerId (fleet lag / seatId remap) still labels each agent.
+    // Hint keyed by computerId still labels each agent when seatId ownership matches.
     const byCompOnly = new Map(
       seats.map((seat) => [
         seat.computerId!,
@@ -270,6 +270,7 @@ ok("at least one paused (lucas)", roll.paused >= 1);
           status: "ready" as const,
           sessionHealthy: null as boolean | null,
           computerId: seat.computerId,
+          seatId: seat.id,
         },
       ]),
     );
@@ -281,6 +282,22 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     ok(
       "N-agent floor computerId hints stay distinct",
       new Set(viaComp.map((a) => /…([0-9a-f]{8})/i.exec(a.subtitle || "")?.[1])).size === n,
+    );
+    // Empty-owner computerId hint must not paint (matches computerHealthOwnedBySeat).
+    const emptyOwnerHints = new Map(
+      seats.map((seat) => [
+        seat.computerId!,
+        {
+          status: "ready" as const,
+          sessionHealthy: true as boolean | null,
+          computerId: seat.computerId,
+        },
+      ]),
+    );
+    const viaEmpty = seatsToOfficeAgents(seats, s, emptyOwnerHints);
+    ok(
+      "N-agent floor refuses empty-owner computerId hints",
+      viaEmpty.every((a) => !/session healthy/i.test(a.subtitle || "")),
     );
   }
 }
@@ -362,6 +379,53 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     /session healthy/i.test(agentB.subtitle || ""),
   );
 
+  const actA = agentActivityWithComputers(a, s, Date.now(), hints);
+  ok(
+    "poisoned computerId cannot inherit another seat's activity",
+    actA.state === "idle" && /No Browser Computer|VM not on host/i.test(actA.label),
+  );
+}
+
+// Orphan / empty-owner computerId must not paint Floor green via Hermes twin.
+{
+  const li = s.seats.find((x) => x.provider === "LinkedIn Browser Computer");
+  if (li) {
+    const seat = { ...li, id: "seat_orphan_hint", computerId: "comp_orphan_green" };
+    const orphanHints = new Map([
+      [
+        "comp_orphan_green",
+        {
+          status: "ready" as const,
+          sessionHealthy: true as boolean | null,
+          computerId: "comp_orphan_green",
+          seatId: "__orphan__",
+        },
+      ],
+    ]);
+    const act = agentActivityWithComputers(seat, s, NOW, orphanHints);
+    ok(
+      "orphan-owned computerId hint does not apply healthy overlay",
+      !/session healthy/i.test(act.label),
+    );
+    const emptyOwner = new Map([
+      [
+        "comp_orphan_green",
+        {
+          status: "ready" as const,
+          sessionHealthy: true as boolean | null,
+          computerId: "comp_orphan_green",
+          // empty seatId — refuse like computerHealthOwnedBySeat
+        },
+      ],
+    ]);
+    const actEmpty = agentActivityWithComputers(seat, s, NOW, emptyOwner);
+    ok(
+      "empty-owner computerId hint does not apply healthy overlay",
+      !/session healthy/i.test(actEmpty.label),
+    );
+  }
+}
+
 {
   const seat = { ...s.seats.find((x) => x.provider === "LinkedIn Browser Computer")!, id: "seat_vm_sfx", computerId: "comp_abcd1234" };
   const hints = new Map([
@@ -369,13 +433,6 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   ]);
   const act = agentActivityWithComputers(seat, s, Date.now(), hints);
   ok("2D activity label includes VM suffix", /…abcd1234/.test(act.label));
-}
-
-  const actA = agentActivityWithComputers(a, s, Date.now(), hints);
-  ok(
-    "poisoned computerId cannot inherit another seat's activity",
-    actA.state === "idle" && /No Browser Computer|VM not on host/i.test(actA.label),
-  );
 }
 
 // Live computer map: non-LI theatrical busy with zero sends is not "Working now".

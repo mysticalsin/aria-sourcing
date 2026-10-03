@@ -236,21 +236,28 @@ const browserComputerAdapter: LinkedInAdapter = {
           detail: "help_requested — Take control, finish LinkedIn login, then Release.",
         };
       }
-      if (req.seat) {
-        const pace = evaluateSendPace({
-          seat: req.seat,
-          settings: req.fleetSettings ?? defaultFleetSettings(),
-          // Pass through null/false — pacing fails closed unless probed true.
-          sessionHealthy: computer.sessionHealthy ?? null,
-        });
-        if (!pace.ok) {
-          return {
-            status: "error",
-            deliveryState: "not-sent",
-            provider: "LinkedIn Browser Computer",
-            detail: pace.detail ?? `Deferred: ${pace.reason}`,
-          };
-        }
+      if (!req.seat) {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail:
+            "seat snapshot required for Browser Computer pacing (daily cap / gap / sessionHealthy).",
+        };
+      }
+      const pace = evaluateSendPace({
+        seat: req.seat,
+        settings: req.fleetSettings ?? defaultFleetSettings(),
+        // Pass through null/false — pacing fails closed unless probed true.
+        sessionHealthy: computer.sessionHealthy ?? null,
+      });
+      if (!pace.ok) {
+        return {
+          status: "error",
+          deliveryState: "not-sent",
+          provider: "LinkedIn Browser Computer",
+          detail: pace.detail ?? `Deferred: ${pace.reason}`,
+        };
       }
       if (computer.status === "stopped" || computer.status === "error") {
         await defaultComputerSupervisor.start(computer.computerId, { campaignId: req.campaignId });

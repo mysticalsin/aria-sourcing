@@ -1,26 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 241
+shift: 242
 agent: cursor-cloud
-updated: 2026-10-03T02:15Z
-status: busy-healthy-mock-vm-badge-shipped-fly-stale
+updated: 2026-10-03T02:22Z
+status: pacing-orphan-hint-ops-shipped-fly-stale
 ---
 
-# Handoff — Shift 241
+# Handoff — Shift 242
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `212759b` (busy+healthy / mock gate)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** busy+healthy Floor honesty; mockSend requires sessionHealthy; with-VM badge = fleet seat-owned count
+- **N-agent local:** dispatch passes seat for Browser Computer pacing; Floor refuses empty/orphan computerId hints; Campaign ops use fleet bind without Hermes
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
 
 ## Done this shift
 
-1. Floor busy+healthy keeps base / healthy label (no unverified lie)
-2. linkedin_send always requires sessionHealthy===true (mock only fakes ACK after probe)
-3. Campaign Agents with-VM badge uses fleet computers by seatId
-4. Tests: supervisor 123, floor 83
+1. dispatch-outbound: AGENT_SEAT_SELECT + seat/fleetSettings on deliver
+2. linkedin-channel requires seat for Browser Computer pace
+3. evaluateSendPace: Browser Computer requires sessionHealthy===true (no undefined skip)
+4. resolveComputerHint refuses empty/`__orphan__` owners
+5. Campaign Agents ops on fleet seat-owned row even when Hermes null
+6. Tests: floor 86, send-pacing 13, floor-fleet-wire 12
 
 ## Blockers
 
@@ -39,9 +41,9 @@ status: busy-healthy-mock-vm-badge-shipped-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- mockSend never bypasses sessionHealthy gate
-- Floor busy+healthy ≠ unverified
-- with-VM count = fleet seat-owned, not Hermes id
+- Browser Computer pacing always requires seat + sessionHealthy===true
+- Floor computerId hints require matching non-orphan seatId
+- Campaign ops gate on fleet bind, not Hermes alone
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out
