@@ -1,37 +1,38 @@
 ---
 project: MSourcing / ARIA
-shift: 339
+shift: 340
 agent: cursor-cloud
-updated: 2026-10-03T20:01Z
-status: setup-guide-assert-fixed-awaiting-ci-and-owner-approve
+updated: 2026-10-03T20:08Z
+status: go-live-all-N-fixed-awaiting-ci-and-owner-approve
 ---
 
-# Handoff — Shift 339
+# Handoff — Shift 340
 
 ## Current state
 
-- **#150 tip:** `6f2fef6` — store-contracts 131 + setup-guide take-control assert accepts `campaignId` soft-nav
-- **#148 tip:** `991141d` — same cherry-picks
-- Local: linkedin-connections 58/0, store-contracts 11/11, floor 33, soft-nav 25, hermes-sync 23, supervisor 137
-- Tip FE↔BE residual hunt: **NONE**
-- **#150:** squash auto-merge on; `REVIEW_REQUIRED` (agent cannot approve)
-- **Fly:** `21a42e7…` / `0084` / hermesRuntime true — proof fails build==tip + migration≥0087
+- **#150 tip:** `5197af5` — go-live + fleet-health-strip require all attached N desks (no 1/N green)
+- **#148 tip:** `e6f5fe5` — same
+- Prior on tip: store-contracts 131, setup-guide campaignId soft-nav assert
+- Local: campaign-go-live 32, floor-fleet-wire 34, linkedin-connections 58, store-contracts 11
+- Tip FE↔BE wiring: NONE; go-live N-subset theater: **fixed**
+- **#150:** squash auto-merge on; `REVIEW_REQUIRED`
+- **Fly:** `21a42e7…` / `0084` — proof fails tip SHA + 0087
 
 ## Done this shift
 
-1. Fixed store-contracts HermesActions 130→131
-2. Fixed linkedin-connections setup-guide assert (`campaign.id` → `campaignId`)
-3. Reconfirmed tip FE↔BE residuals NONE; Fly still stale
+1. Fixed go-live attach/live/session denom = attached (not withComputer subset)
+2. Fleet health strip success only when liveReady === seats
+3. Tests for 1/N partial bind + strip tone drift
 
 ## Blockers
 
-1. Owner approve #150 → squash → dispatch + proof + LI Take→login→Release
-2. Await Quality + Release green on `6f2fef6` / `991141d`
+1. Owner approve #150 → squash → dispatch + proof + LI healthy
+2. Await Quality + Release on `5197af5` / `e6f5fe5`
 
 ## Next steps
 
-1. Confirm Quality + Release green on both tips
-2. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
+1. Confirm Quality + Release green
+2. Owner approve #150 + Fly Deploy Aria Mantu dispatch
 3. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 4. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
@@ -42,7 +43,7 @@ status: setup-guide-assert-fixed-awaiting-ci-and-owner-approve
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - N-agent deploy does **not** require `agentFrameworks:true`
-- Setup-guide take-control fetch keys on `campaignId` (soft-nav), not `campaign.id` inline
+- Go-live / health-strip: all attached N desks, never 1/N subset green
 
 ## Watch out
 
