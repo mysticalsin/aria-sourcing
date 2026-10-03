@@ -17,3 +17,6 @@ b5d723a3914a029d9efbf3eaed1e34b10c16bca4:src/lib/sourcing/providers/linkedin-pro
 d46a3d207905be0e00dec69b81ab0bc0c35338ac:src/app/api/source/sillage/start/route.ts:linkedin-client-id:75
 d46a3d207905be0e00dec69b81ab0bc0c35338ac:tests/sourcing-loop-ignition-route.mts:generic-api-key:9
 d46a3d207905be0e00dec69b81ab0bc0c35338ac:tests/source-apify-auth.mts:generic-api-key:169
+d4ca9af6dc65bbd488625e4edd25bcaa705e378f:tests/source-apify-auth.mts:generic-api-key:169
+886df40f0e21c4fd8c2cf32865f2901a1caab5ae:tests/sourcing-loop-ignition-route.mts:generic-api-key:9
+f5f1e47fec2568fbcf6da60d73dc7aaf42585df7:src/app/api/source/sillage/start/route.ts:linkedin-client-id:75
