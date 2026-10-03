@@ -10,7 +10,7 @@ status: jina-reader-auth-wired-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (Jina auth commit pending)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `ae71690`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **Agent Reach:** slices 1–3.7 ✅; slice 4 ❌ Fly+LI
 - **Jina:** `ARIA_JINA_API_KEY` wired — portal `apikey_…` via `X-API-Key` for Reader; live prove Tony LI profile ok (`_relay/evidence/2026-10-03-jina-reader-auth-prove.json`). Search needs separate `jina_…` Bearer key.
