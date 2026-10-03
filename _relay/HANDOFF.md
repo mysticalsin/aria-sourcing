@@ -10,7 +10,7 @@ status: busy-healthy-mock-vm-badge-shipped-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `8296dd6`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** busy+healthy Floor honesty; mockSend requires sessionHealthy; with-VM badge = fleet seat-owned count
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`

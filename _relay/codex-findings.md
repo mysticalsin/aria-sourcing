@@ -1237,4 +1237,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** busy/starting overlay always said "session unverified" even when sessionHealthy===true (real linkedin_send). mockSend bypassed sessionHealthy gate so null health could fake sent. Campaign Agents "N/M with VM" counted Hermes computerId, not fleet seat-owned rows.
 **Repro/evidence:** status=busy + sessionHealthy=true → Floor warming/unverified while Campaign Agents green; MOCK_SEND=1 + null health → succeeded; Hermes twin id inflated with-VM badge.
 **Suggested fix:** busy+healthy keep base + healthy label; always require sessionHealthy===true for linkedin_send; badge counts fleet computers by seatId.
-**Status:** fixed (pending tip SHA)
+**Status:** fixed (8296dd6) — busy+healthy Floor; mockSend requires healthy; with-VM fleet count
