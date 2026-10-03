@@ -52,10 +52,16 @@ ok(
     /mergeDurableCampaignSeatsForGoLive/.test(agents) &&
       /setDurableSeats/.test(agents),
   );
-  ok(
-    "campaign agents ingest durable browserSeatBindings / campaignSeats",
-    /ingestDurableBrowserBindings/.test(agents),
-  );
+ok(
+  "campaign agents ingest durable browserSeatBindings / campaignSeats",
+  /ingestDurableBrowserBindings/.test(agents),
+);
+ok(
+  "campaign agents invalidate in-flight refresh on soft-nav (pollGeneration)",
+  /pollGeneration/.test(agents) &&
+    /gen !== pollGeneration\.current/.test(agents) &&
+    /pollGeneration\.current \+= 1/.test(agents),
+);
 
 const setup = readFileSync(
   new URL("../src/components/settings/setup-guide-panel.tsx", import.meta.url),
