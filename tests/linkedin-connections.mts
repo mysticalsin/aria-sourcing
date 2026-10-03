@@ -154,7 +154,8 @@ ok(
   /done: attachedOk && liSessionHealthy/.test(setupGuide) &&
     /sessionHealthy === true/.test(setupGuide) &&
     /attachedSeatIds\.has\(c\.seatId\.trim\(\)\)/.test(setupGuide) &&
-    /campaignId=\$\{encodeURIComponent\(campaign\.id\)\}/.test(setupGuide) &&
+    // Soft-nav: effect keys on campaignId (from campaign?.id), not campaign.id inline.
+    /campaignId=\$\{encodeURIComponent\(campaignId\)\}/.test(setupGuide) &&
     /Array\.isArray\(data\.campaignSeats\)/.test(setupGuide),
 );
 ok(
