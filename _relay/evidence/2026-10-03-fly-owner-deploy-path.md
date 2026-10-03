@@ -40,7 +40,7 @@ Deploy SHA must itself have green CI — after landing tip on deploy, re-verify 
 
 ## Owner checklist (ordered)
 
-0. **Merge PR #150** (`cursor/fly-deploy-land-n-agent-b91d` → `deploy/fly-github-actions`), preferring tip on conflicted files — or land tip another way.
+0. **Merge PR #150** (`cursor/fly-deploy-land-n-agent-b91d` → `deploy/fly-github-actions`). Conflicts already resolved on the land branch (deploy base merged in; `codex-findings` kept tip + 4 deploy findings). PR reports `mergeable=MERGEABLE`.
 1. **Land tip on deploy branch** (if not via #150):
    - Preferred: merge tip → `deploy/fly-github-actions`, resolve the ~8 “changed in both” files by **keeping tip** (`winlog`, `web-tools`, channel/obscura/tavily/winlog tests, HANDOFF/codex-findings).
    - Alt: if policy allows, reset/fast-forward deploy to tip (tip already has CI-fix equivalent).
