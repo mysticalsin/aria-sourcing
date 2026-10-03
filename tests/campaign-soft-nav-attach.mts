@@ -81,6 +81,11 @@ ok(
   /applyFleetHermesComputerPatches/.test(agents) &&
     !/updateSeat\(patch\.seatId, \{ computerId: patch\.computerId \}\)/.test(agents),
 );
+ok(
+  "campaign agents detach skips durable-bound seats — never LWW-wipe other campaigns",
+  /durableById\.has\(local\.id\)/.test(agents) &&
+    /if \(durableById\.has\(local\.id\)\) continue/.test(agents),
+);
 
 const setup = readFileSync(
   new URL("../src/components/settings/setup-guide-panel.tsx", import.meta.url),
@@ -170,6 +175,11 @@ ok(
   "viewport Take prefers seat attach over stale computer.campaignId",
   /seatAttachedToCampaign\(hermesSeat, stamped\)/.test(viewport) &&
     !/\(computer\?\.campaignId \?\? ""\)\.trim\(\) \|\|/.test(viewport),
+);
+ok(
+  "viewport unboundOrphan requires loaded computer — loading is not reclaim theater",
+  /computer != null && \(!seatId \|\| seatId === "__orphan__"\)/.test(viewport) &&
+    /canDrive = computer != null && !unboundOrphan/.test(viewport),
 );
 
 console.log(`RESULT campaign-soft-nav-attach: ${pass} passed, ${fail} failed`);

@@ -1,23 +1,25 @@
 ---
 project: MSourcing / ARIA
-shift: 329
+shift: 330
 agent: cursor-cloud
-updated: 2026-10-03T19:16Z
-status: poll-hermes-local-on-150-awaiting-owner-approve
+updated: 2026-10-03T19:20Z
+status: detach-viewport-fixed-awaiting-owner-approve
 ---
 
-# Handoff — Shift 329
+# Handoff — Shift 330
 
 ## Current state
 
-- **#150 tip:** poll Hermes computerId patches local-only + prior N-agent seatsRef/adoptDurable stack
-- **#148 tip:** `dda564f` same
+- **#150 tip:** Agents detach skips durable-bound seats (no LWW wipe other campaigns); viewport unboundOrphan requires loaded computer
+- **#148:** port next
 - **#150:** squash auto-merge on; owner approve still required
 - **Fly:** `21a42e7…` / `0084` — goal open until tip SHA + 0087 + LI desks healthy
 
 ## Done this shift
 
-1. Ported poll local-only Hermes patches onto #150
+1. Agents detach: skip seats present in durable bindings (ingest already applied)
+2. Viewport: loading ≠ unbound reclaim theater; canDrive gated on computer loaded
+3. Soft-nav 25/25
 
 ## Blockers
 
@@ -25,14 +27,14 @@ status: poll-hermes-local-on-150-awaiting-owner-approve
 
 ## Next steps
 
-1. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
-2. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+1. Port onto #148
+2. Owner approve + dispatch + `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 3. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
 ## Decisions made (don't relitigate)
 
-- Poll Hermes computerId align is local-only; durable writes only via ensure/reclaim/Deploy
-- Soft-nav / seats churn seatsRef stack + adoptDurable on stale Map
+- Poll Hermes computerId local-only; detach PATCH never from Hermes when durable bindings exist
+- Soft-nav / seatsRef / adoptDurable stack
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - N-agent deploy does **not** require `agentFrameworks:true`
