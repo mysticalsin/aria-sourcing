@@ -340,7 +340,9 @@ begin
       ('public.upsert_linkedin_inbound_route(uuid,text,uuid)'),
       ('public.resolve_linkedin_inbound_route(text)'),
       ('public.record_linkedin_inbound(uuid,text,text,text)'),
-      ('public.record_linkedin_assisted_manual_send(text,text,text,text,uuid)'),
+      -- record_linkedin_assisted_manual_send is authenticated-member (auth.uid()),
+      -- not service_role. Privilege matrix above already expects authenticated EXECUTE.
+      -- Do not require an in-body service_role assertion here.
       ('public.complete_aria_job_with_workspace_patch(uuid,uuid,timestamp with time zone,text,jsonb,text,text,jsonb,jsonb)'),
       ('public.redact_loop_events_for_candidate_erasure(uuid,text,text[],text[])'),
       ('public.claim_email_outbound_queued(uuid)'),
