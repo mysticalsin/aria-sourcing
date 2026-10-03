@@ -9,6 +9,7 @@ import {
 } from "../scripts/apollo-authority-cleanup-worker.mjs";
 import {
   verifyCleanupProcessGroups,
+  verifyFrameworkHeartbeatReleaseEvidence,
   verifyHealthyCleanupEvent,
   verifyHealthyFrameworkHeartbeatEvent,
   verifyReleaseProcessGroups,
@@ -344,6 +345,48 @@ test("release acceptance binds one started cleanup process to a healthy cleanup 
       notBefore,
     ),
     true,
+  );
+  assert.equal(
+    verifyFrameworkHeartbeatReleaseEvidence(
+      JSON.stringify({
+        timestamp: "2026-07-13T00:00:02.000Z",
+        message: JSON.stringify({
+          event: "agent_framework_heartbeat",
+          status: "degraded",
+          releaseSha,
+          targets: 0,
+          ready: 0,
+          recorded: 0,
+          failureCodes: ["target_inventory_unavailable"],
+          durationMs: 5,
+        }),
+      }),
+      releaseSha,
+      notBefore,
+    ),
+    true,
+    "Hermes N-agent tenants may deploy with adapter-absent degraded heartbeat",
+  );
+  assert.equal(
+    verifyFrameworkHeartbeatReleaseEvidence(
+      JSON.stringify({
+        timestamp: "2026-07-13T00:00:02.000Z",
+        message: JSON.stringify({
+          event: "agent_framework_heartbeat",
+          status: "failed",
+          releaseSha,
+          targets: 0,
+          ready: 0,
+          recorded: 0,
+          failureCodes: ["worker_exception"],
+          durationMs: 5,
+        }),
+      }),
+      releaseSha,
+      notBefore,
+    ),
+    false,
+    "worker_exception heartbeat must still fail release acceptance",
   );
   assert.throws(
     () => verifyCleanupProcessGroups(

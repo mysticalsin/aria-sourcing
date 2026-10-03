@@ -45,7 +45,7 @@ type Scenario = {
   readyFailure?: "frameworks" | "plane";
   kong?: string;
   cleanupStatus?: "ok" | "degraded";
-  heartbeatStatus?: "ok" | "degraded";
+  heartbeatStatus?: "ok" | "degraded" | "failed";
   failFlyMatch?: string;
   invalidJwt?: boolean;
   weakDbPassword?: boolean;
@@ -598,16 +598,18 @@ elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-cl
 elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-heartbeat"* ]]; then
   node -e '
     const [releaseSha, status, timestamp] = process.argv.slice(1);
+    const degraded = status === "degraded";
+    const crashed = status === "failed";
     process.stdout.write(JSON.stringify({
       timestamp,
       message: JSON.stringify({
         event: "agent_framework_heartbeat",
         releaseSha,
-        status,
-        targets: 2,
-        ready: 2,
-        recorded: 2,
-        failureCodes: [],
+        status: crashed ? "failed" : status,
+        targets: degraded || crashed ? 0 : 2,
+        ready: degraded || crashed ? 0 : 2,
+        recorded: degraded || crashed ? 0 : 2,
+        failureCodes: crashed ? ["worker_exception"] : degraded ? ["target_inventory_unavailable"] : [],
         durationMs: 5,
       }),
     }) + "\\n");
@@ -891,10 +893,20 @@ ok(
   !cleanupFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
 );
 
-const heartbeatFailure = runDeploy({ heartbeatStatus: "degraded" });
-ok("degraded framework heartbeat evidence fails the deploy", heartbeatFailure.status !== 0);
+const heartbeatDegraded = runDeploy({ heartbeatStatus: "degraded" });
 ok(
-  "framework heartbeat failure cannot report a pending deployment",
+  "adapter-absent degraded framework heartbeat still deploys (Hermes N-agent tenant)",
+  heartbeatDegraded.status === 0,
+);
+ok(
+  "adapter-absent heartbeat still reports pending deployment",
+  heartbeatDegraded.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
+
+const heartbeatFailure = runDeploy({ heartbeatStatus: "failed" });
+ok("framework heartbeat worker_exception fails the deploy", heartbeatFailure.status !== 0);
+ok(
+  "framework heartbeat worker failure cannot report a pending deployment",
   !heartbeatFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
 );
 

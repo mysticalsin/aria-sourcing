@@ -794,13 +794,13 @@ verify_apollo_cleanup_release(){
       heartbeat_logs="$(fast 30 fly logs --app aria-mantu-app --machine "$heartbeat_machine" --no-tail --json 2>&1)" &&
       node scripts/verify-apollo-cleanup-release.mjs heartbeat-logs "$release_sha" "$not_before" <<< "$heartbeat_logs"
     then
-      echo "   OK app process topology and healthy cleanup/agent-framework heartbeat events"
+      echo "   OK app process topology and cleanup + framework-heartbeat release evidence"
       return 0
     fi
     attempt=$((attempt+1))
     [ "$attempt" -gt 6 ] || sleep 10
   done
-  echo "ERROR: application background processes did not emit healthy bounded release receipts" >&2
+  echo "ERROR: application background processes did not emit acceptable bounded release receipts" >&2
   return 1
 }
 

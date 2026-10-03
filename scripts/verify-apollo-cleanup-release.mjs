@@ -172,6 +172,51 @@ export function verifyHealthyFrameworkHeartbeatEvent(raw, expectedReleaseSha, no
   );
 }
 
+/** Adapter / inventory codes when DeerFlow/Flowise sidecars are absent on a Hermes N-agent tenant. */
+const FRAMEWORK_ABSENT_FAILURE_CODES = new Set([
+  "adapter_unavailable",
+  "adapter_unready",
+  "adapter_response_invalid",
+  "adapter_configuration_invalid",
+  "target_identity_mismatch",
+  "target_inventory_unavailable",
+  "target_inventory_invalid",
+  "readiness_record_failed",
+]);
+
+/**
+ * Release acceptance for framework heartbeat on Hermes-only tenants:
+ * full healthy OK, or degraded solely due to missing/unready framework adapters.
+ * Rejects worker crashes and other unknown failure codes.
+ */
+export function verifyFrameworkHeartbeatReleaseEvidence(raw, expectedReleaseSha, notBefore) {
+  if (verifyHealthyFrameworkHeartbeatEvent(raw, expectedReleaseSha, notBefore)) return true;
+  if (!RELEASE_SHA_RE.test(expectedReleaseSha)) return false;
+  const lowerBound = Date.parse(notBefore);
+  if (!Number.isFinite(lowerBound)) return false;
+  return logHasEvent(raw, "agent_framework_heartbeat", ({ event, timestamp }) =>
+    event?.event === "agent_framework_heartbeat" &&
+    event.status === "degraded" &&
+    event.releaseSha === expectedReleaseSha &&
+    Number.isFinite(Date.parse(timestamp)) &&
+    Date.parse(timestamp) >= lowerBound &&
+    Number.isSafeInteger(event.targets) &&
+    event.targets >= 0 &&
+    event.targets <= 500 &&
+    Number.isSafeInteger(event.ready) &&
+    event.ready >= 0 &&
+    event.ready <= event.targets &&
+    Number.isSafeInteger(event.recorded) &&
+    event.recorded >= 0 &&
+    event.recorded <= event.targets &&
+    Array.isArray(event.failureCodes) &&
+    event.failureCodes.length > 0 &&
+    event.failureCodes.every((code) => typeof code === "string" && FRAMEWORK_ABSENT_FAILURE_CODES.has(code)) &&
+    Number.isSafeInteger(event.durationMs) &&
+    event.durationMs >= 0,
+  );
+}
+
 async function main() {
   const mode = process.argv[2];
   const expectedDigest = process.argv[3] ?? "";
@@ -182,8 +227,8 @@ async function main() {
     return;
   }
   if (mode === "logs" && verifyHealthyCleanupEvent(raw, expectedDigest, process.argv[4] ?? "")) return;
-  if (mode === "heartbeat-logs" && verifyHealthyFrameworkHeartbeatEvent(raw, expectedDigest, process.argv[4] ?? "")) return;
-  if (mode === "heartbeat-logs") throw new Error("healthy agent framework heartbeat release evidence is absent");
+  if (mode === "heartbeat-logs" && verifyFrameworkHeartbeatReleaseEvidence(raw, expectedDigest, process.argv[4] ?? "")) return;
+  if (mode === "heartbeat-logs") throw new Error("acceptable agent framework heartbeat release evidence is absent");
   throw new Error("healthy Apollo cleanup release evidence is absent");
 }
 
