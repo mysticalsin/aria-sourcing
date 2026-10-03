@@ -17,7 +17,7 @@ import {
   permissionModeLabel,
   type BrowserAgentPermissionMode,
 } from "@/lib/browser-agent-permissions";
-import { useActions, useSettings } from "@/lib/store";
+import { useActions, useSettings, useSeats } from "@/lib/store";
 import { defaultFleetSettings } from "@/lib/fleet";
 
 type ComputerState = {
@@ -29,6 +29,7 @@ type ComputerState = {
   viewUrl?: string | null;
   lastError?: string | null;
   lastAudit?: string | null;
+  campaignId?: string | null;
 };
 
 /**
@@ -46,6 +47,7 @@ export default function FleetComputerViewportPage() {
   >([]);
   const settings = useSettings();
   const actions = useActions();
+  const seats = useSeats();
   const fleet = settings.fleet ?? defaultFleetSettings();
   const permissionMode: BrowserAgentPermissionMode =
     fleet.browserAgentPermissionMode === "manual" || fleet.browserAgentPermissionMode === "skip"
@@ -100,6 +102,12 @@ export default function FleetComputerViewportPage() {
           setError("Unbound host VM — reclaim/bind a seat before Start, Take control, or Release.");
           return;
         }
+        // When the desk is campaign-attached, pass campaignId so refuseUnattached gates Take/Start.
+        const hermesSeat = seats.find((s) => s.id === seatId);
+        const campaignId =
+          (computer?.campaignId ?? "").trim() ||
+          (hermesSeat?.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim())) ||
+          undefined;
         const res = await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "same-origin",
@@ -108,6 +116,7 @@ export default function FleetComputerViewportPage() {
             action,
             computerId,
             seatId,
+            ...(campaignId ? { campaignId } : {}),
           }),
         });
         const data = (await res.json().catch(() => ({}))) as {
@@ -131,7 +140,7 @@ export default function FleetComputerViewportPage() {
         setBusy(false);
       }
     },
-    [computer, computerId, refresh],
+    [computer, computerId, refresh, seats],
   );
 
   const human = computer?.control === "human";

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Card, CardHeader, CardBody, CardTitle, Eyebrow, Badge, EmptyState } from "@/components/ui";
-import { useRecommendations } from "@/lib/store";
+import { useRecommendations, useActions } from "@/lib/store";
 import { cn, pluralize, type Tone } from "@/lib/utils";
 import {
   deriveComputerHelpRecommendations,
@@ -54,6 +54,7 @@ const KIND_ICON: Record<RecommendationKind, React.ReactNode> = {
  */
 export function AttentionPanel() {
   const recommendations = useRecommendations();
+  const actions = useActions();
   const [helpItems, setHelpItems] = React.useState<Recommendation[]>([]);
 
   React.useEffect(() => {
@@ -71,8 +72,14 @@ export function AttentionPanel() {
             campaignId?: string | null;
             lastError?: string | null;
           }>;
+          browserSeatBindings?: Array<{
+            id: string;
+            computerId?: string | null;
+            assignedCampaignIds?: string[];
+          }>;
         };
         if (cancelled) return;
+        actions.ingestDurableBrowserBindings(data.browserSeatBindings);
         setHelpItems(deriveComputerHelpRecommendations(data.computers ?? []));
       } catch {
         /* fleet unavailable — leave help items empty */
@@ -81,7 +88,7 @@ export function AttentionPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [actions]);
 
   const merged = React.useMemo(() => {
     const ids = new Set(helpItems.map((h) => h.id));

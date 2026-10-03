@@ -239,15 +239,28 @@ export default function SettingsPage() {
     let cancelled = false;
     void fetch("/api/fleet/computers", { credentials: "same-origin" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: { hostCapacity?: { max?: number } | null } | null) => {
-        const max = data?.hostCapacity?.max;
-        if (!cancelled && typeof max === "number" && max > 0) setHostVmMax(max);
-      })
+      .then(
+        (
+          data: {
+            hostCapacity?: { max?: number } | null;
+            browserSeatBindings?: Array<{
+              id: string;
+              computerId?: string | null;
+              assignedCampaignIds?: string[];
+            }>;
+          } | null,
+        ) => {
+          if (cancelled || !data) return;
+          actions.ingestDurableBrowserBindings(data.browserSeatBindings);
+          const max = data.hostCapacity?.max;
+          if (typeof max === "number" && max > 0) setHostVmMax(max);
+        },
+      )
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [actions]);
 
   const goTab = React.useCallback((id: string) => {
     if (!VALID_TABS.has(id)) return;
