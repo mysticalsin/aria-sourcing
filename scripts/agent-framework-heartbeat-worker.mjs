@@ -477,6 +477,18 @@ export async function heartbeatAgentFrameworksOnce(client, configuration, fetche
       failureCodes: ["target_inventory_invalid"],
     };
   }
+  // Hermes-only tenants have no registered DeerFlow/Flowise instances. Empty
+  // ok+[] used to paint status:"ok" with targets:0, which failed both healthy
+  // (needs targets>=2) and adapter-absent degraded (needs failureCodes) gates.
+  if (targets.length === 0) {
+    return {
+      status: "degraded",
+      targets: 0,
+      ready: 0,
+      recorded: 0,
+      failureCodes: ["target_inventory_unavailable"],
+    };
+  }
 
   const outcomes = await mapWithConcurrency(targets, configuration.concurrency, async (target) => {
     const probe = await probeTarget(target, configuration, fetcher);
