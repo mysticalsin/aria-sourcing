@@ -10,7 +10,7 @@ status: deploy-fleetloaded-cortex-idle-send-failclosed-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `4c661de`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** Deploy waits for fleetLoaded; Login staleTwin; Floor idle overlays clear theater; cortex short-circuits idle/paused/warming; LI send fails closed without seat snapshot
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
