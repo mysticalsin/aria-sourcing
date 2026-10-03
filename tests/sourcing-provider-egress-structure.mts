@@ -84,7 +84,7 @@ test("provider egress chokepoint owns provider sockets", () => {
     ["Tavily", "api.tavily.com"],
     ["DuckDuckGo", "api.duckduckgo.com"],
   ]) {
-    assert.match(providerTransport, new RegExp(`${provider}: "${host.replaceAll(".", "\\.")}"`));
+    assert.ok(providerTransport.includes(`${provider}: "${host}"`));
   }
 
   const scannedFiles = [

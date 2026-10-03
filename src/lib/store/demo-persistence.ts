@@ -14,3 +14,9 @@ export function demoStateAllowsCandidatePersistence(state: HermesState): boolean
     (candidate) => candidate.provenance === "synthetic" || candidate.provenance === "live",
   );
 }
+
+/** Demo localStorage never persists credential material — only last4 metadata lives in memory. */
+export function demoStateForLocalStorage(state: HermesState): HermesState {
+  const { apiKeys: _omitApiKeys, ...rest } = state;
+  return { ...rest, apiKeys: [] };
+}

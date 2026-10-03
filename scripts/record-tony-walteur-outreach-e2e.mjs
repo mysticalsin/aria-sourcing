@@ -165,7 +165,8 @@ async function injectTony(page) {
     ];
     if (state.settings) state.settings.dryRunMode = false;
     state.activeCampaignId = campaignId;
-    localStorage.setItem(KEY, JSON.stringify(state));
+    const { apiKeys: _omitApiKeys, ...persistable } = state;
+    localStorage.setItem(KEY, JSON.stringify({ ...persistable, apiKeys: [] }));
     return { ok: true, hasOutreach: true };
   });
 }

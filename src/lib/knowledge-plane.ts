@@ -100,12 +100,23 @@ export function resolveWikiRoot(override?: string): string {
   return path.resolve(process.cwd(), "data", "llm-wiki");
 }
 
-function campaignDir(root: string, workspaceId: string, campaignId: string): string {
-  return path.join(root, sanitizePathSeg(workspaceId), sanitizePathSeg(campaignId));
+function sanitizePathSeg(seg: string): string {
+  const cleaned = path.basename(seg.replace(/\\/g, "/")).replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120);
+  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "_";
 }
 
-function sanitizePathSeg(seg: string): string {
-  return seg.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "_";
+function assertInsideRoot(root: string, candidate: string): string {
+  const base = path.resolve(root);
+  const resolved = path.resolve(candidate);
+  const prefix = base.endsWith(path.sep) ? base : `${base}${path.sep}`;
+  if (resolved !== base && !resolved.startsWith(prefix)) {
+    throw new Error("wiki path escapes root");
+  }
+  return resolved;
+}
+
+function campaignDir(root: string, workspaceId: string, campaignId: string): string {
+  return assertInsideRoot(root, path.join(root, sanitizePathSeg(workspaceId), sanitizePathSeg(campaignId)));
 }
 
 function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
@@ -159,9 +170,9 @@ export class FileWikiKnowledgePlane {
 
   private ensureCampaignScaffold(workspaceId: string, campaignId: string) {
     const dir = campaignDir(this.root, workspaceId, campaignId);
-    const notesDir = path.join(dir, "notes");
+    const notesDir = assertInsideRoot(dir, path.join(dir, "notes"));
     fs.mkdirSync(notesDir, { recursive: true });
-    const indexPath = path.join(dir, "index.md");
+    const indexPath = assertInsideRoot(dir, path.join(dir, "index.md"));
     if (!fs.existsSync(indexPath)) {
       fs.writeFileSync(
         indexPath,
@@ -177,7 +188,7 @@ export class FileWikiKnowledgePlane {
         "utf8",
       );
     }
-    const edgesPath = path.join(dir, "edges.json");
+    const edgesPath = assertInsideRoot(dir, path.join(dir, "edges.json"));
     if (!fs.existsSync(edgesPath)) {
       fs.writeFileSync(edgesPath, "[]\n", "utf8");
     }
@@ -186,12 +197,12 @@ export class FileWikiKnowledgePlane {
 
   private loadCampaignFromDisk(workspaceId: string, campaignId: string) {
     const dir = campaignDir(this.root, workspaceId, campaignId);
-    const notesDir = path.join(dir, "notes");
+    const notesDir = assertInsideRoot(dir, path.join(dir, "notes"));
     if (!fs.existsSync(notesDir)) return;
     for (const file of fs.readdirSync(notesDir)) {
-      if (!file.endsWith(".md")) continue;
+      if (file !== path.basename(file) || file.includes("..") || !file.endsWith(".md")) continue;
       try {
-        const raw = fs.readFileSync(path.join(notesDir, file), "utf8");
+        const raw = fs.readFileSync(assertInsideRoot(notesDir, path.join(notesDir, file)), "utf8");
         const { meta, body } = parseFrontmatter(raw);
         const kind = (NOTE_KINDS.includes(meta.kind as KnowledgeNoteKind)
           ? meta.kind
@@ -211,7 +222,7 @@ export class FileWikiKnowledgePlane {
         /* skip corrupt note */
       }
     }
-    const edgesPath = path.join(dir, "edges.json");
+    const edgesPath = assertInsideRoot(dir, path.join(dir, "edges.json"));
     if (fs.existsSync(edgesPath)) {
       try {
         const parsed = JSON.parse(fs.readFileSync(edgesPath, "utf8")) as KnowledgeEdge[];
@@ -237,7 +248,11 @@ export class FileWikiKnowledgePlane {
     const list = [...this.edges.values()].filter((e) =>
       this.noteKey(e.workspaceId, e.campaignId, e.id).startsWith(prefix),
     );
-    fs.writeFileSync(path.join(dir, "edges.json"), `${JSON.stringify(list, null, 2)}\n`, "utf8");
+    fs.writeFileSync(
+      assertInsideRoot(dir, path.join(dir, "edges.json")),
+      `${JSON.stringify(list, null, 2)}\n`,
+      "utf8",
+    );
   }
 
   async upsertNote(note: Omit<KnowledgeNote, "updatedAt"> & { updatedAt?: string }): Promise<KnowledgeNote> {
@@ -248,10 +263,11 @@ export class FileWikiKnowledgePlane {
     await this.writeQueue.enqueue(() => {
       this.ensureCampaignScaffold(note.workspaceId, note.campaignId);
       this.notes.set(this.noteKey(note.workspaceId, note.campaignId, note.id), saved);
-      const file = path.join(
-        campaignDir(this.root, note.workspaceId, note.campaignId),
-        "notes",
-        `${note.kind}__${slugify(note.title)}.md`,
+      const campaign = campaignDir(this.root, note.workspaceId, note.campaignId);
+      const notesDir = assertInsideRoot(campaign, path.join(campaign, "notes"));
+      const file = assertInsideRoot(
+        notesDir,
+        path.join(notesDir, `${note.kind}__${slugify(note.title)}.md`),
       );
       fs.writeFileSync(file, writeNoteMarkdown(saved), "utf8");
     });

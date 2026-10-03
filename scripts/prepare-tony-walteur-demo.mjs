@@ -156,7 +156,8 @@ async function main() {
     state.candidates = candidates;
     state.outreach = messages;
     state.activeCampaignId = campaignId;
-    localStorage.setItem(KEY, JSON.stringify(state));
+    const { apiKeys: _omitApiKeys, ...persistable } = state;
+    localStorage.setItem(KEY, JSON.stringify({ ...persistable, apiKeys: [] }));
     return { ok: true, candidateId, messageId };
   });
 

@@ -93,7 +93,8 @@ export function normalizeLinkedInProfileUrl(raw: string): string | null {
   if (!/linkedin\.com\/(in|pub)\//i.test(value)) return null;
   try {
     const url = value.startsWith("http") ? new URL(value) : new URL(`https://${value}`);
-    if (!url.hostname.includes("linkedin.com")) return null;
+    const host = url.hostname.toLowerCase();
+    if (host !== "linkedin.com" && !host.endsWith(".linkedin.com")) return null;
     return `${url.origin}${url.pathname}`.replace(/\/$/, "");
   } catch {
     return null;

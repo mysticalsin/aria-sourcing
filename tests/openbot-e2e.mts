@@ -172,7 +172,13 @@ async function main() {
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
-    if (url.includes("api.openai.com")) {
+    let hostname = "";
+    try {
+      hostname = new URL(url).hostname;
+    } catch {
+      hostname = "";
+    }
+    if (hostname === "api.openai.com") {
       return realFetch(`http://127.0.0.1:${openaiPort}/v1/chat/completions`, init);
     }
     return realFetch(input, init);

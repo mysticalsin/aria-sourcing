@@ -135,7 +135,7 @@ async function main() {
   // Explicit anti-Vercel guard for OpenBot LLM / contact path
   ok(
     "OpenBot proxy base URL must be Fly",
-    `${FLY_APP}/api/openbot/v1`.startsWith("https://aria-mantu-app.fly.dev"),
+    new URL(FLY_APP).origin === "https://aria-mantu-app.fly.dev",
   );
   ok(
     "demo Vercel host is not production",

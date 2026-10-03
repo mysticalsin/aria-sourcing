@@ -83,7 +83,7 @@ import { createCampaignActions } from "./store/campaign-actions";
 import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
-import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
+import { demoStateAllowsCandidatePersistence, demoStateForLocalStorage } from "./store/demo-persistence";
 import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
 import type {
@@ -496,7 +496,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     if (pending) {
       try {
         if (demoStateAllowsCandidatePersistence(pending)) {
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+          window.localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify(demoStateForLocalStorage(pending)),
+          );
         }
       } catch {
         /* quota / private mode — ignore for demo */

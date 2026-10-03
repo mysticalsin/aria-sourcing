@@ -72,6 +72,10 @@ fs.mkdirSync(PROFILE_ROOT, { recursive: true });
 /** @type {Map<string, any>} */
 const computers = new Map();
 
+function publicErrorMessage() {
+  return "request failed";
+}
+
 function json(res, status, body) {
   const raw = JSON.stringify(body);
   res.writeHead(status, {
@@ -1377,8 +1381,8 @@ const server = http.createServer(async (req, res) => {
       const rest = desktopMatch[2] || "";
       if (!computers.has(botId)) {
         try { await ensureComputer(botId); }
-        catch (err) {
-          return html(res, 503, `<h1>Desktop ${botId} unavailable</h1><p>${err instanceof Error ? err.message : String(err)}</p>`);
+        catch {
+          return html(res, 503, `<h1>Desktop ${botId} unavailable</h1><p>${publicErrorMessage()}</p>`);
         }
       }
       const rec = computers.get(botId);
@@ -1402,8 +1406,8 @@ const server = http.createServer(async (req, res) => {
       const botId = decodeURIComponent(viewMatch[1]);
       if (!computers.has(botId)) {
         try { await ensureComputer(botId); }
-        catch (err) {
-          return html(res, 503, `<h1>Computer ${botId} unavailable</h1><p>${err instanceof Error ? err.message : String(err)}</p>`);
+        catch {
+          return html(res, 503, `<h1>Computer ${botId} unavailable</h1><p>${publicErrorMessage()}</p>`);
         }
       }
       return html(res, 200, viewPage(botId));
@@ -1493,8 +1497,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     return json(res, 404, { error: "not found" });
-  } catch (err) {
-    return json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  } catch {
+    return json(res, 500, { error: publicErrorMessage() });
   }
 });
 

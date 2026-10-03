@@ -28,7 +28,7 @@ function ok(name: string, cond: boolean) {
 ok("default mode is auto", DEFAULT_BROWSER_AGENT_PERMISSIONS.mode === "auto");
 ok(
   "default hosts include linkedin.com",
-  DEFAULT_BROWSER_AGENT_PERMISSIONS.allowedHosts.includes("www.linkedin.com"),
+  DEFAULT_BROWSER_AGENT_PERMISSIONS.allowedHosts.some((host) => host === "www.linkedin.com"),
 );
 
 const parsed = parseBrowserAgentPermissions({
@@ -39,9 +39,9 @@ const parsed = parseBrowserAgentPermissions({
 ok("parse keeps manual mode", parsed.mode === "manual");
 ok(
   "parse normalizes hosts",
-  parsed.allowedHosts.includes("www.linkedin.com") &&
-    parsed.allowedHosts.includes("talent.linkedin.com") &&
-    !parsed.allowedHosts.includes("bad host"),
+  parsed.allowedHosts.some((host) => host === "www.linkedin.com") &&
+    parsed.allowedHosts.some((host) => host === "talent.linkedin.com") &&
+    !parsed.allowedHosts.some((host) => host === "bad host"),
 );
 
 ok(

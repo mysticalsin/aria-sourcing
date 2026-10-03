@@ -98,7 +98,7 @@ async function main() {
   ok("provider resolves deepseek", resolveAriaLlmProvider()?.slug === "deepseek");
   ok(
     "CLOUD_ENDPOINT.deepseek points at api.deepseek.com",
-    CLOUD_ENDPOINT.deepseek.includes("api.deepseek.com"),
+    new URL(CLOUD_ENDPOINT.deepseek).hostname === "api.deepseek.com",
   );
 
   const auth = authorizeOpenBotLlm(`Bearer ${KEY}`);
