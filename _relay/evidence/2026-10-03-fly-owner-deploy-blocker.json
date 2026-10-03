@@ -1,7 +1,7 @@
 {
-  "probedAt": "2026-10-03T12:11Z",
-  "tipSha": "4c4a53a0d13c794e050f279f2cf33cbd614601e2",
-  "tipShort": "4c4a53a",
+  "probedAt": "2026-10-03T13:25Z",
+  "tipSha": "65feac72de77ede9bd9fbf63514f8bd127198837",
+  "tipShort": "65feac7",
   "appReady": {
     "url": "https://aria-mantu-app.fly.dev/api/ready",
     "ok": false,
@@ -36,9 +36,9 @@
     "agentEnvHasToken": false
   },
   "postDeployProof": [
-    "curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq -e --arg tip '4c4a53a0d13c794e050f279f2cf33cbd614601e2' '.build==$tip and .components.agentFrameworks==true'",
+    "curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq -e --arg tip '65feac72de77ede9bd9fbf63514f8bd127198837' '.build==$tip and .components.agentFrameworks==true'",
     "migration filename includes 0087",
     "Take\u2192login\u2192Release on each campaign LI desk; sessionHealthy===true only after probe"
   ],
-  "verdict": "Tip N-agent class advancing; production goal blocked on owner Fly tip redeploy + LI healthy"
+  "verdict": "Tip N-agent class advanced; production goal blocked on owner Fly tip redeploy + LI healthy"
 }
