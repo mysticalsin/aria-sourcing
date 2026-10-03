@@ -143,7 +143,22 @@ ok(
 const setupGuide = readFileSync("src/components/settings/setup-guide-panel.tsx", "utf8");
 ok("setup guide deep-links AriaBot stack", /linkedin-outreach-stack/.test(setupGuide));
 ok("setup guide Connect AriaBot Browser Computer step", /Connect AriaBot Browser Computer/.test(setupGuide));
-ok("setup guide login done from computerId", /computerId/.test(setupGuide));
+ok(
+  "setup guide attach requires assignedCampaignIds.includes (not empty=attached)",
+  /\.includes\(campaign!\.id\)/.test(setupGuide) &&
+    /empty assignedCampaignIds is NOT attached/.test(setupGuide) &&
+    !/assigned\.length === 0 \|\| assigned\.includes/.test(setupGuide),
+);
+ok(
+  "setup guide take-control done from fleet sessionHealthy (not Hermes computerId)",
+  /done: liSessionHealthy/.test(setupGuide) &&
+    /sessionHealthy === true/.test(setupGuide),
+);
+ok(
+  "setup guide never classifies Browser Computer via computerId alone",
+  /Never classify via Hermes computerId alone/.test(setupGuide) &&
+    !/Boolean\(seat\.computerId\)/.test(setupGuide),
+);
 
 console.log(`RESULT linkedin-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

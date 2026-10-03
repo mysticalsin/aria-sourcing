@@ -204,5 +204,29 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
   );
 }
 
+{
+  const agentsPanel = readFileSync(
+    "src/components/campaigns/campaign-agents-panel.tsx",
+    "utf8",
+  );
+  ok(
+    "campaign agents clear computers paint on fleet GET fail",
+    agentsPanel.includes("setComputers([])") &&
+      agentsPanel.includes("Fleet computers unavailable"),
+  );
+  const healthStrip = readFileSync("src/components/fleet/fleet-health-strip.tsx", "utf8");
+  ok(
+    "fleet health strip clears LI healthy map on fleet GET fail",
+    healthStrip.includes("setLiHealthyBySeat(new Map())") &&
+      healthStrip.includes("!res.ok"),
+  );
+  const fleetPage = readFileSync("src/app/fleet/page.tsx", "utf8");
+  ok(
+    "fleet page clears computers on GET fail",
+    fleetPage.includes("if (!res.ok)") &&
+      fleetPage.includes("setComputers([])"),
+  );
+}
+
 console.log(`floor-fleet-wire: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

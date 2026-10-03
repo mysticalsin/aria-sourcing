@@ -903,10 +903,20 @@ try {
     // default seatId to computerId — that registers comps as fake seats).
     for (const action of ["ensure", "navigate", "session_probe"] as const) {
       const idx = route.indexOf(`case "${action}"`);
-      const block = idx >= 0 ? route.slice(idx, idx + 700) : "";
+      const block = idx >= 0 ? route.slice(idx, idx + 900) : "";
       ok(
         `${action} requires seatId (no computerId fallback)`,
         block.includes("seatId required") && !block.includes("body.seatId ?? computerId"),
+      );
+    }
+    {
+      const idx = route.indexOf('case "navigate"');
+      const block = idx >= 0 ? route.slice(idx, idx + 1800) : "";
+      ok(
+        "navigate refuses human-held (no silent releaseControl)",
+        block.includes("computer-human-held") &&
+          block.includes("status: 409") &&
+          !block.includes("releaseControl(navComputerId"),
       );
     }
   }
