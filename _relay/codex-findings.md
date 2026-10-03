@@ -1245,4 +1245,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** `adapter.deliver` omitted seat/fleetSettings so linkedin-channel skipped evaluateSendPace. Floor resolveComputerHint allowed empty/`__orphan__` owners via computerId map. Campaign Agents ops required Hermes computerId even when fleet had seat-owned bind.
 **Repro/evidence:** dispatch LinkedIn Browser Computer send without seat → pace skipped; Hermes twin orphan hint painted Floor healthy; fleet bind + null Hermes → Deploy CTA.
 **Suggested fix:** pass agentSeatRowToSeat + defaultFleetSettings; refuse empty/orphan in resolveComputerHint; ops on bySeat??byComp only.
-**Status:** fixed (pending tip SHA)
+**Status:** fixed (ee91d34) — dispatch seat pacing; Floor refuse orphan/empty; Campaign ops fleet bind

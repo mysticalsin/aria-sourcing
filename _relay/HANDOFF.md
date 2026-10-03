@@ -10,7 +10,7 @@ status: pacing-orphan-hint-ops-shipped-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `ee91d34` (pacing + orphan hint)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** dispatch passes seat for Browser Computer pacing; Floor refuses empty/orphan computerId hints; Campaign ops use fleet bind without Hermes
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
