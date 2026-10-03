@@ -10,6 +10,7 @@ import type { AgentSeat } from "@/lib/types";
 export function isBrowserComputerSeat(
   seat: Pick<AgentSeat, "provider" | "linkedinDeliveryBackend">,
 ): boolean {
+  // Provider/backend only — never green Setup/go-live from a Hermes twin id.
   return (
     seat.provider === "LinkedIn Browser Computer" ||
     seat.linkedinDeliveryBackend === "browser-computer"
