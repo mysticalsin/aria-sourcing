@@ -1176,3 +1176,11 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** For orphan/foreign `currentId`, probe in place and `claimOrphan` only when `sessionHealthy===true` and priorSeatId is empty/same-seat; on unhealthy leave orphan and fall through; never ensure-claim before healthy proof.
 **Status:** fixed (c6ac494) — probe-before-claim in reclaimHealthyOrphan; Deploy omits staleTwin existingComputerId; tests: unhealthy orphan twin + foreign prior as currentId
 
+## 2026-10-03 — ensureComputer claimOrphan lacked priorSeatId gate
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:285
+**Issue:** `ensureComputer` still called `claimOrphan` for `__orphan__` ids with no `priorSeatId` check. Fleet ensure/nav/probe (or any client) could bind another desk's detached LinkedIn cookies onto the caller seat. Reclaim was gated; ensure was not.
+**Repro/evidence:** Orphan `comp_x` with `priorSeatId=seat-other`; `ensureComputer({seatId:seat-tony, computerId:comp_x})` claimed onto seat-tony.
+**Suggested fix:** Gate in `claimOrphan` — refuse when priorSeatId set and ≠ caller seat; share `isStaleHermesComputerTwin` for Fleet+Campaign Agents Deploy.
+**Status:** fixed (b68d304) — claimOrphan priorSeatId gate; isStaleHermesComputerTwin on Fleet+Campaign Agents Deploy
+

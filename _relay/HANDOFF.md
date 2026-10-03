@@ -10,7 +10,7 @@ status: priorSeatId-ensure-gate-shipped-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (priorSeatId claim gate)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `b68d304` (priorSeatId claim gate)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** `claimOrphan` refuses foreign `priorSeatId`; `isStaleHermesComputerTwin` shared by Campaign Agents + Fleet Deploy; supervisor 120/0; hermes-sync 18/0
 - **Jina:** portal key in `.env.local` only (Reader prove OK)
@@ -21,7 +21,7 @@ status: priorSeatId-ensure-gate-shipped-fly-stale
 1. `claimOrphan` priorSeatId gate (covers ensureComputer path)
 2. `isStaleHermesComputerTwin` helper; Fleet Deploy + Campaign Agents use it
 3. Tests: foreign prior ensure blocked; same-prior ensure allowed; staleTwin matrix
-4. Finding logged for ensure priorSeatId (fix status after tip SHA)
+4. Marked ensure priorSeatId finding fixed (`b68d304`)
 
 ## Blockers
 
