@@ -1,35 +1,34 @@
 ---
 project: MSourcing / ARIA
-shift: 277
+shift: 278
 agent: cursor-cloud
-updated: 2026-10-03T08:45Z
-status: r1-r6-ci-fix-pushed-fly-stale
+updated: 2026-10-03T09:05Z
+status: tip-ci-green-fly-stale
 ---
 
-# Handoff — Shift 277
+# Handoff — Shift 278
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **Tip:** `6c6a1bd` — Vendor dark campaign_id + schema fingerprint `5650f11c…`
+- **Tip:** `07cf959` — CI green (Quality + DB security + Release gate)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Fly:** still `21a42e7…` / `agentFrameworks:false`
+- **Fly:** still stale / `agentFrameworks:false` — production N-agent goal open
 
 ## Done this shift
 
-1. Fixed dispatch vendor-dark fixture: `baseLinkedInMsg({ campaign_id: "camp-1" })` so attach passes before `linkedin-provider-unconfigured`
-2. Pinned `legacy-baseline-public-schema.sha256` to `5650f11c…` (0087)
+1. Vendor-dark dispatch fixture: `campaign_id` so attach passes before unconfigured
+2. Schema fingerprint `5650f11c…` for 0087
+3. Tip CI green on `07cf959`
 
 ## Blockers
 
-1. Owner Fly tip redeploy (0086+0087) + LI healthy
-2. Tip CI on `6c6a1bd` must go green (Quality + DB security)
+1. Owner Fly tip redeploy (0086+0087) + LI desks healthy (Take→login→Release)
 
 ## Next steps
 
-1. Confirm tip CI green on `6c6a1bd`
-2. Owner Fly tip SHA + LI healthy
-3. Do not UpdateGoal complete until then
+1. Owner Fly tip SHA match + LI healthy
+2. Do not UpdateGoal complete until then
 
 ## Decisions (don't relitigate)
 
@@ -38,7 +37,8 @@ status: r1-r6-ci-fix-pushed-fly-stale
 - Vendor foreign assigned refused on send path
 - Vendor/BC dispatch require non-empty campaign_id before unconfigured
 - Never invent sessionHealthy=true
+- Tip CI green ≠ production N-agent goal complete
 
 ## Watch out
 
-- Tip CI green ≠ production N-agent goal complete
+- Ignore Vercel preview rate-limit when Quality/Release pass
