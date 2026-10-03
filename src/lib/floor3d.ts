@@ -188,9 +188,24 @@ export function seatsToOfficeAgents(
       provider: seat.provider,
     };
   }).map((agent, index, all) => {
-    // PacketFX hub: prefer a bound LinkedIn Browser Computer over roster[0]
-    // email theater so packets don't fly to a non-LI desk.
+    // PacketFX hub: prefer probed-healthy bound LI over first suffix / roster[0]
+    // email theater so packets don't fly to unverified or non-LI desks.
     const hubId =
+      all.find(
+        (a) =>
+          a.provider === "LinkedIn Browser Computer" &&
+          a.status === "working" &&
+          typeof a.subtitle === "string" &&
+          /session healthy/i.test(a.subtitle) &&
+          /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
+      )?.id ??
+      all.find(
+        (a) =>
+          a.provider === "LinkedIn Browser Computer" &&
+          typeof a.subtitle === "string" &&
+          /session healthy/i.test(a.subtitle) &&
+          /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
+      )?.id ??
       all.find(
         (a) =>
           a.provider === "LinkedIn Browser Computer" &&

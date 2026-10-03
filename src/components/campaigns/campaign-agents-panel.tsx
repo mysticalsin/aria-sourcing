@@ -399,10 +399,25 @@ export function CampaignAgentsPanel({
   const withVmCount = campaignSeats.filter((s) =>
     computers.some((c) => c.seatId === s.id && Boolean((c.computerId ?? "").trim())),
   ).length;
+  const boundComputerIdBySeat = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of computers) {
+      const sid = (c.seatId ?? "").trim();
+      const cid = (c.computerId ?? "").trim();
+      if (!sid || sid === "__orphan__" || !cid) continue;
+      m.set(sid, cid);
+    }
+    return m;
+  }, [computers]);
 
   return (
     <div className="space-y-4">
-    <BanRiskStrip seats={campaignSeats} audits={audits} fleet={settings.fleet} />
+    <BanRiskStrip
+      seats={campaignSeats}
+      audits={audits}
+      fleet={settings.fleet}
+      boundComputerIdBySeat={boundComputerIdBySeat}
+    />
     <section
       className="rounded-2xl border border-line bg-surface/80"
       aria-labelledby="campaign-agents-heading"

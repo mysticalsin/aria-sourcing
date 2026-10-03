@@ -42,6 +42,8 @@ export function BanRiskStrip(props: {
   seats: AgentSeat[];
   audits?: AuditLike[];
   fleet?: Pick<FleetSettings, "jitter" | "enforceBusinessHours">;
+  /** Fleet-bound computerId per seat — prefer over Hermes twin after reclaim clear. */
+  boundComputerIdBySeat?: ReadonlyMap<string, string>;
   className?: string;
 }) {
   const seats = props.seats;
@@ -72,7 +74,9 @@ export function BanRiskStrip(props: {
       <p className="font-semibold text-ink">Ban-risk pacing</p>
       <ul className="mt-1 space-y-0.5">
         {seats.map((seat) => {
-          const cid = (seat.computerId ?? "").trim();
+          const fleetId = props.boundComputerIdBySeat?.get(seat.id)?.trim() || "";
+          const hermesId = (seat.computerId ?? "").trim();
+          const cid = fleetId || hermesId;
           const help = cid ? helpByComputer.get(cid) ?? null : null;
           return <li key={seat.id}>{seatPacingLine(seat, props.fleet, help)}</li>;
         })}

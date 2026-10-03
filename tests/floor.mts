@@ -91,13 +91,23 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     s,
     new Map([[liSeat.id, { status: "ready", sessionHealthy: true, seatId: liSeat.id }]]),
   ).find((a) => a.id === liSeat.id)!;
-  // Seed LI seats are theatrically busy — healthy overlay must not invent a
-  // different lane; it only stamps the healthy label.
+  // ready+healthy with zero sends stays idle — never keep hash sourcing theater.
   ok(
-    "ready+healthy keeps theatrical base as working (not inventing a new lane)",
-    healthy.status === "working",
+    "ready+healthy with zero sends stays idle (no theatrical working)",
+    healthy.status === "idle",
   );
   ok("ready+healthy subtitle", /LinkedIn session healthy/i.test(healthy.subtitle ?? ""));
+
+  const sendingSeat = { ...liSeat, id: "seat_li_sent_today", sentToday: 3 };
+  const sendingHealthy = seatsToOfficeAgents(
+    [sendingSeat],
+    s,
+    new Map([[sendingSeat.id, { status: "ready", sessionHealthy: true, seatId: sendingSeat.id }]]),
+  ).find((a) => a.id === sendingSeat.id)!;
+  ok(
+    "ready+healthy with real sends paints working",
+    sendingHealthy.status === "working",
+  );
 
   // Truly idle desk + healthy session must stay idle (no sourcing theater).
   const idleSeat = { ...liSeat, id: "seat_idle_li_healthy", status: "disabled" as const };
@@ -144,7 +154,10 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     const withReady = floorRollup([liSeat], s, NOW, readyMap);
     const busyAlone = agentActivity(liSeat, s, NOW);
     if (busyAlone.state !== "idle" && busyAlone.state !== "paused" && busyAlone.state !== "warming") {
-      ok("rollup counts ready+healthy Browser Computer as working", withReady.working === 1);
+      ok(
+        "rollup: ready+healthy with zero sends is not working",
+        withReady.working === 0,
+      );
       const readyUnverified = floorRollup(
         [liSeat],
         s,
@@ -184,7 +197,10 @@ ok("at least one paused (lucas)", roll.paused >= 1);
         NOW,
         new Map([[li.id, { status: "ready", sessionHealthy: true }]]),
       );
-      ok("2D overlay: ready+healthy stays busy", healthy.busy === true);
+      ok(
+        "2D overlay: ready+healthy with zero sends is not busy",
+        healthy.busy === false && healthy.state === "idle",
+      );
     }
     const busyVm = agentActivityWithComputers(
       li,
@@ -385,7 +401,7 @@ ok("at least one paused (lucas)", roll.paused >= 1);
   const agentB = agents.find((x) => x.id === b.id)!;
   ok(
     "poisoned computerId cannot inherit another seat's healthy VM (status)",
-    agentA.status === "idle" && agentB.status === "working",
+    agentA.status === "idle" && agentB.status === "idle",
   );
   ok(
     "poisoned computerId cannot inherit another seat's VM suffix",

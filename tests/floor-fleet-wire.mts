@@ -120,14 +120,18 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
 
   ok("N seats → N floor agents", agents.length === 3);
   ok(
-    "only probed-healthy paints working",
-    agents.find((a) => a.id === "seat_a")?.status === "working" &&
+    "ready+healthy idle; unverified idle; unhealthy error (no invent working)",
+    agents.find((a) => a.id === "seat_a")?.status === "idle" &&
       agents.find((a) => a.id === "seat_b")?.status === "idle" &&
       agents.find((a) => a.id === "seat_c")?.status === "error",
   );
   ok(
     "orphan healthy VM does not paint any seat working",
-    !agents.some((a) => a.id !== "seat_a" && a.status === "working"),
+    !agents.some((a) => a.status === "working"),
+  );
+  ok(
+    "probed-healthy subtitle stamps session healthy without working theater",
+    /session healthy/i.test(agents.find((a) => a.id === "seat_a")?.subtitle || ""),
   );
   const suffixes = agents.map((a) => /…([0-9a-zA-Z_-]{4,})/.exec(a.subtitle || "")?.[1] ?? "");
   ok(

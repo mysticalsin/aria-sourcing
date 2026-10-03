@@ -65,7 +65,16 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   const assigned = seat.assignedCampaignIds ?? [];
   const attached = assigned.length
     ? campaigns.filter((c) => assigned.includes(c.id))
-    : campaigns;
+    : [];
+  // LinkedIn Browser Computer desks must be explicitly attached — never narrate
+  // foreign-campaign sourcing/outreach from an unassigned N-agent seat.
+  if (
+    attached.length === 0 &&
+    (seat.provider === "LinkedIn Browser Computer" ||
+      seat.linkedinDeliveryBackend === "browser-computer")
+  ) {
+    return make("idle", "Standing by", "No campaign assigned");
+  }
   const pool = attached.length > 0 ? attached : campaigns;
   const h = hash(seat.id);
   const campaign = pool[h % pool.length];
@@ -304,14 +313,15 @@ export function agentActivityWithComputers(
     };
   }
   if (hint.status === "ready" && hint.sessionHealthy === true) {
+    // Healthy LinkedIn is ready — not automatic "working". Only real sends
+    // (or VM status=busy above) count as working; never keep hash theater.
+    const realSends = (seat.sentToday ?? 0) > 0;
     return {
       ...base,
-      // Healthy LinkedIn is ready — not automatic "working". Keep base activity
-      // (idle stays idle); only real sources/sends flip to sourcing/busy.
-      state: base.state,
+      state: realSends ? (base.state === "idle" ? "sourcing" : base.state) : "idle",
       label: withVm("LinkedIn session healthy"),
-      busy: base.state !== "idle",
-      tone: base.state === "idle" ? "electric" : base.tone,
+      busy: realSends,
+      tone: realSends && base.state !== "idle" ? base.tone : "electric",
     };
   }
   if (hint.status === "ready" && hint.sessionHealthy === false) {

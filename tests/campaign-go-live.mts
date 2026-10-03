@@ -290,6 +290,10 @@ ok(
     orphanOwner.ready === false &&
       orphanOwner.checks.find((c) => c.id === "session_healthy")?.ok === false,
   );
+  ok(
+    "orphan-owned Hermes twin does not green browser_seat_attached after fleet poll",
+    orphanOwner.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
+  );
   const emptyOwner = evaluateCampaignGoLive({
     campaignId,
     settings: { dryRunMode: false, minScoreToContact: 80 },

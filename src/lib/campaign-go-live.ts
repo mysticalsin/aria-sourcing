@@ -99,8 +99,10 @@ export function mergeDurableCampaignSeatsForGoLive(
         row.status === "paused" || row.status === "disabled" || row.status === "active"
           ? row.status
           : "active",
-      mode: "live",
-      domainVerified: true,
+      // Fail-closed: durable-only stubs must not invent live+verified until Hermes
+      // (or operator Fleet) records a real live seat. session_healthy still needs probe.
+      mode: "mock",
+      domainVerified: false,
       dailyLimit: LINKEDIN_BROWSER_SEAT_DEFAULTS.dailyLimit,
       warmup: true,
       warmupStartCap: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStartCap,
@@ -165,11 +167,14 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
   nextAction?: GoLiveCheck;
 } {
   const attached = campaignBrowserSeats(input.seats, input.campaignId);
-  // Attached with durable Hermes computerId OR a fleet seat-owned bind (Hermes
-  // may be null after reclaim clear — still a real VM desk).
+  // When fleet has been polled (computers defined, incl. []), only seat-owned
+  // fleet binds count — Hermes computerId alone must not green attach via a
+  // refused orphan/foreign twin. Pre-poll (computers undefined): provisional
+  // Hermes durable id only.
+  const fleetPolled = input.computers !== undefined;
   const withComputer = attached.filter((s) => {
-    if ((s.computerId ?? "").trim().length > 0) return true;
-    return Boolean(computerForSeat(input.computers, s));
+    if (fleetPolled) return Boolean(computerForSeat(input.computers, s));
+    return (s.computerId ?? "").trim().length > 0;
   });
   const liveActive = withComputer.filter((s) => s.status === "active" && s.mode === "live");
   const comps = withComputer.map((s) => ({ seat: s, computer: computerForSeat(input.computers, s) }));
@@ -206,9 +211,11 @@ export function evaluateCampaignGoLive(input: GoLiveInput): {
       ok: withComputer.length > 0,
       detail:
         withComputer.length > 0
-          ? `${withComputer.length} LinkedIn Browser Computer seat(s) with a durable VM id on this campaign.`
+          ? `${withComputer.length} LinkedIn Browser Computer seat(s) with a fleet-bound VM on this campaign.`
           : attached.length > 0
-            ? "Campaign seats are assigned but none have a computerId yet — Start / Deploy on Agents or Fleet."
+            ? fleetPolled
+              ? "Campaign seats are assigned but none have a seat-owned fleet VM — Start / Deploy or reclaim on Agents or Fleet."
+              : "Campaign seats are assigned but none have a computerId yet — Start / Deploy on Agents or Fleet."
             : "Assign a LinkedIn Browser Computer seat on the Agents tab (explicit attach).",
       ctaLabel: "Open Agents",
       ctaHref: `/campaigns/${input.campaignId}?tab=agents`,
