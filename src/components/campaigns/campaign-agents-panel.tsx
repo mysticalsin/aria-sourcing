@@ -121,13 +121,20 @@ export function CampaignAgentsPanel({
   const [observingId, setObservingId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
-  // Soft-nav: bump to invalidate in-flight refresh so a late prior-campaign
+  // Soft-nav: bump only on campaignId change so a late prior-campaign
   // success/fail cannot paint foreign durableSeats or wipe the new campaign.
+  // Do NOT bump on seats/Hermes patches — Floor ingest must not flap durable paint.
   const pollGeneration = React.useRef(0);
+  const seatsRef = React.useRef(seats);
+  const hermesCampaignSeatsRef = React.useRef(hermesCampaignSeats);
+  seatsRef.current = seats;
+  hermesCampaignSeatsRef.current = hermesCampaignSeats;
 
   const actions = useActions();
   const refresh = React.useCallback(async () => {
     const gen = pollGeneration.current;
+    const hermesNow = hermesCampaignSeatsRef.current;
+    const seatsNow = seatsRef.current;
     setLoading(true);
     try {
       // GET-only like Floor/Fleet — never poll-ensure with Hermes computerId.
@@ -178,7 +185,7 @@ export function CampaignAgentsPanel({
         );
         const authIds = new Set(data.campaignSeats.map((s) => s.id));
         // Detach Hermes-only attaches not in durable authority (server write).
-        for (const local of hermesCampaignSeats) {
+        for (const local of hermesNow) {
           if (authIds.has(local.id)) continue;
           const next = (local.assignedCampaignIds ?? []).filter((id) => id !== campaignId);
           if (next.length !== (local.assignedCampaignIds ?? []).length) {
@@ -194,14 +201,14 @@ export function CampaignAgentsPanel({
       // Badge seat set: durable⊇ when campaignSeats present; else Hermes local only.
       const seatIds = Array.isArray(data.campaignSeats)
         ? new Set(data.campaignSeats.map((s) => s.id))
-        : new Set(hermesCampaignSeats.map((s) => s.id));
+        : new Set(hermesNow.map((s) => s.id));
       const computerIds = new Set<string>();
       if (Array.isArray(data.campaignSeats)) {
         for (const row of data.campaignSeats) {
           if (row.computerId) computerIds.add(row.computerId);
         }
       } else {
-        for (const s of hermesCampaignSeats) {
+        for (const s of hermesNow) {
           if (s.computerId) computerIds.add(s.computerId);
         }
       }
@@ -211,8 +218,8 @@ export function CampaignAgentsPanel({
       setFleetComputers(allRows);
       setFleetLoaded(true);
       const displaySeats = Array.isArray(data.campaignSeats)
-        ? mergeDurableCampaignSeatsForGoLive(seats, data.campaignSeats, campaignId)
-        : hermesCampaignSeats;
+        ? mergeDurableCampaignSeatsForGoLive(seatsNow, data.campaignSeats, campaignId)
+        : hermesNow;
       const rows = allRows.filter((c) => {
         if (!c.seatId || c.seatId === "__orphan__") return false;
         return seatIds.has(c.seatId);
@@ -227,7 +234,7 @@ export function CampaignAgentsPanel({
       );
       // Use the full fleet list — campaign-filtered rows miss owners outside this
       // campaign, so a foreign Hermes computerId would never get cleared.
-      for (const patch of fleetHermesComputerPatches(hermesCampaignSeats, allRows)) {
+      for (const patch of fleetHermesComputerPatches(hermesNow, allRows)) {
         void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
       }
 
@@ -249,10 +256,11 @@ export function CampaignAgentsPanel({
     } finally {
       if (gen === pollGeneration.current) setLoading(false);
     }
-  }, [actions, hermesCampaignSeats, campaignId, seats]);
+  }, [actions, campaignId]);
 
   React.useEffect(() => {
-    // Soft-nav campaign change: clear prior campaign fleet paint before poll.
+    // Soft-nav campaign change only: clear prior campaign fleet paint before poll.
+    // seatsRef keeps refresh current — do not remount/clear on Floor Hermes patches.
     pollGeneration.current += 1;
     setComputers([]);
     setFleetComputers([]);
@@ -265,7 +273,7 @@ export function CampaignAgentsPanel({
       pollGeneration.current += 1;
       window.clearInterval(t);
     };
-  }, [refresh]);
+  }, [campaignId, refresh]);
 
   async function deploySeat(seat: AgentSeat) {
     if (!fleetLoaded) {

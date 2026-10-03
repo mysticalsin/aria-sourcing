@@ -1294,3 +1294,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `saveApiKey` never copies `input.value`; `/api/keys` encrypts the raw value server-side and returns only ID/last-four metadata. Alert `13` predates PR `#3`.
 **Suggested fix:** Preserve the metadata contract and document the verified false positive instead of breaking provider references.
 **Status:** wontfix (CodeQL alert 13 dismissed as false positive on 2026-07-14 with audit comment)
+
+## 2026-10-03 — Agents pollGeneration remounted on seats/Hermes churn
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-agents-panel.tsx:252
+**Issue:** Soft-nav `pollGeneration` guard listed `seats`/`hermesCampaignSeats` in `refresh` deps, so Floor Hermes patches remounted the effect, cleared durable seats, and blocked Deploy on the same campaign.
+**Repro/evidence:** Soft-nav to campaign A, durable seats paint, then Hermes seat identity churn → durable wiped / Deploy gated until re-poll.
+**Suggested fix:** seatsRef + hermesCampaignSeatsRef; deps `[actions, campaignId]` and `[campaignId, refresh]`.
+**Status:** fixed (port onto #150 from 4ca658e)
