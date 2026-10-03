@@ -135,7 +135,7 @@ begin
       ('public.correlate_linkedin_inbound(uuid)',                             'service_role',  true),
       ('public.resolve_linkedin_inbound_conversation(uuid,text)',             'service_role',  true),
       ('public.record_linkedin_channel_event(uuid,uuid,text,text,text,text,text,text,jsonb,timestamptz)', 'service_role', true),
-      ('public.upsert_linkedin_inbound_route(uuid,text,uuid)',                'authenticated', true),
+      ('public.upsert_linkedin_inbound_route(uuid,text,uuid)',                'authenticated,service_role', true),
       ('public.resolve_linkedin_inbound_route(text)',                         'service_role',  true),
       ('public.record_linkedin_inbound(uuid,text,text,text)',                 'service_role',  true),
       ('public.record_linkedin_assisted_manual_send(text,text,text,text,uuid)', 'authenticated', true),
@@ -162,8 +162,7 @@ begin
       ('public.revoke_outreach_template(uuid)',                               'authenticated', true),
       ('public.upsert_mcp_allowlist_entry(text,text,text,uuid,integer,boolean)', 'authenticated', true),
       ('public.disable_mcp_allowlist_entry(uuid)',                            'authenticated', true),
-      ('public.profile_has_autopilot(uuid,uuid)',                             'authenticated', true),
-      ('public.profile_has_autopilot(uuid,uuid)',                             'service_role', true),
+      ('public.profile_has_autopilot(uuid,uuid)',                             'authenticated,service_role', true),
       ('public.resolve_inbound_mailbox_route(text)',                          'service_role',  true),
       ('public.record_inbound_email(uuid,text,text,text)',                    'service_role',  true),
       ('public.correlate_inbound_email(uuid,text)',                           'service_role',  true),
@@ -215,7 +214,7 @@ begin
 
     foreach role_name in array array['anon', 'authenticator', 'authenticated', 'service_role']
     loop
-      expected := role_name = item.allowed_role;
+      expected := role_name = any(string_to_array(item.allowed_role, ','));
       execute format('select has_function_privilege(%L, %L, %L)', role_name, item.signature, 'EXECUTE') into actual;
       if actual is distinct from expected then
         raise exception 'Unexpected EXECUTE privilege for role % on %: expected %, got %',
