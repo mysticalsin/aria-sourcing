@@ -27,14 +27,18 @@ export function CampaignGoLiveChecklist(props: {
   const actions = useActions();
   const [polledComputers, setPolledComputers] = React.useState<ComputerHealthLike[]>([]);
   const [durableSeats, setDurableSeats] = React.useState<DurableCampaignSeatLike[] | undefined>();
+  // seatsRef: Floor Hermes patches must not remount/clear durable go-live paint.
+  const seatsRef = React.useRef(props.seats);
+  seatsRef.current = props.seats;
   React.useEffect(() => {
     if (props.computers) return;
     let cancelled = false;
-    // Soft-nav campaign change: clear prior campaign paint before the next poll.
+    // Soft-nav campaign change only: clear prior campaign paint before the next poll.
     setPolledComputers([]);
     setDurableSeats(undefined);
     const load = async () => {
       try {
+        const seatsNow = seatsRef.current;
         const res = await fetch(
           `/api/fleet/computers?campaignId=${encodeURIComponent(props.campaignId)}`,
           { credentials: "same-origin" },
@@ -69,7 +73,7 @@ export function CampaignGoLiveChecklist(props: {
         const scoped = authIds
           ? comps.filter((c) => c.seatId && authIds.has(c.seatId))
           : comps.filter((c) => {
-              const seat = props.seats.find((s) => s.id === c.seatId);
+              const seat = seatsNow.find((s) => s.id === c.seatId);
               return Boolean(
                 seat &&
                   (seat.assignedCampaignIds ?? []).includes(props.campaignId),
@@ -92,7 +96,7 @@ export function CampaignGoLiveChecklist(props: {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [props.campaignId, props.computers, props.seats, actions]);
+  }, [props.campaignId, props.computers, actions]);
 
   // props.computers wins; otherwise fail-closed [] until/after poll (never undefined Hermes-only path).
   const computers = props.computers ?? polledComputers;

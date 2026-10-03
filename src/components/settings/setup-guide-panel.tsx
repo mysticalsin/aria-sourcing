@@ -90,30 +90,32 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   // Take→login→Release done only after fleet probe paints sessionHealthy=true
   // on a seat attached to this campaign (not any random healthy Browser Computer).
   const [liSessionHealthy, setLiSessionHealthy] = React.useState(false);
+  const seatsRef = React.useRef(seats);
+  seatsRef.current = seats;
+  const campaignId = campaign?.id;
   React.useEffect(() => {
-    // Soft-nav: clear until the next fleet poll — never keep green across seat/campaign change.
+    // Soft-nav campaign change only — seats/Hermes churn must not wipe durable attach.
     setLiSessionHealthy(false);
     setDurableAttachedIds(null);
     let cancelled = false;
-    const hermesAttachedSeatIds = new Set(
-      seats
-        .filter(isBrowserComputerSeat)
-        .filter((s) =>
-          Boolean(campaign && (s.assignedCampaignIds ?? []).includes(campaign.id)),
-        )
-        .map((s) => s.id),
-    );
     const load = async () => {
-      if (!campaign) {
+      const seatsNow = seatsRef.current;
+      if (!campaignId) {
         if (!cancelled) {
           setLiSessionHealthy(false);
           setDurableAttachedIds(null);
         }
         return;
       }
+      const hermesAttachedSeatIds = new Set(
+        seatsNow
+          .filter(isBrowserComputerSeat)
+          .filter((s) => (s.assignedCampaignIds ?? []).includes(campaignId))
+          .map((s) => s.id),
+      );
       try {
         const res = await fetch(
-          `/api/fleet/computers?campaignId=${encodeURIComponent(campaign.id)}`,
+          `/api/fleet/computers?campaignId=${encodeURIComponent(campaignId)}`,
           { credentials: "same-origin" },
         );
         if (!res.ok || cancelled) {
@@ -166,7 +168,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [seats, campaign, actions]);
+  }, [campaignId, actions]);
 
   const steps: Step[] = [
     {

@@ -1,23 +1,23 @@
 ---
 project: MSourcing / ARIA
-shift: 319
+shift: 320
 agent: cursor-cloud
-updated: 2026-10-03T18:22Z
-status: seats-churn-on-148-and-150-fly-blocks-goal
+updated: 2026-10-03T18:35Z
+status: sibling-seats-churn-fixed-fly-blocks-goal
 ---
 
-# Handoff — Shift 319
+# Handoff — Shift 320
 
 ## Current state
 
-- **#148 tip:** `cursor/linkedin-human-claude-chrome-b91d` — seatsRef churn fix ported (parity with #150 / `4ca658e`)
-- **#150 tip:** `cursor/fly-deploy-land-n-agent-b91d` @ `a088f65` — seatsRef + soft-nav; squash auto-merge on; owner approve still required
-- **Fly:** still stale (`21a42e7…` / `0084`) — goal open until tip SHA + 0087 + LI desks healthy
+- **#148 tip:** seatsRef on Agents + go-live checklist + setup guide (soft-nav 17/17)
+- **#150:** port sibling seats-churn fix next; owner approve still required
+- **Fly:** `21a42e7…` / `0084` / `hermesRuntime:true` — goal open until tip SHA + 0087 + LI desks healthy
 
 ## Done this shift
 
-1. Ported seatsRef onto #150 (`a088f65`) and #148 Agents panel + soft-nav 15/15
-2. Aborted stray cherry-pick conflict on pollgen branch
+1. Adversarial tip hunt after seatsRef Agents fix
+2. Fixed go-live checklist + setup guide: clear durable only on campaignId; seats via refs
 
 ## Blockers
 
@@ -25,17 +25,16 @@ status: seats-churn-on-148-and-150-fly-blocks-goal
 
 ## Next steps
 
-1. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
-2. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+1. Port sibling seats-churn fix onto deploy-land / #150
+2. Owner approve + dispatch + `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 3. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
 ## Decisions made (don't relitigate)
 
 - Soft-nav late prior-campaign paint stays via pollGeneration; seats churn must not remount/clear
+- Sibling go-live / setup-guide same seatsRef rule as Agents
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
-- campaignId on Take/resolve/boot only when seat already attached
-- Fleet Deploy omits campaignId for newly minted seats
 - N-agent deploy does **not** require `agentFrameworks:true`
 
 ## Watch out

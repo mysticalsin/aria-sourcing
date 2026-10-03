@@ -1262,3 +1262,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** orphan host botId overwrites seat hint; Hermes twin shows VM …xxxx in drawer; StatCard Ready > filtered list; Hermes-null + fleet bind → browser_seat_attached false.
 **Suggested fix:** skip orphan/empty before map.set; bound=hint only; summary filter !seatId||orphan; withComputer includes computerForSeat.
 **Status:** fixed (8dcc17c) — Floor orphan skip; drawer hint-bound; summary empty filter; go-live fleet bind
+
+## 2026-10-03 — Go-live / setup-guide wiped durable on seats churn
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-go-live-checklist.tsx:95; src/components/settings/setup-guide-panel.tsx:169
+**Issue:** Effect deps included seats (and campaign object), so Floor Hermes patches cleared durable authority and briefly re-painted Hermes-only attach.
+**Repro/evidence:** Durable campaignSeats=[] then seats identity churn → durable wiped to undefined/null → Hermes attach greens go-live/setup until re-poll.
+**Suggested fix:** seatsRef; deps campaignId (+ computers/actions) only.
+**Status:** fixed (tip #148; port #150)
