@@ -40,6 +40,7 @@ import {
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
@@ -377,12 +378,16 @@ export default function FleetPage() {
           computerId,
           // N-seat isolation: always name the owning seat for mutating actions.
           ...(row?.seatId && row.seatId !== "__orphan__" ? { seatId: row.seatId } : {}),
-          // Campaign-scoped fleet view / attached desk → refuseUnattached on Take/Start.
+          // CampaignId only when the desk is actually attached — scope alone must not
+          // force refuseUnattached on post-Deploy Take before campaign assign.
           ...(() => {
-            const fromScope = scopeId.trim();
-            if (fromScope) return { campaignId: fromScope };
             const seat = seats.find((s) => s.id === row?.seatId);
-            const fromSeat = (seat?.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
+            if (!seat) return {};
+            const fromScope = scopeId.trim();
+            if (fromScope && seatAttachedToCampaign(seat, fromScope)) {
+              return { campaignId: fromScope };
+            }
+            const fromSeat = (seat.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
             return fromSeat ? { campaignId: fromSeat } : {};
           })(),
         }),
