@@ -36,5 +36,16 @@ ok(
   ),
 );
 
+ok(
+  "approve with seatId also requires seatAttachedToCampaign",
+  /LinkedIn seat is not attached to this campaign/.test(store) &&
+    /seatAttachedToCampaign\(stamped,\s*campaign\.id\)/.test(store),
+);
+
+ok(
+  "unscoped allocate draft loop skips seats not attached to candidate campaign",
+  /if \(seat && !seatAttachedToCampaign\(seat, campaign\.id\)\) continue;/.test(store),
+);
+
 console.log(`RESULT campaign-allocate-approve-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

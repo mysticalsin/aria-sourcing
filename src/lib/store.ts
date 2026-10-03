@@ -2601,33 +2601,48 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // N LinkedIn desks: refuse empty seat attribution on the authoritative ledger.
-      if (msg.channel === "LinkedIn" && !(msg.seatId ?? "").trim()) {
-        // Only seats attached to this campaign (BC empty ≠ attached; Vendor empty = shared).
-        const attachedLi = s.seats.filter(
-          (x) =>
-            x.status === "active" &&
-            isLinkedInAutomaticProvider(x.provider) &&
-            seatAttachedToCampaign(x, campaign.id),
-        );
-        if (attachedLi.length === 1) {
-          const soleAuto = attachedLi[0]!.id;
-          msg = { ...msg, seatId: soleAuto };
-          commit((prev) => ({
-            ...prev,
-            outreach: prev.outreach.map((m) =>
-              m.id === messageId ? { ...m, seatId: soleAuto } : m,
-            ),
-          }));
-          s = current();
-        } else if (attachedLi.length > 1) {
-          return approvalBlocked(
-            "Message has no seatId; cannot approve across N LinkedIn seats without a drafting desk.",
-          );
+      // N LinkedIn desks: refuse empty or foreign-campaign seat attribution.
+      if (msg.channel === "LinkedIn") {
+        const stampedSeatId = (msg.seatId ?? "").trim();
+        if (stampedSeatId) {
+          const stamped = s.seats.find((x) => x.id === stampedSeatId);
+          if (
+            !stamped ||
+            stamped.status !== "active" ||
+            !isLinkedInAutomaticProvider(stamped.provider) ||
+            !seatAttachedToCampaign(stamped, campaign.id)
+          ) {
+            return approvalBlocked(
+              "LinkedIn seat is not attached to this campaign — re-draft from an attached Browser Computer or Vendor API desk.",
+            );
+          }
         } else {
-          return approvalBlocked(
-            "No LinkedIn automatic seat attached to this campaign — attach a Browser Computer or Vendor API desk.",
+          // Only seats attached to this campaign (BC empty ≠ attached; Vendor empty = shared).
+          const attachedLi = s.seats.filter(
+            (x) =>
+              x.status === "active" &&
+              isLinkedInAutomaticProvider(x.provider) &&
+              seatAttachedToCampaign(x, campaign.id),
           );
+          if (attachedLi.length === 1) {
+            const soleAuto = attachedLi[0]!.id;
+            msg = { ...msg, seatId: soleAuto };
+            commit((prev) => ({
+              ...prev,
+              outreach: prev.outreach.map((m) =>
+                m.id === messageId ? { ...m, seatId: soleAuto } : m,
+              ),
+            }));
+            s = current();
+          } else if (attachedLi.length > 1) {
+            return approvalBlocked(
+              "Message has no seatId; cannot approve across N LinkedIn seats without a drafting desk.",
+            );
+          } else {
+            return approvalBlocked(
+              "No LinkedIn automatic seat attached to this campaign — attach a Browser Computer or Vendor API desk.",
+            );
+          }
         }
       }
 
@@ -5290,6 +5305,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const campaign = candidate && byCampaign.get(candidate.campaignId);
         if (!candidate || !campaign) continue;
         const seat = bySeat.get(a.seatId);
+        // Whole-fleet allocate: never stamp a BC/Vendor onto a foreign campaign.
+        if (seat && !seatAttachedToCampaign(seat, campaign.id)) continue;
         const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
         const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
         const channel =
