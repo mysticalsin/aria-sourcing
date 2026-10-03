@@ -22,7 +22,7 @@
 
 `agentFrameworks` probes DeerFlow/Flowise adapters. This Fly tenant does not run those sidecars (`_relay/evidence/2026-09-05-fly-linkedin-live.md`). N campaign LI desks use Hermes/Browser Computer (`hermesRuntime`). Gating N-agent goal complete on `agentFrameworks:true` was incorrect theater — removed from `scripts/fly-n-agent-proof.sh`.
 
-Full `deploy-fly.sh` still ends with `require_http_200 … /api/ready` under `AGENT_FRAMEWORKS_REQUIRED=true`; owner dispatch may go red late even after tip+0087 land. Prove via proof script JSON fields.
+Full `deploy-fly.sh` post-app acceptance uses `require_app_ready_json` (tip SHA + Hermes data plane). HTTP 503 with only `agentFrameworks:false` is accepted on this tenant.
 
 ## Production blocker (ordered)
 

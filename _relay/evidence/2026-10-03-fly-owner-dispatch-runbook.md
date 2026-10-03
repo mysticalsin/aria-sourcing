@@ -56,7 +56,7 @@ gh workflow run "Deploy Aria Mantu (Fly)" \
   -f recovery_receipt_sha256="$RECEIPT_SHA256"
 ```
 
-**Expect:** workflow may still fail late on `require_http_200 … /api/ready` because DeerFlow/Flowise sidecars are not on this tenant (`AGENT_FRAMEWORKS_REQUIRED=true`). Migrations (step 7) and app image (step 11) can still land before that check — verify with the proof script below, not workflow green alone.
+**Expect:** deploy acceptance now passes when `/api/ready` is HTTP 503 with only `agentFrameworks:false` (tip SHA + Hermes data plane green). DeerFlow/Flowise sidecars are not required for N-agent land.
 
 ## 5. Post-deploy proof (N-agent goal gate)
 
