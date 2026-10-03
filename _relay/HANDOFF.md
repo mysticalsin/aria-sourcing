@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 266
 agent: cursor-cloud
 updated: 2026-10-03T06:30Z
-status: bc-attach-required-fly-stale
+status: n-agent-wire-audit-done
 ---
 
 # Handoff — Shift 266
@@ -11,36 +11,33 @@ status: bc-attach-required-fly-stale
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Shipping:** LI Browser Computer empty `assignedCampaignIds` is NOT attached (allocate / send pick / floor FX)
-- **Prior tip CI:** green on `6835e29` (ignore Vercel rate-limit)
-- **Fly:** still `21a42e7…` / `agentFrameworks:false` — deploy needs protected `deploy/fly-github-actions` + recovery receipt (no agent token)
+- **Tip commit:** `211a8ee` (CI green; Fly still stale — skip per this audit)
+- **Audit:** `_relay/evidence/2026-10-03-n-agent-wire-audit.md`
+- **WIP (other agent, do not discard):** `src/lib/campaign-seat-attach.ts` (untracked) + dirty `agent-event-seat.ts` / `linkedin-automatic.ts` / `store.ts` / matching tests — partial F1 fix
 
 ## Done this shift
 
-1. `campaign-seat-attach.ts` — shared attach helper (BC explicit; other seats empty=shared)
-2. `agent-event-seat` / `linkedin-automatic` / `store.allocateOutreach` use it
-3. Regression: campaign-seat-attach, agent-event-seat, sourcing-automatic-deliver
+1. Read-only N-agent FE↔BE wire audit (attach, seatId↔computerId, floor↔fleet, go-live/ops, Hermes sync, isolation)
+2. Wrote evidence file with concrete file:line + one-line fixes
 
 ## Blockers
 
-1. Owner Fly tip redeploy via Deploy Aria Mantu workflow (protected branch + receipt)
-2. `ARIA_JINA_API_KEY` + Take→login→Release for LI healthy
+1. F1 still open on tip: empty `assignedCampaignIds` = shared pool for LI Browser on allocate/send/sole-stamp/source pulses
+2. Fly tip deploy still owner-gated (out of scope this ask)
 
 ## Next steps
 
-1. Confirm tip CI green on this SHA
-2. Owner Fly tip SHA + LI healthy
-3. Do not UpdateGoal complete until Fly tip + LI healthy
+1. Finish F1: wire `seatAttachedToCampaign` everywhere; remove `store.ts` allocate fallback to all seats; remove approve `liLive.length===1` soleAuto fallback; land + test
+2. Do not UpdateGoal complete until Fly tip SHA + LI healthy (unchanged)
 
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- LI Browser Computer empty assigned ≠ attached / ≠ send fallback
-- Zero-send busy+healthy is idle
-- Pace health via get() TTL
-- Never commit ARIA_JINA_API_KEY
+- Empty assignedCampaignIds is NOT attached for LinkedIn Browser Computer (Setup/Go-live/Floor already; store/send/FX must match)
+- Go-live requires computerForSeat (never Hermes-only)
+- Physical VM isolation on tip is real; remaining gap is campaign-membership enforcement
 
 ## Watch out
 
+- Uncommitted WIP partially implements F1 — complete it, don't revert
 - Tip CI green ≠ production N-agent goal complete
