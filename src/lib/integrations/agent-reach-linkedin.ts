@@ -423,25 +423,65 @@ export async function searchLinkedInViaAgentReachJina(query: {
   }
 }
 
+export function agentReachJinaKeyKind():
+  | "none"
+  | "portal-apikey-reader"
+  | "jina-bearer" {
+  const key = agentReachJinaApiKey();
+  if (!key) return "none";
+  if (/^apikey_/i.test(key)) return "portal-apikey-reader";
+  return "jina-bearer";
+}
+
+/** Operator-facing best Aria uses for the configured JEV / Jina key (never logs the key). */
+export function agentReachJinaBestAriaUses(): string[] {
+  const kind = agentReachJinaKeyKind();
+  if (kind === "none") {
+    return [
+      "Keyless r.jina.ai Reader (low limits) — set ARIA_JINA_API_KEY for authenticated enrichment",
+    ];
+  }
+  if (kind === "portal-apikey-reader") {
+    return [
+      "Authenticated Jina Reader enrichment of public LinkedIn /in|/company|/jobs (best use for portal apikey_…)",
+      "Agent Reach eyes before OpenBot hands — profile evidenceText for sourcing / NightTrek",
+      "Discovery stays on Tavily / web_search until a jina_… Bearer key is added for s.jina.ai",
+    ];
+  }
+  return [
+    "Authenticated Jina Reader enrichment (r.jina.ai Bearer)",
+    "Jina Search discovery site:linkedin.com/in (s.jina.ai) — supplements Tavily",
+    "Agent Reach eyes before OpenBot hands",
+  ];
+}
+
 export function agentReachLinkedInStatus(): {
   id: string;
   enabled: boolean;
   urlConfigured: boolean;
   apiKeyConfigured: boolean;
+  keyKind: ReturnType<typeof agentReachJinaKeyKind>;
+  bestAriaUses: string[];
   role: string;
   builtin: string;
 } {
   const apiKeyConfigured = agentReachJinaApiKeyConfigured();
+  const keyKind = agentReachJinaKeyKind();
   return {
     id: "agent-reach-jina",
     enabled: agentReachJinaEnabled(),
     // Reader origin is always reachable; apiKeyConfigured raises rate limits / ASN unlock.
     urlConfigured: true,
     apiKeyConfigured,
+    keyKind,
+    bestAriaUses: agentReachJinaBestAriaUses(),
     role: "Public LinkedIn page read (Agent Reach → Jina Reader)",
-    builtin: apiKeyConfigured
-      ? "r.jina.ai + ARIA_JINA_API_KEY (Bearer or X-API-Key) over SSRF-guarded HTTPS"
-      : "r.jina.ai keyless over SSRF-guarded HTTPS (set ARIA_JINA_API_KEY for higher limits)",
+    builtin:
+      keyKind === "portal-apikey-reader"
+        ? "r.jina.ai + ARIA_JINA_API_KEY via X-API-Key (Reader enrichment — best Aria use for portal keys)"
+        : keyKind === "jina-bearer"
+          ? "r.jina.ai + ARIA_JINA_API_KEY Bearer over SSRF-guarded HTTPS"
+          : "r.jina.ai keyless over SSRF-guarded HTTPS (set ARIA_JINA_API_KEY for higher limits)",
   };
 }
 

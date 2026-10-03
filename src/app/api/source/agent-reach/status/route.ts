@@ -52,6 +52,8 @@ export async function GET(req: NextRequest) {
     ok: true,
     role: "eyes",
     hands: "OpenBot Browser Computer (Connect/Message)",
+    // Portal apikey_… → Reader enrichment (best Aria use). Search needs jina_… Bearer.
+    bestAriaUses: jina.bestAriaUses,
     agentReach: { jina, jinaSearch, mcp },
     agents,
   });
