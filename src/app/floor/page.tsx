@@ -651,7 +651,7 @@ function AgentDetailDrawer({
 
         <Card className="bg-canvas/40">
           <CardContent className="space-y-1">
-            <Eyebrow>Working on</Eyebrow>
+            <Eyebrow>{activity.busy || activity.state !== "idle" ? "Working on" : "Status"}</Eyebrow>
             <p className="text-sm font-semibold text-ink">{activity.detail}</p>
             {activity.focusName && <p className="text-sm text-muted">Current focus: {activity.focusName}</p>}
           </CardContent>

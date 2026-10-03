@@ -1,28 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 247
+shift: 248
 agent: cursor-cloud
-updated: 2026-10-03T02:55Z
-status: checklist-failclosed-fleet-li-health-fly-stale
+updated: 2026-10-03T03:00Z
+status: deploy-fleetloaded-cortex-idle-send-failclosed-fly-stale
 ---
 
-# Handoff — Shift 247
+# Handoff — Shift 248
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `38101f4`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** Go-live checklist fails closed on `computers=[]` (never Hermes-only attach race); durable null clears twin; Floor idle clears theatrical detail; FleetHealthStrip LI needs sessionHealthy; Fleet add-seat uses staleTwin
+- **N-agent local:** Deploy waits for fleetLoaded; Login staleTwin; Floor idle overlays clear theater; cortex short-circuits idle/paused/warming; LI send fails closed without seat snapshot
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
 
 ## Done this shift
 
-1. CampaignGoLiveChecklist: init/fail `[]` so fleetPolled attach always applies
-2. mergeDurable: `computerId: null` clears Hermes twin
-3. Floor ready+healthy idle clears detail/focusName theater
-4. FleetHealthStrip polls fleet — LI liveReady requires sessionHealthy===true
-5. FleetRosterStack no longer greens LI via mailbox theater; add-seat staleTwin
-6. Tests: floor 89, floor-fleet-wire 14, campaign-go-live 25
+1. Campaign Agents Deploy gated on fleetLoaded; empty fleet omits Hermes existingComputerId
+2. Settings Login uses isStaleHermesComputerTwin (+ omit when fleet empty/unloaded)
+3. Floor idle overlays clear detail/focusName; drawer eyebrow Status vs Working on
+4. agentCortexTrace respects Floor activity idle/paused/warming (no hash theater)
+5. outreach/send: Browser Computer without Hermes seat → 429 seat_missing
+6. Tests: floor 89, floor-fleet-wire 14, campaign-go-live 25, send-pacing 13, linkedin-send-contract 12
 
 ## Blockers
 
@@ -41,9 +41,8 @@ status: checklist-failclosed-fleet-li-health-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Go-live checklist never leaves computers undefined after mount
-- Fleet readiness for LI = probed healthy, not mailbox
-- ready+healthy ≠ working; idle clears Working-on theater
+- Deploy/Login never feed Hermes twin before fleet poll settles
+- Cortex must match Floor activity state (no idle→working narration)
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out

@@ -11,6 +11,7 @@ import { resolveDurableComputerId } from "@/lib/boot-browser-computer";
 import {
   fleetHermesComputerPatches,
   computerHealthOwnedBySeat,
+  isStaleHermesComputerTwin,
 } from "@/lib/fleet-hermes-sync";
 import {
   ConnectedIdentityBanner,
@@ -111,6 +112,11 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const [hostCapacity, setHostCapacity] = React.useState<{ computers: number; max: number } | null>(
     null,
   );
+  /** Latest fleet rows for Login staleTwin — never feed orphan/foreign Hermes id. */
+  const [fleetComputers, setFleetComputers] = React.useState<
+    { seatId?: string; computerId?: string; sessionHealthy?: boolean | null }[]
+  >([]);
+  const [fleetLoaded, setFleetLoaded] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (!enabled) {
@@ -161,6 +167,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           };
           if (fleet.hostCapacity) setHostCapacity(fleet.hostCapacity);
           const computers = fleet.computers ?? [];
+          setFleetComputers(computers);
+          setFleetLoaded(true);
           const bySeatHealth = new Map(
             computers
               .filter((c) => c.seatId && c.seatId !== "__orphan__")
@@ -214,6 +222,8 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           });
         }
       } catch {
+        setFleetComputers([]);
+        setFleetLoaded(true);
         /* seats still usable without fleet overlay */
       }
 
@@ -502,9 +512,15 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       // Never invent computerId from seat.id — that collapses N Chromium profiles onto one id.
       // Prefer durable API/DB binding; reclaim a probed-healthy host orphan before minting
       // (including when store pre-minted a blank id). Do NOT trust Hermes-only computerId.
+      // When fleet not loaded yet, omit existing — empty poll cannot detect stale twins.
+      const hermesId = (seat.computerId ?? "").trim();
+      const staleTwin =
+        !fleetLoaded ||
+        !fleetComputers.length ||
+        isStaleHermesComputerTwin(seat.id, hermesId, fleetComputers);
       let computerId = await resolveDurableComputerId({
         seatId: seat.id,
-        existingComputerId: seat.computerId,
+        existingComputerId: staleTwin ? null : seat.computerId,
       });
 
       // Persist computer id before ensure/start so N concurrent boots cannot race-mint twins.

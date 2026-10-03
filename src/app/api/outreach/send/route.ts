@@ -290,6 +290,22 @@ export async function POST(req: NextRequest) {
     const seatState = seatsArr
       .map((item) => record(item))
       .find((item) => item?.id === seatId) as AgentSeat | undefined;
+    if (
+      liSeat.provider === "LinkedIn Browser Computer" &&
+      !seatState
+    ) {
+      // Fail closed: Browser Computer pacing needs the Hermes seat snapshot.
+      return NextResponse.json(
+        {
+          status: "deferred",
+          detail:
+            "Seat snapshot required for Browser Computer pacing (daily cap / gap / sessionHealthy).",
+          paceReason: "seat_missing",
+          nextEligibleAt: null,
+        },
+        { status: 429 },
+      );
+    }
     if (seatState) {
       const fleetSettings = {
         ...defaultFleetSettings(),

@@ -260,7 +260,8 @@ export function agentActivityWithComputers(
       ...base,
       state: "idle",
       label: seat.computerId ? "VM not on host" : "No Browser Computer",
-      detail: base.detail,
+      detail: "Standing by",
+      focusName: null,
       busy: false,
       tone: "neutral",
     };
@@ -270,7 +271,8 @@ export function agentActivityWithComputers(
       ...base,
       state: "idle",
       label: withVm("Operator in control"),
-      detail: base.detail,
+      detail: "Standing by",
+      focusName: null,
       busy: false,
       tone: "warning",
     };
@@ -280,6 +282,8 @@ export function agentActivityWithComputers(
       ...base,
       state: "paused",
       label: withVm(hint.status === "help_requested" ? "Needs Take control" : "VM error"),
+      detail: "Standing by",
+      focusName: null,
       busy: false,
       tone: "danger",
     };
@@ -340,6 +344,8 @@ export function agentActivityWithComputers(
       ...base,
       state: "paused",
       label: withVm("LinkedIn session unhealthy"),
+      detail: "Standing by",
+      focusName: null,
       busy: false,
       tone: "danger",
     };
@@ -349,6 +355,8 @@ export function agentActivityWithComputers(
       ...base,
       state: "idle",
       label: withVm("LinkedIn unverified — Take control"),
+      detail: "Standing by",
+      focusName: null,
       busy: false,
       tone: "warning",
     };
@@ -358,6 +366,8 @@ export function agentActivityWithComputers(
       ...base,
       state: "idle",
       label: withVm("VM stopped"),
+      detail: "Standing by",
+      focusName: null,
       busy: false,
       tone: "neutral",
     };

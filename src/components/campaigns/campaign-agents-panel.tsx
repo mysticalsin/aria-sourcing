@@ -102,6 +102,8 @@ export function CampaignAgentsPanel({
   // Full fleet rows (incl. __orphan__) for staleTwin / Hermes honesty — badge
   // list above stays seat-filtered so orphans never inflate campaign ops.
   const [fleetComputers, setFleetComputers] = React.useState<FleetComputerRow[]>([]);
+  /** First successful fleet poll settled — Deploy must wait (empty=[] is ambiguous for staleTwin). */
+  const [fleetLoaded, setFleetLoaded] = React.useState(false);
   const [audits, setAudits] = React.useState<AuditEvent[]>([]);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [observingId, setObservingId] = React.useState<string | null>(null);
@@ -122,6 +124,9 @@ export function CampaignAgentsPanel({
       );
       if (!res.ok) {
         setError(`Fleet computers unavailable (${res.status})`);
+        // Settled fail-closed: empty fleet so Deploy omits Hermes twin.
+        setFleetComputers([]);
+        setFleetLoaded(true);
         return;
       }
       const data = (await res.json()) as {
@@ -183,6 +188,7 @@ export function CampaignAgentsPanel({
       // campaign badges or ops (Hermes twin after reclaim must not inflate counts).
       const allRows = data.computers ?? [];
       setFleetComputers(allRows);
+      setFleetLoaded(true);
       const rows = allRows.filter((c) => {
         if (!c.seatId || c.seatId === "__orphan__") return false;
         return seatIds.has(c.seatId);
@@ -211,6 +217,8 @@ export function CampaignAgentsPanel({
       setAudits((tagged.length ? tagged : campaignAudits).slice(-40));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load campaign agents");
+      setFleetComputers([]);
+      setFleetLoaded(true);
     } finally {
       setLoading(false);
     }
@@ -223,6 +231,14 @@ export function CampaignAgentsPanel({
   }, [refresh]);
 
   async function deploySeat(seat: AgentSeat) {
+    if (!fleetLoaded) {
+      toast({
+        title: "Fleet not loaded",
+        description: "Wait for the fleet poll before Deploy — empty list cannot detect stale Hermes twins.",
+        variant: "warning",
+      });
+      return;
+    }
     setBusyId(seat.id);
     setError(null);
     try {
@@ -231,9 +247,12 @@ export function CampaignAgentsPanel({
       // login-wall computerId into reclaim before Hermes poll clears it.
       // Use full fleet rows (incl. orphans), not badge-filtered computers.
       const staleTwin = isStaleHermesComputerTwin(seat.id, hermesId, fleetComputers);
+      // Empty fleet after load: still omit Hermes id (ambiguous ≠ own).
+      const existingComputerId =
+        !fleetComputers.length || staleTwin ? null : seat.computerId;
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
-        existingComputerId: staleTwin ? null : seat.computerId,
+        existingComputerId,
       });
       const ok = await actions.updateSeat(seat.id, { computerId });
       if (!ok) {
@@ -532,10 +551,14 @@ export function CampaignAgentsPanel({
                         <Button
                           type="button"
                           size="sm"
-                          disabled={busyId === seat.id}
+                          disabled={busyId === seat.id || !fleetLoaded}
                           onClick={() => void deploySeat(seat)}
                         >
-                          {busyId === seat.id ? "Deploying…" : "Deploy computer"}
+                          {busyId === seat.id
+                            ? "Deploying…"
+                            : !fleetLoaded
+                              ? "Loading fleet…"
+                              : "Deploy computer"}
                         </Button>
                         {onUnassignSeat ? (
                           <Button
