@@ -890,6 +890,11 @@ try {
         !/campaignSeats: campaignSeats \?\? \[\]/.test(route),
     );
     ok(
+      "GET returns browserSeatBindings for Floor durable attach sync",
+      route.includes("browserSeatBindings") &&
+        /Omit bindings when seats read failed/.test(route),
+    );
+    ok(
       "reclaim persist failure rolls back in-memory claim",
       reclaimBlock.includes("releaseToOrphan") &&
         reclaimBlock.includes("computer_id persist failed"),

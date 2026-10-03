@@ -38,6 +38,7 @@ import {
   resolveComputerHint,
 } from "@/lib/floor";
 import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import {
   EVENT_COLOR,
   EVENT_SOUND,
@@ -132,6 +133,11 @@ export default function FloorPage() {
             sessionHealthy?: boolean | null;
             control?: "bot" | "human" | null;
           }[];
+          browserSeatBindings?: Array<{
+            id: string;
+            computerId?: string | null;
+            assignedCampaignIds?: string[];
+          }>;
         };
         const map = new Map<string, ComputerFloorHint>();
         for (const c of data.computers ?? []) {
@@ -157,6 +163,38 @@ export default function FloorPage() {
         for (const patch of fleetHermesComputerPatches(seatsRef.current, data.computers ?? [])) {
           void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
         }
+        // Durable agent_seats attach/computerId → Hermes so floor labels/FX match DB
+        // (N desks visible without requiring Campaign Agents tab open first).
+        if (Array.isArray(data.browserSeatBindings)) {
+          for (const row of data.browserSeatBindings) {
+            if (!row?.id) continue;
+            const local = seatsRef.current.find((s) => s.id === row.id);
+            if (!local || !isBrowserComputerSeat(local)) continue;
+            const patch: {
+              assignedCampaignIds?: string[];
+              computerId?: string | null;
+            } = {};
+            const durableAssigned = Array.isArray(row.assignedCampaignIds)
+              ? row.assignedCampaignIds
+              : [];
+            const localAssigned = local.assignedCampaignIds ?? [];
+            const sameAssign =
+              durableAssigned.length === localAssigned.length &&
+              durableAssigned.every((id) => localAssigned.includes(id));
+            if (!sameAssign) patch.assignedCampaignIds = durableAssigned;
+            if (row.computerId && row.computerId !== local.computerId) {
+              patch.computerId = row.computerId;
+            } else if (
+              (row.computerId == null || String(row.computerId).trim() === "") &&
+              Boolean((local.computerId ?? "").trim())
+            ) {
+              patch.computerId = null;
+            }
+            if (Object.keys(patch).length > 0) {
+              void actions.updateSeat(row.id, patch);
+            }
+          }
+        }
         if (!cancelled) setComputerHints(map);
       } catch {
         if (!cancelled) setComputerHints(new Map());
@@ -178,7 +216,12 @@ export default function FloorPage() {
       if (!e.seatId) continue;
       // Resolve by seatId across the full roster — desk 0 can be a real LI Browser seat.
       const seat = seatsRef.current.find((s) => s.id === e.seatId);
-      if (seat) pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
+      if (!seat) continue;
+      // LI desks: only pulse when the event's campaign matches durable/Hermes attach.
+      if (isBrowserComputerSeat(seat)) {
+        if (!e.campaignId || !seatAttachedToCampaign(seat, e.campaignId)) continue;
+      }
+      pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
     }
 
     const unsubscribe = subscribe((e) => {
@@ -186,7 +229,16 @@ export default function FloorPage() {
       // Fail-closed: only pulse the desk that owns the event (never hash-pick).
       if (e.seatId) {
         const seat = seatsRef.current.find((s) => s.id === e.seatId);
-        if (seat) pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
+        if (seat) {
+          if (
+            isBrowserComputerSeat(seat) &&
+            (!e.campaignId || !seatAttachedToCampaign(seat, e.campaignId))
+          ) {
+            // Unattached / foreign campaign — no walk theater.
+          } else {
+            pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
+          }
+        }
       }
       if (fxSoundEnabled && soundEnabledRef.current) {
         playSound(EVENT_SOUND[e.kind], true);
@@ -450,6 +502,8 @@ function Floor3DSection({
       ) {
         return a;
       }
+      // Fail-closed: unattached LI desk must not walk from a foreign pulse.
+      if (!(seat.assignedCampaignIds ?? []).length) return a;
       return { ...a, status: "working" as const };
     }
     // Non-LI: only pulse when the desk already has real send activity.

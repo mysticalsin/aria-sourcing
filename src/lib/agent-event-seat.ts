@@ -7,7 +7,7 @@
  */
 
 import type { AgentSeat, OutreachMessage } from "@/lib/types";
-import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 
 /** Active LinkedIn Browser Computer seats explicitly attached to this campaign. */
 export function campaignBrowserSeatIds(
@@ -17,7 +17,7 @@ export function campaignBrowserSeatIds(
   return seats
     .filter((seat) => {
       if (seat.status !== "active") return false;
-      if (seat.provider !== "LinkedIn Browser Computer") return false;
+      if (!isBrowserComputerSeat(seat)) return false;
       // Empty assignedCampaignIds is NOT attached (N-agent isolation).
       return seatAttachedToCampaign(seat, campaignId);
     })

@@ -287,6 +287,19 @@ export async function GET(req: NextRequest) {
               : [],
           }))
       : undefined;
+    // Workspace-wide durable LI bindings (Floor / Fleet unscoped polls) — same
+    // agent_seats authority as campaignSeats, without inventing campaignSeats:[].
+    const browserSeatBindings = Array.isArray(seats)
+      ? (seats ?? []).map((s) => ({
+          id: s.id,
+          name: s.name,
+          computerId: s.computer_id ?? null,
+          status: s.status,
+          assignedCampaignIds: Array.isArray(s.assigned_campaign_ids)
+            ? s.assigned_campaign_ids.filter((id: unknown): id is string => typeof id === "string")
+            : [],
+        }))
+      : undefined;
     return NextResponse.json({
       computers: enriched,
       summary: summarizeFleetComputers(
@@ -299,6 +312,8 @@ export async function GET(req: NextRequest) {
       hostCapacity,
       // Omit campaignSeats key when not campaign-scoped — never invent [] from error.
       ...(campaignId && Array.isArray(seats) ? { campaignId, campaignSeats } : {}),
+      // Omit bindings when seats read failed (already 500 above); present ⇒ authority.
+      ...(Array.isArray(browserSeatBindings) ? { browserSeatBindings } : {}),
     });
   } finally {
     bindComputerSupervisorEndpoint(null);

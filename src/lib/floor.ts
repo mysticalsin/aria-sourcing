@@ -388,5 +388,14 @@ export function agentActivityWithComputers(
       tone: "neutral",
     };
   }
-  return base;
+  // Unknown LI status with live fleet map — fail-closed idle (no hash theater).
+  return {
+    ...base,
+    state: "idle",
+    label: withVm(`VM ${hint.status || "unknown"}`),
+    detail: "Standing by",
+    focusName: null,
+    busy: false,
+    tone: "neutral",
+  };
 }

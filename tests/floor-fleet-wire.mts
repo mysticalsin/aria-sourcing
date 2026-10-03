@@ -183,6 +183,16 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
       !/Idle \/ warming \/ error stay put/.test(floorPage) &&
       floorPage.includes('status: "working" as const'),
   );
+  ok(
+    "floor syncs durable browserSeatBindings into Hermes",
+    floorPage.includes("browserSeatBindings") &&
+      floorPage.includes("isBrowserComputerSeat") &&
+      floorPage.includes("seatAttachedToCampaign"),
+  );
+  ok(
+    "floor LI pulse requires campaign attach on event",
+    /seatAttachedToCampaign\(seat, e\.campaignId\)/.test(floorPage),
+  );
 }
 
 {
