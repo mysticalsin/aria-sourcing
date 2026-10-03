@@ -1160,3 +1160,11 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** allow ensure/reclaim without computerId; pass computerId||undefined into ensureComputer.
 **Status:** fixed (6cbc99a)
 
+## 2026-10-03 — Hermes computerId reclaim drift (orphan / null durable)
+**Severity:** correctness
+**File:** src/lib/fleet-hermes-sync.ts:48
+**Issue:** After reclaim/detach, a login-wall twin becomes `__orphan__` (or durable `computer_id` is cleared) but `fleetHermesComputerPatches` only clears Hermes when another seat owns the id — orphan-only / absent fleet rows leave the stale `seat.computerId`. Campaign Agents durable merge (`campaign-agents-panel.tsx:146`) only writes when durable is non-null, never nulls Hermes. Deploy then passes that stale id into `resolveDurableComputerId` → `reclaimHealthyOrphan` `ensureComputer`s the twin back onto the seat and can return the unhealthy binding.
+**Repro/evidence:** `tests/fleet-hermes-sync.mts:65` asserts `keeps Hermes when only orphan-bound on fleet` (patches.length === 0). Seat A Hermes=`comp_twin`, fleet=`{seatId:__orphan__, computerId:comp_twin}` + durable null → poll leaves Hermes; Deploy reclaims twin.
+**Suggested fix:** Clear Hermes when fleet owner is missing/orphan or durable campaignSeats.computerId is null; flip the locked test.
+**Status:** open
+
