@@ -12,7 +12,7 @@ status: tip-floor-durable-bindings-fly-stale
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip work:** Floor syncs durable `browserSeatBindings`; LI pulse attach-gated; unknown LI status idle
+- **Tip:** `8b7482d` — Floor syncs durable browserSeatBindings; LI pulse attach-gated
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
 - **Goal:** open until Fly tip SHA + LI desks healthy
 
