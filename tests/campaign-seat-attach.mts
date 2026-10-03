@@ -42,7 +42,7 @@ ok(
 );
 
 const backendOnly = {
-  provider: "Email SMTP",
+  provider: "SendGrid" as const,
   linkedinDeliveryBackend: "browser-computer" as const,
   assignedCampaignIds: [] as string[],
 };
