@@ -10,7 +10,7 @@ status: ensure-refuse-orphan-shipped-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (ensure refuse orphan / mint on refuse)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `bebf179` (ensure refuse orphan)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** ensureComputer never claims orphans; resolveDurable mints on no-healthy-orphan; Campaign Agents Deploy uses full fleetRows; Attach gates staleTwin; Floor healthy keeps base (idle stays idle)
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`

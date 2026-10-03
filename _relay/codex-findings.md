@@ -1190,4 +1190,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** `ensureComputer` still claimed `__orphan__` ids (health unchecked). Campaign Agents Deploy passed badge-filtered `computers` (orphans stripped) into `isStaleHermesComputerTwin`, so an orphan-only fleet looked empty → staleTwin false → Hermes login-wall id fed to reclaim. `no-healthy-orphan` then kept that twin id for boot→ensure→claim. Floor idle+healthy forced `sourcing` theater.
 **Repro/evidence:** Deploy with Hermes=orphan twin + filtered computers=[]; reclaim throws no-healthy-orphan; resolve keeps twin; ensure claims.
 **Suggested fix:** ensure refuses all orphan claims; resolve mints on no-healthy-orphan; Deploy uses full fleetRows; floor keeps base state on healthy.
-**Status:** fixed (pending tip SHA)
+**Status:** fixed (bebf179) — ensure refuse orphan; mint on no-healthy-orphan; Deploy full fleet; floor idle+healthy
