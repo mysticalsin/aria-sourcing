@@ -109,6 +109,29 @@ ok("at least one paused (lucas)", roll.paused >= 1);
     sendingHealthy.status === "working",
   );
 
+  // Unattached BC + healthy + real sends must stay idle (no sourcing theater).
+  const unassignedBc = {
+    ...liSeat,
+    id: "seat_li_unassigned_sent",
+    sentToday: 2,
+    assignedCampaignIds: [] as string[],
+  };
+  const unassignedHealthy = seatsToOfficeAgents(
+    [unassignedBc],
+    s,
+    new Map([
+      [unassignedBc.id, { status: "ready", sessionHealthy: true, seatId: unassignedBc.id }],
+    ]),
+  ).find((a) => a.id === unassignedBc.id)!;
+  ok(
+    "unattached BC ready+healthy+sends stays idle (no campaign assigned)",
+    unassignedHealthy.status === "idle",
+  );
+  ok(
+    "unattached BC does not paint working theater",
+    unassignedHealthy.status !== "working",
+  );
+
   // Truly idle desk + healthy session must stay idle (no sourcing theater).
   const idleSeat = { ...liSeat, id: "seat_idle_li_healthy", status: "disabled" as const };
   const idleHealthy = seatsToOfficeAgents(

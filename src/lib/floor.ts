@@ -322,6 +322,18 @@ export function agentActivityWithComputers(
   if (hint.status === "ready" && hint.sessionHealthy === true) {
     // Healthy LinkedIn is ready — not automatic "working". Only real sends
     // (or VM status=busy above) count as working; never keep hash theater.
+    // Unattached BC idle must stay idle even with sentToday (no campaign assign).
+    if (base.detail === "No campaign assigned") {
+      return {
+        ...base,
+        state: "idle",
+        label: withVm("LinkedIn session healthy"),
+        detail: "No campaign assigned",
+        focusName: null,
+        busy: false,
+        tone: "electric",
+      };
+    }
     const realSends = (seat.sentToday ?? 0) > 0;
     if (!realSends) {
       return {

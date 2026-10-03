@@ -62,5 +62,29 @@ ok(
   ),
 );
 
+ok(
+  "Aria draft verb uses allocateOutreach (N>1 safe)",
+  /step\.verb === "draft"[\s\S]*?allocateOutreach\(\{\s*campaignId\s*\}\)/.test(store),
+);
+
+ok(
+  "draftFollowUpFor refuses foreign/unattached resolvedSeatId",
+  /const draftFollowUpFor = useCallback[\s\S]*?resolvedSeatId && \(!seat \|\| !seatAttachedToCampaign\(seat, campaign\.id\)\)/.test(
+    store,
+  ),
+);
+
+ok(
+  "draftRecontactFor refuses foreign/unattached resolvedSeatId",
+  /const draftRecontactFor = useCallback[\s\S]*?resolvedSeatId && \(!seat \|\| !seatAttachedToCampaign\(seat, campaign\.id\)\)/.test(
+    store,
+  ),
+);
+
+ok(
+  "draftReplyResponse gates prior seat with seatAttachedToCampaign",
+  /const draftReplyResponse[\s\S]*?seatAttachedToCampaign\(x,\s*campaign\.id\)/.test(store),
+);
+
 console.log(`RESULT campaign-allocate-approve-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

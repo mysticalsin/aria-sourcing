@@ -19,7 +19,8 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
-import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
+import { campaignBrowserSeatIds } from "@/lib/agent-event-seat";
+import { useActions, useActiveCampaign, useCandidates, useHydrated, useSeats } from "@/lib/store";
 import { corpusServerReadEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
@@ -140,6 +141,7 @@ function CandidatesView() {
   const hydrated = useHydrated();
   const candidates = useCandidates();
   const actions = useActions();
+  const seats = useSeats();
   const activeCampaign = useActiveCampaign();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -345,6 +347,7 @@ function CandidatesView() {
    *  QuickDraft already use, so every draft gets its own distinct
    *  personalizationEvidence from mock-ai.ts (never a shared/spam template) and
    *  lands in the approval queue exactly like a single draft — never sends.
+   *  Attached Browser Computer desks are stamped round-robin (N>1 safe).
    *  Runs in small batches, yielding between them so a big selection (dozens+)
    *  never freezes the store while the Progress meter below reports done/total. */
   async function handleBulkDraftOutreach() {
@@ -355,10 +358,20 @@ function CandidatesView() {
     setDraftingOutreach(true);
     setDraftProgress({ done: 0, total: ids.length });
     let drafted = 0;
+    const deskCursorByCampaign = new Map<string, number>();
     for (let i = 0; i < ids.length; i += DRAFT_BATCH_SIZE) {
       const batch = ids.slice(i, i + DRAFT_BATCH_SIZE);
       for (const id of batch) {
-        if (actions.generateOutreachFor(id)) drafted += 1;
+        const candidate = candidates.find((c) => c.id === id);
+        const campaignId = candidate?.campaignId;
+        const attached = campaignId ? campaignBrowserSeatIds(seats, campaignId) : [];
+        let seatId: string | undefined;
+        if (attached.length > 0 && campaignId) {
+          const cursor = deskCursorByCampaign.get(campaignId) ?? 0;
+          seatId = attached[cursor % attached.length];
+          deskCursorByCampaign.set(campaignId, cursor + 1);
+        }
+        if (actions.generateOutreachFor(id, undefined, undefined, seatId)) drafted += 1;
       }
       setDraftProgress({ done: Math.min(i + DRAFT_BATCH_SIZE, ids.length), total: ids.length });
       await nextTick();

@@ -209,7 +209,6 @@ export type { HermesActions } from "./store/contracts";
 const STORAGE_KEY = "hermes-sourcing:v1";
 
 
-const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
 const ARIA_PERFECT_RATING: StarRating = "TopGun";
 const ARIA_STEP_CANDIDATE_CAP = 10;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -2238,6 +2237,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (mirror generateOutreach*).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Mock is the canonical fallback (and the source of personalization evidence).
@@ -2322,6 +2325,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (mirror generateOutreach*).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Mock is the canonical fallback (and the source of personalization evidence).
@@ -3883,7 +3890,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const priorMaxStep = s.outreach
         .filter((m) => m.candidateId === candidate.id)
         .reduce((max, m) => Math.max(max, m.sequenceStep), 0);
-      const replySeatId = latestOutreachSeatId(s.outreach, candidate.id);
+      const prior = latestOutreachSeatId(s.outreach, candidate.id);
+      const priorSeat = prior
+        ? s.seats.find(
+            (x) =>
+              x.id === prior &&
+              (reply.channel !== "LinkedIn" || isLinkedInAutomaticProvider(x.provider)) &&
+              seatAttachedToCampaign(x, campaign.id),
+          )
+        : undefined;
+      let replySeatId = priorSeat?.id;
+      if (!replySeatId && reply.channel === "LinkedIn") {
+        replySeatId = soleCampaignBrowserSeatId(s.seats, campaign.id);
+        if (!replySeatId && campaignBrowserSeatIds(s.seats, campaign.id).length > 1) {
+          return null;
+        }
+      }
       const msg: OutreachMessage = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, priorMaxStep + 1),
         ...(reply.inboxThreadId ? { inboxThreadId: reply.inboxThreadId } : {}),
@@ -5857,21 +5879,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (step.verb === "draft") {
-            const s = current();
-            const targets = s.candidates
-              .filter((c) => c.campaignId === campaignId)
-              .filter(
-                (c) => !c.complianceFlags.doNotContact && !c.complianceFlags.suppressed && !c.complianceFlags.unsubscribed,
-              )
-              .filter((c) => stageRank(c.stage) < 1)
-              .filter((c) => ARIA_STRONG_RATINGS.includes(c.starRating ?? deriveStarRating(c.matchScore)))
-              .filter((c) => !s.outreach.some((m) => m.candidateId === c.id && m.status === "Needs Approval"))
-              .slice(0, ARIA_STEP_CANDIDATE_CAP);
-            let count = 0;
-            for (const cand of targets) {
-              const msg = await generateOutreachLive(cand.id);
-              if (msg) count += 1;
-            }
+            // Fleet allocate stamps attached campaign desks (N>1 safe) — never
+            // seatless generateOutreachLive (N BC → 0 drafts).
+            const allocation = allocateOutreach({ campaignId });
+            const count = allocation.assignments.length;
             onStep?.(i, "done", {
               count,
               detail: `${count} outreach draft${count === 1 ? "" : "s"} queued for approval`,
@@ -5959,7 +5970,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [current, sourceNextBatch, syntheticSourcingAllowed, generateOutreachLive, draftFollowUpFor, createBookingFor, toggleVivier, generateReport],
+    [current, sourceNextBatch, syntheticSourcingAllowed, allocateOutreach, draftFollowUpFor, createBookingFor, toggleVivier, generateReport],
   );
 
   // "Ask Aria" — first tries to parse the instruction as an Aria Command (see
