@@ -752,6 +752,12 @@ try {
       route.includes("restoreSessionHealthFromDurableAudits"),
     );
     ok(
+      "GET ?campaignId= returns durable campaignSeats from assigned_campaign_ids",
+      route.includes("assigned_campaign_ids") &&
+        route.includes("campaignSeats") &&
+        route.includes("campaignId"),
+    );
+    ok(
       "reclaim persist failure rolls back in-memory claim",
       reclaimBlock.includes("releaseToOrphan") &&
         reclaimBlock.includes("computer_id persist failed"),

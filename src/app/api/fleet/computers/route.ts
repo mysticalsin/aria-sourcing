@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
 
     const { data: seats } = await supabase
       .from("agent_seats")
-      .select("id, name, provider, computer_id, status")
+      .select("id, name, provider, computer_id, status, assigned_campaign_ids")
       .eq("workspace_id", wid)
       .eq("provider", "LinkedIn Browser Computer");
 
@@ -206,11 +206,34 @@ export async function GET(req: NextRequest) {
     }
 
     const hostCapacity = await hostCapacityFromEnv();
+    // Durable campaign↔seat bindings from agent_seats (not Hermes-only theater).
+    // Campaign Agents prefer this when present so N desks match DB after cold load.
+    const campaignSeats = campaignId
+      ? (seats ?? [])
+          .filter((s) => {
+            const assigned = Array.isArray(s.assigned_campaign_ids)
+              ? s.assigned_campaign_ids
+              : [];
+            return assigned.includes(campaignId);
+          })
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            computerId: s.computer_id ?? null,
+            status: s.status,
+            assignedCampaignIds: Array.isArray(s.assigned_campaign_ids)
+              ? s.assigned_campaign_ids.filter((id: unknown): id is string => typeof id === "string")
+              : [],
+          }))
+      : undefined;
     return NextResponse.json({
       computers: enriched,
       summary: summarizeFleetComputers(enriched.filter((c) => c.seatId !== HOST_ORPHAN_SEAT_ID)),
       recentAudits,
       hostCapacity,
+      ...(campaignId
+        ? { campaignId, campaignSeats: campaignSeats ?? [] }
+        : {}),
     });
   } finally {
     bindComputerSupervisorEndpoint(null);

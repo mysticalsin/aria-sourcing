@@ -124,11 +124,52 @@ export function CampaignAgentsPanel({
       const data = (await res.json()) as {
         computers?: FleetComputerRow[];
         recentAudits?: AuditEvent[];
+        campaignSeats?: Array<{
+          id: string;
+          name: string;
+          computerId?: string | null;
+          assignedCampaignIds?: string[];
+        }>;
       };
+      // Durable DB campaign bindings win over Hermes-only attach (cold load / multi-tab).
+      if (Array.isArray(data.campaignSeats)) {
+        const authIds = new Set(data.campaignSeats.map((s) => s.id));
+        for (const row of data.campaignSeats) {
+          const local = seats.find((s) => s.id === row.id);
+          if (!local) continue;
+          const patch: { assignedCampaignIds?: string[]; computerId?: string | null } = {};
+          if (!(local.assignedCampaignIds ?? []).includes(campaignId)) {
+            patch.assignedCampaignIds = Array.from(
+              new Set([...(local.assignedCampaignIds ?? []), campaignId]),
+            );
+          }
+          if (row.computerId && row.computerId !== local.computerId) {
+            patch.computerId = row.computerId;
+          }
+          if (Object.keys(patch).length > 0) {
+            void actions.updateSeat(row.id, patch);
+          }
+        }
+        for (const local of campaignSeats) {
+          if (authIds.has(local.id)) continue;
+          const next = (local.assignedCampaignIds ?? []).filter((id) => id !== campaignId);
+          if (next.length !== (local.assignedCampaignIds ?? []).length) {
+            void actions.updateSeat(local.id, { assignedCampaignIds: next });
+          }
+        }
+      }
       const seatIds = new Set(campaignSeats.map((s) => s.id));
+      if (Array.isArray(data.campaignSeats)) {
+        for (const row of data.campaignSeats) seatIds.add(row.id);
+      }
       const computerIds = new Set(
         campaignSeats.map((s) => s.computerId).filter(Boolean) as string[],
       );
+      if (Array.isArray(data.campaignSeats)) {
+        for (const row of data.campaignSeats) {
+          if (row.computerId) computerIds.add(row.computerId);
+        }
+      }
       // Seat-owned rows only — never ingest __orphan__ / foreign VMs into
       // campaign badges or ops (Hermes twin after reclaim must not inflate counts).
       const rows = (data.computers ?? []).filter((c) => {
@@ -137,7 +178,9 @@ export function CampaignAgentsPanel({
       });
       setComputers(
         rows.map((c) => {
-          const seat = campaignSeats.find((s) => s.id === c.seatId);
+          const seat =
+            campaignSeats.find((s) => s.id === c.seatId) ||
+            data.campaignSeats?.find((s) => s.id === c.seatId);
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
@@ -160,7 +203,7 @@ export function CampaignAgentsPanel({
     } finally {
       setLoading(false);
     }
-  }, [actions, campaignSeats, campaignId]);
+  }, [actions, campaignSeats, campaignId, seats]);
 
   React.useEffect(() => {
     void refresh();

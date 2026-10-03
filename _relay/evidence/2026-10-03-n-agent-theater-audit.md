@@ -12,7 +12,8 @@
 
 1. ~~Process-local supervisor singleton (`globalThis`)~~ ✅
 2. ~~Durable session health restore from `computer_audits` within TTL~~ ✅
-3. Owner Fly tip deploy → `/api/ready` tip SHA + `agentFrameworks:true`
+3. ~~Fleet GET `campaignSeats` from durable `assigned_campaign_ids`~~ ✅
+4. Owner Fly tip deploy → `/api/ready` tip SHA + `agentFrameworks:true`
 4. Operator Take→login→Release → live `sessionHealthy:true` within TTL
 
 ## Production blockers (unchanged)
