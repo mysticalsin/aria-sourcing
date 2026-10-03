@@ -10,7 +10,7 @@ status: floor-rollup-honest-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (pending floor commit)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `80160d6`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** FE↔BE↔Floor rollup now matches overlays; Floor copy is healthy/unverified (not bound≠live theater)
 - **Agent Reach:** slices 1–3.7 ✅; Jina key local-only
