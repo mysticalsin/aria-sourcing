@@ -151,9 +151,11 @@ export default function FleetComputerViewportPage() {
   const ready = Boolean(computer && computer.status !== "stopped" && computer.status !== "error");
   const liveUrl = computer?.viewUrl || computer?.remoteUrl || null;
   const seatId = (computer?.seatId ?? "").trim();
-  const unboundOrphan = !seatId || seatId === "__orphan__";
+  // Loading (computer==null) is not unbound theater — wait for fleet truth.
+  const unboundOrphan = computer != null && (!seatId || seatId === "__orphan__");
   // Orphan / empty seat must not stream or mutate — reclaim/bind first.
-  const canDrive = !unboundOrphan;
+  // Also gate Start/Take until the first fleet poll lands.
+  const canDrive = computer != null && !unboundOrphan;
   const streamUrl = canDrive ? liveUrl : null;
 
   React.useEffect(() => {

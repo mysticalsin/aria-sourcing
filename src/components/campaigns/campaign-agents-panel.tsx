@@ -180,13 +180,18 @@ export function CampaignAgentsPanel({
       if (Array.isArray(data.campaignSeats)) {
         setDurableSeats(data.campaignSeats);
         // Append durable-only desks + patch attach locally (Floor/Fleet same path).
-        actions.ingestDurableBrowserBindings(
-          data.browserSeatBindings ?? data.campaignSeats,
-        );
+        const durableBindings = data.browserSeatBindings ?? data.campaignSeats;
+        actions.ingestDurableBrowserBindings(durableBindings);
         const authIds = new Set(data.campaignSeats.map((s) => s.id));
-        // Detach Hermes-only attaches not in durable authority (server write).
+        const durableById = new Map(
+          (Array.isArray(durableBindings) ? durableBindings : []).map((b) => [b.id, b] as const),
+        );
+        // Hermes-only attaches not in durable campaignSeats for this campaign:
+        // if durable bindings exist for the seat, ingest already applied them —
+        // never PATCH a Hermes-derived assigned list (LWW can wipe other campaigns).
         for (const local of hermesNow) {
           if (authIds.has(local.id)) continue;
+          if (durableById.has(local.id)) continue;
           const next = (local.assignedCampaignIds ?? []).filter((id) => id !== campaignId);
           if (next.length !== (local.assignedCampaignIds ?? []).length) {
             void actions.updateSeat(local.id, { assignedCampaignIds: next });

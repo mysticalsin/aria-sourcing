@@ -1302,3 +1302,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Floor clear patch in flight → reclaim persists Z → late PATCH null → Floor unbound.
 **Suggested fix:** applyFleetHermesComputerPatches local-only; never updateSeat computerId from poll.
 **Status:** fixed (tip #148)
+
+## 2026-10-03 — Agents detach LWW wipe + viewport loading unbound theater
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-agents-panel.tsx:188; src/app/fleet/computers/[computerId]/viewport/page.tsx:154
+**Issue:** Hermes-derived detach PATCH could clear other-campaign assignedCampaignIds; viewport showed unbound reclaim UI while computer still loading.
+**Repro/evidence:** Seat durable [B], Hermes [A] on Agents A poll → PATCH []; open bound viewport → first paint Unbound host VM.
+**Suggested fix:** skip detach when durableById.has(seat); unboundOrphan requires computer!=null.
+**Status:** fixed (tip #150)
