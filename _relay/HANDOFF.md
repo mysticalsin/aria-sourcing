@@ -12,7 +12,7 @@ status: tip-fleet-li-durable-wire-fly-stale
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip work:** shared `hermesPatchesFromBrowserSeatBindings`; Fleet/health strip sync; LI login passes campaignId when attached
+- **Tip:** `9f5cc25` — Fleet/LI durable bindings sync + login campaignId gate
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
 - **Goal:** open until Fly tip SHA + LI desks healthy
 
