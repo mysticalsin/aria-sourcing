@@ -643,8 +643,108 @@ try {
     ok("claimed clears priorSeatId", same.computer.priorSeatId == null);
   }
 
+  // Deploy race: Hermes still holds orphan twin id; probe null/false — never seat-bind.
+  {
+    const race = new ComputerSupervisor();
+    const twin = race.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_login_wall_twin",
+    });
+    twin.remoteUrl = "http://127.0.0.1:9201";
+    twin.status = "ready";
+    twin.priorSeatId = "seat-aisha";
+    twin.sessionHealthy = null;
+    race.probeSession = async (computerId: string) => {
+      const rec = race.get(computerId)!;
+      rec.sessionHealthy = null; // never invent healthy
+      return rec;
+    };
+    let threw: string | null = null;
+    try {
+      await race.reclaimHealthyOrphan({
+        workspaceId: "ws",
+        seatId: "seat-aisha",
+        computerId: "comp_login_wall_twin",
+      });
+    } catch (err) {
+      threw = err instanceof Error ? err.message : String(err);
+    }
+    ok(
+      "unhealthy orphan twin throws no-healthy-orphan (not seat-bound)",
+      threw === "no-healthy-orphan",
+    );
+    ok(
+      "unhealthy twin stays __orphan__ after reclaim refuse",
+      race.get("comp_login_wall_twin")?.seatId === HOST_ORPHAN_SEAT_ID,
+    );
+    ok(
+      "unhealthy twin sessionHealthy stays null",
+      race.get("comp_login_wall_twin")?.sessionHealthy == null,
+    );
+  }
 
+  // Foreign priorSeatId passed as existingComputerId must not claim via ensure path.
+  {
+    const foreignPrior = new ComputerSupervisor();
+    const stolen = foreignPrior.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_other_desk_cookies",
+    });
+    stolen.remoteUrl = "http://127.0.0.1:9202";
+    stolen.status = "ready";
+    stolen.priorSeatId = "seat-other";
+    foreignPrior.probeSession = async (computerId: string) => {
+      const rec = foreignPrior.get(computerId)!;
+      rec.sessionHealthy = true; // healthy but foreign — still refuse
+      return rec;
+    };
+    let threw: string | null = null;
+    try {
+      await foreignPrior.reclaimHealthyOrphan({
+        workspaceId: "ws",
+        seatId: "seat-tony",
+        computerId: "comp_other_desk_cookies",
+      });
+    } catch (err) {
+      threw = err instanceof Error ? err.message : String(err);
+    }
+    ok(
+      "foreign priorSeatId as currentId throws no-healthy-orphan",
+      threw === "no-healthy-orphan",
+    );
+    ok(
+      "foreign prior orphan never claimed onto seat-tony",
+      foreignPrior.get("comp_other_desk_cookies")?.seatId === HOST_ORPHAN_SEAT_ID,
+    );
+  }
 
+  // Same-prior healthy orphan twin via currentId: probe then claim (not ensure-first).
+  {
+    const sameTwin = new ComputerSupervisor();
+    const twin = sameTwin.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_same_prior_healthy",
+    });
+    twin.remoteUrl = "http://127.0.0.1:9203";
+    twin.status = "ready";
+    twin.priorSeatId = "seat-tony";
+    sameTwin.probeSession = async (computerId: string) => {
+      const rec = sameTwin.get(computerId)!;
+      rec.sessionHealthy = computerId === "comp_same_prior_healthy";
+      return rec;
+    };
+    const claimed = await sameTwin.reclaimHealthyOrphan({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_same_prior_healthy",
+    });
+    ok("same-prior healthy twin reclaimed via probe-before-claim", claimed.reclaimed === true);
+    ok("same-prior healthy twin bound to seat", claimed.computer.seatId === "seat-tony");
+    ok("same-prior claim cleared priorSeatId", claimed.computer.priorSeatId == null);
+  }
 
   // Manual Claude-in-Chrome mode must BE-refuse linkedin_send (not localStorage theater).
   {

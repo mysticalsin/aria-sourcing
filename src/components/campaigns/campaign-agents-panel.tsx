@@ -221,9 +221,20 @@ export function CampaignAgentsPanel({
     setBusyId(seat.id);
     setError(null);
     try {
+      const hermesId = (seat.computerId ?? "").trim();
+      const fleetRow = hermesId
+        ? computers.find((c) => c.computerId === hermesId)
+        : undefined;
+      // Omit stale twin when fleet shows orphan/absent/foreign — never feed
+      // login-wall computerId into reclaim before Hermes poll clears it.
+      const staleTwin =
+        Boolean(hermesId) &&
+        (!fleetRow ||
+          fleetRow.seatId === "__orphan__" ||
+          (Boolean(fleetRow.seatId) && fleetRow.seatId !== seat.id));
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
-        existingComputerId: seat.computerId,
+        existingComputerId: staleTwin ? null : seat.computerId,
       });
       const ok = await actions.updateSeat(seat.id, { computerId });
       if (!ok) {

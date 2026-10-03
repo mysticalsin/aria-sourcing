@@ -1,19 +1,17 @@
 {
-  "at": "2026-10-03T01:41:20Z",
-  "prove": [
-    {
-      "status": {
-        "enabled": true,
-        "apiKeyConfigured": true,
-        "builtin": "r.jina.ai + ARIA_JINA_API_KEY (Bearer or X-API-Key) over SSRF-guarded HTTPS"
-      }
-    },
-    {
-      "ok": true,
-      "via": "agent-reach-jina",
-      "title": "Tony Walteur - Amaris Consulting | LinkedIn",
-      "textBytes": 8000
-    }
+  "at": "2026-10-03T01:59:00Z",
+  "authStyle": "X-API-Key",
+  "keyKind": "portal apikey_… (Reader)",
+  "prove": {
+    "httpStatus": 200,
+    "bodyChars": 113155,
+    "hasLinkedInSignal": true,
+    "target": "https://www.linkedin.com/in/tonyw/"
+  },
+  "bestAriaUses": [
+    "Authenticated Jina Reader enrichment of public LinkedIn /in profiles (higher limits vs keyless)",
+    "Agent Reach status doctor apiKeyConfigured=true for NightTrek / source loop",
+    "NOT s.jina.ai Search — portal apikey_ tokens are Reader-only; Search needs jina_ Bearer"
   ],
-  "note": "ARIA_JINA_API_KEY set in Fly/Vercel/local env only \u2014 never committed"
+  "note": "ARIA_JINA_API_KEY lives in .env.local / Fly secrets only — never committed"
 }

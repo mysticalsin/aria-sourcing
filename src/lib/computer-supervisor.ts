@@ -666,6 +666,9 @@ export class ComputerSupervisor {
    * orphans and claim a healthy durable profile that is safe for this seat.
    * Auto-claim only: never-bound host imports, or orphans previously detached
    * from this same seat. Never steals another seat's LinkedIn cookies / invents healthy.
+   *
+   * Never ensure→claimOrphan an orphan id before proving sessionHealthy===true
+   * (login-wall twin race). Probe in place; claim only when healthy + prior ok.
    */
   async reclaimHealthyOrphan(opts: {
     workspaceId: string;
@@ -677,21 +680,64 @@ export class ComputerSupervisor {
 
     const currentId = typeof opts.computerId === "string" ? opts.computerId.trim() : "";
     if (currentId) {
-      try {
-        this.ensureComputer({
-          workspaceId: opts.workspaceId,
-          seatId: opts.seatId,
-          computerId: currentId,
-          campaignId: opts.campaignId,
-        });
-        const current = await this.probeSession(currentId);
-        if (current.sessionHealthy === true) {
-          return { computer: current, reclaimed: false };
+      const existing = this.computers.get(currentId);
+      if (existing && existing.workspaceId === opts.workspaceId) {
+        if (existing.seatId === opts.seatId) {
+          try {
+            const current = await this.probeSession(currentId);
+            if (current.sessionHealthy === true) {
+              return { computer: current, reclaimed: false };
+            }
+          } catch {
+            /* fall through to orphan search */
+          }
+        } else if (existing.seatId === HOST_ORPHAN_SEAT_ID) {
+          // Orphan twin — probe BEFORE claimOrphan (never ensure-claim unhealthy).
+          const prior = (existing.priorSeatId ?? "").trim();
+          const priorOk = !prior || prior === opts.seatId;
+          const seatOwner = [...this.computers.values()].find(
+            (c) =>
+              c.workspaceId === opts.workspaceId &&
+              c.seatId === opts.seatId &&
+              c.seatId !== HOST_ORPHAN_SEAT_ID &&
+              c.computerId !== currentId,
+          );
+          if (priorOk && !seatOwner) {
+            try {
+              const probed = await this.probeSession(currentId);
+              if (probed.sessionHealthy === true) {
+                const claimed = this.claimOrphan(currentId, {
+                  workspaceId: opts.workspaceId,
+                  seatId: opts.seatId,
+                  campaignId: opts.campaignId,
+                });
+                return { computer: claimed, reclaimed: true };
+              }
+            } catch {
+              /* leave orphan, fall through */
+            }
+          }
+          // foreign prior / blocked / unhealthy — leave __orphan__, fall through
         }
-      } catch (err) {
-        // Foreign / blocked id — fall through to orphan reclaim (do not keep another seat's VM).
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/ownership-mismatch|orphan-claim-blocked/.test(msg)) throw err;
+        // else: belongs to another real seat — do not steal; fall through
+      } else if (!existing) {
+        // Not in memory after hydrate — may be a stopped DB id. ensureComputer
+        // mints/binds only when missing; if it were orphan it would be in map.
+        try {
+          const ensured = this.ensureComputer({
+            workspaceId: opts.workspaceId,
+            seatId: opts.seatId,
+            computerId: currentId,
+            campaignId: opts.campaignId,
+          });
+          const current = await this.probeSession(ensured.computerId);
+          if (current.sessionHealthy === true) {
+            return { computer: current, reclaimed: false };
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/ownership-mismatch|orphan-claim-blocked/.test(msg)) throw err;
+        }
       }
     }
 
@@ -717,11 +763,12 @@ export class ComputerSupervisor {
 
     if (currentId) {
       const fallback = this.computers.get(currentId);
-      // Only keep the stored id when it is still ours (or unbound orphan we already probed unhealthy).
+      // Keep only when still ours. Never return an unhealthy __orphan__ twin as
+      // if it were seat-bound (that re-feeds Deploy → ensure → login wall).
       if (
         fallback &&
         fallback.workspaceId === opts.workspaceId &&
-        (fallback.seatId === opts.seatId || fallback.seatId === HOST_ORPHAN_SEAT_ID)
+        fallback.seatId === opts.seatId
       ) {
         return { computer: fallback, reclaimed: false };
       }
