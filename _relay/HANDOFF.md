@@ -1,77 +1,60 @@
 ---
 project: MSourcing / ARIA
-shift: 224
+shift: 225
 agent: cursor-cloud
-updated: 2026-10-03T00:52Z
-status: tip-ci-security-followup-and-agent-reach-23
+updated: 2026-10-03T01:05Z
+status: tip-ci-db-privs-and-graphify-contract-pushed
 ---
 
-# Handoff — Shift 224
+# Handoff — Shift 225
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148 (still draft)
-- **Tip:** `39bea5783bd594868a4918871ab3033f8799689a`
-- **CI follow-up commits:** `692997ad` (secrets/schema/images), `ea248640` (npm-strip RUN split)
-- **Also on tip:** `5a303659` Agent Reach slices 2–3 (MCP sidecar + INTERESTED→booking propose)
-- **Local proof on the CI follow-up:** gitleaks 8.30.1 dir + `git --all` = 0;
-  `npm audit --audit-level=high` = 0; `npx tsc --noEmit` + `tsc -p tsconfig.tests.json` = 0;
-  `npm test` = 0 before the Agent Reach push; infra-release-contract 135/0
-- **GitHub CI:** not terminal on the new tip. Do not call Secret scan /
-  Database security / Production image supply chain / Release gate green
-  until GitHub says so.
-- **Prior tip `6e4f7d2` (run 37081553228):** Quality SUCCESS, Dependency
-  audit SUCCESS, CodeQL SUCCESS, Analyze SUCCESS. Failed: Secret scan
-  (3 leaks), Database security (legacy table set), Production image
-  supply chain (libpcre2 HIGH), Release gate aggregate.
-- **Fly live:** still build `21a42e7…`, `agentFrameworks:false`, computers 0 VMs;
-  no deploy token. This shift did not touch Fly.
+- **Tip:** `35a1ae64a908a3541978ea21955cc39916be7ab5`
+- **GitHub on `e27e9487` (run 37083790302):** Secret scan SUCCESS, Dependency
+  audit SUCCESS, Quality SUCCESS, CodeQL/Analyze SUCCESS. Failed: Database
+  security (`claim_contact` service_role EXECUTE), Production image supply
+  chain (graphify `assertNotIn("apt-get")` during image build — libpcre2
+  *was* upgraded), Release gate aggregate.
+- **This tip:** not judged yet. Do not call those jobs green until GitHub says so.
+- **Fly:** untouched
 
 ## Done this shift
 
-1. Added 3 historical gitleaks fingerprints for remaining file:rule:line
-   hits on other commits (no history rewrite)
-2. Synced `expected_tables` + inventory to the CI 98-table dump; added 24
-   post-0054 RPC signatures to `expected_functions`
-3. App + graphify runners: `apt-get upgrade`; keep a dedicated
-   `RUN rm -rf /usr/local/lib/node_modules` (infra-release-contract)
-4. Parallel tip (other agent): Agent Reach MCP sidecar + interest→booking
-   propose trail (`5a303659`)
+1. Migration `0085_claim_contact_authenticated_only.sql` revokes
+   service_role EXECUTE on `claim_contact` and `complete_contact_lease`
+2. Privilege matrix accepts comma-separated roles; dual grants recorded for
+   `profile_has_autopilot` and `upsert_linkedin_inbound_route`
+3. Graphify contract now forbids `apt-get install` only (upgrade stays)
 
 ## Blockers
 
-1. No Docker here — cannot run `test:db-privileges` or Trivy locally.
-   Function-signature string must match `oid::regprocedure` exactly.
-2. No Fly deploy token — cannot complete slice 4 / N-agent production goal
+1. No Docker — cannot re-run `test:db-privileges` or Trivy here
+2. No Fly deploy token
 
 ## Next steps
 
-1. Wait for CI on the tip after this push. If Secret scan / Dependency
-   audit / Quality / CodeQL are green, leave them.
-2. If Database security fails on `legacy public function signatures`,
-   replace `expected_functions` with the exception's actual dump — not Fly.
-3. If Production image supply chain is still red, read the new Trivy JSON.
+1. Wait for CI on `35a1ae64`. Leave green jobs alone.
+2. If Database security fails again, read the next privilege exception —
+   more dual grants may still be exclusive in the matrix.
+3. If supply chain is still red, read the Trivy JSON (app pcre2 was already
+   patched on e27e; graphify should now reach the scan).
 4. Do not mark PR 148 ready, merge, or deploy
-5. Owner Fly redeploy + operator Take→login→Release remain human-owned
 
 ## Decisions made (don't relitigate)
 
 - Never invent `sessionHealthy=true`
 - Agent Reach = eyes (Jina/optional MCP); OpenBot = hands
 - Booking propose ≠ silent createBookingFor
-- MCP sidecar optional; Jina remains zero-config fallback
-- `linkedin_send` requires probed-healthy when `mockSend=false`
-- Send window half-open `[start,end)` — all-day fixtures use `endHour: 24`
-- `@types/X` satisfies type-only import of `X` for declared-deps audit
 - Gitleaks exceptions stay fingerprint- or line-specific
-- Reviewed schema fingerprint tracks the post-migration dump, not Fly
-- `linkedin*Provider: SourcingProvider` trips gitleaks — keep
-  `satisfies SourcingProvider` on a following line
+- Reviewed schema fingerprint tracks the post-migration dump (`--no-privileges`), not Fly
+- `claim_contact` / `complete_contact_lease` are authenticated-only
+- Graphify image may `apt-get upgrade` for OS CVEs; must not `apt-get install`
 
 ## Watch out
 
-- Quality fails closed on first suite failure; infra-release-contract
-  requires a dedicated `RUN rm -rf /usr/local/lib/node_modules` in the
-  production runner stage
-- Do not mark N-agent goal complete until Fly tip SHA + LI healthy verified
+- Privilege matrix is exclusive per row unless the role cell is a comma list
+- Quality / infra-release-contract still require a dedicated
+  `RUN rm -rf /usr/local/lib/node_modules` in Dockerfile.prod
