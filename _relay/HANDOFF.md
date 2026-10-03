@@ -1,49 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 340
+shift: 341
 agent: cursor-cloud
-updated: 2026-10-03T20:08Z
-status: go-live-all-N-fixed-awaiting-ci-and-owner-approve
+updated: 2026-10-03T20:13Z
+status: n-agent-1n-ui-closed-awaiting-ci-and-owner-approve
 ---
 
-# Handoff — Shift 340
+# Handoff — Shift 341
 
 ## Current state
 
-- **#150 tip:** `5197af5` — go-live + fleet-health-strip require all attached N desks (no 1/N green)
-- **#148 tip:** `e6f5fe5` — same
-- Prior on tip: store-contracts 131, setup-guide campaignId soft-nav assert
-- Local: campaign-go-live 32, floor-fleet-wire 34, linkedin-connections 58, store-contracts 11
-- Tip FE↔BE wiring: NONE; go-live N-subset theater: **fixed**
-- **#150:** squash auto-merge on; `REVIEW_REQUIRED`
-- **Fly:** `21a42e7…` / `0084` — proof fails tip SHA + 0087
+- **#150 tip:** `23fb25c` — go-live all-N + setup-guide/stack/agents 1/N healthy UI closed
+- **#148 tip:** `d3a0108` — same
+- Local: go-live 32, soft-nav 26, floor-wire 34, linkedin-connections 59, store-contracts 11
+- Send path stays per-seat (intentional — not campaign-wide evaluateCampaignGoLive on every send)
+- **#150:** squash auto-merge; `REVIEW_REQUIRED`
+- **Fly:** `21a42e7…` / `0084` — proof fails tip + 0087
 
 ## Done this shift
 
-1. Fixed go-live attach/live/session denom = attached (not withComputer subset)
-2. Fleet health strip success only when liveReady === seats
-3. Tests for 1/N partial bind + strip tone drift
+1. Go-live/health-strip all attached N
+2. Setup-guide take-control, AriaBot stack Ready, Agents healthy badge — every desk
 
 ## Blockers
 
 1. Owner approve #150 → squash → dispatch + proof + LI healthy
-2. Await Quality + Release on `5197af5` / `e6f5fe5`
+2. Await Quality + Release on `23fb25c` / `d3a0108`
 
 ## Next steps
 
 1. Confirm Quality + Release green
-2. Owner approve #150 + Fly Deploy Aria Mantu dispatch
+2. Owner approve #150 + Fly Deploy Aria Mantu
 3. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 4. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
 ## Decisions made (don't relitigate)
 
-- Probe candidates need remoteUrl; rotate by sessionProbedAt
-- Durable Map conflicts adopt; poll Hermes local-only; detach skips durableById
-- Never invent sessionHealthy=true
-- Ignore Vercel-only CI when Quality/Release pass
-- N-agent deploy does **not** require `agentFrameworks:true`
-- Go-live / health-strip: all attached N desks, never 1/N subset green
+- Probe remoteUrl + sessionProbedAt rotate; durable adopt; hermes local-only
+- Never invent sessionHealthy=true; ignore Vercel-only when Quality/Release pass
+- N-agent deploy does not require agentFrameworks:true
+- All-N for go-live/strip/setup/stack/agents badges; send remains per-seat fail-closed
 
 ## Watch out
 
