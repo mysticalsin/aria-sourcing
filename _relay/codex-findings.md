@@ -1278,3 +1278,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Soft-nav A→B keeps A durable count; Fleet Hermes patch remounts refresh while in-flight fail clears computers.
 **Suggested fix:** seatsRef+pollGeneration; durableAgentAuthority stamped by campaignId.
 **Status:** fixed (tip #150)
+
+## 2026-10-03 — ownership-mismatch re-poisons durable bindings
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:205-301
+**Issue:** After clearing a poisoned computer_id FK in DB, campaignSeats/browserSeatBindings still emitted the old computerId from the seats snapshot, so Floor ingest rewrote the foreign VM onto Hermes.
+**Repro/evidence:** Seat A FK = B's computer → GET clears A → bindings still have B's id → ingestDurableBrowserBindings re-poisons.
+**Suggested fix:** clearedPoisonedComputerIds → force null in binding maps.
+**Status:** fixed (tip #148)

@@ -185,6 +185,7 @@ export async function GET(req: NextRequest) {
     }
 
     const computers = [];
+    const clearedPoisonedComputerIds = new Set<string>();
     for (const seat of seats ?? []) {
       // GET is list/hydrate only — never mint. Unbound seats stay unbound until
       // Deploy / Login / POST ensure assigns a durable computer_id. Concurrent
@@ -208,6 +209,9 @@ export async function GET(req: NextRequest) {
           .eq("id", seat.id)
           .eq("workspace_id", wid);
         if (error) console.warn("clear poisoned computer_id failed", error.message);
+        // Even if DB clear fails, never re-emit the poisoned id into durable bindings —
+        // Floor/Fleet ingest would write the foreign computerId back onto Hermes.
+        clearedPoisonedComputerIds.add(seat.id);
         continue;
       }
       if (!rec) continue;
@@ -280,7 +284,8 @@ export async function GET(req: NextRequest) {
           .map((s) => ({
             id: s.id,
             name: s.name,
-            computerId: s.computer_id ?? null,
+            // Ownership-mismatch clears must not re-poison ingest with the old FK.
+            computerId: clearedPoisonedComputerIds.has(s.id) ? null : (s.computer_id ?? null),
             status: s.status,
             assignedCampaignIds: Array.isArray(s.assigned_campaign_ids)
               ? s.assigned_campaign_ids.filter((id: unknown): id is string => typeof id === "string")
@@ -293,7 +298,7 @@ export async function GET(req: NextRequest) {
       ? (seats ?? []).map((s) => ({
           id: s.id,
           name: s.name,
-          computerId: s.computer_id ?? null,
+          computerId: clearedPoisonedComputerIds.has(s.id) ? null : (s.computer_id ?? null),
           status: s.status,
           assignedCampaignIds: Array.isArray(s.assigned_campaign_ids)
             ? s.assigned_campaign_ids.filter((id: unknown): id is string => typeof id === "string")
