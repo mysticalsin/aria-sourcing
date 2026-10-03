@@ -1,22 +1,23 @@
 ---
 project: MSourcing / ARIA
-shift: 331
+shift: 332
 agent: cursor-cloud
-updated: 2026-10-03T19:21Z
-status: detach-viewport-on-148-and-150-fly-blocks-goal
+updated: 2026-10-03T19:25Z
+status: orphan-hydrate-adopt-fixed-fly-blocks-goal
 ---
 
-# Handoff — Shift 331
+# Handoff — Shift 332
 
 ## Current state
 
-- **#148 + #150:** Agents detach skips durable-bound seats; viewport loading not unbound theater
-- **#150:** squash auto-merge on; owner approve still required
+- **#148 tip:** GET/POST hydrate treat `computer-orphan-claim-blocked` like ownership-mismatch → adoptDurable (no fleet 500)
+- **#150:** port next; owner approve still required
 - **Fly:** `21a42e7…` / `0084` — goal open until tip SHA + 0087 + LI desks healthy
 
 ## Done this shift
 
-1. Ported detach LWW + viewport loading fixes onto #148
+1. Fixed multi-instance orphan Map vs durable FK: adoptDurable instead of rethrow 500
+2. computer-supervisor 134/134
 
 ## Blockers
 
@@ -24,14 +25,14 @@ status: detach-viewport-on-148-and-150-fly-blocks-goal
 
 ## Next steps
 
-1. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
-2. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+1. Port onto #150
+2. Owner approve + dispatch + `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 3. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
 ## Decisions made (don't relitigate)
 
-- Poll Hermes computerId local-only; detach PATCH never from Hermes when durable bindings exist
-- Soft-nav / seatsRef / adoptDurable stack
+- Durable Map conflicts (ownership-mismatch OR orphan-claim-blocked) adopt when no other DB seat claims id
+- Poll Hermes computerId local-only; detach skips durableById
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - N-agent deploy does **not** require `agentFrameworks:true`

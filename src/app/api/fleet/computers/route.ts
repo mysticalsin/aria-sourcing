@@ -198,10 +198,14 @@ export async function GET(req: NextRequest) {
           computerId: seat.computer_id,
         });
       } catch (err) {
-        // Poisoned FK: seat points at another seat's computer. Clear it — do not
-        // remint on read (that reintroduced twin ids across pollers).
+        // Map conflict vs durable FK: ownership-mismatch (other seat) OR
+        // orphan-claim-blocked (host import as __orphan__). Do not 500 the
+        // whole fleet poll — Floor/Agents would wipe N desks fail-closed.
         const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("computer-ownership-mismatch")) throw err;
+        const durableConflict =
+          msg.includes("computer-ownership-mismatch") ||
+          msg.includes("computer-orphan-claim-blocked");
+        if (!durableConflict) throw err;
         const cid =
           typeof seat.computer_id === "string" ? seat.computer_id.trim() : "";
         const claimedByOtherSeat = Boolean(
@@ -211,8 +215,7 @@ export async function GET(req: NextRequest) {
             ),
         );
         if (!claimedByOtherSeat && cid) {
-          // Stale in-memory Map (other instance) — adopt durable DB binding; do not
-          // null the rightful FK or Floor desks go unbound until Redeploy.
+          // Stale/orphan Map — adopt durable DB binding; do not null the rightful FK.
           try {
             rec = defaultComputerSupervisor.adoptDurableComputerBinding({
               workspaceId: String(wid),
@@ -235,7 +238,7 @@ export async function GET(req: NextRequest) {
             continue;
           }
         } else {
-          console.warn("computer_id ownership mismatch; clearing poisoned FK", seat.id, msg);
+          console.warn("computer_id Map conflict; clearing poisoned FK", seat.id, msg);
           const { error } = await supabase
             .from("agent_seats")
             .update({ computer_id: null })
@@ -420,9 +423,30 @@ async function hydrateWorkspaceSeatBindings(
         computerId: seat.computer_id,
       });
     } catch (err) {
-      // Poisoned FK — skip; do not clear here (GET owns clear-on-read).
+      // Map conflict vs durable FK — adopt when possible; do not 500 POST ensure/reclaim.
+      // GET owns clear-on-read when another DB seat claims the id.
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("computer-ownership-mismatch")) throw err;
+      const durableConflict =
+        msg.includes("computer-ownership-mismatch") ||
+        msg.includes("computer-orphan-claim-blocked");
+      if (!durableConflict) throw err;
+      const cid =
+        typeof seat.computer_id === "string" ? seat.computer_id.trim() : "";
+      const claimedByOtherSeat = Boolean(
+        cid &&
+          (seats ?? []).some((s) => s.id !== seat.id && s.computer_id === cid),
+      );
+      if (!claimedByOtherSeat && cid) {
+        try {
+          defaultComputerSupervisor.adoptDurableComputerBinding({
+            workspaceId,
+            seatId: seat.id,
+            computerId: cid,
+          });
+        } catch {
+          /* skip — GET owns clear-on-read */
+        }
+      }
     }
   }
 }
