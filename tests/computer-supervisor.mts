@@ -1227,6 +1227,40 @@ try {
       "refreshSessionHealthForList rotated onto null desks (not first-5 starve)",
       earlyStillOld.length === 5,
     );
+    // Unprobeable ready desks (no remoteUrl) must not consume never-probed budget.
+    for (let i = 0; i < 5; i++) {
+      const dead = rotate.ensureComputer({
+        workspaceId: "ws-rotate",
+        seatId: `seat-dead-${i}`,
+        computerId: `comp_dead_${i}`,
+      });
+      dead.status = "ready";
+      dead.remoteUrl = null;
+      dead.sessionHealthy = null;
+      dead.sessionProbedAt = null;
+    }
+    const real = rotate.get("comp_rot_0")!;
+    real.sessionHealthy = false;
+    real.sessionProbedAt = old;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("session-probe")) {
+        return new Response(JSON.stringify({ healthy: true, detail: "ok" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ computers: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    await rotate.refreshSessionHealthForList("ws-rotate", { limit: 5 });
+    globalThis.fetch = prevFetch;
+    ok(
+      "refreshSessionHealthForList skips no-remoteUrl desks (does not starve HTTP probes)",
+      rotate.get("comp_rot_0")?.sessionHealthy === true,
+    );
     delete process.env.COMPUTER_SUPERVISOR_URL;
     delete process.env.COMPUTER_SUPERVISOR_TOKEN;
     delete process.env.OPENBOT_COMPUTER_TOKEN;
