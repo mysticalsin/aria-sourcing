@@ -141,9 +141,8 @@ function createHarness(options: {
   if (state.campaigns[0]) {
     state.campaigns[0] = { ...state.campaigns[0], status: "Sourcing" };
   }
-  // Sourcing unit tests assert a single source pulse. campaignBrowserSeatIds
-  // treats assignedCampaignIds=[] as "available to every campaign", so detach
-  // LI Browser desks by assigning a foreign campaign id (not the seed ones).
+  // Sourcing unit tests assert a single source pulse. Detach LI Browser desks
+  // (empty or foreign assign) so campaignBrowserSeatIds does not stamp N pulses.
   state = {
     ...state,
     seats: state.seats.map((seat) =>

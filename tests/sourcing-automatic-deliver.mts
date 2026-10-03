@@ -88,7 +88,7 @@ ok(
   )?.id === "camp",
 );
 ok(
-  "pickLiveLinkedInSendSeat falls back to unscoped Browser Computer",
+  "pickLiveLinkedInSendSeat fails closed on unscoped Browser Computer (empty ≠ attached)",
   pickLiveLinkedInSendSeat(
     [
       seat({ id: "unscoped", provider: "LinkedIn Browser Computer", assignedCampaignIds: [] }),
@@ -99,7 +99,24 @@ ok(
       }),
     ],
     "camp_seed_backend",
-  )?.id === "unscoped",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat does not fall through to Vendor when live BC exists",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({ id: "unscoped_bc", provider: "LinkedIn Browser Computer", assignedCampaignIds: [] }),
+      seat({ id: "unscoped_vendor", provider: "LinkedIn Vendor API", assignedCampaignIds: [] }),
+    ],
+    "camp_seed_backend",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat may use unscoped Vendor API when no live BC",
+  pickLiveLinkedInSendSeat(
+    [seat({ id: "unscoped_vendor", provider: "LinkedIn Vendor API", assignedCampaignIds: [] })],
+    "camp_seed_backend",
+  )?.id === "unscoped_vendor",
 );
 ok(
   "pickLiveLinkedInSendSeat fails closed on N-way campaign-rank tie",

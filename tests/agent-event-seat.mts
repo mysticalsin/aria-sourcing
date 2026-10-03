@@ -31,6 +31,21 @@ const baseSeat = {
     { ...baseSeat, id: "seat_b", provider: "Email" as const },
   ] as unknown as AgentSeat[];
   ok(
+    "unattached sole LI Browser Computer does not claim campaign (empty ≠ attached)",
+    soleCampaignBrowserSeatId(seats, "camp_1") === undefined,
+  );
+}
+
+{
+  const seats = [
+    {
+      ...baseSeat,
+      id: "seat_a",
+      assignedCampaignIds: ["camp_1"],
+    },
+    { ...baseSeat, id: "seat_b", provider: "Email" as const },
+  ] as unknown as AgentSeat[];
+  ok(
     "sole LI Browser Computer seat attributes source",
     soleCampaignBrowserSeatId(seats, "camp_1") === "seat_a",
   );

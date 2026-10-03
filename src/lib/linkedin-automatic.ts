@@ -4,6 +4,7 @@
  */
 
 import type { AgentSeat, Candidate } from "@/lib/types";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 
 /**
  * Providers that may send when deliveryMode is automatic (never assisted-manual).
@@ -46,7 +47,8 @@ export function preferLinkedInAutomaticSeats(
 /**
  * Pick the live seat used for Approve → Send LinkedIn delivery.
  * Prefer Browser Computer seats attached to the campaign (Campaign Agents),
- * then unscoped Browser Computer, then Vendor API with the same campaign bias.
+ * then Vendor API with the same campaign bias (empty Vendor = shared pool).
+ * Browser Computer empty assigned is NOT a fallback — match floor/setup attach.
  * Fail-closed when preferred is missing/unusable or N seats tie at the best rank
  * — never silently retarget another desk's VM/profile.
  */
@@ -68,8 +70,10 @@ export function pickLiveLinkedInSendSeat(
   }
 
   const campaignRank = (seat: AgentSeat): number => {
+    if (campaignId && seatAttachedToCampaign(seat, campaignId)) return 0;
     const assigned = seat.assignedCampaignIds ?? [];
-    if (campaignId && assigned.includes(campaignId)) return 0;
+    // Browser Computer: never treat empty as shared-pool fallback.
+    if (isBrowserComputerSeat(seat)) return 2;
     if (assigned.length === 0) return 1;
     return 2;
   };
@@ -86,6 +90,8 @@ export function pickLiveLinkedInSendSeat(
       best = Math.min(best, campaignRank(live[i]!));
     }
     const winners = live.filter((x) => campaignRank(x) === best);
+    // No campaign-eligible seat at this provider (best is "other campaign" / unattached BC).
+    if (best >= 2) return undefined;
     // Unique winner only — N desks at the same campaign rank must not hash/sort-pick.
     return winners.length === 1 ? winners[0] : undefined;
   };

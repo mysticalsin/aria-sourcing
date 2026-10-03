@@ -178,6 +178,7 @@ import {
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
 import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "./send-pacing";
 import { pickLiveLinkedInSendSeat, preferLinkedInAutomaticSeats, isLinkedInAutomaticProvider } from "./linkedin-automatic";
+import { seatAttachedToCampaign } from "./campaign-seat-attach";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyLearning,
@@ -5266,10 +5267,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Seats with no assignment list stay eligible (shared pool); seats assigned
       // only to other campaigns are excluded.
       const campaignSeats = opts?.campaignId
-        ? activeSeats.filter((seat) => {
-            const assigned = seat.assignedCampaignIds ?? [];
-            return assigned.length === 0 || assigned.includes(opts.campaignId!);
-          })
+        ? activeSeats.filter((seat) => seatAttachedToCampaign(seat, opts.campaignId!))
         : activeSeats;
       const seatPool = campaignSeats.length > 0 ? campaignSeats : activeSeats;
       const orderedSeats =

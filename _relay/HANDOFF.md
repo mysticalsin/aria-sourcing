@@ -1,47 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 265
+shift: 266
 agent: cursor-cloud
-updated: 2026-10-03T06:10Z
-status: tip-ci-green-fly-stale
+updated: 2026-10-03T06:30Z
+status: bc-attach-required-fly-stale
 ---
 
-# Handoff — Shift 265
+# Handoff — Shift 266
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip:** `211a8ee` — floor busy+healthy zero-sends idle; channel pace via get() TTL
-- **Tip CI:** all green (Quality, DB security, Dep audit, Release gate, CodeQL, supply chain)
-- **Fly:** still `21a42e7…` / `agentFrameworks:false` / `ok:false` — not tip
+- **Shipping:** LI Browser Computer empty `assignedCampaignIds` is NOT attached (allocate / send pick / floor FX)
+- **Prior tip CI:** green on `6835e29` (ignore Vercel rate-limit)
+- **Fly:** still `21a42e7…` / `agentFrameworks:false` — deploy needs protected `deploy/fly-github-actions` + recovery receipt (no agent token)
 
 ## Done this shift
 
-1. Confirmed tip CI fully green on `211a8ee`
-2. Local honesty suites reaffirmed (floor 90, floor-fleet-wire 19, campaign-go-live 27, linkedin-channel-contract 23)
-3. Clarified floor3d AgentStatus comment (working ≠ healthy-alone)
+1. `campaign-seat-attach.ts` — shared attach helper (BC explicit; other seats empty=shared)
+2. `agent-event-seat` / `linkedin-automatic` / `store.allocateOutreach` use it
+3. Regression: campaign-seat-attach, agent-event-seat, sourcing-automatic-deliver
 
 ## Blockers
 
-1. No Fly deploy token in this agent
-2. Owner must redeploy tip SHA to `aria-mantu-app` + set `ARIA_JINA_API_KEY` + Take→login→Release
+1. Owner Fly tip redeploy via Deploy Aria Mantu workflow (protected branch + receipt)
+2. `ARIA_JINA_API_KEY` + Take→login→Release for LI healthy
 
 ## Next steps
 
-1. Triage any remaining tip honesty gaps from explore audit
-2. Owner: Fly tip SHA match + LI desks healthy
-3. Do not UpdateGoal complete until Fly tip SHA + LI healthy proven
+1. Confirm tip CI green on this SHA
+2. Owner Fly tip SHA + LI healthy
+3. Do not UpdateGoal complete until Fly tip + LI healthy
 
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Zero-send busy+healthy is idle not working
-- Pace health must go through get() TTL expire
-- Go-live requires computerForSeat (never Hermes-only)
+- LI Browser Computer empty assigned ≠ attached / ≠ send fallback
+- Zero-send busy+healthy is idle
+- Pace health via get() TTL
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out
 
 - Tip CI green ≠ production N-agent goal complete
-- `/api/ready` must show tip build SHA + agentFrameworks:true before goal close
