@@ -884,6 +884,12 @@ try {
         route.includes("campaignId"),
     );
     ok(
+      "GET campaignSeats omitted on agent_seats error (never detach-all [])",
+      route.includes("agent-seats-unavailable") &&
+        route.includes("Array.isArray(seats)") &&
+        !/campaignSeats: campaignSeats \?\? \[\]/.test(route),
+    );
+    ok(
       "reclaim persist failure rolls back in-memory claim",
       reclaimBlock.includes("releaseToOrphan") &&
         reclaimBlock.includes("computer_id persist failed"),

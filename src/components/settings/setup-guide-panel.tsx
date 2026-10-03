@@ -83,6 +83,8 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   // on a seat attached to this campaign (not any random healthy Browser Computer).
   const [liSessionHealthy, setLiSessionHealthy] = React.useState(false);
   React.useEffect(() => {
+    // Soft-nav: clear until the next fleet poll — never keep green across seat/campaign change.
+    setLiSessionHealthy(false);
     let cancelled = false;
     const attachedSeatIds = new Set(
       seats

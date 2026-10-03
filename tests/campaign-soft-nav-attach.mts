@@ -42,6 +42,21 @@ ok(
   /campaignComputers\.filter\(\(c\) => c\.sessionHealthy === true\)/.test(agents) &&
     /setComputers\(\[\]\)/.test(agents),
 );
+ok(
+  "campaign agents use durable⊇ seatIds when campaignSeats present",
+  /new Set\(data\.campaignSeats\.map\(\(s\) => s\.id\)\)/.test(agents) &&
+    /Only sync when campaignSeats is present/.test(agents),
+);
+
+const setup = readFileSync(
+  new URL("../src/components/settings/setup-guide-panel.tsx", import.meta.url),
+  "utf8",
+);
+ok(
+  "setup guide clears liSessionHealthy on soft-nav before poll",
+  /setLiSessionHealthy\(false\)/.test(setup) &&
+    setup.indexOf("setLiSessionHealthy(false)") < setup.indexOf("const load = async"),
+);
 
 console.log(`RESULT campaign-soft-nav-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

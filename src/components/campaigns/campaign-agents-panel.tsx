@@ -138,6 +138,8 @@ export function CampaignAgentsPanel({
         }>;
       };
       // Durable DB campaign bindings win over Hermes-only attach (cold load / multi-tab).
+      // Only sync when campaignSeats is present (successful authority). Error responses
+      // omit the key — never detach-all on error-shaped [].
       if (Array.isArray(data.campaignSeats)) {
         const authIds = new Set(data.campaignSeats.map((s) => s.id));
         for (const row of data.campaignSeats) {
@@ -170,16 +172,18 @@ export function CampaignAgentsPanel({
           }
         }
       }
-      const seatIds = new Set(campaignSeats.map((s) => s.id));
-      if (Array.isArray(data.campaignSeats)) {
-        for (const row of data.campaignSeats) seatIds.add(row.id);
-      }
-      const computerIds = new Set(
-        campaignSeats.map((s) => s.computerId).filter(Boolean) as string[],
-      );
+      // Badge seat set: durable⊇ when campaignSeats present; else Hermes local only.
+      const seatIds = Array.isArray(data.campaignSeats)
+        ? new Set(data.campaignSeats.map((s) => s.id))
+        : new Set(campaignSeats.map((s) => s.id));
+      const computerIds = new Set<string>();
       if (Array.isArray(data.campaignSeats)) {
         for (const row of data.campaignSeats) {
           if (row.computerId) computerIds.add(row.computerId);
+        }
+      } else {
+        for (const s of campaignSeats) {
+          if (s.computerId) computerIds.add(s.computerId);
         }
       }
       // Seat-owned rows only — never ingest __orphan__ / foreign VMs into

@@ -170,11 +170,19 @@ export async function GET(req: NextRequest) {
   try {
     await bindWorkspaceSupervisor(String(wid));
 
-    const { data: seats } = await supabase
+    const { data: seats, error: seatsErr } = await supabase
       .from("agent_seats")
       .select("id, name, provider, computer_id, status, assigned_campaign_ids")
       .eq("workspace_id", wid)
       .eq("provider", "LinkedIn Browser Computer");
+    // Fail closed: never emit campaignSeats:[] from a null/error seats read —
+    // FE treats [] as durable authority and would detach every Hermes attach.
+    if (seatsErr) {
+      return NextResponse.json(
+        { error: "agent-seats-unavailable", detail: seatsErr.message },
+        { status: 500 },
+      );
+    }
 
     const computers = [];
     for (const seat of seats ?? []) {
@@ -289,9 +297,8 @@ export async function GET(req: NextRequest) {
       ),
       recentAudits,
       hostCapacity,
-      ...(campaignId
-        ? { campaignId, campaignSeats: campaignSeats ?? [] }
-        : {}),
+      // Omit campaignSeats key when not campaign-scoped — never invent [] from error.
+      ...(campaignId && Array.isArray(seats) ? { campaignId, campaignSeats } : {}),
     });
   } finally {
     bindComputerSupervisorEndpoint(null);
