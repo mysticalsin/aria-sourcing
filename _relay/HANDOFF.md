@@ -10,7 +10,7 @@ status: hermes-orphan-clear-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (pending hermes orphan commit)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `580d0c3`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** Hermes computerId cleared when fleet shows orphan-only / absent (non-empty poll); durable campaignSeats null clears Hermes twin
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
