@@ -1,0 +1,31 @@
+{
+  "probedAt": "2026-10-03T10:37Z",
+  "tipSha": "10a4cb6f856ca913750978ec3675c1341cde6980",
+  "appReady": {
+    "url": "https://aria-mantu-app.fly.dev/api/ready",
+    "ok": false,
+    "status": "not_ready",
+    "build": "21a42e7da6c271758ea4cade91c8d5658032832d",
+    "migration": "0084_agent_seats_computer_id_unique.sql",
+    "components": {
+      "database": true,
+      "auth": true,
+      "queue": true,
+      "agentFrameworks": false,
+      "hermesRuntime": true,
+      "migration": true,
+      "releaseIdentity": true
+    }
+  },
+  "computersHttp": 401,
+  "deployBranch": {
+    "name": "deploy/fly-github-actions",
+    "sha": "f5868fa",
+    "protected": true
+  },
+  "agentEnv": {
+    "FLY_API_TOKEN": false,
+    "flyctl": false
+  },
+  "verdict": "Fly still stale vs tip; owner protected deploy required; tip N-agent attach closed"
+}

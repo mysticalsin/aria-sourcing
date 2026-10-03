@@ -171,6 +171,13 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
     "floor caption includes bound count from floorBrowserVmTruth",
     floorPage.includes("floorBrowserVmTruth") && floorPage.includes("${t.bound} bound"),
   );
+  ok(
+    "attributed pulse may walk idle healthy BC (never invent sessionHealthy)",
+    floorPage.includes("pulsingSeatIds") &&
+      floorPage.includes("sessionHealthy !== true") &&
+      !/Idle \/ warming \/ error stay put/.test(floorPage) &&
+      floorPage.includes('status: "working" as const'),
+  );
 }
 
 {

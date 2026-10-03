@@ -429,30 +429,31 @@ function Floor3DSection({
   // what's on screen. The full fleet always lives on the Agent Fleet page.
   const [deviceQuality] = React.useState(() => getDeviceQuality());
   const cap = MAX_3D_AGENTS[deviceQuality];
-  // Pulse may force "working" for walk animation — but never invent working
-  // from idle+healthy (session ready ≠ actively sourcing/sending).
+  // Pulse may force "working" for walk animation when an event is attributed
+  // to this desk — never invent sessionHealthy; never hash-pick a seatId.
+  // Idle+healthy BC with a real seatId pulse (source/allocate on attached desks)
+  // may walk; unverified / human-held / unattached-without-event stay idle.
   const office = seatsToOfficeAgents(seats, state, computerHints, now).map((a) => {
     if (!pulsingSeatIds.has(a.id) || a.status === "working") return a;
-    // Idle / warming / error stay put — pulse is FX for desks already working.
-    if (a.status === "idle" || a.status === "warming" || a.status === "error") return a;
+    if (a.status === "warming" || a.status === "error") return a;
     const seat = seats.find((s) => s.id === a.id);
     if (!seat) return a;
-    // Live fleet poll: never theatrical-pulse without real VM health / real sends.
-    if (computerHints) {
-      if (seat.provider === "LinkedIn Browser Computer") {
-        const hint = resolveComputerHint(seat, computerHints);
-        if (
-          !hint ||
-          hint.control === "human" ||
-          hint.status !== "ready" ||
-          hint.sessionHealthy !== true
-        ) {
-          return a;
-        }
-      } else if (!(seat.sentToday > 0)) {
+    // Without fleet poll, do not invent working from pulse alone.
+    if (!computerHints) return a;
+    if (seat.provider === "LinkedIn Browser Computer") {
+      const hint = resolveComputerHint(seat, computerHints);
+      if (
+        !hint ||
+        hint.control === "human" ||
+        hint.status !== "ready" ||
+        hint.sessionHealthy !== true
+      ) {
         return a;
       }
+      return { ...a, status: "working" as const };
     }
+    // Non-LI: only pulse when the desk already has real send activity.
+    if (!(seat.sentToday > 0)) return a;
     return { ...a, status: "working" as const };
   });
   const notShown = Math.max(0, office.length - cap);
