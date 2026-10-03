@@ -313,6 +313,11 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
       healthStrip.includes("ingestDurableBrowserBindings") &&
       !/\$\{s\.liveSeats\} live/.test(healthStrip),
   );
+  ok(
+    "fleet health strip success tone requires every seat send-ready (no 1/N green)",
+    /liveReady === s\.seats/.test(healthStrip) &&
+      !/liveReady > 0 \? "success"/.test(healthStrip),
+  );
   const fleetLib = readFileSync("src/lib/fleet.ts", "utf8");
   ok(
     "fleetSummary liveSeats excludes Browser Computer (sessionHealthy path)",
