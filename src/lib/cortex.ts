@@ -9,6 +9,7 @@ import {
   warmupStage,
 } from "./fleet";
 import { roleProfile } from "./roles";
+import { isBrowserComputerSeat } from "./campaign-seat-attach";
 
 /* ============================================================================
    GLASS CORTEX — "what is this agent thinking right now?"
@@ -253,11 +254,7 @@ export function agentCortexTrace(
     ? campaigns.filter((c) => assigned.includes(c.id))
     : [];
   // Browser Computer desks must be explicitly attached — match floor.ts.
-  if (
-    attached.length === 0 &&
-    (seat.provider === "LinkedIn Browser Computer" ||
-      seat.linkedinDeliveryBackend === "browser-computer")
-  ) {
+  if (attached.length === 0 && isBrowserComputerSeat(seat)) {
     return {
       ...base,
       candidateId: null,

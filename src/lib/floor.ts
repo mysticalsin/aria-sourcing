@@ -3,6 +3,7 @@ import type { Tone } from "./utils";
 import { roleProfile } from "./roles";
 import { applyConfidentiality, hasOutreachPurpose } from "./confidential";
 import { seatHealthStatus, warmupStage } from "./fleet";
+import { isBrowserComputerSeat } from "./campaign-seat-attach";
 
 /* ============================================================================
    Operations-floor model — derives, deterministically, what each agent is
@@ -68,11 +69,7 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
     : [];
   // LinkedIn Browser Computer desks must be explicitly attached — never narrate
   // foreign-campaign sourcing/outreach from an unassigned N-agent seat.
-  if (
-    attached.length === 0 &&
-    (seat.provider === "LinkedIn Browser Computer" ||
-      seat.linkedinDeliveryBackend === "browser-computer")
-  ) {
+  if (attached.length === 0 && isBrowserComputerSeat(seat)) {
     return make("idle", "Standing by", "No campaign assigned");
   }
   const pool = attached.length > 0 ? attached : campaigns;
