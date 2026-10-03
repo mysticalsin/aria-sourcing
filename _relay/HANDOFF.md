@@ -1,24 +1,24 @@
 ---
 project: MSourcing / ARIA
-shift: 321
+shift: 322
 agent: cursor-cloud
-updated: 2026-10-03T18:36Z
-status: sibling-seats-churn-on-150-awaiting-owner-approve
+updated: 2026-10-03T18:45Z
+status: fleet-li-badge-seats-churn-fixed-awaiting-owner-approve
 ---
 
-# Handoff — Shift 321
+# Handoff — Shift 322
 
 ## Current state
 
-- **Deploy-land tip / #150:** seatsRef on Agents + go-live checklist + setup guide (soft-nav 17/17)
-- **#148 tip:** `6166561` same sibling seats-churn fix
-- **#150:** squash auto-merge on; owner approve still required (REVIEW_REQUIRED)
-- **Fly:** `21a42e7…` / `0084` / `hermesRuntime:true` — goal open until tip SHA + 0087 + LI desks healthy
+- **#150 tip:** seatsRef/pollGeneration on Agents, go-live, setup, Fleet, LinkedIn connections; campaign Agents badge stamps campaignId (soft-nav 20/20)
+- **#148:** port this tip next
+- **#150:** squash auto-merge on; owner approve still required
+- **Fly:** `21a42e7…` / `0084` — goal open until tip SHA + 0087 + LI desks healthy
 
 ## Done this shift
 
-1. Ported sibling seats-churn seatsRef (go-live + setup guide) onto #150
-2. Soft-nav contract 17/17
+1. Fixed Fleet + LinkedIn connections seats-churn wipe (seatsRef + pollGeneration)
+2. Fixed campaign Agents badge soft-nav foreign durable count (authority stamp)
 
 ## Blockers
 
@@ -26,14 +26,13 @@ status: sibling-seats-churn-on-150-awaiting-owner-approve
 
 ## Next steps
 
-1. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
-2. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+1. Port same fix onto #148 tip
+2. Owner approve + dispatch + `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 3. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
 ## Decisions made (don't relitigate)
 
-- Soft-nav late prior-campaign paint stays via pollGeneration; seats churn must not remount/clear
-- Sibling go-live / setup-guide same seatsRef rule as Agents
+- Soft-nav / seats churn must not remount or clear durable across Agents, go-live, setup, Fleet, LI connections, campaign badge
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - N-agent deploy does **not** require `agentFrameworks:true`
@@ -41,4 +40,3 @@ status: sibling-seats-churn-on-150-awaiting-owner-approve
 ## Watch out
 
 - No agent review/approve / FLY_API_TOKEN / request-reviewers
-- Docs pushes cancel CI — re-verify green before dispatch on deploy HEAD

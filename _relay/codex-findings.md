@@ -1309,3 +1309,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Durable campaignSeats=[] then seats identity churn → durable wiped to undefined/null → Hermes attach greens go-live/setup until re-poll.
 **Suggested fix:** seatsRef; deps campaignId (+ computers/actions) only.
 **Status:** fixed (tip #148; port #150)
+
+## 2026-10-03 — Fleet/LI/campaign-badge seats-churn wipe + soft-nav foreign count
+**Severity:** correctness
+**File:** src/app/fleet/page.tsx:296; src/components/settings/linkedin-connections-panel.tsx:257; src/app/campaigns/[id]/page.tsx:419
+**Issue:** Fleet/LI poll remounted on seats churn and could clear healthy roster; campaign Agents badge reused prior campaign durable count for one paint on soft-nav.
+**Repro/evidence:** Soft-nav A→B keeps A durable count; Fleet Hermes patch remounts refresh while in-flight fail clears computers.
+**Suggested fix:** seatsRef+pollGeneration; durableAgentAuthority stamped by campaignId.
+**Status:** fixed (tip #150)

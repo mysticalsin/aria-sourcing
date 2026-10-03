@@ -94,6 +94,10 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const actions = useActions();
   const role = useRole();
   const localSeats = useSeats();
+  // localSeatsRef + pollGeneration: Hermes ingest must not remount load / wipe LI healthy.
+  const localSeatsRef = React.useRef(localSeats);
+  localSeatsRef.current = localSeats;
+  const pollGeneration = React.useRef(0);
   const { toast } = useToast();
   const isAdmin = can(role, "manage_fleet");
   const [loading, setLoading] = React.useState(enabled);
@@ -120,13 +124,16 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
   const [fleetLoaded, setFleetLoaded] = React.useState(false);
 
   const load = React.useCallback(async () => {
+    const gen = pollGeneration.current;
     if (!enabled) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
+      const seatsNow = localSeatsRef.current;
       const res = await fetch("/api/linkedin/connections", { method: "GET", credentials: "include" });
+      if (gen !== pollGeneration.current) return;
       const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
         demo?: boolean;
@@ -137,7 +144,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       } | null;
       if (json?.providers) setProviders(json.providers);
 
-      const localLinkedIn = localSeats
+      const localLinkedIn = seatsNow
         .filter((s) => isLinkedInSeatProvider(s.provider))
         .map((s) => ({
           id: s.id,
@@ -162,6 +169,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       // Overlay fleet sessionHealthy so Browser Computer badges aren't "green" without a probe.
       try {
         const fleetRes = await fetch("/api/fleet/computers", { credentials: "include" });
+        if (gen !== pollGeneration.current) return;
         if (fleetRes.ok) {
           const fleet = (await fleetRes.json()) as {
             computers?: { seatId?: string; computerId?: string; sessionHealthy?: boolean | null }[];
@@ -174,6 +182,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
               assignedCampaignIds?: string[];
             }>;
           };
+          if (gen !== pollGeneration.current) return;
           if (fleet.hostCapacity) setHostCapacity(fleet.hostCapacity);
           const computers = fleet.computers ?? [];
           setFleetComputers(computers);
@@ -239,28 +248,35 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           nextSeats = nextSeats.map((s) => ({ ...s, sessionHealthy: null }));
         }
       } catch {
+        if (gen !== pollGeneration.current) return;
         setFleetComputers([]);
         setFleetLoaded(true);
         /* seats still usable without fleet overlay */
       }
 
+      if (gen !== pollGeneration.current) return;
       setSeats(nextSeats);
 
       if (json?.error && !json.ok) {
         toast({ title: "LinkedIn status", description: json.error, variant: "error" });
       }
     } catch {
+      if (gen !== pollGeneration.current) return;
       toast({ title: "LinkedIn status failed", description: "Network error.", variant: "error" });
     } finally {
-      setLoading(false);
+      if (gen === pollGeneration.current) setLoading(false);
     }
-  }, [enabled, localSeats, toast]);
+  }, [enabled, actions, toast]);
 
   React.useEffect(() => {
+    pollGeneration.current += 1;
     void load();
     // Keep sessionHealthy / VM …last8 aligned with Floor/Fleet (same /api/fleet/computers).
     const t = window.setInterval(() => void load(), 5000);
-    return () => window.clearInterval(t);
+    return () => {
+      pollGeneration.current += 1;
+      window.clearInterval(t);
+    };
   }, [load]);
 
   async function connectWithLinkedInOAuth() {
