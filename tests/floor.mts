@@ -165,6 +165,17 @@ ok("at least one paused (lucas)", roll.paused >= 1);
       );
       ok("2D overlay: ready+healthy stays busy", healthy.busy === true);
     }
+    const busyVm = agentActivityWithComputers(
+      li,
+      s,
+      NOW,
+      new Map([[li.id, { status: "busy", sessionHealthy: null, computerId: "comp_busy_x" }]]),
+    );
+    ok("2D overlay: busy VM stays busy (warming)", busyVm.busy === true);
+    ok(
+      "2D overlay: busy VM drops theatrical sourcing label",
+      /session unverified/i.test(busyVm.label) && !/Sourcing|Outreach|Booking/i.test(busyVm.label),
+    );
   }
 }
 

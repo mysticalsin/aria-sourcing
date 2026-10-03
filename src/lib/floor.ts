@@ -274,7 +274,8 @@ export function agentActivityWithComputers(
     return {
       ...base,
       state: "warming",
-      label: withVm(hint.status === "starting" ? "Booting VM" : base.label),
+      // Never keep theatrical sourcing/outreach labels while session is unverified.
+      label: withVm(hint.status === "starting" ? "Booting VM" : "VM busy — session unverified"),
       busy: true,
       tone: "warning",
     };

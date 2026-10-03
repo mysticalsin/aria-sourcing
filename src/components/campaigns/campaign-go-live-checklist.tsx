@@ -32,8 +32,26 @@ export function CampaignGoLiveChecklist(props: {
           { credentials: "same-origin" },
         );
         if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { computers?: ComputerHealthLike[] };
-        if (!cancelled) setPolledComputers(data.computers ?? []);
+        const data = (await res.json()) as {
+          computers?: ComputerHealthLike[];
+          campaignSeats?: Array<{ id: string }>;
+        };
+        const comps = data.computers ?? [];
+        // Scope to durable campaign seats when Fleet returns them — never paint
+        // foreign desk health into this campaign's go-live checklist.
+        const authIds = Array.isArray(data.campaignSeats)
+          ? new Set(data.campaignSeats.map((s) => s.id))
+          : null;
+        const scoped = authIds
+          ? comps.filter((c) => c.seatId && authIds.has(c.seatId))
+          : comps.filter((c) => {
+              const seat = props.seats.find((s) => s.id === c.seatId);
+              return Boolean(
+                seat &&
+                  (seat.assignedCampaignIds ?? []).includes(props.campaignId),
+              );
+            });
+        if (!cancelled) setPolledComputers(scoped);
       } catch {
         /* checklist still works without live computer rows */
       }
