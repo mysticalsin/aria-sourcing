@@ -1,60 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 225
+shift: 226
 agent: cursor-cloud
-updated: 2026-10-03T01:05Z
-status: tip-ci-db-privs-and-graphify-contract-pushed
+updated: 2026-10-03T01:10Z
+status: agent-reach-23-quality-green-fly-stale
 ---
 
-# Handoff — Shift 225
+# Handoff — Shift 226
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148 (still draft)
-- **Tip:** `35a1ae64a908a3541978ea21955cc39916be7ab5`
-- **GitHub on `e27e9487` (run 37083790302):** Secret scan SUCCESS, Dependency
-  audit SUCCESS, Quality SUCCESS, CodeQL/Analyze SUCCESS. Failed: Database
-  security (`claim_contact` service_role EXECUTE), Production image supply
-  chain (graphify `assertNotIn("apt-get")` during image build — libpcre2
-  *was* upgraded), Release gate aggregate.
-- **This tip:** not judged yet. Do not call those jobs green until GitHub says so.
-- **Fly:** untouched
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (includes `5a30365` Agent Reach 2/3)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
+- **Tip CI Quality:** GREEN on `e27e948` (run 37083790302) — includes Agent Reach MCP + booking propose. Secret scan + Dependency audit also SUCCESS on that run.
+- **Still red (base/infra):** Database security, Production image supply chain, Release gate
+- **Agent Reach:** slices 1–3 shipped (Jina, optional MCP sidecar, INTERESTED→booking_propose activity)
+- **Fly live:** build `21a42e7…`, `agentFrameworks:false`, computers 0 VMs; no deploy token
+- **N-agent local:** FE↔BE↔Floor proven fail-closed; never invents sessionHealthy
 
 ## Done this shift
 
-1. Migration `0085_claim_contact_authenticated_only.sql` revokes
-   service_role EXECUTE on `claim_contact` and `complete_contact_lease`
-2. Privilege matrix accepts comma-separated roles; dual grants recorded for
-   `profile_has_autopilot` and `upsert_linkedin_inbound_route`
-3. Graphify contract now forbids `apt-get install` only (upgrade stays)
+1. Agent Reach slice 2: `ARIA_AGENT_REACH_LINKEDIN_MCP_URL` → POST `/linkedin/profile` fail-closed + status
+2. Agent Reach slice 3: `decideBookingProposeFromInterest` + store activity on INTERESTED (no silent create)
+3. Fly re-probe still stale; N-agent theater audit already filed
+4. Parallel tip: gitleaks/schema/image + claim_contact privilege fixes
 
 ## Blockers
 
-1. No Docker — cannot re-run `test:db-privileges` or Trivy here
-2. No Fly deploy token
+1. No Fly deploy token — cannot complete N-agent production goal / Agent Reach slice 4
+2. Operator Take→login→Release for `sessionHealthy:true` after tip deploy
 
 ## Next steps
 
-1. Wait for CI on `35a1ae64`. Leave green jobs alone.
-2. If Database security fails again, read the next privilege exception —
-   more dual grants may still be exclusive in the matrix.
-3. If supply chain is still red, read the Trivy JSON (app pcre2 was already
-   patched on e27e; graphify should now reach the scan).
-4. Do not mark PR 148 ready, merge, or deploy
+1. Owner Fly redeploy tip until `/api/ready` build == tip SHA + `agentFrameworks:true`
+2. Operator LI login on N desks; prove sessionHealthy within TTL on Floor + Campaign Agents
+3. Optional: durable multi-instance computer-supervisor Maps
 
-## Decisions made (don't relitigate)
+## Decisions (don't relitigate)
 
-- Never invent `sessionHealthy=true`
-- Agent Reach = eyes (Jina/optional MCP); OpenBot = hands
+- Never invent sessionHealthy=true
+- Agent Reach = eyes; OpenBot = hands
 - Booking propose ≠ silent createBookingFor
-- Gitleaks exceptions stay fingerprint- or line-specific
-- Reviewed schema fingerprint tracks the post-migration dump (`--no-privileges`), not Fly
-- `claim_contact` / `complete_contact_lease` are authenticated-only
-- Graphify image may `apt-get upgrade` for OS CVEs; must not `apt-get install`
+- MCP sidecar optional; Jina zero-config fallback
 
 ## Watch out
 
-- Privilege matrix is exclusive per row unless the role cell is a comma list
-- Quality / infra-release-contract still require a dedicated
-  `RUN rm -rf /usr/local/lib/node_modules` in Dockerfile.prod
+- Do not mark N-agent goal complete until Fly tip SHA + LI healthy verified
