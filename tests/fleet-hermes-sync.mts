@@ -6,6 +6,7 @@
 import {
   fleetHermesComputerPatches,
   computerHealthOwnedBySeat,
+  isStaleHermesComputerTwin,
 } from "../src/lib/fleet-hermes-sync";
 
 let pass = 0;
@@ -122,6 +123,43 @@ function ok(name: string, cond: boolean) {
   ok(
     "health blocked on empty fleet list",
     !computerHealthOwnedBySeat("seat_a", "comp_x", []),
+  );
+}
+
+{
+  ok(
+    "empty fleet poll is not stale twin (ambiguous)",
+    !isStaleHermesComputerTwin("seat_a", "comp_wall", []),
+  );
+  ok(
+    "orphan fleet row is stale twin",
+    isStaleHermesComputerTwin("seat_a", "comp_wall", [
+      { seatId: "__orphan__", computerId: "comp_wall" },
+    ]),
+  );
+  ok(
+    "absent from non-empty fleet is stale twin",
+    isStaleHermesComputerTwin("seat_a", "comp_gone", [
+      { seatId: "seat_b", computerId: "comp_b" },
+    ]),
+  );
+  ok(
+    "foreign owner is stale twin",
+    isStaleHermesComputerTwin("seat_a", "comp_b", [
+      { seatId: "seat_b", computerId: "comp_b" },
+    ]),
+  );
+  ok(
+    "owned binding is not stale twin",
+    !isStaleHermesComputerTwin("seat_a", "comp_a", [
+      { seatId: "seat_a", computerId: "comp_a" },
+    ]),
+  );
+  ok(
+    "null hermes id is not stale twin",
+    !isStaleHermesComputerTwin("seat_a", null, [
+      { seatId: "__orphan__", computerId: "comp_x" },
+    ]),
   );
 }
 

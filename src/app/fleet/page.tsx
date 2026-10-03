@@ -28,7 +28,7 @@ import {
   type FleetOpsSummary,
 } from "@/components/fleet/fleet-computer-ops-board";
 import { AllocationResultView } from "@/components/fleet/allocation-result";
-import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
+import { fleetHermesComputerPatches, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import {
   useHydrated,
   useSeats,
@@ -166,9 +166,11 @@ export default function FleetPage() {
     for (const seat of res.seats) {
       // Never use seat.id as computerId — that collapses N Chromium profiles onto one id.
       // Reclaim a probed-healthy host orphan before minting (store may have pre-minted a blank id).
+      // Omit stale twin when fleet shows orphan/absent/foreign — same belt as Campaign Agents.
+      const staleTwin = isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
-        existingComputerId: seat.computerId,
+        existingComputerId: staleTwin ? null : seat.computerId,
       });
       if (!seat.computerId || seat.computerId !== computerId) {
         await actions.updateSeat(seat.id, { computerId });

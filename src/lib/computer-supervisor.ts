@@ -405,6 +405,14 @@ export class ComputerSupervisor {
     if (opts.seatId === HOST_ORPHAN_SEAT_ID) {
       throw new Error("claim-orphan-requires-real-seat");
     }
+    // Never steal another desk's detached LinkedIn cookies via ensure/claim.
+    // Empty prior = never-bound host import; same-seat prior = our twin OK.
+    const prior = (rec.priorSeatId ?? "").trim();
+    if (prior && prior !== opts.seatId) {
+      throw new Error(
+        `computer-orphan-claim-blocked: orphan ${computerId} priorSeatId=${prior} not seat ${opts.seatId}`,
+      );
+    }
     for (const other of this.computers.values()) {
       if (
         other.workspaceId === opts.workspaceId &&

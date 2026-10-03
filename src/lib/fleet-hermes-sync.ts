@@ -63,6 +63,28 @@ export function fleetHermesComputerPatches(
   return patches;
 }
 
+/**
+ * True when Hermes computerId must not be fed into Deploy/reclaim as
+ * existingComputerId — fleet shows orphan, absent, or foreign owner.
+ * Empty fleet poll is ambiguous (not stale).
+ */
+export function isStaleHermesComputerTwin(
+  seatId: string,
+  hermesComputerId: string | null | undefined,
+  computers: readonly FleetComputerBinding[],
+): boolean {
+  const hermesId = typeof hermesComputerId === "string" ? hermesComputerId.trim() : "";
+  if (!hermesId || computers.length === 0) return false;
+  const fleetRow = computers.find((c) => {
+    const id = typeof c.computerId === "string" ? c.computerId.trim() : "";
+    return id === hermesId;
+  });
+  if (!fleetRow) return true;
+  const owner = typeof fleetRow.seatId === "string" ? fleetRow.seatId.trim() : "";
+  if (!owner || owner === ORPHAN) return true;
+  return owner !== seatId;
+}
+
 /** True when a computerId health badge may apply to this seat (no cross-desk bleed). */
 export function computerHealthOwnedBySeat(
   seatId: string,

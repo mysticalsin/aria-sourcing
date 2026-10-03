@@ -18,7 +18,7 @@ import type { AgentSeat } from "@/lib/types";
 import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel";
 import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
 import { useActions, useSettings } from "@/lib/store";
-import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
+import { fleetHermesComputerPatches, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
 
 type AuditEvent = {
@@ -222,16 +222,9 @@ export function CampaignAgentsPanel({
     setError(null);
     try {
       const hermesId = (seat.computerId ?? "").trim();
-      const fleetRow = hermesId
-        ? computers.find((c) => c.computerId === hermesId)
-        : undefined;
       // Omit stale twin when fleet shows orphan/absent/foreign — never feed
       // login-wall computerId into reclaim before Hermes poll clears it.
-      const staleTwin =
-        Boolean(hermesId) &&
-        (!fleetRow ||
-          fleetRow.seatId === "__orphan__" ||
-          (Boolean(fleetRow.seatId) && fleetRow.seatId !== seat.id));
+      const staleTwin = isStaleHermesComputerTwin(seat.id, hermesId, computers);
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId: staleTwin ? null : seat.computerId,

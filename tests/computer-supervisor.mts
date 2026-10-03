@@ -927,6 +927,51 @@ try {
     );
   }
 
+  // ensureComputer / claimOrphan refuse foreign priorSeatId (LinkedIn cookie steal).
+  {
+    const priorGate = new ComputerSupervisor();
+    const foreign = priorGate.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_foreign_cookies",
+    });
+    foreign.remoteUrl = "http://127.0.0.1:9301";
+    foreign.status = "ready";
+    foreign.priorSeatId = "seat-other";
+    let blocked = false;
+    let detail = "";
+    try {
+      priorGate.ensureComputer({
+        workspaceId: "ws",
+        seatId: "seat-tony",
+        computerId: "comp_foreign_cookies",
+      });
+    } catch (err) {
+      detail = err instanceof Error ? err.message : String(err);
+      blocked = detail.includes("computer-orphan-claim-blocked");
+    }
+    ok("ensureComputer blocks foreign priorSeatId orphan claim", blocked);
+    ok(
+      "foreign prior orphan stays __orphan__",
+      priorGate.get("comp_foreign_cookies")?.seatId === HOST_ORPHAN_SEAT_ID,
+    );
+
+    // Same-seat prior still allowed via ensure (operator re-bind).
+    const mine = priorGate.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_mine_prior",
+    });
+    mine.remoteUrl = "http://127.0.0.1:9302";
+    mine.priorSeatId = "seat-tony";
+    const claimed = priorGate.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-tony",
+      computerId: "comp_mine_prior",
+    });
+    ok("ensureComputer allows same priorSeatId orphan claim", claimed.seatId === "seat-tony");
+    ok("same-prior ensure clears priorSeatId", claimed.priorSeatId == null);
+  }
 
   // releaseToOrphan undoes claim + restores prior seat binding (persist-fail rollback).
   {
