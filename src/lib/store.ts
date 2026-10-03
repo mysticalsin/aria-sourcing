@@ -31,6 +31,7 @@ import {
   parseHermesOutreach,
 } from "./ai/hermes";
 import { fetchLinkedInAgentContext } from "./integrations/linkedin-agent-context-client";
+import { decideBookingProposeFromInterest } from "./inbound-reply-trigger";
 import { resolveAiProvider } from "./ai/provider";
 import {
   anonymizeHermesState,
@@ -3522,7 +3523,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ),
             };
           }
-          return withActivity(
+          const seatId = latestOutreachSeatId(prev.outreach, candidate.id);
+          const seat = seatId ? prev.seats.find((x) => x.id === seatId) : undefined;
+          const propose = decideBookingProposeFromInterest({
+            intent: classification.intent,
+            campaignId,
+            candidateId: candidate.id,
+            seatId,
+            computerId: seat?.computerId ?? undefined,
+          });
+          let withLearn = withActivity(
             next,
             makeActivity({
               type: "learning",
@@ -3535,6 +3545,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             }),
             campaignId,
           );
+          if (propose) {
+            withLearn = withActivity(
+              withLearn,
+              makeActivity({
+                type: "booking",
+                title: `${propose.activityTitle}: ${candidate.name}`,
+                notes: `${propose.activityNotes} [${propose.idempotencyKey}] seat=${propose.payload.seatId ?? "—"} computer=${propose.payload.computerId ?? "—"}`,
+                outcome: "Proposed — confirm in Calendar",
+                campaignId,
+                linkedEntityType: "candidate",
+                linkedEntityId: candidate.id,
+              }),
+              campaignId,
+            );
+          }
+          return withLearn;
         });
       }
 

@@ -13,8 +13,9 @@
 
 import { runWebTool } from "@/lib/ai/web-tools";
 import {
+  agentReachLinkedInMcpStatus,
   agentReachLinkedInStatus,
-  readLinkedInViaAgentReachJina,
+  readLinkedInViaAgentReach,
 } from "@/lib/integrations/agent-reach-linkedin";
 import { scraplingFetch } from "@/lib/scrapling/adapter";
 import { extractLead } from "@/lib/sourcing/web-leads";
@@ -26,7 +27,7 @@ export type LinkedInProfileInsight = {
   focusAreas: string[];
   trajectoryNotes: string[];
   painPoints: string[];
-  via: "orca-style" | "web-fetch" | "agent-reach-jina" | "stub";
+  via: "orca-style" | "web-fetch" | "agent-reach-jina" | "agent-reach-mcp" | "stub";
   /** Raw excerpt used for scoring / outreach when a public page was readable. */
   evidenceText?: string;
 };
@@ -263,10 +264,10 @@ export async function analyzeLinkedInProfile(url: string): Promise<LinkedInProfi
     }
   }
 
-  // Agent Reach LinkedIn zero-config backend (Jina Reader) before raw fetch.
-  const reach = await readLinkedInViaAgentReachJina(clean);
+  // Agent Reach: MCP sidecar (if configured) then Jina Reader before raw fetch.
+  const reach = await readLinkedInViaAgentReach(clean);
   if (reach.ok) {
-    return insightFromText(clean, reach.title, reach.text, "agent-reach-jina");
+    return insightFromText(clean, reach.title, reach.text, reach.via);
   }
 
   const page = await readPublicPage(clean);
@@ -559,6 +560,7 @@ export function listLinkedInBrowserAgentStatus(): {
   const url = (name: string) => Boolean((process.env[name] || "").trim());
   return [
     agentReachLinkedInStatus(),
+    agentReachLinkedInMcpStatus(),
     {
       id: "orca",
       enabled: true,

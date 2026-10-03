@@ -1,7 +1,7 @@
 # PRD — Agent Reach + human LinkedIn loop inside Aria
 
 **Date:** 2026-10-02  
-**Status:** Active — slice 1 implementing  
+**Status:** Active — slices 1–3 implemented in tip; slice 4 (Fly+LI) blocked on deploy/login  
 **Upstream researched:** [Panniantong/Agent-Reach](https://github.com/Panniantong/Agent-Reach)  
 **Owner product:** Aria / MSourcing  
 **Related tip work:** N isolated Browser Computer seats, human Take→login→Release, never invent `sessionHealthy=true`
@@ -109,6 +109,8 @@ Every hop records: `workspaceId`, `campaignId`, `candidateId`, `seatId`, `comput
 | **2** | Optional MCP LinkedIn sidecar + doctor/status API for Agent Reach | Fail-closed without inventing connectivity |
 | **3** | Interest → booking propose job + UI trail | Receipts in activity + calendar ledger |
 | **4** | Tip Fly deploy + N desks logged in | Live `/api/ready` tip SHA; `sessionHealthy:true` within TTL on Floor |
+
+**Slice status (2026-10-03):** 1 ✅ · 2 ✅ (`ARIA_AGENT_REACH_LINKEDIN_MCP_URL` → POST `/linkedin/profile`) · 3 ✅ (activity `booking_propose` on INTERESTED; operator confirms via `createBookingFor`) · 4 ❌ Fly tip + LI login
 
 ---
 

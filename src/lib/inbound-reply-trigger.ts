@@ -80,3 +80,50 @@ export function decideReplyDraftSuccessor(input: {
     priority: 70,
   };
 }
+
+/**
+ * After positive interest: propose a booking (operator confirms) — never silent calendar create.
+ * Pure helper; store emits activity + receipts. createBookingFor stays operator-gated.
+ */
+export function decideBookingProposeFromInterest(input: {
+  intent: string;
+  campaignId?: string;
+  candidateId?: string;
+  seatId?: string;
+  computerId?: string;
+}): null | {
+  kind: "booking_propose";
+  idempotencyKey: string;
+  payload: {
+    campaignId: string;
+    candidateId: string;
+    seatId?: string;
+    computerId?: string;
+    intent: string;
+    trigger: "inbound_interest";
+  };
+  activityTitle: string;
+  activityNotes: string;
+} {
+  if (!isPositiveReplyIntent(input.intent)) return null;
+  const campaignId = input.campaignId?.trim() ?? "";
+  const candidateId = input.candidateId?.trim() ?? "";
+  if (!campaignId || !candidateId) return null;
+  const seatId = input.seatId?.trim() || undefined;
+  const computerId = input.computerId?.trim() || undefined;
+  return {
+    kind: "booking_propose",
+    idempotencyKey: `booking:propose:${campaignId}:${candidateId}`,
+    payload: {
+      campaignId,
+      candidateId,
+      seatId,
+      computerId,
+      intent: input.intent,
+      trigger: "inbound_interest",
+    },
+    activityTitle: "Booking proposed from interested reply",
+    activityNotes:
+      "Positive interest — propose a meeting in Calendar (operator confirms). No silent calendar create.",
+  };
+}

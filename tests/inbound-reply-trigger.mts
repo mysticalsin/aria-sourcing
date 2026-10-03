@@ -1,4 +1,5 @@
 import {
+  decideBookingProposeFromInterest,
   decideInboundClassifyEnqueue,
   decideReplyDraftSuccessor,
   isPositiveReplyIntent,
@@ -70,6 +71,34 @@ ok(
   draft?.idempotencyKey === "draft:reply:camp-1:cand-1",
 );
 ok("approvalSource autopilot_reply", draft?.payload.approvalSource === "autopilot_reply");
+
+ok(
+  "no booking propose without correlation",
+  decideBookingProposeFromInterest({ intent: "INTERESTED", campaignId: "camp-1" }) === null,
+);
+ok(
+  "no booking propose for OOO",
+  decideBookingProposeFromInterest({
+    intent: "OOO",
+    campaignId: "camp-1",
+    candidateId: "cand-1",
+  }) === null,
+);
+const booking = decideBookingProposeFromInterest({
+  intent: "INTERESTED",
+  campaignId: "camp-1",
+  candidateId: "cand-1",
+  seatId: "seat-1",
+  computerId: "comp_1",
+});
+ok("booking propose for INTERESTED", booking !== null);
+ok("booking kind booking_propose", booking?.kind === "booking_propose");
+ok(
+  "booking idempotency scoped",
+  booking?.idempotencyKey === "booking:propose:camp-1:cand-1",
+);
+ok("booking carries seat+computer", booking?.payload.seatId === "seat-1" && booking?.payload.computerId === "comp_1");
+ok("booking notes forbid silent create", /No silent calendar create/i.test(booking?.activityNotes ?? ""));
 
 console.log(`RESULT inbound-reply-trigger: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

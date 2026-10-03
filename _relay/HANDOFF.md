@@ -1,51 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 223
+shift: 224
 agent: cursor-cloud
-updated: 2026-10-03T00:35Z
-status: tip-quality-green-fly-stale
+updated: 2026-10-03T00:48Z
+status: agent-reach-slices-2-3-shipped-fly-stale
 ---
 
-# Handoff — Shift 223
+# Handoff — Shift 224
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `64d8156`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip CI Quality:** GREEN on `6e4f7d2` (run 37081553228); tip SHA advanced docs-only to `64d8156`.
-- **N-agent audit:** local FE↔BE↔Floor proven fail-closed; no invent theater — `_relay/evidence/2026-10-03-n-agent-theater-audit.md`
-- **Base-wide still red:** Secret scan, Database security, Production image supply chain, Release gate (not tip-owned).
-- **Agent Reach slice 1:** Jina LinkedIn eyes + PRD shipped.
-- **Local N-agent wire:** Floor/Campaign Agents fail-closed; never invents `sessionHealthy=true`.
-- **Fly live:** build `21a42e7…`, `agentFrameworks:false`; computers 0 VMs; no deploy token (`_relay/evidence/2026-10-02-fly-tip-still-stale.json`).
+- **Agent Reach:** slices 1–3 in tip (Jina + optional MCP sidecar + INTERESTED→booking propose activity)
+- **Tip CI Quality:** was GREEN on `6e4f7d2`; verify after this push
+- **Fly live:** still build `21a42e7…`, `agentFrameworks:false`, computers 0 VMs; no deploy token
+- **N-agent local:** FE↔BE↔Floor proven fail-closed; never invents sessionHealthy
 
 ## Done this shift
 
-1. Tip Quality whittle: Senior Java fixtures (sourcing/apify/web-leads), fly-workflow endHour:24, keys probe allowlist, login-page, STATUS date, @types declared-deps.
-2. Parallel tip: gitleaks/CodeQL/Next audit fixes landed (other agent) → Quality stayed green.
-3. Agent Reach PRD + Jina adapter already on tip from prior shift.
+1. Re-probed Fly — still stale (evidence refreshed)
+2. Agent Reach slice 2: `ARIA_AGENT_REACH_LINKEDIN_MCP_URL` → POST `/linkedin/profile` fail-closed
+3. Agent Reach slice 3: `decideBookingProposeFromInterest` + store activity on INTERESTED (no silent calendar create)
+4. PRD status updated
 
 ## Blockers
 
-1. No Fly deploy / supervisor production tokens
-2. `sessionHealthy:true` needs human Take→login→Release after tip deploy
-3. Base-wide CI red outside tip-owned Quality
+1. No Fly deploy token — cannot complete slice 4 / N-agent production goal
+2. Operator Take→login→Release for sessionHealthy after tip deploy
 
 ## Next steps
 
-1. Owner Fly redeploy tip until `/api/ready` build SHA == tip + `agentFrameworks:true`
-2. Operator Take→login→Release on N desks; prove `sessionHealthy:true` within TTL
-3. Agent Reach slice 2/3 (MCP LinkedIn + interest→booking tracking scoped in Aria)
+1. Confirm tip CI Quality green after Agent Reach 2/3 push
+2. Owner Fly redeploy tip until `/api/ready` build == tip SHA + agentFrameworks:true
+3. Operator LI login on N desks; prove sessionHealthy within TTL
+4. Optional: durable multi-instance computer-supervisor Maps
 
-## Decisions made (don't relitigate)
+## Decisions (don't relitigate)
 
-- Never invent `sessionHealthy=true`
-- Agent Reach = eyes (Jina/optional MCP); OpenBot = hands
-- `linkedin_send` requires probed-healthy when `mockSend=false`
-- Send window half-open `[start,end)` — all-day fixtures use `endHour: 24`
-- `@types/X` satisfies type-only import of `X` for declared-deps audit
+- Never invent sessionHealthy=true
+- Agent Reach = eyes; OpenBot = hands
+- Booking propose ≠ silent createBookingFor
+- MCP sidecar optional; Jina remains zero-config fallback
 
 ## Watch out
 
-- Do not mark N-agent goal complete until Fly tip SHA + LI healthy verified
-- Quality can cancel mid-run when newer tip pushes land — use latest tip SHA
+- Do not mark N-agent goal complete until Fly tip + LI healthy verified

@@ -1,7 +1,6 @@
 {
-  "probedAt": "2026-10-02T22:50:46Z",
-  "tipShaExpected": "90585ba",
-  "tipShaFull": "90585ba18ed9a03f1a390becc23008078ab2a826",
+  "probedAt": "2026-10-03T00:45:00Z",
+  "tipShaExpected": "692997a",
   "appReadyHttp": 503,
   "appReady": {
     "ok": false,
