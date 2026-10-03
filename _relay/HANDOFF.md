@@ -10,9 +10,10 @@ status: tip-quality-green-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `6e4f7d2`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `64d8156`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip CI Quality:** GREEN on `6e4f7d2` (run 37081553228). Dependency audit also green after Next 16.3.8.
+- **Tip CI Quality:** GREEN on `6e4f7d2` (run 37081553228); tip SHA advanced docs-only to `64d8156`.
+- **N-agent audit:** local FE↔BE↔Floor proven fail-closed; no invent theater — `_relay/evidence/2026-10-03-n-agent-theater-audit.md`
 - **Base-wide still red:** Secret scan, Database security, Production image supply chain, Release gate (not tip-owned).
 - **Agent Reach slice 1:** Jina LinkedIn eyes + PRD shipped.
 - **Local N-agent wire:** Floor/Campaign Agents fail-closed; never invents `sessionHealthy=true`.
