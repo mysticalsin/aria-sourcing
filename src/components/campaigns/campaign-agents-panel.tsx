@@ -19,6 +19,10 @@ import type { FleetComputerRow } from "@/components/fleet/fleet-computers-panel"
 import { BanRiskStrip } from "@/components/campaigns/ban-risk-strip";
 import { useActions, useSettings } from "@/lib/store";
 import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import {
+  mergeDurableCampaignSeatsForGoLive,
+  type DurableCampaignSeatLike,
+} from "@/lib/campaign-go-live";
 import { fleetHermesComputerPatches, isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
 
@@ -80,7 +84,7 @@ export function CampaignAgentsPanel({
 }) {
   const { toast } = useToast();
   const settings = useSettings();
-  const campaignSeats = React.useMemo(
+  const hermesCampaignSeats = React.useMemo(
     () =>
       seats.filter(
         (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, campaignId),
@@ -99,6 +103,17 @@ export function CampaignAgentsPanel({
   // Full fleet rows (incl. __orphan__) for staleTwin / Hermes honesty — badge
   // list above stays seat-filtered so orphans never inflate campaign ops.
   const [fleetComputers, setFleetComputers] = React.useState<FleetComputerRow[]>([]);
+  /** Durable Fleet campaignSeats — undefined until successful authority (or omitted on error). */
+  const [durableSeats, setDurableSeats] = React.useState<
+    DurableCampaignSeatLike[] | undefined
+  >(undefined);
+  // Cards + counts: durable⊇ when present (incl. authoritative []); else Hermes local.
+  const campaignSeats = React.useMemo(() => {
+    if (!Array.isArray(durableSeats)) return hermesCampaignSeats;
+    return mergeDurableCampaignSeatsForGoLive(seats, durableSeats, campaignId).filter(
+      (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, campaignId),
+    );
+  }, [durableSeats, hermesCampaignSeats, seats, campaignId]);
   /** First successful fleet poll settled — Deploy must wait (empty=[] is ambiguous for staleTwin). */
   const [fleetLoaded, setFleetLoaded] = React.useState(false);
   const [audits, setAudits] = React.useState<AuditEvent[]>([]);
@@ -124,6 +139,7 @@ export function CampaignAgentsPanel({
         // Settled fail-closed: clear badge rows + Deploy fleet so paint cannot stay green.
         setFleetComputers([]);
         setComputers([]);
+        setDurableSeats(undefined);
         setFleetLoaded(true);
         return;
       }
@@ -134,6 +150,7 @@ export function CampaignAgentsPanel({
           id: string;
           name: string;
           computerId?: string | null;
+          status?: string;
           assignedCampaignIds?: string[];
         }>;
       };
@@ -141,6 +158,7 @@ export function CampaignAgentsPanel({
       // Only sync when campaignSeats is present (successful authority). Error responses
       // omit the key — never detach-all on error-shaped [].
       if (Array.isArray(data.campaignSeats)) {
+        setDurableSeats(data.campaignSeats);
         const authIds = new Set(data.campaignSeats.map((s) => s.id));
         for (const row of data.campaignSeats) {
           const local = seats.find((s) => s.id === row.id);
@@ -164,25 +182,27 @@ export function CampaignAgentsPanel({
             void actions.updateSeat(row.id, patch);
           }
         }
-        for (const local of campaignSeats) {
+        for (const local of hermesCampaignSeats) {
           if (authIds.has(local.id)) continue;
           const next = (local.assignedCampaignIds ?? []).filter((id) => id !== campaignId);
           if (next.length !== (local.assignedCampaignIds ?? []).length) {
             void actions.updateSeat(local.id, { assignedCampaignIds: next });
           }
         }
+      } else {
+        setDurableSeats(undefined);
       }
       // Badge seat set: durable⊇ when campaignSeats present; else Hermes local only.
       const seatIds = Array.isArray(data.campaignSeats)
         ? new Set(data.campaignSeats.map((s) => s.id))
-        : new Set(campaignSeats.map((s) => s.id));
+        : new Set(hermesCampaignSeats.map((s) => s.id));
       const computerIds = new Set<string>();
       if (Array.isArray(data.campaignSeats)) {
         for (const row of data.campaignSeats) {
           if (row.computerId) computerIds.add(row.computerId);
         }
       } else {
-        for (const s of campaignSeats) {
+        for (const s of hermesCampaignSeats) {
           if (s.computerId) computerIds.add(s.computerId);
         }
       }
@@ -191,6 +211,9 @@ export function CampaignAgentsPanel({
       const allRows = data.computers ?? [];
       setFleetComputers(allRows);
       setFleetLoaded(true);
+      const displaySeats = Array.isArray(data.campaignSeats)
+        ? mergeDurableCampaignSeatsForGoLive(seats, data.campaignSeats, campaignId)
+        : hermesCampaignSeats;
       const rows = allRows.filter((c) => {
         if (!c.seatId || c.seatId === "__orphan__") return false;
         return seatIds.has(c.seatId);
@@ -198,14 +221,14 @@ export function CampaignAgentsPanel({
       setComputers(
         rows.map((c) => {
           const seat =
-            campaignSeats.find((s) => s.id === c.seatId) ||
+            displaySeats.find((s) => s.id === c.seatId) ||
             data.campaignSeats?.find((s) => s.id === c.seatId);
           return seat ? { ...c, seatName: seat.name } : c;
         }),
       );
       // Use the full fleet list — campaign-filtered rows miss owners outside this
       // campaign, so a foreign Hermes computerId would never get cleared.
-      for (const patch of fleetHermesComputerPatches(campaignSeats, allRows)) {
+      for (const patch of fleetHermesComputerPatches(hermesCampaignSeats, allRows)) {
         void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
       }
 
@@ -221,16 +244,18 @@ export function CampaignAgentsPanel({
       setError(e instanceof Error ? e.message : "Failed to load campaign agents");
       setFleetComputers([]);
       setComputers([]);
+      setDurableSeats(undefined);
       setFleetLoaded(true);
     } finally {
       setLoading(false);
     }
-  }, [actions, campaignSeats, campaignId, seats]);
+  }, [actions, hermesCampaignSeats, campaignId, seats]);
 
   React.useEffect(() => {
     // Soft-nav campaign change: clear prior campaign fleet paint before poll.
     setComputers([]);
     setFleetComputers([]);
+    setDurableSeats(undefined);
     setFleetLoaded(false);
     setAudits([]);
     void refresh();

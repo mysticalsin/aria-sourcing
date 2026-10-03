@@ -70,10 +70,16 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const campaignOk = campaigns.length > 0;
   const browserSeats = seats.filter(isBrowserComputerSeat);
   // Explicit campaign membership only — empty assignedCampaignIds is NOT attached
-  // (matches evaluateCampaignGoLive / Campaign Agents).
-  const attachedOk =
+  // (matches evaluateCampaignGoLive / Campaign Agents). Hermes until durable poll.
+  const hermesAttachedOk =
     Boolean(campaign) &&
     browserSeats.some((s) => (s.assignedCampaignIds ?? []).includes(campaign!.id));
+  // null = durable not loaded / omitted → Hermes; Set = DB authority (may be empty).
+  const [durableAttachedIds, setDurableAttachedIds] = React.useState<Set<string> | null>(
+    null,
+  );
+  const attachedOk =
+    durableAttachedIds !== null ? durableAttachedIds.size > 0 : hermesAttachedOk;
   const agentsHref = campaign
     ? `/campaigns/${campaign.id}?tab=agents`
     : "/campaigns";
@@ -85,8 +91,9 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   React.useEffect(() => {
     // Soft-nav: clear until the next fleet poll — never keep green across seat/campaign change.
     setLiSessionHealthy(false);
+    setDurableAttachedIds(null);
     let cancelled = false;
-    const attachedSeatIds = new Set(
+    const hermesAttachedSeatIds = new Set(
       seats
         .filter(isBrowserComputerSeat)
         .filter((s) =>
@@ -95,15 +102,38 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
         .map((s) => s.id),
     );
     const load = async () => {
+      if (!campaign) {
+        if (!cancelled) {
+          setLiSessionHealthy(false);
+          setDurableAttachedIds(null);
+        }
+        return;
+      }
       try {
-        const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+        const res = await fetch(
+          `/api/fleet/computers?campaignId=${encodeURIComponent(campaign.id)}`,
+          { credentials: "same-origin" },
+        );
         if (!res.ok || cancelled) {
-          if (!cancelled) setLiSessionHealthy(false);
+          if (!cancelled) {
+            setLiSessionHealthy(false);
+            setDurableAttachedIds(null);
+          }
           return;
         }
         const data = (await res.json()) as {
           computers?: { seatId?: string | null; sessionHealthy?: boolean | null }[];
+          campaignSeats?: { id: string }[];
         };
+        // Prefer durable campaignSeats when present; else Hermes attach set.
+        const attachedSeatIds = Array.isArray(data.campaignSeats)
+          ? new Set(data.campaignSeats.map((s) => s.id))
+          : hermesAttachedSeatIds;
+        if (!cancelled) {
+          setDurableAttachedIds(
+            Array.isArray(data.campaignSeats) ? attachedSeatIds : null,
+          );
+        }
         const healthy = (data.computers ?? []).some(
           (c) =>
             c.sessionHealthy === true &&
@@ -112,7 +142,10 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
         );
         if (!cancelled) setLiSessionHealthy(healthy);
       } catch {
-        if (!cancelled) setLiSessionHealthy(false);
+        if (!cancelled) {
+          setLiSessionHealthy(false);
+          setDurableAttachedIds(null);
+        }
       }
     };
     void load();

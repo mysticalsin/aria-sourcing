@@ -51,7 +51,8 @@ export type GoLiveInput = {
 
 /**
  * Prefer durable Fleet `campaignSeats` for go-live attachment checks.
- * When present, DB bindings win over cold Hermes (same rule as Campaign Agents).
+ * When present (including authoritative `[]`), DB bindings win over Hermes.
+ * Only `undefined` (not loaded / poll fail) may fall back to Hermes-local seats.
  * Hermes fields fill persona/mode when the seat already exists locally.
  */
 export function mergeDurableCampaignSeatsForGoLive(
@@ -59,7 +60,9 @@ export function mergeDurableCampaignSeatsForGoLive(
   durable: DurableCampaignSeatLike[] | undefined,
   campaignId: string,
 ): AgentSeat[] {
-  if (!Array.isArray(durable) || durable.length === 0) return hermesSeats;
+  if (!Array.isArray(durable)) return hermesSeats;
+  // Successful fleet GET with zero campaign seats — do not Hermes-fallback attach.
+  if (durable.length === 0) return [];
   const hermesById = new Map(hermesSeats.map((s) => [s.id, s]));
   const out: AgentSeat[] = [];
   for (const row of durable) {

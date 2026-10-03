@@ -153,7 +153,9 @@ ok(
   "setup guide take-control done requires attach + fleet sessionHealthy",
   /done: attachedOk && liSessionHealthy/.test(setupGuide) &&
     /sessionHealthy === true/.test(setupGuide) &&
-    /attachedSeatIds\.has\(c\.seatId\.trim\(\)\)/.test(setupGuide),
+    /attachedSeatIds\.has\(c\.seatId\.trim\(\)\)/.test(setupGuide) &&
+    /campaignId=\$\{encodeURIComponent\(campaign\.id\)\}/.test(setupGuide) &&
+    /Array\.isArray\(data\.campaignSeats\)/.test(setupGuide),
 );
 ok(
   "setup guide never classifies Browser Computer via computerId alone",

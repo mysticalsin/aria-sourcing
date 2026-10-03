@@ -1,0 +1,44 @@
+{
+  "probedAt": "2026-10-03T11:47Z",
+  "tipSha": "6bc0640bebc2c3d74f0cf3c538d5a48c769349c6",
+  "tipShort": "6bc0640",
+  "appReady": {
+    "url": "https://aria-mantu-app.fly.dev/api/ready",
+    "ok": false,
+    "status": "not_ready",
+    "build": "21a42e7da6c271758ea4cade91c8d5658032832d",
+    "migration": "0084_agent_seats_computer_id_unique.sql",
+    "components": {
+      "database": true,
+      "auth": true,
+      "queue": true,
+      "agentFrameworks": false,
+      "hermesRuntime": true,
+      "migration": true,
+      "releaseIdentity": true
+    }
+  },
+  "pendingMigrationsOnFly": [
+    "0085_claim_contact_authenticated_only.sql",
+    "0086_enqueue_linkedin_browser_campaign_attach.sql",
+    "0087_enqueue_linkedin_vendor_campaign_attach.sql"
+  ],
+  "deploy": {
+    "path": "protected workflow .github/workflows/deploy-aria-mantu.yml",
+    "ref": "deploy/fly-github-actions",
+    "refSha": "f5868fabe1468f1f606c650baf9804cc817c68f5",
+    "requires": [
+      "ARIA_RELEASE_SHA=tip",
+      "recovery_receipt_sha256",
+      "Production environment secrets",
+      "FLY_API_TOKEN"
+    ],
+    "agentEnvHasToken": false
+  },
+  "postDeployProof": [
+    "curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq -e --arg tip '6bc0640bebc2c3d74f0cf3c538d5a48c769349c6' '.build==$tip and .components.agentFrameworks==true'",
+    "migration filename includes 0087",
+    "Take\u2192login\u2192Release on each campaign LI desk; sessionHealthy===true only after probe"
+  ],
+  "verdict": "Tip N-agent class green; production goal blocked on owner Fly tip redeploy + LI healthy"
+}

@@ -451,9 +451,13 @@ ok(
       (cleared[0].assignedCampaignIds ?? []).includes(campaignId),
   );
   ok(
-    "empty durable leaves Hermes unchanged",
+    "undefined durable leaves Hermes unchanged",
     mergeDurableCampaignSeatsForGoLive([liSeat()], undefined, campaignId)[0].id ===
       "seat_java_vm_01",
+  );
+  ok(
+    "authoritative empty durable returns no seats (no Hermes attach fallback)",
+    mergeDurableCampaignSeatsForGoLive([liSeat()], [], campaignId).length === 0,
   );
 }
 
