@@ -1196,7 +1196,7 @@ export class ComputerSupervisor {
     }
 
     // Session gate: LinkedIn sends require a probed-healthy session (align with go-live).
-    // Mock send may proceed without a probe so unit tests can exercise the act path.
+    // Mock send does NOT bypass this — tests must seed sessionHealthy + sessionProbedAt.
     if (opts.kind === "linkedin_send") {
       const permissionMode =
         typeof opts.payload.permissionMode === "string"

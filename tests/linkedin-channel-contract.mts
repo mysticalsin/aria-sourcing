@@ -6,6 +6,8 @@ import {
   linkedInBackendForProvider,
   isLinkedInAutomaticProvider,
 } from "../src/lib/linkedin-channel";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "../src/lib/send-pacing";
+import type { AgentSeat } from "../src/lib/types";
 
 const migration = readFileSync("supabase/migrations/0054_linkedin_channel_adapter_authority.sql", "utf8");
 const whatsappMigration = readFileSync("supabase/migrations/0013_outreach_approval_race_safety.sql", "utf8");
@@ -198,6 +200,43 @@ ok(
       defaultComputerSupervisor.list("ws-1").every((c) => c.seatId !== "seat_java_vm_01"),
     );
 
+    // Honesty: mock send still requires seat snapshot + probed sessionHealthy.
+    // Never invent healthy inside the adapter — the test seeds a fresh probe.
+    const nowIso = new Date().toISOString();
+    const seatSnapshot: AgentSeat = {
+      id: "seat_java_vm_01",
+      name: "Java VM",
+      operatorEmail: "java@example.test",
+      provider: "LinkedIn Browser Computer",
+      status: "active",
+      mode: "live",
+      domainVerified: true,
+      dailyLimit: LINKEDIN_BROWSER_SEAT_DEFAULTS.dailyLimit,
+      warmup: false,
+      warmupStartCap: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStartCap,
+      warmupStepPerDay: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStepPerDay,
+      warmupStartedAt: nowIso,
+      minGapMinutes: LINKEDIN_BROWSER_SEAT_DEFAULTS.minGapMinutes,
+      sendWindow: { startHour: 0, endHour: 23, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
+      sentToday: 0,
+      lastSendAt: null,
+      health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      persona: "",
+      signature: "",
+      connectedAccount: "",
+      createdAt: nowIso,
+      linkedinDeliveryBackend: "browser-computer",
+    };
+    const bound = defaultComputerSupervisor.ensureComputer({
+      workspaceId: "ws-1",
+      seatId: "seat_java_vm_01",
+      computerId: "comp_java_campaign_send",
+      campaignId: "camp_seed_backend",
+    });
+    bound.status = "ready";
+    bound.sessionHealthy = true;
+    bound.sessionProbedAt = nowIso;
+
     const outcome = await browser.deliver({
       workspaceId: "ws-1",
       messageId: "m-li",
@@ -209,6 +248,7 @@ ok(
       attemptId: "11111111-1111-4111-8111-111111111111",
       seatId: "seat_java_vm_01",
       computerId: "comp_java_campaign_send",
+      seat: seatSnapshot,
       credentials: { computerSupervisorMockSend: true },
     });
     ok(
