@@ -86,5 +86,26 @@ ok(
   /ingestDurableBrowserBindings/.test(checklist),
 );
 
+const fleetPage = readFileSync(new URL("../src/app/fleet/page.tsx", import.meta.url), "utf8");
+ok(
+  "fleet Take passes campaignId only when seatAttachedToCampaign(scope)",
+  /seatAttachedToCampaign\(seat, fromScope\)/.test(fleetPage) &&
+    !/if \(fromScope\) return \{ campaignId: fromScope \}/.test(fleetPage),
+);
+ok(
+  "fleet Deploy omits campaignId for newly minted seats",
+  /New seats from Deploy are not campaign-attached yet/.test(fleetPage),
+);
+
+const viewport = readFileSync(
+  new URL("../src/app/fleet/computers/[computerId]/viewport/page.tsx", import.meta.url),
+  "utf8",
+);
+ok(
+  "viewport Take prefers seat attach over stale computer.campaignId",
+  /seatAttachedToCampaign\(hermesSeat, stamped\)/.test(viewport) &&
+    !/\(computer\?\.campaignId \?\? ""\)\.trim\(\) \|\|/.test(viewport),
+);
+
 console.log(`RESULT campaign-soft-nav-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

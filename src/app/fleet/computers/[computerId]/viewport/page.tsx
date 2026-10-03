@@ -18,6 +18,7 @@ import {
   type BrowserAgentPermissionMode,
 } from "@/lib/browser-agent-permissions";
 import { useActions, useSettings, useSeats } from "@/lib/store";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { defaultFleetSettings } from "@/lib/fleet";
 
 type ComputerState = {
@@ -102,12 +103,15 @@ export default function FleetComputerViewportPage() {
           setError("Unbound host VM — reclaim/bind a seat before Start, Take control, or Release.");
           return;
         }
-        // When the desk is campaign-attached, pass campaignId so refuseUnattached gates Take/Start.
+        // campaignId only from real seat attach — never prefer stale computer.campaignId
+        // after detach (that would refuseUnattached-block Take/Start).
         const hermesSeat = seats.find((s) => s.id === seatId);
+        const stamped = (computer?.campaignId ?? "").trim();
+        const fromSeat = (hermesSeat?.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim()));
         const campaignId =
-          (computer?.campaignId ?? "").trim() ||
-          (hermesSeat?.assignedCampaignIds ?? []).find((x) => Boolean(x?.trim())) ||
-          undefined;
+          hermesSeat && stamped && seatAttachedToCampaign(hermesSeat, stamped)
+            ? stamped
+            : fromSeat || undefined;
         const res = await fetch("/api/fleet/computers", {
           method: "POST",
           credentials: "same-origin",
