@@ -23,7 +23,7 @@ export function CampaignGoLiveChecklist(props: {
   className?: string;
   compact?: boolean;
 }) {
-  const [polledComputers, setPolledComputers] = React.useState<ComputerHealthLike[] | undefined>();
+  const [polledComputers, setPolledComputers] = React.useState<ComputerHealthLike[]>([]);
   const [durableSeats, setDurableSeats] = React.useState<DurableCampaignSeatLike[] | undefined>();
   React.useEffect(() => {
     if (props.computers) return;
@@ -34,7 +34,12 @@ export function CampaignGoLiveChecklist(props: {
           `/api/fleet/computers?campaignId=${encodeURIComponent(props.campaignId)}`,
           { credentials: "same-origin" },
         );
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          // Fail closed: empty fleet poll — Hermes twin alone must not green attach.
+          setPolledComputers([]);
+          return;
+        }
         const data = (await res.json()) as {
           computers?: ComputerHealthLike[];
           campaignSeats?: DurableCampaignSeatLike[];
@@ -61,7 +66,7 @@ export function CampaignGoLiveChecklist(props: {
           }
         }
       } catch {
-        /* checklist still works without live computer rows */
+        if (!cancelled) setPolledComputers([]);
       }
     };
     void load();
@@ -72,6 +77,7 @@ export function CampaignGoLiveChecklist(props: {
     };
   }, [props.campaignId, props.computers, props.seats]);
 
+  // props.computers wins; otherwise fail-closed [] until/after poll (never undefined Hermes-only path).
   const computers = props.computers ?? polledComputers;
   const seatsForEval = React.useMemo(
     () => mergeDurableCampaignSeatsForGoLive(props.seats, durableSeats, props.campaignId),

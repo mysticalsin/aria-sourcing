@@ -163,7 +163,7 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
           const computers = fleet.computers ?? [];
           const bySeatHealth = new Map(
             computers
-              .filter((c) => c.seatId)
+              .filter((c) => c.seatId && c.seatId !== "__orphan__")
               .map((c) => [c.seatId!, c.sessionHealthy ?? null] as const),
           );
           const byCompHealth = new Map(

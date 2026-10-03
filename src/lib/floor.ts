@@ -316,12 +316,23 @@ export function agentActivityWithComputers(
     // Healthy LinkedIn is ready — not automatic "working". Only real sends
     // (or VM status=busy above) count as working; never keep hash theater.
     const realSends = (seat.sentToday ?? 0) > 0;
+    if (!realSends) {
+      return {
+        ...base,
+        state: "idle",
+        label: withVm("LinkedIn session healthy"),
+        detail: "Standing by",
+        focusName: null,
+        busy: false,
+        tone: "electric",
+      };
+    }
     return {
       ...base,
-      state: realSends ? (base.state === "idle" ? "sourcing" : base.state) : "idle",
+      state: base.state === "idle" ? "sourcing" : base.state,
       label: withVm("LinkedIn session healthy"),
-      busy: realSends,
-      tone: realSends && base.state !== "idle" ? base.tone : "electric",
+      busy: true,
+      tone: base.state !== "idle" ? base.tone : "electric",
     };
   }
   if (hint.status === "ready" && hint.sessionHealthy === false) {

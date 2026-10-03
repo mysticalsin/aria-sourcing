@@ -74,7 +74,8 @@ export function mergeDurableCampaignSeatsForGoLive(
     if (local) {
       out.push({
         ...local,
-        computerId: (row.computerId ?? local.computerId) || local.computerId,
+        computerId:
+          row.computerId !== undefined ? row.computerId : local.computerId,
         assignedCampaignIds: assigned,
         provider:
           local.provider === "LinkedIn Browser Computer" ||

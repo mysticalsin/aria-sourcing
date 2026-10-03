@@ -507,9 +507,10 @@ export default function FleetPage() {
       return;
     }
     if (seat.provider === "LinkedIn Browser Computer") {
+      const staleTwin = isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
-        existingComputerId: seat.computerId,
+        existingComputerId: staleTwin ? null : seat.computerId,
       });
       if (!seat.computerId || seat.computerId !== computerId) {
         await actions.updateSeat(seat.id, { computerId });

@@ -12,26 +12,41 @@ export const FLEET_ROSTER_STACK_ID = "fleet-roster-stack";
 export function FleetRosterStack({ children }: { children: React.ReactNode }) {
   const seats = useSeats();
 
-  const withMailbox = seats.filter((s) => s.connectedAccount).length;
-  const liveReady = seats.filter(
+  const isBrowserComputer = (s: (typeof seats)[number]) =>
+    s.provider === "LinkedIn Browser Computer" ||
+    s.linkedinDeliveryBackend === "browser-computer";
+
+  const emailSeats = seats.filter((s) => !isBrowserComputer(s));
+  const liSeats = seats.filter(isBrowserComputer);
+  const withMailbox = emailSeats.filter((s) => s.connectedAccount).length;
+  // Email-only live-ready — LI send-ready is FleetHealthStrip (sessionHealthy probe).
+  const emailLiveReady = emailSeats.filter(
     (s) => s.mode === "live" && s.connectedAccount && s.domainVerified,
   ).length;
 
   const stepsComplete =
-    (seats.length > 0 ? 1 : 0) + (withMailbox > 0 ? 1 : 0) + (liveReady > 0 ? 1 : 0);
+    (seats.length > 0 ? 1 : 0) +
+    (withMailbox > 0 || liSeats.length > 0 ? 1 : 0) +
+    (emailLiveReady > 0 || liSeats.some((s) => s.mode === "live") ? 1 : 0);
   const progressPct = seats.length ? (stepsComplete / 3) * 100 : 0;
 
   let statusLabel = "No agents";
   let statusTone: "neutral" | "success" | "electric" | "warning" = "neutral";
-  if (liveReady > 0) {
-    statusLabel = `${liveReady} ready to send`;
+  if (emailLiveReady > 0) {
+    statusLabel = `${emailLiveReady} email ready to send`;
     statusTone = "success";
+  } else if (liSeats.length > 0) {
+    statusLabel = `${liSeats.length} LI desk${liSeats.length === 1 ? "" : "s"} · probe on strip`;
+    statusTone = "electric";
   } else if (withMailbox > 0) {
     statusLabel = "Mailboxes linked";
     statusTone = "electric";
-  } else if (seats.length > 0) {
+  } else if (emailSeats.length > 0) {
     statusLabel = "Needs mailbox";
     statusTone = "warning";
+  } else if (seats.length > 0) {
+    statusLabel = "Agents present";
+    statusTone = "electric";
   }
 
   return (
@@ -39,13 +54,13 @@ export function FleetRosterStack({ children }: { children: React.ReactNode }) {
       id={FLEET_ROSTER_STACK_ID}
       eyebrow="Agent fleet"
       title="Seats & mailboxes"
-      description="Each agent is one authorized mailbox under shared guardrails. Connect in Settings or per-seat below, verify domain, then go live."
+      description="Email seats need mailbox + domain verify. LinkedIn Browser Computer desks need Take→login→Release — the strip below never invents sessionHealthy."
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
       progressLabel={
         seats.length
-          ? `${liveReady} live-ready · ${withMailbox} with mailbox · ${seats.length} total`
+          ? `${liSeats.length} LI · ${emailLiveReady} email live-ready · ${withMailbox} with mailbox · ${seats.length} total`
           : "Add your first agent to begin"
       }
       footer={
@@ -55,7 +70,7 @@ export function FleetRosterStack({ children }: { children: React.ReactNode }) {
           <Link href="/settings?tab=integrations" className="font-medium text-ink underline-offset-2 hover:underline">
             Settings → Integrations
           </Link>
-          . Warm-up, caps, and suppression apply fleet-wide.
+          . LI session probe is on the readiness strip (never invent healthy).
         </p>
       }
     >

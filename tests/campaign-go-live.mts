@@ -409,6 +409,16 @@ ok(
     patched[0].computerId === "comp_java_01" &&
       (patched[0].assignedCampaignIds ?? []).includes(campaignId),
   );
+  const cleared = mergeDurableCampaignSeatsForGoLive(
+    [liSeat({ id: "seat_clear_twin", computerId: "comp_stale_twin", assignedCampaignIds: [] })],
+    [{ id: "seat_clear_twin", computerId: null, assignedCampaignIds: [campaignId] }],
+    campaignId,
+  );
+  ok(
+    "durable null computerId clears Hermes twin",
+    cleared[0].computerId === null &&
+      (cleared[0].assignedCampaignIds ?? []).includes(campaignId),
+  );
   ok(
     "empty durable leaves Hermes unchanged",
     mergeDurableCampaignSeatsForGoLive([liSeat()], undefined, campaignId)[0].id ===
