@@ -11,9 +11,9 @@ status: tip-n-agent-closed-fly-blocks-goal
 ## Current state
 
 - **Deploy-land:** `cursor/fly-deploy-land-n-agent-b91d` @ `49b20bb` — PR https://github.com/mysticalsin/aria-sourcing/pull/150 → `deploy/fly-github-actions`
-- **#150:** `MERGEABLE`, **CI+CodeQL green**, squash **auto-merge enabled**, blocked only on **`REVIEW_REQUIRED`**
-- **Feature:** `cursor/linkedin-human-claude-chrome-b91d` — PR https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip residual:** **NONE** (reconfirmed)
+- **#150:** `MERGEABLE`, **CI+CodeQL green** @ `7a63905`, squash **auto-merge enabled**, blocked only on **`REVIEW_REQUIRED`**
+- **Dispatch runbook:** `_relay/evidence/2026-10-03-fly-owner-dispatch-runbook.md`
+- **Tip residual:** **NONE**
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
 - **Goal:** **open** until Fly tip SHA + LI desks healthy
 
@@ -21,7 +21,8 @@ status: tip-n-agent-closed-fly-blocks-goal
 
 1. Residual hunt NONE
 2. Enabled squash auto-merge on #150
-3. Confirmed tip `49b20bb` CI+CodeQL success (Quality+Release)
+3. Confirmed tip CI+CodeQL success
+4. Wrote owner dispatch runbook (approve → receipt digest → workflow_dispatch → LI proof)
 
 ## Blockers
 
