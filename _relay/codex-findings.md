@@ -1253,4 +1253,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** computerForSeat allowed empty seatId to green go-live. Take control toast used pre-take sessionHealthy as "session restored". seatsToOfficeAgents hard-coded Date.now desyncing 3D vs rollup.
 **Repro/evidence:** computerId hint with seatId:"" + sessionHealthy true → session_healthy ok; toast after take claimed no re-login while BE cleared probe.
 **Suggested fix:** refuse empty/orphan in computerForSeat; toast from after-take health; injectable now on seatsToOfficeAgents + Floor page clock.
-**Status:** fixed (pending tip SHA)
+**Status:** fixed (8fb3eec) — go-live empty-owner refuse; Take toast honest; Floor shared now

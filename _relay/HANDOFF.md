@@ -10,7 +10,7 @@ status: golive-take-toast-floor-now-shipped-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `8fb3eec` (go-live/Take/Floor now)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** go-live refuses empty/orphan owners; Take toast honest after probe clear; Floor 2D/3D/rollup share one now
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
