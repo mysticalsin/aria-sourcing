@@ -63,5 +63,16 @@ ok(
     setup.indexOf("setLiSessionHealthy(false)") < setup.indexOf("const load = async"),
 );
 
+const campaignPage = readFileSync(
+  new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
+  "utf8",
+);
+ok(
+  "campaign Agents tab count prefers durable campaignSeats length",
+  /durableAgentCount/.test(campaignPage) &&
+    /Array\.isArray\(data\.campaignSeats\) \? data\.campaignSeats\.length/.test(campaignPage) &&
+    /isBrowserComputerSeat\(s\) && seatAttachedToCampaign\(s, c\.id\)/.test(campaignPage),
+);
+
 console.log(`RESULT campaign-soft-nav-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -31,6 +31,7 @@ import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
 import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
 import { CampaignGoLiveChecklist } from "@/components/campaigns/campaign-go-live-checklist";
 import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
 import { CampaignFunnelSpine } from "@/components/campaigns/campaign-funnel-spine";
 import { MetricCard } from "@/components/dashboard/metric-card";
@@ -414,6 +415,40 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
   const [runToken, setRunToken] = React.useState(0);
+  /** Durable Fleet campaignSeats length when present; null until poll / on omit. */
+  const [durableAgentCount, setDurableAgentCount] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    // Soft-nav: clear durable badge until campaign-scoped fleet authority lands.
+    setDurableAgentCount(null);
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/fleet/computers?campaignId=${encodeURIComponent(id)}`,
+          { credentials: "same-origin" },
+        );
+        if (!res.ok || cancelled) {
+          if (!cancelled) setDurableAgentCount(null);
+          return;
+        }
+        const data = (await res.json()) as { campaignSeats?: unknown[] };
+        if (!cancelled) {
+          setDurableAgentCount(
+            Array.isArray(data.campaignSeats) ? data.campaignSeats.length : null,
+          );
+        }
+      } catch {
+        if (!cancelled) setDurableAgentCount(null);
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [id]);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -530,6 +565,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const enrichmentSpend = (hermesState?.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
   const enrichmentBudget = hermesState?.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
 
+  const hermesAgentCount = seats.filter(
+    (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, c.id),
+  ).length;
+  // Prefer durable Fleet campaignSeats length when present (incl. authoritative 0).
+  const agentsTabCount =
+    durableAgentCount !== null ? durableAgentCount : hermesAgentCount;
+
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
     { value: "jd", label: "JD Analysis", icon: <FileSearch className="h-4 w-4" /> },
@@ -538,11 +580,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       value: "agents",
       label: "Agents",
       icon: <Bot className="h-4 w-4" />,
-      count: seats.filter(
-        (s) =>
-          s.provider === "LinkedIn Browser Computer" &&
-          (s.assignedCampaignIds ?? []).includes(c.id),
-      ).length,
+      count: agentsTabCount,
     },
     { value: "candidates", label: "Candidates", icon: <Users className="h-4 w-4" />, count: candidates.length },
     { value: "outreach", label: "Outreach", icon: <Send className="h-4 w-4" />, count: outreach.length },
