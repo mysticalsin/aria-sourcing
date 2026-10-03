@@ -28,6 +28,7 @@ import {
 } from "@/lib/openbot/supervisor-client";
 import {
   recordComputerAudit,
+  queryComputerAuditsDurable,
 } from "@/lib/computer-audit";
 import { HOST_ORPHAN_SEAT_ID } from "@/lib/computer-constants";
 
@@ -900,6 +901,59 @@ export class ComputerSupervisor {
   }
 
   /**
+   * Multi-instance cold start: restore sessionHealthy from durable session_probe
+   * audits within SESSION_HEALTH_TTL_MS. Never invents true — only meta.healthy===true
+   * from a real probe receipt. Skips computers that already have a fresher in-memory probe.
+   */
+  async restoreSessionHealthFromDurableAudits(
+    workspaceId: string,
+    opts?: { now?: number; queryAudits?: typeof queryComputerAuditsDurable },
+  ): Promise<{ restored: number; considered: number }> {
+    const now = opts?.now ?? Date.now();
+    const sinceIso = new Date(now - SESSION_HEALTH_TTL_MS).toISOString();
+    const query = opts?.queryAudits ?? queryComputerAuditsDurable;
+    const events = await query({
+      workspaceId,
+      action: "session_probe",
+      since: sinceIso,
+      limit: 200,
+    });
+    // Newest last from durable query — walk newest-first per computer.
+    const latestByComputer = new Map<string, (typeof events)[number]>();
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i]!;
+      if (!latestByComputer.has(ev.computerId)) latestByComputer.set(ev.computerId, ev);
+    }
+    let restored = 0;
+    let considered = 0;
+    for (const rec of this.list(workspaceId)) {
+      if (rec.seatId === HOST_ORPHAN_SEAT_ID) continue;
+      const ev = latestByComputer.get(rec.computerId);
+      if (!ev) continue;
+      considered++;
+      const probedAtMs = Date.parse(ev.at);
+      if (!Number.isFinite(probedAtMs) || now - probedAtMs > SESSION_HEALTH_TTL_MS) continue;
+      // Fresher in-memory probe wins — do not clobber with older durable receipt.
+      const memAt = rec.sessionProbedAt ? Date.parse(rec.sessionProbedAt) : NaN;
+      if (Number.isFinite(memAt) && memAt >= probedAtMs && rec.sessionHealthy != null) {
+        continue;
+      }
+      const healthyMeta = ev.meta?.healthy;
+      // Fail closed: only explicit boolean meta counts. Missing meta → leave null.
+      if (healthyMeta === true) {
+        rec.sessionHealthy = true;
+        rec.sessionProbedAt = ev.at;
+        restored++;
+      } else if (healthyMeta === false) {
+        rec.sessionHealthy = false;
+        rec.sessionProbedAt = ev.at;
+        restored++;
+      }
+    }
+    return { restored, considered };
+  }
+
+  /**
    * Probe LinkedIn session on a durable computer profile. Never invents healthy=true.
    * Used by Login/Restore so we open /feed when cookies already work (survives app deploys).
    */
@@ -923,7 +977,9 @@ export class ComputerSupervisor {
         rec.lastError = probe.detail;
       }
       rec.updatedAt = isoNow();
-      this.audit(computerId, "session_probe", probe.detail, "system");
+      this.audit(computerId, "session_probe", probe.detail, "system", {
+        meta: { healthy: probe.healthy === true },
+      });
     } catch (err) {
       rec.sessionHealthy = null;
       rec.sessionProbedAt = isoNow();
@@ -934,6 +990,7 @@ export class ComputerSupervisor {
         "session_probe_failed",
         err instanceof Error ? err.message : "session probe failed",
         "system",
+        { meta: { healthy: null } },
       );
     }
     return rec;
@@ -993,7 +1050,7 @@ export class ComputerSupervisor {
         this.audit(computerId, "session_probe", probe.detail, "system", {
           correlationId,
           campaignId: opts?.campaignId,
-          meta: { healthy: probe.healthy, url: probe.url ?? null },
+          meta: { healthy: probe.healthy === true, url: probe.url ?? null },
         });
       } catch (err) {
         rec.sessionHealthy = null;
@@ -1004,7 +1061,7 @@ export class ComputerSupervisor {
           "session_probe_failed",
           err instanceof Error ? err.message : "session probe failed",
           "system",
-          { correlationId, campaignId: opts?.campaignId },
+          { correlationId, campaignId: opts?.campaignId, meta: { healthy: null } },
         );
       }
     } else {

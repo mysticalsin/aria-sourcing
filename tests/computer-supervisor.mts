@@ -748,6 +748,10 @@ try {
         route.includes("hydrateFromHost"),
     );
     ok(
+      "GET/POST restores session health from durable audits (multi-instance)",
+      route.includes("restoreSessionHealthFromDurableAudits"),
+    );
+    ok(
       "reclaim persist failure rolls back in-memory claim",
       reclaimBlock.includes("releaseToOrphan") &&
         reclaimBlock.includes("computer_id persist failed"),
@@ -912,6 +916,91 @@ try {
     ok(
       "singleton never invents sessionHealthy on ensure",
       b.get(seat.computerId)?.sessionHealthy == null,
+    );
+  }
+
+  // Multi-instance: restore sessionHealthy from durable probe audits within TTL.
+  {
+    const { SESSION_HEALTH_TTL_MS } = await import("../src/lib/computer-supervisor");
+    const cold = new ComputerSupervisor();
+    const seat = cold.ensureComputer({ workspaceId: "ws-durable", seatId: "seat-durable" });
+    const rec = cold.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.sessionHealthy = null;
+    rec.sessionProbedAt = null;
+    const probedAt = new Date(Date.now() - 5_000).toISOString();
+    const result = await cold.restoreSessionHealthFromDurableAudits("ws-durable", {
+      queryAudits: async () => [
+        {
+          id: "caud_probe1",
+          at: probedAt,
+          workspaceId: "ws-durable",
+          computerId: seat.computerId,
+          seatId: seat.seatId,
+          campaignId: null,
+          action: "session_probe",
+          detail: "ok",
+          actor: "system",
+          meta: { healthy: true },
+        },
+      ],
+    });
+    ok("durable restore considered matching computer", result.considered >= 1);
+    ok("durable restore applied healthy=true from meta", result.restored === 1);
+    ok(
+      "cold Map restored sessionHealthy from audit (not invented)",
+      cold.get(seat.computerId)?.sessionHealthy === true,
+    );
+    ok(
+      "cold Map restored sessionProbedAt from audit",
+      cold.get(seat.computerId)?.sessionProbedAt === probedAt,
+    );
+
+    // Missing meta must not invent healthy=true.
+    const cold2 = new ComputerSupervisor();
+    const seat2 = cold2.ensureComputer({ workspaceId: "ws-durable2", seatId: "seat-durable2" });
+    cold2.get(seat2.computerId)!.status = "ready";
+    await cold2.restoreSessionHealthFromDurableAudits("ws-durable2", {
+      queryAudits: async () => [
+        {
+          id: "caud_old",
+          at: new Date().toISOString(),
+          workspaceId: "ws-durable2",
+          computerId: seat2.computerId,
+          action: "session_probe",
+          detail: "looks fine",
+          actor: "system",
+          meta: {},
+        },
+      ],
+    });
+    ok(
+      "durable restore without meta.healthy leaves null (no invent)",
+      cold2.get(seat2.computerId)?.sessionHealthy == null,
+    );
+
+    // Stale audit beyond TTL must expire.
+    const cold3 = new ComputerSupervisor();
+    const seat3 = cold3.ensureComputer({ workspaceId: "ws-durable3", seatId: "seat-durable3" });
+    cold3.get(seat3.computerId)!.status = "ready";
+    const staleAt = new Date(Date.now() - SESSION_HEALTH_TTL_MS - 60_000).toISOString();
+    await cold3.restoreSessionHealthFromDurableAudits("ws-durable3", {
+      queryAudits: async () => [
+        {
+          id: "caud_stale",
+          at: staleAt,
+          workspaceId: "ws-durable3",
+          computerId: seat3.computerId,
+          action: "session_probe",
+          detail: "old",
+          actor: "system",
+          meta: { healthy: true },
+        },
+      ],
+    });
+    ok(
+      "durable restore ignores TTL-expired probe",
+      cold3.get(seat3.computerId)?.sessionHealthy == null,
     );
   }
 

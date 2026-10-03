@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
     try {
       await bindWorkspaceSupervisor(null);
       await defaultComputerSupervisor.hydrateFromHost("__local__");
+      await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits("__local__");
       await defaultComputerSupervisor.refreshSessionHealthForList("__local__");
       const computers = defaultComputerSupervisor
         .list("__local__")
@@ -156,6 +157,10 @@ export async function GET(req: NextRequest) {
     // when Chromiums are already running on Fly. Also import unmatched host bots as
     // orphans (visible for Login reclaim) — never mint, never invent sessionHealthy.
     await defaultComputerSupervisor.hydrateFromHost(String(wid));
+
+    // Multi-instance: restore recent probe receipts from durable audits before
+    // opportunistic re-probe. Never invents true without meta.healthy===true.
+    await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(String(wid));
 
     const seenIds = new Set(computers.map((c) => c.computerId));
     for (const orphan of defaultComputerSupervisor.listOrphans(String(wid))) {
@@ -309,8 +314,10 @@ export async function POST(req: NextRequest) {
     if (supabase && workspaceId && workspaceId !== "__local__") {
       await hydrateWorkspaceSeatBindings(supabase, workspaceId);
       await defaultComputerSupervisor.hydrateFromHost(workspaceId);
+      await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(workspaceId);
     } else if (workspaceId) {
       await defaultComputerSupervisor.hydrateFromHost(workspaceId);
+      await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(workspaceId);
     }
     const campaignOpts = { campaignId: body.campaignId };
     const computerId = (body.computerId ?? "").trim();
