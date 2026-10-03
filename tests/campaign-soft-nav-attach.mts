@@ -82,6 +82,12 @@ ok(
     !/updateSeat\(patch\.seatId, \{ computerId: patch\.computerId \}\)/.test(agents),
 );
 ok(
+  "campaign agents healthy badge uses N denom — success only when all desks healthy",
+  /\{healthyCount\}\/\{campaignSeats\.length\} session healthy/.test(agents) &&
+    /healthyCount === campaignSeats\.length/.test(agents) &&
+    !/tone=\{healthyCount \? "success" : "neutral"\}/.test(agents),
+);
+ok(
   "campaign agents detach skips durable-bound seats — never LWW-wipe other campaigns",
   /durableById\.has\(local\.id\)/.test(agents) &&
     /if \(durableById\.has\(local\.id\)\) continue/.test(agents),

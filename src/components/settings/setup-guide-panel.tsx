@@ -148,12 +148,18 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
             Array.isArray(data.campaignSeats) ? attachedSeatIds : null,
           );
         }
-        const healthy = (data.computers ?? []).some(
-          (c) =>
-            c.sessionHealthy === true &&
-            typeof c.seatId === "string" &&
-            attachedSeatIds.has(c.seatId.trim()),
-        );
+        // All attached desks must probe healthy — 1/N must not green take-control.
+        const computers = data.computers ?? [];
+        const healthy =
+          attachedSeatIds.size > 0 &&
+          [...attachedSeatIds].every((seatId) =>
+            computers.some(
+              (c) =>
+                c.sessionHealthy === true &&
+                typeof c.seatId === "string" &&
+                c.seatId.trim() === seatId,
+            ),
+          );
         if (!cancelled) setLiSessionHealthy(healthy);
       } catch {
         if (!cancelled) {

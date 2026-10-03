@@ -120,6 +120,12 @@ const stack = readFileSync("src/components/settings/linkedin-outreach-stack.tsx"
 ok("settings stack Automatic outreach label", /Automatic outreach/.test(stack));
 ok("settings stack Manual approve-and-send label", /Manual approve-and-send/.test(stack));
 ok("settings stack writes deliveryMode", /deliveryMode/.test(stack));
+ok(
+  "settings stack Ready requires every LI desk healthy (not .some 1/N)",
+  /browserSeats\.every\(\(s\) => s\.sessionHealthy === true\)/.test(stack) &&
+    /browserSeats\.every\(/.test(stack) &&
+    !/browserSeats\.some\(\(s\) => s\.sessionHealthy === true\)/.test(stack),
+);
 
 const oauthMigration = existsSync("supabase/migrations/0061_linkedin_oauth_connections.sql")
   ? readFileSync("supabase/migrations/0061_linkedin_oauth_connections.sql", "utf8")
@@ -153,7 +159,10 @@ ok(
   "setup guide take-control done requires attach + fleet sessionHealthy",
   /done: attachedOk && liSessionHealthy/.test(setupGuide) &&
     /sessionHealthy === true/.test(setupGuide) &&
-    /attachedSeatIds\.has\(c\.seatId\.trim\(\)\)/.test(setupGuide) &&
+    // All attached desks — not .some() 1/N theater.
+    /attachedSeatIds\.size > 0/.test(setupGuide) &&
+    /\[\.\.\.attachedSeatIds\]\.every/.test(setupGuide) &&
+    /c\.seatId\.trim\(\) === seatId/.test(setupGuide) &&
     // Soft-nav: effect keys on campaignId (from campaign?.id), not campaign.id inline.
     /campaignId=\$\{encodeURIComponent\(campaignId\)\}/.test(setupGuide) &&
     /Array\.isArray\(data\.campaignSeats\)/.test(setupGuide),
