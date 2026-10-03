@@ -10,7 +10,7 @@ status: floor-3d-warming-aligned-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip (pending 3D warming commit)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `452c257`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** 2D + rollup + 3D share `agentActivityWithComputers`; busy/starting → `warming` (not idle theater)
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
