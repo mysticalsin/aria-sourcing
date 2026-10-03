@@ -1166,5 +1166,13 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** After reclaim/detach, a login-wall twin becomes `__orphan__` (or durable `computer_id` is cleared) but `fleetHermesComputerPatches` only clears Hermes when another seat owns the id — orphan-only / absent fleet rows leave the stale `seat.computerId`. Campaign Agents durable merge (`campaign-agents-panel.tsx:146`) only writes when durable is non-null, never nulls Hermes. Deploy then passes that stale id into `resolveDurableComputerId` → `reclaimHealthyOrphan` `ensureComputer`s the twin back onto the seat and can return the unhealthy binding.
 **Repro/evidence:** `tests/fleet-hermes-sync.mts:65` asserts `keeps Hermes when only orphan-bound on fleet` (patches.length === 0). Seat A Hermes=`comp_twin`, fleet=`{seatId:__orphan__, computerId:comp_twin}` + durable null → poll leaves Hermes; Deploy reclaims twin.
 **Suggested fix:** Clear Hermes when fleet owner is missing/orphan or durable campaignSeats.computerId is null; flip the locked test.
+**Status:** fixed (580d0c3) — residual Deploy/reclaim race tracked below
+
+## 2026-10-03 — reclaimHealthyOrphan ensureComputer claims orphan before healthy probe
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:681
+**Issue:** `reclaimHealthyOrphan` still `ensureComputer`s the caller `computerId` before proving `sessionHealthy===true`. For a `__orphan__` login-wall twin that path hits `ensureComputer`→`claimOrphan` (line 285) with no `priorSeatId` gate and no health gate. Hermes poll clear (580d0c3) does not close the race: Campaign Agents Deploy (`campaign-agents-panel.tsx:226`) can pass stale `seat.computerId` before the next poll, rebinding the twin onto the seat; when probe is null/false and no other healthy orphan exists, fallback (718–727) returns that seat-bound unhealthy binding and `resolveDurableComputerId` keeps `existing` (boot-browser-computer.ts:107). Contrast the other-orphan loop (707–715) which correctly probes before `claimOrphan`.
+**Repro/evidence:** Seat A Hermes=`comp_twin` still (pre-poll); fleet row `{seatId:__orphan__, computerId:comp_twin}` with `sessionHealthy` null/false and no other healthy orphan; Deploy → `resolveDurableComputerId({existingComputerId:comp_twin})` → reclaim `ensureComputer` claims twin → probe fails → returns twin on seat A. Foreign `priorSeatId` orphan passed as `existingComputerId` is also claimable via ensure (candidates filter never runs).
+**Suggested fix:** For orphan/foreign `currentId`, probe in place and `claimOrphan` only when `sessionHealthy===true` and priorSeatId is empty/same-seat; on unhealthy leave orphan and fall through; never ensure-claim before healthy proof.
 **Status:** open
 
