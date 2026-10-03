@@ -1537,9 +1537,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               let computerId = seat.computerId ?? null;
               if (seat.provider === "LinkedIn Browser Computer") {
                 let fleetRows: Array<{ seatId?: string | null; computerId?: string | null }> = [];
+                let fleetOk = false;
                 try {
                   const capRes = await fetch("/api/fleet/computers", { credentials: "same-origin" });
                   if (capRes.ok) {
+                    fleetOk = true;
                     const cap = (await capRes.json()) as {
                       hostCapacity?: { computers: number; max: number } | null;
                       computers?: Array<{ seatId?: string | null; computerId?: string | null }>;
@@ -1561,12 +1563,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 // Reclaim a probed-healthy host orphan before minting — never seat.id
                 // (that merges N VMs onto one profile) and never burn a blank mint when
                 // a durable orphan already has LinkedIn cookies.
-                // Omit stale twin when fleet shows orphan/absent/foreign.
-                const staleTwin = isStaleHermesComputerTwin(
-                  seatId,
-                  seat.computerId,
-                  fleetRows,
-                );
+                // Fail closed like Campaign Agents Deploy: empty/failed fleet omits Hermes twin.
+                const staleTwin =
+                  !fleetOk ||
+                  fleetRows.length === 0 ||
+                  isStaleHermesComputerTwin(seatId, seat.computerId, fleetRows);
                 computerId = await resolveDurableComputerId({
                   seatId,
                   existingComputerId: staleTwin ? null : seat.computerId,

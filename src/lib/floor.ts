@@ -293,12 +293,17 @@ export function agentActivityWithComputers(
     // Busy + probed-healthy is real work (linkedin_send in flight) — keep base
     // activity, never lie "session unverified". Unverified/null stays warming.
     if (hint.status === "busy" && healthyBusy) {
+      // VM busy + probed healthy is real host work — never keep hash campaign theater
+      // when the desk has zero sends (detail/focusName would invent a Working-on cycle).
+      const realSends = (seat.sentToday ?? 0) > 0;
       return {
         ...base,
-        state: base.state,
+        state: realSends && base.state !== "idle" ? base.state : "sourcing",
         label: withVm("VM busy — LinkedIn session healthy"),
+        detail: realSends ? base.detail : "VM busy",
+        focusName: realSends ? base.focusName : null,
         busy: true,
-        tone: base.state === "idle" ? "electric" : base.tone,
+        tone: realSends && base.state !== "idle" ? base.tone : "electric",
       };
     }
     return {

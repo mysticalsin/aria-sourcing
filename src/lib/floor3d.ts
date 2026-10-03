@@ -188,8 +188,7 @@ export function seatsToOfficeAgents(
       provider: seat.provider,
     };
   }).map((agent, index, all) => {
-    // PacketFX hub: prefer probed-healthy bound LI over first suffix / roster[0]
-    // email theater so packets don't fly to unverified or non-LI desks.
+    // PacketFX hub: only probed-healthy bound LI — never unverified suffix theater.
     const hubId =
       all.find(
         (a) =>
@@ -206,12 +205,6 @@ export function seatsToOfficeAgents(
           /session healthy/i.test(a.subtitle) &&
           /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
       )?.id ??
-      all.find(
-        (a) =>
-          a.provider === "LinkedIn Browser Computer" &&
-          typeof a.subtitle === "string" &&
-          /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
-      )?.id ??
       all.find((a) => a.provider === "LinkedIn Browser Computer")?.id ??
       all.find((a) => (a.provider ?? "").startsWith("LinkedIn"))?.id ??
       all[0]?.id;
@@ -222,7 +215,7 @@ export function seatsToOfficeAgents(
   });
 }
 
-/** Prefer Browser Computer seats (esp. bound VMs) when the 3D view is capped. */
+/** Prefer Browser Computer seats (esp. probed-healthy bound VMs) when the 3D view is capped. */
 export function preferBrowserComputerAgents<T extends { provider?: string; subtitle?: string | null; position?: string; id: string }>(
   agents: T[],
   selectedId?: string | null,
@@ -231,10 +224,13 @@ export function preferBrowserComputerAgents<T extends { provider?: string; subti
     if (a.position === "ceo") return 0;
     if (selectedId && a.id === selectedId) return 1;
     if (a.provider === "LinkedIn Browser Computer") {
-      // Bound VM suffix is …last8 — ids are hex or base36 (comp_…), not hex-only.
-      return a.subtitle && /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle) ? 2 : 3;
+      const sub = typeof a.subtitle === "string" ? a.subtitle : "";
+      // Prefer probed-healthy bound desks over unverified suffix-only theater.
+      if (/session healthy/i.test(sub) && /…[0-9a-zA-Z_-]{4,}/.test(sub)) return 2;
+      if (/…[0-9a-zA-Z_-]{4,}/.test(sub)) return 3;
+      return 4;
     }
-    return 4;
+    return 5;
   };
   return [...agents].sort((a, b) => rank(a) - rank(b));
 }

@@ -1,20 +1,20 @@
 {
-  "at": "2026-10-02T21:23:17.498Z",
+  "at": "2026-10-03T02:57:02.674Z",
   "mode": "healthy-floor-path-unit",
   "agents": [
     {
       "id": "seat_healthy_1",
-      "status": "working",
+      "status": "idle",
       "subtitle": "LinkedIn session healthy · …_1aabbcc"
     },
     {
       "id": "seat_healthy_2",
-      "status": "working",
+      "status": "idle",
       "subtitle": "LinkedIn session healthy · …_2aabbcc"
     },
     {
       "id": "seat_healthy_3",
-      "status": "working",
+      "status": "idle",
       "subtitle": "LinkedIn session healthy · …_3aabbcc"
     }
   ],
@@ -24,5 +24,5 @@
     "LinkedIn session healthy · …_3aabbcc"
   ],
   "ok": true,
-  "note": "When probe returns healthy=true, floor paints working + VM suffixes (no runtime invent)"
+  "note": "When probe returns healthy=true with zero sends, floor paints idle + healthy label + VM suffixes (never invent working)"
 }

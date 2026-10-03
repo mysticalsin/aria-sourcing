@@ -27,19 +27,21 @@ const hints = new Map(
 );
 const agents = seatsToOfficeAgents(seats, s, hints);
 const acts = seats.map((seat) => agentActivityWithComputers(seat, s, Date.now(), hints));
+// ready+healthy with zero sends stays idle — never invent working theater.
 const ok =
   agents.length === 3 &&
-  agents.every((a) => a.status === "working") &&
+  agents.every((a) => a.status === "idle") &&
+  agents.every((a) => /session healthy/i.test(a.subtitle || "")) &&
   new Set(agents.map((a) => /…([0-9a-zA-Z_-]+)/.exec(a.subtitle || "")?.[1]).filter(Boolean)).size ===
     3 &&
-  acts.every((a) => /healthy/i.test(a.label) && /…/.test(a.label));
+  acts.every((a) => a.state === "idle" && /healthy/i.test(a.label) && /…/.test(a.label));
 const evidence = {
   at: new Date().toISOString(),
   mode: "healthy-floor-path-unit",
   agents: agents.map((a) => ({ id: a.id, status: a.status, subtitle: a.subtitle })),
   labels: acts.map((a) => a.label),
   ok,
-  note: "When probe returns healthy=true, floor paints working + VM suffixes (no runtime invent)",
+  note: "When probe returns healthy=true with zero sends, floor paints idle + healthy label + VM suffixes (never invent working)",
 };
 fs.mkdirSync("_relay/evidence", { recursive: true });
 fs.writeFileSync("_relay/evidence/2026-10-02-healthy-floor-path.json", JSON.stringify(evidence, null, 2));

@@ -1,28 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 248
+shift: 249
 agent: cursor-cloud
-updated: 2026-10-03T03:00Z
-status: deploy-fleetloaded-cortex-idle-send-failclosed-fly-stale
+updated: 2026-10-03T03:05Z
+status: busy-healthy-clear-theater-attach-empty-omit-fly-stale
 ---
 
-# Handoff — Shift 248
+# Handoff — Shift 249
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `4c661de`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** Deploy waits for fleetLoaded; Login staleTwin; Floor idle overlays clear theater; cortex short-circuits idle/paused/warming; LI send fails closed without seat snapshot
+- **N-agent local:** busy+healthy clears hash theater; Attach/Fleet omit Hermes on empty fleet; 3D hub/prefer require session healthy; prove-healthy expects idle
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
 
 ## Done this shift
 
-1. Campaign Agents Deploy gated on fleetLoaded; empty fleet omits Hermes existingComputerId
-2. Settings Login uses isStaleHermesComputerTwin (+ omit when fleet empty/unloaded)
-3. Floor idle overlays clear detail/focusName; drawer eyebrow Status vs Working on
-4. agentCortexTrace respects Floor activity idle/paused/warming (no hash theater)
-5. outreach/send: Browser Computer without Hermes seat → 429 seat_missing
-6. Tests: floor 89, floor-fleet-wire 14, campaign-go-live 25, send-pacing 13, linkedin-send-contract 12
+1. Floor busy+healthy with zero sends: working label without campaign hash detail/focus
+2. Campaign Attach fail-closed when fleet fetch fails or empty (omit Hermes twin)
+3. Fleet Deploy/add-seat omit Hermes when computers=[]
+4. Floor3D hub + preferBrowserComputerAgents: no unverified suffix-as-ceo
+5. prove-healthy-floor-path expects idle+healthy (aligned with tip)
+6. Tests: floor 89, floor-fleet-wire 14, prove script ok
 
 ## Blockers
 
@@ -41,8 +41,9 @@ status: deploy-fleetloaded-cortex-idle-send-failclosed-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Deploy/Login never feed Hermes twin before fleet poll settles
-- Cortex must match Floor activity state (no idle→working narration)
+- Empty fleet poll → omit Hermes existingComputerId (Deploy/Attach/Login/add-seat)
+- ready+healthy / busy+healthy never keep hash Working-on theater without sends
+- 3D hub prefers session-healthy only
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out

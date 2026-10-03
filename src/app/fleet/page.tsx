@@ -167,7 +167,10 @@ export default function FleetPage() {
       // Never use seat.id as computerId — that collapses N Chromium profiles onto one id.
       // Reclaim a probed-healthy host orphan before minting (store may have pre-minted a blank id).
       // Omit stale twin when fleet shows orphan/absent/foreign — same belt as Campaign Agents.
-      const staleTwin = isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
+      // Empty fleet list cannot detect twins — omit Hermes existingComputerId (fail closed).
+      const staleTwin =
+        !computers.length ||
+        isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId: staleTwin ? null : seat.computerId,
@@ -507,7 +510,9 @@ export default function FleetPage() {
       return;
     }
     if (seat.provider === "LinkedIn Browser Computer") {
-      const staleTwin = isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
+      const staleTwin =
+        !computers.length ||
+        isStaleHermesComputerTwin(seat.id, seat.computerId, computers);
       const computerId = await resolveDurableComputerId({
         seatId: seat.id,
         existingComputerId: staleTwin ? null : seat.computerId,
