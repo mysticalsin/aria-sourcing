@@ -1,41 +1,36 @@
-# N-agent goal completion audit — 2026-10-03T16:30Z
+# N-agent goal completion audit — 2026-10-03T17:05Z
 
-**Tip:** `cursor/fly-deploy-land-n-agent-b91d` @ `e0bd943` (proof gate fix pending this commit)  
+**Tip:** `cursor/fly-deploy-land-n-agent-b91d` @ `150b58a`  
 **Deploy PR:** https://github.com/mysticalsin/aria-sourcing/pull/150 — `MERGEABLE`, squash auto-merge on, **`REVIEW_REQUIRED`**  
-**Fly:** build `21a42e7…`, migration `0084`, `hermesRuntime:true`, `agentFrameworks:false`, `/api/ready` HTTP 503 (expected without DeerFlow/Flowise)  
-**Proof:** `bash scripts/fly-n-agent-proof.sh` → exit 1 on tip≠build + migration≠0087 (frameworks no longer a fail gate)  
-**Residual hunt:** **NONE**  
+**Fly:** build `21a42e7…`, migration `0084`, `hermesRuntime:true`, `agentFrameworks:false`, `/api/ready` HTTP 503  
+**Proof:** `bash scripts/fly-n-agent-proof.sh` → exit 1 (tip≠build, migration≠0087)  
+**Tip residual:** **NONE**  
+**Hermes deploy path:** **CLEAR** (ready JSON + degraded/empty heartbeat acceptance)  
 **Verdict:** tip requirements **satisfied** / production **incomplete** — **do not UpdateGoal complete**
 
 ## Requirements vs evidence
 
 | Requirement | Tip evidence | Production evidence |
 |---|---|---|
-| N campaign agents real (1 seat = 1 VM/LI) | `seatAttachedToCampaign` / `isBrowserComputerSeat`; migrations 0085–0087 on tip; refuseUnattached on campaign-scoped fleet POST | Fly still migration `0084` |
-| Isolated LinkedIn profiles | LI login + Agents deploy pass `campaignId` when attached; Fleet Deploy omits for new seats; Take only when `seatAttachedToCampaign` | Unproven on stale build |
-| Visible on 3D floor | `ingestDurableBrowserBindings`; pulse/PacketFX/ticker LI attach-gated | Unproven — not tip SHA |
-| Fully wired FE↔BE | Floor/Fleet/Agents/Setup/go-live/LI/viewport/Attention/Settings ingest; campaignSeats fail-closed | Unproven |
-| No theater | never invent `sessionHealthy=true`; `liveSeats` excludes LI BC; Take won't send stale campaignId | Unproven |
-| Ponytail | shared attach helpers; proof gates Hermes+0087 not DeerFlow/Flowise | — |
+| N campaign agents real (1 seat = 1 VM/LI) | attach gates; migrations 0085–0087; refuseUnattached | Fly still `0084` |
+| Isolated LinkedIn profiles | campaignId only when attached; Fleet Deploy omits for new seats | Unproven on stale build |
+| Visible on 3D floor | durable ingest; pulse/PacketFX/ticker attach-gated | Unproven |
+| Fully wired FE↔BE | Floor/Fleet/Agents/Setup/go-live/LI/viewport/Attention/Settings | Unproven |
+| No theater | never invent `sessionHealthy=true`; liveSeats excludes LI BC | Unproven |
+| Ponytail | Hermes deploy gates; proof script; empty inventory honest degraded | — |
 
-## Honest readiness note
+## Deploy path (Hermes-only tenant)
 
-`agentFrameworks` probes DeerFlow/Flowise adapters. This Fly tenant does not run those sidecars (`_relay/evidence/2026-09-05-fly-linkedin-live.md`). N campaign LI desks use Hermes/Browser Computer (`hermesRuntime`). Gating N-agent goal complete on `agentFrameworks:true` was incorrect theater — removed from `scripts/fly-n-agent-proof.sh`.
-
-Full `deploy-fly.sh` post-app acceptance uses `require_app_ready_json` (tip SHA + Hermes data plane). HTTP 503 with only `agentFrameworks:false` is accepted on this tenant.
+1. `require_app_ready_json` — tip SHA + Hermes plane; HTTP 503 with only `agentFrameworks:false` passes
+2. Framework heartbeat — adapter/inventory `degraded` passes; empty inventory → `degraded`/`target_inventory_unavailable`; `worker_exception` fails
+3. `bash scripts/fly-n-agent-proof.sh` after land — tip + `0087` + Hermes (not DeerFlow/Flowise)
 
 ## Production blocker (ordered)
 
-1. Owner **approve PR #150** (auto-merge squash → `deploy/fly-github-actions`)
-2. CI+CodeQL green on **new deploy HEAD**
-3. `node scripts/recovery-receipt-digest.mjs <receipt.json>` → dispatch Deploy Aria Mantu
-4. Prove tip SHA + migration `0087` + Hermes data plane via `bash scripts/fly-n-agent-proof.sh`
-5. Take→login→Release each campaign LI desk; `sessionHealthy===true` only after probe
+1. Owner **approve PR #150** (non-pusher)
+2. CI green on new `deploy/fly-github-actions` HEAD
+3. Dispatch Deploy Aria Mantu + recovery receipt
+4. Proof script green
+5. Take→login→Release LI desks; `sessionHealthy` only after probe
 
 Runbook: `_relay/evidence/2026-10-03-fly-owner-dispatch-runbook.md`
-
-## Agent cannot
-
-- Approve #150 / request reviewers (integration 403 on `addPullRequestReview`)
-- Push protected `deploy/fly-github-actions` directly
-- Invent recovery receipt or use `FLY_API_TOKEN`
