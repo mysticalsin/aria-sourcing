@@ -892,5 +892,28 @@ try {
     delete process.env.OPENBOT_COMPUTER_TOKEN;
   }
 
+  // Process singleton: Fleet routes must share Maps (no cold empty Map inventing empty fleet).
+  {
+    const g = globalThis as typeof globalThis & {
+      __ariaDefaultComputerSupervisor?: import("../src/lib/computer-supervisor").ComputerSupervisor;
+    };
+    const a = (await import("../src/lib/computer-supervisor")).defaultComputerSupervisor;
+    const b = (await import("../src/lib/computer-supervisor")).defaultComputerSupervisor;
+    ok("defaultComputerSupervisor is stable across re-import", a === b);
+    ok(
+      "defaultComputerSupervisor is pinned on globalThis",
+      g.__ariaDefaultComputerSupervisor === a,
+    );
+    const seat = a.ensureComputer({ workspaceId: "ws-singleton", seatId: "seat-singleton" });
+    ok(
+      "singleton Map retains ensure across alias",
+      b.get(seat.computerId)?.seatId === "seat-singleton",
+    );
+    ok(
+      "singleton never invents sessionHealthy on ensure",
+      b.get(seat.computerId)?.sessionHealthy == null,
+    );
+  }
+
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

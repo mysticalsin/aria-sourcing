@@ -1454,5 +1454,25 @@ export class ComputerSupervisor {
   }
 }
 
-/** Process-local supervisor (Fleet API + LinkedIn browser-computer adapter). */
-export const defaultComputerSupervisor = new ComputerSupervisor();
+/** Process-local supervisor (Fleet API + LinkedIn browser-computer adapter).
+ *
+ * Pinned on globalThis so Next.js route modules / HMR share one Map in-process.
+ * Multi-instance Fly still treats OpenBot host + /session-probe TTL as authority:
+ * cold instances hydrateFromHost + refreshSessionHealthForList and never invent
+ * sessionHealthy=true from an empty Map.
+ */
+const GLOBAL_SUPERVISOR_KEY = "__ariaDefaultComputerSupervisor";
+
+type SupervisorGlobal = typeof globalThis & {
+  [GLOBAL_SUPERVISOR_KEY]?: ComputerSupervisor;
+};
+
+function resolveDefaultComputerSupervisor(): ComputerSupervisor {
+  const g = globalThis as SupervisorGlobal;
+  if (!g[GLOBAL_SUPERVISOR_KEY]) {
+    g[GLOBAL_SUPERVISOR_KEY] = new ComputerSupervisor();
+  }
+  return g[GLOBAL_SUPERVISOR_KEY];
+}
+
+export const defaultComputerSupervisor = resolveDefaultComputerSupervisor();
