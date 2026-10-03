@@ -1,7 +1,8 @@
 /**
  * Align Hermes seat.computerId with fleet GET rows.
- * Writes owned non-orphan bindings; clears Hermes when computerId is owned by another seat.
- * Poll paths stay GET-only — this never mints or ensures.
+ * Writes owned non-orphan bindings; clears Hermes when computerId is owned by
+ * another seat, only present as __orphan__, or absent from a non-empty fleet
+ * poll (stale twin after reclaim). Poll paths stay GET-only — never mints.
  */
 
 export type FleetComputerBinding = {
@@ -21,7 +22,7 @@ export type HermesComputerPatch = {
 
 const ORPHAN = "__orphan__";
 
-/** Patches to apply so Hermes matches fleet ownership (write + clear-foreign). */
+/** Patches to apply so Hermes matches fleet ownership (write + clear-foreign/orphan). */
 export function fleetHermesComputerPatches(
   seats: readonly HermesSeatBinding[],
   computers: readonly FleetComputerBinding[],
@@ -49,6 +50,13 @@ export function fleetHermesComputerPatches(
     if (!hermes) continue;
     const owner = ownerOfComp.get(hermes);
     if (owner && owner !== seat.id) {
+      patches.push({ seatId: seat.id, computerId: null });
+      continue;
+    }
+    // No seat-owned fleet row for this Hermes id. Empty fleet poll is ambiguous
+    // (transient) — fail soft. Non-empty poll means orphan-only or absent → clear
+    // so Deploy cannot feed a login-wall twin into reclaim/ensure.
+    if (computers.length > 0 && !owner) {
       patches.push({ seatId: seat.id, computerId: null });
     }
   }

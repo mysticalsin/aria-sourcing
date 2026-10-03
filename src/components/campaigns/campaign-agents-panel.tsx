@@ -145,6 +145,12 @@ export function CampaignAgentsPanel({
           }
           if (row.computerId && row.computerId !== local.computerId) {
             patch.computerId = row.computerId;
+          } else if (
+            (row.computerId == null || String(row.computerId).trim() === "") &&
+            Boolean((local.computerId ?? "").trim())
+          ) {
+            // Durable unbound wins — clear Hermes twin so Deploy cannot reclaim a login wall.
+            patch.computerId = null;
           }
           if (Object.keys(patch).length > 0) {
             void actions.updateSeat(row.id, patch);

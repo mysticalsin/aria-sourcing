@@ -62,7 +62,32 @@ function ok(name: string, cond: boolean) {
     [{ id: "seat_a", computerId: "comp_orphan" }],
     [{ seatId: "__orphan__", computerId: "comp_orphan" }],
   );
-  ok("keeps Hermes when only orphan-bound on fleet", patches.length === 0);
+  ok(
+    "clears Hermes when only orphan-bound on fleet (no login-wall twin)",
+    patches.some((p) => p.seatId === "seat_a" && p.computerId === null),
+  );
+}
+
+{
+  const patches = fleetHermesComputerPatches(
+    [{ id: "seat_a", computerId: "comp_gone" }],
+    [{ seatId: "seat_b", computerId: "comp_b" }],
+  );
+  ok(
+    "clears Hermes when computerId absent from non-empty fleet",
+    patches.some((p) => p.seatId === "seat_a" && p.computerId === null),
+  );
+}
+
+{
+  const patches = fleetHermesComputerPatches(
+    [{ id: "seat_a", computerId: "comp_keep" }],
+    [],
+  );
+  ok(
+    "empty fleet poll does not clear Hermes (ambiguous / transient)",
+    patches.length === 0,
+  );
 }
 
 {
