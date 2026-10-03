@@ -56,7 +56,17 @@ export default function FleetComputerViewportPage() {
     try {
       const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
       if (!res.ok) return;
-      const data = (await res.json()) as { computers?: ComputerState[] };
+      const data = (await res.json()) as {
+        computers?: ComputerState[];
+        browserSeatBindings?: Array<{
+          id: string;
+          name?: string;
+          computerId?: string | null;
+          status?: string;
+          assignedCampaignIds?: string[];
+        }>;
+      };
+      actions.ingestDurableBrowserBindings(data.browserSeatBindings);
       const hit = (data.computers ?? []).find((c) => c.computerId === computerId) ?? null;
       setComputer(hit);
       const auditRes = await fetch(
@@ -72,7 +82,7 @@ export default function FleetComputerViewportPage() {
     } catch {
       /* ignore */
     }
-  }, [computerId]);
+  }, [computerId, actions]);
 
   React.useEffect(() => {
     void refresh();

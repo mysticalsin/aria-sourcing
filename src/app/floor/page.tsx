@@ -524,7 +524,16 @@ function Floor3DSection({
  *  Living Floor on every device, tier, and view mode (see PacketFX.tsx /
  *  RetroOfficeScene.tsx for the 3D-only packet+sound layer this backs up). */
 function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentSeat[] }) {
-  const items = [...events].slice(-TICKER_CAP).reverse();
+  const items = [...events]
+    .filter((e) => {
+      if (!e.seatId) return true;
+      const seat = seats.find((s) => s.id === e.seatId);
+      if (!seat || !isBrowserComputerSeat(seat)) return true;
+      // LI: hide foreign/unattached campaign events (match Floor pulse / PacketFX).
+      return Boolean(e.campaignId && seatAttachedToCampaign(seat, e.campaignId));
+    })
+    .slice(-TICKER_CAP)
+    .reverse();
   return (
     <Card className="mb-4 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">

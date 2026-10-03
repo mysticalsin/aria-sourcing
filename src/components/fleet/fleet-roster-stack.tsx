@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
 import { useSeats } from "@/lib/store";
+import { isBrowserComputerSeat } from "@/lib/campaign-seat-attach";
 import { ConnectionStackShell } from "@/components/settings/integration-connection-primitives";
 import { FleetHealthStrip } from "@/components/fleet/fleet-health-strip";
 
@@ -12,22 +13,19 @@ export const FLEET_ROSTER_STACK_ID = "fleet-roster-stack";
 export function FleetRosterStack({ children }: { children: React.ReactNode }) {
   const seats = useSeats();
 
-  const isBrowserComputer = (s: (typeof seats)[number]) =>
-    s.provider === "LinkedIn Browser Computer" ||
-    s.linkedinDeliveryBackend === "browser-computer";
-
-  const emailSeats = seats.filter((s) => !isBrowserComputer(s));
-  const liSeats = seats.filter(isBrowserComputer);
+  const emailSeats = seats.filter((s) => !isBrowserComputerSeat(s));
+  const liSeats = seats.filter(isBrowserComputerSeat);
   const withMailbox = emailSeats.filter((s) => s.connectedAccount).length;
   // Email-only live-ready — LI send-ready is FleetHealthStrip (sessionHealthy probe).
   const emailLiveReady = emailSeats.filter(
     (s) => s.mode === "live" && s.connectedAccount && s.domainVerified,
   ).length;
 
+  // Step 3 is email send-ready only — never green from LI mode=live alone.
   const stepsComplete =
     (seats.length > 0 ? 1 : 0) +
     (withMailbox > 0 || liSeats.length > 0 ? 1 : 0) +
-    (emailLiveReady > 0 || liSeats.some((s) => s.mode === "live") ? 1 : 0);
+    (emailLiveReady > 0 ? 1 : 0);
   const progressPct = seats.length ? (stepsComplete / 3) * 100 : 0;
 
   let statusLabel = "No agents";

@@ -184,6 +184,20 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
       floorPage.includes('status: "working" as const'),
   );
   ok(
+    "floor ActivityTicker filters LI events without campaign attach",
+    /ActivityTicker/.test(floorPage) &&
+      /seatAttachedToCampaign\(seat, e\.campaignId\)/.test(floorPage),
+  );
+  const packetFx = readFileSync(
+    "src/components/floor3d/retro/scene/PacketFX.tsx",
+    "utf8",
+  );
+  ok(
+    "PacketFX gates LI packets on campaign attach",
+    packetFx.includes("seatAttachedToCampaign") &&
+      packetFx.includes("isBrowserComputerSeat"),
+  );
+  ok(
     "floor syncs durable browserSeatBindings into Hermes",
     floorPage.includes("browserSeatBindings") &&
       floorPage.includes("ingestDurableBrowserBindings") &&

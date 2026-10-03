@@ -12,6 +12,8 @@ import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { subscribe, type AgentEvent } from "@/lib/agent-events";
+import { useSeats } from "@/lib/store";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import type { RenderAgent } from "../core/types";
 import { toWorld } from "../core/geometry";
 import { CANVAS_H, CANVAS_W } from "../core/constants";
@@ -64,6 +66,11 @@ function makeGlowTexture(): THREE.Texture | null {
 
 export function PacketFX({ agentsRef, ceoId }: PacketFXProps) {
   const glowTex = useMemo(() => makeGlowTexture(), []);
+  const seats = useSeats();
+  const seatsRef = useRef(seats);
+  useEffect(() => {
+    seatsRef.current = seats;
+  }, [seats]);
 
   // Fixed pool — pre-allocated once, mutated in place every frame. No
   // per-frame allocation: positions/colors are `.set()`/`.lerpVectors()`
@@ -95,6 +102,11 @@ export function PacketFX({ agentsRef, ceoId }: PacketFXProps) {
       if (!e.seatId) return;
       const source = agents.find((a) => a.id === e.seatId);
       if (!source) return;
+      // LI desks: only FX when event campaign matches attach (same as Floor pulse).
+      const seat = seatsRef.current.find((s) => s.id === e.seatId);
+      if (seat && isBrowserComputerSeat(seat)) {
+        if (!e.campaignId || !seatAttachedToCampaign(seat, e.campaignId)) return;
+      }
 
       const hub = resolveHub();
       const fromXY = { x: source.x, y: source.y };
