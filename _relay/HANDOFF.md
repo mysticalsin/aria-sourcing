@@ -10,7 +10,7 @@ status: stale-empty-failclosed-start-mutex-hud-dryrun-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `074e54e`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** empty fleet = staleTwin; outreach browserBound needs probed health; start refuses human-held; HUD excludes dry-run drafts; 3D hub never elects unverified LI
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
