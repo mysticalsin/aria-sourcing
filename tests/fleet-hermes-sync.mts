@@ -8,6 +8,7 @@ import {
   computerHealthOwnedBySeat,
   isStaleHermesComputerTwin,
   hermesPatchesFromBrowserSeatBindings,
+  applyBrowserSeatBindingsToHermes,
 } from "../src/lib/fleet-hermes-sync";
 
 let pass = 0;
@@ -200,6 +201,23 @@ function ok(name: string, cond: boolean) {
   ok(
     "browserSeatBindings omitted → no patches",
     hermesPatchesFromBrowserSeatBindings(seats as never, undefined).length === 0,
+  );
+  const hydrated = applyBrowserSeatBindingsToHermes([], [
+    {
+      id: "seat_db_only",
+      name: "DB Only",
+      computerId: "comp_db",
+      assignedCampaignIds: ["camp_1"],
+      status: "active",
+    },
+  ]);
+  ok(
+    "applyBrowserSeatBindings appends durable-only stub to empty Hermes",
+    hydrated.length === 1 &&
+      hydrated[0]!.id === "seat_db_only" &&
+      hydrated[0]!.mode === "mock" &&
+      hydrated[0]!.computerId === "comp_db" &&
+      (hydrated[0]!.assignedCampaignIds ?? []).includes("camp_1"),
   );
 }
 

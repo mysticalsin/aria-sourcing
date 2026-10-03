@@ -181,6 +181,10 @@ import { pickLiveLinkedInSendSeat, preferLinkedInAutomaticSeats, isLinkedInAutom
 import { seatAttachedToCampaign } from "./campaign-seat-attach";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
+  applyBrowserSeatBindingsToHermes,
+  type BrowserSeatBinding,
+} from "./fleet-hermes-sync";
+import {
   applyLearning,
   defaultSkills,
   effectiveTone,
@@ -5020,6 +5024,32 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
+  /**
+   * Durable agent_seats bindings → Hermes roster (append missing BC stubs + patch).
+   * Local-only — DB already owns these rows; avoids 5s poll write storms via updateSeat.
+   */
+  const ingestDurableBrowserBindings = useCallback(
+    (bindings: BrowserSeatBinding[] | undefined | null) => {
+      if (!Array.isArray(bindings)) return;
+      if (!workspaceEffectAllowed()) return;
+      commit((s) => {
+        const next = applyBrowserSeatBindingsToHermes(s.seats, bindings);
+        if (next.length === s.seats.length) {
+          let changed = false;
+          for (let i = 0; i < next.length; i++) {
+            if (next[i] !== s.seats[i]) {
+              changed = true;
+              break;
+            }
+          }
+          if (!changed) return s;
+        }
+        return { ...s, seats: next };
+      });
+    },
+    [commit, workspaceEffectAllowed],
+  );
+
   const setSeatStatus = useCallback(
     (id: string, status: AgentSeat["status"]) =>
       commit((s) => {
@@ -7033,6 +7063,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addSeat,
       deployAgents,
       updateSeat,
+      ingestDurableBrowserBindings,
       setSeatStatus,
       connectSeatAccount,
       disconnectSeatAccount,
@@ -7107,7 +7138,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       suppressCandidate, markDoNotContact, restoreCandidateContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
-      addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
+      addSeat, deployAgents, updateSeat, ingestDurableBrowserBindings, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
       addSuppression, removeSuppression, allocateOutreach,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis, endorseCandidateFit,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,

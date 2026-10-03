@@ -37,7 +37,7 @@ import {
   floorRollup,
   resolveComputerHint,
 } from "@/lib/floor";
-import { fleetHermesComputerPatches, hermesPatchesFromBrowserSeatBindings } from "@/lib/fleet-hermes-sync";
+import { fleetHermesComputerPatches } from "@/lib/fleet-hermes-sync";
 import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import {
   EVENT_COLOR,
@@ -163,15 +163,9 @@ export default function FloorPage() {
         for (const patch of fleetHermesComputerPatches(seatsRef.current, data.computers ?? [])) {
           void actions.updateSeat(patch.seatId, { computerId: patch.computerId });
         }
-        // Durable agent_seats attach/computerId → Hermes so floor labels/FX match DB
-        // (N desks visible without requiring Campaign Agents tab open first).
-        for (const patch of hermesPatchesFromBrowserSeatBindings(
-          seatsRef.current,
-          data.browserSeatBindings,
-        )) {
-          const { seatId, ...rest } = patch;
-          void actions.updateSeat(seatId, rest);
-        }
+        // Durable agent_seats → Hermes roster (append missing desks + patch attach).
+        // Local-only ingest — N desks visible without Agents tab / without server write storms.
+        actions.ingestDurableBrowserBindings(data.browserSeatBindings);
         if (!cancelled) setComputerHints(map);
       } catch {
         if (!cancelled) setComputerHints(new Map());

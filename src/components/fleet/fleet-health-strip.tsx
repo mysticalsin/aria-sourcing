@@ -4,7 +4,6 @@ import * as React from "react";
 import { HealthStrip } from "@/components/settings/integration-connection-primitives";
 import { useSeats, useFleetSummary, useActions } from "@/lib/store";
 import { isBrowserComputerSeat } from "@/lib/campaign-seat-attach";
-import { hermesPatchesFromBrowserSeatBindings } from "@/lib/fleet-hermes-sync";
 import type { Tone } from "@/lib/utils";
 
 /**
@@ -34,7 +33,9 @@ export function FleetHealthStrip() {
           computers?: { seatId?: string | null; sessionHealthy?: boolean | null }[];
           browserSeatBindings?: Array<{
             id: string;
+            name?: string;
             computerId?: string | null;
+            status?: string;
             assignedCampaignIds?: string[];
           }>;
         };
@@ -46,13 +47,8 @@ export function FleetHealthStrip() {
           m.set(sid, c.sessionHealthy === true);
         }
         if (!cancelled) setLiHealthyBySeat(m);
-        for (const patch of hermesPatchesFromBrowserSeatBindings(
-          seats,
-          data.browserSeatBindings,
-        )) {
-          const { seatId, ...rest } = patch;
-          void actions.updateSeat(seatId, rest);
-        }
+        // Durable → Hermes roster (append missing desks + patch attach).
+        actions.ingestDurableBrowserBindings(data.browserSeatBindings);
       } catch {
         if (!cancelled) setLiHealthyBySeat(new Map());
       }

@@ -5,9 +5,12 @@
  * poll (stale twin after reclaim). Poll paths stay GET-only — never mints.
  *
  * Also: durable agent_seats attach/computerId via browserSeatBindings (Floor/Fleet).
+ * Missing local desks get fail-closed stubs so N agents appear on the 3D floor.
  */
 
 import { isBrowserComputerSeat } from "@/lib/campaign-seat-attach";
+import { defaultSendWindow } from "@/lib/fleet";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "@/lib/send-pacing";
 import type { AgentSeat } from "@/lib/types";
 
 export type FleetComputerBinding = {
@@ -27,7 +30,9 @@ export type HermesComputerPatch = {
 
 export type BrowserSeatBinding = {
   id: string;
+  name?: string;
   computerId?: string | null;
+  status?: string;
   assignedCampaignIds?: string[];
 };
 
@@ -80,6 +85,41 @@ export function fleetHermesComputerPatches(
   return patches;
 }
 
+/** Fail-closed Hermes stub for a durable LI desk missing from local roster. */
+export function durableBrowserSeatStub(row: BrowserSeatBinding): AgentSeat {
+  const status =
+    row.status === "paused" || row.status === "disabled" || row.status === "active"
+      ? row.status
+      : "active";
+  return {
+    id: row.id,
+    name: (row.name ?? "").trim() || row.id,
+    operatorEmail: "",
+    provider: "LinkedIn Browser Computer",
+    status,
+    // Never invent live+verified — Take→login→Release / probe must paint health.
+    mode: "mock",
+    domainVerified: false,
+    dailyLimit: LINKEDIN_BROWSER_SEAT_DEFAULTS.dailyLimit,
+    warmup: true,
+    warmupStartCap: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStartCap,
+    warmupStepPerDay: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStepPerDay,
+    warmupStartedAt: new Date(0).toISOString(),
+    minGapMinutes: LINKEDIN_BROWSER_SEAT_DEFAULTS.minGapMinutes,
+    sendWindow: defaultSendWindow(),
+    sentToday: 0,
+    lastSendAt: null,
+    health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+    persona: "",
+    signature: "",
+    connectedAccount: "",
+    computerId: row.computerId ?? null,
+    linkedinDeliveryBackend: "browser-computer",
+    assignedCampaignIds: Array.isArray(row.assignedCampaignIds) ? row.assignedCampaignIds : [],
+    createdAt: new Date(0).toISOString(),
+  };
+}
+
 /**
  * Durable agent_seats bindings → Hermes attach/computerId patches.
  * Only patches seats that already exist locally (BC). Empty assigned is authority.
@@ -116,6 +156,29 @@ export function hermesPatchesFromBrowserSeatBindings(
     }
   }
   return out;
+}
+
+/**
+ * Apply durable bindings onto a seat list: append missing BC stubs, then patch.
+ * Pure — store commits the result (no server write; DB already owns these rows).
+ */
+export function applyBrowserSeatBindingsToHermes(
+  seats: readonly AgentSeat[],
+  bindings: readonly BrowserSeatBinding[] | undefined | null,
+): AgentSeat[] {
+  if (!Array.isArray(bindings)) return seats.slice();
+  const byId = new Set(seats.map((s) => s.id));
+  const stubs: AgentSeat[] = [];
+  for (const row of bindings) {
+    if (!row?.id || byId.has(row.id)) continue;
+    stubs.push(durableBrowserSeatStub(row));
+  }
+  let next: AgentSeat[] = stubs.length > 0 ? [...seats, ...stubs] : seats.slice();
+  for (const patch of hermesPatchesFromBrowserSeatBindings(next, bindings)) {
+    const { seatId, ...rest } = patch;
+    next = next.map((s) => (s.id === seatId ? { ...s, ...rest } : s));
+  }
+  return next;
 }
 
 /**

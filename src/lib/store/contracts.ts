@@ -476,6 +476,16 @@ export interface HermesActions {
     opts?: { language?: string; namePrefix?: string; campaignId?: string },
   ) => Promise<{ created: number; total: number; capped: boolean; max: number; seats: AgentSeat[] }>;
   updateSeat: (id: string, patch: Partial<AgentSeat>) => Promise<boolean>;
+  /** Durable browserSeatBindings → Hermes (append missing stubs + patch; local-only). */
+  ingestDurableBrowserBindings: (
+    bindings: Array<{
+      id: string;
+      name?: string;
+      computerId?: string | null;
+      status?: string;
+      assignedCampaignIds?: string[];
+    }> | null | undefined,
+  ) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => Promise<{ ok: boolean; error?: string }>;
   disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;

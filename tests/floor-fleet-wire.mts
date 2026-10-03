@@ -186,7 +186,7 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
   ok(
     "floor syncs durable browserSeatBindings into Hermes",
     floorPage.includes("browserSeatBindings") &&
-      floorPage.includes("isBrowserComputerSeat") &&
+      floorPage.includes("ingestDurableBrowserBindings") &&
       floorPage.includes("seatAttachedToCampaign"),
   );
   ok(
@@ -261,13 +261,13 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
   );
   ok(
     "fleet page syncs durable browserSeatBindings",
-    fleetPage.includes("hermesPatchesFromBrowserSeatBindings") &&
+    fleetPage.includes("ingestDurableBrowserBindings") &&
       fleetPage.includes("browserSeatBindings"),
   );
   ok(
     "fleet health strip headline uses send-ready (not domain liveSeats theater)",
     healthStrip.includes("send-ready") &&
-      healthStrip.includes("hermesPatchesFromBrowserSeatBindings") &&
+      healthStrip.includes("ingestDurableBrowserBindings") &&
       !/\$\{s\.liveSeats\} live/.test(healthStrip),
   );
 }
