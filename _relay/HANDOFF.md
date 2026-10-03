@@ -12,7 +12,7 @@ status: tip-n-agent-closed-fly-blocks-goal
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip:** `ca8cf40` — N-agent tip residual hunt **NONE**; **CI+CodeQL green**
+- **Tip:** `6c8cfca` (docs); last code+CI-proven green `ca8cf40` — N-agent residual **NONE**
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false` (HTTP 503)
 - **Deploy divergence:** `deploy/fly-github-actions` @ `f5868fa` — tip **657** ahead / **2** behind (ee0cee9+f5868fa); tip already has CI-fix via `8a63a8f`
 - **Audit/checklist:** `_relay/evidence/2026-10-03-n-agent-goal-tip-closed-prod-blocked.md`, `_relay/evidence/2026-10-03-fly-owner-deploy-path.md`
