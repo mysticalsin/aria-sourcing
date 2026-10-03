@@ -10,7 +10,7 @@ status: setup-attach-probe-poll-failclear-navigate-mutex-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `f7a467f`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** Setup attach requires explicit campaign assign; take-control done = sessionHealthy; poll fail clears Agents/Fleet/HealthStrip paint; navigate refuses human-held
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
