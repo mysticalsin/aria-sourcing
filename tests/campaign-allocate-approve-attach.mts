@@ -47,5 +47,20 @@ ok(
   /if \(seat && !seatAttachedToCampaign\(seat, campaign\.id\)\) continue;/.test(store),
 );
 
+ok(
+  "generateOutreachFor refuses foreign/unattached resolvedSeatId",
+  /resolvedSeatId && \(!seat \|\| !seatAttachedToCampaign\(seat, campaign\.id\)\)/.test(store) &&
+    /const generateOutreachFor = useCallback[\s\S]*?resolvedSeatId && \(!seat \|\| !seatAttachedToCampaign\(seat, campaign\.id\)\)/.test(
+      store,
+    ),
+);
+
+ok(
+  "generateOutreachLive refuses foreign/unattached resolvedSeatId",
+  /const generateOutreachLive = useCallback[\s\S]*?resolvedSeatId && \(!seat \|\| !seatAttachedToCampaign\(seat, campaign\.id\)\)/.test(
+    store,
+  ),
+);
+
 console.log(`RESULT campaign-allocate-approve-attach: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -1,0 +1,34 @@
+{
+  "probedAt": "2026-10-03T09:20Z",
+  "appReady": {
+    "url": "https://aria-mantu-app.fly.dev/api/ready",
+    "ok": false,
+    "status": "not_ready",
+    "build": "21a42e7da6c271758ea4cade91c8d5658032832d",
+    "migration": "0084_agent_seats_computer_id_unique.sql",
+    "components": {
+      "database": true,
+      "auth": true,
+      "queue": true,
+      "agentFrameworks": false,
+      "hermesRuntime": true,
+      "migration": true,
+      "releaseIdentity": true
+    }
+  },
+  "tipSha": "efbaf9940f693020c18ff1f197e20bed17251371",
+  "tipShort": "efbaf99",
+  "flyBuild": "21a42e7da6c271758ea4cade91c8d5658032832d",
+  "flyMigration": "0084_agent_seats_computer_id_unique.sql",
+  "delta": {
+    "shaMatch": false,
+    "needsMigrations": [
+      "0085?",
+      "0086",
+      "0087"
+    ],
+    "agentFrameworks": false
+  },
+  "deployPath": "owner-only protected Production workflow / fly-deploy-now (no FLY_API_TOKEN in agent env)",
+  "verdict": "Fly still stale vs tip; production N-agent goal blocked"
+}

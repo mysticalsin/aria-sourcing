@@ -1999,6 +1999,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (BC empty ≠ attached; Vendor foreign refused).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       // Compose in the seat's language, else the need's, else the workspace default.
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
@@ -2058,6 +2062,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (BC empty ≠ attached; Vendor foreign refused).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
 
