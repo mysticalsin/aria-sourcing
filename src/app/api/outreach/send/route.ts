@@ -270,22 +270,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-        if (liSeat.provider === "LinkedIn Browser Computer") {
+    let browserSessionHealthy: boolean | null = null;
+    if (liSeat.provider === "LinkedIn Browser Computer") {
       const boundId = String(liSeat.computer_id ?? "").trim();
       if (boundId) {
         try {
-          defaultComputerSupervisor.hydrateComputer({
+          const hydrated = defaultComputerSupervisor.hydrateComputer({
             workspaceId: String(approvalWid),
             seatId,
             computerId: boundId,
           });
+          // Only trust health from a successful seat-owned hydrate. Never
+          // get(computer_id) after ownership/orphan throw — that can pick up a
+          // foreign/orphan sessionHealthy=true and green pace theater.
+          browserSessionHealthy = hydrated
+            ? (defaultComputerSupervisor.get(hydrated.computerId)?.sessionHealthy ?? null)
+            : null;
         } catch {
-          /* ownership mismatch — pace below fails closed on null health */
+          browserSessionHealthy = null;
         }
       }
     }
 
-// Human pacing — refuse before queue so deferred sends never look like success.
+    // Human pacing — refuse before queue so deferred sends never look like success.
     const seatsArr = Array.isArray(stateRec?.seats) ? (stateRec.seats as unknown[]) : [];
     const seatState = seatsArr
       .map((item) => record(item))
@@ -316,9 +323,7 @@ export async function POST(req: NextRequest) {
         settings: fleetSettings,
         // Browser Computer: fail closed unless probed true (undefined would skip the check).
         sessionHealthy:
-          liSeat.provider === "LinkedIn Browser Computer"
-            ? (defaultComputerSupervisor.get(String(liSeat.computer_id ?? "").trim())?.sessionHealthy ?? null)
-            : undefined,
+          liSeat.provider === "LinkedIn Browser Computer" ? browserSessionHealthy : undefined,
       });
       if (!pace.ok) {
         return NextResponse.json(

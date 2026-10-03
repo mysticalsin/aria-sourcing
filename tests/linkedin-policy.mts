@@ -74,6 +74,12 @@ ok(
 );
 ok("outreach route enqueues LinkedIn automatic", /enqueue_linkedin_outbound/.test(sendRoute));
 ok("outreach route refuses assisted-manual fallback for automatic", /linkedin-automatic-requires-vendor|LinkedIn Vendor API/.test(sendRoute));
+ok(
+  "outreach Browser Computer pace uses hydrate health only (no get after ownership throw)",
+  /browserSessionHealthy/.test(sendRoute) &&
+    /Only trust health from a successful seat-owned hydrate/.test(sendRoute) &&
+    !/get\(String\(liSeat\.computer_id/.test(sendRoute),
+);
 
 const migration = readFileSync(
   new URL("../supabase/migrations/0062_linkedin_automatic_enqueue.sql", import.meta.url),
