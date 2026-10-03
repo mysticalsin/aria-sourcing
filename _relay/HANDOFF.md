@@ -10,7 +10,7 @@ status: jev-reader-best-uses-floor-hint-only-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (uncommitted → ship this shift)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `bee5237`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **JEV:** `ARIA_JINA_API_KEY` portal `apikey_…` in `.env.local` — Reader prove 200 / 113k chars (`_relay/evidence/2026-10-03-jina-reader-auth-prove.json`). Best Aria uses = authenticated Reader enrichment; Search fail-closed until `jina_…` Bearer.
 - **N-agent local:** Floor `withVm` hint-only (no Hermes suffix bleed); pulse no idle→working; viewport unboundOrphan gates stream/buttons
