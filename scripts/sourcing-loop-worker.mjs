@@ -97,6 +97,93 @@ class HandlerError extends Error {
   }
 }
 
+/**
+ * Resolve seatId + computerId for an inbound classify → booking.proposed trail.
+ * Prefer fields already on read_inbound_message_for_loop when present; else look up
+ * linkedin_channel_events / outreach_ledger → agent_seats. Fail-closed: omit, never invent.
+ */
+export async function resolveInboundSeatComputer(client, workspaceId, inboundId, storedInbound) {
+  const fromStored = (key) => {
+    if (!isRecord(storedInbound)) return undefined;
+    const raw = storedInbound[key];
+    return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+  };
+  let seatId = fromStored("seat_id") ?? fromStored("seatId");
+  let computerId = fromStored("computer_id") ?? fromStored("computerId");
+
+  if (!seatId && inboundId && client?.from) {
+    try {
+      const li = await client
+        .from("linkedin_channel_events")
+        .select("seat_id")
+        .eq("workspace_id", workspaceId)
+        .eq("inbound_id", inboundId)
+        .limit(1)
+        .maybeSingle();
+      const sid = isRecord(li?.data) && typeof li.data.seat_id === "string" ? li.data.seat_id.trim() : "";
+      if (sid) seatId = sid;
+    } catch {
+      /* fail-soft */
+    }
+  }
+
+  if (!seatId && inboundId && client?.from) {
+    try {
+      const msg = await client
+        .from("messages_inbound")
+        .select("correlated_ledger_id")
+        .eq("workspace_id", workspaceId)
+        .eq("id", inboundId)
+        .limit(1)
+        .maybeSingle();
+      const ledgerId =
+        isRecord(msg?.data) && typeof msg.data.correlated_ledger_id === "string"
+          ? msg.data.correlated_ledger_id.trim()
+          : "";
+      if (ledgerId) {
+        const ledger = await client
+          .from("outreach_ledger")
+          .select("seat_id")
+          .eq("workspace_id", workspaceId)
+          .eq("id", ledgerId)
+          .limit(1)
+          .maybeSingle();
+        const sid =
+          isRecord(ledger?.data) && typeof ledger.data.seat_id === "string"
+            ? ledger.data.seat_id.trim()
+            : "";
+        if (sid) seatId = sid;
+      }
+    } catch {
+      /* fail-soft */
+    }
+  }
+
+  if (seatId && !computerId && client?.from) {
+    try {
+      const seat = await client
+        .from("agent_seats")
+        .select("computer_id")
+        .eq("workspace_id", workspaceId)
+        .eq("id", seatId)
+        .limit(1)
+        .maybeSingle();
+      const cid =
+        isRecord(seat?.data) && typeof seat.data.computer_id === "string"
+          ? seat.data.computer_id.trim()
+          : "";
+      if (cid) computerId = cid;
+    } catch {
+      /* fail-soft */
+    }
+  }
+
+  return {
+    seatId: seatId || undefined,
+    computerId: computerId || undefined,
+  };
+}
+
 function boundedInteger(value, fallback, minimum, maximum, name) {
   const raw = value === undefined || value === "" ? fallback : Number(value);
   if (!Number.isSafeInteger(raw) || raw < minimum || raw > maximum) {
@@ -870,7 +957,17 @@ async function handleInboundClassify(job, context) {
       channel: reply.channel,
     }),
   ];
+  let bookingSeatId;
+  let bookingComputerId;
   if (positive && campaignId && candidateId) {
+    const trail = await resolveInboundSeatComputer(
+      context.client,
+      job.workspace_id,
+      inboundId,
+      storedInbound,
+    );
+    bookingSeatId = trail.seatId;
+    bookingComputerId = trail.computerId;
     try {
       const entitled = await context.client
         .from("profiles")
@@ -910,6 +1007,8 @@ async function handleInboundClassify(job, context) {
         channel: reply.channel,
         trigger: "inbound_interest",
         idempotencyKey: `booking:propose:${campaignId}:${candidateId}`,
+        ...(bookingSeatId ? { seatId: bookingSeatId } : {}),
+        ...(bookingComputerId ? { computerId: bookingComputerId } : {}),
       }),
     );
     bookingProposed = true;
@@ -933,14 +1032,16 @@ async function handleInboundClassify(job, context) {
   );
 
   // Durable activity trail scoped in Aria (fail-soft: loop event already recorded).
+  // Notes match bookingProposeActivityFields (Hermes path) — seat/computer from trail, else —.
   if (bookingProposed) {
     try {
+      const channelNote = reply.channel ? ` channel=${reply.channel}` : "";
       const activity = {
         id: `act-booking-propose-${campaignId}-${candidateId}`.slice(0, 120),
         type: "booking",
         title: "Booking proposed from interested reply",
         notes:
-          `Positive interest — propose a meeting in Calendar (operator confirms). No silent calendar create. channel=${reply.channel} [booking:propose:${campaignId}:${candidateId}] seat=— computer=—`,
+          `Positive interest — propose a meeting in Calendar (operator confirms). No silent calendar create.${channelNote} [booking:propose:${campaignId}:${candidateId}] seat=${bookingSeatId ?? "—"} computer=${bookingComputerId ?? "—"}`,
         outcome: "Proposed — confirm in Calendar",
         campaignId,
         linkedEntityType: "candidate",

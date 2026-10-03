@@ -7,7 +7,9 @@ import { Badge, Button, Card, CardContent } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import {
   evaluateCampaignGoLive,
+  mergeDurableCampaignSeatsForGoLive,
   type ComputerHealthLike,
+  type DurableCampaignSeatLike,
   type GoLiveCheck,
 } from "@/lib/campaign-go-live";
 import type { AgentSeat, Candidate, SystemSettings } from "@/lib/types";
@@ -22,6 +24,7 @@ export function CampaignGoLiveChecklist(props: {
   compact?: boolean;
 }) {
   const [polledComputers, setPolledComputers] = React.useState<ComputerHealthLike[] | undefined>();
+  const [durableSeats, setDurableSeats] = React.useState<DurableCampaignSeatLike[] | undefined>();
   React.useEffect(() => {
     if (props.computers) return;
     let cancelled = false;
@@ -34,7 +37,7 @@ export function CampaignGoLiveChecklist(props: {
         if (!res.ok || cancelled) return;
         const data = (await res.json()) as {
           computers?: ComputerHealthLike[];
-          campaignSeats?: Array<{ id: string }>;
+          campaignSeats?: DurableCampaignSeatLike[];
         };
         const comps = data.computers ?? [];
         // Scope to durable campaign seats when Fleet returns them — never paint
@@ -51,7 +54,12 @@ export function CampaignGoLiveChecklist(props: {
                   (seat.assignedCampaignIds ?? []).includes(props.campaignId),
               );
             });
-        if (!cancelled) setPolledComputers(scoped);
+        if (!cancelled) {
+          setPolledComputers(scoped);
+          if (Array.isArray(data.campaignSeats)) {
+            setDurableSeats(data.campaignSeats);
+          }
+        }
       } catch {
         /* checklist still works without live computer rows */
       }
@@ -62,19 +70,23 @@ export function CampaignGoLiveChecklist(props: {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [props.campaignId, props.computers]);
+  }, [props.campaignId, props.computers, props.seats]);
 
   const computers = props.computers ?? polledComputers;
+  const seatsForEval = React.useMemo(
+    () => mergeDurableCampaignSeatsForGoLive(props.seats, durableSeats, props.campaignId),
+    [props.seats, durableSeats, props.campaignId],
+  );
   const { ready, checks, nextAction } = React.useMemo(
     () =>
       evaluateCampaignGoLive({
         campaignId: props.campaignId,
         settings: props.settings,
-        seats: props.seats,
+        seats: seatsForEval,
         computers,
         candidate: props.candidate,
       }),
-    [props.campaignId, props.settings, props.seats, computers, props.candidate],
+    [props.campaignId, props.settings, seatsForEval, computers, props.candidate],
   );
 
   return (

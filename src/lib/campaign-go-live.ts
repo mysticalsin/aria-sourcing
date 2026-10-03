@@ -3,6 +3,8 @@
  */
 
 import type { AgentSeat, Candidate, SystemSettings } from "@/lib/types";
+import { defaultSendWindow } from "@/lib/fleet";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "@/lib/send-pacing";
 
 export type GoLiveCheckId =
   | "dry_run_off"
@@ -29,6 +31,15 @@ export type ComputerHealthLike = {
   sessionHealthy?: boolean | null;
 };
 
+/** Durable Fleet campaignSeats row (subset) — DB authority over Hermes-only attach. */
+export type DurableCampaignSeatLike = {
+  id: string;
+  name?: string;
+  computerId?: string | null;
+  status?: string;
+  assignedCampaignIds?: string[];
+};
+
 export type GoLiveInput = {
   campaignId: string;
   settings: Pick<SystemSettings, "dryRunMode" | "minScoreToContact">;
@@ -36,6 +47,81 @@ export type GoLiveInput = {
   computers?: ComputerHealthLike[];
   candidate?: Pick<Candidate, "matchScore"> | null;
 };
+
+/**
+ * Prefer durable Fleet `campaignSeats` for go-live attachment checks.
+ * When present, DB bindings win over cold Hermes (same rule as Campaign Agents).
+ * Hermes fields fill persona/mode when the seat already exists locally.
+ */
+export function mergeDurableCampaignSeatsForGoLive(
+  hermesSeats: AgentSeat[],
+  durable: DurableCampaignSeatLike[] | undefined,
+  campaignId: string,
+): AgentSeat[] {
+  if (!Array.isArray(durable) || durable.length === 0) return hermesSeats;
+  const hermesById = new Map(hermesSeats.map((s) => [s.id, s]));
+  const out: AgentSeat[] = [];
+  for (const row of durable) {
+    if (!row?.id) continue;
+    const local = hermesById.get(row.id);
+    const assigned = Array.from(
+      new Set([
+        ...(local?.assignedCampaignIds ?? []),
+        ...(Array.isArray(row.assignedCampaignIds) ? row.assignedCampaignIds : []),
+        campaignId,
+      ]),
+    );
+    if (local) {
+      out.push({
+        ...local,
+        computerId: (row.computerId ?? local.computerId) || local.computerId,
+        assignedCampaignIds: assigned,
+        provider:
+          local.provider === "LinkedIn Browser Computer" ||
+          local.linkedinDeliveryBackend === "browser-computer"
+            ? local.provider
+            : "LinkedIn Browser Computer",
+        linkedinDeliveryBackend: local.linkedinDeliveryBackend ?? "browser-computer",
+        status:
+          row.status === "active" || row.status === "paused" || row.status === "disabled"
+            ? row.status
+            : local.status,
+      });
+      continue;
+    }
+    // Durable-only desk (Hermes cold) — stub enough for campaignBrowserSeats.
+    out.push({
+      id: row.id,
+      name: (row.name ?? "").trim() || row.id,
+      operatorEmail: "",
+      provider: "LinkedIn Browser Computer",
+      status:
+        row.status === "paused" || row.status === "disabled" || row.status === "active"
+          ? row.status
+          : "active",
+      mode: "live",
+      domainVerified: true,
+      dailyLimit: LINKEDIN_BROWSER_SEAT_DEFAULTS.dailyLimit,
+      warmup: true,
+      warmupStartCap: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStartCap,
+      warmupStepPerDay: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStepPerDay,
+      warmupStartedAt: new Date(0).toISOString(),
+      minGapMinutes: LINKEDIN_BROWSER_SEAT_DEFAULTS.minGapMinutes,
+      sendWindow: defaultSendWindow(),
+      sentToday: 0,
+      lastSendAt: null,
+      health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      persona: "",
+      signature: "",
+      connectedAccount: "",
+      computerId: row.computerId ?? null,
+      linkedinDeliveryBackend: "browser-computer",
+      assignedCampaignIds: assigned,
+      createdAt: new Date(0).toISOString(),
+    });
+  }
+  return out;
+}
 
 function isBrowserComputerSeat(seat: AgentSeat): boolean {
   // Provider/backend only — a bare computerId must not classify email seats as Browser Computers.

@@ -2,7 +2,7 @@
  * Unit checks for evaluateCampaignGoLive checklist.
  * Run: tsx tests/campaign-go-live.mts
  */
-import { evaluateCampaignGoLive, campaignBrowserSeats } from "../src/lib/campaign-go-live";
+import { evaluateCampaignGoLive, campaignBrowserSeats, mergeDurableCampaignSeatsForGoLive } from "../src/lib/campaign-go-live";
 import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "../src/lib/send-pacing";
 import { defaultSendWindow } from "../src/lib/fleet";
 import type { AgentSeat } from "../src/lib/types";
@@ -276,6 +276,61 @@ ok(
       ],
       campaignId,
     ).length === 0,
+  );
+}
+
+{
+  const cold = mergeDurableCampaignSeatsForGoLive(
+    [],
+    [
+      {
+        id: "seat_db_01",
+        name: "DB seat",
+        computerId: "comp_db_01",
+        status: "active",
+        assignedCampaignIds: [campaignId],
+      },
+    ],
+    campaignId,
+  );
+  ok("durable-only seat merges when Hermes cold", cold.length === 1 && cold[0].id === "seat_db_01");
+  ok(
+    "durable-only stub is browser computer for go-live",
+    campaignBrowserSeats(cold, campaignId).length === 1,
+  );
+  const fromDurable = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: cold,
+    computers: [
+      {
+        computerId: "comp_db_01",
+        seatId: "seat_db_01",
+        status: "ready",
+        control: "bot",
+        sessionHealthy: true,
+      },
+    ],
+    candidate: { matchScore: 90 },
+  });
+  ok(
+    "go-live browser_seat_attached ok from durable seats alone",
+    fromDurable.checks.find((c) => c.id === "browser_seat_attached")?.ok === true,
+  );
+  const patched = mergeDurableCampaignSeatsForGoLive(
+    [liSeat({ id: "seat_java_vm_01", assignedCampaignIds: [], computerId: null })],
+    [{ id: "seat_java_vm_01", computerId: "comp_java_01", assignedCampaignIds: [campaignId] }],
+    campaignId,
+  );
+  ok(
+    "durable patches Hermes computerId + campaign assign",
+    patched[0].computerId === "comp_java_01" &&
+      (patched[0].assignedCampaignIds ?? []).includes(campaignId),
+  );
+  ok(
+    "empty durable leaves Hermes unchanged",
+    mergeDurableCampaignSeatsForGoLive([liSeat()], undefined, campaignId)[0].id ===
+      "seat_java_vm_01",
   );
 }
 

@@ -109,9 +109,10 @@ Every hop records: `workspaceId`, `campaignId`, `candidateId`, `seatId`, `comput
 | **2** | Optional MCP LinkedIn sidecar + doctor/status API for Agent Reach | Fail-closed without inventing connectivity |
 | **3** | Interest → booking propose job + UI trail | Receipts in activity + calendar ledger |
 | **3.5** | Durable loop: `inbound_classify` → `booking.proposed` event + `append_activities`; ICP provenance preserves Agent Reach `via`; `GET /api/source/agent-reach/status` | Worker + unit tests green; no silent calendar create |
+| **3.6** | Booking trail stamps `seatId`/`computerId` (LinkedIn event / ledger → `agent_seats`); go-live merges durable `campaignSeats` when Hermes cold | Worker + go-live tests; honest `—` when unresolved |
 | **4** | Tip Fly deploy + N desks logged in | Live `/api/ready` tip SHA; `sessionHealthy:true` within TTL on Floor |
 
-**Slice status (2026-10-03):** 1 ✅ · 2 ✅ · 3 ✅ · 3.5 ✅ · 4 ❌ Fly tip + LI login
+**Slice status (2026-10-03):** 1 ✅ · 2 ✅ · 3 ✅ · 3.5 ✅ · 3.6 ✅ · 4 ❌ Fly tip + LI login
 
 ---
 
