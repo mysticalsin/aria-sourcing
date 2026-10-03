@@ -32,6 +32,12 @@ ok(
   /setDurableSeats\(undefined\)/.test(checklist) &&
     (checklist.match(/setDurableSeats\(undefined\)/g) ?? []).length >= 3,
 );
+ok(
+  "go-live checklist seatsRef — seats churn must not remount / clear durable",
+  /seatsRef/.test(checklist) &&
+    /\[props\.campaignId, props\.computers, actions\]/.test(checklist) &&
+    !/\[props\.campaignId, props\.computers, props\.seats, actions\]/.test(checklist),
+);
 
 const agents = readFileSync(
   new URL("../src/components/campaigns/campaign-agents-panel.tsx", import.meta.url),
@@ -79,6 +85,12 @@ ok(
   "setup guide clears liSessionHealthy on soft-nav before poll",
   /setLiSessionHealthy\(false\)/.test(setup) &&
     setup.indexOf("setLiSessionHealthy(false)") < setup.indexOf("const load = async"),
+);
+ok(
+  "setup guide seatsRef — seats churn must not remount / clear durable attach",
+  /seatsRef/.test(setup) &&
+    /\[campaignId, actions\]/.test(setup) &&
+    !/\}, \[seats, campaign, actions\]\)/.test(setup),
 );
 
 const campaignPage = readFileSync(
