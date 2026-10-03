@@ -1,34 +1,36 @@
 ---
 project: MSourcing / ARIA
-shift: 338
+shift: 339
 agent: cursor-cloud
-updated: 2026-10-03T19:54Z
-status: store-contracts-131-pushed-awaiting-ci-and-owner-approve
+updated: 2026-10-03T20:01Z
+status: setup-guide-assert-fixed-awaiting-ci-and-owner-approve
 ---
 
-# Handoff — Shift 338
+# Handoff — Shift 339
 
 ## Current state
 
-- **#150 tip:** `d8abd8e` — store-contracts HermesActions 130→131 (+ prior skip-no-remoteUrl stack)
-- **#148 tip:** `09dcc93` — same store-contracts bump cherry-pick
-- Local `npx tsx --test tests/store-contracts.mts` → 11/11 pass on both tips
-- **#150:** squash auto-merge on; owner approve still required (agent cannot approve)
-- **Fly:** still `21a42e7…` / `0084` — goal open until tip SHA + 0087 + LI desks healthy
+- **#150 tip:** `6f2fef6` — store-contracts 131 + setup-guide take-control assert accepts `campaignId` soft-nav
+- **#148 tip:** `991141d` — same cherry-picks
+- Local: linkedin-connections 58/0, store-contracts 11/11, floor 33, soft-nav 25, hermes-sync 23, supervisor 137
+- Tip FE↔BE residual hunt: **NONE**
+- **#150:** squash auto-merge on; `REVIEW_REQUIRED` (agent cannot approve)
+- **Fly:** `21a42e7…` / `0084` / hermesRuntime true — proof fails build==tip + migration≥0087
 
 ## Done this shift
 
-1. Bumped `tests/store-contracts.mts` expected HermesActions count 130→131 (asserts + markup) for `applyFleetHermesComputerPatches`
-2. Pushed #150 `d8abd8e` and #148 `09dcc93`
+1. Fixed store-contracts HermesActions 130→131
+2. Fixed linkedin-connections setup-guide assert (`campaign.id` → `campaignId`)
+3. Reconfirmed tip FE↔BE residuals NONE; Fly still stale
 
 ## Blockers
 
-1. Owner approve #150 → squash → dispatch + proof + LI healthy
-2. Await Quality + Release green on both tips (Vercel rate-limit ignore when those pass)
+1. Owner approve #150 → squash → dispatch + proof + LI Take→login→Release
+2. Await Quality + Release green on `6f2fef6` / `991141d`
 
 ## Next steps
 
-1. Confirm Quality + Release green on `d8abd8e` / `09dcc93`
+1. Confirm Quality + Release green on both tips
 2. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
 3. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 4. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
@@ -40,7 +42,7 @@ status: store-contracts-131-pushed-awaiting-ci-and-owner-approve
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - N-agent deploy does **not** require `agentFrameworks:true`
-- HermesActions count tracks Object.keys(actions) / contracts / deps parity
+- Setup-guide take-control fetch keys on `campaignId` (soft-nav), not `campaign.id` inline
 
 ## Watch out
 
