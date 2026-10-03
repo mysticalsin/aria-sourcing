@@ -266,6 +266,46 @@ ok(
     multi.checks.find((c) => c.id === "session_healthy")?.ok === false,
 );
 
+// Partial fleet bind: 1 healthy VM must not green attach/ready while a sibling
+// attached desk still lacks a seat-owned computer.
+{
+  const partial = evaluateCampaignGoLive({
+    campaignId,
+    settings: { dryRunMode: false, minScoreToContact: 80 },
+    seats: [
+      liSeat(),
+      liSeat({
+        id: "seat_java_vm_unbound",
+        computerId: null,
+        assignedCampaignIds: [campaignId],
+      }),
+    ],
+    computers: [
+      {
+        computerId: "comp_java_01",
+        seatId: "seat_java_vm_01",
+        status: "ready",
+        control: "bot",
+        sessionHealthy: true,
+      },
+    ],
+    candidate: { matchScore: 88 },
+  });
+  ok(
+    "1/N fleet-bound healthy does not green browser_seat_attached",
+    partial.checks.find((c) => c.id === "browser_seat_attached")?.ok === false,
+  );
+  ok(
+    "1/N fleet-bound healthy does not green session_healthy or ready",
+    partial.ready === false &&
+      partial.checks.find((c) => c.id === "session_healthy")?.ok === false,
+  );
+  ok(
+    "partial bind detail uses attached denominator",
+    /1\/2/.test(partial.checks.find((c) => c.id === "browser_seat_attached")?.detail ?? ""),
+  );
+}
+
 
 // Cross-seat bleed: stale Hermes computerId must not inherit another seat's healthy VM.
 {

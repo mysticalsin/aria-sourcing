@@ -85,8 +85,13 @@ export function FleetHealthStrip() {
   ).length;
 
   const readyPct = s.seats ? (liveReady / s.seats) * 100 : 0;
+  // Success only when every seat is send-ready — partial N must not paint green theater.
   let tone: Tone =
-    liveReady > 0 ? "success" : needsMailbox > 0 || liUnverified > 0 ? "warning" : "neutral";
+    s.seats > 0 && liveReady === s.seats
+      ? "success"
+      : liveReady > 0 || needsMailbox > 0 || liUnverified > 0
+        ? "warning"
+        : "neutral";
   if (s.pausedSeats > s.seats / 2 && s.seats > 0) tone = "warning";
 
   return (
