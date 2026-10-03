@@ -10,7 +10,7 @@ status: go-live-fleet-attach-floor-no-healthy-theater-fly-stale
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `4062b2e`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
 - **N-agent local:** Go-live attach requires fleet seat-owned bind when computers polled; Floor ready+healthy stays idle unless sentToday>0 or VM busy; LI unassigned = Standing by; BanRisk prefers fleet computerId; packet hub prefers healthy
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
