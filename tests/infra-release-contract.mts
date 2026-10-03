@@ -807,12 +807,16 @@ ok(
   indexOfOrInfinity(deploy, "fly deploy --config fly.auth.toml") < indexOfOrInfinity(deploy, "ARIA_BOOTSTRAP_PHASE=migrations") &&
     indexOfOrInfinity(deploy, "fly deploy --config fly.rest.toml") < indexOfOrInfinity(deploy, "ARIA_BOOTSTRAP_PHASE=migrations"),
 );
-ok("post-mutation acceptance requires app readiness", /require_http_200[^\n]*app \/api\/ready[^\n]*\/api\/ready/.test(deploy));
-// 082178e: /api/ready is deliberately NOT a proxy-routing check — its
-// agentFrameworks component is required in production while the sidecars are
-// not deployed on Fly, so routing on it would 503 the whole app for an
-// unrelated subsystem. The app routes on /api/health; deep readiness stays
-// monitoring-only (asserted above via require_http_200 in the deploy script).
+ok(
+  "post-mutation acceptance requires tip+Hermes /api/ready JSON (not bare HTTP 200)",
+  /require_app_ready_json[^\n]*app \/api\/ready/.test(deploy) &&
+    /hermesRuntime === true/.test(deploy) &&
+    /agentFrameworks !== true/.test(deploy),
+);
+// 082178e + 2026-10-03: /api/ready is deliberately NOT a proxy-routing check —
+// agentFrameworks may stay false when DeerFlow/Flowise sidecars are absent.
+// Deploy acceptance gates tip SHA + Hermes data plane from the ready JSON.
+// The app routes on /api/health.
 ok(
   "Fly app deployment health check routes on /api/health, not deep readiness",
   /path\s*=\s*"\/api\/health"/.test(appFlyConfig) && !/path\s*=\s*"\/api\/ready"/.test(appFlyConfig),

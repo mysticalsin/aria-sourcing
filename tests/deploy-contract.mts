@@ -41,6 +41,8 @@ type Scenario = {
   auth?: string;
   app?: string;
   ready?: string;
+  /** When ready is 503: "frameworks" (default) = only agentFrameworks false; "plane" = database false. */
+  readyFailure?: "frameworks" | "plane";
   kong?: string;
   cleanupStatus?: "ok" | "degraded";
   heartbeatStatus?: "ok" | "degraded";
@@ -636,14 +638,46 @@ while [ "$#" -gt 0 ]; do
   if [ "$1" = "-o" ]; then out="$2"; shift 2; continue; fi
   shift
 done
-printf '{"contract":true}\\n' > "$out"
 case "$url" in
-  */rest/v1/) code="\${FAKE_REST_STATUS:-200}" ;;
-  */auth/v1/health) code="\${FAKE_AUTH_STATUS:-200}" ;;
-  */api/health) code="\${FAKE_APP_STATUS:-200}" ;;
-  */api/ready) code="\${FAKE_READY_STATUS:-200}" ;;
-  */healthz) code="\${FAKE_KONG_STATUS:-200}" ;;
-  *) code=500 ;;
+  */rest/v1/) code="\${FAKE_REST_STATUS:-200}" ; printf '{"contract":true}\\n' > "$out" ;;
+  */auth/v1/health) code="\${FAKE_AUTH_STATUS:-200}" ; printf '{"contract":true}\\n' > "$out" ;;
+  */api/health) code="\${FAKE_APP_STATUS:-200}" ; printf '{"ok":true}\\n' > "$out" ;;
+  */api/ready)
+    code="\${FAKE_READY_STATUS:-200}"
+    frameworks=true
+    database=true
+    if [ "$code" != "200" ]; then
+      if [ "\${FAKE_READY_FAILURE:-frameworks}" = "plane" ]; then
+        database=false
+      else
+        frameworks=false
+      fi
+    fi
+    node -e '
+      const code = process.argv[1];
+      const frameworks = process.argv[2] === "true";
+      const database = process.argv[3] === "true";
+      const releaseSha = process.env.FAKE_RELEASE_SHA || "";
+      const body = {
+        ok: code === "200" && frameworks && database,
+        status: code === "200" && frameworks && database ? "ready" : "not_ready",
+        build: releaseSha,
+        migration: "0018_contract.sql",
+        components: {
+          database,
+          auth: true,
+          queue: true,
+          agentFrameworks: frameworks,
+          hermesRuntime: true,
+          migration: database,
+          releaseIdentity: true,
+        },
+      };
+      require("node:fs").writeFileSync(process.argv[4], JSON.stringify(body) + "\\n");
+    ' "$code" "$frameworks" "$database" "$out"
+    ;;
+  */healthz) code="\${FAKE_KONG_STATUS:-200}" ; printf '{"contract":true}\\n' > "$out" ;;
+  *) code=500 ; printf '{"contract":true}\\n' > "$out" ;;
 esac
 printf '%s' "$code"
 `,
@@ -694,6 +728,7 @@ esac
         FAKE_AUTH_STATUS: scenario.auth ?? "200",
         FAKE_APP_STATUS: scenario.app ?? "200",
         FAKE_READY_STATUS: scenario.ready ?? "200",
+        FAKE_READY_FAILURE: scenario.readyFailure ?? "frameworks",
         FAKE_KONG_STATUS: scenario.kong ?? "200",
         FAKE_CLEANUP_STATUS: scenario.cleanupStatus ?? "ok",
         TAVILY_API_KEY: scenario.tavilyApiKey ?? "",
@@ -835,9 +870,19 @@ const appFailure = runDeploy({ app: "503" });
 ok("final app HTTP 503 fails the deploy", appFailure.status !== 0);
 ok("final app failure cannot report a pending deployment", !appFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"));
 
-const readinessFailure = runDeploy({ ready: "503" });
-ok("final readiness HTTP 503 fails the deploy", readinessFailure.status !== 0);
-ok("readiness failure cannot report a pending deployment", !readinessFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"));
+const readinessFrameworksDown = runDeploy({ ready: "503", readyFailure: "frameworks" });
+ok(
+  "final readiness HTTP 503 with only agentFrameworks false still deploys (Hermes N-agent tenant)",
+  readinessFrameworksDown.status === 0,
+);
+ok(
+  "frameworks-only ready 503 still reports pending deployment",
+  readinessFrameworksDown.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
+
+const readinessFailure = runDeploy({ ready: "503", readyFailure: "plane" });
+ok("final readiness HTTP 503 with data-plane failure fails the deploy", readinessFailure.status !== 0);
+ok("readiness plane failure cannot report a pending deployment", !readinessFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"));
 
 const cleanupFailure = runDeploy({ cleanupStatus: "degraded" });
 ok("degraded cleanup startup evidence fails the deploy", cleanupFailure.status !== 0);

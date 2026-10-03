@@ -719,6 +719,44 @@ require_http_200(){
   diagnose_backends
   return 1
 }
+# N-agent / Hermes tenants may keep /api/ready at HTTP 503 when DeerFlow/Flowise
+# sidecars are absent while AGENT_FRAMEWORKS_REQUIRED stays true (honest bit).
+# Accept that shape when tip identity + Hermes data plane are green.
+require_app_ready_json(){
+  local attempts="$1" delay="$2" description="$3" url="$4" i=1 code
+  while [ "$i" -le "$attempts" ]; do
+    if code="$(sm "$url")"; then :; else code="000"; fi
+    echo "  $description -> $code (try $i/$attempts)"
+    if [ -s "$SM_OUTPUT" ] && node -e '
+      const fs = require("node:fs");
+      const expectedSha = process.argv[2];
+      const expectedMig = process.argv[3];
+      let j;
+      try { j = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch { process.exit(2); }
+      const c = j.components || {};
+      const okPlane = c.database === true && c.auth === true && c.queue === true;
+      const okHermes = c.hermesRuntime === true;
+      const okMig = c.migration === true && String(j.migration || "") === expectedMig;
+      const okBuild = String(j.build || "") === expectedSha && c.releaseIdentity === true;
+      if (!okPlane || !okHermes || !okMig || !okBuild) process.exit(1);
+      if (c.agentFrameworks !== true) {
+        console.log("   note: agentFrameworks=false (sidecars absent; N-agent gate uses Hermes)");
+      }
+      process.exit(0);
+    ' "$SM_OUTPUT" "$ARIA_RELEASE_SHA" "$EXPECTED_MIGRATION_FILE"
+    then
+      return 0
+    fi
+    i=$((i+1))
+    [ "$i" -gt "$attempts" ] || sleep "$delay"
+  done
+  echo "ERROR: $description never satisfied tip+Hermes readiness JSON (last http=$code)" >&2
+  if [ -s "$SM_OUTPUT" ]; then
+    echo "  body: $(head -c 500 "$SM_OUTPUT")" >&2
+  fi
+  diagnose_backends
+  return 1
+}
 app_image_digest(){
   local app="$1" expected_tag="${2:-}" images
   images="$(fly image show --app "$app" --json)"
@@ -1054,7 +1092,7 @@ rs 3 50 "app v4" ensure_fly_ip aria-mantu-app v4
 rs 3 50 "app v6" ensure_fly_ip aria-mantu-app v6
 
 require_http_200 10 12 "app /api/health" https://aria-mantu-app.fly.dev/api/health
-require_http_200 10 12 "app /api/ready" https://aria-mantu-app.fly.dev/api/ready
+require_app_ready_json 10 12 "app /api/ready (tip+Hermes)" https://aria-mantu-app.fly.dev/api/ready
 
 log "12/12  bind running images and migration identity into the pending deployment receipt"
 
