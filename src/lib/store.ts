@@ -2208,11 +2208,27 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const finalTone = tone ?? effectiveTone(s.skills);
       // Keep following up on whichever channel the candidate was originally reached on.
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
-      const resolvedSeatId =
-        seatId ??
-        (channel === "LinkedIn"
-          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
-          : undefined);
+      let resolvedSeatId = seatId;
+      if (!resolvedSeatId && channel === "LinkedIn") {
+        const prior = latestOutreachSeatId(s.outreach, candidateId);
+        const priorSeat = prior
+          ? s.seats.find(
+              (x) =>
+                x.id === prior &&
+                isLinkedInAutomaticProvider(x.provider) &&
+                seatAttachedToCampaign(x, campaign.id),
+            )
+          : undefined;
+        resolvedSeatId = priorSeat?.id ?? soleCampaignBrowserSeatId(s.seats, campaign.id);
+      }
+      // N Browser seats: never silently stamp the wrong desk — require prior/explicit seatId.
+      if (
+        channel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
@@ -2276,11 +2292,27 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!candidate || !campaign) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
-      const resolvedSeatId =
-        seatId ??
-        (channel === "LinkedIn"
-          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
-          : undefined);
+      let resolvedSeatId = seatId;
+      if (!resolvedSeatId && channel === "LinkedIn") {
+        const prior = latestOutreachSeatId(s.outreach, candidateId);
+        const priorSeat = prior
+          ? s.seats.find(
+              (x) =>
+                x.id === prior &&
+                isLinkedInAutomaticProvider(x.provider) &&
+                seatAttachedToCampaign(x, campaign.id),
+            )
+          : undefined;
+        resolvedSeatId = priorSeat?.id ?? soleCampaignBrowserSeatId(s.seats, campaign.id);
+      }
+      // N Browser seats: never silently stamp the wrong desk — require prior/explicit seatId.
+      if (
+        channel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
       const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;

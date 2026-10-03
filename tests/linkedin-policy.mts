@@ -85,6 +85,10 @@ ok(
   /assigned_campaign_ids/.test(sendRoute) &&
     /This Browser Computer seat is not attached to the campaign/.test(sendRoute),
 );
+ok(
+  "outreach send refuses foreign-assigned Vendor API seat",
+  /This LinkedIn Vendor API seat is not attached to the campaign/.test(sendRoute),
+);
 
 const migration = readFileSync(
   new URL("../supabase/migrations/0062_linkedin_automatic_enqueue.sql", import.meta.url),
@@ -104,6 +108,15 @@ ok(
   /linkedin-seat-not-attached/.test(migration86) &&
     /assigned_campaign_ids/.test(migration86),
 );
+const migration87 = readFileSync(
+  new URL("../supabase/migrations/0087_enqueue_linkedin_vendor_campaign_attach.sql", import.meta.url),
+  "utf8",
+);
+ok(
+  "migration 0087 Vendor enqueue refuses foreign assigned",
+  /LinkedIn Vendor API/.test(migration87) &&
+    /cardinality\(coalesce\(seat\.assigned_campaign_ids/.test(migration87),
+);
 
 const dispatch = readFileSync(new URL("../src/lib/dispatch-outbound.ts", import.meta.url), "utf8");
 ok(
@@ -113,6 +126,12 @@ ok(
 ok(
   "dispatch fails closed when BC message has blank campaign_id",
   /campaign-required/.test(dispatch),
+);
+ok(
+  "dispatch attach gate covers Vendor API",
+  /seat\.provider === "LinkedIn Browser Computer" \|\| seat\.provider === "LinkedIn Vendor API"/.test(
+    dispatch,
+  ),
 );
 
 console.log(`RESULT linkedin-policy: ${pass} passed, ${fail} failed`);

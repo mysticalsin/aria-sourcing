@@ -365,10 +365,10 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           });
           continue;
         }
-        // BC requires campaign_id (match enqueue 0086) — blank must not skip attach.
+        // Automatic LI requires campaign attach (BC empty ≠ shared; Vendor empty = shared).
         const attachCampaignId =
           (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) || "";
-        if (seat.provider === "LinkedIn Browser Computer") {
+        if (seat.provider === "LinkedIn Browser Computer" || seat.provider === "LinkedIn Vendor API") {
           if (!attachCampaignId) {
             await finish("blocked", { pass: false, reasons: ["campaign-required"] });
             continue;

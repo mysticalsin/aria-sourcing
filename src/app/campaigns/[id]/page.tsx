@@ -599,16 +599,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     if (res.accepted.length > 0) setTab("candidates");
 
     const newlyAccepted = res.accepted.filter((cand) => !beforeIds.has(cand.id));
-    let drafted = 0;
     let deferredTenure = 0;
-    for (const cand of newlyAccepted.slice(0, 8)) {
-      if (!isContactReadyByTenure(cand)) {
-        deferredTenure += 1;
-        continue;
-      }
-      const msg = actions.generateOutreachFor(cand.id, undefined, "LinkedIn");
-      if (msg) drafted += 1;
+    for (const cand of newlyAccepted) {
+      if (!isContactReadyByTenure(cand)) deferredTenure += 1;
     }
+    // Fleet allocate stamps attached campaign desks (N>1 safe) — never generateOutreachFor
+    // without seatId (that returns null when multiple Browser Computers are attached).
+    const allocation = actions.allocateOutreach({ campaignId: c.id });
+    const drafted = allocation.assignments.filter((a) =>
+      newlyAccepted.some((cand) => cand.id === a.candidateId),
+    ).length;
 
     const isLive = res.source === "github" || res.source === "web";
     if (res.accepted.length === 0) {

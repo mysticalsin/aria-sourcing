@@ -269,17 +269,26 @@ export async function POST(req: NextRequest) {
         { status: 503 },
       );
     }
-    // Browser Computer: campaign attach required (empty assigned ≠ shared pool).
-    if (liSeat.provider === "LinkedIn Browser Computer") {
+    // Browser Computer + Vendor: campaign attach required (empty BC ≠ shared pool;
+    // Vendor empty remains shared; foreign assigned refuses both).
+    if (liSeat.provider === "LinkedIn Browser Computer" || liSeat.provider === "LinkedIn Vendor API") {
       const assigned = Array.isArray(liSeat.assigned_campaign_ids)
         ? liSeat.assigned_campaign_ids.filter((id): id is string => typeof id === "string")
         : [];
-      if (!campaignId || !assigned.includes(campaignId)) {
+      const attached =
+        liSeat.provider === "LinkedIn Browser Computer"
+          ? Boolean(campaignId && assigned.includes(campaignId))
+          : !campaignId
+            ? false
+            : assigned.length === 0 || assigned.includes(campaignId);
+      if (!attached) {
         return NextResponse.json(
           {
             status: "error",
             detail:
-              "This Browser Computer seat is not attached to the campaign. Attach it under Campaign Agents before send.",
+              liSeat.provider === "LinkedIn Browser Computer"
+                ? "This Browser Computer seat is not attached to the campaign. Attach it under Campaign Agents before send."
+                : "This LinkedIn Vendor API seat is not attached to the campaign. Attach it under Campaign Agents before send.",
           },
           { status: 409 },
         );
