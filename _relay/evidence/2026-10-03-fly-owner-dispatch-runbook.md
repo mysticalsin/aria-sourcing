@@ -58,10 +58,12 @@ gh workflow run "Deploy Aria Mantu (Fly)" \
 ## 5. Post-deploy proof (goal gate)
 
 ```bash
-TIP=$(git rev-parse origin/deploy/fly-github-actions)
-curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq -e --arg tip "$TIP" \
-  '.build==$tip and .components.agentFrameworks==true and (.migration|test("0087"))'
+# After land + workflow_dispatch succeed:
+bash scripts/fly-n-agent-proof.sh   # uses origin/deploy/fly-github-actions tip
+# or: bash scripts/fly-n-agent-proof.sh <40-char-deploy-head>
 ```
+
+Script requires `/api/ready` build==tip, `agentFrameworks:true`, migration includes `0087`.
 
 Then Take→login→Release on each campaign LI desk. `sessionHealthy===true` only after probe — never invent.
 
