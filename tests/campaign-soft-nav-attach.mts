@@ -99,13 +99,18 @@ const campaignPage = readFileSync(
 );
 ok(
   "campaign Agents tab count prefers durable campaignSeats length",
-  /durableAgentCount/.test(campaignPage) &&
+  /durableAgentAuthority/.test(campaignPage) &&
+    /durableAgentAuthority\?\.campaignId === c\.id/.test(campaignPage) &&
     /Array\.isArray\(data\.campaignSeats\) \? data\.campaignSeats\.length/.test(campaignPage) &&
     /isBrowserComputerSeat\(s\) && seatAttachedToCampaign\(s, c\.id\)/.test(campaignPage),
 );
 ok(
   "campaign page Agents badge poll ingests durable bindings",
   /ingestDurableBrowserBindings/.test(campaignPage),
+);
+ok(
+  "campaign Agents badge stamps campaignId — soft-nav cannot paint foreign durable",
+  /setDurableAgentAuthority\(\{ campaignId: id, count:/.test(campaignPage),
 );
 ok(
   "go-live checklist ingests durable bindings on fleet poll",
@@ -121,6 +126,25 @@ ok(
 ok(
   "fleet Deploy omits campaignId for newly minted seats",
   /New seats from Deploy are not campaign-attached yet/.test(fleetPage),
+);
+ok(
+  "fleet seatsRef + pollGeneration — seats churn must not wipe roster",
+  /seatsRef/.test(fleetPage) &&
+    /pollGeneration/.test(fleetPage) &&
+    /\}, \[actions\]\)/.test(fleetPage) &&
+    !/\}, \[actions, seats\]\)/.test(fleetPage),
+);
+
+const linkedinPanel = readFileSync(
+  new URL("../src/components/settings/linkedin-connections-panel.tsx", import.meta.url),
+  "utf8",
+);
+ok(
+  "linkedin connections localSeatsRef — seats churn must not wipe LI healthy",
+  /localSeatsRef/.test(linkedinPanel) &&
+    /pollGeneration/.test(linkedinPanel) &&
+    /\}, \[enabled, actions, toast\]\)/.test(linkedinPanel) &&
+    !/\}, \[enabled, localSeats, toast\]\)/.test(linkedinPanel),
 );
 
 const viewport = readFileSync(

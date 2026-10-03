@@ -1,23 +1,23 @@
 ---
 project: MSourcing / ARIA
-shift: 320
+shift: 323
 agent: cursor-cloud
-updated: 2026-10-03T18:35Z
-status: sibling-seats-churn-fixed-fly-blocks-goal
+updated: 2026-10-03T18:46Z
+status: fleet-li-badge-on-148-and-150-fly-blocks-goal
 ---
 
-# Handoff — Shift 320
+# Handoff — Shift 323
 
 ## Current state
 
-- **#148 tip:** seatsRef on Agents + go-live checklist + setup guide (soft-nav 17/17)
-- **#150:** port sibling seats-churn fix next; owner approve still required
-- **Fly:** `21a42e7…` / `0084` / `hermesRuntime:true` — goal open until tip SHA + 0087 + LI desks healthy
+- **#148 + #150:** seatsRef/pollGeneration on Agents, go-live, setup, Fleet, LinkedIn connections; campaign Agents badge stamps campaignId (soft-nav 20/20)
+- **#150:** squash auto-merge on; owner approve still required
+- **Fly:** `21a42e7…` / `0084` — goal open until tip SHA + 0087 + LI desks healthy
 
 ## Done this shift
 
-1. Adversarial tip hunt after seatsRef Agents fix
-2. Fixed go-live checklist + setup guide: clear durable only on campaignId; seats via refs
+1. Ported Fleet/LI/campaign-badge seats-churn fix onto #148
+2. Soft-nav contract 20/20
 
 ## Blockers
 
@@ -25,14 +25,13 @@ status: sibling-seats-churn-fixed-fly-blocks-goal
 
 ## Next steps
 
-1. Port sibling seats-churn fix onto deploy-land / #150
-2. Owner approve + dispatch + `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+1. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
+2. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 3. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
 ## Decisions made (don't relitigate)
 
-- Soft-nav late prior-campaign paint stays via pollGeneration; seats churn must not remount/clear
-- Sibling go-live / setup-guide same seatsRef rule as Agents
+- Soft-nav / seats churn must not remount or clear durable across Agents, go-live, setup, Fleet, LI connections, campaign badge
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - N-agent deploy does **not** require `agentFrameworks:true`
@@ -40,4 +39,3 @@ status: sibling-seats-churn-fixed-fly-blocks-goal
 ## Watch out
 
 - No agent review/approve / FLY_API_TOKEN / request-reviewers
-- Docs pushes cancel CI — re-verify green before dispatch on deploy HEAD

@@ -415,12 +415,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
   const [runToken, setRunToken] = React.useState(0);
-  /** Durable Fleet campaignSeats length when present; null until poll / on omit. */
-  const [durableAgentCount, setDurableAgentCount] = React.useState<number | null>(null);
+  /** Durable Fleet campaignSeats length when present; null until poll / on omit.
+   * Stamp campaignId so soft-nav A→B cannot paint A's count before the effect clears. */
+  const [durableAgentAuthority, setDurableAgentAuthority] = React.useState<{
+    campaignId: string;
+    count: number | null;
+  } | null>(null);
 
   React.useEffect(() => {
     // Soft-nav: clear durable badge until campaign-scoped fleet authority lands.
-    setDurableAgentCount(null);
+    setDurableAgentAuthority({ campaignId: id, count: null });
     let cancelled = false;
     const load = async () => {
       try {
@@ -429,7 +433,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           { credentials: "same-origin" },
         );
         if (!res.ok || cancelled) {
-          if (!cancelled) setDurableAgentCount(null);
+          if (!cancelled) setDurableAgentAuthority({ campaignId: id, count: null });
           return;
         }
         const data = (await res.json()) as {
@@ -449,12 +453,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               : undefined),
         );
         if (!cancelled) {
-          setDurableAgentCount(
-            Array.isArray(data.campaignSeats) ? data.campaignSeats.length : null,
-          );
+          setDurableAgentAuthority({
+            campaignId: id,
+            count: Array.isArray(data.campaignSeats) ? data.campaignSeats.length : null,
+          });
         }
       } catch {
-        if (!cancelled) setDurableAgentCount(null);
+        if (!cancelled) setDurableAgentAuthority({ campaignId: id, count: null });
       }
     };
     void load();
@@ -584,6 +589,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, c.id),
   ).length;
   // Prefer durable Fleet campaignSeats length when present (incl. authoritative 0).
+  // Soft-nav: ignore foreign-campaign stamp until this id's authority lands.
+  const durableAgentCount =
+    durableAgentAuthority?.campaignId === c.id ? durableAgentAuthority.count : null;
   const agentsTabCount =
     durableAgentCount !== null ? durableAgentCount : hermesAgentCount;
 

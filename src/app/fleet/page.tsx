@@ -95,6 +95,10 @@ const GUARDRAILS = [
 export default function FleetPage() {
   const hydrated = useHydrated();
   const seats = useSeats();
+  // seatsRef + pollGeneration: Hermes ingest must not remount refresh / wipe roster.
+  const seatsRef = React.useRef(seats);
+  seatsRef.current = seats;
+  const pollGeneration = React.useRef(0);
   const campaigns = useCampaigns();
   const activeId = useActiveCampaignId();
   const actions = useActions();
@@ -217,12 +221,16 @@ export default function FleetPage() {
   const [hostCapacity, setHostCapacity] = React.useState<{ computers: number; max: number; desktop?: boolean } | null>(null);
 
   const refreshComputers = React.useCallback(async () => {
+    const gen = pollGeneration.current;
     setComputersLoading(true);
     try {
-      const browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
+      const browserSeats = seatsRef.current.filter(
+        (s) => s.provider === "LinkedIn Browser Computer",
+      );
       // GET-only like Floor — never poll-ensure with Hermes computerId. After reclaim,
       // a stale login-wall id would re-claim the orphan twin and detach the durable VM.
       const res = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+      if (gen !== pollGeneration.current) return;
       if (!res.ok) {
         // Fail closed: clear roster paint so stale healthy/orphan rows cannot linger.
         setComputers([]);
@@ -240,6 +248,7 @@ export default function FleetPage() {
           assignedCampaignIds?: string[];
         }>;
       };
+      if (gen !== pollGeneration.current) return;
       const rows = data.computers ?? [];
       setOpsSummary(data.summary ?? null);
       setFleetAudits(data.recentAudits ?? []);
@@ -254,6 +263,7 @@ export default function FleetPage() {
       if (!supabaseEnabled && rows.length === 0 && browserSeats.length > 0) {
         // Local demo may need a second list after cold hydrateFromHost.
         const again = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+        if (gen !== pollGeneration.current) return;
         if (again.ok) {
           const againData = (await again.json()) as {
             computers?: FleetComputerRow[];
@@ -266,6 +276,7 @@ export default function FleetPage() {
               assignedCampaignIds?: string[];
             }>;
           };
+          if (gen !== pollGeneration.current) return;
           setOpsSummary(againData.summary ?? null);
           setFleetAudits(againData.recentAudits ?? []);
           if (againData.hostCapacity) setHostCapacity(againData.hostCapacity);
@@ -287,20 +298,25 @@ export default function FleetPage() {
         }),
       );
     } catch {
+      if (gen !== pollGeneration.current) return;
       // Fail closed on throw after a green poll — clear stale healthy/orphan paint.
       setComputers([]);
       setOpsSummary(null);
     } finally {
-      setComputersLoading(false);
+      if (gen === pollGeneration.current) setComputersLoading(false);
     }
-  }, [actions, seats]);
+  }, [actions]);
 
   React.useEffect(() => {
     if (!hydrated) return;
+    pollGeneration.current += 1;
     void refreshComputers();
     // Same cadence as Floor / Campaign Agents — N seats' sessionHealthy must not go stale.
     const t = window.setInterval(() => void refreshComputers(), 5000);
-    return () => window.clearInterval(t);
+    return () => {
+      pollGeneration.current += 1;
+      window.clearInterval(t);
+    };
   }, [hydrated, refreshComputers]);
 
   async function reclaimOrphan(computerId: string, seatId: string) {
