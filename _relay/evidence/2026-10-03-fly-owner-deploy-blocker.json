@@ -42,8 +42,11 @@
         "number": 150,
         "url": "https://github.com/mysticalsin/aria-sourcing/pull/150",
         "head": "cursor/fly-deploy-land-n-agent-b91d",
+        "headSha": "281cc7f32bd273d9044d5161b5eb2708fa75c6ea",
         "mergeable": "MERGEABLE",
-        "note": "deploy base merged into head; sole conflict was codex-findings"
+        "ci": "success",
+        "codeql": "success",
+        "note": "deploy base merged; providers URL CodeQL fix; ready for owner merge"
       }
     ],
     "requires": [
