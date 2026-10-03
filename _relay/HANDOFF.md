@@ -14,13 +14,14 @@ status: tip-n-agent-closed-fly-blocks-goal
 - **Deploy-land branch:** `cursor/fly-deploy-land-n-agent-b91d` — PR https://github.com/mysticalsin/aria-sourcing/pull/150 → base `deploy/fly-github-actions`
 - **Tip residual:** **NONE**; last code+CI-proven green `ca8cf40`
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false` (HTTP 503)
-- **Merge:** `origin/deploy/fly-github-actions` merged into deploy-land; only conflict was `_relay/codex-findings.md` (kept tip + appended 4 deploy findings). Tip already had `ee0cee9` code via `8a63a8f`.
+- **Merge:** deploy base merged into #150 head (`MERGEABLE`); CodeQL URL-substring fix in `tests/providers.mts`
 - **Goal:** **open** until Fly tip SHA + LI desks healthy
 
 ## Done this shift
 
 1. Merged deploy base into #150 land branch; conflict resolved
 2. Reprobed Fly — still stale
+3. Fixed CodeQL incomplete-url-substring in providers tests (blocking #150)
 
 ## Blockers
 
