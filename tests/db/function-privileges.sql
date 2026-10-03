@@ -328,7 +328,11 @@ begin
       ('public.get_sourcing_loop_controls(uuid)'),
       ('public.record_loop_worker_heartbeat(text,text)'),
       ('public.read_workspace_state_for_loop(uuid)'),
-      ('public.read_inbound_email_for_loop(uuid,uuid)'),
+      -- read_inbound_email_for_loop is a 0059 thin wrapper. The service_role
+      -- gate lives on read_inbound_message_for_loop (SECURITY DEFINER still
+      -- sees the invoker's auth.role()). Do not add a duplicate in-body
+      -- assertion via a new migration — that would change the reviewed
+      -- schema fingerprint (pg_dump includes function bodies).
       ('public.read_inbound_message_for_loop(uuid,uuid)'),
       ('public.correlate_linkedin_inbound(uuid)'),
       ('public.resolve_linkedin_inbound_conversation(uuid,text)'),
