@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
+import { readBoundedBody } from "@/lib/api/validate";
 import { safeLog } from "@/lib/log-redact";
 import {
   verifyMetaSignature,
@@ -44,8 +45,19 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: false }, { status: 403 });
 }
 
+const WEBHOOK_MAX_BODY_BYTES = 1_000_000;
+
 export async function POST(req: NextRequest) {
-  const rawBody = await req.text();
+  // Bound the unauthenticated body BEFORE buffering it: an attacker who does
+  // not know APP_SECRET can still stream an arbitrarily large body straight
+  // into memory ahead of the signature check. readBoundedBody streams and
+  // cancels at the cap (and rejects an oversized Content-Length up front).
+  let rawBody: string;
+  try {
+    rawBody = await readBoundedBody(req, WEBHOOK_MAX_BODY_BYTES);
+  } catch {
+    return NextResponse.json({ ok: false, reason: "Body too large." }, { status: 413 });
+  }
   const signature = req.headers.get("x-hub-signature-256");
   if (!verifyMetaSignature(rawBody, signature, APP_SECRET())) {
     return NextResponse.json({ ok: false, reason: "Bad signature." }, { status: 401 });

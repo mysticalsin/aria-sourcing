@@ -27,8 +27,9 @@ OWNER_RECONCILIATION_FILE="${OWNER_RECONCILIATION_FILE:-$RECONCILIATION_DIR/supa
 LEGACY_BASELINE_INVARIANTS_FILE="${LEGACY_BASELINE_INVARIANTS_FILE:-$RECONCILIATION_DIR/legacy-baseline-invariants.sql}"
 LEGACY_BASELINE_EXPECTED_SCHEMA_SHA256_FILE="${LEGACY_BASELINE_EXPECTED_SCHEMA_SHA256_FILE:-$RECONCILIATION_DIR/legacy-baseline-public-schema.sha256}"
 RECOVERY_EMPTY_EXPECTED_SCHEMA_SHA256_FILE="${RECOVERY_EMPTY_EXPECTED_SCHEMA_SHA256_FILE:-$RECONCILIATION_DIR/recovery-empty-public-schema.sha256}"
+LEGACY_TABLE_INVENTORY_FILE="${LEGACY_TABLE_INVENTORY_FILE:-$RECONCILIATION_DIR/legacy-table-inventory.txt}"
 
-case "$MIGRATIONS_DIR:$OWNER_RECONCILIATION_FILE:$LEGACY_BASELINE_INVARIANTS_FILE:$LEGACY_BASELINE_EXPECTED_SCHEMA_SHA256_FILE:$RECOVERY_EMPTY_EXPECTED_SCHEMA_SHA256_FILE" in
+case "$MIGRATIONS_DIR:$OWNER_RECONCILIATION_FILE:$LEGACY_BASELINE_INVARIANTS_FILE:$LEGACY_BASELINE_EXPECTED_SCHEMA_SHA256_FILE:$RECOVERY_EMPTY_EXPECTED_SCHEMA_SHA256_FILE:$LEGACY_TABLE_INVENTORY_FILE" in
   *[!A-Za-z0-9_./:-]*) echo "[bootstrap] ERROR: unsafe reconciliation path" >&2; exit 1 ;;
 esac
 
@@ -77,7 +78,20 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 export LC_ALL=C
-LEGACY_TABLES="agent_conversations agent_events agent_memories agent_memory_events agent_memory_legacy_quarantine agent_run_memory_context agent_runs agent_seats agent_specs api_keys databricks_connection_events databricks_connections dust_connection_events dust_connections email_connections messages_inbound messages_outbound outbound_content_cache outreach_approvals outreach_ledger profiles suppression_list whatsapp_contacts whatsapp_conversation_windows whatsapp_delivery_events whatsapp_senders whatsapp_templates workspace_state workspaces"
+if [ ! -r "$LEGACY_TABLE_INVENTORY_FILE" ]; then
+  echo "[bootstrap] ERROR: legacy table inventory is unavailable" >&2
+  exit 1
+fi
+if ! LEGACY_TABLES="$(awk '
+  BEGIN { previous = ""; count = 0 }
+  !/^[a-z][a-z0-9_]*$/ { exit 2 }
+  previous != "" && $0 <= previous { exit 3 }
+  { values = values (count ? " " : "") $0; previous = $0; count += 1 }
+  END { if (count == 0) exit 4; print values }
+' "$LEGACY_TABLE_INVENTORY_FILE")"; then
+  echo "[bootstrap] ERROR: legacy table inventory is invalid" >&2
+  exit 1
+fi
 LEGACY_PREFLIGHT_APPROVAL_SHA256=""
 LEGACY_ACTUAL_SCHEMA_SHA256=""
 LEGACY_ACTUAL_ROW_FINGERPRINT_SHA256=""

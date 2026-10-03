@@ -1,9 +1,8 @@
 "use client";
 
-/* Agent Studio — create and tune on-demand sourcing agents. Flow execution is
-   limited to ARIA-owned runtime bindings; Flowise authoring is intentionally
-   private until a per-workspace deployment boundary exists. Reply drafting is
-   queue-only: every generated reply waits for a named human reviewer. */
+/* Agent Studio runs only owner-scoped specs bound to an independently approved
+   Flowise workflow. DeerFlow may orchestrate the exact reviewed campaign query;
+   the canonical store action remains the only candidate persistence authority. */
 
 import * as React from "react";
 import { Bot, ShieldCheck, Wand2 } from "lucide-react";
@@ -18,37 +17,70 @@ import {
   useToast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/app/page-header";
+import { useActions, useCampaigns } from "@/lib/store";
+import {
+  acquireStudioRunIdempotencyKey,
+  executeStudioAgentRun,
+  resolveStudioCampaign,
+  settleStudioRunIdempotencyKey,
+} from "@/lib/agents/studio-runner";
 
 interface SpecRow {
   id: string;
   name: string;
   role_brief: { title?: string; requiredSkills?: string[] } & Record<string, unknown>;
   channels: string[];
-  flowise_chatflow_id: string | null;
   status: string;
+  runtime_eligible: boolean;
+  runtime_reason: string | null;
+  workflowVersionId: string | null;
+  workflowName: string | null;
+  workflowSha256: string | null;
 }
 
-const ALL_CHANNELS = ["Email", "WhatsApp", "LinkedIn", "SMS"] as const;
+const SUPPORTED_CHANNELS = ["Email"] as const;
+
+function getStudioSessionStorage(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export default function StudioPage() {
   const { toast } = useToast();
+  const actions = useActions();
+  const campaigns = useCampaigns();
   const [loading, setLoading] = React.useState(true);
+  const [availability, setAvailability] = React.useState<"loading" | "ready" | "unavailable">("loading");
   const [demo, setDemo] = React.useState(false);
   const [specs, setSpecs] = React.useState<SpecRow[]>([]);
   const [name, setName] = React.useState("");
   const [roleTitle, setRoleTitle] = React.useState("");
   const [skills, setSkills] = React.useState("");
-  const [channels, setChannels] = React.useState<string[]>(["Email"]);
   const [saving, setSaving] = React.useState(false);
+  const [runningSpecId, setRunningSpecId] = React.useState<string | null>(null);
+  const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
   const load = React.useCallback(async () => {
+    setLoading(true);
+    setAvailability("loading");
     try {
       const res = await fetch("/api/agents/specs");
       const json = (await res.json()) as { ok: boolean; demo?: boolean; specs?: SpecRow[] };
+      if (!res.ok || json.ok !== true) throw new Error("Agent Studio is unavailable.");
       setDemo(Boolean(json.demo));
       setSpecs(json.specs ?? []);
-    } catch {
-      toast({ title: "Could not load agents.", variant: "error" });
+      setAvailability("ready");
+    } catch (err) {
+      setAvailability("unavailable");
+      setSpecs([]);
+      toast({
+        title: "Agent Studio unavailable.",
+        description: err instanceof Error ? err.message : "Could not load agents.",
+        variant: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -60,6 +92,10 @@ export default function StudioPage() {
 
   async function createSpec(e: React.FormEvent) {
     e.preventDefault();
+    if (availability !== "ready") {
+      toast({ title: "Agent Studio unavailable.", description: "Retry loading agents before creating one.", variant: "error" });
+      return;
+    }
     if (!name.trim() || !roleTitle.trim()) return;
     setSaving(true);
     try {
@@ -72,12 +108,16 @@ export default function StudioPage() {
             title: roleTitle.trim(),
             requiredSkills: skills.split(",").map((s) => s.trim()).filter(Boolean),
           },
-          channels,
+          channels: SUPPORTED_CHANNELS,
         }),
       });
       const json = (await res.json()) as { ok: boolean; reason?: string };
       if (!json.ok) throw new Error(json.reason ?? "Create failed");
-      toast({ title: "Agent created. Generated replies will wait for human review.", variant: "success" });
+      toast({
+        title: "Agent definition created.",
+        description: "An administrator must import and independently approve its Flowise workflow before it can run.",
+        variant: "success",
+      });
       setName("");
       setRoleTitle("");
       setSkills("");
@@ -89,12 +129,64 @@ export default function StudioPage() {
     }
   }
 
+  async function runSpec(spec: SpecRow) {
+    if (runningSpecId || !spec.runtime_eligible || !spec.workflowVersionId) return;
+    const campaign = resolveStudioCampaign(spec.role_brief.title ?? "", campaigns);
+    if (!campaign.ok) {
+      toast({ title: "No unambiguous reviewed campaign", description: campaign.reason, variant: "error" });
+      return;
+    }
+    setRunningSpecId(spec.id);
+    try {
+      const idempotencyScope = {
+        specId: spec.id,
+        workflowVersionId: spec.workflowVersionId,
+        campaignId: campaign.campaignId,
+      };
+      const retryStorage = getStudioSessionStorage();
+      const idempotencyKey = acquireStudioRunIdempotencyKey(
+        idempotencyScope,
+        pendingRunIdempotencyKeys.current,
+        retryStorage,
+      );
+      const result = await executeStudioAgentRun({
+        specId: spec.id,
+        workflowVersionId: spec.workflowVersionId,
+        campaignId: campaign.campaignId,
+        count: 5,
+        idempotencyKey,
+        sourceNextBatch: actions.sourceNextBatch,
+      });
+      settleStudioRunIdempotencyKey(
+        idempotencyScope,
+        result,
+        pendingRunIdempotencyKeys.current,
+        retryStorage,
+      );
+      if (!result.ok) {
+        toast({ title: "Agent run failed", description: result.error, variant: "error" });
+        return;
+      }
+      toast({
+        title: result.accepted === 0
+          ? "Real search completed with no new candidates"
+          : `Sourced ${result.accepted} real candidate${result.accepted === 1 ? "" : "s"}`,
+        description: result.skipped > 0
+          ? `${result.skipped} provider result${result.skipped === 1 ? " was" : "s were"} excluded or already present.`
+          : `DeerFlow completed approved workflow ${spec.workflowName ?? spec.workflowVersionId}.`,
+        variant: result.accepted === 0 ? "info" : "success",
+      });
+    } finally {
+      setRunningSpecId(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
         eyebrow="System"
         title="Agent Studio"
-        description="Build on-demand sourcing agents: one role, one task, hard guardrails. Runtime flows stay bound to this workspace; Flowise authoring remains private."
+        description="Run approved Flowise workflows through DeerFlow against exact reviewed campaign needs. Candidate search and persistence remain under ARIA authority."
       />
 
       {demo && (
@@ -115,46 +207,42 @@ export default function StudioPage() {
               <Wand2 className="h-4 w-4 text-muted" />
               <h2 className="text-sm font-semibold text-ink">New sourcing agent</h2>
             </div>
-            <form onSubmit={createSpec} className="flex flex-col gap-4">
+            {availability === "unavailable" && (
+              <div
+                id="studio-unavailable"
+                role="alert"
+                className="mb-4 rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger"
+              >
+                <p className="font-semibold">Agent Studio is unavailable.</p>
+                <p className="mt-1 text-xs text-muted">Existing agents are hidden until the backend responds successfully.</p>
+                <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void load()}>
+                  Retry loading agents
+                </Button>
+              </div>
+            )}
+            <form onSubmit={createSpec} className="flex flex-col gap-4" aria-describedby={availability === "unavailable" ? "studio-unavailable" : undefined}>
               <Field label="Agent name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Backend hunter — Paris" maxLength={120} />
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Backend hunter — Paris" maxLength={120} disabled={availability !== "ready"} />
               </Field>
               <Field label="Role title">
-                <Input value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} placeholder="Staff Backend Engineer" maxLength={120} />
+                <Input value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} placeholder="Staff Backend Engineer" maxLength={120} disabled={availability !== "ready"} />
               </Field>
               <Field label="Required skills (comma-separated)">
-                <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Go, Postgres, Kubernetes" maxLength={300} />
+                <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Go, Postgres, Kubernetes" maxLength={300} disabled={availability !== "ready"} />
               </Field>
               <Field label="Channels">
                 <div className="flex flex-wrap gap-2">
-                  {ALL_CHANNELS.map((c) => {
-                    const active = channels.includes(c);
-                    return (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() =>
-                          setChannels((prev) => (active ? prev.filter((x) => x !== c) : [...prev, c]))
-                        }
-                        className={
-                          active
-                            ? "rounded-full border border-ink/20 bg-ink px-3 py-1 text-xs text-paper"
-                            : "rounded-full border border-ink/15 px-3 py-1 text-xs text-muted hover:border-ink/30"
-                        }
-                        aria-pressed={active}
-                      >
-                        {c}
-                      </button>
-                    );
-                  })}
+                  {SUPPORTED_CHANNELS.map((channel) => (
+                    <Badge key={channel} tone="neutral">{channel}</Badge>
+                  ))}
                 </div>
+                <p className="mt-2 text-xs text-muted">Email is the only stored channel currently accepted. Creating a spec does not approve or execute a workflow.</p>
               </Field>
-              <Button type="submit" disabled={saving || !name.trim() || !roleTitle.trim() || channels.length === 0}>
+              <Button type="submit" disabled={availability !== "ready" || saving || !name.trim() || !roleTitle.trim()}>
                 {saving ? "Creating…" : "Create agent"}
               </Button>
               <p className="text-xs text-muted">
-                Reply drafting is queue-only. Every generated reply stays in human review until a named operator
-                approves its exact content and recipient.
+                A second administrator must approve the imported Flowise version. DeerFlow can then orchestrate only an exact active campaign match.
               </p>
             </form>
           </CardContent>
@@ -167,14 +255,32 @@ export default function StudioPage() {
                 <p className="text-sm text-muted">Loading agents…</p>
               </CardContent>
             </Card>
+          ) : availability === "unavailable" ? (
+            <EmptyState
+              icon={<Bot className="h-6 w-6" />}
+              title="Agent Studio unavailable"
+              description="The backend did not return a successful agent list. Retry before treating this workspace as empty."
+              action={
+                <Button type="button" variant="outline" onClick={() => void load()}>
+                  Retry loading agents
+                </Button>
+              }
+            />
           ) : specs.length === 0 ? (
             <EmptyState
               icon={<Bot className="h-6 w-6" />}
               title="No agents yet"
-              description="Create your first on-demand sourcing agent — one role, one task, fully guardrailed."
+              description="Create an owner-scoped definition, then have an administrator import and independently approve its Flowise workflow."
             />
           ) : (
-            specs.map((spec) => (
+            specs.map((spec) => {
+              const campaign = resolveStudioCampaign(spec.role_brief.title ?? "", campaigns);
+              const runBlockedReason = !spec.runtime_eligible
+                ? spec.runtime_reason ?? "Stored policy is not executable by this runtime."
+                : !campaign.ok
+                  ? campaign.reason
+                  : null;
+              return (
               <Card key={spec.id}>
                 <CardContent>
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -193,20 +299,41 @@ export default function StudioPage() {
                             {c}
                           </Badge>
                         ))}
+                        {spec.workflowName && <Badge tone="neutral">Flowise: {spec.workflowName}</Badge>}
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">
-                      <div className="flex items-center gap-2 text-xs text-muted">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        Reply drafting
-                        <Badge tone="success">Human review</Badge>
-                      </div>
-                      {spec.flowise_chatflow_id && <Badge tone="neutral">Workspace-bound Flowise runtime</Badge>}
+                      {spec.runtime_eligible ? (
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2 text-xs text-muted">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Approved Flowise workflow
+                            <Badge tone="neutral">DeerFlow</Badge>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void runSpec(spec)}
+                            disabled={Boolean(runBlockedReason) || runningSpecId !== null}
+                            title={runBlockedReason ?? "Run against the exact matching active campaign"}
+                          >
+                            {runningSpecId === spec.id ? "Running real search…" : "Run approved agent"}
+                          </Button>
+                          {runBlockedReason && <span className="max-w-sm text-right text-xs text-danger">{runBlockedReason}</span>}
+                        </div>
+                      ) : (
+                        <div className="flex max-w-sm flex-col items-end gap-1 text-xs text-danger">
+                          <Badge tone="danger">Execution blocked</Badge>
+                          <span className="text-right">{spec.runtime_reason ?? "Stored policy is not executable by this runtime."}</span>
+                        </div>
+                      )}
+                      <span className="text-xs text-muted">No delivery authority</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            ))
+              );
+            })
           )}
         </div>
       </div>

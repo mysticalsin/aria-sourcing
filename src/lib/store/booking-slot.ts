@@ -50,12 +50,22 @@ export function resolveBookingSlot(
   roundRobinIndex: number,
   opts?: { startTime?: string; interviewerName?: string },
 ): { interviewer: Interviewer | null; start: Date } | { error: string } {
-  if (interviewers.length === 0) {
-    return { interviewer: null, start: opts?.startTime ? new Date(opts.startTime) : defaultSlot() };
+  const pinnedStart = opts?.startTime ? new Date(opts.startTime) : null;
+  if (
+    pinnedStart &&
+    (!Number.isFinite(pinnedStart.getTime()) || pinnedStart.getTime() <= Date.now())
+  ) {
+    return { error: "Interview start time must be a valid future date." };
   }
 
   const pinnedInterviewer = getInterviewerByName(interviewers, opts?.interviewerName);
-  const pinnedStart = opts?.startTime ? new Date(opts.startTime) : null;
+  if (opts?.interviewerName && !pinnedInterviewer) {
+    return { error: "Selected interviewer is not active or does not exist." };
+  }
+
+  if (interviewers.length === 0) {
+    return { interviewer: null, start: pinnedStart ?? defaultSlot() };
+  }
 
   const pool = pinnedInterviewer
     ? [pinnedInterviewer]

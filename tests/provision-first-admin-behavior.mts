@@ -441,6 +441,7 @@ exec "\$REAL_CURL" "\$@"
       cwd: process.cwd(),
       encoding: "utf8",
       env: {
+        NODE_ENV: "test",
         PATH: `${binPath}:${process.env.PATH ?? ""}`,
         HOME: process.env.HOME ?? "",
         TMPDIR: root,

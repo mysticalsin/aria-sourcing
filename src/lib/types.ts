@@ -106,6 +106,7 @@ export const ACTIVITY_TYPES = [
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 export const SENIORITY_LEVELS = [
+  "Unspecified",
   "Junior",
   "Mid",
   "Senior",
@@ -115,6 +116,17 @@ export const SENIORITY_LEVELS = [
   "Director",
 ] as const;
 export type Seniority = (typeof SENIORITY_LEVELS)[number];
+
+export const EMPLOYMENT_TYPES = [
+  "Unspecified",
+  "Full-time",
+  "Contract",
+  "Part-time",
+] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
+export const LOCATION_TYPES = ["Unspecified", "Remote", "Hybrid", "On-site"] as const;
+export type LocationType = (typeof LOCATION_TYPES)[number];
 
 export const COMPANY_STAGES = [
   "Seed",
@@ -135,10 +147,15 @@ export const SOURCE_PLATFORMS = [
   "Sillage",
   "Apollo",
   "Seamless",
+  "Manual",
+  "Apify",
   "Referral",
   "Talent Pool",
 ] as const;
 export type SourcePlatform = (typeof SOURCE_PLATFORMS)[number];
+
+export const CANDIDATE_LAWFUL_BASES = ["consent", "legitimate_interest"] as const;
+export type CandidateLawfulBasis = (typeof CANDIDATE_LAWFUL_BASES)[number];
 
 export const BOOKING_STATUSES = [
   "Proposed",
@@ -166,8 +183,8 @@ export interface JobAnalysis {
   title: string;
   department: string;
   seniority: Seniority;
-  employmentType: "Full-time" | "Contract" | "Part-time";
-  locationType: "Remote" | "Hybrid" | "On-site";
+  employmentType: EmploymentType;
+  locationType: LocationType;
   /** Concrete place parsed from the brief, e.g. "London". Empty/absent when unknown. */
   location?: string;
   regions: string[];
@@ -279,6 +296,50 @@ export interface ComplianceFlags {
   preSuppressionStage?: CandidateStage | null;
 }
 
+/* ---- Enrichment orchestrator (additive; unified cross-provider waterfall) --
+   A candidate discovered by ANY provider can be enriched by ALL configured
+   providers. Field-level provenance tracks who supplied which value so a
+   later, higher-confidence provider can safely overwrite an earlier one. */
+
+export const ENRICHABLE_FIELDS = [
+  "email",
+  "phone",
+  "headline",
+  "skills",
+  "experience",
+  "education",
+  "languages",
+  "location",
+  "company",
+] as const;
+export type EnrichableField = (typeof ENRICHABLE_FIELDS)[number];
+
+/** Which provider supplied a field's current value, and how confident it was. */
+export interface FieldProvenance {
+  provider: SourcePlatform; // who supplied this field's value
+  at: string; // ISO
+  confidence?: number; // 0..1 (e.g. email deliverable/qualityScore)
+}
+
+/** One provider run against one candidate — recorded whether or not it found data. */
+export interface EnrichmentAttempt {
+  provider: SourcePlatform;
+  at: string;
+  status: "ok" | "no_data" | "not_configured" | "no_key_field" | "budget_exceeded" | "error" | "deferred";
+  fieldsFilled: EnrichableField[];
+  costUnits: number; // credits/$ consumed (0 if free/no-match)
+  detail?: string; // terse, never leaks a key
+}
+
+/** Enrichment state carried on a candidate — merged in by field, never replaced wholesale. */
+export interface CandidateEnrichment {
+  status: "unenriched" | "partial" | "enriched" | "failed";
+  lastEnrichedAt?: string;
+  fieldProvenance: Partial<Record<EnrichableField, FieldProvenance>>;
+  attempts: EnrichmentAttempt[];
+  coverage: EnrichableField[]; // fields currently present
+}
+
 export interface Candidate {
   id: string;
   campaignId: string;
@@ -297,17 +358,35 @@ export interface Candidate {
   /** Canonical URL for a real hit on a platform with no dedicated field above
    *  (Stack Overflow, Dribbble, Behance). Blank for synthetic candidates. */
   sourceUrl?: string;
-  /** External record id on the source platform (e.g. Apollo's person `id`) —
-   *  lets a later enrichment call re-identify this exact profile precisely
-   *  instead of a fuzzy name/company re-match. Absent for sources that already
-   *  resolve the full profile (email included) at sourcing time (Sillage, GitHub). */
+  /** External record id on a source platform whose later API still accepts a
+   *  raw result id. Never use this field as paid-provider authority. */
   sourceExternalId?: string;
+  /** Opaque server-issued authority for a paid provider action. The browser
+   *  never receives the underlying provider person id. */
+  sourceAuthorityId?: string;
+  /** Per-provider external record ids, keyed by SourcePlatform, so a candidate
+   *  discovered by one provider can still be precisely re-identified by every
+   *  OTHER configured provider (Apollo person id, Seamless searchResultId, …)
+   *  instead of colliding on the single legacy `sourceExternalId` slot. Mapping
+   *  helpers seed `externalIds[sourcePlatform] = sourceExternalId` on migration. */
+  externalIds?: Partial<Record<SourcePlatform, string>>;
   sourcePlatform: SourcePlatform;
   sourceQuery: string;
   matchScore: number;
   matchBreakdown: MatchBreakdownItem[];
   techStack: string[];
-  yearsExperience: number;
+  /** Enriched work-history lines, formatted "Title @ Company (dates)", newest
+   *  first. Provider free-text (Apify/dev_fusion) — displayed to recruiters but
+   *  deliberately NOT parsed into `yearsExperience` (dates are unstructured; see
+   *  the fabrication contract on that field). Absent until enriched. */
+  experience?: string[];
+  /** Enriched education lines, formatted "Degree @ School (dates)". Absent until enriched. */
+  education?: string[];
+  /** Enriched spoken/written languages. Absent until enriched. */
+  languages?: string[];
+  /** Verified professional experience in years. Null means not provided and
+   *  must never be rendered or scored as zero years. */
+  yearsExperience: number | null;
   companyStageExperience: CompanyStage[];
   industryExperience: string[];
   recentActivity: string;
@@ -329,11 +408,19 @@ export interface Candidate {
   booking: Booking | null;
   complianceFlags: ComplianceFlags;
   createdAt: string;
-  /** How this profile came to exist. "live" = a real GitHub/web hit mapped by
-   *  mapGithubCandidates/mapWebSearchCandidates. "synthetic" = generated by
-   *  synthCandidate (demo/dry-run backfill) — never a real person. Undefined
-   *  covers seed data predating this field. */
-  provenance?: "live" | "synthetic";
+  /** How this profile came to exist. "live" = a validated provider result,
+   *  "manual" = operator-entered evidence, and "synthetic" = generated demo
+   *  data. Undefined covers seed data predating this field. */
+  provenance?: "live" | "manual" | "synthetic";
+  /** Operator-selected legal-processing input for manually entered records.
+   *  The app records the selection but does not determine legal validity. */
+  lawfulBasis?: CandidateLawfulBasis;
+  lawfulBasisRecordedAt?: string;
+  lawfulBasisSource?: "operator_selection";
+  /** Operator reviewed a below-floor live lead and endorsed role fit for outreach.
+   *  Does not change matchScore; the approval gate accepts it with a warning. */
+  fitEndorsedAt?: string;
+  fitEndorsedSource?: "operator_selection";
   /** Free-text recruiter notes, newest first. Absent/empty = none yet. */
   notes?: CandidateNote[];
   /** Why this candidate was rejected — captured alongside the "Rejected" stage.
@@ -363,6 +450,10 @@ export interface Candidate {
   /** Skills + signals captured across the process — the candidate "DNA" stored
    *  back into the talent pool (TAnIA Talent Pool & Community Mgr). */
   dna?: string[];
+  /** Cross-provider enrichment state — field-level provenance, attempt log and
+   *  coverage produced by the unified enrichment orchestrator. Absent = never
+   *  run through the orchestrator yet. */
+  enrichment?: CandidateEnrichment;
 }
 
 /* ============================================================================
@@ -529,11 +620,19 @@ export interface OutreachMessage {
   scheduledFor: string | null;
   sentAt: string | null;
   approvedBy: string | null;
+  /** ISO timestamp when a human sealed this copy for bot delivery. */
+  approvedAt?: string | null;
+  /** Exact subject sealed at approve — bots must send this verbatim. */
+  approvedSubject?: string | null;
+  /** Exact body sealed at approve — bots must send this verbatim. */
+  approvedBody?: string | null;
   dryRun: boolean;
   createdAt: string;
   /** Carried over from a ClassifiedReply when this draft was created as a reply
    *  (see draftReplyResponse in store.ts), so a live send can thread correctly. */
   inboxThreadId?: string;
+  /** Seat chosen at allocate/draft time — send must use this VM/mailbox, not re-pick. */
+  seatId?: string;
 }
 
 /* ---- Replies ------------------------------------------------------------- */
@@ -589,6 +688,15 @@ export interface Booking {
   interviewerEmail: string;
   teamsLink: string;
   calLink: string;
+  /** Provider receipt retained even when the provider does not issue a browser
+   *  link. This is operational state only; durable provider authority belongs
+   *  in the server-side booking-attempt ledger. */
+  calendarSync?: {
+    status: "created";
+    seatId: string;
+    provider: "Gmail API" | "Microsoft Graph";
+    eventId: string;
+  };
   status: BookingStatus;
   agenda: string[];
   createdAt: string;
@@ -777,6 +885,15 @@ export interface WeeklyReport {
   winningPatterns: string[];
   skillUpdates: SkillUpdate[];
   attentionNeeded: string[];
+  /** Dot-paths (e.g. "performance.costPerHire", "winningPatterns") into this report
+   *  that are fixed reference/benchmark values rather than computed from this
+   *  campaign's actual state — e.g. an industry-average cost-per-hire, a generic
+   *  best-send-time heuristic, "patterns" copy. Set by generateWeeklyReport in
+   *  mock-ai.ts, the single place that knows which fields it fabricated vs.
+   *  derived from real candidate/message data. Every consumer (report card,
+   *  Markdown export, any future surface) must read this list and label those
+   *  fields as illustrative rather than presenting them as verified figures. */
+  illustrativeFields: string[];
 }
 
 /* ---- Integrations -------------------------------------------------------- */
@@ -889,6 +1006,21 @@ export interface SystemSettings {
   hermesApiUrl?: string;
   /** References an ApiKey.id (provider "Aria Agent") holding the bearer token. */
   hermesApiKeyId?: string;
+  /**
+   * LinkedIn OpenID Connect client id (public). Pair with `linkedinClientSecretKeyId`
+   * from the Aria key vault for plug-and-play OIDC — env `LINKEDIN_CLIENT_*` remains a fallback.
+   */
+  linkedinClientId?: string;
+  /** ApiKey.id under provider "LinkedIn OIDC" (client secret). */
+  linkedinClientSecretKeyId?: string;
+  /** Entitled LinkedIn vendor messaging API base URL. */
+  linkedinVendorApiUrl?: string;
+  /** ApiKey.id under provider "LinkedIn Vendor API". */
+  linkedinVendorApiKeyId?: string;
+  /** Browser-computer supervisor base URL (OpenBot-shaped Chromium pool). */
+  computerSupervisorUrl?: string;
+  /** ApiKey.id under provider "Computer Supervisor" (bearer token). */
+  computerSupervisorTokenKeyId?: string;
   /** Maximum number of memory entries stored across all agents. */
   memoryCapacity?: number;
   /** Base URL of the hermes-agent web_server / management API (e.g. http://127.0.0.1:8643).
@@ -909,6 +1041,9 @@ export const SEAT_PROVIDERS = [
   "Resend",
   "WhatsApp Cloud",
   "Twilio SMS",
+  "LinkedIn Assisted Manual",
+  "LinkedIn Vendor API",
+  "LinkedIn Browser Computer",
 ] as const;
 export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 
@@ -972,6 +1107,15 @@ export interface AgentSeat {
   modelId?: string;
   /** Tool IDs enabled for this agent (overrides workspace defaults when set). */
   toolIds?: ToolId[];
+  /** Isolated Chromium computer id (LinkedIn Browser Computer seats). */
+  computerId?: string | null;
+  /**
+   * Campaigns this seat/agent is attached to for Observe / Take control.
+   * Workspace seats can serve multiple campaigns; UI filters by this list.
+   */
+  assignedCampaignIds?: string[];
+  /** Automatic LinkedIn backend for this seat. */
+  linkedinDeliveryBackend?: "vendor-api" | "browser-computer" | null;
 }
 
 export const SUPPRESSION_TYPES = ["email", "domain", "phone", "linkedin"] as const;
@@ -1013,6 +1157,10 @@ export interface OutreachLedgerEntry {
   at: string;
 }
 
+/** LinkedIn outreach delivery: automatic (default) queues entitled vendor/API sends; manual keeps assisted approve-and-paste. */
+export const LINKEDIN_DELIVERY_MODES = ["automatic", "manual"] as const;
+export type LinkedInDeliveryMode = (typeof LINKEDIN_DELIVERY_MODES)[number];
+
 export interface FleetSettings {
   recontactWindowDays: number; // global re-contact suppression window (default 90)
   bounceRatePauseThreshold: number; // auto-pause a seat above this (e.g. 0.05)
@@ -1021,6 +1169,18 @@ export interface FleetSettings {
   jitter: boolean;
   globalDailyCap: number | null; // optional org-wide ceiling across all seats
   maxAgents: number; // hard ceiling on deployable agents (e.g. 300)
+  /**
+   * LinkedIn delivery mode for the workspace fleet.
+   * `automatic` (default): agent queues sends via entitled vendor-api or browser-computer without per-message paste/confirm.
+   * `manual`: assisted-manual — human copies/pastes in LinkedIn, then Confirms.
+   */
+  deliveryMode: LinkedInDeliveryMode;
+  /**
+   * Claude-in-Chrome–style Browser Computer action approval.
+   * `manual` refuses bot linkedin_send until operator Takes control (BE-gated).
+   * `auto` / `skip` run after Outreach Approve with sessionHealthy fail-closed.
+   */
+  browserAgentPermissionMode?: "manual" | "auto" | "skip";
 }
 
 export interface AllocationAssignment {
@@ -1059,6 +1219,8 @@ export const API_KEY_PROVIDERS = [
   "OpenRouter",
   "Mistral",
   "Kimi (Moonshot)",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Resend",
   "SendGrid",
   "Aria Agent",
@@ -1066,8 +1228,13 @@ export const API_KEY_PROVIDERS = [
   "Sillage",
   "Apollo",
   "Seamless",
+  "Apify",
   "Tavily",
+  "HeyReach",
   "Databricks",
+  "LinkedIn OIDC",
+  "LinkedIn Vendor API",
+  "Computer Supervisor",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -1083,6 +1250,8 @@ export const LLM_PROVIDERS = [
   "Groq",
   "Mistral",
   "Kimi",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Local/Custom",
 ] as const;
 export type LlmProviderKind = (typeof LLM_PROVIDERS)[number];
@@ -1136,6 +1305,9 @@ export interface ToolDef {
 
 export type McpServerStatus = "untested" | "connected" | "error";
 
+export const MCP_AUTH_STYLES = ["bearer", "query", "x-api-key"] as const;
+export type McpAuthStyle = (typeof MCP_AUTH_STYLES)[number];
+
 export const AUTH_QUERY_PARAMS = ["tavilyApiKey"] as const;
 export type AuthQueryParam = (typeof AUTH_QUERY_PARAMS)[number];
 
@@ -1148,7 +1320,7 @@ export interface McpServerConfig {
   /** The MCP server's HTTP(S) endpoint (streamable-HTTP / SSE transport). */
   url: string;
   /** How the resolved vault secret is sent to the MCP server. Defaults to bearer. */
-  authStyle?: "bearer" | "query";
+  authStyle?: McpAuthStyle;
   /** Closed-list query parameter for query-auth MCP servers. */
   authQueryParam?: AuthQueryParam;
   /** References an ApiKey.id; the raw secret never lives here. */
@@ -1160,6 +1332,8 @@ export interface McpServerConfig {
   toolCount?: number;
   /** Names of those tools (for display), captured on the last successful test. */
   toolNames?: string[];
+  /** Known integration preset — used for HeyReach funnel wiring in Settings. */
+  preset?: "heyreach";
 }
 
 /** Recruiting tasks that can be delegated to a locked Dust agent. A Record (not an
@@ -1332,4 +1506,11 @@ export interface HermesState {
   /** Scored external applications from the career-website chatbox, awaiting
    *  recruiter handoff to the Applicant Screener (TAnIA §5). Additive. */
   chatboxSubmissions?: ChatboxSubmission[];
+  /** Append-only spend ledger for the unified enrichment orchestrator — one
+   *  entry per provider call, whether or not it found data (costUnits may be 0).
+   *  The audit trail behind enrichmentBudgetUnits. Additive. */
+  enrichmentLedger?: { provider: SourcePlatform; candidateId: string; units: number; at: string }[];
+  /** Per-workspace cap on total enrichment spend (arbitrary provider-defined
+   *  cost units). Absent = no cap enforced (treated as unlimited upstream). */
+  enrichmentBudgetUnits?: number;
 }

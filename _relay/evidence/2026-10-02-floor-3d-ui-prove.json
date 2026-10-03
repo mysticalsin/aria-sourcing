@@ -1,0 +1,25 @@
+{
+  "at": "2026-10-02T21:08:12.285Z",
+  "mode": "floor-3d-ui",
+  "app": "http://127.0.0.1:3000",
+  "n": 3,
+  "started": [
+    {
+      "seatId": "seat_3dui_n_1",
+      "computerId": "comp_rantwce4"
+    },
+    {
+      "seatId": "seat_3dui_n_2",
+      "computerId": "comp_h4u3gy6v"
+    },
+    {
+      "seatId": "seat_3dui_n_3",
+      "computerId": "comp_1v1krf6d"
+    }
+  ],
+  "liveVmCopy": "3 with live VM",
+  "canvas": true,
+  "screenshotPath": "/opt/cursor/artifacts/floor-3d-n-agent-ui.png",
+  "ok": true,
+  "note": "3D floor view uses same /api/fleet/computers poll; LinkedIn healthy remains human-gated"
+}

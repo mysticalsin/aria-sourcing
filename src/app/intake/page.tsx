@@ -29,7 +29,10 @@ import {
 } from "@/lib/mock-ai";
 import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
+import { OutlookNeedsPanel } from "@/components/intake/outlook-needs-panel";
+import type { OutlookNeedMessage } from "@/lib/outlook-needs";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   copyToClipboard,
   formatPercent,
@@ -40,6 +43,8 @@ import {
 } from "@/lib/utils";
 import {
   SENIORITY_LEVELS,
+  EMPLOYMENT_TYPES,
+  LOCATION_TYPES,
   URGENCY_LEVELS,
   type IntakeIntent,
   type JobAnalysis,
@@ -61,8 +66,6 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-
-const LOCATION_TYPES = ["Remote", "Hybrid", "On-site"] as const;
 
 const INTENT_TONE: Record<IntakeIntent, Tone> = {
   "New Role": "electric",
@@ -101,6 +104,7 @@ export default function IntakePage() {
   const [skillDraft, setSkillDraft] = useState("");
   const [dustPending, setDustPending] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [selectedNeedId, setSelectedNeedId] = useState<string | null>(null);
   // Guards against a slow Dust reply from an earlier parse landing on top of a
   // newer one if the user re-parses before the first call resolves.
   const parseSeqRef = React.useRef(0);
@@ -162,12 +166,9 @@ export default function IntakePage() {
     });
   }
 
-  /** Scans the connected mailbox (POST /api/email/sync) for hiring-need emails
-   *  and loads the newest one into the form. When no mailbox is connected (demo
-   *  mode), sync fails, or no need email is found, it falls back to the bundled
-   *  sample Mantu need — and says so. Routes through the live LLM when a cloud
-   *  provider is configured for chat; parseIntakeLive falls back to the regex
-   *  heuristic silently on any failure. */
+  /** Scans the connected mailbox for hiring-need emails and loads the newest
+   * one into the form. A bundled sample is available only in explicit demo
+   * mode; a live tenant never substitutes sample data for an empty inbox. */
   async function scanInbox() {
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
@@ -196,9 +197,19 @@ export default function IntakePage() {
         }
       }
     } catch {
-      // Mailbox unreachable (demo mode, no connection, timeout) — sample below.
+      // The live path reports the unavailable mailbox below. Demo mode may load
+      // the clearly labelled bundled sample.
     }
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
+    if (!incoming && supabaseEnabled) {
+      setParsing(false);
+      toast({
+        title: "No hiring need found",
+        description: "The connected mailbox returned no hiring-need email. Nothing was created or substituted.",
+        variant: "warning",
+      });
+      return;
+    }
     if (!incoming) incoming = SAMPLE_MANTU_EMAIL;
 
     setEmail(incoming);
@@ -212,19 +223,48 @@ export default function IntakePage() {
     setSenderEmail(result.sender.email);
     maybeRunDustJdAnalysis("", incoming);
     toast({
-      title: fromInbox ? "Need email found in your inbox" : "Sample need loaded",
-      description: fromInbox
+      title: result.providerWarning
+        ? "Need loaded for review"
+        : fromInbox
+          ? "Need email found in your inbox"
+          : "Sample need loaded",
+      description: result.providerWarning
+        ? result.providerWarning
+        : fromInbox
         ? `${result.jobAnalysis.title} parsed from the newest need email${
             needCount > 1 ? ` (${needCount - 1} older need email${needCount > 2 ? "s" : ""} also in the inbox)` : ""
           }.`
         : `No need email found in a connected mailbox. Parsed the sample Mantu need instead. (${result.jobAnalysis.title})`,
-      variant: fromInbox ? "success" : "info",
+      variant: result.providerWarning ? "warning" : fromInbox ? "success" : "info",
     });
   }
 
-  /** Routes through the live LLM when a cloud provider is configured for chat;
-   *  parseIntakeLive falls back to the regex heuristic silently on any failure
-   *  (unconfigured, network error, or an unusable/non-JSON reply). */
+  /** Load an Outlook need into the form and immediately parse with the intake LLM. */
+  async function handleOutlookNeed(intakeEmail: string, need: OutlookNeedMessage) {
+    const seq = ++liveParseSeqRef.current;
+    setSelectedNeedId(need.messageId);
+    setEmail(intakeEmail);
+    setJd("");
+    setParsing(true);
+    const result = await parseIntakeLive(settings, { email: intakeEmail });
+    if (liveParseSeqRef.current !== seq) return;
+    setParsing(false);
+    setParsed(result);
+    setJob(result.jobAnalysis);
+    setSenderName(result.sender.name);
+    setSenderEmail(result.sender.email);
+    maybeRunDustJdAnalysis("", intakeEmail);
+    toast({
+      title: result.providerWarning ? "Need loaded for review" : "Outlook need parsed",
+      description:
+        result.providerWarning ??
+        `${result.jobAnalysis.title} · review the brief, then create the campaign to start sourcing.`,
+      variant: result.providerWarning ? "warning" : "success",
+    });
+  }
+
+  /** Routes through the live LLM when a cloud provider is configured for chat.
+   * Provider failures return a visible warning and an evidence-only parse. */
   async function handleParse() {
     if (!email.trim()) {
       toast({
@@ -245,9 +285,11 @@ export default function IntakePage() {
     setSenderEmail(result.sender.email);
     maybeRunDustJdAnalysis(jd, email);
     toast({
-      title: "Brief parsed",
-      description: `${result.jobAnalysis.title} · ${result.jobAnalysis.requiredSkills.length} required skills detected.`,
-      variant: "success",
+      title: result.providerWarning ? "Brief extracted for review" : "Brief parsed",
+      description:
+        result.providerWarning ??
+        `${result.jobAnalysis.title} · ${result.jobAnalysis.requiredSkills.length} required skills detected.`,
+      variant: result.providerWarning ? "warning" : "success",
     });
   }
 
@@ -288,26 +330,19 @@ export default function IntakePage() {
     if (!job || !parsed) return;
     const criticalWarnings = liveValidationWarnings.filter((w) => w.severity === "critical");
     if (criticalWarnings.length > 0) {
-      const ok = await confirm({
-        title:
-          criticalWarnings.length === 1
-            ? "1 critical issue needs review"
-            : `${criticalWarnings.length} critical issues need review`,
-        description: `${criticalWarnings
-          .map((w) => `${w.field}: ${w.message}`)
-          .join(" · ")}. Review the validation warnings above, or proceed anyway.`,
-        confirmLabel: "Create anyway",
-        cancelLabel: "Review brief",
-        danger: true,
+      toast({
+        title: "Complete the brief before sourcing",
+        description: criticalWarnings.map((warning) => warning.message).join(" "),
+        variant: "warning",
       });
-      if (!ok) return;
+      return;
     }
 
     // Duplicate guard: a re-parse-and-create, a double-click, or repeated "Scan
     // inbox" on the same recurring need email shouldn't silently spin up a
     // second campaign (and a second sourcing run) for the same open role.
     const normalizedTitle = job.title.trim().toLowerCase();
-    const hiringManagerEmail = senderEmail.trim() || "unknown@company.example";
+    const hiringManagerEmail = senderEmail.trim();
     const duplicate = campaigns.find(
       (c) =>
         c.status !== "Filled" &&
@@ -326,33 +361,44 @@ export default function IntakePage() {
     }
 
     const campaign = actions.createCampaignFromAnalysis(job, {
-      hiringManager: senderName.trim() || "Hiring Manager",
+      hiringManager: senderName.trim(),
       hiringManagerEmail,
     });
-    // Sourcing starts immediately — first batch on the strategy's lead platform.
-    // Fire-and-forget: the campaign page renders candidates as they land, and a
-    // failure surfaces as a toast without blocking campaign creation.
-    void actions.sourceNextBatch(campaign.id).then((res) => {
-      if (res.ok) {
-        const n = res.accepted.length;
-        toast({
-          title: "Sourcing started",
-          description: `First batch in: ${n} candidate${n === 1 ? "" : "s"} for ${campaign.title}.`,
-          variant: "success",
-        });
-      } else {
-        toast({
-          title: "Sourcing couldn't start",
-          description: `${res.error} Retry with “Source next batch” on the campaign page.`,
-          variant: "warning",
-        });
-      }
-    });
+    if (!campaign) {
+      toast({
+        title: "Campaign not created",
+        description:
+          "Your workspace is unavailable or your access is read-only. Retry after access is restored.",
+        variant: "error",
+      });
+      return;
+    }
     toast({
       title: "Campaign created",
-      description: `${campaign.title} is live. First sourcing batch is running.`,
+      description: `${campaign.title} is ready. The first real sourcing search is starting.`,
       variant: "success",
     });
+
+    if (supabaseEnabled) {
+      await actions.flushWorkspaceSave();
+    }
+    const res = await actions.sourceNextBatch(campaign.id);
+    if (res.ok) {
+      const n = res.accepted.length;
+      toast({
+        title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
+        description: n > 0
+          ? `Added ${n} real candidate${n === 1 ? "" : "s"} for ${campaign.title}.`
+          : `The first real search for ${campaign.title} completed without a matching result.`,
+        variant: n > 0 ? "success" : "info",
+      });
+    } else {
+      toast({
+        title: "Sourcing couldn't start",
+        description: `${res.error} Retry with “Source next batch” on the campaign page.`,
+        variant: "warning",
+      });
+    }
     router.push(`/campaigns/${campaign.id}`);
   }
 
@@ -373,8 +419,8 @@ export default function IntakePage() {
     <div>
       <PageHeader
         eyebrow="Intake"
-        title="Email + JD intake"
-        description="Paste a hiring request and Aria parses it into a structured, editable brief, then spins up an autonomous sourcing campaign."
+        title="Open needs → sourcing"
+        description="Pull hiring needs from Outlook, or paste a brief. Aria parses it into an editable role and starts a real sourcing campaign."
         actions={
           <Badge tone="aqua" dot>
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
@@ -384,6 +430,16 @@ export default function IntakePage() {
       />
 
       <HydrationGate hydrated={hydrated} fallback={<IntakeFallback />}>
+        <div className="mb-6">
+          <OutlookNeedsPanel
+            onSelectNeed={(intakeEmail, need) => {
+              void handleOutlookNeed(intakeEmail, need);
+            }}
+            selectedMessageId={selectedNeedId}
+            busy={parsing}
+          />
+        </div>
+
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* LEFT — inbound brief form */}
           <Card className="animate-fade-in lg:sticky lg:top-6 lg:self-start">
@@ -548,14 +604,26 @@ export default function IntakePage() {
                     </Field>
                   </div>
 
-                  {/* Seniority + urgency */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Seniority + employment + urgency */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <Field label="Seniority" htmlFor="job-seniority">
                       <Select
                         id="job-seniority"
                         value={job.seniority}
                         onChange={(e) => patchJob({ seniority: e.target.value as Seniority })}
                         options={SENIORITY_LEVELS.map((s) => ({ value: s, label: s }))}
+                      />
+                    </Field>
+                    <Field label="Employment type" htmlFor="job-employment-type">
+                      <Select
+                        id="job-employment-type"
+                        value={job.employmentType}
+                        onChange={(e) =>
+                          patchJob({
+                            employmentType: e.target.value as JobAnalysis["employmentType"],
+                          })
+                        }
+                        options={EMPLOYMENT_TYPES.map((type) => ({ value: type, label: type }))}
                       />
                     </Field>
                     <Field label="Urgency" htmlFor="job-urgency">

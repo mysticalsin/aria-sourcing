@@ -37,6 +37,12 @@ const REPLACEMENTS: [RegExp, string][] = [
   [/\bembark\b/gi, "start"],
   [/\brealm\b/gi, "space"],
   [/\bvibrant\b/gi, "lively"],
+  [/\bcircle back\b/gi, "follow up"],
+  [/\breach out\b/gi, "get in touch"],
+  [/\btouch base\b/gi, "chat"],
+  [/\bsynergistic\b/gi, "good fit"],
+  [/\bI wanted to take a moment to\b/gi, "I"],
+  [/\bplease don.?t hesitate to\b/gi, "feel free to"],
   [/\bnestled\b/gi, "set"],
   [/\bbustling\b/gi, "busy"],
   [/\bever[- ]evolving\b/gi, "changing"],
@@ -62,9 +68,9 @@ export function humanize(input: string): HumanizeResult {
   const removed: string[] = [];
   let out = input;
 
-  // em / en dashes — a classic AI tell
-  if (/[—–]/.test(out)) {
-    out = out.replace(/\s*[—–]\s*/g, ", ");
+  // em / en / figure / minus dashes — classic AI tells
+  if (/[—–―−]/.test(out)) {
+    out = out.replace(/\s*[—–―−]\s*/g, ", ");
     removed.push("em-dash");
   }
 

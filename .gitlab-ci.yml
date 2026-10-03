@@ -1,0 +1,31 @@
+# GitLab CI/CD — deploy the Aria Mantu Fly stack from a GitLab runner (clean, fast
+# network to Fly). Secrets come from ONE masked CI/CD variable ARIA_DEPLOY_BUNDLE
+# (base64 of a tar of production-readiness/.fly-token.env + .fly-secrets.env + .env.local);
+# nothing secret is committed. Trigger the "deploy-fly" job manually from the Pipelines UI.
+
+stages:
+  - deploy
+
+deploy-fly:
+  stage: deploy
+  image: alpine:3.20
+  variables:
+    FLY_NO_METRICS: "1"
+    DO_NOT_TRACK: "1"
+  before_script:
+    - apk add --no-cache curl bash tar coreutils grep
+    - curl -L https://fly.io/install.sh | sh
+    - export FLYCTL_INSTALL="$HOME/.fly"
+    - export PATH="$FLYCTL_INSTALL/bin:$PATH"
+    - fly version
+  script:
+    - |
+      if [ -z "$ARIA_DEPLOY_BUNDLE" ]; then
+        echo "ERROR: set the ARIA_DEPLOY_BUNDLE CI/CD variable first"; exit 1
+      fi
+      echo "$ARIA_DEPLOY_BUNDLE" | base64 -d | tar xzf - -C .
+      echo "restored:"; ls -1 production-readiness/.fly-*.env .env.local 2>/dev/null
+    - bash deploy-fly.sh
+  rules:
+    - when: manual
+  timeout: 45 minutes

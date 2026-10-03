@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { mintDemoToken } from "../src/lib/demo-auth";
 import { principalFromEvidence } from "../src/lib/authenticated-principal-policy";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0;
 let fail = 0;
@@ -26,13 +27,24 @@ ok(
   principalFromEvidence({ supabaseUserId: null, signedDemoSession: false }) === null,
 );
 
-process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN = "true";
-process.env.NODE_ENV = "production";
-delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-delete process.env.SUPABASE_URL;
-process.env.DEMO_SESSION_SECRET = "test-demo-session-secret-32-characters";
-process.env.ELEVENLABS_API_KEY = "test-key-never-logged";
+const envScope = createProcessEnvScope([
+  "NEXT_PUBLIC_ENABLE_DEMO_LOGIN",
+  "NODE_ENV",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "SUPABASE_URL",
+  "DEMO_SESSION_SECRET",
+  "ELEVENLABS_API_KEY",
+]);
+envScope.set({
+  NEXT_PUBLIC_ENABLE_DEMO_LOGIN: "true",
+  NODE_ENV: "production",
+  NEXT_PUBLIC_SUPABASE_URL: undefined,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+  SUPABASE_URL: undefined,
+  DEMO_SESSION_SECRET: "test-demo-session-secret-32-characters",
+  ELEVENLABS_API_KEY: "test-key-never-logged",
+});
 
 let providerCalls = 0;
 let providerStatus = 200;
@@ -81,7 +93,7 @@ try {
   ok("signed demo session may use the configured TTS provider", authenticated.status === 200 && providerCalls === 1);
   ok("successful TTS preserves the binary audio contract", authenticated.headers.get("content-type") === "audio/mpeg");
 
-  delete process.env.ELEVENLABS_API_KEY;
+  envScope.set({ ELEVENLABS_API_KEY: undefined });
   const noKey = await post(new NextRequest("http://localhost/api/voice/tts", {
     method: "POST",
     headers: {
@@ -92,7 +104,7 @@ try {
     body: JSON.stringify({ text: "Hello" }),
   }));
   ok("authenticated missing-key response preserves browser fallback", noKey.status === 204 && providerCalls === 1);
-  process.env.ELEVENLABS_API_KEY = "test-key-never-logged";
+  envScope.set({ ELEVENLABS_API_KEY: "test-key-never-logged" });
 
   // The first signed request above consumed one slot for the default IP. Fill
   // the remaining 19, then prove the 21st is blocked before provider access.
@@ -164,6 +176,7 @@ try {
   }
 } finally {
   globalThis.fetch = originalFetch;
+  envScope.restore();
 }
 
 console.log(`RESULT voice-tts-auth: ${pass} passed, ${fail} failed`);

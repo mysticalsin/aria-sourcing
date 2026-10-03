@@ -57,9 +57,23 @@ No candidate PII enters here. This is a JD-to-campaign conversion endpoint.
 
 ### 2. Sourcing — `sourceNextBatch` (store.ts)
 
-**Flow:** Store action → `sourceCandidates()` (`src/lib/mock-ai.ts`) → `Candidate[]` pushed into `HermesState.candidates`
+**Live flow:** Store action → `/api/sourcing-agent` → authenticated workspace,
+role, campaign, need, reviewed-query, quota, and idempotency checks → real provider
+search → durable query/completion receipt → bounded candidate DTOs → client-side
+authority recheck and `commitPersisted()` → `HermesState.candidates`.
 
-In the current implementation this calls `sourceCandidates()` from the mock-ai module, which generates synthetic candidates from a fixed seed. In a real deployment this would call a sourcing integration (LinkedIn, GitHub, ATS). Regardless of the source, once candidates are accepted by `dedupeCandidates()` they enter the `candidates` array in the in-memory HermesState.
+The primary **Run Aria** surface first resolves one exact approved Flowise workflow,
+executes its allowlisted proposal through the private DeerFlow adapter, and passes a
+short-lived, campaign-bound sourcing capability into the same canonical sourcing
+route. DeerFlow and Flowise can select only a persisted reviewed GitHub query; they
+cannot create candidates or write the workspace. The provider response remains the
+candidate source of truth. Zero results remain an empty result.
+
+The separately labelled demo path may call `sourceCandidates()` from
+`src/lib/mock-ai.ts` for synthetic records. It is not the live fallback: a missing or
+failed live authority/provider returns an error rather than synthetic candidates.
+Regardless of mode, only records accepted by `dedupeCandidates()` enter the browser
+state.
 
 The following PII enters at this stage: name, email, linkedinUrl, githubUrl, currentCompany, currentTitle, avatarInitials, techStack, recentActivity, yearsExperience.
 
@@ -79,7 +93,10 @@ Once a candidate is accepted, the full `Candidate` object lives in the React con
 - `linkedinUrl` and `githubUrl` → `•••`
 - `avatarInitials` → `J•`
 
-This masking is applied at render time only. The underlying PII remains in the store and is persisted in full to the storage backend (localStorage or Supabase).
+This masking is applied at render time only. In live mode the underlying PII remains
+in the store and is persisted in full to Supabase. Browser-local demo persistence
+accepts only candidate records explicitly marked `synthetic`; real, manual, or
+missing provenance fails closed.
 
 ---
 
@@ -89,14 +106,22 @@ This masking is applied at render time only. The underlying PII remains in the s
 
 **Key:** `hermes-sourcing:v1`
 
-`window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))` is called synchronously on every state change when `supabaseEnabled` is false. The full `HermesState` is serialized, including all candidate PII, outreach messages with body text, and classified replies. This data:
+When `supabaseEnabled` is false, the store debounces the current demo state for
+600 ms and writes it only if every candidate has explicit `synthetic` provenance.
+Real-provider and manual candidate intake are rejected before network or state work,
+both commit paths reject any unsafe candidate snapshot, the final localStorage write
+rechecks the same invariant, and hydration removes a legacy unsafe blob rather than
+loading it. Synthetic demo content, including its generated outreach and replies, is
+still serialized so navigation and reloads remain usable. This data:
 
 - Persists across browser sessions on the same device.
 - Is readable by any JavaScript on the same origin (no `HttpOnly` protection).
 - Is not encrypted at rest.
 - Is cleared only by the user clearing browser storage, calling `resetDemo()`, or a browser-managed storage eviction.
 
-This mode is intended for local development and demos only. It must not be used with real candidate data.
+This mode is intended for local development and demos only. The store authority
+prevents it from persisting real or manual candidates; a live Supabase workspace is
+required for real sourcing and candidate intake.
 
 ### Live Mode — Supabase `workspace_state`
 

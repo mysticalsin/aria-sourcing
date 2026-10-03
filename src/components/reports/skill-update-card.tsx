@@ -31,10 +31,15 @@ export function SkillUpdateCard({
   const isProposed = skillUpdate.status === "proposed";
 
   function decide(status: "accepted" | "rejected") {
-    actions.setSkillUpdateStatus(campaignId, skillUpdate.id, status);
-    // Accepting must actually apply the learning to the agent skill (feed back),
-    // not just flip the record's status.
-    if (status === "accepted") actions.acceptSkillLearning(skillUpdate.skill);
+    const updated = actions.setSkillUpdateStatus(campaignId, skillUpdate.id, status);
+    if (!updated) {
+      toast({
+        title: "Couldn't save the learning decision",
+        description: "Refresh the campaign and try again.",
+        variant: "error",
+      });
+      return;
+    }
     toast({
       title: status === "accepted" ? "Skill update accepted" : "Skill update rejected",
       description:

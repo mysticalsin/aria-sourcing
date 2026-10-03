@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
   SUPABASE_ANON_KEY,
-  SUPABASE_AUTH_COOKIE_NAME,
+  SUPABASE_COOKIE_OPTIONS,
   SUPABASE_SERVICE_ROLE_KEY,
   SUPABASE_URL,
   supabaseEnabled,
@@ -86,7 +86,7 @@ export async function getServerSupabase() {
   // Next.js 15+: cookies() is async-only.
   const cookieStore = await cookies();
   return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookieOptions: { name: SUPABASE_AUTH_COOKIE_NAME },
+    cookieOptions: SUPABASE_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return cookieStore.getAll();

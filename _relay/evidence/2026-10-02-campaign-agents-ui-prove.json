@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-02T21:36:41.802Z",
+  "mode": "campaign-agents-ui",
+  "app": "http://127.0.0.1:3000",
+  "campaignId": "camp_seed_backend",
+  "n": 3,
+  "started": [
+    {
+      "seatId": "seat_camp_ui_n_1",
+      "computerId": "comp_j5y0ojyy"
+    },
+    {
+      "seatId": "seat_camp_ui_n_2",
+      "computerId": "comp_ypv7pm2r"
+    },
+    {
+      "seatId": "seat_camp_ui_n_3",
+      "computerId": "comp_fy0apzxl"
+    }
+  ],
+  "screenshotPath": "/opt/cursor/artifacts/campaign-agents-n-ui.png",
+  "ok": true,
+  "note": "Campaign Agents panel wired to GET /api/fleet/computers?campaignId=…; sessionHealthy remains human-gated"
+}

@@ -1,6 +1,6 @@
 // Real candidate sourcing via the Apollo.io API. Search (mixed_people/search) is
 // free (no Apollo credits) and requires a MASTER API key. Enrichment
-// (people/match) costs exactly 1 credit per matched person (0 if not found) and
+// (people/match) may consume up to 1 credit when contact data is returned and
 // must only ever be called on a deliberate, per-candidate, confirmed action —
 // never automatically for a whole search batch. Auth header is `x-api-key`
 // (docs.apollo.io/docs/authentication).
@@ -13,6 +13,7 @@
 import type { getServerSupabase } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
+import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
 const APOLLO_API = "https://api.apollo.io/v1";
 
@@ -38,6 +39,13 @@ export interface ApolloPerson {
   seniority: string;
   departments: string[];
 }
+
+/** Browser-safe Apollo search result. The provider id stays server-side; the
+ * opaque target is the only value accepted by the paid enrichment boundary. */
+export type ApolloSearchProfile = Omit<ApolloPerson, "id"> & {
+  targetId: string;
+  candidateId: string;
+};
 
 export interface ApolloMatch {
   email: string;
@@ -88,6 +96,7 @@ function toApolloPerson(raw: Record<string, unknown>): ApolloPerson {
  * consume Apollo credits. `count` is capped at 100 (Apollo's per-page max).
  */
 export async function searchApolloPeople(
+  clearance: ProviderClearance,
   filters: ApolloSearchFilters,
   count: number,
   apiKey: string,
@@ -100,7 +109,7 @@ export async function searchApolloPeople(
   if (filters.organizationDomains?.length) body.q_organization_domains_list = filters.organizationDomains;
   if (filters.keywords?.trim()) body.q_keywords = filters.keywords.trim();
 
-  const res = await fetch(`${APOLLO_API}/mixed_people/search`, {
+  const res = await sourcingFetch(clearance, `${APOLLO_API}/mixed_people/search`, {
     method: "POST",
     headers: apolloHeaders(apiKey),
     body: JSON.stringify(body),
@@ -119,16 +128,18 @@ export async function searchApolloPeople(
 
 /**
  * Enrich a single Apollo person by their Apollo id — reveals personal email and
- * (optionally) phone. Costs exactly 1 Apollo credit on a match, 0 if not found.
+ * (optionally) phone. May consume up to 1 Apollo credit when data is returned.
  * Only ever call this for a deliberate, confirmed, single-candidate action.
- * Returns null when Apollo found no match (0 credits charged).
+ * Returns null when Apollo found no match. The provider remains authoritative
+ * for the final billing outcome.
  */
 export async function matchApolloPerson(
+  clearance: ProviderClearance,
   apolloId: string,
   apiKey: string,
   opts: { revealPhone?: boolean } = {},
 ): Promise<ApolloMatch | null> {
-  const res = await fetch(`${APOLLO_API}/people/match`, {
+  const res = await sourcingFetch(clearance, `${APOLLO_API}/people/match`, {
     method: "POST",
     headers: apolloHeaders(apiKey),
     body: JSON.stringify({
@@ -175,8 +186,8 @@ export async function matchApolloPerson(
  * assumed. Throws on network/timeout error so the caller can fall back to a
  * format-only check.
  */
-export async function checkApolloAuth(apiKey: string): Promise<{ valid: boolean; detail: string }> {
-  const res = await fetch(`${APOLLO_API}/auth/health`, {
+export async function checkApolloAuth(clearance: ProviderClearance, apiKey: string): Promise<{ valid: boolean; detail: string }> {
+  const res = await sourcingFetch(clearance, `${APOLLO_API}/auth/health`, {
     method: "GET",
     headers: apolloHeaders(apiKey),
     signal: AbortSignal.timeout(10_000),

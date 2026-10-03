@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
-import { isPublicDemoSideEffectBlocked } from "../src/lib/demo-side-effect-policy";
+import {
+  isPublicDemoAriaBotAllowed,
+  isPublicDemoAriaBotBlocked,
+  isPublicDemoSideEffectBlocked,
+} from "../src/lib/demo-side-effect-policy";
 import { approvalHash, approvalScopeHash } from "../src/lib/outreach-content";
 
 let pass = 0;
@@ -19,10 +23,15 @@ function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-function guardBetween(path: string, trustedMarker: string, irreversibleMarker: string) {
+function guardBetween(
+  path: string,
+  trustedMarker: string,
+  irreversibleMarker: string,
+  guardNeedle = "publicDemoSideEffectsDisabled()",
+) {
   const code = source(path);
   const trusted = code.indexOf(trustedMarker);
-  const guard = code.indexOf("publicDemoSideEffectsDisabled()", trusted + trustedMarker.length);
+  const guard = code.indexOf(guardNeedle, trusted + trustedMarker.length);
   const irreversible = code.indexOf(irreversibleMarker, trusted + trustedMarker.length);
   return trusted >= 0 && guard > trusted && irreversible > guard;
 }
@@ -36,9 +45,42 @@ ok(
   !isPublicDemoSideEffectBlocked({ NEXT_PUBLIC_ENABLE_DEMO_LOGIN: "false" }),
 );
 ok("an unset demo flag preserves normal tenant behavior", !isPublicDemoSideEffectBlocked({}));
+ok(
+  "AriaBot escape hatch stays off by default on public demo",
+  isPublicDemoAriaBotBlocked({ NEXT_PUBLIC_ENABLE_DEMO_LOGIN: "true" }) &&
+    !isPublicDemoAriaBotAllowed({ NEXT_PUBLIC_ENABLE_DEMO_LOGIN: "true" }),
+);
+ok(
+  "ENABLE_PUBLIC_DEMO_ARIABOT allows AriaBot while demo login stays on",
+  isPublicDemoAriaBotAllowed({
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN: "true",
+    ENABLE_PUBLIC_DEMO_ARIABOT: "true",
+  }) &&
+    !isPublicDemoAriaBotBlocked({
+      NEXT_PUBLIC_ENABLE_DEMO_LOGIN: "true",
+      ENABLE_PUBLIC_DEMO_ARIABOT: "true",
+    }),
+);
+ok(
+  "AriaBot is not blocked when public demo login is off",
+  !isPublicDemoAriaBotBlocked({}),
+);
 
 const serverBoundary = source("src/lib/server/demo-side-effects.ts");
 ok("the runtime helper has a Next-enforced server-only boundary", /from "next\/headers"/.test(serverBoundary));
+ok(
+  "server helper exports AriaBot showcase predicates",
+  /publicDemoAriaBotDisabled/.test(serverBoundary) && /publicDemoAriaBotEnabled/.test(serverBoundary),
+);
+ok(
+  "LinkedIn Browser Computer connect uses AriaBot carve-out",
+  /publicDemoAriaBotDisabled\(\)/.test(source("src/app/api/linkedin/connections/route.ts")) &&
+    /LinkedIn Browser Computer/.test(source("src/app/api/linkedin/connections/route.ts")),
+);
+ok(
+  "outreach approve uses AriaBot carve-out on public demo",
+  /publicDemoAriaBotDisabled\(\)/.test(source("src/app/api/outreach/approve/route.ts")),
+);
 ok(
   "email send checks the live owned seat before the demo decision and checks the decision before DNS or claims",
   guardBetween("src/app/api/outreach/send/route.ts", 'if (seat.mode !== "live")', "domainVerified("),
@@ -48,8 +90,13 @@ ok(
   guardBetween("src/app/api/outreach/send/route.ts", 'phoneSeat.provider !== "WhatsApp Cloud"', '.from("messages_outbound")'),
 );
 ok(
-  "approval validates recipient scope before the demo decision",
-  guardBetween("src/app/api/outreach/approve/route.ts", "approvalScopeHash(", 'rpc("record_outreach_approval"'),
+  "approval validates recipient scope before the AriaBot demo decision",
+  guardBetween(
+    "src/app/api/outreach/approve/route.ts",
+    "approvalScopeHash(",
+    'rpc("record_outreach_approval"',
+    "publicDemoAriaBotDisabled()",
+  ),
 );
 ok(
   "revocation validates the authenticated request before the demo decision",
@@ -125,10 +172,16 @@ let currentService: any = null;
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 
+// src/lib/calendar-authority.ts (imported transitively by the calendar route
+// below) is server-only.
+mock.module("server-only", { namedExports: {} });
+
 mock.module(moduleUrl("src/lib/server/demo-side-effects.ts"), {
   namedExports: {
     PUBLIC_DEMO_DRY_RUN_DETAIL: "Public demo: provider effects disabled.",
     publicDemoSideEffectsDisabled: () => blockExternalEffects,
+    publicDemoAriaBotDisabled: () => blockExternalEffects,
+    publicDemoAriaBotEnabled: () => !blockExternalEffects,
   },
 });
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
@@ -404,12 +457,26 @@ currentService = {
     account_email: "recruiter@example.test",
     workspace_id: workspaceId,
   }),
+  // The calendar route claims/reconciles a durable booking authority row
+  // (0034) via these two service-role RPCs before/after the provider call.
+  rpc: async (name: string) => {
+    if (name === "claim_calendar_booking") {
+      durableMutations += 1;
+      return { data: { status: "claimed", id: "booking-1", booking_status: "claimed", external_event_id: null, replay: false }, error: null };
+    }
+    if (name === "reconcile_calendar_booking") {
+      durableMutations += 1;
+      return { data: { status: "reconciled", id: "booking-1", booking_status: "confirmed" }, error: null };
+    }
+    return { data: null, error: null };
+  },
 };
 currentSupabase = calendarSupabase;
 const calendarModule = await import("../src/app/api/calendar/event/route");
 const calendarPost = ((calendarModule as any).POST ?? (calendarModule as any).default?.POST) as (req: NextRequest) => Promise<Response>;
 const calendarPayload = {
   seatId,
+  candidateId: "candidate-1",
   candidateName: "Candidate One",
   candidateEmail: "candidate@example.test",
   role: "Platform Engineer",

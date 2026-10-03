@@ -15,7 +15,7 @@ export type RenderAgent = {
   id: string;
   name: string;
   subtitle?: string | null;
-  status: "working" | "idle" | "error";
+  status: "working" | "warming" | "idle" | "error";
   color: string;
   /** Canvas pixel X */
   x: number;

@@ -1,0 +1,22 @@
+{
+  "when": "2026-09-04T13:59:57Z",
+  "target": "https://aria-mantu-app.fly.dev",
+  "branch": "cursor/linkedin-auto-vm-fleet-b91d",
+  "tipSha": "20110a1d88b895ad33da8f8429f568eb94beeeed",
+  "pr": 64,
+  "live": {
+    "health": 200,
+    "ready": 200,
+    "build": "5728ad41ab7a4c74757741ecc269bc298d98ba2a",
+    "migration": "0079_autopilot_enqueue_approval_hash_bind.sql",
+    "authLinkedin": 401,
+    "linkedinConnections": 404,
+    "fleetComputers": 404,
+    "knowledgeCampaign": 404
+  },
+  "blockers": [
+    "FLY_API_TOKEN missing in agent environment",
+    "live migration 0079 not present on branch tip (0063)",
+    "admin credentials unavailable for authenticated E2E"
+  ]
+}

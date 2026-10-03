@@ -1,0 +1,36 @@
+app = "aria-mantu-model-gateway"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = 30
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  NODE_ENV = "production"
+  MODEL_GATEWAY_PORT = "8090"
+  MODEL_GATEWAY_BIND_HOST = "fly-local-6pn"
+  MODEL_GATEWAY_INTERNAL_TOKEN_FILE = "/run/secrets/deerflow_model_gateway_token"
+  MODEL_GATEWAY_UPSTREAM_API_KEY_FILE = "/run/secrets/deerflow_model_provider_api_key"
+  MODEL_GATEWAY_TIMEOUT_MS = "30000"
+  MODEL_GATEWAY_REQUEST_MAX_BYTES = "262144"
+  MODEL_GATEWAY_RESPONSE_MAX_BYTES = "1048576"
+  MODEL_GATEWAY_MAX_CONCURRENCY = "8"
+  MODEL_GATEWAY_REQUESTS_PER_MINUTE = "60"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_model_gateway_token"
+  secret_name = "ARIA_GATEWAY_TOKEN_B64"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_model_provider_api_key"
+  secret_name = "ARIA_PROVIDER_API_KEY_B64"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  persist_rootfs = "never"
+
+[[restart]]
+  policy = "always"

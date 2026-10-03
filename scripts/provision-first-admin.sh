@@ -64,7 +64,7 @@ ADMIN_EMAIL_DOMAIN="$(printf '%s' "$ADMIN_EMAIL_DOMAIN" | tr '[:upper:]' '[:lowe
 [ -n "${ADMIN_EMAIL%@*}" ] || fail "ADMIN_EMAIL must contain a local part."
 [ "$ADMIN_EMAIL_DOMAIN" = "$ARIA_ALLOWED_EMAIL_DOMAIN" ] || \
   fail "ADMIN_EMAIL email domain does not match ARIA_ALLOWED_EMAIL_DOMAIN."
-[ "${#ADMIN_PASSWORD}" -ge 5 ] || fail "ADMIN_PASSWORD must contain at least 5 characters."
+[ "${#ADMIN_PASSWORD}" -ge 24 ] || fail "ADMIN_PASSWORD must contain at least 24 characters."
 [ "${#ADMIN_PASSWORD}" -le 256 ] || fail "ADMIN_PASSWORD must contain at most 256 characters."
 case "$ADMIN_PASSWORD" in
   *$'\n'*|*$'\r'*) fail "ADMIN_PASSWORD must not contain line breaks." ;;

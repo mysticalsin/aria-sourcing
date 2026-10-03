@@ -1,0 +1,92 @@
+app = "aria-mantu-flowise"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = 60
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  NODE_ENV = "production"
+  HOST = "fly-local-6pn"
+  PORT = "3000"
+  APP_URL = "http://aria-mantu-flowise.internal:3000"
+  DATABASE_TYPE = "postgres"
+  DATABASE_HOST = "aria-mantu-flowise-db.internal"
+  DATABASE_PORT = "5432"
+  DATABASE_NAME = "flowise"
+  DATABASE_USER = "flowise"
+  DATABASE_SSL = "false"
+  MODE = "queue"
+  QUEUE_NAME = "aria-flowise"
+  REDIS_HOST = "aria-mantu-flowise-redis.internal"
+  REDIS_PORT = "6379"
+  REDIS_USERNAME = "default"
+  REDIS_TLS = "false"
+  WORKER_CONCURRENCY = "4"
+  REMOVE_ON_AGE = "86400"
+  REMOVE_ON_COUNT = "10000"
+  DISABLE_FLOWISE_TELEMETRY = "true"
+  SHOW_COMMUNITY_NODES = "false"
+  ALLOW_BUILTIN_DEP = "false"
+  TOOL_FUNCTION_BUILTIN_DEP = ""
+  TOOL_FUNCTION_EXTERNAL_DEP = ""
+  CUSTOM_MCP_SECURITY_CHECK = "true"
+  CUSTOM_MCP_PROTOCOL = "sse"
+  CUSTOM_MCP_ALLOWED_ENV_VARS = ""
+  CUSTOM_MCP_ALLOWED_COMMANDS = ""
+  HTTP_SECURITY_CHECK = "true"
+  PATH_TRAVERSAL_SAFETY = "true"
+  OAUTH2_SECURITY_CHECK = "true"
+  CORS_ORIGINS = "http://aria-mantu-flowise.internal:3000"
+  MCP_CORS_ORIGINS = "http://aria-mantu-flowise.internal:3000"
+  IFRAME_ORIGINS = "'none'"
+  FLOWISE_FILE_SIZE_LIMIT = "1mb"
+  LOG_LEVEL = "warn"
+  LOG_PATH = "/tmp/flowise-logs"
+  LOG_SANITIZE_BODY_FIELDS = "password,pwd,pass,secret,token,apikey,api_key,accesstoken,access_token,refreshtoken,refresh_token,clientsecret,client_secret,privatekey,private_key,secretkey,secret_key,auth,authorization,credential,credentials"
+  LOG_SANITIZE_HEADER_FIELDS = "authorization,x-api-key,x-auth-token,cookie"
+  SECRETKEY_STORAGE_TYPE = "local"
+  SECRETKEY_PATH = "/tmp/flowise-secrets"
+  SECURE_COOKIES = "false"
+  EXPIRE_AUTH_TOKENS_ON_RESTART = "false"
+  PASSWORD_SALT_HASH_ROUNDS = "12"
+  HOME = "/tmp"
+  FLOWISE_DATABASE_PASSWORD_FILE = "/run/secrets/flowise_db_password"
+  FLOWISE_REDIS_PASSWORD_FILE = "/run/secrets/flowise_redis_password"
+  FLOWISE_ENCRYPTION_KEY_FILE = "/run/secrets/flowise_encryption_key"
+  FLOWISE_JWT_AUTH_SECRET_FILE = "/run/secrets/flowise_jwt_auth_secret"
+  FLOWISE_JWT_REFRESH_SECRET_FILE = "/run/secrets/flowise_jwt_refresh_secret"
+  FLOWISE_SESSION_SECRET_FILE = "/run/secrets/flowise_session_secret"
+  FLOWISE_TOKEN_HASH_SECRET_FILE = "/run/secrets/flowise_token_hash_secret"
+
+[[files]]
+  guest_path = "/run/secrets/flowise_db_password"
+  secret_name = "ARIA_FLOWISE_DB_PASSWORD_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_redis_password"
+  secret_name = "ARIA_FLOWISE_REDIS_PASSWORD_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_encryption_key"
+  secret_name = "ARIA_FLOWISE_ENCRYPTION_KEY_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_jwt_auth_secret"
+  secret_name = "ARIA_FLOWISE_JWT_AUTH_SECRET_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_jwt_refresh_secret"
+  secret_name = "ARIA_FLOWISE_JWT_REFRESH_SECRET_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_session_secret"
+  secret_name = "ARIA_FLOWISE_SESSION_SECRET_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_token_hash_secret"
+  secret_name = "ARIA_FLOWISE_TOKEN_HASH_SECRET_B64"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  persist_rootfs = "never"
+
+[[restart]]
+  policy = "always"

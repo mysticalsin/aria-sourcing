@@ -22,16 +22,7 @@ function ok(name: string, cond: boolean) {
 
 /* ---- Fixtures ---- */
 
-const base: Pick<
-  Candidate,
-  | "id" | "campaignId" | "name" | "email" | "avatarInitials" | "currentTitle"
-  | "currentCompany" | "location" | "timezone" | "linkedinUrl" | "githubUrl"
-  | "sourcePlatform" | "sourceQuery" | "matchScore" | "matchBreakdown"
-  | "techStack" | "yearsExperience" | "companyStageExperience"
-  | "industryExperience" | "recentActivity" | "stage" | "lastContactedAt"
-  | "outreachHistory" | "replyHistory" | "booking" | "complianceFlags"
-  | "createdAt"
-> = {
+const base: Omit<Candidate, "id" | "campaignId" | "name" | "email"> = {
   avatarInitials: "AA",
   currentTitle: "Engineer",
   currentCompany: "Acme",
@@ -62,7 +53,6 @@ const base: Pick<
     suppressedUntil: null,
   },
   createdAt: new Date().toISOString(),
-  name: "",
 };
 
 const cand1: Candidate = {

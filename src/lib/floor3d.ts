@@ -1,5 +1,5 @@
 import type { AgentSeat, HermesState } from "@/lib/types";
-import { agentActivity } from "@/lib/floor";
+import { agentActivityWithComputers, type FloorComputerHint } from "@/lib/floor";
 import type { AgentEvent } from "@/lib/agent-events";
 import type { SoundKind } from "@/lib/sound";
 
@@ -9,7 +9,8 @@ import type { SoundKind } from "@/lib/sound";
    can share the floor contract without pulling in the 3D subsystem.
    ========================================================================== */
 
-export type AgentStatus = "working" | "idle" | "error";
+/** working = real sends/outreach activity; warming = VM busy/starting; idle includes ready+healthy zero-sends; error = paused/unhealthy */
+export type AgentStatus = "working" | "warming" | "idle" | "error";
 
 /** Org position. Everyone is an employee; the first seat is treated as CEO. */
 export type AgentPosition = "employee" | "ceo";
@@ -64,12 +65,12 @@ export const PULSE_MS = 4000;
 
 export const PACKET_FLIGHT_MS = 850;
 
-export function pickResponderIndex(e: AgentEvent, n: number): number {
-  if (n <= 0) return 0;
-  const key = `${e.kind}:${e.campaignId ?? ""}:${e.candidateName ?? ""}:${e.count ?? ""}:${e.at}`;
-  let h = 0;
-  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h % n;
+export function pickResponderIndex(e: AgentEvent, n: number, seatIds?: string[]): number {
+  if (n <= 0) return -1;
+  // Fail-closed: only the seat that owns the event may light up — never hash-pick.
+  if (!e.seatId || !seatIds?.length) return -1;
+  const idx = seatIds.indexOf(e.seatId);
+  return idx >= 0 ? idx % n : -1;
 }
 
 export function describeEvent(e: AgentEvent, seatName?: string | null): string {
@@ -148,37 +149,88 @@ export function colorForAgent(index: number): string {
   return hslToHex(hue, 0.78, lightness);
 }
 
-// Activity states that mean the agent is actively doing work.
-const BUSY_STATES = new Set(["sourcing", "outreach", "booking", "warming"]);
+// Activity states that mean the agent is actively doing probed work (not VM boot).
+const WORKING_STATES = new Set(["sourcing", "outreach", "booking"]);
 
 /**
- * Map real seats to 3D-floor agents. The FIRST seat (index 0) is treated as the
- * lead/CEO (AgentSeat has no lead field — first-seat-as-lead is the agreed
- * rule). Status collapses the richer activity model into the three render
- * states the characters understand.
+ * Map real seats to 3D-floor agents. Uses the same overlay as 2D desks /
+ * floorRollup (`agentActivityWithComputers`) so Warming / Working counts match
+ * the robots. Never invents sessionHealthy=true.
  */
+/** Live computer hint — overlays VM truth onto theatrical activity. */
+export type ComputerFloorHint = FloorComputerHint;
+
 export function seatsToOfficeAgents(
   seats: AgentSeat[],
   state: HermesState,
+  computers?: ReadonlyMap<string, ComputerFloorHint>,
+  now = Date.now(),
 ): OfficeAgent[] {
   return seats.map((seat, index) => {
-    const activity = agentActivity(seat, state);
-    const status: OfficeAgent["status"] = BUSY_STATES.has(activity.state)
-      ? "working"
-      : activity.state === "idle"
-        ? "idle"
-        : "error"; // "paused" / auto-paused → error
+    const activity = agentActivityWithComputers(seat, state, now, computers);
+    let status: OfficeAgent["status"];
+    if (activity.state === "warming") status = "warming";
+    else if (activity.state === "paused") status = "error";
+    else if (activity.state === "idle") status = "idle";
+    else if (WORKING_STATES.has(activity.state)) status = "working";
+    else status = "idle";
+
+    // Label already includes VM suffix when computers map is present.
+    const subtitle = activity.label;
+
     return {
       id: seat.id,
       name: seat.name,
-      subtitle: activity.label,
+      subtitle,
       status,
-      // Honour a custom per-agent colour when set; otherwise auto-assign a
-      // distinct colour by seat index — curated palette first (faithful to the
-      // reference lineup), then generated hues for any number of new agents.
       color: seat.color ?? colorForAgent(index),
-      position: index === 0 ? "ceo" : "employee",
+      position: "employee" as OfficeAgent["position"],
       provider: seat.provider,
+    };
+  }).map((agent, index, all) => {
+    // PacketFX hub: only probed-healthy bound LI. No hub CEO when none are healthy
+    // (never elect unverified/non-LI as packet theater center).
+    const hubId =
+      all.find(
+        (a) =>
+          a.provider === "LinkedIn Browser Computer" &&
+          a.status === "working" &&
+          typeof a.subtitle === "string" &&
+          /session healthy/i.test(a.subtitle) &&
+          /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
+      )?.id ??
+      all.find(
+        (a) =>
+          a.provider === "LinkedIn Browser Computer" &&
+          typeof a.subtitle === "string" &&
+          /session healthy/i.test(a.subtitle) &&
+          /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
+      )?.id ??
+      null;
+    return {
+      ...agent,
+      position: hubId && agent.id === hubId ? ("ceo" as const) : ("employee" as const),
     };
   });
 }
+
+/** Prefer Browser Computer seats (esp. probed-healthy bound VMs) when the 3D view is capped. */
+export function preferBrowserComputerAgents<T extends { provider?: string; subtitle?: string | null; position?: string; id: string }>(
+  agents: T[],
+  selectedId?: string | null,
+): T[] {
+  const rank = (a: T) => {
+    if (a.position === "ceo") return 0;
+    if (selectedId && a.id === selectedId) return 1;
+    if (a.provider === "LinkedIn Browser Computer") {
+      const sub = typeof a.subtitle === "string" ? a.subtitle : "";
+      // Prefer probed-healthy bound desks over unverified suffix-only theater.
+      if (/session healthy/i.test(sub) && /…[0-9a-zA-Z_-]{4,}/.test(sub)) return 2;
+      if (/…[0-9a-zA-Z_-]{4,}/.test(sub)) return 3;
+      return 4;
+    }
+    return 5;
+  };
+  return [...agents].sort((a, b) => rank(a) - rank(b));
+}
+

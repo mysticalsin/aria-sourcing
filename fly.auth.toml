@@ -11,6 +11,10 @@ primary_region = "cdg"
   API_EXTERNAL_URL              = "https://aria-mantu-kong.fly.dev"   # was http://localhost:54321
   GOTRUE_SITE_URL               = "https://aria-mantu-app.fly.dev"    # was http://localhost:3000
   GOTRUE_URI_ALLOW_LIST         = "https://aria-mantu-app.fly.dev/**" # was "*"
+  # IMPORTANT: GOTRUE_SITE_URL and API_EXTERNAL_URL must NOT be Fly secrets.
+  # Secrets override [env] values. If redirects go to 0.0.0.0:3000, check:
+  # fly secrets list -a aria-mantu-auth
+  # If either appears, unset it: fly secrets unset GOTRUE_SITE_URL -a aria-mantu-auth
   GOTRUE_DB_DRIVER              = "postgres"
   GOTRUE_PASSWORD_MIN_LENGTH    = "5"                           # owner-set floor (default 6); short admin password by request
   GOTRUE_DISABLE_SIGNUP         = "true"                        # single-admin tenant (was "false"); see runbook step 11

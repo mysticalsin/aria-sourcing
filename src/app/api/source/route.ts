@@ -7,11 +7,21 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { searchGithubUsers, getGithubUser, type GithubUser } from "@/lib/sourcing/github";
+import {
+  GITHUB_USERNAME_RE,
+  getGithubAuthenticatedUser,
+  getGithubRateLimit,
+  searchGithubUsers,
+  getGithubUser,
+  type GithubUser,
+} from "@/lib/sourcing/github";
 import { SOURCE_PLATFORMS } from "@/lib/types";
 import { ensureWebQueryScope, isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
 import { runWebTool } from "@/lib/ai/web-tools";
-import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import { buildSeedState } from "@/lib/seed";
+import { clearDiscoveryCriteria, clearIdentityResolution, clearProviderProbe } from "@/lib/sourcing/provider-egress";
+import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const runtime = "nodejs";
 
@@ -29,8 +39,7 @@ export const runtime = "nodejs";
  * existing compliant web_search tool (site:-scoped), same honesty/read-only
  * guarantees as the chat research tools.
  *
- * platform in {Referral, Talent Pool}: not externally sourceable — these are
- * internal-pipeline concepts, not searched at all.
+ * platform in {Manual, Referral, Talent Pool}: not externally sourceable.
  *
  * Read-only throughout: never writes to GitHub, never logs into or scrapes a
  * platform, never posts a message.
@@ -39,8 +48,6 @@ export const runtime = "nodejs";
  * is ignored entirely and the request resolves that one GitHub login via
  * GET /users/{login} instead of running a search.
  */
-const GITHUB_USERNAME_RE = /^[a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38}$/;
-
 const SourceSchema = z
   .object({
     query: z.string().min(1).max(256).optional(),
@@ -59,16 +66,26 @@ function publicDemoSourceDenied(req: NextRequest): Response | null {
   return NextResponse.json({ ok: false, error: "Sign in to use live sourcing." }, { status: 401 });
 }
 
+function liveOriginDenied(req: NextRequest): Response | null {
+  if (!supabaseEnabled) return null;
+  const origin = req.headers.get("origin");
+  if (isTrustedBrowserOrigin(origin, req.nextUrl.origin)) return null;
+  return NextResponse.json(
+    { ok: false, code: "CROSS_ORIGIN_REQUEST", error: "Cross-origin sourcing is not allowed." },
+    { status: 403 },
+  );
+}
+
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
   const demoBlock = publicDemoSourceDenied(req);
   if (demoBlock) return demoBlock;
+  const originBlock = liveOriginDenied(req);
+  if (originBlock) return originBlock;
 
   const rl = checkRateLimit(rateLimitKey(req, "source"), { windowMs: 60_000, max: 10 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
-
-  let tavilyKey: string | null = null;
 
   // Live mode: require an authenticated user with the `source` permission. Demo
   // mode (no backend) is open but still rate-limited.
@@ -83,7 +100,6 @@ export async function POST(req: NextRequest) {
     if (!can(role as Role, "source")) {
       return NextResponse.json({ ok: false, error: "Insufficient permissions." }, { status: 403 });
     }
-    tavilyKey = await resolveStoredTavilyKey(supabase);
   }
 
   const validated = await validateBody(req, SourceSchema, { maxBytes: 10_000 });
@@ -93,9 +109,17 @@ export async function POST(req: NextRequest) {
   // Manual single-profile intake: resolve exactly the named GitHub login,
   // ignoring `query` and `count` entirely — this is a lookup, not a search.
   if (username) {
+    if (platform !== "GitHub") {
+      return NextResponse.json(
+        { ok: false, error: "GitHub username lookup requires the GitHub platform." },
+        { status: 400 },
+      );
+    }
     const token = process.env.GITHUB_TOKEN ?? "";
+    const clearance = clearIdentityResolution("GitHub", { username });
+    if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
     try {
-      const user = await getGithubUser(username, token);
+      const user = await getGithubUser(clearance.clearance, username, token);
       if (!user) {
         return NextResponse.json({ ok: false, error: "GitHub user not found." }, { status: 404 });
       }
@@ -106,13 +130,39 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Live campaign search is intentionally available only through the canonical
+  // server-owned campaign route. This endpoint retains exact-profile intake and
+  // the explicitly signed demo search path; it cannot bypass campaign readiness,
+  // idempotency, learning receipts, or configuration authority in a live tenant.
+  if (supabaseEnabled) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "CAMPAIGN_AUTHORITY_REQUIRED",
+        error: "Live search must use the reviewed campaign sourcing authority.",
+      },
+      { status: 409 },
+    );
+  }
+
   // Schema-enforced: username or query is present; username was handled above.
   if (!query) return NextResponse.json({ ok: false, error: "query is required." }, { status: 400 });
 
+  if (platform === "Manual") {
+    return NextResponse.json(
+      { ok: false, source: "manual", error: "Manual intake must use the candidate intake action." },
+      { status: 400 },
+    );
+  }
+
+  const demoCampaign = buildSeedState().campaigns[0];
+
   if (platform === "GitHub") {
+    const policy = clearDiscoveryCriteria(platform, { query }, demoCampaign);
+    if (!policy.ok) return NextResponse.json({ ok: false, error: policy.error }, { status: 422 });
     const token = process.env.GITHUB_TOKEN ?? "";
     try {
-      const users = await searchGithubUsers(query, count, token);
+      const users = await searchGithubUsers(policy.clearance, query, count, token);
       return NextResponse.json({ ok: true, source: "github", platform, users });
     } catch (err) {
       // GitHub error bodies never contain the token; keep the client message terse.
@@ -122,8 +172,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (isWebSearchPlatform(platform)) {
+    const webPolicy = validateSourcingQuery(platform, query, demoCampaign);
+    if (!webPolicy.ok) return NextResponse.json({ ok: false, error: webPolicy.error }, { status: 422 });
     const scopedQuery = ensureWebQueryScope(platform, query);
-    const result = await runWebTool("web_search", { query: scopedQuery }, { tavilyKey: tavilyKey ?? undefined });
+    const result = await runWebTool("web_search", { query: scopedQuery });
     if (!result.ok) {
       return NextResponse.json(
         { ok: false, source: "web", platform, error: result.error ?? "Web search failed." },
@@ -173,10 +225,7 @@ export async function GET(req: NextRequest) {
 
   if (!token) {
     try {
-      const res = await fetch("https://api.github.com/rate_limit", {
-        headers: { Accept: "application/vnd.github+json", "User-Agent": "aria-sourcing" },
-        signal: AbortSignal.timeout(10_000),
-      });
+      const res = await getGithubRateLimit(clearProviderProbe("GitHub"));
       if (!res.ok) {
         return NextResponse.json({ ok: true, connected: false, reason: `GitHub unreachable (${res.status}).` });
       }
@@ -200,19 +249,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "aria-sourcing",
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
+    const res = await getGithubAuthenticatedUser(clearProviderProbe("GitHub"), token);
     if (!res.ok) {
       return NextResponse.json({ ok: true, connected: false, reason: `GitHub token rejected (${res.status}).` });
     }
-    const u = (await res.json().catch(() => ({}))) as { login?: string; name?: string; public_repos?: number };
+    const u = (await res.json().catch(() => ({}))) as {
+      login?: string;
+      name?: string;
+      public_repos?: number;
+    };
     return NextResponse.json({
       ok: true,
       connected: true,

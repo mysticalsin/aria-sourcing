@@ -54,8 +54,3 @@ bash scripts/restore-drill.sh   # restores the latest backup into a scratch DB,
 - **Structured logs:** the Hermes proxy + send paths emit JSON log lines
   (`source: hermes-proxy`, audit events) to stdout — scrape `npm run dev` output
   or pipe to a file. See `OPERATIONS_RUNBOOK.md` for the alert thresholds.
-
-## Status
-- ✅ Login page, app, health endpoint, scripts — done + verified.
-- ⏳ `supabase start` + migrations + first backup + restore drill — run automatically
-  by the commands above the moment Docker Desktop is running.

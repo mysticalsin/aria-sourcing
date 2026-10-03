@@ -36,6 +36,18 @@ ok("finance candidate titles are role-appropriate", sourced.accepted.some((c) =>
 const swJd = buildSeedState().campaigns[0].jobAnalysis; // seeded Senior Backend Engineer
 ok("software need -> software family", roleFamily(swJd) === "software");
 
+const systemDesignerJd = parseEmailAndJD({
+  email: `This need is now ACTIVE: System Designer
+Type: Consulting
+Client: Magnit Global Canada Ltd
+Location: MONTREAL
+Profile description:
+5+ years of experience in system design within the medical device industry.
+Skills: FDA Regulations,Quality Systems Management`,
+}).jobAnalysis;
+ok("System Designer Mantu need is not finance", roleFamily(systemDesignerJd) !== "finance");
+ok("System Designer sources on LinkedIn first", roleProfile(systemDesignerJd).platforms[0] === "LinkedIn");
+
 /* ---- multilingual outreach ---- */
 const seed = buildSeedState();
 const cand = seed.candidates[0];

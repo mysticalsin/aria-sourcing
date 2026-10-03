@@ -1,0 +1,44 @@
+app = "aria-mantu-flowise-db"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = 60
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  POSTGRES_DB = "flowise"
+  POSTGRES_USER = "flowise"
+  POSTGRES_PASSWORD_FILE = "/run/secrets/db_password"
+  POSTGRES_INITDB_ARGS = "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+  PGDATA = "/var/lib/postgresql/data/pgdata"
+
+[[files]]
+  guest_path = "/run/secrets/db_password"
+  secret_name = "ARIA_DB_PASSWORD_B64"
+
+[[mounts]]
+  source = "flowise_pg_data"
+  destination = "/var/lib/postgresql/data"
+  initial_size = "10GB"
+  snapshot_retention = 30
+  scheduled_snapshots = true
+  auto_extend_size_threshold = 80
+  auto_extend_size_increment = "5GB"
+  auto_extend_size_limit = "50GB"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  persist_rootfs = "never"
+
+[[restart]]
+  policy = "always"
+
+[checks.postgres]
+  type = "tcp"
+  port = 5432
+  interval = "15s"
+  timeout = "5s"
+  grace_period = "45s"

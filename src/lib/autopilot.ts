@@ -207,23 +207,37 @@ export interface SpecGuardrails {
 export { COMMITMENT_PATTERNS } from "./agent-disclosure-policy";
 type DisclosureInternal = Parameters<typeof validateCandidateBoundText>[1];
 
-export type AutopilotDecision = { action: "queue"; text: string; reasons: string[] };
+export type AutopilotDecision = {
+  action: "queue" | "auto_approve_eligible";
+  text: string;
+  reasons: string[];
+};
 
-/** Decide what happens to a composed reply. `queue` means a named human reviews
- * the stored draft in Replies. Provider delivery requires a separate human
- * approval whose exact content and recipient are revalidated server-side. */
+export type AutopilotEntitlement = {
+  /** Per-user admin toggle from profiles.autopilot_enabled. */
+  autopilotEnabled: boolean;
+};
+
+/**
+ * Decide what happens to a composed reply.
+ * - `queue` — named human reviews the stored draft in Replies.
+ * - `auto_approve_eligible` — entitled user + clean guardrails; caller may mint a
+ *   template_bound / human approval, but provider delivery still goes through
+ *   claim RPCs that re-check authority. Salary disclosure and injection always
+ *   force `queue`.
+ */
 export function decideAutopilot(
   replyDraft: string,
   guardrails: SpecGuardrails,
   disclosureInternal?: DisclosureInternal,
+  entitlement: AutopilotEntitlement = { autopilotEnabled: false },
 ): AutopilotDecision {
   // Soft-clean first so the human queue receives reviewable text either way.
   const cleaned = humanizeText(replyDraft ?? "");
-  // Autopilot may classify and draft, but a named operator makes the only
-  // approval that can release an external message.
-  const reasons: string[] = ["human-review-required"];
+  const reasons: string[] = [];
 
   if (!guardrails.autopilot) reasons.push("autopilot-off");
+  if (!entitlement.autopilotEnabled) reasons.push("user-entitlement-off");
   if ((guardrails.canary_remaining ?? 0) > 0) reasons.push("canary");
 
   const disclosure = validateCandidateBoundText(cleaned, disclosureInternal);
@@ -235,5 +249,24 @@ export function decideAutopilot(
   const gate: GateVerdict = gateOutbound(cleaned);
   if (!gate.pass) reasons.push(...gate.reasons.map((r) => `gate:${r}`));
 
-  return { action: "queue", text: gate.pass ? gate.text : cleaned, reasons };
+  const hardBlock =
+    !disclosure.safe ||
+    injection.flagged ||
+    !gate.pass ||
+    reasons.includes("salary-disclosure") ||
+    reasons.some((r) => r.startsWith("gate:"));
+
+  const eligible =
+    entitlement.autopilotEnabled === true &&
+    guardrails.autopilot === true &&
+    (guardrails.canary_remaining ?? 0) <= 0 &&
+    !hardBlock;
+
+  if (!eligible) {
+    if (!reasons.includes("human-review-required")) reasons.unshift("human-review-required");
+    return { action: "queue", text: gate.pass ? gate.text : cleaned, reasons };
+  }
+
+  reasons.unshift("auto-approve-eligible");
+  return { action: "auto_approve_eligible", text: gate.pass ? gate.text : cleaned, reasons };
 }

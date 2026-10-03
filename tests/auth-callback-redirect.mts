@@ -22,10 +22,20 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
 
 const route = await import("../src/app/auth/callback/route");
 
+function callbackRequest(url: URL): NextRequest {
+  return new NextRequest(url, {
+    headers: {
+      host: url.host,
+      "x-forwarded-host": url.host,
+      "x-forwarded-proto": "https",
+    },
+  });
+}
+
 const exploit = new URL("https://aria.example.test/auth/callback");
 exploit.searchParams.set("code", "oauth-code");
 exploit.searchParams.set("redirect", "/\\evil.example/phish");
-const exploitResponse = await route.GET(new NextRequest(exploit));
+const exploitResponse = await route.GET(callbackRequest(exploit));
 const exploitLocation = exploitResponse.headers.get("location") ?? "";
 
 ok("OAuth callback returns a redirect", exploitResponse.status >= 300 && exploitResponse.status < 400);
@@ -38,7 +48,7 @@ ok("OAuth callback rejects the ambiguous redirect path", new URL(exploitLocation
 const safe = new URL("https://aria.example.test/auth/callback");
 safe.searchParams.set("code", "oauth-code");
 safe.searchParams.set("redirect", "/campaigns?status=active#results");
-const safeResponse = await route.GET(new NextRequest(safe));
+const safeResponse = await route.GET(callbackRequest(safe));
 ok(
   "OAuth callback preserves a valid same-origin relative target",
   safeResponse.headers.get("location") === "https://aria.example.test/campaigns?status=active#results",

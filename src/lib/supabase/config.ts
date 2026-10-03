@@ -31,6 +31,31 @@ export const SUPABASE_AUTH_COOKIE_NAME = "sb-auth-token";
 export const isProduction = process.env.NODE_ENV === "production";
 
 /**
+ * Shared cookie options for every @supabase/ssr client. `secure` is set in
+ * production so the session cookie is only ever sent over HTTPS (the Fly proxy
+ * and Kong both force_https); left off in dev so `localhost` over http still
+ * works. Must be identical at every call site or the sides pick different
+ * cookies (see SUPABASE_AUTH_COOKIE_NAME above).
+ */
+export const SUPABASE_COOKIE_OPTIONS = {
+  name: SUPABASE_AUTH_COOKIE_NAME,
+  secure: isProduction,
+} as const;
+
+/**
+ * Sillage and Seamless do not yet have the server-owned receipt authority used
+ * by Apollo. They remain available only for explicit local development and
+ * can never be enabled in a production build.
+ */
+export const experimentalPaidSourcingEnabled =
+  !isProduction && process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING === "true";
+
+/** Preview-only: read /candidates listing rows from the server corpus mirror.
+ *  Default off keeps the existing store-backed page path unchanged. */
+export const corpusServerReadEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_CORPUS_SERVER_READ === "true";
+
+/**
  * Fail-closed guard. In production the app MUST run in LIVE mode: if Supabase env
  * is missing, the open DEMO fallbacks (no login gate, every caller treated as
  * admin) would expose the entire app. Throwing here forces request-scoped server

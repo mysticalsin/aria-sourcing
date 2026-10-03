@@ -27,8 +27,7 @@ export function CareersShell({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <span className="hidden items-center gap-1.5 text-xs font-semibold text-muted sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-success status-live" aria-hidden />
-            Now hiring across our teams
+            Applications open when careers is online
           </span>
         </div>
       </header>

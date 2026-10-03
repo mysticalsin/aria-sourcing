@@ -1,6 +1,98 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-29",
+      "lesson": "New channel provider labels must update SeatProvider and all exhaustive provider maps, not only dispatcher SQL/string checks."
+    },
+    {
+      "date": "2026-07-28",
+      "lesson": "When replacing authority functions, diff inherited side effects explicitly; new linkage must not erase existing outcome/event recording."
+    },
+    {
+      "date": "2026-07-28",
+      "lesson": "Blob-independent erasure must distinguish workspace row existence from candidate-in-blob presence; malformed state still raises, absence records zero."
+    },
+    {
+      "date": "2026-07-28",
+      "lesson": "When adding erasure receipt stores, widen the named check constraint and assert both allowed store and unknown-store rejection."
+    },
+    {
+      "date": "2026-07-28",
+      "lesson": "Job payload privacy contracts belong at enqueue authority; handler-only cleanup cannot protect future producers."
+    },
+    {
+      "date": "2026-07-26",
+      "lesson": "Loop workers should call machine routes for TS provider adapters; production copies .mjs scripts, not source TS modules."
+    },
+    {
+      "date": "2026-07-25",
+      "lesson": "Provider adapters import transport only; policy egress may mint clearance, but importing policy from adapters recreates Rock 2 cycles."
+    },
+    {
+      "date": "2026-07-25",
+      "lesson": "Human-gated loop stages stop at gates; wrap workspace patches and job follow-ons in one SQL transaction."
+    },
+    {
+      "date": "2026-07-16",
+      "lesson": "Separate source proof from sandbox socket blockers; Docker and TSX IPC failures are environment evidence, not DB behavior proof."
+    },
+    {
+      "date": "2026-07-14",
+      "lesson": "Archive and rewrite the MSourcing Relay Baton every shift; Claude continuation must never depend on chat context."
+    },
+    {
+      "date": "2026-07-14",
+      "lesson": "Audit actual LangChain payloads; disabled framework tools can still inject pinned built-ins that strict gateways must strip exactly."
+    },
+    {
+      "date": "2026-07-14",
+      "lesson": "Never call source enterprise-ready while live SHA, migrations, model credit, governance, deployment receipts, or acceptance evidence remain unproven."
+    },
+    {
+      "date": "2026-07-14",
+      "lesson": "Demo mode must block non-synthetic candidate data before I/O and again at commit, storage, and hydration boundaries."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Durable sourcing feedback must reload from server authority and merge by receipt; component-only prompts lose lessons and can cross campaign state."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Graphify adds runtime value only through aggregate digest-bound clustering and separate human promotion; it never invents needs, candidates, or queries."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Paid enrichment needs persisted candidate authority, retry-convergent state, bounded retention, and release evidence bound to exact worker, image, and deployment."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Unknown candidate facts must remain nullable through mapping, scoring, consent, and outreach; personalized claims require shared role evidence and canonical persisted authority."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Campaign mutations need synchronous commit results, authoritative role gates, exact runtime projection, non-reflective tests, and aggregate success only when every requested role completes."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Store refactors need hook behavior, exact action parity, and static/runtime cycle gates; negative assertions must never reflect full workspace state."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Keep live candidate normalization in a neutral sourcing module; mock modules may expose compatibility re-exports but cannot own live behavior."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Retry-safety classification needs one neutral owner across provider adapters; HTTP 408 and server failures remain ambiguous."
+    },
+    {
+      "date": "2026-07-13",
+      "lesson": "Derive documentation facts from package, migration, and config sources; label current operations separately from historical audit evidence."
+    },
+    {
+      "date": "2026-07-12",
+      "lesson": "Never interpolate credentials into shell argv; use client-native auth and inspect process commands only after excluding authorization arguments."
+    },
+    {
       "date": "2026-07-10",
       "lesson": "For pure store splits, extract React-free helpers only; leave provider-bound hooks/contracts when cycle risk exceeds comprehension gain."
     },

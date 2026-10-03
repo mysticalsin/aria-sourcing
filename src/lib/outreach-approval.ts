@@ -10,7 +10,7 @@ export interface OutreachApprovalRequest {
 }
 
 export type OutreachApprovalPersistence =
-  | { ok: true; dryRun: boolean; detail?: string }
+  | { ok: true; dryRun: boolean; detail?: string; subject?: string; body?: string }
   | { ok: false; error: string };
 
 type ApprovalFetch = typeof fetch;
@@ -37,12 +37,20 @@ export async function recordOutreachApproval(
       status?: unknown;
       persisted?: unknown;
       detail?: unknown;
+      subject?: unknown;
+      body?: unknown;
     } | null;
     if (!response.ok || payload?.ok !== true) {
       return { ok: false, error: APPROVAL_NOT_RECORDED };
     }
     const dryRun = payload.status === "dry-run" && payload.persisted === false;
-    return { ok: true, dryRun, detail: dryRun && typeof payload.detail === "string" ? payload.detail : undefined };
+    return {
+      ok: true,
+      dryRun,
+      detail: dryRun && typeof payload.detail === "string" ? payload.detail : undefined,
+      subject: typeof payload.subject === "string" ? payload.subject : undefined,
+      body: typeof payload.body === "string" ? payload.body : undefined,
+    };
   } catch {
     return { ok: false, error: APPROVAL_NOT_RECORDED };
   }

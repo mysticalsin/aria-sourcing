@@ -16,6 +16,7 @@
 import type { getServerSupabase } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
+import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
 const SEAMLESS_API = "https://api.seamless.ai/api/client/v1";
 
@@ -106,6 +107,7 @@ function toSeamlessContact(raw: Record<string, unknown>): SeamlessContact {
  * max — capped at 100 defensively, same convention as Apollo's per-page cap).
  */
 export async function searchSeamlessContacts(
+  clearance: ProviderClearance,
   filters: SeamlessSearchFilters,
   count: number,
   apiKey: string,
@@ -121,7 +123,7 @@ export async function searchSeamlessContacts(
   if (filters.companyNames?.length) body.companyName = filters.companyNames;
   if (filters.companyDomains?.length) body.companyDomain = filters.companyDomains;
 
-  const res = await fetch(`${SEAMLESS_API}/search/contacts`, {
+  const res = await sourcingFetch(clearance, `${SEAMLESS_API}/search/contacts`, {
     method: "POST",
     headers: seamlessHeaders(apiKey),
     body: JSON.stringify(body),
@@ -145,12 +147,13 @@ export async function searchSeamlessContacts(
  * field is present.
  */
 async function seamlessRequest<T>(
+  clearance: ProviderClearance,
   path: string,
   apiKey: string,
   opts: { method?: "GET" | "POST"; body?: unknown; timeoutMs?: number } = {},
 ): Promise<SeamlessResult<T>> {
   try {
-    const res = await fetch(`${SEAMLESS_API}${path}`, {
+    const res = await sourcingFetch(clearance, `${SEAMLESS_API}${path}`, {
       method: opts.method ?? "GET",
       headers: seamlessHeaders(apiKey),
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -178,10 +181,11 @@ async function seamlessRequest<T>(
  * deliberate single-candidate action, never a batch reveal.
  */
 export async function startSeamlessResearch(
+  clearance: ProviderClearance,
   apiKey: string,
   searchResultId: string,
 ): Promise<SeamlessResult<{ requestId: string }>> {
-  const res = await seamlessRequest<{ success?: boolean; requestIds?: string[] }>("/contacts/research", apiKey, {
+  const res = await seamlessRequest<{ success?: boolean; requestIds?: string[] }>(clearance, "/contacts/research", apiKey, {
     method: "POST",
     body: { searchResultIds: [searchResultId] },
     timeoutMs: 15_000,
@@ -201,13 +205,14 @@ export async function startSeamlessResearch(
  * available" (failure — no contact). "queued" / "researching" are in-progress.
  */
 export async function pollSeamlessResearch(
+  clearance: ProviderClearance,
   apiKey: string,
   requestId: string,
 ): Promise<SeamlessResult<SeamlessResearchStatus>> {
   const res = await seamlessRequest<{
     success?: boolean;
     data?: { requestId?: string; searchResultId?: string; status?: string; message?: string; contact?: Record<string, unknown> }[];
-  }>(`/contacts/research/poll?requestIds=${encodeURIComponent(requestId)}`, apiKey);
+  }>(clearance, `/contacts/research/poll?requestIds=${encodeURIComponent(requestId)}`, apiKey);
   if (!res.ok) return res;
   const result = res.data.data?.[0];
   if (!result) {
@@ -241,9 +246,9 @@ export async function pollSeamlessResearch(
  * probe. 401 → invalid; 200 → valid; any other response is surfaced honestly.
  * Throws on network/timeout error so the caller can fall back to a format-only check.
  */
-export async function checkSeamlessAuth(apiKey: string): Promise<{ valid: boolean; detail: string }> {
+export async function checkSeamlessAuth(clearance: ProviderClearance, apiKey: string): Promise<{ valid: boolean; detail: string }> {
   const params = new URLSearchParams({ limit: "1", startDate: "1970-01-01T00:00:00Z", endDate: new Date().toISOString() });
-  const res = await fetch(`${SEAMLESS_API}/contacts?${params.toString()}`, {
+  const res = await sourcingFetch(clearance, `${SEAMLESS_API}/contacts?${params.toString()}`, {
     method: "GET",
     headers: seamlessHeaders(apiKey),
     signal: AbortSignal.timeout(10_000),

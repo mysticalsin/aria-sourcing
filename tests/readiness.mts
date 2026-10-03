@@ -1,4 +1,5 @@
 import { evaluateReadiness, type ReadinessProbes } from "../src/lib/readiness";
+import { readFileSync } from "node:fs";
 
 const releaseSha = "a".repeat(40);
 const expectedMigration = "0018_first_login_admin_grant.sql";
@@ -11,6 +12,8 @@ const readinessInput = {
   expectedMigrationSha,
   expectedMigrationCount,
   expectedLedgerSha256,
+  agentFrameworksRequired: true,
+  hermesRuntimeMisconfigured: false,
 };
 
 let passed = 0;
@@ -29,6 +32,7 @@ function healthyProbes(overrides: Partial<ReadinessProbes> = {}): ReadinessProbe
     database: async () => true,
     auth: async () => true,
     queue: async () => true,
+    agentFrameworks: async () => true,
     migration: async () => ({
       latest: { filename: expectedMigration, sha256: expectedMigrationSha },
       count: expectedMigrationCount,
@@ -99,6 +103,51 @@ const queueDown = await evaluateReadiness(
 );
 ok("queue failure makes readiness fail", !queueDown.ok && !queueDown.components.queue);
 
+const frameworksDown = await evaluateReadiness(
+  readinessInput,
+  healthyProbes({ agentFrameworks: async () => false }),
+);
+ok("required DeerFlow and Flowise adapter failure makes readiness fail", !frameworksDown.ok && !frameworksDown.components.agentFrameworks);
+
+const frameworksOptional = await evaluateReadiness(
+  { ...readinessInput, agentFrameworksRequired: false },
+  healthyProbes({ agentFrameworks: async () => false }),
+);
+ok(
+  "framework-free deploy stays ready when frameworks are not required",
+  frameworksOptional.ok,
+);
+ok(
+  "optional deploy still reports honest agentFrameworks component bit",
+  !frameworksOptional.components.agentFrameworks,
+);
+
+/* A Hermes URL the SSRF allow-list refuses used to be invisible: every call fell
+   back to the deterministic mock and readiness still reported healthy. The
+   deployment must fail its own probe instead. */
+const hermesMisconfigured = await evaluateReadiness(
+  { ...readinessInput, hermesRuntimeMisconfigured: true },
+  healthyProbes(),
+);
+ok(
+  "an unroutable Hermes runtime URL makes readiness fail instead of degrading silently",
+  !hermesMisconfigured.ok && !hermesMisconfigured.components.hermesRuntime,
+);
+ok(
+  "a correctly configured or absent Hermes runtime does not fail readiness",
+  healthy.ok && healthy.components.hermesRuntime,
+);
+
+const readinessRoute = readFileSync(
+  new URL("../src/app/api/ready/route.ts", import.meta.url),
+  "utf8",
+);
+ok(
+  "production readiness cannot opt out of DeerFlow and Flowise with an environment flag",
+  /process\.env\.NODE_ENV === "production"\s*\|\|\s*process\.env\.AGENT_FRAMEWORKS_REQUIRED === "true"/.test(readinessRoute) &&
+    !/frameworkRequirement !== "false"/.test(readinessRoute),
+);
+
 const missingIdentity = await evaluateReadiness(
   {
     releaseSha: "",
@@ -106,6 +155,8 @@ const missingIdentity = await evaluateReadiness(
     expectedMigrationSha: "",
     expectedMigrationCount: 0,
     expectedLedgerSha256: "",
+    agentFrameworksRequired: true,
+    hermesRuntimeMisconfigured: false,
   },
   healthyProbes(),
 );

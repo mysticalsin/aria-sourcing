@@ -1,5 +1,6 @@
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
 import { renderEmailWithUnsubscribe } from "@/lib/email-unsubscribe";
+import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import type { SeatProvider } from "./types";
 
 function auditLog(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
@@ -21,9 +22,12 @@ export function validateApiKeyFormat(provider: string, value: string): { valid: 
     Anthropic: /^sk-ant-[A-Za-z0-9_-]{20,}$/,
     OpenAI: /^sk-[A-Za-z0-9_-]{20,}$/,
     "Kimi (Moonshot)": /^sk-[A-Za-z0-9_-]{20,}$/,
+    DeepSeek: /^sk-[A-Za-z0-9_-]{16,}$/,
+    "NVIDIA NIM": /^nvapi-[A-Za-z0-9_-]{16,}$/,
     Resend: /^re_[A-Za-z0-9_-]{10,}$/,
     SendGrid: /^SG\.[A-Za-z0-9_.-]{20,}$/,
     Sillage: /^sk_live_[A-Za-z0-9]{16,}$/,
+    Apify: /^apify_api_[A-Za-z0-9]{20,}$/,
     Tavily: /^tvly-[A-Za-z0-9_-]{8,}$/,
     Databricks: /^(?:dapi[A-Za-z0-9]{16,}|[A-Za-z0-9_./+=:-]{12,})$/,
   };
@@ -62,6 +66,9 @@ export interface SendRequest {
    *  provider call. Emitted as an X-Aria-Send-Attempt header so an ambiguous
    *  outcome can be matched against the provider's logs by a human. */
   attemptId?: string;
+  /** RFC 5322 Message-ID ("<uuid@domain>") minted by the durable claim; emitted
+   *  as the Message-ID header so an inbound reply threads back to this send. */
+  messageId?: string;
 }
 
 export interface SendOutcome {
@@ -71,14 +78,6 @@ export interface SendOutcome {
   provider: SeatProvider;
   detail: string;
   id?: string;
-}
-
-/** Classify a failed HTTP response by whether the provider may still have
- *  processed the request before failing. */
-export function failedHttpDeliveryState(status: number): "not-sent" | "unknown" {
-  // A timeout or server failure can be returned after the provider processed
-  // the request. Client rejections are definitive; these responses are not.
-  return status === 408 || status >= 500 ? "unknown" : "not-sent";
 }
 
 /** Perform a real send via the provider's official API. Never throws on
@@ -95,9 +94,11 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
     };
   }
   const rendered = renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl);
-  const headers: Record<string, string> = req.attemptId
-    ? { ...rendered.headers, "X-Aria-Send-Attempt": req.attemptId }
-    : { ...rendered.headers };
+  const headers: Record<string, string> = {
+    ...rendered.headers,
+    ...(req.attemptId ? { "X-Aria-Send-Attempt": req.attemptId } : {}),
+    ...(req.messageId ? { "Message-ID": req.messageId } : {}),
+  };
   switch (req.provider) {
     case "Resend": {
       const key = process.env.RESEND_API_KEY;
@@ -106,7 +107,11 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
         return { status: "dry-run", deliveryState: "not-sent", provider: req.provider, detail: "No RESEND_API_KEY, dry-run only." };
       }
       try {
-        const res = await fetch("https://api.resend.com/emails", {
+        // Base URL is overridable for staging/test harnesses; defaults to the
+        // production Resend API. Never affects which provider is chosen — only
+        // where the already-authenticated request is sent.
+        const base = (process.env.RESEND_BASE_URL || "https://api.resend.com").replace(/\/$/, "");
+        const res = await fetch(`${base}/emails`, {
           method: "POST",
           signal: AbortSignal.timeout(15_000),
           headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -122,7 +127,7 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
           auditLog("error", "Resend send failed", { status: res.status, to: req.to });
-          return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider: req.provider, detail: `Resend send error ${res.status}.` };
+          return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider: req.provider, detail: `Resend send error ${res.status}.` };
         }
         auditLog("info", "Resend send succeeded", { to: req.to, id: json?.id });
         return { status: "sent", deliveryState: "accepted", provider: req.provider, detail: "Sent via Resend.", id: json?.id };
@@ -158,7 +163,7 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
         if (!res.ok) {
           const txt = await res.text().catch(() => "");
           auditLog("error", "SendGrid send failed", { status: res.status, to: req.to, body: redactSecrets(redactEmail(txt.slice(0, 500))) });
-          return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider: req.provider, detail: `SendGrid send error ${res.status}.` };
+          return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider: req.provider, detail: `SendGrid send error ${res.status}.` };
         }
         auditLog("info", "SendGrid send succeeded", { to: req.to });
         return { status: "sent", deliveryState: "accepted", provider: req.provider, detail: "Sent via SendGrid." };

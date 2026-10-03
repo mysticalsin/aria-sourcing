@@ -38,7 +38,7 @@ export type RobotAgentModelProps = {
   agentId: string;
   name: string;
   subtitle?: string | null;
-  status: "working" | "idle" | "error";
+  status: "working" | "warming" | "idle" | "error";
   color: string;
   /** CEO seat → rigged human; everyone else → colour-coded robot. */
   isHuman?: boolean;

@@ -1,0 +1,307 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import { buildSeedState } from "../src/lib/seed";
+import {
+  candidateFromSourcingAgentDto,
+  parseSourcingAgentCandidates,
+  projectSourcingAgentWorkspace,
+  sourcingAgentCampaignFingerprint,
+} from "../src/lib/sourcing/sourcing-agent-contract";
+
+const campaignId = "campaign-1";
+const seed = buildSeedState();
+const campaign = { ...seed.campaigns[0], id: campaignId, status: "Sourcing" as const };
+
+function dto(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "agent-candidate-1",
+    campaignId,
+    name: "Ada Example",
+    currentTitle: "Staff Engineer",
+    currentCompany: "Example Labs",
+    location: "Toronto, Canada",
+    linkedinUrl: "",
+    githubUrl: "https://github.com/ada-example",
+    sourcePlatform: "GitHub",
+    sourceQuery: "language:TypeScript",
+    matchScore: 82,
+    matchBreakdown: [
+      {
+        key: "skills",
+        label: "Skills match",
+        score: 80,
+        weight: 0.5,
+        contribution: 40,
+        rationale: "Verified public skill overlap.",
+      },
+    ],
+    techStack: ["TypeScript"],
+    recentActivity: "Maintains public TypeScript projects.",
+    createdAt: "2026-07-13T14:00:00.000Z",
+    draftSubject: "A role related to your public work",
+    draftBody: "Your public TypeScript work stood out. Would you be open to a short conversation?",
+    ...overrides,
+  };
+}
+
+test("workspace projection owns campaign and dedupe context while stripping unrelated state", () => {
+  const state = {
+    secret: "must-not-project",
+    campaigns: [{ ...campaign, unknown: "strip-me" }],
+    candidates: [
+      {
+        ...seed.candidates[0],
+        campaignId,
+        notes: [{ id: "note-1", text: "private", at: "2026-07-13T14:00:00.000Z" }],
+        sourceAuthorityId: "private-authority",
+      },
+    ],
+  };
+  const projected = projectSourcingAgentWorkspace(state, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(projected.value.campaign.id, campaignId);
+  assert.deepEqual(Object.keys(projected.value.existing[0] ?? {}).sort(), [
+    "email",
+    "githubUrl",
+    "lastContactedAt",
+    "linkedinUrl",
+  ]);
+  assert.equal(JSON.stringify(projected.value).includes("private-authority"), false);
+  assert.equal(JSON.stringify(projected.value).includes("private"), false);
+});
+
+test("workspace projection strips legacy jobAnalysis extras instead of invalid_state", () => {
+  const state = {
+    campaigns: [
+      {
+        ...campaign,
+        jobAnalysis: {
+          ...campaign.jobAnalysis,
+          searchBoolean: null,
+          localeContext: "Montreal",
+          missionDescription: "Support Calypso",
+          linkedinBoolean: "(legacy misplaced field)",
+          requiredLanguages: ["English", "French"],
+        },
+      },
+    ],
+    candidates: [],
+    settings: {
+      llmProviders: seed.settings.llmProviders,
+      savedModels: seed.settings.savedModels,
+      defaultModels: seed.settings.defaultModels,
+    },
+  };
+  const projected = projectSourcingAgentWorkspace(state, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(
+    JSON.stringify(projected.value.campaign.jobAnalysis).includes("searchBoolean"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(projected.value.campaign.jobAnalysis).includes("missionDescription"),
+    false,
+  );
+});
+
+test("workspace projection accepts githubQueries without label and strips rationale/id extras", () => {
+  const state = {
+    campaigns: [
+      {
+        ...campaign,
+        sourcingStrategy: {
+          ...campaign.sourcingStrategy,
+          githubQueries: [
+            {
+              id: "gq_legacy",
+              query: "Calypso location:Montreal",
+              rationale: "wiki signal",
+              estimatedResults: 8,
+            },
+            {
+              label: "Labeled",
+              query: "language:Python",
+              estimatedResults: 12,
+            },
+          ],
+        },
+      },
+    ],
+    candidates: [],
+    settings: {
+      llmProviders: seed.settings.llmProviders,
+      savedModels: seed.settings.savedModels,
+      defaultModels: seed.settings.defaultModels,
+    },
+  };
+  const projected = projectSourcingAgentWorkspace(state, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.deepEqual(projected.value.campaign.sourcingStrategy.githubQueries, [
+    {
+      label: "Calypso location:Montreal",
+      query: "Calypso location:Montreal",
+      estimatedResults: 8,
+    },
+    {
+      label: "Labeled",
+      query: "language:Python",
+      estimatedResults: 12,
+    },
+  ]);
+});
+
+test("campaign fingerprint changes when the persisted need or search strategy changes", () => {
+  const initial = sourcingAgentCampaignFingerprint(campaign);
+  const changedRole = sourcingAgentCampaignFingerprint({
+    ...campaign,
+    jobAnalysis: { ...campaign.jobAnalysis, title: "Changed role" },
+  });
+  const changedQuery = sourcingAgentCampaignFingerprint({
+    ...campaign,
+    sourcingStrategy: {
+      ...campaign.sourcingStrategy,
+      githubQueries: [
+        ...campaign.sourcingStrategy.githubQueries,
+        { label: "new", query: "language:Rust", estimatedResults: 1 },
+      ],
+    },
+  });
+  assert.notEqual(initial, changedRole);
+  assert.notEqual(initial, changedQuery);
+});
+
+test("campaign fingerprint is stable across key order and matches CampaignProjectionSchema output", () => {
+  const shuffled = {
+    scoringWeights: campaign.scoringWeights,
+    sourcingStrategy: campaign.sourcingStrategy,
+    status: campaign.status,
+    jobAnalysis: {
+      validationWarnings: campaign.jobAnalysis.validationWarnings,
+      requiredSkills: campaign.jobAnalysis.requiredSkills,
+      title: campaign.jobAnalysis.title,
+      department: campaign.jobAnalysis.department,
+      seniority: campaign.jobAnalysis.seniority,
+      employmentType: campaign.jobAnalysis.employmentType,
+      locationType: campaign.jobAnalysis.locationType,
+      regions: campaign.jobAnalysis.regions,
+      timezone: campaign.jobAnalysis.timezone,
+      salaryMin: campaign.jobAnalysis.salaryMin,
+      salaryMax: campaign.jobAnalysis.salaryMax,
+      currency: campaign.jobAnalysis.currency,
+      equity: campaign.jobAnalysis.equity,
+      niceToHaveSkills: campaign.jobAnalysis.niceToHaveSkills,
+      minYearsExperience: campaign.jobAnalysis.minYearsExperience,
+      maxYearsExperience: campaign.jobAnalysis.maxYearsExperience,
+      education: campaign.jobAnalysis.education,
+      industryExperience: campaign.jobAnalysis.industryExperience,
+      companyStageTarget: campaign.jobAnalysis.companyStageTarget,
+      teamSize: campaign.jobAnalysis.teamSize,
+      reportingTo: campaign.jobAnalysis.reportingTo,
+      urgency: campaign.jobAnalysis.urgency,
+    },
+    id: campaign.id,
+  };
+  assert.equal(
+    sourcingAgentCampaignFingerprint(campaign),
+    sourcingAgentCampaignFingerprint(shuffled),
+  );
+});
+
+test("strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads", () => {
+  assert.equal(parseSourcingAgentCandidates([dto()], campaignId, 2)?.length, 1);
+  assert.equal(parseSourcingAgentCandidates([dto({ campaignId: "foreign" })], campaignId, 2), null);
+  assert.equal(parseSourcingAgentCandidates([dto(), dto()], campaignId, 2), null);
+  assert.equal(
+    parseSourcingAgentCandidates([dto({ githubUrl: "http://127.0.0.1/private" })], campaignId, 2),
+    null,
+  );
+  assert.equal(
+    parseSourcingAgentCandidates([dto({ githubUrl: "https://attacker.example/profile" })], campaignId, 2),
+    null,
+  );
+  assert.equal(
+    parseSourcingAgentCandidates([dto({ sourceAuthorityId: "forbidden" })], campaignId, 2),
+    null,
+  );
+});
+
+test("client reconstruction creates a minimal sourced candidate with no injected authority or history", () => {
+  const parsed = parseSourcingAgentCandidates([dto()], campaignId, 1);
+  assert.ok(parsed);
+  const candidate = candidateFromSourcingAgentDto(parsed[0]);
+  assert.equal(candidate.campaignId, campaignId);
+  assert.equal(candidate.email, "");
+  assert.equal(candidate.phone, "");
+  assert.equal(candidate.sourceAuthorityId, undefined);
+  assert.equal(candidate.sourceExternalId, undefined);
+  assert.deepEqual(candidate.outreachHistory, []);
+  assert.deepEqual(candidate.replyHistory, []);
+  assert.equal(candidate.complianceFlags.anonymized, false);
+  assert.equal(candidate.provenance, "live");
+});
+
+test("store consumer uses strict response parsing, current authority, commit-time dedupe, and persisted truth", () => {
+  const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+  const start = store.indexOf("const runSourcingAgent = useCallback");
+  const end = store.indexOf("const generateOutreachFor = useCallback", start);
+  const action = store.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(action, /requestReviewedSourcing\(\s*workspaceFetch,\s*campaignId,\s*requestedCount,?\s*\)/);
+  assert.doesNotMatch(action, /workspaceFetch\("\/api\/sourcing-agent"/);
+  assert.doesNotMatch(action, /campaign:\s*\{/);
+  assert.doesNotMatch(action, /existing:/);
+  assert.doesNotMatch(action, /provider:\s*cloudConfig/);
+  assert.doesNotMatch(action, /apiKeyId:/);
+  assert.match(action, /campaignAllowsLiveSourcing\(/);
+  assert.match(action, /sourcingAgentCampaignFingerprint\(latestCampaign\)/);
+  assert.match(action, /workspaceEffectAllowed\(\).*sourcingMutationAllowed\(\)/s);
+  assert.match(action, /commitPersisted\(\(prev\)/);
+  assert.match(action, /dedupeCandidates\(/);
+  assert.match(action, /if \(!persisted \|\| !authorized\)/);
+});
+
+test("campaign UI presents a completed zero-match search as information, not sourcing success", () => {
+  const page = readFileSync(
+    new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const start = page.indexOf("const handleRunAgent = async () =>");
+  const end = page.indexOf("const handleOpenRun", start);
+  const action = page.slice(start, end);
+
+  assert.ok(start >= 0 && end > start);
+  assert.match(action, /res\.added\s*===\s*0/);
+  assert.match(action, /No (?:candidates(?: were)? added|new matches)/i);
+  assert.match(action, /variant:\s*"info"/);
+});
+
+test("campaign UI keeps durable feedback scoped and merges new run receipts", () => {
+  const page = readFileSync(
+    new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const start = page.indexOf("const handleRunAgent = async () =>");
+  const end = page.indexOf("const handleOpenRun", start);
+  const action = page.slice(start, end);
+  const batchStart = page.indexOf("const handleSource = async () =>");
+  const batchAction = page.slice(batchStart, start);
+
+  assert.match(
+    page,
+    /current\.campaignId === id[\s\S]*?mergeSourcingFeedbackReceipts\(current\.receipts, receipts\)/,
+  );
+  assert.match(
+    action,
+    /current\.campaignId === campaignId[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
+  );
+  assert.doesNotMatch(action, /setFeedbackReceipts\(res\.feedbackReceipts/);
+  assert.match(
+    batchAction,
+    /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
+  );
+});

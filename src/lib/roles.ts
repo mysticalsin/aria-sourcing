@@ -30,17 +30,18 @@ export interface RoleProfile {
 const PROFILES: Record<RoleFamily, Omit<RoleProfile, "family">> = {
   software: {
     label: "Software engineering",
-    titles: ["Software Engineer", "Senior Software Engineer", "Backend Engineer", "Full-Stack Engineer", "Staff Engineer", "Platform Engineer"],
+    titles: ["Software Engineer", "Senior Software Engineer", "Backend Engineer", "Full-Stack Engineer", "Staff Engineer", "Platform Engineer", "Java Developer", "Senior Java Developer"],
     companies: ["Brightloop", "Helix Data", "Forgepoint", "Aurora Grid", "Meridian Cloud", "Northwind Labs", "Vellum AI", "Cobalt Systems"],
-    platforms: ["GitHub", "LinkedIn", "Stack Overflow"],
-    queryStyle: "github",
+    // LinkedIn-first for outreach-ready sourcing; GitHub remains secondary signal.
+    platforms: ["LinkedIn", "GitHub", "Stack Overflow"],
+    queryStyle: "linkedin",
   },
   data: {
     label: "Data & ML",
     titles: ["Data Engineer", "Machine Learning Engineer", "Data Scientist", "Analytics Engineer", "ML Platform Engineer"],
     companies: ["Helix Data", "Vellum AI", "Snowfield Analytics", "Latchkey", "Aurora Grid", "Meridian Cloud"],
-    platforms: ["GitHub", "LinkedIn", "Stack Overflow"],
-    queryStyle: "github",
+    platforms: ["LinkedIn", "GitHub", "Stack Overflow"],
+    queryStyle: "linkedin",
   },
   design: {
     label: "Product design",
@@ -99,15 +100,23 @@ const FINANCE_SIGNALS = /\b(murex|finance|financial|pricing|trading|front office
 
 export function roleFamily(jd: JobAnalysis): RoleFamily {
   const hay = `${jd.title} ${jd.department} ${jd.requiredSkills.join(" ")} ${jd.industryExperience.join(" ")}`;
-  const dept = jd.department.toLowerCase();
+  const dept = jd.department.toLowerCase().trim();
+  // Mantu need emails store Type: Consulting in department — that is contract
+  // classification (also mirrored on employmentType), not a finance vertical.
+  const mantuContractDept = dept === "consulting" && jd.employmentType === "Contract";
 
-  if (FINANCE_SIGNALS.test(hay) || /consulting|finance|banking/.test(dept)) return "finance";
+  if (FINANCE_SIGNALS.test(hay)) return "finance";
+  if (!mantuContractDept && /^(finance|financial|banking|capital markets)$/.test(dept)) return "finance";
   if (/design/.test(dept) || /\b(figma|ux|ui|design systems|prototyping)\b/i.test(hay)) return "design";
   if (/\bdata\b|ml|machine learning|analytics/.test(dept) || /\b(tensorflow|pytorch|spark|dbt|snowflake|airflow|llm|rag)\b/i.test(hay)) return "data";
   if (/sales|revenue/.test(dept) || /\b(account executive|quota|pipeline generation|sdr|bdr)\b/i.test(hay)) return "sales";
   if (/product/.test(dept) && !/engineer/i.test(jd.title)) return "product";
   if (/marketing|growth/.test(dept)) return "marketing";
-  if (/platform|engineering/.test(dept) || CODE_SKILLS.test(hay) || /engineer|developer|architect/i.test(jd.title)) return "software";
+  if (/platform|engineering/.test(dept) || CODE_SKILLS.test(hay) || /engineer|developer|architect|designer/i.test(jd.title)) {
+    // System/product designers are LinkedIn-first even when the title says "designer".
+    if (/\bdesigner\b/i.test(jd.title) && !/engineer|developer|architect/i.test(jd.title)) return "generic";
+    return "software";
+  }
   return "generic";
 }
 

@@ -10,6 +10,7 @@ export type ReadinessProbes = {
   database: () => Promise<boolean>;
   auth: () => Promise<boolean>;
   queue: () => Promise<boolean>;
+  agentFrameworks: () => Promise<boolean>;
   migration: () => Promise<MigrationState | null>;
 };
 
@@ -19,6 +20,15 @@ export type ReadinessInput = {
   expectedMigrationSha: string;
   expectedMigrationCount: number;
   expectedLedgerSha256: string;
+  agentFrameworksRequired: boolean;
+  /**
+   * True when HERMES_API_URL is set to a value the SSRF allow-list will refuse.
+   * The runtime is then unreachable and every call silently falls back to the
+   * deterministic mock, so the deployment must fail readiness rather than look
+   * healthy. False both when Hermes is unconfigured (feature off) and when it is
+   * configured correctly.
+   */
+  hermesRuntimeMisconfigured: boolean;
 };
 
 async function booleanProbe(probe: () => Promise<boolean>) {
@@ -46,10 +56,13 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     input.expectedMigrationCount > 0 &&
     /^[0-9a-f]{64}$/.test(input.expectedLedgerSha256);
 
-  const [database, auth, queue, migration] = await Promise.all([
+  const [database, auth, queue, agentFrameworks, migration] = await Promise.all([
     booleanProbe(probes.database),
     booleanProbe(probes.auth),
     booleanProbe(probes.queue),
+    // Always probe the component bit — skipping it painted local "ready" theater.
+    // Top-level ok still ignores frameworks when agentFrameworksRequired is false.
+    booleanProbe(probes.agentFrameworks),
     migrationProbe(probes.migration),
   ]);
 
@@ -58,7 +71,17 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     migration.latest.sha256 === input.expectedMigrationSha &&
     migration.count === input.expectedMigrationCount &&
     migration.ledgerSha256 === input.expectedLedgerSha256;
-  const ok = metadata && database && auth && queue && migrationMatches;
+  const hermesRuntime = !input.hermesRuntimeMisconfigured;
+  // Component bit is always probed above; only gate ok on it when required
+  // (otherwise local/dev painted frameworks green without a real probe).
+  const ok =
+    metadata &&
+    database &&
+    auth &&
+    queue &&
+    (!input.agentFrameworksRequired || agentFrameworks) &&
+    migrationMatches &&
+    hermesRuntime;
 
   return {
     ok,
@@ -69,6 +92,8 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
       database,
       auth,
       queue,
+      agentFrameworks,
+      hermesRuntime,
       migration: migrationMatches,
       releaseIdentity: metadata,
     },

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { SUPABASE_ANON_KEY, SUPABASE_AUTH_COOKIE_NAME, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
+import { SUPABASE_ANON_KEY, SUPABASE_COOKIE_OPTIONS, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { verifyDemoTokenAtEdge } from "@/lib/demo-auth-edge";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
@@ -12,7 +12,9 @@ function isPublicPath(path: string): boolean {
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
     path.startsWith("/careers") ||
-    path.startsWith("/unsubscribe")
+    path.startsWith("/unsubscribe") ||
+    // AriaBot Chromium seats load these static LinkedIn compose demos without a session.
+    path.startsWith("/ariabot/")
   );
 }
 
@@ -97,7 +99,7 @@ export async function proxy(req: NextRequest) {
   let res = NextResponse.next({ request: req });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookieOptions: { name: SUPABASE_AUTH_COOKIE_NAME },
+    cookieOptions: SUPABASE_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return req.cookies.getAll();
@@ -159,6 +161,6 @@ export const config = {
   // bypass the organization gate. Static assets and image files stay excluded.
   matcher: [
     "/api/:path*",
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|ariabot/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|html)$).*)",
   ],
 };

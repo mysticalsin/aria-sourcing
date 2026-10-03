@@ -1,0 +1,40 @@
+app = "aria-mantu-deerflow"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = 60
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  DEER_FLOW_CONFIG_PATH = "/opt/aria/deerflow/config.yaml"
+  DEER_FLOW_HOME = "/tmp/deerflow"
+  DEERFLOW_MODEL_BASE_URL = "http://aria-mantu-model-gateway.internal:8090/v1"
+  DEERFLOW_MODEL_API_KEY_FILE = "/run/secrets/deerflow_model_gateway_token"
+  DEER_FLOW_INTERNAL_AUTH_TOKEN_FILE = "/run/secrets/deerflow_internal_token"
+  DEERFLOW_BIND_HOST = "fly-local-6pn"
+  LANGSMITH_TRACING = "false"
+  LANGCHAIN_TRACING_V2 = "false"
+  LANGCHAIN_TRACING = "false"
+  LANGFUSE_TRACING = "false"
+  MONOCLE_TRACING = "false"
+  PYTHONDONTWRITEBYTECODE = "1"
+  UV_CACHE_DIR = "/tmp/uv-cache"
+  HOME = "/tmp"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_model_gateway_token"
+  secret_name = "ARIA_GATEWAY_TOKEN_B64"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_internal_token"
+  secret_name = "ARIA_DEERFLOW_INTERNAL_TOKEN_B64"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  persist_rootfs = "never"
+
+[[restart]]
+  policy = "always"

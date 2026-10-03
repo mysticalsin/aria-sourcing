@@ -10,41 +10,48 @@ import React, {
   useState,
 } from "react";
 import {
-  candidateConfirmationEmail,
   classifyReply,
-  createBooking,
   generateOutreach,
-  generateWeeklyReport,
-  interviewerPrepEmail,
   newOutreachMessage,
-  sourceCandidates,
-  mapGithubCandidates,
-  mapWebSearchCandidates,
-  mapApolloCandidates,
-  mapSeamlessCandidates,
   type GeneratedOutreach,
   type ReplyClassification,
-  type SourceResult,
 } from "./mock-ai";
-import type { GithubUser } from "./sourcing/github";
-import { ensureWebQueryScope, isWebSearchPlatform, type WebLead } from "./sourcing/web-leads";
+import { preferredOutreachChannel } from "./outreach-channel";
+import {
+  mapSeamlessCandidates,
+  type SourceResult,
+} from "./sourcing/candidate-mappers";
 import type { SillageProfile } from "./sourcing/sillage";
-import type { ApolloPerson } from "./sourcing/apollo";
 import type { SeamlessContact, SeamlessResearchContact } from "./sourcing/seamless";
-import { roleProfile } from "./roles";
+import type { ApifyProfile, ApifyProfileSearchInput } from "./sourcing/apify";
 import {
   buildOutreachPrompt,
   hermesAvailable,
   hermesGenerate,
   parseHermesOutreach,
 } from "./ai/hermes";
+import { fetchLinkedInAgentContext } from "./integrations/linkedin-agent-context-client";
+import {
+  bookingProposeActivityFields,
+  decideBookingProposeFromInterest,
+} from "./inbound-reply-trigger";
 import { resolveAiProvider } from "./ai/provider";
+import {
+  anonymizeHermesState,
+  isCandidateErasureTombstone,
+  preserveCandidateErasureTombstones,
+} from "./candidate-privacy";
 import {
   candidateDisclosureContextForCampaignLike,
   detectInjection,
   validateCandidateBoundText,
 } from "./agent-disclosure-policy";
 import { emit } from "./agent-events";
+import {
+  soleCampaignBrowserSeatId,
+  latestOutreachSeatId,
+  campaignBrowserSeatIds,
+} from "@/lib/agent-event-seat";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultTools, STATE_VERSION } from "./seed";
 import {
   computeCampaignMetrics,
@@ -61,17 +68,36 @@ import {
   dedupeCandidates,
   type ApprovalResult,
 } from "./rules";
+import {
+  candidateFromSourcingAgentDto,
+  sourcingAgentCampaignFingerprint,
+} from "./sourcing/sourcing-agent-contract";
+import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
+import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
+import { isContactReadyByTenure } from "./sourcing/role-tenure";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
+import { findHeyReachMcpServer } from "./heyreach-mcp";
 import {
   defaultLiveIntegrations,
   testConnection,
   type ConnectionTestResult,
 } from "./integrations";
-import { interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
+import { createBookingReportActions } from "./store/booking-report-actions";
+import { createCampaignActions } from "./store/campaign-actions";
+import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
-import { baseWebQuery, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
-import { appendWinRecord } from "./store/winlog-derive";
+import { demoStateAllowsCandidatePersistence, demoStateForLocalStorage } from "./store/demo-persistence";
+import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
+import { computeCoverage } from "./enrichment/merge";
+import type {
+  CandidateErasureObligation,
+  CandidateErasureStatus,
+  HermesActions,
+  HermesContextValue,
+  SourcingFeedbackReceipt,
+  SourcingFeedbackVerdict,
+} from "./store/contracts";
 import type {
   Activity,
   AgentSeat,
@@ -86,7 +112,6 @@ import type {
   LlmProvider,
   McpServerConfig,
   MemoryEntry,
-  MemoryKind,
   ModelTask,
   Role,
   Booking,
@@ -99,6 +124,7 @@ import type {
   ClassifiedReply,
   InterviewKind,
   InterviewRecord,
+  CandidateLawfulBasis,
   LeadSource,
   PrequalOutcome,
   PrequalRecord,
@@ -106,6 +132,8 @@ import type {
   DustAgentSummary,
   DustRegion,
   DustTask,
+  EnrichableField,
+  EnrichmentAttempt,
   HermesState,
   IntegrationStatus,
   Interviewer,
@@ -118,23 +146,46 @@ import type {
   OutreachTone,
   ReplyIntent,
   SavedModel,
-  ScoringWeights,
   SkillKey,
   SkillUpdate,
-  SourcePlatform,
   SuppressionEntry,
   SystemSettings,
   ToolId,
   WinRecord,
   WeeklyReport,
 } from "./types";
-import { genId, initialsFrom, isoDaysBefore } from "./utils";
+import { genId, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
-import { loadRemoteAgentSeats, loadRemoteState, saveRemoteState } from "./supabase/workspace";
+import {
+  loadRemoteAgentSeats,
+  loadRemoteState,
+  saveRemoteState,
+  type RemoteStateVersion,
+} from "./supabase/workspace";
 import { applyAuthoritativeRole } from "./live-role-authority";
+import {
+  createFailedWorkspaceSave,
+  retainPendingWorkspaceSave,
+  runWorkspaceEffect as runWorkspaceEffectBoundary,
+  settleWorkspaceSave,
+  workspaceAllowsMutation,
+  type PendingWorkspaceSave,
+  type WorkspaceDependency,
+  type WorkspaceEffectAttempt,
+  type WorkspaceStatus,
+} from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "./send-pacing";
+import { pickLiveLinkedInSendSeat, preferLinkedInAutomaticSeats, isLinkedInAutomaticProvider } from "./linkedin-automatic";
+import { seatAttachedToCampaign } from "./campaign-seat-attach";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
+import {
+  applyBrowserSeatBindingsToHermes,
+  applyHermesComputerPatchesToSeats,
+  type BrowserSeatBinding,
+  type HermesComputerPatch,
+} from "./fleet-hermes-sync";
 import {
   applyLearning,
   defaultSkills,
@@ -154,421 +205,151 @@ import {
   persistManualSuppression,
   type EnforcedSuppressionType,
 } from "./manual-suppression";
+import { linkedInGuardrailPrompt } from "./linkedin-policy";
 
 export { defaultSlot, interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
 export { migrateToCurrentVersion, normalizeHermesState } from "./store/migrations";
 export { appendWinRecord, deriveWinRecord, WIN_RECORD_LIMIT } from "./store/winlog-derive";
+export type { HermesActions } from "./store/contracts";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
-const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
+
+
 const ARIA_PERFECT_RATING: StarRating = "TopGun";
 const ARIA_STEP_CANDIDATE_CAP = 10;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SOURCING_FEEDBACK_PLATFORMS = new Set<SourcingFeedbackReceipt["platform"]>([
+  "GitHub",
+  "LinkedIn",
+  "Stack Overflow",
+  "Dribbble",
+  "Behance",
+]);
 
-/* ============================================================================
-   Actions contract
-   ========================================================================== */
-
-export interface HermesActions {
-  // campaigns
-  setActiveCampaign: (id: string | null) => void;
-  createCampaignFromAnalysis: (
-    jd: JobAnalysis,
-    meta: { hiringManager: string; hiringManagerEmail: string },
-  ) => Campaign;
-  updateCampaign: (id: string, patch: Partial<Campaign>) => void;
-  regenerateQueries: (id: string) => void;
-
-  // sourcing
-  sourceNextBatch: (
-    campaignId: string,
-    opts?: { platform?: SourcePlatform; count?: number },
-  ) => Promise<
-    | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-    | { ok: false; error: string; source: "github" | "web" | "paused" }
-  >;
-  /** One tool-calling agent pass: searches real candidates, scores them, and
-   *  drafts outreach for the best matches in a single loop (/api/sourcing-agent),
-   *  instead of sourceNextBatch + generateOutreachLive called one at a time.
-   *  Requires a cloud provider configured for the "sourcing" task (Anthropic or
-   *  an OpenAI-compatible provider — hermes/Kimi don't support tool-calling). */
-  runSourcingAgent: (campaignId: string, count?: number) => Promise<{ ok: boolean; added: number; error?: string }>;
-  /** Manual intake: resolve one real GitHub user by exact login (via /api/source)
-   *  and add them to the campaign — same scoring + dedupe pipeline as
-   *  sourceNextBatch, just for a person the operator already has in mind
-   *  instead of a search. Never drafts or sends outreach. */
-  addCandidateFromGithub: (
-    campaignId: string,
-    username: string,
-  ) => Promise<{ ok: true; added: number; skipped: number } | { ok: false; error: string }>;
-  /** Manual intake, zero network: builds a real Candidate straight from
-   *  operator-entered fields (no search, no scraping) and scores it with the
-   *  same scoring/dedupe pipeline as every other sourcing path. Labeled
-   *  sourcePlatform "Referral" — an honest existing value, not a fabricated
-   *  live source. Never drafts or sends outreach. */
-  addCandidateManual: (
-    campaignId: string,
-    input: {
-      name: string;
-      title?: string;
-      skills?: string[];
-      profileUrl?: string;
-      email?: string;
-      location?: string;
-      notes?: string;
-    },
-  ) => { ok: true; added: number; skipped: number } | { ok: false; error: string };
-  /** Sillage Account Mapping (third real sourcing channel): resolves a company
-   *  (domain or LinkedIn URL) into real enriched employee profiles. Enrichment is
-   *  async — this kicks off the job server-side and returns a requestId to poll
-   *  with checkSillageMapping. Requires a stored Sillage key (Settings). */
-  startSillageMapping: (
-    campaignId: string,
-    identifier: string,
-  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
-  /** Polls one Sillage mapping job. While processing: {ok:true, status:"processing"}.
-   *  On completion: maps + scores + dedupes the real profiles exactly like
-   *  sourceNextBatch, commits the accepted candidates, logs an activity entry, and
-   *  updates campaign metrics. Never backfills a failed/empty result with synthetic
-   *  profiles. */
-  checkSillageMapping: (
-    campaignId: string,
-    requestId: string,
-  ) => Promise<
-    | { ok: true; status: "processing" }
-    | { ok: true; status: "completed"; added: number; company: string }
-    | { ok: false; error: string }
-  >;
-  /** Real Apollo.io search (fourth real sourcing channel) — free, synchronous,
-   *  no mock fallback: Apollo is a real channel, so an unconfigured key
-   *  surfaces honestly as "not_configured" rather than synthesizing fake
-   *  candidates. Requires a stored Apollo key (Settings). */
-  sourceFromApollo: (
-    campaignId: string,
-    filters: {
-      titles?: string[];
-      seniorities?: string[];
-      locations?: string[];
-      organizationDomains?: string[];
-      keywords?: string;
-      count?: number;
-    },
-  ) => Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }>;
-  /** Explicit, confirmed, single-candidate Apollo enrichment (costs 1 Apollo
-   *  credit on a match, 0 if not found). Never call this for a whole batch. */
-  enrichApolloCandidate: (
-    candidateId: string,
-  ) => Promise<{ ok: boolean; revealed: boolean; detail: string }>;
-  /** Real Seamless.AI search (fifth real sourcing channel) — synchronous, no
-   *  mock fallback. Requires a stored Seamless key (Settings). */
-  sourceFromSeamless: (
-    campaignId: string,
-    filters: {
-      jobTitles?: string[];
-      seniorities?: string[];
-      departments?: string[];
-      industries?: string[];
-      countries?: string[];
-      states?: string[];
-      companyNames?: string[];
-      companyDomains?: string[];
-      count?: number;
-    },
-  ) => Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }>;
-  /** Explicit, confirmed, single-candidate Seamless contact reveal. Async
-   *  (research → poll) — kicks off the job and returns a requestId to poll
-   *  with checkSeamlessResearch. Never call this for a whole batch. */
-  startSeamlessResearch: (
-    candidateId: string,
-  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
-  /** Polls one Seamless research job. On completion, patches the candidate's
-   *  email/phone in place (same PII convention as enrichApolloCandidate) and
-   *  never fabricates contact info on failure. */
-  checkSeamlessResearch: (
-    candidateId: string,
-    requestId: string,
-  ) => Promise<
-    | { ok: true; status: "processing" }
-    | { ok: true; status: "completed"; revealed: boolean }
-    | { ok: false; error: string }
-  >;
-
-  // outreach
-  generateOutreachFor: (
-    candidateId: string,
-    tone?: OutreachTone,
-    channel?: OutreachChannel,
-    seatId?: string,
-  ) => OutreachMessage | null;
-  /** Live variant: drafts via the Aria runtime when live mode is configured,
-   *  else falls back to the deterministic mock. Commits exactly like
-   *  generateOutreachFor — status is still set by the human approval gate. */
-  generateOutreachLive: (
-    candidateId: string,
-    tone?: OutreachTone,
-    channel?: OutreachChannel,
-    seatId?: string,
-  ) => Promise<OutreachMessage | null>;
-  updateOutreach: (messageId: string, patch: Partial<OutreachMessage>) => void;
-  /** Live variant: regenerates via the Aria runtime when live mode is configured
-   *  (same three-layer fallback as generateOutreachLive), else the deterministic
-   *  mock. Status is still set by the human approval gate — never auto-sent. */
-  regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
-  approveOutreach: (messageId: string) => Promise<ApprovalResult>;
-  confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
-  /** The deliberate gated send for a live-approved email — calls the server send route. */
-  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
-  rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
-  /** Drafts the next sequence-step follow-up for a candidate who has gone quiet
-   *  past the configured gap (see deriveFollowUpsDue). Lands in the approval
-   *  queue exactly like generateOutreachFor — never sends. Returns null when
-   *  the candidate isn't actually due (already replied, too recent, or already
-   *  has a pending draft). */
-  draftFollowUpFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => Promise<OutreachMessage | null>;
-  /** Draft a #Vivier re-contact for a pooled (Rejected/Not Interested) candidate,
-   *  bypassing the follow-up stage gate. Returns the Draft (still needs approval). */
-  draftRecontactFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => Promise<OutreachMessage | null>;
-
-  // replies
-  classifyAndStoreReply: (input: {
-    text: string;
-    candidateId?: string;
-    campaignId?: string;
-    fromAddress?: string;
-    messageId?: string;
-    inboxThreadId?: string;
-    externalReceivedAt?: string;
-  }) => Promise<{ reply: ClassifiedReply; classification: ReplyClassification }>;
-  markReplyHandled: (replyId: string) => void;
-  applyReplyAction: (replyId: string) => Promise<{ ok: boolean; error?: string; warning?: string }>;
-  /** Turns a reply's suggested draftResponse into a real OutreachMessage in the
-   *  approval queue (never sends directly). Carries the reply's inboxThreadId
-   *  for threading when present. Returns null when the reply/candidate can't
-   *  be resolved or there's no draft text to send. */
-  draftReplyResponse: (replyId: string) => OutreachMessage | null;
-
-  // bookings
-  createBookingFor: (
-    candidateId: string,
-    opts?: { startTime?: string; interviewerName?: string },
-  ) => Promise<
-    | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
-    | { ok: false; error: string }
-  >;
-  updateBooking: (
-    id: string,
-    patch: Partial<Booking>,
-  ) => { ok: true } | { ok: false; error: string };
-
-  // reports + learning
-  generateReport: (campaignId: string) => WeeklyReport | null;
-  setSkillUpdateStatus: (
-    campaignId: string,
-    skillId: string,
-    status: SkillUpdate["status"],
-  ) => void;
-
-  // candidates / compliance
-  setCandidateStage: (id: string, stage: CandidateStage) => void;
-  setCandidatePhone: (id: string, phone: string) => void;
-  /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
-   *  an Activity, not just a UI notification. No-ops on blank text. */
-  addCandidateNote: (candidateId: string, text: string) => void;
-  /** Records/edits why a candidate was rejected. Independent of the stage
-   *  control — call it alongside setCandidateStage("Rejected", ...), never
-   *  instead of it. Clearing the reason (empty string) is not audit-logged. */
-  setRejectionReason: (candidateId: string, reason: string) => void;
-  /* ---- TAnIA: star rating, lead source, #Vivier, prequal, interviews ---- */
-  /** Manual override of the Mantu Star Rating (TopGun/A/B/C/D). */
-  setCandidateRating: (id: string, rating: StarRating) => void;
-  /** Reclassify a candidate's lead source (Applicant/Referral/Outbound). */
-  setCandidateLeadSource: (id: string, leadSource: LeadSource) => void;
-  /** Add/remove a candidate from #Vivier (talent pool); auto-flags Silver Medalist. */
-  toggleVivier: (id: string) => void;
-  /** Patch the prequal record (schedule, questions, tone guide). */
-  savePrequal: (candidateId: string, patch: Partial<PrequalRecord>) => void;
-  /** Record the prequal decision. "advance" promotes a LEAD to a CANDIDATE. */
-  setPrequalOutcome: (candidateId: string, outcome: PrequalOutcome) => void;
-  /** Schedule an interview round (Intw1/2/3/QM); books an Interested lead. */
-  addInterview: (candidateId: string, kind: InterviewKind, interviewer: string, scheduledFor: string | null) => void;
-  /** Patch an interview record (outcome, HM feedback, rating). */
-  updateInterview: (candidateId: string, interviewId: string, patch: Partial<InterviewRecord>) => void;
-  /** Hand a scored chatbox application off to the Applicant Screener — creates a Candidate. */
-  advanceChatboxSubmission: (id: string) => void;
-  /** Set a chatbox submission's review status. */
-  setChatboxSubmissionStatus: (id: string, status: ChatboxSubmissionStatus) => void;
-  /** Append a new chatbox submission (used by the public careers chatbox). */
-  addChatboxSubmission: (sub: ChatboxSubmission) => void;
-  suppressCandidate: (id: string) => void;
-  markDoNotContact: (id: string) => void;
-  /** Undoes suppressCandidate/markDoNotContact — clears the suppressed/doNotContact
-   *  flags and restores `stage` to whatever it was right before suppression. */
-  restoreCandidateContact: (id: string) => void;
-  unsubscribeCandidate: (id: string) => void;
-  anonymizeCandidate: (id: string) => void;
-  exportCandidate: (id: string) => string;
-
-  // settings + integrations
-  updateSettings: (patch: Partial<SystemSettings>) => void;
-  updateIntegration: (id: string, patch: Partial<IntegrationStatus>) => void;
-  toggleIntegrationMode: (id: string) => void;
-  testIntegration: (id: string) => Promise<ConnectionTestResult>;
-
-  // fleet — multi-seat coordination + anti-ban guardrails
-  addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => Promise<AgentSeat | null>;
-  deployAgents: (
-    n: number,
-    opts?: { language?: string; namePrefix?: string },
-  ) => { created: number; total: number; capped: boolean; max: number };
-  updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
-  setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
-  connectSeatAccount: (id: string, account: string) => Promise<{ ok: boolean; error?: string }>;
-  disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
-  toggleSeatLive: (id: string) => Promise<{ ok: boolean; reason: string }>;
-  verifySeatDomain: (id: string) => Promise<{ ok: boolean; verified?: boolean; error?: string }>;
-  addSuppression: (entry: {
-    type: SuppressionEntry["type"];
-    value: string;
-    reason: string;
-    expiresAt?: string | null;
-  }) => Promise<{ ok: boolean; entry?: SuppressionEntry; error?: string }>;
-  removeSuppression: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  allocateOutreach: (opts?: { campaignId?: string; pool?: "ready" | "interested" }) => AllocationResult;
-  runFleetSourcing: (opts?: { campaignId?: string; perAgent?: number }) => {
-    sourced: number;
-    skipped: number;
-    perSeat: { seatName: string; campaignTitle: string; sourced: number }[];
-  };
-
-  // skills — learning loop
-  runLearning: () => SkillUpdate[];
-  acceptSkillLearning: (key: SkillKey) => void;
-  updateSkillContent: (key: SkillKey, content: string) => { ok: boolean; error?: string };
-
-  // confidentiality
-  recordPiiReveal: (candidateId: string) => void;
-
-  // API keys + access control
-  saveApiKey: (input: {
-    name: string;
-    provider: ApiKeyProvider;
-    value: string;
-  }) => Promise<{ ok: boolean; key?: ApiKey; demo?: boolean; error?: string }>;
-  testApiKey: (id: string) => Promise<{ ok: boolean; valid: boolean; detail: string }>;
-  removeApiKey: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  setCurrentRole: (role: Role) => void;
-
-  // guardrails & Aria
-  updateAriaPrompt: (text: string) => void;
-  addGuardrailRule: (text: string) => void;
-  toggleGuardrailRule: (id: string) => void;
-  removeGuardrailRule: (id: string) => void;
-  askAria: (instruction: string) => { reply: string };
-  /** Aria Command — sequences the real store actions behind a previewed,
-   *  step-by-step plan (see src/lib/aria-command.ts + command-console.tsx).
-   *  `onStep` fires "running" then "done"/"failed" (with a real result count)
-   *  for each step in order. Never sends: every draft it creates lands in the
-   *  same Draft/Needs-Approval queue as every other drafting path, still
-   *  gated by the human approval gate — this only composes existing actions. */
-  runAriaPlan: (
-    plan: AriaPlan,
-    onStep?: (
-      i: number,
-      status: "running" | "done" | "failed",
-      result?: { count?: number; detail?: string },
-    ) => void,
-  ) => Promise<void>;
-
-  // LLM providers
-  addProvider: (p: Omit<LlmProvider, "id">) => LlmProvider;
-  updateProvider: (id: string, patch: Partial<LlmProvider>) => void;
-  removeProvider: (id: string) => void;
-  setDefaultProvider: (id: string) => void;
-
-  // MCP servers (external tool sources)
-  addMcpServer: (m: Omit<McpServerConfig, "id" | "status">) => McpServerConfig;
-  updateMcpServer: (id: string, patch: Partial<McpServerConfig>) => void;
-  removeMcpServer: (id: string) => void;
-  testMcpServer: (id: string) => Promise<{ ok: boolean; toolCount?: number; error?: string }>;
-
-  // Dust (dust.tt) agent-platform integration
-  testDustConnection: (
-    workspaceId: string,
-    apiKey: string,
-    region?: DustRegion,
-  ) => Promise<{ ok: boolean; agents?: DustAgentSummary[]; error?: string }>;
-  connectDust: (workspaceId: string, apiKey: string, region?: DustRegion) => Promise<{ ok: boolean; error?: string }>;
-  updateDustAgentLock: (task: DustTask, agentSId: string) => Promise<{ ok: boolean; error?: string }>;
-  disconnectDust: () => Promise<{ ok: boolean; error?: string }>;
-  runDustTask: (task: DustTask, message: string) => Promise<{ ok: boolean; text?: string; agentId?: string; error?: string }>;
-
-  // Saved models
-  addModel: (m: Omit<SavedModel, "id">) => SavedModel;
-  updateModel: (id: string, patch: Partial<SavedModel>) => void;
-  removeModel: (id: string) => void;
-  setModelDefaultForTask: (id: string, task: ModelTask) => void;
-
-  // Tools
-  toggleTool: (toolId: ToolId) => void;
-
-  // Per-agent LLM assignment
-  assignAgentProvider: (seatId: string, providerId: string) => void;
-  assignAgentModel: (seatId: string, modelId: string) => void;
-  assignAgentTools: (seatId: string, toolIds: ToolId[]) => void;
-
-  // misc
-  logActivity: (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) => void;
-  resetDemo: () => void;
-
-  // chat
-  createChatThread: (seatId: string) => ChatThread;
-  deleteChatThread: (id: string) => void;
-  /** Empty a thread's message history in place (keeps the thread/id). */
-  clearChatThread: (id: string) => void;
-  appendChatMessage: (threadId: string, msg: ChatMessage) => void;
-  updateChatMessage: (threadId: string, msgId: string, patch: Partial<ChatMessage>) => void;
-  sendChat: (threadId: string, text: string) => Promise<void>;
-  /** Abort an in-flight sendChat for the given thread (call on unmount / thread delete). */
-  cancelChat: (threadId: string) => void;
-
-  // memory
-  addMemory: (seatId: string, kind: MemoryKind, content: string) => MemoryEntry;
-  updateMemory: (id: string, patch: Partial<Pick<MemoryEntry, "kind" | "content" | "pinned">>) => void;
-  removeMemory: (id: string) => void;
-  togglePinMemory: (id: string) => void;
-
-  // schedules
-  addSchedule: (job: Omit<CronJob, "id" | "createdAt" | "lastRunAt">) => CronJob;
-  updateSchedule: (id: string, patch: Partial<Omit<CronJob, "id" | "createdAt">>) => void;
-  removeSchedule: (id: string) => void;
-  toggleSchedule: (id: string) => void;
-
-  // interviewers (real registered staff — replaces the old hardcoded mock roster)
-  addInterviewer: (input: { name: string; email: string; role?: string }) => Interviewer;
-  updateInterviewer: (id: string, patch: Partial<Omit<Interviewer, "id">>) => void;
-  removeInterviewer: (id: string) => void;
+function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 20) return null;
+  const receipts: SourcingFeedbackReceipt[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return null;
+    const row = item as Record<string, unknown>;
+    if (
+      Object.keys(row).some(
+        (key) => key !== "receiptId" && key !== "platform" && key !== "candidateCount",
+      ) ||
+      typeof row.receiptId !== "string" ||
+      !UUID_RE.test(row.receiptId) ||
+      seen.has(row.receiptId) ||
+      typeof row.platform !== "string" ||
+      !SOURCING_FEEDBACK_PLATFORMS.has(row.platform as SourcingFeedbackReceipt["platform"]) ||
+      typeof row.candidateCount !== "number" ||
+      !Number.isSafeInteger(row.candidateCount) ||
+      row.candidateCount < 0 ||
+      row.candidateCount > 100
+    ) {
+      return null;
+    }
+    seen.add(row.receiptId);
+    receipts.push({
+      receiptId: row.receiptId,
+      platform: row.platform as SourcingFeedbackReceipt["platform"],
+      candidateCount: row.candidateCount,
+    });
+  }
+  return receipts;
 }
 
-interface HermesContextValue {
-  state: HermesState | null;
-  hydrated: boolean;
-  actions: HermesActions;
-  /** Computed once per state change (not per consumer) — the TopBar bell and
-   *  the dashboard AttentionPanel both read this instead of independently
-   *  re-running deriveRecommendations on every render. */
-  recommendations: Recommendation[];
-}
+/** Core contact/richness fields enrichCandidate/enrichCampaign fill when the
+ *  caller doesn't specify `want` explicitly (docs/superpowers/plans/
+ *  2026-07-15-enrichment-orchestrator.md). */
+const DEFAULT_ENRICH_FIELDS: EnrichableField[] = ["email", "phone", "skills", "experience", "headline"];
+/** Generous per-workspace fallback spend cap (registry cost units, not real
+ *  currency) used when `state.enrichmentBudgetUnits` hasn't been configured. */
+const DEFAULT_ENRICHMENT_BUDGET_UNITS = 1000;
+/** Concurrency cap enrichCampaign uses when the caller doesn't specify one. */
+const DEFAULT_ENRICH_CONCURRENCY = 3;
 
 const HermesContext = createContext<HermesContextValue | null>(null);
+const UNSAVED_WORKSPACE_MESSAGE =
+  "Your latest changes are still in this browser but are not saved to the shared workspace.";
+
+function unavailableWorkspaceStatus(dependency: WorkspaceDependency): WorkspaceStatus {
+  const messages: Record<WorkspaceDependency, string> = {
+    auth: "We could not verify your session. Product data and actions are blocked until the connection recovers.",
+    workspace: "We could not resolve your workspace or access level. Product data and actions are blocked.",
+    state: "Workspace data is temporarily unavailable. No empty or demo data has been substituted.",
+    agent_seats: "The authoritative agent roster is temporarily unavailable. Stale workspace seats are not shown.",
+  };
+  return { phase: "unavailable", mode: "live", dependency, message: messages[dependency] };
+}
+
+function makeActivity(
+  activity: Omit<Activity, "id" | "createdAt"> & { createdAt?: string },
+): Activity {
+  return {
+    id: genId("act"),
+    createdAt: activity.createdAt ?? new Date().toISOString(),
+    ...activity,
+  };
+}
+
+function withActivity(
+  state: HermesState,
+  activity: Activity,
+  campaignId: string | null,
+): HermesState {
+  const campaigns = campaignId
+    ? state.campaigns.map((campaign) =>
+        campaign.id === campaignId
+          ? {
+              ...campaign,
+              activities: [activity, ...campaign.activities].slice(0, 80),
+            }
+          : campaign,
+      )
+    : state.campaigns;
+  return {
+    ...state,
+    campaigns,
+    activities: [activity, ...state.activities].slice(0, 300),
+  };
+}
+
+function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
+  const candidates = state.candidates.filter(
+    (candidate) => candidate.campaignId === campaignId,
+  );
+  const campaign = state.campaigns.find((item) => item.id === campaignId);
+  const firstInterviewHours = campaign
+    ? firstInterviewElapsedHours(
+        state.bookings.filter((booking) => booking.campaignId === campaignId),
+        campaign.createdAt,
+      )
+    : null;
+  return {
+    ...state,
+    campaigns: state.campaigns.map((item) =>
+      item.id === campaignId
+        ? {
+            ...item,
+            metrics: computeCampaignMetrics(
+              candidates,
+              item.metrics,
+              firstInterviewHours,
+              realFunnelFacts(state, {
+                live: !state.settings.dryRunMode,
+                campaignId,
+              }),
+            ),
+          }
+        : item,
+    ),
+  };
+}
 
 /* ============================================================================
    Provider
    ========================================================================== */
-
-function githubLocationQualifier(location: string | undefined, query: string): string {
-  if (!location?.trim() || /(?:^|\s)location:/i.test(query)) return "";
-  const city = location.split(",")[0]?.trim();
-  return city ? ` location:"${city}"` : "";
-}
 
 /**
  * Shared live-generation attempt for follow-up / re-contact drafts — the same
@@ -581,6 +362,7 @@ function githubLocationQualifier(location: string | undefined, query: string): s
  */
 async function attemptLiveFollowUpGen(opts: {
   settings: SystemSettings;
+  skills: AgentSkill[];
   candidate: Candidate;
   campaign: Campaign;
   tone: OutreachTone;
@@ -590,8 +372,9 @@ async function attemptLiveFollowUpGen(opts: {
   mockGen: GeneratedOutreach;
   seat?: AgentSeat;
   touchNote: string;
+  runEffect: <T>(effect: () => T) => WorkspaceEffectAttempt<T>;
 }): Promise<{ gen: GeneratedOutreach; live: boolean }> {
-  const { settings, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote } = opts;
+  const { settings, skills, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote, runEffect } = opts;
   const aiCfg = resolveAiProvider(settings, "outreach", {
     providerId: seat?.providerId,
     modelId: seat?.modelId,
@@ -600,6 +383,13 @@ async function attemptLiveFollowUpGen(opts: {
     return { gen: mockGen, live: false };
   }
 
+  const linkedInAgentContext = await fetchLinkedInAgentContext({
+    profileUrl: candidate.linkedinUrl || candidate.sourceUrl,
+    snippet: [candidate.currentTitle, candidate.currentCompany, candidate.location]
+      .filter(Boolean)
+      .join(" · "),
+    icp: campaign.jobAnalysis.title,
+  });
   const basePrompt = buildOutreachPrompt({
     candidateName: candidate.name,
     candidateTitle: candidate.currentTitle,
@@ -617,9 +407,16 @@ async function attemptLiveFollowUpGen(opts: {
     language: lang,
     persona: voice?.persona,
     signature: voice?.signature,
+    skillPlaybook: getSkill(skills, "outreach_skill")?.content,
+    linkedInAgentContext,
   });
-  const ariaPrompt = settings.guardrails?.ariaPrompt;
-  const guardrails = [ariaPrompt, touchNote].filter(Boolean).join("\n\n");
+    const ariaPrompt = settings.guardrails?.ariaPrompt;
+  const liGuard = channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
+  const inviteRules =
+    channel === "LinkedIn"
+      ? "LinkedIn Connect notes must stay ≤200 characters or Send greys out and the candidate never gets a notification."
+      : "";
+  const guardrails = [ariaPrompt, liGuard, inviteRules, touchNote].filter(Boolean).join("\n\n");
   const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
   let genInput: Parameters<typeof hermesGenerate>[0];
@@ -639,7 +436,9 @@ async function attemptLiveFollowUpGen(opts: {
     }
   }
 
-  const result = await hermesGenerate(genInput);
+  const attempt = runEffect(() => hermesGenerate(genInput));
+  if (!attempt.allowed) return { gen: mockGen, live: false };
+  const result = await attempt.value;
   if (result.ok && result.text) {
     const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
     if (parsed) {
@@ -661,15 +460,32 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<HermesState | null>(null);
   const stateRef = useRef<HermesState | null>(null);
   stateRef.current = state;
+  const [workspaceStatus, setWorkspaceStatusState] = useState<WorkspaceStatus>({
+    phase: "loading",
+    mode: supabaseEnabled ? "live" : "demo",
+  });
+  const workspaceStatusRef = useRef<WorkspaceStatus>(workspaceStatus);
+  const setWorkspaceStatus = useCallback((next: WorkspaceStatus) => {
+    workspaceStatusRef.current = next;
+    setWorkspaceStatusState(next);
+  }, []);
   const workspaceIdRef = useRef<string>("");
   // Optimistic-concurrency token: the workspace_state.updated_at we last loaded/saved.
   const remoteUpdatedAtRef = useRef<string | null>(null);
   const liveRoleRef = useRef<Role>("viewer");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hydrationGeneration = useRef(0);
+  const queuedRemoteSnapshot = useRef<HermesState | null>(null);
+  const pendingRemoteSave = useRef<PendingWorkspaceSave<HermesState> | null>(null);
+  const remoteSaveInFlight = useRef(false);
+  const authoritativeCommitInFlight = useRef(false);
+  const remoteSaveOperation = useRef<symbol | null>(null);
+  const drainRemoteSaveQueueRef = useRef<() => void>(() => undefined);
   // DEMO mode only: latest state snapshot awaiting a debounced localStorage write,
   // so flushLocalSave() can write it immediately on unmount / tab close.
   const pendingLocalSave = useRef<HermesState | null>(null);
   const skipNextPersist = useRef(false);
+  const skipPersistSnapshot = useRef<HermesState | null>(null);
   // F-5: AbortControllers for in-flight sendChat requests, keyed by threadId.
   const chatAbortControllers = useRef<Map<string, AbortController>>(new Map());
   // Approval persistence is authoritative in live mode. Keep a per-draft lock
@@ -689,7 +505,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     const pending = pendingLocalSave.current;
     if (pending) {
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+        if (demoStateAllowsCandidatePersistence(pending)) {
+          window.localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify(demoStateForLocalStorage(pending)),
+          );
+        }
       } catch {
         /* quota / private mode — ignore for demo */
       }
@@ -706,110 +527,333 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     };
   }, [flushLocalSave]);
 
-  // Hydrate once on mount.
-  // LIVE mode → load the shared workspace document from Supabase (seed if empty).
-  // DEMO mode → load from localStorage (no login, fully client-side).
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (supabaseEnabled) {
-        const remote = await loadRemoteState();
-        if (cancelled) return;
-        if (remote) {
-          workspaceIdRef.current = remote.workspaceId;
-          remoteUpdatedAtRef.current = remote.updatedAt;
-          liveRoleRef.current = remote.role;
-          if (remote.state) {
-            skipNextPersist.current = true; // don't re-save what we just loaded
-            // D-1: run migration when the persisted version is behind current.
-            const loaded = normalizeHermesState(remote.state);
-            const serverSeats = await loadRemoteAgentSeats();
-            const liveState = serverSeats ? { ...loaded, seats: mergeAgentSeatRows(loaded.seats, serverSeats) } : loaded;
-            setState(applyAuthoritativeRole(liveState, remote.role));
-          } else {
-            const seededBase = buildLiveEmptyState();
-            const serverSeats = await loadRemoteAgentSeats();
-            const seeded = applyAuthoritativeRole(
-              serverSeats ? { ...seededBase, seats: mergeAgentSeatRows(seededBase.seats, serverSeats) } : seededBase,
-              remote.role,
-            );
-            setState(seeded);
-            if (remote.workspaceId) {
-              void saveRemoteState(remote.workspaceId, seeded, null).then((res) => {
-                if (res.ok && res.updatedAt) remoteUpdatedAtRef.current = res.updatedAt;
-              });
-            }
-          }
-          return;
-        }
-        // A live auth-null/error path must never fall through to localStorage,
-        // whose demo seed is admin. Keep the shell read-only until auth recovers.
-        setState(applyAuthoritativeRole(buildLiveEmptyState(), "viewer"));
+    if (workspaceStatus.phase !== "ready") {
+      for (const controller of chatAbortControllers.current.values()) controller.abort();
+      chatAbortControllers.current.clear();
+    }
+  }, [workspaceStatus.phase]);
+
+  const hydrateWorkspace = useCallback(async () => {
+    const generation = ++hydrationGeneration.current;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    queuedRemoteSnapshot.current = null;
+    pendingRemoteSave.current = null;
+    remoteSaveOperation.current = null;
+    remoteSaveInFlight.current = false;
+    authoritativeCommitInFlight.current = false;
+    skipNextPersist.current = false;
+    skipPersistSnapshot.current = null;
+    setWorkspaceStatus({ phase: "loading", mode: supabaseEnabled ? "live" : "demo" });
+
+    if (!supabaseEnabled) {
+      const demoState = loadState();
+      if (generation !== hydrationGeneration.current) return;
+      stateRef.current = demoState;
+      setState(demoState);
+      setWorkspaceStatus({ phase: "ready", mode: "demo" });
+      return;
+    }
+
+    workspaceIdRef.current = "";
+    remoteUpdatedAtRef.current = null;
+    liveRoleRef.current = "viewer";
+    stateRef.current = null;
+    setState(null);
+
+    try {
+      const remote = await loadRemoteState();
+      if (generation !== hydrationGeneration.current) return;
+      if (remote.status === "signed_out") {
+        setWorkspaceStatus({ phase: "signed_out", mode: "live" });
         return;
       }
-      setState(loadState());
-    })();
+      if (remote.status === "unavailable") {
+        setWorkspaceStatus(unavailableWorkspaceStatus(remote.dependency));
+        return;
+      }
+
+      workspaceIdRef.current = remote.workspaceId;
+      remoteUpdatedAtRef.current = remote.updatedAt;
+      liveRoleRef.current = remote.role;
+
+      const serverSeats = await loadRemoteAgentSeats();
+      if (generation !== hydrationGeneration.current) return;
+      if (serverSeats.status === "unavailable") {
+        setWorkspaceStatus(unavailableWorkspaceStatus("agent_seats"));
+        return;
+      }
+
+      const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
+      const liveState = {
+        ...base,
+        seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
+      };
+      const next = applyAuthoritativeRole(liveState, remote.role);
+      if (remote.state) {
+        skipNextPersist.current = true;
+        skipPersistSnapshot.current = next;
+      }
+      stateRef.current = next;
+      setState(next);
+      setWorkspaceStatus({ phase: "ready", mode: "live" });
+    } catch (error) {
+      console.warn("workspace hydration failed:", error);
+      if (generation !== hydrationGeneration.current) return;
+      stateRef.current = null;
+      setState(null);
+      setWorkspaceStatus(unavailableWorkspaceStatus("state"));
+    }
+  }, [setWorkspaceStatus]);
+
+  // Hydrate once on mount. Retry uses the same authoritative path, so recovery
+  // cannot accidentally switch to local/demo state.
+  useEffect(() => {
+    void hydrateWorkspace();
     return () => {
-      cancelled = true;
+      hydrationGeneration.current += 1;
+      if (supabaseEnabled && saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
     };
+  }, [hydrateWorkspace]);
+
+  const prepareRemoteConflict = useCallback(async (latest: RemoteStateVersion) => {
+    if (!latest.state || !latest.updatedAt) return null;
+    const serverSeats = await loadRemoteAgentSeats();
+    if (serverSeats.status === "unavailable") return null;
+
+    const base = normalizeHermesState(latest.state);
+    const liveState = {
+      ...base,
+      seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
+    };
+    const notice: Activity = {
+      id: genId("act"),
+      type: "system",
+      title: "Workspace reloaded from your team",
+      notes:
+        "A teammate saved a change at the same moment, so the latest shared version was loaded. Reapply your last edit if it is missing.",
+      outcome: "Reloaded",
+      campaignId: null,
+      linkedEntityType: null,
+      linkedEntityId: null,
+      createdAt: new Date().toISOString(),
+    };
+    const next = applyAuthoritativeRole(
+      { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
+      liveRoleRef.current,
+    );
+    return { latest, next };
   }, []);
+
+  const applyRemoteConflict = useCallback((prepared: {
+    latest: RemoteStateVersion;
+    next: HermesState;
+  }) => {
+    remoteUpdatedAtRef.current = prepared.latest.updatedAt;
+    skipNextPersist.current = true;
+    skipPersistSnapshot.current = prepared.next;
+    stateRef.current = prepared.next;
+    setState(prepared.next);
+    setWorkspaceStatus({ phase: "ready", mode: "live" });
+  }, [setWorkspaceStatus]);
+
+  const persistPendingSave = useCallback(async (
+    pending: PendingWorkspaceSave<HermesState>,
+  ) => settleWorkspaceSave({
+    generation: pending.generation,
+    currentGeneration: () => hydrationGeneration.current,
+    save: () => saveRemoteState(
+      pending.workspaceId,
+      pending.snapshot,
+      pending.expectedUpdatedAt,
+    ),
+    prepareConflict: prepareRemoteConflict,
+    applySaved: (result) => {
+      if (result.updatedAt) remoteUpdatedAtRef.current = result.updatedAt;
+      setWorkspaceStatus({ phase: "ready", mode: "live" });
+    },
+    applyConflict: applyRemoteConflict,
+  }), [applyRemoteConflict, prepareRemoteConflict, setWorkspaceStatus]);
+
+  const markRemoteSaveFailed = useCallback((
+    pending: PendingWorkspaceSave<HermesState>,
+    snapshot: HermesState = pending.snapshot,
+  ) => {
+    if (pending.generation !== hydrationGeneration.current) return;
+    const retained = retainPendingWorkspaceSave(
+      pending,
+      snapshot,
+      remoteUpdatedAtRef.current,
+    );
+    const failed = createFailedWorkspaceSave(
+      retained,
+      UNSAVED_WORKSPACE_MESSAGE,
+    );
+    pendingRemoteSave.current = failed.pending;
+    setWorkspaceStatus(failed.status);
+  }, [setWorkspaceStatus]);
+
+  const drainRemoteSaveQueue = useCallback(() => {
+    if (remoteSaveInFlight.current || !workspaceAllowsMutation(workspaceStatusRef.current)) return;
+    const snapshot = queuedRemoteSnapshot.current;
+    const workspaceId = workspaceIdRef.current;
+    if (!snapshot) return;
+    if (!workspaceId) {
+      queuedRemoteSnapshot.current = null;
+      setWorkspaceStatus(unavailableWorkspaceStatus("workspace"));
+      return;
+    }
+
+    queuedRemoteSnapshot.current = null;
+    const pending: PendingWorkspaceSave<HermesState> = {
+      workspaceId,
+      snapshot,
+      expectedUpdatedAt: remoteUpdatedAtRef.current,
+      generation: hydrationGeneration.current,
+    };
+    pendingRemoteSave.current = pending;
+    const operation = Symbol("workspace-save");
+    remoteSaveOperation.current = operation;
+    remoteSaveInFlight.current = true;
+
+    void persistPendingSave(pending).then((outcome) => {
+      if (remoteSaveOperation.current !== operation) return;
+      remoteSaveOperation.current = null;
+      remoteSaveInFlight.current = false;
+      if (outcome === "stale") return;
+      if (outcome === "conflict") {
+        queuedRemoteSnapshot.current = null;
+        pendingRemoteSave.current = null;
+        return;
+      }
+      if (outcome === "failed") {
+        const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+        queuedRemoteSnapshot.current = null;
+        markRemoteSaveFailed(pending, newestSnapshot);
+        return;
+      }
+
+      if (pendingRemoteSave.current === pending) pendingRemoteSave.current = null;
+      if (queuedRemoteSnapshot.current) drainRemoteSaveQueueRef.current();
+    }).catch(() => {
+      if (remoteSaveOperation.current !== operation) return;
+      remoteSaveOperation.current = null;
+      remoteSaveInFlight.current = false;
+      const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+      queuedRemoteSnapshot.current = null;
+      markRemoteSaveFailed(pending, newestSnapshot);
+    });
+  }, [markRemoteSaveFailed, persistPendingSave, setWorkspaceStatus]);
+  drainRemoteSaveQueueRef.current = drainRemoteSaveQueue;
+
+  const flushWorkspaceSave = useCallback(async (): Promise<boolean> => {
+    if (!supabaseEnabled) return true;
+    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return false;
+    const workspaceId = workspaceIdRef.current;
+    const snapshot = stateRef.current;
+    if (!workspaceId || !snapshot) return false;
+
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    queuedRemoteSnapshot.current = null;
+
+    for (let attempt = 0; attempt < 40 && remoteSaveInFlight.current; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (remoteSaveInFlight.current) return false;
+
+    const pending: PendingWorkspaceSave<HermesState> = {
+      workspaceId,
+      snapshot,
+      expectedUpdatedAt: remoteUpdatedAtRef.current,
+      generation: hydrationGeneration.current,
+    };
+    const operation = Symbol("workspace-save-flush");
+    remoteSaveOperation.current = operation;
+    remoteSaveInFlight.current = true;
+    try {
+      const outcome = await persistPendingSave(pending);
+      if (remoteSaveOperation.current !== operation) return false;
+      if (outcome === "saved") {
+        skipNextPersist.current = true;
+        skipPersistSnapshot.current = snapshot;
+        pendingRemoteSave.current = null;
+        queuedRemoteSnapshot.current = null;
+        return true;
+      }
+      return outcome === "conflict";
+    } catch {
+      return false;
+    } finally {
+      if (remoteSaveOperation.current === operation) {
+        remoteSaveOperation.current = null;
+        remoteSaveInFlight.current = false;
+      }
+    }
+  }, [persistPendingSave]);
+
+  const retrySave = useCallback(async () => {
+    const pending = pendingRemoteSave.current;
+    if (!pending || remoteSaveInFlight.current) return;
+    const operation = Symbol("workspace-save-retry");
+    remoteSaveOperation.current = operation;
+    remoteSaveInFlight.current = true;
+    try {
+      const outcome = await persistPendingSave(pending);
+      if (remoteSaveOperation.current !== operation || outcome === "stale") return;
+      if (outcome === "saved") {
+        skipNextPersist.current = true;
+        skipPersistSnapshot.current = pending.snapshot;
+        stateRef.current = pending.snapshot;
+        setState(pending.snapshot);
+        pendingRemoteSave.current = null;
+        queuedRemoteSnapshot.current = null;
+        return;
+      }
+      if (outcome === "conflict") {
+        pendingRemoteSave.current = null;
+        queuedRemoteSnapshot.current = null;
+        return;
+      }
+      const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+      queuedRemoteSnapshot.current = null;
+      markRemoteSaveFailed(pending, newestSnapshot);
+    } catch {
+      const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+      queuedRemoteSnapshot.current = null;
+      markRemoteSaveFailed(pending, newestSnapshot);
+    } finally {
+      if (remoteSaveOperation.current === operation) {
+        remoteSaveOperation.current = null;
+        remoteSaveInFlight.current = false;
+      }
+    }
+  }, [markRemoteSaveFailed, persistPendingSave]);
 
   // Persist on change (debounced upsert in LIVE mode, synchronous in DEMO mode).
   useEffect(() => {
     if (!state) return;
     if (skipNextPersist.current) {
       skipNextPersist.current = false;
-      return;
+      const persisted = skipPersistSnapshot.current;
+      skipPersistSnapshot.current = null;
+      if (persisted === state) return;
     }
     if (supabaseEnabled) {
+      if (!workspaceAllowsMutation(workspaceStatusRef.current)) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      const wid = workspaceIdRef.current;
-      const snapshot = state;
+      queuedRemoteSnapshot.current = state;
       saveTimer.current = setTimeout(() => {
-        if (!wid) return;
-        void (async () => {
-          const res = await saveRemoteState(wid, snapshot, remoteUpdatedAtRef.current);
-          if (res.ok) {
-            if (res.updatedAt) remoteUpdatedAtRef.current = res.updatedAt;
-          } else if (res.conflict && res.latest) {
-            // A teammate saved since we loaded. Reload their latest so nothing is
-            // silently clobbered; record it in the activity log so the operator
-            // knows their last unsaved edit was dropped and can reapply it.
-            remoteUpdatedAtRef.current = res.latest.updatedAt;
-            const latestState = res.latest.state;
-            if (latestState) {
-              skipNextPersist.current = true;
-              const migrated = normalizeHermesState(latestState);
-              const serverSeats = await loadRemoteAgentSeats();
-              const liveState = serverSeats ? { ...migrated, seats: mergeAgentSeatRows(migrated.seats, serverSeats) } : migrated;
-              const notice: Activity = {
-                id: genId("act"),
-                type: "system",
-                title: "Workspace reloaded from your team",
-                notes:
-                  "A teammate saved a change at the same moment, so the latest shared version was loaded. Reapply your last edit if it is missing.",
-                outcome: "Reloaded",
-                campaignId: null,
-                linkedEntityType: null,
-                linkedEntityId: null,
-                createdAt: new Date().toISOString(),
-              };
-              setState(applyAuthoritativeRole(
-                { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
-                liveRoleRef.current,
-              ));
-            }
-          } else {
-            // Non-conflict save failure (network / quota). Retry once shortly so a blip
-            // on the last edit before the user stops typing doesn't silently lose the
-            // write (the debounce otherwise only re-saves on the next state change).
-            setTimeout(() => {
-              void saveRemoteState(wid, snapshot, remoteUpdatedAtRef.current).then((r) => {
-                if (r.ok && r.updatedAt) remoteUpdatedAtRef.current = r.updatedAt;
-              });
-            }, 2500);
-          }
-        })();
+        saveTimer.current = null;
+        drainRemoteSaveQueueRef.current();
       }, 600);
     } else {
       // Debounced like the Supabase branch above (same 600ms interval / saveTimer ref)
@@ -824,76 +868,226 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, [state, flushLocalSave]);
 
   const commit = useCallback((fn: (s: HermesState) => HermesState) => {
-    setState((prev) => {
-      const base = prev ?? stateRef.current;
-      if (!base) return prev;
-      const next = fn(base);
-      stateRef.current = next;
-      return next;
-    });
+    if (
+      authoritativeCommitInFlight.current ||
+      !workspaceAllowsMutation(workspaceStatusRef.current)
+    ) return false;
+    const base = stateRef.current;
+    if (!base) return false;
+    const next = preserveCandidateErasureTombstones(base, fn(base));
+    if (!supabaseEnabled && !demoStateAllowsCandidatePersistence(next)) return false;
+    stateRef.current = next;
+    setState(next);
+    return true;
   }, []);
+
+  const commitPersisted = useCallback(async (
+    fn: (current: HermesState) => HermesState,
+  ): Promise<boolean> => {
+    if (
+      authoritativeCommitInFlight.current ||
+      remoteSaveInFlight.current ||
+      !workspaceAllowsMutation(workspaceStatusRef.current)
+    ) return false;
+    const base = stateRef.current;
+    if (!base) return false;
+    const next = preserveCandidateErasureTombstones(base, fn(base));
+    if (next === base) return true;
+    if (!supabaseEnabled && !demoStateAllowsCandidatePersistence(next)) return false;
+
+    if (!supabaseEnabled) {
+      stateRef.current = next;
+      setState(next);
+      return true;
+    }
+
+    const workspaceId = workspaceIdRef.current;
+    if (!workspaceId) return false;
+    const generation = hydrationGeneration.current;
+    const pending: PendingWorkspaceSave<HermesState> = {
+      workspaceId,
+      snapshot: next,
+      expectedUpdatedAt: remoteUpdatedAtRef.current,
+      generation,
+    };
+    const operation = Symbol("workspace-authoritative-commit");
+    authoritativeCommitInFlight.current = true;
+    remoteSaveInFlight.current = true;
+    remoteSaveOperation.current = operation;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    queuedRemoteSnapshot.current = null;
+
+    try {
+      const outcome = await settleWorkspaceSave({
+        generation,
+        currentGeneration: () => hydrationGeneration.current,
+        save: () => saveRemoteState(
+          workspaceId,
+          next,
+          remoteUpdatedAtRef.current,
+        ),
+        prepareConflict: prepareRemoteConflict,
+        applySaved: (result) => {
+          if (remoteSaveOperation.current !== operation) {
+            throw new Error("authoritative workspace commit superseded");
+          }
+          if (result.updatedAt) remoteUpdatedAtRef.current = result.updatedAt;
+          pendingRemoteSave.current = null;
+          skipNextPersist.current = true;
+          skipPersistSnapshot.current = next;
+          stateRef.current = next;
+          setState(next);
+          setWorkspaceStatus({ phase: "ready", mode: "live" });
+        },
+        applyConflict: applyRemoteConflict,
+      });
+      if (outcome === "failed") {
+        markRemoteSaveFailed(pending, next);
+        return false;
+      }
+      return outcome === "saved";
+    } catch {
+      markRemoteSaveFailed(pending, next);
+      return false;
+    } finally {
+      if (remoteSaveOperation.current === operation) {
+        remoteSaveOperation.current = null;
+        remoteSaveInFlight.current = false;
+      }
+      authoritativeCommitInFlight.current = false;
+    }
+  // Module-level capability is immutable for the lifetime of this client bundle,
+  // but React Compiler needs it named to preserve this callback's memoization.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyRemoteConflict, markRemoteSaveFailed, prepareRemoteConflict, setWorkspaceStatus, supabaseEnabled]);
 
   const current = useCallback(
     () => stateRef.current ?? (supabaseEnabled ? buildLiveEmptyState() : buildSeedState()),
+    // See commitPersisted: this build-time capability cannot change at runtime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [supabaseEnabled],
+  );
+
+  const workspaceEffectAllowed = useCallback(
+    () =>
+      !authoritativeCommitInFlight.current &&
+      workspaceAllowsMutation(workspaceStatusRef.current),
     [],
   );
 
-  /* ---- helpers ---------------------------------------------------------- */
+  const bookingMutationAllowed = useCallback(() => {
+    const role = supabaseEnabled
+      ? liveRoleRef.current
+      : stateRef.current?.currentRole;
+    return role != null && can(role, "book");
+  }, []);
 
-  const makeActivity = (
-    a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string },
-  ): Activity => ({
-    id: genId("act"),
-    createdAt: a.createdAt ?? new Date().toISOString(),
-    ...a,
-  });
+  const learningMutationAllowed = useCallback(() => {
+    const role = supabaseEnabled
+      ? liveRoleRef.current
+      : stateRef.current?.currentRole;
+    return role != null && can(role, "skills");
+  }, []);
 
-  const withActivity = (s: HermesState, a: Activity, campaignId: string | null): HermesState => {
-    const campaigns = campaignId
-      ? s.campaigns.map((c) =>
-          c.id === campaignId
-            ? { ...c, activities: [a, ...c.activities].slice(0, 80) }
-            : c,
-        )
-      : s.campaigns;
-    return { ...s, campaigns, activities: [a, ...s.activities].slice(0, 300) };
-  };
+  const sourcingMutationAllowed = useCallback(() => {
+    const role = supabaseEnabled
+      ? liveRoleRef.current
+      : stateRef.current?.currentRole;
+    return role != null && can(role, "source");
+  }, []);
 
-  const recomputeMetrics = (s: HermesState, campaignId: string): HermesState => {
-    const cands = s.candidates.filter((c) => c.campaignId === campaignId);
-    const campaign = s.campaigns.find((c) => c.id === campaignId);
-    // Elapsed time from campaign creation to the first *scheduled* interview
-    // (shared with seed.ts via firstInterviewElapsedHours so live and seeded
-    // campaigns report the same KPI meaning — see metrics.ts).
-    const firstInterviewHours = campaign
-      ? firstInterviewElapsedHours(
-          s.bookings.filter((b) => b.campaignId === campaignId),
-          campaign.createdAt,
-        )
-      : null;
-    return {
-      ...s,
-      campaigns: s.campaigns.map((c) =>
-        c.id === campaignId
-          ? {
-              ...c,
-              metrics: computeCampaignMetrics(
-                cands,
-                c.metrics,
-                firstInterviewHours,
-                realFunnelFacts(s, { live: !s.settings.dryRunMode, campaignId }),
-              ),
-            }
-          : c,
-      ),
-    };
-  };
+  const syntheticSourcingAllowed = useCallback(() => !supabaseEnabled, []);
+
+  const candidatePersistenceAllowed = useCallback(
+    (provenance: NonNullable<Candidate["provenance"]>) =>
+      // Demo (no Supabase): allow both synthetic Talent Pool and live GitHub/web
+      // profiles so operators can run real sourcing E2E locally. Live workspaces
+      // always allow persistence for any provenance the server returns.
+      supabaseEnabled || provenance === "synthetic" || provenance === "live",
+    [],
+  );
+
+  const campaignMutationAllowed = useCallback(
+    () => workspaceEffectAllowed() && sourcingMutationAllowed(),
+    [sourcingMutationAllowed, workspaceEffectAllowed],
+  );
+
+  const runWorkspaceEffect = useCallback(
+    <T,>(effect: () => T) => runWorkspaceEffectBoundary(workspaceStatusRef.current, effect),
+    [],
+  );
+
+  const workspaceFetch = useCallback<typeof fetch>(
+    (input, init) => {
+      const attempt = runWorkspaceEffect(() => fetch(input, init));
+      return attempt.allowed
+        ? attempt.value
+        : Promise.reject(new Error("Workspace unavailable. Retry the workspace before running this action."));
+    },
+    [runWorkspaceEffect],
+  );
 
   /* ---- actions ---------------------------------------------------------- */
 
-  const setActiveCampaign = useCallback(
-    (id: string | null) => commit((s) => ({ ...s, activeCampaignId: id })),
-    [commit],
+  const {
+    setActiveCampaign,
+    createCampaignFromAnalysis,
+    updateCampaign,
+    regenerateQueries,
+  } = useMemo(
+    () =>
+      createCampaignActions({
+        commit,
+        buildCampaign,
+        makeActivity,
+        withActivity,
+        recomputeMetrics,
+        effectiveWeights,
+        scoreCandidate,
+        campaignMutationAllowed,
+        currentState: () => stateRef.current,
+      }),
+    [commit, campaignMutationAllowed],
+  );
+
+  const {
+    sourceNextBatch,
+    addCandidateFromGithub,
+    addCandidateManual,
+    sourceFromApollo,
+    prepareApolloEnrichment,
+    enrichApolloCandidate,
+  } = useMemo(
+    () =>
+      createSourcingActions({
+        commit,
+        commitPersisted,
+        flushWorkspaceSave,
+        currentState: () => stateRef.current,
+        sourcingMutationAllowed,
+        workspaceEffectAllowed,
+        syntheticSourcingAllowed,
+        candidatePersistenceAllowed,
+        workspaceFetch,
+        makeActivity,
+        withActivity,
+        recomputeMetrics,
+        effectiveWeights,
+        emitSource: emit,
+      }),
+    [
+      commit,
+      commitPersisted,
+      flushWorkspaceSave,
+      sourcingMutationAllowed,
+      syntheticSourcingAllowed,
+      candidatePersistenceAllowed,
+      workspaceEffectAllowed,
+      workspaceFetch,
+    ],
   );
 
   const logActivity = useCallback(
@@ -902,416 +1096,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
-  const createCampaignFromAnalysis = useCallback(
-    (jd: JobAnalysis, meta: { hiringManager: string; hiringManagerEmail: string }) => {
-      const campaign = buildCampaign(jd, meta);
-      commit((s) => {
-        let next: HermesState = {
-          ...s,
-          campaigns: [campaign, ...s.campaigns],
-          activeCampaignId: campaign.id,
-        };
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "campaign",
-            title: "Campaign created",
-            notes: `Created “${campaign.title}” from parsed intake.`,
-            outcome: "Sourcing strategy generated",
-            campaignId: campaign.id,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaign.id,
-          }),
-          campaign.id,
-        );
-        return next;
-      });
-      return campaign;
-    },
-    [commit],
-  );
-
-  const updateCampaign = useCallback(
-    (id: string, patch: Partial<Campaign>) =>
-      commit((s) => {
-        const existing = s.campaigns.find((c) => c.id === id);
-        if (!existing) return s;
-        const merged: Campaign = { ...existing, ...patch };
-        let next: HermesState = {
-          ...s,
-          campaigns: s.campaigns.map((c) => (c.id === id ? merged : c)),
-        };
-
-        // Reactive re-score: editing the JD or scoring weights silently re-ranks
-        // existing candidates (via the recommendation queue's match-score input)
-        // instead of leaving them frozen at their original sourcing-time score.
-        // Adaptive, not autonomous -- it reacts to a human's own edit here; it
-        // never touches anything already approved/sent/booked, and never sends.
-        if (patch.jobAnalysis || patch.scoringWeights) {
-          const weights = effectiveWeights(merged.scoringWeights, s.skills);
-          const affected = next.candidates.filter((c) => c.campaignId === id);
-          next = {
-            ...next,
-            candidates: next.candidates.map((c) => {
-              if (c.campaignId !== id) return c;
-              const { score, breakdown } = scoreCandidate(c, merged.jobAnalysis, weights);
-              return { ...c, matchScore: score, matchBreakdown: breakdown };
-            }),
-          };
-          next = recomputeMetrics(next, id);
-          if (affected.length > 0) {
-            next = withActivity(
-              next,
-              makeActivity({
-                type: "score",
-                title: "Candidates re-scored",
-                notes: `${affected.length} candidate${affected.length === 1 ? "" : "s"} re-scored after the JD/weights update.`,
-                outcome: "Priority queue updated",
-                campaignId: id,
-                linkedEntityType: "campaign",
-                linkedEntityId: id,
-              }),
-              id,
-            );
-          }
-        }
-
-        return next;
-      }),
-    [commit],
-  );
-
-  const regenerateQueries = useCallback(
-    (id: string) =>
-      commit((s) => {
-        const campaign = s.campaigns.find((c) => c.id === id);
-        if (!campaign) return s;
-        const extra = {
-          label: `Adjacent: ${campaign.jobAnalysis.requiredSkills[1] ?? "stack"} maintainers`,
-          query: `language:${(campaign.jobAnalysis.requiredSkills[1] ?? "go").replace(/\s+/g, "")} sort:updated location:${campaign.jobAnalysis.regions[0] ?? "EU"} forks:>5`,
-          estimatedResults: 80 + Math.round((campaign.metrics.sourced + 1) * 3.5),
-        };
-        const next = {
-          ...s,
-          campaigns: s.campaigns.map((c) =>
-            c.id === id
-              ? {
-                  ...c,
-                  sourcingStrategy: {
-                    ...c.sourcingStrategy,
-                    githubQueries: [...c.sourcingStrategy.githubQueries, extra],
-                  },
-                }
-              : c,
-          ),
-        };
-        return withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: "Generated additional query",
-            notes: extra.query,
-            outcome: `~${extra.estimatedResults} estimated results`,
-            campaignId: id,
-            linkedEntityType: "campaign",
-            linkedEntityId: id,
-          }),
-          id,
-        );
-      }),
-    [commit],
-  );
-
-  const sourceNextBatch = useCallback(
-    async (
-      campaignId: string,
-      opts?: { platform?: SourcePlatform; count?: number },
-    ): Promise<
-      | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-      | { ok: false; error: string; source: "github" | "web" | "paused" }
-    > => {
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { accepted: [], skipped: [], source: "mock", ok: true };
-      if (campaign.status === "Paused") {
-        return { ok: false, error: "Campaign is paused.", source: "paused" };
-      }
-      const platform: SourcePlatform = opts?.platform ?? roleProfile(campaign.jobAnalysis).platforms[0];
-      const count = opts?.count ?? 6;
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills); // learned scoring
-
-      let result: SourceResult = { accepted: [], skipped: [] };
-      let source: "github" | "web" | "mock" = "mock";
-
-      // Try REAL sourcing first, on whichever backend the platform actually has:
-      // GitHub via its Search API, everything else with a real presence (LinkedIn,
-      // Stack Overflow, Dribbble, Behance) via site:-scoped web search. Both run
-      // keyless by default. Once a real attempt runs, its result is authoritative
-      // even at zero hits — no synthetic backfill. A failed real attempt is a
-      // genuine error, surfaced to the caller — never silently backfilled with
-      // synthetic profiles. Talent Pool / Referral are internal-pipeline concepts
-      // with no external source, so they stay synthetic (demo mode).
-      if (platform === "GitHub") {
-        const baseQuery =
-          campaign.sourcingStrategy.githubQueries[0]?.query ??
-          `language:${(campaign.jobAnalysis.requiredSkills[0] ?? "typescript").toLowerCase()}`;
-        const query = `${baseQuery}${githubLocationQualifier(campaign.jobAnalysis.location, baseQuery)}`;
-        try {
-          const res = await fetch("/api/source", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, count, platform }),
-          });
-          const out = (await res.json().catch(() => null)) as
-            | { ok?: boolean; source?: string; users?: GithubUser[]; error?: string }
-            | null;
-          if (out?.ok && out.source === "github") {
-            result =
-              out.users && out.users.length > 0
-                ? mapGithubCandidates(out.users, campaign, query, s.candidates, weights)
-                : { accepted: [], skipped: [] };
-            source = "github";
-          } else {
-            return { ok: false, error: out?.error ?? "GitHub sourcing failed.", source: "github" };
-          }
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : "Network error reaching GitHub sourcing.",
-            source: "github",
-          };
-        }
-      } else if (isWebSearchPlatform(platform)) {
-        const query = ensureWebQueryScope(platform, baseWebQuery(campaign, platform));
-        try {
-          const res = await fetch("/api/source", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, count, platform }),
-          });
-          const out = (await res.json().catch(() => null)) as
-            | { ok?: boolean; source?: string; leads?: WebLead[]; error?: string }
-            | null;
-          if (out?.ok && out.source === "web") {
-            result =
-              out.leads && out.leads.length > 0
-                ? mapWebSearchCandidates(out.leads, campaign, query, platform, s.candidates, weights)
-                : { accepted: [], skipped: [] };
-            source = "web";
-          } else {
-            return { ok: false, error: out?.error ?? "Web sourcing failed.", source: "web" };
-          }
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : "Network error reaching web sourcing.",
-            source: "web",
-          };
-        }
-      } else {
-        // Referral / Talent Pool: internal-pipeline concepts, no external source to
-        // search — synthetic by design, not a fallback from a failed live attempt.
-        result = sourceCandidates(campaign, platform, count, s.candidates, s.candidates.length, weights);
-      }
-
-      commit((prev) => {
-        let next: HermesState = {
-          ...prev,
-          candidates: [...result.accepted, ...prev.candidates],
-        };
-        next = recomputeMetrics(next, campaignId);
-        const liveLabel = source === "github" ? "Live GitHub" : source === "web" ? `Live ${platform} search` : `${platform} synthetic`;
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Sourced ${result.accepted.length} candidates`,
-            notes: `${liveLabel} batch. ${result.skipped.length} skipped by dedupe (${result.skipped
-              .slice(0, 3)
-              .map((x) => x.reason)
-              .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
-            outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped${source !== "mock" ? " (live)" : ""}`,
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      emit({ kind: "source", campaignId, count: result.accepted.length });
-      return { ...result, source, ok: true };
-    },
-    [commit, current],
-  );
-
-  const addCandidateFromGithub = useCallback(
-    async (
-      campaignId: string,
-      username: string,
-    ): Promise<{ ok: true; added: number; skipped: number } | { ok: false; error: string }> => {
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-      const login = username.trim();
-      if (!login) return { ok: false, error: "GitHub username is required." };
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-
-      let res: Response;
-      try {
-        res = await fetch("/api/source", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: login, platform: "GitHub", count: 1 }),
-        });
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching GitHub." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | { ok?: boolean; source?: string; users?: GithubUser[]; error?: string }
-        | null;
-      if (!out?.ok || out.source !== "github") {
-        return { ok: false, error: out?.error ?? "GitHub lookup failed." };
-      }
-      const users = out.users ?? [];
-      if (users.length === 0) return { ok: false, error: "GitHub user not found." };
-
-      const { accepted, skipped } = mapGithubCandidates(users, campaign, `@${login}`, s.candidates, weights);
-
-      commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
-        next = recomputeMetrics(next, campaignId);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: accepted.length ? `Added @${login} from GitHub` : `@${login} already in pipeline`,
-            notes: accepted.length
-              ? "Manually added a specific GitHub profile (not a search)."
-              : `Skipped by dedupe (${skipped[0]?.reason ?? "duplicate"}).`,
-            outcome: accepted.length ? "1 accepted" : "0 accepted, 1 skipped",
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      emit({ kind: "source", campaignId, count: accepted.length });
-      return { ok: true, added: accepted.length, skipped: skipped.length };
-    },
-    [commit, current],
-  );
-
-  const addCandidateManual = useCallback(
-    (
-      campaignId: string,
-      input: {
-        name: string;
-        title?: string;
-        skills?: string[];
-        profileUrl?: string;
-        email?: string;
-        location?: string;
-        notes?: string;
-      },
-    ): { ok: true; added: number; skipped: number } | { ok: false; error: string } => {
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-      const name = input.name.trim();
-      if (!name) return { ok: false, error: "Name is required." };
-
-      const jd = campaign.jobAnalysis;
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const noteText = input.notes?.trim();
-
-      // Same construction as mapGithubCandidates/mapWebSearchCandidates: a real
-      // profile, honestly blank wherever the operator didn't supply a value —
-      // no fabricated company/timezone/tenure. sourcePlatform "Referral" is the
-      // least-invasive existing SourcePlatform value for a hand-entered lead;
-      // sourceUrl is the same generic "canonical URL, no dedicated field" slot
-      // mapWebSearchCandidates uses.
-      const raw: Candidate = {
-        id: genId("cand"),
-        campaignId,
-        name,
-        email: input.email?.trim() ?? "",
-        avatarInitials: initialsFrom(name),
-        currentTitle: input.title?.trim() || jd.title,
-        currentCompany: "",
-        location: input.location?.trim() ?? "",
-        timezone: "",
-        linkedinUrl: "",
-        githubUrl: "",
-        sourceUrl: input.profileUrl?.trim() || undefined,
-        sourcePlatform: "Referral",
-        sourceQuery: "Manually added by operator",
-        matchScore: 0,
-        matchBreakdown: [],
-        techStack: Array.from(new Set((input.skills ?? []).map((sk) => sk.trim()).filter(Boolean))),
-        yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
-        companyStageExperience: [],
-        industryExperience: [],
-        recentActivity: "Manually added, no activity signal available.",
-        stage: "Sourced",
-        lastContactedAt: null,
-        outreachHistory: [],
-        replyHistory: [],
-        booking: null,
-        complianceFlags: {
-          doNotContact: false,
-          suppressed: false,
-          unsubscribed: false,
-          gdprExportRequested: false,
-          anonymized: false,
-          suppressedUntil: null,
-        },
-        createdAt: new Date().toISOString(),
-        provenance: "live",
-        notes: noteText ? [{ id: genId("note"), text: noteText, at: new Date().toISOString() }] : undefined,
-      };
-
-      const { accepted, skipped } = dedupeCandidates([raw], s.candidates, {
-        excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-      });
-      const scored = accepted.map((cand) => {
-        const { score, breakdown } = scoreCandidate(cand, jd, weights);
-        return { ...cand, matchScore: score, matchBreakdown: breakdown };
-      });
-
-      commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...scored, ...prev.candidates] };
-        next = recomputeMetrics(next, campaignId);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: scored.length ? `Added ${name} manually` : `${name} already in pipeline`,
-            notes: scored.length
-              ? "Manually entered candidate, no external search involved."
-              : `Skipped by dedupe (${skipped[0]?.reason ?? "duplicate"}).`,
-            outcome: scored.length ? "1 accepted" : "0 accepted, 1 skipped",
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      if (scored.length > 0) emit({ kind: "source", campaignId, count: scored.length });
-      return { ok: true, added: scored.length, skipped: skipped.length };
-    },
-    [commit, current],
-  );
-
   const startSillageMapping = useCallback(
     async (
       campaignId: string,
       identifier: string,
     ): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Sillage candidate sourcing requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, error: "Campaign not found." };
@@ -1320,7 +1113,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       let res: Response;
       try {
-        res = await fetch("/api/source/sillage/start", {
+        res = await workspaceFetch("/api/source/sillage/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ campaignId, ...parseSillageIdentifier(trimmed) }),
@@ -1336,7 +1129,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ok: true, requestId: out.requestId };
     },
-    [current],
+    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const checkSillageMapping = useCallback(
@@ -1348,13 +1141,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: true; status: "completed"; added: number; company: string }
       | { ok: false; error: string }
     > => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Sillage candidate sourcing requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, error: "Campaign not found." };
 
       let res: Response;
       try {
-        res = await fetch(`/api/source/sillage/status?requestId=${encodeURIComponent(requestId)}`);
+        res = await workspaceFetch(`/api/source/sillage/status?requestId=${encodeURIComponent(requestId)}`);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Sillage." };
       }
@@ -1402,158 +1199,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
+      if (accepted.length > 0) {
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: accepted.length });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: accepted.length, seatId });
+            }
+          }
+        }
+      }
       return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
     },
-    [commit, current],
-  );
-
-  const sourceFromApollo = useCallback(
-    async (
-      campaignId: string,
-      filters: {
-        titles?: string[];
-        seniorities?: string[];
-        locations?: string[];
-        organizationDomains?: string[];
-        keywords?: string;
-        count?: number;
-      },
-    ): Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }> => {
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const count = filters.count ?? 10;
-      const queryLabel =
-        [
-          filters.titles?.length ? `titles:${filters.titles.join("|")}` : null,
-          filters.seniorities?.length ? `seniority:${filters.seniorities.join("|")}` : null,
-          filters.locations?.length ? `loc:${filters.locations.join("|")}` : null,
-          filters.organizationDomains?.length ? `domains:${filters.organizationDomains.join("|")}` : null,
-          filters.keywords ? `kw:${filters.keywords}` : null,
-        ]
-          .filter(Boolean)
-          .join(" ") || "Apollo search";
-
-      let result: SourceResult = { accepted: [], skipped: [] };
-      let source: "apollo" | "not_configured" | "error" = "error";
-      let error: string | undefined;
-
-      try {
-        const res = await fetch("/api/source/apollo/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...filters, count }),
-        });
-        const out = (await res.json().catch(() => null)) as
-          | { ok?: boolean; source?: string; people?: ApolloPerson[]; error?: string }
-          | null;
-        if (out?.ok && out.source === "apollo") {
-          result =
-            out.people && out.people.length > 0
-              ? mapApolloCandidates(out.people, campaign, queryLabel, s.candidates, weights)
-              : { accepted: [], skipped: [] };
-          source = "apollo";
-        } else if (out?.source === "not_configured") {
-          source = "not_configured";
-          error = out.error ?? "Add an Apollo key in Settings to source real candidates.";
-        } else {
-          source = "error";
-          error = out?.error ?? "Apollo search failed.";
-        }
-      } catch (e) {
-        source = "error";
-        error = e instanceof Error ? e.message : "Network error.";
-      }
-
-      if (result.accepted.length > 0) {
-        commit((prev) => {
-          let next: HermesState = {
-            ...prev,
-            candidates: [...result.accepted, ...prev.candidates],
-          };
-          next = recomputeMetrics(next, campaignId);
-          next = withActivity(
-            next,
-            makeActivity({
-              type: "sourcing",
-              title: `Sourced ${result.accepted.length} candidates via Apollo`,
-              notes: `Live Apollo batch. ${result.skipped.length} skipped by dedupe (${result.skipped
-                .slice(0, 3)
-                .map((x) => x.reason)
-                .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
-              outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
-              campaignId,
-              linkedEntityType: "campaign",
-              linkedEntityId: campaignId,
-            }),
-            campaignId,
-          );
-          return next;
-        });
-        emit({ kind: "source", campaignId, count: result.accepted.length });
-      }
-      return { ...result, source, error };
-    },
-    [commit, current],
-  );
-
-  const enrichApolloCandidate = useCallback(
-    async (candidateId: string): Promise<{ ok: boolean; revealed: boolean; detail: string }> => {
-      const s = current();
-      const cand = s.candidates.find((c) => c.id === candidateId);
-      if (!cand) return { ok: false, revealed: false, detail: "Candidate not found." };
-      if (cand.sourcePlatform !== "Apollo" || !cand.sourceExternalId) {
-        return { ok: false, revealed: false, detail: "Not an Apollo-sourced candidate." };
-      }
-      try {
-        const res = await fetch("/api/source/apollo/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apolloId: cand.sourceExternalId }),
-        });
-        const out = (await res.json().catch(() => null)) as
-          | { ok?: boolean; source?: string; email?: string; phone?: string; error?: string; detail?: string }
-          | null;
-        if (!out?.ok || (out.source !== "apollo" && out.source !== "not_configured")) {
-          return { ok: false, revealed: false, detail: out?.error ?? "Apollo enrichment failed." };
-        }
-        if (out.source === "not_configured") {
-          return { ok: false, revealed: false, detail: out.error ?? "No Apollo key configured." };
-        }
-        const email = out.email ?? "";
-        const phone = out.phone ?? "";
-        if (!email && !phone) {
-          return { ok: true, revealed: false, detail: out.detail ?? "No contact details found (0 credits charged)." };
-        }
-        commit((prev) => {
-          const next: HermesState = {
-            ...prev,
-            candidates: prev.candidates.map((c) =>
-              c.id === candidateId ? { ...c, email: email || c.email, phone: phone || c.phone } : c,
-            ),
-          };
-          return withActivity(
-            next,
-            makeActivity({
-              type: "sourcing",
-              title: `Enriched via Apollo: ${cand.name}`,
-              notes: "Revealed contact details via Apollo (1 credit).",
-              outcome: email && phone ? "Email + phone revealed" : email ? "Email revealed" : "Phone revealed",
-              campaignId: cand.campaignId,
-              linkedEntityType: "candidate",
-              linkedEntityId: cand.id,
-            }),
-            cand.campaignId,
-          );
-        });
-        return { ok: true, revealed: true, detail: "Contact details revealed." };
-      } catch (e) {
-        return { ok: false, revealed: false, detail: e instanceof Error ? e.message : "Network error." };
-      }
-    },
-    [commit, current],
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const sourceFromSeamless = useCallback(
@@ -1571,6 +1231,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         count?: number;
       },
     ): Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return {
+          accepted: [],
+          skipped: [],
+          source: "error",
+          error: "Seamless candidate sourcing requires a live workspace.",
+        };
+      }
+      if (!workspaceEffectAllowed()) {
+        return { accepted: [], skipped: [], source: "error", error: "Workspace unavailable. Retry before sourcing." };
+      }
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
@@ -1594,10 +1265,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       let error: string | undefined;
 
       try {
-        const res = await fetch("/api/source/seamless/search", {
+        const res = await workspaceFetch("/api/source/seamless/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...filters, count }),
+          body: JSON.stringify({ campaignId, ...filters, count }),
         });
         const out = (await res.json().catch(() => null)) as
           | { ok?: boolean; source?: string; contacts?: SeamlessContact[]; error?: string }
@@ -1645,15 +1316,28 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           );
           return next;
         });
-        emit({ kind: "source", campaignId, count: result.accepted.length });
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: result.accepted.length });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: result.accepted.length, seatId });
+            }
+          }
+        }
       }
       return { ...result, source, error };
     },
-    [commit, current],
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const startSeamlessResearch = useCallback(
     async (candidateId: string): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Seamless enrichment requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
       const s = current();
       const cand = s.candidates.find((c) => c.id === candidateId);
       if (!cand) return { ok: false, error: "Candidate not found." };
@@ -1662,7 +1346,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       let res: Response;
       try {
-        res = await fetch("/api/source/seamless/research", {
+        res = await workspaceFetch("/api/source/seamless/research", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ searchResultId: cand.sourceExternalId }),
@@ -1678,7 +1362,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ok: true, requestId: out.requestId };
     },
-    [current],
+    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const checkSeamlessResearch = useCallback(
@@ -1690,13 +1374,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: true; status: "completed"; revealed: boolean }
       | { ok: false; error: string }
     > => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Seamless enrichment requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
       const s = current();
       const cand = s.candidates.find((c) => c.id === candidateId);
       if (!cand) return { ok: false, error: "Candidate not found." };
 
       let res: Response;
       try {
-        res = await fetch(`/api/source/seamless/research-status?requestId=${encodeURIComponent(requestId)}`);
+        res = await workspaceFetch(`/api/source/seamless/research-status?requestId=${encodeURIComponent(requestId)}`);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Seamless." };
       }
@@ -1754,94 +1442,93 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true, status: "completed", revealed: true };
     },
-    [commit, current],
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
-  const runSourcingAgent = useCallback(
-    async (campaignId: string, count = 5): Promise<{ ok: boolean; added: number; error?: string }> => {
+  const startApifyRun = useCallback(
+    async (
+      campaignId: string,
+      criteria: ApifyProfileSearchInput,
+    ): Promise<{ ok: true; runId: string; datasetId: string } | { ok: false; error: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "LinkedIn profile search requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, added: 0, error: "Campaign not found." };
-      if (campaign.status === "Paused") {
-        return { ok: false, added: 0, error: "Campaign is paused." };
-      }
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const finalTone = effectiveTone(s.skills);
+      if (!campaign) return { ok: false, error: "Campaign not found." };
 
-      const aiCfg = resolveAiProvider(s.settings, "sourcing");
-      if (!aiCfg) {
-        return { ok: false, added: 0, error: "No cloud LLM provider configured for sourcing. Add one in Settings." };
-      }
-      if (aiCfg.provider === "kimi") {
-        return {
-          ok: false,
-          added: 0,
-          error: "Kimi doesn't support tool-calling. Configure a different provider (Anthropic/OpenAI/Groq/xAI/Mistral) for the sourcing task.",
-        };
-      }
-
-      type AgentCandidate = Candidate & { draftSubject?: string; draftBody?: string };
-      let out: { ok?: boolean; candidates?: AgentCandidate[]; reason?: string } | null = null;
+      let res: Response;
       try {
-        const res = await fetch("/api/sourcing-agent", {
+        res = await workspaceFetch("/api/source/apify/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            campaign: { ...campaign, scoringWeights: weights },
-            existing: s.candidates.filter((c) => c.campaignId === campaignId),
-            count,
-            provider: aiCfg.provider,
-            apiKeyId: aiCfg.apiKeyId,
-            model: aiCfg.model,
-          }),
+          body: JSON.stringify({ campaignId, ...criteria }),
         });
-        out = await res.json().catch(() => null);
       } catch (err) {
-        return { ok: false, added: 0, error: err instanceof Error ? err.message : "Network error." };
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching LinkedIn profile search." };
       }
+      const out = (await res.json().catch(() => null)) as
+        | { ok?: boolean; runId?: string; datasetId?: string; error?: string }
+        | null;
+      if (!out?.ok || !out.runId || !out.datasetId) {
+        return { ok: false, error: out?.error ?? "LinkedIn profile search failed to start." };
+      }
+      return { ok: true, runId: out.runId, datasetId: out.datasetId };
+    },
+    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
+  );
 
-      if (!out?.ok || !out.candidates?.length) {
-        return { ok: false, added: 0, error: out?.reason ?? "The agent found no real candidates." };
+  const checkApifyRun = useCallback(
+    async (
+      campaignId: string,
+      runId: string,
+      datasetId: string,
+      query: string,
+    ): Promise<
+      | { ok: true; status: "processing" }
+      | { ok: true; status: "completed"; added: number }
+      | { ok: false; error: string }
+    > => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "LinkedIn profile search requires a live workspace." };
       }
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, error: "Campaign not found." };
 
-      const cleanCandidates: Candidate[] = [];
-      const messages: OutreachMessage[] = [];
-      for (const raw of out.candidates) {
-        const { draftSubject, draftBody, ...clean } = raw;
-        const candidate = clean as Candidate;
-        cleanCandidates.push(candidate);
-        if (draftSubject && draftBody) {
-          messages.push(
-            newOutreachMessage(
-              candidate,
-              campaign,
-              {
-                subject: draftSubject,
-                body: draftBody,
-                personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
-                channel: "Email",
-              },
-              finalTone,
-              s.settings,
-            ),
-          );
-        }
+      let res: Response;
+      try {
+        res = await workspaceFetch(
+          `/api/source/apify/status?runId=${encodeURIComponent(runId)}&datasetId=${encodeURIComponent(datasetId)}`,
+        );
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching LinkedIn profile search." };
       }
+      const out = (await res.json().catch(() => null)) as
+        | { ok?: boolean; status?: string; error?: string; profiles?: ApifyProfile[] }
+        | null;
+      if (!out?.ok) return { ok: false, error: out?.error ?? "LinkedIn profile search status check failed." };
+      if (out.status === "processing") return { ok: true, status: "processing" };
+      if (out.status !== "completed") return { ok: false, error: out.error ?? "LinkedIn profile search did not complete." };
+
+      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
+      const { accepted, skipped } = mapApifyCandidates(out.profiles ?? [], campaign, query, s.candidates, weights);
 
       commit((prev) => {
-        let next: HermesState = {
-          ...prev,
-          candidates: [...cleanCandidates, ...prev.candidates],
-          outreach: [...messages, ...prev.outreach],
-        };
+        let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
         next = recomputeMetrics(next, campaignId);
         next = withActivity(
           next,
           makeActivity({
             type: "sourcing",
-            title: `Sourcing agent found ${cleanCandidates.length} candidates`,
-            notes: `${messages.length} drafted for outreach in one tool-calling pass (live).`,
-            outcome: `${cleanCandidates.length} added, ${messages.length} drafted`,
+            title: `Sourced ${accepted.length} candidates via LinkedIn profile search: ${query}`,
+            notes: `Live LinkedIn profile batch. ${skipped.length} skipped by dedupe (${skipped
+              .slice(0, 3)
+              .map((x) => x.reason)
+              .join(", ")}${skipped.length > 3 ? "…" : ""}).`,
+            outcome: `${accepted.length} accepted, ${skipped.length} skipped (live)`,
             campaignId,
             linkedEntityType: "campaign",
             linkedEntityId: campaignId,
@@ -1850,25 +1537,485 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-
-      return { ok: true, added: cleanCandidates.length };
+      if (accepted.length > 0) {
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: accepted.length });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: accepted.length, seatId });
+            }
+          }
+        }
+      }
+      return { ok: true, status: "completed", added: accepted.length };
     },
-    [commit, current],
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const enrichCandidate = useCallback(
+    async (
+      candidateId: string,
+      opts?: { want?: EnrichableField[] },
+    ): Promise<{ ok: boolean; filled: EnrichableField[]; spend: number; detail: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, filled: [], spend: 0, detail: "Enrichment requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, filled: [], spend: 0, detail: "Workspace unavailable. Retry before enrichment." };
+      }
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, filled: [], spend: 0, detail: "Candidate not found." };
+
+      const want = opts?.want ?? DEFAULT_ENRICH_FIELDS;
+      const budgetCap = s.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
+      const alreadySpent = (s.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
+      const budgetRemaining = Math.max(0, budgetCap - alreadySpent);
+
+      let res: Response;
+      try {
+        res = await workspaceFetch("/api/source/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ candidate: cand, want, budgetRemaining }),
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          filled: [],
+          spend: 0,
+          detail: err instanceof Error ? err.message : "Network error reaching the enrichment service.",
+        };
+      }
+      const out = (await res.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            patch?: Partial<
+              Pick<
+                Candidate,
+                | "email"
+                | "phone"
+                | "currentTitle"
+                | "location"
+                | "currentCompany"
+                | "techStack"
+                | "externalIds"
+                | "matchScore"
+                | "matchBreakdown"
+                | "enrichment"
+              >
+            >;
+            attempts?: EnrichmentAttempt[];
+            spend?: number;
+            error?: string;
+          }
+        | null;
+      if (!out?.ok || !out.patch) {
+        return { ok: false, filled: [], spend: 0, detail: out?.error ?? "Enrichment failed." };
+      }
+
+      const patch = out.patch;
+      const attempts = out.attempts ?? [];
+      const spend = out.spend ?? 0;
+      const filled = Array.from(new Set(attempts.flatMap((a) => a.fieldsFilled)));
+      const byProvider = attempts
+        .filter((a) => a.fieldsFilled.length > 0)
+        .map((a) => `${a.provider}: ${a.fieldsFilled.join(", ")}`);
+      // One ledger entry per provider CALL this run, whether or not it found
+      // data (costUnits may be 0) — the audit trail behind
+      // state.enrichmentBudgetUnits (see HermesState.enrichmentLedger).
+      const ledgerEntries = attempts.map((a) => ({ provider: a.provider, candidateId, units: a.costUnits, at: a.at }));
+
+      commit((prev) => {
+        const next: HermesState = {
+          ...prev,
+          candidates: prev.candidates.map((c) => (c.id === candidateId ? { ...c, ...patch } : c)),
+          enrichmentLedger: ledgerEntries.length
+            ? [...(prev.enrichmentLedger ?? []), ...ledgerEntries]
+            : prev.enrichmentLedger,
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: `Enriched: ${cand.name}`,
+            notes: byProvider.length
+              ? `${byProvider.join("; ")}.`
+              : "No configured provider had new data for this candidate.",
+            outcome: filled.length
+              ? `${filled.length} field(s) filled (${spend} unit(s) spent)`
+              : `No new data (${spend} unit(s) spent)`,
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: cand.id,
+          }),
+          cand.campaignId,
+        );
+      });
+
+      return { ok: true, filled, spend, detail: byProvider.join("; ") || "No new data found." };
+    },
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const enrichCampaign = useCallback(
+    async (
+      campaignId: string,
+      opts?: { want?: EnrichableField[]; concurrency?: number },
+    ): Promise<{ ok: boolean; total: number; done: number; filled: number; spend: number; error?: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, total: 0, done: 0, filled: 0, spend: 0, error: "Enrichment requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, total: 0, done: 0, filled: 0, spend: 0, error: "Workspace unavailable. Retry before enrichment." };
+      }
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, total: 0, done: 0, filled: 0, spend: 0, error: "Campaign not found." };
+
+      const want = opts?.want ?? DEFAULT_ENRICH_FIELDS;
+      const concurrency = Math.max(1, opts?.concurrency ?? DEFAULT_ENRICH_CONCURRENCY);
+      const targets = s.candidates.filter(
+        (c) => c.campaignId === campaignId && !want.every((field) => computeCoverage(c).includes(field)),
+      );
+      if (targets.length === 0) return { ok: true, total: 0, done: 0, filled: 0, spend: 0 };
+
+      let done = 0;
+      let filledTotal = 0;
+      let spendTotal = 0;
+      let stoppedForBudget = false;
+      let cursor = 0;
+
+      const worker = async () => {
+        for (;;) {
+          const idx = cursor++;
+          if (idx >= targets.length) return;
+          const liveState = current();
+          const budgetCap = liveState.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
+          const alreadySpent = (liveState.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
+          if (alreadySpent >= budgetCap) {
+            stoppedForBudget = true;
+            return;
+          }
+          const result = await enrichCandidate(targets[idx].id, { want });
+          done += 1;
+          if (result.ok) {
+            filledTotal += result.filled.length;
+            spendTotal += result.spend;
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, () => worker()));
+
+      commit((prev) =>
+        withActivity(
+          prev,
+          makeActivity({
+            type: "sourcing",
+            title: `Batch enrichment: ${campaign.jobAnalysis.title}`,
+            notes: stoppedForBudget
+              ? `Stopped early — enrichment budget exhausted after ${done}/${targets.length} candidate(s).`
+              : `Ran the enrichment waterfall for ${done}/${targets.length} candidate(s) missing ${want.join(", ")}.`,
+            outcome: `${filledTotal} field(s) filled across ${done} candidate(s), ${spendTotal} unit(s) spent`,
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        ),
+      );
+
+      return { ok: true, total: targets.length, done, filled: filledTotal, spend: spendTotal };
+    },
+    [candidatePersistenceAllowed, commit, current, enrichCandidate, workspaceEffectAllowed],
+  );
+
+  const runSourcingAgent = useCallback(
+    async (
+      campaignId: string,
+      count = 5,
+    ): Promise<{
+      ok: boolean;
+      added: number;
+      mode?: "cloud" | "deterministic";
+      feedbackReceipts?: SourcingFeedbackReceipt[];
+      error?: string;
+    }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return {
+          ok: false,
+          added: 0,
+          error: "The live sourcing agent requires a live workspace.",
+        };
+      }
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) {
+        return { ok: false, added: 0, error: "Workspace unavailable. Retry before running the sourcing agent." };
+      }
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, added: 0, error: "Campaign not found." };
+      if (!campaignAllowsLiveSourcing(campaign.status)) {
+        return { ok: false, added: 0, error: "Campaign is not active for sourcing." };
+      }
+      const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 8);
+      const reviewed = await requestReviewedSourcing(
+        workspaceFetch,
+        campaignId,
+        requestedCount,
+      );
+      if (!reviewed.ok) {
+        return { ok: false, added: 0, error: reviewed.error };
+      }
+      const out = reviewed.value;
+      const executionMode = out.mode;
+      const received = out.candidates;
+      const feedbackReceipts = out.feedbackReceipts;
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) {
+        return { ok: false, added: 0, error: "Sourcing authority changed during the operation." };
+      }
+
+      let authorized = false;
+      let added = 0;
+      let drafted = 0;
+      const persisted = await commitPersisted((prev) => {
+        if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return prev;
+        const latestCampaign = prev.campaigns.find((item) => item.id === campaignId);
+        if (!latestCampaign || !campaignAllowsLiveSourcing(latestCampaign.status)) {
+          return prev;
+        }
+        if (sourcingAgentCampaignFingerprint(latestCampaign) !== out.campaignFingerprint) {
+          return prev;
+        }
+        authorized = true;
+        const weights = effectiveWeights(latestCampaign.scoringWeights, prev.skills);
+        const finalTone = effectiveTone(prev.skills);
+        const candidates = received
+          .filter((dto) => {
+            if (!dto.draftSubject && !dto.draftBody) return true;
+            if (!dto.draftSubject || !dto.draftBody) return false;
+            const forbidden = [
+              latestCampaign.jobAnalysis.department,
+              latestCampaign.jobAnalysis.teamSize,
+              latestCampaign.jobAnalysis.reportingTo,
+              latestCampaign.jobAnalysis.currency,
+            ];
+            return (
+              validateCandidateBoundText(dto.draftSubject, {
+                salaryMin: latestCampaign.jobAnalysis.salaryMin,
+                salaryMax: latestCampaign.jobAnalysis.salaryMax,
+                forbidden,
+              }).safe &&
+              validateCandidateBoundText(dto.draftBody, {
+                salaryMin: latestCampaign.jobAnalysis.salaryMin,
+                salaryMax: latestCampaign.jobAnalysis.salaryMax,
+                forbidden,
+              }).safe
+            );
+          })
+          .map((dto) => {
+            const candidate = candidateFromSourcingAgentDto(dto);
+            const scored = scoreCandidate(candidate, latestCampaign.jobAnalysis, weights);
+            return { dto, candidate: { ...candidate, matchScore: scored.score, matchBreakdown: scored.breakdown } };
+          });
+        const unique = dedupeCandidates(
+          candidates.map((item) => item.candidate),
+          prev.candidates,
+          { excludedCompanies: latestCampaign.sourcingStrategy.excludedCompanies },
+        ).accepted;
+        if (unique.length === 0) return prev;
+        const dtoById = new Map(candidates.map((item) => [item.candidate.id, item.dto]));
+        const contactReady = unique.filter((candidate) => isContactReadyByTenure(candidate));
+        const preferredChannel =
+          latestCampaign.sourcingStrategy.primaryPlatforms.find((p) => p === "LinkedIn") != null
+            ? ("LinkedIn" as const)
+            : ("Email" as const);
+        const messages = contactReady.map((candidate) => {
+          const dto = dtoById.get(candidate.id)!;
+          const channel =
+            preferredChannel === "LinkedIn" && candidate.linkedinUrl.trim()
+              ? ("LinkedIn" as const)
+              : ("Email" as const);
+          const generated = dto.draftSubject && dto.draftBody && channel === "Email"
+            ? {
+                subject: dto.draftSubject,
+                body: dto.draftBody,
+                personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
+                channel: "Email" as const,
+              }
+            : generateOutreach(
+                candidate,
+                latestCampaign,
+                finalTone,
+                channel,
+                1,
+                undefined,
+                latestCampaign.jobAnalysis.language ?? prev.settings.defaultLanguage,
+              );
+          return newOutreachMessage(
+            candidate,
+            latestCampaign,
+            generated,
+            finalTone,
+            prev.settings,
+          );
+        });
+        added = unique.length;
+        drafted = messages.length;
+        let next: HermesState = {
+          ...prev,
+          candidates: [...unique, ...prev.candidates],
+          outreach: [...messages, ...prev.outreach],
+        };
+        next = recomputeMetrics(next, campaignId);
+        return withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: `Sourcing agent found ${unique.length} candidates`,
+            notes:
+              executionMode === "cloud"
+                ? `${messages.length} drafted for human review after a cloud tool-calling pass.`
+                : `${messages.length} drafted for human review after direct GitHub search. No cloud model ran.`,
+            outcome: `${unique.length} added, ${messages.length} drafted`,
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+      });
+      if (!persisted || !authorized) {
+        return { ok: false, added: 0, error: "The sourcing result could not be saved. Retry safely." };
+      }
+      if (added > 0) {
+        {
+          const seatIds = campaignBrowserSeatIds(s.seats, campaignId);
+          if (seatIds.length === 0) {
+            emit({ kind: "source", campaignId, count: added });
+          } else {
+            for (const seatId of seatIds) {
+              emit({ kind: "source", campaignId, count: added, seatId });
+            }
+          }
+        }
+      }
+      return {
+        ok: true,
+        added,
+        mode: executionMode,
+        feedbackReceipts,
+        ...(drafted === 0 && added > 0 ? { error: "Candidates were saved without drafts." } : {}),
+      };
+    },
+    [candidatePersistenceAllowed, commitPersisted, current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const recordSourcingFeedback = useCallback(
+    async (receiptId: string, verdict: SourcingFeedbackVerdict): Promise<boolean> => {
+      if (
+        !workspaceEffectAllowed() ||
+        !sourcingMutationAllowed() ||
+        !UUID_RE.test(receiptId) ||
+        (verdict !== "useful" && verdict !== "dead_end" && verdict !== "corrected")
+      ) {
+        return false;
+      }
+      const operationId = crypto.randomUUID();
+      let response: Response;
+      try {
+        response = await workspaceFetch("/api/sourcing-learning/feedback", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": operationId,
+            "X-Request-Id": operationId,
+          },
+          body: JSON.stringify({ receiptId, verdict }),
+        });
+      } catch {
+        return false;
+      }
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.split(";", 1)[0]?.trim() !== "application/json") return false;
+      const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      return Boolean(
+        response.ok &&
+          body?.ok === true &&
+          body.receiptId === receiptId &&
+          body.verdict === verdict,
+      );
+    },
+    [sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const listPendingSourcingFeedback = useCallback(
+    async (campaignId: string): Promise<SourcingFeedbackReceipt[] | null> => {
+      if (
+        !workspaceEffectAllowed() ||
+        !sourcingMutationAllowed() ||
+        !campaignId ||
+        campaignId.length > 100 ||
+        /[\u0000-\u001f\u007f]/.test(campaignId)
+      ) {
+        return null;
+      }
+      let response: Response;
+      try {
+        response = await workspaceFetch(
+          `/api/sourcing-learning/feedback?campaignId=${encodeURIComponent(campaignId)}`,
+          { headers: { "X-Request-Id": crypto.randomUUID() } },
+        );
+      } catch {
+        return null;
+      }
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (!response.ok || contentType.split(";", 1)[0]?.trim() !== "application/json") return null;
+      const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      if (body?.ok !== true || !Array.isArray(body.receipts)) return null;
+      if (body.receipts.length === 0) return [];
+      return parseSourcingFeedbackReceipts(body.receipts);
+    },
+    [sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
   );
 
   const generateOutreachFor = useCallback(
-    (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
+    (candidateId: string, tone?: OutreachTone, channel?: OutreachChannel, seatId?: string) => {
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      if (!isContactReadyByTenure(candidate)) return null;
+      const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills); // learned default tone
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const resolvedSeatId =
+        seatId ??
+        (resolvedChannel === "LinkedIn"
+          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
+          : undefined);
+      // N Browser seats: never silently stamp the wrong desk — require explicit seatId.
+      if (
+        resolvedChannel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (BC empty ≠ attached; Vendor foreign refused).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       // Compose in the seat's language, else the need's, else the workspace default.
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
-      const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      const gen = generateOutreach(candidate, campaign, finalTone, resolvedChannel, 1, voice, lang);
+      const msg = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        ...(seat?.id ? { seatId: seat.id } : {}),
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -1876,7 +2023,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Outreach drafted: ${candidate.name}`,
-            notes: `${finalTone} ${channel} message generated with ${gen.personalizationEvidence.length} personalization points.`,
+            notes: `${finalTone} ${resolvedChannel} message generated with ${gen.personalizationEvidence.length} personalization points.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -1885,7 +2032,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaign.id,
         );
       });
-      emit({ kind: "allocate", candidateName: candidate.name, campaignId: campaign.id });
+      emit({ kind: "allocate", candidateName: candidate.name, campaignId: campaign.id, seatId: seat?.id ?? seatId });
       return msg;
     },
     [commit, current],
@@ -1897,18 +2044,38 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // exact same mock used by generateOutreachFor. The committed message's status
   // is still decided by the human approval gate — never auto-sent.
   const generateOutreachLive = useCallback(
-    async (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
+    async (candidateId: string, tone?: OutreachTone, channel?: OutreachChannel, seatId?: string) => {
+      if (!workspaceEffectAllowed()) return null;
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      if (!isContactReadyByTenure(candidate)) return null;
+      const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills);
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const resolvedSeatId =
+        seatId ??
+        (resolvedChannel === "LinkedIn"
+          ? soleCampaignBrowserSeatId(s.seats, campaign.id)
+          : undefined);
+      // N Browser seats: never silently stamp the wrong desk — require explicit seatId.
+      if (
+        resolvedChannel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (BC empty ≠ attached; Vendor foreign refused).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
 
       // Mock is the canonical fallback (and the source of personalization evidence).
-      const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+      const mockGen = generateOutreach(candidate, campaign, finalTone, resolvedChannel, 1, voice, lang);
 
       // Resolve cloud provider config (seat override → workspace defaults).
       const aiCfg = resolveAiProvider(s.settings, "outreach", {
@@ -1920,6 +2087,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       let gen: GeneratedOutreach = mockGen;
       let live = false;
       if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
+        const linkedInAgentContext = await fetchLinkedInAgentContext({
+          profileUrl: candidate.linkedinUrl || candidate.sourceUrl,
+          snippet: [candidate.currentTitle, candidate.currentCompany, candidate.location]
+            .filter(Boolean)
+            .join(" · "),
+          icp: campaign.jobAnalysis.title,
+        });
         const basePrompt = buildOutreachPrompt({
           candidateName: candidate.name,
           candidateTitle: candidate.currentTitle,
@@ -1933,14 +2107,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           requiredSkills: campaign.jobAnalysis.requiredSkills,
           roleContext: candidateDisclosureContextForCampaignLike(campaign),
           tone: finalTone,
-          channel,
+          channel: resolvedChannel,
           language: lang,
           persona: voice?.persona,
           signature: voice?.signature,
+          skillPlaybook: getSkill(s.skills, "outreach_skill")?.content,
+          linkedInAgentContext,
         });
         // F-2: prepend ariaPrompt when set so it shapes the live generation.
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
-        const guardrails = ariaPrompt || "";
+        const liGuard = resolvedChannel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
+        const inviteRules =
+          resolvedChannel === "LinkedIn"
+            ? "LinkedIn Connect notes must stay ≤200 characters or Send greys out and the candidate never gets a notification."
+            : "";
+        const guardrails = [ariaPrompt, liGuard, inviteRules].filter(Boolean).join("\n\n");
         const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
         // Build input: cloud path when aiCfg resolved, hermes path otherwise.
@@ -1969,10 +2150,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Layer 2: a non-ok result keeps the mock draft.
-        const result = await hermesGenerate(outreachGenInput);
+        const attempt = runWorkspaceEffect(() => hermesGenerate(outreachGenInput));
+        if (!attempt.allowed) return null;
+        const result = await attempt.value;
         if (result.ok && result.text) {
           // Layer 3: an unparseable reply keeps the mock draft.
-          const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
+          const parsed = parseHermesOutreach(result.text, resolvedChannel, mockGen.subject);
           if (parsed) {
             gen = {
               // ALWAYS humanize live copy too — the mock path already does this
@@ -1982,14 +2165,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               body: humanizeText(parsed.body),
               // Reuse the mock's evidence — same shape, deterministic, audit-friendly.
               personalizationEvidence: mockGen.personalizationEvidence,
-              channel,
+              channel: resolvedChannel,
             };
             live = true;
           }
         }
       }
 
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      if (!workspaceEffectAllowed()) return null;
+      const msg = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        ...(seat?.id ? { seatId: seat.id } : {}),
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -2008,7 +2195,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return msg;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   // Task 1 — follow-up sequences. Reuses the exact same draft-creation path as
@@ -2019,6 +2206,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // creates a Draft that still has to clear the human approval gate.
   const draftFollowUpFor = useCallback(
     async (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+      if (!workspaceEffectAllowed()) return null;
       const s = current();
       // Captured before the live-gen await below so the stale-draft blocker in
       // checkOutreachApproval (candidate.lastRepliedAt > message.createdAt) still
@@ -2031,16 +2219,42 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
-      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
-      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Keep following up on whichever channel the candidate was originally reached on.
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
+      let resolvedSeatId = seatId;
+      if (!resolvedSeatId && channel === "LinkedIn") {
+        const prior = latestOutreachSeatId(s.outreach, candidateId);
+        const priorSeat = prior
+          ? s.seats.find(
+              (x) =>
+                x.id === prior &&
+                isLinkedInAutomaticProvider(x.provider) &&
+                seatAttachedToCampaign(x, campaign.id),
+            )
+          : undefined;
+        resolvedSeatId = priorSeat?.id ?? soleCampaignBrowserSeatId(s.seats, campaign.id);
+      }
+      // N Browser seats: never silently stamp the wrong desk — require prior/explicit seatId.
+      if (
+        channel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (mirror generateOutreach*).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
+      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Mock is the canonical fallback (and the source of personalization evidence).
       const mockGen = generateOutreach(candidate, campaign, finalTone, channel, due.nextSequenceStep, voice, lang);
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
       // follow-up touch isn't silently downgraded to canned copy at scale.
       const { gen, live } = await attemptLiveFollowUpGen({
+        skills: s.skills,
         settings: s.settings,
         candidate,
         campaign,
@@ -2051,10 +2265,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         mockGen,
         seat,
         touchNote: `This is follow-up touch #${due.nextSequenceStep} after ${Math.floor(due.daysSinceContact)}d of silence since the last message — vary the angle/urgency from a first touch, keep it short, no guilt-tripping.`,
+        runEffect: runWorkspaceEffect,
       });
+      if (!workspaceEffectAllowed()) return null;
       const msg = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep),
         createdAt: draftedAt,
+        ...(seat?.id ? { seatId: seat.id } : {}),
       };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -2074,7 +2291,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return msg;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   // #Vivier re-contact. Unlike draftFollowUpFor (which is gated to candidates
@@ -2083,6 +2300,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // outreach regardless of stage. Still only a Draft behind the approval gate.
   const draftRecontactFor = useCallback(
     async (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+      if (!workspaceEffectAllowed()) return null;
       const s = current();
       // Same createdAt-before-await fix as draftFollowUpFor — see comment there.
       const draftedAt = new Date().toISOString();
@@ -2090,15 +2308,41 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
-      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
+      let resolvedSeatId = seatId;
+      if (!resolvedSeatId && channel === "LinkedIn") {
+        const prior = latestOutreachSeatId(s.outreach, candidateId);
+        const priorSeat = prior
+          ? s.seats.find(
+              (x) =>
+                x.id === prior &&
+                isLinkedInAutomaticProvider(x.provider) &&
+                seatAttachedToCampaign(x, campaign.id),
+            )
+          : undefined;
+        resolvedSeatId = priorSeat?.id ?? soleCampaignBrowserSeatId(s.seats, campaign.id);
+      }
+      // N Browser seats: never silently stamp the wrong desk — require prior/explicit seatId.
+      if (
+        channel === "LinkedIn" &&
+        !resolvedSeatId &&
+        campaignBrowserSeatIds(s.seats, campaign.id).length > 1
+      ) {
+        return null;
+      }
+      const seat = resolvedSeatId ? s.seats.find((x) => x.id === resolvedSeatId) : undefined;
+      // Refuse foreign/unattached desk stamps (mirror generateOutreach*).
+      if (resolvedSeatId && (!seat || !seatAttachedToCampaign(seat, campaign.id))) {
+        return null;
+      }
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
-      const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
       // Mock is the canonical fallback (and the source of personalization evidence).
       const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
       // #Vivier re-contact isn't silently downgraded to canned copy either.
       const { gen, live } = await attemptLiveFollowUpGen({
+        skills: s.skills,
         settings: s.settings,
         candidate,
         campaign,
@@ -2109,8 +2353,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         mockGen,
         seat,
         touchNote: `This is a #Vivier re-engagement of a previously ${candidate.stage} candidate${candidate.silverMedalist ? " (Silver Medalist)" : ""} — acknowledge the gap briefly, lead with what's different now, no guilt-tripping.`,
+        runEffect: runWorkspaceEffect,
       });
-      const msg = { ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1), createdAt: draftedAt };
+      if (!workspaceEffectAllowed()) return null;
+      const msg = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        createdAt: draftedAt,
+        ...(seat?.id ? { seatId: seat.id } : {}),
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -2129,20 +2379,27 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return msg;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const updateOutreach = useCallback(
     (messageId: string, patch: Partial<OutreachMessage>) =>
       commit((s) => ({
         ...s,
-        outreach: s.outreach.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+        outreach: s.outreach.map((m) => {
+          if (m.id !== messageId) return m;
+          const next = { ...m, ...patch };
+          if (typeof next.subject === "string") next.subject = humanizeText(next.subject);
+          if (typeof next.body === "string") next.body = humanizeText(next.body);
+          return next;
+        }),
       })),
     [commit],
   );
 
   const regenerateOutreach = useCallback(
     async (messageId: string, tone?: OutreachTone) => {
+      if (!workspaceEffectAllowed()) return;
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       const candidate = msg && s.candidates.find((c) => c.id === msg.candidateId);
@@ -2162,6 +2419,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const aiCfg = resolveAiProvider(s.settings, "outreach");
       if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
         const lang = campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+        const linkedInAgentContext = await fetchLinkedInAgentContext({
+          profileUrl: candidate.linkedinUrl || candidate.sourceUrl,
+          snippet: [candidate.currentTitle, candidate.currentCompany, candidate.location]
+            .filter(Boolean)
+            .join(" · "),
+          icp: campaign.jobAnalysis.title,
+        });
         const basePrompt = buildOutreachPrompt({
           candidateName: candidate.name,
           candidateTitle: candidate.currentTitle,
@@ -2177,9 +2441,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           tone: nextTone,
           channel: msg.channel,
           language: lang,
+          skillPlaybook: getSkill(s.skills, "outreach_skill")?.content,
+          linkedInAgentContext,
         });
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
-        const prompt = ariaPrompt ? `${ariaPrompt}\n\n${basePrompt}` : basePrompt;
+        const liGuard = msg.channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
+        const inviteRules =
+          msg.channel === "LinkedIn"
+            ? "LinkedIn Connect notes must stay ≤200 characters or Send greys out and the candidate never gets a notification."
+            : "";
+        const composed = [ariaPrompt, liGuard, inviteRules].filter(Boolean).join("\n\n");
+        const prompt = composed ? `${composed}\n\n${basePrompt}` : basePrompt;
 
         let regenGenInput: Parameters<typeof hermesGenerate>[0];
         if (aiCfg) {
@@ -2204,7 +2476,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        const result = await hermesGenerate(regenGenInput);
+        const attempt = runWorkspaceEffect(() => hermesGenerate(regenGenInput));
+        if (!attempt.allowed) return;
+        const result = await attempt.value;
         if (result.ok && result.text) {
           const parsed = parseHermesOutreach(result.text, msg.channel, mockGen.subject);
           if (parsed) {
@@ -2219,6 +2493,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      if (!workspaceEffectAllowed()) return;
       commit((prev) => ({
         ...prev,
         outreach: prev.outreach.map((m) =>
@@ -2235,7 +2510,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ),
       }));
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const approveOutreach = useCallback(
@@ -2254,11 +2529,25 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const isActionable = (message: OutreachMessage) =>
         message.status === "Needs Approval" || message.status === "Draft";
 
+      if (!workspaceEffectAllowed()) return approvalBlocked("Workspace unavailable. Retry before approving outreach.");
       let s = current();
       const initialMessage = s.outreach.find((m) => m.id === messageId);
       if (!initialMessage) return approvalBlocked("Message not found.");
       if (!isActionable(initialMessage)) return approvalBlocked("Message is no longer awaiting approval.");
-      let msg: OutreachMessage = initialMessage;
+      // Last-mile Humanizer: legacy drafts may still carry em dashes from older gens.
+      const cleanedSubject = humanizeText(initialMessage.subject);
+      const cleanedBody = humanizeText(initialMessage.body);
+      let msg: OutreachMessage =
+        cleanedSubject !== initialMessage.subject || cleanedBody !== initialMessage.body
+          ? { ...initialMessage, subject: cleanedSubject, body: cleanedBody }
+          : initialMessage;
+      if (msg !== initialMessage) {
+        commit((state) => ({
+          ...state,
+          outreach: state.outreach.map((m) => (m.id === messageId ? msg : m)),
+        }));
+        s = current();
+      }
       let candidate = s.candidates.find((c) => c.id === msg.candidateId);
       let campaign = s.campaigns.find((c) => c.id === msg.campaignId);
       if (!candidate || !campaign) return approvalBlocked("Linked candidate/campaign missing.");
@@ -2289,7 +2578,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
         pendingOutreachApprovals.current.add(messageId);
         try {
-          const persisted = await recordOutreachApproval({ messageId, ...approvalSnapshot });
+          const persisted = await recordOutreachApproval({ messageId, ...approvalSnapshot }, workspaceFetch);
           if (!persisted.ok) return approvalBlocked(persisted.error);
           if (persisted.dryRun) {
             return {
@@ -2301,7 +2590,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ],
             };
           }
+          // Server may soft-fit LinkedIn ≤200 / humanize — adopt the sealed echo so
+          // bots send byte-identical copy to what the approval hash covers.
+          if (typeof persisted.subject === "string" || typeof persisted.body === "string") {
+            msg = {
+              ...msg,
+              subject: typeof persisted.subject === "string" ? persisted.subject : msg.subject,
+              body: typeof persisted.body === "string" ? persisted.body : msg.body,
+            };
+            commit((state) => ({
+              ...state,
+              outreach: state.outreach.map((m) =>
+                m.id === messageId ? { ...m, subject: msg.subject, body: msg.body } : m,
+              ),
+            }));
+          }
           const revokeStaleApproval = async (blocker: string): Promise<ApprovalResult> => {
+            // The approval POST already succeeded. Its idempotent rollback must
+            // remain available if hydration changes readiness before revalidation.
             const revoked = await revokeOutreachApproval(messageId);
             return revoked.ok
               ? approvalBlocked(blocker)
@@ -2315,7 +2621,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           const refreshedCandidate = s.candidates.find((c) => c.id === refreshedMessage.candidateId);
           const refreshedCampaign = s.campaigns.find((c) => c.id === refreshedMessage.campaignId);
           if (!refreshedCandidate || !refreshedCampaign) return revokeStaleApproval("Linked candidate/campaign missing.");
-          msg = refreshedMessage;
+          // Prefer sealed subject/body already applied above; keep seat/other fields from refresh.
+          msg = {
+            ...refreshedMessage,
+            subject: msg.subject,
+            body: msg.body,
+          };
           candidate = refreshedCandidate;
           campaign = refreshedCampaign;
 
@@ -2323,9 +2634,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           if (
             msg.candidateId !== approvalSnapshot.candidateId ||
             msg.channel !== approvalSnapshot.channel ||
-            refreshedRecipient !== approvalSnapshot.recipient ||
-            msg.subject !== approvalSnapshot.subject ||
-            msg.body !== approvalSnapshot.body
+            refreshedRecipient !== approvalSnapshot.recipient
           ) {
             return revokeStaleApproval("Draft changed while approval was being recorded. Review and approve the current copy again.");
           }
@@ -2345,21 +2654,71 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // N LinkedIn desks: refuse empty or foreign-campaign seat attribution.
+      if (msg.channel === "LinkedIn") {
+        const stampedSeatId = (msg.seatId ?? "").trim();
+        if (stampedSeatId) {
+          const stamped = s.seats.find((x) => x.id === stampedSeatId);
+          if (
+            !stamped ||
+            stamped.status !== "active" ||
+            !isLinkedInAutomaticProvider(stamped.provider) ||
+            !seatAttachedToCampaign(stamped, campaign.id)
+          ) {
+            return approvalBlocked(
+              "LinkedIn seat is not attached to this campaign — re-draft from an attached Browser Computer or Vendor API desk.",
+            );
+          }
+        } else {
+          // Only seats attached to this campaign (BC empty ≠ attached; Vendor empty = shared).
+          const attachedLi = s.seats.filter(
+            (x) =>
+              x.status === "active" &&
+              isLinkedInAutomaticProvider(x.provider) &&
+              seatAttachedToCampaign(x, campaign.id),
+          );
+          if (attachedLi.length === 1) {
+            const soleAuto = attachedLi[0]!.id;
+            msg = { ...msg, seatId: soleAuto };
+            commit((prev) => ({
+              ...prev,
+              outreach: prev.outreach.map((m) =>
+                m.id === messageId ? { ...m, seatId: soleAuto } : m,
+              ),
+            }));
+            s = current();
+          } else if (attachedLi.length > 1) {
+            return approvalBlocked(
+              "Message has no seatId; cannot approve across N LinkedIn seats without a drafting desk.",
+            );
+          } else {
+            return approvalBlocked(
+              "No LinkedIn automatic seat attached to this campaign — attach a Browser Computer or Vendor API desk.",
+            );
+          }
+        }
+      }
+
       const now = new Date().toISOString();
-      // LinkedIn is assisted-manual: the system drafts the message but a human must
-      // copy/paste it on the candidate's profile. Keep it out of the sent counter
-      // and ledger until the operator confirms the manual send.
+      // LinkedIn Manual: draft → human paste/confirm. LinkedIn Automatic (default):
+      // same hybrid as Email/WhatsApp — Approved, then explicit send queues vendor delivery.
       const isLive = !s.settings.dryRunMode;
-      const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
-      // Email, WhatsApp, and SMS all have a real live provider wired up in
-      // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS).
-      // None of them may be delivered on approval alone.
+      const linkedInDeliveryMode = s.settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic";
+      const isLinkedInManual = msg.channel === "LinkedIn" && isLive && linkedInDeliveryMode === "manual";
+      const isLinkedInAutomatic = msg.channel === "LinkedIn" && isLive && linkedInDeliveryMode === "automatic";
+      // Email, WhatsApp, SMS, and LinkedIn Automatic have a real live provider path in
+      // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS,
+      // LinkedIn Vendor API). None of them may be delivered on approval alone.
       const isLiveSendChannel =
-        (msg.channel === "Email" || msg.channel === "WhatsApp" || msg.channel === "SMS") && isLive;
+        (msg.channel === "Email" ||
+          msg.channel === "WhatsApp" ||
+          msg.channel === "SMS" ||
+          isLinkedInAutomatic) &&
+        isLive;
       // HYBRID send model: in LIVE mode an approval records approval and holds the
       // de-dupe slot (ledger 'claimed') but NEVER sends — an explicit sendApprovedOutreach()
       // actually delivers and only then flips to 'sent'. In dry-run/demo we simulate the
-      // send so the showcase stays alive. This is the never-auto-send guarantee.
+      // send so the showcase stays alive. This is the never-auto-send-without-approval guarantee.
       const isPendingSend = isLinkedInManual || isLiveSendChannel;
       const finalStatus: OutreachStatus = isLinkedInManual
         ? "Pending Manual Send"
@@ -2376,8 +2735,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           m.id === messageId
             ? {
                 ...m,
+                subject: msg.subject,
+                body: msg.body,
                 status: finalStatus,
                 approvedBy: prev.settings.operatorName,
+                approvedAt: now,
+                approvedSubject: msg.subject,
+                approvedBody: msg.body,
                 scheduledFor: isPendingSend ? null : now,
                 sentAt: isPendingSend ? null : now,
                 dryRun: prev.settings.dryRunMode,
@@ -2408,7 +2772,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           id: genId("led"),
           candidateId: candidate.id,
           candidateEmail: candidate.email,
-          seatId: "",
+          seatId: msg.seatId ?? "",
           campaignId: campaign.id,
           channel: msg.channel,
           status: finalLedgerStatus,
@@ -2460,14 +2824,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      emit({ kind: "send", candidateName: candidate.name, campaignId: campaign.id });
+      emit({ kind: "send", candidateName: candidate.name, campaignId: campaign.id, seatId: msg.seatId });
       return result;
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const confirmManualSend = useCallback(
-    (messageId: string): { ok: boolean; error?: string } => {
+    async (messageId: string): Promise<{ ok: boolean; error?: string; dryRun?: boolean }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before confirming." };
+      }
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       if (!msg) return { ok: false, error: "Message not found." };
@@ -2476,6 +2843,97 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       const campaign = s.campaigns.find((c) => c.id === msg.campaignId);
       if (!candidate || !campaign) return { ok: false, error: "Linked candidate/campaign missing." };
+      const profile = (candidate.linkedinUrl ?? "").trim();
+      if (!profile) return { ok: false, error: "Candidate has no LinkedIn profile URL." };
+
+      // Match record_linkedin_assisted_manual_send allowlist — Browser Computer
+      // uses automatic send / Take control, not paste-confirm.
+      const isManualConfirmSeat = (seat: (typeof s.seats)[number]) =>
+        seat.provider === "LinkedIn Assisted Manual" ||
+        seat.provider === "LinkedIn Vendor API";
+      if (
+        msg.seatId &&
+        s.seats.some(
+          (seat) =>
+            seat.id === msg.seatId && seat.provider === "LinkedIn Browser Computer",
+        )
+      ) {
+        return {
+          ok: false,
+          error:
+            "Browser Computer desks send automatically after Take control / Release — use Send Approved, not manual confirm.",
+        };
+      }
+      let linkedInSeat =
+        msg.seatId != null && msg.seatId !== ""
+          ? s.seats.find((seat) => seat.id === msg.seatId && isManualConfirmSeat(seat))
+          : undefined;
+      if (msg.seatId && !linkedInSeat) {
+        return {
+          ok: false,
+          error: "Message seatId is not a LinkedIn Assisted/Vendor seat — cannot confirm on another desk.",
+        };
+      }
+      if (linkedInSeat && !seatAttachedToCampaign(linkedInSeat, campaign.id)) {
+        return {
+          ok: false,
+          error:
+            "LinkedIn seat is not attached to this campaign — attach it under Campaign Agents before confirming.",
+        };
+      }
+      if (!linkedInSeat) {
+        const liSeats = s.seats.filter(
+          (seat) => isManualConfirmSeat(seat) && seatAttachedToCampaign(seat, campaign.id),
+        );
+        if (liSeats.length > 1) {
+          return {
+            ok: false,
+            error: "Message has no seatId; cannot attribute confirm across N LinkedIn seats.",
+          };
+        }
+        linkedInSeat =
+          liSeats.find((seat) => seat.status === "active" && seat.mode === "live") ?? liSeats[0];
+      }
+
+      if (supabaseEnabled) {
+        if (!linkedInSeat) {
+          return {
+            ok: false,
+            error: "Connect a LinkedIn seat in Settings → Integrations before confirming sends.",
+          };
+        }
+        try {
+          const res = await workspaceFetch("/api/outreach/confirm-manual", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messageId,
+              candidateId: candidate.id,
+              candidateProfileUrl: profile,
+              campaignId: campaign.id,
+              seatId: linkedInSeat.id,
+            }),
+          });
+          const out = (await res.json().catch(() => null)) as {
+            ok?: boolean;
+            error?: string;
+            status?: string;
+            detail?: string;
+            synced?: boolean;
+          } | null;
+          if (!out?.ok) {
+            return { ok: false, error: out?.error ?? `Confirm failed (${res.status}).` };
+          }
+          if (out.status === "dry-run") {
+            return { ok: true, dryRun: true, error: out.detail };
+          }
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : "Network error confirming LinkedIn send.",
+          };
+        }
+      }
 
       const now = new Date().toISOString();
       commit((prev) => {
@@ -2501,14 +2959,31 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           id: genId("led"),
           candidateId: candidate.id,
           candidateEmail: candidate.email,
-          seatId: "",
+          seatId: linkedInSeat?.id ?? "",
           campaignId: campaign.id,
           channel: msg.channel,
           status: "sent",
           reason: "Operator confirmed manual send on LinkedIn.",
           at: now,
         };
-        let next: HermesState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
+        const seats = linkedInSeat
+          ? prev.seats.map((s) =>
+              s.id === linkedInSeat.id
+                ? {
+                    ...s,
+                    lastSendAt: now,
+                    sentToday: (s.sentToday ?? 0) + 1,
+                  }
+                : s,
+            )
+          : prev.seats;
+        let next: HermesState = {
+          ...prev,
+          outreach,
+          candidates,
+          seats,
+          ledger: [ledgerEntry, ...prev.ledger],
+        };
         next = {
           ...next,
           campaigns: next.campaigns.map((c) =>
@@ -2541,7 +3016,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   // The deliberate, gated SEND for a live-approved email. Calls the server send route
@@ -2549,7 +3024,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // approval) and only flips the local record to sent on a real "sent" response. This is
   // the one place a real email leaves; it never fires automatically.
   const sendApprovedOutreach = useCallback(
-    async (messageId: string): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
+    async (
+      messageId: string,
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      queued?: boolean;
+      status?: string;
+      detail?: string;
+      paceReason?: string;
+      dryRun?: boolean;
+    }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before sending outreach." };
+      }
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       if (!msg) return { ok: false, error: "Message not found." };
@@ -2559,29 +3047,69 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Resolve a live seat for the message's channel: a live mailbox for Email
       // (domain verification is checked — and persisted — server-side on send,
       // not pre-filtered here, since that's the only place it can ever become
-      // true), or a live WhatsApp / SMS sender for the phone channels.
+      // true), a live WhatsApp / SMS sender for the phone channels, or a live
+      // LinkedIn Vendor API seat for automatic LinkedIn delivery.
       const channel = msg.channel;
+      const liveOf = (provider: string) =>
+        s.seats.filter((x) => x.status === "active" && x.mode === "live" && x.provider === provider);
+      const pickUniqueOrPreferred = (provider: string) => {
+        if (msg.seatId) {
+          return s.seats.find(
+            (x) =>
+              x.id === msg.seatId &&
+              x.status === "active" &&
+              x.mode === "live" &&
+              x.provider === provider,
+          );
+        }
+        const live = liveOf(provider);
+        return live.length === 1 ? live[0] : undefined;
+      };
       const seat =
         channel === "WhatsApp"
-          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
+          ? pickUniqueOrPreferred("WhatsApp Cloud")
           : channel === "SMS"
-            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
-            : s.seats.find((x) => x.status === "active" && x.mode === "live");
+            ? pickUniqueOrPreferred("Twilio SMS")
+            : channel === "LinkedIn"
+              ? pickLiveLinkedInSendSeat(s.seats, msg.campaignId, msg.seatId)
+              : (() => {
+                  if (msg.seatId) {
+                    return s.seats.find(
+                      (x) => x.id === msg.seatId && x.status === "active" && x.mode === "live",
+                    );
+                  }
+                  const liveMail = s.seats.filter(
+                    (x) =>
+                      x.status === "active" &&
+                      x.mode === "live" &&
+                      x.provider !== "WhatsApp Cloud" &&
+                      x.provider !== "Twilio SMS" &&
+                      x.provider !== "LinkedIn Browser Computer" &&
+                      x.provider !== "LinkedIn Vendor API" &&
+                      x.provider !== "LinkedIn Assisted Manual",
+                  );
+                  return liveMail.length === 1 ? liveMail[0] : undefined;
+                })();
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"
             ? "live WhatsApp sender"
             : channel === "SMS"
               ? "live SMS sender"
-              : "live mailbox";
+              : channel === "LinkedIn"
+                ? "live LinkedIn Vendor API or Browser Computer seat (or switch LinkedIn to Manual)"
+                : "live mailbox";
         return { ok: false, error: `No ${need} connected. Connect one in the Fleet first.` };
       }
       if ((channel === "WhatsApp" || channel === "SMS") && !candidate.phone) {
         return { ok: false, error: "No phone number on file for this candidate. Enrich it before a phone send." };
       }
-      let out: { status?: string; detail?: string };
+      if (channel === "LinkedIn" && !(candidate.linkedinUrl ?? "").trim()) {
+        return { ok: false, error: "Candidate has no LinkedIn profile URL." };
+      }
+      let out: { status?: string; detail?: string; paceReason?: string };
       try {
-        const res = await fetch("/api/outreach/send", {
+        const res = await workspaceFetch("/api/outreach/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2589,9 +3117,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             seatId: seat.id,
             candidateId: candidate.id,
             candidateEmail: candidate.email,
+            profileUrl: candidate.linkedinUrl,
             campaignId: msg.campaignId,
-            subject: msg.subject,
-            body: msg.body,
+            subject: msg.approvedSubject ?? msg.subject,
+            body: msg.approvedBody ?? msg.body,
             channel,
             phone: candidate.phone,
             confirmLive: true,
@@ -2600,13 +3129,31 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         out = (await res.json().catch(() => ({ status: "error", detail: "Bad response from the send endpoint." }))) as {
           status?: string;
           detail?: string;
+          paceReason?: string;
         };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Send failed." };
       }
-      const deliveryQueued = channel === "WhatsApp" && out.status === "queued";
+      const deliveryQueued =
+        (channel === "WhatsApp" || channel === "LinkedIn") && out.status === "queued";
+      if (out.status === "dry-run") {
+        return {
+          ok: false,
+          error: out.detail ?? "Dry-run: nothing sent.",
+          status: out.status,
+          detail: out.detail,
+          dryRun: true,
+          paceReason: out.paceReason,
+        };
+      }
       if (out.status !== "sent" && !deliveryQueued) {
-        return { ok: false, error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).` };
+        return {
+          ok: false,
+          error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).`,
+          status: out.status,
+          detail: out.detail,
+          paceReason: out.paceReason,
+        };
       }
       if (deliveryQueued) {
         const now = new Date().toISOString();
@@ -2620,8 +3167,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             { ...prev, outreach },
             makeActivity({
               type: "outreach",
-              title: `WhatsApp delivery queued for ${candidate.name}`,
-              notes: "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
+              title:
+                channel === "LinkedIn"
+                  ? `LinkedIn delivery queued for ${candidate.name}`
+                  : `WhatsApp delivery queued for ${candidate.name}`,
+              notes:
+                channel === "LinkedIn"
+                  ? "ARIA will re-check suppression, the contact ledger, seat caps, and the approval before vendor delivery."
+                  : "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
               outcome: "Queued for policy check",
               campaignId: msg.campaignId,
               linkedEntityType: "candidate",
@@ -2630,7 +3183,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             msg.campaignId,
           );
         });
-        return { ok: true, queued: true };
+        return {
+          ok: true,
+          queued: true,
+          status: out.status,
+          detail: out.detail,
+          paceReason: out.paceReason,
+        };
       }
       // Delivered. Flip the local record to sent (Scheduled + sentAt) and count it.
       const now = new Date().toISOString();
@@ -2656,7 +3215,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               }
             : c,
         );
-        let next: HermesState = { ...prev, outreach, ledger, candidates };
+        const seats = prev.seats.map((s) =>
+          s.id === seat.id
+            ? {
+                ...s,
+                lastSendAt: now,
+                sentToday: (s.sentToday ?? 0) + 1,
+              }
+            : s,
+        );
+        let next: HermesState = { ...prev, outreach, ledger, candidates, seats };
         next = {
           ...next,
           campaigns: next.campaigns.map((c) =>
@@ -2673,7 +3241,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             title: `${channel} sent to ${candidate.name}`,
             notes: channel === "Email"
               ? `Live email delivered via ${seat.operatorEmail}.`
-              : `Live ${channel} delivered to ${candidate.phone ?? "the candidate"}.`,
+              : channel === "LinkedIn"
+                ? `Live LinkedIn delivered via ${seat.provider}.`
+                : `Live ${channel} delivered to ${candidate.phone ?? "the candidate"}.`,
             outcome: "Sent",
             campaignId: msg.campaignId,
             linkedEntityType: "candidate",
@@ -2683,18 +3253,32 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      return { ok: true };
+      emit({
+        kind: "send",
+        candidateName: candidate.name,
+        campaignId: msg.campaignId,
+        seatId: seat.id,
+      });
+      return {
+        ok: true,
+        status: out.status ?? "sent",
+        detail: out.detail,
+        paceReason: out.paceReason,
+      };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const rejectOutreach = useCallback(
     async (messageId: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing outreach." };
+      }
       const currentState = current();
       const currentMessage = currentState.outreach.find((m) => m.id === messageId);
       if (!currentMessage) return { ok: false, error: "Message not found." };
       if (supabaseEnabled) {
-        const revoked = await revokeOutreachApproval(messageId);
+        const revoked = await revokeOutreachApproval(messageId, workspaceFetch);
         if (!revoked.ok) return { ok: false, error: revoked.error };
       }
       commit((s) => {
@@ -2722,7 +3306,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const classifyAndStoreReply = useCallback(
@@ -2735,6 +3319,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       inboxThreadId?: string;
       externalReceivedAt?: string;
     }) => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before classifying replies.");
+      }
       const s = current();
 
       // DEDUP: never create a second reply for a messageId already ingested. Return the
@@ -2830,7 +3417,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 hermesApiUrl: s.settings.hermesApiUrl,
                 hermesApiKeyId: s.settings.hermesApiKeyId,
               };
-          const result = await hermesGenerate(classifyInput);
+          const attempt = runWorkspaceEffect(() => hermesGenerate(classifyInput));
+          if (!attempt.allowed) throw new Error("Workspace unavailable. Retry before classifying replies.");
+          const result = await attempt.value;
           if (result.ok && result.text) {
             const parsed = JSON.parse(result.text) as ReplyClassification;
             if (
@@ -2959,10 +3548,105 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaignId,
         );
       });
-      emit({ kind: "reply", candidateName: candidate?.name, campaignId });
+      emit({
+        kind: "reply",
+        candidateName: candidate?.name,
+        campaignId,
+        seatId: candidate ? latestOutreachSeatId(s.outreach, candidate.id) : undefined,
+      });
+
+      // Learning loop: positive replies refine outreach_skill using the sealed copy that landed.
+      if (candidate && ["INTERESTED", "QUALIFIED_INTEREST"].includes(classification.intent)) {
+        commit((prev) => {
+          const lastOutbound = [...prev.outreach]
+            .filter((m) => m.candidateId === candidate.id && (m.approvedBody || m.body))
+            .sort((a, b) =>
+              (b.approvedAt ?? b.sentAt ?? b.createdAt).localeCompare(
+                a.approvedAt ?? a.sentAt ?? a.createdAt,
+              ),
+            )[0];
+          const proposals = proposeSkillUpdates(prev);
+          let next: HermesState = {
+            ...prev,
+            campaigns: prev.campaigns.map((c) =>
+              c.id === campaignId
+                ? { ...c, skillUpdates: [...proposals, ...c.skillUpdates] }
+                : c,
+            ),
+          };
+          if (lastOutbound) {
+            const sealed = (lastOutbound.approvedBody ?? lastOutbound.body).trim();
+            const lesson = [
+              "",
+              `## Learned from positive reply (${classification.intent})`,
+              `- Tone that landed: ${lastOutbound.tone}`,
+              `- Channel: ${lastOutbound.channel}`,
+              `- Sealed length: ${sealed.length} chars`,
+              "- Keep using specific work references + one soft ask; Connect notes stay ≤200.",
+              sealed.length <= 200 && lastOutbound.channel === "LinkedIn"
+                ? `- Winning note shape (~${sealed.length}c): "${sealed.slice(0, 120)}${sealed.length > 120 ? "…" : ""}"`
+                : null,
+            ]
+              .filter(Boolean)
+              .join("\n");
+            next = {
+              ...next,
+              skills: next.skills.map((sk) =>
+                sk.key === "outreach_skill"
+                  ? {
+                      ...sk,
+                      content: `${sk.content}\n${lesson}`.slice(0, 12_000),
+                      metrics: {
+                        ...sk.metrics,
+                        applied: (sk.metrics?.applied ?? 0) + 1,
+                        outcomeSignal: (sk.metrics?.outcomeSignal ?? 0) + 1,
+                      },
+                      updatedAt: new Date().toISOString(),
+                    }
+                  : sk,
+              ),
+            };
+          }
+          const seatId = latestOutreachSeatId(prev.outreach, candidate.id);
+          const seat = seatId ? prev.seats.find((x) => x.id === seatId) : undefined;
+          const propose = decideBookingProposeFromInterest({
+            intent: classification.intent,
+            campaignId,
+            candidateId: candidate.id,
+            seatId,
+            computerId: seat?.computerId ?? undefined,
+          });
+          let withLearn = withActivity(
+            next,
+            makeActivity({
+              type: "learning",
+              title: `Outreach skill learned from ${candidate.name}`,
+              notes: `Positive ${classification.intent} reply — sealed copy and tone fed back into outreach_skill.`,
+              outcome: "Skill reinforced",
+              campaignId,
+              linkedEntityType: "skill",
+              linkedEntityId: "outreach_skill",
+            }),
+            campaignId,
+          );
+          if (propose) {
+            const fields = bookingProposeActivityFields(propose);
+            withLearn = withActivity(
+              withLearn,
+              makeActivity({
+                ...fields,
+                title: `${fields.title}: ${candidate.name}`,
+              }),
+              campaignId,
+            );
+          }
+          return withLearn;
+        });
+      }
+
       return { reply, classification };
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const markReplyHandled = useCallback(
@@ -2997,9 +3681,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       reason: string,
       method: "POST" | "DELETE" = "POST",
     ): Promise<{ ok: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
+      }
       if (!value.trim()) return { ok: true };
       try {
-        const response = await fetch("/api/compliance/suppress", {
+        const response = await workspaceFetch("/api/compliance/suppress", {
           method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ type, value, reason }),
@@ -3015,7 +3702,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error updating the enforcement list." };
       }
     },
-    [],
+    [workspaceEffectAllowed, workspaceFetch],
   );
 
   const syncSuppressionToServer = useCallback(
@@ -3068,6 +3755,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const applyReplyAction = useCallback(
     async (replyId: string): Promise<{ ok: boolean; error?: string; warning?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before applying reply actions." };
+      }
       const initial = current();
       const reply0 = initial.replies.find((r) => r.id === replyId);
       if (!reply0) return { ok: false, error: "Reply not found." };
@@ -3096,7 +3786,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const approvalIds = initial.outreach
           .filter((message) => message.candidateId === candidate0.id)
           .map((message) => message.id);
-        const revoked = await Promise.all(approvalIds.map((messageId) => revokeOutreachApproval(messageId)));
+        const revoked = await Promise.all(
+          approvalIds.map((messageId) => revokeOutreachApproval(messageId, workspaceFetch)),
+        );
         if (revoked.some((result) => !result.ok)) {
           warning = "The candidate is suppressed for future contact, but a message already in delivery could not be cancelled.";
         }
@@ -3183,7 +3875,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       return warning ? { ok: true, warning } : { ok: true };
     },
-    [commit, current, persistSuppressionToServer],
+    [commit, current, persistSuppressionToServer, workspaceEffectAllowed, workspaceFetch],
   );
 
   // Task 2 — turn a classified reply's suggested draft into a real outreach
@@ -3213,9 +3905,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const priorMaxStep = s.outreach
         .filter((m) => m.candidateId === candidate.id)
         .reduce((max, m) => Math.max(max, m.sequenceStep), 0);
+      const prior = latestOutreachSeatId(s.outreach, candidate.id);
+      const priorSeat = prior
+        ? s.seats.find(
+            (x) =>
+              x.id === prior &&
+              (reply.channel !== "LinkedIn" || isLinkedInAutomaticProvider(x.provider)) &&
+              seatAttachedToCampaign(x, campaign.id),
+          )
+        : undefined;
+      let replySeatId = priorSeat?.id;
+      if (!replySeatId && reply.channel === "LinkedIn") {
+        replySeatId = soleCampaignBrowserSeatId(s.seats, campaign.id);
+        if (!replySeatId && campaignBrowserSeatIds(s.seats, campaign.id).length > 1) {
+          return null;
+        }
+      }
       const msg: OutreachMessage = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, priorMaxStep + 1),
         ...(reply.inboxThreadId ? { inboxThreadId: reply.inboxThreadId } : {}),
+        ...(replySeatId ? { seatId: replySeatId } : {}),
       };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -3238,243 +3947,33 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
-  const createBookingFor = useCallback(
-    async (
-      candidateId: string,
-      opts?: { startTime?: string; interviewerName?: string },
-    ): Promise<
-      | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
-      | { ok: false; error: string }
-    > => {
-      const s = current();
-      const candidate = s.candidates.find((c) => c.id === candidateId);
-      const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
-      if (!candidate || !campaign) return { ok: false, error: "Candidate or campaign not found." };
-      // Never book a candidate who opted out / is suppressed (compliance).
-      const cf = candidate.complianceFlags;
-      if (cf.doNotContact || cf.suppressed || cf.unsubscribed) {
-        return { ok: false, error: "Candidate has opted out or is suppressed. Cannot book." };
-      }
-
-      const activeInterviewers = s.interviewers.filter((iv) => iv.active);
-      const slot = resolveBookingSlot(s.bookings, activeInterviewers, s.bookings.length, opts);
-      if ("error" in slot) return { ok: false, error: slot.error };
-      const booking = createBooking(candidate, campaign, slot.interviewer, slot.start);
-      const prep = interviewerPrepEmail(booking, candidate);
-      const confirm = candidateConfirmationEmail(booking);
-
-      // Create a REAL calendar event FIRST when a live mailbox is connected — a
-      // failed remote call must not produce a "Booked" candidate carrying a fake
-      // calendar link. Demo mode / no live seat skips this and commits immediately
-      // below with the synthetic link, exactly as before.
-      const seat = s.seats.find(
-        (x) =>
-          x.status === "active" &&
-          x.mode === "live" &&
-          (x.provider === "Gmail API" || x.provider === "Microsoft Graph"),
-      );
-      if (supabaseEnabled && seat) {
-        try {
-          const res = await fetch("/api/calendar/event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              seatId: seat.id,
-              candidateName: booking.candidateName,
-              candidateEmail: candidate.email || undefined,
-              role: booking.role,
-              startTime: booking.startTime,
-              endTime: booking.endTime,
-              timezone: booking.timezone,
-              interviewerEmail: booking.interviewerEmail || undefined,
-              agenda: booking.agenda,
-              confirmLive: true,
-            }),
-          });
-          const out = (await res.json().catch(() => null)) as
-            | { status?: string; link?: string | null; detail?: string }
-            | null;
-          if (!res.ok) {
-            return { ok: false, error: out?.detail ?? `Calendar request failed (${res.status}).` };
-          }
-          if (out?.status === "created" && out.link) {
-            booking.calLink = out.link;
-          }
-          // status "dry-run" / "skipped" (mail-only connection, seat not live, etc.)
-          // is documented graceful degradation, not a failure — keep the synthetic link.
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : "Calendar service unreachable.",
-          };
-        }
-      }
-
-      commit((prev) => {
-        const candidates = prev.candidates.map((c) =>
-          c.id === candidate.id
-            ? { ...c, ...withStage(c, "Booked"), booking }
-            : c,
-        );
-        const bookedCandidate = candidates.find((c) => c.id === candidate.id) ?? candidate;
-        let next: HermesState = {
-          ...prev,
-          bookings: [booking, ...prev.bookings],
-          candidates,
-        };
-        next = appendWinRecord(next, bookedCandidate, campaign, booking);
-        next = recomputeMetrics(next, campaign.id);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "booking",
-            title: `Interview booked: ${candidate.name}`,
-            notes: `${booking.interviewer || "No interviewer assigned yet"}. Teams + Cal.com links generated. Stage → Booked.`,
-            outcome: "Confirmed",
-            campaignId: campaign.id,
-            linkedEntityType: "booking",
-            linkedEntityId: booking.id,
-          }),
-          campaign.id,
-        );
-        return next;
-      });
-
-      emit({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
-      return { ok: true, booking, prepEmail: prep, confirmationEmail: confirm };
-    },
-    [commit, current],
-  );
-
-  const updateBooking = useCallback(
-    (id: string, patch: Partial<Booking>): { ok: true } | { ok: false; error: string } => {
-      // Rescheduling to a new time is the one patch shape that can create a
-      // fresh double-booking (status-only patches like "Completed"/"Cancelled"
-      // never move a slot) — guard it before committing.
-      if (patch.startTime || patch.endTime) {
-        const s = current();
-        const booking = s.bookings.find((b) => b.id === id);
-        if (!booking) return { ok: false, error: "Booking not found." };
-        const start = new Date(patch.startTime ?? booking.startTime);
-        const end = new Date(patch.endTime ?? booking.endTime);
-        // No interviewer assigned (empty roster at booking time) — nothing to
-        // conflict-check; an empty interviewerEmail must never collide with
-        // another interviewer-less booking's empty string.
-        if (booking.interviewerEmail && interviewerIsBusy(s.bookings, booking.interviewerEmail, start, end, booking.id)) {
-          return { ok: false, error: `${booking.interviewer} is already booked at that time.` };
-        }
-      }
-      commit((s) => {
-        const booking = s.bookings.find((b) => b.id === id);
-        let next: HermesState = {
-          ...s,
-          bookings: s.bookings.map((b) => (b.id === id ? { ...b, ...patch } : b)),
-        };
-        // Completing an interview naturally advances the candidate past "Booked" --
-        // only when they're still sitting there, so this never fights a stage the
-        // human already set manually (Interviewed/Offer/Hired/Rejected/...).
-        if (booking && patch.status === "Completed") {
-          const cand = next.candidates.find((c) => c.id === booking.candidateId);
-          if (cand?.stage === "Booked") {
-            next = {
-              ...next,
-              candidates: next.candidates.map((c) =>
-                c.id === booking.candidateId
-                  ? { ...c, ...withStage(c, "Interviewed") }
-                  : c,
-              ),
-            };
-            next = recomputeMetrics(next, booking.campaignId);
-          }
-        }
-        return next;
-      });
-      return { ok: true };
-    },
-    [commit, current],
-  );
-
-  const generateReport = useCallback(
-    (campaignId: string) => {
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return null;
-      const report = generateWeeklyReport(campaign, s.candidates, s.outreach);
-      commit((prev) => {
-        let next: HermesState = {
-          ...prev,
-          reports: [report, ...prev.reports.filter((r) => r.campaignId !== campaignId)],
-          campaigns: prev.campaigns.map((c) =>
-            c.id === campaignId
-              ? {
-                  ...c,
-                  // Append newly proposed updates only — overwriting here discarded any
-                  // Accept/Reject decision the recruiter already made on a prior report
-                  // (proposeSkillUpdates re-proposes the same fixed titles every run).
-                  skillUpdates: [
-                    ...c.skillUpdates,
-                    ...report.skillUpdates
-                      .filter((nu) => !c.skillUpdates.some((ex) => ex.title === nu.title))
-                      .map((x) => ({ ...x })),
-                  ],
-                }
-              : c,
-          ),
-        };
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "learning",
-            title: "Weekly report generated",
-            notes: `${report.skillUpdates.length} skill updates proposed.`,
-            outcome: "Report ready",
-            campaignId,
-            linkedEntityType: "report",
-            linkedEntityId: report.id,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      return report;
-    },
-    [commit, current],
-  );
-
-  const setSkillUpdateStatus = useCallback(
-    (campaignId: string, skillId: string, status: SkillUpdate["status"]) =>
-      commit((s) => {
-        const next: HermesState = {
-          ...s,
-          campaigns: s.campaigns.map((c) =>
-            c.id === campaignId
-              ? { ...c, skillUpdates: c.skillUpdates.map((u) => (u.id === skillId ? { ...u, status } : u)) }
-              : c,
-          ),
-          reports: s.reports.map((r) =>
-            r.campaignId === campaignId
-              ? { ...r, skillUpdates: r.skillUpdates.map((u) => (u.id === skillId ? { ...u, status } : u)) }
-              : r,
-          ),
-        };
-        const skill = s.campaigns
-          .find((c) => c.id === campaignId)
-          ?.skillUpdates.find((u) => u.id === skillId);
-        return withActivity(
-          next,
-          makeActivity({
-            type: "learning",
-            title: `Skill update ${status}`,
-            notes: skill ? `${skill.skill}: ${skill.title}` : skillId,
-            outcome: status,
-            campaignId,
-            linkedEntityType: "skill",
-            linkedEntityId: skillId,
-          }),
-          campaignId,
-        );
+  const {
+    createBookingFor,
+    updateBooking,
+    generateReport,
+    setSkillUpdateStatus,
+  } = useMemo(
+    () =>
+      createBookingReportActions({
+        commit,
+        currentState: () => stateRef.current,
+        workspaceEffectAllowed,
+        bookingMutationAllowed,
+        learningMutationAllowed,
+        workspaceFetch,
+        liveCalendarEnabled: supabaseEnabled,
+        makeActivity,
+        withActivity,
+        recomputeMetrics,
+        emitBooking: emit,
       }),
-    [commit],
+    [
+      commit,
+      bookingMutationAllowed,
+      learningMutationAllowed,
+      workspaceEffectAllowed,
+      workspaceFetch,
+    ],
   );
 
   /* ---- candidate compliance -------------------------------------------- */
@@ -3785,9 +4284,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           phone: sub.phone,
           avatarInitials: initials,
           currentTitle: sub.roleTitle,
-          currentCompany: "—",
-          location: sub.detected.location ?? "—",
-          timezone: "—",
+          currentCompany: "Unknown",
+          location: sub.detected.location ?? "Unknown",
+          timezone: "Unknown",
           linkedinUrl: "",
           githubUrl: "",
           sourcePlatform: "Referral", // closest base enum; leadSource is authoritative
@@ -3795,7 +4294,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           matchScore: sub.score.total,
           matchBreakdown: [],
           techStack: sub.detected.skills ?? [],
-          yearsExperience: 0,
+          yearsExperience: null,
           companyStageExperience: [],
           industryExperience: [],
           recentActivity: `Applied via career-site chatbox (Path ${sub.path}).`,
@@ -3879,6 +4378,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       commit((s) => {
         const cand = s.candidates.find((c) => c.id === id);
         if (!cand) return s;
+        if (isCandidateErasureTombstone(cand)) return s;
         let next: HermesState = {
           ...s,
           // Any complianceMutate caller may change `stage` (e.g. suppressCandidate,
@@ -3963,6 +4463,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const restoreCandidateContact = useCallback(
     (id: string) => {
       const cand = current().candidates.find((c) => c.id === id);
+      if (!cand || isCandidateErasureTombstone(cand)) return;
       complianceMutate(
         id,
         (c) => ({
@@ -3982,7 +4483,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Mirror suppressCandidate/markDoNotContact: also remove the candidate
       // from the real, server-enforced suppression_list so the outreach send
       // route stops blocking them, not just the local view.
-      if (cand) syncCandidateSuppressionToServer(cand, "Restored", "DELETE");
+      syncCandidateSuppressionToServer(cand, "Restored", "DELETE");
     },
     [complianceMutate, current, syncCandidateSuppressionToServer],
   );
@@ -4001,25 +4502,164 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [complianceMutate, current, syncCandidateSuppressionToServer],
   );
 
-  const anonymizeCandidate = useCallback(
-    (id: string) =>
-      complianceMutate(
-        id,
-        (c) => ({
-          ...c,
-          name: "Anonymized Candidate",
-          email: `anon-${c.id.slice(-6)}@redacted.example`,
-          avatarInitials: "—",
-          linkedinUrl: "",
-          githubUrl: "",
-          currentCompany: "Redacted",
-          complianceFlags: { ...c.complianceFlags, anonymized: true },
-        }),
-        "Candidate anonymized",
-        "Anonymized",
-      ),
-    [complianceMutate],
-  );
+  const anonymizeCandidate = useCallback(async (id: string) => {
+    if (!workspaceEffectAllowed()) {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Workspace unavailable. Retry before anonymizing.",
+      };
+    }
+    const candidate = current().candidates.find((item) => item.id === id);
+    if (!candidate) {
+      return { ok: false as const, completed: false as const, error: "Candidate not found." };
+    }
+
+    const role = supabaseEnabled ? liveRoleRef.current : current().currentRole;
+    if (!role || !can(role, "compliance")) {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "You do not have permission to anonymize candidates.",
+      };
+    }
+    if (!supabaseEnabled) {
+      const changed = commit((state) => {
+        const exact = state.candidates.find((item) => item.id === id);
+        if (!exact) return state;
+        return recomputeMetrics(anonymizeHermesState(state, id), exact.campaignId);
+      });
+      if (!changed) {
+        return {
+          ok: false as const,
+          completed: false as const,
+          error: "The local demo record could not be anonymized.",
+        };
+      }
+      return {
+        ok: true as const,
+        completed: true,
+        status: "completed" as const,
+        scrubCounts: { browser_demo_state: 1 },
+        obligations: [],
+        workspaceRefreshRequired: false,
+      };
+    }
+    if (role !== "admin") {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Administrator permission is required for candidate erasure.",
+      };
+    }
+
+    let response: Response;
+    let body: unknown;
+    try {
+      response = await workspaceFetch("/api/admin/candidates/erasure", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId: candidate.campaignId, candidateId: candidate.id }),
+      });
+      body = await response.json().catch(() => null);
+    } catch {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Could not reach the candidate erasure service.",
+      };
+    }
+    const receipt = body !== null && typeof body === "object" && !Array.isArray(body)
+      ? body as Record<string, unknown>
+      : null;
+    const requestId = typeof receipt?.requestId === "string" ? receipt.requestId : undefined;
+    if (!response.ok && response.status !== 202) {
+      const code = typeof receipt?.code === "string" ? receipt.code : "";
+      const blocked = code === "candidate_erasure_blocked_legal_hold";
+      return {
+        ok: false as const,
+        completed: false as const,
+        status: blocked ? "blocked_legal_hold" as const : undefined,
+        requestId,
+        error: blocked
+          ? "Erasure blocked by legal hold. No candidate data was changed."
+          : code === "candidate_erasure_obligation_limit_exceeded"
+            ? "Candidate erasure requires manual handling because more than 100 provider records are linked. No candidate data was changed."
+          : code === "candidate_not_found"
+            ? "The candidate was not found in this workspace."
+            : code === "insufficient_permissions"
+              ? "Administrator permission is required for candidate erasure."
+              : "Candidate erasure is unavailable. No completion was recorded.",
+      };
+    }
+    const status = receipt?.status;
+    const acceptedStatus = status === "completed"
+      || status === "manual_required"
+      || status === "pending_provider"
+      || status === "retryable_failure";
+    if (
+      receipt?.ok !== true
+      || receipt.campaignId !== candidate.campaignId
+      || receipt.candidateId !== candidate.id
+      || !acceptedStatus
+      || typeof receipt.completed !== "boolean"
+      || (status === "completed") !== receipt.completed
+      || !Array.isArray(receipt.obligations)
+      || !receipt.obligations.every((item) => {
+        if (item === null || typeof item !== "object" || Array.isArray(item)) return false;
+        const obligation = item as Record<string, unknown>;
+        return typeof obligation.id === "string"
+          && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(obligation.id)
+          && typeof obligation.provider === "string"
+          && obligation.provider.length >= 1
+          && obligation.provider.length <= 64
+          && [
+            "pending_provider",
+            "manual_required",
+            "retryable_failure",
+            "completed",
+          ].includes(String(obligation.status))
+          && Number.isInteger(obligation.attemptCount)
+          && Number(obligation.attemptCount) >= 0
+          && Number(obligation.attemptCount) <= 100;
+      })
+      || receipt.scrubCounts === null
+      || typeof receipt.scrubCounts !== "object"
+      || Array.isArray(receipt.scrubCounts)
+    ) {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Candidate erasure returned an invalid authority receipt.",
+      };
+    }
+
+    const erasureStatus = status as Exclude<CandidateErasureStatus, "blocked_legal_hold">;
+    const maskedState = recomputeMetrics(
+      anonymizeHermesState(current(), candidate.id),
+      candidate.campaignId,
+    );
+    stateRef.current = maskedState;
+    setState(maskedState);
+    try {
+      await hydrateWorkspace();
+    } catch {
+      // The server erasure receipt remains authoritative. Keep the local
+      // tombstone masked and require a later workspace refresh.
+    }
+    return {
+      ok: true as const,
+      completed: receipt.completed,
+      status: erasureStatus,
+      requestId,
+      scrubCounts: receipt.scrubCounts as Record<string, number>,
+      obligations: receipt.obligations as CandidateErasureObligation[],
+      workspaceRefreshRequired: workspaceStatusRef.current.phase !== "ready",
+    };
+  }, [commit, current, hydrateWorkspace, workspaceEffectAllowed, workspaceFetch]);
 
   const exportCandidate = useCallback(
     (id: string) => {
@@ -4083,6 +4723,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const testIntegration = useCallback(
     async (id: string): Promise<ConnectionTestResult> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, latencyMs: 0, message: "Workspace unavailable. Retry before testing integrations." };
+      }
       const s = current();
       const integ = s.integrations.find((i) => i.id === id);
       if (!integ) return { ok: false, latencyMs: 0, message: "Integration not found." };
@@ -4094,7 +4737,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (integ.id === "int_github") {
         const t0 = Date.now();
         try {
-          const res = await fetch("/api/source", { method: "GET" });
+          const res = await workspaceFetch("/api/source", { method: "GET" });
           const out = (await res.json().catch(() => null)) as
             | { connected?: boolean; login?: string | null; anonymous?: boolean; reason?: string }
             | null;
@@ -4115,6 +4758,116 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         } catch {
           result = { ok: false, latencyMs: Date.now() - t0, message: "GitHub probe failed (network)." };
         }
+      } else if (integ.id === "int_outlook" || integ.id === "int_gmail") {
+        const t0 = Date.now();
+        try {
+          const listRes = await workspaceFetch("/api/email/connections", { method: "GET" });
+          const list = (await listRes.json().catch(() => null)) as {
+            ok?: boolean;
+            connections?: { seatId: string; provider: string }[];
+            error?: string;
+          } | null;
+          const wantProvider = integ.id === "int_gmail" ? "Gmail API" : "Microsoft Graph";
+          const match = list?.connections?.find((c) => c.provider === wantProvider);
+          if (!match) {
+            result = {
+              ok: false,
+              latencyMs: Date.now() - t0,
+              message: `${integ.name}: not connected. Use Connect on Settings → Integrations.`,
+            };
+          } else {
+            const testRes = await workspaceFetch("/api/email/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ seatId: match.seatId }),
+            });
+            const out = (await testRes.json().catch(() => null)) as {
+              ok?: boolean;
+              message?: string;
+              error?: string;
+              latencyMs?: number;
+            } | null;
+            result = {
+              ok: Boolean(out?.ok),
+              latencyMs: out?.latencyMs ?? Date.now() - t0,
+              message: out?.message ?? out?.error ?? `${integ.name}: validation failed.`,
+            };
+          }
+        } catch {
+          result = { ok: false, latencyMs: Date.now() - t0, message: `${integ.name}: probe failed (network).` };
+        }
+      } else if (integ.id === "int_heyreach") {
+        const t0 = Date.now();
+        const server = findHeyReachMcpServer(s.settings.mcpServers);
+        if (!server) {
+          result = {
+            ok: false,
+            latencyMs: Date.now() - t0,
+            message: "HeyReach MCP: not connected. Use Connect HeyReach MCP on Settings → Integrations.",
+          };
+        } else {
+          try {
+            const testRes = await workspaceFetch("/api/mcp/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: server.url,
+                apiKeyId: server.apiKeyId,
+                authStyle: server.authStyle,
+                authQueryParam: server.authQueryParam,
+              }),
+            });
+            const out = (await testRes.json().catch(() => null)) as {
+              ok?: boolean;
+              toolCount?: number;
+              error?: string;
+            } | null;
+            result = {
+              ok: Boolean(out?.ok),
+              latencyMs: Date.now() - t0,
+              message: out?.ok
+                ? `HeyReach MCP connected (${out.toolCount ?? server.toolCount ?? 0} tools).`
+                : out?.error ?? "HeyReach MCP validation failed.",
+            };
+          } catch {
+            result = { ok: false, latencyMs: Date.now() - t0, message: "HeyReach MCP probe failed (network)." };
+          }
+        }
+      } else if (integ.id === "int_linkedin_rsc") {
+        const t0 = Date.now();
+        try {
+          const listRes = await workspaceFetch("/api/linkedin/connections", { method: "GET" });
+          const list = (await listRes.json().catch(() => null)) as {
+            seats?: { id: string; mode: string }[];
+          } | null;
+          const live = list?.seats?.find((s) => s.mode === "live");
+          if (!live) {
+            result = {
+              ok: false,
+              latencyMs: Date.now() - t0,
+              message: "LinkedIn: not connected. Use Connect my LinkedIn on Settings → Integrations.",
+            };
+          } else {
+            const testRes = await workspaceFetch("/api/linkedin/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ seatId: live.id }),
+            });
+            const out = (await testRes.json().catch(() => null)) as {
+              ok?: boolean;
+              message?: string;
+              error?: string;
+              latencyMs?: number;
+            } | null;
+            result = {
+              ok: Boolean(out?.ok),
+              latencyMs: out?.latencyMs ?? Date.now() - t0,
+              message: out?.message ?? out?.error ?? "LinkedIn validation failed.",
+            };
+          }
+        } catch {
+          result = { ok: false, latencyMs: Date.now() - t0, message: "LinkedIn probe failed (network)." };
+        }
       } else {
         result = testConnection(integ);
       }
@@ -4129,30 +4882,36 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return result;
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Fleet: seats ----------------------------------------------------- */
 
   const addSeat = useCallback(
     async (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => {
+      if (!workspaceEffectAllowed()) return null;
       const authorizedState = stateRef.current;
       if (!authorizedState || !can(authorizedState.currentRole, "manage_fleet")) return null;
       const now = new Date().toISOString();
+      const provider = partial.provider ?? "Microsoft Graph";
+      const liBrowser =
+        provider === "LinkedIn Browser Computer" ||
+        partial.linkedinDeliveryBackend === "browser-computer";
+      const liDefaults = liBrowser ? LINKEDIN_BROWSER_SEAT_DEFAULTS : null;
       const draft: AgentSeat = {
         id: genId("seat"),
         name: partial.name,
         operatorEmail: partial.operatorEmail,
-        provider: partial.provider ?? "Microsoft Graph",
+        provider,
         status: "active",
         mode: "mock",
         domainVerified: false,
-        dailyLimit: partial.dailyLimit ?? 40,
-        warmup: partial.warmup ?? true,
-        warmupStartCap: partial.warmupStartCap ?? 10,
-        warmupStepPerDay: partial.warmupStepPerDay ?? 4,
+        dailyLimit: partial.dailyLimit ?? liDefaults?.dailyLimit ?? 40,
+        warmup: partial.warmup ?? liDefaults?.warmup ?? true,
+        warmupStartCap: partial.warmupStartCap ?? liDefaults?.warmupStartCap ?? 10,
+        warmupStepPerDay: partial.warmupStepPerDay ?? liDefaults?.warmupStepPerDay ?? 4,
         warmupStartedAt: now,
-        minGapMinutes: partial.minGapMinutes ?? 12,
+        minGapMinutes: partial.minGapMinutes ?? liDefaults?.minGapMinutes ?? 12,
         sendWindow: partial.sendWindow ?? defaultSendWindow(),
         sentToday: 0,
         lastSendAt: null,
@@ -4163,11 +4922,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         signature: partial.signature ?? "",
         language: partial.language ?? current().settings.defaultLanguage,
         connectedAccount: "",
+        // Always null on create (ignore client) — Deploy/Login/Attach reclaim-or-mint.
+        // Pre-minting a blank id skips healthy host orphans and forces LinkedIn login.
+        computerId: null,
+        linkedinDeliveryBackend:
+          partial.linkedinDeliveryBackend ??
+          (provider === "LinkedIn Browser Computer" ? "browser-computer" : null),
+        assignedCampaignIds: partial.assignedCampaignIds,
         createdAt: now,
       };
       let seat = draft;
       if (supabaseEnabled) {
-        const created = await createFleetSeatOnServer(draft);
+        const attempt = runWorkspaceEffect(() => createFleetSeatOnServer(draft));
+        if (!attempt.allowed) return null;
+        const created = await attempt.value;
         if (!created.ok) return null;
         seat = created.seat;
       }
@@ -4188,81 +4956,117 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return seat;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
-  // Bulk-deploy up to maxAgents coordinated agents. Each is a distinct seat that
-  // still obeys every guardrail (official-API only, per-account caps, warm-up,
-  // suppression, shared de-dupe) — scale, not rate-limit evasion.
+  // Spin up N LinkedIn Browser Computer seats (each = isolated Chromium profile / VM).
+  // Demo: in-memory via addSeat. Live (supabaseEnabled): durable via addSeat →
+  // createFleetSeatOnServer. Never invents sessionHealthy — Fleet boots VMs separately.
   const deployAgents = useCallback(
-    (n: number, opts?: { language?: string; namePrefix?: string }) => {
+    async (n: number, opts?: { language?: string; namePrefix?: string; campaignId?: string }) => {
       const s = stateRef.current;
-      if (!s) return { created: 0, total: 0, capped: false, max: 0 };
+      if (!s) return { created: 0, total: 0, capped: false, max: 0, seats: [] };
       const max = s.settings.fleet.maxAgents || 300;
       if (!can(s.currentRole, "manage_fleet")) {
-        return { created: 0, total: s.seats.length, capped: false, max };
+        return { created: 0, total: s.seats.length, capped: false, max, seats: [] };
       }
       const room = Math.max(0, max - s.seats.length);
       const toCreate = Math.min(Math.max(0, Math.floor(n)), room);
-      if (toCreate === 0) return { created: 0, total: s.seats.length, capped: room === 0, max };
-      const providers = ["Microsoft Graph", "Gmail API", "SendGrid", "Resend"] as const;
-      const now = new Date().toISOString();
-      const base = s.seats.length;
-      const newSeats: AgentSeat[] = Array.from({ length: toCreate }, (_, i) => {
-        const idx = base + i;
-        return {
-          id: genId("seat"),
-          name: `${opts?.namePrefix ?? "Aria Agent"} ${String(idx + 1).padStart(3, "0")}`,
-          operatorEmail: `agent${idx + 1}@hermes.example`,
-          provider: providers[idx % providers.length],
-          status: "active",
-          mode: "mock",
-          domainVerified: false,
-          dailyLimit: 40,
-          warmup: true,
-          warmupStartCap: 10,
-          warmupStepPerDay: 4,
-          warmupStartedAt: now,
-          minGapMinutes: 12,
-          sendWindow: defaultSendWindow(),
-          sentToday: 0,
-          lastSendAt: null,
-          health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
-          persona: "Warm, concise, peer-to-peer recruiter. Lead with the candidate's recent work, one genuine compliment, soft 15-minute ask. No AI slop.",
-          signature: "",
+      if (toCreate === 0) return { created: 0, total: s.seats.length, capped: room === 0, max, seats: [] };
+
+      const prefix = opts?.namePrefix ?? "AriaBot";
+      const createdSeats: AgentSeat[] = [];
+      for (let i = 0; i < toCreate; i += 1) {
+        const idx = (stateRef.current?.seats.length ?? s.seats.length) + 1;
+        const seat = await addSeat({
+          name: `${prefix} ${String(idx).padStart(3, "0")}`,
+          operatorEmail: `agent${idx}@ariabot.local`,
+          provider: "LinkedIn Browser Computer",
           language: opts?.language ?? s.settings.defaultLanguage,
-          connectedAccount: "",
-          createdAt: now,
-        };
-      });
-      commit((prev) =>
-        withActivity(
-          { ...prev, seats: [...prev.seats, ...newSeats] },
-          makeActivity({
-            type: "system",
-            title: `Deployed ${newSeats.length} Aria agents`,
-            notes: `Fleet now ${s.seats.length + newSeats.length}/${max} agents (mock, dry-run; each within official limits).`,
-            outcome: `${newSeats.length} deployed`,
-            campaignId: null,
-            linkedEntityType: null,
-            linkedEntityId: null,
-          }),
-          null,
-        ),
-      );
-      return { created: newSeats.length, total: s.seats.length + newSeats.length, capped: toCreate < Math.floor(n), max };
+          assignedCampaignIds: opts?.campaignId ? [opts.campaignId] : undefined,
+        });
+        if (seat) createdSeats.push(seat);
+      }
+      return {
+        created: createdSeats.length,
+        total: stateRef.current?.seats.length ?? s.seats.length,
+        capped: createdSeats.length < toCreate,
+        max,
+        seats: createdSeats,
+      };
     },
-    [commit],
+    [addSeat],
   );
 
   const updateSeat = useCallback(
-    (id: string, patch: Partial<AgentSeat>) => {
-      if (supabaseEnabled && (patch.operatorEmail !== undefined || patch.mode !== undefined)) {
-        void patchFleetSeatOnServer(id, { operatorEmail: patch.operatorEmail, mode: patch.mode });
+    async (id: string, patch: Partial<AgentSeat>): Promise<boolean> => {
+      if (!workspaceEffectAllowed()) return false;
+      if (
+        supabaseEnabled &&
+        (patch.operatorEmail !== undefined ||
+          patch.mode !== undefined ||
+          patch.assignedCampaignIds !== undefined ||
+          patch.computerId !== undefined)
+      ) {
+        const attempt = runWorkspaceEffect(() =>
+          patchFleetSeatOnServer(id, {
+            operatorEmail: patch.operatorEmail,
+            mode: patch.mode,
+            assignedCampaignIds: patch.assignedCampaignIds,
+            computerId: patch.computerId,
+          }),
+        );
+        if (!attempt.allowed) return false;
+        const result = await attempt.value;
+        if (!result.ok) return false;
       }
       commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+      return true;
     },
-    [commit],
+    [commit, runWorkspaceEffect, workspaceEffectAllowed],
+  );
+
+  /**
+   * Durable agent_seats bindings → Hermes roster (append missing BC stubs + patch).
+   * Local-only — DB already owns these rows; avoids 5s poll write storms via updateSeat.
+   */
+  const ingestDurableBrowserBindings = useCallback(
+    (bindings: BrowserSeatBinding[] | undefined | null) => {
+      if (!Array.isArray(bindings)) return;
+      if (!workspaceEffectAllowed()) return;
+      commit((s) => {
+        const next = applyBrowserSeatBindingsToHermes(s.seats, bindings);
+        if (next.length === s.seats.length) {
+          let changed = false;
+          for (let i = 0; i < next.length; i++) {
+            if (next[i] !== s.seats[i]) {
+              changed = true;
+              break;
+            }
+          }
+          if (!changed) return s;
+        }
+        return { ...s, seats: next };
+      });
+    },
+    [commit, workspaceEffectAllowed],
+  );
+
+  /**
+   * Align Hermes computerId with fleet GET ownership (write + clear foreign/orphan).
+   * Local-only — pollers must not PATCH agent_seats.computer_id (races reclaim/ensure).
+   */
+  const applyFleetHermesComputerPatches = useCallback(
+    (patches: readonly HermesComputerPatch[]) => {
+      if (!patches.length) return;
+      if (!workspaceEffectAllowed()) return;
+      commit((s) => {
+        const next = applyHermesComputerPatchesToSeats(s.seats, patches);
+        if (next === s.seats) return s;
+        return { ...s, seats: next };
+      });
+    },
+    [commit, workspaceEffectAllowed],
   );
 
   const setSeatStatus = useCallback(
@@ -4289,8 +5093,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const connectSeatAccount = useCallback(
     async (id: string, account: string) => {
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before connecting." };
       if (supabaseEnabled) {
-        const synced = await patchFleetSeatOnServer(id, { operatorEmail: account });
+        const attempt = runWorkspaceEffect(() => patchFleetSeatOnServer(id, { operatorEmail: account }));
+        if (!attempt.allowed) return { ok: false, error: "Workspace unavailable. Retry before connecting." };
+        const synced = await attempt.value;
         if (!synced.ok) return synced;
       }
       commit((s) => {
@@ -4315,11 +5122,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit],
+    [commit, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const disconnectSeatAccount = useCallback(
     async (id: string): Promise<{ ok: boolean; error?: string; dryRun?: boolean }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before disconnecting." };
+      }
       // Live mode: revoke + delete the server-side OAuth connection so the refresh
       // token is actually killed. Awaited — the seat is only marked disconnected
       // locally once the server confirms the connection is actually gone, so a
@@ -4327,7 +5137,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // server still holds a live token.
       if (supabaseEnabled) {
         try {
-          const res = await fetch("/api/email/disconnect", {
+          const res = await workspaceFetch("/api/email/disconnect", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ seatId: id }),
@@ -4371,26 +5181,43 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const toggleSeatLive = useCallback(
     async (id: string): Promise<{ ok: boolean; reason: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, reason: "Workspace unavailable. Retry before changing seat mode." };
+      }
       const s = current();
       const seat = s.seats.find((x) => x.id === id);
       if (!seat) return { ok: false, reason: "Seat not found." };
       if (seat.mode === "live") {
         if (supabaseEnabled) {
-          const synced = await patchFleetSeatOnServer(id, { mode: "mock" });
+          const attempt = runWorkspaceEffect(() => patchFleetSeatOnServer(id, { mode: "mock" }));
+          if (!attempt.allowed) return { ok: false, reason: "Workspace unavailable. Retry before changing seat mode." };
+          const synced = await attempt.value;
           if (!synced.ok) return { ok: false, reason: synced.error };
         }
         commit((prev) => ({ ...prev, seats: prev.seats.map((x) => (x.id === id ? { ...x, mode: "mock" } : x)) }));
         return { ok: true, reason: "Switched to dry-run (mock)." };
       }
-      if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
-      if (!seat.domainVerified) return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
+      const isLinkedIn =
+        seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API" || seat.provider === "LinkedIn Browser Computer";
+      if (!isLinkedIn) {
+        if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
+        if (!seat.domainVerified) return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
+      } else if (seat.provider === "LinkedIn Vendor API") {
+        // Vendor seat may go live without mailbox; keys are env-side. Assisted-manual never needs SPF.
+      } else if (!seat.connectedAccount?.trim()) {
+        // Soft: allow live with empty label — Settings connect stamps connectedAccount.
+      }
       if (supabaseEnabled) {
-        const synced = await patchFleetSeatOnServer(id, { mode: "live", operatorEmail: seat.operatorEmail });
+        const attempt = runWorkspaceEffect(() =>
+          patchFleetSeatOnServer(id, { mode: "live", operatorEmail: seat.operatorEmail }),
+        );
+        if (!attempt.allowed) return { ok: false, reason: "Workspace unavailable. Retry before changing seat mode." };
+        const synced = await attempt.value;
         if (!synced.ok) return { ok: false, reason: synced.error };
       }
       commit((prev) => {
@@ -4400,7 +5227,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "system",
             title: `Agent set LIVE: ${seat.name}`,
-            notes: "Seat will send via the official provider API within guardrails.",
+            notes: isLinkedIn
+              ? "LinkedIn seat live for automatic vendor messaging or Manual approve-and-send (no mailbox SPF required)."
+              : "Seat will send via the official provider API within guardrails.",
             outcome: "Live",
             campaignId: null,
             linkedEntityType: null,
@@ -4409,20 +5238,28 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           null,
         );
       });
-      return { ok: true, reason: "Seat is live. Sends still require approval + guardrails." };
+      return {
+        ok: true,
+        reason: isLinkedIn
+          ? "LinkedIn seat is live. Automatic mode queues vendor sends after approval; Manual mode still needs Confirm after you paste."
+          : "Seat is live. Sends still require approval + guardrails.",
+      };
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const verifySeatDomain = useCallback(
     async (id: string): Promise<{ ok: boolean; verified?: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before verifying the domain." };
+      }
       const s = current();
       const seat = s.seats.find((x) => x.id === id);
       if (!seat) return { ok: false, error: "Seat not found." };
       const domain = seat.operatorEmail.split("@")[1] ?? "";
       if (!domain) return { ok: false, error: "Connect a mailbox before verifying its domain." };
       try {
-        const res = await fetch("/api/outreach/verify-domain", {
+        const res = await workspaceFetch("/api/outreach/verify-domain", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ seatId: id, domain }),
@@ -4454,24 +5291,31 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error verifying domain." };
       }
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Fleet: suppression ---------------------------------------------- */
 
   const addSuppression = useCallback(
     async (entry: { type: SuppressionEntry["type"]; value: string; reason: string; expiresAt?: string | null }) => {
-      if (supabaseEnabled && entry.type === "linkedin") {
-        return { ok: false, error: "LinkedIn is assisted-manual and has no server-enforced suppression channel." };
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
       }
-      const normalized = entry.type === "linkedin"
-        ? entry.value.trim().toLowerCase()
-        : normalizeSuppressionValue(entry.type as EnforcedSuppressionType, entry.value);
+      const normalized = normalizeSuppressionValue(
+        entry.type as EnforcedSuppressionType,
+        entry.value,
+      );
       if (!normalized) return { ok: false, error: "Enter a valid suppression value." };
       if (supabaseEnabled) {
         const persisted = await persistManualSuppression(
-          { ...entry, type: entry.type as EnforcedSuppressionType, value: normalized },
+          {
+            type: entry.type as EnforcedSuppressionType,
+            value: normalized,
+            reason: entry.reason,
+            expiresAt: entry.expiresAt,
+          },
           "POST",
+          workspaceFetch,
         );
         if (!persisted.ok) return persisted;
       }
@@ -4499,14 +5343,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       ));
       return { ok: true, entry: e };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const removeSuppression = useCallback(
     async (id: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
+      }
       const entry = stateRef.current?.suppression.find((item) => item.id === id);
       if (!entry) return { ok: false, error: "Suppression not found." };
-      if (supabaseEnabled && entry.type !== "linkedin") {
+      if (supabaseEnabled) {
         const persisted = await persistManualSuppression(
           {
             type: entry.type as EnforcedSuppressionType,
@@ -4515,13 +5362,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             expiresAt: entry.expiresAt,
           },
           "DELETE",
+          workspaceFetch,
         );
         if (!persisted.ok) return persisted;
       }
       commit((s) => ({ ...s, suppression: s.suppression.filter((item) => item.id !== id) }));
       return { ok: true };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Fleet: coordinated allocation (the anti-double-contact core) ----- */
@@ -4553,7 +5401,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return c.matchScore >= s.settings.minScoreToContact && stageRank(c.stage) < 1;
       });
       const activeSeats = s.seats.filter((x) => x.status === "active");
-      const result = allocateBatch(pool, activeSeats, s.ledger, s.suppression, s.settings.fleet, new Date());
+      // Campaign-scoped allocate: only seats attached to that campaign (BC empty ≠ attached).
+      // Never fall back to all active desks — that drafts onto foreign LI VMs.
+      const campaignSeats = opts?.campaignId
+        ? activeSeats.filter((seat) => seatAttachedToCampaign(seat, opts.campaignId!))
+        : activeSeats;
+      const seatPool = campaignSeats;
+      const orderedSeats =
+        s.settings.fleet?.deliveryMode === "manual"
+          ? seatPool
+          : preferLinkedInAutomaticSeats(seatPool, pool);
+      const result = allocateBatch(pool, orderedSeats, s.ledger, s.suppression, s.settings.fleet, new Date());
       if (result.assignments.length === 0) return result;
 
       const byCand = new Map(s.candidates.map((c) => [c.id, c]));
@@ -4567,10 +5425,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const campaign = candidate && byCampaign.get(candidate.campaignId);
         if (!candidate || !campaign) continue;
         const seat = bySeat.get(a.seatId);
+        // Whole-fleet allocate: never stamp a BC/Vendor onto a foreign campaign.
+        if (seat && !seatAttachedToCampaign(seat, campaign.id)) continue;
         const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
         const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
-        const gen = generateOutreach(candidate, campaign, finalTone, "Email", 1, voice, lang);
-        drafted.push(newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1));
+        const channel =
+          seat?.provider === "LinkedIn Browser Computer" || seat?.provider === "LinkedIn Vendor API"
+            ? "LinkedIn"
+            : "Email";
+        const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+        drafted.push({
+          ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+          seatId: a.seatId,
+        });
       }
       if (drafted.length === 0) return result;
 
@@ -4597,62 +5464,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      emit({ kind: "allocate", count: drafted.length, campaignId: opts?.campaignId });
+      // Pulse each drafting desk — never collapse N agents onto the first seatId.
+      for (const seatId of seatIds) {
+        const n = drafted.filter((m) => m.seatId === seatId).length;
+        if (n === 0) continue;
+        emit({
+          kind: "allocate",
+          count: n,
+          campaignId: opts?.campaignId,
+          seatId,
+        });
+      }
       return result;
-    },
-    [commit, current],
-  );
-
-  /* ---- Fleet: parallel sourcing (multiple Aria agents) --------------- */
-
-  const runFleetSourcing = useCallback(
-    (opts?: { campaignId?: string; perAgent?: number }) => {
-      const s = current();
-      const activeSeats = s.seats.filter((x) => x.status === "active");
-      const workCampaigns = opts?.campaignId
-        ? s.campaigns.filter((c) => c.id === opts.campaignId && c.status !== "Paused")
-        : s.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
-      if (activeSeats.length === 0 || workCampaigns.length === 0)
-        return { sourced: 0, skipped: 0, perSeat: [] as { seatName: string; campaignTitle: string; sourced: number }[] };
-
-      const perAgent = opts?.perAgent ?? 4;
-      let acc = [...s.candidates];
-      const added: Candidate[] = [];
-      const perSeat: { seatName: string; campaignTitle: string; sourced: number }[] = [];
-      let totalSkipped = 0;
-      const affected = new Set<string>();
-
-      activeSeats.forEach((seat, i) => {
-        const campaign = workCampaigns[i % workCampaigns.length];
-        const platform: SourcePlatform = campaign.jobAnalysis.department === "Design" ? "LinkedIn" : "GitHub";
-        const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-        const res = sourceCandidates(campaign, platform, perAgent, acc, acc.length + i * 13, weights);
-        acc = [...res.accepted, ...acc];
-        added.push(...res.accepted);
-        totalSkipped += res.skipped.length;
-        affected.add(campaign.id);
-        perSeat.push({ seatName: seat.name, campaignTitle: campaign.title, sourced: res.accepted.length });
-      });
-
-      commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...added, ...prev.candidates] };
-        affected.forEach((cid) => (next = recomputeMetrics(next, cid)));
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Fleet sourcing: ${added.length} candidates`,
-            notes: `${activeSeats.length} Aria agents sourced in parallel across ${affected.size} campaign(s). ${totalSkipped} deduped.`,
-            outcome: `${added.length} added`,
-            campaignId: opts?.campaignId ?? null,
-            linkedEntityType: null,
-            linkedEntityId: null,
-          }),
-          opts?.campaignId ?? null,
-        );
-        return next;
-      });
-      return { sourced: added.length, skipped: totalSkipped, perSeat };
     },
     [commit, current],
   );
@@ -4764,26 +5587,126 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  const recordCandidateLawfulBasis = useCallback(
+    (candidateId: string, basis: CandidateLawfulBasis): { ok: true } | { ok: false; error: string } => {
+      if (basis !== "consent" && basis !== "legitimate_interest") {
+        return { ok: false, error: "Select consent or legitimate interest." };
+      }
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, error: "Candidate not found." };
+      if (cand.complianceFlags.anonymized) {
+        return { ok: false, error: "Cannot record lawful basis on an anonymized candidate." };
+      }
+      const now = new Date().toISOString();
+      const basisLabel = basis === "consent" ? "Consent" : "Legitimate interest";
+      commit((prev) => {
+        const next: HermesState = {
+          ...prev,
+          candidates: prev.candidates.map((c) =>
+            c.id === candidateId
+              ? {
+                  ...c,
+                  lawfulBasis: basis,
+                  lawfulBasisRecordedAt: now,
+                  lawfulBasisSource: "operator_selection" as const,
+                }
+              : c,
+          ),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "compliance",
+            title: `Lawful basis recorded: ${cand.name}`,
+            notes: `Operator selected ${basisLabel}. Illustrative compliance record only; not a legal determination.`,
+            outcome: "Recorded",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      });
+      return { ok: true };
+    },
+    [commit, current],
+  );
+
+  const endorseCandidateFit = useCallback(
+    (candidateId: string): { ok: true } | { ok: false; error: string } => {
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, error: "Candidate not found." };
+      if (cand.complianceFlags.anonymized) {
+        return { ok: false, error: "Cannot endorse fit on an anonymized candidate." };
+      }
+      const floor = s.settings.minScoreToContact;
+      if (cand.matchScore >= floor) {
+        return { ok: false, error: `Match score ${cand.matchScore} already meets the ${floor} contact floor.` };
+      }
+      const now = new Date().toISOString();
+      commit((prev) => {
+        const next: HermesState = {
+          ...prev,
+          candidates: prev.candidates.map((c) =>
+            c.id === candidateId
+              ? {
+                  ...c,
+                  fitEndorsedAt: now,
+                  fitEndorsedSource: "operator_selection" as const,
+                }
+              : c,
+          ),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "compliance",
+            title: `Role fit endorsed: ${cand.name}`,
+            notes: `Operator endorsed outreach despite match score ${cand.matchScore} (floor ${floor}). Score unchanged; approval shows a warning.`,
+            outcome: "Endorsed",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      });
+      return { ok: true };
+    },
+    [commit, current],
+  );
+
   /* ---- API keys (secret stored server-side; never in client state) ------ */
 
   const saveApiKey = useCallback(
     async (input: { name: string; provider: ApiKeyProvider; value: string }) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before saving credentials." };
+      }
       try {
-        const res = await fetch("/api/keys", {
+        const res = await workspaceFetch("/api/keys", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(input),
         });
         const json = await res.json();
         if (!json.ok) return { ok: false as const, error: json.error ?? "Save failed." };
+        const status: ApiKey["status"] =
+          json.status === "valid" || json.valid === true
+            ? "valid"
+            : json.status === "invalid" || json.valid === false
+              ? "invalid"
+              : "untested";
         const key: ApiKey = {
           // D-5: use the server-assigned id so client and server agree on the key id.
           id: json.id ?? genId("key"),
           name: input.name,
           provider: input.provider,
           last4: json.last4 ?? "••••",
-          status: "untested",
-          lastTestedAt: null,
+          status,
+          lastTestedAt: status === "untested" ? null : new Date().toISOString(),
           createdBy: current().settings.operatorName,
           createdAt: new Date().toISOString(),
         };
@@ -4793,7 +5716,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             makeActivity({
               type: "system",
               title: `API key saved: ${input.name}`,
-              notes: `${input.provider} key stored (••••${key.last4})${json.demo ? " · demo session" : " · backend"}.`,
+              notes: `${input.provider} key stored (••••${key.last4})${json.demo ? " · demo session" : " · backend"}${
+                status === "valid" ? " · verified" : status === "invalid" ? " · verify failed" : ""
+              }.`,
               outcome: "Saved",
               campaignId: null,
               linkedEntityType: null,
@@ -4802,19 +5727,28 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             null,
           ),
         );
-        return { ok: true as const, key, demo: !!json.demo };
+        return {
+          ok: true as const,
+          key,
+          demo: !!json.demo,
+          valid: status === "valid",
+          detail: typeof json.detail === "string" ? json.detail : undefined,
+        };
       } catch (e) {
         return { ok: false as const, error: e instanceof Error ? e.message : "Network error." };
       }
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const testApiKey = useCallback(
     async (id: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, valid: false, detail: "Workspace unavailable. Retry before testing credentials." };
+      }
       const k = current().apiKeys.find((x) => x.id === id);
       try {
-        const res = await fetch("/api/keys/test", {
+        const res = await workspaceFetch("/api/keys/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, provider: k?.provider }),
@@ -4832,14 +5766,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, valid: false, detail: e instanceof Error ? e.message : "Network error." };
       }
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const removeApiKey = useCallback(
     async (id: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before removing credentials." };
+      }
       // D-6: only commit the local removal when the server delete succeeded.
       try {
-        const res = await fetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+        const res = await workspaceFetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           return { ok: false, error: body?.error ?? `Delete failed (${res.status}).` };
@@ -4851,7 +5788,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       commit((prev) => ({ ...prev, apiKeys: prev.apiKeys.filter((x) => x.id !== id) }));
       return { ok: true };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const setCurrentRole = useCallback(
@@ -4984,7 +5921,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (step.verb === "source") {
-            const res = await sourceNextBatch(campaignId, { platform: "Talent Pool", count: step.count ?? 10 });
+            const res = await sourceNextBatch(campaignId, {
+              platform: syntheticSourcingAllowed() ? "Talent Pool" : undefined,
+              count: step.count ?? 10,
+            });
             if (res.ok) {
               onStep?.(i, "done", {
                 count: res.accepted.length,
@@ -4997,21 +5937,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (step.verb === "draft") {
-            const s = current();
-            const targets = s.candidates
-              .filter((c) => c.campaignId === campaignId)
-              .filter(
-                (c) => !c.complianceFlags.doNotContact && !c.complianceFlags.suppressed && !c.complianceFlags.unsubscribed,
-              )
-              .filter((c) => stageRank(c.stage) < 1)
-              .filter((c) => ARIA_STRONG_RATINGS.includes(c.starRating ?? deriveStarRating(c.matchScore)))
-              .filter((c) => !s.outreach.some((m) => m.candidateId === c.id && m.status === "Needs Approval"))
-              .slice(0, ARIA_STEP_CANDIDATE_CAP);
-            let count = 0;
-            for (const cand of targets) {
-              const msg = await generateOutreachLive(cand.id);
-              if (msg) count += 1;
-            }
+            // Fleet allocate stamps attached campaign desks (N>1 safe) — never
+            // seatless generateOutreachLive (N BC → 0 drafts).
+            const allocation = allocateOutreach({ campaignId });
+            const count = allocation.assignments.length;
             onStep?.(i, "done", {
               count,
               detail: `${count} outreach draft${count === 1 ? "" : "s"} queued for approval`,
@@ -5099,7 +6028,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [current, sourceNextBatch, generateOutreachLive, draftFollowUpFor, createBookingFor, toggleVivier, generateReport],
+    [current, sourceNextBatch, syntheticSourcingAllowed, allocateOutreach, draftFollowUpFor, createBookingFor, toggleVivier, generateReport],
   );
 
   // "Ask Aria" — first tries to parse the instruction as an Aria Command (see
@@ -5137,6 +6066,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addProvider = useCallback(
     (p: Omit<LlmProvider, "id">): LlmProvider => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before adding an LLM provider.");
+      }
       const provider: LlmProvider = { ...p, id: genId("prov") };
       commit((s) =>
         withActivity(
@@ -5155,7 +6087,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return provider;
     },
-    [commit],
+    [commit, workspaceEffectAllowed],
   );
 
   const updateProvider = useCallback(
@@ -5214,6 +6146,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addMcpServer = useCallback(
     (m: Omit<McpServerConfig, "id" | "status">): McpServerConfig => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before adding an MCP server.");
+      }
       const guard = validateMcpBaseUrl(m.url);
       if (!guard.ok) throw new Error(guard.error);
       const server: McpServerConfig = { ...m, id: genId("mcp"), status: "untested" };
@@ -5234,7 +6169,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return server;
     },
-    [commit],
+    [commit, workspaceEffectAllowed],
   );
 
   const updateMcpServer = useCallback(
@@ -5272,12 +6207,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    *  handshake) and record the result on the server config. */
   const testMcpServer = useCallback(
     async (id: string): Promise<{ ok: boolean; toolCount?: number; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before testing MCP servers." };
+      }
       const s = current();
       const server = (s.settings.mcpServers ?? []).find((m) => m.id === id);
       if (!server) return { ok: false, error: "MCP server not found." };
       let out: { ok?: boolean; toolCount?: number; toolNames?: string[]; serverName?: string; error?: string };
       try {
-        const res = await fetch("/api/mcp/test", {
+        const res = await workspaceFetch("/api/mcp/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -5311,7 +6249,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }));
       return { ok: !!out.ok, toolCount: out.toolCount, error: out.error };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Dust (dust.tt) agent-platform integration ------------------------- */
@@ -5321,8 +6259,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    *  the key is saved to the vault. */
   const testDustConnection = useCallback(
     async (workspaceId: string, apiKey: string, region: DustRegion = "us") => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before testing Dust." };
+      }
       try {
-        const res = await fetch("/api/dust/test", {
+        const res = await workspaceFetch("/api/dust/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workspaceId, apiKey, region }),
@@ -5338,7 +6279,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
       }
     },
-    [],
+    [workspaceEffectAllowed, workspaceFetch],
   );
 
   /** Full Connect flow: live-test the credentials, store and mark the key valid,
@@ -5346,8 +6287,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    * Dust authority route. workspace_state is never an execution authority. */
   const connectDust = useCallback(
     async (workspaceId: string, apiKey: string, region: DustRegion = "us") => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before connecting Dust." };
+      }
       const test = await testDustConnection(workspaceId, apiKey, region);
       if (!test.ok) return { ok: false as const, error: test.error };
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before connecting Dust." };
+      }
       const agents = test.agents ?? [];
       const saved = await saveApiKey({ name: "Dust", provider: "Dust", value: apiKey });
       if (!saved.ok || !saved.key) {
@@ -5358,9 +6305,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!verified.ok || !verified.valid) {
         return { ok: false as const, error: verified.detail || "Could not verify the stored Dust API key." };
       }
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before connecting Dust." };
+      }
       let configured: { ok?: boolean; error?: string };
       try {
-        const response = await fetch("/api/integrations/dust/config", {
+        const response = await workspaceFetch("/api/integrations/dust/config", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workspaceId, region, apiKeyId, agents }),
@@ -5395,13 +6345,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true as const };
     },
-    [testDustConnection, saveApiKey, testApiKey, commit],
+    [testDustConnection, saveApiKey, testApiKey, commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const updateDustAgentLock = useCallback(
     async (task: DustTask, agentSId: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before changing Dust authority." };
+      }
       try {
-        const response = await fetch("/api/integrations/dust/config", {
+        const response = await workspaceFetch("/api/integrations/dust/config", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ task, agentSId }),
@@ -5417,13 +6370,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false as const, error: error instanceof Error ? error.message : "Network error." };
       }
     },
-    [],
+    [workspaceEffectAllowed, workspaceFetch],
   );
 
   const disconnectDust = useCallback(
     async () => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before disconnecting Dust." };
+      }
       try {
-        const response = await fetch("/api/integrations/dust/config", { method: "DELETE" });
+        const response = await workspaceFetch("/api/integrations/dust/config", { method: "DELETE" });
         const body = (await response.json().catch(() => ({ ok: false, error: "Bad response from the server." }))) as {
           ok?: boolean;
           error?: string;
@@ -5449,14 +6405,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return { ok: true as const };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   /** Run one locked Dust agent turn. The server resolves workspace, credential,
    * and task lock from normalized authority; this call sends only task + text. */
   const runDustTask = useCallback(async (task: DustTask, message: string) => {
+    if (!workspaceEffectAllowed()) {
+      return { ok: false as const, error: "Workspace unavailable. Retry before running Dust." };
+    }
     try {
-      const res = await fetch("/api/dust/run", {
+      const res = await workspaceFetch("/api/dust/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task, message }),
@@ -5472,7 +6431,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
     }
-  }, []);
+  }, [workspaceEffectAllowed, workspaceFetch]);
 
   const setDefaultProvider = useCallback(
     (id: string) =>
@@ -5490,6 +6449,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addModel = useCallback(
     (m: Omit<SavedModel, "id">): SavedModel => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before adding a model.");
+      }
       const model: SavedModel = { ...m, id: genId("model") };
       commit((s) =>
         withActivity(
@@ -5508,7 +6470,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return model;
     },
-    [commit],
+    [commit, workspaceEffectAllowed],
   );
 
   const updateModel = useCallback(
@@ -5683,6 +6645,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const sendChat = useCallback(
     async (threadId: string, text: string) => {
+      if (!workspaceEffectAllowed()) return;
       const s = current();
       const thread = s.chats.find((t) => t.id === threadId);
       if (!thread) return;
@@ -5760,8 +6723,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         : [];
       if (chatAiCfg && (enabledMcp.length || webResearch || activeCampaign)) {
         attemptedLive = true;
+        const toolLoopController = new AbortController();
+        chatAbortControllers.current.set(threadId, toolLoopController);
         try {
-          const res = await fetch("/api/hermes/chat", {
+          const res = await workspaceFetch("/api/hermes/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -5774,6 +6739,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               webResearch,
               ...(activeCampaign && { campaign: activeCampaign, existing: existingForCampaign }),
             }),
+            signal: toolLoopController.signal,
           });
           const data = (await res.json().catch(() => null)) as
             | { ok?: boolean; text?: string; reason?: string }
@@ -5784,9 +6750,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
           liveError = data?.reason ?? `Chat tool loop failed (${res.status}).`;
         } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") {
+            updateChatMessage(threadId, assistantId, { content: "(cancelled)", pending: false });
+            return;
+          }
           // Genuine failure — recorded, not swallowed. Still let the streaming Aria
           // path below have a chance before surfacing it.
           liveError = err instanceof Error ? err.message : "Network error contacting the chat tool loop.";
+        } finally {
+          if (chatAbortControllers.current.get(threadId) === toolLoopController) {
+            chatAbortControllers.current.delete(threadId);
+          }
         }
       }
 
@@ -5797,7 +6771,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const controller = new AbortController();
         chatAbortControllers.current.set(threadId, controller);
         try {
-          const res = await fetch("/api/hermes/chat", {
+          const res = await workspaceFetch("/api/hermes/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -5888,7 +6862,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         pending: false,
       });
     },
-    [current, appendChatMessage, updateChatMessage],
+    [current, appendChatMessage, updateChatMessage, workspaceEffectAllowed, workspaceFetch],
   );
 
   // F-5: cancel an in-flight sendChat stream (call on component unmount or thread delete).
@@ -5898,68 +6872,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       chatAbortControllers.current.delete(threadId);
     },
     [],
-  );
-
-  /* ---- Memory -------------------------------------------------------------- */
-
-  const addMemory = useCallback(
-    (seatId: string, kind: MemoryKind, content: string): MemoryEntry => {
-      const now = new Date().toISOString();
-      const entry: MemoryEntry = {
-        id: genId("mem"),
-        seatId,
-        kind,
-        content: content.trim(),
-        pinned: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      commit((s) =>
-        withActivity(
-          { ...s, memory: [entry, ...s.memory] },
-          makeActivity({
-            type: "system",
-            title: `Memory stored: ${kind}`,
-            notes: content.trim().slice(0, 80),
-            outcome: "Stored",
-            campaignId: null,
-            linkedEntityType: null,
-            linkedEntityId: null,
-          }),
-          null,
-        ),
-      );
-      return entry;
-    },
-    [commit],
-  );
-
-  const updateMemory = useCallback(
-    (id: string, patch: Partial<Pick<MemoryEntry, "kind" | "content" | "pinned">>) =>
-      commit((s) => ({
-        ...s,
-        memory: s.memory.map((m) =>
-          m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m,
-        ),
-      })),
-    [commit],
-  );
-
-  const removeMemory = useCallback(
-    (id: string) =>
-      commit((s) => ({ ...s, memory: s.memory.filter((m) => m.id !== id) })),
-    [commit],
-  );
-
-  const togglePinMemory = useCallback(
-    (id: string) =>
-      commit((s) => ({
-        ...s,
-        memory: s.memory.map((m) =>
-          m.id === id ? { ...m, pinned: !m.pinned, updatedAt: new Date().toISOString() } : m,
-        ),
-      })),
-    [commit],
   );
 
   /* ---- Schedules ----------------------------------------------------------- */
@@ -6095,11 +7007,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const resetDemo = useCallback(() => {
+    if (supabaseEnabled || !workspaceAllowsMutation(workspaceStatusRef.current)) return;
     const fresh = buildSeedState();
     stateRef.current = fresh;
-    // In LIVE mode, do NOT auto-persist the reset — that would wipe the SHARED
-    // workspace for every member. Reset only the local view; reload re-hydrates.
-    if (supabaseEnabled) skipNextPersist.current = true;
     setState(fresh);
   }, []);
 
@@ -6115,11 +7025,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       startSillageMapping,
       checkSillageMapping,
       sourceFromApollo,
+      prepareApolloEnrichment,
       enrichApolloCandidate,
       sourceFromSeamless,
       startSeamlessResearch,
       checkSeamlessResearch,
+      startApifyRun,
+      checkApifyRun,
+      enrichCandidate,
+      enrichCampaign,
       runSourcingAgent,
+      recordSourcingFeedback,
+      listPendingSourcingFeedback,
       generateOutreachFor,
       generateOutreachLive,
       updateOutreach,
@@ -6165,6 +7082,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addSeat,
       deployAgents,
       updateSeat,
+      ingestDurableBrowserBindings,
+      applyFleetHermesComputerPatches,
       setSeatStatus,
       connectSeatAccount,
       disconnectSeatAccount,
@@ -6173,11 +7092,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addSuppression,
       removeSuppression,
       allocateOutreach,
-      runFleetSourcing,
       runLearning,
       acceptSkillLearning,
       updateSkillContent,
       recordPiiReveal,
+      recordCandidateLawfulBasis,
+      endorseCandidateFit,
       saveApiKey,
       testApiKey,
       removeApiKey,
@@ -6211,6 +7131,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       assignAgentTools,
       logActivity,
       resetDemo,
+      flushWorkspaceSave,
       createChatThread,
       deleteChatThread,
       clearChatThread,
@@ -6218,10 +7139,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateChatMessage,
       sendChat,
       cancelChat,
-      addMemory,
-      updateMemory,
-      removeMemory,
-      togglePinMemory,
       addSchedule,
       updateSchedule,
       removeSchedule,
@@ -6232,7 +7149,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,
@@ -6241,9 +7158,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       suppressCandidate, markDoNotContact, restoreCandidateContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
-      addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
-      addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
-      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
+      addSeat, deployAgents, updateSeat, ingestDurableBrowserBindings, applyFleetHermesComputerPatches, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
+      addSuppression, removeSuppression, allocateOutreach,
+      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis, endorseCandidateFit,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria, runAriaPlan,
       addProvider, updateProvider, removeProvider, setDefaultProvider,
@@ -6252,9 +7169,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addModel, updateModel, removeModel, setModelDefaultForTask,
       toggleTool,
       assignAgentProvider, assignAgentModel, assignAgentTools,
-      logActivity, resetDemo,
+      logActivity, resetDemo, flushWorkspaceSave,
       createChatThread, deleteChatThread, clearChatThread, appendChatMessage, updateChatMessage, sendChat, cancelChat,
-      addMemory, updateMemory, removeMemory, togglePinMemory,
       addSchedule, updateSchedule, removeSchedule, toggleSchedule,
       addInterviewer, updateInterviewer, removeInterviewer,
     ],
@@ -6266,8 +7182,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<HermesContextValue>(
-    () => ({ state, hydrated: state !== null, actions, recommendations }),
-    [state, actions, recommendations],
+    () => ({
+      state,
+      hydrated: workspaceStatus.phase === "ready" && state !== null,
+      workspaceStatus,
+      retryWorkspace: hydrateWorkspace,
+      retrySave,
+      flushWorkspaceSave,
+      actions,
+      recommendations,
+    }),
+    [state, workspaceStatus, hydrateWorkspace, retrySave, flushWorkspaceSave, actions, recommendations],
   );
 
   return React.createElement(HermesContext.Provider, { value }, children);
@@ -6308,7 +7233,7 @@ function buildLiveEmptyState(): HermesState {
       humanApprovalGate: true,
       dryRunMode: true,
       webResearch: true,
-      minScoreToContact: 70,
+      minScoreToContact: 80,
       slaMinutes: 15,
       operatorName: "Operator",
       systemIdentity: "Aria Sourcing",
@@ -6320,6 +7245,8 @@ function buildLiveEmptyState(): HermesState {
       fleet: {
         recontactWindowDays: 90, bounceRatePauseThreshold: 0.05, complaintRatePauseThreshold: 0.001,
         enforceBusinessHours: true, jitter: true, globalDailyCap: null, maxAgents: 300,
+        deliveryMode: "automatic",
+        browserAgentPermissionMode: "auto",
       },
       confidentialityMode: true,
       defaultLanguage: "en",

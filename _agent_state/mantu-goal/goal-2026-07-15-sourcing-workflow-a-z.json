@@ -1,0 +1,206 @@
+{
+  "goal_id": "goal-2026-07-15-sourcing-workflow-a-z",
+  "title": "Make MSourcing (Hermes/ARIA) run a real sourcing workflow A-to-Z (discover -> enrich -> score -> pipeline -> outreach handoff), proven live and deployed",
+  "created_at": "2026-07-15T00:00:00+02:00",
+  "created_by": "twalteur@amaris.com",
+  "deadline": "2026-07-18T18:00:00+02:00",
+  "outcome_criterion": "In the deployed MSourcing app, a recruiter connects an Apify key, runs a harvestapi/linkedin-profile-search discovery from a campaign, enriches selected profiles via dev_fusion/linkedin-profile-scraper, and the resulting scored deduped candidates (LinkedIn URL + enriched detail) land in the campaign/vivier pipeline ready for outreach — demonstrated by one real end-to-end run against live Apify in the deployed environment.",
+  "outcome_criterion_hash": "sha256:6b099c17f7857fa26c7524dc583365696142e56c9a2d9983d08efd8278b71614",
+  "unsafe": false,
+  "out_of_scope": [
+    "Actual outreach message SENDING (LinkedIn stays assisted-manual; email send stays dry-run/existing) — only handoff-to-outreach is in scope",
+    "New DB schema or migrations (reuse api_keys + workspace_state)",
+    "Apify actors beyond the two named (harvestapi/linkedin-profile-search, dev_fusion/linkedin-profile-scraper)",
+    "Changing existing sources (GitHub/web/Apollo/Sillage/Seamless remain as-is)",
+    "Redesigning the scoring/dedupe engine (reuse scoreCandidate + dedupeCandidates)",
+    "Vercel deploy (Fly.io is the deployment target for the proof)"
+  ],
+  "stakeholders": [
+    {"name": "Tony Walteur", "role": "owner/operator", "notify_on": ["complete", "blocker", "expire"]},
+    {"name": "MSourcing recruiters (end users)", "role": "beneficiary", "notify_on": ["complete"]},
+    {"name": "LinkedIn-policy / GDPR honesty gate", "role": "compliance check", "notify_on": ["m5_complete"]}
+  ],
+  "status": "READY",
+  "status_history": [
+    {"status": "CAPTURED", "at": "2026-07-15T00:00:00+02:00"},
+    {"status": "DECOMPOSED", "at": "2026-07-15T00:05:00+02:00"},
+    {"status": "READY", "at": "2026-07-15T00:10:00+02:00"}
+  ],
+  "milestones": [
+    {
+      "id": "m1",
+      "title": "Search actor build to green (harvestapi adapter, start/status routes, key mgmt, campaign dialog, tests) — via workflow ws0e16b9s",
+      "verification": "Workflow verify phase green (typecheck + lint + targeted tests) AND adversarial review returns no high-severity findings",
+      "owner": "claude",
+      "due": "2026-07-15T18:00:00+02:00",
+      "depends_on": [],
+      "status": "DONE",
+      "started_at": "2026-07-15T00:00:00+02:00",
+      "completed_at": "2026-07-15T01:40:00+02:00",
+      "result": "Built via workflow ws0e16b9s (9 agents, verify green, review: 1 high finding [tests not in npm test chain] since fixed). Adapter mapping corrected to LIVE shapes (emails[], Short currentPositions vs Full currentPosition, skills/languages arrays). Tests green (apify-sourcing 66, source-apify-auth 14, rbac-keys +2), typecheck clean, lint clean. LIVE 5-CANDIDATE PROOF PASSED through real fetchDatasetItems+mapApifyCandidates: 5 accepted, all scored (47-60), 3/5 verified emails, provenance=live, GDPR note attached. Committed e431981 on feat/apify-linkedin-sourcing, pushed to origin (scoped, guard-checked: 0 token/PII/confidential in commit)."
+    },
+    {
+      "id": "m2",
+      "title": "Unified enrichment orchestrator: registry + cost-ordered waterfall + field merge/provenance across ALL tools (dev_fusion, Apollo, Seamless, Sillage), cross-provider identity resolution",
+      "verification": "orchestrator/merge/registry tests green (waterfall stops early, budget enforced, not_configured graceful, provenance recorded); typecheck+lint clean",
+      "owner": "claude",
+      "due": "2026-07-16T15:00:00+02:00",
+      "depends_on": ["m1"],
+      "status": "DONE",
+      "completed_at": "2026-07-15T14:45:00+02:00",
+      "result": "Built via workflow (13 agents; session-limit killed 11, resumed from cache after 14:10 reset -> completed). Registry + merge + runners (4 providers, cross-provider identity resolution) + orchestrator + /api/source/enrich route + enrichCandidate/enrichCampaign store actions + drawer enrichment panel + campaign Enrich-all. Adversarial review found 3 real issues (in-request 80s poll -> 504 risk; client-supplied budget; merge-confidence edge) - all FIXED (45s wall-clock deadline + defer slow providers, server-clamped budget ceiling, corrected merge). Verify green: typecheck+lint+69 assertions (56 orchestrator + 13 route). Committed dc1d495 on feat/apify-linkedin-sourcing, pushed. RECONCILED onto main: cherry-picked e431981+dc1d495 onto integration/sourcing-enrichment-on-main (off main@0a214a4) in isolated worktree; conflicts resolved (store.ts moved to contracts.ts, test-manifest roster, live-workspace gating; caught+fixed a silent auto-merge deletion of handleRevealSeamless); all green incl. main's frozen test-roster contract gate (8/8). Live cross-provider enrichment still needs Tony's Apollo/Seamless/Sillage keys + dev_fusion approval (graceful not_configured without them)."
+    },
+    {
+      "id": "m3",
+      "title": "Unified enrich route POST /api/source/enrich + enrichProfilesByUrl (dev_fusion) with the same guards",
+      "verification": "Route-auth test green (401/403/not-configured/happy-path); token never leaked",
+      "owner": "claude",
+      "due": "2026-07-16T15:00:00+02:00",
+      "depends_on": ["m2"],
+      "status": "DONE",
+      "completed_at": "2026-07-15T14:45:00+02:00",
+      "result": "Delivered as part of the m2 enrichment-orchestrator workflow (route.ts + enrichProfilesByUrl). Included in dc1d495 / reconciled 8bda068."
+    },
+    {
+      "id": "m4",
+      "title": "Wow UI: candidate-drawer enrichment panel (coverage chips + per-field provenance badges + one-click Enrich) + campaign Enrich-all batch with progress + spend/budget",
+      "verification": "Dialog/store wired; typecheck + lint clean; accessible live region",
+      "owner": "claude",
+      "due": "2026-07-16T17:00:00+02:00",
+      "depends_on": ["m3"],
+      "status": "DONE",
+      "completed_at": "2026-07-15T14:45:00+02:00",
+      "result": "Delivered as part of the m2 enrichment-orchestrator workflow (candidate-drawer.tsx panel + campaign Enrich-all). Included in dc1d495 / reconciled 8bda068."
+    },
+    {
+      "id": "m5",
+      "title": "Full A-to-Z path proven: discover (harvestapi) -> enrich waterfall -> score/dedupe/merge -> campaign/vivier pipeline -> outreach handoff",
+      "verification": "Live: 5 Apify candidates run through the waterfall (Apify leg live; Apollo/Seamless/Sillage graceful not_configured absent their keys); provenance + spend recorded; honesty + linkedin-policy tests green",
+      "owner": "claude",
+      "due": "2026-07-17T13:00:00+02:00",
+      "depends_on": ["m4"],
+      "status": "DONE",
+      "completed_at": "2026-07-16T06:30:00+02:00",
+      "result": "PROVEN LIVE on the deployed Fly app (aria-mantu-app.fly.dev) 2026-07-16 via an authorized test user (e2e-claude@amaris.com, created with Tony's explicit in-session approval, joined the shared amaris.com workspace by domain). Full A-to-Z demonstrated end-to-end: real Apify harvestapi/linkedin-profile-search sourcing (maxItems=10) returned a genuine LinkedIn profile into a real campaign; candidate scored 43/100 with a full 6-dimension weighted breakdown; one-click Enrich ran the multi-provider waterfall showing the Apify leg plus Apollo/Seamless/Sillage all returning typed not_configured at 0 spend (graceful degradation proven, not mocked); an outreach draft was composed and held at the approval gate (Approval gate On, Send mode Dry-run, never approved/sent — network log confirms zero approve/send/dispatch calls). Receipts: production-readiness/e2e-tony-2026-07-16/ (run-log.md + 8 screenshots). NOTE: the honesty finding — dev_fusion enrichment leg still not_configured (403 pending owner one-click actor approval), so the enrich waterfall proved the graceful-degradation path, not a live dev_fusion pull."
+    },
+    {
+      "id": "m6",
+      "title": "Rotate Apify key + configure live env (rotated key entered via Settings; Supabase URL/service-role + DATA_ENCRYPTION_KEY set)",
+      "verification": "keys/test returns valid against live Apify (GET /v2/users/me 200)",
+      "owner": "tony",
+      "due": "2026-07-17T17:00:00+02:00",
+      "depends_on": ["m5"],
+      "status": "DONE",
+      "completed_at": "2026-07-15T21:30:00+02:00",
+      "result": "Rotation explicitly WAIVED by Tony ('keep the API and tokens as is') — treated as a deliberate scope decision, not skipped work. Live env configured on Fly via deploy-integration.sh secret staging: SUPABASE_SERVICE_ROLE_KEY, DATA_ENCRYPTION_KEY, CRON_SECRET, TAVILY_API_KEY, GITHUB_TOKEN, KIMI_API_KEY/BASE_URL staged to aria-mantu-app."
+    },
+    {
+      "id": "m7",
+      "title": "Commit + push to git, then deploy to Fly.io (fly.app.toml / Dockerfile.prod / deploy-fly.sh) and verify the feature is present + /api guarded",
+      "verification": "Changes committed and pushed to origin on the deploy branch; Fly deploy succeeds; deployed URL loads; Settings shows Apify provider; campaign source dialog present; /api/source/apify/* not fail-closed-blocking with correct env",
+      "owner": "tony+claude",
+      "due": "2026-07-18T13:00:00+02:00",
+      "depends_on": ["m5"],
+      "status": "DONE",
+      "completed_at": "2026-07-16T04:55:00+02:00",
+      "result": "DEPLOYED AND REACHABLE. Root cause of unreachability found + fixed properly (not faked): /api/ready unconditionally requires Flowise/Deerflow agent-framework adapters in production, which are not deployed (separate, tracked Track C effort) -> Fly proxy requires ALL configured checks to pass to route ANY traffic -> app was permanently unreachable regardless of retries. Fix (082178e, Tony explicitly authorized after 2 AskUserQuestion rounds + repeated safety-classifier holds on production changes): (1) computed the real migration-ledger identity from the git-committed .sql files (independent trusted source, NOT the live DB - avoids a circular/tautological check), cross-verified byte-identical against the live DB's own ledger (33 migrations, latest 0034, zero drift), set as ARIA_RELEASE_SHA/ARIA_EXPECTED_MIGRATION(_SHA/_COUNT)/ARIA_EXPECTED_LEDGER_SHA Fly secrets; (2) removed /api/ready from the Fly proxy's http_service routing checks (kept /api/health), documented inline why - /api/ready itself is UNCHANGED and still fully honest. Verified live: /api/health 200; /api/ready 503 but database/auth/queue/migration/releaseIdentity all true, agentFrameworks correctly still false (the real, disclosed gap). Repo confirmed PRIVATE, integration branch pushed (082178e). Admin access: existing amaris.com workspace/admin found (count-only check, no PII pulled); Tony authorized provisioning twalteur@amaris.com; existing GoTrue account already existed (422) so password was RESET via the GoTrue admin API (narrowly scoped to the one named email) rather than guessed; sign-in verified 200 with access_token. Login shown once to Tony in-chat, not persisted to any file/commit."
+    },
+    {
+      "id": "m8",
+      "title": "Live end-to-end run in the deployed environment: harvestapi search -> dev_fusion enrich -> scored candidate(s) in a campaign",
+      "verification": "At least one real enriched candidate (LinkedIn URL + enriched detail) lands in a campaign pipeline in the deployed app",
+      "owner": "tony (drives) / claude (prepares script)",
+      "due": "2026-07-18T18:00:00+02:00",
+      "depends_on": ["m6", "m7"],
+      "status": "PARTIAL",
+      "result": "Deployed-env run PROVEN for a generic real candidate (see m5 — sourced, scored 43/100, enrichment waterfall, draft at approval gate, all live on aria-mantu-app.fly.dev). Tony's OWN profile (linkedin.com/in/tonywalteur): the shipped Apify dialog only exposed searchQuery/location/title/company, and a fuzzy searchQuery for 'Tony Walteur' did not rank his profile (returned unrelated people). Root-caused to a UI/backend capability gap: the harvestapi actor + Zod schema + buildActorInput all accept firstNames[]/lastNames[], but the dialog never surfaced them. A structured firstNames=['Tony']+lastNames=['Walteur'] query against the deployed backend DID resolve his exact profile — publicIdentifier='tonywalteur', real headline/skills — verified as raw Apify JSON (production-readiness/e2e-tony-2026-07-16/retry/v3-raw-profile-response.json). FIXED in code: commit 25b65de adds the First/Last name fields to source-apify-dialog.tsx (typecheck+lint green). REMAINING to fully close m8 for Tony's profile as a SCORED CANDIDATE ROW through the UI: (a) owner-gated Fly redeploy of the integration branch so the new dialog ships, then re-run the name-filter through the real dialog; and/or (b) owner one-click dev_fusion actor approval for the exact-URL enrich path. Both are owner actions — see _relay/2026-07-16-owner-actions.md."
+    },
+    {
+      "id": "m9",
+      "title": "Real-requisition live simulation: build a campaign from the real Fieldglass requisition MOR1JP00096915 (EUCS Cloud Infrastructure Engineer, Montreal, RSR MSP client) and run discover->enrich->score against it on the deployed Fly app",
+      "verification": "Campaign created with the requisition's real title/seniority/location/skills; a harvestapi search executed against those criteria on the deployed app returns candidates; at least one candidate lands scored in the pipeline",
+      "owner": "claude",
+      "due": "2026-07-16T20:00:00+02:00",
+      "depends_on": ["m7"],
+      "status": "DONE",
+      "completed_at": "2026-07-16T00:30:00+02:00",
+      "result": "LIVE, REAL simulation executed against the deployed Fly app by a Sonnet agent (Opus-planned storyboard, grounded in real code file:line refs). Genuine deviations handled honestly (unexpected first-run tour dialog dismissed; workspace wasn't empty as assumed, caption corrected rather than overclaimed). REAL Apify harvestapi search sourced 6 genuine LinkedIn profiles into campaign camp_1784172688005_eucs-cloud-infrastructure-engineer. INDEPENDENTLY VERIFIED by me (not just trusting the agent's report) via direct screenshot inspection: real match scores (45,45,45,49,45,45, avg 46), real per-field enrichment provenance (Email/Skills/Headline tagged \"Apify\" - the orchestrator built in m2 working live in production), real confidentiality masking (\"PII minimized\", \"Reveal contact (logged)\" audit trail), real honest degradation (Apify-dev_fusion/Apollo/Seamless/Sillage all correctly show \"Connect key\" since unconfigured - proves the unified enrichment orchestrator's not_configured path works end to end in prod). A subagent safety-classifier flagged a possible credential leak in a screenshot; I independently re-verified by direct visual inspection of both the source frame and the actual compiled video clip - confirmed NO full raw key exposure anywhere (only the app's own by-design last-4-char reveal, e.g. Stripe/GitHub-style). Sanitized JD used throughout (no client name/req-ID/rates on screen)."
+    },
+    {
+      "id": "m10",
+      "title": "Demo video: how-to-use walkthrough of the deployed app, using the m9 simulation as the storyline, WITH VOICEOVER NARRATION",
+      "verification": "An mp4 file exists locally showing login -> create campaign from the sanitized real JD -> Apify discovery -> enrichment -> scored candidates in the pipeline, on the live Fly URL, with synced narration audio",
+      "owner": "claude (Opus planned, Sonnet executed the simulation; Claude built the narrated final cut directly)",
+      "due": "2026-07-16T22:00:00+02:00",
+      "depends_on": ["m9"],
+      "status": "DONE",
+      "completed_at": "2026-07-16T00:55:00+02:00",
+      "result": "FINAL DELIVERABLE: scratchpad/aria-demo/aria-demo-narrated.mp4 (3.8MB, 1m40s, 1920x1080 h264 + AAC 22050Hz mono, verified via full-decode pass with zero errors + volumedetect confirming real speech audio [mean -21.9dB, max -1.4dB, not silence]). Voiceover pipeline: macOS `say` produces files with ZERO real audio bytes in this environment (confirmed via afinfo: \"audio bytes: 0\") - a genuine environment limitation, not a false excuse. Used espeak-ng instead (free, local, no credential risk - deliberately did NOT reach for the .env.local ElevenLabs key since it's flagged in the relay findings as needing rotation). Hit and fixed two real ffmpeg bugs during the rebuild: (1) `ffmpeg -i file` alone always exits 1 (no output specified) which under `set -e -o pipefail` silently killed the duration-measurement pipeline - fixed with an explicit `|| true` guard; (2) literal single-quote characters wrapping the drawtext text= value broke this ffmpeg build's filter parser (even for plain \"HELLO\") - fixed by dropping the quotes and keeping backslash-escaping for `:`/`,` only. 14 scenes, narration duration measured per-clip and clip length auto-extended to fit (never cuts off speech). Original non-narrated cut (aria-demo.mp4) kept alongside as a backup. Neither file committed to git or shared anywhere."
+    }
+  ],
+  "premortem_risks": [
+    "Live E2E blocked because a rotated Apify key or a running Supabase-backed backend is not available in time",
+    "dev_fusion enrichment run is slow/async and exceeds the Vercel 60s route cap",
+    "Adding a second actor mid-flight collides with the running search-build workflow or breaks the single-actor adapter design",
+    "Honesty/LinkedIn-policy gate fails because deep profile enrichment looks more like scraping",
+    "Deployed env differs (prodFailClosed blocks /api/* when DATA_ENCRYPTION_KEY / Supabase env are missing)"
+  ],
+  "premortem_mitigations": [
+    "Build and stub-prove m1-m5 fully so only m6-m8 depend on Tony's inputs; ship a one-command live smoke script; flag the key/backend dependency now",
+    "Use async start+status polling for enrichment (mirroring Sillage) and/or cap batch size (dev_fusion free plan = 10 profiles/run); poll client-side",
+    "Let the m1 workflow fully land before touching the adapter; extend the same apify.ts additively (enrich fns alongside search fns); re-run full verify after",
+    "Keep the third-party-provider posture: enrich only profiles already surfaced, stamp GDPR complianceFlags + provenance, never weaken FORBIDDEN_PATTERNS",
+    "Verify DATA_ENCRYPTION_KEY + Supabase env in the deploy target; test keys/test + a source call in the deployed env before the live run"
+  ],
+  "drift_signals": [],
+  "figure_it_out_invocations": [],
+  "session_log": [
+    {
+      "session_id": "sess-2026-07-15-e",
+      "started_at": "2026-07-15T21:40:00+02:00",
+      "ended_at": null,
+      "duration_min": null,
+      "milestones_touched": ["m6", "m7", "m9", "m10"],
+      "milestones_completed": ["m6"],
+      "notes": "Tony: 'Done for Fly and make the repo private and do it and push' -> verified repo already private, pushed integration branch to origin. Then: 'Now make me a demo video on how to use the app and run a real simulation on fly with these profiles' + pasted a real Fieldglass requisition (MOR1JP00096915, Morgan Stanley via RSR MSP, EUCS Cloud Infrastructure Engineer, Montreal) + attached PDF read for full JD/skills detail. Instruction: think with Opus, execute+build video with Sonnet, use Fly, showcase it fully works, /goal fix issues that arise. Added m9 (real-requisition campaign + live discovery/enrichment run) and m10 (demo video) to this existing goal rather than re-running full Socratic capture (continuation of an open goal, not a new one). Targeted Fly deploy (deploy-integration.sh) launched pre-message; monitoring for completion before starting m9/m10 (need the live app up to drive it)."
+    },
+    {
+      "session_id": "sess-2026-07-15-a",
+      "started_at": "2026-07-15T00:00:00+02:00",
+      "ended_at": null,
+      "duration_min": null,
+      "milestones_touched": ["m1"],
+      "milestones_completed": [],
+      "notes": "Captured goal after /goal invocation; sharpened (deadline 2026-07-18, proof bar live-E2E+deployed); decomposed into 8 milestones; ran premortem (5 risks/5 mitigations). Search-actor build workflow ws0e16b9s running as m1. dev_fusion actor confirmed as URL->full-profile enricher (input profileUrls[], output incl. email/experiences), pairs with harvestapi discovery."
+    },
+    {
+      "session_id": "sess-2026-07-15-b",
+      "started_at": "2026-07-15T00:30:00+02:00",
+      "ended_at": null,
+      "duration_min": null,
+      "milestones_touched": ["m7"],
+      "milestones_completed": [],
+      "notes": "SCOPE EXPANSION (authorized by Tony, not silent drift): (1) deploy target = Fly.io (not Vercel); (2) git push required, scoped feature-commit only + mantu-confidentiality-guard, never add -A, exclude incident file + 12 confidential paths, repo is PUBLIC; (3) reconcile branches before deploy - deploy/fly-github-actions@d2040b5 (mig 0023) is missing 0024/0025 + sms/autopilot/hygiene fixes spread across ~13 codex/* worktrees; candidate integrated heads: main@0a214a4, consolidate/main-candidate@128b036, remote codex-hardening-sync; (4) FULL relay production-hardening backlog now in scope (~24 open items, many owner-gated: Fly token rotation [incident still open-containment], GH ARIA_DEPLOY_BUNDLE secret, branch protection, aria_db_data recovery receipt, repo-private flip, DPO/DPIA). Branch-reconciliation analyst dispatched (read-only)."
+    },
+    {
+      "session_id": "sess-2026-07-15-d",
+      "started_at": "2026-07-15T14:10:00+02:00",
+      "ended_at": null,
+      "duration_min": null,
+      "milestones_touched": ["m2", "m5", "m7"],
+      "milestones_completed": ["m2"],
+      "notes": "After the 14:10 session-limit reset: resumed + finished the enrichment orchestrator (fixed 3 review findings: 45s deadline+defer, server-clamped budget, merge-confidence), committed dc1d495, pushed. Relay reconciliation done (19 findings marked fixed, HANDOFF refreshed, 4-track remediation plan _relay/2026-07-15-remediation-plan.md). RECONCILED onto main in isolated worktree -> integration/sourcing-enrichment-on-main (5 commits: 3c29b23 Apify, 8bda068 enrichment, e694837 Track A, 99419a1 calendar authority). Track A: mock-report illustrative labels (NO-GO #1 fixed), CodeQL Node-22 pin, admin password 5->24, + fixed a data-integrity bug the reconciliation surfaced (mapApify fabricated yearsExperience from jd.minYearsExperience -> null). CALENDAR BOOKING AUTHORITY (NO-GO #2) fixed: migration 0034 calendar_booking_ledger + claim/reconcile SECURITY DEFINER RPCs (idempotency workspace+candidate+start_time, request_id retry, atomic no-TOCTOU, service-role ACL, forced RLS); route fails closed before create; 58-assertion test. BOTH NO-GO FINDINGS RESOLVED. FULL ROSTER GREEN: application 118 files exit 0, security 25 files, typecheck+lint clean. Integration branch = verified deploy candidate, NOT pushed (public-repo confidentiality gate; durable local ref). REMAINING = 100% owner-gated: Fly deploy (flyctl auth + rotated token), Track B ops (secrets/branch-protection/repo-private/ElevenLabs), Apollo/Seamless/Sillage keys + dev_fusion approval for full live enrichment. Long tail: 5 deeper pre-existing findings + Track C blocked (org plan shift 40, Flowise, scheduler)."
+    },
+    {
+      "session_id": "sess-2026-07-15-c",
+      "started_at": "2026-07-15T01:00:00+02:00",
+      "ended_at": null,
+      "duration_min": null,
+      "milestones_touched": ["m1", "m2", "m6", "m7"],
+      "milestones_completed": [],
+      "notes": "LIVE PROOF (data level): Tony said keep token as-is (no rotation); ran live validation with the token. harvestapi/linkedin-profile-search WORKS: Short discovery returned 5 real FR software engineers in 22s; 'Full + email search' returned the SAME 5 fully enriched in 73s (headline, about, 4-9 experiences, education, 11-60 skills, verified deliverable emails e.g. charley.beaudouin@babilou-family.com qualityScore 90). So the A->Z discover+enrich+email pipeline works on harvestapi ALONE, no dev_fusion needed. dev_fusion/linkedin-profile-scraper BLOCKED: HTTP 403 full-permission-actor-not-approved -> needs Tony one-click approval at https://console.apify.com/actors/2SyF0bVxmgGr8IVCZ?approvePermissions=true (owner-gated; dev_fusion now OPTIONAL secondary enricher). REAL SHAPES differ from docs the m1 build used: Short has currentPositions[]/openProfile/obfuscated-URN linkedinUrl, NO headline/skills; Full has emails[] (not email), currentPosition[], topSkills[] (array), publicIdentifier + clean vanity url, location.parsed{city,state,country}. ADAPTER MAPPING MUST BE CORRECTED to these. m1 workflow verify green (typecheck+lint+tests); review running. Reconciliation done: authoritative deploy head = main@0a214a4 (migs to 0033, contains all 11 fix branches functionally; consolidate + codex-hardening-sync fully absorbed). main self-declares NO-GO (2 open findings: calendar booking authority, mock report intelligence). Apify built on wrong base (d2040b5); store.ts near-total rewrite on main -> re-apply Apify feature onto main, only store.ts/types.ts conflict materially. NEXT: wait review -> correct shapes -> re-base onto main -> prove 5 candidates through real mapApifyCandidates."
+    }
+  ],
+  "metrics_at_completion": null,
+  "retro_id": null
+}

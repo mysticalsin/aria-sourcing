@@ -16,20 +16,26 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { WarRoomBoard, type WarRoomLane } from "@/components/launch/war-room-board";
 import { parseIntakeLive } from "@/lib/ai/intake";
+import { evaluateNeedReadiness } from "@/lib/needs/readiness";
+import type { ParsedIntake } from "@/lib/mock-ai";
+import { SAMPLE_LAUNCH_BRIEF } from "@/lib/launch/sample-brief";
 import { useActions, useHydrated, useSettings } from "@/lib/store";
+import {
+  summarizeCampaignLaunch,
+  type LaunchRoleResult,
+} from "@/lib/store/campaign-launch";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { Radio, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
 /* ============================================================================
    2.2 Sourcing War Room — paste a multi-role brief, launch N campaigns that
-   source in parallel. Offline-safe by construction:
+   source in parallel. Local demo mode is offline-safe by construction:
      - Role blocks are split on a line of `---` (pure string parsing, no I/O).
      - parseIntakeLive already carries its own three-layer fallback (mock-ai.ts
        heuristic is canonical whenever no cloud provider is configured).
-     - Sourcing runs via sourceNextBatch with platform "Talent Pool", which is
-       the one branch of sourceNextBatch that never calls `/api/source` — it
-       goes straight to the deterministic synthetic generator (see the
-       Referral/Talent Pool branch, store.ts sourceNextBatch). No network,
-       ever, regardless of how settings are configured.
+     - Local demo sourcing uses the deterministic Talent Pool generator.
+     - Live workspaces use the campaign's primary real source and never persist
+       synthetic candidates.
    ========================================================================== */
 
 const DELIMITER_RE = /^\s*-{3,}\s*$/;
@@ -53,24 +59,8 @@ function splitRoleBlocks(raw: string): string[] {
   return blocks.map((b) => b.trim()).filter(Boolean);
 }
 
-const SAMPLE_BRIEF = [
-  `Title: Senior Backend Engineer
-We're growing the platform team and adding a Senior Backend Engineer, fully remote (EU timezone). 5+ years with Go, Kubernetes and PostgreSQL required; Kafka is a nice-to-have. Salary 90k-125k EUR. Team of 8 engineers, reporting to the Engineering Manager.`,
-  `Title: Frontend Engineer
-Expanding the product team with a Frontend Engineer for our React/TypeScript app, hybrid (Germany). 3+ years with React, TypeScript and Next.js. GraphQL a plus. Salary 70k-95k EUR.`,
-  `Title: Data Engineer
-Building out the data platform: adding a Data Engineer with Python, Spark and Airflow experience, remote (EU). 4+ years, dbt and Snowflake nice to have. Salary 85k-110k EUR.`,
-  `Title: Product Designer
-Growing design with a Product Designer for our design systems, hybrid (UK). 4+ years, Figma and Accessibility required. Salary 65k-85k GBP.`,
-  `Title: Account Executive
-Adding an Account Executive to close new logos, remote (US). 3+ years selling SaaS, CRM and negotiation skills required. Salary 80k-100k USD plus commission.`,
-  `Title: Product Manager
-Expanding product with a Product Manager for the platform line, hybrid (EU). 5+ years shipping B2B SaaS. Salary 90k-115k EUR.`,
-].join("\n---\n");
-
-/** Deterministic offline sourcing waves per launched role — every wave calls
- *  sourceNextBatch with platform "Talent Pool" (synthetic, no fetch); the
- *  short delay between waves is purely cosmetic staging for the count-up. */
+/** Sourcing waves per launched role. Local demo mode uses deterministic Talent
+ *  Pool profiles; live workspaces use the campaign's primary real source. */
 const SOURCING_WAVES = 5;
 const PER_WAVE = 3;
 const WAVE_DELAY_MS = 220;
@@ -95,7 +85,7 @@ export default function LaunchPage() {
   const blocks = React.useMemo(() => splitRoleBlocks(raw), [raw]);
 
   function loadSample() {
-    setRaw(SAMPLE_BRIEF);
+    setRaw(SAMPLE_LAUNCH_BRIEF);
     toast({
       title: "Sample brief loaded",
       description: "6 roles, separated by ---, ready to launch.",
@@ -107,23 +97,40 @@ export default function LaunchPage() {
     setLanes((prev) => prev.map((l) => (l.campaignId === campaignId ? { ...l, sourcing } : l)));
   }
 
-  async function launchRole(seq: number, block: string) {
-    const parsed = await parseIntakeLive(settings, { email: block });
-    if (launchSeqRef.current !== seq) return; // superseded by a newer launch
-
+  async function launchRole(
+    seq: number,
+    parsed: ParsedIntake,
+  ): Promise<LaunchRoleResult | null> {
     const campaign = actions.createCampaignFromAnalysis(parsed.jobAnalysis, {
-      hiringManager: parsed.sender.name || "Hiring Manager",
-      hiringManagerEmail: parsed.sender.email || "unknown@company.example",
+      hiringManager: parsed.sender.name,
+      hiringManagerEmail: parsed.sender.email,
     });
-    if (launchSeqRef.current !== seq) return;
+    if (!campaign) return { created: false, sourcingComplete: false };
+    if (launchSeqRef.current !== seq) return null;
     setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: true }]);
 
+    if (supabaseEnabled) {
+      await actions.flushWorkspaceSave();
+    }
+
+    let sourcedCount = 0;
     for (let wave = 0; wave < SOURCING_WAVES; wave++) {
-      if (launchSeqRef.current !== seq) return;
-      await actions.sourceNextBatch(campaign.id, { platform: "Talent Pool", count: PER_WAVE });
+      if (launchSeqRef.current !== seq) return null;
+      const sourceResult = await actions.sourceNextBatch(campaign.id, {
+        platform: supabaseEnabled ? undefined : "Talent Pool",
+        count: PER_WAVE,
+      });
+      if (!sourceResult.ok) {
+        setLaneSourcing(campaign.id, false);
+        return { created: true, sourcingComplete: false };
+      }
+      sourcedCount += sourceResult.accepted.length;
       if (wave < SOURCING_WAVES - 1) await wait(WAVE_DELAY_MS);
     }
     if (launchSeqRef.current === seq) setLaneSourcing(campaign.id, false);
+    return launchSeqRef.current === seq
+      ? { created: true, sourcingComplete: sourcedCount > 0 }
+      : null;
   }
 
   async function handleLaunch() {
@@ -140,15 +147,68 @@ export default function LaunchPage() {
     setLaunching(true);
     setLanes([]);
 
-    await Promise.all(roleBlocks.map((block) => launchRole(seq, block)));
+    const parsedRoles = await Promise.all(
+      roleBlocks.map((block) => parseIntakeLive(settings, { email: block })),
+    );
+    if (launchSeqRef.current !== seq) return;
+    const incomplete = parsedRoles.flatMap((parsed, index) => {
+      const readiness = evaluateNeedReadiness(parsed.jobAnalysis);
+      return readiness.ready
+        ? []
+        : [{
+            label: parsed.jobAnalysis.title || `Role ${index + 1}`,
+            issues: readiness.issues.map((issue) => issue.message),
+          }];
+    });
+    if (incomplete.length > 0) {
+      setLaunching(false);
+      toast({
+        title: "Complete every role before launch",
+        description: incomplete
+          .slice(0, 3)
+          .map((item) => `${item.label}: ${item.issues.join(" ")}`)
+          .join(" "),
+        variant: "warning",
+      });
+      return;
+    }
+
+    const results = await Promise.all(parsedRoles.map((parsed) => launchRole(seq, parsed)));
 
     if (launchSeqRef.current === seq) {
       setLaunching(false);
-      toast({
-        title: "War room live",
-        description: `${roleBlocks.length} role${roleBlocks.length === 1 ? "" : "s"} sourcing in parallel: nothing sent, drafts only.`,
-        variant: "success",
-      });
+      const summary = summarizeCampaignLaunch(roleBlocks.length, results);
+
+      if (summary.status === "success") {
+        toast({
+          title: "War room live",
+          description: `${summary.sourcingComplete} role${summary.sourcingComplete === 1 ? "" : "s"} sourced in parallel: nothing sent, drafts only.`,
+          variant: "success",
+        });
+      } else if (summary.status === "partial") {
+        const failures = [
+          summary.creationFailed > 0
+            ? `${summary.creationFailed} campaign creation${summary.creationFailed === 1 ? "" : "s"} failed.`
+            : "",
+          summary.sourcingFailed > 0
+            ? `${summary.sourcingFailed} sourcing run${summary.sourcingFailed === 1 ? "" : "s"} stopped.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        toast({
+          title: "Launch needs attention",
+          description: `${summary.created} of ${summary.requested} campaigns were created. ${failures} Retry from the campaign workspace.`,
+          variant: "warning",
+        });
+      } else {
+        toast({
+          title: "No campaigns created",
+          description:
+            "Your workspace is unavailable or your access is read-only. Retry after access is restored.",
+          variant: "error",
+        });
+      }
     }
   }
 
@@ -208,8 +268,9 @@ export default function LaunchPage() {
                 </Button>
               </div>
               <p className="text-xs text-muted">
-                Each block is parsed offline into a structured brief, then becomes its own campaign with
-                deterministic sourcing: zero network required, nothing is sent.
+                {supabaseEnabled
+                  ? "Each block becomes its own campaign and sources from its primary live channel. Nothing is sent."
+                  : "Each block is parsed offline into a campaign with deterministic demo sourcing. Zero network required; nothing is sent."}
               </p>
             </CardBody>
           </Card>

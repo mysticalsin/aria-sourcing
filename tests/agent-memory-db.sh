@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-migration="supabase/migrations/0025_agent_memory_authority.sql"
-if [ ! -f "$migration" ]; then
-  echo "RED: missing $migration" >&2
-  exit 1
-fi
+memory_migration="supabase/migrations/0025_agent_memory_authority.sql"
+operational_migration="supabase/migrations/0032_agent_operational_authority.sql"
+for required_migration in "$memory_migration" "$operational_migration"; do
+  if [ ! -f "$required_migration" ]; then
+    echo "RED: missing $required_migration" >&2
+    exit 1
+  fi
+done
 
 project="aria-agent-memory-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}"
 client_image="supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00"
@@ -78,8 +81,7 @@ SQL
   psql_stdin -c "update public.profiles set role='admin' where id='a3000000-0000-4000-8000-000000000003'" >/dev/null
 }
 
-for file in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
-  [ "$file" = "$migration" ] && continue
+for file in supabase/migrations/00[01][0-9]_*.sql supabase/migrations/002[0-4]_*.sql; do
   psql_stdin < "$file"
 done
 
@@ -121,10 +123,13 @@ insert into public.workspace_state (workspace_id,state) values (
 );
 SQL
 
-psql_stdin < "$migration"
+for file in supabase/migrations/002[5-9]_*.sql supabase/migrations/003[0-2]_*.sql; do
+  psql_stdin < "$file"
+done
 
 if [ "${AGENT_MEMORY_DOUBLE_APPLY_ONLY:-0}" = "1" ]; then
-  psql_stdin < "$migration"
+  psql_stdin < "$memory_migration"
+  psql_stdin < "$operational_migration"
   echo "RESULT agent-memory-db: idempotence=pass"
   exit 0
 fi
@@ -138,6 +143,7 @@ psql_stdin < tests/db/agent-memory-authority.sql
 test_concurrent_actor_revocation
 
 # The numbered migration must reconcile safely if the ledger retries it.
-psql_stdin < "$migration"
+psql_stdin < "$memory_migration"
+psql_stdin < "$operational_migration"
 
-echo "RESULT agent-memory-db: authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass"
+echo "RESULT agent-memory-db: authority=pass isolation=pass quarantine=opaque-receipt receipts=content-free concurrency=pass idempotence=pass"

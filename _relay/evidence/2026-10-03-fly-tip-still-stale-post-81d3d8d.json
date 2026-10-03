@@ -1,0 +1,28 @@
+{
+  "probedAt": "2026-10-03T16:00:00Z",
+  "appUrl": "https://aria-mantu-app.fly.dev/api/ready",
+  "expectedTip": "81d3d8d50ea389047fe7290918360781f1a325e0",
+  "ready": {
+    "ok": false,
+    "status": "not_ready",
+    "build": "21a42e7da6c271758ea4cade91c8d5658032832d",
+    "migration": "0084_agent_seats_computer_id_unique.sql",
+    "agentFrameworks": false
+  },
+  "proofScriptExit": 1,
+  "pr150": {
+    "url": "https://github.com/mysticalsin/aria-sourcing/pull/150",
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "REVIEW_REQUIRED",
+    "autoMerge": "SQUASH"
+  },
+  "ciTip": {
+    "quality": "success",
+    "releaseGate": "success",
+    "codeql": "success",
+    "runId": 37134790600,
+    "vercel": "failure_rate_limit_ignore"
+  },
+  "verdict": "tip_closed_fly_blocks_goal"
+}

@@ -211,12 +211,16 @@ export function missionControlHudValues(
       eligibleCandidateIds.has(message.candidateId) &&
       (options.campaignId == null || message.campaignId === options.campaignId),
   );
+  // Live HUD tiles must not count dry-run drafts/approvals as live funnel work.
+  const liveOutreach = options.live
+    ? scopedOutreach.filter((message) => message.dryRun !== true)
+    : scopedOutreach;
 
   return {
     sourced: facts.sourced,
     contacted: facts.contacted,
-    drafted: scopedOutreach.length,
-    approved: scopedOutreach.filter((message) => message.approvedBy != null).length,
+    drafted: liveOutreach.length,
+    approved: liveOutreach.filter((message) => message.approvedBy != null).length,
     booked: facts.booked,
   };
 }

@@ -1,12 +1,23 @@
 name: CodeQL
 
+# Same dual-trigger discipline as CI: avoid push+PR double spend on feature branches.
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+      - vercel-demo
+      - integration/**
+      - deploy/**
+      - consolidate/**
   pull_request:
     branches: ["**"]
   schedule:
     - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
@@ -21,6 +32,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node 22
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0

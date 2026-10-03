@@ -1,0 +1,112 @@
+{
+  "at": "2026-09-11T00:30:55.940Z",
+  "analyze": {
+    "via": "orca-style",
+    "headline": "Tony Walteur - Amaris Consulting | LinkedIn",
+    "focusAreas": [
+      "ai",
+      "platform",
+      "data",
+      "product",
+      "innovation"
+    ],
+    "trajectoryNotes": [
+      "Sign in Sign in with Email or New to LinkedIn",
+      "Join now By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement , Privacy Policy , and Cookie Policy"
+    ],
+    "painPoints": [
+      "Signals around transform in public profile text"
+    ],
+    "evidenceChars": 1201
+  },
+  "qualify": {
+    "ok": true,
+    "score": 76,
+    "reasons": [
+      "Matched ICP tokens: enterprise, agentic, innovation",
+      "LinkedIn profile URL present.",
+      "Sufficient public text for qualification."
+    ],
+    "via": "linki"
+  },
+  "navigate": {
+    "ok": true,
+    "via": "browser-use",
+    "title": "Example Domain",
+    "detail": "Fetched Example Domain"
+  },
+  "connectBlocked": {
+    "ok": false,
+    "detail": "LinkedIn Connect/Message must use AriaBot computers (Take control path).",
+    "via": "ariabot"
+  },
+  "search": {
+    "ok": true,
+    "hitCount": 5,
+    "hits": [
+      {
+        "profileUrl": "https://www.linkedin.com/in/tonywalteur/",
+        "name": "Tony Walteur",
+        "title": "Amaris Consulting",
+        "via": "web-search",
+        "invented": false
+      },
+      {
+        "profileUrl": "https://www.linkedin.com/in/nizar-dellal/",
+        "name": "Nizar DELLAL",
+        "title": "Directeur Principal / Senior Manager",
+        "via": "web-search",
+        "invented": false
+      },
+      {
+        "profileUrl": "https://www.linkedin.com/in/felipe-sawada/",
+        "name": "Felipe Sawada",
+        "title": "- Just got back from Brazil 🇧🇷 Caio Santos and I co-hosted this year's Annual Training Program - Mantu Group's flagshi",
+        "via": "web-search",
+        "invented": false
+      },
+      {
+        "profileUrl": "https://www.linkedin.com/in/fares-cherif-larbi-532544222/",
+        "name": "Fares-Cherif Larbi",
+        "title": "B.A.A. Gestion des ressources humaines",
+        "via": "web-search",
+        "invented": false
+      },
+      {
+        "profileUrl": "https://www.linkedin.com/in/jean-marquis-basque-ing-963500205/",
+        "name": "Jean Marquis-Basque, ing.",
+        "title": "CPI, Engineering Integration",
+        "via": "web-search",
+        "invented": false
+      }
+    ]
+  },
+  "providerAlwaysAvailable": true,
+  "status": [
+    {
+      "id": "orca",
+      "enabled": true,
+      "builtin": "web-fetch + scrapling"
+    },
+    {
+      "id": "linkedin-agent-tool",
+      "enabled": true,
+      "builtin": "web_search site:linkedin.com/in"
+    },
+    {
+      "id": "browser-use",
+      "enabled": true,
+      "builtin": "fetch_page / scrapling"
+    },
+    {
+      "id": "linki",
+      "enabled": true,
+      "builtin": "token-overlap against public text"
+    },
+    {
+      "id": "openoutreach",
+      "enabled": true,
+      "builtin": "token-overlap against public text"
+    }
+  ]
+}

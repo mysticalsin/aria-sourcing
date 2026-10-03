@@ -1,0 +1,6 @@
+FROM python:3.12-slim
+WORKDIR /app
+COPY server.py ./
+ENV ARIA_AGENT_SIDECAR_HOST=0.0.0.0 ARIA_AGENT_SIDECAR_PORT=8092
+EXPOSE 8092
+CMD ["python3", "server.py"]

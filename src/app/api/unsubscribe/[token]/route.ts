@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { hashEmailUnsubscribeToken, isEmailUnsubscribeToken } from "@/lib/email-unsubscribe";
 
@@ -25,6 +26,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
 /** RFC 8058 one-click endpoint. It accepts no recipient identity from callers. */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  // Cap token-guessing traffic before any DB lookup. Unauthenticated public
+  // endpoint, so key on IP only.
+  const limit = checkRateLimit(rateLimitKey(req, "unsubscribe"), { windowMs: 60_000, max: 30 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
   const { token } = await params;
   if (!isEmailUnsubscribeToken(token)) return genericSuccess();
 

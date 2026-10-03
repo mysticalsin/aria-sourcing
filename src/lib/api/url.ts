@@ -3,10 +3,41 @@ import { lookup } from "dns/promises";
 import { BlockList, isIP } from "node:net";
 
 /**
+ * Deployment-owned exact-hostname allow-list for the Hermes runtime.
+ *
+ * The built-in patterns below only cover a developer's loopback and RFC1918
+ * ranges. A real deployment reaches Hermes over its own private DNS — Fly, for
+ * example, uses `<app>.internal` names on 6PN IPv6 — and none of those forms can
+ * be expressed as a static pattern without weakening the guard for everyone.
+ *
+ * So the deployment names its own hosts, exactly. Read at call time rather than
+ * at module load so a test (and a redeploy) can change it. Wildcards, paths and
+ * embedded whitespace are rejected: every entry must be a bare hostname or IP
+ * literal, which keeps this an allow-list rather than a pattern language.
+ *
+ * Note the ordering in isAllowedHermesUrl: the SSRF block-list is evaluated
+ * BEFORE this, so naming a cloud metadata endpoint here cannot unblock it.
+ */
+function deploymentAllowedHermesHosts(): Set<string> {
+  const raw = process.env.HERMES_ALLOWED_HOSTS ?? "";
+  const hosts = new Set<string>();
+  for (const entry of raw.split(",")) {
+    const host = entry.trim().toLowerCase().replace(/^\[|\]$/g, "");
+    if (!host) continue;
+    // Bare hostname or IP literal only — no wildcards, no scheme, no path, no port.
+    if (!/^[a-z0-9.:_-]+$/.test(host)) continue;
+    if (host.includes("*")) continue;
+    hosts.add(host);
+  }
+  return hosts;
+}
+
+/**
  * SSRF-safe URL validator for upstream HTTP proxies.
  *
- * Allows only http/https schemes and private/internal IPs commonly used for
- * local Aria deployments. Blocks file/ftp/gopher, metadata endpoints, and
+ * Allows only http/https schemes, the private/internal IPs commonly used for
+ * local Aria deployments, and any exact hostname the deployment names in
+ * HERMES_ALLOWED_HOSTS. Blocks file/ftp/gopher, metadata endpoints, and
  * ambiguous hostnames that could resolve to internal services.
  */
 export function isAllowedHermesUrl(urlString: string): { ok: boolean; reason?: string } {
@@ -21,7 +52,14 @@ export function isAllowedHermesUrl(urlString: string): { ok: boolean; reason?: s
     return { ok: false, reason: "Only http/https schemes are allowed." };
   }
 
-  const hostname = url.hostname.toLowerCase();
+  // WHATWG URL keeps the surrounding brackets on an IPv6 literal, so
+  // `http://[::1]/` yields hostname "[::1]". Strip them before matching:
+  // every IPv6 pattern below (`^::1$`, `^fc00:`, `^fe80:`, `^ff00:`) is written
+  // against the bare address and would otherwise never fire. Those block
+  // patterns were previously unreachable for that reason — harmless only because
+  // the default-deny allow-list rejected all IPv6 anyway, which stops being true
+  // now that a deployment can name an IPv6 host explicitly.
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
 
   // Block metadata / link-local / broadcast / wildcard / cloud metadata addresses.
   const blockedHostPatterns = [
@@ -57,12 +95,29 @@ export function isAllowedHermesUrl(urlString: string): { ok: boolean; reason?: s
     /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
     /^192\.168\.\d+\.\d+$/,
   ];
-  const isAllowed = allowedHostPatterns.some((pattern) => pattern.test(hostname));
+  const isAllowed =
+    allowedHostPatterns.some((pattern) => pattern.test(hostname)) ||
+    deploymentAllowedHermesHosts().has(hostname);
   if (!isAllowed) {
     return { ok: false, reason: "Host not in allow-list." };
   }
 
   return { ok: true };
+}
+
+/**
+ * True when a Hermes runtime URL is configured but would be refused by the
+ * validator above — i.e. the deployment believes it has a live runtime and every
+ * request will in fact be rejected before it is sent.
+ *
+ * This is the silent-misconfiguration case: the client degrades to the
+ * deterministic mock, the UI looks healthy, and nothing surfaces it. Readiness
+ * consumes this so the deployment fails its own probe instead.
+ */
+export function hermesRuntimeMisconfigured(hermesApiUrl: string | undefined): boolean {
+  const configured = (hermesApiUrl ?? "").trim();
+  if (!configured) return false; // Hermes is simply not enabled — not a fault.
+  return !isAllowedHermesUrl(configured).ok;
 }
 
 /* ------------------------------------------------------------------------- *

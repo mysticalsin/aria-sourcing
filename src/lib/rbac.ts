@@ -20,6 +20,7 @@ export const PERMISSIONS = [
   "manage_settings",
   "manage_keys",
   "manage_roles",
+  "manage_autopilot",
   "manage_providers",
   "manage_models",
   "manage_tools",

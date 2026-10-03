@@ -1,6 +1,5 @@
-import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { decryptSecret } from "@/lib/crypto-secrets";
+import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { isAllowedHermesUrl } from "./url";
 
 /**
@@ -19,14 +18,55 @@ export function logHermesProxy(level: "info" | "error", message: string, meta?: 
   }
 }
 
-export function getHermesBaseUrl(): { ok: true; baseUrl: string } | { ok: false; reason: string } {
-  const raw = process.env.HERMES_API_URL ?? "";
+/**
+ * Upstream Hermes is TWO processes, not one, and their route sets do not overlap:
+ *
+ *  - "api"  the aiohttp gateway (`gateway/platforms/api_server.py`, default port
+ *           8642). Serves `/health`, `/v1/*` and the `/api/sessions` family.
+ *  - "web"  the FastAPI management server (`hermes_cli/web_server.py`, started as
+ *           `python -m hermes_cli.main web --port 8080`). Serves `/api/status`,
+ *           `/api/system/stats`, `/api/config`, `/api/memory`, `/api/skills`,
+ *           `/api/curator` and `/api/files`.
+ *
+ * Addressing both off one base URL is why seven management paths returned 404
+ * against a perfectly healthy runtime: they were being asked of the gateway.
+ */
+export type HermesProxyBase = "api" | "web";
+
+const HERMES_BASE_ENV: Record<HermesProxyBase, string> = {
+  api: "HERMES_API_URL",
+  web: "HERMES_WEB_URL",
+};
+
+export function getHermesBaseUrl(
+  base: HermesProxyBase = "api",
+): { ok: true; baseUrl: string } | { ok: false; reason: string } {
+  const envVar = HERMES_BASE_ENV[base];
+  const raw = process.env[envVar] ?? "";
   const baseUrl = raw.replace(/\/$/, "");
-  if (!baseUrl) return { ok: false, reason: "Aria runtime URL is not configured." };
+  if (!baseUrl) {
+    // Deliberately no fallback to HERMES_API_URL. Falling back is exactly how
+    // every management path came to be sent to the gateway and 404 silently; a
+    // clear "not configured" is more useful than a confident wrong answer.
+    return {
+      ok: false,
+      reason:
+        base === "web"
+          ? `Aria runtime management URL is not configured (${envVar}).`
+          : "Aria runtime URL is not configured.",
+    };
+  }
   const urlCheck = isAllowedHermesUrl(baseUrl);
   if (!urlCheck.ok) return { ok: false, reason: `Aria runtime URL rejected: ${urlCheck.reason}` };
   return { ok: true, baseUrl };
 }
+
+/**
+ * Provider slug that a Hermes runtime credential is stored under. The typed chat
+ * route already pins this (`src/app/api/hermes/chat/route.ts`), and the generic
+ * proxy must agree with it or the two paths accept different sets of secrets.
+ */
+const HERMES_VAULT_PROVIDER = "Aria Agent";
 
 export async function resolveHermesBearerToken(
   hermesApiKeyId?: string,
@@ -34,58 +74,90 @@ export async function resolveHermesBearerToken(
   if (!hermesApiKeyId) return { ok: true, token: process.env.HERMES_API_KEY ?? "" };
   if (!supabaseEnabled) return { ok: false, reason: "Aria runtime key is not available." };
 
-  const session = await getServerSupabase();
-  const svc = getServiceSupabase();
-  if (!session || !svc) return { ok: false, reason: "Aria runtime key is not available." };
-  const {
-    data: { user },
-  } = await session.auth.getUser();
-  if (!user) return { ok: false, reason: "Aria runtime key is not available." };
-  const { data: wid } = await session.rpc("current_workspace_id");
-  const { data: row } = await svc
-    .from("api_keys")
-    .select("secret, workspace_id")
-    .eq("id", hermesApiKeyId)
-    .single();
-  if (!row || row.workspace_id !== wid || typeof row.secret !== "string") {
-    return { ok: false, reason: "Aria runtime key is not available." };
-  }
-  try {
-    const token = decryptSecret(row.secret);
-    return token
-      ? { ok: true, token }
-      : { ok: false, reason: "Aria runtime key is not available." };
-  } catch {
-    return { ok: false, reason: "Aria runtime key is not available." };
-  }
+  // Delegate to the single hardened resolver rather than re-implementing it.
+  // This function used to select on `workspace_id` alone — no `provider`, no
+  // `status = 'valid'` — so any authenticated workspace member could name any
+  // secret in their workspace, including a REVOKED one, and have it sent as a
+  // Bearer token to the Hermes host. resolveVaultSecret filters on workspace,
+  // status and provider in the query and re-checks each in code.
+  const token = await resolveVaultSecret(hermesApiKeyId, HERMES_VAULT_PROVIDER);
+  return token
+    ? { ok: true, token }
+    : { ok: false, reason: "Aria runtime key is not available." };
 }
 
 /**
- * Paths on the Aria runtime web_server that the MSourcing UI is allowed to
- * proxy to. Everything else returns 404. This is an allow-list, not a block-list.
+ * Paths on the Aria runtime that the MSourcing UI is allowed to proxy to, each
+ * paired with the upstream process that actually serves it. Everything else
+ * returns 404. This is an allow-list, not a block-list.
+ *
+ * Every entry below was verified to exist at upstream `origin/main`
+ * (NousResearch/hermes-agent, 2026-07-24). Six entries were removed because they
+ * exist on NEITHER upstream process and could only ever have 404'd:
+ *
+ *   api/health          the gateway serves `/health`, not `/api/health`
+ *   api/tools           only `/api/tools/toolsets/*` and `/api/tools/computer-use/*`
+ *   api/models          only `/api/model/*` (singular) and `/v1/models`
+ *   api/schedules       no such route anywhere upstream
+ *   api/gateway         only `/api/gateway/{drain,restart,start,stop}`
+ *   api/oauth/account   a Nous cloud endpoint, not a local route
+ *
+ * Keeping dead entries here widened the nominal proxy surface for zero function
+ * and made the list look maintained when it was not.
  */
-export const HERMES_PROXY_ALLOW_LIST = [
-  "api/status",
-  "api/system/stats",
-  "api/health",
-  "api/config",
-  "api/sessions",
-  "api/memory",
-  "api/skills",
-  "api/tools",
-  "api/models",
-  "api/schedules",
-  "api/curator",
-  "api/files",
-  "api/gateway",
-  "api/oauth/account",
-  "v1/chat/completions",
+export const HERMES_PROXY_ALLOW_LIST: readonly { path: string; base: HermesProxyBase }[] = [
+  // aiohttp gateway.
+  { path: "health", base: "api" },
+  { path: "v1/chat/completions", base: "api" },
+  // Registered on both processes; the gateway owns the chat session lifecycle
+  // (GET/POST/PATCH/DELETE), so GET and POST must not straddle two servers.
+  { path: "api/sessions", base: "api" },
+  // FastAPI management server.
+  { path: "api/status", base: "web" },
+  { path: "api/system/stats", base: "web" },
+  { path: "api/config", base: "web" },
+  { path: "api/memory", base: "web" },
+  { path: "api/skills", base: "web" },
+  { path: "api/curator", base: "web" },
+  { path: "api/files", base: "web" },
 ];
 
-export function isAllowedHermesPath(path: string[]): { ok: boolean; reason?: string; upstreamPath: string } {
+/**
+ * Validate a client-supplied directory path before it is forwarded to the
+ * runtime's file browser. Deny-by-default: only a relative POSIX-style path made
+ * of ordinary segments is accepted.
+ *
+ * Rejected: absolute paths, Windows drive letters and UNC prefixes, backslashes,
+ * any `.` or `..` segment, NUL and control characters, percent-encoding (which
+ * would let `%2e%2e` survive this check and be decoded upstream), and anything
+ * over 512 characters. Upstream enforces its own managed-path policy as well;
+ * this exists so a traversal attempt never leaves our process.
+ */
+export function isSafeRelativeBrowsePath(raw: string): { ok: true } | { ok: false; reason: string } {
+  if (raw.length > 512) return { ok: false, reason: "Path is too long." };
+  // Unicode escapes, not literal control bytes: the source stays readable and
+  // no-control-regex has nothing to flag.
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return { ok: false, reason: "Path contains control characters." };
+  if (raw.includes("%")) return { ok: false, reason: "Percent-encoded paths are not accepted." };
+  if (raw.includes("\\")) return { ok: false, reason: "Backslashes are not accepted in a path." };
+  if (raw.startsWith("/") || /^[a-zA-Z]:/.test(raw)) return { ok: false, reason: "Path must be relative." };
+  // An empty string means "the default root", which upstream already handles.
+  if (raw === "") return { ok: true };
+  const segments = raw.split("/");
+  for (const segment of segments) {
+    if (segment === "" ) return { ok: false, reason: "Path contains an empty segment." };
+    if (segment === "." || segment === "..") return { ok: false, reason: "Relative path segments are not accepted." };
+  }
+  return { ok: true };
+}
+
+export function isAllowedHermesPath(
+  path: string[],
+): { ok: true; upstreamPath: string; base: HermesProxyBase } | { ok: false; reason: string; upstreamPath: string } {
   const upstreamPath = path.join("/");
-  if (!HERMES_PROXY_ALLOW_LIST.includes(upstreamPath)) {
+  const entry = HERMES_PROXY_ALLOW_LIST.find((candidate) => candidate.path === upstreamPath);
+  if (!entry) {
     return { ok: false, reason: "Path not in Aria proxy allow-list.", upstreamPath };
   }
-  return { ok: true, upstreamPath };
+  return { ok: true, upstreamPath, base: entry.base };
 }

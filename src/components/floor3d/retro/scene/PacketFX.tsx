@@ -12,10 +12,12 @@ import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { subscribe, type AgentEvent } from "@/lib/agent-events";
+import { useSeats } from "@/lib/store";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import type { RenderAgent } from "../core/types";
 import { toWorld } from "../core/geometry";
 import { CANVAS_H, CANVAS_W } from "../core/constants";
-import { EVENT_COLOR, PACKET_FLIGHT_MS, PULSE_MS, pickResponderIndex } from "@/lib/floor3d";
+import { EVENT_COLOR, PACKET_FLIGHT_MS, PULSE_MS } from "@/lib/floor3d";
 
 export interface PacketFXProps {
   /** Live, ref-driven agent records (agentTick.ts). Read-only here. */
@@ -64,6 +66,11 @@ function makeGlowTexture(): THREE.Texture | null {
 
 export function PacketFX({ agentsRef, ceoId }: PacketFXProps) {
   const glowTex = useMemo(() => makeGlowTexture(), []);
+  const seats = useSeats();
+  const seatsRef = useRef(seats);
+  useEffect(() => {
+    seatsRef.current = seats;
+  }, [seats]);
 
   // Fixed pool — pre-allocated once, mutated in place every frame. No
   // per-frame allocation: positions/colors are `.set()`/`.lerpVectors()`
@@ -91,13 +98,18 @@ export function PacketFX({ agentsRef, ceoId }: PacketFXProps) {
   useEffect(() => {
     const unsubscribe = subscribe((e: AgentEvent) => {
       const agents = agentsRef.current ?? [];
-      const employees = ceoId ? agents.filter((a) => a.id !== ceoId) : agents;
-      const source =
-        (e.seatId ? agents.find((a) => a.id === e.seatId) : undefined) ??
-        (employees.length > 0 ? employees[pickResponderIndex(e, employees.length)] : undefined);
+      // Seatless events must not hash-paint a random LI desk (floor page already fail-closed).
+      if (!e.seatId) return;
+      const source = agents.find((a) => a.id === e.seatId);
+      if (!source) return;
+      // LI desks: only FX when event campaign matches attach (same as Floor pulse).
+      const seat = seatsRef.current.find((s) => s.id === e.seatId);
+      if (seat && isBrowserComputerSeat(seat)) {
+        if (!e.campaignId || !seatAttachedToCampaign(seat, e.campaignId)) return;
+      }
 
       const hub = resolveHub();
-      const fromXY = source ? { x: source.x, y: source.y } : hub;
+      const fromXY = { x: source.x, y: source.y };
 
       const [fx, , fz] = toWorld(fromXY.x, fromXY.y);
       const [hx, , hz] = toWorld(hub.x, hub.y);

@@ -5,10 +5,39 @@ import { Badge, Button, Card, CardContent, Field, Input, Select, EmptyState, use
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { API_KEY_PROVIDERS, type ApiKeyProvider } from "@/lib/types";
 import { can } from "@/lib/rbac";
+import { experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
 import { formatTimeAgo, type Tone } from "@/lib/utils";
 import { KeyRound, Plus, ShieldAlert, Trash2, Zap } from "lucide-react";
 
 const STATUS_TONE: Record<string, Tone> = { valid: "success", invalid: "danger", untested: "neutral" };
+
+const SELECTABLE_API_KEY_PROVIDERS = experimentalPaidSourcingEnabled
+  ? API_KEY_PROVIDERS
+  : API_KEY_PROVIDERS.filter((provider) => provider !== "Sillage" && provider !== "Seamless");
+
+// Provider-specific format hints for the API key value field. Most providers
+// rely on the generic placeholder below; the LinkedIn profile search connector
+// token shape is distinctive enough to call out explicitly.
+const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
+  Apify:
+    "LinkedIn profile search connector token (from your search-provider console), format apify_api_…",
+  "LinkedIn OIDC": "LinkedIn app client secret (Developer Portal → Auth). Attach it on the LinkedIn stack.",
+  "LinkedIn Vendor API": "Entitled vendor messaging API key for automatic LinkedIn sends.",
+  "Computer Supervisor": "Bearer token for the browser-computer supervisor (isolated Chromium seats).",
+};
+const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
+  Apify: "apify_api_…  (stored server-side, never shown again)",
+  DeepSeek: "sk-…  (encrypted; never shown again)",
+  "NVIDIA NIM": "nvapi-…  (encrypted; never shown again)",
+  "Kimi (Moonshot)": "sk-…  (Moonshot / Kimi; encrypted)",
+};
+
+const KEY_PROVIDER_LABELS: Partial<Record<ApiKeyProvider, string>> = {
+  Apify: "LinkedIn profile search",
+  "Kimi (Moonshot)": "Kimi (Moonshot)",
+  "NVIDIA NIM": "NVIDIA NIM",
+  DeepSeek: "DeepSeek",
+};
 
 export function ApiKeysPanel() {
   const keys = useApiKeys();
@@ -25,34 +54,54 @@ export function ApiKeysPanel() {
   const [testing, setTesting] = React.useState<string | null>(null);
 
   async function handleSave() {
-    if (!name.trim() || !value.trim()) {
-      toast({ title: "Name and key required", variant: "warning" });
+    if (!value.trim()) {
+      toast({ title: "Paste an API key first", variant: "warning" });
       return;
     }
+    const label =
+      name.trim() || `${provider} ${new Date().toISOString().slice(0, 10)}`;
     setBusy(true);
-    const res = await actions.saveApiKey({ name: name.trim(), provider, value });
-    setBusy(false);
-    if (res.ok) {
-      setName("");
-      setValue(""); // never retain the secret in the form
-      toast({
-        title: "API key saved",
-        description: res.demo
-          ? "Stored for this session (demo). Configure Supabase to persist server-side."
-          : "Stored securely in the backend. Test it below.",
-        variant: "success",
-      });
-    } else {
+    const res = await actions.saveApiKey({ name: label, provider, value });
+    if (!res.ok || !res.key) {
+      setBusy(false);
       toast({ title: "Could not save key", description: res.error, variant: "error" });
+      return;
     }
+    setName("");
+    setValue(""); // never retain the secret in the form after encrypt/store
+
+    let valid = res.valid === true;
+    let detail = res.detail ?? "";
+    if (res.valid === undefined) {
+      const tested = await actions.testApiKey(res.key.id);
+      valid = tested.valid;
+      detail = tested.detail;
+    }
+    setBusy(false);
+    toast({
+      title: valid
+        ? "Encrypted and verified end-to-end"
+        : "Encrypted, but live verification failed",
+      description: valid
+        ? `Stored as ••••${res.key.last4}. ${detail}`
+        : `${detail || "Provider rejected this key."} Delete the key below and try again with a working secret.`,
+      variant: valid ? "success" : "error",
+    });
   }
 
   async function handleTest(id: string) {
     setTesting(id);
     const r = await actions.testApiKey(id);
     setTesting(null);
+    const live = /accepted \(HTTP|authenticated \(HTTP|rejected this key/i.test(r.detail ?? "");
     toast({
-      title: r.valid ? "Format looks valid (not a live test)" : "Format check failed",
+      title: r.valid
+        ? live
+          ? "Key verified with provider"
+          : "Format looks valid"
+        : live
+          ? "Key verification failed"
+          : "Format check failed",
       description: r.detail,
       variant: r.valid ? "success" : "error",
     });
@@ -80,7 +129,7 @@ export function ApiKeysPanel() {
 
         {isAdmin && (
           <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <Field label="Label" htmlFor="key-name">
+            <Field label="Label (optional)" htmlFor="key-name" hint="Defaults to provider + date if blank.">
               <Input id="key-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Anthropic (primary)" />
             </Field>
             <Field label="Provider" htmlFor="key-provider">
@@ -88,10 +137,21 @@ export function ApiKeysPanel() {
                 id="key-provider"
                 value={provider}
                 onChange={(e) => setProvider(e.target.value as ApiKeyProvider)}
-                options={API_KEY_PROVIDERS.map((p) => ({ value: p, label: p }))}
+                options={SELECTABLE_API_KEY_PROVIDERS.map((p) => ({
+                  value: p,
+                  label: KEY_PROVIDER_LABELS[p] ?? p,
+                }))}
               />
             </Field>
-            <Field label="API key" htmlFor="key-value" className="sm:col-span-3">
+            <Field
+              label="API key"
+              htmlFor="key-value"
+              hint={
+                KEY_VALUE_HINT[provider] ??
+                "Paste once → we encrypt server-side → we verify live → you only see ••••last4."
+              }
+              className="sm:col-span-3"
+            >
               <div className="flex gap-2">
                 <Input
                   id="key-value"
@@ -99,10 +159,19 @@ export function ApiKeysPanel() {
                   autoComplete="off"
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
-                  placeholder="sk-…  (stored server-side, never shown again)"
+                  placeholder={KEY_VALUE_PLACEHOLDER[provider] ?? "sk-…  (encrypted; never shown again)"}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !busy) void handleSave();
+                  }}
                 />
-                <Button variant="secondary" loading={busy} leftIcon={<Plus className="h-4 w-4" />} onClick={handleSave}>
-                  Save key
+                <Button
+                  variant="secondary"
+                  loading={busy}
+                  disabled={busy || !value.trim()}
+                  leftIcon={<Plus className="h-4 w-4" />}
+                  onClick={() => void handleSave()}
+                >
+                  {busy ? "Encrypting…" : "Add key"}
                 </Button>
               </div>
             </Field>
@@ -125,7 +194,7 @@ export function ApiKeysPanel() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-ink">{k.name}</span>
                   <span className="block text-xs text-muted">
-                    {k.provider} · ••••{k.last4}
+                    {KEY_PROVIDER_LABELS[k.provider] ?? k.provider} · ••••{k.last4}
                     {k.lastTestedAt ? ` · tested ${formatTimeAgo(k.lastTestedAt)}` : ""}
                   </span>
                 </span>
@@ -141,7 +210,7 @@ export function ApiKeysPanel() {
                       leftIcon={<Zap className="h-4 w-4" />}
                       onClick={() => handleTest(k.id)}
                     >
-                      Format check
+                      Verify
                     </Button>
                     <Button
                       variant="ghost"
@@ -158,8 +227,9 @@ export function ApiKeysPanel() {
           </ul>
         )}
         <p className="text-xs text-muted">
-          Secrets are written to the backend and withheld from the browser (only the last 4 digits are
-          returned). Validation runs server-side. Admins only.
+          Secrets are written encrypted to the backend and withheld from the browser (only the last 4
+          digits are returned). LLM and sourcing connector keys are verified with a live provider
+          probe. Admins only.
         </p>
       </CardContent>
     </Card>

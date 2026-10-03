@@ -1,4 +1,5 @@
 import type { OutreachChannel, SystemSettings } from "@/lib/types";
+import { linkedInInviteDraftRules } from "@/lib/linkedin-invite-note";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -28,6 +29,8 @@ export interface HermesResult {
   ok: boolean;
   text?: string;
   reason?: string;
+  /** When true, callers should keep the deterministic template draft. */
+  useTemplateFallback?: boolean;
 }
 
 /**
@@ -72,7 +75,7 @@ export function buildOutreachPrompt(opts: {
   candidateCompany: string;
   techStack: string[];
   recentActivity: string;
-  yearsExperience: number;
+  yearsExperience: number | null;
   roleTitle: string;
   locationType: string;
   regions: string[];
@@ -83,6 +86,10 @@ export function buildOutreachPrompt(opts: {
   language: string;
   persona?: string;
   signature?: string;
+  /** Active outreach_skill playbook markdown from Agent Skills. */
+  skillPlaybook?: string;
+  /** Optional Orca-style profile insight + ICP qualify context. */
+  linkedInAgentContext?: string;
 }): string {
   const lines = [
     `Draft a first-touch ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
@@ -91,10 +98,21 @@ export function buildOutreachPrompt(opts: {
     "",
     "Candidate:",
     `- Name: ${opts.candidateName}`,
-    `- Current: ${opts.candidateTitle} at ${opts.candidateCompany}`,
-    `- Experience: ${opts.yearsExperience} years`,
+    opts.candidateTitle || opts.candidateCompany
+      ? `- Current: ${[opts.candidateTitle, opts.candidateCompany].filter(Boolean).join(" at ")}`
+      : "- Current role: not provided",
+    opts.yearsExperience == null
+      ? "- Experience: not provided"
+      : `- Experience: ${opts.yearsExperience} years`,
     `- Tech stack: ${opts.techStack.join(", ") || "n/a"}`,
-    `- Recent activity: ${opts.recentActivity || "n/a"}`,
+    `- Recent activity: ${
+      opts.recentActivity && !/no activity signal/i.test(opts.recentActivity)
+        ? opts.recentActivity
+        : "n/a"
+    }`,
+    opts.linkedInAgentContext ? "" : "",
+    opts.linkedInAgentContext ? "LinkedIn agent context (Orca / Linki / OpenOutreach):" : "",
+    opts.linkedInAgentContext ? opts.linkedInAgentContext : "",
     "",
     "Role:",
     opts.roleContext ??
@@ -104,10 +122,22 @@ export function buildOutreachPrompt(opts: {
         `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
       ].join("\n"),
     "",
-    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler.",
+    opts.skillPlaybook
+      ? ["Agent Skills playbook (must follow):", opts.skillPlaybook.trim(), ""].join("\n")
+      : "",
+    opts.channel === "LinkedIn"
+      ? [
+          "Rules (LinkedIn Connect-first):",
+          linkedInInviteDraftRules(),
+          "If drafting a Message/InMail instead of Connect, still stay under 90 words, body-only (no Subject line dumped into the DM box).",
+          "No AI slop, no corporate filler. Never use em dashes (—) or en dashes (–); use commas or periods. The Humanizer will strip remaining AI tells.",
+        ].join("\n")
+      : "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler. Never use em dashes (—) or en dashes (–); use commas or periods. The Humanizer will strip remaining AI tells.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",
     "",
-    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",
+    opts.channel === "LinkedIn"
+      ? "Reply with exactly the invite/message body only (no 'Subject:' line for Connect notes). No preamble, no commentary."
+      : "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",
   ];
   return lines.filter((l) => l !== "").join("\n");
 }

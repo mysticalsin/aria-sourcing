@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 
 const restore = readFileSync("scripts/restore-drill.sh", "utf8");
 const backup = readFileSync("scripts/backup.sh", "utf8");
+const tableInventory = readFileSync("docker/bootstrap/legacy-table-inventory.txt", "utf8")
+  .trim()
+  .split("\n");
 
 let pass = 0;
 let fail = 0;
@@ -29,6 +32,21 @@ ok("container resolver prefers the checked-in Compose db service", /docker compo
 ok("container resolver rejects remote Docker contexts", /Docker context is not local/.test(readFileSync("scripts/lib/local-db-container.sh", "utf8")));
 ok("container resolver verifies current checkout labels", /com\.docker\.compose\.project\.working_dir/.test(readFileSync("scripts/lib/local-db-container.sh", "utf8")));
 ok("backup refuses missing required tables", /REQUIRED_TABLES/.test(backup));
+ok(
+  "backup and restore load the canonical table inventory",
+  /done < docker\/bootstrap\/legacy-table-inventory\.txt/.test(backup) &&
+    /done < docker\/bootstrap\/legacy-table-inventory\.txt/.test(restore),
+);
+ok(
+  "backup and restore append the migration ledger to the canonical inventory",
+  /REQUIRED_TABLES\+=\(aria_schema_migrations\)/.test(backup) &&
+    /REQUIRED_TABLES\+=\(aria_schema_migrations\)/.test(restore),
+);
+ok(
+  "canonical recovery inventory covers operational memory and email quarantine",
+  tableInventory.includes("agent_framework_run_memory_context") &&
+    tableInventory.includes("email_connection_seat_mismatch_quarantine"),
+);
 ok("backup refuses disabled RLS", /rowsecurity\s*=\s*false/.test(backup));
 ok("backup requires the exact ARIA migration identities", /EXPECTED_MIGRATION_IDENTITIES/.test(backup) && /ACTUAL_MIGRATION_IDENTITIES/.test(backup));
 ok("backup requires the latest schema fingerprint", /finalize_whatsapp_provider_failure/.test(backup));
@@ -80,20 +98,6 @@ const restoreArm = restore.indexOf("SCRATCH_CLEANUP_ARMED=1");
 const restoreCreate = restore.indexOf('dex_owner -d postgres -c "create database');
 ok("backup arms scratch cleanup before create", backupArm >= 0 && backupCreate > backupArm);
 ok("restore arms scratch cleanup before create", restoreArm >= 0 && restoreCreate > restoreArm);
-
-for (const table of [
-  "agent_conversations", "agent_events", "agent_memories", "agent_memory_events",
-  "agent_memory_legacy_quarantine", "agent_run_memory_context",
-  "agent_runs", "agent_seats", "agent_specs", "api_keys", "aria_schema_migrations",
-  "databricks_connection_events", "databricks_connections", "dust_connection_events",
-  "dust_connections", "email_connections",
-  "messages_inbound", "messages_outbound", "outbound_content_cache",
-  "outreach_approvals", "outreach_ledger", "profiles", "suppression_list",
-  "whatsapp_contacts", "whatsapp_conversation_windows", "whatsapp_delivery_events",
-  "whatsapp_senders", "whatsapp_templates", "workspace_state", "workspaces",
-]) {
-  ok(`restore requires table ${table}`, restore.includes(table));
-}
 
 console.log(`RESULT restore-drill-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

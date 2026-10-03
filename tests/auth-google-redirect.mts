@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 // Keep the route in its existing non-production test harness: no Supabase env
 // means requireAdmin() returns the local admin demo session, while the public
 // demo flag stays false so publicDemoSideEffectsDisabled() does not block.
-process.env.NODE_ENV = "test";
+if (!Reflect.set(process.env, "NODE_ENV", "test")) {
+  throw new Error("Unable to set NODE_ENV for the Google OAuth route test.");
+}
 process.env.NEXT_PUBLIC_SUPABASE_URL = "";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "";
 process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN = "false";

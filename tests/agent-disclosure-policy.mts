@@ -196,7 +196,12 @@ ok("drift: no state.brief JSON serialization", !/JSON\.stringify\(state\.brief\)
 ok("drift: no roleSummary raw JSON serialization", !/roleSummary:\s*JSON\.stringify/.test(sourceText));
 ok("drift: WhatsApp inbound uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8")));
 ok("drift: agent graph uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/lib/agents/graph.ts", import.meta.url), "utf8")));
-ok("drift: agent run route documents graph disclosure boundary", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/app/api/agents/run/route.ts", import.meta.url), "utf8")));
+ok(
+  "drift: framework run route has no caller candidate, provider, model, or direct delivery surface",
+  !/runGraph|apiKeyId|existing\s*:|provider:\s*z\.|model:\s*z\.|send_message/.test(
+    readFileSync(new URL("../src/app/api/agents/run/route.ts", import.meta.url), "utf8"),
+  ),
+);
 ok("drift: sourcing agent uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8")));
 
 const storeText = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");

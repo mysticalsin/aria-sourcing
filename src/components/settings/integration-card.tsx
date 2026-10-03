@@ -96,6 +96,25 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     });
   }
 
+  function scrollToLinkedInStack() {
+    const el = document.getElementById("linkedin-outreach-stack");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.focus({ preventScroll: true });
+    }
+  }
+
+  function handleSetupGuide() {
+    const href = integration.setupHref ?? "";
+    if (href.includes("#linkedin-outreach-stack")) {
+      if (typeof window !== "undefined" && window.location.pathname === "/settings") {
+        scrollToLinkedInStack();
+        return;
+      }
+    }
+    router.push(href);
+  }
+
   function handleToggleMode() {
     const nextMode = isLive ? "mock" : "live";
     actions.toggleIntegrationMode(integration.id);
@@ -111,22 +130,42 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
   async function handleConnect() {
     if (!apiKey.trim()) {
-      toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "error" });
+      toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "warning" });
       return;
     }
     setSaving(true);
     try {
-      await actions.saveApiKey({ name: `${integration.name} connection`, provider: "Custom", value: apiKey.trim() });
+      const provider =
+        integration.id === "int_apify"
+          ? "Apify"
+          : integration.id === "int_sendgrid"
+            ? "SendGrid"
+            : "Custom";
+      const saved = await actions.saveApiKey({
+        name: `${integration.name} connection`,
+        provider,
+        value: apiKey.trim(),
+      });
+      if (!saved.ok) {
+        toast({ title: "Couldn't connect", description: saved.error, variant: "error" });
+        return;
+      }
       actions.updateIntegration(integration.id, {
-        status: "connected",
+        status: saved.valid === false ? "error" : "connected",
         connectedAccount: account.trim() || undefined,
         lastSync: new Date().toISOString(),
-        errors: [],
+        errors: saved.valid === false ? [saved.detail ?? "Key verification failed"] : [],
       });
       toast({
-        title: `${integration.name} connected`,
-        description: "Credentials stored server-side. Flip Live mode on the card when you're ready.",
-        variant: "success",
+        title:
+          saved.valid === false
+            ? `${integration.name}: key saved but invalid`
+            : `${integration.name} connected`,
+        description:
+          saved.valid === false
+            ? saved.detail
+            : "Credentials encrypted server-side. Flip Live mode when you're ready.",
+        variant: saved.valid === false ? "error" : "success",
       });
       setApiKey("");
       setAccount("");
@@ -272,6 +311,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             )}
 
             <div className="flex gap-2">
+              {integration.real ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -281,10 +321,23 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               >
                 Configure
               </Button>
-              {/* Only GitHub has a real, live connection check (testIntegration in
-                  store.ts pings /api/source). Other real cards point to their actual
-                  setup surface instead of running the no-op mock testConnection(). */}
-              {integration.real && integration.id === "int_github" && (
+              ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                disabled
+                title="Roadmap placeholder — not wired to a live adapter"
+              >
+                Coming soon
+              </Button>
+              )}
+              {integration.real &&
+                (integration.id === "int_github" ||
+                  integration.id === "int_outlook" ||
+                  integration.id === "int_gmail" ||
+                  integration.id === "int_linkedin_rsc" ||
+                  integration.id === "int_heyreach") && (
                 <Button
                   variant="subtle"
                   size="sm"
@@ -296,15 +349,34 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   Test connection
                 </Button>
               )}
-              {integration.real && integration.id !== "int_github" && integration.setupHref && (
+              {integration.real &&
+                integration.id !== "int_github" &&
+                integration.id !== "int_outlook" &&
+                integration.id !== "int_gmail" &&
+                integration.id !== "int_linkedin_rsc" &&
+                integration.id !== "int_heyreach" &&
+                integration.setupHref && (
                 <Button
                   variant="subtle"
                   size="sm"
                   className="flex-1"
                   leftIcon={<Wrench className="h-4 w-4" />}
-                  onClick={() => router.push(integration.setupHref!)}
+                  onClick={handleSetupGuide}
                 >
                   Setup guide
+                </Button>
+              )}
+              {integration.real &&
+                (integration.id === "int_linkedin_rsc" || integration.id === "int_heyreach") &&
+                integration.setupHref && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  className="flex-1"
+                  leftIcon={<Wrench className="h-4 w-4" />}
+                  onClick={handleSetupGuide}
+                >
+                  Open stack
                 </Button>
               )}
             </div>
