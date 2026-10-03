@@ -290,6 +290,37 @@ try {
     ok("ensureComputer rejects cross-seat computerId", threw);
   }
 
+  // Durable DB owns computer_id; stale Map thief must not force GET to clear FK.
+  {
+    const adoptSup = new ComputerSupervisor();
+    adoptSup.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-stale-map",
+      computerId: "comp_durable",
+    });
+    const adopted = adoptSup.adoptDurableComputerBinding({
+      workspaceId: "ws",
+      seatId: "seat-db-owner",
+      computerId: "comp_durable",
+    });
+    ok(
+      "adoptDurableComputerBinding rebinds stale Map to durable seat",
+      adopted.seatId === "seat-db-owner" && adopted.computerId === "comp_durable",
+    );
+    let stillThrows = false;
+    try {
+      adoptSup.ensureComputer({
+        workspaceId: "ws",
+        seatId: "seat-other",
+        computerId: "comp_durable",
+      });
+    } catch (err) {
+      stillThrows =
+        err instanceof Error && err.message.includes("computer-ownership-mismatch");
+    }
+    ok("adoptDurable still leaves ensureComputer ownership-gated", stillThrows);
+  }
+
   // Without OpenBot + without mock, start must not invent ready.
   {
     process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "0";
@@ -911,6 +942,12 @@ try {
       route.includes("clearedPoisonedComputerIds") &&
         /clearedPoisonedComputerIds\.has\(s\.id\) \? null/.test(route) &&
         (route.match(/clearedPoisonedComputerIds\.has\(s\.id\) \? null/g) ?? []).length >= 2,
+    );
+    ok(
+      "GET ownership-mismatch adopts durable when no other seat claims computer_id",
+      route.includes("adoptDurableComputerBinding") &&
+        route.includes("claimedByOtherSeat") &&
+        /Stale in-memory Map/.test(route),
     );
 
     ok(

@@ -202,17 +202,51 @@ export async function GET(req: NextRequest) {
         // remint on read (that reintroduced twin ids across pollers).
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("computer-ownership-mismatch")) throw err;
-        console.warn("computer_id ownership mismatch; clearing poisoned FK", seat.id, msg);
-        const { error } = await supabase
-          .from("agent_seats")
-          .update({ computer_id: null })
-          .eq("id", seat.id)
-          .eq("workspace_id", wid);
-        if (error) console.warn("clear poisoned computer_id failed", error.message);
-        // Even if DB clear fails, never re-emit the poisoned id into durable bindings —
-        // Floor/Fleet ingest would write the foreign computerId back onto Hermes.
-        clearedPoisonedComputerIds.add(seat.id);
-        continue;
+        const cid =
+          typeof seat.computer_id === "string" ? seat.computer_id.trim() : "";
+        const claimedByOtherSeat = Boolean(
+          cid &&
+            (seats ?? []).some(
+              (s) => s.id !== seat.id && s.computer_id === cid,
+            ),
+        );
+        if (!claimedByOtherSeat && cid) {
+          // Stale in-memory Map (other instance) — adopt durable DB binding; do not
+          // null the rightful FK or Floor desks go unbound until Redeploy.
+          try {
+            rec = defaultComputerSupervisor.adoptDurableComputerBinding({
+              workspaceId: String(wid),
+              seatId: seat.id,
+              computerId: cid,
+            });
+          } catch (adoptErr) {
+            console.warn(
+              "adopt durable binding failed; clearing poisoned FK",
+              seat.id,
+              adoptErr instanceof Error ? adoptErr.message : String(adoptErr),
+            );
+            const { error } = await supabase
+              .from("agent_seats")
+              .update({ computer_id: null })
+              .eq("id", seat.id)
+              .eq("workspace_id", wid);
+            if (error) console.warn("clear poisoned computer_id failed", error.message);
+            clearedPoisonedComputerIds.add(seat.id);
+            continue;
+          }
+        } else {
+          console.warn("computer_id ownership mismatch; clearing poisoned FK", seat.id, msg);
+          const { error } = await supabase
+            .from("agent_seats")
+            .update({ computer_id: null })
+            .eq("id", seat.id)
+            .eq("workspace_id", wid);
+          if (error) console.warn("clear poisoned computer_id failed", error.message);
+          // Even if DB clear fails, never re-emit the poisoned id into durable bindings —
+          // Floor/Fleet ingest would write the foreign computerId back onto Hermes.
+          clearedPoisonedComputerIds.add(seat.id);
+          continue;
+        }
       }
       if (!rec) continue;
       computers.push(rec);

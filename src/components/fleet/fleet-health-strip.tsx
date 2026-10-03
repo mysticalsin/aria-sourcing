@@ -39,6 +39,7 @@ export function FleetHealthStrip() {
             assignedCampaignIds?: string[];
           }>;
         };
+        if (cancelled) return;
         const m = new Map<string, boolean>();
         for (const c of data.computers ?? []) {
           const sid = (c.seatId ?? "").trim();
@@ -46,7 +47,7 @@ export function FleetHealthStrip() {
           // Seat-owned only; true only when probed healthy.
           m.set(sid, c.sessionHealthy === true);
         }
-        if (!cancelled) setLiHealthyBySeat(m);
+        setLiHealthyBySeat(m);
         // Durable → Hermes roster (append missing desks + patch attach).
         actions.ingestDurableBrowserBindings(data.browserSeatBindings);
       } catch {
@@ -59,7 +60,8 @@ export function FleetHealthStrip() {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [actions, seats]);
+    // seats churn must not remount — strip reads seats for counts outside this effect.
+  }, [actions]);
 
   const needsMailbox = seats.filter(
     (seat) => !isBrowserComputerSeat(seat) && !seat.connectedAccount,

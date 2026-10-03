@@ -1325,3 +1325,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Seat A FK = B's computer → GET clears A → bindings still have B's id → ingestDurableBrowserBindings re-poisons.
 **Suggested fix:** clearedPoisonedComputerIds → force null in binding maps.
 **Status:** fixed (tip #148)
+
+## 2026-10-03 — Floor cancel race + stale-Map ownership clear destroys durable bind
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:128; src/components/fleet/fleet-health-strip.tsx:51; src/app/api/fleet/computers/route.ts:200
+**Issue:** Floor/health-strip could ingest/updateSeat after cancel; GET ownership-mismatch nulling always cleared the hydrating seat even when no other DB seat claimed the computer (stale Map), unbinding Floor desks.
+**Repro/evidence:** Multi-instance Map has X→seatB while DB has seatA.computer_id=X → GET clears seatA; Floor remount mid-poll writes stale computerId.
+**Suggested fix:** cancel-before-write + deps [actions]; adoptDurableComputerBinding when !claimedByOtherSeat.
+**Status:** fixed (tip #150)
