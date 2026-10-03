@@ -3,14 +3,21 @@ import { mock } from "node:test";
 
 mock.module("server-only", { namedExports: {} });
 
+// Isolate from operator shell secrets (never assert against a live key value).
+delete process.env.ARIA_JINA_API_KEY;
+delete process.env.JINA_API_KEY;
+
 const {
   isLinkedInPublicUrl,
   jinaReaderUrlFor,
   readLinkedInViaAgentReachJina,
   readLinkedInViaAgentReachMcp,
   readLinkedInViaAgentReach,
+  searchLinkedInViaAgentReachJina,
   agentReachLinkedInStatus,
   agentReachLinkedInMcpStatus,
+  agentReachLinkedInSearchStatus,
+  agentReachJinaApiKeyConfigured,
 } = await import("../src/lib/integrations/agent-reach-linkedin");
 
 assert.equal(isLinkedInPublicUrl("https://www.linkedin.com/in/tonywalteur/"), true);
@@ -26,11 +33,17 @@ assert.equal(
 const status = agentReachLinkedInStatus();
 assert.equal(status.id, "agent-reach-jina");
 assert.equal(status.enabled, true);
+assert.equal(typeof status.apiKeyConfigured, "boolean");
 
 const mcpOff = agentReachLinkedInMcpStatus();
 assert.equal(mcpOff.id, "agent-reach-mcp");
 assert.equal(mcpOff.enabled, false);
 assert.equal(mcpOff.urlConfigured, false);
+
+const searchOff = agentReachLinkedInSearchStatus();
+assert.equal(searchOff.id, "agent-reach-jina-search");
+assert.equal(searchOff.enabled, false);
+assert.equal(agentReachJinaApiKeyConfigured(), false);
 
 process.env.ARIA_AGENT_REACH_JINA = "0";
 const disabled = await readLinkedInViaAgentReachJina("https://www.linkedin.com/in/tonywalteur/");
@@ -94,4 +107,21 @@ if (viaMcp.ok) assert.equal(viaMcp.via, "agent-reach-mcp");
 
 delete process.env.ARIA_AGENT_REACH_LINKEDIN_MCP_URL;
 
-console.log("RESULT agent-reach-linkedin: 16 passed, 0 failed");
+// Search requires API key — fail closed without inventing URLs.
+delete process.env.ARIA_JINA_API_KEY;
+delete process.env.JINA_API_KEY;
+const searchNoKey = await searchLinkedInViaAgentReachJina({ keywords: ["java"] });
+assert.equal(searchNoKey.ok, false);
+assert.match(String(searchNoKey.detail), /ARIA_JINA_API_KEY/i);
+assert.equal(searchNoKey.hits.length, 0);
+
+process.env.ARIA_JINA_API_KEY = "apikey_test_not_real";
+assert.equal(agentReachJinaApiKeyConfigured(), true);
+assert.equal(agentReachLinkedInStatus().apiKeyConfigured, true);
+assert.equal(agentReachLinkedInSearchStatus().enabled, false);
+const searchApikey = await searchLinkedInViaAgentReachJina({ keywords: ["java"] });
+assert.equal(searchApikey.ok, false);
+assert.match(String(searchApikey.detail), /Reader \(X-API-Key\)|standard jina/i);
+delete process.env.ARIA_JINA_API_KEY;
+
+console.log("RESULT agent-reach-linkedin: 21 passed, 0 failed");

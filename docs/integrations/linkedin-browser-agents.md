@@ -9,7 +9,8 @@ They are referenced from **Agent Skills** (`sourcing_skill`) and wired into:
 
 | Capability | Upstream | Env flags |
 |---|---|---|
-| Agent Reach / Jina read | [Agent-Reach](https://github.com/Panniantong/Agent-Reach) → Jina Reader | `ARIA_AGENT_REACH_JINA` (default on; set `0` to disable) |
+| Agent Reach / Jina read | [Agent-Reach](https://github.com/Panniantong/Agent-Reach) → Jina Reader | `ARIA_AGENT_REACH_JINA` (default on; set `0` to disable); `ARIA_JINA_API_KEY` (or `JINA_API_KEY`) for Bearer auth + higher limits |
+| Agent Reach / Jina search | Jina Search `s.jina.ai` site:linkedin.com/in | Requires `ARIA_JINA_API_KEY` — supplements Tavily discovery |
 | Profile analysis | [orca](https://github.com/DimiMikadze/orca) | `ARIA_ORCA_ENABLED`, `ARIA_ORCA_URL` (local slug heuristic always on) |
 | LinkedIn search metadata | [Linkedin_Agent_Tool](https://github.com/NightTrek/Linkedin_Agent_Tool) | `ARIA_LINKEDIN_AGENT_TOOL_ENABLED`, `ARIA_LINKEDIN_AGENT_TOOL_URL` |
 | Browser actions | [browser-use](https://github.com/browser-use/browser-use) (+ [CrewAI skills pack](https://github.com/KennyWayn3/crewai-browser-automation-skills-pack)) | `ARIA_BROWSER_USE_ENABLED`, `ARIA_BROWSER_USE_URL` |

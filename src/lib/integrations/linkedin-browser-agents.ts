@@ -14,8 +14,10 @@
 import { runWebTool } from "@/lib/ai/web-tools";
 import {
   agentReachLinkedInMcpStatus,
+  agentReachLinkedInSearchStatus,
   agentReachLinkedInStatus,
   readLinkedInViaAgentReach,
+  searchLinkedInViaAgentReachJina,
 } from "@/lib/integrations/agent-reach-linkedin";
 import { scraplingFetch } from "@/lib/scrapling/adapter";
 import { extractLead } from "@/lib/sourcing/web-leads";
@@ -38,7 +40,7 @@ export type LinkedInSearchHit = {
   title?: string;
   location?: string;
   snippet?: string;
-  via: "linkedin-agent-tool" | "web-search" | "stub";
+  via: "linkedin-agent-tool" | "web-search" | "agent-reach-jina-search" | "stub";
 };
 
 export type BrowserUseAction =
@@ -341,6 +343,30 @@ export async function searchLinkedInProfiles(query: {
     }
   }
 
+  // Agent Reach → Jina Search when ARIA_JINA_API_KEY is set (best discovery use case).
+  if (hits.length < limit) {
+    const jinaSearch = await searchLinkedInViaAgentReachJina({
+      keywords,
+      location: query.location,
+      limit: limit - hits.length,
+    });
+    if (jinaSearch.ok) {
+      for (const hit of jinaSearch.hits) {
+        const profileUrl = normalizeProfileUrl(hit.profileUrl);
+        if (!isLinkedInProfileUrl(profileUrl) || seen.has(profileUrl)) continue;
+        seen.add(profileUrl);
+        hits.push({
+          profileUrl,
+          title: hit.title,
+          location: query.location,
+          snippet: hit.snippet,
+          via: "agent-reach-jina-search",
+        });
+        if (hits.length >= limit) break;
+      }
+    }
+  }
+
   const search = await runWebTool(
     "web_search",
     { query: q },
@@ -574,8 +600,16 @@ export function listLinkedInBrowserAgentStatus(): {
 }[] {
   const flag = (name: string) => process.env[name] === "1" || process.env[name] === "true";
   const url = (name: string) => Boolean((process.env[name] || "").trim());
+  const jinaSearch = agentReachLinkedInSearchStatus();
   return [
     agentReachLinkedInStatus(),
+    {
+      id: jinaSearch.id,
+      enabled: jinaSearch.enabled,
+      urlConfigured: jinaSearch.apiKeyConfigured,
+      role: jinaSearch.role,
+      builtin: jinaSearch.builtin,
+    },
     agentReachLinkedInMcpStatus(),
     {
       id: "orca",

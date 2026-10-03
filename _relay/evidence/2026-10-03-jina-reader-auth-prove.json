@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-03T01:41:20Z",
+  "prove": [
+    {
+      "status": {
+        "enabled": true,
+        "apiKeyConfigured": true,
+        "builtin": "r.jina.ai + ARIA_JINA_API_KEY (Bearer or X-API-Key) over SSRF-guarded HTTPS"
+      }
+    },
+    {
+      "ok": true,
+      "via": "agent-reach-jina",
+      "title": "Tony Walteur - Amaris Consulting | LinkedIn",
+      "textBytes": 8000
+    }
+  ],
+  "note": "ARIA_JINA_API_KEY set in Fly/Vercel/local env only \u2014 never committed"
+}

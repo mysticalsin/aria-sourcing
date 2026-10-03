@@ -7,6 +7,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { listLinkedInBrowserAgentStatus } from "@/lib/integrations/linkedin-browser-agents";
 import {
   agentReachLinkedInMcpStatus,
+  agentReachLinkedInSearchStatus,
   agentReachLinkedInStatus,
 } from "@/lib/integrations/agent-reach-linkedin";
 
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
   }
 
   const jina = agentReachLinkedInStatus();
+  const jinaSearch = agentReachLinkedInSearchStatus();
   const mcp = agentReachLinkedInMcpStatus();
   const agents = listLinkedInBrowserAgentStatus();
 
@@ -50,7 +52,7 @@ export async function GET(req: NextRequest) {
     ok: true,
     role: "eyes",
     hands: "OpenBot Browser Computer (Connect/Message)",
-    agentReach: { jina, mcp },
+    agentReach: { jina, jinaSearch, mcp },
     agents,
   });
 }
