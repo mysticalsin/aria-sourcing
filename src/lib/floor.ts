@@ -267,11 +267,29 @@ export function agentActivityWithComputers(
     };
   }
   if (hint.status === "starting" || hint.status === "busy") {
+    const healthyBusy = hint.sessionHealthy === true;
+    // Busy + probed-healthy is real work (linkedin_send in flight) — keep base
+    // activity, never lie "session unverified". Unverified/null stays warming.
+    if (hint.status === "busy" && healthyBusy) {
+      return {
+        ...base,
+        state: base.state,
+        label: withVm("VM busy — LinkedIn session healthy"),
+        busy: true,
+        tone: base.state === "idle" ? "electric" : base.tone,
+      };
+    }
     return {
       ...base,
       state: "warming",
       // Never keep theatrical sourcing/outreach labels while session is unverified.
-      label: withVm(hint.status === "starting" ? "Booting VM" : "VM busy — session unverified"),
+      label: withVm(
+        hint.status === "starting"
+          ? "Booting VM"
+          : healthyBusy
+            ? "VM busy — LinkedIn session healthy"
+            : "VM busy — session unverified",
+      ),
       busy: true,
       tone: "warning",
     };

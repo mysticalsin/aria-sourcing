@@ -463,6 +463,32 @@ ok("at least one paused (lucas)", roll.paused >= 1);
       "3D warming status matches floorRollup warming count",
       busy.status === "warming" && rollBusy.warming === 1 && rollBusy.working === 0,
     );
+
+    // Busy + probed-healthy is real send in flight — never "session unverified".
+    const busyHealthy = seatsToOfficeAgents(
+      [{ ...li, computerId: "comp_busy_ok_abc" }],
+      s,
+      new Map([
+        [
+          li.id,
+          {
+            status: "busy" as const,
+            sessionHealthy: true as boolean | null,
+            computerId: "comp_busy_ok_abc",
+            seatId: li.id,
+          },
+        ],
+      ]),
+    )[0]!;
+    ok(
+      "busy+healthy is not warming unverified",
+      busyHealthy.status !== "warming",
+    );
+    ok(
+      "busy+healthy subtitle says session healthy",
+      /session healthy/i.test(busyHealthy.subtitle ?? "") &&
+        !/unverified/i.test(busyHealthy.subtitle ?? ""),
+    );
   }
 }
 

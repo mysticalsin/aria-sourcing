@@ -1191,3 +1191,50 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Deploy with Hermes=orphan twin + filtered computers=[]; reclaim throws no-healthy-orphan; resolve keeps twin; ensure claims.
 **Suggested fix:** ensure refuses all orphan claims; resolve mints on no-healthy-orphan; Deploy uses full fleetRows; floor keeps base state on healthy.
 **Status:** fixed (bebf179) — ensure refuse orphan; mint on no-healthy-orphan; Deploy full fleet; floor idle+healthy
+## 2026-10-03 — Floor busy/starting label lies "session unverified" while healthy
+**Severity:** spec-mismatch
+**File:** src/lib/floor.ts:269
+**Issue:** `agentActivityWithComputers` short-circuits `status===starting|busy` before the `ready && sessionHealthy===true` branch. During a real `linkedin_send` the supervisor sets `status=busy` but leaves `sessionHealthy=true`; Floor overlays force `warming` and hardcode label "VM busy — session unverified". Campaign Agents still badges "Session healthy" for the same row — FE↔BE desk honesty split.
+**Repro/evidence:** Seat ready+sessionHealthy true; enqueueJob sets rec.status=busy (computer-supervisor.ts:1294); Floor poll paints warming/unverified; Campaign Agents panel sessionLabel stays healthy.
+**Suggested fix:** If sessionHealthy===true under busy, label "VM busy" (keep base/working); only say unverified when sessionHealthy!==true.
+**Status:** open
+
+## 2026-10-03 — Campaign Agents "with VM" counts Hermes, not fleet-owned row
+**Severity:** spec-mismatch
+**File:** src/components/campaigns/campaign-agents-panel.tsx:425
+**Issue:** Header badge `N/M with VM` counts seats with non-empty Hermes `seat.computerId`. Row rendering requires a seat-owned fleet row (`bySeat ?? byComp` with `row.seatId===seat.id`); stale twin / durable-null / orphan fleet leaves the row at "No Browser Computer" while the badge still claims a VM.
+**Repro/evidence:** Campaign seat Hermes=`comp_twin`, fleet owner `__orphan__` or absent; list shows Deploy/No Browser Computer; badge shows `1/1 with VM`.
+**Suggested fix:** Count seats where `computers.some(c => c.seatId===seat.id && c.computerId)` (same ownership as ops row).
+**Status:** open
+
+## 2026-10-03 — mockSend skips sessionHealthy; dispatch never paces it
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:1222
+**Issue:** `linkedin_send` gate is `(!supervisorMockSend() && rec.sessionHealthy !== true)` — mock path accepts send with null/false health. Comment admits "mock send would lie green". `dispatch-outbound.ts:407` calls `adapter.deliver` without `seat`/`fleetSettings`, so `linkedin-channel.ts:239` `if (req.seat)` skips `evaluateSendPace({sessionHealthy})` entirely; enqueue mock is the only gate and it is open. Fly blocks mock unless `ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND=1`, but local/demo credentials with `computerSupervisorMockSend` still return `status:sent`.
+**Repro/evidence:** COMPUTER_SUPERVISOR_MOCK_SEND=1 (non-Fly); computer sessionHealthy null; dispatch deliver → enqueueJob succeeds → "mock browser-computer send accepted".
+**Suggested fix:** Always require `sessionHealthy===true` for linkedin_send; mock may only fake remote ACK after probe. Pass seat+sessionHealthy into deliver pace on dispatch.
+**Status:** open
+
+## 2026-10-03 — resolveComputerHint ignores computerHealthOwnedBySeat empty-owner rule
+**Severity:** spec-mismatch
+**File:** src/lib/floor.ts:149
+**Issue:** Settings gates computerId-keyed health with `computerHealthOwnedBySeat` (empty/`__orphan__` → false). Floor `resolveComputerHint` only rejects when `byComputer.seatId` is truthy and ≠ seat — empty seatId falls through and can paint sessionHealthy green from a computerId-only map entry. Helper unused on Floor/Campaign go-live (`computerForSeat` same empty-owner allow).
+**Repro/evidence:** Hint map key=`comp_x` with `{seatId:"", sessionHealthy:true, computerId:comp_x}`; seat.computerId=comp_x → Floor healthy; `computerHealthOwnedBySeat(seat,comp_x,[{seatId:"",computerId:comp_x}])` === false.
+**Suggested fix:** Refuse empty/`__orphan__` owner in resolveComputerHint (and computerForSeat); reuse computerHealthOwnedBySeat.
+**Status:** open
+
+## 2026-10-03 — seatsToOfficeAgents hardcodes Date.now (warmup desync)
+**Severity:** test-gap
+**File:** src/lib/floor3d.ts:169
+**Issue:** `seatsToOfficeAgents` calls `agentActivityWithComputers(..., Date.now(), ...)` with no injectable `now`. Floor rollup/2D desks can pass a clock; near warmup boundaries 3D status ≠ rollup working count; seed tests using SEED_NOW flake.
+**Repro/evidence:** HANDOFF watch-out; floor.mts passes NOW into floorRollup but seatsToOfficeAgents always wall-clock.
+**Suggested fix:** Add `now?: number` param; thread from floor page / tests.
+**Status:** open
+
+## 2026-10-03 — Floor busy lied unverified; mockSend skipped sessionHealthy; VM badge Hermes theater
+**Severity:** correctness
+**File:** src/lib/floor.ts:269; computer-supervisor.ts:1220; campaign-agents-panel.tsx:425
+**Issue:** busy/starting overlay always said "session unverified" even when sessionHealthy===true (real linkedin_send). mockSend bypassed sessionHealthy gate so null health could fake sent. Campaign Agents "N/M with VM" counted Hermes computerId, not fleet seat-owned rows.
+**Repro/evidence:** status=busy + sessionHealthy=true → Floor warming/unverified while Campaign Agents green; MOCK_SEND=1 + null health → succeeded; Hermes twin id inflated with-VM badge.
+**Suggested fix:** busy+healthy keep base + healthy label; always require sessionHealthy===true for linkedin_send; badge counts fleet computers by seatId.
+**Status:** fixed (pending tip SHA)

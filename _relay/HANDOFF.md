@@ -1,27 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 240
+shift: 241
 agent: cursor-cloud
-updated: 2026-10-03T02:10Z
-status: ensure-refuse-orphan-shipped-fly-stale
+updated: 2026-10-03T02:15Z
+status: busy-healthy-mock-vm-badge-shipped-fly-stale
 ---
 
-# Handoff — Shift 240
+# Handoff — Shift 241
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `bebf179` (ensure refuse orphan)
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ tip
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** ensureComputer never claims orphans; resolveDurable mints on no-healthy-orphan; Campaign Agents Deploy uses full fleetRows; Attach gates staleTwin; Floor healthy keeps base (idle stays idle)
+- **N-agent local:** busy+healthy Floor honesty; mockSend requires sessionHealthy; with-VM badge = fleet seat-owned count
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false`
 
 ## Done this shift
 
-1. ensureComputer → orphan-claim-blocked (reclaim-only claim path)
-2. resolveDurableComputerId mints on no-healthy-orphan (never keep refused twin)
-3. Campaign Agents `fleetComputers` full list for staleTwin; Attach same belt
-4. Floor ready+healthy no longer promotes idle→sourcing
-5. Tests: supervisor 122, boot 15, floor 81, hermes 18
+1. Floor busy+healthy keeps base / healthy label (no unverified lie)
+2. linkedin_send always requires sessionHealthy===true (mock only fakes ACK after probe)
+3. Campaign Agents with-VM badge uses fleet computers by seatId
+4. Tests: supervisor 123, floor 83
 
 ## Blockers
 
@@ -40,12 +39,11 @@ status: ensure-refuse-orphan-shipped-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Only reclaimHealthyOrphan may claimOrphan (ensure refuses)
-- no-healthy-orphan → mint (existing was not seat-bound healthy)
-- Floor healthy keeps base activity (idle≠working)
+- mockSend never bypasses sessionHealthy gate
+- Floor busy+healthy ≠ unverified
+- with-VM count = fleet seat-owned, not Hermes id
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out
 
 - Do not mark N-agent goal complete until Fly tip SHA + LI healthy verified
-- seatsToOfficeAgents uses Date.now() (not SEED_NOW) — floor tests can flake near warmup boundaries

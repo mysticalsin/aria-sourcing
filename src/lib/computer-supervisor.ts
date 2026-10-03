@@ -1218,8 +1218,7 @@ export class ComputerSupervisor {
         return job;
       }
       const needsSession =
-        rec.status === "help_requested" ||
-        (!supervisorMockSend() && rec.sessionHealthy !== true);
+        rec.status === "help_requested" || rec.sessionHealthy !== true;
       if (needsSession) {
         job.status = "refused";
         job.detail =

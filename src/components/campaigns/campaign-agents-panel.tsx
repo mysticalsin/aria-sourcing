@@ -395,6 +395,10 @@ export function CampaignAgentsPanel({
   const unverifiedCount = computers.filter(
     (c) => (c.status === "ready" || c.status === "busy") && c.sessionHealthy !== true,
   ).length;
+  // Fleet seat-owned bindings only — Hermes computerId alone is not a live VM.
+  const withVmCount = campaignSeats.filter((s) =>
+    computers.some((c) => c.seatId === s.id && Boolean((c.computerId ?? "").trim())),
+  ).length;
 
   return (
     <div className="space-y-4">
@@ -422,8 +426,7 @@ export function CampaignAgentsPanel({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge size="sm" tone="electric">
-            {campaignSeats.filter((s) => (s.computerId ?? "").trim()).length}/
-            {campaignSeats.length} with VM
+            {withVmCount}/{campaignSeats.length} with VM
           </Badge>
           <Badge size="sm" tone={healthyCount ? "success" : "neutral"}>
             {healthyCount} session healthy

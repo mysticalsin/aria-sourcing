@@ -144,16 +144,34 @@ try {
       candidateId: "cand_1",
     },
   });
-  ok("bot job succeeds after release with mock send", sent.status === "succeeded");
+  ok(
+    "mock send still refuses when sessionHealthy null",
+    sent.status === "refused" && sent.detail === "session_unverified",
+  );
+  // Mock only fakes ACK after a probed-healthy session — never invents sent.
+  const readyRec = supervisor.get(computer.computerId)!;
+  readyRec.sessionHealthy = true;
+  readyRec.sessionProbedAt = new Date().toISOString();
+  const sentOk = await supervisor.enqueueJob({
+    computerId: computer.computerId,
+    kind: "linkedin_send",
+    payload: {
+      profileUrl: "https://linkedin.com/in/x",
+      campaignId: "camp_seed_backend",
+      messageId: "msg_1",
+      candidateId: "cand_1",
+    },
+  });
+  ok("bot job succeeds after release with mock send + healthy", sentOk.status === "succeeded");
   ok("audits recorded", supervisor.recentAudits(computer.computerId).length >= 3);
   ok(
     "act_done audit carries jobId",
-    supervisor.recentAudits(computer.computerId).some((a) => a.action === "act_done" && a.jobId === sent.jobId),
+    supervisor.recentAudits(computer.computerId).some((a) => a.action === "act_done" && a.jobId === sentOk.jobId),
   );
   ok(
     "linkedin_send act_done audit carries campaignId from payload",
     supervisor.recentAudits(computer.computerId).some(
-      (a) => a.action === "act_done" && a.jobId === sent.jobId && a.campaignId === "camp_seed_backend",
+      (a) => a.action === "act_done" && a.jobId === sentOk.jobId && a.campaignId === "camp_seed_backend",
     ),
   );
   ok(
