@@ -50,6 +50,14 @@ try {
     supervisor.get(computer.computerId)?.sessionHealthy == null,
   );
 
+  let startHeld = false;
+  try {
+    await supervisor.start(computer.computerId);
+  } catch (err) {
+    startHeld = err instanceof Error && err.message === "computer-human-held";
+  }
+  ok("start refuses while human has control", startHeld);
+
   const refused = await supervisor.enqueueJob({
     computerId: computer.computerId,
     kind: "linkedin_send",

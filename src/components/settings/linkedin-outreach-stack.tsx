@@ -104,7 +104,13 @@ function LinkedInOutreachStackInner() {
   const browserSeats = seats.filter((s) => s.provider === "LinkedIn Browser Computer");
   const hasBrowserSeat = browserSeats.length > 0;
   const browserHealthy = browserSeats.some((s) => s.sessionHealthy === true);
-  const browserBound = browserSeats.some((s) => Boolean(s.computerId?.trim()));
+  // Bound = fleet-probed desk (true or false). Hermes computerId alone with null
+  // sessionHealthy is twin theater after an empty/failed fleet overlay.
+  const browserBound = browserSeats.some(
+    (s) =>
+      Boolean(s.computerId?.trim()) &&
+      (s.sessionHealthy === true || s.sessionHealthy === false),
+  );
 
   const step1Done = supervisorConfigured;
   const step2Done =

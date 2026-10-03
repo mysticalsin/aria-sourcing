@@ -66,7 +66,7 @@ export function fleetHermesComputerPatches(
 /**
  * True when Hermes computerId must not be fed into Deploy/reclaim as
  * existingComputerId — fleet shows orphan, absent, or foreign owner.
- * Empty fleet poll is ambiguous (not stale).
+ * Empty fleet poll with a Hermes id is fail-closed stale (cannot prove ownership).
  */
 export function isStaleHermesComputerTwin(
   seatId: string,
@@ -74,7 +74,9 @@ export function isStaleHermesComputerTwin(
   computers: readonly FleetComputerBinding[],
 ): boolean {
   const hermesId = typeof hermesComputerId === "string" ? hermesComputerId.trim() : "";
-  if (!hermesId || computers.length === 0) return false;
+  if (!hermesId) return false;
+  // Empty poll cannot prove the twin is ours — omit existingComputerId (fail closed).
+  if (computers.length === 0) return true;
   const fleetRow = computers.find((c) => {
     const id = typeof c.computerId === "string" ? c.computerId.trim() : "";
     return id === hermesId;

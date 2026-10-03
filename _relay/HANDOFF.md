@@ -1,28 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 249
+shift: 250
 agent: cursor-cloud
-updated: 2026-10-03T03:05Z
-status: busy-healthy-clear-theater-attach-empty-omit-fly-stale
+updated: 2026-10-03T03:10Z
+status: stale-empty-failclosed-start-mutex-hud-dryrun-fly-stale
 ---
 
-# Handoff — Shift 249
+# Handoff — Shift 250
 
 ## Current state
 
-- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` @ `cdf2279`
+- **Branch:** `cursor/linkedin-human-claude-chrome-b91d` (shipping)
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **N-agent local:** busy+healthy clears hash theater; Attach/Fleet omit Hermes on empty fleet; 3D hub/prefer require session healthy; prove-healthy expects idle
+- **N-agent local:** empty fleet = staleTwin; outreach browserBound needs probed health; start refuses human-held; HUD excludes dry-run drafts; 3D hub never elects unverified LI
 - **Fly live:** build `21a42e7…`, `agentFrameworks:false` (stale)
 
 ## Done this shift
 
-1. Floor busy+healthy with zero sends: working label without campaign hash detail/focus
-2. Campaign Attach fail-closed when fleet fetch fails or empty (omit Hermes twin)
-3. Fleet Deploy/add-seat omit Hermes when computers=[]
-4. Floor3D hub + preferBrowserComputerAgents: no unverified suffix-as-ceo
-5. prove-healthy-floor-path expects idle+healthy (aligned with tip)
-6. Tests: floor 89, floor-fleet-wire 14, prove script ok
+1. `isStaleHermesComputerTwin([], hermesId)` → true (fail-closed)
+2. LinkedIn outreach stack: browserBound requires sessionHealthy true|false (not Hermes-only)
+3. computerSupervisor.start throws `computer-human-held` when Take holds desk
+4. missionControlHudValues live drafted/approved exclude dryRun
+5. Floor3D hub: no unverified LI as ceo fallback
+6. Tests: fleet-hermes-sync 18, metrics-canonical 23, computer-supervisor 124, floor 89
 
 ## Blockers
 
@@ -41,9 +41,9 @@ status: busy-healthy-clear-theater-attach-empty-omit-fly-stale
 ## Decisions (don't relitigate)
 
 - Never invent sessionHealthy=true
-- Empty fleet poll → omit Hermes existingComputerId (Deploy/Attach/Login/add-seat)
-- ready+healthy / busy+healthy never keep hash Working-on theater without sends
-- 3D hub prefers session-healthy only
+- Empty fleet + Hermes id = stale twin (omit existingComputerId)
+- Observe/start must not override Take control
+- Live HUD never counts dry-run drafts as live
 - Never commit ARIA_JINA_API_KEY
 
 ## Watch out

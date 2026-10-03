@@ -240,6 +240,19 @@ ok("computeCampaignMetrics replyRate agrees with canonical facts", campaignMetri
 ok("computeCampaignMetrics booked agrees with canonical facts", campaignMetrics.booked === facts.booked);
 ok("HUD contacted derivation agrees with canonical facts", hudValues.contacted === facts.contacted);
 ok("HUD booked derivation agrees with canonical facts", hudValues.booked === facts.booked);
+ok(
+  "HUD live drafted excludes dry-run outreach",
+  state.outreach.some((m) => m.dryRun === true) && hudValues.drafted < state.outreach.length,
+);
+ok(
+  "HUD live drafted equals non-dry-run scoped count",
+  hudValues.drafted ===
+    state.outreach.filter(
+      (m) =>
+        m.dryRun !== true &&
+        facts.candidateIds.includes(m.candidateId),
+    ).length,
+);
 
 console.log(`RESULT metrics-canonical: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

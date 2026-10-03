@@ -188,7 +188,7 @@ export function seatsToOfficeAgents(
       provider: seat.provider,
     };
   }).map((agent, index, all) => {
-    // PacketFX hub: only probed-healthy bound LI — never unverified suffix theater.
+    // PacketFX hub: only probed-healthy bound LI — never unverified LI as ceo.
     const hubId =
       all.find(
         (a) =>
@@ -205,8 +205,6 @@ export function seatsToOfficeAgents(
           /session healthy/i.test(a.subtitle) &&
           /…[0-9a-zA-Z_-]{4,}/.test(a.subtitle),
       )?.id ??
-      all.find((a) => a.provider === "LinkedIn Browser Computer")?.id ??
-      all.find((a) => (a.provider ?? "").startsWith("LinkedIn"))?.id ??
       all[0]?.id;
     return {
       ...agent,

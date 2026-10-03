@@ -777,6 +777,10 @@ export class ComputerSupervisor {
   ): Promise<ComputerRecord> {
     const rec = this.computers.get(computerId);
     if (!rec) throw new Error("computer-not-found");
+    // Observe must not warm-navigate while Take holds the desk.
+    if (rec.control === "human") {
+      throw new Error("computer-human-held");
+    }
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     rec.status = "starting";
     rec.sessionHealthy = null;

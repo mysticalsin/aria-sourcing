@@ -128,8 +128,8 @@ function ok(name: string, cond: boolean) {
 
 {
   ok(
-    "empty fleet poll is not stale twin (ambiguous)",
-    !isStaleHermesComputerTwin("seat_a", "comp_wall", []),
+    "empty fleet poll with Hermes id is fail-closed stale twin",
+    isStaleHermesComputerTwin("seat_a", "comp_wall", []),
   );
   ok(
     "orphan fleet row is stale twin",
