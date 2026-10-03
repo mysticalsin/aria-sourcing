@@ -1357,3 +1357,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Instance imports host bot as orphan; other instance persists computer_id; this instance GET 500s.
 **Suggested fix:** treat orphan-claim-blocked like ownership-mismatch → adoptDurable.
 **Status:** fixed (tip #148)
+
+## 2026-10-03 — session probe budget starves N desks
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:590
+**Issue:** refreshSessionHealthForList sliced Map-order ready desks (limit 5); first seats stuck at probed-false monopolized every Floor GET; later desks stayed sessionHealthy=null.
+**Repro/evidence:** 8 ready VMs; desks 1–5 false; 6–8 null → 3 polls never probe 6–8.
+**Suggested fix:** sort by sessionProbedAt ascending (never-probed first) before slice.
+**Status:** fixed (tip #150)

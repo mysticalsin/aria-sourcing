@@ -1,23 +1,24 @@
 ---
 project: MSourcing / ARIA
-shift: 333
+shift: 334
 agent: cursor-cloud
-updated: 2026-10-03T19:26Z
-status: orphan-hydrate-on-150-awaiting-owner-approve
+updated: 2026-10-03T19:30Z
+status: probe-rotate-n-desks-awaiting-owner-approve
 ---
 
-# Handoff — Shift 333
+# Handoff — Shift 334
 
 ## Current state
 
-- **#150 tip:** GET/POST hydrate adoptDurable on orphan-claim-blocked (no fleet 500) + full N-agent seatsRef stack
-- **#148 tip:** `06d0765` same
+- **#150 tip:** refreshSessionHealthForList rotates by sessionProbedAt (never-probed/oldest first) so N desks are not starved
+- **#148:** port next
 - **#150:** squash auto-merge on; owner approve still required
 - **Fly:** `21a42e7…` / `0084` — goal open until tip SHA + 0087 + LI desks healthy
 
 ## Done this shift
 
-1. Ported orphan-hydrate adoptDurable onto #150
+1. Fixed probe budget starvation — sort candidates by sessionProbedAt ascending before slice
+2. computer-supervisor 136/136; floor-fleet-wire 32/32
 
 ## Blockers
 
@@ -25,14 +26,14 @@ status: orphan-hydrate-on-150-awaiting-owner-approve
 
 ## Next steps
 
-1. Owner approve #150 + wait CI on deploy HEAD + workflow_dispatch Fly Deploy Aria Mantu
-2. `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+1. Port onto #148
+2. Owner approve + dispatch + `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
 3. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
 ## Decisions made (don't relitigate)
 
-- Durable Map conflicts (ownership-mismatch OR orphan-claim-blocked) adopt when no other DB seat claims id
-- Poll Hermes computerId local-only; detach skips durableById
+- N-desk Floor health probes rotate (never-probed first); Map-order must not monopolize limit=5
+- Durable Map conflicts adopt; poll Hermes local-only; detach skips durableById
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - N-agent deploy does **not** require `agentFrameworks:true`

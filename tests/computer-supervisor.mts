@@ -1172,6 +1172,66 @@ try {
     delete process.env.OPENBOT_COMPUTER_TOKEN;
   }
 
+  // N desks: rotate probe budget — never-probed / oldest first (not Map-order starve).
+  {
+    process.env.COMPUTER_SUPERVISOR_URL = "https://openbot.example.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok";
+    process.env.OPENBOT_COMPUTER_TOKEN = "ctok";
+    const rotate = new ComputerSupervisor();
+    const old = new Date(Date.now() - 60_000).toISOString();
+    for (let i = 0; i < 8; i++) {
+      const rec = rotate.ensureComputer({
+        workspaceId: "ws-rotate",
+        seatId: `seat-rot-${i}`,
+        computerId: `comp_rot_${i}`,
+      });
+      rec.status = "ready";
+      rec.remoteUrl = `http://openbot.test/view/comp_rot_${i}`;
+      if (i < 5) {
+        rec.sessionHealthy = false;
+        rec.sessionProbedAt = old;
+      } else {
+        rec.sessionHealthy = null;
+        rec.sessionProbedAt = null;
+      }
+    }
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("session-probe")) {
+        return new Response(JSON.stringify({ healthy: false, detail: "auth wall" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ computers: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    await rotate.refreshSessionHealthForList("ws-rotate", { limit: 3 });
+    globalThis.fetch = prevFetch;
+    const nullDesksProbed = [5, 6, 7].filter((i) => {
+      const r = rotate.get(`comp_rot_${i}`);
+      return r?.sessionProbedAt != null && r.sessionHealthy === false;
+    });
+    const earlyStillOld = [0, 1, 2, 3, 4].filter((i) => {
+      const r = rotate.get(`comp_rot_${i}`);
+      return r?.sessionProbedAt === old;
+    });
+    ok(
+      "refreshSessionHealthForList prefers never-probed over recent false",
+      nullDesksProbed.length === 3,
+    );
+    ok(
+      "refreshSessionHealthForList rotated onto null desks (not first-5 starve)",
+      earlyStillOld.length === 5,
+    );
+    delete process.env.COMPUTER_SUPERVISOR_URL;
+    delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    delete process.env.OPENBOT_COMPUTER_TOKEN;
+  }
+
   // Process singleton: Fleet routes must share Maps (no cold empty Map inventing empty fleet).
   {
     const g = globalThis as typeof globalThis & {

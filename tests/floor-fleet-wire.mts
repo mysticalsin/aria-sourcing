@@ -241,6 +241,11 @@ const template = s.seats.find((x) => x.provider === "LinkedIn Browser Computer")
   );
   const supervisor = readFileSync("src/lib/computer-supervisor.ts", "utf8");
   ok(
+    "refreshSessionHealthForList rotates by sessionProbedAt (N desks not starved)",
+    supervisor.includes("sessionProbedAt") &&
+      /never-probed \/ oldest first|Rotates by sessionProbedAt/.test(supervisor),
+  );
+  ok(
     "refreshSessionHealthForList never invents true",
     supervisor.includes("Never invents healthy=true") &&
       supervisor.includes("refreshSessionHealthForList"),
