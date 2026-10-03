@@ -1,9 +1,9 @@
 # Owner: approve #150 → deploy → LI healthy
 
-**As of:** 2026-10-03T16:00Z  
+**As of:** 2026-10-03T16:30Z  
 **PR:** https://github.com/mysticalsin/aria-sourcing/pull/150 (`MERGEABLE`, squash auto-merge on, `REVIEW_REQUIRED`)  
-**Tip SHA:** `81d3d8d50ea389047fe7290918360781f1a325e0`  
-**Fly now:** `21a42e7…` / `0084` / `agentFrameworks:false`
+**Tip SHA:** `e0bd94325359fd449b979365b0efece38f350730` (docs) / last green code tip `81d3d8d…`  
+**Fly now:** `21a42e7…` / `0084` / `hermesRuntime:true` / `agentFrameworks:false` (HTTP 503 on `/api/ready` — expected)
 
 ## 1. Approve PR #150
 
@@ -56,15 +56,17 @@ gh workflow run "Deploy Aria Mantu (Fly)" \
   -f recovery_receipt_sha256="$RECEIPT_SHA256"
 ```
 
-## 5. Post-deploy proof (goal gate)
+**Expect:** workflow may still fail late on `require_http_200 … /api/ready` because DeerFlow/Flowise sidecars are not on this tenant (`AGENT_FRAMEWORKS_REQUIRED=true`). Migrations (step 7) and app image (step 11) can still land before that check — verify with the proof script below, not workflow green alone.
+
+## 5. Post-deploy proof (N-agent goal gate)
 
 ```bash
-# After land + workflow_dispatch succeed:
 bash scripts/fly-n-agent-proof.sh   # uses origin/deploy/fly-github-actions tip
 # or: bash scripts/fly-n-agent-proof.sh <40-char-deploy-head>
 ```
 
-Script requires `/api/ready` build==tip, `agentFrameworks:true`, migration includes `0087`.
+Script requires `/api/ready` JSON: `build==tip`, migration includes `0087`, `hermesRuntime` + database/auth/queue true.  
+It does **not** require `agentFrameworks:true` or HTTP 200 (tenant intentional 503 — see `_relay/evidence/2026-09-05-fly-linkedin-live.md`).
 
 Then Take→login→Release on each campaign LI desk. `sessionHealthy===true` only after probe — never invent.
 

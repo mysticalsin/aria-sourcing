@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 309
 agent: cursor-cloud
-updated: 2026-10-03T16:22Z
+updated: 2026-10-03T16:30Z
 status: tip-n-agent-closed-fly-blocks-goal
 ---
 
@@ -10,41 +10,40 @@ status: tip-n-agent-closed-fly-blocks-goal
 
 ## Current state
 
-- **Deploy-land:** `cursor/fly-deploy-land-n-agent-b91d` @ `e0bd943` — PR https://github.com/mysticalsin/aria-sourcing/pull/150
-- **#150:** `MERGEABLE`, squash auto-merge on, **`REVIEW_REQUIRED` only** (`mergeStateStatus: BLOCKED`)
-- **Tip residual:** **NONE** (reconfirmed 2026-10-03T16:22Z — soft-nav/Floor/profiles/invent/mig-path/theater)
-- **CI on tip `81d3d8d`:** Quality+Release+CodeQL+DB+supply-chain+secret+dep-audit **green** (run `37134790600`); Vercel fail = rate-limit (ignore)
-- **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false` — `bash scripts/fly-n-agent-proof.sh 81d3d8d…` exits 1
-- **Audit:** `_relay/evidence/2026-10-03-n-agent-goal-completion-audit-final.md`
-- **This hunt:** `_relay/evidence/2026-10-03-n-agent-residual-hunt-softnav-floor-mig.md`
-- **Dispatch runbook:** `_relay/evidence/2026-10-03-fly-owner-dispatch-runbook.md`
+- **Deploy-land:** `cursor/fly-deploy-land-n-agent-b91d` — PR https://github.com/mysticalsin/aria-sourcing/pull/150
+- **#150:** `MERGEABLE`, squash auto-merge on, **`REVIEW_REQUIRED` only**
+- **Tip residual:** **NONE**
+- **Proof gate fix:** `scripts/fly-n-agent-proof.sh` no longer requires `agentFrameworks:true` (DeerFlow/Flowise not on tenant; N-agents = Hermes + migration 0087 + tip SHA)
+- **Fly:** still `21a42e7…` / `0084` / `hermesRuntime:true` / `/api/ready` 503 expected
 - **Goal:** **open** until Fly tip SHA + LI desks healthy
 
 ## Done this shift
 
-1. Adversarial residual hunt (6 classes) → **NONE**
-2. Confirmed Fly still stale vs tip; migration apply path exists in `deploy-fly.sh` / bootstrap image
-3. Evidence written for soft-nav / Floor / profiles / invent / mig / theater
+1. Confirmed #150 still REVIEW_REQUIRED; Fly still stale
+2. Residual hunt NONE (soft-nav/floor/profiles/invent-health/mig path)
+3. Corrected N-agent proof: drop false DeerFlow/Flowise gate; require hermes+0087+tip
+4. Updated runbook + completion audit
 
 ## Blockers
 
-1. Owner approve #150 → squash auto-merge → CI on deploy HEAD → dispatch + LI healthy
+1. Owner approve #150 → squash → dispatch (may go red late on `/api/ready` 503) → proof script + LI healthy
 
 ## Next steps
 
-1. Owner approve #150 + dispatch + LI healthy — **do not UpdateGoal complete**
-2. After deploy: `bash scripts/fly-n-agent-proof.sh` then Take→login→Release
+1. Owner approve #150 + dispatch + `bash scripts/fly-n-agent-proof.sh` + LI Take→login→Release
+2. **do not UpdateGoal complete** until tip SHA + 0087 + LI desks healthy
 
-## Decisions made (don't relitigate)
+## Decisions (don't relitigate)
 
 - Tip N-agent class closed on tip; production incomplete until Fly tip + LI healthy
 - Never invent sessionHealthy=true
 - Ignore Vercel-only CI when Quality/Release pass
 - campaignId on Take/resolve/boot only when seat already attached
+- N-agent goal does **not** require `agentFrameworks:true` on this tenant
 - Open historical Codex findings outside N-agent tip/Fly gate are not this goal's tip work
-- Missing Fly 0085–0087 on prod = owner dispatch gap, not missing tip apply path
 
 ## Watch out
 
 - No agent review/approve / FLY_API_TOKEN
+- Full deploy-fly.sh `require_http_200 /api/ready` may fail after tip lands — verify via proof script JSON
 - Docs pushes cancel CI — re-verify green before dispatch on deploy HEAD
