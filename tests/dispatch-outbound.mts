@@ -739,7 +739,8 @@ const LOOP_SENDS_ENABLED: Row = {
   }) as typeof fetch;
   try {
     const db = makeFakeDb({
-      outbound: [baseLinkedInMsg()],
+      // campaign_id required so Vendor attach gate passes before unconfigured check
+      outbound: [baseLinkedInMsg({ campaign_id: "camp-1" })],
       approvals: [
         {
           workspace_id: "ws-1",
