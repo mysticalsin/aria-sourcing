@@ -27,6 +27,24 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return Object.fromEntries(Object.entries(value));
 }
 
+/** Exact href match via URL parse — avoids CodeQL incomplete-url-substring findings. */
+function textContainsExactHref(text: string, expectedHref: string): boolean {
+  const expected = new URL(expectedHref);
+  const candidates = text.match(/https?:\/\/[^\s<>"']+/g) ?? [];
+  return candidates.some((raw) => {
+    try {
+      const found = new URL(raw);
+      return (
+        found.protocol === expected.protocol &&
+        found.hostname === expected.hostname &&
+        found.pathname === expected.pathname
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
 const originalFetch = globalThis.fetch;
 const originalLog = console.log;
 const originalError = console.error;
@@ -71,7 +89,10 @@ try {
   const successfulPayload = asRecord(resendPayload);
   const successfulHeaders = asRecord(successfulPayload?.headers);
   ok("Resend includes standard one-click unsubscribe headers", successfulHeaders?.["List-Unsubscribe"] === `<${UNSUBSCRIBE_URL}>`);
-  ok("Resend includes an unsubscribe footer", String(successfulPayload?.text).includes(UNSUBSCRIBE_URL));
+  ok(
+    "Resend includes an unsubscribe footer",
+    textContainsExactHref(String(successfulPayload?.text ?? ""), UNSUBSCRIBE_URL),
+  );
 
   logs.length = 0;
   globalThis.fetch = (async () =>
@@ -132,7 +153,7 @@ try {
     } satisfies EmailConnection,
   );
   ok("Gmail MIME includes one-click unsubscribe headers", gmailSent.status === "sent" && gmailRaw.includes(`List-Unsubscribe: <${UNSUBSCRIBE_URL}>`) && gmailRaw.includes("List-Unsubscribe-Post: List-Unsubscribe=One-Click"));
-  ok("Gmail MIME includes an unsubscribe footer", gmailRaw.includes(UNSUBSCRIBE_URL));
+  ok("Gmail MIME includes an unsubscribe footer", textContainsExactHref(gmailRaw, UNSUBSCRIBE_URL));
 
   let graphMime = "";
   let graphContentType = "";
