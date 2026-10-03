@@ -12,7 +12,7 @@ status: tip-agents-settings-ingest-fly-stale
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
-- **Tip work:** Agents panel + LI settings call `ingestDurableBrowserBindings`
+- **Tip:** `e4c2fc0` — Agents + LI settings ingest durable browser seats
 - **Fly:** still `21a42e7…` / `0084` / `agentFrameworks:false`
 - **Audit:** tip OK / prod incomplete (`_relay/evidence/2026-10-03-n-agent-goal-completion-audit-post-ingest.md`)
 - **Goal:** open until Fly tip SHA + LI desks healthy
