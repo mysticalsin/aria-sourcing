@@ -6,7 +6,9 @@
 
 ## 1. Approve PR #150
 
-Approve on GitHub. Squash auto-merge lands tip onto `deploy/fly-github-actions`.
+Approve on GitHub (**required**: someone other than the last pusher). Squash auto-merge lands tip onto `deploy/fly-github-actions` as a single commit (branch policy rejects merge commits).
+
+Agent cannot approve (`addPullRequestReview` 403) or push the protected branch directly.
 
 ## 2. Wait for green CI on the new deploy HEAD
 

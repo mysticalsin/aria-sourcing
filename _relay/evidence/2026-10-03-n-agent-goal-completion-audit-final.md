@@ -37,6 +37,8 @@ Runbook: `_relay/evidence/2026-10-03-fly-owner-dispatch-runbook.md`
 
 ## Agent cannot
 
-- Approve #150 / request reviewers (integration 403)
-- Push protected `deploy/fly-github-actions`
+- Approve #150 / request reviewers (integration 403 on `addPullRequestReview`)
+- Push protected `deploy/fly-github-actions` directly (branch policy: no merge commits on branch; requires approval from someone other than last pusher; required status checks)
 - Invent recovery receipt or use `FLY_API_TOKEN`
+
+**Note:** PR #150 uses **squash** auto-merge so the land does not introduce a merge commit on `deploy/fly-github-actions` (policy rejects merge commits).
