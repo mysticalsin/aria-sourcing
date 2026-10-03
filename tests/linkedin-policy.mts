@@ -80,6 +80,11 @@ ok(
     /Only trust health from a successful seat-owned hydrate/.test(sendRoute) &&
     !/get\(String\(liSeat\.computer_id/.test(sendRoute),
 );
+ok(
+  "outreach send selects assigned_campaign_ids and refuses unattached BC",
+  /assigned_campaign_ids/.test(sendRoute) &&
+    /This Browser Computer seat is not attached to the campaign/.test(sendRoute),
+);
 
 const migration = readFileSync(
   new URL("../supabase/migrations/0062_linkedin_automatic_enqueue.sql", import.meta.url),
@@ -90,6 +95,21 @@ ok("migration 0062 vendor automatic", /LinkedIn Vendor API/.test(migration));
 const migration63 = readFileSync(new URL("../supabase/migrations/0063_contact_lease_and_browser_computer.sql", import.meta.url), "utf8");
 ok("migration 0063 browser-computer automatic", /LinkedIn Browser Computer/.test(migration63));
 ok("migration 0063 claim_contact", /claim_contact/.test(migration63));
+const migration86 = readFileSync(
+  new URL("../supabase/migrations/0086_enqueue_linkedin_browser_campaign_attach.sql", import.meta.url),
+  "utf8",
+);
+ok(
+  "migration 0086 BC enqueue requires campaign attach",
+  /linkedin-seat-not-attached/.test(migration86) &&
+    /assigned_campaign_ids/.test(migration86),
+);
+
+const dispatch = readFileSync(new URL("../src/lib/dispatch-outbound.ts", import.meta.url), "utf8");
+ok(
+  "dispatch blocks unattached Browser Computer",
+  /linkedin-seat-not-attached/.test(dispatch) && /seatAttachedToCampaign/.test(dispatch),
+);
 
 console.log(`RESULT linkedin-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

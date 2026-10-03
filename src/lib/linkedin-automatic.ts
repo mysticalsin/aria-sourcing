@@ -66,6 +66,9 @@ export function pickLiveLinkedInSendSeat(
         isLinkedInAutomaticProvider(x.provider),
     );
     // Preferred was stamped on the draft — do not fall through to another seat.
+    // Still refuse unattached / foreign-campaign BC (and non-attached Vendor).
+    if (!preferred) return undefined;
+    if (campaignId && !seatAttachedToCampaign(preferred, campaignId)) return undefined;
     return preferred;
   }
 

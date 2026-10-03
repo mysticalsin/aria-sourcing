@@ -1,44 +1,44 @@
 ---
 project: MSourcing / ARIA
-shift: 269
+shift: 270
 agent: cursor-cloud
-updated: 2026-10-03T07:20Z
-status: tip-audit-send-attach-bleed
+updated: 2026-10-03T07:25Z
+status: send-attach-gated-fly-stale
 ---
 
-# Handoff — Shift 269
+# Handoff — Shift 270
 
 ## Current state
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
-- **Tip:** `b9677dd` — allocate/approve attach fail-closed
-- **Audit:** empty-BC bleed remains on send/dispatch/enqueue (+ preferred stamp bypass)
-- **Fly:** still stale — skip (owner)
+- **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148
+- **Shipping:** BC send attach gate (route + dispatch + enqueue 0086 + preferred)
+- **Fly:** still `21a42e7…` / `agentFrameworks:false`
 
 ## Done this shift
 
-1. Read-only tip audit after `b9677dd` (six gap classes)
-2. Evidence: `_relay/evidence/2026-10-03-n-agent-wire-audit.md`
+1. `send/route.ts` — select `assigned_campaign_ids`; 409 if BC not attached
+2. `dispatch-outbound.ts` — `linkedin-seat-not-attached` via `seatAttachedToCampaign`
+3. Migration `0086_enqueue_linkedin_browser_campaign_attach.sql`
+4. `pickLiveLinkedInSendSeat` preferred requires attach
+5. Contracts in linkedin-policy + sourcing-automatic-deliver
 
 ## Blockers
 
-1. Owner Fly tip redeploy + LI healthy (unchanged)
+1. Owner Fly tip redeploy (includes 0086) + LI healthy
 
 ## Next steps
 
-1. Gate BC send: `send/route.ts` + `dispatch-outbound.ts` + `enqueue_linkedin_outbound` require `assigned_campaign_ids` includes campaign
-2. Harden `pickLiveLinkedInSendSeat` preferred path for BC attach (update preferred test)
-3. Do not UpdateGoal complete until Fly tip + LI healthy
+1. Confirm tip CI green
+2. Owner Fly tip SHA + migration tip 0086 + LI healthy
+3. Do not UpdateGoal complete until then
 
 ## Decisions (don't relitigate)
 
-- LI Browser empty assigned ≠ attached
-- Campaign-scoped allocate never falls back to all desks
+- LI Browser empty assigned ≠ attached (allocate/approve/send/enqueue)
 - Never invent sessionHealthy=true
 - Never commit ARIA_JINA_API_KEY
-- Go-live requires computerForSeat (never Hermes-only)
 
 ## Watch out
 
-- Client allocate/approve green ≠ durable send attach enforced
 - Tip CI green ≠ production N-agent goal complete

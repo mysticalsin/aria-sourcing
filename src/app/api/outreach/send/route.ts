@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
     }
     const { data: liSeat } = await supabase
       .from("agent_seats")
-      .select("id, provider, status, mode, computer_id")
+      .select("id, provider, status, mode, computer_id, assigned_campaign_ids")
       .eq("id", seatId)
       .maybeSingle();
     if (!liSeat) {
@@ -268,6 +268,22 @@ export async function POST(req: NextRequest) {
         },
         { status: 503 },
       );
+    }
+    // Browser Computer: campaign attach required (empty assigned ≠ shared pool).
+    if (liSeat.provider === "LinkedIn Browser Computer") {
+      const assigned = Array.isArray(liSeat.assigned_campaign_ids)
+        ? liSeat.assigned_campaign_ids.filter((id): id is string => typeof id === "string")
+        : [];
+      if (!campaignId || !assigned.includes(campaignId)) {
+        return NextResponse.json(
+          {
+            status: "error",
+            detail:
+              "This Browser Computer seat is not attached to the campaign. Attach it under Campaign Agents before send.",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     let browserSessionHealthy: boolean | null = null;

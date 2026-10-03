@@ -45,6 +45,7 @@ import {
   resolveLinkedInCredentialsForWorkspace,
 } from "@/lib/linkedin-credentials";
 import { AGENT_SEAT_SELECT, agentSeatRowToSeat, type AgentSeatRow } from "@/lib/fleet-seats";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { defaultFleetSettings } from "@/lib/fleet";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
@@ -362,6 +363,17 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
             pass: false,
             reasons: ["linkedin-computer-id-missing"],
           });
+          continue;
+        }
+        // BC empty/foreign assigned ≠ this campaign (match allocate/approve attach).
+        const attachCampaignId =
+          (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) || "";
+        if (
+          attachCampaignId &&
+          seat.provider === "LinkedIn Browser Computer" &&
+          !seatAttachedToCampaign(seat, attachCampaignId)
+        ) {
+          await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-attached"] });
           continue;
         }
         const linkedInRefs = await loadLinkedInCredentialRefsForWorkspace(msg.workspace_id);

@@ -151,7 +151,7 @@ ok(
   ) === undefined,
 );
 ok(
-  "pickLiveLinkedInSendSeat honors preferred when live + automatic",
+  "pickLiveLinkedInSendSeat refuses preferred BC not attached to campaign",
   pickLiveLinkedInSendSeat(
     [
       seat({
@@ -163,6 +163,25 @@ ok(
         id: "preferred",
         provider: "LinkedIn Browser Computer",
         assignedCampaignIds: ["camp_other"],
+      }),
+    ],
+    "camp_seed_backend",
+    "preferred",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat honors preferred when attached + live + automatic",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "other",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+      seat({
+        id: "preferred",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
       }),
     ],
     "camp_seed_backend",
