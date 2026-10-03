@@ -556,7 +556,7 @@ async function main() {
     computers: COMPUTERS,
     botId: botId || null,
     sessionHealthy,
-    linkedInLandClaimed: sessionHealthy === true,
+    landClaimed: sessionHealthy === true,
     learning: {
       uiLessons: "linkedin-ui-lessons second brain (seat-scoped hints + human pacing)",
       copyLessons: "outreach_skill (separate)",

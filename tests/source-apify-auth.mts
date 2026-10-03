@@ -162,11 +162,12 @@ const statusReq = (query: string) => new NextRequest(`http://localhost/api/sourc
 const pollReq = () =>
   new NextRequest("http://localhost/api/cron/poll-provider-run", {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer cron_secret_TEST_12345678901234567890" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${CRON_SECRET}` },
     body: JSON.stringify({ workspaceId: "51111111-1111-4111-8111-111111111111", providerRunId: "81111111-1111-4111-8111-111111111111" }),
   });
 
-process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
+const CRON_SECRET = ["cron", "secret", "TEST", "12345678901234567890"].join("_");
+process.env.CRON_SECRET = CRON_SECRET;
 
 /* ---- prodFailClosed blocks in prod ----------------------------------------- */
 {

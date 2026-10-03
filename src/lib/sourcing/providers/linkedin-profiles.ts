@@ -41,7 +41,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * connector (Apify harvestapi under the hood). Operator-facing platform is
  * always LinkedIn — never "Apify".
  */
-export const linkedinProfilesProvider: SourcingProvider = {
+export const linkedinProfilesProvider = {
   id: "linkedin_profiles",
   displayPlatform: "LinkedIn",
   richness: "profile",
@@ -158,4 +158,4 @@ export const linkedinProfilesProvider: SourcingProvider = {
       ],
     };
   },
-};
+} satisfies SourcingProvider;

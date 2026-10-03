@@ -19,7 +19,7 @@ import type { ProviderSearchInput, ProviderSearchResult, SourcingProvider } from
  * when public evidence overlaps the campaign role. Connect/Message stays on
  * AriaBot computers, never through this path.
  */
-export const linkedinAgentToolProvider: SourcingProvider = {
+export const linkedinAgentToolProvider = {
   id: "linkedin_agent_tool",
   displayPlatform: "LinkedIn",
   richness: "serp",
@@ -117,4 +117,4 @@ export const linkedinAgentToolProvider: SourcingProvider = {
       ],
     };
   },
-};
+} satisfies SourcingProvider;
