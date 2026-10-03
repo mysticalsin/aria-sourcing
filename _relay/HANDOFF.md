@@ -12,7 +12,7 @@ status: tip-ci-security-followup-and-agent-reach-23
 
 - **Branch:** `cursor/linkedin-human-claude-chrome-b91d`
 - **PR:** https://github.com/mysticalsin/aria-sourcing/pull/148 (still draft)
-- **Tip:** `ff06a5aa546438a68b90d4e9879d1b56b5ffe766`
+- **Tip:** `39bea5783bd594868a4918871ab3033f8799689a`
 - **CI follow-up commits:** `692997ad` (secrets/schema/images), `ea248640` (npm-strip RUN split)
 - **Also on tip:** `5a303659` Agent Reach slices 2–3 (MCP sidecar + INTERESTED→booking propose)
 - **Local proof on the CI follow-up:** gitleaks 8.30.1 dir + `git --all` = 0;
