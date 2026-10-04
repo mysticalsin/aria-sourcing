@@ -170,6 +170,24 @@ try {
   });
   ok("persist failed keeps existing id", keptOnPersist === "comp_keep");
 
+  // Mid-Take reclaim: never mint a twin (would orphan the held durable profile).
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "computer-human-held" }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  let heldThrew = false;
+  try {
+    await resolveDurableComputerId({ seatId: "seat_held_empty" });
+  } catch (err) {
+    heldThrew = err instanceof Error && /computer-human-held/i.test(err.message);
+  }
+  ok("human-held reclaim with no existing throws (never mint)", heldThrew);
+  const heldKeep = await resolveDurableComputerId({
+    seatId: "seat_held",
+    existingComputerId: "comp_held_durable",
+  });
+  ok("human-held reclaim keeps existing computerId", heldKeep === "comp_held_durable");
 
   // no-healthy-orphan with existing must mint — existing was not seat-bound
   // healthy (orphan twin / refused). Keeping it would feed ensure→login wall.

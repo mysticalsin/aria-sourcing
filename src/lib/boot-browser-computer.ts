@@ -90,6 +90,11 @@ export async function resolveDurableComputerId(opts: {
         if (existing) return existing;
         throw new Error(json?.error ?? "computer_id persist failed");
       }
+      // Mid-Take: never mint — keep existing if any; otherwise surface (Login/Deploy must not orphan).
+      if (/computer-human-held|human-has-control/.test(err)) {
+        if (existing) return existing;
+        throw new Error(json?.error ?? "computer-human-held");
+      }
       // Foreign id — server mint; never keep another seat's VM.
       if (existing && /ownership-mismatch|orphan-claim-blocked/.test(err)) {
         return mintComputerIdViaEnsure(seatId, campaignId);
