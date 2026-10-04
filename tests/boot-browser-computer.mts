@@ -1,0 +1,266 @@
+/* ==========================================================================
+   tests/boot-browser-computer.mts
+   resolveDurableComputerId — reclaim-before-mint client contract.
+   ========================================================================== */
+
+import { bootBrowserComputer, resolveDurableComputerId } from "../src/lib/boot-browser-computer";
+
+let pass = 0;
+let fail = 0;
+function ok(name: string, cond: boolean) {
+  if (cond) pass++;
+  else {
+    fail++;
+    console.log("FAIL:", name);
+  }
+}
+
+const originalFetch = globalThis.fetch;
+
+try {
+  // Healthy reclaim wins over a blank existing mint.
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        sessionHealthy: true,
+        computer: { computerId: "comp_durable_orphan", sessionHealthy: true },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )) as typeof fetch;
+
+  const reclaimed = await resolveDurableComputerId({
+    seatId: "seat_1",
+    existingComputerId: "comp_blank_mint",
+  });
+  ok("reclaim returns probed-healthy orphan id", reclaimed === "comp_durable_orphan");
+
+  // Unhealthy / empty reclaim keeps existing when present.
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        sessionHealthy: false,
+        computer: { computerId: "comp_blank_mint", sessionHealthy: false },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )) as typeof fetch;
+
+  const kept = await resolveDurableComputerId({
+    seatId: "seat_1",
+    existingComputerId: "comp_blank_mint",
+  });
+  ok("unhealthy reclaim keeps existing computerId", kept === "comp_blank_mint");
+
+  // No existing + failed reclaim mints via server ensure (never client UUID twins).
+  let mintActions: string[] = [];
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string; seatId?: string };
+    mintActions.push(body.action ?? "");
+    if (body.action === "reclaim_healthy_orphan") {
+      return new Response(JSON.stringify({ error: "no-healthy-orphan" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (body.action === "ensure") {
+      return new Response(
+        JSON.stringify({ computer: { computerId: "comp_server_mint_01", seatId: body.seatId } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
+
+  const minted = await resolveDurableComputerId({ seatId: "seat_2" });
+  ok("mint when no orphan uses server ensure id", minted === "comp_server_mint_01");
+  ok("mint does not invent durable orphan id", minted !== "comp_durable_orphan");
+  ok("mint posts reclaim then ensure", mintActions.join(",") === "reclaim_healthy_orphan,ensure");
+
+  // Never invent sessionHealthy=true from a non-healthy payload with an id.
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        sessionHealthy: null,
+        computer: { computerId: "comp_unverified", sessionHealthy: null },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )) as typeof fetch;
+
+  const unverified = await resolveDurableComputerId({
+    seatId: "seat_3",
+    existingComputerId: "comp_existing",
+  });
+  ok(
+    "null sessionHealthy does not adopt orphan as durable",
+    unverified === "comp_existing",
+  );
+
+  // Posts reclaim_healthy_orphan with seatId (+ computerId when present).
+  let posted: unknown = null;
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    posted = JSON.parse(String(init?.body ?? "{}"));
+    return new Response(
+      JSON.stringify({
+        sessionHealthy: true,
+        computer: { computerId: "comp_ok", sessionHealthy: true },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  await resolveDurableComputerId({
+    seatId: "seat_post",
+    existingComputerId: "comp_prev",
+  });
+  const body = posted as { action?: string; seatId?: string; computerId?: string };
+  ok("posts reclaim_healthy_orphan", body.action === "reclaim_healthy_orphan");
+  ok("posts seatId", body.seatId === "seat_post");
+  ok("posts existing computerId for probe", body.computerId === "comp_prev");
+
+  // Ownership mismatch on reclaim must mint via ensure — never keep another seat's VM id.
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const req = JSON.parse(String(init?.body ?? "{}")) as { action?: string; seatId?: string };
+    if (req.action === "reclaim_healthy_orphan") {
+      return new Response(JSON.stringify({ error: "computer-ownership-mismatch: foreign" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (req.action === "ensure") {
+      return new Response(
+        JSON.stringify({ computer: { computerId: "comp_server_remint", seatId: req.seatId } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
+
+  const reminted = await resolveDurableComputerId({
+    seatId: "seat_foreign",
+    existingComputerId: "comp_other_seat",
+  });
+  ok(
+    "ownership mismatch mints new id",
+    reminted === "comp_server_remint",
+  );
+
+
+  // Persist failure with no existing id must fail closed — never mint a twin.
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "reclaim claimed x in-memory but computer_id persist failed: uniq" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  let threw = false;
+  try {
+    await resolveDurableComputerId({ seatId: "seat_persist" });
+  } catch (err) {
+    threw = err instanceof Error && /persist failed/i.test(err.message);
+  }
+  ok("persist failed does not mint", threw);
+
+  // Persist failure with existing keeps existing (no mint).
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "computer_id persist failed: uniq" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  const keptOnPersist = await resolveDurableComputerId({
+    seatId: "seat_persist2",
+    existingComputerId: "comp_keep",
+  });
+  ok("persist failed keeps existing id", keptOnPersist === "comp_keep");
+
+  // Mid-Take reclaim: never mint a twin (would orphan the held durable profile).
+  let heldActions: string[] = [];
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string };
+    heldActions.push(body.action ?? "");
+    return new Response(JSON.stringify({ error: "computer-human-held" }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  let heldThrew = false;
+  try {
+    await resolveDurableComputerId({ seatId: "seat_held_empty" });
+  } catch (err) {
+    heldThrew = err instanceof Error && /computer-human-held/i.test(err.message);
+  }
+  ok("human-held reclaim with no existing throws (never mint)", heldThrew);
+  ok(
+    "human-held reclaim with no existing never calls ensure mint",
+    heldActions.join(",") === "reclaim_healthy_orphan",
+  );
+  heldActions = [];
+  const heldKeep = await resolveDurableComputerId({
+    seatId: "seat_held",
+    existingComputerId: "comp_held_durable",
+  });
+  ok("human-held reclaim keeps existing computerId", heldKeep === "comp_held_durable");
+  ok(
+    "human-held reclaim with existing never calls ensure mint",
+    heldActions.join(",") === "reclaim_healthy_orphan",
+  );
+
+  // no-healthy-orphan with existing must mint — existing was not seat-bound
+  // healthy (orphan twin / refused). Keeping it would feed ensure→login wall.
+  let mintOnRefuse: string[] = [];
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string };
+    mintOnRefuse.push(body.action ?? "");
+    if (body.action === "reclaim_healthy_orphan") {
+      return new Response(JSON.stringify({ error: "no-healthy-orphan" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (body.action === "ensure") {
+      return new Response(
+        JSON.stringify({ computer: { computerId: "comp_fresh_mint", seatId: "seat_keep" } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
+  const mintedUnhealthy = await resolveDurableComputerId({
+    seatId: "seat_keep",
+    existingComputerId: "comp_unhealthy_orphan_twin",
+  });
+  ok("no-healthy-orphan mints instead of keeping twin", mintedUnhealthy === "comp_fresh_mint");
+  ok(
+    "no-healthy-orphan posts reclaim then ensure mint",
+    mintOnRefuse.join(",") === "reclaim_healthy_orphan,ensure",
+  );
+
+
+  // ensure failure must refuse start — never boot another seat's VM.
+  let started = false;
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string };
+    if (body.action === "ensure") {
+      return new Response(JSON.stringify({ error: "computer-ownership-mismatch: foreign" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (body.action === "start") {
+      started = true;
+      return new Response(JSON.stringify({ computer: { status: "ready" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  const bootFail = await bootBrowserComputer({
+    seatId: "seat_a",
+    computerId: "comp_foreign",
+  });
+  ok("ensure failure refuses start", bootFail.ok === false && started === false);
+
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
+console.log(`boot-browser-computer: ${pass} passed, ${fail} failed`);
+if (fail > 0) process.exit(1);

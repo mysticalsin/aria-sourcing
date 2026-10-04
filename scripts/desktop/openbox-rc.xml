@@ -1,0 +1,43 @@
+# Openbox — maximize Chromium/Chrome on the virtual desktop (Métis-style VM).
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc"
+  xmlns:xi="http://www.w3.org/2001/XInclude">
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>20</screen_edge_strength>
+  </resistance>
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+  </focus>
+  <theme>
+    <name>Clearlooks</name>
+    <titleLayout>NLIMC</titleLayout>
+    <keepBorder>yes</keepBorder>
+  </theme>
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+  </desktops>
+  <applications>
+    <application class="Chromium*">
+      <maximized>yes</maximized>
+      <decor>yes</decor>
+      <layer>normal</layer>
+    </application>
+    <application class="Google-chrome*">
+      <maximized>yes</maximized>
+      <decor>yes</decor>
+    </application>
+    <application class="chrome*">
+      <maximized>yes</maximized>
+      <decor>yes</decor>
+    </application>
+  </applications>
+  <keyboard>
+    <chainQuitKey>C-g</chainQuitKey>
+  </keyboard>
+  <mouse>
+    <dragThreshold>8</dragThreshold>
+  </mouse>
+</openbox_config>

@@ -14,6 +14,7 @@ import {
   Eyebrow,
   Field,
   Input,
+  Meter,
   Progress,
   Select,
   SkeletonCard,
@@ -24,8 +25,18 @@ import {
   useToast,
   type TabItem,
 } from "@/components/ui";
+import { motion } from "framer-motion";
 import { HydrationGate } from "@/components/app/page-header";
+import { CampaignWikiPanel } from "@/components/campaigns/campaign-wiki-panel";
+import { CampaignAgentsPanel } from "@/components/campaigns/campaign-agents-panel";
+import { CampaignGoLiveChecklist } from "@/components/campaigns/campaign-go-live-checklist";
+import { bootBrowserComputer, resolveDurableComputerId } from "@/lib/boot-browser-computer";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import { isStaleHermesComputerTwin } from "@/lib/fleet-hermes-sync";
+import { CampaignFunnelSpine } from "@/components/campaigns/campaign-funnel-spine";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { staggerContainer } from "@/lib/dashboard-motion";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { ScoreDistribution } from "@/components/charts/score-distribution";
@@ -45,17 +56,30 @@ import { BookingCalendar } from "@/components/calendar/booking-calendar";
 import { InterviewerPanel } from "@/components/calendar/interviewer-panel";
 import { WeeklyReportCard } from "@/components/reports/weekly-report-card";
 import { SkillUpdateCard } from "@/components/reports/skill-update-card";
+import { bookingCalendarSummary } from "@/lib/booking-status";
 import {
   useActions,
   useBookings,
   useCampaign,
   useCampaignCandidates,
   useCampaignOutreach,
+  useHermes,
   useHydrated,
   useReplies,
   useReportForCampaign,
+  useRole,
+  useSeats,
+  useSettings,
 } from "@/lib/store";
+import { can } from "@/lib/rbac";
+import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
+import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import { isContactReadyByTenure } from "@/lib/sourcing/role-tenure";
+import type {
+  SourcingFeedbackReceipt,
+  SourcingFeedbackVerdict,
+} from "@/lib/store/contracts";
 import {
   copyToClipboard,
   formatNumber,
@@ -72,10 +96,38 @@ import {
   type Campaign,
   type CampaignStatus,
   type Candidate,
+  type EnrichableField,
   type JobAnalysis,
   type ScoringWeights,
   type ValidationWarning,
 } from "@/lib/types";
+
+function mergeSourcingFeedbackReceipts(
+  ...groups: SourcingFeedbackReceipt[][]
+): SourcingFeedbackReceipt[] {
+  const merged = new Map<string, SourcingFeedbackReceipt>();
+  for (const group of groups) {
+    for (const receipt of group) merged.set(receipt.receiptId, receipt);
+  }
+  return [...merged.values()];
+}
+
+function summarizeSourcingFeedback(receipts: SourcingFeedbackReceipt[]): string {
+  if (receipts.length === 0) return "";
+  const byPlatform = new Map<string, number>();
+  let candidates = 0;
+  for (const receipt of receipts) {
+    candidates += receipt.candidateCount;
+    byPlatform.set(receipt.platform, (byPlatform.get(receipt.platform) ?? 0) + 1);
+  }
+  const platforms = [...byPlatform.entries()]
+    .map(([platform, count]) => (count === 1 ? platform : `${platform} ×${count}`))
+    .join(", ");
+  const searchLabel = receipts.length === 1 ? "1 search" : `${receipts.length} searches`;
+  const candLabel =
+    candidates === 1 ? "1 real candidate" : `${candidates} real candidates`;
+  return `${platforms}: ${candLabel} from ${searchLabel}`;
+}
 import {
   ArrowLeft,
   Banknote,
@@ -83,6 +135,7 @@ import {
   CalendarCheck,
   CalendarPlus,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Compass,
   Copy,
@@ -103,7 +156,17 @@ import {
   UserRound,
   Users,
   X,
+  Zap,
 } from "lucide-react";
+
+/** Core contact/richness fields the "Enrich all" panel reports coverage % for
+ *  — mirrors `DEFAULT_ENRICH_FIELDS` in store.ts (enrichCandidate/
+ *  enrichCampaign's default `want` when the caller doesn't specify one), kept
+ *  as a local constant here since that const isn't exported. */
+const ENRICH_ALL_WANT_FIELDS: EnrichableField[] = ["email", "phone", "skills", "experience", "headline"];
+/** Mirrors store.ts's DEFAULT_ENRICHMENT_BUDGET_UNITS fallback for when
+ *  `state.enrichmentBudgetUnits` hasn't been configured. */
+const DEFAULT_ENRICHMENT_BUDGET_UNITS = 1000;
 
 const STATUS_TONE: Record<CampaignStatus, Tone> = {
   Intake: "neutral",
@@ -315,9 +378,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const allBookings = useBookings();
   const report = useReportForCampaign(id);
   const actions = useActions();
+  const seats = useSeats();
+  const settings = useSettings();
+  const role = useRole();
+  const hermesState = useHermes().state;
   const { toast } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
+  const reducedMotion = usePrefersReducedMotion();
 
   const [tab, setTab] = React.useState("overview");
   const [selected, setSelected] = React.useState<Candidate | null>(null);
@@ -325,7 +393,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [stageFilter, setStageFilter] = React.useState("all");
   const [scoreFilter, setScoreFilter] = React.useState("all");
   const [agentRunning, setAgentRunning] = React.useState(false);
+  const [feedbackState, setFeedbackState] = React.useState<{
+    campaignId: string;
+    receipts: SourcingFeedbackReceipt[];
+  }>({ campaignId: id, receipts: [] });
+  const feedbackReceipts = feedbackState.campaignId === id ? feedbackState.receipts : [];
+  const [feedbackSubmitting, setFeedbackSubmitting] = React.useState<Set<string>>(new Set());
+  const [feedbackExpanded, setFeedbackExpanded] = React.useState(false);
   const [sourcing, setSourcing] = React.useState(false);
+  const [enrichingAll, setEnrichingAll] = React.useState(false);
   // The just-sourced batch, staged for the streaming reveal below — purely a
   // display buffer; the store already committed these candidates for real.
   // `sourceBatchKey` remounts <SourcingFeed> on every new batch (even one of
@@ -339,6 +415,82 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
   const [runToken, setRunToken] = React.useState(0);
+  /** Durable Fleet campaignSeats length when present; null until poll / on omit.
+   * Stamp campaignId so soft-nav A→B cannot paint A's count before the effect clears. */
+  const [durableAgentAuthority, setDurableAgentAuthority] = React.useState<{
+    campaignId: string;
+    count: number | null;
+  } | null>(null);
+
+  React.useEffect(() => {
+    // Soft-nav: clear durable badge until campaign-scoped fleet authority lands.
+    setDurableAgentAuthority({ campaignId: id, count: null });
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/fleet/computers?campaignId=${encodeURIComponent(id)}`,
+          { credentials: "same-origin" },
+        );
+        if (!res.ok || cancelled) {
+          if (!cancelled) setDurableAgentAuthority({ campaignId: id, count: null });
+          return;
+        }
+        const data = (await res.json()) as {
+          campaignSeats?: unknown[];
+          browserSeatBindings?: Array<{
+            id: string;
+            name?: string;
+            computerId?: string | null;
+            status?: string;
+            assignedCampaignIds?: string[];
+          }>;
+        };
+        actions.ingestDurableBrowserBindings(
+          data.browserSeatBindings ??
+            (Array.isArray(data.campaignSeats)
+              ? (data.campaignSeats as Array<{ id: string }>)
+              : undefined),
+        );
+        if (!cancelled) {
+          setDurableAgentAuthority({
+            campaignId: id,
+            count: Array.isArray(data.campaignSeats) ? data.campaignSeats.length : null,
+          });
+        }
+      } catch {
+        if (!cancelled) setDurableAgentAuthority({ campaignId: id, count: null });
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [id, actions]);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    setFeedbackState((current) =>
+      current.campaignId === id ? current : { campaignId: id, receipts: [] },
+    );
+    void actions.listPendingSourcingFeedback(id).then((receipts) => {
+      if (cancelled || receipts === null) return;
+      setFeedbackState((current) =>
+        current.campaignId === id
+          ? {
+              campaignId: id,
+              receipts: mergeSourcingFeedbackReceipts(current.receipts, receipts),
+            }
+          : current,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, hydrated, id]);
 
   if (!hydrated) {
     return (
@@ -366,11 +518,23 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   }
 
   const c: Campaign = campaign;
+  const liveSourcingAllowed = campaignAllowsLiveSourcing(c.status);
   const m = c.metrics;
   const jd = c.jobAnalysis;
   const strategy = c.sourcingStrategy;
   const health = campaignHealth(c);
-  const nextAction = nextActionForCampaign(c);
+  const tenureDeferred = candidates.filter((cand) => !isContactReadyByTenure(cand));
+  const contactReadyCount = candidates.filter((cand) => isContactReadyByTenure(cand)).length;
+  const nextAction = (() => {
+    const pendingDrafts = outreach.filter((mm) => mm.status === "Needs Approval").length;
+    if (c.status !== "Paused" && pendingDrafts > 0) {
+      return `Approve ${pendingDrafts} draft${pendingDrafts === 1 ? "" : "s"} to contact ${contactReadyCount} ready candidate${contactReadyCount === 1 ? "" : "s"}`;
+    }
+    if (tenureDeferred.length > 0 && pendingDrafts === 0 && candidates.length > 0) {
+      return `Hold ${tenureDeferred.length} early-tenure profile${tenureDeferred.length === 1 ? "" : "s"} · draft outreach for 6–12 mo in role`;
+    }
+    return nextActionForCampaign(c);
+  })();
   const scores = candidates.map((cand) => cand.matchScore);
   const campaignReplies = allReplies.filter((r) => r.campaignId === c.id);
   const campaignBookings = allBookings.filter((b) => b.campaignId === c.id);
@@ -401,10 +565,46 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const weightTotal = Object.values(c.scoringWeights).reduce((a, b) => a + b, 0) || 1;
 
+  const canEnrich = can(role, "source");
+  // Coverage % across ENRICH_ALL_WANT_FIELDS, averaged over this campaign's
+  // candidates — the same fields enrichCampaign fills by default, so 100%
+  // here means "Enrich all" has nothing left to do.
+  const enrichmentCoveragePct =
+    candidates.length === 0
+      ? 0
+      : Math.round(
+          (candidates.reduce(
+            (sum, cand) => sum + computeCoverage(cand).filter((f) => ENRICH_ALL_WANT_FIELDS.includes(f)).length,
+            0,
+          ) /
+            (candidates.length * ENRICH_ALL_WANT_FIELDS.length)) *
+            100,
+        );
+  // Workspace-wide (not per-campaign): the server enforces one shared budget
+  // across every candidate/campaign, so the meter reports that same total.
+  const enrichmentSpend = (hermesState?.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
+  const enrichmentBudget = hermesState?.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
+
+  const hermesAgentCount = seats.filter(
+    (s) => isBrowserComputerSeat(s) && seatAttachedToCampaign(s, c.id),
+  ).length;
+  // Prefer durable Fleet campaignSeats length when present (incl. authoritative 0).
+  // Soft-nav: ignore foreign-campaign stamp until this id's authority lands.
+  const durableAgentCount =
+    durableAgentAuthority?.campaignId === c.id ? durableAgentAuthority.count : null;
+  const agentsTabCount =
+    durableAgentCount !== null ? durableAgentCount : hermesAgentCount;
+
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
     { value: "jd", label: "JD Analysis", icon: <FileSearch className="h-4 w-4" /> },
     { value: "strategy", label: "Sourcing Strategy", icon: <Compass className="h-4 w-4" /> },
+    {
+      value: "agents",
+      label: "Agents",
+      icon: <Bot className="h-4 w-4" />,
+      count: agentsTabCount,
+    },
     { value: "candidates", label: "Candidates", icon: <Users className="h-4 w-4" />, count: candidates.length },
     { value: "outreach", label: "Outreach", icon: <Send className="h-4 w-4" />, count: outreach.length },
     { value: "replies", label: "Replies", icon: <MessageSquare className="h-4 w-4" />, count: campaignReplies.length },
@@ -426,49 +626,214 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const handleSource = async () => {
     if (sourcing) return;
     setSourcing(true);
-    const res = await actions.sourceNextBatch(c.id);
+    const beforeIds = new Set(candidates.map((cand) => cand.id));
+    // LinkedIn-first: prefer LinkedIn when the strategy lists it first (or at all).
+    const preferred =
+      c.sourcingStrategy.primaryPlatforms.find((p) => p === "LinkedIn") ??
+      c.sourcingStrategy.primaryPlatforms[0];
+    const res = await actions.sourceNextBatch(c.id, preferred ? { platform: preferred } : undefined);
     setSourcing(false);
     if (!res.ok) {
       toast({
-        title:
-          res.source === "paused"
-            ? "Campaign is paused"
-            : `${res.source === "github" ? "GitHub" : "Web"} sourcing failed`,
+        title: res.source === "paused" ? "Campaign is paused" : "Sourcing failed",
         description: res.error,
         variant: "error",
       });
       return;
     }
+    setFeedbackState((current) =>
+      current.campaignId === c.id
+        ? {
+            campaignId: c.id,
+            receipts: mergeSourcingFeedbackReceipts(
+              current.receipts,
+              res.feedbackReceipts ?? [],
+            ),
+          }
+        : current,
+    );
     // Stage the reveal with the exact, already-committed batch — never a
     // re-derived or re-scored copy — and jump to the Candidates tab so the
     // stream is immediately visible instead of resolving behind a toast.
     setJustSourced(res.accepted);
     setSourceBatchKey((k) => k + 1);
     if (res.accepted.length > 0) setTab("candidates");
+
+    const newlyAccepted = res.accepted.filter((cand) => !beforeIds.has(cand.id));
+    let deferredTenure = 0;
+    for (const cand of newlyAccepted) {
+      if (!isContactReadyByTenure(cand)) deferredTenure += 1;
+    }
+    // Fleet allocate stamps attached campaign desks (N>1 safe) — never generateOutreachFor
+    // without seatId (that returns null when multiple Browser Computers are attached).
+    const allocation = actions.allocateOutreach({ campaignId: c.id });
+    const drafted = allocation.assignments.filter((a) =>
+      newlyAccepted.some((cand) => cand.id === a.candidateId),
+    ).length;
+
     const isLive = res.source === "github" || res.source === "web";
+    if (res.accepted.length === 0) {
+      toast({
+        title: "No candidates were added",
+        description: res.skipped.length
+          ? `${res.skipped.length} real results were excluded or already present.`
+          : "The real search completed without a matching result.",
+        variant: "info",
+      });
+      return;
+    }
     toast({
-      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
-      description: res.skipped.length
-        ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-        : isLive
-          ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
-          : "All matched candidates accepted into the pipeline.",
+      title: `Sourced ${res.accepted.length} via ${preferred ?? res.source}${isLive ? " (live)" : ""}`,
+      description:
+        drafted > 0
+          ? `${drafted} LinkedIn draft${drafted === 1 ? "" : "s"} ready to review and contact${
+              deferredTenure > 0
+                ? ` · ${deferredTenure} deferred (<${6} mo in role)`
+                : ""
+            }.`
+          : deferredTenure > 0
+            ? `${deferredTenure} held back — wait until 6–12 months in role before outreach.`
+            : res.skipped.length
+              ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
+              : isLive
+                ? "Live LinkedIn/web results are in the pipeline."
+                : "All matched candidates accepted into the pipeline.",
+      variant: "success",
+    });
+    if (drafted > 0) setTab("outreach");
+  };
+
+  // Batch variant of the drawer's unified enrichment waterfall (docs/
+  // superpowers/plans/2026-07-15-enrichment-orchestrator.md, "Wow UI") — runs
+  // every configured provider against every candidate in this campaign still
+  // missing core contact/richness fields, sharing the workspace budget.
+  const handleEnrichAll = async () => {
+    setEnrichingAll(true);
+    const res = await actions.enrichCampaign(c.id);
+    setEnrichingAll(false);
+    if (!res.ok) {
+      toast({ title: "Batch enrichment failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title:
+        res.total === 0
+          ? "All candidates already covered"
+          : `Enriched ${res.done}/${res.total} candidate${res.total === 1 ? "" : "s"}`,
+      description:
+        res.total === 0
+          ? "No candidates were missing email, phone, skills, experience, or headline."
+          : `${res.filled} field(s) filled, ${res.spend} unit(s) spent.`,
       variant: "success",
     });
   };
 
   const handleRunAgent = async () => {
+    const campaignId = c.id;
     setAgentRunning(true);
-    const res = await actions.runSourcingAgent(c.id);
+    const res = await actions.runSourcingAgent(campaignId);
     setAgentRunning(false);
     if (!res.ok) {
       toast({ title: "Sourcing agent didn't run", description: res.error, variant: "error" });
       return;
     }
+    setFeedbackState((current) =>
+      current.campaignId === campaignId
+        ? {
+            campaignId,
+            receipts: mergeSourcingFeedbackReceipts(
+              current.receipts,
+              res.feedbackReceipts ?? [],
+            ),
+          }
+        : current,
+    );
+    if (res.added === 0) {
+      toast({
+        title: "No candidates were added",
+        description:
+          res.mode === "cloud"
+            ? "The real provider search completed, but every result was empty, excluded, or already present."
+            : "The reviewed GitHub queries completed, but every result was empty, excluded, or already present. No cloud model ran.",
+        variant: "info",
+      });
+      return;
+    }
     toast({
-      title: `Sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
-      description: "Real search, real scoring, drafted outreach: review before sending.",
+      title:
+        res.mode === "cloud"
+          ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
+          : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
+      description:
+        "Contact-ready drafts are queued for review — open Outreach to approve and reach out. People under 6 months in role are held back.",
       variant: "success",
+    });
+    setTab("outreach");
+  };
+
+  const handleSourcingFeedback = async (
+    receipt: SourcingFeedbackReceipt,
+    verdict: SourcingFeedbackVerdict,
+  ) => {
+    if (feedbackSubmitting.has(receipt.receiptId)) return;
+    setFeedbackSubmitting((current) => new Set(current).add(receipt.receiptId));
+    const recorded = await actions.recordSourcingFeedback(receipt.receiptId, verdict);
+    setFeedbackSubmitting((current) => {
+      const next = new Set(current);
+      next.delete(receipt.receiptId);
+      return next;
+    });
+    if (!recorded) {
+      toast({
+        title: "Feedback was not saved",
+        description: "The learning receipt is unavailable or was already reviewed differently.",
+        variant: "error",
+      });
+      return;
+    }
+    setFeedbackState((current) =>
+      current.campaignId === c.id
+        ? {
+            campaignId: c.id,
+            receipts: current.receipts.filter(
+              (item) => item.receiptId !== receipt.receiptId,
+            ),
+          }
+        : current,
+    );
+    toast({
+      title: "Sourcing feedback saved",
+      description: "This aggregate result can inform a future human-reviewed sourcing lesson.",
+      variant: "success",
+    });
+  };
+
+  const handleBulkSourcingFeedback = async (verdict: SourcingFeedbackVerdict) => {
+    if (feedbackReceipts.length === 0) return;
+    const pending = [...feedbackReceipts];
+    setFeedbackSubmitting(new Set(pending.map((r) => r.receiptId)));
+    const savedIds = new Set<string>();
+    for (const receipt of pending) {
+      const recorded = await actions.recordSourcingFeedback(receipt.receiptId, verdict);
+      if (recorded) savedIds.add(receipt.receiptId);
+    }
+    setFeedbackSubmitting(new Set());
+    setFeedbackState((current) =>
+      current.campaignId === c.id
+        ? {
+            campaignId: c.id,
+            receipts: current.receipts.filter((item) => !savedIds.has(item.receiptId)),
+          }
+        : current,
+    );
+    const saved = savedIds.size;
+    toast({
+      title: saved > 0 ? "Role learning saved" : "Feedback was not saved",
+      description:
+        saved > 0
+          ? `${saved} search outcome${saved === 1 ? "" : "s"} recorded.`
+          : "The learning receipts are unavailable or were already reviewed.",
+      variant: saved > 0 ? "success" : "error",
     });
   };
 
@@ -478,7 +843,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handlePause = () => {
-    actions.updateCampaign(c.id, { status: "Paused", previousStatus: c.status });
+    if (!actions.updateCampaign(c.id, { status: "Paused", previousStatus: c.status })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign paused",
       description: "Sourcing and new outreach drafts are blocked until you resume.",
@@ -488,7 +856,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleResume = () => {
     const restored: CampaignStatus = c.previousStatus ?? "Sourcing";
-    actions.updateCampaign(c.id, { status: restored, previousStatus: null });
+    if (!actions.updateCampaign(c.id, { status: restored, previousStatus: null })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign resumed",
       description: `Status restored to ${restored}.`,
@@ -504,7 +875,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       danger: true,
     });
     if (!proceed) return;
-    actions.updateCampaign(c.id, { status: "Filled", previousStatus: null });
+    if (!actions.updateCampaign(c.id, { status: "Filled", previousStatus: null })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign marked Filled",
       description: `${c.title} is now marked as filled.`,
@@ -513,7 +887,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleReopen = () => {
-    actions.updateCampaign(c.id, { status: "Sourcing" });
+    if (!actions.updateCampaign(c.id, { status: "Sourcing" })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign reopened",
       description: `${c.title} is back to Sourcing.`,
@@ -522,7 +899,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleMoreQueries = () => {
-    actions.regenerateQueries(c.id);
+    if (!actions.regenerateQueries(c.id)) {
+      toast({ title: "Query not generated", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "New sourcing query generated",
       description: "Added an adjacent query to widen the search.",
@@ -538,7 +918,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     if (res.ok) {
       toast({
         title: `Interview booked: ${cand.name}`,
-        description: `With ${res.booking.interviewer}. Teams + Cal.com links generated (dry-run).`,
+        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
         variant: "success",
       });
     } else {
@@ -566,7 +946,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSaveJd = (patch: Partial<JobAnalysis>) => {
     const candidateCount = candidates.length;
-    actions.updateCampaign(c.id, { jobAnalysis: { ...c.jobAnalysis, ...patch } });
+    if (!actions.updateCampaign(c.id, { jobAnalysis: { ...c.jobAnalysis, ...patch } })) {
+      toast({ title: "Requirements not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     setEditingJd(false);
     toast({
       title: "Requirements updated",
@@ -579,7 +962,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSaveWeights = (patch: ScoringWeights) => {
     const candidateCount = candidates.length;
-    actions.updateCampaign(c.id, { scoringWeights: patch });
+    if (!actions.updateCampaign(c.id, { scoringWeights: patch })) {
+      toast({ title: "Weights not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     setEditingWeights(false);
     toast({
       title: "Scoring weights updated",
@@ -690,8 +1076,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               leftIcon={<Sparkles className="h-4 w-4" />}
               onClick={handleSource}
               loading={sourcing}
-              disabled={sourcing || c.status === "Paused"}
-              title={c.status === "Paused" ? "Resume the campaign to source new candidates" : undefined}
+              disabled={sourcing || !liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to source candidates" : undefined}
             >
               {sourcing ? "Sourcing…" : "Source next batch"}
             </Button>
@@ -699,20 +1085,20 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               variant="secondary"
               leftIcon={<Bot className="h-4 w-4" />}
               onClick={handleRunAgent}
-              disabled={agentRunning || c.status === "Paused"}
-              title={c.status === "Paused" ? "Resume the campaign to run the sourcing agent" : undefined}
+              disabled={agentRunning || !liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run the sourcing agent" : undefined}
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
-            <SourceSillageButton campaignId={c.id} disabled={c.status === "Paused"} />
-            <SourceApolloButton campaignId={c.id} disabled={c.status === "Paused"} />
-            <SourceSeamlessButton campaignId={c.id} disabled={c.status === "Paused"} />
+            <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
+            <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
+            <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
               onClick={handleOpenRun}
-              disabled={c.status === "Paused"}
-              title={c.status === "Paused" ? "Resume the campaign to run Aria" : undefined}
+              disabled={!liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run Aria" : undefined}
             >
               Run Aria
             </Button>
@@ -753,6 +1139,108 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </Card>
 
+      {feedbackReceipts.length > 0 && (
+        <Card className="mb-6" aria-label="Sourcing lesson feedback">
+          <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <Eyebrow>Private role learning</Eyebrow>
+              <CardTitle className="mt-1 text-base sm:text-lg">
+                {summarizeSourcingFeedback(feedbackReceipts)} — useful?
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted">
+                Aggregate query outcomes only · never sends profiles to Graphify
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("useful")}
+              >
+                Useful
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("dead_end")}
+              >
+                Dead end
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={feedbackSubmitting.size > 0}
+                onClick={() => void handleBulkSourcingFeedback("corrected")}
+              >
+                Needs correction
+              </Button>
+            </div>
+          </CardHeader>
+          {feedbackReceipts.length > 1 && (
+            <CardBody className="pt-0">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs font-medium text-ink-soft hover:text-ink"
+                aria-expanded={feedbackExpanded}
+                onClick={() => setFeedbackExpanded((v) => !v)}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform ${feedbackExpanded ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+                {feedbackExpanded ? "Hide per-search rows" : `Review ${feedbackReceipts.length} searches`}
+              </button>
+              {feedbackExpanded && (
+                <ul className="mt-3 space-y-2">
+                  {feedbackReceipts.map((receipt) => {
+                    const submitting = feedbackSubmitting.has(receipt.receiptId);
+                    return (
+                      <li
+                        key={receipt.receiptId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line/80 px-3 py-2 text-sm"
+                      >
+                        <span className="text-ink">
+                          {receipt.platform}: {receipt.candidateCount} candidate
+                          {receipt.candidateCount === 1 ? "" : "s"}
+                        </span>
+                        <div className="flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "useful")}
+                          >
+                            Useful
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "dead_end")}
+                          >
+                            Dead end
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={submitting}
+                            onClick={() => void handleSourcingFeedback(receipt, "corrected")}
+                          >
+                            Fix
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          )}
+        </Card>
+      )}
+
       {runOpen && (
         <AgentRunStream
           key={runToken}
@@ -768,13 +1256,24 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Overview */}
       <TabPanel value="overview" active={tab === "overview"} idBase={idBase}>
         <div className="space-y-6">
+          <CampaignFunnelSpine
+            candidates={candidates}
+            outreach={outreach}
+            replies={allReplies.filter((r) => r.campaignId === c.id)}
+            bookings={allBookings.filter((b) => b.campaignId === c.id)}
+          />
           <StagePipeline metrics={m} />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <motion.div
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+            variants={staggerContainer}
+            initial={reducedMotion ? false : "hidden"}
+            animate="show"
+          >
             {overviewMetrics.map((mc) => (
               <MetricCard key={mc.label} label={mc.label} value={mc.value} hint={mc.hint} icon={mc.icon} tone={mc.tone} />
             ))}
-          </div>
+          </motion.div>
 
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
@@ -918,6 +1417,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Sourcing Strategy */}
       <TabPanel value="strategy" active={tab === "strategy"} idBase={idBase}>
         <div className="space-y-6">
+          <CampaignWikiPanel campaignId={c.id} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <Eyebrow>Where Aria looks</Eyebrow>
@@ -1077,6 +1577,132 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </TabPanel>
 
+      <TabPanel value="agents" active={tab === "agents"} idBase={idBase}>
+        <div className="space-y-6">
+          <CampaignGoLiveChecklist
+            campaignId={c.id}
+            settings={{
+              dryRunMode: settings.dryRunMode,
+              minScoreToContact: settings.minScoreToContact,
+            }}
+            seats={seats}
+          />
+          <CampaignAgentsPanel
+            campaignId={c.id}
+            seats={seats}
+            onAssignSeat={async (seatId) => {
+              const seat = seats.find((s) => s.id === seatId);
+              if (!seat) return;
+              // Browser Computer: capacity + durable computerId BEFORE campaign assign,
+              // so a full host never leaves an "attached" seat without its own VM.
+              let computerId = seat.computerId ?? null;
+              if (seat.provider === "LinkedIn Browser Computer") {
+                let fleetRows: Array<{ seatId?: string | null; computerId?: string | null }> = [];
+                let fleetOk = false;
+                try {
+                  const capRes = await fetch("/api/fleet/computers", { credentials: "same-origin" });
+                  if (capRes.ok) {
+                    fleetOk = true;
+                    const cap = (await capRes.json()) as {
+                      hostCapacity?: { computers: number; max: number } | null;
+                      computers?: Array<{ seatId?: string | null; computerId?: string | null }>;
+                    };
+                    fleetRows = cap.computers ?? [];
+                    const hc = cap.hostCapacity;
+                    if (hc && hc.max > 0 && hc.computers >= hc.max) {
+                      toast({
+                        title: "Host at capacity",
+                        description: `${hc.computers}/${hc.max} VMs in use — stop idle Fleet VMs or raise OPENBOT_MAX_COMPUTERS before attaching.`,
+                        variant: "warning",
+                      });
+                      return;
+                    }
+                  }
+                } catch {
+                  /* boot path still fails closed if host is full */
+                }
+                // Reclaim a probed-healthy host orphan before minting — never seat.id
+                // (that merges N VMs onto one profile) and never burn a blank mint when
+                // a durable orphan already has LinkedIn cookies.
+                // Fail closed like Campaign Agents Deploy: empty/failed fleet omits Hermes twin.
+                const staleTwin =
+                  !fleetOk ||
+                  fleetRows.length === 0 ||
+                  isStaleHermesComputerTwin(seatId, seat.computerId, fleetRows);
+                computerId = await resolveDurableComputerId({
+                  seatId,
+                  existingComputerId: staleTwin ? null : seat.computerId,
+                });
+                if (!seat.computerId || seat.computerId !== computerId) {
+                  const saved = await actions.updateSeat(seatId, { computerId });
+                  if (!saved) {
+                    toast({
+                      title: "Attach blocked",
+                      description: "computerId did not persist — fix Fleet before attaching.",
+                      variant: "warning",
+                    });
+                    return;
+                  }
+                }
+              }
+              const next = Array.from(
+                new Set([...(seat.assignedCampaignIds ?? []), c.id]),
+              );
+              const assigned = await actions.updateSeat(seatId, { assignedCampaignIds: next });
+              if (!assigned) {
+                toast({
+                  title: "Attach failed",
+                  description: "Could not persist campaign assignment — VM not started.",
+                  variant: "warning",
+                });
+                return;
+              }
+              if (seat.provider === "LinkedIn Browser Computer" && computerId) {
+                const boot = await bootBrowserComputer({
+                  seatId,
+                  computerId,
+                  campaignId: c.id,
+                });
+                toast({
+                  title: boot.booted
+                    ? `${seat.name} attached · VM booting`
+                    : `${seat.name} attached · VM not booted`,
+                  description: boot.booted
+                    ? "Take control to finish LinkedIn login. Floor will show this seat once the host reports ready."
+                    : boot.error ||
+                      "Seat attached but Chromium did not start — check Fly host capacity.",
+                  variant: boot.booted ? "success" : "warning",
+                });
+              } else {
+                toast({
+                  title: "Agent attached",
+                  description: `${seat.name} is on this campaign. Browser Computer seats still need Take control after boot.`,
+                  variant: "success",
+                });
+              }
+            }}
+            onUnassignSeat={(seatId) => {
+              const seat = seats.find((s) => s.id === seatId);
+              if (!seat) return;
+              const next = (seat.assignedCampaignIds ?? []).filter((id) => id !== c.id);
+              actions.updateSeat(seatId, { assignedCampaignIds: next });
+              toast({
+                title: "Agent detached",
+                description: `${seat.name} removed from this campaign’s VM panel.`,
+                variant: "info",
+              });
+            }}
+          />
+          <p className="text-xs text-muted">
+            Same Chromium mutex as{" "}
+            <Link href="/fleet" className="font-medium text-electric underline-offset-2 hover:underline">
+              Fleet
+            </Link>
+            — this tab only shows agents attached to {c.title}.
+          </p>
+        </div>
+      </TabPanel>
+
       {/* Candidates */}
       <TabPanel value="candidates" active={tab === "candidates"} idBase={idBase}>
         <div className="space-y-6">
@@ -1123,6 +1749,43 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           <Card className="overflow-x-auto">
             <CardBody>
               <CandidateTable candidates={filteredCandidates} onSelect={openCandidate} />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Eyebrow>Unified enrichment</Eyebrow>
+                <CardTitle className="mt-1">Enrich all candidates</CardTitle>
+              </div>
+              {canEnrich ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Zap className="h-4 w-4" />}
+                  onClick={handleEnrichAll}
+                  loading={enrichingAll}
+                  disabled={enrichingAll || candidates.length === 0}
+                >
+                  {enrichingAll ? "Enriching…" : "Enrich all"}
+                </Button>
+              ) : (
+                <span className="text-xs text-muted">Requires sourcing permission.</span>
+              )}
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-baseline justify-between text-sm">
+                  <span className="font-semibold text-ink-soft">Coverage (email, phone, skills, experience, headline)</span>
+                  <span className="font-bold tabular-nums text-ink">{enrichmentCoveragePct}%</span>
+                </div>
+                <Progress
+                  value={enrichmentCoveragePct}
+                  tone="aqua"
+                  aria-label={`Enrichment coverage across candidates: ${enrichmentCoveragePct}%`}
+                />
+              </div>
+              <Meter label="Workspace enrichment spend" used={enrichmentSpend} limit={enrichmentBudget} tone="electric" />
             </CardBody>
           </Card>
         </div>

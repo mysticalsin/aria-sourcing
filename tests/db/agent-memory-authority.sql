@@ -5,12 +5,15 @@ create schema aria_agent_memory_test;
 revoke all on schema aria_agent_memory_test from public;
 grant usage on schema aria_agent_memory_test to authenticated, service_role;
 
-create function aria_agent_memory_test.set_claims(subject uuid)
+create function aria_agent_memory_test.set_claims(
+  subject uuid,
+  claim_role text default 'authenticated'
+)
 returns void language plpgsql set search_path = pg_catalog as $$
 begin
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', subject, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', subject, 'role', claim_role)::text, true);
   perform set_config('request.jwt.claim.sub', coalesce(subject::text, ''), true);
-  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.role', claim_role, true);
 end;
 $$;
 
@@ -197,6 +200,246 @@ select aria_agent_memory_test.assert_sqlstate(
   array['23503']
 );
 
+-- The management API writes only through service-role RPCs. Exercise their
+-- full state machine and optimistic revision contract against PostgreSQL.
+select aria_agent_memory_test.set_claims(
+  'a1000000-0000-4000-8000-000000000001',
+  'service_role'
+);
+set local role service_role;
+select aria_agent_memory_test.assert_sqlstate(
+  'service callers cannot bypass atomic memory RPCs with direct writes',
+  $$insert into public.agent_memories(
+      workspace_id,owner_id,spec_id,kind,content_ciphertext,content_sha256,
+      content_byte_count,status,source_type,created_by
+    ) values (
+      '11111111-1111-4111-8111-111111111111',
+      'a1000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000001',
+      'fact',
+      'enc:v2:1111111111111111111111111111111111111111111111111111111111111111:AA==:AA==:AA==',
+      repeat('1',64),1,'pending_review','operator',
+      'a1000000-0000-4000-8000-000000000001'
+    )$$,
+  array['42501']
+);
+create temporary table aria_agent_memory_rpc_result(result jsonb) on commit drop;
+insert into aria_agent_memory_rpc_result(result)
+select public.create_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  'fact',
+  'enc:v2:1111111111111111111111111111111111111111111111111111111111111111:AA==:AA==:AA==',
+  repeat('1',64),64,false,null
+);
+reset role;
+create temporary table aria_agent_memory_rpc_target on commit drop as
+select id as memory_id
+  from public.agent_memories
+ where content_sha256=repeat('1',64)
+   and owner_id='a1000000-0000-4000-8000-000000000001';
+grant select on aria_agent_memory_rpc_target to service_role;
+select aria_agent_memory_test.assert_scalar(
+  'service create persists one pending revision with a content-free receipt',
+  $$select concat(
+      result->>'status',':',result->>'revision',':',result->>'memory_status',':',
+      (select concat(status,':',revision) from public.agent_memories
+        where id=(select memory_id from aria_agent_memory_rpc_target)),':',
+      (select concat(event_type,':',memory_revision,':',metadata)
+         from public.agent_memory_events
+        where memory_id=(select memory_id from aria_agent_memory_rpc_target))
+    ) from aria_agent_memory_rpc_result$$,
+  'created:1:pending_review:pending_review:1:created:1:{}'
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.mutate_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',1,null::text,
+  null,null,null,null,null,false,null
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'null mutation operation is rejected without changing memory',
+  $$select concat(result->>'status',':',
+      (select concat(status,':',revision) from public.agent_memories
+        where id=(select memory_id from aria_agent_memory_rpc_target)),':',
+      (select count(*) from public.agent_memory_events
+        where memory_id=(select memory_id from aria_agent_memory_rpc_target)))
+    from aria_agent_memory_rpc_result$$,
+  'invalid_request:pending_review:1:1'
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.mutate_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',1,'approve',
+  null,null,null,null,null,false,null
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'pending memory can be approved without forging a revision',
+  $$select concat(result->>'status',':',result->>'revision',':',result->>'memory_status',':',
+      (select concat(status,':',revision) from public.agent_memories
+        where id=(select memory_id from aria_agent_memory_rpc_target)))
+    from aria_agent_memory_rpc_result$$,
+  'updated:1:approved:approved:1'
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.mutate_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',1,'edit',
+  null,
+  'enc:v2:2222222222222222222222222222222222222222222222222222222222222222:AA==:AA==:AA==',
+  repeat('2',64),128,null,false,null
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'content edit advances revision and returns approved memory to review',
+  $$select concat(result->>'status',':',result->>'revision',':',result->>'memory_status',':',
+      (select concat(status,':',revision,':',content_sha256)
+         from public.agent_memories
+        where id=(select memory_id from aria_agent_memory_rpc_target)))
+    from aria_agent_memory_rpc_result$$,
+  'updated:2:pending_review:pending_review:2:' || repeat('2',64)
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.mutate_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',2,'reject',
+  null,null,null,null,null,false,null
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'pending edited memory can be rejected',
+  $$select concat(result->>'status',':',result->>'revision',':',result->>'memory_status')
+      from aria_agent_memory_rpc_result$$,
+  'updated:2:rejected'
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.mutate_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',2,'edit',
+  null,null,null,null,true,true,now()+interval '1 day'
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'pin and expiry edit advances revision while preserving review status',
+  $$select concat(result->>'revision',':',result->>'memory_status',':',
+      (select concat(revision,':',status,':',pinned::text,':',(expires_at is not null)::text)
+         from public.agent_memories
+        where id=(select memory_id from aria_agent_memory_rpc_target)))
+    from aria_agent_memory_rpc_result$$,
+  '3:rejected:3:rejected:true:true'
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.mutate_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',2,'edit',
+  null,null,null,null,false,false,null
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'stale metadata edit is rejected without a write or audit event',
+  $$select concat(result->>'status',':',result->>'revision',':',
+      (select concat(revision,':',pinned::text) from public.agent_memories
+        where id=(select memory_id from aria_agent_memory_rpc_target)),':',
+      (select count(*) from public.agent_memory_events
+        where memory_id=(select memory_id from aria_agent_memory_rpc_target)))
+    from aria_agent_memory_rpc_result$$,
+  'revision_conflict:3:3:true:5'
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.mutate_agent_memory(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',3,'edit',
+  null,
+  'enc:v2:3333333333333333333333333333333333333333333333333333333333333333:AA==:AA==:AA==',
+  repeat('2',64),128,null,false,null
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'same-content re-encryption advances revision without changing review status',
+  $$select concat(result->>'status',':',result->>'revision',':',result->>'memory_status',':',
+      (select concat(revision,':',status,':',content_sha256)
+         from public.agent_memories
+        where id=(select memory_id from aria_agent_memory_rpc_target)))
+    from aria_agent_memory_rpc_result$$,
+  'updated:4:rejected:4:rejected:' || repeat('2',64)
+);
+
+truncate aria_agent_memory_rpc_result;
+set local role service_role;
+insert into aria_agent_memory_rpc_result(result)
+select public.delete_agent_memory_content(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  (select memory_id from aria_agent_memory_rpc_target),
+  'a1000000-0000-4000-8000-000000000001',4,
+  'enc:v2:9999999999999999999999999999999999999999999999999999999999999999:AA==:AA==:AA==',
+  repeat('9',64),9
+);
+reset role;
+select aria_agent_memory_test.assert_scalar(
+  'secure delete replaces live content and retains only old hash audit evidence',
+  $$select concat(
+      result->>'status',':',result->>'revision',':',memory.revision,':',memory.status,':',
+      memory.content_sha256,':',memory.content_byte_count,':',
+      (memory.deleted_at is not null)::text,':',memory.pinned::text,':',
+      (memory.expires_at is null)::text,':',
+      event.event_type,':',event.memory_revision,':',event.content_sha256,':',event.metadata
+    )
+    from aria_agent_memory_rpc_result
+    join public.agent_memories as memory
+      on memory.id=(select memory_id from aria_agent_memory_rpc_target)
+    join public.agent_memory_events as event
+      on event.memory_id=memory.id and event.event_type='deleted'$$,
+  'deleted:5:5:deleted:' || repeat('9',64) || ':9:true:false:true:deleted:4:' || repeat('2',64) || ':{}'
+);
+
 -- The service-only function atomically creates the run, content-free receipt,
 -- and content-free memory-use event.
 select aria_agent_memory_test.assert_sqlstate(
@@ -288,6 +531,23 @@ select aria_agent_memory_test.assert_scalar(
       from public.agent_run_memory_context
      where run_id=(select id from public.agent_runs where spec_id='62000000-0000-4000-8000-000000000002' order by started_at desc limit 1)$$,
   '0'
+);
+
+-- Composite ON DELETE behavior must null only the optional seat reference and
+-- preserve the non-null tenant authority on every surviving AgentSpec.
+delete from public.agent_seats
+ where id='51000000-0000-4000-8000-000000000001'
+   and workspace_id='11111111-1111-4111-8111-111111111111';
+select aria_agent_memory_test.assert_scalar(
+  'seat deletion preserves AgentSpec workspace and clears only seat_id',
+  $$select concat(
+      count(*) filter (where workspace_id='11111111-1111-4111-8111-111111111111'),':',
+      count(*) filter (where seat_id is null)
+    ) from public.agent_specs where id in (
+      '61000000-0000-4000-8000-000000000001',
+      '62000000-0000-4000-8000-000000000002'
+    )$$,
+  '2:2'
 );
 
 rollback;

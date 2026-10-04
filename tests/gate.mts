@@ -216,7 +216,7 @@ for (const [i, msg] of MUST_PASS.entries()) {
     recipientAddress: "33612345678",
     type: "approved_template",
     permission: { ...optedIn, status: "opted_out" as const },
-    template: { name: "role_intro", language: "en_US" },
+    template: { name: "role_intro", language: "en_US", approved: true },
   });
   ok("WhatsApp policy: blocks opted-out recipient even for templates", optOut.allow === false && optOut.reason === "opted-out");
 

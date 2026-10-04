@@ -1,25 +1,37 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { createHash, randomUUID } from "crypto";
-import { sendViaProvider, type SendRequest } from "@/lib/providers";
-import { sendViaGmailApi, sendViaMicrosoftGraph } from "@/lib/email-oauth";
+import { randomUUID } from "crypto";
 import { domainVerified } from "@/lib/domain-verification";
+import { performEmailSend } from "@/lib/email-send";
+import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
-import type { EmailConnection, Role } from "@/lib/types";
+import type { Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
-import { dedupeHash, gateOutbound } from "@/lib/gate";
-import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
-import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
+import { gateOutbound } from "@/lib/gate";
+import {
+  getOutboundChannelPolicy,
+  resolveLinkedInDeliveryMode,
+} from "@/lib/linkedin-policy";
+import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
+import { isLinkedInAutomaticProvider, linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import {
+  extractLinkedInCredentialRefs,
+  resolveLinkedInCredentials,
+} from "@/lib/linkedin-credentials";
+import { evaluateSendPace } from "@/lib/send-pacing";
+import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
+import { defaultFleetSettings, startOfDayInTimeZone } from "@/lib/fleet";
+import type { AgentSeat } from "@/lib/types";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
-import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
-import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoAriaBotDisabled, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import type { LinkedInDeliveryMode } from "@/lib/types";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -27,6 +39,8 @@ const OutreachSendSchema = z.object({
   candidateId: z.string().min(1).max(120),
   candidateEmail: z.string().email().max(255).optional(),
   to: z.string().email().max(255).optional(),
+  /** LinkedIn profile URL for automatic LinkedIn delivery (scope + enqueue recipient). */
+  profileUrl: z.string().max(500).optional(),
   campaignId: z.string().min(1).max(120),
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),
@@ -71,16 +85,6 @@ export async function POST(req: NextRequest) {
   const payload = validated.data;
   const channel = payload.channel ?? "Email";
 
-  // LinkedIn is always an assisted-manual channel unless a separately approved
-  // official integration is implemented. Reject before any provider, approval,
-  // claim, or email fallback can make this look like a deliverable send.
-  const channelPolicy = getOutboundChannelPolicy(channel);
-  if (!channelPolicy.ok) {
-    return NextResponse.json(
-      { status: "manual-required", detail: channelPolicy.reason },
-      { status: 409 },
-    );
-  }
   if (channel === "SMS") {
     return NextResponse.json(
       {
@@ -101,6 +105,8 @@ export async function POST(req: NextRequest) {
   const { confirmLive } = payload;
 
   // DEMO mode: no server-side guardrails → never send.
+  // LinkedIn Manual still returns 409 below once we can read workspace deliveryMode;
+  // without Supabase we cannot resolve mode, so dry-run (nothing sent).
   if (!supabaseEnabled || !confirmLive) {
     return NextResponse.json({
       status: "dry-run",
@@ -141,8 +147,24 @@ export async function POST(req: NextRequest) {
     .select("state")
     .eq("workspace_id", approvalWid)
     .maybeSingle();
-  const campaigns = Array.isArray(record(workspaceState?.state)?.campaigns)
-    ? record(workspaceState?.state)?.campaigns as unknown[]
+  const stateRec = record(workspaceState?.state);
+  const fleetRec = record(record(stateRec?.settings)?.fleet);
+  const linkedInDeliveryMode: LinkedInDeliveryMode = resolveLinkedInDeliveryMode(
+    typeof fleetRec?.deliveryMode === "string" ? fleetRec.deliveryMode : undefined,
+  );
+
+  // LinkedIn Manual → assisted paste/confirm (409). Automatic (default) continues
+  // to the entitled vendor/API queue path below — never scrape/session bots.
+  const channelPolicy = getOutboundChannelPolicy(channel, { deliveryMode: linkedInDeliveryMode });
+  if (!channelPolicy.ok) {
+    return NextResponse.json(
+      { status: "manual-required", detail: channelPolicy.reason },
+      { status: 409 },
+    );
+  }
+
+  const campaigns = Array.isArray(stateRec?.campaigns)
+    ? stateRec?.campaigns as unknown[]
     : [];
   const campaign = campaigns.find((item) => record(item)?.id === campaignId);
   const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
@@ -154,10 +176,26 @@ export async function POST(req: NextRequest) {
     );
   }
   const approvedContentHash = approvalHash(subject, body);
+  const linkedInProfile =
+    channel === "LinkedIn"
+      ? normalizeLinkedInProfileUrl(
+          (payload.profileUrl ?? "").trim() ||
+            (() => {
+              const candidates = Array.isArray(stateRec?.candidates) ? (stateRec.candidates as unknown[]) : [];
+              const cand = candidates.find((item) => record(item)?.id === candidateId);
+              return String(record(cand)?.linkedinUrl ?? "");
+            })(),
+        )
+      : null;
   const approvedScopeHash = approvalScopeHash({
     candidateId,
     channel,
-    recipient: channel === "WhatsApp" ? payload.phone ?? "" : candidateEmail,
+    recipient:
+      channel === "WhatsApp"
+        ? payload.phone ?? ""
+        : channel === "LinkedIn"
+          ? linkedInProfile ?? ""
+          : candidateEmail,
   });
   if (!approvedScopeHash) {
     return NextResponse.json({ status: "error", detail: "Invalid approved recipient." }, { status: 400 });
@@ -197,6 +235,321 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "error", detail: "Missing seatId." }, { status: 400 });
   }
 
+  // LinkedIn Automatic: durable outbox + vendor-api dispatcher (same shape as WhatsApp).
+  // Manual mode already returned 409 above. Never falls back to assisted-manual paste.
+  if (channel === "LinkedIn") {
+    if (!linkedInProfile) {
+      return NextResponse.json(
+        { status: "error", detail: "A valid LinkedIn profile URL is required for automatic delivery." },
+        { status: 400 },
+      );
+    }
+    const { data: liSeat } = await supabase
+      .from("agent_seats")
+      .select("id, provider, status, mode, computer_id, assigned_campaign_ids")
+      .eq("id", seatId)
+      .maybeSingle();
+    if (!liSeat) {
+      return NextResponse.json({ status: "error", detail: "Seat not found in your workspace." }, { status: 403 });
+    }
+    if (liSeat.status !== "active") {
+      return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
+    }
+    if (liSeat.mode !== "live") {
+      return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
+    }
+    if (liSeat.provider !== "LinkedIn Vendor API" && liSeat.provider !== "LinkedIn Browser Computer") {
+      return NextResponse.json(
+        {
+          status: "error",
+          detail:
+            "Automatic LinkedIn delivery requires a live LinkedIn Vendor API or LinkedIn Browser Computer seat. Connect an entitled adapter in Settings → LinkedIn, or switch to Manual approve-and-send.",
+          settingsPath: "/settings?tab=integrations#linkedin-outreach-stack",
+        },
+        { status: 503 },
+      );
+    }
+    // Browser Computer + Vendor: campaign attach required (empty BC ≠ shared pool;
+    // Vendor empty remains shared; foreign assigned refuses both).
+    if (liSeat.provider === "LinkedIn Browser Computer" || liSeat.provider === "LinkedIn Vendor API") {
+      const assigned = Array.isArray(liSeat.assigned_campaign_ids)
+        ? liSeat.assigned_campaign_ids.filter((id): id is string => typeof id === "string")
+        : [];
+      const attached =
+        liSeat.provider === "LinkedIn Browser Computer"
+          ? Boolean(campaignId && assigned.includes(campaignId))
+          : !campaignId
+            ? false
+            : assigned.length === 0 || assigned.includes(campaignId);
+      if (!attached) {
+        return NextResponse.json(
+          {
+            status: "error",
+            detail:
+              liSeat.provider === "LinkedIn Browser Computer"
+                ? "This Browser Computer seat is not attached to the campaign. Attach it under Campaign Agents before send."
+                : "This LinkedIn Vendor API seat is not attached to the campaign. Attach it under Campaign Agents before send.",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    let browserSessionHealthy: boolean | null = null;
+    let browserComputerRec: ReturnType<typeof defaultComputerSupervisor.get> | undefined;
+    if (liSeat.provider === "LinkedIn Browser Computer") {
+      const boundId = String(liSeat.computer_id ?? "").trim();
+      if (boundId) {
+        try {
+          const hydrated = defaultComputerSupervisor.hydrateComputer({
+            workspaceId: String(approvalWid),
+            seatId,
+            computerId: boundId,
+          });
+          // Cold Send instance Map has no probe — restore durable session_probe
+          // so pace matches Floor/Fleet green (never invent healthy).
+          await defaultComputerSupervisor.hydrateFromHost(String(approvalWid));
+          await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(
+            String(approvalWid),
+          );
+          // Only trust health from a successful seat-owned hydrate. Never
+          // get(computer_id) after ownership/orphan throw — that can pick up a
+          // foreign/orphan sessionHealthy=true and green pace theater.
+          browserComputerRec = hydrated
+            ? defaultComputerSupervisor.get(hydrated.computerId)
+            : undefined;
+          browserSessionHealthy = browserComputerRec?.sessionHealthy ?? null;
+        } catch {
+          browserSessionHealthy = null;
+          browserComputerRec = undefined;
+        }
+      }
+    }
+
+    // Human pacing — refuse before queue so deferred sends never look like success.
+    const seatsArr = Array.isArray(stateRec?.seats) ? (stateRec.seats as unknown[]) : [];
+    const seatState = seatsArr
+      .map((item) => record(item))
+      .find((item) => item?.id === seatId) as AgentSeat | undefined;
+    if (
+      liSeat.provider === "LinkedIn Browser Computer" &&
+      !seatState
+    ) {
+      // Fail closed: Browser Computer pacing needs the Hermes seat snapshot.
+      return NextResponse.json(
+        {
+          status: "deferred",
+          detail:
+            "Seat snapshot required for Browser Computer pacing (daily cap / gap / sessionHealthy).",
+          paceReason: "seat_missing",
+          nextEligibleAt: null,
+        },
+        { status: 429 },
+      );
+    }
+    if (seatState) {
+      const fleetSettings = {
+        ...defaultFleetSettings(),
+        ...(fleetRec as Record<string, unknown>),
+      } as ReturnType<typeof defaultFleetSettings>;
+      // Mirror dispatch soft-gates so enqueue cannot 202 while dispatch forever defers.
+      if (liSeat.provider === "LinkedIn Browser Computer") {
+        if (fleetSettings.browserAgentPermissionMode === "manual") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "Manual permission mode — Take control to send, then Release.",
+              paceReason: "manual_permission_mode",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+        if (browserComputerRec?.control === "human") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "Human has control of this computer — Release before send.",
+              paceReason: "human-has-control",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+        if (browserComputerRec?.status === "help_requested") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "help_requested — Take control, finish LinkedIn login, then Release.",
+              paceReason: "help_requested",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+        if (browserComputerRec?.status === "starting") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "Computer is still starting — retry shortly.",
+              paceReason: "computer_starting",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+      }
+      // Hermes queued path never bumps sentToday — hydrate from durable ledger (CET day).
+      let paceSeat = seatState;
+      if (liSeat.provider === "LinkedIn Browser Computer") {
+        const dayStart = startOfDayInTimeZone(new Date(), "CET");
+        const [{ data: lastRow }, { count: todayCount }] = await Promise.all([
+          supabase
+            .from("outreach_ledger")
+            .select("at")
+            .eq("seat_id", seatId)
+            .eq("workspace_id", approvalWid)
+            .in("status", ["claimed", "sent", "ambiguous"])
+            .order("at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("outreach_ledger")
+            .select("id", { count: "exact", head: true })
+            .eq("seat_id", seatId)
+            .eq("workspace_id", approvalWid)
+            .in("status", ["claimed", "sent", "ambiguous"])
+            .gte("at", dayStart.toISOString()),
+        ]);
+        paceSeat = {
+          ...seatState,
+          lastSendAt:
+            lastRow && typeof (lastRow as { at?: string }).at === "string"
+              ? (lastRow as { at: string }).at
+              : null,
+          sentToday: typeof todayCount === "number" ? todayCount : 0,
+        };
+      }
+      const pace = evaluateSendPace({
+        seat: paceSeat,
+        settings: fleetSettings,
+        // Browser Computer: fail closed unless probed true (undefined would skip the check).
+        sessionHealthy:
+          liSeat.provider === "LinkedIn Browser Computer" ? browserSessionHealthy : undefined,
+      });
+      if (!pace.ok) {
+        return NextResponse.json(
+          {
+            status: "deferred",
+            detail: pace.detail ?? "Send deferred by pacing.",
+            paceReason: pace.reason,
+            nextEligibleAt: pace.nextEligibleAt ?? null,
+          },
+          { status: 429 },
+        );
+      }
+    }
+
+    const adapter = linkedInAdapterForProvider(liSeat.provider);
+    const linkedInCreds = await resolveLinkedInCredentials(
+      extractLinkedInCredentialRefs(stateRec?.settings),
+    );
+    if (!adapter?.configured(linkedInCreds)) {
+      return NextResponse.json(
+        {
+          status: "error",
+          detail:
+            "No live LinkedIn automatic adapter is configured for this seat (add Vendor API / Computer Supervisor keys in Settings → LinkedIn, or set LINKEDIN_VENDOR_* / COMPUTER_SUPERVISOR_*). Automatic send refused.",
+          settingsPath: "/settings?tab=integrations#linkedin-outreach-stack",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (publicDemoAriaBotDisabled()) {
+      return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+    }
+
+    const { data: queuedData, error: queueErr } = await supabase.rpc("enqueue_linkedin_outbound", {
+      p_message_id: payload.messageId,
+      p_candidate_id: candidateId,
+      p_campaign_id: campaignId,
+      p_seat_id: seatId,
+      p_profile_url: linkedInProfile,
+      p_subject: subject,
+      p_body: body,
+    });
+    const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
+    if (queueErr || queued?.ok !== true || queued.status !== "queued" || !queued.id) {
+      if (queued?.reason === "duplicate") {
+        return NextResponse.json({ status: "skipped", detail: "This LinkedIn message is already queued or was sent." });
+      }
+      if (queued?.reason === "suppressed") {
+        return NextResponse.json({ status: "skipped", detail: "Recipient is on the LinkedIn suppression / do-not-contact list." });
+      }
+      safeLog("linkedin outbox queue error", {
+        message: queueErr?.message ?? queued?.reason ?? "no result",
+        code: queueErr?.code,
+      });
+      return NextResponse.json(
+        { status: "error", detail: queued?.reason ?? "Could not queue the LinkedIn message." },
+        { status: 500 },
+      );
+    }
+    const dispatcher = getServiceSupabase();
+    if (dispatcher) {
+      try {
+        await dispatchDue(dispatcher, 1, queued.id);
+      } catch (err) {
+        safeLog("linkedin immediate dispatch error", { message: err instanceof Error ? err.message : "unknown" });
+      }
+
+      const { data: dispatched, error: dispatchedErr } = await dispatcher
+        .from("messages_outbound")
+        .select("status")
+        .eq("id", queued.id)
+        .maybeSingle();
+      if (dispatched?.status === "sent") {
+        return NextResponse.json({ status: "sent", detail: "Sent through the policy-checked LinkedIn vendor dispatcher." });
+      }
+      if (dispatched?.status === "blocked") {
+        return NextResponse.json({ status: "skipped", detail: "LinkedIn policy blocked this message before delivery." });
+      }
+      if (dispatched?.status === "failed") {
+        return NextResponse.json({ status: "error", detail: "LinkedIn delivery failed after the policy checks." }, { status: 502 });
+      }
+      if (dispatched?.status === "dispatching") {
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "linkedin-reconciliation-required",
+            messageId: queued.id,
+            detail: "LinkedIn provider acceptance is not yet reconciled. Do not retry this message.",
+          },
+          { status: 502 },
+        );
+      }
+      if (dispatchedErr || !dispatched || dispatched.status !== "queued") {
+        safeLog("linkedin immediate dispatch state unavailable", { message: dispatchedErr?.message ?? "no outbox row" });
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "linkedin-reconciliation-required",
+            messageId: queued.id,
+            detail: "LinkedIn delivery state could not be confirmed. Do not retry this message.",
+          },
+          { status: 502 },
+        );
+      }
+    }
+    return NextResponse.json({
+      status: "queued",
+      delivery: "linkedin-delivery-queued",
+      messageId: queued.id,
+      detail: "Queued for policy-checked LinkedIn vendor delivery. No message was sent by this request.",
+    }, { status: 202 });
+  }
+
   // WhatsApp never calls Meta from this request handler. The approved message
   // becomes a durable outbox row, then the service-only dispatcher re-checks
   // consent, DNC, window/template, and the human approval inside one DB claim.
@@ -232,32 +585,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
     }
 
-    const { data: queued, error: queueErr } = await supabase
-      .from("messages_outbound")
-      .insert({
-        workspace_id: approvalWid,
-        candidate_id: candidateId,
-        seat_id: seatId,
-        channel: "WhatsApp",
-        to_address: recipientE164,
-        recipient_e164: recipientE164,
-        approval_message_id: payload.messageId,
-        type: "candidate_reply",
-        subject,
-        body,
-        status: "queued",
-        gate_result: { pass: true, reasons: [] },
-        content_hash: createHash("sha256").update(body, "utf8").digest("hex"),
-        dedupe_hash: dedupeHash(candidateId, "WhatsApp", body),
-        scheduled_at: new Date().toISOString(),
-      })
-      .select("id")
-      .maybeSingle();
-    if (queueErr || !queued) {
-      if (queueErr?.code === "23505") {
+    const { data: queuedData, error: queueErr } = await supabase.rpc("enqueue_whatsapp_outbound", {
+      p_message_id: payload.messageId,
+      p_candidate_id: candidateId,
+      p_campaign_id: campaignId,
+      p_seat_id: seatId,
+      p_recipient: recipientE164,
+      p_type: "candidate_reply",
+      p_subject: subject,
+      p_body: body,
+      p_template_id: null,
+      p_template_parameters: [],
+    });
+    const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
+    if (queueErr || queued?.ok !== true || queued.status !== "queued" || !queued.id) {
+      if (queued?.reason === "duplicate") {
         return NextResponse.json({ status: "skipped", detail: "This WhatsApp message is already queued or was sent." });
       }
-      safeLog("whatsapp outbox queue error", { message: queueErr?.message ?? "no row", code: queueErr?.code });
+      safeLog("whatsapp outbox queue error", {
+        message: queueErr?.message ?? queued?.reason ?? "no result",
+        code: queueErr?.code,
+      });
       return NextResponse.json({ status: "error", detail: "Could not queue the WhatsApp message." }, { status: 500 });
     }
     const dispatcher = getServiceSupabase();
@@ -353,11 +701,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: "Domain not verified (SPF/DKIM/DMARC), dry-run." });
   }
 
-  // 3b. Server-side suppression / do-not-contact gate — enforced BEFORE any send
-  // and before the atomic claim. `suppression_list` (RLS-scoped to the caller's
-  // workspace) is the only DNC source reachable server-side; candidate-level
-  // compliance flags live solely in the client store and cannot be enforced here.
-  // claim_and_record re-checks this atomically; this is explicit defence-in-depth.
+  // 4. Synchronous, policy-checked send — the interactive "Send" button delivers
+  // NOW and returns "sent". It uses claim_email_outbound (0011, already deployed)
+  // so it works against the live schema, and performEmailSend (the shared send
+  // primitive) so the actual provider call is gate-identical to the worker path.
+  // (The durable enqueue/dispatch path — 0039 — is the autonomous WORKER's route
+  // for browser-closed sending; it is NOT this request, and must not gate the
+  // button on migrations that may not be applied yet.)
   const emailLc = candidateEmail.toLowerCase();
   const domainLc = emailLc.split("@")[1] ?? "";
   const { data: suppRows, error: suppErr } = await supabase
@@ -370,16 +720,14 @@ export async function POST(req: NextRequest) {
     safeLog("suppression_list check error", { message: suppErr.message, code: suppErr.code });
     return NextResponse.json({ status: "error", detail: "Suppression check failed." }, { status: 500 });
   }
-  const suppressed = (suppRows ?? []).some((s) => {
+  if ((suppRows ?? []).some((s) => {
     const v = String(s.value).toLowerCase();
     return (s.type === "email" && v === emailLc) || (s.type === "domain" && domainLc !== "" && v === domainLc);
-  });
-  if (suppressed) {
+  })) {
     return NextResponse.json({ status: "skipped", detail: "Recipient is on the suppression / do-not-contact list." });
   }
 
-  // Live email is disabled unless every recipient receives a real public
-  // one-click unsubscribe link. There is no provider-only fallback.
+  // Live email requires a real one-click unsubscribe link — no provider-only fallback.
   const unsubscribe = createEmailUnsubscribeLink();
   if (!unsubscribe) {
     return NextResponse.json(
@@ -388,9 +736,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. Atomic approval + guardrail claim. The function locks the active human
-  // approval and creates the ledger claim in one transaction, so a revoke cannot
-  // land between client-visible approval validation and provider dispatch.
+  // Atomic approval + guardrail claim: locks the active human approval and creates
+  // the ledger claim in one transaction, so a revoke cannot land between the
+  // client-visible approval validation and the provider dispatch.
   const { data: claim, error: claimErr } = await supabase.rpc("claim_email_outbound", {
     p_message_id: payload.messageId,
     p_body_hash: approvedContentHash,
@@ -401,44 +749,35 @@ export async function POST(req: NextRequest) {
     p_seat_id: seatId,
   });
   if (claimErr) {
-    safeLog("claim_and_record error", { message: claimErr.message, code: claimErr.code });
+    safeLog("claim_email_outbound error", { message: claimErr.message, code: claimErr.code });
     return NextResponse.json({ status: "error", detail: "Guardrail check failed." }, { status: 500 });
   }
   const claimObj = claim as { allowed?: boolean; reason?: string; ledger_id?: string } | null;
   if (claimObj?.allowed !== true) {
     return NextResponse.json({ status: "skipped", detail: `Guardrail blocked: ${claimObj?.reason ?? "blocked by guardrails"}` });
   }
-  // The claim is recorded as 'claimed' (holds the de-dupe slot). We reconcile it
-  // after the provider actually responds: 'sent' on acceptance, 'skipped' for a
-  // proven pre-transport failure (retryable — never counts as contacted), or
-  // 'ambiguous' when the outcome is unknown after transport began. 'ambiguous'
-  // keeps the de-dupe slot (the partial unique indexes include it) and is only
-  // ever released by a human — retrying an unknown acceptance could deliver the
-  // same approved message twice.
   const ledgerId = claimObj.ledger_id;
   const reconcile = async (status: "sent" | "skipped" | "ambiguous", reason: string | null) => {
     if (ledgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", ledgerId);
   };
-  // Immutable per-attempt identity, generated BEFORE any provider call and
-  // stamped on the claimed row via the service client below (clients hold no
-  // update grant on it). It travels to the provider as an X-Aria-Send-Attempt
-  // header, so a human can match an ambiguous attempt against provider logs.
-  const sendAttemptId = randomUUID();
 
-  // Token hashes are service-only data. Bind this exact recipient token to the
-  // just-claimed ledger before touching any provider; failure releases the claim
-  // and sends nothing.
+  // Immutable per-attempt identity, stamped on the ledger before any provider call
+  // and travelling as the X-Aria-Send-Attempt header + MIME Message-ID.
+  const sendAttemptId = randomUUID();
   const serviceSupabase = getServiceSupabase();
   if (!serviceSupabase || !ledgerId) {
-    await reconcile("skipped", "Unsubscribe token storage is unavailable.");
-    return NextResponse.json(
-      { status: "error", detail: "Email delivery is unavailable until unsubscribe storage is configured." },
-      { status: 503 },
-    );
+    await reconcile("skipped", "Send service unavailable.");
+    return NextResponse.json({ status: "error", detail: "Email delivery is unavailable (service client)." }, { status: 503 });
   }
+  // The RFC 5322 Message-ID travels in the MIME header AND is stamped on the
+  // ledger so a later bounce/complaint delivery webhook can correlate this
+  // synchronous send (which never creates a messages_outbound row) and suppress
+  // the address. Stamped before the provider call so even an ambiguous outcome
+  // stays correlatable.
+  const rfcMessageId = `<${sendAttemptId}@${seat.operator_email.split("@")[1] ?? "mail"}>`;
   const { data: tokenBound, error: tokenBindErr } = await serviceSupabase
     .from("outreach_ledger")
-    .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash, send_attempt_id: sendAttemptId })
+    .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash, send_attempt_id: sendAttemptId, rfc_message_id: rfcMessageId })
     .eq("id", ledgerId)
     .eq("workspace_id", approvalWid)
     .is("email_unsubscribe_token_hash", null)
@@ -447,142 +786,63 @@ export async function POST(req: NextRequest) {
   if (tokenBindErr || !tokenBound) {
     safeLog("email unsubscribe token bind error", { message: tokenBindErr?.message ?? "no ledger row" });
     await reconcile("skipped", "Unsubscribe token storage failed.");
-    return NextResponse.json(
-      { status: "error", detail: "Email delivery could not prepare the unsubscribe link." },
-      { status: 503 },
-    );
+    return NextResponse.json({ status: "error", detail: "Email could not prepare the unsubscribe link." }, { status: 503 });
   }
 
-  // 5. Send — From is the SEAT's verified mailbox, never the request body.
-  // `transportStarted` separates a proven pre-transport throw (connection
-  // lookup, secret decryption — safe to retry) from a throw once a provider
-  // call is possible (the provider may already hold the message — never retry).
-  let transportStarted = false;
-  try {
-    let outcome: {
-      status: "sent" | "dry-run" | "error";
-      deliveryState?: "accepted" | "not-sent" | "unknown";
-      provider: string;
-      detail: string;
-      id?: string;
-    };
-
-    if (seat.provider === "Gmail API" || seat.provider === "Microsoft Graph") {
-      const svc = serviceSupabase;
-      // Defence-in-depth workspace check: resolve the caller's workspace_id via
-      // the RPC (same pattern as hermes/chat resolveVaultSecret), then verify
-      // the service-role result matches — RLS alone is not sufficient when the
-      // service role bypasses row-level policies.
-      const { data: wid } = await supabase.rpc("current_workspace_id");
-      const { data: conn } = await svc
-        ?.from("email_connections")
-        .select("id, access_token, refresh_token, expires_at, scope, account_email, workspace_id")
-        .eq("seat_id", seatId)
-        .single() ?? { data: null };
-      if (!conn || conn.workspace_id !== wid) {
-        await reconcile("skipped", `${seat.provider} mailbox not connected.`);
-        return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected, dry-run.` });
-      }
-      // Tokens are stored encrypted at rest; decrypt for use. Keep the decrypted
-      // original to detect a refresh below.
-      const origAccessToken = decryptSecret(conn.access_token);
-      const connection: EmailConnection = {
-        id: conn.id,
-        seatId,
-        provider: seat.provider,
-        accountEmail: conn.account_email,
-        accessToken: origAccessToken,
-        refreshToken: conn.refresh_token ? decryptSecret(conn.refresh_token) : conn.refresh_token,
-        expiresAt: conn.expires_at,
-        scope: conn.scope,
-        connectedAt: "",
-        updatedAt: "",
-      };
-
-      transportStarted = true;
-      if (seat.provider === "Gmail API") {
-        outcome = await sendViaGmailApi({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url, attemptId: sendAttemptId }, connection);
-      } else {
-        outcome = await sendViaMicrosoftGraph({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url, attemptId: sendAttemptId }, connection);
-      }
-      // Reconcile an accepted send BEFORE any post-send bookkeeping. A throw
-      // while persisting the refreshed token must never mark a delivered email
-      // 'skipped' — that would free the de-dupe slot and invite a duplicate.
-      if (outcome.status === "sent") await reconcile("sent", null);
-
-      // Persist refreshed token if it changed. Fail closed: never write a refreshed
-      // token in cleartext when production requires encryption at rest but no key is
-      // configured — skip the persist (the send itself already happened above)
-      // rather than silently degrade the stored credential to plaintext.
-      if (
-        svc &&
-        (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
-        !encryptionRequiredButMissing()
-      ) {
-        try {
-          await svc
-            .from("email_connections")
-            .update({ access_token: encryptSecret(connection.accessToken), expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
-            .eq("id", connection.id);
-        } catch (persistErr) {
-          // Storage-only failure after the send outcome is known: log and move
-          // on. The next send simply refreshes the token again.
-          safeLog("email refreshed token persist error", { message: persistErr instanceof Error ? persistErr.message : "unknown" });
-        }
-      }
-    } else {
-      transportStarted = true;
-      outcome = await sendViaProvider({
-        provider: seat.provider as SendRequest["provider"],
-        from: seat.operator_email,
-        to: candidateEmail,
-        subject,
-        body,
-        unsubscribeUrl: unsubscribe.url,
-        attemptId: sendAttemptId,
-      });
-      if (outcome.status === "sent") await reconcile("sent", null);
-    }
-
-    if (outcome.status === "sent") return NextResponse.json(outcome);
-    if (outcome.status === "dry-run" || outcome.deliveryState === "not-sent") {
-      // Proven pre-transport failure (or an intentional dry-run): the provider
-      // definitively never accepted this message, so the slot is retryable.
-      await reconcile("skipped", outcome.detail);
-      return NextResponse.json(outcome);
-    }
-    // Any other failure (deliveryState 'unknown' — or absent, which fails
-    // closed) may follow provider acceptance: a timeout or 5xx can arrive after
-    // the message was queued for delivery. Park the claim as 'ambiguous' so it
-    // keeps holding the de-dupe slot until a human reconciles it against the
-    // provider's logs using the send_attempt_id.
-    await reconcile("ambiguous", outcome.detail);
-    return NextResponse.json(
+  const reconciliationRequired = () =>
+    NextResponse.json(
       {
         status: "reconciliation-required",
         delivery: "email-reconciliation-required",
         sendAttemptId,
-        detail: "Email provider acceptance is not yet reconciled. Do not retry this message.",
+        detail: "Email delivery state could not be confirmed. Do not retry this message.",
       },
       { status: 502 },
     );
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "Send failed.";
-    if (transportStarted) {
-      // Unknown post-transport outcome — the provider may have accepted the
-      // message before the failure. Fail closed: hold the slot, never retry.
-      await reconcile("ambiguous", detail);
-      return NextResponse.json(
-        {
-          status: "reconciliation-required",
-          delivery: "email-reconciliation-required",
-          sendAttemptId,
-          detail: "Email delivery state could not be confirmed. Do not retry this message.",
-        },
-        { status: 502 },
-      );
+  let transportStarted = false;
+  try {
+    // 5. Send — From is the SEAT's verified mailbox, never the request body.
+    transportStarted = true;
+    const outcome = await performEmailSend(serviceSupabase, {
+      workspaceId: approvalWid,
+      seatId,
+      provider: seat.provider,
+      operatorEmail: seat.operator_email,
+      to: candidateEmail,
+      subject,
+      body,
+      unsubscribeUrl: unsubscribe.url,
+      attemptId: sendAttemptId,
+      rfcMessageId,
+    });
+
+    if (outcome.status === "sent" && outcome.deliveryState === "accepted") {
+      await reconcile("sent", null);
+      return NextResponse.json({ status: "sent", detail: outcome.detail });
     }
-    await reconcile("skipped", detail); // provably pre-transport → free the slot
-    return NextResponse.json({ status: "error", detail }, { status: 500 });
+    if (outcome.deliveryState === "not-sent") {
+      // Proven pre-transport failure, or a dry-run (provider unconfigured): the
+      // provider definitively never accepted, so the de-dupe slot is retryable.
+      await reconcile("skipped", outcome.detail);
+      return NextResponse.json({ status: outcome.status === "dry-run" ? "dry-run" : "error", detail: outcome.detail });
+    }
+    // deliveryState 'unknown' — a timeout/5xx may have followed acceptance. Hold the
+    // slot as 'ambiguous' for human reconciliation; never retry (double-send risk).
+    await reconcile("ambiguous", outcome.detail);
+    return reconciliationRequired();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Email send reconciliation failed.";
+    if (transportStarted) {
+      try {
+        await reconcile("ambiguous", detail);
+      } catch (reconcileErr) {
+        safeLog("email ambiguous reconciliation failed", {
+          message: reconcileErr instanceof Error ? reconcileErr.message : "unknown",
+        });
+      }
+      return reconciliationRequired();
+    }
+    await reconcile("skipped", detail);
+    return NextResponse.json({ status: "error", detail });
   }
 }

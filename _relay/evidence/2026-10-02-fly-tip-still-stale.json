@@ -1,0 +1,41 @@
+{
+  "probedAt": "2026-10-03T00:45:00Z",
+  "tipShaExpected": "692997a",
+  "appReadyHttp": 503,
+  "appReady": {
+    "ok": false,
+    "status": "not_ready",
+    "build": "21a42e7da6c271758ea4cade91c8d5658032832d",
+    "migration": "0084_agent_seats_computer_id_unique.sql",
+    "components": {
+      "database": true,
+      "auth": true,
+      "queue": true,
+      "agentFrameworks": false,
+      "hermesRuntime": true,
+      "migration": true,
+      "releaseIdentity": true
+    }
+  },
+  "computersHealthHttp": 200,
+  "computersHealth": {
+    "ok": true,
+    "computers": 0,
+    "headed": true,
+    "max": 5,
+    "desktop": true,
+    "stream": "x11vnc+novnc",
+    "multitab": true,
+    "liveView": "desktop-vm",
+    "input": "novnc+x11",
+    "sessions": true,
+    "stealth": true,
+    "proxy": false,
+    "locale": "en-US",
+    "timezone": "America/Montreal"
+  },
+  "flyDeployTokensPresent": false,
+  "ok": false,
+  "blocker": "Fly app still on build 21a42e7 with agentFrameworks=false; no deploy token. Computers host up with 0 VMs.",
+  "note": "sessionHealthy:true still requires operator Take→login→Release after tip deploy"
+}

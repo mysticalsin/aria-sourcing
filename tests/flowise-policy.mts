@@ -12,10 +12,8 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-const allowed = getFlowiseProxyPolicy("POST", ["prediction", "flow_123"]);
-ok("allows only a POST prediction for a concrete flow ID", allowed.ok === true && allowed.flowId === "flow_123");
-
 for (const [method, path] of [
+  ["POST", ["prediction", "flow_123"]],
   ["GET", ["prediction", "flow_123"]],
   ["PUT", ["prediction", "flow_123"]],
   ["DELETE", ["prediction", "flow_123"]],
@@ -32,9 +30,13 @@ const proxyRoute = readFileSync(new URL("../src/app/api/flowise/[...path]/route.
 const specRoute = readFileSync(new URL("../src/app/api/agents/specs/route.ts", import.meta.url), "utf8");
 const studio = readFileSync(new URL("../src/app/studio/page.tsx", import.meta.url), "utf8");
 
-ok("proxy verifies the flow belongs to an ARIA agent spec", proxyRoute.includes('from("agent_specs")') && proxyRoute.includes('eq("flowise_chatflow_id", policy.flowId)'));
+ok(
+  "the public Flowise proxy is fail-closed until server-owned tenant bindings exist",
+  proxyRoute.includes("FLOWISE_PUBLIC_PROXY_DISABLED") && !proxyRoute.includes("await fetch("),
+);
 ok("proxy no longer exposes Flowise API-key operations", !proxyRoute.includes('"apikey"'));
 ok("agent specs do not disclose a public Flowise URL", !specRoute.includes("FLOWISE_PUBLIC_URL"));
+ok("operators cannot create or patch raw Flowise identifiers", !specRoute.includes("flowise_chatflow_id"));
 ok("studio does not open the Flowise workbench directly", !studio.includes("window.open(flowiseUrl"));
 
 console.log(`RESULT flowise-policy: ${pass} passed, ${fail} failed`);

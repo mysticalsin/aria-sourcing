@@ -32,15 +32,78 @@ import {
 } from "@/lib/whatsapp-template-queue";
 import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-policy";
 import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
-import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import {
+  publicDemoAriaBotEnabled,
+  publicDemoSideEffectsDisabled,
+} from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { performEmailSend } from "@/lib/email-send";
+import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
+import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import {
+  loadLinkedInCredentialRefsForWorkspace,
+  resolveLinkedInCredentialsForWorkspace,
+} from "@/lib/linkedin-credentials";
+import { AGENT_SEAT_SELECT, agentSeatRowToSeat, type AgentSeatRow } from "@/lib/fleet-seats";
+import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import { defaultFleetSettings, defaultSendWindow, startOfDayInTimeZone } from "@/lib/fleet";
+import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
+import { evaluateSendPace } from "@/lib/send-pacing";
+import type { AgentSeat, FleetSettings, SendWindow } from "@/lib/types";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** Hermes fleet settings from workspace_state — Manual/BH/jitter must reach deliver. */
+function fleetSettingsFromHermesState(state: unknown): FleetSettings {
+  const fleetRec = record(record(record(state)?.settings)?.fleet);
+  if (!fleetRec) return defaultFleetSettings();
+  const permission =
+    fleetRec.browserAgentPermissionMode === "manual" ||
+    fleetRec.browserAgentPermissionMode === "skip" ||
+    fleetRec.browserAgentPermissionMode === "auto"
+      ? fleetRec.browserAgentPermissionMode
+      : undefined;
+  return {
+    ...defaultFleetSettings(),
+    ...fleetRec,
+    deliveryMode: fleetRec.deliveryMode === "manual" ? "manual" : "automatic",
+    ...(permission ? { browserAgentPermissionMode: permission } : {}),
+  } as FleetSettings;
+}
+
+function sendWindowFromUnknown(value: unknown): SendWindow | null {
+  const rec = record(value);
+  if (!rec) return null;
+  const startHour = Number(rec.startHour);
+  const endHour = Number(rec.endHour);
+  const timezone = typeof rec.timezone === "string" ? rec.timezone.trim() : "";
+  const days = Array.isArray(rec.days)
+    ? rec.days.filter((d): d is number => typeof d === "number" && d >= 0 && d <= 6)
+    : [];
+  if (!timezone || !Number.isFinite(startHour) || !Number.isFinite(endHour) || days.length === 0) {
+    return null;
+  }
+  return { startHour, endHour, timezone, days };
+}
+
+/** Overlay Hermes seat pacing fields (sendWindow) onto the durable DB seat. */
+function hermesSeatOverlay(
+  seat: AgentSeat,
+  state: unknown,
+): Pick<AgentSeat, "sendWindow"> {
+  const seats = record(state)?.seats;
+  if (!Array.isArray(seats)) return { sendWindow: seat.sendWindow ?? defaultSendWindow() };
+  const match = seats.find((item) => record(item)?.id === seat.id);
+  const window = sendWindowFromUnknown(record(match)?.sendWindow);
+  return { sendWindow: window ?? seat.sendWindow ?? defaultSendWindow() };
 }
 
 function disclosureInternalFromBrief(value: unknown): Parameters<typeof validateCandidateBoundText>[1] {
@@ -63,6 +126,20 @@ export interface DispatchStats {
 }
 
 type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
+
+async function loopSendControlsPermit(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("sourcing_loop_controls")
+    .select("kill_switch, sequences_enabled")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (error) {
+    safeLog("dispatch-outbound: loop controls lookup error", { message: error.message });
+    return false;
+  }
+  const controls = record(data);
+  return controls?.kill_switch === false && controls.sequences_enabled === true;
+}
 
 /**
  * Maps a Twilio result to the durable ledger state used if SMS is enabled in a
@@ -112,15 +189,22 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
   const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0, unconfigured: 0 };
 
   // A public demo may still use a real Supabase database. Never let a queued
-  // row from that shared environment reach a provider, regardless of caller.
-  if (publicDemoSideEffectsDisabled()) return stats;
+  // row from that shared environment reach a third-party provider. AriaBot
+  // LinkedIn Browser Computer is allowed when ENABLE_PUBLIC_DEMO_ARIABOT=true.
+  const demoBlocked = publicDemoSideEffectsDisabled();
+  const ariaBotLive = publicDemoAriaBotEnabled();
+  if (demoBlocked && !ariaBotLive) return stats;
 
   let dueQuery = supabase
     .from("messages_outbound")
-    .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
+    .select("id, workspace_id, spec_id, campaign_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
     .eq("status", "queued")
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
+  // Showcase escape hatch: only LinkedIn (AriaBot) may leave the outbox.
+  if (demoBlocked && ariaBotLive) {
+    dueQuery = dueQuery.eq("channel", "LinkedIn");
+  }
   const { data: due, error: dueErr } = await dueQuery
     .order("scheduled_at", { ascending: true })
     .limit(limit);
@@ -131,6 +215,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   for (const msg of due ?? []) {
     stats.processed++;
+    if (!(await loopSendControlsPermit(supabase, msg.workspace_id))) continue;
     let deliveryAttemptId: string | null = null;
     const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown, countAs?: DispatchOutcomeCounter) => {
       const reopenReview =
@@ -238,18 +323,35 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       const approvalMessageId = msg.approval_message_id ?? msg.id;
       const { data: approval } = await supabase
         .from("outreach_approvals")
-        .select("body_hash, approval_source, revoked_at")
+        .select("body_hash, approval_source, revoked_at, approved_by, template_id")
         .eq("workspace_id", msg.workspace_id)
         .eq("message_id", approvalMessageId)
         .maybeSingle();
-      if (!approval || approval.revoked_at || approval.body_hash !== bodyHash || approval.approval_source !== "human") {
+      const approvalSource =
+        approval && typeof approval.approval_source === "string" ? approval.approval_source : null;
+      let approvalOk = false;
+      if (approval && !approval.revoked_at && approval.body_hash === bodyHash) {
+        if (approvalSource === "human") {
+          approvalOk = true;
+        } else if (approvalSource === "template_bound") {
+          const authorized = await supabase.rpc("outbound_approval_authorizes_send", {
+            p_workspace_id: msg.workspace_id,
+            p_approval_source: approvalSource,
+            p_approved_by: approval.approved_by,
+            p_template_id: approval.template_id,
+            p_revoked_at: approval.revoked_at,
+          });
+          approvalOk = authorized.error == null && authorized.data === true;
+        }
+      }
+      if (!approvalOk) {
         const reason = !approval
           ? "no-approval"
           : approval.revoked_at
             ? "approval-revoked"
             : approval.body_hash !== bodyHash
             ? "approval-hash-mismatch"
-            : "approval-not-human";
+            : "approval-not-authorized";
         await finish("blocked", { pass: false, reasons: [reason] });
         continue;
       }
@@ -273,6 +375,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
               .from("agent_specs")
               .select("role_brief")
               .eq("id", msg.spec_id)
+              .eq("workspace_id", msg.workspace_id)
               .maybeSingle()
           : { data: null };
         const disclosure = validateCandidateBoundText(msg.body, disclosureInternalFromBrief(record(spec)?.role_brief));
@@ -281,6 +384,412 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: [disclosure.reason ?? "injection-suspected"] });
           continue;
         }
+      }
+
+      if (msg.channel === "LinkedIn") {
+        const { data: seatRow, error: seatErr } = await supabase
+          .from("agent_seats")
+          .select(AGENT_SEAT_SELECT)
+          .eq("id", msg.seat_id ?? "")
+          .eq("workspace_id", msg.workspace_id)
+          .maybeSingle();
+        if (seatErr) {
+          safeLog("dispatch-outbound: LinkedIn seat lookup error", { message: seatErr.message });
+          await finish("blocked", { pass: false, reasons: ["linkedin-seat-store-unavailable"] });
+          continue;
+        }
+        const seatBase = seatRow ? agentSeatRowToSeat(seatRow as AgentSeatRow) : null;
+        const adapter = linkedInAdapterForProvider(seatBase?.provider);
+        if (!seatBase || seatBase.status !== "active" || seatBase.mode !== "live" || !adapter) {
+          await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
+          continue;
+        }
+        // Hermes workspace_state carries sendWindow + fleet Manual/BH — load once for BC.
+        let hermesState: unknown = null;
+        let fleetSettings = defaultFleetSettings();
+        if (seatBase.provider === "LinkedIn Browser Computer") {
+          const { data: wsRow } = await supabase
+            .from("workspace_state")
+            .select("state")
+            .eq("workspace_id", msg.workspace_id)
+            .maybeSingle();
+          hermesState = wsRow?.state ?? null;
+          fleetSettings = fleetSettingsFromHermesState(hermesState);
+        }
+        // Hydrate pacing counters from durable ledger — agentSeatRowToSeat alone
+        // zeros sentToday/lastSendAt so min_gap / daily_cap would be theater.
+        // Day boundary pinned to CET (Europe/Berlin) to match claim 0089 until
+        // durable send_window exists — Hermes TZ still drives business_hours.
+        let seat: AgentSeat = {
+          ...seatBase,
+          ...(seatBase.provider === "LinkedIn Browser Computer"
+            ? hermesSeatOverlay(seatBase, hermesState)
+            : {}),
+        };
+        if (seat.provider === "LinkedIn Browser Computer") {
+          const dayStart = startOfDayInTimeZone(new Date(), "CET");
+          const [{ data: lastRow }, { count: todayCount }] = await Promise.all([
+            supabase
+              .from("outreach_ledger")
+              .select("at")
+              .eq("seat_id", seat.id)
+              .eq("workspace_id", msg.workspace_id)
+              .in("status", ["claimed", "sent", "ambiguous"])
+              .order("at", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            supabase
+              .from("outreach_ledger")
+              .select("id", { count: "exact", head: true })
+              .eq("seat_id", seat.id)
+              .eq("workspace_id", msg.workspace_id)
+              .in("status", ["claimed", "sent", "ambiguous"])
+              .gte("at", dayStart.toISOString()),
+          ]);
+          seat = {
+            ...seat,
+            lastSendAt:
+              lastRow && typeof (lastRow as { at?: string }).at === "string"
+                ? (lastRow as { at: string }).at
+                : null,
+            sentToday: typeof todayCount === "number" ? todayCount : 0,
+          };
+        }
+        // Browser Computer send must use the durable DB computer_id — never mint on dispatch.
+        if (
+          seat.provider === "LinkedIn Browser Computer" &&
+          !(typeof seat.computerId === "string" && seat.computerId.trim())
+        ) {
+          await finish("blocked", {
+            pass: false,
+            reasons: ["linkedin-computer-id-missing"],
+          });
+          continue;
+        }
+        // Automatic LI requires campaign attach (BC empty ≠ shared; Vendor empty = shared).
+        const attachCampaignId =
+          (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) || "";
+        if (seat.provider === "LinkedIn Browser Computer" || seat.provider === "LinkedIn Vendor API") {
+          if (!attachCampaignId) {
+            await finish("blocked", { pass: false, reasons: ["campaign-required"] });
+            continue;
+          }
+          if (!seatAttachedToCampaign(seat, attachCampaignId)) {
+            await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-attached"] });
+            continue;
+          }
+        }
+        const linkedInRefs = await loadLinkedInCredentialRefsForWorkspace(msg.workspace_id);
+        const linkedInCreds = await resolveLinkedInCredentialsForWorkspace(
+          msg.workspace_id,
+          linkedInRefs,
+        );
+        if (!adapter.configured(linkedInCreds)) {
+          await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
+          continue;
+        }
+
+        // Pace BEFORE claim — claim+skipped burns the outbox (no requeue). Soft-defer
+        // leaves status=queued so min_gap / BH / session refuse can retry later.
+        if (seat.provider === "LinkedIn Browser Computer") {
+          const computerId = (seat.computerId ?? "").trim();
+          const seatId = (msg.seat_id ?? seat.id ?? "").trim();
+          // Manual refuses at enqueue after claim would burn — defer here.
+          // Skip ≡ auto for send (browser-agent-permissions); do not defer Skip.
+          if (fleetSettings.browserAgentPermissionMode === "manual") {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason: "manual_permission_mode",
+            });
+            continue;
+          }
+          if (computerId && seatId) {
+            try {
+              defaultComputerSupervisor.ensureComputer({
+                workspaceId: msg.workspace_id,
+                seatId,
+                computerId,
+                campaignId: attachCampaignId || undefined,
+              });
+              await defaultComputerSupervisor.hydrateFromHost(msg.workspace_id);
+              await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(
+                msg.workspace_id,
+              );
+            } catch (err) {
+              // orphan-claim-blocked / ownership-mismatch — leave queued, do not burn.
+              safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+                reason: "computer_ensure_failed",
+                detail: err instanceof Error ? err.message : "ensure-failed",
+              });
+              continue;
+            }
+          }
+          const computerRec = computerId
+            ? defaultComputerSupervisor.get(computerId)
+            : null;
+          if (computerRec?.control === "human" || computerRec?.status === "help_requested") {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason:
+                computerRec.control === "human" ? "human-has-control" : "help_requested",
+            });
+            continue;
+          }
+          // starting + durable healthy passes session gate but enqueue won't wait —
+          // soft-defer until ready/busy (stopped/error: enqueueJob starts after gate).
+          if (computerRec?.status === "starting") {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason: "computer_starting",
+            });
+            continue;
+          }
+          const pacedHealthy = computerRec?.sessionHealthy ?? null;
+          const pace = evaluateSendPace({
+            seat,
+            settings: fleetSettings,
+            sessionHealthy: pacedHealthy,
+          });
+          if (!pace.ok) {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason: pace.reason,
+              detail: pace.detail,
+            });
+            continue;
+          }
+        }
+
+        const { data: claim, error: claimErr } = await supabase.rpc("claim_linkedin_outbound_queued", {
+          p_message_id: msg.id,
+        });
+        if (claimErr) {
+          safeLog("dispatch-outbound: LinkedIn claim error", { message: claimErr.message });
+          await finish("failed");
+          continue;
+        }
+        const claimObj = claim as {
+          allowed?: boolean;
+          reason?: string;
+          ledger_id?: string;
+          delivery_attempt_id?: string;
+          profile_url?: string;
+        } | null;
+        if (claimObj?.allowed !== true) {
+          if (claimObj?.reason === "not-queued" || claimObj?.reason === "message-not-found") {
+            continue;
+          }
+          // Cap/gap losers after soft-defer race — leave queued, do not burn.
+          if (
+            claimObj?.reason === "seat-daily-cap-reached" ||
+            claimObj?.reason === "seat-min-gap"
+          ) {
+            safeLog("dispatch-outbound: LinkedIn soft-defer on claim", {
+              reason: claimObj.reason,
+            });
+            continue;
+          }
+          await finish("blocked", { pass: false, reasons: [`guardrail:${claimObj?.reason ?? "blocked"}`] });
+          continue;
+        }
+        deliveryAttemptId = claimObj.delivery_attempt_id ?? null;
+        if (!deliveryAttemptId || !UUID_PATTERN.test(deliveryAttemptId) || !claimObj.profile_url || !claimObj.ledger_id) {
+          safeLog("dispatch-outbound: LinkedIn claim returned no valid ownership token");
+          stats.failed++;
+          continue;
+        }
+
+        const campaignId =
+          (typeof msg.campaign_id === "string" && msg.campaign_id.trim()) ||
+          (typeof msg.spec_id === "string" && msg.spec_id.trim()) ||
+          undefined;
+        const outcome = await adapter.deliver({
+          workspaceId: msg.workspace_id,
+          messageId: msg.id,
+          candidateId: msg.candidate_id,
+          campaignId,
+          profileUrl: claimObj.profile_url,
+          subject: msg.subject ?? "",
+          body: msg.body,
+          attemptId: deliveryAttemptId,
+          seatId: msg.seat_id ?? undefined,
+          computerId: seat.computerId ?? undefined,
+          credentials: linkedInCreds,
+          // Pass full seat + Hermes fleet settings so Browser Computer pacing
+          // (sessionHealthy / gap / cap / Manual permission / BH) cannot be skipped
+          // or forced to defaults that ignore operator Computers options.
+          seat,
+          fleetSettings,
+        });
+        // Soft refuse after claim (TOCTOU / session / human / pace) — requeue, do not fail.
+        // All BC not-sent are soft: hard provider failures use deliveryState unknown.
+        const softRefuse =
+          seat.provider === "LinkedIn Browser Computer" &&
+          outcome.deliveryState === "not-sent";
+        const outcomeKind = softRefuse
+          ? "deferred"
+          : outcome.status === "sent" && outcome.deliveryState === "accepted"
+            ? "sent"
+            : outcome.deliveryState === "unknown"
+              ? "ambiguous"
+              : "skipped";
+        const { data: recorded, error: recordErr } = await supabase.rpc("record_linkedin_delivery_outcome", {
+          p_message_id: msg.id,
+          p_delivery_attempt_id: deliveryAttemptId,
+          p_outcome: outcomeKind,
+          p_reason: outcomeKind === "sent" ? null : outcome.detail.slice(0, 512),
+          p_provider_message_id: outcome.id ?? null,
+        });
+        const recordedObj = recorded as { allowed?: boolean; reason?: string } | null;
+        if (recordErr || recordedObj?.allowed !== true) {
+          safeLog("dispatch-outbound: LinkedIn outcome reconciliation failed", {
+            message: recordErr?.message ?? recordedObj?.reason ?? "unknown",
+          });
+          stats.failed++;
+          continue;
+        }
+        if (outcomeKind === "sent") {
+          stats.sent++;
+        } else if (outcomeKind === "deferred") {
+          // Left queued — no terminal counter; clear local attempt so finish paths stay safe.
+          deliveryAttemptId = null;
+          safeLog("dispatch-outbound: LinkedIn soft-refuse deferred (requeued)", {
+            detail: outcome.detail,
+          });
+        } else if (outcome.status === "dry-run") {
+          stats.unconfigured++;
+        } else {
+          stats.failed++;
+        }
+        continue;
+      }
+
+      // 2c. Email joins the durable outbox (Rock 2). Approval, human-likeness, and
+      // disclosure already cleared above. The service-only claim re-verifies the
+      // approval, suppression, a LIVE domain-verified email seat, the 90-day
+      // window, and the warmup cap in ONE transaction, transitions the outbox row
+      // queued -> dispatching under a delivery_attempt_id (the pre-dispatch trigger
+      // is the final race-safe gate), and mints the RFC Message-ID the send stamps
+      // and a reply threads back to. Never calls a provider from the request path.
+      if (msg.channel === "Email") {
+        const unsubscribe = createEmailUnsubscribeLink();
+        if (!unsubscribe) {
+          await finish("blocked", { pass: false, reasons: ["email-unsubscribe-unavailable"] });
+          continue;
+        }
+
+        const { data: claim, error: claimErr } = await supabase.rpc("claim_email_outbound_queued", {
+          p_message_id: msg.id,
+        });
+        if (claimErr) {
+          safeLog("dispatch-outbound: email claim error", { message: claimErr.message });
+          await finish("failed");
+          continue;
+        }
+        const emailClaim = claim as {
+          allowed?: boolean;
+          reason?: string;
+          ledger_id?: string;
+          delivery_attempt_id?: string;
+          rfc_message_id?: string;
+          operator_email?: string;
+          provider?: string;
+        } | null;
+        if (emailClaim?.allowed !== true) {
+          if (emailClaim?.reason === "not-queued" || emailClaim?.reason === "message-not-found") {
+            // Another worker already owns or completed this row; its state is
+            // authoritative and a losing selector must never downgrade it.
+            continue;
+          }
+          await finish("blocked", { pass: false, reasons: [`guardrail:${emailClaim?.reason ?? "blocked"}`] });
+          continue;
+        }
+        deliveryAttemptId = emailClaim.delivery_attempt_id ?? null;
+        const rfcMessageId = emailClaim.rfc_message_id ?? "";
+        if (
+          !deliveryAttemptId ||
+          !UUID_PATTERN.test(deliveryAttemptId) ||
+          !rfcMessageId ||
+          !emailClaim.operator_email ||
+          !emailClaim.provider ||
+          !emailClaim.ledger_id
+        ) {
+          // A provider call without the DB-issued ownership token / message id
+          // could never be reconciled safely. Leave the claimed row for operator
+          // recovery rather than guessing a terminal state.
+          safeLog("dispatch-outbound: email claim returned no valid ownership token or rfc id");
+          stats.failed++;
+          continue;
+        }
+
+        // Bind the one-click unsubscribe token to the claimed ledger BEFORE any
+        // provider call; a failure finalizes the attempt without sending.
+        const { data: tokenBound, error: tokenBindErr } = await supabase
+          .from("outreach_ledger")
+          .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash })
+          .eq("id", emailClaim.ledger_id)
+          .eq("workspace_id", msg.workspace_id)
+          .is("email_unsubscribe_token_hash", null)
+          .select("id")
+          .maybeSingle();
+        if (tokenBindErr || !tokenBound) {
+          safeLog("dispatch-outbound: email unsubscribe token bind error", { message: tokenBindErr?.message ?? "no ledger row" });
+          await supabase.rpc("finalize_email_provider_failure", {
+            p_message_id: msg.id,
+            p_delivery_attempt_id: deliveryAttemptId,
+            p_reason: "Unsubscribe token storage failed.",
+          });
+          stats.failed++;
+          continue;
+        }
+
+        const outcome = await performEmailSend(supabase, {
+          workspaceId: msg.workspace_id,
+          seatId: msg.seat_id ?? "",
+          provider: emailClaim.provider,
+          operatorEmail: emailClaim.operator_email,
+          to: msg.to_address,
+          subject: msg.subject ?? "",
+          body: msg.body,
+          unsubscribeUrl: unsubscribe.url,
+          attemptId: deliveryAttemptId,
+          rfcMessageId,
+        });
+
+        if (outcome.status === "sent" && outcome.deliveryState === "accepted") {
+          const { data: acceptance, error: acceptanceErr } = await supabase.rpc("record_email_send_message_id", {
+            p_message_id: msg.id,
+            p_delivery_attempt_id: deliveryAttemptId,
+            p_rfc_message_id: rfcMessageId,
+          });
+          const acceptanceObj = acceptance as { allowed?: boolean; reason?: string } | null;
+          if (acceptanceErr || acceptanceObj?.allowed !== true) {
+            // The provider accepted but the durable acceptance record failed: leave
+            // the row dispatching for human recovery, never retry (double-send risk).
+            safeLog("dispatch-outbound: email acceptance reconciliation failed", {
+              message: acceptanceErr?.message ?? acceptanceObj?.reason ?? "unknown",
+            });
+            stats.failed++;
+            continue;
+          }
+          stats.sent++;
+          continue;
+        }
+        if (outcome.deliveryState === "not-sent") {
+          // Provably pre-transport (or an intentional dry-run): the provider never
+          // accepted, so the ledger slot is retryable. outbox -> failed, ledger ->
+          // skipped. A dry-run means the provider is unconfigured.
+          const providerUnconfigured = outcome.status === "dry-run";
+          await supabase.rpc("finalize_email_provider_failure", {
+            p_message_id: msg.id,
+            p_delivery_attempt_id: deliveryAttemptId,
+            p_reason: outcome.detail.slice(0, 512),
+          });
+          stats[providerUnconfigured ? "unconfigured" : "failed"]++;
+          continue;
+        }
+        // deliveryState 'unknown' — a timeout or 5xx may have followed provider
+        // acceptance. Leave the row dispatching (ledger stays claimed) for human
+        // reconciliation via send_attempt_id; retrying could double-contact.
+        safeLog("dispatch-outbound: email result requires reconciliation", { deliveryState: outcome.deliveryState });
+        stats.failed++;
+        continue;
       }
 
       // 2b. WhatsApp has its own legal/provider boundary. A free-form reply
@@ -334,6 +843,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         .from("agent_seats")
         .select("id, provider, status, mode")
         .eq("id", msg.seat_id ?? "")
+        .eq("workspace_id", msg.workspace_id)
         .maybeSingle();
       if (!seat || seat.status !== "active" || seat.mode !== "live" || seat.provider !== expectedProvider) {
         await finish("blocked", { pass: false, reasons: ["seat-not-live"] });

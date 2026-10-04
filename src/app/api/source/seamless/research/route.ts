@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { experimentalPaidSourcingEnabled, supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { startSeamlessResearch, resolveStoredSeamlessKey } from "@/lib/sourcing/seamless";
+import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 
 /**
  * Kick off async contact-detail research for one Seamless search result — the
@@ -23,6 +24,12 @@ const SeamlessResearchSchema = z.object({
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
+  if (!experimentalPaidSourcingEnabled) {
+    return NextResponse.json(
+      { ok: false, error: "Seamless is unavailable until server-owned provider receipts are enabled." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   const rl = checkRateLimit(rateLimitKey(req, "source-seamless-research"), { windowMs: 60_000, max: 15 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
@@ -50,7 +57,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect a Seamless key in Settings first." });
   }
 
-  const result = await startSeamlessResearch(apiKey, searchResultId);
+  const clearance = clearIdentityResolution("Seamless", { searchResultId });
+  if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
+
+  const result = await startSeamlessResearch(clearance.clearance, apiKey, searchResultId);
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, status: result.status, error: result.detail || result.title },

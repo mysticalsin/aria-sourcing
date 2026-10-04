@@ -189,8 +189,8 @@ ok("append keeps the winlog bounded at 500", capped.wins.length === WIN_RECORD_L
 ok("new win is prepended", capped.wins[0].bookingId === booking.id);
 ok("oldest win is trimmed", !capped.wins.some((item) => item.id === `old-${WIN_RECORD_LIMIT - 1}`));
 
-const sameVersionWithoutWins = { ...state } as HermesState & { wins?: WinRecord[] };
-delete sameVersionWithoutWins.wins;
+const sameVersionWithoutWins = { ...state } as Partial<HermesState>;
+Reflect.deleteProperty(sameVersionWithoutWins, "wins");
 const normalized = normalizeHermesState(sameVersionWithoutWins as HermesState);
 ok("same-version state without wins hydrates to []", Array.isArray(normalized.wins) && normalized.wins.length === 0);
 

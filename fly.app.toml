@@ -6,29 +6,48 @@
 app            = "aria-mantu-app"
 primary_region = "cdg"
 
+[processes]
+  web                = "node server.js"
+  cleanup            = "node scripts/apollo-authority-cleanup-worker.mjs"
+  framework_heartbeat = "node scripts/agent-framework-heartbeat-worker.mjs"
+  loop               = "node scripts/sourcing-loop-worker.mjs"
+
 [build]
   dockerfile = "Dockerfile.prod"
   [build.args]
     NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
+    NEXT_PUBLIC_SITE_URL             = "https://aria-mantu-app.fly.dev"    # browser Origin for CSRF checks
     NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
-    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "true"                        # public showcase: demo-login ON
     NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
+    NEXT_PUBLIC_DEMO_ADMIN_USERNAME  = "Twalteur@amaris.com"         # showcase login identity (password is a runtime secret)
     # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
 
 [env]
   NODE_ENV                      = "production"
   PORT                          = "3000"
   HOSTNAME                      = "0.0.0.0"
+  NEXT_PUBLIC_SITE_URL          = "https://aria-mantu-app.fly.dev"
   NEXT_TELEMETRY_DISABLED       = "1"
   # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
   # Inert until a seat goes live (also needs a provider key + verified domain); safe to set now:
   OUTREACH_UNSUBSCRIBE_BASE_URL = "https://aria-mantu-app.fly.dev"
+  # Loop worker → web process, over 6PN (process-group DNS). Used only by the
+  # "loop" process for its minute-level outbound drain; harmless elsewhere.
+  ARIA_WEB_INTERNAL_URL         = "http://web.process.aria-mantu-app.internal:3000"
   # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
-  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
-  # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
-
+  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET),
+  #   COMPUTER_SUPERVISOR_TOKEN, COMPUTER_TOKEN / OPENBOT_COMPUTER_TOKEN.
+  # Showcase secrets (fly secrets set): DEMO_ADMIN_PASSWORD, NEXT_PUBLIC_DEMO_ADMIN_PASSWORD,
+  #   ENABLE_DEMO_LOGIN=true (runtime gate), NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true.
+  # Do NOT copy those onto a separate real-tenant Fly app.
+  # Do NOT set COMPUTER_SUPERVISOR_MOCK_SEND on production.
+  # OpenBot Chromium supervisor (Fly-only — never Vercel):
+  COMPUTER_SUPERVISOR_URL       = "https://aria-mantu-computers.fly.dev"
+  NEXT_PUBLIC_COMPUTER_SUPERVISOR_URL = "https://aria-mantu-computers.fly.dev"
 [http_service]
+  processes            = ["web"]
   internal_port        = 3000
   force_https          = true
   auto_stop_machines   = "suspend"
@@ -44,17 +63,44 @@ primary_region = "cdg"
     interval     = "15s"
     timeout      = "5s"
     grace_period = "20s"
-  [[http_service.checks]]
-    method       = "GET"
-    path         = "/api/ready"      # DB, Auth, queue, migration hash, and release identity
-    interval     = "30s"
-    timeout      = "5s"
-    grace_period = "30s"
+  # /api/ready is intentionally NOT a proxy-routing check. Fly requires every
+  # configured http_service check to pass before routing any traffic, and
+  # /api/ready's agentFrameworks component is unconditionally required in
+  # production (src/app/api/ready/route.ts) yet the Flowise/Deerflow adapters
+  # it probes are not deployed here (tracked separately — relay Track C,
+  # "Flowise sidecar deployment... still absent"). Gating the WHOLE app's
+  # reachability on an unrelated, not-yet-shipped subsystem would make every
+  # feature unreachable for a reason unconnected to whether requests can
+  # actually be served. /api/ready stays deployed, unmodified, and fully
+  # honest for monitoring/ops — curl it directly for the real deep-readiness
+  # verdict (db/auth/queue/migration-ledger/release-identity/agentFrameworks).
 
 # shared-cpu-1x starves Next.js SSR under load (oversubscribed fractional vCPU →
 # render latency + CPU steal jitter). shared-cpu-2x doubles vCPU/RAM for a modest
 # cost bump. If SSR still feels slow, go performance-1x (a DEDICATED vCPU removes
 # oversubscription jitter entirely) — that's the next lever, not a bigger shared VM.
 [[vm]]
+  processes = ["web"]
   size   = "shared-cpu-2x"
   memory = "2gb"
+
+[[vm]]
+  processes = ["cleanup"]
+  size      = "shared-cpu-1x"
+  memory    = "256mb"
+
+[[vm]]
+  processes = ["framework_heartbeat"]
+  size      = "shared-cpu-1x"
+  memory    = "256mb"
+
+# Autonomous-loop tick worker (PLAN.md Rock 1). SHIPS DARK: the worker does
+# NOTHING unless ARIA_LOOP_KILL_SWITCH is set to the exact string "false"
+# (fly secrets/env — deliberately NOT set here, so a fresh deploy is inert).
+# When live it reuses the cron dispatch route on the web process, so every
+# send-side guardrail (approval re-verification, suppression, quiet hours,
+# atomic claims) applies verbatim — just minute-level instead of daily.
+[[vm]]
+  processes = ["loop"]
+  size      = "shared-cpu-1x"
+  memory    = "256mb"

@@ -19,6 +19,7 @@ import {
   scrubExactSecretString,
   scrubExactSecretValue,
 } from "@/lib/credential-safety";
+import { scraplingFetch } from "@/lib/scrapling/adapter";
 
 export type WebFetch = (url: string | URL, init?: PublicFetchInit) => Promise<Response>;
 
@@ -29,7 +30,7 @@ const FETCH_TIMEOUT_MS = 12_000;
 const MAX_BYTES = 1_500_000; // 1.5 MB cap on any fetched body
 const MAX_TEXT = 6_000; // chars of page text returned to the model
 const MAX_RESULTS = 8; // search results returned
-const USER_AGENT = "AriaResearchBot/1.0 (+read-only; https://aria-sourcing-demo.vercel.app)";
+const USER_AGENT = "AriaResearchBot/1.0 (+read-only; https://aria-mantu-app.fly.dev)";
 
 /** Tool definitions in the same shape MCP tools use, so the existing tool-def builders work unchanged. */
 export const WEB_TOOL_DEFS: McpTool[] = [
@@ -288,6 +289,27 @@ async function webSearch(
 async function fetchPage(urlRaw: string, fetchImpl: WebFetch, signal?: AbortSignal): Promise<ToolResult> {
   const url = urlRaw.trim();
   if (!url) return { ok: false, error: "Missing url." };
+
+  // Prefer Scrapling sidecar for stealthy public-web research when enabled.
+  try {
+    const scraped = await scraplingFetch({ url, timeoutMs: 20_000 });
+    if (scraped.ok) {
+      return {
+        ok: true,
+        content: {
+          url: scraped.url,
+          title: (scraped.title ?? "").slice(0, 200),
+          text: scraped.text.slice(0, MAX_TEXT),
+          truncated: scraped.text.length > MAX_TEXT,
+          via: scraped.via,
+          extracted: scraped.extracted,
+        },
+      };
+    }
+  } catch {
+    // fall through to compliant public fetch
+  }
+
   const r = await safeGet(url, "text/html,application/xhtml+xml,text/plain", fetchImpl, signal);
   if (!r.ok) return { ok: false, error: r.error };
   const { title, text } = stripHtml(r.body ?? "");

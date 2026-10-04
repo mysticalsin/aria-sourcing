@@ -75,6 +75,7 @@ jobs:
       ARIA_LOCAL_DB_IMAGE: aria-mantu-db:sha-${{ inputs.release_sha }}
       ARIA_LOCAL_BOOTSTRAP_IMAGE: aria-mantu-bootstrap:sha-${{ inputs.release_sha }}
       ARIA_LOCAL_KONG_IMAGE: aria-mantu-kong:sha-${{ inputs.release_sha }}
+      ARIA_LOCAL_GRAPHIFY_IMAGE: aria-graphify-lessons:sha-${{ inputs.release_sha }}
       TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
       CYCLONEDX_CLI_IMAGE: cyclonedx/cyclonedx-cli:0.32.0@sha256:9a858a15e7b0843606efc0ff19d5f7575011a5428d7f3d343b4f6cf09d8f0d4e
       GH_TOKEN: ${{ github.token }}
@@ -353,6 +354,13 @@ jobs:
             --label "org.opencontainers.image.revision=$ARIA_RELEASE_SHA" \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             .
+          docker build --pull --platform linux/amd64 \
+            --file workers/graphify-lessons/Dockerfile \
+            --tag "$ARIA_LOCAL_GRAPHIFY_IMAGE" \
+            --label "org.opencontainers.image.revision=$ARIA_RELEASE_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            workers/graphify-lessons
+          GRAPHIFY_IMAGE="$ARIA_LOCAL_GRAPHIFY_IMAGE" npm run test:graphify-learning
           mkdir -p "$RUNNER_TEMP/aria-release-supply-chain/input"
 
       - name: Publish candidate images and materialize exact registry inputs
@@ -394,7 +402,8 @@ jobs:
             "app|aria-mantu-app|$ARIA_LOCAL_APP_IMAGE|ARIA_APP_CANDIDATE_REF" \
             "db|aria-mantu-db|$ARIA_LOCAL_DB_IMAGE|ARIA_DB_CANDIDATE_REF" \
             "bootstrap|aria-mantu-bootstrap|$ARIA_LOCAL_BOOTSTRAP_IMAGE|ARIA_BOOTSTRAP_CANDIDATE_REF" \
-            "kong|aria-mantu-kong|$ARIA_LOCAL_KONG_IMAGE|ARIA_KONG_CANDIDATE_REF"
+            "kong|aria-mantu-kong|$ARIA_LOCAL_KONG_IMAGE|ARIA_KONG_CANDIDATE_REF" \
+            "graphify|aria-graphify-lessons|$ARIA_LOCAL_GRAPHIFY_IMAGE|ARIA_GRAPHIFY_CANDIDATE_REF"
           do
             IFS='|' read -r component app local_image variable <<< "$specification"
             candidate_tag="registry.fly.io/$app:candidate-$ARIA_RELEASE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -498,7 +507,7 @@ jobs:
           };
           fs.writeFileSync(process.env.ARIA_TRIVY_SECRET_CONFIG, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
           NODE
-          for component in app db bootstrap kong auth rest; do
+          for component in app db bootstrap kong graphify auth rest; do
             docker run --rm \
               --volume "$evidence/input:/image:ro" \
               --volume "$evidence/cache:/trivy-cache" \
@@ -545,7 +554,7 @@ jobs:
           from pathlib import Path
 
           evidence = Path(os.environ["RUNNER_TEMP"]) / "aria-release-supply-chain"
-          for component in ("app", "db", "bootstrap", "kong", "auth", "rest"):
+          for component in ("app", "db", "bootstrap", "kong", "graphify", "auth", "rest"):
               path = evidence / f"aria-{component}.cdx.json"
               document = json.loads(path.read_text(encoding="utf-8"))
               if document.get("bomFormat") != "CycloneDX":
@@ -557,7 +566,7 @@ jobs:
           PY
           (
             cd "$evidence"
-            for component in app db bootstrap kong auth rest; do
+            for component in app db bootstrap kong graphify auth rest; do
               sha256sum \
                 "aria-$component.cdx.json" \
                 "aria-$component-vulnerabilities.json" \
@@ -726,6 +735,21 @@ jobs:
           subject-digest: ${{ env.ARIA_KONG_IMAGE_DIGEST }}
           sbom-path: ${{ runner.temp }}/aria-release-supply-chain/aria-kong.cdx.json
 
+      - name: Attest Graphify worker build provenance
+        id: attest_graphify_provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-graphify-lessons
+          subject-digest: ${{ env.ARIA_GRAPHIFY_IMAGE_DIGEST }}
+
+      - name: Attest Graphify worker SBOM
+        id: attest_graphify_sbom
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-graphify-lessons
+          subject-digest: ${{ env.ARIA_GRAPHIFY_IMAGE_DIGEST }}
+          sbom-path: ${{ runner.temp }}/aria-release-supply-chain/aria-graphify.cdx.json
+
       - name: Collect signed attestation bundles
         shell: bash
         env:
@@ -737,6 +761,8 @@ jobs:
           BOOTSTRAP_SBOM: ${{ steps.attest_bootstrap_sbom.outputs.bundle-path }}
           KONG_PROVENANCE: ${{ steps.attest_kong_provenance.outputs.bundle-path }}
           KONG_SBOM: ${{ steps.attest_kong_sbom.outputs.bundle-path }}
+          GRAPHIFY_PROVENANCE: ${{ steps.attest_graphify_provenance.outputs.bundle-path }}
+          GRAPHIFY_SBOM: ${{ steps.attest_graphify_sbom.outputs.bundle-path }}
           APP_PROVENANCE_ID: ${{ steps.attest_app_provenance.outputs.attestation-id }}
           APP_SBOM_ID: ${{ steps.attest_app_sbom.outputs.attestation-id }}
           DB_PROVENANCE_ID: ${{ steps.attest_db_provenance.outputs.attestation-id }}
@@ -745,6 +771,8 @@ jobs:
           BOOTSTRAP_SBOM_ID: ${{ steps.attest_bootstrap_sbom.outputs.attestation-id }}
           KONG_PROVENANCE_ID: ${{ steps.attest_kong_provenance.outputs.attestation-id }}
           KONG_SBOM_ID: ${{ steps.attest_kong_sbom.outputs.attestation-id }}
+          GRAPHIFY_PROVENANCE_ID: ${{ steps.attest_graphify_provenance.outputs.attestation-id }}
+          GRAPHIFY_SBOM_ID: ${{ steps.attest_graphify_sbom.outputs.attestation-id }}
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/aria-release-supply-chain"
@@ -756,7 +784,9 @@ jobs:
             "bootstrap-provenance|$BOOTSTRAP_PROVENANCE" \
             "bootstrap-sbom|$BOOTSTRAP_SBOM" \
             "kong-provenance|$KONG_PROVENANCE" \
-            "kong-sbom|$KONG_SBOM"
+            "kong-sbom|$KONG_SBOM" \
+            "graphify-provenance|$GRAPHIFY_PROVENANCE" \
+            "graphify-sbom|$GRAPHIFY_SBOM"
           do
             IFS='|' read -r name source <<< "$specification"
             test -s "$source"
@@ -767,6 +797,7 @@ jobs:
             db "$DB_PROVENANCE_ID" "$DB_SBOM_ID" \
             bootstrap "$BOOTSTRAP_PROVENANCE_ID" "$BOOTSTRAP_SBOM_ID" \
             kong "$KONG_PROVENANCE_ID" "$KONG_SBOM_ID" \
+            graphify "$GRAPHIFY_PROVENANCE_ID" "$GRAPHIFY_SBOM_ID" \
             > "$evidence/attestation-ids.tsv"
 
           export ARIA_RELEASE_EVIDENCE_DIR="$evidence"
@@ -788,6 +819,7 @@ jobs:
             db: "docker/db/Dockerfile.fly",
             bootstrap: "docker/bootstrap/Dockerfile.fly",
             kong: "docker/kong/Dockerfile.fly",
+            graphify: "workers/graphify-lessons/Dockerfile",
           };
           const components = Object.fromEntries(Object.keys(dockerfiles).map((component) => {
             const files = [
@@ -908,6 +940,37 @@ jobs:
           FLY_DATA_ENCRYPTION_PREVIOUS_KEYS: ${{ secrets.FLY_DATA_ENCRYPTION_PREVIOUS_KEYS }}
           ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL: ${{ secrets.ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL }}
           FLY_CRON_SECRET: ${{ secrets.FLY_CRON_SECRET }}
+          FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET: ${{ secrets.FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET }}
+          FLY_DEERFLOW_ADAPTER_TOKEN: ${{ secrets.FLY_DEERFLOW_ADAPTER_TOKEN }}
+          FLY_FLOWISE_ADAPTER_TOKEN: ${{ secrets.FLY_FLOWISE_ADAPTER_TOKEN }}
+          AGENT_FRAMEWORKS_REQUIRED: "true"
+          AGENT_FRAMEWORK_EXECUTION_ENABLED: ${{ vars.ARIA_AGENT_FRAMEWORK_EXECUTION_ENABLED }}
+          AGENT_FRAMEWORK_KILL_SWITCH: ${{ vars.ARIA_AGENT_FRAMEWORK_KILL_SWITCH }}
+          AGENT_FRAMEWORK_CONFIGURATION_SHA256: ${{ vars.ARIA_AGENT_FRAMEWORK_CONFIGURATION_SHA256 }}
+          AGENT_FRAMEWORK_READINESS_WORKSPACE_ID: ${{ vars.ARIA_AGENT_FRAMEWORK_WORKSPACE_ID }}
+          FRAMEWORK_ADAPTER_IMAGE_DIGEST: ${{ vars.ARIA_FRAMEWORK_ADAPTER_IMAGE_DIGEST }}
+          REDIS_IMAGE_DIGEST: ${{ vars.ARIA_FRAMEWORK_REDIS_IMAGE_DIGEST }}
+          DEERFLOW_ADAPTER_URL: ${{ vars.ARIA_DEERFLOW_ADAPTER_URL }}
+          DEERFLOW_SOURCE_COMMIT: fabadae4168db81f0eaaf62f209050f978e2f691
+          DEERFLOW_IMAGE_DIGEST: ${{ vars.ARIA_DEERFLOW_IMAGE_DIGEST }}
+          DEERFLOW_DATABASE_IMAGE_DIGEST: ${{ vars.ARIA_DEERFLOW_DATABASE_IMAGE_DIGEST }}
+          DEERFLOW_FRAMEWORK_INSTANCE_ID: ${{ vars.ARIA_DEERFLOW_INSTANCE_ID }}
+          DEERFLOW_MODEL_GATEWAY_IMAGE_DIGEST: ${{ vars.ARIA_DEERFLOW_MODEL_GATEWAY_IMAGE_DIGEST }}
+          DEERFLOW_CLOUD_PROVIDER_ID: ${{ vars.ARIA_DEERFLOW_CLOUD_PROVIDER_ID }}
+          DEERFLOW_MODEL_PROVIDER: langchain-openai
+          DEERFLOW_MODEL_ID: ${{ vars.ARIA_DEERFLOW_MODEL_ID }}
+          DEERFLOW_MODEL_BASE_URL: ${{ vars.ARIA_DEERFLOW_MODEL_BASE_URL }}
+          DEERFLOW_MODEL_CREDENTIAL_VERSION: ${{ vars.ARIA_DEERFLOW_MODEL_CREDENTIAL_VERSION }}
+          FLOWISE_ADAPTER_URL: ${{ vars.ARIA_FLOWISE_ADAPTER_URL }}
+          FLOWISE_SOURCE_COMMIT: bb773ffa710bd22639c4ba2643413a0ea2b679d3
+          FLOWISE_IMAGE_DIGEST: ${{ vars.ARIA_FLOWISE_IMAGE_DIGEST }}
+          FLOWISE_WORKER_IMAGE_DIGEST: ${{ vars.ARIA_FLOWISE_WORKER_IMAGE_DIGEST }}
+          FLOWISE_DATABASE_IMAGE_DIGEST: ${{ vars.ARIA_FLOWISE_DATABASE_IMAGE_DIGEST }}
+          FLOWISE_FRAMEWORK_INSTANCE_ID: ${{ vars.ARIA_FLOWISE_INSTANCE_ID }}
+          FLOWISE_WORKSPACE_ID: ${{ vars.ARIA_FLOWISE_WORKSPACE_ID }}
+          FLOWISE_READINESS_WORKFLOW_ID: ${{ vars.ARIA_FLOWISE_READINESS_WORKFLOW_ID }}
+          FLOWISE_TENANT_ISOLATION: instance-per-workspace
+          FLOWISE_QUEUE_NAME: aria-flowise
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           GITHUB_SOURCE_TOKEN: ${{ secrets.ARIA_GITHUB_SOURCE_TOKEN }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
@@ -922,6 +985,9 @@ jobs:
             process.env.FLY_SUPABASE_ADMIN_TARGET_PASSWORD,
             process.env.FLY_AUTH_DB_PASSWORD,
             process.env.FLY_REST_DB_PASSWORD,
+            process.env.FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET,
+            process.env.FLY_DEERFLOW_ADAPTER_TOKEN,
+            process.env.FLY_FLOWISE_ADAPTER_TOKEN,
           ].filter(Boolean);
           for (const value of values) {
             console.log(`::add-mask::${value}`);
@@ -1331,8 +1397,8 @@ jobs:
 
           const temp = process.env.RUNNER_TEMP;
           const evidence = path.join(temp, "aria-release-supply-chain");
-          const scannedComponents = ["app", "db", "bootstrap", "kong", "auth", "rest"];
-          const attestedComponents = ["app", "db", "bootstrap", "kong"];
+          const scannedComponents = ["app", "db", "bootstrap", "kong", "graphify", "auth", "rest"];
+          const attestedComponents = ["app", "db", "bootstrap", "kong", "graphify"];
           const expected = [
             path.join(temp, "aria-deployment-receipt.json"),
             path.join(temp, "aria-tenant-admin-verification.json"),
@@ -1409,7 +1475,7 @@ jobs:
               exit 1
             fi
           done
-          for component in app db bootstrap kong auth rest; do
+          for component in app db bootstrap kong graphify auth rest; do
             for suffix in .cdx.json -vulnerabilities.json -secrets.json -artifacts.sha256; do
               artifact="$RUNNER_TEMP/aria-release-supply-chain/aria-$component$suffix"
               if [ ! -s "$artifact" ]; then
@@ -1418,7 +1484,7 @@ jobs:
               fi
             done
           done
-          for component in app db bootstrap kong; do
+          for component in app db bootstrap kong graphify; do
             for suffix in -provenance.sigstore.json -sbom.sigstore.json; do
               artifact="$RUNNER_TEMP/aria-release-supply-chain/aria-$component$suffix"
               if [ ! -s "$artifact" ]; then

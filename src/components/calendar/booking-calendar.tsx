@@ -111,7 +111,15 @@ function BookingRow({ booking }: { booking: Booking }) {
   const [newStart, setNewStart] = React.useState(() => toDatetimeLocalValue(booking.startTime));
 
   const setOutcome = (status: Extract<BookingStatus, "Completed" | "No Show" | "Cancelled">) => {
-    actions.updateBooking(booking.id, { status });
+    const result = actions.updateBooking(booking.id, { status });
+    if (!result.ok) {
+      toast({
+        title: "Couldn't update the interview",
+        description: result.error,
+        variant: "error",
+      });
+      return;
+    }
     toast({
       title: `Interview marked ${status}`,
       description: `${booking.candidateName} · ${booking.role}`,

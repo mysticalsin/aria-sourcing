@@ -113,6 +113,18 @@ export async function POST(req: NextRequest) {
   // row from being deleted. The token is consumed here only — never logged.
   let revoked = false;
 
+  // Deactivate inbound routes before deleting the connection row.
+  const { error: routeDeactErr } = await svc.rpc("deactivate_inbound_mailbox_route_for_connection", {
+    p_connection_id: conn.id,
+    p_workspace_id: wid,
+  });
+  if (routeDeactErr) {
+    console.warn("[email-disconnect] inbound route deactivate failed", {
+      connectionId: conn.id,
+      code: routeDeactErr.code,
+    });
+  }
+
   if (conn.provider === "Gmail API" && conn.refresh_token) {
     try {
       const body = new URLSearchParams({ token: decryptSecret(conn.refresh_token) });

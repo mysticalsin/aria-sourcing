@@ -68,13 +68,13 @@ for (const failedResponse of [
 }
 
 {
-  const malformed = await recordOutreachApproval(request, async () => ({
-    ok: true,
-    status: 200,
-    json: async () => {
-      throw new Error("bad json");
-    },
-  }) as Response);
+  const malformed = await recordOutreachApproval(
+    request,
+    async () => new Response("{", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  );
   ok("approval persistence rejects malformed success bodies", !malformed.ok);
 
   const unavailable = await recordOutreachApproval(request, async () => {

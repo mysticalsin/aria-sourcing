@@ -9,6 +9,9 @@ import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
 import { MOBILE_NAV } from "./nav";
 import { Onboarding } from "./onboarding";
+import { WorkspaceStatusPanel } from "./workspace-status-panel";
+import { useHermes } from "@/lib/store";
+import { workspaceBlocksProduct } from "@/lib/workspace-status";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -17,9 +20,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // the recruiter console chrome.
   if (pathname.startsWith("/login") || pathname.startsWith("/careers") || pathname.startsWith("/unsubscribe")) return <>{children}</>;
 
+  return <ProtectedAppShell pathname={pathname}>{children}</ProtectedAppShell>;
+}
+
+function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; pathname: string }) {
+  const { workspaceStatus, retryWorkspace, retrySave } = useHermes();
+
+  if (workspaceBlocksProduct(workspaceStatus)) {
+    return (
+      <WorkspaceStatusPanel
+        status={workspaceStatus}
+        onRetryWorkspace={retryWorkspace}
+        onRetrySave={retrySave}
+      />
+    );
+  }
+
   return (
     <ConfirmProvider>
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen max-w-full overflow-x-hidden">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>

@@ -1,0 +1,853 @@
+# =============================================================================
+# FIRST DRAFT — deploy-agent-frameworks.yml
+# =============================================================================
+# Builds, scans, keyless-signs, and pushes the 8 ARIA agent-framework container
+# images (10 operator roles, 8 distinct manifest digests, 7 distinct wrapper
+# builds) so that infra/agent-frameworks/fly/operator.mjs `prepare` can verify
+# them with cosign.
+#
+# ACCEPTANCE CONTRACT (operator.mjs verifySupplyChainForImage, lines 262-308):
+#   For every role the operator runs, against manifest.images[role].ref:
+#     cosign verify              --certificate-identity <id> --certificate-oidc-issuer <iss> --output json <ref>
+#     cosign verify-attestation  --certificate-identity <id> --certificate-oidc-issuer <iss> --type spdxjson       --output json <ref>
+#     cosign verify-attestation  --certificate-identity <id> --certificate-oidc-issuer <iss> --type slsaprovenance --output json <ref>
+#     trivy  image --severity HIGH,CRITICAL --format json <ref>   (>0 HIGH/CRITICAL => reject)
+#   - id  = this workflow's keyless OIDC identity (Fulcio SAN)
+#   - iss = https://token.actions.githubusercontent.com
+#   Provenance predicate must contain the 40-hex sourceCommit anywhere
+#   (operator containsExactString over predicate) AND, for the deerflow image,
+#   the 7 DeerFlow runtime build-args under invocation.parameters
+#   (operator containsExactParameter over predicate.invocation.parameters,
+#   matching key `build-arg:<KEY>` == value).  SBOM only needs a signed
+#   statement whose subject binds the image digest.
+#
+# WHY cosign (NOT actions/attest):  see the accompanying design report.
+#   The operator verifies with `cosign verify-attestation --type slsaprovenance
+#   / --type spdxjson`, which resolves cosign-written attestations and filters
+#   on predicateType https://slsa.dev/provenance/v0.2 and
+#   https://spdx.dev/Document.  actions/attest-build-provenance emits SLSA v1.0
+#   (predicateType .../provenance/v1) as a GitHub-native attestation and gives
+#   no way to inject the DeerFlow build-args into invocation.parameters, so
+#   `cosign verify-attestation --type slsaprovenance` would find nothing to
+#   verify.  deploy-aria-mantu.yml uses actions/attest for its OWN images and
+#   never feeds them to cosign — a different contract.  This workflow therefore
+#   uses `cosign sign` + `cosign attest --type spdxjson` + `cosign attest
+#   --type slsaprovenance` keyless (id-token: write).
+#
+# TWO-STAGE BAKE (both push into the single holder repo; per-target `--set
+# <t>.tags=` overrides the HCL's nested-path tags so every push is a Fly-legal
+# registry.fly.io/<app>:<tag>):
+#   Stage 1  infra/agent-frameworks/docker-bake.hcl
+#            builds adapter, model-gateway, deerflow, flowise, flowise-worker
+#            from the aria repo + pinned upstream git contexts (tags :*-base-<sha>).
+#   Stage 2  infra/agent-frameworks/fly/docker-bake.hcl
+#            wraps postgres + redis (external upstream digests) and the five
+#            Stage-1 outputs, passing each as *_UPSTREAM_IMAGE.  Only the deerflow
+#            wrapper receives the 7 provenance-bound build-args, passed via
+#            `--set deerflow.args.*` from the SAME env used in the provenance
+#            predicate (and re-asserted against the image's io.mantu.aria.* labels).
+#
+# ROLE -> IMAGE MAP (operator-core.mjs ROLE_ORDER; shared-ref constraints at
+# operator-core.mjs:249-254 require IDENTICAL ref strings for the adapter pair
+# and the redis pair — same repo AND same digest).
+#
+# Fly's registry is PER-APP: registry.fly.io/<app>[:<tag>] — NOT nested paths.
+# Every image therefore lives in ONE holder-app repo <holder> and is told apart
+# by TAG at push time; the operator only ever pins the immutable @sha256 digest,
+# so the manifest ref for every role is <holder>@sha256:<digest>:
+#   deerflow-db      -> <holder>@<pg>     (push tag :postgres-<sha>; release-disabled)
+#   deerflow-redis   -> <holder>@<redis>  (push tag :redis-<sha>; == flowise-redis, one push)
+#   flowise-db       -> <holder>@<pg>
+#   flowise-redis    -> <holder>@<redis>  (== deerflow-redis)
+#   model-gateway    -> <holder>@<mg>     (push tag :model-gateway-<sha>)
+#   deerflow         -> <holder>@<df>     (push tag :deerflow-<sha>; sourceCommit fabadae..., + 7 build-args)
+#   flowise          -> <holder>@<fw>     (push tag :flowise-<sha>)
+#   flowise-worker   -> <holder>@<fww>    (push tag :flowise-worker-<sha>)
+#   deerflow-adapter -> <holder>@<ad>     (push tag :adapter-<sha>; == flowise-adapter, one push)
+#   flowise-adapter  -> <holder>@<ad>     (== deerflow-adapter)
+#   where <holder> = registry.fly.io/aria-mantu-agent-frameworks and <sha> = release_sha
+#
+# GITHUB CONFIG REQUIRED (see design report "repo config" section):
+#   secrets.FLY_REGISTRY_TOKEN   MUST be a deploy-scoped org token: app create/list
+#                                (Machines API) + registry push/pull + cosign write —
+#                                NOT a registry-only token. The runtime org- and
+#                                holder-app assertion steps fail loudly if it is not.
+#   inputs.fly_org               Fly org slug; proven at runtime (Assert fly_org step)
+#   vars.AF_UPSTREAM_POSTGRES    default docker.io/library/postgres:16 (mutable tag; @sha256 pinned at build time)
+#   vars.AF_UPSTREAM_REDIS       default docker.io/library/redis:7     (mutable tag; @sha256 pinned at build time)
+#   environment: Production      (approval gate)
+#   protected branch: deploy/fly-github-actions  (drives the emitted certificateIdentity)
+# =============================================================================
+
+name: Deploy ARIA agent frameworks (Fly)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact 40-character commit SHA on the protected branch (equals github.sha)
+        required: true
+        type: string
+      fly_org:
+        description: Fly.io org slug that owns the holder app and the per-role Fly apps
+        required: false
+        default: personal  # proven at runtime by the "Assert fly_org is accessible" step
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aria-agent-frameworks-supply-chain
+  cancel-in-progress: false
+
+env:
+  # Fly's registry is per-app: one holder app owns ONE repo (registry.fly.io/<app>);
+  # images are distinguished by TAG on push and by @sha256 digest in the manifest.
+  # Both bake stages and the base images share this single repo (distinct tags).
+  AF_HOLDER_APP: aria-mantu-agent-frameworks
+  AF_HOLDER_REPO: registry.fly.io/aria-mantu-agent-frameworks
+  AF_PROTECTED_REF: refs/heads/deploy/fly-github-actions
+  # Pinned tool identities copied verbatim from deploy-aria-mantu.yml.
+  TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+  # F5: the 7 DeerFlow runtime identity values are NOT hardcoded here. They are
+  # read at runtime from operator-core.mjs DEERFLOW_RUNTIME_IDENTITY (the single
+  # source of truth) by the "Load DeerFlow runtime identity" step and exported to
+  # $GITHUB_ENV as DEERFLOW_PATCHED_RUNS_SHA256 ... DEERFLOW_STREAM_BRIDGE_TYPE.
+  # The Stage-2 bake args, the provenance predicate, and the image-label gate all
+  # consume THOSE exported values, so drift from operator-core.mjs is impossible.
+  # Audited upstream source commits (README source boundary; deploy-aria-mantu.yml:955,966).
+  DEERFLOW_SOURCE_COMMIT: fabadae4168db81f0eaaf62f209050f978e2f691
+  FLOWISE_SOURCE_COMMIT: bb773ffa710bd22639c4ba2643413a0ea2b679d3
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Governance gate — mirrors deploy-aria-mantu.yml validate-dispatch.
+  # ---------------------------------------------------------------------------
+  validate-dispatch:
+    name: Validate protected release dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AF_RELEASE_SHA: ${{ inputs.release_sha }}
+      AF_WORKFLOW_REF: ${{ github.ref }}
+      AF_WORKFLOW_REF_TYPE: ${{ github.ref_type }}
+      AF_WORKFLOW_REF_PROTECTED: ${{ github.ref_protected }}
+      AF_WORKFLOW_SHA: ${{ github.sha }}
+    steps:
+      - name: Validate release input and workflow identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$AF_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be an exact lowercase 40-character Git SHA"
+            exit 1
+          fi
+          if [ "$AF_WORKFLOW_REF" != "$AF_PROTECTED_REF" ] \
+             || [ "$AF_WORKFLOW_REF_TYPE" != "branch" ] \
+             || [ "$AF_WORKFLOW_REF_PROTECTED" != "true" ]; then
+            echo "::error::dispatch must execute from the protected release branch ($AF_PROTECTED_REF)"
+            exit 1
+          fi
+          if [ "$AF_WORKFLOW_SHA" != "$AF_RELEASE_SHA" ]; then
+            echo "::error::release_sha must equal the commit that supplied this workflow definition"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build, scan, keyless-sign, attest, push, emit operator manifest images block.
+  # ---------------------------------------------------------------------------
+  supply-chain:
+    name: Build, scan, sign, and attest agent-framework images
+    needs: validate-dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: Production
+    permissions:
+      contents: read
+      id-token: write        # keyless cosign (Fulcio) + OIDC
+      attestations: write
+      packages: write
+    env:
+      AF_RELEASE_SHA: ${{ inputs.release_sha }}
+      AF_FLY_ORG: ${{ inputs.fly_org }}
+      # Mutable official tags; the "Resolve external upstream base digests" step
+      # pins each to an immutable @sha256 at build time (resolve-then-pin).
+      AF_UPSTREAM_POSTGRES: ${{ vars.AF_UPSTREAM_POSTGRES || 'docker.io/library/postgres:16' }}
+      AF_UPSTREAM_REDIS: ${{ vars.AF_UPSTREAM_REDIS || 'docker.io/library/redis:7' }}
+      # cosign keyless identity that the operator manifest pins. github.workflow_ref
+      # equals "<owner>/<repo>/.github/workflows/<file>@<ref>", and the Fulcio SAN
+      # cosign requests is exactly https://github.com/<that>.
+      AF_CERT_IDENTITY: https://github.com/${{ github.workflow_ref }}
+      AF_CERT_ISSUER: https://token.actions.githubusercontent.com
+    steps:
+      - name: Checkout exact release
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "$actual_sha" != "$AF_RELEASE_SHA" ]; then
+            echo "::error::checked out $actual_sha instead of $AF_RELEASE_SHA"
+            exit 1
+          fi
+          test -f infra/agent-frameworks/docker-bake.hcl
+          test -f infra/agent-frameworks/fly/docker-bake.hcl
+          test -f infra/agent-frameworks/fly/operator-core.mjs
+          test -n "$AF_UPSTREAM_POSTGRES"
+          test -n "$AF_UPSTREAM_REDIS"
+
+      # F5: single source of truth. Import operator-core.mjs DEERFLOW_RUNTIME_IDENTITY
+      # (L12-20) at runtime and export its 7 values to $GITHUB_ENV. Every later
+      # consumer — the Stage-2 bake args, the provenance predicate, and the image
+      # label gate — reads THESE env values, so the workflow can never drift from
+      # the operator's audited runtime identity (a change there flows into the build).
+      - name: Load DeerFlow runtime identity from operator-core.mjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module >> "$GITHUB_ENV" <<'NODE'
+          import { DEERFLOW_RUNTIME_IDENTITY as id } from "./infra/agent-frameworks/fly/operator-core.mjs";
+          const map = {
+            DEERFLOW_PATCHED_RUNS_SHA256: "patchedRunsSha256",
+            DEERFLOW_CLEANUP_GUARD_SHA256: "cleanupGuardSha256",
+            DEERFLOW_RUNTIME_POLICY_SHA256: "runtimePolicySha256",
+            DEERFLOW_RUNTIME_CONFIG_SHA256: "runtimeConfigSha256",
+            DEERFLOW_DATABASE_BACKEND: "databaseBackend",
+            DEERFLOW_RUN_EVENTS_BACKEND: "runEventsBackend",
+            DEERFLOW_STREAM_BRIDGE_TYPE: "streamBridgeType",
+          };
+          const out = [];
+          for (const [envName, key] of Object.entries(map)) {
+            const v = id[key];
+            if (typeof v !== "string" || !v || /[\r\n=]/.test(v)) {
+              throw new Error(`operator-core DEERFLOW_RUNTIME_IDENTITY.${key} is missing or unsafe`);
+            }
+            out.push(`${envName}=${v}`);
+          }
+          process.stdout.write(out.join("\n") + "\n");
+          NODE
+
+      # setup-qemu is required because the Stage-1 `release` target builds
+      # linux/amd64 + linux/arm64 (docker-bake.hcl:10). See RISK: arm64 via QEMU
+      # is slow; consider `--set *.platform=linux/amd64` if arm64 is not deployed.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Install pinned flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+        with:
+          version: 0.4.69
+
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify the pinned Trivy scanner signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify "$TRIVY_IMAGE" \
+            --certificate-identity-regexp 'https://github\.com/aquasecurity/trivy/\.github/workflows/.+' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            >/dev/null
+
+      # fly_org is PROVEN at runtime, not asserted by a comment: fail loudly if the
+      # token's caller cannot see the requested org. A registry-only token cannot
+      # list orgs and trips the explicit deploy-token message here.
+      - name: Assert fly_org is accessible to the caller
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$AF_FLY_ORG"
+          # Capture STDOUT ONLY (stderr -> log) so a flyctl notice/warning cannot
+          # contaminate the JSON fed to JSON.parse. Still fail loud on non-zero:
+          # surface the log + the explicit deploy-token message and exit 1.
+          orgs_err="$RUNNER_TEMP/fly-orgs-list.err"
+          if ! orgs_json="$(flyctl orgs list --json 2>"$orgs_err")"; then
+            cat "$orgs_err" >&2 || true
+            echo "::error::cannot list Fly orgs with FLY_REGISTRY_TOKEN — it must be a deploy-scoped org token (not registry-only)" >&2
+            exit 1
+          fi
+          AF_ORGS_JSON="$orgs_json" node -e '
+            const orgs = JSON.parse(process.env.AF_ORGS_JSON);
+            const want = process.env.AF_FLY_ORG;
+            // flyctl orgs list --json shape varies: array of {Slug/slug} or object slug->name.
+            let slugs = [];
+            if (Array.isArray(orgs)) {
+              slugs = orgs.map((o) => o && (o.Slug || o.slug)).filter(Boolean);
+            } else if (orgs && typeof orgs === "object") {
+              slugs = Object.keys(orgs).concat(
+                Object.values(orgs).map((o) => o && typeof o === "object" && (o.Slug || o.slug)).filter(Boolean),
+              );
+            }
+            if (!slugs.includes(want)) { console.error("org " + want + " not among caller orgs: " + JSON.stringify(slugs)); process.exit(1); }
+          ' || { echo "::error::fly_org $AF_FLY_ORG is not accessible to FLY_REGISTRY_TOKEN — pass a valid org slug (flyctl orgs list) and a deploy-scoped token" >&2; exit 1; }
+          echo "fly_org $AF_FLY_ORG confirmed accessible"
+
+      # Fly's registry is per-app: the holder app MUST exist before its repo
+      # (registry.fly.io/<app>) will accept pushes. Create it idempotently, then
+      # install a reusable credential-refresh helper. `flyctl auth docker` and
+      # `cosign login` tokens expire in ~5 min, so every registry-touching phase
+      # (both bakes + each image in the sign loop) re-runs the helper first.
+      - name: Ensure holder Fly app and install registry-credential helper
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN"
+          test -n "$AF_FLY_ORG"
+          # Idempotent create — tolerate the app already existing (any actor/run).
+          if ! created="$(flyctl apps create "$AF_HOLDER_APP" --org "$AF_FLY_ORG" 2>&1)"; then
+            printf '%s\n' "$created" | grep -qiE 'already (exists|been taken)|name .*taken|has already' \
+              || { printf '%s\n' "$created" >&2; echo "::error::could not ensure holder app $AF_HOLDER_APP" >&2; exit 1; }
+            echo "holder app $AF_HOLDER_APP already exists — continuing"
+          fi
+          # Reusable login helper: refreshes docker + cosign creds for the private
+          # registry.fly.io repo. Callable from every later step (creds are short-lived).
+          login="$RUNNER_TEMP/aria-fly-registry-login.sh"
+          {
+            echo '#!/usr/bin/env bash'
+            echo 'set -euo pipefail'
+            echo ': "${FLY_API_TOKEN:?FLY_API_TOKEN required for registry login}"'
+            echo 'flyctl auth docker >/dev/null'
+            echo 'cosign login registry.fly.io -u x -p "$FLY_API_TOKEN" >/dev/null 2>&1'
+          } > "$login"
+          chmod +x "$login"
+          bash "$login"
+
+      # Prove holder-app ownership at runtime — never assume the create succeeded or
+      # that a prior run left it in place. Also resolves the token-scope risk: if
+      # FLY_REGISTRY_TOKEN is registry-only (cannot list apps), this fails fast with
+      # an explicit message that a deploy-scoped org token is required.
+      - name: Assert holder Fly app exists and is accessible
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$AF_FLY_ORG"
+          # Scope the query to $AF_FLY_ORG (flyctl apps list supports --org, matching
+          # `flyctl apps create --org` above), so a match proves the app is OWNED BY
+          # that org — not merely globally visible. Capture STDOUT ONLY (stderr ->
+          # log) so a flyctl notice cannot contaminate the JSON fed to JSON.parse.
+          apps_err="$RUNNER_TEMP/fly-apps-list.err"
+          if ! apps_json="$(flyctl apps list --org "$AF_FLY_ORG" --json 2>"$apps_err")"; then
+            cat "$apps_err" >&2 || true
+            echo "::error::cannot list Fly apps in org $AF_FLY_ORG with FLY_REGISTRY_TOKEN — it must be a deploy-scoped org token (app create/list + registry push), not registry-only" >&2
+            exit 1
+          fi
+          AF_APPS_JSON="$apps_json" node -e '
+            const apps = JSON.parse(process.env.AF_APPS_JSON);
+            const list = Array.isArray(apps) ? apps : (apps && Array.isArray(apps.apps) ? apps.apps : null);
+            if (!list) { console.error("unexpected flyctl apps list output"); process.exit(1); }
+            const want = process.env.AF_HOLDER_APP;
+            if (!list.some((a) => a && (a.Name === want || a.name === want))) {
+              console.error("holder app " + want + " not present in org " + process.env.AF_FLY_ORG);
+              process.exit(1);
+            }
+          ' || { echo "::error::holder app $AF_HOLDER_APP is not owned by org $AF_FLY_ORG (or not visible to FLY_REGISTRY_TOKEN) — ensure it exists in that org and the token is an org deploy token" >&2; exit 1; }
+          echo "holder app $AF_HOLDER_APP confirmed present in org $AF_FLY_ORG"
+
+      # -----------------------------------------------------------------------
+      # Resolve the external upstream base digests (postgres, redis) that the
+      # Stage-2 wrappers pull as *_UPSTREAM_IMAGE. deerflow/flowise "upstream"
+      # digests are NOT resolved here — Stage 1 BUILDS them from pinned git
+      # contexts and we capture their pushed digests below.
+      # -----------------------------------------------------------------------
+      - name: Resolve external upstream base digests
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          # F7: correct ref decomposition. Split off an optional @digest first,
+          # then strip only a trailing :tag from the FINAL path segment — never the
+          # host:port colon. A naive ${VAR%%:*} corrupts registry:5000/repo:tag and
+          # any @sha256: digest, producing an unpullable upstream reference.
+          repo_of() {
+            node -e '
+              const ref = process.argv[1];
+              const at = ref.lastIndexOf("@");
+              const name = at >= 0 ? ref.slice(0, at) : ref;
+              const slash = name.lastIndexOf("/");
+              const seg = name.slice(slash + 1);
+              const colon = seg.lastIndexOf(":");
+              process.stdout.write(colon >= 0 ? name.slice(0, slash + 1) + seg.slice(0, colon) : name);
+            ' "$1"
+          }
+          resolve() {
+            local ref="$1" raw digest
+            raw="$(docker buildx imagetools inspect "$ref" --raw)"
+            digest="sha256:$(printf '%s' "$raw" | sha256sum | awk '{print $1}')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::could not resolve $ref" >&2; return 1; }
+            printf '%s' "$digest"
+          }
+          pg_repo="$(repo_of "$AF_UPSTREAM_POSTGRES")"
+          redis_repo="$(repo_of "$AF_UPSTREAM_REDIS")"
+          pg_digest="$(resolve "$AF_UPSTREAM_POSTGRES")"
+          redis_digest="$(resolve "$AF_UPSTREAM_REDIS")"
+          {
+            echo "POSTGRES_UPSTREAM_IMAGE=${pg_repo}@${pg_digest}"
+            echo "REDIS_UPSTREAM_IMAGE=${redis_repo}@${redis_digest}"
+          } >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # STAGE 1 — base images. Push and capture each digest from the bake
+      # metadata (<target>.containerimage.digest is the multi-arch index digest).
+      # -----------------------------------------------------------------------
+      - name: Stage 1 — build and push base images
+        id: base
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash "$RUNNER_TEMP/aria-fly-registry-login.sh"   # F2: fresh creds before push
+          meta="$RUNNER_TEMP/base-metadata.json"
+          # F1: one holder repo, images told apart by tag (:*-base-<sha>); override
+          # the HCL's nested-path tags so every push is registry.fly.io/<app>:<tag>.
+          docker buildx bake \
+            -f infra/agent-frameworks/docker-bake.hcl \
+            --set "adapter.tags=$AF_HOLDER_REPO:adapter-base-$AF_RELEASE_SHA" \
+            --set "model-gateway.tags=$AF_HOLDER_REPO:model-gateway-base-$AF_RELEASE_SHA" \
+            --set "deerflow.tags=$AF_HOLDER_REPO:deerflow-base-$AF_RELEASE_SHA" \
+            --set "flowise.tags=$AF_HOLDER_REPO:flowise-base-$AF_RELEASE_SHA" \
+            --set "flowise-worker.tags=$AF_HOLDER_REPO:flowise-worker-base-$AF_RELEASE_SHA" \
+            --push \
+            --metadata-file "$meta"
+          # F4: derive each ref from the ACTUAL pushed image.name + digest recorded
+          # in the bake metadata — never rebuild the repo string from a namespace var.
+          emit() {
+            local target="$1" var="$2" ref
+            ref="$(AF_META="$meta" AF_TARGET="$target" node -e '
+              const m = require(process.env.AF_META);
+              const t = m[process.env.AF_TARGET] || {};
+              const digest = t["containerimage.digest"] || "";
+              let name = t["image.name"] || "";
+              if (!/^sha256:[0-9a-f]{64}$/.test(digest)) { console.error("emit: bad digest for " + process.env.AF_TARGET); process.exit(1); }
+              if (!name) { console.error("emit: missing image.name for " + process.env.AF_TARGET); process.exit(1); }
+              name = String(name).split(",")[0].trim();          // first tag if comma-separated
+              const at = name.lastIndexOf("@");                  // drop any @digest
+              if (at >= 0) name = name.slice(0, at);
+              const slash = name.lastIndexOf("/");               // strip :tag from final segment only
+              const seg = name.slice(slash + 1);
+              const colon = seg.lastIndexOf(":");
+              const repo = colon >= 0 ? name.slice(0, slash + 1) + seg.slice(0, colon) : name;
+              if (!/^[a-z0-9][a-z0-9./:_-]*$/.test(repo)) { console.error("emit: bad repo " + repo); process.exit(1); }
+              process.stdout.write(repo + "@" + digest);
+            ')"
+            echo "${var}=${ref}" >> "$GITHUB_ENV"
+          }
+          emit adapter        ADAPTER_UPSTREAM_IMAGE
+          emit model-gateway  MODEL_GATEWAY_UPSTREAM_IMAGE
+          emit deerflow       DEERFLOW_UPSTREAM_IMAGE
+          emit flowise        FLOWISE_UPSTREAM_IMAGE
+          emit flowise-worker FLOWISE_WORKER_UPSTREAM_IMAGE
+
+      # -----------------------------------------------------------------------
+      # STAGE 2 — Fly wrappers. All *_UPSTREAM_IMAGE come from Stage 1 (5) and
+      # the resolved external upstream (postgres, redis). Capture each final
+      # wrapper digest.
+      # -----------------------------------------------------------------------
+      - name: Stage 2 — build and push Fly wrapper images
+        id: wrap
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash "$RUNNER_TEMP/aria-fly-registry-login.sh"   # F2: fresh creds before push
+          meta="$RUNNER_TEMP/wrapper-metadata.json"
+          # F1: single holder repo, one tag per role (:<role>-<sha>). The adapter
+          # and redis targets each build+push ONCE, so both operator roles that
+          # reference them resolve to one identical @sha256 (operator-core L249-254).
+          # F5: the 7 DeerFlow build-args are passed from the SAME workflow env that
+          # authors the provenance predicate — a single source of truth, so the
+          # bake args, the predicate, and the image labels cannot diverge.
+          docker buildx bake \
+            -f infra/agent-frameworks/fly/docker-bake.hcl \
+            --set "postgres.tags=$AF_HOLDER_REPO:postgres-$AF_RELEASE_SHA" \
+            --set "redis.tags=$AF_HOLDER_REPO:redis-$AF_RELEASE_SHA" \
+            --set "deerflow.tags=$AF_HOLDER_REPO:deerflow-$AF_RELEASE_SHA" \
+            --set "flowise.tags=$AF_HOLDER_REPO:flowise-$AF_RELEASE_SHA" \
+            --set "flowise-worker.tags=$AF_HOLDER_REPO:flowise-worker-$AF_RELEASE_SHA" \
+            --set "adapter.tags=$AF_HOLDER_REPO:adapter-$AF_RELEASE_SHA" \
+            --set "model-gateway.tags=$AF_HOLDER_REPO:model-gateway-$AF_RELEASE_SHA" \
+            --set "deerflow.args.DEERFLOW_PATCHED_RUNS_SHA256=$DEERFLOW_PATCHED_RUNS_SHA256" \
+            --set "deerflow.args.DEERFLOW_CLEANUP_GUARD_SHA256=$DEERFLOW_CLEANUP_GUARD_SHA256" \
+            --set "deerflow.args.DEERFLOW_RUNTIME_POLICY_SHA256=$DEERFLOW_RUNTIME_POLICY_SHA256" \
+            --set "deerflow.args.DEERFLOW_RUNTIME_CONFIG_SHA256=$DEERFLOW_RUNTIME_CONFIG_SHA256" \
+            --set "deerflow.args.DEERFLOW_DATABASE_BACKEND=$DEERFLOW_DATABASE_BACKEND" \
+            --set "deerflow.args.DEERFLOW_RUN_EVENTS_BACKEND=$DEERFLOW_RUN_EVENTS_BACKEND" \
+            --set "deerflow.args.DEERFLOW_STREAM_BRIDGE_TYPE=$DEERFLOW_STREAM_BRIDGE_TYPE" \
+            --push \
+            --metadata-file "$meta"
+          # F4: compose each ref from the pushed image.name + digest in the metadata.
+          emit() {
+            local target="$1" var="$2" ref
+            ref="$(AF_META="$meta" AF_TARGET="$target" node -e '
+              const m = require(process.env.AF_META);
+              const t = m[process.env.AF_TARGET] || {};
+              const digest = t["containerimage.digest"] || "";
+              let name = t["image.name"] || "";
+              if (!/^sha256:[0-9a-f]{64}$/.test(digest)) { console.error("emit: bad digest for " + process.env.AF_TARGET); process.exit(1); }
+              if (!name) { console.error("emit: missing image.name for " + process.env.AF_TARGET); process.exit(1); }
+              name = String(name).split(",")[0].trim();          // first tag if comma-separated
+              const at = name.lastIndexOf("@");                  // drop any @digest
+              if (at >= 0) name = name.slice(0, at);
+              const slash = name.lastIndexOf("/");               // strip :tag from final segment only
+              const seg = name.slice(slash + 1);
+              const colon = seg.lastIndexOf(":");
+              const repo = colon >= 0 ? name.slice(0, slash + 1) + seg.slice(0, colon) : name;
+              if (!/^[a-z0-9][a-z0-9./:_-]*$/.test(repo)) { console.error("emit: bad repo " + repo); process.exit(1); }
+              process.stdout.write(repo + "@" + digest);
+            ')"
+            echo "${var}=${ref}" >> "$GITHUB_ENV"
+          }
+          emit postgres       AF_REF_POSTGRES
+          emit redis          AF_REF_REDIS
+          emit model-gateway  AF_REF_MODEL_GATEWAY
+          emit deerflow       AF_REF_DEERFLOW
+          emit flowise        AF_REF_FLOWISE
+          emit flowise-worker AF_REF_FLOWISE_WORKER
+          emit adapter        AF_REF_ADAPTER
+
+      # -----------------------------------------------------------------------
+      # F5: prove the deerflow wrapper image ACTUALLY carries the audited runtime
+      # identity. deerflow.Dockerfile writes each build-arg as an
+      # io.mantu.aria.deerflow.* LABEL; assert every label equals the SAME env
+      # value fed to the Stage-2 bake args and the provenance predicate, so the
+      # predicate can never claim an identity the image does not embed.
+      # -----------------------------------------------------------------------
+      - name: Assert DeerFlow image labels match the audited runtime identity
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash "$RUNNER_TEMP/aria-fly-registry-login.sh"   # F2/F3: creds for the private repo
+          labels="$RUNNER_TEMP/deerflow-image.json"
+          # .Image is the OCI image config. The walk() parser below handles BOTH the
+          # single-image shape (.config.Labels) and the platform-keyed multi-arch
+          # shape (.["linux/amd64"].config.Labels), and Config/config + Labels/labels
+          # casing. Self-verifying: this step IS the verification — it fails the job
+          # if the io.mantu.aria.deerflow.* labels are absent or mismatched, and
+          # throws on zero labels found, so it never passes silently.
+          docker buildx imagetools inspect "$AF_REF_DEERFLOW" --format '{{ json .Image }}' > "$labels"
+          AF_LABELS_FILE="$labels" node <<'NODE'
+          const fs = require("node:fs");
+          const parsed = JSON.parse(fs.readFileSync(process.env.AF_LABELS_FILE, "utf8"));
+          const expected = {
+            "io.mantu.aria.deerflow.patched-runs-sha256": process.env.DEERFLOW_PATCHED_RUNS_SHA256,
+            "io.mantu.aria.deerflow.cleanup-guard-sha256": process.env.DEERFLOW_CLEANUP_GUARD_SHA256,
+            "io.mantu.aria.deerflow.runtime-policy-sha256": process.env.DEERFLOW_RUNTIME_POLICY_SHA256,
+            "io.mantu.aria.deerflow.runtime-config-sha256": process.env.DEERFLOW_RUNTIME_CONFIG_SHA256,
+            "io.mantu.aria.deerflow.database-backend": process.env.DEERFLOW_DATABASE_BACKEND,
+            "io.mantu.aria.deerflow.run-events-backend": process.env.DEERFLOW_RUN_EVENTS_BACKEND,
+            "io.mantu.aria.deerflow.stream-bridge-type": process.env.DEERFLOW_STREAM_BRIDGE_TYPE,
+          };
+          const sets = [];
+          const walk = (o) => {
+            if (!o || typeof o !== "object") return;
+            for (const ck of ["config", "Config"]) {
+              const cfg = o[ck];
+              if (cfg && typeof cfg === "object") {
+                const labels = cfg.Labels ?? cfg.labels;
+                if (labels && typeof labels === "object") sets.push(labels);
+              }
+            }
+            for (const v of Object.values(o)) walk(v);
+          };
+          walk(parsed);
+          if (!sets.length) throw new Error("no image config labels found on the deerflow image");
+          for (const [k, v] of Object.entries(expected)) {
+            if (!v) throw new Error(`audited identity value for ${k} is empty`);
+            const present = sets.filter((s) => Object.prototype.hasOwnProperty.call(s, k));
+            if (!present.length) throw new Error(`deerflow image is missing label ${k}`);
+            for (const s of present) {
+              if (s[k] !== v) throw new Error(`deerflow label ${k}="${s[k]}" != audited identity "${v}"`);
+            }
+          }
+          process.stderr.write("deerflow label assertion passed\n");
+          NODE
+
+      # -----------------------------------------------------------------------
+      # Scan + SBOM + keyless sign + spdxjson attest + slsaprovenance attest +
+      # CI self-check, once per distinct wrapper digest (7). The 10 operator
+      # roles map onto these 7 signed refs; shared refs (redis, adapter) are
+      # signed once. Trivy gate matches the operator exactly: ANY HIGH/CRITICAL
+      # rejects.
+      # NOTE: the operator host that later runs `operator.mjs prepare` must ALSO
+      # hold registry.fly.io auth (docker + cosign + trivy) to re-run this verify
+      # at deploy time — CI signing does not exempt the operator from logging in.
+      # -----------------------------------------------------------------------
+      - name: Scan, sign, attest, and self-check each wrapper digest
+        shell: bash
+        env:
+          # One token drives every registry touch: docker/cosign login (via the
+          # helper) plus Trivy, which runs in its own container and cannot see the
+          # host credential helper (F3; Fly ignores the username, token is the password).
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN"
+          login="$RUNNER_TEMP/aria-fly-registry-login.sh"
+          work="$RUNNER_TEMP/aria-af-supply-chain"
+          mkdir -p "$work"
+
+          scan_sign_attest() {
+            local name="$1" ref="$2" source_commit="$3" is_deerflow="$4"
+            local sbom="$work/$name.spdx.json" prov="$work/$name.provenance.json"
+            local verify="$work/$name.verify.provenance.json"
+
+            # F2/F3: registry creds (flyctl auth docker + cosign login registry.fly.io)
+            # are refreshed immediately before EVERY registry-touching op below. A
+            # single image's full cycle (scan + SBOM + sign + 2 attests + 3 verifies)
+            # can exceed the ~5-min Fly token lifetime, so per-op re-auth — each op is
+            # seconds — guarantees valid creds right up to the moment each op runs.
+
+            # (1) Vulnerability gate — reject any HIGH/CRITICAL (operator parity).
+            bash "$login"
+            docker run --rm \
+              -e TRIVY_USERNAME=x -e TRIVY_PASSWORD="$FLY_API_TOKEN" \
+              "$TRIVY_IMAGE" image \
+              --severity HIGH,CRITICAL --exit-code 1 --format table --timeout 15m "$ref"
+
+            # (2) SPDX SBOM for `cosign attest --type spdxjson`.
+            bash "$login"
+            docker run --rm \
+              -e TRIVY_USERNAME=x -e TRIVY_PASSWORD="$FLY_API_TOKEN" \
+              "$TRIVY_IMAGE" image \
+              --format spdx-json --timeout 15m "$ref" > "$sbom"
+            test -s "$sbom"
+
+            # (3) SLSA v0.2 provenance predicate. Cosign sets the statement
+            # subject from <ref>; we only author the predicate body. sourceCommit
+            # lives in invocation.configSource.digest.sha1 (found by the operator's
+            # containsExactString over predicate). For deerflow the 7 runtime
+            # build-args live under invocation.parameters as `build-arg:<KEY>`
+            # (found by the operator's containsExactParameter) — the SAME env
+            # values passed to the Stage-2 bake args, so they cannot diverge.
+            AF_PRED_SOURCE_COMMIT="$source_commit" \
+            AF_PRED_IS_DEERFLOW="$is_deerflow" \
+            AF_PRED_NAME="$name" \
+            node > "$prov" <<'NODE'
+            const c = process.env.AF_PRED_SOURCE_COMMIT;
+            if (!/^[0-9a-f]{40}$/.test(c)) { throw new Error("bad sourceCommit"); }
+            const deerflow = process.env.AF_PRED_IS_DEERFLOW === "yes";
+            const sourceUri = deerflow
+              ? "git+https://github.com/bytedance/deer-flow"
+              : (process.env.AF_PRED_NAME === "flowise" || process.env.AF_PRED_NAME === "flowise-worker")
+                ? "git+https://github.com/FlowiseAI/Flowise"
+                : "git+https://github.com/mysticalsin/aria-sourcing";
+            const parameters = deerflow ? {
+              "build-arg:DEERFLOW_PATCHED_RUNS_SHA256": process.env.DEERFLOW_PATCHED_RUNS_SHA256,
+              "build-arg:DEERFLOW_CLEANUP_GUARD_SHA256": process.env.DEERFLOW_CLEANUP_GUARD_SHA256,
+              "build-arg:DEERFLOW_RUNTIME_POLICY_SHA256": process.env.DEERFLOW_RUNTIME_POLICY_SHA256,
+              "build-arg:DEERFLOW_RUNTIME_CONFIG_SHA256": process.env.DEERFLOW_RUNTIME_CONFIG_SHA256,
+              "build-arg:DEERFLOW_DATABASE_BACKEND": process.env.DEERFLOW_DATABASE_BACKEND,
+              "build-arg:DEERFLOW_RUN_EVENTS_BACKEND": process.env.DEERFLOW_RUN_EVENTS_BACKEND,
+              "build-arg:DEERFLOW_STREAM_BRIDGE_TYPE": process.env.DEERFLOW_STREAM_BRIDGE_TYPE,
+            } : {};
+            const predicate = {
+              builder: { id: `https://github.com/${process.env.GITHUB_WORKFLOW_REF}` },
+              buildType: "https://github.com/mysticalsin/aria-sourcing/agent-frameworks-bake@v1",
+              invocation: {
+                configSource: {
+                  uri: `${sourceUri}@${c}`,
+                  digest: { sha1: c },
+                  entryPoint: `infra/agent-frameworks/fly/docker-bake.hcl#${process.env.AF_PRED_NAME}`,
+                },
+                parameters,
+                environment: { githubRunId: process.env.GITHUB_RUN_ID, releaseSha: process.env.AF_RELEASE_SHA },
+              },
+              metadata: { buildInvocationId: `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`, reproducible: false },
+              materials: [{ uri: `${sourceUri}@${c}`, digest: { sha1: c } }],
+            };
+            process.stdout.write(JSON.stringify(predicate));
+          NODE
+            test -s "$prov"
+
+            # (4) keyless signature + attestations (all keyless via id-token).
+            # Fresh creds before EACH cosign op (F2/F3).
+            bash "$login"; cosign sign   --yes "$ref"
+            bash "$login"; cosign attest --yes --type spdxjson       --predicate "$sbom" "$ref"
+            bash "$login"; cosign attest --yes --type slsaprovenance --predicate "$prov" "$ref"
+
+            # (5) F6: CI self-check. Verify the signature + attestation TYPES, then
+            # run the operator's OWN predicate CONTENT checks against the fetched
+            # slsaprovenance JSON — deep sourceCommit match plus, for deerflow, every
+            # build-arg param — mirroring operator.mjs containsExactString /
+            # containsExactParameter (operator.mjs L204-244). Fails the job on any miss.
+            # Fresh creds before EACH verify op (F2/F3).
+            bash "$login"
+            cosign verify \
+              --certificate-identity "$AF_CERT_IDENTITY" \
+              --certificate-oidc-issuer "$AF_CERT_ISSUER" \
+              --output json "$ref" >/dev/null
+            bash "$login"
+            cosign verify-attestation \
+              --certificate-identity "$AF_CERT_IDENTITY" \
+              --certificate-oidc-issuer "$AF_CERT_ISSUER" \
+              --type spdxjson --output json "$ref" >/dev/null
+            bash "$login"
+            cosign verify-attestation \
+              --certificate-identity "$AF_CERT_IDENTITY" \
+              --certificate-oidc-issuer "$AF_CERT_ISSUER" \
+              --type slsaprovenance --output json "$ref" > "$verify"
+            AF_SELFCHECK_REF="$ref" \
+            AF_SELFCHECK_SOURCE_COMMIT="$source_commit" \
+            AF_SELFCHECK_IS_DEERFLOW="$is_deerflow" \
+            AF_SELFCHECK_FILE="$verify" \
+            node <<'NODE'
+            const fs = require("node:fs");
+            const raw = fs.readFileSync(process.env.AF_SELFCHECK_FILE, "utf8");
+            // --- vendored from operator.mjs L171-244 (same logic shape) ---
+            function jsonDocuments(output) {
+              const t = output.trim();
+              if (!t) throw new Error("self-check: provenance evidence is empty");
+              try { const p = JSON.parse(t); return Array.isArray(p) ? p : [p]; }
+              catch {
+                const docs = [];
+                for (const line of t.split(/\r?\n/).filter(Boolean)) docs.push(JSON.parse(line));
+                return docs.flatMap((v) => Array.isArray(v) ? v : [v]);
+              }
+            }
+            function statements(output) {
+              const out = [];
+              for (const d of jsonDocuments(output)) {
+                if (d && typeof d === "object" && typeof d.payload === "string") {
+                  out.push(JSON.parse(Buffer.from(d.payload, "base64").toString("utf8")));
+                } else if (d && typeof d === "object" && Array.isArray(d.subject)) {
+                  out.push(d);
+                }
+              }
+              if (!out.length) throw new Error("self-check: no signed statement");
+              return out;
+            }
+            function containsExactString(v, e, depth = 0) {
+              if (depth > 30) return false;
+              if (v === e) return true;
+              if (Array.isArray(v)) return v.some((i) => containsExactString(i, e, depth + 1));
+              if (v && typeof v === "object") return Object.values(v).some((i) => containsExactString(i, e, depth + 1));
+              return false;
+            }
+            function containsExactParameter(v, k, val, depth = 0) {
+              if (depth > 30 || !v || typeof v !== "object") return false;
+              if (Array.isArray(v)) return v.some((i) => containsExactParameter(i, k, val, depth + 1));
+              for (const [key, item] of Object.entries(v)) {
+                if ((key === k || key === `build-arg:${k}`) && item === val) return true;
+                if (containsExactParameter(item, k, val, depth + 1)) return true;
+              }
+              return false;
+            }
+            const expectedDigest = process.env.AF_SELFCHECK_REF.split("@sha256:")[1];
+            const sourceCommit = process.env.AF_SELFCHECK_SOURCE_COMMIT;
+            const bound = statements(raw).filter((s) => Array.isArray(s?.subject) &&
+              s.subject.some((sub) => sub && typeof sub === "object" && sub.digest?.sha256 === expectedDigest));
+            if (!bound.length) throw new Error("self-check: provenance does not bind the pushed digest");
+            if (!bound.some((s) => containsExactString(s.predicate, sourceCommit))) {
+              throw new Error("self-check: provenance does not bind the source commit");
+            }
+            if (process.env.AF_SELFCHECK_IS_DEERFLOW === "yes") {
+              const params = {
+                DEERFLOW_PATCHED_RUNS_SHA256: process.env.DEERFLOW_PATCHED_RUNS_SHA256,
+                DEERFLOW_CLEANUP_GUARD_SHA256: process.env.DEERFLOW_CLEANUP_GUARD_SHA256,
+                DEERFLOW_RUNTIME_POLICY_SHA256: process.env.DEERFLOW_RUNTIME_POLICY_SHA256,
+                DEERFLOW_RUNTIME_CONFIG_SHA256: process.env.DEERFLOW_RUNTIME_CONFIG_SHA256,
+                DEERFLOW_DATABASE_BACKEND: process.env.DEERFLOW_DATABASE_BACKEND,
+                DEERFLOW_RUN_EVENTS_BACKEND: process.env.DEERFLOW_RUN_EVENTS_BACKEND,
+                DEERFLOW_STREAM_BRIDGE_TYPE: process.env.DEERFLOW_STREAM_BRIDGE_TYPE,
+              };
+              const ok = bound.some((s) => {
+                const roots = [
+                  s.predicate?.invocation?.parameters,
+                  s.predicate?.buildDefinition?.externalParameters,
+                ].filter((r) => r && typeof r === "object" && !Array.isArray(r));
+                return roots.some((root) => Object.entries(params).every(([k, val]) => containsExactParameter(root, k, val)));
+              });
+              if (!ok) throw new Error("self-check: provenance does not bind the DeerFlow build-args");
+            }
+            process.stderr.write(`self-check passed: ${process.env.AF_SELFCHECK_REF}\n`);
+          NODE
+          }
+
+          #                name           ref                       sourceCommit            is_deerflow
+          scan_sign_attest postgres       "$AF_REF_POSTGRES"        "$AF_RELEASE_SHA"        no
+          scan_sign_attest redis          "$AF_REF_REDIS"           "$AF_RELEASE_SHA"        no
+          scan_sign_attest model-gateway  "$AF_REF_MODEL_GATEWAY"   "$AF_RELEASE_SHA"        no
+          scan_sign_attest deerflow       "$AF_REF_DEERFLOW"        "$DEERFLOW_SOURCE_COMMIT" yes
+          scan_sign_attest flowise        "$AF_REF_FLOWISE"         "$FLOWISE_SOURCE_COMMIT"  no
+          scan_sign_attest flowise-worker "$AF_REF_FLOWISE_WORKER"  "$FLOWISE_SOURCE_COMMIT"  no
+          scan_sign_attest adapter        "$AF_REF_ADAPTER"         "$AF_RELEASE_SHA"        no
+
+      # -----------------------------------------------------------------------
+      # Emit the operator manifest `images` block (10 roles) + certificate
+      # identity/issuer, ready to paste into aria.agent-framework.fly-manifest.v2.
+      # -----------------------------------------------------------------------
+      - name: Emit operator manifest images block
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/aria-af-supply-chain"
+          out="$work/manifest-images.json"
+          node > "$out" <<'NODE'
+          const id = process.env.AF_CERT_IDENTITY;
+          const iss = process.env.AF_CERT_ISSUER;
+          const release = process.env.AF_RELEASE_SHA;
+          const df = process.env.DEERFLOW_SOURCE_COMMIT;
+          const fw = process.env.FLOWISE_SOURCE_COMMIT;
+          const ref = {
+            postgres: process.env.AF_REF_POSTGRES,
+            redis: process.env.AF_REF_REDIS,
+            modelGateway: process.env.AF_REF_MODEL_GATEWAY,
+            deerflow: process.env.AF_REF_DEERFLOW,
+            flowise: process.env.AF_REF_FLOWISE,
+            flowiseWorker: process.env.AF_REF_FLOWISE_WORKER,
+            adapter: process.env.AF_REF_ADAPTER,
+          };
+          for (const [k, v] of Object.entries(ref)) {
+            if (!/@sha256:[0-9a-f]{64}$/.test(v ?? "")) throw new Error(`missing ref ${k}`);
+          }
+          const img = (r, sourceCommit) => ({
+            ref: r, sourceCommit, certificateIdentity: id, certificateIssuer: iss,
+          });
+          // ROLE_ORDER (operator-core.mjs:21-32). Shared: adapter pair, redis pair.
+          const images = {
+            "deerflow-db": img(ref.postgres, release),
+            "deerflow-redis": img(ref.redis, release),
+            "flowise-db": img(ref.postgres, release),
+            "flowise-redis": img(ref.redis, release),
+            "model-gateway": img(ref.modelGateway, release),
+            "deerflow": img(ref.deerflow, df),
+            "flowise": img(ref.flowise, fw),
+            "flowise-worker": img(ref.flowiseWorker, fw),
+            "deerflow-adapter": img(ref.adapter, release),
+            "flowise-adapter": img(ref.adapter, release),
+          };
+          process.stdout.write(JSON.stringify({ images }, null, 2) + "\n");
+          NODE
+          echo "----- operator manifest images block -----"
+          cat "$out"
+
+      - name: Archive supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aria-agent-frameworks-supply-chain-${{ inputs.release_sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/aria-af-supply-chain/manifest-images.json
+            ${{ runner.temp }}/aria-af-supply-chain/*.spdx.json
+            ${{ runner.temp }}/aria-af-supply-chain/*.provenance.json
+          if-no-files-found: error
+          retention-days: 90

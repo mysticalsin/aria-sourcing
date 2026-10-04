@@ -18,7 +18,10 @@ ok("suppression route uses the service client only after session authorization",
 ok("suppression route still scopes service writes to current workspace", /workspace_id: workspaceId/.test(route));
 ok("client records a visible activity when an enforcement sync fails", /Suppression not synced to enforcement list/.test(store));
 ok("negative reply persists suppression before local state advances", /await persistSuppressionToServer/.test(store));
-ok("negative reply revokes every existing outreach approval", /Promise\.all\(approvalIds\.map\(\(messageId\) => revokeOutreachApproval/.test(store));
+ok(
+  "negative reply revokes every existing outreach approval through the guarded dispatch boundary",
+  /Promise\.all\(\s*approvalIds\.map\(\(messageId\) => revokeOutreachApproval\(messageId, workspaceFetch\)\)/.test(store),
+);
 ok("negative reply rejects queued/manual local outreach state", /m\.status === "Pending Manual Send"/.test(store) && /m\.status === "Scheduled" && !m\.sentAt/.test(store));
 
 console.log(`RESULT compliance-suppression: ${pass} passed, ${fail} failed`);

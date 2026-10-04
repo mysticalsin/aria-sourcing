@@ -16,6 +16,7 @@ ok("admin can manage settings", can("admin", "manage_settings"));
 ok("admin can manage keys", can("admin", "manage_keys"));
 ok("admin can manage fleet", can("admin", "manage_fleet"));
 ok("admin can manage roles", can("admin", "manage_roles"));
+ok("admin can manage autopilot", can("admin", "manage_autopilot"));
 ok("member can source", can("member", "source"));
 ok("member can outreach", can("member", "outreach"));
 ok("member CANNOT manage keys", !can("member", "manage_keys"));
@@ -32,6 +33,8 @@ ok("Anthropic key without prefix rejected", !validateApiKeyFormat("Anthropic", "
 ok("valid OpenAI key", validateApiKeyFormat("OpenAI", "sk-" + "b".repeat(30)).valid);
 ok("valid Resend key", validateApiKeyFormat("Resend", "re_" + "c".repeat(20)).valid);
 ok("valid SendGrid key", validateApiKeyFormat("SendGrid", "SG." + "d".repeat(30)).valid);
+ok("valid Apify key", validateApiKeyFormat("Apify", "apify_api_" + "e".repeat(30)).valid);
+ok("malformed Apify key rejected", !validateApiKeyFormat("Apify", "apify_" + "f".repeat(5)).valid);
 ok("empty key rejected", !validateApiKeyFormat("OpenAI", "").valid);
 ok("custom: short rejected", !validateApiKeyFormat("Custom", "abc").valid);
 ok("custom: long accepted", validateApiKeyFormat("Custom", "abcdefghij").valid);

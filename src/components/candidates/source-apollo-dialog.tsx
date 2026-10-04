@@ -19,8 +19,8 @@ function splitList(v: string): string[] {
  * filters (title, seniority, location, company domain, keywords) and gets back
  * real, named profiles that land directly as scored candidates. Free — no
  * Apollo credits spent. Contact details are NOT included at search time;
- * revealing email/phone is a separate, explicitly confirmed per-candidate
- * action (costs 1 Apollo credit) from the candidate drawer. Gated behind the
+ * revealing email is a separate, explicitly confirmed per-candidate
+ * action (may cost up to 1 Apollo credit) from the candidate drawer. Gated behind the
  * same "source" permission as the other sourcing buttons, and only rendered
  * once an Apollo key is connected (Settings → API Keys).
  */
@@ -59,12 +59,17 @@ export function SourceApolloButton({ campaignId, disabled }: { campaignId: strin
     setBusy(false);
     if (res.source === "apollo") {
       resetAndClose();
+      const added = res.accepted.length;
       toast({
-        title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"} via Apollo`,
+        title: added > 0
+          ? `Sourced ${added} candidate${added === 1 ? "" : "s"} via Apollo`
+          : "No Apollo candidates added",
         description: res.skipped.length
           ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-          : "Live results from Apollo.",
-        variant: "success",
+          : added > 0
+            ? "Live results from Apollo."
+            : "The search returned no matching profiles.",
+        variant: added > 0 ? "success" : "info",
       });
       return;
     }
@@ -90,7 +95,7 @@ export function SourceApolloButton({ campaignId, disabled }: { campaignId: strin
         open={open}
         onClose={resetAndClose}
         title="Source via Apollo"
-        description="Free search: no Apollo credits spent. Results land directly as candidates; reveal contact details per-candidate afterward (that step costs a credit)."
+        description="Free search: no Apollo credits spent. Results land directly as candidates; reveal email per candidate afterward (that step may use up to one credit)."
         footer={
           <>
             <Button variant="ghost" size="md" onClick={resetAndClose}>

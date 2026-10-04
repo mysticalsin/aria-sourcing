@@ -1,0 +1,12 @@
+{
+  "llm_wiki": true,
+  "suggested_search": true,
+  "source_button": true,
+  "java_note": true,
+  "no_contact_grant": true,
+  "senior_java": true,
+  "agent_brain": false,
+  "source_enabled": true,
+  "wikiNotes": 5,
+  "sourceUsers": 5
+}

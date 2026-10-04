@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button, Field, Input, Modal, useToast } from "@/components/ui";
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import { experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
 import { Building2, Loader2 } from "lucide-react";
 
 const POLL_INTERVAL_MS = 4_000;
@@ -40,7 +41,7 @@ export function SourceSillageButton({ campaignId, disabled }: { campaignId: stri
   // /api/source/sillage/status in the background.
   React.useEffect(() => clearPoll, [clearPoll]);
 
-  if (!can(role, "source")) return null;
+  if (!experimentalPaidSourcingEnabled || !can(role, "source")) return null;
   if (!apiKeys.some((k) => k.provider === "Sillage")) return null;
 
   function resetAndClose() {

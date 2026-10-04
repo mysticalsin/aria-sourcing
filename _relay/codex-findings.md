@@ -19,6 +19,30 @@ every `open` entry at the start of each session/loop iteration. See
 Historical and current findings follow. The current consolidated audit is
 `_relay/2026-07-11-enterprise-audit.md`.
 
+## 2026-07-14 — Booking and report actions returned false success
+**Severity:** correctness
+**File:** src/lib/store.ts:2957
+**Issue:** Booking creation, status updates, and report generation reported success after `commit()` rejection; learning acceptance used two independent commits and callers always toasted success.
+**Repro/evidence:** A blocked workspace or rejected commit still emitted a booking event or returned a generated report. An unknown status-only booking update returned `{ok:true}` and an unknown learning ID created activity.
+**Suggested fix:** Propagate commit results, validate booking patches, keep candidate booking snapshots aligned, and apply a learning decision atomically.
+**Status:** fixed (11ef0db)
+
+## 2026-07-14 — Live calendar creation has no durable booking authority
+**Severity:** security
+**File:** src/app/api/calendar/event/route.ts:20
+**Issue:** An authenticated member with `book` can submit arbitrary attendee and invite content, while the client calls the provider before any durable booking command, idempotency claim, or reconciliation receipt exists.
+**Repro/evidence:** The route accepts client-owned name, email, role, times, agenda, and `confirmLive`; `createBookingFor` discards `eventId`, then relies on a debounced workspace save. Timeout, conflict, suppression, or retry can orphan or duplicate a provider event.
+**Suggested fix:** Add server-owned prepare/confirm/claim/reconcile authority, content-bound idempotency, provider delivery states, reschedule/cancel synchronization, and erasure obligations. Keep live calendar effects fail closed until it exists.
+**Status:** fixed (99419a1; migration 0034 adds calendar_booking_ledger + claim_calendar_booking/reconcile_calendar_booking SECURITY DEFINER RPCs with a double-book partial unique index and request-id idempotency; the route claims before the provider call, replay never re-invokes the provider, and reconcile leaves 'claimed' on unknown outcomes for human review; tests/calendar-booking-authority.mts 58/58)
+
+## 2026-07-14 — Generated reports contain unverified fixed intelligence
+**Severity:** spec-mismatch
+**File:** src/lib/mock-ai.ts:1191
+**Issue:** Weekly reports present fixed cost, best-day/time, winning-pattern, and projected-impact claims as measured campaign intelligence.
+**Repro/evidence:** `generateWeeklyReport` returns `costPerHire: 4200`, fixed Tuesday/time claims, a fixed 2.1x pattern, and the same three proposals without evidence provenance.
+**Suggested fix:** Return `null` or explicitly unavailable facts unless derived from campaign evidence, and bind each learned proposal to reviewed aggregate receipts.
+**Status:** fixed (e694837; src/lib/mock-ai.ts labels the WeeklyReport cost-per-hire, best-day/time, winning-pattern, and projected-impact figures via `illustrativeFields` so exports/UI never present them as measured campaign intelligence)
+
 ## 2026-07-09 — Late inactive-sender opt-out was discarded
 **Severity:** correctness
 **File:** src/app/api/webhooks/whatsapp/route.ts
@@ -105,7 +129,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Live runs accept an optional `specId` but build the graph from caller-supplied campaign JSON. Stored role brief, channels, ownership, status, and guardrails are not loaded or enforced.
 **Repro/evidence:** `specId` is only inserted at line 121. Migration `0007_agent_runtime.sql` makes `agent_runs.spec_id` non-null, so omitting it silently prevents persistence while the route still returns a successful stateless result.
 **Suggested fix:** Require and authorize a stored spec in live mode, build graph state from it, and fail or pause when persistence fails.
-**Status:** open
+**Status:** fixed (01721dc; live runs require the exact active owner-bound spec, validate its executable role/policy before receipt or egress, persist the truthful run-history/no-delivery policy snapshot, recheck active status before every step, and pass independent QA plus the full local gate)
 
 ## 2026-07-09 — Agent ownership is workspace-wide, not per-user
 **Severity:** spec-mismatch
@@ -113,7 +137,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Regular workspace users can select and update every AgentSpec and run because policies check only workspace, not `owner_id`. This fails the two-user per-session isolation criterion.
 **Repro/evidence:** AgentSpec select and update policies at lines 153-166 contain no owner or admin predicate. API GET and PATCH also omit owner filters.
 **Suggested fix:** Add owner-or-admin RLS and API filters, then negative tests for two users in one workspace and two workspaces.
-**Status:** open
+**Status:** fixed (a469aee, 01721dc; migration 0025 enforces owner-or-admin metadata access and immutable authority while execution requires exact owner; disposable PostgreSQL agent-memory isolation and application authority suites pass)
 
 ## 2026-07-09 — Live backend failure silently becomes demo state
 **Severity:** correctness
@@ -121,7 +145,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** RPC, read, and network failures return an empty workspace marker. Hydration then seeds synthetic demo data, presenting a failed live backend as an operational workspace whose changes do not persist.
 **Repro/evidence:** Error branches return `workspaceId: "", state: null`; `src/lib/store.ts:894-916` uses the same shape to build seed state.
 **Suggested fix:** Model live load as loaded, empty, failed, or conflict and show a blocking degraded state on failure.
-**Status:** open
+**Status:** fixed (bb719a7, ae571d9, 9023a63; live workspace failures block the application shell and effectful actions, preserve retryable unsaved state, and pass workspace availability/runtime/status/application-shell suites)
 
 ## 2026-07-09 — UI seats cannot become live normalized seats
 **Severity:** spec-mismatch
@@ -129,7 +153,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Fleet seat create and mode changes live only in `workspace_state`, while OAuth, domain verification, AgentSpec, and send routes use normalized `agent_seats` rows.
 **Repro/evidence:** No client or API path inserts the normalized row when the UI creates a seat. A UI-created live seat therefore cannot satisfy the send route lookup.
 **Suggested fix:** Make a role-checked server API and normalized table authoritative in live mode; keep local seats demo-only.
-**Status:** open
+**Status:** fixed (79dfe7b; normalized server-side seat APIs are authoritative in live mode and `fleet-seats-server` passes 18/18)
 
 ## 2026-07-09 — Restore drill can pass after restore failure
 **Severity:** correctness
@@ -209,7 +233,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The audited Fly release serves the app shell, but the sole database machine and both authentication machines are stopped. Auth, REST, and careers requests return 503. The local replacement now fails closed, but it has not recovered or revalidated production.
 **Repro/evidence:** Fly machine inventory for exact SHA `05cda612` shows database stopped and GoTrue stopped. In deploy run `29139277754`, the database machine reached `stopped`, Fly classified that state as good because no service health check existed, and the script printed `OK deploy db`. It then logged REST 503 and six Auth 503 probes, continued to migrations, and succeeded because app `/api/health` returned 200.
 **Suggested fix:** Diagnose the machine exit-code-1 root cause, require running-state plus dependency readiness, and make every failed retry or probe fail the deploy.
-**Status:** open (local false-green release path repaired and verified; database exit-code-1 root cause and live recovery remain unproven)
+**Status:** open (local false-green release path is repaired and public `/api/ready` now reports database/auth/queue true on build `d2040b...`; exact Machine restart, restore, and sustained-stability evidence remain unproven)
 
 ## 2026-07-11 - Deploy can publish a red exact SHA
 **Severity:** security
@@ -257,7 +281,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Memory and chat records are keyed by `seatId` in the shared workspace document, not by AgentSpec and owner. The live run route does not load them.
 **Repro/evidence:** Multiple AgentSpecs may share a seat; every member can update `workspace_state`; `src/app/api/agents/run/route.ts` builds state only from caller campaign data.
 **Suggested fix:** Normalize memory by workspace, owner, and agent with provenance and retention; load only authorized bounded context in the run service.
-**Status:** open
+**Status:** fixed in local integration (166e752, a469aee, 8312111; post-merge proof on 2026-07-12: `npm run test:security`, `npm test`, and `npm run test:db-agent-memory` passed with `authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass`; live deployment pending)
 
 ## 2026-07-11 - Autopilot contract and implementation disagree
 **Severity:** spec-mismatch
@@ -265,7 +289,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The active goal requires a guarded in-policy auto-answer, while the implementation type and function can only return `action: "queue"`. Nearby comments still describe a send outcome.
 **Repro/evidence:** `decideAutopilot()` unconditionally returns queue with `human-review-required` at lines 223-241.
 **Suggested fix:** Keep human review as the declared default; either implement the narrow, kill-switched canary path and acceptance test or amend the goal and every product claim.
-**Status:** open
+**Status:** fixed in local integration (218f6cb, 0f011c6; release contract is queue-only reply drafting with named human approval, not autonomous send; post-merge proof on 2026-07-12: `npm run test:security`, `npm test`, and `tests/autopilot-contract.mts` inside both chains passed)
 
 ## 2026-07-11 - Live backend failure is presented as empty or synthetic UI
 **Severity:** correctness
@@ -273,7 +297,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Workspace read errors return a truthy empty marker that seeds demo state, while Chat and Studio turn non-2xx loads into ordinary empty states.
 **Repro/evidence:** Live careers is already 503 while the public page initially displays ONLINE. Equivalent failures can display `No sessions` or `No agents yet` instead of degraded state.
 **Suggested fix:** Model loading, empty, ready, degraded, conflict, and forbidden separately and add browser failure tests.
-**Status:** open
+**Status:** fixed in local integration (bb719a7, 76b4683, ae571d9, 9023a63; post-merge proof on 2026-07-12: `npm test` passed through `workspace-availability`, `workspace-runtime-safety`, `workspace-effectful-actions`, `workspace-status`, `app-shell-workspace-gate`, `fail-closed`, `chat`, `aria-live`, and `careers-public`; live browser acceptance after deploy pending)
 
 ## 2026-07-11 - Dependency audit blocks CI after deployment has already remained available
 **Severity:** security
@@ -313,7 +337,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The tracked tree is about 227 MB and includes about 155 MB of macOS arm64 Supabase executables plus 198 `.rocket-fuel` files and large event logs.
 **Repro/evidence:** `git ls-files` reports 920 files; `.localbin`, `.rocket-fuel`, and screenshot archives account for most non-product size.
 **Suggested fix:** Define retention first, replace binaries with checksum-pinned setup, move raw logs/screenshots to release artifacts, and avoid history rewrite without explicit approval.
-**Status:** open
+**Status:** fixed in local integration (69ee81a; tracked `.localbin` binaries and `.rocket-fuel` machine artifacts removed from release tip, ignore rules added, and `tests/repository-hygiene.mts` is wired into `npm test`; no history rewrite attempted)
 
 ## 2026-07-11 - Fly deployment credential exposed in internal tool output
 **Severity:** security
@@ -473,7 +497,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Same bug class as the email ambiguity finding (fixed by 0022): the SMS branch reconciles a provider deliveryState of "unknown" to retryable "skipped", so an accepted-but-disconnected SMS send can be retried and duplicated. Email and WhatsApp now fail closed to a non-retryable reconciliation state; SMS does not.
 **Repro/evidence:** Surfaced by the F1 builder while porting the ambiguity doctrine; the SMS branch predates the deliveryState classification.
 **Suggested fix:** Port the 0022 doctrine: unknown outcome -> non-retryable ambiguous reconciliation + operator resolution, only proven pre-transport failure stays retryable.
-**Status:** open
+**Status:** fixed in local integration (2171868; public API and dispatcher still reject SMS, dormant unknown provider outcome no longer becomes retryable capacity; post-merge proof on 2026-07-12: `npm run test:security` and `npm test` passed through dispatch/outreach/channel contracts)
 
 ## 2026-07-11 - Cross-channel daily cap race between email and WhatsApp claims
 **Severity:** correctness
@@ -481,8 +505,763 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** 0021 serializes claim_and_record (email) with a per-seat FOR UPDATE lock, but claim_whatsapp_outbound counts the same per-seat ledger without locking agent_seats. A simultaneous email + WhatsApp claim on one seat at cap-1 can still land cap+1 across channels.
 **Repro/evidence:** Surfaced by the F2 builder; the two claim functions count the same ledger under different locking disciplines.
 **Suggested fix:** New migration: take the same workspace-scoped agent_seats FOR UPDATE lock in claim_whatsapp_outbound before its cap count (keep the 0021-documented lock order: approvals before seats).
+**Status:** fixed in local integration (adbc7fc; migration 0024 serializes the shared per-seat daily cap across email and WhatsApp; post-merge proof on 2026-07-12: `npm run test:db-cross-channel-cap` returned `concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only`, and `npm test` passed `cross-channel-cap-contract`)
+
+## 2026-07-12 - Fly DB volume recovery gate cannot build while Alpine indexes are unreachable
+**Severity:** test-gap
+**File:** docker/db/Dockerfile.fly:12; scripts/test-fly-db-volume.sh
+**Issue:** The local `npm run test:fly-db-volume` gate cannot reach its recovery assertions because Docker times out fetching Alpine 3.23 package indexes during the DB image CVE-patch layer.
+**Repro/evidence:** On 2026-07-12, `npm run test:fly-db-volume` failed in Docker layer `RUN apk upgrade --no-cache && apk add --no-cache su-exec && rm -f /usr/local/bin/gosu` with `APKINDEX.tar.gz: Operation timed out` for both `main` and `community`, then `ERROR: Not continuing due to stale/unavailable repositories. Use --force-missing-repositories to continue.` Alternate mirrors tested from the host (`dl-2.alpinelinux.org`, `mirrors.edge.kernel.org`, `mirror.leaseweb.com`) also timed out. The Dockerfile mirror override was removed; no `--force-missing-repositories` bypass was accepted.
+**Suggested fix:** Retry the gate from a network that can reach Alpine indexes, or move to a reviewed internal package mirror only after proving the exact image and two-restart recovery suite pass. Do not weaken the CVE patch layer.
+**Status:** fixed (uncommitted; 2026-07-14 rerun reached every recovery assertion and exited 0, including the exact image, two restarts, legacy cutover/recreate, unsafe-layout blocks, and init-secret-free recreate)
+
+## 2026-07-12 - Read-only QA lane pushed unsafe production authority code
+**Severity:** correctness
+**File:** src/app/api/agents/run/route.ts; git history b205293
+**Issue:** A reviewer instructed to remain read-only edited, committed, and pushed production code. The pushed implementation failed open from unsupported channels to Email and wrote first-touch drafts into the reply outbox with the wrong semantic type.
+**Repro/evidence:** Commit `b205293` was observed on `origin/main`. Local commit `7e6d1aa` explicitly reverts it. The replacement source was built in an isolated branch, passed repeated adversarial reviews, and was merged at `01721dc`.
+**Suggested fix:** Keep reviewer agents in detached worktrees, require exact-SHA independent GO, and never grant reviewer lanes release-worktree or push authority.
+**Status:** fixed and pushed (7e6d1aa, 01721dc; remote `main` advanced normally from b205293 through the reviewed replacement and Relay evidence to 352de32; exact-SHA CI remains pending)
+
+## 2026-07-12 - Pushed main SHA has remote pre-runner CI failures
+**Severity:** test-gap
+**File:** .github/workflows/ci.yml; .github/workflows/codeql.yml
+**Issue:** Source merge `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` and pushed Relay descendant `352de32cc444aec38450e4cfe2f65fe06bdb511b` are fully green locally but are not proven remotely green. Earlier main SHAs were red before runner steps executed.
+**Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` showed CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b`; earlier runs also failed for `52423e8`. Job `86713908848` had empty runner fields, zero steps, and a four-second failure. The corrective main push later succeeded and all three refs matched, but exact-SHA `gh api check-runs` and `gh run list --commit` calls then timed out against `api.github.com`, so no final check conclusion is claimed.
+**Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
 **Status:** open
 
+## 2026-07-12 - Release candidate exact-SHA CI and CodeQL fail before meaningful execution
+**Severity:** test-gap
+**File:** .github/workflows/ci.yml; .github/workflows/codeql.yml
+**Issue:** Candidate `c3e94b2b5694825c613e127a69c811f7935a1dd8` passes the complete local gate but is not eligible for production because its GitHub CI and CodeQL runs are red.
+**Repro/evidence:** CI run `29221158898` failed eight seconds after creation and CodeQL run `29221158901` failed four seconds after creation. The exact job annotation is unknown because the job and check-run endpoints timed out. The older Actions-budget diagnosis is obsolete and must not be reused without current evidence.
+**Suggested fix:** Capture the exact top-level and job annotations, repair that specific workflow-start or account-policy failure, then rerun both workflows for exact `c3e94b2`.
+**Status:** open
+
+## 2026-07-12 - GitHub CLI credential exposed through process arguments
+**Severity:** security
+**File:** _relay/HANDOFF.md
+**Issue:** A read-only CI diagnostic interpolated the GitHub CLI credential into a curl Authorization argument, making the credential visible to local process inspection.
+**Repro/evidence:** The process command line was observed during the release audit. Matching curl processes were terminated, authenticated GitHub access was stopped, and the credential is not reproduced in this finding.
+**Suggested fix:** Revoke and rotate the credential, review GitHub account and repository access history, use least privilege, and keep credentials out of argv and diagnostic output.
+**Status:** open
+
+## 2026-07-12 - Live production is healthy only on an older migration ledger
+**Severity:** spec-mismatch
+**File:** src/app/api/ready/route.ts; supabase/migrations/0024_cross_channel_claim_serialization.sql through 0033_candidate_erasure_authority.sql
+**Issue:** Public readiness is green, but the running build is not the reviewed release candidate and does not include the latest authority migrations.
+**Repro/evidence:** The final 2026-07-14 `/api/ready` call returned HTTP 200 with build `d2040b534177f5bd2abb28f22de19af57b58dc3a`, migration `0023_conversation_identity.sql`, and all reported components true. Reviewed local source now contains migrations 0024 through 0033.
+**Suggested fix:** Complete the protected exact-SHA release path, verify the running digest and build identity, and require the live migration ledger through `0033` before acceptance.
+**Status:** open
+
+## 2026-07-13 - Store contract drift had no executable boundary
+**Severity:** test-gap
+**File:** src/lib/store.ts; src/lib/store/contracts.ts; tests/store-contracts.mts
+**Issue:** The 124-action public store contract, implementation object, memo dependency list, React context shape, and consumer hooks shared one 7,002-line coordinator with no parity or dependency-cycle gate. A future extraction could silently omit an action, retain a stale dependency, or introduce a type/runtime cycle.
+**Repro/evidence:** The pre-change interface, action object, and memo list each had 124 names but no executable comparison. The new suite checks exact name parity, the seven-field context shape, real provider-bound hook behavior, outside-provider rejection, type-inclusive static cycles, value-only runtime cycles, dynamic imports, and positive two-node/self-cycle fixtures.
+**Suggested fix:** Keep `src/lib/store/contracts.ts` React-free and preserve the compatibility re-export while Wave 1B moves action factories behind this boundary.
+**Status:** fixed (`316aecb`; exact final gate: 10/10 focused, 135/135 chained commands, typecheck, lint, 59/59 build)
+
+## 2026-07-13 - Hook regression assertion could print workspace state
+**Severity:** security
+**File:** tests/store-contracts.mts
+**Issue:** The first provider-hook characterization compared `context.state` directly with `null`. If server rendering ever exposed a populated state, Node's assertion failure could serialize candidate, outreach, reply, chat, or memory data into CI logs.
+**Repro/evidence:** Independent security review reproduced Node's direct-object assertion output. The final test compares the boolean `context.state === null` with a fixed message, so a failure cannot reflect `HermesState`.
+**Suggested fix:** Keep security-sensitive negative assertions non-reflective and never print full workspace objects in CI failures.
+**Status:** fixed (`316aecb`; independent closure review and focused 10/10 suite passed)
+
+## 2026-07-13 - Campaign updates trusted broad and opaque client patches
+**Severity:** security
+**File:** src/lib/store/contracts.ts:55; src/lib/store/campaign-actions.ts:213
+**Issue:** The public update accepted `Partial<Campaign>`, allowing client code to replace identifiers, timestamps, metrics, and activity history. The first allowlist still accepted undefined values, invalid enums, malformed warnings, and unknown JD fields that could retain opaque or secret-like data in shared state.
+**Repro/evidence:** Independent reviewers reproduced `status: undefined` corrupting a required field and a valid-looking JD persisting an invalid seniority plus top-level and nested sentinel fields. The final factory projects only four editable fields, validates canonical enums and exact warning fields, strips unknown JD data, validates strict finite scoring weights, and denies live viewers through the authoritative role ref.
+**Suggested fix:** Keep runtime projection at the state boundary even when TypeScript narrows callers, and treat shared workspace JSON as untrusted input.
+**Status:** fixed (`1450f85`; adversarial projection cases and focused 22/22 suite passed)
+
+## 2026-07-13 - Campaign flows reported success after rejected or partial work
+**Severity:** correctness
+**File:** src/lib/store.ts:704; src/app/launch/page.tsx:111; src/lib/store/campaign-launch.ts:15
+**Issue:** The old void commit could reject a mutation while creation returned an orphan campaign. Callers then navigated or sourced that nonexistent ID. Multi-role launch also ignored failed sourcing waves and could report success when only some requested roles completed.
+**Repro/evidence:** Reviewers reproduced commit rejection, viewer denial, failed sourcing, and one-success plus one-creation-failure result sets. The commit boundary now returns a synchronous application result; callers branch on nullable or boolean action outcomes; launch success requires every requested role to be created and sourced.
+**Suggested fix:** Preserve explicit applied/rejected results and keep multi-step UI completion logic in a pure decision function with a complete decision table.
+**Status:** fixed (`1450f85`; focused 22/22, full 136-command gate, and production build passed)
+
+## 2026-07-13 - Candidate intake trusted client and provider data across an effect boundary
+**Severity:** security
+**File:** src/lib/store/sourcing-actions.ts:393
+**Issue:** Live batch, exact GitHub, and manual candidate intake could accept stale authority, malformed provider data, unsafe links, fabricated defaults, duplicate identities, or a rejected state commit while still exposing success behavior.
+**Repro/evidence:** The adversarial matrix covers workspace and role loss before and after I/O, missing and paused campaigns, exact provider source and identity, bounded DTOs, private and mapped-IP URLs, unknown-field injection, latest-state dedupe, and commit rejection. The final boundary records source events and metrics only after a positive applied result.
+**Suggested fix:** Keep the three actions behind the React-free factory and preserve the exact pre-I/O, post-I/O, DTO, dedupe, and commit-result gates.
+**Status:** fixed (`e070e55`, `1f89813`; intake 23/23, approval 58/58, outreach 52/52, full 137-command gate, security suite, and 59/59 build passed)
+
+## 2026-07-13 - Paid enrichment accepts unbound provider identifiers
+**Severity:** security
+**File:** src/app/api/source/apollo/enrich/route.ts:19; src/app/api/source/seamless/research/route.ts:19
+**Issue:** The original Apollo and current Seamless flows accepted bounded raw provider identifiers without a server-owned binding to the persisted workspace candidate before spending provider credits or revealing contact data.
+**Repro/evidence:** Apollo is fixed in `ced2a58`: search persists the candidate, selection creates an exact server-owned workspace, campaign, candidate, target binding, prepare claims it before confirmation, and commit revalidates it. `SeamlessResearchSchema` still accepts `searchResultId` without the equivalent binding.
+**Suggested fix:** Accept a canonical candidate ID, resolve the workspace-owned candidate server-side, verify provider and external ID, then spend or reveal only for that exact record.
+**Status:** fixed (`f19bcb1`; every Seamless and Sillage route fails closed before rate limits, secrets, or egress in production, and their production UI actions are hidden; re-enable only after equivalent server-owned authority exists)
+
+## 2026-07-13 - Async enrichment handles are not bound to their persistence target
+**Severity:** security
+**File:** src/app/api/source/seamless/research-status/route.ts:38; src/app/api/source/sillage/status/route.ts:39; src/lib/store.ts:828
+**Issue:** Polling accepts a raw request ID, while the browser separately supplies the campaign or candidate that receives the result. A valid handle is not server-bound to a workspace, provider operation, candidate, or campaign, so a mismatched or replayed handle can disclose or persist data into the wrong client-selected record.
+**Repro/evidence:** Both status routes query by `requestId` after role checks only. `checkSeamlessResearch(candidateId, requestId)` and `checkSillageMapping(campaignId, requestId)` choose their local persistence target independently of the server-side provider job.
+**Suggested fix:** Persist an opaque workspace-scoped job record at start, bind it to the exact candidate or campaign, and authorize polling and persistence from that server-owned binding.
+**Status:** fixed (`f19bcb1`; incomplete Seamless and Sillage start/status paths are production-disabled before secret or provider access and hidden from production UI)
+
+## 2026-07-13 - Sillage returns and persists a company-wide contact batch
+**Severity:** security
+**File:** src/app/api/source/sillage/status/route.ts:76; src/lib/store.ts:872
+**Issue:** One completed company mapping returns all resolved profiles to the browser and the store persists every accepted profile, including provider-returned contact fields. This expands PII exposure beyond an explicit per-candidate reveal decision.
+**Repro/evidence:** The status response includes `profiles: mappingRes.data.profiles`; the client maps the entire array and prepends every accepted candidate to shared workspace state.
+**Suggested fix:** Return a minimized preview by default, require explicit per-candidate reveal, and persist only the fields and candidates the authorized operator selected.
+**Status:** fixed (`f19bcb1`; Sillage is production-disabled before provider access and its UI action is hidden until a minimized server-bound implementation exists)
+
+## 2026-07-13 - Remaining provider actions lack the guarded action contract
+**Severity:** correctness
+**File:** src/lib/store.ts:946; src/lib/store.ts:1115; src/lib/store.ts:1145; src/lib/store.ts:1222
+**Issue:** Seamless, Sillage, and sourcing-agent actions still live in the React coordinator. Several snapshot authority and campaign data before I/O, then commit after await without rechecking current role, workspace, campaign state, dedupe state, or whether the commit applied.
+**Repro/evidence:** Apollo now uses the guarded sourcing factory in `ced2a58`, including exact pre-I/O, post-I/O, DTO, binding, persistence, and commit-result gates. The remaining callbacks still use the old coordinator pattern.
+**Suggested fix:** Extract one provider action group at a time into the sourcing factory and port the same authority, response projection, latest-state, and applied-result decision table.
+**Status:** fixed (`f19bcb1`; unfinished paid-provider paths are production-disabled; the sourcing-agent route now owns campaign/settings authority, revalidates before every external call and commit, returns a strict DTO, and the client rechecks latest campaign and dedupe state)
+
+## 2026-07-13 - Sourcing agent trusts full client objects and returns full candidates
+**Severity:** security
+**File:** src/app/api/sourcing-agent/route.ts:37; src/app/api/sourcing-agent/route.ts:132
+**Issue:** The route accepts opaque campaign and candidate records up to 200 KB, casts them to domain types, and sends them through a cloud tool-calling flow. It does not use a bounded campaign DTO, a minimized candidate context, or a server-authoritative campaign record.
+**Repro/evidence:** `campaign` and `existing` are `z.record(z.string(), z.unknown())`; the route then uses `as unknown as Campaign` and `as unknown as Candidate[]`. The caller sends every campaign candidate rather than an explicit dedupe and disclosure projection.
+**Suggested fix:** Define exact schemas, resolve authoritative campaign data server-side where available, minimize existing candidates to dedupe fields, and validate every returned candidate before persistence.
+**Status:** fixed (`f19bcb1`; the route accepts only a campaign ID, loads campaign and provider authority server-side, minimizes tool context, and releases strict candidate DTOs only after the database completion receipt)
+
+## 2026-07-13 - Provider errors cross the server boundary without one bounded translator
+**Severity:** security
+**File:** src/app/api/source/seamless/research/route.ts:56; src/app/api/source/sillage/start/route.ts:68
+**Issue:** Remaining source routes return provider detail strings to the browser. Upstream bodies can contain request details, identifiers, or unbounded text, and each adapter applies a different error policy.
+**Repro/evidence:** Apollo now returns bounded typed errors in `ced2a58`. Seamless and Sillage still return `result.detail || result.title`; there is no shared allowlisted public-error mapping across those routes.
+**Suggested fix:** Centralize provider error classification, redact known secret and URL material, cap length, log only a safe diagnostic code, and return a bounded public message.
+**Status:** fixed (`f19bcb1`; Apollo uses bounded errors and the incomplete Seamless/Sillage routes are production-disabled before provider access, so upstream detail cannot cross the production boundary)
+
+## 2026-07-13 - Intake and sourcing invented role facts when evidence was missing
+**Severity:** spec-mismatch
+**File:** src/lib/ai/intake.ts; src/lib/mock-ai.ts; src/app/intake/page.tsx
+**Issue:** Generic intake and sample paths could fill absent role facts with plausible defaults, making an incomplete user request appear sourcing-ready and creating searches from invented needs.
+**Repro/evidence:** Grounding tests now prove absent title, skills, location, seniority, and description remain unknown; cloud-extracted values not grounded in submitted text are dropped; launch samples are separately labeled and complete.
+**Suggested fix:** Keep need readiness evidence-based and block sourcing until required facts and a reviewed query exist.
+**Status:** fixed (`f19bcb1`; intake grounding 5/5, launch readiness 1/1, Mantu intake 14/14, and sourcing action tests passed)
+
+## 2026-07-13 - Graphify learning lacked durable artifact and runtime authority
+**Severity:** security
+**File:** supabase/migrations/0027_sourcing_learning_authority.sql; workers/graphify-lessons; src/app/api/sourcing-agent/route.ts
+**Issue:** A lesson system would be forgeable or ceremonial if Graphify output were not stored and digest-bound, if the worker could see candidate/query data, or if promoted clusters never affected later sourcing.
+**Repro/evidence:** Migration 0027 stores exact export input, graph bytes, manifest, image digest, source commit, optimistic lesson version, independent evidence, and human review. The isolated worker receives aggregate fingerprints/counts only, and deterministic sourcing diversifies human-promoted exact-role queries across Graphify cluster references.
+**Suggested fix:** Preserve aggregate-only exports, immutable image/source binding, separate human promotion, and runtime cluster-aware selection.
+**Status:** fixed (`f19bcb1`; static authority 85/85, runtime 7/7, operations 19/19, and disposable PostgreSQL authority/isolation/idempotency/review/kill-switch/privacy gate passed)
+
+## 2026-07-13 - Feedback receipts disappeared or crossed campaign UI state
+**Severity:** correctness
+**File:** src/app/campaigns/[id]/page.tsx; supabase/migrations/0027_sourcing_learning_authority.sql
+**Issue:** Component-only feedback prompts disappeared after reload, a new run could replace older pending prompts, failed searches could become impossible-to-submit prompts, and preserved component state could show a prior campaign's receipts.
+**Repro/evidence:** The database now lists only successful unreviewed receipts for the exact workspace, actor, and campaign. The page scopes state by campaign, reloads it, merges new receipts by opaque ID, and removes only a durably recorded receipt.
+**Suggested fix:** Keep feedback authority durable and server-scoped; never derive it solely from the latest component response.
+**Status:** fixed (`f19bcb1`; feedback route/runtime 13/13, UI contract 7/7, and mixed-success disposable PostgreSQL regression passed)
+
+## 2026-07-13 - Exact Graphify worker container cannot complete on current network
+**Severity:** test-gap
+**File:** workers/graphify-lessons/Dockerfile; tests/graphify-learning-container.sh
+**Issue:** The exact Graphify 0.9.14 container acceptance gate cannot install its hash-locked Python dependencies because the current route to PyPI times out.
+**Repro/evidence:** Docker resolves the digest-pinned Python base, then pip repeatedly reports `Connection to pypi.org timed out` while requesting `/simple/networkx/`. Host API checks used a different installed Graphify version and are not exact-runtime proof.
+**Suggested fix:** Run `npm run test:graphify-learning` in clean CI/network, scan and publish the resulting immutable image, then configure only that accepted digest.
+**Status:** fixed (uncommitted; dependencies and Graphify 0.9.14 are vendored with checked hashes, the container builds without network, and `npm run test:graphify-learning` passed exact-runtime, network-none, deterministic graph, and receipt checks)
+
+## 2026-07-13 - Migration 0027 was missing from reviewed recovery authority
+**Severity:** correctness
+**File:** docker/bootstrap/legacy-baseline-invariants.sql; docker/bootstrap/legacy-baseline-public-schema.sha256
+**Issue:** Migration 0027 applied under the restricted migration role, but protected legacy recovery still pinned the schema, table set, and function signatures from migration 0026, so an exact current database could not pass recovery preflight.
+**Repro/evidence:** The first full `npm run test:db-privileges` reported schema fingerprint mismatch. After the digest changed, the next run rejected the legacy public table set. The final allowlists include all ten learning tables and sixteen functions.
+**Suggested fix:** Move the reviewed recovery digest and exact table/function allowlists atomically with every future migration.
+**Status:** fixed (`f19bcb1`; final owner-session gate exited 0 with restricted postgres, direct supabase_admin, read-only empty/legacy/complete preflights, approved baseline, exact ledger, rotation, idempotence, and no secret leak)
+
+## 2026-07-13 - Apollo paid work lacked exact persisted authority
+**Severity:** security
+**File:** supabase/migrations/0026_apollo_enrichment_authority.sql:1; src/lib/store/sourcing-actions.ts:1309
+**Issue:** Apollo enrichment previously spent against a client-supplied external identifier without a durable, replay-safe server record proving the exact workspace, campaign, candidate, target, confirmation, and attempt authority.
+**Repro/evidence:** Migration 0026 and the guarded sourcing factory now require a persisted Apollo candidate and exact target binding, revoke stale or anonymized targets, serialize prepare and commit, permit only same-workspace authorized teammate handoff, and deny cross-workspace, tenant, campaign, candidate, and replay cases. The TypeScript authority matrix passed 47/47 and the real PostgreSQL authority gate exited 0.
+**Suggested fix:** Keep all future paid providers on the same select, prepare, confirm, commit, reconcile authority model.
+**Status:** fixed (`ced2a58`)
+
+## 2026-07-13 - Successful retry could leave local state behind persisted state
+**Severity:** correctness
+**File:** src/lib/store.ts:639; src/lib/store.ts:657
+**Issue:** A failed authoritative save retained a retryable snapshot, but a later successful retry could clear recovery state without installing that exact snapshot locally. A subsequent save could overwrite the recovered server document with stale local state.
+**Repro/evidence:** Retry success now installs `pending.snapshot` in the local state and state ref under the exact skip-persist guard before clearing recovery state. The focused recovery convergence matrix passed 18/18 and the unchanged-snapshot full gate passed.
+**Suggested fix:** Preserve remote and local convergence as one atomic success condition for every retryable shared-state save.
+**Status:** fixed (`ced2a58`)
+
+## 2026-07-13 - Candidate anonymization left linked privacy data behind
+**Severity:** security
+**File:** src/lib/candidate-privacy.ts:14; src/lib/candidate-privacy.ts:156
+**Issue:** Candidate removal needed one canonical projection covering provider authority and receipts, outreach, replies, bookings, wins, activity, chat, suppression, ingestion, and structured content without deleting unrelated short-name text.
+**Repro/evidence:** `anonymizeHermesState` removes exact candidate-linked data, redacts structured content, revokes Apollo authority, handles punctuation around identifiers, and uses boundary-aware matching to avoid cases such as Ian inside compliance. The focused privacy suite passed 9/9 and the real PostgreSQL erasure path proved lost-response convergence.
+**Suggested fix:** Route every candidate-rights operation through the canonical privacy projection and server erasure RPC.
+**Status:** fixed (`ced2a58`)
+
+## 2026-07-13 - Cleanup worker could leak authority or accept stale release proof
+**Severity:** security
+**File:** scripts/apollo-authority-cleanup-worker.mjs:25; scripts/verify-apollo-cleanup-release.mjs:38
+**Issue:** A privileged cleanup worker must not forward its service-role header across redirects, and release verification must not accept an old success event, partial process topology, a mismatched image, or incomplete counters.
+**Repro/evidence:** The worker denies redirects, applies a 10-second abort, emits the exact release SHA and all counters, and isolates bounded workspace failures. A real two-origin test proved the redirected origin received no `apikey`. The verifier requires the promoted digest on all web and cleanup Machines, one active cleanup Machine, one explicitly paired stopped standby, and a success event created after app activation with every expected counter. Focused cleanup tests passed 5/5 and deploy-contract tests passed 131/131.
+**Suggested fix:** Keep privileged background workers redirect-denying and bind operational receipts to the exact promoted artifact, topology, release, and activation window.
+**Status:** fixed (`ced2a58`)
+## 2026-07-13 - Authenticated users can forge message authority and cross-bind an agent conversation
+**Severity:** security
+**File:** supabase/migrations/0007_agent_runtime.sql:146; supabase/migrations/0023_conversation_identity.sql:134; src/lib/whatsapp-inbound.ts:297
+**Issue:** Authenticated workspace members retain direct message-table writes. A member can insert a workspace-local outbound row whose simple `spec_id` foreign key points to another workspace, and the inbound resolver accepts composed or unsent history. The service worker then trusts the returned spec identity. Authenticated inbound insertion also lets a member forge a WhatsApp STOP event that reaches suppression processing.
+**Repro/evidence:** An isolated PostgreSQL run with migrations 0001 through 0027 allowed a viewer to insert both message rows, accepted the foreign spec binding, and returned the other workspace's spec from `resolve_whatsapp_inbound_conversation`.
+**Suggested fix:** Make normalized message writes service/RPC-only, bind messages and conversations to immutable workspace-owner-spec authority, derive conversations only from provider-accepted outbound receipts, and reselect the runtime spec by workspace plus owner plus spec.
+**Status:** fixed (uncommitted; migration 0028 removes authenticated message DML, owner-binds message/conversation/spec authority, accepts only durable sent receipts, routes human queueing through one bounded RPC, and passes 46/46 static plus disposable PostgreSQL authority/replay/isolation proof)
+
+## 2026-07-13 - Alternate agent-run route invents missing hiring requirements
+**Severity:** correctness
+**File:** src/lib/agents/runtime-policy.ts:60; src/app/api/agents/run/route.ts:92
+**Issue:** A title-only stored brief is expanded to Senior, Full-time, Remote, and Standard urgency, then the alternate agent route can run real model and search work without the reviewed-need and role-evidence gates used by the sourcing route.
+**Repro/evidence:** `normalizeStoredAgentRoleBrief` supplies those defaults and the route does not call the campaign readiness, unsafe-input, reviewed-query, or sourcing-receipt authority.
+**Suggested fix:** Fail this incomplete legacy execution path closed in production until it consumes the same reviewed campaign and receipt authority as `/api/sourcing-agent`; preserve unknown facts as unknown.
+**Status:** fixed (uncommitted; the route returns 503 before parsing input or resolving credentials, invented role defaults were removed, and the disabled-path/need-authority suites pass)
+
+## 2026-07-13 - Alternate agent-run route has browser-owned provider authority and no durable replay receipt
+**Severity:** security
+**File:** src/app/api/agents/run/route.ts:50
+**Issue:** The browser selects provider, key identifier, model, and an arbitrary existing-candidate array. The route lacks same-origin enforcement, a database idempotency/quota claim, a server-owned configuration fingerprint, completion receipt, and live role/config/key revalidation around each external call.
+**Repro/evidence:** The request schema accepts every authority input directly; the key is resolved once and reused; the per-node callback rechecks only active spec ownership.
+**Suggested fix:** Disable the incomplete route in production or rebuild it on server-owned configuration, database claims, exact receipts, and per-egress revalidation.
+**Status:** fixed (uncommitted; the route returns 503 before parsing browser authority or touching providers, secrets, candidates, or persistence; focused disabled-route tests pass)
+
+## 2026-07-13 - Candidate erasure does not cover normalized conversations and provider lifecycle
+**Severity:** spec-mismatch
+**File:** src/lib/store.ts:3743; src/lib/candidate-privacy.ts:156
+**Issue:** The original anonymization covered workspace state and Apollo authority but did not prove the broader candidate data lifecycle.
+**Repro/evidence:** Migration 0033 now performs one service-owned local scrub across normalized messages, conversations, WhatsApp rows, runs/events, framework results, caches, and content-free receipts. Provider-held data, logs, restore replay, and retention ownership remain in the narrower open findings below.
+**Suggested fix:** Add a legal-hold-aware service workflow that enumerates and scrubs every candidate-bearing store, calls supported provider DSRs, and produces a bounded durable receipt with automated proof.
+**Status:** fixed in source and superseded by the narrower open restore, reimport/memory, provider-evidence, and bulk-obligation findings
+
+## 2026-07-14 - Flowise binding treated caller input as tenant authority
+**Severity:** security
+**File:** src/app/api/agents/specs/route.ts; src/app/api/flowise/[...path]/route.ts
+**Issue:** An operator could assign an arbitrary `flowise_chatflow_id` to an owner-visible spec, after which the public proxy treated that circular binding as proof of ownership and forwarded arbitrary query/body/session controls to one shared Flowise runtime.
+**Repro/evidence:** The old create/update schemas accepted the raw ID; the proxy queried the same client-writable column, appended the caller query string, and forwarded the unvalidated body under one global API key. Flowise OSS does not independently prove ARIA workspace ownership.
+**Suggested fix:** Remove browser-owned external IDs, disable the public proxy, and resolve immutable server-owned instance/workflow bindings only through a private typed adapter.
+**Status:** fixed (uncommitted; browser Flowise identifiers and the upstream proxy were removed, all public methods fail closed, and the private compiler accepts only ARIA's strict node vocabulary; focused policy/client tests pass)
+
+## 2026-07-14 - DeerFlow and Flowise were described as frameworks without being used
+**Severity:** spec-mismatch
+**File:** src/lib/agents/graph.ts:1; _agent_state/mantu-goal/goal-2026-07-08-aria-enterprise-ready.json
+**Issue:** The current agent graph explicitly implements an older DeerFlow-inspired pattern in plain TypeScript, the executor is now disabled, and Flowise was only an unsafe optional prediction proxy. Goal milestone m5 records the custom graph as done even though Tony now requires actual DeerFlow and Flowise frameworks.
+**Repro/evidence:** Before this shift neither pinned runtime existed in deployment definitions. Current source pins DeerFlow `fabadae4168db81f0eaaf62f209050f978e2f691` and Flowise `bb773ffa710bd22639c4ba2643413a0ea2b679d3`, executes approved Flowise IR through the private DeerFlow adapter, and provides a ten-app private Fly deployment pack. The aggregate framework suite passes 42/42.
+**Suggested fix:** Reopen framework milestones, keep ARIA as authority, use a pinned private DeerFlow adapter plus isolated Flowise authoring/import, and require live two-tenant framework E2E before completion.
+**Status:** fixed in source (uncommitted; actual pinned framework runtimes, private adapters, governed execution, and deployment definitions now exist; promoted image digests, deployed adapters, and live E2E remain release blockers below)
+
+## 2026-07-14 - Flowise and DeerFlow enterprise dependencies are unproven
+**Severity:** security
+**File:** docs/architecture; production deployment configuration
+**Issue:** No accepted image, SBOM, signature, tenant-isolation proof, private network policy, restart/restore proof, or operational owner exists for either framework. Flowise OSS uses a shared default workspace while users/workspaces/RBAC/SSO are commercial features; DeerFlow warns its default trusted-localhost tool surface is unsafe for public deployment.
+**Repro/evidence:** Upstream audits found Flowise `@flowiseai/agentflow` 0.0.0-dev.14 explicitly not recommended for production, plus Custom JS/HTTP/MCP/tool capabilities. DeerFlow exposes broad Gateway thread/run, file, web, MCP, Bash, memory, and agent-mutation surfaces; its active run registry is process-local and orphaned runs become errors rather than auto-resume.
+**Suggested fix:** Obtain Flowise tenancy/license/vendor evidence; build exact commits with frozen locks and digest-pinned bases; scan/sign/attest; deploy only ARIA-owned narrow adapters with default-deny egress, per-workspace isolation, real readiness, leases, idempotency, and kill switches.
+**Status:** open (source now has private narrow adapters, separate state planes, immutable-identity gates, signed/SBOM/provenance/scan requirements, readiness, leases, idempotency, and kill switches; vendor entitlement, promoted artifacts, egress proof, HA/restore, deployment, and live E2E remain unproven)
+
+## 2026-07-14 - Legacy WhatsApp template name constraint crashes valid inserts
+**Severity:** correctness
+**File:** supabase/migrations/0009_whatsapp_delivery_policy.sql:76
+**Issue:** The POSIX regular expression uses `{1,512}`; PostgreSQL rejects that repetition bound when the constraint is evaluated, so a valid approved template insert fails with SQLSTATE 2201B instead of validating the name.
+**Repro/evidence:** The disposable conversation-authority database test stopped at template seed with `invalid regular expression: invalid repetition count(s)`. Migration 0028 replaces it with an explicit 1..512 length predicate plus an unbounded allowlisted character class.
+**Suggested fix:** Preserve the corrected validated constraint in the migration ledger and recovery fingerprint.
+**Status:** fixed (uncommitted; the full disposable PostgreSQL conversation authority test including migration replay passes)
+
+## 2026-07-14 - Owner recovery was absent from CI
+**Severity:** test-gap
+**File:** .github/workflows/ci.yml:37; .github/workflows/ci.yml:128
+**Issue:** The source exposed operator and database recovery test scripts, but neither gate ran in CI or through the aggregate `npm test` command.
+**Repro/evidence:** The pre-fix workflow contained no `test:owner-recovery` or `test:db-owner-recovery` invocation. The operator gate also needs the quality job's installed Node dependencies, while the database gate belongs in the Docker-backed database job.
+**Suggested fix:** Run the operator contract in `quality` after `npm ci` and the PostgreSQL authority test in `database-security`.
+**Status:** fixed (uncommitted; workflow YAML parses and the recovery contract verifies both actual run commands)
+
+## 2026-07-14 - Owner binding committed before password login was proven
+**Severity:** correctness
+**File:** scripts/recover-orphan-workspace-owner.sh:427
+**Issue:** The script called the durable recovery RPC before attempting password login. A confirmed-looking but non-login-capable GoTrue identity could therefore commit the workspace/profile binding and fail only afterward, leaving the tenant recovered on paper but unusable.
+**Repro/evidence:** The behavior test originally required `recovery.rpc` before `auth.password-login`. A new rejected-login scenario proves the RPC is never reached and the exact pre-binding identity is cleaned up.
+**Suggested fix:** Prove the exact active email identity through password login before the recovery RPC, then use its token for post-binding RLS verification.
+**Status:** fixed (uncommitted; operator contract and behavior suite pass with `login=prebinding-verified`)
+
+## 2026-07-14 - Recovery RPC accepted an unmarked GoTrue identity
+**Severity:** security
+**File:** supabase/migrations/0031_orphan_owner_recovery_authority.sql:269
+**Issue:** The shell required a deterministic request marker, but the service-role database RPC checked only email/provider/account fields. A direct RPC caller could bypass the reviewed marked-identity invariant.
+**Repro/evidence:** The disposable database test now clears `raw_user_meta_data` and invokes the RPC with otherwise valid service-role authority; it receives `identity_not_eligible` and performs no recovery mutation.
+**Suggested fix:** Derive the exact marker from request ID and verified approval SHA inside the RPC and require it in `raw_user_meta_data`.
+**Status:** fixed (uncommitted; `test:db-owner-recovery` passes including the unmarked direct-call rejection)
+
+## 2026-07-14 - Concurrent retry cleanup could delete another attempt's user
+**Severity:** correctness
+**File:** scripts/recover-orphan-workspace-owner.sh:180
+**Issue:** Exact retries share the deterministic request marker. If two operators observed empty Auth and one create lost with a conflict, its cleanup could mistake the other in-flight attempt's user for its own and hard-delete it before binding.
+**Repro/evidence:** The adversarial mock returns a create conflict while exposing another attempt's exact-request user. Pre-fix cleanup matched only the shared marker and deleted it.
+**Suggested fix:** Add a random per-attempt cleanup ID to GoTrue metadata and require both the deterministic marker and attempt ID before deletion.
+**Status:** fixed (uncommitted; behavior suite proves the foreign-attempt user is preserved while own failed pre-binding users are deleted)
+
+## 2026-07-14 - Pinned DeerFlow tool schema made every real model request fail
+**Severity:** correctness
+**File:** infra/agent-frameworks/model-gateway/server.mjs; infra/agent-frameworks/deerflow-config.yaml
+**Issue:** The pinned DeerFlow runtime always binds its built-in `review_skill_package` tool even when the ARIA agent and skill declare no tools. The model gateway rejected every request containing `tools`, so a real proposal could never reach the cloud model.
+**Repro/evidence:** The exact pinned DeerFlow commit and locked `langchain-openai` 1.2.1 request included the built-in schema. The gateway now accepts only that byte-semantically exact schema, strips it and optional literal `tool_choice: "none"` before egress, disables streaming fallback, and rejects every schema drift or additional tool. Focused gateway tests pass.
+**Suggested fix:** Keep the exact locked schema contract synchronized with the promoted DeerFlow image; never forward tool authority to the provider.
+**Status:** fixed (uncommitted; exact-schema acceptance, negative drift, egress stripping, and non-streaming compatibility tests pass)
+
+## 2026-07-14 - Provider responses could restore stripped local tool authority
+**Severity:** security
+**File:** infra/agent-frameworks/model-gateway/server.mjs
+**Issue:** After request-side tool stripping, a malicious or compromised provider could still return `tool_calls` or legacy `function_call`; LangChain would parse that response and DeerFlow could execute its locally bound built-in.
+**Repro/evidence:** Adversarial upstream fixtures return valid assistant text plus each tool-call shape. The gateway now returns a generic 502 and never relays either response; focused tests pass for both formats.
+**Suggested fix:** Preserve response-side tool-call rejection whenever the request boundary strips all tool authority.
+**Status:** fixed (uncommitted; both current and legacy provider tool-injection tests pass)
+
+## 2026-07-14 - Shared Redis let Flowise mutate DeerFlow stream authority
+**Severity:** security
+**File:** infra/agent-frameworks/compose.yaml; infra/agent-frameworks/adapter/server.mjs
+**Issue:** DeerFlow, Flowise, their worker, and both adapters shared one Redis service, volume, and password. Compromise of Flowise's broad OSS runtime therefore granted authentication to DeerFlow's stream state.
+**Repro/evidence:** The stack now has distinct `deerflow-redis` and `flowise-redis` services, volumes, password files, dependency graphs, and mode-bound adapter host authority. Fly adapter startup additionally requires `REDIS_HOST` to equal the exact reviewed `REDIS_FLY_HOST`. Cross-framework host/secret assertions and Compose rendering pass.
+**Suggested fix:** Keep Redis credentials and state per framework even when both services use the same promoted Redis image digest.
+**Status:** fixed (uncommitted; 31/31 framework adapter/gateway/deployment tests and `docker compose config -q` pass)
+
+## 2026-07-14 - Gateway rejected schema-valid large grounded needs
+**Severity:** correctness
+**File:** infra/agent-frameworks/model-gateway/server.mjs; infra/agent-frameworks/compose.yaml
+**Issue:** The gateway imposed a hidden 16 KiB per-message limit and production configured only 64 KiB total, while the reviewed ARIA need contract permits a UTF-8 prompt of about 126 KiB before DeerFlow's system envelope.
+**Repro/evidence:** A 130 KiB framework prompt failed with 400 before the fix. The production ceiling is now 256 KiB, individual messages share that total bound, and the same regression returns 200 while oversized bodies still fail before egress.
+**Suggested fix:** Keep application schema bounds and gateway byte ceilings in one tested compatibility contract.
+**Status:** fixed (uncommitted; 130 KiB compatibility and request-overflow tests pass)
+
+## 2026-07-14 - Adapter readiness did not prove the cloud model was usable
+**Severity:** correctness
+**File:** infra/agent-frameworks/adapter/server.mjs; infra/agent-frameworks/compose.yaml
+**Issue:** DeerFlow adapter readiness checked only the framework's configured model list. After startup, a provider outage, HTTP 402 account failure, or gateway model drift could still leave adapter and ARIA readiness green.
+**Repro/evidence:** Readiness now derives `/readyz` from the canonical private model base URL, authenticates with the internal gateway token, and requires the exact configured provider and model before any DeerFlow dependency can be healthy. Wrong provider/model fixtures and unavailable-gateway readiness fail closed.
+**Suggested fix:** Preserve authenticated live provider/model proof in every activation heartbeat; a configured model name is not readiness.
+**Status:** fixed (uncommitted; exact authenticated gateway and negative drift/readiness tests pass)
+
+## 2026-07-14 - Oversized upstream streams were rejected without cancellation
+**Severity:** security
+**File:** infra/agent-frameworks/adapter/server.mjs
+**Issue:** When a chunked DeerFlow or Flowise response exceeded 2 MB, the adapter threw and released the stream reader without cancelling it, allowing the upstream connection and response production to continue after rejection.
+**Repro/evidence:** An incremental 6 MB upstream fixture remained open before the fix. The adapter now cancels the reader on overflow; the fixture observes connection closure before completion while the client receives the same generic 502.
+**Suggested fix:** Cancel bounded response streams before releasing their reader on every overflow path.
+**Status:** fixed (uncommitted; streamed-overflow cancellation regression passes)
+
+## 2026-07-14 - Demo localStorage accepted real and manual candidate PII
+**Severity:** security
+**File:** src/lib/store.ts; src/lib/store/sourcing-actions.ts; src/lib/store/migrations.ts
+**Issue:** The no-Supabase demo could call real GitHub or web providers and accept manual candidates, then serialize the resulting candidate PII into cleartext localStorage with no provenance guard.
+**Repro/evidence:** Before the fix, `syntheticSourcingAllowed()` selected a branch that still called `/api/source` for explicit GitHub and web platforms, manual intake used the same persisted commit, and both commit paths plus the final localStorage flush accepted non-synthetic candidates.
+**Suggested fix:** Make browser-local candidate authority synthetic-only, reject real and manual actions before I/O, recheck explicit provenance at commit and flush, and purge legacy unsafe snapshots during hydration.
+**Status:** fixed (uncommitted; focused privacy and sourcing boundary gate passes 46/46, legacy unsafe snapshots are purged, and the final 164-command aggregate passes)
+
+## 2026-07-14 - Framework stack had no controlled private Fly deployment path
+**Severity:** spec-mismatch
+**File:** infra/agent-frameworks/fly/operator.mjs; infra/agent-frameworks/fly/*.toml
+**Issue:** Compose contracts could not create or verify the ten private production services, and there was no approval, immutable artifact, secret-import, network, readiness, or replay authority for a Fly rollout.
+**Repro/evidence:** The new source pack defines separate private apps for both PostgreSQL stores, both Redis planes, gateway, DeerFlow, Flowise, worker, and adapters. Its prepare/confirm/deploy operator binds a 15-minute approval to config and image digests, verifies cosign signature/SBOM/provenance and Trivy results, imports file secrets over stdin, uses exact `--image` and `--no-public-ips`, and requires current network, Machine, platform-check, and authenticated private identity evidence before a receipt. `npm run test:agent-framework-adapter` passes 42/42, all ten TOML files pass `flyctl config validate`, shell/Node/Python syntax checks pass, and Bake renders seven wrapper targets.
+**Suggested fix:** Keep this operator in the protected release gate and archive its owner-reviewed manifest, plan, approval, and receipt without secret material.
+**Status:** fixed in source (uncommitted; no Fly mutation or production receipt was produced)
+
+## 2026-07-14 - Private Fly source pack still lacks enterprise release evidence
+**Severity:** security
+**File:** infra/agent-frameworks/fly/README.md; infra/agent-frameworks/fly/docker-bake.hcl
+**Issue:** The upstream DeerFlow and Flowise Dockerfiles still consume mutable base tags, Fly egress is not proven gateway-only, the stateful topology is one Machine and one volume per store, and neither restore nor live framework/campaign behavior has been tested on these apps.
+**Repro/evidence:** The operator requires final signed digests, an SPDX SBOM, SLSA provenance containing the exact source commit, and a zero-high/critical Trivy result, but `cosign`, `trivy`, and `syft` are unavailable in this workspace and no promoted manifests were supplied. No Fly deploy was authorized. A private Flowise bootstrap, provider readiness, PostgreSQL HA decision, timed snapshot restore, failure injection, and real approved-campaign canary remain absent.
+**Suggested fix:** Pin or independently attest every upstream base input, install the verification tools in a protected runner, enforce and test egress, complete the Flowise bootstrap, accept an HA/RTO/RPO design, execute restore/failure drills, then deploy and canary through the approved operator.
+**Status:** open; framework activation remains NO-GO
+
+## 2026-07-14 - Restored backups can reintroduce erased candidate data
+**Severity:** security
+**File:** scripts/restore-drill.sh:73
+**Issue:** The restore drill verifies the restored archive's internal schema and rows, but it has no external erasure journal to replay deletions that happened after the backup was created.
+**Repro/evidence:** A backup taken before a candidate erasure can restore the deleted candidate and still pass the current drill because both the archive and restored database predate the erasure receipt.
+**Suggested fix:** Keep an independently retained erasure journal outside the restored database and make post-restore replay plus verification a mandatory recovery gate.
+**Status:** open; production restore and candidate erasure remain NO-GO
+
+## 2026-07-14 - Candidate reimport and memory erasure authority is incomplete
+**Severity:** security
+**File:** supabase/migrations/0025_agent_memory_authority.sql:196; supabase/migrations/0033_candidate_erasure_authority.sql:289
+**Issue:** Candidate data embedded in agent-run/event JSON, framework-result payloads, and encrypted AgentSpec memory has no explicit candidate provenance that an administrator can target for erasure.
+**Repro/evidence:** Migration 0033 guards and transaction-serializes workspace state, normalized messages, outreach, suppression, WhatsApp contact/window, conversations, and Apollo writes; both writer-first and erasure-first PostgreSQL sessions now pass. Migration 0025 still permits bounded encrypted memory content without a candidate identifier or administrator erasure receipt, and run/framework payloads remain unstructured for erasure authority.
+**Suggested fix:** Add explicit candidate provenance and administrator erasure receipts for run, framework, and memory payloads before production activation.
+**Status:** open; production candidate erasure remains NO-GO
+
+## 2026-07-14 - Provider erasure evidence is manual and not independently verified
+**Severity:** security
+**File:** src/app/api/admin/candidates/erasure/route.ts:36; supabase/migrations/0033_candidate_erasure_authority.sql:1839
+**Issue:** ARIA exposes a manual provider-reference workflow and accepts a case reference plus syntactically valid SHA-256, but it neither executes provider deletion nor verifies that the evidence artifact exists and proves deletion.
+**Repro/evidence:** The completion request validates the hash format and expected attempt count. The database records that assertion; no approved evidence store or provider adapter is queried.
+**Suggested fix:** Bind completion to an approved evidence-store object and provider account, or add provider-specific deletion and receipt adapters with replay-safe reconciliation.
+**Status:** open; provider-held candidate data remains a production NO-GO
+
+## 2026-07-14 - Large provider-obligation sets have no safe completion path
+**Severity:** correctness
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql:201
+**Issue:** The 100-obligation guard prevents partial local scrubbing, but candidates with more than 100 linked provider records cannot enter the application erasure workflow.
+**Repro/evidence:** The before-insert trigger raises SQLSTATE 54000 at the 101st obligation, and the route returns a typed 409 before destructive data changes. There is no paginated bulk workflow that can complete the request.
+**Suggested fix:** Replace the fixed durable-obligation cap with paginated response authority while preserving atomic request creation and bounded API pages.
+**Status:** open; documented Security and DPO escalation is required
+
+## 2026-07-14 - Candidate scrub implementations lack parity proof
+**Severity:** test-gap
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql:289; src/lib/candidate-privacy.ts:95
+**Issue:** The live path previously applied the database scrub and then persisted a second browser scrub whose token rules were not equivalent.
+**Repro/evidence:** Successful live erasure now clears all queued or failed browser save authority and reloads the exact server-owned workspace. `anonymizeHermesState()` remains only in synthetic demo mode, where no real candidate data is permitted.
+**Suggested fix:** Keep the database as the only live erasure authority and preserve the hydration regression.
+**Status:** fixed (uncommitted; candidate privacy passes 9/9, store contracts pass 11/11, and TypeScript passes)
+
+## 2026-07-14 - Late legal hold state disappeared from the reloaded admin queue
+**Severity:** correctness
+**File:** src/components/candidates/candidate-drawer.tsx:91; src/components/candidates/candidate-drawer.tsx:458
+**Issue:** The API and database could return `blocked_legal_hold`, but the drawer's obligation parser and durable-queue validator rejected that valid state after a page reload.
+**Repro/evidence:** A regression first failed because neither validator allowlisted `blocked_legal_hold`; the focused contract now requires both paths to preserve it.
+**Suggested fix:** Keep the UI status allowlist aligned with the canonical erasure state type and OpenAPI enum.
+**Status:** fixed (uncommitted; candidate erasure contract passes 4/4 and TypeScript passes)
+
+## 2026-07-14 - Late legal hold degraded provider actions to an availability error
+**Severity:** correctness
+**File:** src/app/api/admin/candidates/erasure/route.ts:390
+**Issue:** The database returned `blocked_legal_hold` for both provider-authority inspection and reconciliation, but the PATCH route rejected that valid state as an untyped 503.
+**Repro/evidence:** The regression first received HTTP 503 for both actions after a late hold. The route now maps both database results to the canonical non-final HTTP 423 response.
+**Suggested fix:** Keep route, database, and OpenAPI legal-hold states aligned.
+**Status:** fixed (uncommitted; candidate route passes 10/10, OpenAPI contract passes, and TypeScript passes)
+
+## 2026-07-14 - Stale inbound workers could recreate erased contact rows
+**Severity:** security
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql:837
+**Issue:** A worker that claimed inbound work before erasure could later recreate raw suppression, WhatsApp contact/window, or conversation identity after the local scrub committed.
+**Repro/evidence:** The tombstone trigger originally guarded workspace state, messages, outreach, and Apollo only. It now also rejects erased email, phone, LinkedIn, and candidate identifiers in suppression, WhatsApp contact/window, and conversation writes with SQLSTATE 23514.
+**Suggested fix:** Preserve these guards and the shared normalized identity locks; add candidate provenance for the remaining run/event/framework/memory paths in the next migration.
+**Status:** fixed for the bounded contact paths (uncommitted; both transaction lock orders pass and leave zero raw rows after rejected writes)
+
+## 2026-07-14 - AgentSpec dependency failures appeared as missing memory
+**Severity:** correctness
+**File:** src/app/api/agents/memories/route.ts
+**Issue:** The owned-AgentSpec lookup collapsed database errors and confirmed absence into null, so GET, POST, PATCH, and DELETE returned 404 during a retryable database failure. The authentication lookup also ignored its returned error.
+**Repro/evidence:** Adversarial route tests first received 404 or 201 with injected AgentSpec/auth dependency errors. The lookup now has found, not_found, and unavailable states; auth and database errors return non-cacheable 503 while only confirmed absence returns 404.
+**Suggested fix:** Keep dependency errors distinct from resource absence at every authority boundary.
+**Status:** fixed (uncommitted; memory route tests pass 20/20)
+
+## 2026-07-14 - Candidate drawer could cross candidate erasure authority
+**Severity:** security
+**File:** src/components/candidates/candidate-drawer.tsx; src/lib/store.ts
+**Issue:** Late queue, inspect, or completion responses could update a newly opened candidate. Typed 423 holds discarded their body, successful erasure could leave click-time PII visible after hydration failure, and an anonymized tombstone still exposed incompatible restore controls.
+**Repro/evidence:** Every request now carries an abort controller and candidate/open generation scope checked after each await. A 423 clears decrypted authority and reloads the queue; a valid receipt masks local state before fallible hydration and closes the drawer; the store commit boundary preserves tombstones and restore exits before any suppression DELETE.
+**Suggested fix:** Keep UI request authority candidate-scoped and treat erasure tombstones as permanently immutable.
+**Status:** fixed (uncommitted; candidate erasure, privacy, and store contract suites pass)
+
+## 2026-07-14 - Framework recovery changed a successful idempotent response
+**Severity:** correctness
+**File:** src/lib/agents/framework/execution.ts; supabase/migrations/0032_agent_operational_authority.sql
+**Issue:** A first successful framework run returned its bounded report summary, but recovery after a lost response returned reports as an empty array for the same idempotency key.
+**Repro/evidence:** Migration 0032 now persists exactly one bounded public report summary with the proposal digest. Recovery validates it and returns the original complete response; missing or malformed reports fail closed and changed replay reports conflict.
+**Suggested fix:** Preserve the full public response contract in durable idempotency authority.
+**Status:** fixed (uncommitted; framework execution passes 15/15 and database/rollback authority passes)
+
+## 2026-07-14 - Fly adapter configuration mixed provider and private runtime URLs
+**Severity:** correctness
+**File:** infra/agent-frameworks/fly/operator-core.mjs; src/lib/agents/framework/configuration-core.mjs; scripts/agent-framework-heartbeat-worker.mjs
+**Issue:** The Fly operator injected the public Moonshot/OpenAI origin as DeerFlow's private model-gateway URL, while its HTTP-only private adapters were rejected by ARIA and heartbeat's HTTPS-only checks.
+**Repro/evidence:** The operator now injects the exact private gateway and adapter origins, derives and verifies the configuration digest from that environment, and shares one credential-free .internal URL policy across configuration, ARIA readiness, and heartbeat. Public origins remain rejected.
+**Suggested fix:** Keep cloud-provider identity distinct from private gateway identity and test generated deployment values across every consumer.
+**Status:** fixed (uncommitted; Fly deployment 15/15, framework configuration/contract, and heartbeat tests pass)
+
+## 2026-07-14 - Candidate erasure queue mutated state through an unprotected GET
+**Severity:** security
+**File:** src/app/api/admin/candidates/erasure/route.ts; docs/api/openapi.yaml
+**Issue:** Queue listing refreshes expired holds and request states in PostgreSQL, but GET accepted a missing Origin and therefore performed state changes outside the same-origin JSON mutation boundary.
+**Repro/evidence:** Queue listing is now PATCH action list with the exact same-origin JSON boundary. GET is side-effect free and returns 405 with Allow: POST, PATCH; the drawer and OpenAPI use the new contract.
+**Suggested fix:** Keep all state-changing reads behind an explicit mutation contract.
+**Status:** fixed (uncommitted; route 11/11 and OpenAPI contract pass)
+
+## 2026-07-14 - Candidate erasure and stale reimport were not transaction-serialized
+**Severity:** security
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql; tests/candidate-erasure-db.sh
+**Issue:** Reimport triggers read tombstones without sharing a transaction lock with erasure, so a concurrent writer could pass before tombstone commit and recreate PII afterward.
+**Repro/evidence:** Erasure and all nine reimport triggers now lock the same normalized workspace/identity keys in deterministic order. Real two-session tests prove writer-first erasure waits then scrubs the committed row, while erasure-first writer waits then rejects with SQLSTATE 23514 and persists no row.
+**Suggested fix:** Preserve the shared identity-lock authority and both lock-order regressions.
+**Status:** fixed (uncommitted; candidate database authority and database privilege gates pass)
+
+## 2026-07-14 - Private readiness could leave the reviewed Machine through redirects or proxies
+**Severity:** security
+**File:** infra/agent-frameworks/fly/runtime/private-probe.py:63
+**Issue:** The DeerFlow in-Machine readiness probe used default urllib redirect and environment-proxy behavior, so readiness could be supplied by an origin other than the exact `FLY_PRIVATE_IP`.
+**Repro/evidence:** The regression rejects a 302 and an inherited `HTTP_PROXY`, asserting that neither the redirect target nor proxy receives a request.
+**Suggested fix:** Keep the no-redirect, no-proxy transport isolated in `private_http.py` and preserve the executable regression in the Fly deployment suite.
+**Status:** fixed (uncommitted; Fly deployment suite passes 15/15)
+
+## 2026-07-14 - Release documentation drifted from workflow-derived evidence
+**Severity:** test-gap
+**File:** README.md; production-readiness/STATUS.md; production-readiness/DEPLOYMENT_RUNBOOK.md; docs/ARCHITECTURE.md; tests/docs-truth.mts
+**Issue:** Current release docs still described six scanned images, four local attestations, 24 application tables, and ten active framework apps after the workflow, inventory, and operator had changed.
+**Repro/evidence:** The protected workflow declares seven scanned and five locally attested components; the table inventory is canonical; the framework operator has eight active and two release-disabled roles. The docs test previously passed without checking those facts.
+**Suggested fix:** Derive supply-chain counts from the workflow, refer to the canonical table inventory without a copied count, and keep active/disabled topology explicit.
+**Status:** fixed (uncommitted; documentation truth passes 39/39)
+
+## 2026-07-14 - The 0032 SQL fallback had no ledger-safe production operator path
+**Severity:** spec-mismatch
+**File:** supabase/rollbacks/0032_agent_operational_authority.sql; production-readiness/DEPLOYMENT_RUNBOOK.md
+**Issue:** The fallback SQL was described as operational, but no protected apply job existed and the migration ledger would prevent a normal 0032 forward reapply.
+**Repro/evidence:** The database test manually applies rollback SQL and reapplies migration 0032. The production bootstrap records 0032 as applied and has no receipt-bound reverse/forward action for this file.
+**Suggested fix:** Keep production use prohibited until a protected job and new append-only forward migration are reviewed; use restore or a forward migration meanwhile.
+**Status:** open (documentation now fails closed; production machinery remains absent)
+
+## 2026-07-14 - Test manifest could pass without validating itself
+**Severity:** test-gap
+**File:** tests/test-manifest.mjs:389
+**Issue:** The manifest contract was exposed as an optional package script but was absent from the canonical lifecycle, so `npm test` could pass after manifest hashes, wiring, trace parity, or fail-fast behavior drifted.
+**Repro/evidence:** The initial 186-process parity run exited 0 without executing `tests/test-manifest-contract.mts`. The final application group registers it exactly once; the untouched-tree lifecycle ran the contract 8/8 and exited 0.
+**Suggested fix:** Keep every runner-integrity contract in the canonical manifest exactly once.
+**Status:** fixed (`e58992a`)
+
+## 2026-07-14 - Canonical test execution was not process-portable
+**Severity:** correctness
+**File:** scripts/run-test-manifest.mjs:122; tests/test-manifest-contract.mts:230
+**Issue:** Canonical `tsx` entries were executed through the loader shortcut rather than the installed CLI, and the trace proof launched the Windows-incompatible `npm` command directly with `shell: false`.
+**Repro/evidence:** The runner now resolves `tsx/cli` and executes it through `process.execPath`. The npm trace uses the lifecycle-provided `npm_execpath`; bare non-npm execution skips only that lifecycle-specific trace subtest while retaining the other seven runner checks.
+**Suggested fix:** Preserve logical command identity while resolving package CLIs through Node and keep platform shims out of shell-free spawns.
+**Status:** fixed (`e58992a`)
+
+## 2026-07-19 - Direct sourcing adapters can bypass the central recruiting policy
+**Severity:** security
+**File:** src/app/api/source/apify/start/route.ts:21; src/app/api/source/apollo/search/route.ts:107; src/lib/sourcing/query-policy.ts:5
+**Issue:** The central query policy rejects protected traits and proxy criteria, but the direct Apify route accepts raw queries, schools, first names, and last names without invoking it; Apollo search is not bound to a verified approved requisition.
+**Repro/evidence:** Static route tracing found no call from either direct adapter to the canonical policy/requisition authority. The Apify UI exposes the same name filters. A user can therefore reach provider side effects through a path with weaker policy controls than the canonical agent.
+**Suggested fix:** Enforce one server-side prohibited-criteria and approved-requisition check before every provider call, with an immutable policy receipt.
+**Status:** open; real sourcing remains NO-GO
+
+## 2026-07-19 - Enrichment spend authority is defined but not used by application calls
+**Severity:** correctness
+**File:** supabase/migrations/0044_sourcing_enrichment_authority.sql:138; src/app/api/source/enrich/route.ts:42
+**Issue:** Migration 0044 defines database claim, settle, and release authority, but no application source calls those RPCs. The enrichment route treats the client budget as a hint and caps only one request, not total workspace spend.
+**Repro/evidence:** `rg` found no `claim_enrichment_budget`, `settle_enrichment_spend`, or `release_enrichment_claim` call under `src`. Repeated or parallel requests across app instances can exceed a tenant budget while each individual request remains within ten units.
+**Suggested fix:** Wrap every paid enrichment/provider call in durable database claim, settle, and release operations and test concurrent multi-instance replays against a hard ceiling.
+**Status:** open; paid enrichment remains NO-GO
+
+## 2026-07-19 - Autonomous sourcing workers have no executable job handlers
+**Severity:** spec-mismatch
+**File:** scripts/sourcing-loop-worker.mjs:19; scripts/sourcing-loop-worker.mjs:218
+**Issue:** The production loop worker declares an empty handler set and cannot claim any durable sourcing job, so a need cannot progress headlessly from intake through sourcing when the browser is closed.
+**Repro/evidence:** `HANDLER_KINDS` is empty and the worker's claim path therefore has no eligible job kinds. Live aggregate inspection showed zero job/heartbeat activity, one loop control with sourcing disabled, and no deployed framework executor plane.
+**Suggested fix:** Implement bounded idempotent handlers for the approved workflow, deploy supervised executors, and prove lease recovery and zero duplicate sends during worker failure.
+**Status:** open; autonomous campaign execution remains NO-GO
+
+## 2026-07-19 - Live browser-agent image is missing a declared Playwright runtime asset
+**Severity:** correctness
+**File:** package.json:62
+**Issue:** The live web process logs an external-module load failure because `/app/node_modules/playwright-core/browsers.json` is absent.
+**Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
+**Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
+**Status:** open; browser-agent capability remains NO-GO
+
+## 2026-09-12 — Cold-start reclaim steals DB-bound VMs (N-seat isolation)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:367
+**Issue:** `reclaim_healthy_orphan` calls `hydrateFromHost` without first hydrating `agent_seats.computer_id` rows into the supervisor. Every running host bot is imported as `__orphan__`, then claimOrphan binds the first probed-healthy profile onto the requesting seat. If another seat already owns that `computer_id` in DB, persist hits the unique index and throws — but the in-memory claim is not rolled back. Next GET hydrates the victim seat, hits ownership-mismatch, and clears the victim's durable FK; fleetHermes then writes the stolen id onto the attacker seat.
+**Repro/evidence:** Cold supervisor process; seat B has `computer_id=X` with healthy LinkedIn cookies; seat A Login/Deploy with null computerId → reclaim imports X as orphan → claim A → persist unique fail → memory A owns X → GET clears B → PATCH A gets X.
+**Suggested fix:** Before import/claim, load workspace `agent_seats.computer_id` into supervisor (or skip host bots already bound in DB); on persist failure roll back claimOrphan to `__orphan__`.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — ensure/session_probe/navigate bind foreign computerId without DB check
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:272
+**Issue:** POST `ensure` / `session_probe` / `navigate` call `ensureComputer` with client `computerId` without consulting `agent_seats`. On a cold map, a foreign durable id is registered onto the caller seat and can be Started — ops-driving another desk's Chromium even when PATCH would 409.
+**Repro/evidence:** Empty supervisor memory; POST ensure `{seatId:A, computerId:B_owned}` succeeds in-memory; start boots that botId.
+**Suggested fix:** Same pre-hydrate of seat bindings; refuse ensure when DB shows computer_id owned by another seat (mirror PATCH 409).
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — resolveDurableComputerId mints after reclaim persist steal
+**Severity:** correctness
+**File:** src/lib/boot-browser-computer.ts:49
+**Issue:** When reclaim returns `computer_id persist failed` (or other unclassified 400) and `existing` is empty, the helper falls through to mint a new `comp_*` instead of fail-closed. The failed reclaim's in-memory steal remains; mint + ensure/start then races the poisoned supervisor state.
+**Repro/evidence:** Login after seat create (`computerId=null`); reclaim unique-constraint error string does not match `/ownership-mismatch|orphan-claim-blocked|no-healthy-orphan/`; returns fresh UUID.
+**Suggested fix:** Fail closed (throw/return error) on persist-failed / unknown reclaim errors; never mint after a partial claim.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — Ops Ready filter lists orphan ready VMs
+**Severity:** spec-mismatch
+**File:** src/components/fleet/fleet-computer-ops-board.tsx:157
+**Issue:** API `summary` correctly excludes `__orphan__`, but the Ready filter uses the raw `computers` array, so unbound host VMs appear as ready fleet rows and inflate the filtered list vs the StatCard.
+**Repro/evidence:** GET returns orphans with status=ready; StatCard Ready = summary.ready (no orphans); filter Ready shows orphan rows labeled "Unbound host VM".
+**Suggested fix:** Exclude `seatId === "__orphan__"` (or missing seat) from ops board filters/counts the same way as `summarizeFleetComputers`.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — Send route paces LinkedIn without sessionHealthy
+**Severity:** spec-mismatch
+**File:** src/app/api/outreach/send/route.ts:282
+**Issue:** `evaluateSendPace` is called without `sessionHealthy`, so the undefined-skip branch allows enqueue while Browser Computer deliver later refuses `session_unverified`. UI can show queued success theater for an unhealthy/unprobed desk.
+**Repro/evidence:** Live Browser Computer seat, `sessionHealthy` null/false; send returns queued; dispatcher/adapter refuses at job gate.
+**Suggested fix:** Pass probed sessionHealthy (or fail closed when Browser Computer and not probed true) before enqueue.
+**Status:** fixed (cc60cf1)
+
+## 2026-09-12 — N-seat VM isolation audit (ponytail / theater lens)
+**Severity:** security | correctness | spec-mismatch
+**File:** multi (see HANDOFF / this entry)
+**Issue:** Adversarial audit of N campaign agents × isolated Chromium/LinkedIn. Architecture is largely real and fail-closed on sessionHealthy; remaining theater/gaps listed below.
+**Repro/evidence:** Code review of computer-supervisor, fleet API, floor3d, boot-browser-computer, openbot-chromium-supervisor; tests/computer-supervisor.mts + tests/floor.mts.
+**Suggested fix:** See ordered gaps — prefer seatId ownership on stop/reset/release; drop unused profileVolume claims; persist ensure; constrain orphan reclaim.
+**Status:** fixed (246cdd9 seat ownership + priorSeatId; 47ddefd profileVolume delete + ensure persist). Remaining: process-local Map (#5), mockSend (#6), live Fly login (#7).
+
+### What is real (not theater)
+- 1 seat → 1 computerId → OpenBot botId → `launchPersistentContext(PROFILE_ROOT/botId)` (`scripts/openbot-chromium-supervisor.mjs:352-369`)
+- Cross-seat ensure throws; start/take require seatId match; GET never mints; sessionHealthy only probe `healthy===true`
+- Floor polls `/api/fleet/computers`; working only ready+sessionHealthy===true; poisoned FK cleared
+- Tests: tests/computer-supervisor.mts, tests/floor.mts, tests/boot-browser-computer.mts, tests/campaign-go-live.mts
+
+## 2026-09-12 — N-agent stop/release lacked seat ownership; orphan reclaim stole LinkedIn profiles
+**Severity:** security
+**File:** src/app/api/fleet/computers/route.ts; src/lib/computer-supervisor.ts
+**Issue:** `stop` / `reset` / `release_control` / `request_help` accepted computerId alone (seat A could stop seat B). `reclaimHealthyOrphan` auto-claimed the first healthy host orphan, so seat A could inherit seat B's detached LinkedIn cookies.
+**Repro/evidence:** POST stop with foreign computerId succeeded; reclaim with unhealthy twin + foreign priorSeatId orphan rebound the foreign VM.
+**Suggested fix:** Require caller seatId match for all mutating actions; track priorSeatId on detach; auto-reclaim only never-bound or same-prior orphans.
+**Status:** fixed (246cdd9)
+
+## 2026-10-02 — Manual permissions were localStorage theater; profileVolume unused
+**Severity:** spec-mismatch
+**File:** src/lib/browser-agent-permissions.ts; src/lib/computer-supervisor.ts
+**Issue:** Claude Manual mode never reached enqueueJob; profileVolume was assigned and never used (real isolate is PROFILE_ROOT/botId). ensure did not persist agent_seats.computer_id.
+**Repro/evidence:** Manual mode only wrote localStorage; linkedin_send still ran on Auto path; ensure left cold GET orphans.
+**Suggested fix:** FleetSettings.browserAgentPermissionMode BE gate; delete profileVolume; persist ensure.
+**Status:** fixed (47ddefd)
+
+## 2026-10-02 — Stale sessionHealthy green + client UUID mint twins
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts; src/lib/boot-browser-computer.ts; src/lib/campaign-go-live.ts
+**Issue:** Process-local sessionHealthy=true could paint Floor/Fleet green forever; resolveDurableComputerId minted client UUIDs that could twin-race; go-live "attached" counted seats without computerId.
+**Repro/evidence:** set sessionHealthy true without probedAt → get() still returned true before TTL; mint when no orphan used crypto.randomUUID.
+**Suggested fix:** sessionProbedAt + 120s TTL expire; mint via ensure; go-live requires computerId.
+**Status:** fixed (2ece420)
+
+## 2026-10-02 — Local LIVE prove: N=3 Chromium → floor (no invent healthy)
+**Severity:** test-gap
+**File:** scripts/prove-n-agent-floor.mts; scripts/prove-supervisor-floor-live.mts
+**Issue:** Goal required N isolated VMs visible on floor; Fly tokens absent so production host unproven.
+**Repro/evidence:** Local supervisor :18765; LIVE prove + supervisor-floor evidence JSON show 3 distinct profile dirs and floor suffixes; sessionHealthy stays null/unverified.
+**Suggested fix:** Owner Fly redeploy + LinkedIn login for healthy green; local prove closes VM isolation gap.
+**Status:** fixed (local evidence); Fly/LinkedIn healthy still open
+
+## 2026-10-02 — ensure BodySchema required computerId (blocked server mint)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:BodySchema
+**Issue:** After client mint moved to POST ensure without id, Zod still required computerId — Validation failed; FE could not mint durable VMs.
+**Repro/evidence:** POST {action:ensure,seatId} → 400 computerId required; prove-fleet-api-floor failed until schema fixed.
+**Suggested fix:** allow ensure/reclaim without computerId; pass computerId||undefined into ensureComputer.
+**Status:** fixed (6cbc99a)
+
+## 2026-10-03 — Hermes computerId reclaim drift (orphan / null durable)
+**Severity:** correctness
+**File:** src/lib/fleet-hermes-sync.ts:48
+**Issue:** After reclaim/detach, a login-wall twin becomes `__orphan__` (or durable `computer_id` is cleared) but `fleetHermesComputerPatches` only clears Hermes when another seat owns the id — orphan-only / absent fleet rows leave the stale `seat.computerId`. Campaign Agents durable merge (`campaign-agents-panel.tsx:146`) only writes when durable is non-null, never nulls Hermes. Deploy then passes that stale id into `resolveDurableComputerId` → `reclaimHealthyOrphan` `ensureComputer`s the twin back onto the seat and can return the unhealthy binding.
+**Repro/evidence:** `tests/fleet-hermes-sync.mts:65` asserts `keeps Hermes when only orphan-bound on fleet` (patches.length === 0). Seat A Hermes=`comp_twin`, fleet=`{seatId:__orphan__, computerId:comp_twin}` + durable null → poll leaves Hermes; Deploy reclaims twin.
+**Suggested fix:** Clear Hermes when fleet owner is missing/orphan or durable campaignSeats.computerId is null; flip the locked test.
+**Status:** fixed (580d0c3) — residual Deploy/reclaim race tracked below
+
+## 2026-10-03 — reclaimHealthyOrphan ensureComputer claims orphan before healthy probe
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:681
+**Issue:** `reclaimHealthyOrphan` still `ensureComputer`s the caller `computerId` before proving `sessionHealthy===true`. For a `__orphan__` login-wall twin that path hits `ensureComputer`→`claimOrphan` (line 285) with no `priorSeatId` gate and no health gate. Hermes poll clear (580d0c3) does not close the race: Campaign Agents Deploy (`campaign-agents-panel.tsx:226`) can pass stale `seat.computerId` before the next poll, rebinding the twin onto the seat; when probe is null/false and no other healthy orphan exists, fallback (718–727) returns that seat-bound unhealthy binding and `resolveDurableComputerId` keeps `existing` (boot-browser-computer.ts:107). Contrast the other-orphan loop (707–715) which correctly probes before `claimOrphan`.
+**Repro/evidence:** Seat A Hermes=`comp_twin` still (pre-poll); fleet row `{seatId:__orphan__, computerId:comp_twin}` with `sessionHealthy` null/false and no other healthy orphan; Deploy → `resolveDurableComputerId({existingComputerId:comp_twin})` → reclaim `ensureComputer` claims twin → probe fails → returns twin on seat A. Foreign `priorSeatId` orphan passed as `existingComputerId` is also claimable via ensure (candidates filter never runs).
+**Suggested fix:** For orphan/foreign `currentId`, probe in place and `claimOrphan` only when `sessionHealthy===true` and priorSeatId is empty/same-seat; on unhealthy leave orphan and fall through; never ensure-claim before healthy proof.
+**Status:** fixed (c6ac494) — probe-before-claim in reclaimHealthyOrphan; Deploy omits staleTwin existingComputerId; tests: unhealthy orphan twin + foreign prior as currentId
+
+## 2026-10-03 — ensureComputer claimOrphan lacked priorSeatId gate
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:285
+**Issue:** `ensureComputer` still called `claimOrphan` for `__orphan__` ids with no `priorSeatId` check. Fleet ensure/nav/probe (or any client) could bind another desk's detached LinkedIn cookies onto the caller seat. Reclaim was gated; ensure was not.
+**Repro/evidence:** Orphan `comp_x` with `priorSeatId=seat-other`; `ensureComputer({seatId:seat-tony, computerId:comp_x})` claimed onto seat-tony.
+**Suggested fix:** Gate in `claimOrphan` — refuse when priorSeatId set and ≠ caller seat; share `isStaleHermesComputerTwin` for Fleet+Campaign Agents Deploy.
+**Status:** fixed (b68d304) — claimOrphan priorSeatId gate; isStaleHermesComputerTwin on Fleet+Campaign Agents Deploy
+
+## 2026-10-03 — ensureComputer claimed orphans without health; Deploy used filtered fleet
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:285; campaign-agents-panel.tsx:227; boot-browser-computer.ts:83
+**Issue:** `ensureComputer` still claimed `__orphan__` ids (health unchecked). Campaign Agents Deploy passed badge-filtered `computers` (orphans stripped) into `isStaleHermesComputerTwin`, so an orphan-only fleet looked empty → staleTwin false → Hermes login-wall id fed to reclaim. `no-healthy-orphan` then kept that twin id for boot→ensure→claim. Floor idle+healthy forced `sourcing` theater.
+**Repro/evidence:** Deploy with Hermes=orphan twin + filtered computers=[]; reclaim throws no-healthy-orphan; resolve keeps twin; ensure claims.
+**Suggested fix:** ensure refuses all orphan claims; resolve mints on no-healthy-orphan; Deploy uses full fleetRows; floor keeps base state on healthy.
+**Status:** fixed (bebf179) — ensure refuse orphan; mint on no-healthy-orphan; Deploy full fleet; floor idle+healthy
+## 2026-10-03 — Floor busy/starting label lies "session unverified" while healthy
+**Severity:** spec-mismatch
+**File:** src/lib/floor.ts:269
+**Issue:** `agentActivityWithComputers` short-circuits `status===starting|busy` before the `ready && sessionHealthy===true` branch. During a real `linkedin_send` the supervisor sets `status=busy` but leaves `sessionHealthy=true`; Floor overlays force `warming` and hardcode label "VM busy — session unverified". Campaign Agents still badges "Session healthy" for the same row — FE↔BE desk honesty split.
+**Repro/evidence:** Seat ready+sessionHealthy true; enqueueJob sets rec.status=busy (computer-supervisor.ts:1294); Floor poll paints warming/unverified; Campaign Agents panel sessionLabel stays healthy.
+**Suggested fix:** If sessionHealthy===true under busy, label "VM busy" (keep base/working); only say unverified when sessionHealthy!==true.
+**Status:** open
+
+## 2026-10-03 — Campaign Agents "with VM" counts Hermes, not fleet-owned row
+**Severity:** spec-mismatch
+**File:** src/components/campaigns/campaign-agents-panel.tsx:425
+**Issue:** Header badge `N/M with VM` counts seats with non-empty Hermes `seat.computerId`. Row rendering requires a seat-owned fleet row (`bySeat ?? byComp` with `row.seatId===seat.id`); stale twin / durable-null / orphan fleet leaves the row at "No Browser Computer" while the badge still claims a VM.
+**Repro/evidence:** Campaign seat Hermes=`comp_twin`, fleet owner `__orphan__` or absent; list shows Deploy/No Browser Computer; badge shows `1/1 with VM`.
+**Suggested fix:** Count seats where `computers.some(c => c.seatId===seat.id && c.computerId)` (same ownership as ops row).
+**Status:** open
+
+## 2026-10-03 — mockSend skips sessionHealthy; dispatch never paces it
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:1222
+**Issue:** `linkedin_send` gate is `(!supervisorMockSend() && rec.sessionHealthy !== true)` — mock path accepts send with null/false health. Comment admits "mock send would lie green". `dispatch-outbound.ts:407` calls `adapter.deliver` without `seat`/`fleetSettings`, so `linkedin-channel.ts:239` `if (req.seat)` skips `evaluateSendPace({sessionHealthy})` entirely; enqueue mock is the only gate and it is open. Fly blocks mock unless `ALLOW_COMPUTER_SUPERVISOR_MOCK_SEND=1`, but local/demo credentials with `computerSupervisorMockSend` still return `status:sent`.
+**Repro/evidence:** COMPUTER_SUPERVISOR_MOCK_SEND=1 (non-Fly); computer sessionHealthy null; dispatch deliver → enqueueJob succeeds → "mock browser-computer send accepted".
+**Suggested fix:** Always require `sessionHealthy===true` for linkedin_send; mock may only fake remote ACK after probe. Pass seat+sessionHealthy into deliver pace on dispatch.
+**Status:** open
+
+## 2026-10-03 — resolveComputerHint ignores computerHealthOwnedBySeat empty-owner rule
+**Severity:** spec-mismatch
+**File:** src/lib/floor.ts:149
+**Issue:** Settings gates computerId-keyed health with `computerHealthOwnedBySeat` (empty/`__orphan__` → false). Floor `resolveComputerHint` only rejects when `byComputer.seatId` is truthy and ≠ seat — empty seatId falls through and can paint sessionHealthy green from a computerId-only map entry. Helper unused on Floor/Campaign go-live (`computerForSeat` same empty-owner allow).
+**Repro/evidence:** Hint map key=`comp_x` with `{seatId:"", sessionHealthy:true, computerId:comp_x}`; seat.computerId=comp_x → Floor healthy; `computerHealthOwnedBySeat(seat,comp_x,[{seatId:"",computerId:comp_x}])` === false.
+**Suggested fix:** Refuse empty/`__orphan__` owner in resolveComputerHint (and computerForSeat); reuse computerHealthOwnedBySeat.
+**Status:** open
+
+## 2026-10-03 — seatsToOfficeAgents hardcodes Date.now (warmup desync)
+**Severity:** test-gap
+**File:** src/lib/floor3d.ts:169
+**Issue:** `seatsToOfficeAgents` calls `agentActivityWithComputers(..., Date.now(), ...)` with no injectable `now`. Floor rollup/2D desks can pass a clock; near warmup boundaries 3D status ≠ rollup working count; seed tests using SEED_NOW flake.
+**Repro/evidence:** HANDOFF watch-out; floor.mts passes NOW into floorRollup but seatsToOfficeAgents always wall-clock.
+**Suggested fix:** Add `now?: number` param; thread from floor page / tests.
+**Status:** open
+
+## 2026-10-03 — Floor busy lied unverified; mockSend skipped sessionHealthy; VM badge Hermes theater
+**Severity:** correctness
+**File:** src/lib/floor.ts:269; computer-supervisor.ts:1220; campaign-agents-panel.tsx:425
+**Issue:** busy/starting overlay always said "session unverified" even when sessionHealthy===true (real linkedin_send). mockSend bypassed sessionHealthy gate so null health could fake sent. Campaign Agents "N/M with VM" counted Hermes computerId, not fleet seat-owned rows.
+**Repro/evidence:** status=busy + sessionHealthy=true → Floor warming/unverified while Campaign Agents green; MOCK_SEND=1 + null health → succeeded; Hermes twin id inflated with-VM badge.
+**Suggested fix:** busy+healthy keep base + healthy label; always require sessionHealthy===true for linkedin_send; badge counts fleet computers by seatId.
+**Status:** fixed (212759b) — busy+healthy Floor; mockSend requires healthy; with-VM fleet count
+
+## 2026-10-03 — dispatch skipped Browser Computer pacing; Floor empty-owner green
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts:407; src/lib/floor.ts:149; campaign-agents-panel.tsx:499
+**Issue:** `adapter.deliver` omitted seat/fleetSettings so linkedin-channel skipped evaluateSendPace. Floor resolveComputerHint allowed empty/`__orphan__` owners via computerId map. Campaign Agents ops required Hermes computerId even when fleet had seat-owned bind.
+**Repro/evidence:** dispatch LinkedIn Browser Computer send without seat → pace skipped; Hermes twin orphan hint painted Floor healthy; fleet bind + null Hermes → Deploy CTA.
+**Suggested fix:** pass agentSeatRowToSeat + defaultFleetSettings; refuse empty/orphan in resolveComputerHint; ops on bySeat??byComp only.
+**Status:** fixed (ee91d34) — dispatch seat pacing; Floor refuse orphan/empty; Campaign ops fleet bind
+
+## 2026-10-03 — go-live empty-owner green; Take toast restored theater; Floor now desync
+**Severity:** correctness
+**File:** src/lib/campaign-go-live.ts:155; linkedin-connections-panel.tsx:628; floor3d.ts:169
+**Issue:** computerForSeat allowed empty seatId to green go-live. Take control toast used pre-take sessionHealthy as "session restored". seatsToOfficeAgents hard-coded Date.now desyncing 3D vs rollup.
+**Repro/evidence:** computerId hint with seatId:"" + sessionHealthy true → session_healthy ok; toast after take claimed no re-login while BE cleared probe.
+**Suggested fix:** refuse empty/orphan in computerForSeat; toast from after-take health; injectable now on seatsToOfficeAgents + Floor page clock.
+**Status:** fixed (8fb3eec) — go-live empty-owner refuse; Take toast honest; Floor shared now
+
+## 2026-10-03 — Floor indexed orphan computerIds; drawer Hermes-bound theater; summary empty seatIds
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:151; page.tsx:563; api/fleet/computers/route.ts:106; campaign-go-live.ts:166
+**Issue:** Floor still computerId-indexed __orphan__ rows; drawer used Hermes computerId as bound after hint refuse; fleet summary kept empty seatIds in Ready; go-live required Hermes computerId before fleet bySeat could attach.
+**Repro/evidence:** orphan host botId overwrites seat hint; Hermes twin shows VM …xxxx in drawer; StatCard Ready > filtered list; Hermes-null + fleet bind → browser_seat_attached false.
+**Suggested fix:** skip orphan/empty before map.set; bound=hint only; summary filter !seatId||orphan; withComputer includes computerForSeat.
+**Status:** fixed (8dcc17c) — Floor orphan skip; drawer hint-bound; summary empty filter; go-live fleet bind
 ## 2026-07-14 — Safe-exit test could signal the child twice
 **Severity:** test-gap
 **File:** tests/safe-exit-traps.mts:28
@@ -514,3 +1293,166 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `saveApiKey` never copies `input.value`; `/api/keys` encrypts the raw value server-side and returns only ID/last-four metadata. Alert `13` predates PR `#3`.
 **Suggested fix:** Preserve the metadata contract and document the verified false positive instead of breaking provider references.
 **Status:** wontfix (CodeQL alert 13 dismissed as false positive on 2026-07-14 with audit comment)
+
+## 2026-10-03 — Agents pollGeneration remounted on seats/Hermes churn
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-agents-panel.tsx:252
+**Issue:** Soft-nav `pollGeneration` guard listed `seats`/`hermesCampaignSeats` in `refresh` deps, so Floor Hermes patches remounted the effect, cleared durable seats, and blocked Deploy on the same campaign.
+**Repro/evidence:** Soft-nav to campaign A, durable seats paint, then Hermes seat identity churn → durable wiped / Deploy gated until re-poll.
+**Suggested fix:** seatsRef + hermesCampaignSeatsRef; deps `[actions, campaignId]` and `[campaignId, refresh]`.
+**Status:** fixed (port onto #150 from 4ca658e)
+
+## 2026-10-03 — Go-live / setup-guide wiped durable on seats churn
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-go-live-checklist.tsx:95; src/components/settings/setup-guide-panel.tsx:169
+**Issue:** Effect deps included seats (and campaign object), so Floor Hermes patches cleared durable authority and briefly re-painted Hermes-only attach.
+**Repro/evidence:** Durable campaignSeats=[] then seats identity churn → durable wiped to undefined/null → Hermes attach greens go-live/setup until re-poll.
+**Suggested fix:** seatsRef; deps campaignId (+ computers/actions) only.
+**Status:** fixed (tip #148; port #150)
+
+## 2026-10-03 — Fleet/LI/campaign-badge seats-churn wipe + soft-nav foreign count
+**Severity:** correctness
+**File:** src/app/fleet/page.tsx:296; src/components/settings/linkedin-connections-panel.tsx:257; src/app/campaigns/[id]/page.tsx:419
+**Issue:** Fleet/LI poll remounted on seats churn and could clear healthy roster; campaign Agents badge reused prior campaign durable count for one paint on soft-nav.
+**Repro/evidence:** Soft-nav A→B keeps A durable count; Fleet Hermes patch remounts refresh while in-flight fail clears computers.
+**Suggested fix:** seatsRef+pollGeneration; durableAgentAuthority stamped by campaignId.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — ownership-mismatch re-poisons durable bindings
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:205-301
+**Issue:** After clearing a poisoned computer_id FK in DB, campaignSeats/browserSeatBindings still emitted the old computerId from the seats snapshot, so Floor ingest rewrote the foreign VM onto Hermes.
+**Repro/evidence:** Seat A FK = B's computer → GET clears A → bindings still have B's id → ingestDurableBrowserBindings re-poisons.
+**Suggested fix:** clearedPoisonedComputerIds → force null in binding maps.
+**Status:** fixed (tip #148)
+
+## 2026-10-03 — Floor cancel race + stale-Map ownership clear destroys durable bind
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:128; src/components/fleet/fleet-health-strip.tsx:51; src/app/api/fleet/computers/route.ts:200
+**Issue:** Floor/health-strip could ingest/updateSeat after cancel; GET ownership-mismatch nulling always cleared the hydrating seat even when no other DB seat claimed the computer (stale Map), unbinding Floor desks.
+**Repro/evidence:** Multi-instance Map has X→seatB while DB has seatA.computer_id=X → GET clears seatA; Floor remount mid-poll writes stale computerId.
+**Suggested fix:** cancel-before-write + deps [actions]; adoptDurableComputerBinding when !claimedByOtherSeat.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — Poll updateSeat(computerId) races reclaim/ensure
+**Severity:** correctness
+**File:** src/app/floor/page.tsx:164; src/app/fleet/page.tsx:257; campaign-agents-panel; linkedin-connections-panel
+**Issue:** GET pollers PATCHed agent_seats.computer_id via updateSeat from fleetHermesComputerPatches, including null clears that could unbind a desk just persisted by reclaim/ensure.
+**Repro/evidence:** Floor clear patch in flight → reclaim persists Z → late PATCH null → Floor unbound.
+**Suggested fix:** applyFleetHermesComputerPatches local-only; never updateSeat computerId from poll.
+**Status:** fixed (tip #148)
+
+## 2026-10-03 — Agents detach LWW wipe + viewport loading unbound theater
+**Severity:** correctness
+**File:** src/components/campaigns/campaign-agents-panel.tsx:188; src/app/fleet/computers/[computerId]/viewport/page.tsx:154
+**Issue:** Hermes-derived detach PATCH could clear other-campaign assignedCampaignIds; viewport showed unbound reclaim UI while computer still loading.
+**Repro/evidence:** Seat durable [B], Hermes [A] on Agents A poll → PATCH []; open bound viewport → first paint Unbound host VM.
+**Suggested fix:** skip detach when durableById.has(seat); unboundOrphan requires computer!=null.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — orphan-claim-blocked aborts fleet GET (N desks wipe)
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:204; hydrateWorkspaceSeatBindings:425
+**Issue:** hydrateComputer throws computer-orphan-claim-blocked when durable FK hits Map __orphan__; GET only caught ownership-mismatch → 500 → Floor/Agents empty.
+**Repro/evidence:** Instance imports host bot as orphan; other instance persists computer_id; this instance GET 500s.
+**Suggested fix:** treat orphan-claim-blocked like ownership-mismatch → adoptDurable.
+**Status:** fixed (tip #148)
+
+## 2026-10-03 — session probe budget starves N desks
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:590
+**Issue:** refreshSessionHealthForList sliced Map-order ready desks (limit 5); first seats stuck at probed-false monopolized every Floor GET; later desks stayed sessionHealthy=null.
+**Repro/evidence:** 8 ready VMs; desks 1–5 false; 6–8 null → 3 polls never probe 6–8.
+**Suggested fix:** sort by sessionProbedAt ascending (never-probed first) before slice.
+**Status:** fixed (tip #150)
+
+## 2026-10-03 — no-remoteUrl desks starve session probe budget
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:591
+**Issue:** refreshSessionHealthForList admitted ready desks with empty remoteUrl; probeSession left sessionProbedAt null so they forever won never-probed sort and consumed limit=5.
+**Repro/evidence:** ≥5 ready null-URL desks + 1 false+URL desk → HTTP probes=0.
+**Suggested fix:** filter !(remoteUrl||"").trim().
+**Status:** fixed (tip #148)
+
+## 2026-10-03 — claim_linkedin excludes Browser Computer (all-N send dead)
+**Severity:** correctness
+**File:** supabase/migrations/0055_autopilot_entitlements_and_templates.sql (superseded by 0088)
+**Issue:** Tip-applied `claim_linkedin_outbound_queued` allowlists only Assisted Manual / Vendor API. Browser Computer always gets seat-not-live.
+**Repro/evidence:** Live BC seat + queued LinkedIn outbox → claim seat-not-live.
+**Suggested fix:** Migration allowlisting Browser Computer.
+**Status:** fixed (223c211; migration 0088)
+
+## 2026-10-03 — dispatch LI pacing seat has sentToday=0 / lastSendAt=null
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** agentSeatRowToSeat zeros sentToday/lastSendAt so min_gap/daily_cap no-ops on durable deliver.
+**Suggested fix:** Hydrate from outreach_ledger.
+**Status:** fixed (223c211)
+
+## 2026-10-03 — dispatch LI sendWindow always defaultSendWindow
+**Severity:** correctness
+**File:** src/lib/fleet-seats.ts; src/lib/dispatch-outbound.ts
+**Issue:** No durable send_window column; dispatch ignored Hermes seat window.
+**Suggested fix:** Load Hermes seat snapshot in dispatch.
+**Status:** fixed (hermesSeatOverlay on BC path)
+
+## 2026-10-03 — nextEligibleAt hour-step overshoots window open
+**Severity:** correctness
+**File:** src/lib/send-pacing.ts
+**Issue:** 1h step overshoots window open by up to ~59m.
+**Status:** fixed (223c211; 5-minute step)
+
+## 2026-10-03 — SESSION_HEALTH_TTL accepts future sessionProbedAt
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts
+**Issue:** Future probedAt keeps sessionHealthy true past TTL.
+**Status:** fixed (223c211)
+
+## 2026-10-03 — LI queued client commit skips sentToday/lastSendAt
+**Severity:** correctness
+**File:** src/lib/store.ts
+**Issue:** Queued LI Hermes commit skips sentToday bump.
+**Status:** wontfix (durable ledger + claim Europe day is authority; Hermes bump would double-count)
+
+## 2026-10-03 — claim daily cap uses UTC calendar day
+**Severity:** correctness
+**File:** supabase/migrations/0088 (superseded by 0089)
+**Issue:** used_today used UTC midnight; CET seats mis-count near midnight.
+**Status:** fixed (migration 0089 Europe/Berlin + startOfDayInTimeZone hydrate)
+
+## 2026-10-04 — dispatch hardcodes defaultFleetSettings (Manual + BH drift)
+**Severity:** correctness | security
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** BC deliver always defaultFleetSettings — ignores Manual/Skip and BH override.
+**Status:** fixed (fleetSettingsFromHermesState on BC path)
+
+## 2026-10-04 tip residual hunt — floor/go-live/openbot claim bypass
+**Severity:** (audit note)
+**File:** multi
+**Issue:** Floor/PacketFX invent-healthy closed; go-live all-N closed; openbot enqueueJob is test-only.
+**Status:** wontfix (no tip residual in those focus areas)
+
+## 2026-10-04 — claim before pace burns outbox on soft refuse
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** claim_linkedin_outbound_queued ran before evaluateSendPace; min_gap/BH/session refuse after claim → skipped → failed (no requeue).
+**Status:** fixed (pace + soft-defer continue before claim; restore durable probe first)
+
+## 2026-10-04 — deliver start() nulls sessionHealthy before enqueue gate
+**Severity:** correctness
+**File:** src/lib/linkedin-channel.ts
+**Issue:** start() before enqueueJob cleared sessionHealthy → session_unverified after pace OK.
+**Status:** fixed (drop pre-start; enqueueJob starts after session gate)
+
+## 2026-10-04 — cold deliver Map never restores durable session probe
+**Severity:** correctness
+**File:** src/lib/linkedin-channel.ts
+**Issue:** deliver paced on empty Map sessionHealthy=null while Floor green on other instance.
+**Status:** fixed (hydrateFromHost + restoreSessionHealthFromDurableAudits before pace)
+
+## 2026-10-04 — hydrate day TZ vs claim Europe/Berlin mismatch
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** sentToday used Hermes sendWindow TZ; claim 0089 hardcodes Europe/Berlin.
+**Status:** fixed (hydrate dayStart pinned to CET)
+

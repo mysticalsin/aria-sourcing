@@ -1,0 +1,266 @@
+/**
+ * Campaign "Go live" checklist — readiness before LinkedIn Send.
+ */
+
+import type { AgentSeat, Candidate, SystemSettings } from "@/lib/types";
+import { defaultSendWindow } from "@/lib/fleet";
+import { isBrowserComputerSeat, seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
+import { LINKEDIN_BROWSER_SEAT_DEFAULTS } from "@/lib/send-pacing";
+
+export type GoLiveCheckId =
+  | "dry_run_off"
+  | "browser_seat_attached"
+  | "seat_live"
+  | "seat_not_human_held"
+  | "session_healthy"
+  | "candidate_above_floor";
+
+export type GoLiveCheck = {
+  id: GoLiveCheckId;
+  label: string;
+  ok: boolean;
+  detail: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+};
+
+export type ComputerHealthLike = {
+  computerId: string;
+  seatId?: string | null;
+  status?: string;
+  control?: string;
+  sessionHealthy?: boolean | null;
+};
+
+/** Durable Fleet campaignSeats row (subset) — DB authority over Hermes-only attach. */
+export type DurableCampaignSeatLike = {
+  id: string;
+  name?: string;
+  computerId?: string | null;
+  status?: string;
+  assignedCampaignIds?: string[];
+};
+
+export type GoLiveInput = {
+  campaignId: string;
+  settings: Pick<SystemSettings, "dryRunMode" | "minScoreToContact">;
+  seats: AgentSeat[];
+  computers?: ComputerHealthLike[];
+  candidate?: Pick<Candidate, "matchScore"> | null;
+};
+
+/**
+ * Prefer durable Fleet `campaignSeats` for go-live attachment checks.
+ * When present (including authoritative `[]`), DB bindings win over Hermes.
+ * Only `undefined` (not loaded / poll fail) may fall back to Hermes-local seats.
+ * Hermes fields fill persona/mode when the seat already exists locally.
+ */
+export function mergeDurableCampaignSeatsForGoLive(
+  hermesSeats: AgentSeat[],
+  durable: DurableCampaignSeatLike[] | undefined,
+  campaignId: string,
+): AgentSeat[] {
+  if (!Array.isArray(durable)) return hermesSeats;
+  // Successful fleet GET with zero campaign seats — do not Hermes-fallback attach.
+  if (durable.length === 0) return [];
+  const hermesById = new Map(hermesSeats.map((s) => [s.id, s]));
+  const out: AgentSeat[] = [];
+  for (const row of durable) {
+    if (!row?.id) continue;
+    const local = hermesById.get(row.id);
+    const assigned = Array.from(
+      new Set([
+        ...(local?.assignedCampaignIds ?? []),
+        ...(Array.isArray(row.assignedCampaignIds) ? row.assignedCampaignIds : []),
+      ]),
+    );
+    if (local) {
+      out.push({
+        ...local,
+        computerId:
+          row.computerId !== undefined ? row.computerId : local.computerId,
+        assignedCampaignIds: assigned,
+        provider:
+          local.provider === "LinkedIn Browser Computer" ||
+          local.linkedinDeliveryBackend === "browser-computer"
+            ? local.provider
+            : "LinkedIn Browser Computer",
+        linkedinDeliveryBackend: local.linkedinDeliveryBackend ?? "browser-computer",
+        status:
+          row.status === "active" || row.status === "paused" || row.status === "disabled"
+            ? row.status
+            : local.status,
+      });
+      continue;
+    }
+    // Durable-only desk (Hermes cold) — stub enough for campaignBrowserSeats.
+    out.push({
+      id: row.id,
+      name: (row.name ?? "").trim() || row.id,
+      operatorEmail: "",
+      provider: "LinkedIn Browser Computer",
+      status:
+        row.status === "paused" || row.status === "disabled" || row.status === "active"
+          ? row.status
+          : "active",
+      // Fail-closed: durable-only stubs must not invent live+verified until Hermes
+      // (or operator Fleet) records a real live seat. session_healthy still needs probe.
+      mode: "mock",
+      domainVerified: false,
+      dailyLimit: LINKEDIN_BROWSER_SEAT_DEFAULTS.dailyLimit,
+      warmup: true,
+      warmupStartCap: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStartCap,
+      warmupStepPerDay: LINKEDIN_BROWSER_SEAT_DEFAULTS.warmupStepPerDay,
+      warmupStartedAt: new Date(0).toISOString(),
+      minGapMinutes: LINKEDIN_BROWSER_SEAT_DEFAULTS.minGapMinutes,
+      sendWindow: defaultSendWindow(),
+      sentToday: 0,
+      lastSendAt: null,
+      health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+      persona: "",
+      signature: "",
+      connectedAccount: "",
+      computerId: row.computerId ?? null,
+      linkedinDeliveryBackend: "browser-computer",
+      assignedCampaignIds: assigned,
+      createdAt: new Date(0).toISOString(),
+    });
+  }
+  return out;
+}
+
+export function campaignBrowserSeats(seats: AgentSeat[], campaignId: string): AgentSeat[] {
+  return seats.filter((s) => {
+    if (!isBrowserComputerSeat(s)) return false;
+    // Explicit campaign membership only — unassigned seats are not "attached".
+    return seatAttachedToCampaign(s, campaignId);
+  });
+}
+
+function computerForSeat(
+  computers: ComputerHealthLike[] | undefined,
+  seat: AgentSeat,
+): ComputerHealthLike | undefined {
+  if (!computers?.length) return undefined;
+  // Seat ownership first (same rule as resolveComputerHint) — a stale Hermes
+  // computerId must not pull another seat's / orphan VM into this desk's go-live.
+  const bySeat = computers.find((c) => c.seatId === seat.id);
+  if (bySeat) return bySeat;
+  const computerId = typeof seat.computerId === "string" ? seat.computerId.trim() : "";
+  if (!computerId) return undefined;
+  const byComputer = computers.find((c) => c.computerId === computerId);
+  if (!byComputer) return undefined;
+  // Match resolveComputerHint / computerHealthOwnedBySeat — empty or
+  // __orphan__ owners must not green go-live via Hermes twin computerId.
+  const owner = typeof byComputer.seatId === "string" ? byComputer.seatId.trim() : "";
+  if (!owner || owner === "__orphan__" || owner !== seat.id) return undefined;
+  return byComputer;
+}
+
+export function evaluateCampaignGoLive(input: GoLiveInput): {
+  ready: boolean;
+  checks: GoLiveCheck[];
+  nextAction?: GoLiveCheck;
+} {
+  const attached = campaignBrowserSeats(input.seats, input.campaignId);
+  // Always require a seat-owned fleet bind via computerForSeat. Missing/undefined
+  // computers is fail-closed [] — Hermes computerId alone must never green attach.
+  // Denominator is attached (all campaign LI desks), not the withComputer subset —
+  // 1 healthy VM must not green go-live while sibling attached desks lack a bind.
+  const fleet = input.computers ?? [];
+  const comps = attached.map((s) => ({ seat: s, computer: computerForSeat(fleet, s) }));
+  const withComputer = comps.filter((x) => Boolean(x.computer)).map((x) => x.seat);
+  const allBound = attached.length > 0 && withComputer.length === attached.length;
+  const liveActive = attached.filter((s) => s.status === "active" && s.mode === "live");
+  const humanHeld = comps.some((x) => x.computer?.control === "human");
+  const needsHelp = comps.some(
+    (x) => x.computer?.status === "help_requested" || x.computer?.status === "error",
+  );
+  // Never invent healthy from ready+bot — only Release /session-probe sets true.
+  // Every attached seat must have its own probed-healthy computer (no computers[0] fallback).
+  const allHealthy =
+    allBound && comps.every((x) => x.computer?.sessionHealthy === true);
+  const missingComputer = comps.some((x) => !x.computer);
+  const healthyCount = comps.filter((x) => x.computer?.sessionHealthy === true).length;
+
+  const floor = input.settings.minScoreToContact ?? 80;
+  const scoreOk =
+    !input.candidate ||
+    (typeof input.candidate.matchScore === "number" && input.candidate.matchScore >= floor);
+
+  const checks: GoLiveCheck[] = [
+    {
+      id: "dry_run_off",
+      label: "Dry-run off",
+      ok: !input.settings.dryRunMode,
+      detail: input.settings.dryRunMode
+        ? "Dry-run is on — approvals rehearse only; nothing contacts candidates."
+        : "Live contact allowed.",
+      ctaLabel: "Open Approval & Compliance",
+      ctaHref: "/settings?tab=compliance",
+    },
+    {
+      id: "browser_seat_attached",
+      label: "Browser Computer attached",
+      ok: allBound,
+      detail:
+        allBound
+          ? `${attached.length} LinkedIn Browser Computer seat(s) with a fleet-bound VM on this campaign.`
+          : attached.length > 0
+            ? `${withComputer.length}/${attached.length} attached seats have a seat-owned fleet VM — Start / Deploy or reclaim the rest on Agents or Fleet.`
+            : "Assign a LinkedIn Browser Computer seat on the Agents tab (explicit attach).",
+      ctaLabel: "Open Agents",
+      ctaHref: `/campaigns/${input.campaignId}?tab=agents`,
+    },
+    {
+      id: "seat_live",
+      label: "Seat live + active",
+      ok: allBound && liveActive.length === attached.length,
+      detail:
+        attached.length === 0
+          ? "No browser seat attached yet."
+          : liveActive.length < attached.length
+            ? `${liveActive.length}/${attached.length} attached seats are live+active — fix the rest in Fleet.`
+            : `${attached.length} seat(s) live and active.`,
+      ctaLabel: "Open Fleet",
+      ctaHref: "/fleet",
+    },
+    {
+      id: "seat_not_human_held",
+      label: "Not held by human",
+      ok: allBound && !humanHeld,
+      detail: humanHeld
+        ? "A seat still has Take control — Release so the bot can send."
+        : "Mutex clear for bot sends.",
+      ctaLabel: "Open Agents",
+      ctaHref: `/campaigns/${input.campaignId}?tab=agents`,
+    },
+    {
+      id: "session_healthy",
+      label: "LinkedIn session healthy",
+      ok: allHealthy,
+      detail: missingComputer
+        ? `${withComputer.length}/${attached.length} attached seats have a fleet VM — Start the rest, then Take control to log in.`
+        : needsHelp
+          ? "A computer needs help (login / checkpoint). Take control, finish LinkedIn login, Release."
+          : allHealthy
+            ? `${healthyCount}/${attached.length} sessions probed healthy.`
+            : `${healthyCount}/${attached.length} sessions healthy — Take control on each unverified seat.`,
+      ctaLabel: "Take control",
+      ctaHref: `/campaigns/${input.campaignId}?tab=agents`,
+    },
+    {
+      id: "candidate_above_floor",
+      label: `Score ≥ ${floor}`,
+      ok: scoreOk,
+      detail: !input.candidate
+        ? `Contact floor is ${floor} (checked per candidate at send).`
+        : scoreOk
+          ? `Candidate score ${input.candidate.matchScore} clears the floor.`
+          : `Candidate score ${input.candidate.matchScore} is below the contact floor (${floor}).`,
+    },
+  ];
+
+  const nextAction = checks.find((c) => !c.ok);
+  return { ready: checks.every((c) => c.ok), checks, nextAction };
+}

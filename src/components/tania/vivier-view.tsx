@@ -14,11 +14,14 @@ import {
   useConfirm,
   useToast,
 } from "@/components/ui";
+import { motion } from "framer-motion";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StarBadge, SourceBadge } from "@/components/tania/badges";
 import { useActions, useHydrated, useOutreach, useSettings, useVivier } from "@/lib/store";
+import { staggerContainer } from "@/lib/dashboard-motion";
 import { hasPendingDraft } from "@/lib/recommendations";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import {
   DEFAULT_STAR_THRESHOLDS,
   deriveLeadSource,
@@ -49,6 +52,7 @@ type SourceFilter = LeadSource | "all";
 
 export function VivierView() {
   const hydrated = useHydrated();
+  const reducedMotion = usePrefersReducedMotion();
   const pool = useVivier();
   const outreach = useOutreach();
   const settings = useSettings();
@@ -179,9 +183,12 @@ export function VivierView() {
         ) : (
           <div className="space-y-8">
             {/* KPI strip */}
-            <section
+            <motion.section
               className="grid grid-cols-2 gap-4 lg:grid-cols-4"
               aria-label="Talent pool overview"
+              variants={staggerContainer}
+              initial={reducedMotion ? false : "hidden"}
+              animate="show"
             >
               <MetricCard
                 label="In the pool"
@@ -225,7 +232,7 @@ export function VivierView() {
                   ))}
                 </ul>
               </Card>
-            </section>
+            </motion.section>
 
             {/* Source filter chips */}
             <div

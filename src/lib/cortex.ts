@@ -1,5 +1,5 @@
 import type { AgentSeat, Candidate, HermesState, MatchBreakdownItem } from "./types";
-import { agentActivity, type AgentActivityState } from "./floor";
+import { agentActivity, agentActivityWithComputers, type AgentActivityState, type FloorComputerHint } from "./floor";
 import { applyConfidentiality, hasOutreachPurpose } from "./confidential";
 import {
   ledgerHasActiveContact,
@@ -9,6 +9,7 @@ import {
   warmupStage,
 } from "./fleet";
 import { roleProfile } from "./roles";
+import { isBrowserComputerSeat } from "./campaign-seat-attach";
 
 /* ============================================================================
    GLASS CORTEX — "what is this agent thinking right now?"
@@ -99,8 +100,15 @@ function healthChip(seat: AgentSeat, state: HermesState): CortexChip {
 
 /** Builds the deterministic cortex trace for one seat. Same seat+state (at a
  *  given `now`) always yields the same trace — no randomness, only real facts. */
-export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date.now()): CortexTrace {
-  const activity = agentActivity(seat, state, now);
+export function agentCortexTrace(
+  seat: AgentSeat,
+  state: HermesState,
+  now = Date.now(),
+  computers?: ReadonlyMap<string, FloorComputerHint>,
+): CortexTrace {
+  const activity = computers
+    ? agentActivityWithComputers(seat, state, now, computers)
+    : agentActivity(seat, state, now);
   const h = hash(seat.id);
   const base = {
     seatId: seat.id,
@@ -199,9 +207,72 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
     };
   }
 
+  // ---- Floor overlay says idle/paused/warming: never invent hash sourcing theater ----
+  if (activity.state === "idle" || activity.state === "paused" || activity.state === "warming") {
+    return {
+      ...base,
+      candidateId: null,
+      candidateName: null,
+      suppressed: false,
+      lines: [
+        activity.state === "paused"
+          ? `${seat.name} is paused — ${activity.label}.`
+          : activity.state === "warming"
+            ? `${seat.name} is warming — ${activity.label}.`
+            : `${seat.name} is standing by — ${activity.label}.`,
+        activity.detail || "No active sourcing cycle on this desk.",
+      ],
+      ladder: [
+        { key: "source", label: "Source", status: "skipped", detail: activity.label },
+        { key: "score", label: "Score", status: "skipped", detail: "Desk not working." },
+        { key: "draft", label: "Draft", status: "skipped", detail: "Desk not working." },
+      ],
+      chips: [
+        {
+          key: "status",
+          label:
+            activity.state === "paused"
+              ? "Paused"
+              : activity.state === "warming"
+                ? "Warming"
+                : "Standing by",
+          tone: activity.state === "paused" ? "danger" : activity.state === "warming" ? "warning" : "neutral",
+          detail: activity.label,
+        },
+        healthChip(seat, state),
+      ],
+      meters: [],
+      matchScore: null,
+    };
+  }
+
   // ---- Working: replicate floor.ts's exact campaign/candidate selection so
   // the cortex always narrates the same focus candidate the floor tile shows. --
-  const campaign = campaigns[h % campaigns.length];
+  // Prefer campaigns this seat is actually attached to (Campaign Agents), not a hash lottery.
+  const assigned = seat.assignedCampaignIds ?? [];
+  const attached = assigned.length
+    ? campaigns.filter((c) => assigned.includes(c.id))
+    : [];
+  // Browser Computer desks must be explicitly attached — match floor.ts.
+  if (attached.length === 0 && isBrowserComputerSeat(seat)) {
+    return {
+      ...base,
+      candidateId: null,
+      candidateName: null,
+      suppressed: false,
+      lines: [`${seat.name} has no campaign assigned.`, "Standing by until Campaign Agents attach."],
+      ladder: [
+        { key: "source", label: "Source", status: "skipped", detail: "No campaign assigned." },
+        { key: "score", label: "Score", status: "skipped", detail: "Standing by." },
+        { key: "draft", label: "Draft", status: "skipped", detail: "Standing by." },
+      ],
+      chips: [{ key: "queue", label: "Standing by", tone: "neutral", detail: "No campaign assigned." }],
+      meters: [],
+      matchScore: null,
+    };
+  }
+  const pool = attached.length > 0 ? attached : campaigns;
+  const campaign = pool[h % pool.length]!;
   const cands = state.candidates.filter((c) => c.campaignId === campaign.id);
   const mode = h % 3;
   const role = roleProfile(campaign.jobAnalysis).label;

@@ -4,6 +4,9 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 
+import { resolveTestGroup } from "../scripts/run-test-manifest.mjs";
+import { testManifest } from "./test-manifest.mjs";
+
 const databaseTestPath = "tests/db/databricks-authority.sql";
 const databaseTest = existsSync(databaseTestPath)
   ? readFileSync(databaseTestPath, "utf8")
@@ -11,7 +14,9 @@ const databaseTest = existsSync(databaseTestPath)
 const migration = readFileSync("supabase/migrations/0019_agent_authority_and_integrations.sql", "utf8");
 const harness = readFileSync("scripts/test-db-privileges.sh", "utf8");
 const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
-const packageJson = readFileSync("package.json", "utf8");
+const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+  scripts?: Record<string, string>;
+};
 
 let pass = 0;
 let fail = 0;
@@ -85,8 +90,10 @@ ok(
 );
 ok(
   "package exposes the disposable database security test",
-  packageJson.includes('"test:db-privileges"') &&
-    packageJson.includes("tests/databricks-database-contract.mts"),
+  typeof packageJson.scripts?.["test:db-privileges"] === "string" &&
+    resolveTestGroup(testManifest, "pretest").some(({ argv }) =>
+      argv.includes("tests/databricks-database-contract.mts"),
+    ),
 );
 ok(
   "CI runs the disposable database security test",

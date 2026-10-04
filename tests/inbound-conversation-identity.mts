@@ -217,8 +217,11 @@ ok(
 /* ---- 2. Source-inspection contracts -------------------------------------- */
 
 const migrationUrl = new URL("../supabase/migrations/0023_conversation_identity.sql", import.meta.url);
+const authorityMigrationUrl = new URL("../supabase/migrations/0028_conversation_authority_hardening.sql", import.meta.url);
 const inboundProcessor = readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8");
 const storeText = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const outreachSendRoute = readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8");
+const whatsappTemplateRoute = readFileSync(new URL("../src/app/api/outreach/whatsapp-template/route.ts", import.meta.url), "utf8");
 
 ok("conversation-identity migration exists", existsSync(migrationUrl));
 if (existsSync(migrationUrl)) {
@@ -267,6 +270,74 @@ if (existsSync(migrationUrl)) {
   );
 }
 
+ok("conversation-authority hardening migration exists", existsSync(authorityMigrationUrl));
+if (existsSync(authorityMigrationUrl)) {
+  const authorityMigration = readFileSync(authorityMigrationUrl, "utf8");
+  ok(
+    "authenticated callers lose all direct inbound and outbound message mutation",
+    /revoke insert, update, delete on public\.messages_outbound from authenticated/.test(authorityMigration) &&
+      /revoke insert, update, delete on public\.messages_inbound from authenticated/.test(authorityMigration),
+  );
+  ok(
+    "service workers retain explicit message-ledger mutation authority",
+    /grant select, insert, update, delete on public\.messages_outbound to service_role/.test(authorityMigration) &&
+      /grant select, insert, update, delete on public\.messages_inbound to service_role/.test(authorityMigration),
+  );
+  ok(
+    "message and conversation rows carry owner authority",
+    /alter table public\.messages_outbound[\s\S]*?add column if not exists owner_id uuid/.test(authorityMigration) &&
+      /alter table public\.messages_inbound[\s\S]*?add column if not exists owner_id uuid/.test(authorityMigration) &&
+      /alter table public\.agent_conversations[\s\S]*?add column if not exists owner_id uuid/.test(authorityMigration),
+  );
+  ok(
+    "outbound spec authority is enforced by one composite database foreign key",
+    /messages_outbound_workspace_owner_spec_fkey[\s\S]*?foreign key \(workspace_id, owner_id, spec_id\)[\s\S]*?references public\.agent_specs \(workspace_id, owner_id, id\)/.test(authorityMigration),
+  );
+  ok(
+    "conversation spec authority is enforced by one composite database foreign key",
+    /agent_conversations_workspace_owner_spec_fkey[\s\S]*?foreign key \(workspace_id, owner_id, spec_id\)[\s\S]*?references public\.agent_specs \(workspace_id, owner_id, id\)/.test(authorityMigration),
+  );
+  ok(
+    "outbound conversation authority is enforced by workspace and owner",
+    /messages_outbound_conversation_authority_fkey[\s\S]*?foreign key \(conversation_id, workspace_id, owner_id\)[\s\S]*?references public\.agent_conversations \(id, workspace_id, owner_id\)/.test(authorityMigration),
+  );
+  ok(
+    "unproven legacy owner bindings are invalidated instead of guessed",
+    /provider_message_id is not null/.test(authorityMigration) &&
+      /status = 'sent'/.test(authorityMigration) &&
+      /set spec_id = null,[\s\S]*?owner_id = null/.test(authorityMigration),
+  );
+  ok(
+    "resolver bootstrap requires exact owner/spec and durable provider acceptance",
+    /join public\.agent_specs as spec[\s\S]*?spec\.workspace_id = m\.workspace_id[\s\S]*?spec\.owner_id = m\.owner_id/.test(authorityMigration) &&
+      /m\.status = 'sent'/.test(authorityMigration) &&
+      /m\.provider_message_id is not null/.test(authorityMigration) &&
+      /m\.delivery_attempt_id is not null/.test(authorityMigration),
+  );
+  ok(
+    "resolver returns exact owner authority with the conversation receipt",
+    /'owner_id', resolved_owner_id/.test(authorityMigration),
+  );
+  ok(
+    "human WhatsApp queue writes use one authenticated security-definer RPC",
+    /create or replace function public\.enqueue_whatsapp_outbound\(/.test(authorityMigration) &&
+      /security definer/.test(authorityMigration) &&
+      /grant execute on function public\.enqueue_whatsapp_outbound/.test(authorityMigration),
+  );
+  ok(
+    "the enqueue RPC revalidates actor, workspace, candidate, approval, sender, and template authority",
+    /from public\.profiles[\s\S]*?for share/.test(authorityMigration) &&
+      /state -> 'candidates'/.test(authorityMigration) &&
+      /from public\.outreach_approvals[\s\S]*?for update/.test(authorityMigration) &&
+      /from public\.whatsapp_senders/.test(authorityMigration) &&
+      /from public\.whatsapp_templates/.test(authorityMigration),
+  );
+  ok(
+    "authority migration leaves transaction ownership to the bootstrap runner",
+    !/^\s*(?:begin|commit|rollback)\s*;\s*(?:--.*)?$/im.test(authorityMigration),
+  );
+}
+
 // WhatsApp processor: identity comes from the conversation resolver, and the
 // latest-outbound-address lookup no longer supplies candidate/spec identity.
 ok(
@@ -288,6 +359,24 @@ ok(
 ok(
   "the review draft dedupe identity comes from the conversation, not an outbound row",
   /dedupeHash\(conversationCandidateId, "WhatsApp"/.test(inboundProcessor),
+);
+ok(
+  "the service worker binds agent lookup to workspace, owner, and spec",
+  /\.from\("agent_specs"\)[\s\S]*?\.eq\("id", convo\.spec_id\)[\s\S]*?\.eq\("workspace_id", workspaceId\)[\s\S]*?\.eq\("owner_id", convo\.owner_id\)/.test(inboundProcessor),
+);
+ok(
+  "the service worker persists exact owner authority on generated drafts",
+  /owner_id: convo\.owner_id/.test(inboundProcessor),
+);
+ok(
+  "human reply queueing no longer writes the message table as the authenticated role",
+  /rpc\(\s*"enqueue_whatsapp_outbound"/.test(outreachSendRoute) &&
+    !/\.from\("messages_outbound"\)\s*\.insert\(/.test(outreachSendRoute),
+);
+ok(
+  "approved-template queueing no longer writes the message table as the authenticated role",
+  /rpc\(\s*"enqueue_whatsapp_outbound"/.test(whatsappTemplateRoute) &&
+    !/\.from\("messages_outbound"\)\s*\.insert\(/.test(whatsappTemplateRoute),
 );
 
 // Email auto-match: the resolver replaces active-campaign arbitration, and

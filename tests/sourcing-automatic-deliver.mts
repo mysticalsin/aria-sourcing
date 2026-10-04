@@ -1,0 +1,242 @@
+/* ==========================================================================
+   tests/sourcing-automatic-deliver.mts
+   Shortlist → allocateBatch → automatic LinkedIn seat preference.
+   ========================================================================== */
+
+import {
+  planShortlistAutomaticDeliver,
+  preferLinkedInAutomaticSeats,
+} from "../src/lib/sourcing-automatic-deliver";
+import { pickLiveLinkedInSendSeat } from "../src/lib/linkedin-automatic";
+import { defaultFleetSettings } from "../src/lib/fleet";
+import type { AgentSeat, Candidate } from "../src/lib/types";
+import { isLinkedInAutomaticProvider } from "../src/lib/linkedin-channel";
+
+let pass = 0;
+let fail = 0;
+function ok(name: string, cond: boolean) {
+  if (cond) pass++;
+  else {
+    fail++;
+    console.log("FAIL:", name);
+  }
+}
+
+ok("vendor is automatic provider", isLinkedInAutomaticProvider("LinkedIn Vendor API"));
+ok(
+  "browser computer is automatic provider",
+  isLinkedInAutomaticProvider("LinkedIn Browser Computer"),
+);
+ok(
+  "assisted manual is not automatic",
+  isLinkedInAutomaticProvider("LinkedIn Assisted Manual") === false,
+);
+
+function seat(partial: Partial<AgentSeat> & Pick<AgentSeat, "id" | "provider">): AgentSeat {
+  return {
+    name: partial.name ?? partial.id,
+    operatorEmail: "op@example.com",
+    status: "active",
+    mode: "live",
+    domainVerified: true,
+    dailyLimit: 20,
+    warmup: false,
+    warmupStartCap: 5,
+    warmupStepPerDay: 2,
+    warmupStartedAt: new Date().toISOString(),
+    minGapMinutes: 10,
+    sendWindow: { startHour: 8, endHour: 18, timezone: "UTC", days: [1, 2, 3, 4, 5] },
+    sentToday: 0,
+    lastSendAt: null,
+    health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+    persona: "",
+    signature: "",
+    connectedAccount: "x",
+    createdAt: new Date().toISOString(),
+    ...partial,
+  } as AgentSeat;
+}
+
+const emailSeat = seat({ id: "email", provider: "Microsoft Graph", name: "Email" });
+const liSeat = seat({ id: "li", provider: "LinkedIn Browser Computer", name: "LI" });
+const ordered = preferLinkedInAutomaticSeats([emailSeat, liSeat], {
+  linkedinUrl: "https://linkedin.com/in/a",
+});
+ok("prefer puts LinkedIn automatic seat first", ordered[0]?.id === "li");
+
+ok(
+  "pickLiveLinkedInSendSeat prefers campaign-attached Browser Computer",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "elsewhere",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+      seat({
+        id: "camp",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+      seat({
+        id: "vendor",
+        provider: "LinkedIn Vendor API",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+    ],
+    "camp_seed_backend",
+  )?.id === "camp",
+);
+ok(
+  "pickLiveLinkedInSendSeat fails closed on unscoped Browser Computer (empty ≠ attached)",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({ id: "unscoped", provider: "LinkedIn Browser Computer", assignedCampaignIds: [] }),
+      seat({
+        id: "wrong",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+    ],
+    "camp_seed_backend",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat does not fall through to Vendor when live BC exists",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({ id: "unscoped_bc", provider: "LinkedIn Browser Computer", assignedCampaignIds: [] }),
+      seat({ id: "unscoped_vendor", provider: "LinkedIn Vendor API", assignedCampaignIds: [] }),
+    ],
+    "camp_seed_backend",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat may use unscoped Vendor API when no live BC",
+  pickLiveLinkedInSendSeat(
+    [seat({ id: "unscoped_vendor", provider: "LinkedIn Vendor API", assignedCampaignIds: [] })],
+    "camp_seed_backend",
+  )?.id === "unscoped_vendor",
+);
+ok(
+  "pickLiveLinkedInSendSeat fails closed on N-way campaign-rank tie",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "desk_a",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+      seat({
+        id: "desk_b",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+    ],
+    "camp_seed_backend",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat fails closed when preferred seat is missing",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "other",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+    ],
+    "camp_seed_backend",
+    "missing_preferred",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat refuses preferred BC not attached to campaign",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "camp",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+      seat({
+        id: "preferred",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+    ],
+    "camp_seed_backend",
+    "preferred",
+  ) === undefined,
+);
+ok(
+  "pickLiveLinkedInSendSeat honors preferred when attached + live + automatic",
+  pickLiveLinkedInSendSeat(
+    [
+      seat({
+        id: "other",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_other"],
+      }),
+      seat({
+        id: "preferred",
+        provider: "LinkedIn Browser Computer",
+        assignedCampaignIds: ["camp_seed_backend"],
+      }),
+    ],
+    "camp_seed_backend",
+    "preferred",
+  )?.id === "preferred",
+);
+
+const cand = {
+  id: "c1",
+  campaignId: "camp",
+  name: "Ada",
+  email: "ada@example.com",
+  avatarInitials: "A",
+  currentTitle: "BA",
+  currentCompany: "X",
+  location: "Montreal",
+  timezone: "America/Toronto",
+  linkedinUrl: "https://linkedin.com/in/ada",
+  githubUrl: "",
+  matchScore: 90,
+  stage: "New",
+  skills: [],
+  complianceFlags: { doNotContact: false, unsubscribed: false },
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+} as unknown as Candidate;
+
+// Weekday noon UTC — allocateBatch respects enforceBusinessHours/send windows.
+const weekdayNoon = new Date("2026-09-09T12:00:00Z");
+const plan = planShortlistAutomaticDeliver({
+  pool: [cand],
+  seats: [emailSeat, liSeat],
+  ledger: [],
+  suppression: [],
+  fleet: defaultFleetSettings(),
+  deliveryMode: "automatic",
+  now: weekdayNoon,
+});
+ok(
+  "automatic plan routes to LinkedIn computer",
+  plan.automaticLinkedIn.some((a) => a.seatId === "li") ||
+    plan.allocation.assignments.some((a) => a.seatId === "li"),
+);
+ok("deliveryModeAutomatic true", plan.deliveryModeAutomatic === true);
+
+const manual = planShortlistAutomaticDeliver({
+  pool: [cand],
+  seats: [liSeat],
+  ledger: [],
+  suppression: [],
+  fleet: defaultFleetSettings(),
+  deliveryMode: "manual",
+  now: weekdayNoon,
+});
+ok("manual mode keeps automaticLinkedIn empty", manual.automaticLinkedIn.length === 0);
+
+console.log(`RESULT sourcing-automatic-deliver: ${pass} passed, ${fail} failed`);
+if (fail > 0) process.exitCode = 1;

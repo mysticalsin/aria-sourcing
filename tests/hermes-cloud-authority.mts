@@ -1,5 +1,7 @@
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { buildSeedState } from "../src/lib/seed";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0;
 let fail = 0;
@@ -11,11 +13,18 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-const originalEnv = { ...process.env };
-delete process.env.OPENAI_API_KEY;
-delete process.env.HERMES_API_URL;
-delete process.env.HERMES_API_KEY;
-process.env.NODE_ENV = "test";
+const envScope = createProcessEnvScope([
+  "OPENAI_API_KEY",
+  "HERMES_API_URL",
+  "HERMES_API_KEY",
+  "NODE_ENV",
+]);
+envScope.set({
+  OPENAI_API_KEY: undefined,
+  HERMES_API_URL: undefined,
+  HERMES_API_KEY: undefined,
+  NODE_ENV: "test",
+});
 
 let role: "viewer" | "member" | "admin" = "viewer";
 let upstreamCalls = 0;
@@ -24,12 +33,53 @@ let graphCalls = 0;
 let vaultProvider = "OpenAI";
 let agentSpecAvailable = true;
 let runPersistenceFails = false;
+let agentSpecChannels = ["Email"];
+let agentSpecGuardrails: Record<string, unknown> = { autopilot: false, canary_remaining: 5 };
+let agentSpecOwnerId = "user-1";
+let agentSpecReadCount = 0;
+let agentSpecRemainsActive = true;
+let capturedAgentPolicy: Record<string, unknown> | undefined;
 const resolverCalls: Array<{ id?: string; provider?: string }> = [];
 const serviceReadTables: string[] = [];
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const agentSpecId = "22222222-2222-4222-8222-222222222222";
 const agentRunId = "33333333-3333-4333-8333-333333333333";
+const sourcingSeed = buildSeedState();
+const sourcingCampaign = {
+  ...sourcingSeed.campaigns[0],
+  id: "campaign-1",
+  status: "Sourcing" as const,
+};
+const sourcingWorkspaceState = {
+  campaigns: [sourcingCampaign],
+  candidates: sourcingSeed.candidates.map((candidate) => ({
+    ...candidate,
+    campaignId: "unrelated-campaign",
+  })),
+  settings: {
+    ...sourcingSeed.settings,
+    llmProviders: [{
+      id: "provider-openai",
+      kind: "OpenAI",
+      label: "Approved OpenAI",
+      apiKeyId: "11111111-1111-4111-8111-111111111111",
+      enabled: true,
+      isDefault: true,
+    }],
+    savedModels: [{
+      id: "model-openai-sourcing",
+      providerId: "provider-openai",
+      modelName: "gpt-4o-mini",
+      label: "Approved sourcing model",
+      enabled: true,
+      defaultForTask: ["sourcing"],
+    }],
+    defaultModels: { sourcing: "model-openai-sourcing" },
+  },
+};
+
+mock.module("server-only", { namedExports: {} });
 
 const session = {
   auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },
@@ -38,21 +88,26 @@ const session = {
     error: null,
   }),
   from: (table: string) => {
+    const specReadAllowed = agentSpecReadCount++ === 0 || agentSpecRemainsActive;
     const query: any = {
       insert: () => query,
       update: () => query,
       select: () => query,
       eq: () => query,
       maybeSingle: async () => ({
-        data: table === "agent_specs" && agentSpecAvailable
-          ? {
+        data: table === "workspace_state"
+          ? { state: sourcingWorkspaceState, updated_at: "2026-07-13T19:00:00.000Z" }
+          : table === "agent_specs" && agentSpecAvailable && specReadAllowed
+            ? {
               id: agentSpecId,
               workspace_id: workspaceId,
-              owner_id: "user-1",
+              owner_id: agentSpecOwnerId,
               role_brief: { title: "Platform Engineer", skills: ["TypeScript"] },
+              channels: agentSpecChannels,
+              guardrails: agentSpecGuardrails,
               status: "active",
-            }
-          : null,
+              }
+            : null,
         error: null,
       }),
     };
@@ -71,16 +126,21 @@ const service = {
     if (["agent_run_memory_context", "agent_memories", "api_keys"].includes(table)) {
       serviceReadTables.push(table);
     }
+    let updated = false;
     const query: any = {
       insert: () => query,
-      update: () => query,
+      update: (value: Record<string, unknown>) => {
+        updated = true;
+        if (table === "agent_runs" && value.state_json) serviceReadTables.push("runtime-policy-snapshot");
+        return query;
+      },
       select: () => query,
       eq: () => query,
       is: () => query,
       or: () => query,
       order: () => query,
       limit: () => query,
-      maybeSingle: async () => ({ data: null, error: null }),
+      maybeSingle: async () => ({ data: table === "agent_runs" && updated ? { id: agentRunId } : null, error: null }),
     };
     return query;
   },
@@ -115,19 +175,79 @@ mock.module(moduleUrl("src/lib/ai/tool-loop.ts"), {
       toolLoopCalls += 1;
       return { ok: true, text: '{"drafts":[]}' };
     },
-    runOpenAiWithTools: async () => {
+    runOpenAiWithTools: async (args: { servers?: Array<{ run?: (name: string, input: Record<string, unknown>) => Promise<unknown> }> }) => {
       toolLoopCalls += 1;
+      if (args.servers?.[0]?.run) {
+        await args.servers[0].run("search_candidates", {
+          platform: "GitHub",
+          query: sourcingCampaign.sourcingStrategy.githubQueries[0]?.query,
+          count: 1,
+        });
+      }
       return { ok: true, text: '{"drafts":[]}' };
     },
   },
 });
+mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
+  namedExports: {
+    SOURCING_TOOL_DEFS: [{ name: "search_candidates", description: "test" }],
+    makeSourcingToolRunner: () => {
+      const executions: Array<Record<string, unknown>> = [];
+      return {
+        run: async (_name: string, input: { platform?: string; query?: string }) => {
+          executions.push({
+            platform: String(input.platform ?? ""),
+            query: String(input.query ?? ""),
+            ok: true,
+            candidateCount: 0,
+            skippedCount: 0,
+          });
+          return { ok: true, content: { found: [] } };
+        },
+        getFound: () => [],
+        getExecutions: () => executions,
+      };
+    },
+  },
+});
+mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
+  namedExports: {
+    beginSourcingRun: async () => ({
+      status: "claimed",
+      runId: "55555555-5555-4555-8555-555555555555",
+      roleFingerprint: "a".repeat(64),
+      lessonsEnabled: false,
+    }),
+    listPromotedSourcingLessons: async () => ({ status: "learning_disabled", lessons: [] }),
+    completeSourcingRun: async () => ({
+      status: "completed",
+      runId: "55555555-5555-4555-8555-555555555555",
+      queryCount: 1,
+      candidateCount: 0,
+      receipts: [],
+    }),
+    failSourcingRun: async () => true,
+  },
+});
 mock.module(moduleUrl("src/lib/agents/graph.ts"), {
   namedExports: {
-    initialState: () => ({ drafts: [], planCursor: 0, errors: [], report: "" }),
-    runGraph: async (state: Record<string, unknown>, deps: { generate: (system: string, prompt: string) => Promise<string> }) => {
+    initialState: (_brief: unknown, _count: unknown, policy?: Record<string, unknown>) => {
+      capturedAgentPolicy = policy;
+      return { drafts: [], planCursor: 0, errors: [], report: "", executionPolicy: policy };
+    },
+    runGraph: async (
+      state: Record<string, unknown>,
+      deps: { generate: (system: string, prompt: string) => Promise<string> },
+      onStep?: (node: string, state: Record<string, unknown>, event: { type: string; payload: Record<string, unknown> }) => Promise<void>,
+      _startNode?: string,
+      _startStep?: number,
+      beforeStep?: (node: string, state: Record<string, unknown>, step: number) => Promise<void>,
+    ) => {
       graphCalls += 1;
+      if (beforeStep) await beforeStep("planner", state, 0);
       await deps.generate("system", "prompt");
-      return { state };
+      if (onStep) await onStep("done", state, { type: "report", payload: {} });
+      return { state, node: "done", steps: 1 };
     },
   },
 });
@@ -148,7 +268,7 @@ try {
   const hermesRequest = (provider = "openai") =>
     new NextRequest("http://localhost/api/hermes/chat", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
+      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
       body: JSON.stringify({
         task: "chat",
         prompt: "Confidential candidate context",
@@ -165,20 +285,21 @@ try {
   const sourcingRequest = () =>
     new NextRequest("http://localhost/api/sourcing-agent", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost",
+        "x-forwarded-for": crypto.randomUUID(),
+        "idempotency-key": crypto.randomUUID(),
+      },
       body: JSON.stringify({
-        campaign,
-        existing: [],
+        campaignId: sourcingCampaign.id,
         count: 1,
-        provider: "openai",
-        apiKeyId: "11111111-1111-4111-8111-111111111111",
-        model: "gpt-4o-mini",
       }),
     });
   const agentRequest = (includeSpec = true) =>
     new NextRequest("http://localhost/api/agents/run", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
+      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
       body: JSON.stringify({
         campaign,
         existing: [],
@@ -194,7 +315,10 @@ try {
     upstreamCalls = 0;
     toolLoopCalls = 0;
     graphCalls = 0;
+    capturedAgentPolicy = undefined;
     serviceReadTables.length = 0;
+    agentSpecReadCount = 0;
+    agentSpecRemainsActive = true;
   };
 
   const viewerResponse = await hermesRoute.POST(hermesRequest());
@@ -240,10 +364,14 @@ try {
   vaultProvider = "OpenAI";
   resetCalls();
   const memberSourcing = await sourcingRoute.POST(sourcingRequest());
-  ok("member cannot run the live cloud sourcing agent", memberSourcing.status === 403);
+  const memberSourcingBody = (await memberSourcing.json()) as { ok?: boolean };
   ok(
-    "member sourcing denial happens before vault resolution or model egress",
-    resolverCalls.length === 0 && toolLoopCalls === 0 && upstreamCalls === 0,
+    "member with source permission can run server-configured cloud sourcing",
+    memberSourcing.status === 200 && memberSourcingBody.ok === true,
+  );
+  ok(
+    "member sourcing uses only the server-selected workspace key and model",
+    resolverCalls.some((call) => call.provider === "OpenAI") && toolLoopCalls === 1 && upstreamCalls === 0,
   );
 
   role = "admin";
@@ -265,52 +393,31 @@ try {
   vaultProvider = "OpenAI";
   resetCalls();
   const memberAgent = await agentRoute.POST(agentRequest());
-  ok("member cannot run the live cloud graph agent", memberAgent.status === 403);
+  const memberAgentBody = (await memberAgent.json()) as { code?: string };
   ok(
-    "member graph-agent denial happens before vault resolution or model egress",
-    resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
+    "unconfigured private framework execution fails closed for members",
+    memberAgent.status === 503 && memberAgentBody.code === "agent_framework_unavailable",
+  );
+  ok(
+    "member graph-agent denial happens before authority, persistence, vault, or model access",
+    agentSpecReadCount === 0 && serviceReadTables.length === 0 && resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
   );
 
   role = "admin";
   resetCalls();
-  const missingSpecIdAgent = await agentRoute.POST(agentRequest(false));
-  ok("graph agent requires a stored spec id", missingSpecIdAgent.status === 400);
-  ok("missing spec id fails before vault resolution or model egress", resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0);
-
-  agentSpecAvailable = false;
-  resetCalls();
-  const unknownSpecAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent rejects an unavailable active spec", unknownSpecAgent.status === 404);
-  ok("spec authorization fails before vault resolution or model egress", resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0);
-
-  agentSpecAvailable = true;
-  runPersistenceFails = true;
-  resetCalls();
-  const persistenceFailureAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent fails closed when run-context persistence fails", persistenceFailureAgent.status === 503);
-  ok("run-context persistence failure prevents model egress", graphCalls === 0 && upstreamCalls === 0);
-  ok(
-    "run-context persistence failure performs zero vault, memory-key, or Tavily-key resolution",
-    resolverCalls.length === 0 && serviceReadTables.length === 0,
-  );
-
-  runPersistenceFails = false;
-  resetCalls();
   const adminAgent = await agentRoute.POST(agentRequest());
-  const adminAgentBody = (await adminAgent.json()) as { ok?: boolean };
-  ok("admin can run the live cloud graph agent", adminAgent.status === 200 && adminAgentBody.ok === true);
+  const adminAgentBody = (await adminAgent.json()) as { code?: string };
   ok(
-    "admin graph agent binds its key before one provider call",
-    resolverCalls.some((call) => call.provider === "OpenAI") && graphCalls === 1 && upstreamCalls === 1,
+    "unconfigured private framework execution fails closed for administrators",
+    adminAgent.status === 503 && adminAgentBody.code === "agent_framework_unavailable",
   );
-
-  vaultProvider = "Anthropic";
-  resetCalls();
-  const mismatchAgent = await agentRoute.POST(agentRequest());
-  ok("graph-agent cross-provider key mismatch fails closed before model egress", mismatchAgent.status === 403 && graphCalls === 0 && upstreamCalls === 0);
+  ok(
+    "administrator denial ignores caller-selected spec, provider, model, key, and candidates",
+    agentSpecReadCount === 0 && serviceReadTables.length === 0 && resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
+  );
 } finally {
   globalThis.fetch = originalFetch;
-  process.env = originalEnv;
+  envScope.restore();
 }
 
 console.log(`RESULT hermes-cloud-authority: ${pass} passed, ${fail} failed`);

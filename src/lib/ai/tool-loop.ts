@@ -15,9 +15,12 @@ import {
   remoteMcpExecutionEnabled,
   type McpTool,
 } from "@/lib/mcp-client";
+import type { McpAuthStyle } from "@/lib/types";
 import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
-import { BUILTIN_BROWSER_URL, runBrowserTool } from "@/lib/ai/browser-tools";
+// Keep the browser sentinel as a plain string here so sourcing/chat routes do
+// not statically import playwright-backed browser-tools at module load.
+export const BUILTIN_BROWSER_URL = "builtin:browser-research";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 export const MAX_TOTAL_TOOL_DEFINITIONS = 32;
@@ -148,6 +151,7 @@ function toolResultForModel(server: ResolvedMcpServer | undefined, output: ToolE
 export interface ResolvedMcpServer {
   url: string;
   token: string;
+  authStyle?: McpAuthStyle;
   tools: McpTool[];
   /** Optional workspace-scoped Tavily key for the in-process web_search tool. */
   tavilyKey?: string;
@@ -156,7 +160,11 @@ export interface ResolvedMcpServer {
    *  across calls). When present, execTool calls this instead of the URL-based
    *  dispatch, so the caller can inspect that accumulated state after the loop
    *  finishes rather than trusting the model to echo it back correctly. */
-  run?: (name: string, args: Record<string, unknown>) => Promise<ToolExecutionResult>;
+  run?: (
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<ToolExecutionResult>;
 }
 
 /** One completed tool call, for callers that need the real results the loop saw
@@ -180,10 +188,16 @@ async function execTool(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<ToolExecutionResult> {
-  if (server.run) return server.run(name, args);
+  if (server.run) return server.run(name, args, signal);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey, signal });
-  if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
-  return callMcpTool(server.url, server.token, name, args, { signal });
+  if (server.url === BUILTIN_BROWSER_URL) {
+    const { runBrowserTool } = await import("@/lib/ai/browser-tools");
+    return runBrowserTool(name, args);
+  }
+  return callMcpTool(server.url, server.token, name, args, {
+    signal,
+    authStyle: server.authStyle,
+  });
 }
 
 interface NormalizedToolDefinition {
@@ -277,6 +291,7 @@ export async function runAnthropicWithTools(args: {
   servers: ResolvedMcpServer[];
   maxRounds?: number;
   timeoutMs?: number;
+  beforeExternalCall?: () => Promise<boolean>;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { model, system, prompt, key, servers } = args;
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
@@ -295,6 +310,9 @@ export async function runAnthropicWithTools(args: {
   const messages: AnthropicMessage[] = [{ role: "user", content: prompt }];
 
   for (let round = 0; round < maxRounds; round++) {
+    if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+      return { ok: false, reason: "Authority changed.", toolCalls };
+    }
     let res: Response;
     try {
       res = await withinDeadline(
@@ -355,6 +373,9 @@ export async function runAnthropicWithTools(args: {
       let out: ToolExecutionResult = { ok: false, error: "Tool not available." };
       if (server && tu.name) {
         try {
+          if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+            return { ok: false, reason: "Authority changed.", toolCalls };
+          }
           out = await withinDeadline((signal) => execTool(server, tu.name as string, input, signal), deadlineAt);
         } catch (error) {
           if (isDeadlineError(error)) {
@@ -418,6 +439,7 @@ export async function runOpenAiWithTools(args: {
   servers: ResolvedMcpServer[];
   maxRounds?: number;
   timeoutMs?: number;
+  beforeExternalCall?: () => Promise<boolean>;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { provider, model, system, prompt, key, servers } = args;
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
@@ -440,6 +462,9 @@ export async function runOpenAiWithTools(args: {
   ];
 
   for (let round = 0; round < maxRounds; round++) {
+    if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+      return { ok: false, reason: "Authority changed.", toolCalls: toolCallLog };
+    }
     let res: Response;
     try {
       res = await withinDeadline(
@@ -505,6 +530,9 @@ export async function runOpenAiWithTools(args: {
           parsedArgs = {};
         }
         try {
+          if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+            return { ok: false, reason: "Authority changed.", toolCalls: toolCallLog };
+          }
           out = await withinDeadline((signal) => execTool(server, name, parsedArgs, signal), deadlineAt);
         } catch (error) {
           if (isDeadlineError(error)) {

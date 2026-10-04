@@ -3,7 +3,7 @@
    Area: Aria runtime proxy — path allow-list and URL helpers.
    ========================================================================== */
 
-import { isAllowedHermesPath, HERMES_PROXY_ALLOW_LIST } from "../src/lib/api/hermes-proxy";
+import { isAllowedHermesPath, isSafeRelativeBrowsePath, HERMES_PROXY_ALLOW_LIST } from "../src/lib/api/hermes-proxy";
 
 let pass = 0,
   fail = 0;
@@ -16,11 +16,14 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-ok("allow-list includes api/status", HERMES_PROXY_ALLOW_LIST.includes("api/status"));
-ok("allow-list includes api/sessions", HERMES_PROXY_ALLOW_LIST.includes("api/sessions"));
-ok("allow-list includes api/memory", HERMES_PROXY_ALLOW_LIST.includes("api/memory"));
-ok("allow-list includes api/config", HERMES_PROXY_ALLOW_LIST.includes("api/config"));
-ok("allow-list includes api/skills", HERMES_PROXY_ALLOW_LIST.includes("api/skills"));
+const allowedPaths = HERMES_PROXY_ALLOW_LIST.map((entry) => entry.path);
+const baseFor = (path: string) => HERMES_PROXY_ALLOW_LIST.find((entry) => entry.path === path)?.base;
+
+ok("allow-list includes api/status", allowedPaths.includes("api/status"));
+ok("allow-list includes api/sessions", allowedPaths.includes("api/sessions"));
+ok("allow-list includes api/memory", allowedPaths.includes("api/memory"));
+ok("allow-list includes api/config", allowedPaths.includes("api/config"));
+ok("allow-list includes api/skills", allowedPaths.includes("api/skills"));
 
 ok("allows api/status", isAllowedHermesPath(["api", "status"]).ok === true);
 ok("allows api/sessions", isAllowedHermesPath(["api", "sessions"]).ok === true);
@@ -28,6 +31,85 @@ ok("allows api/memory", isAllowedHermesPath(["api", "memory"]).ok === true);
 ok("blocks arbitrary path", isAllowedHermesPath(["api", "admin", "users"]).ok === false);
 ok("blocks path traversal attempt", isAllowedHermesPath(["..", "etc", "passwd"]).ok === false);
 ok("blocks empty path", isAllowedHermesPath([]).ok === false);
+
+/* ---- two-server routing ----------------------------------------------------
+   Upstream is an aiohttp gateway plus a FastAPI management server with disjoint
+   route sets. Addressing both off one base URL is why every management path
+   404'd against a healthy runtime. Each entry now names its owning process, and
+   these assertions pin that mapping to what upstream origin/main actually
+   registers. ------------------------------------------------------------- */
+
+ok("every allow-list entry names a base", HERMES_PROXY_ALLOW_LIST.every((entry) => entry.base === "api" || entry.base === "web"));
+ok("allow-list has no duplicate paths", new Set(allowedPaths).size === allowedPaths.length);
+
+for (const path of ["api/status", "api/system/stats", "api/config", "api/memory", "api/skills", "api/curator", "api/files"]) {
+  ok(`${path} routes to the management server`, baseFor(path) === "web");
+}
+for (const path of ["health", "v1/chat/completions", "api/sessions"]) {
+  ok(`${path} routes to the gateway`, baseFor(path) === "api");
+}
+
+// isAllowedHermesPath must surface the base, or the route cannot pick a server.
+const statusCheck = isAllowedHermesPath(["api", "status"]);
+ok("a resolved path carries its base", statusCheck.ok === true && statusCheck.base === "web");
+const chatCheck = isAllowedHermesPath(["v1", "chat", "completions"]);
+ok("the chat path resolves to the gateway base", chatCheck.ok === true && chatCheck.base === "api");
+
+/* ---- paths that exist on NEITHER upstream process --------------------------
+   Verified against NousResearch/hermes-agent origin/main (2026-07-24). These
+   were in the allow-list and could only ever have 404'd; keeping them widened
+   the nominal proxy surface for zero function. Asserted so they cannot drift
+   back in. ------------------------------------------------------------------ */
+for (const dead of ["api/health", "api/tools", "api/models", "api/schedules", "api/gateway", "api/oauth/account"]) {
+  ok(`${dead} is not allow-listed (exists on neither upstream server)`, !allowedPaths.includes(dead));
+  ok(`${dead} is refused by the validator`, isAllowedHermesPath(dead.split("/")).ok === false);
+}
+
+/* ---- api/files browse path validation --------------------------------------
+   The file browser needs a directory to list, and that parameter was never
+   forwarded, so browsing was inert. A client-supplied path is a traversal
+   surface, so it is validated here before it can leave the process. Upstream
+   applies its own managed-path policy on top and the route is admin-only in
+   production; none of the three layers is relied on alone. ----------------- */
+
+for (const good of ["", "skills", "skills/bundled", "a/b/c", "with-hyphen", "with_underscore", "file.md", "Ünïcode"]) {
+  ok(`accepts the ordinary relative path ${JSON.stringify(good)}`, isSafeRelativeBrowsePath(good).ok === true);
+}
+for (const bad of [
+  "..",
+  "../etc/passwd",
+  "skills/../../etc/passwd",
+  "./skills",
+  "skills/./bundled",
+  "/etc/passwd",
+  "/",
+  "C:/Windows",
+  "c:\\Windows",
+  "skills\\bundled",
+  "skills//bundled",
+  "skills/",
+  "%2e%2e/etc",
+  "skills%2f..%2fetc",
+  "a".repeat(513),
+]) {
+  ok(`refuses the unsafe path ${JSON.stringify(bad.slice(0, 40))}`, isSafeRelativeBrowsePath(bad).ok === false);
+}
+// Percent-encoding is refused outright rather than decoded: decoding here and
+// validating the result would still leave upstream free to decode again.
+ok(
+  "percent-encoding is refused before any decode is attempted",
+  isSafeRelativeBrowsePath("%2e%2e").ok === false && isSafeRelativeBrowsePath("ok%20name").ok === false,
+);
+ok(
+  "control characters are refused",
+  isSafeRelativeBrowsePath("skills\u0000etc").ok === false && isSafeRelativeBrowsePath("skills\u001f").ok === false,
+);
+// Only api/files consumes a path, so the parameter must not be forwarded for
+// anything else. Asserted structurally against the allow-list.
+ok(
+  "api/files is the only allow-listed path that takes a directory parameter",
+  allowedPaths.filter((p) => p === "api/files").length === 1,
+);
 
 console.log(`RESULT hermes-proxy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

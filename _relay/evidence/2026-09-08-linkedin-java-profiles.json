@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-08T22:29:56.603486Z",
+  "platform": "LinkedIn",
+  "query": "Senior Java Developer Spring Boot",
+  "leads": [
+    {
+      "name": "Swathi Reddy Kathi",
+      "title": "Senior Full Stack Developer | Java, Spring Boot, Microservices | Cloud Solutions (AWS/Azure) | REST",
+      "company": "",
+      "url": "https://www.linkedin.com/in/swathi-reddy-kathi-5479aa175",
+      "snippet": "As a Senior Java Developer at Bank of America, I design and implement high-performance microservices and cloud-based applications, leveraging Java 8, Spring Boot, and AWS services such as EC2, Lambda, S3, and RDS. I lead the development of scalable and resilient cloud architectures, improving system"
+    },
+    {
+      "name": "Naga Venkata Shankar",
+      "title": "\ud83d\udcbb Senior Java Developer | Spring Boot | Microservices | Full-Stack | Vue.js | Java Script| Cloud",
+      "company": "",
+      "url": "https://www.linkedin.com/in/naga-venkata-shankar-4158b7a9",
+      "snippet": "# Naga Venkata Shankar\n\ud83d\udcbb Senior Java Developer | Spring Boot | Microservices | Full-Stack | Vue.js | Java Script| Cloud | Docker | Git | OCP | REST API | Junit | OCJP Certified | Open for Remote Position only\nHyderabad, Telangana, India, IN  \n52 connections, 55 followers\n\n## About\n\ud83d\ude80 Java 17 | Seni"
+    },
+    {
+      "name": "Jiri Kehar",
+      "title": "Contract Java Senior Developer | Spring Boot, Microservices, AWS/Kubernetes | Remote EU/UK |",
+      "company": "BNP Paribas",
+      "url": "https://www.linkedin.com/in/jirikehar",
+      "snippet": "## Experience\n### Senior Java Developer  \nBNP Paribas Cardif  \nFeb 2020 - Present   \nPrague, Czechia  \n- Development of RESTful API back-end applications and microservice architecture for the Central European region. - Technologies: Java 21, Spring Boot, MS SQL Server, MongoDB, Docker, GitLab CI/CD,"
+    },
+    {
+      "name": "Sebastian St\u00eencescu",
+      "title": "Senior Java Software Engineer | 5+ Years Experience | Spring Boot | Microservices | GCP | Kubernet",
+      "company": "",
+      "url": "https://www.linkedin.com/in/sebastian-stincescu",
+      "snippet": "integrations, cloud features, and high-integrity data migrations (>99%).Tech: Java, Kotlin, Spring Boot, Microservices, Kafka, GCP, Kubernetes, Docker, GitLab CI/CD, Argo CD, Helm, Observability and Alerting (Grafana/Prometheus), BitBucket, JUnitI am continuously looking for new challenges and oppor"
+    },
+    {
+      "name": "CHANDRA SHEKAR",
+      "title": "Sr. Java Full Stack Developer | 8+ Years | Java, React, AWS, Azure, Microservices | Building Scalable E",
+      "company": "",
+      "url": "https://www.linkedin.com/in/chandrashekar0909",
+      "snippet": "\u2022\tDeveloped backend microservices using Spring Boot, Hibernate, and REST APIs for financial workflows, improving modularity, scalability, and performance.\u2022\tBuilt and optimized Spark jobs in Scala for account reconciliation, derivative/cash accounts processing, and batch validation of large datasets."
+    }
+  ]
+}

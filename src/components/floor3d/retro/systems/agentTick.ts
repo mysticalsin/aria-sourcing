@@ -121,11 +121,15 @@ export function useAgentTick(agents: OfficeAgent[]): {
       const deskIdx = deskByAgentRef.current.get(agent.id)!;
       const deskPos = DESK_POSITIONS[deskIdx] ?? DESK_POSITIONS[0];
 
-      // Status stickiness: keep "working" for DESK_STICKY_MS after it flips
+      // Brief sticky only while still working — clear immediately on idle/error/warming so
+      // Take control / unhealthy / booting LI never linger as theatrical "working".
       if (agent.status === "working") {
         stickyUntilRef.current.set(agent.id, now + DESK_STICKY_MS);
+      } else {
+        stickyUntilRef.current.delete(agent.id);
       }
       const stickyUntil = stickyUntilRef.current.get(agent.id) ?? 0;
+      // warming → idle animation (roam / stand), never sit at desk as "working"
       const effectiveStatus: RenderAgent["status"] =
         agent.status === "error"
           ? "error"

@@ -1,12 +1,11 @@
 import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
+import { fitLinkedInInviteNote } from "./linkedin-invite-note";
 import { roleProfile } from "./roles";
-import type { GithubUser } from "./sourcing/github";
-import type { ApolloPerson } from "./sourcing/apollo";
-import type { SeamlessContact } from "./sourcing/seamless";
-import type { WebLead, WebSearchPlatform } from "./sourcing/web-leads";
+import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
+import { evaluateNeedReadiness } from "./needs/readiness";
 import type {
   Booking,
   Campaign,
@@ -49,6 +48,56 @@ import {
   slugify,
   titleCase,
 } from "./utils";
+
+export type { SourceResult } from "./sourcing/candidate-mappers";
+export {
+  mapApolloCandidates,
+  mapGithubCandidates,
+  mapSeamlessCandidates,
+  mapWebSearchCandidates,
+} from "./sourcing/candidate-mappers";
+
+/** Parse experience floors like "8 years +", "5+ years", "minimum 6 years". */
+export function extractMinYearsExperience(text: string): number | null {
+  const patterns = [
+    /\bminimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years?\b/i,
+    /\bat\s+least\s+(\d{1,2})\s*\+?\s*years?\b/i,
+    /\b(\d{1,2})\s*\+\s*years?\b/i,
+    /\b(\d{1,2})\s*years?\s*\+/i,
+    /\b(\d{1,2})\s*-\s*\d{1,2}\s*years?\b/i,
+    /\b(\d{1,2})\+?\s*years?\s+(?:of\s+)?(?:relevant\s+)?experience\b/i,
+    /\b(\d{1,2})\s*(?:years?|yrs)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern)?.[1];
+    if (match) {
+      const years = parseInt(match, 10);
+      if (Number.isFinite(years) && years >= 0 && years <= 50) return years;
+    }
+  }
+  return null;
+}
+
+export function seniorityFromTitle(title: string): Seniority {
+  if (/principal/i.test(title)) return "Principal";
+  if (/staff/i.test(title)) return "Staff";
+  if (/lead/i.test(title)) return "Lead";
+  if (/director|head of/i.test(title)) return "Director";
+  if (/junior|graduate|entry/i.test(title)) return "Junior";
+  if (/\bmid\b|intermediate/i.test(title)) return "Mid";
+  if (/\bsenior\b/i.test(title)) return "Senior";
+  return "Unspecified";
+}
+
+/** Map stated years-of-experience floors to seniority when the title is silent. */
+export function seniorityFromYears(minYears: number | null): Seniority {
+  if (minYears == null) return "Unspecified";
+  if (minYears >= 8) return "Senior";
+  if (minYears >= 5) return "Senior";
+  if (minYears >= 3) return "Mid";
+  if (minYears >= 1) return "Junior";
+  return "Unspecified";
+}
 
 /* ============================================================================
    MOCK AI — deterministic stand-ins for the real Aria pipeline.
@@ -121,8 +170,8 @@ const SKILL_DICTIONARY = [
   ...EXTRA_SKILLS,
   "Java", "C++", "Scala", "Elixir", "Ruby", "Swift", "Kotlin", "Next.js", "Vue", "Svelte",
   "TensorFlow", "PyTorch", "LangChain", "LLM", "RAG", "Vector DB", "Snowflake", "dbt", "Spark",
-  "Airflow", "MongoDB", "MySQL", "RabbitMQ", "Nginx", "Linux", "REST", "OAuth", "SAML", "SOC2",
-  "Figma", "Product Design", "Accessibility", "Design Systems", "Sales", "Negotiation", "CRM",
+  "Airflow", "SQL", "MongoDB", "MySQL", "RabbitMQ", "Nginx", "Linux", "REST", "OAuth", "SAML", "SOC2",
+  "Figma", "Product Design", "Product Management", "Roadmapping", "Accessibility", "Design Systems", "Sales", "Negotiation", "CRM",
 ];
 
 /* ============================================================================
@@ -137,7 +186,7 @@ Hi Aria,
 One of our senior backend engineers just resigned and we need to backfill this
 role critically, ideally someone in seat within 8 weeks. This is high priority.
 
-We're hiring a Senior Backend Engineer, fully remote across the EU (CET-ish
+We're hiring a full-time Senior Backend Engineer, fully remote across the EU (CET-ish
 overlap). Core stack is Go, Kubernetes, PostgreSQL and gRPC: they'll own
 distributed systems at the heart of the platform. Nice to have: Kafka,
 OpenTelemetry, Terraform. We want 5+ years of experience, ideally from a
@@ -201,6 +250,8 @@ export interface ParsedIntake {
   validationWarnings: ValidationWarning[];
   clarificationDraft: string | null;
   confidence: Record<string, number>;
+  extractionMode: "evidence" | "cloud";
+  providerWarning?: string;
   /** Optional enrichment from a locked Dust agent (task "jdAnalysis"). A sibling
    *  display field, never merged into jobAnalysis's typed fields — free text from
    *  an external agent shouldn't be able to corrupt the scoring/sourcing pipeline.
@@ -220,7 +271,9 @@ export function isMantuNeedEmail(text: string): boolean {
  *  false positive here would parse a random email into a job brief. */
 export function isNeedEmail(subject: string, body: string): boolean {
   if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
-  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open position)\b/i.test(subject);
+  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open (position|need|role)|platform need|requisition)\b/i.test(
+    subject,
+  );
 }
 
 /** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */
@@ -232,7 +285,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
     text.match(/this need is now active\s*:?\s*(.+)/i)?.[1]?.trim() ||
     field("Subject") ||
     field("Need") ||
-    "Consulting Need";
+    "";
 
   const manager = field("Manager");
   const recruiter = field("Recruiter");
@@ -240,13 +293,11 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const priority = field("Priority");
   const locationRaw = field("Location");
   const startRaw = field("Start date");
-  const typeRaw = field("Type") || "Consulting";
+  const typeRaw = field("Type");
 
   const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
-  const senderName = manager || recruiter || "Hiring Manager";
-  const senderEmail =
-    emailMatch?.[0] ??
-    `${slugify(senderName).replace(/-/g, ".")}@${slugify(client) || "client"}.example`;
+  const senderName = manager || recruiter;
+  const senderEmail = emailMatch?.[0] ?? "";
 
   // Priority / importance → urgency
   let urgency: Urgency = "Standard";
@@ -256,32 +307,31 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   const intent: IntakeIntent = urgency === "Critical" ? "Urgent Hire" : "New Role";
 
-  // Skills — the explicit "Skills:" line is authoritative; augment from bullets.
+  // Skills — explicit "Skills:" line is authoritative; augment from profile block + dictionary.
   const skillsLine = field("Skills");
   const lineSkills = skillsLine
     ? skillsLine.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
     : [];
+  const profileSkills = extractProfileDescriptionSkills(text);
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
   );
-  const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
+  const requiredSkills = Array.from(new Set([...lineSkills, ...profileSkills, ...dictSkills])).slice(0, 8);
 
-  const minYears = text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1];
-  const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
+  const minYearsExperience = extractMinYearsExperience(text);
+
+  let seniority: Seniority = seniorityFromTitle(title);
+  if (seniority === "Unspecified") {
+    seniority = seniorityFromYears(minYearsExperience);
+  }
 
   const niceToHaveSkills: string[] = [];
   if (/offshore/i.test(text)) niceToHaveSkills.push("Offshore experience");
 
   // Location → region + timezone (best-effort)
   const loc = titleCase(locationRaw || "");
-  const tz = /montreal|toronto|new york|boston/i.test(locationRaw)
-    ? "EST"
-    : /london|uk/i.test(locationRaw)
-      ? "GMT"
-      : /paris|france|montreal/i.test(locationRaw)
-        ? "CET"
-        : "EST";
-  const regions = loc ? [loc] : ["Global"];
+  const tz = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
+  const regions = loc ? [loc] : [];
 
   // Start date m/d/yyyy → ISO. Null when the need email doesn't state one —
   // createCampaign applies its own default rather than baking a guess in here.
@@ -290,41 +340,73 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   const industryExperience = /financial markets|bonds|trading|finance|murex|pricing/i.test(text)
     ? ["Fintech"]
-    : [];
-
-  const validationWarnings: ValidationWarning[] = [];
-  if (!skillsLine && requiredSkills.length < 3)
-    validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "No explicit skills line and few skills detected." });
-  validationWarnings.push({ field: "salary", severity: "warning", message: "No salary/rate in the need email. Confirm the band." });
-  if (!locationRaw)
-    validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
+    : /medical device|pharma|healthcare|fda|iso 13485/i.test(text)
+      ? ["Healthtech"]
+      : [];
 
   const jobAnalysis: JobAnalysis = {
     title,
-    department: typeRaw || "Consulting",
-    seniority: minYearsExperience && minYearsExperience >= 8 ? "Staff" : "Senior",
-    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw) ? "Contract" : "Full-time",
-    locationType: /remote/i.test(text) ? "Remote" : /hybrid/i.test(text) ? "Hybrid" : "On-site",
+    department: client.replace(/\s+Ltd\.?$/i, "").trim() || typeRaw,
+    seniority,
+    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw)
+      ? "Contract"
+      : /part[- ]time/i.test(typeRaw)
+        ? "Part-time"
+        : /full[- ]time|permanent/i.test(typeRaw)
+          ? "Full-time"
+          : "Unspecified",
+    locationType: /remote/i.test(text)
+      ? "Remote"
+      : /hybrid/i.test(text)
+        ? "Hybrid"
+        : /on-?site|in office|in-person/i.test(text)
+          ? "On-site"
+          : // Mantu need emails always carry a city Location for consulting seats;
+            // treat a stated city with no remote/hybrid cue as On-site so the
+            // brief can authorize sourcing without a second confirmation step.
+            loc
+            ? "On-site"
+            : "Unspecified",
     regions,
     timezone: tz,
     salaryMin: null,
     salaryMax: null,
-    currency: /montreal|toronto|canada/i.test(locationRaw) ? "CAD" : "USD",
+    currency: /\bCAD\b|C\$/i.test(text) ? "CAD" : /\bUSD\b|\$/i.test(text) ? "USD" : "",
     equity: /equity|options|esop/i.test(text),
-    requiredSkills: requiredSkills.length ? requiredSkills : ["Murex", "Finance", "Pricing"],
+    requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
-    maxYearsExperience: minYearsExperience ? minYearsExperience + 5 : null,
-    education: "No formal requirement",
+    maxYearsExperience: null,
+    education: "",
     industryExperience,
-    companyStageTarget: ["Enterprise", "Public"],
-    teamSize: field("Nb people") ? `${field("Nb people")} role(s)` : "Client-embedded",
-    reportingTo: manager || "Engagement Manager",
+    companyStageTarget: /\bpublic\b/i.test(text)
+      ? ["Public"]
+      : /\benterprise\b/i.test(text)
+        ? ["Enterprise"]
+        : [],
+    teamSize: "",
+    reportingTo: "",
     urgency,
     language: detectLanguage(text),
     expectedStartDate: targetStartDate,
-    validationWarnings,
+    validationWarnings: [],
   };
+
+  const validationWarnings: ValidationWarning[] = [
+    ...evaluateNeedReadiness(jobAnalysis).issues,
+    { field: "salary", severity: "warning", message: "No salary/rate in the need email. Confirm the band." },
+  ];
+  if (!locationRaw) {
+    validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
+  }
+  if (requiredSkills.length > 0 && requiredSkills.length < 3) {
+    validationWarnings.push({
+      field: "requiredSkills",
+      severity: "warning",
+      message: "Fewer than 3 required skills were stated. Confirm whether the brief is complete.",
+    });
+  }
+  jobAnalysis.validationWarnings = validationWarnings;
 
   const hasCritical = validationWarnings.some((w) => w.severity === "critical");
   return {
@@ -341,6 +423,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
       location: locationRaw ? 0.92 : 0.5,
       seniority: 0.8,
     },
+    extractionMode: "evidence",
   };
 }
 
@@ -415,8 +498,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const nameMatch =
     fromLine.match(/^([A-Z][a-z]+ [A-Z][a-z]+)/)?.[1] ??
     text.match(/(?:thanks|regards|best|cheers)[,\s]+\n?\s*([A-Z][a-z]+ [A-Z][a-z]+)/)?.[1] ??
-    "Hiring Manager";
-  const senderEmail = emailMatch?.[0] ?? "unknown@company.example";
+    "";
+  const senderEmail = emailMatch?.[0] ?? "";
 
   // Intent
   let intent: IntakeIntent = "New Role";
@@ -435,21 +518,15 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const titleMatch =
     text.match(/(?:hiring|looking for|need|seeking|backfill)\s+(?:an?\s+)?([A-Z][\w/ +.-]{3,48}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst))/i)?.[1] ??
     text.match(/(?:role|position|title):\s*(.+)/i)?.[1] ??
-    "Senior Software Engineer";
+    "";
   const title = titleMatch.trim().replace(/\s+/g, " ");
 
-  // Seniority
-  let seniority: Seniority = "Senior";
-  if (/principal/i.test(title)) seniority = "Principal";
-  else if (/staff/i.test(title)) seniority = "Staff";
-  else if (/lead/i.test(title)) seniority = "Lead";
-  else if (/director|head of/i.test(title)) seniority = "Director";
-  else if (/junior|graduate|entry/i.test(title)) seniority = "Junior";
-  else if (/\bmid\b|intermediate/i.test(title)) seniority = "Mid";
+  // Seniority — title first, then years floors ("8 years +", "5+ years").
+  let seniority: Seniority = seniorityFromTitle(title);
 
   // Department (specific signals first; word-boundaries to avoid false hits like
   // "design and operate" or "service contracts")
-  let department = "Engineering";
+  let department = "";
   if (/\b(devops|sre|platform engineer|infrastructure|kubernetes|distributed systems|backend)\b/i.test(text))
     department = "Platform";
   else if (/\b(data engineer|ml|machine learning|analytics|data scientist)\b/i.test(text)) department = "Data";
@@ -458,19 +535,18 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   else if (/\b(designer|product design|ux|ui|design systems)\b/i.test(text)) department = "Design";
 
   // Location type
-  let locationType: JobAnalysis["locationType"] = "Hybrid";
+  let locationType: JobAnalysis["locationType"] = "Unspecified";
   if (/fully remote|remote-first|100% remote|\bremote\b/i.test(text)) locationType = "Remote";
+  else if (/\bhybrid\b/i.test(text)) locationType = "Hybrid";
   else if (/on-?site|in office|in-person/i.test(text)) locationType = "On-site";
 
   // Regions
   const regions: string[] = [];
-  for (const r of ["EU", "US", "UK", "APAC", "LATAM", "Europe", "Germany", "Remote"]) {
+  for (const r of ["EU", "US", "UK", "APAC", "LATAM", "Europe", "Germany", "Canada", "Remote"]) {
     if (new RegExp(`\\b${r}\\b`, "i").test(text)) regions.push(r === "Europe" ? "EU" : r);
   }
-  if (regions.length === 0) regions.push("EU");
-
   // Timezone
-  const tzMatch = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "CET";
+  const tzMatch = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
 
   const location = extractLocation(text);
 
@@ -478,12 +554,24 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const salaryNums = [...text.matchAll(/[€$£]?\s?(\d{2,3})\s?k\b/gi)].map((m) => parseInt(m[1], 10) * 1000);
   const salaryMin = salaryNums.length ? Math.min(...salaryNums) : null;
   const salaryMax = salaryNums.length ? Math.max(...salaryNums) : null;
-  const currency = /£/.test(text) ? "GBP" : /\$/.test(text) ? "USD" : "EUR";
+  const currency = salaryNums.length > 0
+    ? /£/.test(text)
+      ? "GBP"
+      : /\$/.test(text)
+        ? "USD"
+        : /€/.test(text)
+          ? "EUR"
+          : ""
+    : "";
 
   // Years
   const yearsMatch = [...text.matchAll(/(\d{1,2})[\s+]{0,6}(?:years|yrs)/gi)].map((m) => parseInt(m[1], 10));
-  const minYearsExperience = yearsMatch.length ? Math.min(...yearsMatch) : null;
-  const maxYearsExperience = yearsMatch.length ? Math.max(...yearsMatch) + 3 : null;
+  const minYearsExperience =
+    extractMinYearsExperience(text) ?? (yearsMatch.length ? Math.min(...yearsMatch) : null);
+  const maxYearsExperience = yearsMatch.length > 1 ? Math.max(...yearsMatch) : null;
+  if (seniority === "Unspecified") {
+    seniority = seniorityFromYears(minYearsExperience);
+  }
 
   // Skills
   const requiredSkills = SKILL_DICTIONARY.filter((s) =>
@@ -501,20 +589,10 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       ? ["Seed", "Series A"]
       : /enterprise|public/i.test(text)
         ? ["Series C+", "Public"]
-        : ["Series A", "Series B"];
+        : [];
 
   // Industry
   const industryExperience = INDUSTRIES.filter((i) => new RegExp(i.replace("/", ".?"), "i").test(text)).slice(0, 2);
-
-  const validationWarnings: ValidationWarning[] = [];
-  if (salaryMin == null)
-    validationWarnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
-  if (locationType === "Hybrid" && !/hybrid/i.test(text))
-    validationWarnings.push({ field: "location", severity: "info", message: "Location type inferred (defaulted to Hybrid)." });
-  if (requiredSkills.length < 3)
-    validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "Fewer than 3 required skills detected. JD may be vague." });
-  if (minYearsExperience == null)
-    validationWarnings.push({ field: "experience", severity: "warning", message: "No years-of-experience band specified." });
 
   const jobAnalysis: JobAnalysis = {
     title,
@@ -522,7 +600,11 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     seniority,
     employmentType: /\b(contractor|freelance|contract role|contract position|fixed[- ]term|day rate)\b/i.test(text)
       ? "Contract"
-      : "Full-time",
+      : /\bpart[- ]time\b/i.test(text)
+        ? "Part-time"
+        : /\bfull[- ]time\b|\bpermanent\b/i.test(text)
+          ? "Full-time"
+          : "Unspecified",
     locationType,
     ...(location ? { location } : {}),
     regions: Array.from(new Set(regions)),
@@ -531,21 +613,37 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     salaryMax,
     currency,
     equity,
-    requiredSkills: requiredSkills.length ? requiredSkills : ["TypeScript", "Node.js", "PostgreSQL"],
+    requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
     maxYearsExperience,
     education: /phd|master|bachelor|degree/i.test(text)
       ? (text.match(/phd|master'?s|bachelor'?s/i)?.[0] ?? "Degree preferred")
-      : "No formal requirement",
+      : "",
     industryExperience,
     companyStageTarget,
-    teamSize: text.match(/team of (\d+)/i)?.[0] ?? "6–10 engineers",
-    reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "Engineering Manager",
+    teamSize: text.match(/team of (\d+)/i)?.[0] ?? "",
+    reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "",
     urgency,
     language: detectLanguage(text),
-    validationWarnings,
+    validationWarnings: [],
   };
+
+  const validationWarnings: ValidationWarning[] = [...evaluateNeedReadiness(jobAnalysis).issues];
+  if (salaryMin == null) {
+    validationWarnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
+  }
+  if (requiredSkills.length > 0 && requiredSkills.length < 3) {
+    validationWarnings.push({
+      field: "requiredSkills",
+      severity: "warning",
+      message: "Fewer than 3 required skills were stated. Confirm whether the brief is complete.",
+    });
+  }
+  if (minYearsExperience == null) {
+    validationWarnings.push({ field: "experience", severity: "warning", message: "No years-of-experience band specified." });
+  }
+  jobAnalysis.validationWarnings = validationWarnings;
 
   const hasCritical = validationWarnings.some((w) => w.severity === "critical") || salaryMin == null;
   const clarificationDraft = hasCritical ? buildClarificationEmail(nameMatch, jobAnalysis, validationWarnings) : null;
@@ -562,8 +660,9 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       salary: salaryMin != null ? 0.9 : 0.4,
       skills: clamp(0.55 + requiredSkills.length * 0.05, 0.5, 0.95),
       location: location ? 0.9 : locationType === "Remote" ? 0.9 : 0.7,
-      seniority: 0.85,
+      seniority: seniority === "Unspecified" ? 0 : 0.85,
     },
+    extractionMode: "evidence",
   };
 }
 
@@ -597,6 +696,129 @@ Aria Sourcing`;
 // good query. Only apply the qualifier for a region that's an actual place.
 const NON_LOCATION_REGIONS = new Set(["EU", "APAC", "LATAM", "Remote", "Global"]);
 
+/** Extract role-relevant phrases from Mantu "Profile description:" blocks. */
+function extractProfileDescriptionSkills(text: string): string[] {
+  const block =
+    text.match(/profile description\s*:\s*([\s\S]*?)(?:\n\s*(?:skills|key required|rate)\s*:|\n\s*$)/i)?.[1] ??
+    "";
+  if (!block.trim()) return [];
+  const found: string[] = [];
+  const patterns: [RegExp, string][] = [
+    [/system design(?:ing)?/i, "system design"],
+    [/product development/i, "product development"],
+    [/medical device/i, "medical device"],
+    [/validation engineer/i, "validation engineering"],
+    [/requirements?(?:\s+management)?/i, "requirements management"],
+    [/\b(uml|sysml)\b/i, "UML"],
+    [/architect/i, "systems architecture"],
+  ];
+  for (const [re, label] of patterns) {
+    if (re.test(block) && !found.includes(label)) found.push(label);
+  }
+  return found;
+}
+
+/** Keyword query for site:linkedin.com web search (Tavily/DDG). */
+export function buildLinkedInKeywords(jd: JobAnalysis): string {
+  const title = jd.title.trim();
+  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const industry = jd.industryExperience[0]?.trim() ?? "";
+  const skillKeywords = jd.requiredSkills.slice(0, 3).map((skill) => {
+    const lower = skill.toLowerCase();
+    if (/medical device/i.test(lower)) return "medical device";
+    if (/fda/i.test(lower)) return "FDA";
+    if (/quality systems/i.test(lower)) return "quality systems";
+    if (/mttf|mean time to failure/i.test(lower)) return "reliability engineering";
+    if (/system design/i.test(lower)) return "system design";
+    const short = skill.split(/[,;/]/)[0]?.trim() ?? skill;
+    return short.split(/\s+/).slice(0, 3).join(" ");
+  });
+  return [title, jd.seniority !== "Unspecified" ? jd.seniority : "", ...skillKeywords, region, industry]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 256);
+}
+
+/**
+ * Deep LinkedIn search variants — title aliases, skills, location, industry —
+ * so the sourcing agent can cast a wide net and keep only 80%+ fits.
+ */
+export function roleTitleSearchAliases(title: string): string[] {
+  const t = title.trim();
+  if (!t) return [];
+  const aliases = new Set<string>([t, `"${t}"`]);
+  if (/system designer/i.test(t)) {
+    for (const a of [
+      "Systems Designer",
+      "System Architect",
+      "Systems Architect",
+      "Systems Engineer",
+      "System Design Engineer",
+      "Systems Design Engineer",
+      "Product Development Engineer",
+      "R&D System Designer",
+      "Medical Device System Designer",
+      "Senior System Designer",
+      "Senior Systems Designer",
+    ]) {
+      aliases.add(a);
+      aliases.add(`"${a}"`);
+    }
+  }
+  if (/murex/i.test(t)) {
+    for (const a of ["Murex Consultant", "Murex Support", "Front Office Support"]) aliases.add(a);
+  }
+  return [...aliases];
+}
+
+export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 12): string[] {
+  const title = jd.title.trim();
+  if (!title) return [];
+  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const industry = jd.industryExperience[0]?.trim() ?? "";
+  const seniority = jd.seniority !== "Unspecified" ? jd.seniority : "";
+  const skills = jd.requiredSkills.slice(0, 5).map((skill) => {
+    const lower = skill.toLowerCase();
+    if (/medical device/i.test(lower)) return "medical device";
+    if (/fda/i.test(lower)) return "FDA";
+    if (/mttf|mean time to failure/i.test(lower)) return "MTTF";
+    if (/system design/i.test(lower)) return "system design";
+    if (/quality systems/i.test(lower)) return "quality systems";
+    const acronym = skill.match(/\(([A-Za-z0-9+.#]{2,})\)/)?.[1];
+    if (acronym) return acronym;
+    return (skill.split(/[,;/]/)[0]?.trim() ?? skill).split(/\s+/).slice(0, 3).join(" ");
+  });
+
+  const titleAliases = roleTitleSearchAliases(title);
+  const geos = Array.from(
+    new Set(
+      [region, region && /montreal/i.test(region) ? "Quebec" : "", region ? "Canada" : "", "Montreal"]
+        .filter(Boolean)
+        .map((g) => String(g)),
+    ),
+  );
+  const variants: string[] = [buildLinkedInKeywords(jd)];
+  for (const alias of titleAliases.slice(0, 6)) {
+    for (const geo of geos.slice(0, 2)) {
+      variants.push([seniority, alias, geo].filter(Boolean).join(" "));
+      variants.push([alias, skills[0], geo].filter(Boolean).join(" "));
+    }
+    variants.push([alias, industry || "medical device", geos[0] || region].filter(Boolean).join(" "));
+  }
+  if (skills[1]) variants.push([titleAliases[0], skills[1], geos[0] || region || industry].filter(Boolean).join(" "));
+  if (skills[2]) variants.push([titleAliases[0], skills[2], geos[0] || region].filter(Boolean).join(" "));
+
+  return Array.from(
+    new Set(
+      variants
+        .map((q) => q.replace(/\s+/g, " ").trim().slice(0, 256))
+        .filter((q) => q.length >= 3),
+    ),
+  ).slice(0, max);
+}
+
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const region = jd.regions[0];
@@ -612,9 +834,7 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     estimatedResults: 120 + i * 60,
   }));
 
-  const linkedinBoolean = `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
-    .map((s) => `"${s}"`)
-    .join(" OR ")}) AND (${jd.regions.map((r) => `"${r}"`).join(" OR ")}) NOT "recruiter"`;
+  const linkedinBoolean = buildLinkedInKeywords(jd);
 
   const profile = roleProfile(jd);
   return {
@@ -678,11 +898,6 @@ export function createCampaign(
    3. sourceCandidates
    ========================================================================== */
 
-export interface SourceResult {
-  accepted: Candidate[];
-  skipped: { name: string; reason: string }[];
-}
-
 export function sourceCandidates(
   campaign: Campaign,
   platform: SourcePlatform,
@@ -721,299 +936,6 @@ export function sourceCandidates(
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
 
-  return { accepted: scored, skipped };
-}
-
-/**
- * Map real GitHub users into scored, deduped Candidates — the live counterpart to
- * sourceCandidates(). Same scoring + dedupe pipeline, real data. Email comes from the
- * public profile when present and is otherwise left blank (enrichment is a separate
- * step); techStack is the query language plus any required/nice skill named in the
- * bio; yearsExperience is estimated from GitHub account age.
- */
-export function mapGithubCandidates(
-  users: GithubUser[],
-  campaign: Campaign,
-  query: string,
-  existing: Candidate[],
-  weights: ScoringWeights = campaign.scoringWeights,
-): SourceResult {
-  const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = users.map((u) => {
-    const name = (u.name && u.name.trim()) || u.login;
-    const bio = (u.bio ?? "").trim();
-    const bioLower = bio.toLowerCase();
-    const matched = allSkills.filter((s) => bioLower.includes(s.toLowerCase()));
-    const techStack = Array.from(new Set([...(u.topLanguage ? [u.topLanguage] : []), ...matched]));
-    const accountYears = u.createdAt
-      ? clamp(Math.floor((Date.now() - new Date(u.createdAt).getTime()) / (365 * 86_400_000)), 1, 25)
-      : 4;
-    return {
-      id: genId("cand"),
-      campaignId: campaign.id,
-      name,
-      email: u.email ?? "",
-      avatarInitials: initialsFrom(name),
-      currentTitle: bio ? bio.slice(0, 64) : jd.title,
-      currentCompany: (u.company ?? "").replace(/^@/, "").trim(),
-      location: u.location ?? "",
-      timezone: "",
-      linkedinUrl: "",
-      githubUrl: u.htmlUrl,
-      sourcePlatform: "GitHub",
-      sourceQuery: query,
-      matchScore: 0,
-      matchBreakdown: [],
-      techStack,
-      yearsExperience: accountYears,
-      companyStageExperience: [],
-      industryExperience: [],
-      recentActivity: `${u.publicRepos} public repos, ${u.followers} followers`,
-      stage: "Sourced",
-      lastContactedAt: null,
-      outreachHistory: [],
-      replyHistory: [],
-      booking: null,
-      complianceFlags: {
-        doNotContact: false,
-        suppressed: false,
-        unsubscribed: false,
-        gdprExportRequested: false,
-        anonymized: false,
-        suppressedUntil: null,
-      },
-      createdAt: new Date().toISOString(),
-      provenance: "live",
-    };
-  });
-
-  const { accepted, skipped } = dedupeCandidates(raw, existing, {
-    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-  });
-  const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
-  });
-  return { accepted: scored, skipped };
-}
-
-/**
- * Map real Apollo people into scored, deduped Candidates — same scoring + dedupe
- * pipeline as mapGithubCandidates, real data. Apollo's search endpoint never
- * returns email/phone (that's the separate, credit-costing enrichment step), so
- * email is always left blank here; `sourceExternalId` carries Apollo's person id
- * so a later per-candidate enrichment call knows who to match.
- */
-export function mapApolloCandidates(
-  people: ApolloPerson[],
-  campaign: Campaign,
-  query: string,
-  existing: Candidate[],
-  weights: ScoringWeights = campaign.scoringWeights,
-): SourceResult {
-  const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = people.map((p) => {
-    const headline = (p.headline || p.title || "").toLowerCase();
-    const matched = allSkills.filter((s) => headline.includes(s.toLowerCase()));
-    const location = [p.city, p.state, p.country].filter(Boolean).join(", ");
-    const recentActivity = p.seniority
-      ? `${p.seniority}${p.departments.length ? ` · ${p.departments.join(", ")}` : ""}`
-      : "Apollo profile";
-    return {
-      id: genId("cand"),
-      campaignId: campaign.id,
-      name: p.name,
-      email: "",
-      avatarInitials: initialsFrom(p.name),
-      currentTitle: p.title || jd.title,
-      currentCompany: p.company,
-      location,
-      timezone: "",
-      linkedinUrl: p.linkedinUrl,
-      githubUrl: "",
-      sourceExternalId: p.id || undefined,
-      sourcePlatform: "Apollo",
-      sourceQuery: query,
-      matchScore: 0,
-      matchBreakdown: [],
-      techStack: matched,
-      yearsExperience: 4, // Apollo search doesn't expose tenure — a neutral estimate
-      companyStageExperience: [],
-      industryExperience: [],
-      recentActivity,
-      stage: "Sourced",
-      lastContactedAt: null,
-      outreachHistory: [],
-      replyHistory: [],
-      booking: null,
-      complianceFlags: {
-        doNotContact: false,
-        suppressed: false,
-        unsubscribed: false,
-        gdprExportRequested: false,
-        anonymized: false,
-        suppressedUntil: null,
-      },
-      createdAt: new Date().toISOString(),
-      provenance: "live",
-    };
-  });
-
-  const { accepted, skipped } = dedupeCandidates(raw, existing, {
-    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-  });
-  const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
-  });
-  return { accepted: scored, skipped };
-}
-
-/**
- * Map real Seamless.AI search contacts (fifth real sourcing channel) into
- * scored, deduped Candidates. Same construction as mapApolloCandidates — no
- * email/phone from search (Seamless reveals those only via the separate,
- * explicitly confirmed research/poll flow — see startSeamlessResearch /
- * checkSeamlessResearch in store.ts), `sourceExternalId` carries the
- * `searchResultId` a later research call needs.
- */
-export function mapSeamlessCandidates(
-  contacts: SeamlessContact[],
-  campaign: Campaign,
-  query: string,
-  existing: Candidate[],
-  weights: ScoringWeights = campaign.scoringWeights,
-): SourceResult {
-  const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = contacts.map((c) => {
-    const headline = (c.title || "").toLowerCase();
-    const matched = allSkills.filter((s) => headline.includes(s.toLowerCase()));
-    const location = [c.city, c.state, c.country].filter(Boolean).join(", ");
-    const recentActivity = c.seniority
-      ? `${c.seniority}${c.department ? ` · ${c.department}` : ""}`
-      : "Seamless profile";
-    return {
-      id: genId("cand"),
-      campaignId: campaign.id,
-      name: c.name,
-      email: "",
-      avatarInitials: initialsFrom(c.name),
-      currentTitle: c.title || jd.title,
-      currentCompany: c.company,
-      location,
-      timezone: "",
-      linkedinUrl: c.liUrl,
-      githubUrl: "",
-      sourceExternalId: c.searchResultId || undefined,
-      sourcePlatform: "Seamless",
-      sourceQuery: query,
-      matchScore: 0,
-      matchBreakdown: [],
-      techStack: matched,
-      yearsExperience: 4, // Seamless search doesn't expose tenure — a neutral estimate
-      companyStageExperience: [],
-      industryExperience: [],
-      recentActivity,
-      stage: "Sourced",
-      lastContactedAt: null,
-      outreachHistory: [],
-      replyHistory: [],
-      booking: null,
-      complianceFlags: {
-        doNotContact: false,
-        suppressed: false,
-        unsubscribed: false,
-        gdprExportRequested: false,
-        anonymized: false,
-        suppressedUntil: null,
-      },
-      createdAt: new Date().toISOString(),
-      provenance: "live",
-    };
-  });
-
-  const { accepted, skipped } = dedupeCandidates(raw, existing, {
-    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-  });
-  const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
-  });
-  return { accepted: scored, skipped };
-}
-
-/**
- * Map real web-search leads (LinkedIn, Stack Overflow, Dribbble, Behance — platforms
- * with no free structured search API) into scored, deduped Candidates. Same
- * scoring + dedupe pipeline as mapGithubCandidates, real data. Search results give a
- * profile URL and a title/snippet, not a structured record: name/title/company are
- * best-effort (extractLead), and anything the result text doesn't contain stays
- * honestly blank rather than fabricated — email, phone, location, tenure signals are
- * all a separate enrichment step.
- */
-export function mapWebSearchCandidates(
-  leads: WebLead[],
-  campaign: Campaign,
-  query: string,
-  platform: WebSearchPlatform,
-  existing: Candidate[],
-  weights: ScoringWeights = campaign.scoringWeights,
-): SourceResult {
-  const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = leads.map((lead) => {
-    const hay = `${lead.title} ${lead.snippet}`.toLowerCase();
-    const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
-    return {
-      id: genId("cand"),
-      campaignId: campaign.id,
-      name: lead.name,
-      email: "",
-      avatarInitials: initialsFrom(lead.name),
-      currentTitle: lead.title || jd.title,
-      currentCompany: lead.company,
-      location: "",
-      timezone: "",
-      linkedinUrl: platform === "LinkedIn" ? lead.url : "",
-      githubUrl: "",
-      sourceUrl: platform === "LinkedIn" ? undefined : lead.url,
-      sourcePlatform: platform,
-      sourceQuery: query,
-      matchScore: 0,
-      matchBreakdown: [],
-      techStack,
-      yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
-      companyStageExperience: [],
-      industryExperience: [],
-      recentActivity: lead.snippet || `Found via ${platform} search.`,
-      stage: "Sourced",
-      lastContactedAt: null,
-      outreachHistory: [],
-      replyHistory: [],
-      booking: null,
-      complianceFlags: {
-        doNotContact: false,
-        suppressed: false,
-        unsubscribed: false,
-        gdprExportRequested: false,
-        anonymized: false,
-        suppressedUntil: null,
-      },
-      createdAt: new Date().toISOString(),
-      provenance: "live",
-    };
-  });
-
-  const { accepted, skipped } = dedupeCandidates(raw, existing, {
-    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-  });
-  const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
-  });
   return { accepted: scored, skipped };
 }
 
@@ -1119,21 +1041,27 @@ export function generateOutreach(
 ): GeneratedOutreach {
   const jd = campaign.jobAnalysis;
   const firstName = candidate.name.split(" ")[0];
-  const topSkill = candidate.techStack[0] ?? jd.requiredSkills[0] ?? "your work";
+  const topSkill = sharedRequiredSkills(candidate, jd)[0]?.trim() || null;
   const evidence = personalizationEvidence(candidate, jd);
 
   // Compose in the need's language (or the requested one); English is the fallback.
   const lang = language ?? jd.language ?? "en";
   const L = outreachStrings(lang);
+  const greeting = topSkill
+    ? L.greeting(firstName, topSkill, candidate.currentCompany)
+    : L.salutation(firstName);
 
-  const subject = sequenceStep > 1 ? L.subjectFollow(jd.title, firstName) : L.subjectNew(jd.title, topSkill);
+  const subject = sequenceStep > 1
+    ? L.subjectFollow(jd.title, firstName)
+    : topSkill
+      ? L.subjectNew(jd.title, topSkill)
+      : L.subjectGeneric(jd.title);
 
   const emailBody = [
-    L.greeting(firstName, topSkill, candidate.currentCompany),
+    greeting,
     "",
     `${L.roleLine(jd.title, jd.locationType, jd.regions.join("/"))}${jd.equity ? " " + L.equity : ""}`,
-    "",
-    L.whyYou(evidence[0] ?? "", evidence[1]),
+    ...(evidence.length ? ["", L.whyYou(evidence[0], evidence[1])] : []),
     "",
     sequenceStep > 1 ? L.ctaFollow : L.cta,
     // No auto-appended footer: a recruiter's own sign-off is added only when set;
@@ -1144,14 +1072,33 @@ export function generateOutreach(
   // WhatsApp / SMS are short-form: one tight message, no long role/why blocks and no
   // subject line in the body (the channel adapters deliver the body only).
   const phoneBody = [
-    L.greeting(firstName, topSkill, candidate.currentCompany),
+    greeting,
     sequenceStep > 1 ? L.ctaFollow : L.cta,
     ...(voice?.signature && voice.signature.trim() ? [voice.signature.trim()] : []),
   ]
     .filter(Boolean)
     .join(" ");
 
-  const body = channel === "WhatsApp" || channel === "SMS" ? phoneBody : emailBody;
+  // LinkedIn Connect notes must stay ≤200 chars or Send greys out (zero notification).
+  // Prefer a short invite note over a multi-paragraph email body that gets mutilated at send.
+  let body: string;
+  if (channel === "WhatsApp" || channel === "SMS") {
+    body = phoneBody;
+  } else if (channel === "LinkedIn") {
+    const evidenceBit = evidence[0] ? evidence[0].replace(/\.$/, "") : null;
+    const invite = [
+      `Hi ${firstName},`,
+      evidenceBit
+        ? `caught your work on ${evidenceBit.slice(0, 60)}.`
+        : topSkill
+          ? `your ${topSkill} depth stood out.`
+          : `your profile stood out for ${jd.title}.`,
+      `Open to a short chat about a ${jd.title} role?`,
+    ].join(" ");
+    body = fitLinkedInInviteNote(invite).text;
+  } else {
+    body = emailBody;
+  }
 
   // ALWAYS humanize — no AI slop ever.
   return {
@@ -1162,12 +1109,23 @@ export function generateOutreach(
   };
 }
 
+function sharedRequiredSkills(candidate: Candidate, jd: JobAnalysis): string[] {
+  const required = new Set(jd.requiredSkills.map((skill) => skill.trim().toLowerCase()));
+  return candidate.techStack.filter((skill) => required.has(skill.trim().toLowerCase()));
+}
+
 function personalizationEvidence(candidate: Candidate, jd: JobAnalysis): string[] {
   const ev: string[] = [];
-  const shared = candidate.techStack.filter((s) => jd.requiredSkills.includes(s));
+  const shared = sharedRequiredSkills(candidate, jd);
   if (shared.length) ev.push(`You work across ${shared.slice(0, 3).join(", ")}, exactly our core stack`);
-  ev.push(`${candidate.yearsExperience} yrs of depth, currently at ${candidate.currentCompany}`);
-  if (candidate.recentActivity) ev.push(candidate.recentActivity.replace(/\.$/, ""));
+  if (candidate.yearsExperience != null) {
+    ev.push(
+      `${candidate.yearsExperience} yrs of depth${candidate.currentCompany ? `, currently at ${candidate.currentCompany}` : ""}`,
+    );
+  }
+  if (candidate.recentActivity && !/no activity signal/i.test(candidate.recentActivity)) {
+    ev.push(candidate.recentActivity.replace(/\.$/, ""));
+  }
   if (candidate.companyStageExperience.length)
     ev.push(`Experience at ${candidate.companyStageExperience.join(" / ")} stage companies`);
   return ev.slice(0, 3);
@@ -1282,9 +1240,9 @@ const SUGGESTED_ACTION: Record<ReplyIntent, string> = {
 function draftFor(intent: ReplyIntent, first: string): string {
   switch (intent) {
     case "INTERESTED":
-      return `Brilliant, ${first}! Thank you. Here's my calendar so you can grab whatever suits: {{cal_link}}. I'll send a Teams invite the moment you pick a slot. Looking forward to it.`;
+      return `Brilliant, ${first}! Thank you. I'll book a Teams slot on the hiring manager's Outlook calendar and send you the invite — reply with a couple of windows that work this week. Looking forward to it.`;
     case "QUALIFIED_INTEREST":
-      return `Great questions, ${first}. Quick answers: comp and remote policy are both flexible within band, and the team is small and senior. If it's easier to talk it through, here's my calendar: {{cal_link}}.`;
+      return `Great questions, ${first}. Quick answers: comp and remote policy are both flexible within band, and the team is small and senior. Happy to jump on a Teams call booked on the hiring manager's Outlook calendar — share a couple of windows that work and I'll send the invite.`;
     case "NOT_INTERESTED":
       return `Completely understand, ${first}. Thanks for the quick reply. I'll close this out and won't keep nudging. If the timing ever changes, you know where to find me. All the best.`;
     case "REFERRAL":
@@ -1350,7 +1308,7 @@ You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.
 Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
 
 Focus areas: ${candidate.matchBreakdown.slice(0, 2).map((x) => x.label).join(", ")}.
-Teams link: ${b.teamsLink}
+Calendar link: ${b.teamsLink || b.calLink || "To be confirmed"}
 
 Agenda:
 ${b.agenda.map((a) => `- ${a}`).join("\n")}
@@ -1375,7 +1333,7 @@ Hi ${b.candidateName.split(" ")[0]},
 You're booked in. Details:
 • When: ${when}
 • With: ${b.interviewer || "Interviewer to be confirmed"}
-• Where: ${b.teamsLink}
+• Where: ${b.teamsLink || b.calLink || "To be confirmed"}
 
 No prep needed, just bring your questions. Reply here if you need to move it.
 
@@ -1424,6 +1382,10 @@ export function generateWeeklyReport(
       bookingRate,
       avgMatchScore: avg,
       timeToFirstInterviewHours: m.timeToFirstInterviewHours,
+      // Fixed industry-reference figures below (costPerHire, bestDay, bestTime) —
+      // no hire-cost or send-time-vs-outcome data exists in this app to compute
+      // them from. Listed in illustrativeFields so every consumer labels them
+      // as illustrative instead of presenting them as this campaign's real numbers.
       costPerHire: 4200,
       bestChannel: computeBestChannel(inCampaign, messages.filter((msg) => msg.campaignId === campaign.id)),
       bestDay: "Tuesday",
@@ -1436,6 +1398,9 @@ export function generateWeeklyReport(
       `Average match score of accepted candidates is ${avg}.`,
       `${m.interested} candidates expressed interest; ${m.booked} converted to booked interviews.`,
     ],
+    // Generic sourcing-industry patterns, not measured from this campaign's own
+    // messages/replies (see computeBestChannel above for the one metric here
+    // that IS derived from real data). Also listed in illustrativeFields.
     winningPatterns: [
       "Messages that lead with a specific open-source reference reply ~2.1× more often.",
       "Tuesday 09:00–11:00 local sends outperform afternoon sends.",
@@ -1443,6 +1408,7 @@ export function generateWeeklyReport(
     ],
     skillUpdates,
     attentionNeeded: buildAttention(campaign),
+    illustrativeFields: ["performance.costPerHire", "performance.bestDay", "performance.bestTime", "winningPatterns"],
   };
 }
 
@@ -1527,6 +1493,7 @@ function proposeSkillUpdates(
 
 export function exportMarkdownReport(report: WeeklyReport): string {
   const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
+  const illustrative = (path: string) => (report.illustrativeFields.includes(path) ? " _(illustrative)_" : "");
   const lines: string[] = [];
   lines.push(`# Weekly Sourcing Report: ${report.campaignTitle}`);
   lines.push("");
@@ -1551,11 +1518,15 @@ export function exportMarkdownReport(report: WeeklyReport): string {
         : "N/A"
     }`,
   );
-  lines.push(`- **Cost per hire (est.):** $${report.performance.costPerHire.toLocaleString()}`);
+  lines.push(
+    `- **Cost per hire:** $${report.performance.costPerHire.toLocaleString()}${illustrative("performance.costPerHire")}`,
+  );
   lines.push(`- **Best channel:** ${report.performance.bestChannel}`);
-  lines.push(`- **Best day / time:** ${report.performance.bestDay}, ${report.performance.bestTime}`);
+  lines.push(
+    `- **Best day / time:** ${report.performance.bestDay}, ${report.performance.bestTime}${illustrative("performance.bestDay")}`,
+  );
   lines.push("");
-  lines.push("## Winning patterns");
+  lines.push(`## Winning patterns${illustrative("winningPatterns")}`);
   lines.push("");
   report.winningPatterns.forEach((p) => lines.push(`- ${p}`));
   lines.push("");

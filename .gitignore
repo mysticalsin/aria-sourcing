@@ -2,6 +2,8 @@
 /node_modules
 /.localbin/
 /.rocket-fuel/
+/graphify-out/
+/data/llm-wiki/
 /.pnp
 .pnp.js
 
@@ -36,6 +38,8 @@ backups/
 # test artifacts
 .playwright-mcp/
 *.jpeg
+__pycache__/
+*.py[cod]
 
 # local 3D verification screenshots
 /*.png
@@ -59,3 +63,19 @@ aria-mark.png
 
 # operational one-off admin setup helper (reads gitignored secrets)
 set-admin-password.sh
+
+# Claude Code machine-local state. Registered worktrees here also inflate the
+# Bash sandbox profile (one deny rule each) until they are pruned, so they must
+# never be shared between checkouts.
+.claude/launch.json
+.claude/worktrees/
+.claude/.cc-writes/
+
+# End-to-end run evidence. Screenshots, video and raw provider responses from
+# real sourcing runs contain candidate PII (candidate lists, match scores,
+# experience history, scraped profile JSON). Git history is immutable, so
+# committing them would put personal data permanently beyond the reach of the
+# erasure authority in 0033/0041 - the opposite of what that authority exists
+# for. Keep this evidence local, or attach it to a review out of band.
+# .dockerignore and scripts/prod-deploy-app.sh already exclude these paths.
+production-readiness/e2e-*/

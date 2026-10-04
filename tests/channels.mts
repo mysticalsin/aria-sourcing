@@ -31,6 +31,11 @@ function jsonResponse(status: number, body: unknown): Response {
   } as Response;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return Object.fromEntries(Object.entries(value));
+}
+
 const ENV_KEYS = ["WHATSAPP_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"] as const;
 const savedEnv: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
@@ -95,11 +100,17 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
     kind: "approved_template",
     template: { name: "role_intro", language: "en_US", bodyParameters: ["Marco"] },
   });
-  const template = sent?.template as { name?: string; language?: { code?: string }; components?: { type?: string; parameters?: { text?: string }[] }[] } | undefined;
+  const sentPayload = asRecord(sent);
+  const template = asRecord(sentPayload?.template);
+  const language = asRecord(template?.language);
+  const components = Array.isArray(template?.components) ? template.components : [];
+  const firstComponent = asRecord(components[0]);
+  const parameters = Array.isArray(firstComponent?.parameters) ? firstComponent.parameters : [];
+  const firstParameter = asRecord(parameters[0]);
   ok("WhatsApp template -> status sent", res.status === "sent");
-  ok("WhatsApp template -> sends a template payload", sent?.type === "template");
-  ok("WhatsApp template -> preserves approved template name and language", template?.name === "role_intro" && template.language?.code === "en_US");
-  ok("WhatsApp template -> sends typed body parameters", template?.components?.[0]?.parameters?.[0]?.text === "Marco");
+  ok("WhatsApp template -> sends a template payload", sentPayload?.type === "template");
+  ok("WhatsApp template -> preserves approved template name and language", template?.name === "role_intro" && language?.code === "en_US");
+  ok("WhatsApp template -> sends typed body parameters", firstParameter?.text === "Marco");
   restoreFetch();
 }
 

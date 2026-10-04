@@ -10,7 +10,7 @@
 #   ARIA_RELEASE_SHA              exact checked 40-character release commit
 #
 # The harness creates a uniquely marked tenant and synthetic user, persists only
-# synthetic dry-run state, exercises confirmLive=false and manual-only LinkedIn,
+# synthetic dry-run state, exercises confirmLive=false for Email and LinkedIn automatic,
 # proves that neither delivery table changed, and deletes everything it created.
 # Stdout is reserved for one non-secret JSON receipt, emitted only after cleanup
 # and absence verification have succeeded. Progress and errors go to stderr.
@@ -341,7 +341,7 @@ on_exit() {
           campaignDryRunMode: true,
           draftStatus: "Needs Approval",
           emailConfirmLiveFalse: "dry-run",
-          linkedinPolicy: "manual-required",
+          linkedinPolicy: "dry-run",
           outreachLedgerRows: 0,
           messagesOutboundRows: 0,
           cleanupVerified: true
@@ -524,7 +524,8 @@ jq -n \
         },
         fleet:{
           recontactWindowDays:90,bounceRatePauseThreshold:0.05,complaintRatePauseThreshold:0.001,
-          enforceBusinessHours:true,jitter:true,globalDailyCap:0,maxAgents:0
+          enforceBusinessHours:true,jitter:true,globalDailyCap:0,maxAgents:0,
+          deliveryMode:"automatic"
         },
         confidentialityMode:true,defaultLanguage:"en",soundEnabled:false,
         guardrails:{ariaPrompt:"Synthetic acceptance only.",rules:[]},
@@ -570,13 +571,13 @@ app_request email-dry-run POST "$APP_URL/api/outreach/send" "$EMAIL_SEND_BODY" |
 [ "$(jq -er '.status | select(type == "string")' "$HTTP_BODY")" = dry-run ] || \
   fail "email confirmLive=false did not return dry-run."
 
-LINKEDIN_SEND_BODY="$WORK/linkedin-manual.json"
+LINKEDIN_SEND_BODY="$WORK/linkedin-automatic-dry-run.json"
 jq '.channel = "LinkedIn"' "$EMAIL_SEND_BODY" > "$LINKEDIN_SEND_BODY"
-app_request linkedin-manual POST "$APP_URL/api/outreach/send" "$LINKEDIN_SEND_BODY" || \
-  fail "LinkedIn manual-only request failed."
-[ "$HTTP_CODE" = 409 ] || fail "LinkedIn manual-only path returned HTTP $HTTP_CODE."
-[ "$(jq -er '.status | select(type == "string")' "$HTTP_BODY")" = manual-required ] || \
-  fail "LinkedIn did not return manual-required."
+app_request linkedin-automatic-dry-run POST "$APP_URL/api/outreach/send" "$LINKEDIN_SEND_BODY" || \
+  fail "LinkedIn automatic dry-run request failed."
+[ "$HTTP_CODE" = 200 ] || fail "LinkedIn confirmLive=false returned HTTP $HTTP_CODE."
+[ "$(jq -er '.status | select(type == "string")' "$HTTP_BODY")" = dry-run ] || \
+  fail "LinkedIn confirmLive=false did not return dry-run."
 
 log "Proving that no delivery ledger or outbound row was created."
 service_request ledger-zero GET \

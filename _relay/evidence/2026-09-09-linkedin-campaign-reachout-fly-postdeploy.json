@@ -1,0 +1,59 @@
+{
+  "at": "2026-09-09T14:34:10.284Z",
+  "campaignId": "camp_seed_backend",
+  "seatId": "seat_java_vm_01",
+  "computerId": "comp_java_01",
+  "supervisorUrl": "https://aria-mantu-computers.fly.dev",
+  "mock": false,
+  "outcome": {
+    "status": "error",
+    "deliveryState": "unknown",
+    "detail": "LinkedIn login/2FA wall — open Fleet → Computers → Observe / Take control"
+  },
+  "computerCampaignId": "camp_seed_backend",
+  "computerStatus": "help_requested",
+  "computerControl": "bot",
+  "campaignTaggedAudits": [
+    {
+      "action": "ensure",
+      "jobId": null,
+      "detail": "Seat seat_java_vm_01 computer registered"
+    },
+    {
+      "action": "start",
+      "jobId": null,
+      "detail": "Booting isolated Chromium via OpenBot ensure"
+    },
+    {
+      "action": "warmup_navigate",
+      "jobId": null,
+      "detail": "Opened LinkedIn after ensure"
+    },
+    {
+      "action": "ready",
+      "jobId": null,
+      "detail": "Computer ready for bot actions"
+    },
+    {
+      "action": "decide",
+      "jobId": "job_dls2wk7v",
+      "detail": "Accepted job linkedin_send"
+    },
+    {
+      "action": "act",
+      "jobId": "job_dls2wk7v",
+      "detail": "Running linkedin_send"
+    },
+    {
+      "action": "help_requested",
+      "jobId": null,
+      "detail": "LinkedIn login/2FA wall — open Fleet → Computers → Observe / Take control"
+    },
+    {
+      "action": "act_failed",
+      "jobId": "job_dls2wk7v",
+      "detail": "LinkedIn login/2FA wall — open Fleet → Computers → Observe / Take control"
+    }
+  ],
+  "ok": true
+}

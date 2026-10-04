@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Badge,
   Button,
   Drawer,
   Eyebrow,
+  Input,
+  Label,
   useToast,
   useConfirm,
 } from "@/components/ui";
@@ -14,15 +16,23 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
-import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
+import { bookingCalendarSummary } from "@/lib/booking-status";
+import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
+import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
+import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import {
   downloadText,
   formatTimeAgo,
   toneForIntent,
   toneForOutreachStatus,
   toneForStage,
+  type Tone,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
+import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
+import { can } from "@/lib/rbac";
+import { computeCoverage } from "@/lib/enrichment/merge";
+import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
 import { StarBadge, SourceBadge } from "@/components/tania/badges";
 import {
   deriveLeadSource,
@@ -35,6 +45,9 @@ import {
 import type {
   Candidate,
   CandidateStage,
+  EnrichableField,
+  EnrichmentAttempt,
+  FieldProvenance,
   InterviewKind,
   InterviewOutcome,
   LeadSource,
@@ -61,6 +74,7 @@ import {
   EyeOff,
   Github,
   Linkedin,
+  Loader2,
   Lock,
   Mail,
   MailX,
@@ -76,6 +90,116 @@ import {
   UserX,
   Zap,
 } from "lucide-react";
+
+type CandidateErasureAuthority = {
+  obligationId: string;
+  provider: string;
+  attemptCount: number;
+  reference: Record<string, unknown>;
+};
+
+type CandidateErasureScope = {
+  generation: number;
+  open: boolean;
+  candidateId: string | null;
+  campaignId: string | null;
+};
+
+function isCandidateErasureLegalHoldResponse(response: Response, body: unknown): boolean {
+  return response.status === 423
+    && body !== null
+    && typeof body === "object"
+    && !Array.isArray(body)
+    && (body as Record<string, unknown>).code === "candidate_erasure_blocked_legal_hold";
+}
+
+function parseCandidateErasureObligations(value: unknown): CandidateErasureObligation[] | null {
+  if (!Array.isArray(value) || value.length > 100) return null;
+  const parsed: CandidateErasureObligation[] = [];
+  for (const item of value) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return null;
+    const obligation = item as Record<string, unknown>;
+    if (
+      typeof obligation.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(obligation.id)
+      || typeof obligation.provider !== "string"
+      || typeof obligation.status !== "string"
+      || ![
+        "pending_provider",
+        "manual_required",
+        "retryable_failure",
+        "completed",
+        "blocked_legal_hold",
+      ].includes(obligation.status)
+      || !Number.isInteger(obligation.attemptCount)
+      || Number(obligation.attemptCount) < 0
+      || Number(obligation.attemptCount) > 100
+    ) return null;
+    parsed.push({
+      id: obligation.id,
+      provider: obligation.provider,
+      status: obligation.status as CandidateErasureStatus,
+      attemptCount: Number(obligation.attemptCount),
+    });
+  }
+  return parsed;
+}
+
+/** The 7 richness fields the drawer's enrichment panel surfaces as coverage
+ *  chips (docs/superpowers/plans/2026-07-15-enrichment-orchestrator.md, "Wow
+ *  UI") — narrower than the full `ENRICHABLE_FIELDS` (which also has
+ *  `location`/`company`, already shown elsewhere in this drawer). */
+const DRAWER_ENRICHMENT_FIELDS: EnrichableField[] = [
+  "email",
+  "phone",
+  "skills",
+  "experience",
+  "headline",
+  "education",
+  "languages",
+];
+
+const ENRICHMENT_FIELD_LABELS: Record<EnrichableField, string> = {
+  email: "Email",
+  phone: "Phone",
+  headline: "Headline",
+  skills: "Skills",
+  experience: "Experience",
+  education: "Education",
+  languages: "Languages",
+  location: "Location",
+  company: "Company",
+};
+
+const ATTEMPT_STATUS_LABEL: Record<EnrichmentAttempt["status"], string> = {
+  ok: "Found data",
+  no_data: "No match",
+  not_configured: "Connect key",
+  no_key_field: "Can't identify",
+  budget_exceeded: "Budget reached",
+  error: "Error",
+  deferred: "Time budget — re-run",
+};
+
+const ATTEMPT_STATUS_TONE: Record<EnrichmentAttempt["status"], Tone> = {
+  ok: "success",
+  no_data: "neutral",
+  not_configured: "warning",
+  no_key_field: "neutral",
+  budget_exceeded: "danger",
+  error: "danger",
+  deferred: "warning",
+};
+
+/** Confidence -> dot color for a filled coverage chip. Undefined confidence
+ *  (a value present with no recorded score, e.g. legacy/manual data) reads as
+ *  neutral rather than fabricating a level of trust that was never measured. */
+function confidenceDotTone(confidence: number | undefined): string {
+  if (confidence === undefined) return "bg-ink/25";
+  if (confidence >= 0.7) return "bg-success";
+  if (confidence >= 0.4) return "bg-warning";
+  return "bg-danger";
+}
 
 function Section({
   title,
@@ -128,6 +252,7 @@ function personalizationFallbackHook(candidate: Candidate): string {
   const topSkill = candidate.techStack[0];
   if (topSkill) return `${topSkill} background fits this role`;
   if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
+  if (candidate.yearsExperience == null) return "Matched against the role requirements";
   return `${candidate.yearsExperience} yrs of relevant experience`;
 }
 
@@ -161,6 +286,7 @@ function WhyThisPerson({ candidate, message }: { candidate: Candidate; message: 
  *  rounds and #Vivier. All actions are recruiter-initiated ("Human Always Decides"). */
 function TaniaPanel({ c }: { c: Candidate }) {
   const actions = useActions();
+  const role = useRole();
   const { toast } = useToast();
   const settings = useSettings();
   const thresholds = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
@@ -362,6 +488,7 @@ export function CandidateDrawer({
   onClose: () => void;
 }) {
   const actions = useActions();
+  const role = useRole();
   const { toast } = useToast();
   const confirm = useConfirm();
   // Always read the LIVE record so in-drawer mutations (stage, compliance, history)
@@ -372,7 +499,25 @@ export function CandidateDrawer({
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [enrichingApollo, setEnrichingApollo] = useState(false);
   const [revealingSeamless, setRevealingSeamless] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  const [erasureNotice, setErasureNotice] = useState<{
+    status: CandidateErasureStatus;
+    requestId?: string;
+  } | null>(null);
+  const [erasureObligations, setErasureObligations] = useState<CandidateErasureObligation[]>([]);
+  const [erasureAuthority, setErasureAuthority] = useState<CandidateErasureAuthority | null>(null);
+  const [erasureEvidenceSha256, setErasureEvidenceSha256] = useState("");
+  const [erasureCaseReference, setErasureCaseReference] = useState("");
+  const [erasureActionId, setErasureActionId] = useState<string | null>(null);
+  const [erasureQueueError, setErasureQueueError] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState(false);
+  // Index into enrichment.attempts marking where the LAST "Enrich" click's
+  // results start — null until the first click this session, so the
+  // per-provider progress list stays empty (not a wall of prior history)
+  // until the recruiter actually runs the waterfall from this drawer.
+  const [attemptsBaseline, setAttemptsBaseline] = useState<number | null>(null);
   const rejectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seamlessPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -385,10 +530,163 @@ export function CandidateDrawer({
   actionsRef.current = actions;
 
   const candidateId = candidate?.id ?? null;
+  const candidateCampaignId = candidate?.campaignId ?? null;
+  const erasureGenerationRef = useRef(0);
+  const erasureControllersRef = useRef(new Set<AbortController>());
+  const erasureScopeRef = useRef<Omit<CandidateErasureScope, "generation">>({
+    open,
+    candidateId,
+    campaignId: candidateCampaignId,
+  });
+  erasureScopeRef.current = {
+    open,
+    candidateId,
+    campaignId: candidateCampaignId,
+  };
+
+  const captureErasureScope = useCallback((): CandidateErasureScope => ({
+    generation: erasureGenerationRef.current,
+    ...erasureScopeRef.current,
+  }), []);
+
+  const isErasureScopeCurrent = useCallback((scope: CandidateErasureScope): boolean => {
+    const currentScope = erasureScopeRef.current;
+    return scope.generation === erasureGenerationRef.current
+      && currentScope.open
+      && currentScope.candidateId === scope.candidateId
+      && currentScope.campaignId === scope.campaignId;
+  }, []);
+
+  const abortErasureRequests = useCallback(() => {
+    for (const controller of erasureControllersRef.current) controller.abort();
+    erasureControllersRef.current.clear();
+  }, []);
+
+  const invalidateErasureRequests = useCallback(() => {
+    erasureGenerationRef.current += 1;
+    abortErasureRequests();
+  }, [abortErasureRequests]);
+
+  const beginErasureRequest = useCallback(() => {
+    const controller = new AbortController();
+    erasureControllersRef.current.add(controller);
+    return { controller, scope: captureErasureScope() };
+  }, [captureErasureScope]);
+
+  const releaseErasureRequest = useCallback((controller: AbortController) => {
+    erasureControllersRef.current.delete(controller);
+  }, []);
+
   useEffect(() => {
+    invalidateErasureRequests();
     setRevealed(false);
     setNoteText("");
-  }, [candidateId, open]);
+    setErasing(false);
+    setErasureNotice(null);
+    setErasureObligations([]);
+    setErasureAuthority(null);
+    setErasureEvidenceSha256("");
+    setErasureCaseReference("");
+    setErasureActionId(null);
+    setErasureQueueError(null);
+    setAttemptsBaseline(null);
+    return invalidateErasureRequests;
+  }, [candidateId, invalidateErasureRequests, open]);
+
+  const refreshErasureQueue = useCallback(async () => {
+    if (!open || role !== "admin" || !supabaseEnabled || !candidateId || !candidateCampaignId) {
+      return;
+    }
+    const { controller, scope } = beginErasureRequest();
+    if (!isErasureScopeCurrent(scope)) {
+      releaseErasureRequest(controller);
+      return;
+    }
+    try {
+      const response = await fetch("/api/admin/candidates/erasure", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "list" }),
+        signal: controller.signal,
+      });
+      if (!isErasureScopeCurrent(scope)) return;
+      const body: unknown = await response.json().catch(() => null);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (!response.ok || body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw new Error("queue unavailable");
+      }
+      const requests = (body as Record<string, unknown>).requests;
+      if (!Array.isArray(requests) || requests.length > 100) throw new Error("invalid queue");
+      const matching = requests.find((item) => {
+        if (item === null || typeof item !== "object" || Array.isArray(item)) return false;
+        const request = item as Record<string, unknown>;
+        return request.candidateId === candidateId && request.campaignId === candidateCampaignId;
+      });
+      if (!matching || typeof matching !== "object" || Array.isArray(matching)) return;
+      const request = matching as Record<string, unknown>;
+      const status = request.status;
+      const obligations = parseCandidateErasureObligations(request.obligations);
+      if (
+        typeof request.requestId !== "string"
+        || typeof status !== "string"
+        || ![
+          "pending_provider",
+          "manual_required",
+          "retryable_failure",
+          "blocked_legal_hold",
+        ].includes(status)
+        || obligations === null
+      ) throw new Error("invalid queue item");
+      setErasureNotice({
+        status: status as CandidateErasureStatus,
+        requestId: request.requestId,
+      });
+      setErasureObligations(obligations);
+      setErasureQueueError(null);
+    } catch {
+      if (controller.signal.aborted || !isErasureScopeCurrent(scope)) return;
+      setErasureQueueError("The durable provider-erasure queue could not be loaded.");
+    } finally {
+      releaseErasureRequest(controller);
+    }
+  }, [
+    beginErasureRequest,
+    candidateCampaignId,
+    candidateId,
+    isErasureScopeCurrent,
+    open,
+    releaseErasureRequest,
+    role,
+  ]);
+
+  useEffect(() => {
+    void refreshErasureQueue();
+  }, [refreshErasureQueue]);
+
+  const applyErasureLegalHold = useCallback((
+    scope: CandidateErasureScope,
+    requestId?: string,
+  ) => {
+    if (!isErasureScopeCurrent(scope)) return false;
+    setErasureAuthority(null);
+    setErasureEvidenceSha256("");
+    setErasureCaseReference("");
+    setErasureNotice((current) => ({
+      status: "blocked_legal_hold",
+      requestId: requestId ?? current?.requestId,
+    }));
+    setErasureQueueError(
+      "Erasure is blocked by a legal hold. Decrypted provider authority was cleared.",
+    );
+    toast({
+      title: "Erasure blocked by legal hold",
+      description: "No erasure state transition was recorded. Decrypted provider authority was cleared.",
+      variant: "warning",
+    });
+    return true;
+  }, [isErasureScopeCurrent, toast]);
 
   // Stop polling on unmount so a closed drawer never keeps hitting
   // /api/source/seamless/research-status in the background.
@@ -440,6 +738,7 @@ export function CandidateDrawer({
   }
 
   const c = liveCandidate ?? candidate;
+  const erasureTombstone = isCandidateErasureTombstone(c);
   const purpose = hasOutreachPurpose(c.stage);
   const masked = confidentialityMode && !purpose && !revealed;
   const dc = applyConfidentiality(c, {
@@ -488,6 +787,7 @@ export function CandidateDrawer({
   };
 
   const handleSetStage = (stage: CandidateStage) => {
+    if (erasureTombstone) return;
     actions.setCandidateStage(c.id, stage);
     toast({
       title: `Stage updated: ${stage}`,
@@ -502,6 +802,7 @@ export function CandidateDrawer({
   };
 
   const handleAddNote = () => {
+    if (erasureTombstone) return;
     const clean = noteText.trim();
     if (!clean) return;
     actions.addCandidateNote(c.id, clean);
@@ -512,6 +813,7 @@ export function CandidateDrawer({
   // Committed on every keystroke (debounced), not onBlur — so an edit isn't lost
   // if the user hits Escape before ever blurring the field (see CAND-P0-1).
   const handleRejectionReasonChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    if (erasureTombstone) return;
     const value = e.target.value;
     pendingRejection.current = { id: c.id, value };
     if (rejectionTimer.current) clearTimeout(rejectionTimer.current);
@@ -524,6 +826,7 @@ export function CandidateDrawer({
   };
 
   const handlePhoneChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (erasureTombstone) return;
     const value = e.target.value;
     pendingPhone.current = { id: c.id, value };
     if (phoneTimer.current) clearTimeout(phoneTimer.current);
@@ -553,8 +856,8 @@ export function CandidateDrawer({
     const res = await actions.createBookingFor(c.id);
     if (res.ok) {
       toast({
-        title: "Interview booked (dry-run)",
-        description: `With ${res.booking.interviewer}. Teams + Cal.com links generated.`,
+        title: "Interview booked",
+        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
         variant: "success",
       });
     } else {
@@ -573,12 +876,220 @@ export function CandidateDrawer({
   };
 
   const handleAnonymize = async () => {
-    if (!(await confirm({ title: `Anonymize ${c.name}?`, description: "This redacts their PII and cannot be undone.", confirmLabel: "Anonymize", danger: true }))) return;
-    actions.anonymizeCandidate(c.id);
-    toast({ title: "Candidate anonymized", description: "PII has been redacted.", variant: "success" });
+    if (erasureTombstone) return;
+    const scope = captureErasureScope();
+    const confirmed = await confirm({ title: `Anonymize ${c.name}?`, description: "This removes operational candidate data and provider receipts. Required suppression records follow their controlled retention policy. This cannot be undone.", confirmLabel: "Anonymize", danger: true });
+    if (!isErasureScopeCurrent(scope) || !confirmed) return;
+    if (rejectionTimer.current) clearTimeout(rejectionTimer.current);
+    if (phoneTimer.current) clearTimeout(phoneTimer.current);
+    rejectionTimer.current = null;
+    phoneTimer.current = null;
+    pendingRejection.current = null;
+    pendingPhone.current = null;
+    setErasing(true);
+    try {
+      const result = await actions.anonymizeCandidate(c.id);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (!result.ok) {
+        if (result.status === "blocked_legal_hold") {
+          applyErasureLegalHold(scope, result.requestId);
+          await refreshErasureQueue();
+          if (!isErasureScopeCurrent(scope)) return;
+          return;
+        }
+        if (result.status) {
+          setErasureNotice({ status: result.status, requestId: result.requestId });
+          setErasureObligations([]);
+        }
+        toast({
+          title: "Candidate anonymization failed",
+          description: result.error,
+          variant: "error",
+        });
+        return;
+      }
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      invalidateErasureRequests();
+      onClose();
+      if (result.completed) {
+        toast({
+          title: "Candidate erasure completed",
+          description: result.workspaceRefreshRequired
+            ? "Server erasure completed. Refresh the workspace before reopening this record."
+            : "Candidate data was scrubbed and the permanent suppression tombstone is in place.",
+          variant: "success",
+        });
+        return;
+      }
+      toast({
+        title: "Provider action required",
+        description: result.status === "manual_required"
+          ? "Candidate data was scrubbed. Reopen the tombstone to record manual provider deletion evidence."
+          : result.status === "retryable_failure"
+            ? "Candidate data was scrubbed. Reopen the tombstone to retry the provider deletion record."
+            : "Candidate data was scrubbed. Reopen the tombstone to manage the pending provider deletion.",
+        variant: "warning",
+      });
+    } catch {
+      if (!isErasureScopeCurrent(scope)) return;
+      toast({
+        title: "Candidate anonymization failed",
+        description: "Candidate erasure did not return a valid completion receipt.",
+        variant: "error",
+      });
+    } finally {
+      if (isErasureScopeCurrent(scope)) setErasing(false);
+    }
+  };
+
+  const handleInspectErasureAuthority = async (obligation: CandidateErasureObligation) => {
+    const { controller, scope } = beginErasureRequest();
+    if (!isErasureScopeCurrent(scope)) {
+      releaseErasureRequest(controller);
+      return;
+    }
+    setErasureActionId(obligation.id);
+    setErasureQueueError(null);
+    try {
+      const response = await fetch("/api/admin/candidates/erasure", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "inspect", obligationId: obligation.id }),
+        signal: controller.signal,
+      });
+      if (!isErasureScopeCurrent(scope)) return;
+      const body: unknown = await response.json().catch(() => null);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (isCandidateErasureLegalHoldResponse(response, body)) {
+        applyErasureLegalHold(scope);
+        await refreshErasureQueue();
+        if (!isErasureScopeCurrent(scope)) return;
+        return;
+      }
+      if (!response.ok || body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw new Error("authority unavailable");
+      }
+      const result = body as Record<string, unknown>;
+      if (
+        result.ok !== true
+        || result.obligationId !== obligation.id
+        || typeof result.provider !== "string"
+        || !Number.isInteger(result.attemptCount)
+        || result.reference === null
+        || typeof result.reference !== "object"
+        || Array.isArray(result.reference)
+      ) throw new Error("invalid authority");
+      setErasureAuthority({
+        obligationId: obligation.id,
+        provider: result.provider,
+        attemptCount: Number(result.attemptCount),
+        reference: result.reference as Record<string, unknown>,
+      });
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+    } catch {
+      if (controller.signal.aborted || !isErasureScopeCurrent(scope)) return;
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      setErasureQueueError("The provider deletion reference could not be opened.");
+    } finally {
+      releaseErasureRequest(controller);
+      if (isErasureScopeCurrent(scope)) setErasureActionId(null);
+    }
+  };
+
+  const handleCompleteErasureObligation = async () => {
+    if (!erasureAuthority) return;
+    const authority = erasureAuthority;
+    const evidenceSha256 = erasureEvidenceSha256.trim().toLowerCase();
+    const caseReference = erasureCaseReference.trim();
+    if (!/^[0-9a-f]{64}$/.test(evidenceSha256)) {
+      setErasureQueueError("Evidence SHA-256 must be exactly 64 hexadecimal characters.");
+      return;
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,119}$/.test(caseReference)) {
+      setErasureQueueError("Case reference must use 1–120 safe reference characters.");
+      return;
+    }
+    const { controller, scope } = beginErasureRequest();
+    if (!isErasureScopeCurrent(scope)) {
+      releaseErasureRequest(controller);
+      return;
+    }
+    setErasureActionId(authority.obligationId);
+    setErasureQueueError(null);
+    try {
+      const response = await fetch("/api/admin/candidates/erasure", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "complete",
+          obligationId: authority.obligationId,
+          expectedAttemptCount: authority.attemptCount,
+          evidenceSha256,
+          caseReference,
+        }),
+        signal: controller.signal,
+      });
+      if (!isErasureScopeCurrent(scope)) return;
+      const body: unknown = await response.json().catch(() => null);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (isCandidateErasureLegalHoldResponse(response, body)) {
+        applyErasureLegalHold(scope);
+        await refreshErasureQueue();
+        if (!isErasureScopeCurrent(scope)) return;
+        return;
+      }
+      if (!response.ok || body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw new Error("completion unavailable");
+      }
+      const result = body as Record<string, unknown>;
+      const status = result.status;
+      const obligations = parseCandidateErasureObligations(result.obligations);
+      if (
+        result.ok !== true
+        || typeof result.requestId !== "string"
+        || typeof status !== "string"
+        || !["pending_provider", "manual_required", "retryable_failure", "completed"].includes(status)
+        || obligations === null
+        || (status === "completed") !== (result.completed === true)
+      ) throw new Error("invalid completion receipt");
+      setErasureNotice({
+        status: status as CandidateErasureStatus,
+        requestId: result.requestId,
+      });
+      setErasureObligations(obligations);
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      toast({
+        title: status === "completed" ? "Candidate erasure completed" : "Provider deletion recorded",
+        description: status === "completed"
+          ? "Every provider obligation now has an administrator-recorded evidence reference."
+          : "Other provider obligations remain in the durable queue.",
+        variant: status === "completed" ? "success" : "warning",
+      });
+    } catch {
+      if (controller.signal.aborted || !isErasureScopeCurrent(scope)) return;
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      setErasureQueueError("Provider deletion completion was not recorded. Refresh and retry.");
+    } finally {
+      releaseErasureRequest(controller);
+      if (isErasureScopeCurrent(scope)) setErasureActionId(null);
+    }
   };
 
   const handleSuppress = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Suppress contact with ${c.name}?`,
@@ -593,6 +1104,7 @@ export function CandidateDrawer({
   };
 
   const handleDoNotContact = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Mark ${c.name} as do-not-contact?`,
@@ -607,20 +1119,65 @@ export function CandidateDrawer({
   };
 
   const handleEnrichApollo = async () => {
-    if (
-      !(await confirm({
+    setEnrichingApollo(true);
+    try {
+      const prepared = await actions.prepareApolloEnrichment(c.id);
+      if (!prepared.ok) {
+        toast({
+          title: prepared.code === "APOLLO_QUOTA_EXCEEDED"
+            ? "Apollo limit reached"
+            : prepared.code === "APOLLO_RECONCILIATION_REQUIRED"
+              ? "Reconciliation required"
+              : "Apollo enrichment unavailable",
+          description: prepared.error,
+          variant: "error",
+        });
+        return;
+      }
+
+      if (!(await confirm({
         title: `Enrich ${c.name} via Apollo?`,
-        description:
-          "Reveals their personal email (and phone, if Apollo has one). Costs 1 Apollo credit on a match, 0 if not found.",
-        confirmLabel: "Enrich (1 credit)",
-      }))
-    )
-      return;
-    const res = await actions.enrichApolloCandidate(c.id);
+        description: "Reveals email only for this candidate and may use up to 1 Apollo credit.",
+        confirmLabel: "Reveal email (up to 1 credit)",
+      }))) {
+        return;
+      }
+
+      const res = await actions.enrichApolloCandidate(c.id, prepared.confirmationNonce);
+      toast({
+        title: res.revealed
+          ? "Email revealed"
+          : res.ok
+            ? "No email found"
+            : res.code === "APOLLO_RECONCILIATION_REQUIRED" || res.code === "APOLLO_OUTCOME_UNKNOWN"
+              ? "Reconciliation required"
+              : res.code === "APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION" || res.code === "APOLLO_CONFIRMATION_INVALID"
+                ? "New confirmation required"
+                : res.code === "APOLLO_QUOTA_EXCEEDED"
+                  ? "Apollo limit reached"
+                  : "Enrichment failed",
+        description: res.detail,
+        variant: res.revealed ? "success" : res.ok ? "info" : "error",
+      });
+    } finally {
+      setEnrichingApollo(false);
+    }
+  };
+
+  // Unified cross-provider enrichment (docs/superpowers/plans/
+  // 2026-07-15-enrichment-orchestrator.md) — runs the cost-ordered waterfall
+  // across every configured provider that can identify this candidate,
+  // regardless of which platform originally sourced them. Complements
+  // (does not replace) the single-provider Apollo/Seamless actions above.
+  const handleEnrich = async () => {
+    setAttemptsBaseline((c.enrichment?.attempts ?? []).length);
+    setEnriching(true);
+    const res = await actions.enrichCandidate(c.id);
+    setEnriching(false);
     toast({
-      title: res.revealed ? "Contact details revealed" : res.ok ? "No contact details found" : "Enrichment failed",
+      title: res.ok ? (res.filled.length > 0 ? "Enrichment complete" : "No new data found") : "Enrichment failed",
       description: res.detail,
-      variant: res.revealed ? "success" : res.ok ? "info" : "error",
+      variant: res.ok ? (res.filled.length > 0 ? "success" : "info") : "error",
     });
   };
 
@@ -660,6 +1217,7 @@ export function CandidateDrawer({
   };
 
   const handleUnsubscribe = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Unsubscribe ${c.name}?`,
@@ -674,6 +1232,7 @@ export function CandidateDrawer({
   };
 
   const handleRestoreContact = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Restore contact with ${c.name}?`,
@@ -697,7 +1256,20 @@ export function CandidateDrawer({
     });
   };
 
-  const contactBlocked = flags.doNotContact || flags.suppressed || flags.unsubscribed;
+  const contactBlocked = erasureTombstone || flags.doNotContact || flags.suppressed || flags.unsubscribed;
+
+  // Unified enrichment panel derivations. `coverage` is the source of truth
+  // for "is this field present" (a homed field like email can be present from
+  // sourcing time with no provenance record); `fieldProvenance` supplies the
+  // "who filled it" badge only when known — a covered-but-unattributed field
+  // (legacy/manual data) still renders as filled, just without a provider tag.
+  const canEnrich = can(role, "source");
+  const enrichmentCoverage = computeCoverage(c);
+  const fieldProvenance: Partial<Record<EnrichableField, FieldProvenance>> = c.enrichment?.fieldProvenance ?? {};
+  const eligibleProviders = ENRICHMENT_PROVIDERS.filter((p) => p.keyField(c) != null);
+  const enrichmentSpend = (c.enrichment?.attempts ?? []).reduce((sum, a) => sum + a.costUnits, 0);
+  const recentEnrichmentAttempts: EnrichmentAttempt[] =
+    attemptsBaseline !== null ? (c.enrichment?.attempts ?? []).slice(attemptsBaseline) : [];
 
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
@@ -742,7 +1314,11 @@ export function CandidateDrawer({
       open={open}
       onClose={handleClose}
       title={dc.name}
-      description={masked ? "Confidential candidate · PII minimized" : `${c.currentTitle} @ ${c.currentCompany}`}
+      description={
+        masked
+          ? "Confidential candidate · PII minimized"
+          : [c.currentTitle, c.currentCompany].filter(Boolean).join(" @ ") || "Role not provided"
+      }
       footer={footer}
       width="max-w-2xl"
     >
@@ -756,6 +1332,11 @@ export function CandidateDrawer({
           {c.provenance === "synthetic" && (
             <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
               Synthetic
+            </Badge>
+          )}
+          {c.provenance === "manual" && (
+            <Badge tone="warning" size="sm" title="Operator-entered profile">
+              Manual
             </Badge>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
@@ -789,12 +1370,19 @@ export function CandidateDrawer({
                   PII minimized (confidential)
                 </span>
               )}
-              {c.sourcePlatform === "Apollo" && !c.email && (
-                <Button variant="outline" size="sm" leftIcon={<Zap className="h-4 w-4" />} onClick={handleEnrichApollo}>
-                  Enrich via Apollo
+              {!erasureTombstone && c.sourcePlatform === "Apollo" && !c.email && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Zap className="h-4 w-4" />}
+                  onClick={handleEnrichApollo}
+                  loading={enrichingApollo}
+                  disabled={enrichingApollo}
+                >
+                  {enrichingApollo ? "Preparing…" : "Enrich via Apollo"}
                 </Button>
               )}
-              {c.sourcePlatform === "Seamless" && !c.email && (
+              {!erasureTombstone && experimentalPaidSourcingEnabled && c.sourcePlatform === "Seamless" && !c.email && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -807,7 +1395,7 @@ export function CandidateDrawer({
                 </Button>
               )}
             </div>
-            {!masked && (
+            {!masked && !erasureTombstone && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
                 <span className="inline-flex items-center gap-1.5 text-ink-soft">
                   <Phone className="h-4 w-4" aria-hidden />
@@ -875,7 +1463,7 @@ export function CandidateDrawer({
                     {c.sourcePlatform}
                   </a>
                 ))}
-              {masked && (
+              {masked && !erasureTombstone && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -918,6 +1506,103 @@ export function CandidateDrawer({
           )}
         </div>
 
+        <Section title="Enrichment" icon={<Zap className="h-4 w-4" />}>
+          {!canEnrich ? (
+            <p className="text-sm text-muted">You don&apos;t have permission to enrich candidates.</p>
+          ) : (
+            <div className="space-y-3">
+              <ul className="flex flex-wrap gap-1.5" aria-label="Field coverage">
+                {DRAWER_ENRICHMENT_FIELDS.map((field) => {
+                  const filled = enrichmentCoverage.includes(field);
+                  const prov = fieldProvenance[field];
+                  return (
+                    <li key={field}>
+                      {filled ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-xs font-semibold text-success ring-1 ring-inset ring-success/20"
+                          title={
+                            prov
+                              ? `Supplied by ${prov.provider}${prov.confidence !== undefined ? ` · confidence ${Math.round(prov.confidence * 100)}%` : ""}`
+                              : "Present (source not tracked)"
+                          }
+                        >
+                          <span className={`h-2 w-2 rounded-full ${confidenceDotTone(prov?.confidence)}`} aria-hidden />
+                          {ENRICHMENT_FIELD_LABELS[field]}
+                          {prov && <span className="text-[0.625rem] font-medium text-success/70">· {prov.provider}</span>}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.04] px-2.5 py-1 text-xs font-medium text-muted ring-1 ring-inset ring-ink/10">
+                          <Circle className="h-2.5 w-2.5" aria-hidden />
+                          {ENRICHMENT_FIELD_LABELS[field]} · missing
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Zap className="h-4 w-4" />}
+                  onClick={handleEnrich}
+                  loading={enriching}
+                  disabled={enriching}
+                >
+                  {enriching ? "Enriching…" : "Enrich"}
+                </Button>
+                <span className="text-xs text-muted">
+                  {enrichmentSpend > 0 ? `${enrichmentSpend} unit(s) spent on this candidate` : "No spend yet"}
+                </span>
+              </div>
+
+              {(enriching || recentEnrichmentAttempts.length > 0) && (
+                <ul
+                  className="space-y-1.5"
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Enrichment progress by provider"
+                >
+                  {enriching && eligibleProviders.length === 0 && (
+                    <li className="text-sm text-muted">
+                      No configured provider can identify this candidate (missing name, company, or LinkedIn URL).
+                    </li>
+                  )}
+                  {enriching
+                    ? eligibleProviders.map((p) => (
+                        <li
+                          key={p.id}
+                          className="flex items-center gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm text-muted"
+                        >
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                          {p.label} — running…
+                        </li>
+                      ))
+                    : recentEnrichmentAttempts.map((a, i) => (
+                        <li
+                          key={`${a.provider}-${a.at}-${i}`}
+                          className="flex items-center justify-between gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm"
+                        >
+                          <span className="font-medium text-ink-soft">{a.provider}</span>
+                          <span className="flex items-center gap-2">
+                            {a.fieldsFilled.length > 0 && (
+                              <span className="text-xs text-muted">
+                                {a.fieldsFilled.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")}
+                              </span>
+                            )}
+                            <Badge tone={ATTEMPT_STATUS_TONE[a.status]} size="sm" title={a.detail}>
+                              {ATTEMPT_STATUS_LABEL[a.status]}
+                            </Badge>
+                          </span>
+                        </li>
+                      ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </Section>
+
         <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
           <div className="grid gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">
             <div className="flex justify-center sm:justify-start">
@@ -935,7 +1620,7 @@ export function CandidateDrawer({
         {latestOutreachMessage && <WhyThisPerson candidate={c} message={latestOutreachMessage} />}
 
         {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
-        <TaniaPanel c={c} />
+        {!erasureTombstone && <TaniaPanel c={c} />}
 
         {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
         {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
@@ -953,7 +1638,8 @@ export function CandidateDrawer({
                 key={stage}
                 variant={c.stage === stage ? "primary" : "outline"}
                 size="sm"
-                disabled={c.stage === stage}
+                disabled={erasureTombstone || c.stage === stage}
+                title={erasureTombstone ? "Permanent erasure tombstones cannot change stage" : undefined}
                 onClick={() => handleSetStage(stage)}
               >
                 {stage}
@@ -973,6 +1659,7 @@ export function CandidateDrawer({
                 key={c.id}
                 defaultValue={c.rejectionReason ?? ""}
                 onChange={handleRejectionReasonChange}
+                disabled={erasureTombstone}
                 placeholder="Why was this candidate rejected? Logged to the activity trail."
                 rows={2}
                 className="w-full rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
@@ -991,7 +1678,7 @@ export function CandidateDrawer({
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Experience</dt>
               <dd className="mt-0.5 text-sm font-semibold text-ink tabular-nums">
-                {c.yearsExperience} yrs
+                {c.yearsExperience == null ? "Not provided" : `${c.yearsExperience} yrs`}
               </dd>
             </div>
             <div className="col-span-2 sm:col-span-2">
@@ -1008,6 +1695,32 @@ export function CandidateDrawer({
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Industry</p>
             <Chips items={c.industryExperience} label="Industry experience" />
           </div>
+          {c.experience?.length ? (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Work history</p>
+              <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
+                {c.experience.map((line, i) => (
+                  <li key={`exp-${i}-${line}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {c.education?.length ? (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Education</p>
+              <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
+                {c.education.map((line, i) => (
+                  <li key={`edu-${i}-${line}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {c.languages?.length ? (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Languages</p>
+              <Chips items={c.languages} label="Languages" />
+            </div>
+          ) : null}
         </Section>
 
         <Section title="Recent activity" icon={<Clock className="h-4 w-4" />}>
@@ -1019,12 +1732,13 @@ export function CandidateDrawer({
             <textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
+              disabled={erasureTombstone}
               placeholder="Add a note for the team…"
               rows={2}
               aria-label="Add a recruiter note"
               className="min-h-[44px] flex-1 rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
             />
-            <Button variant="outline" size="sm" onClick={handleAddNote} disabled={!noteText.trim()}>
+            <Button variant="outline" size="sm" onClick={handleAddNote} disabled={erasureTombstone || !noteText.trim()}>
               Add
             </Button>
           </div>
@@ -1094,24 +1808,154 @@ export function CandidateDrawer({
             Honor candidate rights immediately. Export and anonymize support GDPR; suppression and
             do-not-contact enforce exclusion across all outreach.
           </p>
+          {erasureNotice && (
+            <div
+              className={`rounded-xl border px-3 py-2 text-sm ${
+                erasureNotice.status === "completed"
+                  ? "border-success/30 bg-success/5 text-success"
+                  : erasureNotice.status === "blocked_legal_hold"
+                    ? "border-danger/30 bg-danger/5 text-danger"
+                    : "border-warning/30 bg-warning/5 text-warning"
+              }`}
+              role="status"
+            >
+              <p className="font-semibold">
+                {erasureNotice.status === "completed"
+                  ? "Candidate erasure completed"
+                  : erasureNotice.status === "blocked_legal_hold"
+                    ? "Erasure blocked by legal hold"
+                    : erasureNotice.status === "manual_required"
+                      ? "Provider action required"
+                      : erasureNotice.status === "retryable_failure"
+                        ? "Provider erasure retry required"
+                        : "Provider erasure pending"}
+              </p>
+              {erasureNotice.requestId && (
+                <p className="mt-1 font-mono text-xs opacity-80">
+                  Request {erasureNotice.requestId}
+                </p>
+              )}
+            </div>
+          )}
+          {erasureQueueError && (
+            <p className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert">
+              {erasureQueueError}
+            </p>
+          )}
+          {erasureObligations.some((item) => item.status !== "completed") && (
+            <div className="space-y-2 rounded-xl border border-warning/30 bg-warning/5 p-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">Durable provider-erasure queue</p>
+                <p className="mt-1 text-xs text-muted">
+                  Provider deletion is not complete until an administrator confirms the provider outcome in the approved case system and records its evidence reference.
+                </p>
+              </div>
+              <ul className="space-y-2">
+                {erasureObligations.filter((item) => item.status !== "completed").map((obligation) => (
+                  <li key={obligation.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">{obligation.provider}</p>
+                      <p className="text-xs text-muted">
+                        {obligation.status.replaceAll("_", " ")} · attempt {obligation.attemptCount}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={erasureActionId !== null}
+                      onClick={() => void handleInspectErasureAuthority(obligation)}
+                    >
+                      {erasureActionId === obligation.id ? "Opening…" : "Open authority"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {erasureAuthority && (
+            <div className="space-y-3 rounded-xl border border-ink/10 bg-ink/[0.03] p-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Record {erasureAuthority.provider} deletion evidence
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  Sensitive provider authority is decrypted only for this explicit admin action. ARIA records the reference and SHA-256 but does not inspect the evidence artifact or contact the provider.
+                </p>
+              </div>
+              <pre className="max-h-40 overflow-auto rounded-lg bg-ink p-3 text-xs text-white">
+                {JSON.stringify(erasureAuthority.reference, null, 2)}
+              </pre>
+              <div className="space-y-1.5">
+                <Label htmlFor={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}>
+                  Provider evidence SHA-256
+                </Label>
+                <Input
+                  id={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}
+                  value={erasureEvidenceSha256}
+                  onChange={(event) => setErasureEvidenceSha256(event.target.value)}
+                  placeholder="64 lowercase hexadecimal characters"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`candidate-erasure-case-${erasureAuthority.obligationId}`}>
+                  Provider case reference
+                </Label>
+                <Input
+                  id={`candidate-erasure-case-${erasureAuthority.obligationId}`}
+                  value={erasureCaseReference}
+                  onChange={(event) => setErasureCaseReference(event.target.value)}
+                  placeholder="case:provider-123"
+                  maxLength={120}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={erasureActionId !== null}
+                  onClick={() => void handleCompleteErasureObligation()}
+                >
+                  {erasureActionId === erasureAuthority.obligationId
+                    ? "Recording…"
+                    : "Record evidence reference"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={erasureActionId !== null}
+                  onClick={() => setErasureAuthority(null)}
+                >
+                  Close authority
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button variant="outline" size="sm" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
               Export data
             </Button>
-            <Button variant="outline" size="sm" leftIcon={<UserX className="h-4 w-4" />} onClick={handleAnonymize}>
-              Anonymize
-            </Button>
-            <Button variant="outline" size="sm" leftIcon={<EyeOff className="h-4 w-4" />} onClick={handleSuppress}>
-              Suppress contact
-            </Button>
-            <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
-              Mark do-not-contact
-            </Button>
-            <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
-              Unsubscribe
-            </Button>
+            {!erasureTombstone && (
+              <>
+                <Button variant="outline" size="sm" leftIcon={<UserX className="h-4 w-4" />} onClick={handleAnonymize} disabled={erasing}>
+                  {erasing ? "Erasing…" : "Anonymize"}
+                </Button>
+                <Button variant="outline" size="sm" leftIcon={<EyeOff className="h-4 w-4" />} onClick={handleSuppress}>
+                  Suppress contact
+                </Button>
+                <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
+                  Mark do-not-contact
+                </Button>
+                <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
+                  Unsubscribe
+                </Button>
+              </>
+            )}
           </div>
-          {(flags.suppressed || flags.doNotContact) && (
+          {!erasureTombstone && (flags.suppressed || flags.doNotContact) && (
             <Button
               variant="secondary"
               size="sm"

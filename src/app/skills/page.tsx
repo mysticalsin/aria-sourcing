@@ -16,6 +16,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { SkillCard } from "@/components/skills/skill-card";
 import { LearningSession } from "@/components/skills/learning-session";
+import { LinkedInUiLessonsCard } from "@/components/skills/linkedin-ui-lessons-card";
 import {
   useHydrated,
   useActiveCampaign,
@@ -131,8 +132,15 @@ function ProposalCard({
 
   function accept() {
     if (!canEdit) return;
-    actions.acceptSkillLearning(proposal.skill);
-    actions.setSkillUpdateStatus(campaignId, proposal.id, "accepted");
+    const accepted = actions.setSkillUpdateStatus(campaignId, proposal.id, "accepted");
+    if (!accepted) {
+      toast({
+        title: "Couldn't save the learning decision",
+        description: "Refresh the campaign and try again.",
+        variant: "error",
+      });
+      return;
+    }
     toast({
       title: "Learning accepted",
       description: `${proposal.title} is now baked into ${proposal.skill}.md. It applies on the next run.`,
@@ -142,7 +150,15 @@ function ProposalCard({
 
   function dismiss() {
     if (!canEdit) return;
-    actions.setSkillUpdateStatus(campaignId, proposal.id, "rejected");
+    const rejected = actions.setSkillUpdateStatus(campaignId, proposal.id, "rejected");
+    if (!rejected) {
+      toast({
+        title: "Couldn't save the learning decision",
+        description: "Refresh the campaign and try again.",
+        variant: "error",
+      });
+      return;
+    }
     toast({
       title: "Proposal dismissed",
       description: `${proposal.title} was not applied.`,
@@ -294,6 +310,8 @@ export default function SkillsPage() {
       >
         <div className="space-y-8">
           <LoopExplainer />
+
+          <LinkedInUiLessonsCard />
 
           {/* Watch it learn — a streamed, narrated review of one skill's real,
               most-recent proposal (metrics + reply outcomes + word-diff). */}

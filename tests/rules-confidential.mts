@@ -15,6 +15,7 @@ import {
   hasOutreachPurpose,
   maskEmailBody,
 } from "../src/lib/confidential";
+import { recordedCandidateLawfulBasis } from "../src/lib/candidate-lawful-basis";
 import { buildSeedState, defaultSettings } from "../src/lib/seed";
 import type { Candidate, OutreachMessage, SystemSettings } from "../src/lib/types";
 
@@ -58,6 +59,9 @@ function makeCandidate(over: Partial<Candidate> = {}): Candidate {
     outreachHistory: [],
     replyHistory: [],
     booking: null,
+    lawfulBasis: "legitimate_interest",
+    lawfulBasisSource: "operator_selection",
+    lawfulBasisRecordedAt: "2026-07-13T06:00:00.000Z",
     complianceFlags: {
       doNotContact: false,
       suppressed: false,
@@ -108,9 +112,9 @@ function approvalCtx(over: Partial<ApprovalContext> = {}): ApprovalContext {
 /* checkOutreachApproval                                                       */
 /* ========================================================================== */
 
-// settings.minScoreToContact defaults to 70.
+// settings.minScoreToContact defaults to 80.
 const settings: SystemSettings = defaultSettings();
-ok("settings minScoreToContact is the 70 floor", settings.minScoreToContact === 70);
+ok("settings minScoreToContact is the 80 floor", settings.minScoreToContact === 80);
 ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
 
 // 1) Blocks when matchScore < minScoreToContact.
@@ -120,6 +124,24 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   ok("low score: not allowed", r.allowed === false);
   ok("low score: blocker mentions floor/below", r.blockers.some((b) => /below|floor|score/i.test(b)));
   ok("low score: at least one blocker", r.blockers.length >= 1);
+}
+
+// 1b) Operator fit endorsement warn-through for below-floor live leads.
+{
+  const ctx = approvalCtx({
+    candidate: makeCandidate({
+      matchScore: settings.minScoreToContact - 20,
+      fitEndorsedAt: "2026-07-13T06:00:00.000Z",
+      fitEndorsedSource: "operator_selection",
+    }),
+  });
+  const r = checkOutreachApproval(ctx);
+  ok("endorsed low score: allowed", r.allowed === true);
+  ok(
+    "endorsed low score: warning mentions endorsement",
+    r.warnings.some((w) => /endorsed|below/i.test(w)),
+  );
+  ok("endorsed low score: no score blocker", !r.blockers.some((b) => /below|floor/i.test(b)));
 }
 
 // 2) Blocks when personalizationEvidence is empty.
@@ -205,6 +227,88 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   const r = checkOutreachApproval(ctx);
   ok("clean message: allowed", r.allowed === true);
   ok("clean message: zero blockers", r.blockers.length === 0);
+}
+
+// 5b) Manual candidates require an operator-recorded lawful basis.
+{
+  const missing = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({
+        provenance: "manual",
+        sourcePlatform: "Manual",
+        lawfulBasis: undefined,
+        lawfulBasisSource: undefined,
+        lawfulBasisRecordedAt: undefined,
+      } as Partial<Candidate>),
+    }),
+  );
+  ok("manual candidate without lawful basis: not allowed", missing.allowed === false);
+  ok(
+    "manual candidate without lawful basis: blocker is explicit",
+    missing.blockers.some((blocker) => /lawful basis/i.test(blocker)),
+  );
+
+  const recorded = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({
+        provenance: "manual",
+        sourcePlatform: "Manual",
+        lawfulBasis: "consent",
+        lawfulBasisSource: "operator_selection",
+        lawfulBasisRecordedAt: "2026-07-13T06:00:00.000Z",
+      } as Partial<Candidate>),
+    }),
+  );
+  ok("manual candidate with recorded lawful basis: allowed", recorded.allowed === true);
+
+  for (const ambiguousTimestamp of ["0", "1", "2026-07-13", "2026-07-13T06:00:00Z"]) {
+    const basis = recordedCandidateLawfulBasis(
+      makeCandidate({
+        provenance: "manual",
+        sourcePlatform: "Manual",
+        lawfulBasis: "consent",
+        lawfulBasisSource: "operator_selection",
+        lawfulBasisRecordedAt: ambiguousTimestamp,
+      } as Partial<Candidate>),
+    );
+    ok(
+      `manual candidate with non-canonical timestamp ${ambiguousTimestamp}: basis rejected`,
+      basis === null,
+    );
+  }
+}
+
+// 5c) Provider-sourced candidates require the same operator-recorded lawful basis.
+{
+  const missing = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({
+        provenance: "live",
+        sourcePlatform: "GitHub",
+        lawfulBasis: undefined,
+        lawfulBasisSource: undefined,
+        lawfulBasisRecordedAt: undefined,
+      } as Partial<Candidate>),
+    }),
+  );
+  ok("provider candidate without lawful basis: not allowed", missing.allowed === false);
+  ok(
+    "provider candidate without lawful basis: blocker tells operator to record basis",
+    missing.blockers.some((blocker) => /provider-sourced candidate requires an operator-recorded lawful basis/i.test(blocker)),
+  );
+
+  const recorded = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({
+        provenance: "live",
+        sourcePlatform: "GitHub",
+        lawfulBasis: "legitimate_interest",
+        lawfulBasisSource: "operator_selection",
+        lawfulBasisRecordedAt: "2026-07-13T06:00:00.000Z",
+      } as Partial<Candidate>),
+    }),
+  );
+  ok("provider candidate with recorded lawful basis: allowed", recorded.allowed === true);
 }
 
 // no-throw guard on the approval gate
@@ -335,7 +439,7 @@ ok("hasOutreachPurpose('Hired') is true", hasOutreachPurpose("Hired") === true);
 const _mb = maskEmailBody("reach me at john.doe@acme.com or call +1 415 555 0100, see https://acme.com/jobs");
 ok("maskEmailBody redacts the email address", _mb.includes("[email]") && !_mb.includes("john.doe@acme.com"));
 ok("maskEmailBody redacts the phone number", _mb.includes("[phone]"));
-ok("maskEmailBody redacts the link", _mb.includes("[link]") && !_mb.includes("https://acme.com/jobs"));
+ok("maskEmailBody redacts the link", _mb.includes("[link]") && !/acme\.com\/jobs/.test(_mb));
 ok("maskEmailBody leaves plain prose intact", maskEmailBody("Thanks, sounds interesting.") === "Thanks, sounds interesting.");
 ok("maskEmailBody handles empty string", maskEmailBody("") === "");
 

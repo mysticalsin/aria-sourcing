@@ -13,6 +13,7 @@ import { createHash, createHmac } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { deriveAgentFrameworkConfiguration } from "../src/lib/agents/framework/configuration-core.mjs";
 
 const deploySource = readFileSync("deploy-fly.sh", "utf8");
 const firstAdminPath = "scripts/provision-first-admin.sh";
@@ -40,7 +41,11 @@ type Scenario = {
   auth?: string;
   app?: string;
   ready?: string;
+  /** When ready is 503: "frameworks" (default) = only agentFrameworks false; "plane" = database false. */
+  readyFailure?: "frameworks" | "plane";
   kong?: string;
+  cleanupStatus?: "ok" | "degraded";
+  heartbeatStatus?: "ok" | "degraded" | "failed";
   failFlyMatch?: string;
   invalidJwt?: boolean;
   weakDbPassword?: boolean;
@@ -106,6 +111,65 @@ const contractRestPassword = "RestTarget_0123456789abcdefghijklmnopqrstuvwxyzABC
 const contractDataEncryptionKey = Buffer.alloc(32, 0x42).toString("base64");
 const contractPreviousEncryptionKeys = JSON.stringify([Buffer.alloc(32, 0x43).toString("base64")]);
 const contractCronSecret = "c".repeat(64);
+const contractFrameworkCapabilitySecret = "framework-capability-secret-contract-value-0001";
+const contractDeerFlowAdapterToken = "deerflow-adapter-token-contract-value-0002";
+const contractFlowiseAdapterToken = "flowise-adapter-token-contract-value-0003";
+const contractFrameworkInput = {
+  workspaceId: "10000000-0000-4000-8000-000000000001",
+  adapterImageDigest: `registry.internal/aria-adapter@sha256:${"1".repeat(64)}`,
+  redisImageDigest: `registry.internal/redis@sha256:${"2".repeat(64)}`,
+  deerflowAdapterOrigin: "https://deerflow.service.internal",
+  deerflowInstanceId: "20000000-0000-4000-8000-000000000002",
+  deerflowSourceCommit: "fabadae4168db81f0eaaf62f209050f978e2f691",
+  deerflowImageDigest: `registry.internal/deerflow@sha256:${"3".repeat(64)}`,
+  deerflowDatabaseImageDigest: `registry.internal/deerflow-db@sha256:${"4".repeat(64)}`,
+  deerflowModelGatewayImageDigest: `registry.internal/model-gateway@sha256:${"8".repeat(64)}`,
+  deerflowCloudProviderId: "kimi",
+  deerflowModelProvider: "langchain-openai",
+  deerflowModelId: "gpt-contract",
+  deerflowModelBaseUrl: "https://model-gateway.service.internal/v1",
+  deerflowModelCredentialVersion: "model-key-contract-v1",
+  flowiseAdapterOrigin: "https://flowise.service.internal",
+  flowiseInstanceId: "30000000-0000-4000-8000-000000000003",
+  flowiseSourceCommit: "bb773ffa710bd22639c4ba2643413a0ea2b679d3",
+  flowiseImageDigest: `registry.internal/flowise@sha256:${"5".repeat(64)}`,
+  flowiseWorkerImageDigest: `registry.internal/flowise-worker@sha256:${"6".repeat(64)}`,
+  flowiseDatabaseImageDigest: `registry.internal/flowise-db@sha256:${"7".repeat(64)}`,
+  flowiseWorkspaceId: "40000000-0000-4000-8000-000000000004",
+  flowiseReadinessWorkflowId: "flow_contract",
+  flowiseIsolation: "instance-per-workspace",
+  flowiseQueueName: "aria-flowise",
+};
+const contractFrameworkEnvironment = {
+  AGENT_FRAMEWORKS_REQUIRED: "true",
+  AGENT_FRAMEWORK_EXECUTION_ENABLED: "false",
+  AGENT_FRAMEWORK_KILL_SWITCH: "true",
+  AGENT_FRAMEWORK_CONFIGURATION_SHA256: deriveAgentFrameworkConfiguration(contractFrameworkInput).sha256,
+  AGENT_FRAMEWORK_READINESS_WORKSPACE_ID: contractFrameworkInput.workspaceId,
+  FRAMEWORK_ADAPTER_IMAGE_DIGEST: contractFrameworkInput.adapterImageDigest,
+  REDIS_IMAGE_DIGEST: contractFrameworkInput.redisImageDigest,
+  DEERFLOW_ADAPTER_URL: contractFrameworkInput.deerflowAdapterOrigin,
+  DEERFLOW_SOURCE_COMMIT: contractFrameworkInput.deerflowSourceCommit,
+  DEERFLOW_IMAGE_DIGEST: contractFrameworkInput.deerflowImageDigest,
+  DEERFLOW_DATABASE_IMAGE_DIGEST: contractFrameworkInput.deerflowDatabaseImageDigest,
+  DEERFLOW_MODEL_GATEWAY_IMAGE_DIGEST: contractFrameworkInput.deerflowModelGatewayImageDigest,
+  DEERFLOW_CLOUD_PROVIDER_ID: contractFrameworkInput.deerflowCloudProviderId,
+  DEERFLOW_FRAMEWORK_INSTANCE_ID: contractFrameworkInput.deerflowInstanceId,
+  DEERFLOW_MODEL_PROVIDER: contractFrameworkInput.deerflowModelProvider,
+  DEERFLOW_MODEL_ID: contractFrameworkInput.deerflowModelId,
+  DEERFLOW_MODEL_BASE_URL: contractFrameworkInput.deerflowModelBaseUrl,
+  DEERFLOW_MODEL_CREDENTIAL_VERSION: contractFrameworkInput.deerflowModelCredentialVersion,
+  FLOWISE_ADAPTER_URL: contractFrameworkInput.flowiseAdapterOrigin,
+  FLOWISE_SOURCE_COMMIT: contractFrameworkInput.flowiseSourceCommit,
+  FLOWISE_IMAGE_DIGEST: contractFrameworkInput.flowiseImageDigest,
+  FLOWISE_WORKER_IMAGE_DIGEST: contractFrameworkInput.flowiseWorkerImageDigest,
+  FLOWISE_DATABASE_IMAGE_DIGEST: contractFrameworkInput.flowiseDatabaseImageDigest,
+  FLOWISE_FRAMEWORK_INSTANCE_ID: contractFrameworkInput.flowiseInstanceId,
+  FLOWISE_WORKSPACE_ID: contractFrameworkInput.flowiseWorkspaceId,
+  FLOWISE_READINESS_WORKFLOW_ID: contractFrameworkInput.flowiseReadinessWorkflowId,
+  FLOWISE_TENANT_ISOLATION: contractFrameworkInput.flowiseIsolation,
+  FLOWISE_QUEUE_NAME: contractFrameworkInput.flowiseQueueName,
+};
 function signJwt(role: string) {
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(JSON.stringify({ role })).toString("base64url");
@@ -172,12 +236,25 @@ function runDeploy(scenario: Scenario = {}) {
     }
     mkdirSync(join(root, "supabase", "migrations"), { recursive: true });
     mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, "src", "lib", "agents", "framework"), { recursive: true });
     copyFileSync("deploy-fly.sh", join(root, "deploy-fly.sh"));
     copyFileSync("fly.auth.toml", join(root, "fly.auth.toml"));
     copyFileSync("fly.rest.toml", join(root, "fly.rest.toml"));
     copyFileSync(
       "scripts/validate-volume-recovery-receipt.mjs",
       join(root, "scripts", "validate-volume-recovery-receipt.mjs"),
+    );
+    copyFileSync(
+      "scripts/verify-apollo-cleanup-release.mjs",
+      join(root, "scripts", "verify-apollo-cleanup-release.mjs"),
+    );
+    copyFileSync(
+      "scripts/agent-framework-configuration.mjs",
+      join(root, "scripts", "agent-framework-configuration.mjs"),
+    );
+    copyFileSync(
+      "src/lib/agents/framework/configuration-core.mjs",
+      join(root, "src", "lib", "agents", "framework", "configuration-core.mjs"),
     );
     writeFileSync(join(root, ".env.local"), "\n", { mode: 0o600 });
     writeFileSync(join(root, "supabase", "migrations", "0018_contract.sql"), "select 1;\n");
@@ -332,6 +409,9 @@ function runDeploy(scenario: Scenario = {}) {
         `FLY_DATA_ENCRYPTION_KEY=${scenario.invalidDataEncryptionKey ? "not-canonical-base64" : contractDataEncryptionKey}`,
         `FLY_DATA_ENCRYPTION_PREVIOUS_KEYS=${scenario.invalidPreviousEncryptionKeys ? "not-json" : scenario.previousEncryptionKeys ?? ""}`,
         `FLY_CRON_SECRET=${scenario.weakCronSecret ? "abc123" : contractCronSecret}`,
+        `FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET=${contractFrameworkCapabilitySecret}`,
+        `FLY_DEERFLOW_ADAPTER_TOKEN=${contractDeerFlowAdapterToken}`,
+        `FLY_FLOWISE_ADAPTER_TOKEN=${contractFlowiseAdapterToken}`,
         "",
       ].join("\n"),
       { mode: 0o600 },
@@ -511,7 +591,29 @@ elif [[ "$*" == *"image show"*"--json"* ]]; then
   esac
   printf '[{"Digest":"%s","Tag":"%s"}]\\n' "$digest" "$tag"
 elif [[ "$*" == *"machines list"*"--json"* ]]; then
-  printf '[{"id":"contract-machine"}]\\n'
+  digest="sha256:$(printf '0%.0s' {1..64})"
+  printf '[{"id":"contract-web","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"web"}}},{"id":"contract-cleanup","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"cleanup"}}},{"id":"contract-cleanup-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"cleanup"},"standbys":["contract-cleanup"]}},{"id":"contract-heartbeat","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"framework_heartbeat"}}},{"id":"contract-heartbeat-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"framework_heartbeat"},"standbys":["contract-heartbeat"]}},{"id":"contract-loop","state":"stopped","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"loop"}}}]\\n' "$digest" "$digest" "$digest" "$digest" "$digest" "$digest"
+elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-cleanup"* ]]; then
+  printf '{"event":"apollo_authority_cleanup","status":"%s","releaseSha":"%s","startedAt":"%s","workspacesProcessed":1,"processed":0,"expired_receipts_cleared":0,"confirmations_deleted":0,"targets_deleted":0,"expired_targets_scrubbed":0,"quota_rows_deleted":0,"sourcing_lessons_retired":0,"sourcing_lessons_deleted":0,"sourcing_artifacts_deleted":0,"sourcing_runs_deleted":0,"sourcing_quota_rows_deleted":0,"framework_authorizations_deleted":0}\\n' "\${FAKE_CLEANUP_STATUS:-ok}" "$FAKE_RELEASE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-heartbeat"* ]]; then
+  node -e '
+    const [releaseSha, status, timestamp] = process.argv.slice(1);
+    const degraded = status === "degraded";
+    const crashed = status === "failed";
+    process.stdout.write(JSON.stringify({
+      timestamp,
+      message: JSON.stringify({
+        event: "agent_framework_heartbeat",
+        releaseSha,
+        status: crashed ? "failed" : status,
+        targets: degraded || crashed ? 0 : 2,
+        ready: degraded || crashed ? 0 : 2,
+        recorded: degraded || crashed ? 0 : 2,
+        failureCodes: crashed ? ["worker_exception"] : degraded ? ["target_inventory_unavailable"] : [],
+        durationMs: 5,
+      }),
+    }) + "\\n");
+  ' "$FAKE_RELEASE_SHA" "${scenario.heartbeatStatus ?? "ok"}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 `,
     );
@@ -538,14 +640,46 @@ while [ "$#" -gt 0 ]; do
   if [ "$1" = "-o" ]; then out="$2"; shift 2; continue; fi
   shift
 done
-printf '{"contract":true}\\n' > "$out"
 case "$url" in
-  */rest/v1/) code="\${FAKE_REST_STATUS:-200}" ;;
-  */auth/v1/health) code="\${FAKE_AUTH_STATUS:-200}" ;;
-  */api/health) code="\${FAKE_APP_STATUS:-200}" ;;
-  */api/ready) code="\${FAKE_READY_STATUS:-200}" ;;
-  */healthz) code="\${FAKE_KONG_STATUS:-200}" ;;
-  *) code=500 ;;
+  */rest/v1/) code="\${FAKE_REST_STATUS:-200}" ; printf '{"contract":true}\\n' > "$out" ;;
+  */auth/v1/health) code="\${FAKE_AUTH_STATUS:-200}" ; printf '{"contract":true}\\n' > "$out" ;;
+  */api/health) code="\${FAKE_APP_STATUS:-200}" ; printf '{"ok":true}\\n' > "$out" ;;
+  */api/ready)
+    code="\${FAKE_READY_STATUS:-200}"
+    frameworks=true
+    database=true
+    if [ "$code" != "200" ]; then
+      if [ "\${FAKE_READY_FAILURE:-frameworks}" = "plane" ]; then
+        database=false
+      else
+        frameworks=false
+      fi
+    fi
+    node -e '
+      const code = process.argv[1];
+      const frameworks = process.argv[2] === "true";
+      const database = process.argv[3] === "true";
+      const releaseSha = process.env.FAKE_RELEASE_SHA || "";
+      const body = {
+        ok: code === "200" && frameworks && database,
+        status: code === "200" && frameworks && database ? "ready" : "not_ready",
+        build: releaseSha,
+        migration: "0018_contract.sql",
+        components: {
+          database,
+          auth: true,
+          queue: true,
+          agentFrameworks: frameworks,
+          hermesRuntime: true,
+          migration: database,
+          releaseIdentity: true,
+        },
+      };
+      require("node:fs").writeFileSync(process.argv[4], JSON.stringify(body) + "\\n");
+    ' "$code" "$frameworks" "$database" "$out"
+    ;;
+  */healthz) code="\${FAKE_KONG_STATUS:-200}" ; printf '{"contract":true}\\n' > "$out" ;;
+  *) code=500 ; printf '{"contract":true}\\n' > "$out" ;;
 esac
 printf '%s' "$code"
 `,
@@ -565,8 +699,11 @@ esac
     const result = spawnSync("/bin/bash", ["deploy-fly.sh"], {
       cwd: root,
       encoding: "utf8",
-      timeout: 20_000,
+      // The contract asserts deploy-fly.sh behavior, not wall-clock speed;
+      // keep this bounded only to prevent an indefinite hang on slow filesystems.
+      timeout: 180_000,
       env: {
+        NODE_ENV: "test",
         PATH: `${bin}:${process.env.PATH ?? ""}`,
         HOME: root,
         TMPDIR: temp,
@@ -593,7 +730,9 @@ esac
         FAKE_AUTH_STATUS: scenario.auth ?? "200",
         FAKE_APP_STATUS: scenario.app ?? "200",
         FAKE_READY_STATUS: scenario.ready ?? "200",
+        FAKE_READY_FAILURE: scenario.readyFailure ?? "frameworks",
         FAKE_KONG_STATUS: scenario.kong ?? "200",
+        FAKE_CLEANUP_STATUS: scenario.cleanupStatus ?? "ok",
         TAVILY_API_KEY: scenario.tavilyApiKey ?? "",
         GITHUB_ACTIONS: "true",
         GITHUB_REF_PROTECTED: "true",
@@ -623,6 +762,10 @@ esac
           ? "not-json"
           : scenario.previousEncryptionKeys ?? "",
         FLY_CRON_SECRET: scenario.weakCronSecret ? "abc123" : contractCronSecret,
+        FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET: contractFrameworkCapabilitySecret,
+        FLY_DEERFLOW_ADAPTER_TOKEN: contractDeerFlowAdapterToken,
+        FLY_FLOWISE_ADAPTER_TOKEN: contractFlowiseAdapterToken,
+        ...contractFrameworkEnvironment,
         ARIA_RECOVERY_RECEIPT_SHA256: createHash("sha256")
           .update(readFileSync(recoveryReceiptPath))
           .digest("hex"),
@@ -729,9 +872,43 @@ const appFailure = runDeploy({ app: "503" });
 ok("final app HTTP 503 fails the deploy", appFailure.status !== 0);
 ok("final app failure cannot report a pending deployment", !appFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"));
 
-const readinessFailure = runDeploy({ ready: "503" });
-ok("final readiness HTTP 503 fails the deploy", readinessFailure.status !== 0);
-ok("readiness failure cannot report a pending deployment", !readinessFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"));
+const readinessFrameworksDown = runDeploy({ ready: "503", readyFailure: "frameworks" });
+ok(
+  "final readiness HTTP 503 with only agentFrameworks false still deploys (Hermes N-agent tenant)",
+  readinessFrameworksDown.status === 0,
+);
+ok(
+  "frameworks-only ready 503 still reports pending deployment",
+  readinessFrameworksDown.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
+
+const readinessFailure = runDeploy({ ready: "503", readyFailure: "plane" });
+ok("final readiness HTTP 503 with data-plane failure fails the deploy", readinessFailure.status !== 0);
+ok("readiness plane failure cannot report a pending deployment", !readinessFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"));
+
+const cleanupFailure = runDeploy({ cleanupStatus: "degraded" });
+ok("degraded cleanup startup evidence fails the deploy", cleanupFailure.status !== 0);
+ok(
+  "cleanup failure cannot report a pending deployment",
+  !cleanupFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
+
+const heartbeatDegraded = runDeploy({ heartbeatStatus: "degraded" });
+ok(
+  "adapter-absent degraded framework heartbeat still deploys (Hermes N-agent tenant)",
+  heartbeatDegraded.status === 0,
+);
+ok(
+  "adapter-absent heartbeat still reports pending deployment",
+  heartbeatDegraded.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
+
+const heartbeatFailure = runDeploy({ heartbeatStatus: "failed" });
+ok("framework heartbeat worker_exception fails the deploy", heartbeatFailure.status !== 0);
+ok(
+  "framework heartbeat worker failure cannot report a pending deployment",
+  !heartbeatFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
 
 const flyFailure = runDeploy({ failFlyMatch: "deploy --config fly.auth.toml" });
 ok("required Fly deploy failure propagates", flyFailure.status !== 0);
@@ -784,6 +961,41 @@ ok(
   ["aria-mantu-db", "aria-mantu-auth", "aria-mantu-rest", "aria-mantu-kong"].every(
     (app) => !appSecretFailure.flyCommands.includes(`secrets unset --stage --app ${app}`),
   ),
+);
+
+/* ---- identity posture is a package, not three independent settings ----------
+   fly.auth.toml deliberately carries two production-unsafe values: a 5-character
+   password floor (GOTRUE_PASSWORD_MIN_LENGTH, default is 6) and mailer
+   auto-confirm (GOTRUE_MAILER_AUTOCONFIRM). Both are tolerable ONLY because
+   GOTRUE_DISABLE_SIGNUP is "true", so nobody but the owner can create an
+   account. Nothing asserted that coupling, which meant a single edit flipping
+   signup back on would silently open a tenant that accepts 5-character
+   passwords and self-confirms its own email addresses.
+
+   This does not freeze the values or decide whether the floor should be raised —
+   it enforces the dependency between them. Open signup requires the other two to
+   be safe first. ------------------------------------------------------------ */
+
+const authConfig = readFileSync("fly.auth.toml", "utf8");
+function gotrueSetting(name: string): string | undefined {
+  return new RegExp(`^\\s*${name}\\s*=\\s*"([^"]*)"`, "m").exec(authConfig)?.[1];
+}
+
+const signupDisabled = gotrueSetting("GOTRUE_DISABLE_SIGNUP");
+const passwordFloor = Number(gotrueSetting("GOTRUE_PASSWORD_MIN_LENGTH") ?? "0");
+const mailerAutoconfirm = gotrueSetting("GOTRUE_MAILER_AUTOCONFIRM");
+
+ok(
+  "fly.auth.toml declares all three identity-posture settings explicitly",
+  signupDisabled !== undefined && mailerAutoconfirm !== undefined && Number.isFinite(passwordFloor) && passwordFloor > 0,
+);
+ok(
+  "a short password floor is only permitted while signup is disabled",
+  passwordFloor >= 6 || signupDisabled === "true",
+);
+ok(
+  "mailer auto-confirm is only permitted while signup is disabled",
+  mailerAutoconfirm !== "true" || signupDisabled === "true",
 );
 
 const persistentFlyState = mkdtempSync(join(tmpdir(), "aria-deploy-contract-state-"));

@@ -19,6 +19,7 @@ const kongDockerfile = readFileSync("docker/kong/Dockerfile.fly", "utf8");
 const ownerReconciliation = readFileSync("docker/bootstrap/supabase-admin-reconciliation.sql", "utf8");
 const gitleaksConfig = readFileSync(".gitleaks.toml", "utf8");
 const gitleaksIgnore = readFileSync(".gitleaksignore", "utf8");
+const obscuraIntegration = readFileSync("tests/obscura-integration.mts", "utf8");
 const remoteDeployBody = deploy.match(/rd\(\)\{([\s\S]*?)^\}/m)?.[1] ?? "";
 const workflowBeforeDeployStep = deployWorkflow.slice(0, deployWorkflow.indexOf("- name: Deploy exact checked release"));
 const deployJobStart = deployWorkflow.indexOf("\n  deploy:");
@@ -78,16 +79,35 @@ const releaseEvidenceArtifactDigestOutput = releaseEvidenceArchiveId
   ? `\${{ steps.${releaseEvidenceArchiveId}.outputs.artifact-digest }}`
   : "";
 const appDeployLine = deploy.split("\n").find((line) => /fly deploy --config fly\.app\.toml/.test(line)) ?? "";
+const reviewedAlternateDeploySurfaces = [
+  "deploy-fly-2.sh",
+  "scripts/fly-deploy-now.sh",
+  "scripts/prod-apply-swarm-fixes.sh",
+  "scripts/prod-deploy-app.sh",
+  "scripts/prod-swarm-rollout.sh",
+];
+const reviewedAlternateDeploySources = new Map(
+  reviewedAlternateDeploySurfaces.map((path) => [path, existsSync(path) ? readFileSync(path, "utf8") : ""]),
+);
+const gitlabCiSource = existsSync(".gitlab-ci.yml") ? readFileSync(".gitlab-ci.yml", "utf8") : "";
+const productionReleaseGuard = existsSync("scripts/lib/prod-release-guard.sh")
+  ? readFileSync("scripts/lib/prod-release-guard.sh", "utf8")
+  : "";
 const trackedFiles = spawnSync("git", ["ls-files", "-z"], { encoding: "utf8" }).stdout
   .split("\0")
   .filter(Boolean);
-const canonicalProductionDeploySurfaces = new Set(["deploy-fly.sh", ".github/workflows/deploy-aria-mantu.yml"]);
+const canonicalProductionDeploySurfaces = new Set([
+  "deploy-fly.sh",
+  ".github/workflows/deploy-aria-mantu.yml",
+  ...reviewedAlternateDeploySurfaces,
+]);
 const executableReleaseSurfaces = trackedFiles.filter(
   (path) => path === ".gitlab-ci.yml" || path.endsWith(".sh") || path.startsWith(".github/workflows/"),
 );
 const alternateProductionDeployPattern =
   /ARIA_DEPLOY_BUNDLE|fly\.io\/install\.sh|(?:^|\s)(?:bash\s+)?(?:\.\/)?deploy-fly\.sh\b|(?:^|\s)(?:fly|flyctl)\s+(?:deploy|machine\s+(?:run|destroy)|secrets\s+(?:set|import)|ips\s+allocate|volumes?\s+(?:destroy|update)|apps\s+destroy)\b/m;
 const unsafeAlternateDeploySurfaces = executableReleaseSurfaces.filter((path) => {
+  if (path === ".gitlab-ci.yml") return false; // reviewed separately as manual-only fallback
   if (canonicalProductionDeploySurfaces.has(path) || !existsSync(path)) return false;
   return alternateProductionDeployPattern.test(readFileSync(path, "utf8"));
 });
@@ -129,6 +149,14 @@ function shellFunction(source: string, name: string) {
     .split("\n")
     .map((line) => line.replace(/^ {10}/, ""))
     .join("\n");
+}
+
+function workflowStep(source: string, name: string): string {
+  const marker = `\n      - name: ${name}\n`;
+  const start = source.indexOf(marker);
+  if (start < 0) return "";
+  const next = source.indexOf("\n      - name: ", start + marker.length);
+  return source.slice(start, next < 0 ? source.length : next);
 }
 
 ok("production deploy is manual-only", /^\s{2}workflow_dispatch:\s*$/m.test(deployWorkflow) && !/^\s{2}push:\s*$/m.test(deployWorkflow));
@@ -342,8 +370,35 @@ if (unsafeAlternateDeploySurfaces.length > 0) {
   console.error("Unsafe alternate production deploy surfaces:", unsafeAlternateDeploySurfaces.join(", "));
 }
 ok(
-  "only the reviewed GitHub workflow and hardened deploy script can mutate Fly production",
-  unsafeAlternateDeploySurfaces.length === 0,
+  "only reviewed release-authorized surfaces can mutate Fly production",
+  unsafeAlternateDeploySurfaces.length === 0 &&
+    reviewedAlternateDeploySurfaces.every((path) => canonicalProductionDeploySurfaces.has(path)) &&
+    /ARIA_RELEASE_SHA[\s\S]*\{40\}/.test(productionReleaseGuard) &&
+    /git rev-parse --verify --quiet "\$\{ARIA_RELEASE_SHA\}\^\{commit\}"/.test(productionReleaseGuard) &&
+    /git status --porcelain --untracked-files=all/.test(productionReleaseGuard) &&
+    /ARIA_PROD_DEPLOY_CONFIRM/.test(productionReleaseGuard) &&
+    /ARIA_PROD_DEPLOY_RECEIPT_PATH/.test(productionReleaseGuard) &&
+    reviewedAlternateDeploySurfaces.every((path) => {
+      const source = reviewedAlternateDeploySources.get(path) ?? "";
+      const guardIndex = source.indexOf("aria_require_reviewed_production_release");
+      const firstMutationIndex = source.search(/(?:fly|flyctl)\s+(?:deploy|machine\s+run)\b/);
+      const firstCredentialIndex = source.indexOf("production-readiness/");
+      return (
+        source.includes("source \"$repo/scripts/lib/prod-release-guard.sh\"") &&
+        guardIndex >= 0 &&
+        firstMutationIndex >= 0 &&
+        guardIndex < firstMutationIndex &&
+        (firstCredentialIndex < 0 || guardIndex < firstCredentialIndex)
+      );
+    }),
+);
+ok(
+  "GitLab CI deploy fallback is manual-only and restores an opaque secret bundle",
+  gitlabCiSource.length > 0 &&
+    /when:\s*manual/.test(gitlabCiSource) &&
+    /ARIA_DEPLOY_BUNDLE/.test(gitlabCiSource) &&
+    /bash deploy-fly\.sh/.test(gitlabCiSource) &&
+    !/when:\s*always|when:\s*on_success|when:\s*on_failure/.test(gitlabCiSource),
 );
 ok(
   "alternate-deploy detector rejects wrappers around the canonical mutation script",
@@ -545,8 +600,8 @@ ok(
 );
 ok(
   "release creates provenance and SBOM attestations for every custom image",
-  (deployWorkflow.match(/uses:\s*actions\/attest@[0-9a-f]{40}/g) ?? []).length === 8 &&
-    ["APP", "DB", "BOOTSTRAP", "KONG"].every(
+  (deployWorkflow.match(/uses:\s*actions\/attest@[0-9a-f]{40}/g) ?? []).length === 10 &&
+    ["APP", "DB", "BOOTSTRAP", "KONG", "GRAPHIFY"].every(
       (component) =>
         deployWorkflow.includes(`ARIA_${component}_IMAGE_DIGEST`) &&
         deployWorkflow.includes(`aria-${component.toLowerCase()}.cdx.json`),
@@ -563,12 +618,46 @@ ok(
 );
 
 ok("CI uses the repository Node 22 contract", /node-version:\s*["']?22["']?/.test(ciWorkflow));
+const requiredObscuraProbe = spawnSync(
+  process.execPath,
+  ["--import", "tsx", "tests/obscura-integration.mts"],
+  {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      ARIA_REQUIRE_OBSCURA_TEST: "true",
+      OBSCURA_BIN_PATH: "",
+      OBSCURA_URL: "http://127.0.0.1:1",
+    },
+    timeout: 10_000,
+  },
+);
+const obscuraReadinessStep = workflowStep(ciWorkflow, "Wait for Obscura sidecar");
+const obscuraIntegrationStep = workflowStep(ciWorkflow, "Obscura integration test");
+ok(
+  "required Obscura integration mode fails when the sidecar is unreachable",
+  requiredObscuraProbe.status === 1 &&
+    requiredObscuraProbe.error === undefined &&
+    requiredObscuraProbe.signal === null &&
+    /REQUIRED: no Obscura sidecar reachable/.test(
+      `${requiredObscuraProbe.stdout}${requiredObscuraProbe.stderr}`,
+    ) &&
+    /ARIA_REQUIRE_OBSCURA_TEST/.test(obscuraIntegration),
+);
+ok(
+  "CI waits for Obscura readiness and makes the integration test mandatory",
+  /\/json\/version/.test(obscuraReadinessStep) &&
+    /for attempt in \$\(seq 1 30\)/.test(obscuraReadinessStep) &&
+    /ARIA_REQUIRE_OBSCURA_TEST:\s*["']true["']/.test(obscuraIntegrationStep),
+);
 ok("CI has an independent dependency-audit job", /^\s{2}dependency-audit:\s*$/m.test(ciWorkflow));
 ok("CI has an independent secret-scan job", /^\s{2}secret-scan:\s*$/m.test(ciWorkflow));
 ok("CI has an independent production-image supply-chain job", /^\s{2}supply-chain:\s*$/m.test(ciWorkflow));
 ok(
   "supply-chain job builds every production custom Dockerfile",
-  ["Dockerfile.prod", "docker/db/Dockerfile.fly", "docker/bootstrap/Dockerfile.fly", "docker/kong/Dockerfile.fly"].every(
+  ["Dockerfile.prod", "docker/db/Dockerfile.fly", "docker/bootstrap/Dockerfile.fly", "docker/kong/Dockerfile.fly", "workers/graphify-lessons/Dockerfile"].every(
     (dockerfile) => ciWorkflow.includes(`--file ${dockerfile}`),
   ),
 );
@@ -718,8 +807,20 @@ ok(
   indexOfOrInfinity(deploy, "fly deploy --config fly.auth.toml") < indexOfOrInfinity(deploy, "ARIA_BOOTSTRAP_PHASE=migrations") &&
     indexOfOrInfinity(deploy, "fly deploy --config fly.rest.toml") < indexOfOrInfinity(deploy, "ARIA_BOOTSTRAP_PHASE=migrations"),
 );
-ok("post-mutation acceptance requires app readiness", /require_http_200[^\n]*app \/api\/ready[^\n]*\/api\/ready/.test(deploy));
-ok("Fly app deployment has a readiness health check", /path\s*=\s*"\/api\/ready"/.test(appFlyConfig));
+ok(
+  "post-mutation acceptance requires tip+Hermes /api/ready JSON (not bare HTTP 200)",
+  /require_app_ready_json[^\n]*app \/api\/ready/.test(deploy) &&
+    /hermesRuntime === true/.test(deploy) &&
+    /agentFrameworks !== true/.test(deploy),
+);
+// 082178e + 2026-10-03: /api/ready is deliberately NOT a proxy-routing check —
+// agentFrameworks may stay false when DeerFlow/Flowise sidecars are absent.
+// Deploy acceptance gates tip SHA + Hermes data plane from the ready JSON.
+// The app routes on /api/health.
+ok(
+  "Fly app deployment health check routes on /api/health, not deep readiness",
+  /path\s*=\s*"\/api\/health"/.test(appFlyConfig) && !/path\s*=\s*"\/api\/ready"/.test(appFlyConfig),
+);
 ok("readiness dependency calls have bounded timeouts", (readinessRoute.match(/AbortSignal\.timeout\(3_000\)/g) ?? []).length >= 4);
 ok("app readiness checks the complete ordered migration ledger", /\.order\("filename", \{ ascending: true \}\)/.test(readinessRoute) && /ledgerSha256/.test(readinessRoute) && /expectedMigrationCount/.test(readinessRoute));
 ok("database deployment cannot accept a stopped machine as healthy", /internal_port\s*=\s*5432[\s\S]*services\.tcp_checks/.test(dbFlyConfig));
@@ -740,9 +841,9 @@ ok(
 );
 ok(
   "Auth and REST exact images receive the same SBOM vulnerability and secret gates as custom images",
-  /for component in app db bootstrap kong auth rest/.test(deployWorkflow) &&
-    /\["app", "db", "bootstrap", "kong", "auth", "rest"\]/.test(releaseEvidenceInventoryStep) &&
-    /for component in app db bootstrap kong auth rest/.test(releaseEvidenceVerificationStep),
+  /for component in app db bootstrap kong graphify auth rest/.test(deployWorkflow) &&
+    /\["app", "db", "bootstrap", "kong", "graphify", "auth", "rest"\]/.test(releaseEvidenceInventoryStep) &&
+    /for component in app db bootstrap kong graphify auth rest/.test(releaseEvidenceVerificationStep),
 );
 ok("remote deploys are not locally killed and blindly retried", remoteDeployBody.length > 0 && !/\bfast\b|\bwhile\b/.test(remoteDeployBody));
 ok(
@@ -804,9 +905,9 @@ ok(
     /aria-tenant-admin-verification\.json/.test(releaseEvidenceVerificationStep) &&
     /aria-application-acceptance\.json/.test(releaseEvidenceVerificationStep) &&
     /aria-release-candidate-receipt\.json/.test(releaseEvidenceVerificationStep) &&
-    /for component in app db bootstrap kong auth rest/.test(releaseEvidenceVerificationStep) &&
+    /for component in app db bootstrap kong graphify auth rest/.test(releaseEvidenceVerificationStep) &&
     /\.cdx\.json -vulnerabilities\.json -secrets\.json -artifacts\.sha256/.test(releaseEvidenceVerificationStep) &&
-    /for component in app db bootstrap kong; do[\s\S]*-provenance\.sigstore\.json -sbom\.sigstore\.json/.test(
+    /for component in app db bootstrap kong graphify; do[\s\S]*-provenance\.sigstore\.json -sbom\.sigstore\.json/.test(
       releaseEvidenceVerificationStep,
     ) &&
     /aria-release-images\.json/.test(releaseEvidenceVerificationStep) &&

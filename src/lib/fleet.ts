@@ -9,8 +9,9 @@ import type {
   SuppressionEntry,
 } from "./types";
 import { normalizeSuppressionValue } from "./manual-suppression";
+import { isBrowserComputerSeat } from "./campaign-seat-attach";
 import type { Tone } from "./utils";
-import { clamp } from "./utils";
+import { clamp, ianaForAbbrev } from "./utils";
 
 /* ============================================================================
    FLEET GUARDRAIL ENGINE
@@ -30,6 +31,8 @@ export function defaultFleetSettings(): FleetSettings {
     jitter: true,
     globalDailyCap: null,
     maxAgents: 300,
+    deliveryMode: "automatic",
+    browserAgentPermissionMode: "auto",
   };
 }
 
@@ -45,6 +48,9 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   Resend: "Respect plan limits; verify domain (SPF/DKIM/DMARC) before sending.",
   "WhatsApp Cloud": "Cold WhatsApp needs a pre-approved Meta template; keep volume low and honor opt-out.",
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
+  "LinkedIn Assisted Manual": "Manual mode: draft, profile deep-link, human copy/paste/send, then Confirm.",
+  "LinkedIn Vendor API": "Automatic mode path: licensed vendor API; fails closed until LINKEDIN_VENDOR_* credentials exist.",
+  "LinkedIn Browser Computer": "Automatic mode path: isolated Chromium computer per seat (AriaBot-shaped); fails closed until computer supervisor is ready.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */
@@ -71,11 +77,97 @@ export function warmupStage(seat: AgentSeat, now = Date.now()): { day: number; c
 
 /* ---- Send window ---------------------------------------------------------- */
 
+const WEEKDAY_SHORT_TO_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/** Resolve seat window labels (CET) or IANA ids to a zone Intl accepts. */
+export function resolveSendWindowTimeZone(timezone: string): string {
+  const trimmed = (timezone ?? "").trim();
+  if (!trimmed) return "UTC";
+  if (trimmed.toUpperCase() === "UTC") return "UTC";
+  const fromAbbrev = ianaForAbbrev(trimmed.toUpperCase());
+  if (fromAbbrev !== "UTC") return fromAbbrev;
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: trimmed }).format(new Date(0));
+    return trimmed;
+  } catch {
+    return "UTC";
+  }
+}
+
+/** Wall-clock day (0=Sun) + hour (0–23) in the seat send-window timezone. */
+export function sendWindowWallClock(
+  now: Date,
+  timezone: string,
+): { day: number; hour: number } {
+  const timeZone = resolveSendWindowTimeZone(timezone);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hourRaw = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const day = WEEKDAY_SHORT_TO_INDEX[weekday];
+  const hour = Number.parseInt(hourRaw, 10);
+  if (day == null || !Number.isFinite(hour) || hour < 0 || hour > 23) {
+    // Fail closed for malformed Intl output — treat as outside window via day=-1.
+    return { day: -1, hour: -1 };
+  }
+  return { day, hour };
+}
+
+/**
+ * UTC Instant of local midnight for `now` in the seat send-window timezone.
+ * Used so durable sentToday / claim daily caps share the same calendar day as
+ * business_hours (default CET → Europe/Berlin), not host/UTC midnight.
+ */
+export function startOfDayInTimeZone(now: Date, timezone: string): Date {
+  const timeZone = resolveSendWindowTimeZone(timezone);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type: string): number => {
+    const raw = parts.find((p) => p.type === type)?.value ?? "";
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const y = get("year");
+  const m = get("month");
+  const d = get("day");
+  const h = get("hour");
+  const mi = get("minute");
+  const s = get("second");
+  if (![y, m, d, h, mi, s].every((n) => Number.isFinite(n))) {
+    // Fail closed: UTC midnight so caps never invent a lenient local day.
+    const fallback = new Date(now);
+    fallback.setUTCHours(0, 0, 0, 0);
+    return fallback;
+  }
+  const asUtc = Date.UTC(y, m - 1, d, h, mi, s);
+  const offset = asUtc - now.getTime();
+  return new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - offset);
+}
+
 export function isWithinSendWindow(seat: AgentSeat, now = new Date(), enforce = true): boolean {
   if (!enforce) return true;
   const w = seat.sendWindow;
-  const day = now.getDay();
-  const hour = now.getHours();
+  const { day, hour } = sendWindowWallClock(now, w.timezone);
   return w.days.includes(day) && hour >= w.startHour && hour < w.endHour;
 }
 
@@ -188,10 +280,12 @@ export function allocateBatch(
   const nowMs = now.getTime();
   const remaining = new Map<string, number>();
   for (const seat of seats) {
-    // Planning/claiming respects status, auto-pause health and daily caps.
-    // The send WINDOW governs when a claimed send actually fires, not whether we
-    // can plan it — so allocation works any hour; sends still wait for the window.
-    const blocked = seat.status !== "active" || seatHealthStatus(seat, settings).shouldPause;
+    // Planning respects status, auto-pause health, daily caps, and (when
+    // enforceBusinessHours) the seat send window via isWithinSendWindow.
+    const blocked =
+      seat.status !== "active" ||
+      seatHealthStatus(seat, settings).shouldPause ||
+      (settings.enforceBusinessHours && !isWithinSendWindow(seat, now, true));
     remaining.set(seat.id, blocked ? 0 : seatRemainingToday(seat, nowMs));
   }
 
@@ -287,7 +381,12 @@ export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = 
   return {
     seats: seats.length,
     activeSeats: active.length,
-    liveSeats: seats.filter((s) => s.mode === "live" && s.domainVerified).length,
+    liveSeats: seats.filter((s) => {
+      // LI Browser Computer readiness is sessionHealthy (health strip / Floor) —
+      // never count domainVerified theater as "live" for AriaBot desks.
+      if (isBrowserComputerSeat(s)) return false;
+      return s.mode === "live" && s.domainVerified;
+    }).length,
     sentToday: sent,
     capacityToday: capacity,
     remainingToday: remaining,

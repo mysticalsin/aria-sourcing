@@ -6,7 +6,10 @@ import { RevealStream } from "@/components/reveal/reveal-stream";
 import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
-import { useActions, useCampaignOutreach, useSettings } from "@/lib/store";
+import { executePrimaryAgentSourcing } from "@/lib/agents/studio-runner";
+import { campaignBrowserSeatIds } from "@/lib/agent-event-seat";
+import { useActions, useCampaign, useCampaignOutreach, useSeats, useSettings } from "@/lib/store";
+import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, OutreachMessage } from "@/lib/types";
 import { initialsFrom, scoreTone, toneForOutreachStatus } from "@/lib/utils";
 import { AlertTriangle, Bot, PlayCircle, ShieldCheck, Sparkles, X } from "lucide-react";
@@ -125,19 +128,21 @@ export interface AgentRunStreamProps {
  * while a live "queued — awaiting approval" counter climbs next to the
  * approval-gate pill.
  *
- * Both steps call the REAL store actions (`sourceNextBatch`,
- * `generateOutreachFor`) synchronously/eagerly — the reveal only stages the
- * presentation of data that is already committed, exactly like
- * `SourcingFeed` does for 1.4. Sourcing is pinned to the "Talent Pool"
- * platform, the one sourcing path that is synthetic by design (no GitHub/web
- * search call), so the whole run is guaranteed to work with zero network —
- * required for the no-backend demo mode. `generateOutreachFor` never calls a
- * send path; it only ever leaves a Draft in the human approval queue.
+ * Live sourcing first executes the campaign's one exact runtime-eligible,
+ * independently approved Flowise workflow through DeerFlow, then passes its
+ * short-lived command to the canonical store persistence action. An explicit
+ * demo deployment may use the deterministic Talent Pool source. The reveal
+ * only stages presentation of data that is already committed.
+ * `generateOutreachFor` never calls a send path; it only ever leaves a Draft
+ * in the human approval queue.
  */
 export function AgentRunStream({ campaignId, autoStart = false, onClose, className }: AgentRunStreamProps) {
   const actions = useActions();
   const settings = useSettings();
+  const campaign = useCampaign(campaignId);
   const campaignOutreach = useCampaignOutreach(campaignId);
+  const seats = useSeats();
+  const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
   const [phase, setPhase] = React.useState<RunPhase>("idle");
   const [queue, setQueue] = React.useState<DraftedPair[]>([]);
@@ -162,23 +167,33 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     setRevealedCount(0);
     setSourcedCount(0);
 
-    let sourced: Candidate[] = [];
-    try {
-      // "Talent Pool" is the one platform sourceNextBatch never reaches the
-      // network for (see store.ts sourceNextBatch) — it's the deterministic,
-      // always-available path this cinematic run relies on.
-      const res = await actions.sourceNextBatch(campaignId, { platform: "Talent Pool" });
-      if (!res.ok) {
-        setErrorMessage(res.error);
-        setPhase("error");
-        return;
-      }
-      sourced = res.accepted;
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Sourcing failed unexpectedly.");
+    if (!campaign) {
+      setErrorMessage("Campaign state is unavailable. No sourcing was started.");
       setPhase("error");
       return;
     }
+
+    let retryStorage: Storage | null = null;
+    try {
+      retryStorage = globalThis.sessionStorage ?? null;
+    } catch {
+      retryStorage = null;
+    }
+    const result = await executePrimaryAgentSourcing({
+      campaignId,
+      campaignTitle: campaign.jobAnalysis.title,
+      count: 10,
+      demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
+      idempotencyMemory: pendingRunIdempotencyKeys.current,
+      retryStorage,
+      sourceNextBatch: actions.sourceNextBatch,
+    });
+    if (!result.ok) {
+      setErrorMessage(result.error);
+      setPhase("error");
+      return;
+    }
+    const sourced: Candidate[] = result.candidates;
 
     setSourcedCount(sourced.length);
     if (sourced.length === 0) {
@@ -187,10 +202,18 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     }
 
     setPhase("drafting");
+    // Stamp attached Browser Computer desks round-robin (N>1 safe). Seatless
+    // generateOutreachFor returns null when multiple BC desks are attached.
+    const attachedDesks = campaignBrowserSeatIds(seats, campaignId);
     const pairs: DraftedPair[] = [];
+    let deskCursor = 0;
     for (const candidate of sourced) {
       try {
-        const msg = actions.generateOutreachFor(candidate.id);
+        const seatId =
+          attachedDesks.length === 0
+            ? undefined
+            : attachedDesks[deskCursor++ % attachedDesks.length];
+        const msg = actions.generateOutreachFor(candidate.id, undefined, undefined, seatId);
         if (msg) pairs.push({ candidate, message: msg });
       } catch {
         // Degrade gracefully — a single failed draft never aborts the run.
@@ -205,7 +228,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     setRunKey((k) => k + 1);
     // phase flips to "done" from the RevealStream's onDone once every card
     // has materialized (or instantly, on Skip / prefers-reduced-motion).
-  }, [phase, campaignId, campaignOutreach, actions]);
+  }, [phase, campaignId, campaign, campaignOutreach, actions, seats]);
 
   const autoStartedRef = React.useRef(false);
   React.useEffect(() => {

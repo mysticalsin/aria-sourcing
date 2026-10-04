@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "video": "/opt/cursor/artifacts/tonywalteur-reachout-e2e.mp4",
+  "webm": "/opt/cursor/artifacts/tonywalteur-reachout-e2e.webm",
+  "profile": "https://www.linkedin.com/in/tonywalteur/",
+  "demoLoginStatus": 200,
+  "bot": "comp_tony_01",
+  "linkedInSession": {
+    "healthy": false,
+    "detail": "LinkedIn login/checkpoint wall detected",
+    "url": "https://www.linkedin.com/login/?session_redirect=https%3A%2F%2Fwww.linkedin.com%2Ffeed%2F"
+  },
+  "tabs": {
+    "tabs": [
+      {
+        "id": "tab-1",
+        "title": "Sign Up | LinkedIn",
+        "url": "https://www.linkedin.com/authwall?sessionRedirect=https://www.linkedin.com/in/tonywalteur/",
+        "active": false
+      },
+      {
+        "id": "tab-2",
+        "title": "Sign Up | LinkedIn",
+        "url": "https://www.linkedin.com/authwall?sessionRedirect=https://www.linkedin.com/in/tonywalteur/",
+        "active": false
+      },
+      {
+        "id": "tab-3",
+        "title": "LinkedIn Login, Sign in | LinkedIn",
+        "url": "https://www.linkedin.com/login/?session_redirect=https%3A%2F%2Fwww.linkedin.com%2Ffeed%2F",
+        "active": true
+      }
+    ],
+    "activeTabId": "tab-3"
+  },
+  "connectSent": false,
+  "note": "E2E video shows Tony Walteur outreach draft + OpenBot navigated to his LinkedIn URL; Connect/Message blocked until human Take control + LinkedIn login/2FA"
+}

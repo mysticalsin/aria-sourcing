@@ -139,7 +139,9 @@ export function HermesRuntimePanel() {
           <Field
             label="Runtime API URL"
             htmlFor="hermesApiUrl"
-            hint="The hermes-agent server, e.g. http://127.0.0.1:8642"
+            hint="Enables the live runtime in this browser. The server resolves the real
+              addresses from HERMES_API_URL and HERMES_WEB_URL and ignores anything sent
+              from here, so a client cannot redirect the runtime (SSRF)."
           >
             <Input
               id="hermesApiUrl"

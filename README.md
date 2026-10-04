@@ -9,7 +9,7 @@ mode.
 
 ## Current Stack
 
-Verified from `package.json` on 2026-07-10:
+Verified from `package.json` on 2026-07-14:
 
 | Area | Current truth |
 |---|---|
@@ -17,14 +17,15 @@ Verified from `package.json` on 2026-07-10:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 121 chained checks: 17 `pretest` commands plus 104 test commands |
-| Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
+| Verification | `npm test` executes the validated inventory in `tests/test-manifest.mjs`; inspect it with `node scripts/run-test-manifest.mjs --list all` |
+| Quality gates | `npm run typecheck`, `npm run typecheck:tests`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces
 
 | Surface | Where it lives | Status |
 |---|---|---|
 | Sourcing and campaign flow | `src/app/intake`, `src/app/campaigns`, `src/app/api/source`, `src/app/api/sourcing-agent` | Built |
+| Review-gated sourcing lessons | `supabase/migrations/0027_sourcing_learning_authority.sql`, `workers/graphify-lessons`, `docs/operations/SOURCING_LEARNING.md` | Built in source; database migration, digest-pinned worker image, and human review operations required |
 | Outreach guardrails | `src/app/outreach`, `src/lib/dispatch-outbound.ts`, `src/lib/gate.ts`, `src/lib/outreach-*` | Built |
 | Candidate disclosure security layer | `src/lib/agent-disclosure-policy.ts`, `tests/agent-disclosure-policy.mts`, `tests/salary-boundary-adversarial.mts` | Built |
 | Public careers intake | `src/app/careers`, `src/app/api/careers/route.ts`, `src/lib/careers*` | Built |
@@ -67,6 +68,7 @@ Desktop and the Supabase CLI.
 
 ```bash
 npm run typecheck
+npm run typecheck:tests
 npm run lint
 npm test
 npm run build:isolated
@@ -77,10 +79,28 @@ project to a temporary workspace and runs the normal Next build there.
 
 ## Documentation
 
-[`docs/README.md`](docs/README.md) is the documentation map — it says what every
+[`docs/README.md`](docs/README.md) is the documentation map. It says what every
 top-level directory and doc is for, and separates product docs from the operational
 dossier (`production-readiness/`) and agent working-state (`_relay/`, `_agent_state/`).
 Start there when you're looking for something and don't know which file holds it.
+
+The current developer architecture is
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+[`docs/BUILD_AND_READINESS.md`](docs/BUILD_AND_READINESS.md) explains how the
+system is built and holds the current gap registers for production readiness,
+enterprise readiness, and running sourcing on autopilot with LinkedIn included.
+Change workflow and verification are documented in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`docs/TESTING.md`](docs/TESTING.md). Security reporting and invariants are in
+[`SECURITY.md`](SECURITY.md).
+
+Developer maps:
+
+- Domain and runtime logic: [`src/lib/README.md`](src/lib/README.md)
+- Test suite: [`tests/README.md`](tests/README.md)
+- Operational scripts: [`scripts/README.md`](scripts/README.md)
+- Infrastructure source: [`infra/README.md`](infra/README.md)
+- Responsibility and document authority: [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md)
 
 ## Deployment
 
@@ -96,28 +116,33 @@ Production requires, at minimum:
 - Required production env vars from `.env.production.example`.
 - Protected GitHub `Production` environment secrets for the Fly deployment and
   a separate registry-only `FLY_REGISTRY_TOKEN` restricted to the app, DB,
-  bootstrap, and Kong registries. Do not reuse a general operator token.
+  bootstrap, Kong, and Graphify worker registries. Do not reuse a general
+  operator token.
 - A verified delivery provider path before any live outreach.
 - Domain, OAuth, and unsubscribe settings matching the deployment URL.
 - Green local/CI gates against the release SHA.
 
-The protected Fly workflow builds the app, DB, bootstrap, and Kong images from
-the exact release SHA, pushes isolated candidates, pulls and scans their exact
-registry digests, signs provenance and SBOM attestations, promotes immutable SHA
-tags, and deploys without rebuilding. It also pulls the config-pinned upstream
-Auth and REST images for `linux/amd64`, applies the same CycloneDX,
-HIGH/CRITICAL, and secret gates, records them as upstream rather than claiming a
-local build attestation, and compares all six running digests. Its always-run
-evidence upload retains rollback, manifest, schema-validated SBOM, vulnerability,
-filesystem plus image-config/history secret, attestation, and release receipts
-even when a later gate fails.
+The protected Fly workflow builds the app, DB, bootstrap, Kong, and one-shot
+Graphify lesson-worker images from the exact release SHA, pushes isolated
+candidates, pulls and scans their exact registry digests, signs provenance and
+SBOM attestations for all 5 local images, promotes immutable SHA tags, and
+deploys without rebuilding.
+It also pulls the config-pinned upstream Auth and REST images for `linux/amd64`,
+applies the same CycloneDX, HIGH/CRITICAL, and secret gates, and records them as
+upstream rather than claiming local build attestations. All 7 images are bound
+into release evidence; running-digest equality applies to the 6 deployed
+services. The Graphify worker has a pre-publication container test plus immutable
+scan, attestation, and promotion evidence; this workflow does not claim a
+post-promotion worker execution receipt. The always-run evidence upload retains rollback, manifest,
+schema-validated SBOM, vulnerability, filesystem plus image-config/history
+secret, attestation, and release receipts even when a later gate fails.
 The workflow must exist on the repository default branch before manual dispatch
 is available.
 
 The current dated status page is
 [`production-readiness/STATUS.md`](production-readiness/STATUS.md).
 
-## Architecture Map
+## Architecture map
 
 ```text
 src/
@@ -134,10 +159,19 @@ scripts/                     Local setup, backup/restore, smoke, build helpers
 production-readiness/        Canonical deployment runbook, checklist, status, older evidence pack
 ```
 
+For data ownership, agent isolation, request flows, and deployment boundaries,
+read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 Important code anchors:
 
 - `src/lib/types.ts` is the central domain model.
 - `src/lib/store.ts` owns client state and local/demo persistence.
+- `src/lib/store/contracts.ts` owns the React-free public action and context
+  contracts used to decompose the client store without breaking callers.
+- `src/lib/store/campaign-actions.ts` owns campaign/intake mutations, editable
+  field filtering, and viewer-safe mutation checks.
+- `src/lib/store/campaign-launch.ts` summarizes multi-role creation and sourcing
+  results without allowing partial success to appear complete.
 - `src/lib/supabase/*` owns live-mode Supabase config and server helpers.
 - `src/lib/crypto-secrets.ts` encrypts provider/OAuth secrets at rest when
   `DATA_ENCRYPTION_KEY` is set and supports bounded rotation through

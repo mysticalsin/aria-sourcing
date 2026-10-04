@@ -51,8 +51,15 @@ if (!candidate || !campaign) {
 }
 
 const studio = source("src/app/studio/page.tsx");
-ok("Studio names the capability Reply drafting", studio.includes("Reply drafting"));
-ok("Studio states that generated replies enter human review", /every generated reply[^.]*human review/i.test(studio));
+ok(
+  "Studio names the governed graph output as a real search",
+  studio.includes("Running real search") && studio.includes("Sourced ${result.accepted} real candidate"),
+);
+ok(
+  "Studio keeps candidate persistence under ARIA authority with no delivery authority",
+  studio.includes("Candidate search and persistence remain under ARIA authority") &&
+    studio.includes("No delivery authority"),
+);
 ok("Studio exposes no Autopilot or canary control", !/autopilot|canary/i.test(studio));
 
 const settings = source("src/app/settings/page.tsx");
@@ -67,10 +74,21 @@ const autopilot = source("src/lib/autopilot.ts");
 ok("legacy reply guardrails are documented as non-authoritative", /legacy compatibility only/i.test(autopilot) && /never grant provider delivery authority/i.test(autopilot));
 ok("reply routing comments do not claim a scheduled send", !/schedule send/i.test(autopilot));
 
+const whatsappInbound = source("src/lib/whatsapp-inbound.ts");
+ok(
+  "WhatsApp inbound never mutates legacy canary counters while queuing review drafts",
+  !/canary_remaining[\s\S]{0,220}\.update\(/i.test(whatsappInbound) &&
+    !/canary update failed/i.test(whatsappInbound),
+);
+
 const readinessStatus = source("production-readiness/STATUS.md");
 ok(
-  "current readiness status declares reply drafting queue-only",
-  /Reply drafting is queue-only[^.]*named\s+human review/i.test(readinessStatus),
+  "current readiness status declares inbound reply drafting queue-only",
+  /Inbound candidate repl(?:y|ies)[^.]*named\s+human review/i.test(readinessStatus),
+);
+ok(
+  "current readiness status declares agent graph drafts run-history-only",
+  /Agent graph drafts[^.]*run history[^.]*no delivery authority/i.test(readinessStatus),
 );
 
 console.log(`RESULT autopilot-contract: ${pass} passed, ${fail} failed`);

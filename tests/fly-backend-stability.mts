@@ -1,5 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 
+import { resolveTestGroup } from "../scripts/run-test-manifest.mjs";
+import { testManifest } from "./test-manifest.mjs";
+
 const database = readFileSync("fly.db.toml", "utf8");
 const auth = readFileSync("fly.auth.toml", "utf8");
 const rest = readFileSync("fly.rest.toml", "utf8");
@@ -10,7 +13,9 @@ const databaseInitMarker = existsSync("docker/db/mark-init-complete.sh")
   : "";
 const databaseRoles = readFileSync("docker/db/01-roles.sql", "utf8");
 const volumeTest = readFileSync("scripts/test-fly-db-volume.sh", "utf8");
-const packageJson = readFileSync("package.json", "utf8");
+const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+  scripts?: Record<string, string>;
+};
 const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
 
 let passed = 0;
@@ -125,8 +130,10 @@ ok(
 );
 ok(
   "database volume regression has a real container test",
-  packageJson.includes('"test:fly-db-volume": "bash scripts/test-fly-db-volume.sh"') &&
-    packageJson.includes("tsx tests/fly-backend-stability.mts"),
+  packageJson.scripts?.["test:fly-db-volume"] === "bash scripts/test-fly-db-volume.sh" &&
+    resolveTestGroup(testManifest, "pretest").some(({ argv }) =>
+      argv.includes("tests/fly-backend-stability.mts"),
+    ),
 );
 ok(
   "database security CI runs the real volume and restart test",

@@ -1,5 +1,6 @@
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
 import { renderEmailWithUnsubscribe, type RenderedUnsubscribeEmail } from "@/lib/email-unsubscribe";
+import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import type { EmailConnection, EmailConnectionProvider } from "./types";
 
 export interface OAuthSendRequest {
@@ -15,6 +16,11 @@ export interface OAuthSendRequest {
    *  provider call. Emitted as an X-Aria-Send-Attempt MIME header so an
    *  ambiguous outcome can be matched against the mailbox by a human. */
   attemptId?: string;
+  /** RFC 5322 Message-ID (e.g. "<uuid@domain>") minted by the durable claim
+   *  BEFORE the send and stamped into the MIME headers, so the durable ledger,
+   *  the provider send, and later inbound reply correlation all agree on one
+   *  value. When absent (legacy synchronous path) no Message-ID is stamped. */
+  messageId?: string;
 }
 
 export interface OAuthSendOutcome {
@@ -24,14 +30,6 @@ export interface OAuthSendOutcome {
   provider: EmailConnectionProvider;
   detail: string;
   id?: string;
-}
-
-/** Classify a failed HTTP response by whether the provider may still have
- *  processed the request before failing. */
-function failedHttpDeliveryState(status: number): "not-sent" | "unknown" {
-  // A timeout or server failure can be returned after the provider processed
-  // the request. Client rejections are definitive; these responses are not.
-  return status === 408 || status >= 500 ? "unknown" : "not-sent";
 }
 
 /** Send via Gmail API using a stored OAuth connection. */
@@ -59,7 +57,7 @@ export async function sendViaGmailApi(req: OAuthSendRequest, connection: EmailCo
     });
     const json = (await res.json().catch(() => ({}))) as { id?: string };
     if (!res.ok) {
-      return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider, detail: `Gmail API error ${res.status}.` };
+      return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider, detail: `Gmail API error ${res.status}.` };
     }
     return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Gmail API.", id: json.id };
   } catch {
@@ -98,7 +96,7 @@ export async function sendViaMicrosoftGraph(
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       console.error("Microsoft Graph send error", { status: res.status, body: redactSecrets(redactEmail(txt.slice(0, 500))) });
-      return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider, detail: `Microsoft Graph send error ${res.status}.` };
+      return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider, detail: `Microsoft Graph send error ${res.status}.` };
     }
     return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Microsoft Graph." };
   } catch {
@@ -244,6 +242,9 @@ function buildMimeMessage(req: OAuthSendRequest, rendered: RenderedUnsubscribeEm
     `From: ${fromHeader}`,
     `To: ${req.to}`,
     `Subject: ${req.subject}`,
+    // Durable correlation key: the RFC Message-ID the ledger recorded, so an
+    // inbound reply's In-Reply-To/References threads back to this exact send.
+    ...(req.messageId ? [`Message-ID: ${req.messageId}`] : []),
     `List-Unsubscribe: ${rendered.headers["List-Unsubscribe"]}`,
     `List-Unsubscribe-Post: ${rendered.headers["List-Unsubscribe-Post"]}`,
     // Per-attempt identity for human reconciliation of ambiguous outcomes.

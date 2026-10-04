@@ -2,6 +2,7 @@ import { defaultIntegrations } from "../integrations";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
 import type { HermesState } from "../types";
+import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 
@@ -19,12 +20,53 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   // Blobs older than 12 have their model layer reset below so returning visitors
   // leave the previous Anthropic default (which would fall back to the mock).
   const preKimi = (parsed.version ?? 0) < 12;
+  // STATE_VERSION 18 — wipe fake "connected" seeds on real cards (GitHub/Apify/Graph/SendGrid)
+  // that never had a real credential attached.
+  const preHonestIntegrations = (parsed.version ?? 0) < 18;
+  // STATE_VERSION 21 — Java seed campaign must allow live sourcing for wiki demos.
+  const preJavaSourcing = (parsed.version ?? 0) < 21;
+  // STATE_VERSION 22 — software/data roles are LinkedIn-first; rebuild strategy platforms.
+  const preLinkedInFirst = (parsed.version ?? 0) < 22;
+  // STATE_VERSION 23 — attach LinkedIn Browser Computer agents to Java campaign.
+  const preCampaignVmAgents = (parsed.version ?? 0) < 23;
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
+  const FAKE_CONNECTED_IDS = new Set(["int_github", "int_apify", "int_graph_teams", "int_sendgrid"]);
   return {
     ...parsed,
     version: STATE_VERSION,
     // D-2: fill every required root field that may be absent in older blobs.
-    campaigns: parsed.campaigns ?? [],
+    campaigns: (parsed.campaigns ?? []).map((c) => {
+      let next = preJavaSourcing && c.id === "camp_seed_backend" ? { ...c, status: "Sourcing" as const } : c;
+      if (preLinkedInFirst) {
+        // Lazy require avoided — platforms order is patched inline for Java/software campaigns.
+        const platforms = next.sourcingStrategy?.primaryPlatforms ?? [];
+        if (platforms[0] !== "LinkedIn" && platforms.includes("LinkedIn")) {
+          next = {
+            ...next,
+            sourcingStrategy: {
+              ...next.sourcingStrategy,
+              primaryPlatforms: ["LinkedIn", ...platforms.filter((p) => p !== "LinkedIn")].slice(0, 2) as typeof platforms,
+              secondaryPlatforms: [
+                ...platforms.filter((p) => p !== "LinkedIn").slice(1),
+                ...(next.sourcingStrategy.secondaryPlatforms ?? []),
+              ].filter((p, i, arr) => arr.indexOf(p) === i),
+            },
+          };
+        } else if (platforms[0] !== "LinkedIn") {
+          next = {
+            ...next,
+            sourcingStrategy: {
+              ...next.sourcingStrategy,
+              primaryPlatforms: ["LinkedIn", platforms[0] ?? "GitHub"].filter(Boolean).slice(0, 2) as typeof platforms,
+              secondaryPlatforms: next.sourcingStrategy.secondaryPlatforms?.length
+                ? next.sourcingStrategy.secondaryPlatforms
+                : ["GitHub", "Stack Overflow"],
+            },
+          };
+        }
+      }
+      return next;
+    }),
     // STATE_VERSION 13 — backfill the TAnIA layer (lead source + star rating) on
     // any candidate that predates it, without clobbering explicit values.
     candidates: (parsed.candidates ?? []).map((c) => ({
@@ -42,12 +84,26 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
     // the current seed. Roadmap placeholders (`real: false`) also lose any older
     // fabricated connected/lastSync state; real cards keep their usage history.
+    // STATE_VERSION 18 — also reset known fake-connected real cards.
     integrations:
       parsed.integrations && parsed.integrations.length > 0
         ? parsed.integrations.map((i) => {
             const seed = defaultIntegrations().find((d) => d.id === i.id);
             if (!seed) return i;
-            return seed.real ? { ...i, real: true } : { ...i, real: false, status: "not_configured", lastSync: null };
+            if (!seed.real) {
+              return { ...i, real: false, status: "not_configured" as const, lastSync: null };
+            }
+            if (preHonestIntegrations && FAKE_CONNECTED_IDS.has(i.id) && i.mode === "mock") {
+              return {
+                ...i,
+                real: true,
+                status: seed.status,
+                mode: seed.mode,
+                lastSync: seed.lastSync,
+                errors: seed.errors,
+              };
+            }
+            return { ...i, real: true };
           })
         : defaultIntegrations(),
     activities: parsed.activities ?? [],
@@ -83,6 +139,16 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
       hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,
       hermesApiKeyId: parsed.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
+      linkedinClientId: parsed.settings.linkedinClientId ?? defs.linkedinClientId ?? "",
+      linkedinClientSecretKeyId:
+        parsed.settings.linkedinClientSecretKeyId ?? defs.linkedinClientSecretKeyId ?? "",
+      linkedinVendorApiUrl: parsed.settings.linkedinVendorApiUrl ?? defs.linkedinVendorApiUrl ?? "",
+      linkedinVendorApiKeyId:
+        parsed.settings.linkedinVendorApiKeyId ?? defs.linkedinVendorApiKeyId ?? "",
+      computerSupervisorUrl:
+        parsed.settings.computerSupervisorUrl ?? defs.computerSupervisorUrl ?? "",
+      computerSupervisorTokenKeyId:
+        parsed.settings.computerSupervisorTokenKeyId ?? defs.computerSupervisorTokenKeyId ?? "",
       // D-2: guardrails and notifications fills.
       guardrails: parsed.settings.guardrails ?? defs.guardrails,
       notifications: parsed.settings.notifications ?? defs.notifications,
@@ -90,22 +156,59 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
       // STATE_VERSION 11 — Aria management API URL.
       hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
+      // STATE_VERSION 19 — LinkedIn deliveryMode defaults to automatic.
+      fleet: {
+        ...defs.fleet,
+        ...(parsed.settings.fleet ?? {}),
+        deliveryMode:
+          parsed.settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic",
+        browserAgentPermissionMode:
+          parsed.settings.fleet?.browserAgentPermissionMode === "manual" ||
+          parsed.settings.fleet?.browserAgentPermissionMode === "skip"
+            ? parsed.settings.fleet.browserAgentPermissionMode
+            : "auto",
+      },
     },
-    seats: (parsed.seats ?? []).map((seat) => ({
-      ...seat,
-      providerId: seat.providerId,
-      modelId: seat.modelId,
-      toolIds: seat.toolIds,
-    })),
+    seats: (() => {
+      const seats = (parsed.seats ?? []).map((seat) => ({
+        ...seat,
+        providerId: seat.providerId,
+        modelId: seat.modelId,
+        toolIds: seat.toolIds,
+        assignedCampaignIds: seat.assignedCampaignIds ?? [],
+      }));
+      if (!preCampaignVmAgents) return seats;
+      const seedSeats = buildSeedState().seats.filter(
+        (s) => s.provider === "LinkedIn Browser Computer" && s.assignedCampaignIds?.includes("camp_seed_backend"),
+      );
+      const existing = new Set(seats.map((s) => s.id));
+      return [...seats, ...seedSeats.filter((s) => !existing.has(s.id))];
+    })(),
   };
 }
 
 export function normalizeHermesState(parsed: HermesState): HermesState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
+  const settings = withoutLegacyIntegrationAuthority(parsed.settings);
+  const defs = defaultSettings();
   return {
     ...parsed,
     wins: parsed.wins ?? [],
-    settings: withoutLegacyIntegrationAuthority(parsed.settings),
+    settings: {
+      ...settings,
+      // Quality bar: never contact / accept below 80% unless operator raises further.
+      minScoreToContact: Math.max(80, Number(settings.minScoreToContact) || 80),
+      fleet: {
+        ...defs.fleet,
+        ...(settings.fleet ?? {}),
+        deliveryMode: settings.fleet?.deliveryMode === "manual" ? "manual" : "automatic",
+        browserAgentPermissionMode:
+          settings.fleet?.browserAgentPermissionMode === "manual" ||
+          settings.fleet?.browserAgentPermissionMode === "skip"
+            ? settings.fleet.browserAgentPermissionMode
+            : "auto",
+      },
+    },
   };
 }
 
@@ -115,12 +218,20 @@ export function loadState(): HermesState {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as HermesState;
-      if (parsed && parsed.version === STATE_VERSION) return normalizeHermesState(parsed);
+      if (parsed && parsed.version === STATE_VERSION) {
+        const normalized = normalizeHermesState(parsed);
+        if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
+        window.localStorage.removeItem(STORAGE_KEY);
+        return buildSeedState();
+      }
       // Migrate ANY prior version rather than wiping all data — migrateToCurrentVersion
       // defensively defaults every field, so it can handle arbitrarily old blobs. Only
       // missing/corrupt/unparseable JSON or a non-numeric version falls through to reseed.
       if (parsed && typeof parsed.version === "number") {
-        return normalizeHermesState(parsed);
+        const normalized = normalizeHermesState(parsed);
+        if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
+        window.localStorage.removeItem(STORAGE_KEY);
+        return buildSeedState();
       }
     }
   } catch {

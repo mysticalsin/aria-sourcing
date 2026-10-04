@@ -1,5 +1,9 @@
 # Hermes Sourcing — Go-Live Checklist
 
+> LEGACY VERCEL / SUPABASE CLOUD CHECKLIST. This is not the Fly production
+> release procedure. Use `DEPLOYMENT_RUNBOOK.md` for Fly and
+> `../DEPLOY_VERCEL_DEMO.md` for the separate demo path.
+
 Ordered. Complete each step in sequence. Do not flip any fleet seat to `live`
 until every item above it is checked. Items marked **(optional)** are not
 required for launch but must be done before the relevant feature is used.
@@ -8,7 +12,7 @@ required for launch but must be done before the relevant feature is used.
 
 ## Phase 1 — Pre-flight (local, before touching production)
 
-- [ ] `npm ci && npm run typecheck` — zero TypeScript errors.
+- [ ] `npm ci && npm run typecheck && npm run typecheck:tests` — zero application or test TypeScript errors.
 - [ ] `npm run lint` — clean.
 - [ ] `npm run test` — full deterministic suite passes.
 - [ ] `npm run build` (CI or unsynced checkout) or `npm run build:isolated`

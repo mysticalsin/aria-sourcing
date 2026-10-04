@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
-  SUPABASE_AUTH_COOKIE_NAME,
+  SUPABASE_COOKIE_OPTIONS,
   supabaseEnabled,
   demoLoginEnabled,
   isProduction,
@@ -14,18 +14,46 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { demoAuthConfigured, mintDemoToken } from "@/lib/demo-auth";
 
 /**
- * One-click demo login for the `admin` / `admin` showcase shortcut.
+ * One-click demo login for the configured showcase account.
  *
- *  - LIVE mode (Supabase): resolves admin/admin to the seeded account and signs in
- *    SERVER-SIDE, so the real account password never reaches the client bundle.
- *  - OPEN demo (no Supabase, NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true): mints a short-lived,
- *    HMAC-signed httpOnly cookie so the chat route can gate the env-resident LLM key
- *    behind this login instead of serving it to anonymous callers.
+ *  - Identity: DEMO_ADMIN_USERNAME (or DEMO_ADMIN_EMAIL); local default "admin".
+ *  - Password: DEMO_ADMIN_PASSWORD; local default "admin" when unset.
+ *  - LIVE mode (Supabase): signs in SERVER-SIDE as DEMO_ADMIN_EMAIL
+ *    (falls back to the username when it already looks like an email).
+ *  - OPEN demo (no Supabase): mints a short-lived HMAC-signed httpOnly cookie.
  *
  * Hard-disabled in production unless this is a deliberately public demo instance.
  */
+function configuredDemoUsername(): string | null {
+  const fromEnv =
+    process.env.DEMO_ADMIN_USERNAME?.trim() ||
+    process.env.DEMO_ADMIN_EMAIL?.trim() ||
+    process.env["NEXT_PUBLIC_DEMO_ADMIN_USERNAME"]?.trim() ||
+    null;
+  if (fromEnv) return fromEnv;
+  return isProduction ? null : "admin";
+}
+
+function configuredDemoEmail(username: string): string {
+  const explicit = process.env.DEMO_ADMIN_EMAIL?.trim();
+  if (explicit) return explicit.toLowerCase();
+  if (username.includes("@")) return username.toLowerCase();
+  return `${username.toLowerCase()}@hermes.local`;
+}
+
+function usernamesMatch(provided: string, expected: string): boolean {
+  return provided.trim().toLowerCase() === expected.trim().toLowerCase();
+}
+
 export async function POST(req: Request) {
-  if (isProduction && !demoLoginEnabled) {
+  // Prefer static demoLoginEnabled (build-time NEXT_PUBLIC_*) but also honor a
+  // runtime Fly secret: ENABLE_DEMO_LOGIN or dynamically-read NEXT_PUBLIC_* so
+  // operators can open the showcase without a full image rebuild. Bracket
+  // access avoids Next.js inlining of NEXT_PUBLIC_* at build time.
+  const runtimeDemoLogin =
+    process.env.ENABLE_DEMO_LOGIN === "true" ||
+    process.env["NEXT_PUBLIC_ENABLE_DEMO_LOGIN"] === "true";
+  if (isProduction && !demoLoginEnabled && !runtimeDemoLogin) {
     return NextResponse.json({ ok: false, error: "Disabled in production." }, { status: 404 });
   }
 
@@ -36,14 +64,20 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json().catch(() => ({}))) as { username?: string; password?: string };
-  if (body.username !== "admin" || body.password !== "admin") {
+  const demoUsername = configuredDemoUsername();
+  const demoPassword =
+    process.env.DEMO_ADMIN_PASSWORD ?? (isProduction ? null : "admin");
+  if (!demoUsername || !demoPassword) {
+    return NextResponse.json({ ok: false, error: "Demo login is not configured." }, { status: 500 });
+  }
+  if (!usernamesMatch(String(body.username || ""), demoUsername) || body.password !== demoPassword) {
     return NextResponse.json({ ok: false, error: "Invalid demo credentials." }, { status: 401 });
   }
 
   // OPEN demo (no Supabase): mint a signed httpOnly session cookie. The chat route
   // verifies it before spending the env-resident LLM key. Fail closed if unconfigured.
   if (!supabaseEnabled) {
-    if (!demoLoginEnabled) {
+    if (!demoLoginEnabled && !runtimeDemoLogin) {
       return NextResponse.json({ ok: false, error: "No backend configured." }, { status: 400 });
     }
     if (!demoAuthConfigured()) {
@@ -60,18 +94,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // LIVE mode (Supabase): the seeded account's real password MUST be set explicitly in
-  // a public production demo — never fall back to the well-known local default (it would
-  // let anyone sign in to the seeded account directly). Local/dev keeps the convenience default.
-  const demoPassword =
-    process.env.DEMO_ADMIN_PASSWORD ?? (isProduction ? null : "admindemo123");
-  if (!demoPassword) {
-    return NextResponse.json({ ok: false, error: "Demo login is not configured." }, { status: 500 });
-  }
-
   const cookieStore = await cookies();
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookieOptions: { name: SUPABASE_AUTH_COOKIE_NAME },
+    cookieOptions: SUPABASE_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -83,7 +108,7 @@ export async function POST(req: Request) {
   });
 
   const { error } = await supabase.auth.signInWithPassword({
-    email: "admin@hermes.local",
+    email: configuredDemoEmail(demoUsername),
     password: demoPassword,
   });
   if (error) {

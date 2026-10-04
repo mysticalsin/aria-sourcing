@@ -109,8 +109,15 @@ export function LearningSession({
 
   function accept() {
     if (!canEdit || !pending || !campaignId) return;
-    actions.acceptSkillLearning(pending.skill);
-    actions.setSkillUpdateStatus(campaignId, pending.id, "accepted");
+    const accepted = actions.setSkillUpdateStatus(campaignId, pending.id, "accepted");
+    if (!accepted) {
+      toast({
+        title: "Couldn't save the learning decision",
+        description: "Refresh the campaign and try again.",
+        variant: "error",
+      });
+      return;
+    }
     toast({
       title: "Learning accepted",
       description: `${pending.title} is now v${skill.version + 1} of ${skill.filename}. It applies on the next run.`,
@@ -120,7 +127,15 @@ export function LearningSession({
 
   function dismiss() {
     if (!canEdit || !pending || !campaignId) return;
-    actions.setSkillUpdateStatus(campaignId, pending.id, "rejected");
+    const rejected = actions.setSkillUpdateStatus(campaignId, pending.id, "rejected");
+    if (!rejected) {
+      toast({
+        title: "Couldn't save the learning decision",
+        description: "Refresh the campaign and try again.",
+        variant: "error",
+      });
+      return;
+    }
     toast({
       title: "Proposal dismissed",
       description: `${pending.title} was not applied.`,

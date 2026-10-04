@@ -3,9 +3,17 @@
 import * as React from "react";
 import { Modal, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Sparkles, Building2, Bot, SlidersHorizontal, ArrowLeft } from "lucide-react";
+import {
+  Sparkles,
+  Inbox,
+  Monitor,
+  Hand,
+  ShieldCheck,
+  Send,
+  ArrowLeft,
+} from "lucide-react";
 
-const KEY = "hermes:onboarded:v1";
+const KEY = "hermes:onboarded:v2";
 
 type Step = { icon: React.ReactNode; title: string; body: string };
 
@@ -14,25 +22,37 @@ const STEPS: Step[] = [
     icon: <Sparkles className="h-6 w-6" />,
     title: "Welcome to Aria Sourcing",
     body:
-      "Autonomous recruiting operations by Mantu. Aria turns one job request into booked interviews: it parses the brief, sources matched talent, drafts outreach for your approval, and books the room. Human approval, machine speed.",
+      "Autonomous recruiting by Mantu. Aria turns one job request into booked interviews: parse the brief, source matched talent, draft outreach for your approval, then send via an isolated LinkedIn Browser Computer — human approval, machine speed.",
   },
   {
-    icon: <Building2 className="h-6 w-6" />,
-    title: "The Operations Floor",
+    icon: <Inbox className="h-6 w-6" />,
+    title: "Connect email & pick an LLM",
     body:
-      "Watch your whole fleet at work: a live 2D grid or a 3D office you can orbit. Each agent is a real, authorized sending identity, coordinated so no candidate is ever double-contacted.",
+      "In Settings, connect Gmail or Outlook and choose the recruitment model. Dry-run stays on until you flip it under Approval & Compliance — nothing contacts candidates until then.",
   },
   {
-    icon: <Bot className="h-6 w-6" />,
-    title: "Fleet · Chat · Memory · Soul",
+    icon: <Monitor className="h-6 w-6" />,
+    title: "Create a campaign & attach an agent",
     body:
-      "Deploy and tune up to 300 agents. Chat with any agent live, give each a persona (Soul) and long-term Memory, and assign per-agent models and tools from the Fleet.",
+      "Pull a need from Intake, create the campaign, then attach a LinkedIn Browser Computer seat on the Agents tab. One seat = one Chromium profile — never share research browsers for send.",
   },
   {
-    icon: <SlidersHorizontal className="h-6 w-6" />,
-    title: "Connect & go live, safely",
+    icon: <Hand className="h-6 w-6" />,
+    title: "Take control · log into LinkedIn",
     body:
-      "In Settings, connect your LLM providers and integrations right in the UI. No code, no .env. Everything stays dry-run until you flip Live mode: nothing real ever leaves without your approval.",
+      "Start the agent, Take control, complete LinkedIn login and 2FA in the live view, then Release. While you hold control the bot refuses sends. If the session needs help, Aria surfaces help_requested.",
+  },
+  {
+    icon: <ShieldCheck className="h-6 w-6" />,
+    title: "Approve outreach",
+    body:
+      "Review drafts on Outreach. Approve only what you want sent. With dry-run on, approval is a rehearsal; turn dry-run off when you are ready for live contact.",
+  },
+  {
+    icon: <Send className="h-6 w-6" />,
+    title: "Send — paced & honest",
+    body:
+      "Send approved LinkedIn messages. Aria enforces human-like gaps, daily caps, business hours, and session health — and never pretends a blocked send was a success.",
   },
 ];
 

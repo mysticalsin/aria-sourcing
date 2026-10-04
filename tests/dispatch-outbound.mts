@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import * as dispatchModule from "../src/lib/dispatch-outbound";
+import type { AgentSeat } from "../src/lib/types";
 import {
   APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
   buildApprovedWhatsAppTemplateAudit,
@@ -22,15 +23,23 @@ function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; 
 --------------------------------------------------------------------------- */
 interface Row { [k: string]: unknown }
 
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 function makeFakeDb(seed: {
   outbound: Row[];
   approvals: Row[];
   seats: Row[];
+  controls?: Row[];
   ledgers?: Row[];
   whatsappContacts?: Row[];
   whatsappTemplates?: Row[];
   cacheError?: { message: string } | null;
-  claim: { allowed?: boolean; reason?: string; ledger_id?: string; delivery_attempt_id?: string } | null;
+  claim: { allowed?: boolean; reason?: string; ledger_id?: string; delivery_attempt_id?: string; profile_url?: string } | null;
   claimError?: { message: string } | null;
   acceptance?: { allowed?: boolean; reason?: string } | null;
   acceptanceError?: { message: string } | null;
@@ -44,6 +53,9 @@ function makeFakeDb(seed: {
     if (name === "messages_outbound") return seed.outbound;
     if (name === "outreach_approvals") return seed.approvals;
     if (name === "agent_seats") return seed.seats;
+    if (name === "sourcing_loop_controls") {
+      return seed.controls ?? [{ workspace_id: "ws-1", kill_switch: false, sequences_enabled: true }];
+    }
     if (name === "outreach_ledger") return seed.ledgers ?? [];
     if (name === "whatsapp_contacts") return seed.whatsappContacts ?? [];
     if (name === "whatsapp_templates") return seed.whatsappTemplates ?? [];
@@ -119,6 +131,30 @@ function makeFakeDb(seed: {
         ledger.reason = args.p_reason;
         return Promise.resolve({ data: { allowed: true, reason: "recorded" }, error: null });
       }
+      if (fn === "record_linkedin_delivery_outcome") {
+        const row = seed.outbound.find((item) => item.id === args.p_message_id);
+        const ledger = (seed.ledgers ?? []).find(
+          (item) => item.outbound_message_id === args.p_message_id && item.send_attempt_id === args.p_delivery_attempt_id && item.status === "claimed",
+        );
+        if (!row || row.status !== "dispatching") {
+          return Promise.resolve({ data: { allowed: false, reason: "not-dispatching" }, error: null });
+        }
+        if (row.delivery_attempt_id !== args.p_delivery_attempt_id) {
+          return Promise.resolve({ data: { allowed: false, reason: "attempt-mismatch" }, error: null });
+        }
+        if (!ledger) return Promise.resolve({ data: { allowed: false, reason: "ledger-not-claimed" }, error: null });
+        row.status = args.p_outcome === "sent" ? "sent" : "failed";
+        ledger.status = args.p_outcome;
+        ledger.reason = args.p_reason;
+        return Promise.resolve({ data: { allowed: true, reason: "recorded" }, error: null });
+      }
+      if (fn === "claim_linkedin_outbound_queued" && seed.claim?.allowed === true) {
+        const row = seed.outbound.find((item) => item.id === args.p_message_id);
+        if (row) {
+          row.status = "dispatching";
+          row.delivery_attempt_id = seed.claim.delivery_attempt_id ?? null;
+        }
+      }
       if (fn === "claim_whatsapp_outbound" && seed.atomicClaim) {
         const row = seed.outbound.find((item) => item.id === args.p_message_id);
         if (!row) return Promise.resolve({ data: { allowed: false, reason: "message-not-found" }, error: null });
@@ -138,7 +174,7 @@ function makeFakeDb(seed: {
     },
   } as unknown as SupabaseClient;
 
-  return { client, updates, rpcCalls, cacheWrites };
+  return { client, updates, rpcCalls, cacheWrites, ledgers: seed.ledgers ?? [] };
 }
 
 const bodyHash = (body: string, subject = "") => createHash("sha256").update(`${subject}\n${body}`).digest("hex");
@@ -178,7 +214,35 @@ function baseMsg(over: Row = {}): Row {
     ...over,
   };
 }
-const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "active", mode: "live" };
+
+function baseLinkedInMsg(over: Row = {}): Row {
+  return baseMsg({
+    channel: "LinkedIn",
+    to_address: "https://www.linkedin.com/in/marco-rossi",
+    subject: "Quick note",
+    approval_message_id: "m-1",
+    ...over,
+  });
+}
+
+const LIVE_SEAT = {
+  id: "seat-1",
+  workspace_id: "ws-1",
+  provider: "WhatsApp Cloud",
+  status: "active",
+  mode: "live",
+} satisfies Pick<AgentSeat, "id" | "provider" | "status" | "mode"> & { workspace_id: string };
+const LIVE_LINKEDIN_MANUAL_SEAT = {
+  id: "seat-1",
+  workspace_id: "ws-1",
+  provider: "LinkedIn Assisted Manual",
+  status: "active",
+  mode: "live",
+};
+const LIVE_LINKEDIN_VENDOR_SEAT = {
+  ...LIVE_LINKEDIN_MANUAL_SEAT,
+  provider: "LinkedIn Vendor API",
+};
 const LIVE_WHATSAPP_CONTACT: Row = {
   workspace_id: "ws-1",
   recipient_e164: "33612345678",
@@ -188,11 +252,17 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   expires_at: null,
 };
 
+const LOOP_SENDS_ENABLED: Row = {
+  workspace_id: "ws-1",
+  kill_switch: false,
+  sequences_enabled: true,
+};
+
 // ---------------------------------------------------------------------------
 // 1. No approval row → blocked, RPC never called
 // ---------------------------------------------------------------------------
 {
-  const db = makeFakeDb({ outbound: [baseMsg()], approvals: [], seats: [LIVE_SEAT], claim: { allowed: true } });
+  const db = makeFakeDb({ outbound: [baseMsg()], approvals: [], seats: [LIVE_SEAT], controls: [LOOP_SENDS_ENABLED], claim: { allowed: true } });
   const stats = await dispatchDue(db.client, 10);
   ok("no-approval: blocked", stats.blocked === 1 && stats.sent === 0);
   ok("no-approval: claim never ran", db.rpcCalls.length === 0);
@@ -207,6 +277,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
     outbound: [baseMsg()],
     approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash("different text") }],
     seats: [LIVE_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
     claim: { allowed: true },
   });
   const stats = await dispatchDue(db.client, 10);
@@ -223,6 +294,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
     outbound: [baseMsg({ body: evil })],
     approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(evil) }],
     seats: [LIVE_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
     claim: { allowed: true },
   });
   const stats = await dispatchDue(db.client, 10);
@@ -235,10 +307,51 @@ const LIVE_WHATSAPP_CONTACT: Row = {
 // interaction. Missing consent is a hard block, not a review hint.
 // ---------------------------------------------------------------------------
 {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.WHATSAPP_TOKEN;
+  const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_TOKEN = "test-token";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
+  let transportCalls = 0;
+  globalThis.fetch = (async () => {
+    transportCalls++;
+    return jsonResponse(200, { messages: [{ id: "wamid.must-not-send" }] });
+  }) as typeof fetch;
+  try {
+    for (const [name, controls] of [
+      ["kill switch", { workspace_id: "ws-1", kill_switch: true, sequences_enabled: true }],
+      ["sequences disabled", { workspace_id: "ws-1", kill_switch: false, sequences_enabled: false }],
+    ] as const) {
+      transportCalls = 0;
+      const db = makeFakeDb({
+        outbound: [baseMsg()],
+        approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+        seats: [LIVE_SEAT],
+        controls: [controls],
+        whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+        ledgers: [{ id: `led-${name}`, outbound_message_id: "m-1", status: "claimed" }],
+        claim: { allowed: true, ledger_id: `led-${name}`, delivery_attempt_id: ATTEMPT_ONE },
+      });
+      const stats = await dispatchDue(db.client, 10);
+      ok(`loop controls ${name}: no transport call`, transportCalls === 0);
+      ok(`loop controls ${name}: no dispatch claim`, !db.rpcCalls.some((call) => call.fn === "claim_whatsapp_outbound"));
+      ok(`loop controls ${name}: drains no terminal state`, stats.sent === 0 && stats.blocked === 0 && stats.failed === 0);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.WHATSAPP_TOKEN;
+    else process.env.WHATSAPP_TOKEN = originalToken;
+    if (originalPhone === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = originalPhone;
+  }
+}
+
+{
   const db = makeFakeDb({
     outbound: [baseMsg({ type: "candidate_reply" })],
     approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
     seats: [LIVE_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
     whatsappContacts: [],
     claim: { allowed: true },
   });
@@ -497,7 +610,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   let providerCalls = 0;
   globalThis.fetch = (async () => {
     providerCalls++;
-    return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.must-not-send" }] }) };
+    return jsonResponse(200, { messages: [{ id: "wamid.must-not-send" }] });
   }) as typeof fetch;
   try {
     const db = makeFakeDb({
@@ -534,11 +647,133 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const stats = await dispatchDue(db.client, 10);
   ok("legacy approval: blocked", stats.blocked === 1 && stats.sent === 0);
   ok("legacy approval: claim never ran", db.rpcCalls.length === 0);
-  ok("legacy approval: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-not-human"));
+  ok("legacy approval: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-not-authorized"));
 }
 
 // ---------------------------------------------------------------------------
-// 10. All guards pass, no WhatsApp creds in env → adapter dry-runs → unconfigured
+// 10. LinkedIn without a recorded approval refuses before claim or transport.
+// ---------------------------------------------------------------------------
+{
+  const originalFetch = globalThis.fetch;
+  const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
+  const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
+  process.env.LINKEDIN_VENDOR_API_URL = "https://vendor.example.test/linkedin/send";
+  process.env.LINKEDIN_VENDOR_API_KEY = "vendor-key";
+  let transportCalls = 0;
+  globalThis.fetch = (async () => {
+    transportCalls++;
+    return jsonResponse(200, { id: "li-must-not-send" });
+  }) as typeof fetch;
+  try {
+    const db = makeFakeDb({
+      outbound: [baseLinkedInMsg()],
+      approvals: [],
+      seats: [LIVE_LINKEDIN_VENDOR_SEAT],
+      controls: [LOOP_SENDS_ENABLED],
+      claim: {
+        allowed: true,
+        ledger_id: "li-ledger-must-not-exist",
+        delivery_attempt_id: ATTEMPT_ONE,
+        profile_url: "https://www.linkedin.com/in/marco-rossi",
+      },
+    });
+    const stats = await dispatchDue(db.client, 10);
+    ok("LinkedIn no approval: blocked", stats.blocked === 1 && stats.sent === 0 && stats.failed === 0);
+    ok("LinkedIn no approval: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
+    ok("LinkedIn no approval: transport mock never invoked", transportCalls === 0);
+    ok("LinkedIn no approval: no ledger row is written by the dispatcher", db.ledgers.length === 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
+    else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
+    if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
+    else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 11. LinkedIn assisted-manual works through the adapter and records the
+// outcome in the same durable ledger.
+// ---------------------------------------------------------------------------
+{
+  const db = makeFakeDb({
+    outbound: [baseLinkedInMsg()],
+    approvals: [
+      {
+        workspace_id: "ws-1",
+        message_id: "m-1",
+        body_hash: bodyHash(GOOD_BODY, "Quick note"),
+        approval_source: "human",
+      },
+    ],
+    seats: [LIVE_LINKEDIN_MANUAL_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
+    ledgers: [{ id: "li-ledger-1", outbound_message_id: "m-1", send_attempt_id: ATTEMPT_ONE, status: "claimed" }],
+    claim: {
+      allowed: true,
+      ledger_id: "li-ledger-1",
+      delivery_attempt_id: ATTEMPT_ONE,
+      profile_url: "https://www.linkedin.com/in/marco-rossi",
+    },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("LinkedIn assisted-manual: sent is recorded", stats.sent === 1 && stats.failed === 0 && stats.blocked === 0);
+  ok("LinkedIn assisted-manual: claim and outcome RPCs both run", db.rpcCalls.map((call) => call.fn).join("|") === "claim_linkedin_outbound_queued|record_linkedin_delivery_outcome");
+  ok("LinkedIn assisted-manual: shared ledger reaches sent", db.ledgers[0]?.status === "sent");
+}
+
+// ---------------------------------------------------------------------------
+// 12. LinkedIn vendor API is wired but dark without credentials. It fails
+// closed before claim or transport, never falling back to assisted-manual.
+// ---------------------------------------------------------------------------
+{
+  const originalFetch = globalThis.fetch;
+  const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
+  const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
+  delete process.env.LINKEDIN_VENDOR_API_URL;
+  delete process.env.LINKEDIN_VENDOR_API_KEY;
+  let transportCalls = 0;
+  globalThis.fetch = (async () => {
+    transportCalls++;
+    return jsonResponse(200, { id: "li-must-not-send" });
+  }) as typeof fetch;
+  try {
+    const db = makeFakeDb({
+      // campaign_id required so Vendor attach gate passes before unconfigured check
+      outbound: [baseLinkedInMsg({ campaign_id: "camp-1" })],
+      approvals: [
+        {
+          workspace_id: "ws-1",
+          message_id: "m-1",
+          body_hash: bodyHash(GOOD_BODY, "Quick note"),
+          approval_source: "human",
+        },
+      ],
+      seats: [LIVE_LINKEDIN_VENDOR_SEAT],
+      controls: [LOOP_SENDS_ENABLED],
+      claim: {
+        allowed: true,
+        ledger_id: "li-ledger-vendor",
+        delivery_attempt_id: ATTEMPT_ONE,
+        profile_url: "https://www.linkedin.com/in/marco-rossi",
+      },
+    });
+    const stats = await dispatchDue(db.client, 10);
+    ok("LinkedIn vendor dark: counted as unconfigured failure", stats.unconfigured === 1 && stats.sent === 0);
+    ok("LinkedIn vendor dark: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
+    ok("LinkedIn vendor dark: transport never invoked", transportCalls === 0);
+    ok("LinkedIn vendor dark: reason proves no assisted-manual fallback", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-provider-unconfigured"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
+    else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
+    if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
+    else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 13. All guards pass, no WhatsApp creds in env → adapter dry-runs → unconfigured
 //    (never a silent fake-sent)
 // ---------------------------------------------------------------------------
 {
@@ -568,7 +803,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: false, status: 401, json: async () => ({}) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(401, {})) as typeof fetch;
   try {
     const outbound = [baseMsg()];
     const ledgers = [{ id: "led-1", outbound_message_id: "m-1", status: "claimed" }];
@@ -640,7 +875,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: false, status: 503, json: async () => ({}) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(503, {})) as typeof fetch;
   try {
     const outbound = [baseMsg()];
     const ledgers = [{ id: "led-1", outbound_message_id: "m-1", status: "claimed" }];
@@ -694,7 +929,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.accepted" }] }) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(200, { messages: [{ id: "wamid.accepted" }] })) as typeof fetch;
   try {
     const db = makeFakeDb({
       outbound: [baseMsg()],
@@ -729,7 +964,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.ambiguous" }] }) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(200, { messages: [{ id: "wamid.ambiguous" }] })) as typeof fetch;
   try {
     const db = makeFakeDb({
       outbound: [baseMsg()],
@@ -764,7 +999,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   let providerCalls = 0;
   globalThis.fetch = (async () => {
     providerCalls++;
-    return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.concurrent" }] }) };
+    return jsonResponse(200, { messages: [{ id: "wamid.concurrent" }] });
   }) as typeof fetch;
   try {
     const outbound = [baseMsg()];
@@ -991,7 +1226,7 @@ ok(
 const sendRouteSource = readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8");
 const smsApiGuard = sendRouteSource.indexOf('if (channel === "SMS")');
 const serverClientOpen = sendRouteSource.indexOf("const supabase = await getServerSupabase()", smsApiGuard);
-const providerCall = sendRouteSource.indexOf("sendViaProvider({", smsApiGuard);
+const providerCall = sendRouteSource.indexOf("performEmailSend(", smsApiGuard);
 ok(
   "SMS policy: API guard precedes database and provider side effects",
   smsApiGuard >= 0 && serverClientOpen > smsApiGuard && providerCall > smsApiGuard,
