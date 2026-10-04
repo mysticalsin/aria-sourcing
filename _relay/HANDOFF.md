@@ -1,41 +1,39 @@
 ---
 project: MSourcing / ARIA
-shift: 360
+shift: 361
 agent: cursor-cloud
-updated: 2026-10-04T05:15Z
-status: tip-probe-click-residuals-awaiting-ci-approve
+updated: 2026-10-04T05:30Z
+status: tip-restore-probe-family-awaiting-ci-approve
 ---
 
-# Handoff — Shift 360
+# Handoff — Shift 361
 
 ## Current state
 
-- **Branch tip:** pending push on `cursor/fly-deploy-land-n-agent-b91d` (probe mid-Take + Send click→unknown)
-- #150 squash auto-merge armed, `REVIEW_REQUIRED` (owner Approve)
-- Fly prod still `21a42e7` / migration `0084` (pre-land)
-- Second residual hunt ([Second residual hunt post-865df7d](bc-b187a38b-6b5b-559e-acb3-4df527ceef83)) → 2 fixed
+- **Branch tip:** pending on `cursor/fly-deploy-land-n-agent-b91d` (durable restore probe-family)
+- #150 squash auto-merge armed, `REVIEW_REQUIRED`
+- Fly prod still `21a42e7` / migration `0084`
+- 3rd residual ([Third residual hunt tip 828d9aa](bc-8862f733-fde9-5264-aa99-6f5ee12c2c40)) → fixed
 
 ## Done this shift
 
-1. `probeSession` skip/discard when `isHumanHeld` (no invent green mid-Take / refresh TOCTOU)
-2. Send / Send-invitation `openBotClick` throw → no-proof unknown (not deferred dual-send)
-3. Local: tsc + computer-supervisor 162 / linkedin-send 15 / linkedin-channel 43
+1. `restoreSessionHealthFromDurableAudits` merges `session_probe` + `session_probe_failed`; newest fail/null wins (no invent green)
+2. Local: tsc + computer-supervisor 164 pass
 
 ## Blockers
 
 1. Owner Approve #150 → squash → Deploy → fly-n-agent-proof → LI Take→login→Release
-2. Never invent sessionHealthy; do not UpdateGoal complete until tip SHA + ≥0087/0088/0089/0090 + LI healthy
+2. Never invent sessionHealthy; UpdateGoal complete only after tip SHA + ≥0087–0090 + LI healthy
 
 ## Next steps
 
-1. Wait tip CI green (ignore Vercel-only)
-2. Owner Approve #150; deploy; proof; LI health
+1. Tip CI green (ignore Vercel-only)
+2. Owner Approve; deploy; proof; LI health
 
 ## Decisions made (don't relitigate)
 
 - Never invent sessionHealthy=true; ignore Vercel-only when Quality/Release pass
-- Post-click no-proof / Send-click throw stay unknown; never Release-auto-retry those
-- probeSession never paints green under Take
+- Durable restore uses newest probe-family event (fail/null wipe older green)
 
 ## Watch out
 
