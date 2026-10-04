@@ -111,10 +111,11 @@ export function evaluateSendPace(opts: {
   if (settings.enforceBusinessHours && !isWithinSendWindow(seat, now, true)) {
     const w = seat.sendWindow;
     // Scan forward in real time; isWithinSendWindow owns timezone wall-clock.
+    // 5-minute steps keep nextEligibleAt within the opening hour (hourly was ~59m late).
     let nextEligibleAt: string | undefined;
     let probe = new Date(now.getTime());
-    for (let i = 0; i < 24 * 8; i++) {
-      probe = new Date(probe.getTime() + 60 * 60 * 1000);
+    for (let i = 0; i < 24 * 8 * 12; i++) {
+      probe = new Date(probe.getTime() + 5 * 60 * 1000);
       if (isWithinSendWindow(seat, probe, true)) {
         nextEligibleAt = probe.toISOString();
         break;

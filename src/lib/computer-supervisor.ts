@@ -553,7 +553,8 @@ export class ComputerSupervisor {
   expireStaleSessionHealth(rec: ComputerRecord, now = Date.now()): ComputerRecord {
     if (rec.sessionHealthy !== true) return rec;
     const at = rec.sessionProbedAt ? Date.parse(rec.sessionProbedAt) : NaN;
-    if (!Number.isFinite(at) || now - at > SESSION_HEALTH_TTL_MS) {
+    // Future probedAt is clock skew / poison — fail closed (never keep green).
+    if (!Number.isFinite(at) || at > now || now - at > SESSION_HEALTH_TTL_MS) {
       rec.sessionHealthy = null;
       // Keep sessionProbedAt so audits can see last probe time; health itself is unverified.
     }
@@ -1051,7 +1052,8 @@ export class ComputerSupervisor {
       if (!ev) continue;
       considered++;
       const probedAtMs = Date.parse(ev.at);
-      if (!Number.isFinite(probedAtMs) || now - probedAtMs > SESSION_HEALTH_TTL_MS) continue;
+      // Future audit timestamps are poison — never restore green past wall-clock.
+      if (!Number.isFinite(probedAtMs) || probedAtMs > now || now - probedAtMs > SESSION_HEALTH_TTL_MS) continue;
       // Fresher in-memory probe wins — do not clobber with older durable receipt.
       const memAt = rec.sessionProbedAt ? Date.parse(rec.sessionProbedAt) : NaN;
       if (Number.isFinite(memAt) && memAt >= probedAtMs && rec.sessionHealthy != null) {

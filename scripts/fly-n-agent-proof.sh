@@ -10,7 +10,7 @@
 # expected_tip_sha defaults to origin/deploy/fly-github-actions (fetch first).
 #
 # Exit 0 only when /api/ready JSON shows:
-#   build == tip, migration ~0087, hermesRuntime==true, database/auth/queue true
+#   build == tip, migration ≥0087 (0088+ OK), hermesRuntime==true, database/auth/queue true
 #
 # Does NOT require agentFrameworks==true or HTTP 200. DeerFlow/Flowise sidecars
 # are not on this Fly tenant; /api/ready stays 503 while /api/health routes the
@@ -60,7 +60,10 @@ node -e '
   const build = String(j.build ?? "");
   const migration = String(j.migration ?? "");
   const okBuild = build === expected;
-  const okMig = /0087/.test(migration);
+  const okMig = (() => {
+    const n = Number((migration.match(/^(\d{4})/) || [])[1] || 0);
+    return Number.isFinite(n) && n >= 87;
+  })();
   const okHermes = c.hermesRuntime === true;
   const okPlane = c.database === true && c.auth === true && c.queue === true;
   // Honest report only — not a pass gate on this tenant.

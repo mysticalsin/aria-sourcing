@@ -348,11 +348,44 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-store-unavailable"] });
           continue;
         }
-        const seat = seatRow ? agentSeatRowToSeat(seatRow as AgentSeatRow) : null;
-        const adapter = linkedInAdapterForProvider(seat?.provider);
-        if (!seat || seat.status !== "active" || seat.mode !== "live" || !adapter) {
+        const seatBase = seatRow ? agentSeatRowToSeat(seatRow as AgentSeatRow) : null;
+        const adapter = linkedInAdapterForProvider(seatBase?.provider);
+        if (!seatBase || seatBase.status !== "active" || seatBase.mode !== "live" || !adapter) {
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
           continue;
+        }
+        // Hydrate pacing counters from durable ledger — agentSeatRowToSeat alone
+        // zeros sentToday/lastSendAt so min_gap / daily_cap would be theater.
+        let seat = seatBase;
+        if (seat.provider === "LinkedIn Browser Computer") {
+          const dayStart = new Date();
+          dayStart.setUTCHours(0, 0, 0, 0);
+          const [{ data: lastRow }, { count: todayCount }] = await Promise.all([
+            supabase
+              .from("outreach_ledger")
+              .select("at")
+              .eq("seat_id", seat.id)
+              .eq("workspace_id", msg.workspace_id)
+              .in("status", ["claimed", "sent", "ambiguous"])
+              .order("at", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            supabase
+              .from("outreach_ledger")
+              .select("id", { count: "exact", head: true })
+              .eq("seat_id", seat.id)
+              .eq("workspace_id", msg.workspace_id)
+              .in("status", ["claimed", "sent", "ambiguous"])
+              .gte("at", dayStart.toISOString()),
+          ]);
+          seat = {
+            ...seat,
+            lastSendAt:
+              lastRow && typeof (lastRow as { at?: string }).at === "string"
+                ? (lastRow as { at: string }).at
+                : null,
+            sentToday: typeof todayCount === "number" ? todayCount : 0,
+          };
         }
         // Browser Computer send must use the durable DB computer_id — never mint on dispatch.
         if (

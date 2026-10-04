@@ -375,6 +375,9 @@ try {
     rec.sessionHealthy = true;
     rec.sessionProbedAt = new Date().toISOString();
     ok("fresh sessionHealthy remains true", ttl.get(seat.computerId)?.sessionHealthy === true);
+    rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date(Date.now() + 60_000).toISOString();
+    ok("future sessionProbedAt expires to null", ttl.get(seat.computerId)?.sessionHealthy == null);
   }
 
   // Cold-start hydrate: when OpenBot reports running, in-memory stopped → ready.

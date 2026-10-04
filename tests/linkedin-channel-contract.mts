@@ -98,6 +98,19 @@ ok("adapter maps browser-computer by provider", linkedInBackendForProvider("Link
 ok("browser-computer is an automatic provider", isLinkedInAutomaticProvider("LinkedIn Browser Computer") === true);
 ok("unknown provider has no adapter", linkedInAdapterForProvider("LinkedIn Bot Fleet") === null);
 
+const claimBcMigration = readFileSync(
+  "supabase/migrations/0088_claim_linkedin_browser_computer.sql",
+  "utf8",
+);
+ok(
+  "claim_linkedin allowlists Browser Computer + attach + computer_id (0088)",
+  /LinkedIn Browser Computer/.test(claimBcMigration) &&
+    /linkedin-computer-id-missing/.test(claimBcMigration) &&
+    /linkedin-seat-not-attached/.test(claimBcMigration) &&
+    /browser-computer/.test(claimBcMigration) &&
+    /seat\.provider not in \([\s\S]*LinkedIn Browser Computer/.test(claimBcMigration),
+);
+
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
 const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
 delete process.env.LINKEDIN_VENDOR_API_URL;
