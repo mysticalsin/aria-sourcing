@@ -116,8 +116,13 @@ export async function resolveDurableComputerId(opts: {
       if (healthy && nextId) return nextId;
     }
   } catch (err) {
-    // Persist failure with no existing id must surface — do not mint a twin.
-    if (err instanceof Error && /persist failed|computer_id persist failed/i.test(err.message)) {
+    // Persist / human-held with no existing must surface — do not mint a twin.
+    if (
+      err instanceof Error &&
+      /persist failed|computer_id persist failed|computer-human-held|human-has-control/i.test(
+        err.message,
+      )
+    ) {
       throw err;
     }
     if (err instanceof Error && /ensure mint/i.test(err.message)) {
