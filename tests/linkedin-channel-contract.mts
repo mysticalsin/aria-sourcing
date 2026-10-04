@@ -140,6 +140,13 @@ ok(
     dispatch.indexOf("evaluateSendPace") < dispatch.indexOf("claim_linkedin_outbound_queued"),
 );
 ok(
+  "dispatch soft-defers Manual/Skip and human/help before claim",
+  /manual_permission_mode/.test(dispatch) &&
+    /human-has-control/.test(dispatch) &&
+    /help_requested/.test(dispatch) &&
+    dispatch.indexOf("manual_permission_mode") < dispatch.indexOf("claim_linkedin_outbound_queued"),
+);
+ok(
   "dispatch sentToday day boundary pinned to CET (claim 0089 Europe/Berlin)",
   /startOfDayInTimeZone\(new Date\(\),\s*"CET"\)/.test(dispatch),
 );

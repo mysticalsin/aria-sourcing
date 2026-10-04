@@ -494,6 +494,14 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         if (seat.provider === "LinkedIn Browser Computer") {
           const computerId = (seat.computerId ?? "").trim();
           const seatId = (msg.seat_id ?? seat.id ?? "").trim();
+          // Manual/Skip refuse at enqueue after claim would burn — defer here.
+          const permission = fleetSettings.browserAgentPermissionMode;
+          if (permission === "manual" || permission === "skip") {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason: permission === "skip" ? "permission_skip" : "manual_permission_mode",
+            });
+            continue;
+          }
           if (computerId && seatId) {
             defaultComputerSupervisor.ensureComputer({
               workspaceId: msg.workspace_id,
@@ -506,10 +514,17 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
               msg.workspace_id,
             );
           }
-          const pacedHealthy =
-            computerId
-              ? (defaultComputerSupervisor.get(computerId)?.sessionHealthy ?? null)
-              : null;
+          const computerRec = computerId
+            ? defaultComputerSupervisor.get(computerId)
+            : null;
+          if (computerRec?.control === "human" || computerRec?.status === "help_requested") {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason:
+                computerRec.control === "human" ? "human-has-control" : "help_requested",
+            });
+            continue;
+          }
+          const pacedHealthy = computerRec?.sessionHealthy ?? null;
           const pace = evaluateSendPace({
             seat,
             settings: fleetSettings,
