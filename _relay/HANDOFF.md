@@ -1,26 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 368
+shift: 369
 agent: cursor-cloud
-updated: 2026-10-04T07:05Z
-status: tip-restore-family-query-awaiting-ci-approve
+updated: 2026-10-04T07:20Z
+status: tip-start-busy-refuse-awaiting-ci-approve
 ---
 
-# Handoff — Shift 368
+# Handoff — Shift 369
 
 ## Current state
 
-- **Branch tip:** pending — restore probe/control-family single `actions[]` query
-- Prior tip `19a71ed` / feature `32b1bfe`: Quality+Release SUCCESS; Vercel FAILURE (ignore); still `REVIEW_REQUIRED`
-- 9th residual ([Hunt restore limit residual](bc-206e25fa-b16b-5adc-98b0-2fd5f4998265)) → fixed
+- **Branch tip:** pending — start/navigate refuse busy; runJob ensure-before-busy
+- Prior tip `d61859c` / feature `d5b55a6`: full CI green incl Vercel; still `REVIEW_REQUIRED`
+- 10th residual ([Tenth residual hunt](bc-f324b6bd-819b-526c-8e25-c58ee8734aa0)) → fixed
 - Fly still `21a42e7` / `0084`
 
 ## Done this shift
 
-1. Confirmed tip CI Quality+Release green on `19a71ed`
-2. `ComputerAuditQuery.actions[]` + durable `.in("action")`
-3. restoreSessionHealth: one probe-family + one control-family stream (no split invent-green)
-4. Local: tsc + computer-supervisor 189 + computer-audit 23
+1. Confirmed tip CI full green on `d61859c`
+2. `start()` throws `computer-busy` (no demote busy→ready / warm-navigate mid-send)
+3. `runJob` ensures before marking busy; navigate route 409 on busy
+4. Local: tsc + computer-supervisor 192
 
 ## Blockers
 
@@ -34,8 +34,8 @@ status: tip-restore-family-query-awaiting-ci-approve
 
 ## Decisions made (don't relitigate)
 
-- Restore uses family `actions[]` streams — never split probe/fail or takeover/release caps
-- Ignore Vercel rate-limit when Quality/Release pass
+- busy mutex: Floor skip + probe/reclaim/start/navigate refuse; Release/humanMutex unstick
+- restore family `actions[]` streams
 
 ## Watch out
 
