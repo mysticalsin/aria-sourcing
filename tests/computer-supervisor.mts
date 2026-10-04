@@ -683,6 +683,51 @@ try {
       );
     }
 
+    // Twin/orphan request id must not hide a Taken seat desk.
+    {
+      const twinSup = new ComputerSupervisor();
+      const desk = twinSup.ensureComputer({
+        workspaceId: "ws",
+        seatId: "seat-twin",
+        computerId: "comp_taken_durable",
+      });
+      desk.control = "human";
+      desk.sessionHealthy = null;
+      desk.remoteUrl = "http://127.0.0.1:9020";
+      const twin = twinSup.ensureComputer({
+        workspaceId: "ws",
+        seatId: HOST_ORPHAN_SEAT_ID,
+        computerId: "comp_orphan_twin_req",
+      });
+      twin.remoteUrl = "http://127.0.0.1:9021";
+      twin.status = "ready";
+      twin.priorSeatId = "seat-twin";
+      twinSup.probeSession = async (computerId: string) => {
+        const rec = twinSup.get(computerId)!;
+        rec.sessionHealthy = computerId === "comp_orphan_twin_req";
+        return rec;
+      };
+      let twinErr = "";
+      try {
+        await twinSup.reclaimHealthyOrphan({
+          workspaceId: "ws",
+          seatId: "seat-twin",
+          computerId: "comp_orphan_twin_req",
+        });
+      } catch (err) {
+        twinErr = err instanceof Error ? err.message : String(err);
+      }
+      ok(
+        "reclaim refuses when seat desk Holds even if request id is orphan twin",
+        twinErr === "computer-human-held",
+      );
+      ok(
+        "Taken durable stays on seat (orphan twin request did not detach)",
+        twinSup.get("comp_taken_durable")?.seatId === "seat-twin" &&
+          twinSup.get("comp_taken_durable")?.control === "human",
+      );
+    }
+
     // Already-healthy stored id must not steal another orphan.
     const healthy = reclaimSup.ensureComputer({
       workspaceId: "ws",
@@ -971,7 +1016,9 @@ try {
           reclaimBlock.includes("status: 409") &&
           humanIdx >= 0 &&
           reclaimCallIdx >= 0 &&
-          humanIdx < reclaimCallIdx,
+          humanIdx < reclaimCallIdx &&
+          // Seat-wide — must not gate only on request computerId.
+          /c\.seatId === seatId && c\.control === "human"/.test(reclaimBlock),
       );
     }
 

@@ -230,7 +230,7 @@ ok(
   "browser-computer deliver maps pre-Send OpenBot throws (stale/ref/4xx) to not-sent",
   linkedInChannel.includes("stale snapshot") &&
     linkedInChannel.includes("ref not found") &&
-    linkedInChannel.includes("OpenBot (navigate|click|type) [45]\\d\\d"),
+    linkedInChannel.includes("OpenBot (navigate|click|type|snapshot) [45]\\d\\d"),
 );
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;

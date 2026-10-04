@@ -406,6 +406,10 @@ export class ComputerSupervisor {
         other.seatId === opts.seatId &&
         other.computerId !== computerId
       ) {
+        // Never detach a desk the operator currently Holds.
+        if (other.control === "human") {
+          throw new Error("computer-human-held");
+        }
         other.priorSeatId = opts.seatId;
         other.seatId = HOST_ORPHAN_SEAT_ID;
         other.updatedAt = isoNow();
@@ -748,16 +752,15 @@ export class ComputerSupervisor {
     await this.hydrateFromHost(opts.workspaceId);
 
     const currentId = typeof opts.computerId === "string" ? opts.computerId.trim() : "";
-    // Take mid-login: never probe/claim orphans onto a human-held seat binding.
-    const seatDesk =
-      (currentId ? this.computers.get(currentId) : undefined) ??
-      [...this.computers.values()].find(
-        (c) =>
-          c.workspaceId === opts.workspaceId &&
-          c.seatId === opts.seatId &&
-          c.seatId !== HOST_ORPHAN_SEAT_ID,
-      );
-    if (seatDesk?.control === "human") {
+    // Seat-scoped Take check — never prefer orphan/twin request id over the Taken desk.
+    const seatHeld = [...this.computers.values()].find(
+      (c) =>
+        c.workspaceId === opts.workspaceId &&
+        c.seatId === opts.seatId &&
+        c.seatId !== HOST_ORPHAN_SEAT_ID &&
+        c.control === "human",
+    );
+    if (seatHeld) {
       throw new Error("computer-human-held");
     }
 
