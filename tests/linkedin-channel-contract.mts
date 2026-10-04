@@ -172,8 +172,11 @@ ok(
     /soft-defer on claim/.test(dispatch),
 );
 ok(
-  "dispatch records deferred outcome for BC soft refuse after claim",
-  /"deferred"/.test(dispatch) && /soft-refuse deferred/.test(dispatch),
+  "dispatch records deferred for all BC not-sent after claim (no regex theater)",
+  /deliveryState === "not-sent"/.test(dispatch) &&
+    /"deferred"/.test(dispatch) &&
+    /soft-refuse deferred/.test(dispatch) &&
+    !/Deferred:\|session_unverified/.test(dispatch),
 );
 ok(
   "dispatch sentToday day boundary pinned to CET (claim 0089 Europe/Berlin)",

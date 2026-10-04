@@ -608,13 +608,11 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           seat,
           fleetSettings,
         });
-        // Soft refuse after claim (TOCTOU / session / human) — requeue, do not fail.
+        // Soft refuse after claim (TOCTOU / session / human / pace) — requeue, do not fail.
+        // All BC not-sent are soft: hard provider failures use deliveryState unknown.
         const softRefuse =
           seat.provider === "LinkedIn Browser Computer" &&
-          outcome.deliveryState === "not-sent" &&
-          /Deferred:|session_unverified|session_unhealthy|human-has-control|help_requested|manual_permission_mode|Computer refused|session snapshot required|seat snapshot required|OpenBot supervisor URL/i.test(
-            outcome.detail ?? "",
-          );
+          outcome.deliveryState === "not-sent";
         const outcomeKind = softRefuse
           ? "deferred"
           : outcome.status === "sent" && outcome.deliveryState === "accepted"

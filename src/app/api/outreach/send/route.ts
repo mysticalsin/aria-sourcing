@@ -305,6 +305,12 @@ export async function POST(req: NextRequest) {
             seatId,
             computerId: boundId,
           });
+          // Cold Send instance Map has no probe — restore durable session_probe
+          // so pace matches Floor/Fleet green (never invent healthy).
+          await defaultComputerSupervisor.hydrateFromHost(String(approvalWid));
+          await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(
+            String(approvalWid),
+          );
           // Only trust health from a successful seat-owned hydrate. Never
           // get(computer_id) after ownership/orphan throw — that can pick up a
           // foreign/orphan sessionHealthy=true and green pace theater.

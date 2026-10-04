@@ -81,6 +81,11 @@ ok(
     !/get\(String\(liSeat\.computer_id/.test(sendRoute),
 );
 ok(
+  "outreach Send restores durable session probe before pace (cold Map)",
+  /restoreSessionHealthFromDurableAudits/.test(sendRoute) &&
+    /hydrateFromHost/.test(sendRoute),
+);
+ok(
   "outreach send selects assigned_campaign_ids and refuses unattached BC",
   /assigned_campaign_ids/.test(sendRoute) &&
     /This Browser Computer seat is not attached to the campaign/.test(sendRoute),
