@@ -225,23 +225,33 @@ export async function GET(req: NextRequest) {
           } catch (adoptErr) {
             const adoptMsg =
               adoptErr instanceof Error ? adoptErr.message : String(adoptErr);
-            // Mid-Take: keep rightful FK — do not null while operator Holds.
-            // Still emit the desk so Settings/Agents Hermes patches don't null computerId.
+            // Mid-Take on THIS seat (detach blocked): keep FK + emit held twin.
+            // Durable cid human-held on ANOTHER seat: poisoned FK — clear (do not
+            // push foreign held desk; fleetHermesComputerPatches would null Hermes).
             if (/computer-human-held/i.test(adoptMsg)) {
-              console.warn(
-                "adopt durable skipped — human held; keeping computer_id FK",
-                seat.id,
-              );
-              // Prefer the seat's human-held twin (detach-blocked) over durable cid
-              // when adopt refused because another desk on this seat is Held.
               const seatDesks = defaultComputerSupervisor
                 .list(String(wid))
                 .filter((c) => c.seatId === seat.id);
-              const held =
-                seatDesks.find((c) => c.control === "human") ??
-                defaultComputerSupervisor.get(cid) ??
-                seatDesks[0];
-              if (held) computers.push(held);
+              const seatHeld = seatDesks.find((c) => c.control === "human");
+              if (seatHeld) {
+                console.warn(
+                  "adopt durable skipped — human held; keeping computer_id FK",
+                  seat.id,
+                );
+                computers.push(seatHeld);
+                continue;
+              }
+              console.warn(
+                "adopt durable skipped — durable cid human-held elsewhere; clearing poisoned FK",
+                seat.id,
+              );
+              const { error } = await supabase
+                .from("agent_seats")
+                .update({ computer_id: null })
+                .eq("id", seat.id)
+                .eq("workspace_id", wid);
+              if (error) console.warn("clear poisoned computer_id failed", error.message);
+              clearedPoisonedComputerIds.add(seat.id);
               continue;
             }
             console.warn(

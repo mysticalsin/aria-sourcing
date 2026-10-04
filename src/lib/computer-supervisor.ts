@@ -589,6 +589,11 @@ export class ComputerSupervisor {
     return rec ? this.expireStaleSessionHealth(rec) : undefined;
   }
 
+  /** Live Take check — re-read Map after awaits (control mutates under concurrency). */
+  private isHumanHeld(computerId: string): boolean {
+    return this.computers.get(computerId)?.control === "human";
+  }
+
   /**
    * Opportunistic LinkedIn probes for Floor/Fleet GET freshness.
    * Re-probes ready/busy bot-held seats when health is null or TTL-stale.
@@ -876,7 +881,7 @@ export class ComputerSupervisor {
     const rec = this.computers.get(computerId);
     if (!rec) throw new Error("computer-not-found");
     // Observe must not warm-navigate while Take holds the desk.
-    if (rec.control === "human") {
+    if (this.isHumanHeld(computerId)) {
       throw new Error("computer-human-held");
     }
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
@@ -891,6 +896,10 @@ export class ComputerSupervisor {
     if (cfg) {
       try {
         const state = await openBotEnsureComputer(cfg, rec.botId || computerId);
+        // Take mid-ensure: stop before warmup navigate / ready (do not steal the desk).
+        if (this.isHumanHeld(computerId)) {
+          throw new Error("computer-human-held");
+        }
         rec.botId = state.botId || rec.botId || toOpenBotBotId(computerId);
         rec.remoteUrl =
           state.url ?? (state.port ? `http://127.0.0.1:${state.port}` : rec.remoteUrl);
@@ -906,6 +915,10 @@ export class ComputerSupervisor {
         // Warm the Chromium to LinkedIn so Observe shows real work surface.
         const agent = agentCfg(rec);
         if (agent) {
+          // Re-check Take before navigate — operator may have Taken during ensure.
+          if (this.isHumanHeld(computerId)) {
+            throw new Error("computer-human-held");
+          }
           try {
             const warmupUrl =
               typeof opts?.warmupUrl === "string" && opts.warmupUrl.trim()
@@ -914,17 +927,27 @@ export class ComputerSupervisor {
             await openBotNavigate(agent, warmupUrl);
             this.audit(computerId, "warmup_navigate", "Opened LinkedIn after ensure", "system");
           } catch (navErr) {
+            const navMsg = navErr instanceof Error ? navErr.message : String(navErr);
+            if (/computer-human-held/i.test(navMsg)) throw navErr;
             this.audit(
               computerId,
               "warmup_navigate_failed",
-              navErr instanceof Error ? navErr.message : "LinkedIn warmup navigate failed",
+              navMsg || "LinkedIn warmup navigate failed",
               "system",
             );
           }
         }
       } catch (err) {
+        const msg = err instanceof Error ? err.message : "OpenBot ensure failed";
+        // Take mid-start must surface as human-held (caller maps refused/not-sent).
+        if (/computer-human-held/i.test(msg)) {
+          rec.status = rec.status === "starting" ? "ready" : rec.status;
+          rec.updatedAt = isoNow();
+          this.audit(computerId, "start_refused", "human-has-control (Take mid-ensure)", "system");
+          throw new Error("computer-human-held");
+        }
         rec.status = "error";
-        rec.lastError = err instanceof Error ? err.message : "OpenBot ensure failed";
+        rec.lastError = msg;
         rec.updatedAt = isoNow();
         this.audit(computerId, "start_failed", rec.lastError, "system");
         return rec;
@@ -949,6 +972,12 @@ export class ComputerSupervisor {
       rec.updatedAt = isoNow();
       this.audit(computerId, "start_failed", rec.lastError, "system");
       return rec;
+    }
+
+    // Final Take gate: operator may have Taken during ensure/warmup.
+    if (this.isHumanHeld(computerId)) {
+      this.audit(computerId, "start_refused", "human-has-control (Take before ready)", "system");
+      throw new Error("computer-human-held");
     }
 
     rec.status = "ready";
@@ -1264,6 +1293,11 @@ export class ComputerSupervisor {
     }
 
     // Auto-retry only when LinkedIn is confirmed healthy — never on missing probe.
+    // Never re-drive post-click / no-proof failures (may already have landed) — dual-send.
+    const postClickAmbiguous = (detail: string) =>
+      /Clicked Send but no Message-sent proof|Clicked Send invitation but no Sent\/Pending proof/i.test(
+        detail,
+      );
     const allowRetry = probedHealthy === true;
     if (allowRetry) {
       const failed = [...this.jobs.values()]
@@ -1272,7 +1306,8 @@ export class ComputerSupervisor {
             j.computerId === computerId &&
             j.kind === "linkedin_send" &&
             j.status === "failed" &&
-            !this.retriedJobIds.has(j.jobId),
+            !this.retriedJobIds.has(j.jobId) &&
+            !postClickAmbiguous(j.detail ?? ""),
         )
         .sort((a, b) => Date.parse(b.finishedAt ?? b.createdAt) - Date.parse(a.finishedAt ?? a.createdAt))
         .slice(0, ComputerSupervisor.RELEASE_RETRY_CAP);

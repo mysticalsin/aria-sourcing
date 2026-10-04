@@ -1162,10 +1162,14 @@ try {
       /computer-human-held/i.test(route) &&
         /keeping computer_id FK/.test(route) &&
         /adopt durable skipped — human held/.test(route) &&
-        // Emit desk so Hermes patches don't null computerId mid-Take.
-        /computers\.push\(held\)/.test(route) &&
-        // Prefer seat human-held twin over durable cid when detach blocked.
+        // Emit seat human-held twin only (detach-blocked mid-Take).
+        /computers\.push\(seatHeld\)/.test(route) &&
         /seatDesks\.find\(\(c\) => c\.control === "human"\)/.test(route),
+    );
+    ok(
+      "GET adopt human-held elsewhere clears poisoned FK (no foreign emit)",
+      /durable cid human-held elsewhere; clearing poisoned FK/.test(route) &&
+        /clearedPoisonedComputerIds\.add\(seat\.id\)/.test(route),
     );
     ok(
       "GET/POST hydrate treat orphan-claim-blocked like ownership-mismatch (no fleet 500)",
@@ -1224,6 +1228,39 @@ try {
       ok(
         "session_probe checks human before probeSession",
         humanIdx >= 0 && probeIdx >= 0 && humanIdx < probeIdx,
+      );
+    }
+  }
+
+  // Source contracts: Release retry + start Take mid-ensure.
+  {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("src/lib/computer-supervisor.ts", "utf8");
+    ok(
+      "Release auto-retry skips post-click no-proof (no dual-send)",
+      /postClickAmbiguous/.test(src) &&
+        /Clicked Send but no Message-sent proof\|Clicked Send invitation but no Sent\\\/Pending proof/.test(
+          src,
+        ) &&
+        /!postClickAmbiguous\(j\.detail/.test(src),
+    );
+    {
+      const startIdx = src.indexOf("async start(");
+      const startBlock = startIdx >= 0 ? src.slice(startIdx, startIdx + 4500) : "";
+      const ensureIdx = startBlock.indexOf("openBotEnsureComputer");
+      const midEnsure =
+        ensureIdx >= 0
+          ? startBlock.indexOf("isHumanHeld(computerId)", ensureIdx)
+          : -1;
+      ok(
+        "start re-checks human after ensure (Take mid-ensure)",
+        ensureIdx >= 0 && midEnsure > ensureIdx,
+      );
+      ok(
+        "start re-checks human before marking ready",
+        /Take before ready/.test(startBlock) &&
+          /isHumanHeld\(computerId\)/.test(startBlock) &&
+          /throw new Error\("computer-human-held"\)/.test(startBlock),
       );
     }
   }
