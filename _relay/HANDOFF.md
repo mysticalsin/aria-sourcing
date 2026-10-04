@@ -1,26 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 369
+shift: 370
 agent: cursor-cloud
-updated: 2026-10-04T07:20Z
-status: tip-start-busy-refuse-awaiting-ci-approve
+updated: 2026-10-04T07:35Z
+status: tip-busy-mutex-harden-awaiting-ci-approve
 ---
 
-# Handoff — Shift 369
+# Handoff — Shift 370
 
 ## Current state
 
-- **Branch tip:** pending — start/navigate refuse busy; runJob ensure-before-busy
-- Prior tip `d61859c` / feature `d5b55a6`: full CI green incl Vercel; still `REVIEW_REQUIRED`
-- 10th residual ([Tenth residual hunt](bc-f324b6bd-819b-526c-8e25-c58ee8734aa0)) → fixed
+- **Branch tip:** pending — hydrate/stop/reset/probe busy mutex; Release unstick only if no chain
+- Prior tip `ecce6f3` / feature `76b22f3`: Quality+Release SUCCESS; Vercel FAILURE (ignore); still `REVIEW_REQUIRED`
+- 11th residual ([Eleventh residual hunt](bc-fefab1ac-fac5-5c7b-a7f9-07b39cc1f391)) → fixed
 - Fly still `21a42e7` / `0084`
 
 ## Done this shift
 
-1. Confirmed tip CI full green on `d61859c`
-2. `start()` throws `computer-busy` (no demote busy→ready / warm-navigate mid-send)
-3. `runJob` ensures before marking busy; navigate route 409 on busy
-4. Local: tsc + computer-supervisor 192
+1. Confirmed tip CI Quality+Release green on `ecce6f3`
+2. hydrate/applyHostState preserve `busy`; stop/reset refuse busy (+ mid-await recheck)
+3. probeSession discards mid-busy; Release unstick busy only when `computerChains` empty; requestHelp stamps probedAt
+4. Local: tsc + computer-supervisor 198
 
 ## Blockers
 
@@ -34,8 +34,8 @@ status: tip-start-busy-refuse-awaiting-ci-approve
 
 ## Decisions made (don't relitigate)
 
-- busy mutex: Floor skip + probe/reclaim/start/navigate refuse; Release/humanMutex unstick
-- restore family `actions[]` streams
+- busy mutex covers Floor skip, probe/reclaim/start/navigate/stop/reset, hydrate, probe mid-await discard
+- Release clears stuck busy only when no in-flight act
 
 ## Watch out
 
