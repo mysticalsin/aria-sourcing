@@ -886,6 +886,11 @@ export class ComputerSupervisor {
     if (this.isHumanHeld(computerId)) {
       throw new Error("computer-human-held");
     }
+    // Never demote busy→starting→ready mid-act — wipe busy and warmup-navigate
+    // would clobber linkedin_send and re-open Floor /session-probe mid-send.
+    if (rec.status === "busy") {
+      throw new Error("computer-busy");
+    }
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     rec.status = "starting";
     // Invalidate + stamp so durable restore cannot re-green from a pre-start probe.
@@ -1547,6 +1552,20 @@ export class ComputerSupervisor {
             );
             return job;
           }
+          if (/computer-busy/i.test(msg)) {
+            job.status = "refused";
+            job.detail = "computer-busy";
+            job.finishedAt = isoNow();
+            this.jobs.set(jobId, job);
+            this.audit(
+              opts.computerId,
+              "act_refused",
+              `${opts.kind} refused — computer-busy (start mid-act)`,
+              "bot",
+              { jobId },
+            );
+            return job;
+          }
           if (/OpenBot ensure|supervisor unset|returned no computer URL/i.test(msg)) {
             job.status = "refused";
             job.detail = msg;
@@ -1626,6 +1645,55 @@ export class ComputerSupervisor {
       return job;
     }
 
+    const remoteSupervisor = openBotSupervisorCfg();
+    // Ensure process BEFORE marking busy — start() refuses busy and ends ready;
+    // marking busy first then start() would throw or leave ready during send.
+    if (remoteSupervisor && !rec.remoteUrl) {
+      try {
+        await this.start(job.computerId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/computer-human-held/i.test(msg)) {
+          job.status = "refused";
+          job.detail = "human-has-control";
+          job.finishedAt = isoNow();
+          this.jobs.set(job.jobId, job);
+          this.audit(job.computerId, "act_refused", job.detail, "bot", {
+            jobId: job.jobId,
+            campaignId,
+            meta: jobMeta,
+          });
+          return job;
+        }
+        if (/computer-busy/i.test(msg)) {
+          job.status = "refused";
+          job.detail = "computer-busy";
+          job.finishedAt = isoNow();
+          this.jobs.set(job.jobId, job);
+          this.audit(job.computerId, "act_refused", job.detail, "bot", {
+            jobId: job.jobId,
+            campaignId,
+            meta: jobMeta,
+          });
+          return job;
+        }
+        // fall through — runJob will fail closed on missing remoteUrl
+      }
+      // Take mid-ensure
+      if (this.isHumanHeld(job.computerId)) {
+        job.status = "refused";
+        job.detail = "human-has-control";
+        job.finishedAt = isoNow();
+        this.jobs.set(job.jobId, job);
+        this.audit(job.computerId, "act_refused", job.detail, "bot", {
+          jobId: job.jobId,
+          campaignId,
+          meta: jobMeta,
+        });
+        return job;
+      }
+    }
+
     rec.status = "busy";
     job.status = "running";
     this.jobs.set(job.jobId, job);
@@ -1635,18 +1703,14 @@ export class ComputerSupervisor {
       meta: jobMeta,
     });
 
-    const remoteSupervisor = openBotSupervisorCfg();
     if (remoteSupervisor) {
       try {
-        if (!rec.remoteUrl) {
-          await this.start(job.computerId);
-        }
         const fresh = this.require(job.computerId);
         if (fresh.status === "error" || !fresh.remoteUrl) {
           job.status = "failed";
           job.detail = fresh.lastError || "OpenBot computer not ready";
           job.finishedAt = isoNow();
-          // start() may leave status=busy from this runJob — do not stick Floor skip.
+          // Do not stick Floor skip on a failed ensure.
           if (fresh.status === "busy") fresh.status = "error";
           this.jobs.set(job.jobId, job);
           this.audit(job.computerId, "act_failed", job.detail, "bot", {

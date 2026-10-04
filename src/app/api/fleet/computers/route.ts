@@ -651,6 +651,12 @@ export async function POST(req: NextRequest) {
             { status: 409 },
           );
         }
+        if (held?.status === "busy") {
+          return NextResponse.json(
+            { error: "computer-busy", detail: "Wait for in-flight act before navigate." },
+            { status: 409 },
+          );
+        }
         await defaultComputerSupervisor.start(navComputerId, campaignOpts);
         await defaultComputerSupervisor.enqueueJob({
           computerId: navComputerId,

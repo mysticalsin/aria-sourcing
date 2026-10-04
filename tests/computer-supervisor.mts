@@ -1163,6 +1163,26 @@ try {
     ok("probeSession throws computer-busy while status=busy", busyThrown);
   }
 
+  // start() refuses busy — never demote busy→ready / warm-navigate mid-send.
+  {
+    const busyStart = new ComputerSupervisor();
+    const seat = busyStart.ensureComputer({ workspaceId: "ws-bs", seatId: "seat-bs" });
+    const rec = busyStart.get(seat.computerId)!;
+    rec.status = "busy";
+    rec.remoteUrl = "http://openbot.test/view/bs";
+    let startBusy = false;
+    try {
+      await busyStart.start(seat.computerId);
+    } catch (err) {
+      startBusy = err instanceof Error && err.message === "computer-busy";
+    }
+    ok("start throws computer-busy while status=busy", startBusy);
+    ok(
+      "start refuse leaves status=busy (Floor skip intact)",
+      busyStart.get(seat.computerId)?.status === "busy",
+    );
+  }
+
 
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
@@ -1301,12 +1321,17 @@ try {
       const idx = route.indexOf('case "navigate"');
       const block = idx >= 0 ? route.slice(idx, idx + 2200) : "";
       const humanIdx = block.indexOf('control === "human"');
+      const busyIdx = block.indexOf('status === "busy"');
       const startIdx = block.indexOf(".start(navComputerId");
       ok(
         "navigate refuses human-held (no silent releaseControl)",
         block.includes("computer-human-held") &&
           block.includes("status: 409") &&
           !block.includes("releaseControl(navComputerId"),
+      );
+      ok(
+        "navigate refuses busy (no start/warmup mid-send)",
+        block.includes("computer-busy") && busyIdx >= 0 && busyIdx < startIdx,
       );
       ok(
         "navigate checks human before start (409 not outer 400)",
