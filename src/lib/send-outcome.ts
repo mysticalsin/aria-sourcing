@@ -81,7 +81,35 @@ export function classifySendOutcome(input: {
       nextAction: "Campaign → Agents → Take control → log in → Release",
     };
   }
-  if (blob.includes("human has control") || blob.includes("human mutex") || blob.includes("refused")) {
+  if (
+    input.paceReason === "computer_starting" ||
+    blob.includes("computer_starting")
+  ) {
+    return {
+      kind: "gap_wait",
+      title: "Computer starting",
+      detail: input.detail || "Browser Computer is still starting — retry shortly.",
+      nextAction: "Wait for the desk to reach ready, then retry",
+    };
+  }
+  if (
+    input.paceReason === "manual_permission_mode" ||
+    blob.includes("manual_permission_mode")
+  ) {
+    return {
+      kind: "refused_human_control",
+      title: "Manual permission mode",
+      detail: input.detail || "Bot send is off — Take control to send, or switch permission to Auto.",
+      nextAction: "Agents → Take control, or Settings → Auto permission",
+    };
+  }
+  if (
+    input.paceReason === "human-has-control" ||
+    blob.includes("human has control") ||
+    blob.includes("human-has-control") ||
+    blob.includes("human mutex") ||
+    blob.includes("refused")
+  ) {
     return {
       kind: "refused_human_control",
       title: "Human still has control",
@@ -98,6 +126,15 @@ export function classifySendOutcome(input: {
       title: "Queued",
       detail: input.detail || "Queued on the Browser Computer.",
       nextAction: "Watch Agents for help_requested or success audit",
+    };
+  }
+  // Soft-defer (pace / mutex) must not paint as hard failure.
+  if (input.status === "deferred") {
+    return {
+      kind: "gap_wait",
+      title: "Send deferred",
+      detail: input.detail || "Send deferred — retry when eligible.",
+      nextAction: "Wait for pacing / session, then retry",
     };
   }
   return {

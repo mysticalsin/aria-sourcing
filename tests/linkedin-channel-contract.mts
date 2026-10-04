@@ -204,6 +204,11 @@ ok(
   /ownership-mismatch\|orphan-claim-blocked/.test(linkedInChannel) &&
     /deliveryState: softEnsure \? "not-sent"/.test(linkedInChannel),
 );
+ok(
+  "browser-computer deliver maps remote human-mutex failed to not-sent (no outbox burn)",
+  /human has control\|human-has-control\|human mutex/i.test(linkedInChannel) &&
+    /deliveryState: humanMutex \? "not-sent" : "unknown"/.test(linkedInChannel),
+);
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
 const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;

@@ -302,11 +302,15 @@ const browserComputerAdapter: LinkedInAdapter = {
         };
       }
       if (job.status === "failed") {
+        const detail = job.detail || "Browser-computer job failed.";
+        // Remote OpenBot 409 "human has control" lands as failed — soft-defer, don't burn outbox.
+        const humanMutex =
+          /human has control|human-has-control|human mutex/i.test(detail);
         return {
           status: "error",
-          deliveryState: "unknown",
+          deliveryState: humanMutex ? "not-sent" : "unknown",
           provider: "LinkedIn Browser Computer",
-          detail: job.detail || "Browser-computer job failed.",
+          detail,
         };
       }
       if (job.status !== "succeeded") {

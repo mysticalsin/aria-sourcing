@@ -1177,6 +1177,8 @@ async function handleComputer(botId, req, res, pathname, method) {
   }
 
   if (pathname === "/navigate" && method === "POST") {
+    // Bot must not steal the operator tab during Take — same mutex as /click|/type.
+    if (rec.control === "human") return json(res, 409, { error: "human has control" });
     const body = JSON.parse((await readBody(req)) || "{}");
     const target = String(body.url || "");
     if (!target) return json(res, 400, { error: "url required" });
@@ -1230,6 +1232,8 @@ async function handleComputer(botId, req, res, pathname, method) {
   }
 
   if (pathname === "/session-probe" && method === "POST") {
+    // Probe navigates — refuse while human Holds so Take login isn't yanked to /feed.
+    if (rec.control === "human") return json(res, 409, { error: "human has control" });
     const body = JSON.parse((await readBody(req)) || "{}");
     const preferred = String(body.url || "").trim();
     const current = rec.page.url();

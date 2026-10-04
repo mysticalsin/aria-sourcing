@@ -97,6 +97,18 @@ ok(
     supervisor.includes("humanTypeText(rec.page, text"),
 );
 ok(
+  "supervisor /navigate refuses while human has control (same mutex as click/type)",
+  /pathname === "\/navigate"[\s\S]*?rec\.control === "human"[\s\S]*?human has control/.test(
+    supervisor,
+  ),
+);
+ok(
+  "supervisor /session-probe refuses while human has control (no tab steal during Take)",
+  /pathname === "\/session-probe"[\s\S]*?rec\.control === "human"[\s\S]*?human has control/.test(
+    supervisor,
+  ),
+);
+ok(
   "options page exists (Claude options.html parity)",
   readFileSync("src/app/fleet/computers/options/page.tsx", "utf8").includes(
     "Claude in Chrome",

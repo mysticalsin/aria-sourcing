@@ -1375,6 +1375,58 @@ try {
       "durable restore ignores TTL-expired probe",
       cold3.get(seat3.computerId)?.sessionHealthy == null,
     );
+
+    // Open durable Take must not re-green cold Map from a pre-Take probe.
+    const cold4 = new ComputerSupervisor();
+    const seat4 = cold4.ensureComputer({ workspaceId: "ws-take", seatId: "seat-take" });
+    cold4.get(seat4.computerId)!.status = "ready";
+    cold4.get(seat4.computerId)!.sessionHealthy = null;
+    const probeAt = new Date(Date.now() - 10_000).toISOString();
+    const takeAt = new Date(Date.now() - 5_000).toISOString();
+    const takeResult = await cold4.restoreSessionHealthFromDurableAudits("ws-take", {
+      queryAudits: async (q) => {
+        if (q.action === "takeover") {
+          return [
+            {
+              id: "caud_take",
+              at: takeAt,
+              workspaceId: "ws-take",
+              computerId: seat4.computerId,
+              seatId: seat4.seatId,
+              campaignId: null,
+              action: "takeover",
+              detail: "Operator took control",
+              actor: "human",
+              meta: {},
+            },
+          ];
+        }
+        if (q.action === "release") return [];
+        return [
+          {
+            id: "caud_probe_pre_take",
+            at: probeAt,
+            workspaceId: "ws-take",
+            computerId: seat4.computerId,
+            seatId: seat4.seatId,
+            campaignId: null,
+            action: "session_probe",
+            detail: "ok",
+            actor: "system",
+            meta: { healthy: true },
+          },
+        ];
+      },
+    });
+    ok("open Take does not restore healthy=true", takeResult.restored === 0);
+    ok(
+      "cold Map hydrates control=human from durable takeover",
+      cold4.get(seat4.computerId)?.control === "human",
+    );
+    ok(
+      "cold Map leaves sessionHealthy null while Take open",
+      cold4.get(seat4.computerId)?.sessionHealthy == null,
+    );
   }
 
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);

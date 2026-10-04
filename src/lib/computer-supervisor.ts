@@ -1024,6 +1024,8 @@ export class ComputerSupervisor {
    * Multi-instance cold start: restore sessionHealthy from durable session_probe
    * audits within SESSION_HEALTH_TTL_MS. Never invents true — only meta.healthy===true
    * from a real probe receipt. Skips computers that already have a fresher in-memory probe.
+   * Open durable Take (takeover with no newer release) hydrates control=human and
+   * refuses re-green — Take nulls Map health; cold workers must not undo that.
    */
   async restoreSessionHealthFromDurableAudits(
     workspaceId: string,
@@ -1032,6 +1034,47 @@ export class ComputerSupervisor {
     const now = opts?.now ?? Date.now();
     const sinceIso = new Date(now - SESSION_HEALTH_TTL_MS).toISOString();
     const query = opts?.queryAudits ?? queryComputerAuditsDurable;
+
+    // Durable human mutex — Take may outlive probe TTL; look back further.
+    const controlSinceIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [takeovers, releases] = await Promise.all([
+      query({ workspaceId, action: "takeover", since: controlSinceIso, limit: 200 }),
+      query({ workspaceId, action: "release", since: controlSinceIso, limit: 200 }),
+    ]);
+    const latestTakeoverAt = new Map<string, number>();
+    const latestReleaseAt = new Map<string, number>();
+    for (const ev of takeovers) {
+      if (ev.action !== "takeover") continue;
+      const at = Date.parse(ev.at);
+      if (!Number.isFinite(at)) continue;
+      const prev = latestTakeoverAt.get(ev.computerId) ?? 0;
+      if (at >= prev) latestTakeoverAt.set(ev.computerId, at);
+    }
+    for (const ev of releases) {
+      if (ev.action !== "release") continue;
+      const at = Date.parse(ev.at);
+      if (!Number.isFinite(at)) continue;
+      const prev = latestReleaseAt.get(ev.computerId) ?? 0;
+      if (at >= prev) latestReleaseAt.set(ev.computerId, at);
+    }
+    const humanHeld = new Set<string>();
+    for (const [computerId, takeAt] of latestTakeoverAt) {
+      const relAt = latestReleaseAt.get(computerId) ?? 0;
+      if (takeAt > relAt) humanHeld.add(computerId);
+    }
+    for (const rec of this.list(workspaceId)) {
+      if (rec.seatId === HOST_ORPHAN_SEAT_ID) continue;
+      if (humanHeld.has(rec.computerId)) {
+        // Same-instance Take already set control=human; cold Map defaults to bot.
+        rec.control = "human";
+        // Do not invent healthy from a pre-Take probe while operator holds mutex.
+        if (rec.sessionHealthy === true) {
+          rec.sessionHealthy = null;
+          rec.sessionProbedAt = null;
+        }
+      }
+    }
+
     const events = await query({
       workspaceId,
       action: "session_probe",
@@ -1042,12 +1085,15 @@ export class ComputerSupervisor {
     const latestByComputer = new Map<string, (typeof events)[number]>();
     for (let i = events.length - 1; i >= 0; i--) {
       const ev = events[i]!;
+      if (ev.action !== "session_probe") continue;
       if (!latestByComputer.has(ev.computerId)) latestByComputer.set(ev.computerId, ev);
     }
     let restored = 0;
     let considered = 0;
     for (const rec of this.list(workspaceId)) {
       if (rec.seatId === HOST_ORPHAN_SEAT_ID) continue;
+      // In-memory or durable Take — never re-green while human holds the mutex.
+      if (rec.control === "human" || humanHeld.has(rec.computerId)) continue;
       const ev = latestByComputer.get(rec.computerId);
       if (!ev) continue;
       considered++;
@@ -1524,17 +1570,25 @@ export class ComputerSupervisor {
         });
         return job;
       } catch (err) {
-        job.status = "failed";
-        job.detail = err instanceof Error ? err.message : "OpenBot remote job failed";
+        const detail = err instanceof Error ? err.message : "OpenBot remote job failed";
+        // OpenBot /click|/type|/navigate 409 while operator Holds → soft refuse, not hard fail.
+        const humanMutex =
+          /human has control|human-has-control|human mutex/i.test(detail);
+        job.status = humanMutex ? "refused" : "failed";
+        job.detail = humanMutex ? "human-has-control" : detail;
         job.finishedAt = isoNow();
-        rec.status = "error";
-        rec.lastError = job.detail;
+        if (!humanMutex) {
+          rec.status = "error";
+          rec.lastError = job.detail;
+        }
         this.jobs.set(job.jobId, job);
-        this.audit(job.computerId, "act_failed", job.detail, "bot", {
-          jobId: job.jobId,
-          campaignId,
-          meta: jobMeta,
-        });
+        this.audit(
+          job.computerId,
+          humanMutex ? "act_refused" : "act_failed",
+          job.detail,
+          "bot",
+          { jobId: job.jobId, campaignId, meta: jobMeta },
+        );
         return job;
       }
     }
