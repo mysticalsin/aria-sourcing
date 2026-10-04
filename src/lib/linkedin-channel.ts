@@ -311,7 +311,7 @@ const browserComputerAdapter: LinkedInAdapter = {
         // Pre-act / soft fails never contacted LinkedIn — requeue via not-sent → deferred.
         // Includes pre-Send OpenBot throws (stale snapshot / missing ref / HTTP 4xx).
         const preActNotSent =
-          /human has control|human-has-control|human mutex|computer-human-held|login\/2FA|login wall|help_requested|session_unhealthy|session_unverified|composer did not open|no text box|could not find Send|Send is disabled|no note field|Connect note is \d+ chars|Send invitation is disabled|Could not find Message or Connect|Neither Message nor Connect|profileUrl is required|message body is required|not ready|COMPUTER_TOKEN|manual_permission|stale snapshot|ref not found|OpenBot (navigate|click|type|snapshot) [45]\d\d|OpenBot ensure|returned no computer URL|supervisor unset|OpenBot (navigate|snapshot|session-probe|read|ensure) aborted\/timeout/i.test(
+          /human has control|human-has-control|human mutex|computer-human-held|login\/2FA|login wall|help_requested|session_unhealthy|session_unverified|composer did not open|no text box|could not find Send|Send is disabled|no note field|Connect note is \d+ chars|Send invitation is disabled|Could not find Message or Connect|Neither Message nor Connect|profileUrl is required|message body is required|not ready|COMPUTER_TOKEN|manual_permission|stale snapshot|ref not found|OpenBot (navigate|click|type|snapshot) [45]\d\d|OpenBot ensure|returned no computer URL|supervisor unset|OpenBot (navigate|session-probe|read|ensure) aborted\/timeout/i.test(
             detail,
           );
         return {

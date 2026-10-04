@@ -487,6 +487,10 @@ export class ComputerSupervisor {
       });
     }
     if (existing.seatId !== seatId) {
+      // Never rebind a desk the operator currently Holds onto another seat.
+      if (existing.control === "human") {
+        throw new Error("computer-human-held");
+      }
       this.audit(
         computerId,
         "adopt_durable",

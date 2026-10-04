@@ -223,10 +223,20 @@ export async function GET(req: NextRequest) {
               computerId: cid,
             });
           } catch (adoptErr) {
+            const adoptMsg =
+              adoptErr instanceof Error ? adoptErr.message : String(adoptErr);
+            // Mid-Take: keep rightful FK — do not null while operator Holds.
+            if (/computer-human-held/i.test(adoptMsg)) {
+              console.warn(
+                "adopt durable skipped — human held; keeping computer_id FK",
+                seat.id,
+              );
+              continue;
+            }
             console.warn(
               "adopt durable binding failed; clearing poisoned FK",
               seat.id,
-              adoptErr instanceof Error ? adoptErr.message : String(adoptErr),
+              adoptMsg,
             );
             const { error } = await supabase
               .from("agent_seats")

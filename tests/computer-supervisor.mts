@@ -401,6 +401,32 @@ try {
     );
   }
 
+  // adopt must not rebind a Taken durable desk onto another seat.
+  {
+    const rebindHeld = new ComputerSupervisor();
+    const desk = rebindHeld.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-a",
+      computerId: "comp_taken_rebind",
+    });
+    desk.control = "human";
+    let rebindErr = "";
+    try {
+      rebindHeld.adoptDurableComputerBinding({
+        workspaceId: "ws",
+        seatId: "seat-b",
+        computerId: "comp_taken_rebind",
+      });
+    } catch (err) {
+      rebindErr = err instanceof Error ? err.message : String(err);
+    }
+    ok("adoptDurable refuses rebind of human-held existing", rebindErr === "computer-human-held");
+    ok(
+      "Taken durable stays on original seat",
+      rebindHeld.get("comp_taken_rebind")?.seatId === "seat-a",
+    );
+  }
+
   // Without OpenBot + without mock, start must not invent ready.
   {
     process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "0";
@@ -1130,6 +1156,12 @@ try {
       route.includes("adoptDurableComputerBinding") &&
         route.includes("claimedByOtherSeat") &&
         /Stale\/orphan Map|Stale in-memory Map/.test(route),
+    );
+    ok(
+      "GET adopt human-held keeps computer_id FK (no clear mid-Take)",
+      /computer-human-held/i.test(route) &&
+        /keeping computer_id FK/.test(route) &&
+        /adopt durable skipped — human held/.test(route),
     );
     ok(
       "GET/POST hydrate treat orphan-claim-blocked like ownership-mismatch (no fleet 500)",

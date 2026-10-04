@@ -234,6 +234,10 @@ ok(
     linkedInChannel.includes("OpenBot ensure") &&
     linkedInChannel.includes("supervisor unset") &&
     linkedInChannel.includes(
+      "OpenBot (navigate|session-probe|read|ensure) aborted\\/timeout",
+    ) &&
+    // Proof-phase openBotSnapshot abort must stay unknown (not deferred resend).
+    !linkedInChannel.includes(
       "OpenBot (navigate|snapshot|session-probe|read|ensure) aborted\\/timeout",
     ),
 );
