@@ -1386,7 +1386,7 @@ export class ComputerSupervisor {
         try {
           await this.start(opts.computerId);
         } catch (err) {
-          // Take TOCTOU: session gate passed, then operator Took before start().
+          // Take TOCTOU / ensure soft-fail — refuse so deliver maps not-sent (no outbox burn).
           const msg = err instanceof Error ? err.message : String(err);
           if (/computer-human-held/i.test(msg)) {
             job.status = "refused";
@@ -1402,7 +1402,37 @@ export class ComputerSupervisor {
             );
             return job;
           }
+          if (/OpenBot ensure|supervisor unset|returned no computer URL/i.test(msg)) {
+            job.status = "refused";
+            job.detail = msg;
+            job.finishedAt = isoNow();
+            this.jobs.set(jobId, job);
+            this.audit(
+              opts.computerId,
+              "act_refused",
+              `${opts.kind} refused — start/ensure soft-fail`,
+              "bot",
+              { jobId },
+            );
+            return job;
+          }
           throw err;
+        }
+        // start() may set status=error without throwing (ensure no URL / unset).
+        const after = this.require(opts.computerId);
+        if (after.status === "error") {
+          job.status = "refused";
+          job.detail = after.lastError || "OpenBot ensure failed";
+          job.finishedAt = isoNow();
+          this.jobs.set(jobId, job);
+          this.audit(
+            opts.computerId,
+            "act_refused",
+            `${opts.kind} refused — computer still error after start`,
+            "bot",
+            { jobId },
+          );
+          return job;
         }
       }
     }

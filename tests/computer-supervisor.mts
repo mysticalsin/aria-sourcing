@@ -90,6 +90,33 @@ try {
     ok("enqueueJob start TOCTOU detail is human-has-control", job.detail === "human-has-control");
   }
 
+  // start() leaves status=error (ensure no URL) → refuse, do not runJob burn.
+  {
+    const ensureFail = new ComputerSupervisor();
+    const seat = ensureFail.ensureComputer({ workspaceId: "ws", seatId: "seat-ensure-fail" });
+    const rec = ensureFail.get(seat.computerId)!;
+    rec.status = "error";
+    rec.control = "bot";
+    rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date().toISOString();
+    ensureFail.start = async (computerId: string) => {
+      const r = ensureFail.get(computerId)!;
+      r.status = "error";
+      r.lastError = "OpenBot ensure returned no computer URL/port — check published ports";
+      return r;
+    };
+    const job = await ensureFail.enqueueJob({
+      computerId: seat.computerId,
+      kind: "linkedin_send",
+      payload: { profileUrl: "https://linkedin.com/in/ensure-fail" },
+    });
+    ok("enqueueJob refuses when start leaves status=error", job.status === "refused");
+    ok(
+      "enqueueJob ensure-fail detail mentions OpenBot ensure",
+      /OpenBot ensure/i.test(job.detail),
+    );
+  }
+
   await supervisor.releaseControl(computer.computerId);
   ok("releaseControl returns bot", supervisor.get(computer.computerId)?.control === "bot");
 

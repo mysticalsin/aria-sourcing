@@ -43,6 +43,12 @@ function headers(cfg: OpenBotAgentComputerConfig): Record<string, string> {
   };
 }
 
+/** Always keep `OpenBot <op> <status>` so deliver preActNotSent can soft-defer. */
+function openBotHttpError(op: string, status: number, bodyError?: string): Error {
+  const body = (bodyError ?? "").trim();
+  return new Error(body ? `${body} (OpenBot ${op} ${status})` : `OpenBot ${op} ${status}`);
+}
+
 async function computerFetch(
   cfg: OpenBotAgentComputerConfig,
   path: string,
@@ -75,7 +81,7 @@ export async function openBotNavigate(
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(data.error || `OpenBot navigate ${res.status}`);
+    throw openBotHttpError("navigate", res.status, data.error);
   }
   return { url: data.url ?? url, title: data.title ?? "", text: data.text };
 }
@@ -95,7 +101,7 @@ export async function openBotSnapshot(cfg: OpenBotAgentComputerConfig): Promise<
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(data.error || `OpenBot snapshot ${res.status}`);
+    throw openBotHttpError("snapshot", res.status, data.error);
   }
   return {
     snapshotId: typeof data.snapshotId === "number" ? data.snapshotId : 0,
@@ -118,7 +124,7 @@ export async function openBotClick(
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || `OpenBot click ${res.status}`);
+    throw openBotHttpError("click", res.status, data.error);
   }
 }
 
@@ -136,7 +142,7 @@ export async function openBotType(
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || `OpenBot type ${res.status}`);
+    throw openBotHttpError("type", res.status, data.error);
   }
 }
 
@@ -144,7 +150,7 @@ export async function openBotTakeControl(cfg: OpenBotAgentComputerConfig): Promi
   const res = await computerFetch(cfg, "/control/take", { method: "POST", body: "{}" });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || `OpenBot take control ${res.status}`);
+    throw openBotHttpError("take control", res.status, data.error);
   }
 }
 
@@ -152,7 +158,7 @@ export async function openBotReleaseControl(cfg: OpenBotAgentComputerConfig): Pr
   const res = await computerFetch(cfg, "/control/release", { method: "POST", body: "{}" });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || `OpenBot release control ${res.status}`);
+    throw openBotHttpError("release control", res.status, data.error);
   }
 }
 
@@ -179,7 +185,7 @@ export async function openBotSessionProbe(
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(data.error || `OpenBot session probe ${res.status}`);
+    throw openBotHttpError("session-probe", res.status, data.error);
   }
   return {
     healthy: data.healthy === true,
@@ -204,7 +210,7 @@ export async function openBotReadPage(
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(data.error || `OpenBot read ${res.status}`);
+    throw openBotHttpError("read", res.status, data.error);
   }
   return { url: data.url ?? "", title: data.title ?? "", text: data.text ?? "" };
 }

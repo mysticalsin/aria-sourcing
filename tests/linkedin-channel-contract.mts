@@ -201,7 +201,7 @@ ok(
 );
 ok(
   "browser-computer deliver maps ownership/orphan ensure throws to not-sent",
-  /ownership-mismatch\|orphan-claim-blocked\|computer-human-held\|human-has-control/.test(
+  /ownership-mismatch\|orphan-claim-blocked\|computer-human-held\|human-has-control\|OpenBot ensure\|returned no computer URL\|supervisor unset/.test(
     linkedInChannel,
   ) && /deliveryState: softEnsure \? "not-sent"/.test(linkedInChannel),
 );
@@ -230,7 +230,20 @@ ok(
   "browser-computer deliver maps pre-Send OpenBot throws (stale/ref/4xx) to not-sent",
   linkedInChannel.includes("stale snapshot") &&
     linkedInChannel.includes("ref not found") &&
-    linkedInChannel.includes("OpenBot (navigate|click|type|snapshot) [45]\\d\\d"),
+    linkedInChannel.includes("OpenBot (navigate|click|type|snapshot) [45]\\d\\d") &&
+    linkedInChannel.includes("OpenBot ensure") &&
+    linkedInChannel.includes("supervisor unset"),
+);
+
+const agentClient = readFileSync("src/lib/openbot/agent-computer-client.ts", "utf8");
+ok(
+  "OpenBot agent-computer throws always keep OpenBot <op> <status> (preActNotSent can match)",
+  /function openBotHttpError/.test(agentClient) &&
+    /OpenBot \$\{op\} \$\{status\}/.test(agentClient) &&
+    /openBotHttpError\("navigate"/.test(agentClient) &&
+    /openBotHttpError\("snapshot"/.test(agentClient) &&
+    /openBotHttpError\("click"/.test(agentClient) &&
+    /openBotHttpError\("type"/.test(agentClient),
 );
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
