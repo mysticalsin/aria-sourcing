@@ -1,26 +1,25 @@
 ---
 project: MSourcing / ARIA
-shift: 359
+shift: 360
 agent: cursor-cloud
-updated: 2026-10-04T04:50Z
-status: tip-residual-3-fixes-awaiting-ci-approve
+updated: 2026-10-04T05:15Z
+status: tip-probe-click-residuals-awaiting-ci-approve
 ---
 
-# Handoff — Shift 359
+# Handoff — Shift 360
 
 ## Current state
 
-- **Branch tip:** `865df7d` on `cursor/fly-deploy-land-n-agent-b91d`
+- **Branch tip:** pending push on `cursor/fly-deploy-land-n-agent-b91d` (probe mid-Take + Send click→unknown)
 - #150 squash auto-merge armed, `REVIEW_REQUIRED` (owner Approve)
 - Fly prod still `21a42e7` / migration `0084` (pre-land)
-- Residual hunt ([Residual hunt N-agent tip](bc-5f6d5314-c9f4-533e-bf87-821d983343f3)) → 3 fixed on tip
+- Second residual hunt ([Second residual hunt post-865df7d](bc-b187a38b-6b5b-559e-acb3-4df527ceef83)) → 2 fixed
 
 ## Done this shift
 
-1. Release auto-retry skips post-click no-proof (no dual-send)
-2. `start()` re-checks `isHumanHeld` after ensure / before warmup / before ready
-3. Adopt human-held: keep FK+emit only for seat twin; clear poisoned FK when cid held elsewhere
-4. Local: tsc + computer-supervisor 161 pass
+1. `probeSession` skip/discard when `isHumanHeld` (no invent green mid-Take / refresh TOCTOU)
+2. Send / Send-invitation `openBotClick` throw → no-proof unknown (not deferred dual-send)
+3. Local: tsc + computer-supervisor 162 / linkedin-send 15 / linkedin-channel 43
 
 ## Blockers
 
@@ -29,17 +28,15 @@ status: tip-residual-3-fixes-awaiting-ci-approve
 
 ## Next steps
 
-1. Wait tip CI green on `865df7d` (ignore Vercel-only if Quality/Release pass)
+1. Wait tip CI green (ignore Vercel-only)
 2. Owner Approve #150; deploy; proof; LI health
 
 ## Decisions made (don't relitigate)
 
 - Never invent sessionHealthy=true; ignore Vercel-only when Quality/Release pass
-- Take mutex covers restore/navigate/session_probe/reclaim/claimOrphan/adoptDurable/start-TOCTOU/boot
-- Post-click no-proof stay unknown; never Release-auto-retry those jobs
-- Emit held desk only for seat twin; clear FK when durable cid held on other seat
+- Post-click no-proof / Send-click throw stay unknown; never Release-auto-retry those
+- probeSession never paints green under Take
 
 ## Watch out
 
-- Fingerprint pin after claim function replace migrations
-- No agent review/approve / FLY_API_TOKEN / workflow_dispatch
+- Fingerprint pin; no agent Approve / FLY_API_TOKEN / workflow_dispatch
