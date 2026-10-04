@@ -1,26 +1,25 @@
 ---
 project: MSourcing / ARIA
-shift: 370
+shift: 371
 agent: cursor-cloud
-updated: 2026-10-04T07:35Z
-status: tip-busy-mutex-harden-awaiting-ci-approve
+updated: 2026-10-04T07:45Z
+status: tip-release-skip-busy-probe-awaiting-ci-approve
 ---
 
-# Handoff — Shift 370
+# Handoff — Shift 371
 
 ## Current state
 
-- **Branch tip:** pending — hydrate/stop/reset/probe busy mutex; Release unstick only if no chain
-- Prior tip `ecce6f3` / feature `76b22f3`: Quality+Release SUCCESS; Vercel FAILURE (ignore); still `REVIEW_REQUIRED`
-- 11th residual ([Eleventh residual hunt](bc-fefab1ac-fac5-5c7b-a7f9-07b39cc1f391)) → fixed
+- **Branch tip:** pending — Release skip/discard probe while computerChains/busy
+- Prior tip `7a4019f` / feature `d55819d`: full CI green incl Vercel; squash auto-merge re-armed; still `REVIEW_REQUIRED`
+- 12th residual ([Twelfth residual hunt](bc-fbf0b873-7eb8-5913-a541-b295f3f2038a)) → fixed
 - Fly still `21a42e7` / `0084`
 
 ## Done this shift
 
-1. Confirmed tip CI Quality+Release green on `ecce6f3`
-2. hydrate/applyHostState preserve `busy`; stop/reset refuse busy (+ mid-await recheck)
-3. probeSession discards mid-busy; Release unstick busy only when `computerChains` empty; requestHelp stamps probedAt
-4. Local: tsc + computer-supervisor 198
+1. Confirmed tip CI full green on `7a4019f`; re-armed squash auto-merge
+2. Release skips `/session-probe` when busy or `computerChains` non-empty; discards mid-busy after probe await
+3. Local: tsc + computer-supervisor 201
 
 ## Blockers
 
@@ -34,8 +33,7 @@ status: tip-busy-mutex-harden-awaiting-ci-approve
 
 ## Decisions made (don't relitigate)
 
-- busy mutex covers Floor skip, probe/reclaim/start/navigate/stop/reset, hydrate, probe mid-await discard
-- Release clears stuck busy only when no in-flight act
+- Release probes only when idle (no busy / no chain); stuck busy without chain still unsticks→ready then probes
 
 ## Watch out
 
