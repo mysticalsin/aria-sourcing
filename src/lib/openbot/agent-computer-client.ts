@@ -55,14 +55,26 @@ async function computerFetch(
   init: RequestInit & { timeoutMs?: number } = {},
 ): Promise<Response> {
   const { timeoutMs = 60_000, ...rest } = init;
-  return fetch(`${root(cfg.baseUrl)}${path}`, {
-    ...rest,
-    headers: {
-      ...headers(cfg),
-      ...(rest.headers ?? {}),
-    },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const op = path.replace(/^\//, "") || "request";
+  try {
+    return await fetch(`${root(cfg.baseUrl)}${path}`, {
+      ...rest,
+      headers: {
+        ...headers(cfg),
+        ...(rest.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const name = err instanceof Error ? err.name : "";
+    // Label abort/timeout with op so deliver can soft-defer pre-act (navigate/snapshot)
+    // without treating post-Send click/type abort as not-sent (ambiguous).
+    if (/abort|timeout/i.test(msg) || /AbortError|TimeoutError/i.test(name)) {
+      throw new Error(`OpenBot ${op} aborted/timeout: ${msg || name || "aborted"}`);
+    }
+    throw err;
+  }
 }
 
 export async function openBotNavigate(

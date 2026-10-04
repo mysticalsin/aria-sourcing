@@ -32,15 +32,27 @@ async function supervisorFetch(
   init: RequestInit & { timeoutMs?: number } = {},
 ): Promise<Response> {
   const { timeoutMs = 60_000, ...rest } = init;
-  return fetch(`${root(cfg.baseUrl)}${path}`, {
-    ...rest,
-    headers: {
-      Authorization: `Bearer ${cfg.token}`,
-      "Content-Type": "application/json",
-      ...(rest.headers ?? {}),
-    },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const op = path.includes("/ensure")
+    ? "ensure"
+    : path.replace(/^\//, "").split("/")[0] || "supervisor";
+  try {
+    return await fetch(`${root(cfg.baseUrl)}${path}`, {
+      ...rest,
+      headers: {
+        Authorization: `Bearer ${cfg.token}`,
+        "Content-Type": "application/json",
+        ...(rest.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const name = err instanceof Error ? err.name : "";
+    if (/abort|timeout/i.test(msg) || /AbortError|TimeoutError/i.test(name)) {
+      throw new Error(`OpenBot ${op} aborted/timeout: ${msg || name || "aborted"}`);
+    }
+    throw err;
+  }
 }
 
 type OpenBotEnsureWire = {

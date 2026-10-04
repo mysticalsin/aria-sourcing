@@ -232,7 +232,10 @@ ok(
     linkedInChannel.includes("ref not found") &&
     linkedInChannel.includes("OpenBot (navigate|click|type|snapshot) [45]\\d\\d") &&
     linkedInChannel.includes("OpenBot ensure") &&
-    linkedInChannel.includes("supervisor unset"),
+    linkedInChannel.includes("supervisor unset") &&
+    linkedInChannel.includes(
+      "OpenBot (navigate|snapshot|session-probe|read|ensure) aborted\\/timeout",
+    ),
 );
 
 const agentClient = readFileSync("src/lib/openbot/agent-computer-client.ts", "utf8");

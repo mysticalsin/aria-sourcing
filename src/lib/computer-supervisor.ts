@@ -463,6 +463,10 @@ export class ComputerSupervisor {
         other.seatId === seatId &&
         other.computerId !== computerId
       ) {
+        // Never detach a desk the operator currently Holds (same as claimOrphan).
+        if (other.control === "human") {
+          throw new Error("computer-human-held");
+        }
         other.priorSeatId = seatId;
         other.seatId = HOST_ORPHAN_SEAT_ID;
         other.updatedAt = isoNow();

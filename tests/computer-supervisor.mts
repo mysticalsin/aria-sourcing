@@ -369,6 +369,38 @@ try {
     ok("adoptDurable still leaves ensureComputer ownership-gated", stillThrows);
   }
 
+  // adoptDurable must not detach a Taken seat desk (same mutex as claimOrphan).
+  {
+    const heldAdopt = new ComputerSupervisor();
+    const desk = heldAdopt.ensureComputer({
+      workspaceId: "ws",
+      seatId: "seat-adopt-held",
+      computerId: "comp_held_on_seat",
+    });
+    desk.control = "human";
+    heldAdopt.ensureComputer({
+      workspaceId: "ws",
+      seatId: HOST_ORPHAN_SEAT_ID,
+      computerId: "comp_durable_to_adopt",
+    });
+    let adoptErr = "";
+    try {
+      heldAdopt.adoptDurableComputerBinding({
+        workspaceId: "ws",
+        seatId: "seat-adopt-held",
+        computerId: "comp_durable_to_adopt",
+      });
+    } catch (err) {
+      adoptErr = err instanceof Error ? err.message : String(err);
+    }
+    ok("adoptDurable refuses while seat desk human Holds", adoptErr === "computer-human-held");
+    ok(
+      "Taken desk still on seat after refused adopt",
+      heldAdopt.get("comp_held_on_seat")?.seatId === "seat-adopt-held" &&
+        heldAdopt.get("comp_held_on_seat")?.control === "human",
+    );
+  }
+
   // Without OpenBot + without mock, start must not invent ready.
   {
     process.env.COMPUTER_SUPERVISOR_MOCK_SEND = "0";
