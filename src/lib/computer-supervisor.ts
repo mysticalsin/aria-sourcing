@@ -1075,9 +1075,10 @@ export class ComputerSupervisor {
 
   /**
    * Multi-instance cold start: restore sessionHealthy from durable session_probe
-   * audits within SESSION_HEALTH_TTL_MS. Never invents true — only meta.healthy===true
-   * from a real probe receipt. Skips computers that already have a fresher in-memory probe.
-   * Open durable Take (takeover with no newer release) hydrates control=human and
+   * / session_probe_failed audits within SESSION_HEALTH_TTL_MS. Never invents true —
+   * only meta.healthy===true from a real probe receipt when it is the newest
+   * probe-family event (a newer fail/null wipe wins). Skips computers that already
+   * have a fresher in-memory probe. Open durable Take hydrates control=human and
    * refuses re-green — Take nulls Map health; cold workers must not undo that.
    */
   async restoreSessionHealthFromDurableAudits(
@@ -1128,17 +1129,18 @@ export class ComputerSupervisor {
       }
     }
 
-    const events = await query({
-      workspaceId,
-      action: "session_probe",
-      since: sinceIso,
-      limit: 200,
-    });
-    // Newest last from durable query — walk newest-first per computer.
-    const latestByComputer = new Map<string, (typeof events)[number]>();
-    for (let i = events.length - 1; i >= 0; i--) {
-      const ev = events[i]!;
-      if (ev.action !== "session_probe") continue;
+    const [probeOk, probeFail] = await Promise.all([
+      query({ workspaceId, action: "session_probe", since: sinceIso, limit: 200 }),
+      query({ workspaceId, action: "session_probe_failed", since: sinceIso, limit: 200 }),
+    ]);
+    // Newest probe-family event per computer (ok or failed) — never re-green past a newer fail/null.
+    const latestByComputer = new Map<string, (typeof probeOk)[number]>();
+    const merged = [...probeOk, ...probeFail].sort(
+      (a, b) => Date.parse(a.at) - Date.parse(b.at),
+    );
+    for (let i = merged.length - 1; i >= 0; i--) {
+      const ev = merged[i]!;
+      if (ev.action !== "session_probe" && ev.action !== "session_probe_failed") continue;
       if (!latestByComputer.has(ev.computerId)) latestByComputer.set(ev.computerId, ev);
     }
     let restored = 0;
@@ -1159,8 +1161,12 @@ export class ComputerSupervisor {
         continue;
       }
       const healthyMeta = ev.meta?.healthy;
-      // Fail closed: only explicit boolean meta counts. Missing meta → leave null.
-      if (healthyMeta === true) {
+      // Fail closed: probe_failed / explicit null meta wipe green; only ===true invents true.
+      if (ev.action === "session_probe_failed" || healthyMeta === null) {
+        rec.sessionHealthy = null;
+        rec.sessionProbedAt = ev.at;
+        restored++;
+      } else if (healthyMeta === true) {
         rec.sessionHealthy = true;
         rec.sessionProbedAt = ev.at;
         restored++;
@@ -1169,6 +1175,7 @@ export class ComputerSupervisor {
         rec.sessionProbedAt = ev.at;
         restored++;
       }
+      // Missing meta → leave null (no invent).
     }
     return { restored, considered };
   }

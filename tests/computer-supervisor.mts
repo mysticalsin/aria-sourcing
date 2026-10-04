@@ -1676,20 +1676,24 @@ try {
           ];
         }
         if (q.action === "release") return [];
-        return [
-          {
-            id: "caud_probe_pre_take",
-            at: probeAt,
-            workspaceId: "ws-take",
-            computerId: seat4.computerId,
-            seatId: seat4.seatId,
-            campaignId: null,
-            action: "session_probe",
-            detail: "ok",
-            actor: "system",
-            meta: { healthy: true },
-          },
-        ];
+        if (q.action === "session_probe_failed") return [];
+        if (q.action === "session_probe") {
+          return [
+            {
+              id: "caud_probe_pre_take",
+              at: probeAt,
+              workspaceId: "ws-take",
+              computerId: seat4.computerId,
+              seatId: seat4.seatId,
+              campaignId: null,
+              action: "session_probe",
+              detail: "ok",
+              actor: "system",
+              meta: { healthy: true },
+            },
+          ];
+        }
+        return [];
       },
     });
     ok("open Take does not restore healthy=true", takeResult.restored === 0);
@@ -1700,6 +1704,56 @@ try {
     ok(
       "cold Map leaves sessionHealthy null while Take open",
       cold4.get(seat4.computerId)?.sessionHealthy == null,
+    );
+
+    // Newer session_probe_failed must win over older healthy=true (no re-green invent).
+    const cold5 = new ComputerSupervisor();
+    const seat5 = cold5.ensureComputer({ workspaceId: "ws-fail", seatId: "seat-fail" });
+    cold5.get(seat5.computerId)!.status = "ready";
+    cold5.get(seat5.computerId)!.sessionHealthy = null;
+    const okAt = new Date(Date.now() - 20_000).toISOString();
+    const failAt = new Date(Date.now() - 5_000).toISOString();
+    await cold5.restoreSessionHealthFromDurableAudits("ws-fail", {
+      queryAudits: async (q) => {
+        if (q.action === "takeover" || q.action === "release") return [];
+        if (q.action === "session_probe") {
+          return [
+            {
+              id: "caud_ok_old",
+              at: okAt,
+              workspaceId: "ws-fail",
+              computerId: seat5.computerId,
+              action: "session_probe",
+              detail: "ok",
+              actor: "system",
+              meta: { healthy: true },
+            },
+          ];
+        }
+        if (q.action === "session_probe_failed") {
+          return [
+            {
+              id: "caud_fail_new",
+              at: failAt,
+              workspaceId: "ws-fail",
+              computerId: seat5.computerId,
+              action: "session_probe_failed",
+              detail: "probe blew up",
+              actor: "system",
+              meta: { healthy: null },
+            },
+          ];
+        }
+        return [];
+      },
+    });
+    ok(
+      "newer session_probe_failed wins over older healthy=true (no invent green)",
+      cold5.get(seat5.computerId)?.sessionHealthy == null,
+    );
+    ok(
+      "newer session_probe_failed stamps sessionProbedAt",
+      cold5.get(seat5.computerId)?.sessionProbedAt === failAt,
     );
   }
 
