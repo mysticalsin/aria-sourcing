@@ -63,6 +63,12 @@ ok(
     /no Message-sent proof/.test(src),
 );
 ok(
+  "proof-phase snapshot fail maps to no-proof unknown (not deferred resend)",
+  /Proof-phase snapshot fail\/abort must stay ambiguous/.test(src) &&
+    /Clicked Send but no Message-sent proof[\s\S]{0,80}\(\$\{msg\}\)/.test(src) &&
+    /Clicked Send invitation but no Sent\/Pending proof[\s\S]{0,80}\(\$\{msg\}\)/.test(src),
+);
+ok(
   "never truncates invite notes at 280",
   !/\b280\b/.test(src) || /false allowance|was a false/.test(src),
 );

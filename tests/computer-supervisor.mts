@@ -1161,7 +1161,9 @@ try {
       "GET adopt human-held keeps computer_id FK (no clear mid-Take)",
       /computer-human-held/i.test(route) &&
         /keeping computer_id FK/.test(route) &&
-        /adopt durable skipped — human held/.test(route),
+        /adopt durable skipped — human held/.test(route) &&
+        // Emit desk so Hermes patches don't null computerId mid-Take.
+        /computers\.push\(held\)/.test(route),
     );
     ok(
       "GET/POST hydrate treat orphan-claim-blocked like ownership-mismatch (no fleet 500)",

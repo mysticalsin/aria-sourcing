@@ -267,7 +267,17 @@ export async function openBotLinkedInSend(
     await openBotClick(cfg, sendBtn.ref, snap.snapshotId);
     await humanUiPause("click", input.seatId);
     // Fail closed: a bare Send click is not proof the message left LinkedIn.
-    snap = await openBotSnapshot(cfg);
+    // Proof-phase snapshot fail/abort must stay ambiguous (unknown), not deferred resend.
+    try {
+      snap = await openBotSnapshot(cfg);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        detail: `Clicked Send but no Message-sent proof in UI — operator must confirm delivery. (${msg})`,
+        helpRequested: true,
+      };
+    }
     const proof = snap.elements.some((el) =>
       /message sent|sent successfully|your message was sent|delivered/i.test(el.name),
     );
@@ -380,7 +390,17 @@ export async function openBotLinkedInSend(
     await openBotClick(cfg, sendInvite.ref, snap.snapshotId);
     await humanUiPause("click", input.seatId);
     // Fail closed unless the UI shows Sent/Pending — a bare click is not a notification.
-    snap = await openBotSnapshot(cfg);
+    // Proof-phase snapshot fail/abort must stay ambiguous (unknown), not deferred resend.
+    try {
+      snap = await openBotSnapshot(cfg);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        detail: `Clicked Send invitation but no Sent/Pending proof in UI — operator must confirm delivery. (${msg})`,
+        helpRequested: true,
+      };
+    }
     const proof = snap.elements.some((el) =>
       /pending|invitation sent|invite sent|sent$/i.test(el.name),
     );

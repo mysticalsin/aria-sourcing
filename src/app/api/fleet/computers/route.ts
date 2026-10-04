@@ -226,11 +226,18 @@ export async function GET(req: NextRequest) {
             const adoptMsg =
               adoptErr instanceof Error ? adoptErr.message : String(adoptErr);
             // Mid-Take: keep rightful FK — do not null while operator Holds.
+            // Still emit the desk so Settings/Agents Hermes patches don't null computerId.
             if (/computer-human-held/i.test(adoptMsg)) {
               console.warn(
                 "adopt durable skipped — human held; keeping computer_id FK",
                 seat.id,
               );
+              const held =
+                defaultComputerSupervisor.get(cid) ??
+                defaultComputerSupervisor
+                  .list(String(wid))
+                  .find((c) => c.seatId === seat.id);
+              if (held) computers.push(held);
               continue;
             }
             console.warn(
