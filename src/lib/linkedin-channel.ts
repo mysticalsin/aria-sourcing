@@ -245,6 +245,10 @@ const browserComputerAdapter: LinkedInAdapter = {
             "seat snapshot required for Browser Computer pacing (daily cap / gap / sessionHealthy).",
         };
       }
+      // Cold worker Map has no in-memory probe — restore durable session_probe before pace.
+      // Never invent healthy; hydrate orphans then adopt TTL-fresh probe receipts.
+      await defaultComputerSupervisor.hydrateFromHost(req.workspaceId);
+      await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(req.workspaceId);
       // get() applies SESSION_HEALTH_TTL — ensure()'s raw record can still hold
       // stale sessionHealthy=true that expireStaleSessionHealth would null.
       const pacedHealthy =
@@ -263,9 +267,9 @@ const browserComputerAdapter: LinkedInAdapter = {
           detail: pace.detail ?? `Deferred: ${pace.reason}`,
         };
       }
-      if (computer.status === "stopped" || computer.status === "error") {
-        await defaultComputerSupervisor.start(computer.computerId, { campaignId: req.campaignId });
-      }
+      // Do NOT start() here — start nulls sessionHealthy and races the enqueue
+      // session gate (session_unverified after pace OK). enqueueJob starts after
+      // the gate when status is stopped/error.
 
       const job = await defaultComputerSupervisor.enqueueJob({
         computerId: computer.computerId,

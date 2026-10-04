@@ -1431,3 +1431,28 @@ Historical and current findings follow. The current consolidated audit is
 **File:** multi
 **Issue:** Floor/PacketFX invent-healthy closed; go-live all-N closed; openbot enqueueJob is test-only.
 **Status:** wontfix (no tip residual in those focus areas)
+
+## 2026-10-04 — claim before pace burns outbox on soft refuse
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** claim_linkedin_outbound_queued ran before evaluateSendPace; min_gap/BH/session refuse after claim → skipped → failed (no requeue).
+**Status:** fixed (pace + soft-defer continue before claim; restore durable probe first)
+
+## 2026-10-04 — deliver start() nulls sessionHealthy before enqueue gate
+**Severity:** correctness
+**File:** src/lib/linkedin-channel.ts
+**Issue:** start() before enqueueJob cleared sessionHealthy → session_unverified after pace OK.
+**Status:** fixed (drop pre-start; enqueueJob starts after session gate)
+
+## 2026-10-04 — cold deliver Map never restores durable session probe
+**Severity:** correctness
+**File:** src/lib/linkedin-channel.ts
+**Issue:** deliver paced on empty Map sessionHealthy=null while Floor green on other instance.
+**Status:** fixed (hydrateFromHost + restoreSessionHealthFromDurableAudits before pace)
+
+## 2026-10-04 — hydrate day TZ vs claim Europe/Berlin mismatch
+**Severity:** correctness
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** sentToday used Hermes sendWindow TZ; claim 0089 hardcodes Europe/Berlin.
+**Status:** fixed (hydrate dayStart pinned to CET)
+

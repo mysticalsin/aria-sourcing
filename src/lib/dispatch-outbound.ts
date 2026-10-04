@@ -47,6 +47,8 @@ import {
 import { AGENT_SEAT_SELECT, agentSeatRowToSeat, type AgentSeatRow } from "@/lib/fleet-seats";
 import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
 import { defaultFleetSettings, defaultSendWindow, startOfDayInTimeZone } from "@/lib/fleet";
+import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
+import { evaluateSendPace } from "@/lib/send-pacing";
 import type { AgentSeat, FleetSettings, SendWindow } from "@/lib/types";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
@@ -416,7 +418,8 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         }
         // Hydrate pacing counters from durable ledger — agentSeatRowToSeat alone
         // zeros sentToday/lastSendAt so min_gap / daily_cap would be theater.
-        // Day boundary must match seat sendWindow TZ (Hermes overlay → default CET).
+        // Day boundary pinned to CET (Europe/Berlin) to match claim 0089 until
+        // durable send_window exists — Hermes TZ still drives business_hours.
         let seat: AgentSeat = {
           ...seatBase,
           ...(seatBase.provider === "LinkedIn Browser Computer"
@@ -424,10 +427,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
             : {}),
         };
         if (seat.provider === "LinkedIn Browser Computer") {
-          const dayStart = startOfDayInTimeZone(
-            new Date(),
-            seat.sendWindow?.timezone ?? "CET",
-          );
+          const dayStart = startOfDayInTimeZone(new Date(), "CET");
           const [{ data: lastRow }, { count: todayCount }] = await Promise.all([
             supabase
               .from("outreach_ledger")
@@ -487,6 +487,41 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         if (!adapter.configured(linkedInCreds)) {
           await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
           continue;
+        }
+
+        // Pace BEFORE claim — claim+skipped burns the outbox (no requeue). Soft-defer
+        // leaves status=queued so min_gap / BH / session refuse can retry later.
+        if (seat.provider === "LinkedIn Browser Computer") {
+          const computerId = (seat.computerId ?? "").trim();
+          const seatId = (msg.seat_id ?? seat.id ?? "").trim();
+          if (computerId && seatId) {
+            defaultComputerSupervisor.ensureComputer({
+              workspaceId: msg.workspace_id,
+              seatId,
+              computerId,
+              campaignId: attachCampaignId || undefined,
+            });
+            await defaultComputerSupervisor.hydrateFromHost(msg.workspace_id);
+            await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(
+              msg.workspace_id,
+            );
+          }
+          const pacedHealthy =
+            computerId
+              ? (defaultComputerSupervisor.get(computerId)?.sessionHealthy ?? null)
+              : null;
+          const pace = evaluateSendPace({
+            seat,
+            settings: fleetSettings,
+            sessionHealthy: pacedHealthy,
+          });
+          if (!pace.ok) {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason: pace.reason,
+              detail: pace.detail,
+            });
+            continue;
+          }
         }
 
         const { data: claim, error: claimErr } = await supabase.rpc("claim_linkedin_outbound_queued", {

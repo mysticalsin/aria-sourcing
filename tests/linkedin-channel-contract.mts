@@ -133,6 +133,29 @@ ok(
     /browserAgentPermissionMode/.test(dispatch) &&
     !/fleetSettings:\s*defaultFleetSettings\(\)/.test(dispatch),
 );
+ok(
+  "dispatch paces Browser Computer before claim (soft-defer leaves queued)",
+  /evaluateSendPace/.test(dispatch) &&
+    /soft-defer before claim/.test(dispatch) &&
+    dispatch.indexOf("evaluateSendPace") < dispatch.indexOf("claim_linkedin_outbound_queued"),
+);
+ok(
+  "dispatch sentToday day boundary pinned to CET (claim 0089 Europe/Berlin)",
+  /startOfDayInTimeZone\(new Date\(\),\s*"CET"\)/.test(dispatch),
+);
+
+const linkedInChannel = readFileSync("src/lib/linkedin-channel.ts", "utf8");
+ok(
+  "browser-computer deliver restores durable session before pace (no invent)",
+  /hydrateFromHost/.test(linkedInChannel) &&
+    /restoreSessionHealthFromDurableAudits/.test(linkedInChannel),
+);
+ok(
+  "browser-computer deliver does not start() before enqueueJob session gate",
+  !/if \(computer\.status === "stopped" \|\| computer\.status === "error"\) \{\s*await defaultComputerSupervisor\.start/.test(
+    linkedInChannel,
+  ),
+);
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
 const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
