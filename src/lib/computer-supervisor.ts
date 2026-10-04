@@ -1229,6 +1229,10 @@ export class ComputerSupervisor {
       );
       return rec;
     }
+    // /session-probe navigates — never clobber mid-send/warmup (Floor refresh already skips busy).
+    if (rec.status === "busy") {
+      throw new Error("computer-busy");
+    }
     const agent = agentCfg(rec);
     if (!agent) {
       rec.sessionHealthy = null;
@@ -1286,10 +1290,11 @@ export class ComputerSupervisor {
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     const correlationId = this.takeoverCorrelation.get(computerId) ?? null;
     rec.control = "bot";
-    // Operator finished Take control — clear help_requested so the bot may act again.
+    // Operator finished Take control — clear help_requested / stuck busy so the bot may act.
+    // Take mid-send leaves status=busy after humanMutex refuse; Floor skips busy forever.
     // Do NOT invent sessionHealthy=true: login may have failed or been skipped.
     // Leave null until a real LinkedIn probe (or a later help_requested) decides.
-    if (rec.status === "help_requested") {
+    if (rec.status === "help_requested" || rec.status === "busy") {
       rec.status = "ready";
       rec.lastError = null;
     }
@@ -1635,6 +1640,8 @@ export class ComputerSupervisor {
           job.status = "failed";
           job.detail = fresh.lastError || "OpenBot computer not ready";
           job.finishedAt = isoNow();
+          // start() may leave status=busy from this runJob — do not stick Floor skip.
+          if (fresh.status === "busy") fresh.status = "error";
           this.jobs.set(job.jobId, job);
           this.audit(job.computerId, "act_failed", job.detail, "bot", {
             jobId: job.jobId,
@@ -1777,7 +1784,11 @@ export class ComputerSupervisor {
         job.status = humanMutex ? "refused" : "failed";
         job.detail = humanMutex ? "human-has-control" : detail;
         job.finishedAt = isoNow();
-        if (!humanMutex) {
+        if (humanMutex) {
+          // Clear stuck busy — Take mid-send must not leave Floor refresh skipping forever.
+          const held = this.require(job.computerId);
+          if (held.status === "busy") held.status = "ready";
+        } else {
           rec.status = "error";
           rec.lastError = job.detail;
         }

@@ -1090,6 +1090,77 @@ try {
       "release without agent returns control to bot",
       supervisor.get(seat.computerId)?.control === "bot",
     );
+    // Take mid-send leaves busy; Release must unstick so Floor can re-probe.
+    const stuck = supervisor.get(seat.computerId)!;
+    stuck.status = "busy";
+    stuck.control = "human";
+    await supervisor.takeControl(seat.computerId); // already human — re-stamp
+    stuck.status = "busy";
+    await supervisor.releaseControl(seat.computerId);
+    ok(
+      "releaseControl clears stuck busy → ready",
+      supervisor.get(seat.computerId)?.status === "ready",
+    );
+  }
+
+  // humanMutex catch mid-run clears busy (OpenBot 409 while Take).
+  {
+    const mutex = new ComputerSupervisor();
+    const seat = mutex.ensureComputer({ workspaceId: "ws-mutex", seatId: "seat-mutex" });
+    const rec = mutex.get(seat.computerId)!;
+    rec.status = "ready";
+    rec.control = "bot";
+    rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date().toISOString();
+    rec.remoteUrl = "http://openbot.test/view/mutex";
+    process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok";
+    process.env.OPENBOT_COMPUTER_TOKEN = "ctok";
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("linkedin") || url.includes("session") || url.includes("navigate") || url.includes("click")) {
+        return new Response(JSON.stringify({ error: "human has control" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      // list / ensure paths
+      return new Response(JSON.stringify({ computers: [], computer: { url: rec.remoteUrl, botId: "b" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    const job = await mutex.enqueueJob({
+      computerId: seat.computerId,
+      kind: "warmup_nav",
+      payload: { url: "https://www.linkedin.com/feed/" },
+    });
+    globalThis.fetch = prevFetch;
+    ok("humanMutex mid-run refuses", job.status === "refused");
+    ok(
+      "humanMutex mid-run clears stuck busy → ready",
+      mutex.get(seat.computerId)?.status === "ready",
+    );
+    delete process.env.COMPUTER_SUPERVISOR_URL;
+    delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    delete process.env.OPENBOT_COMPUTER_TOKEN;
+  }
+
+  // probeSession refuses busy (no /session-probe navigate mid-send).
+  {
+    const busyProbe = new ComputerSupervisor();
+    const seat = busyProbe.ensureComputer({ workspaceId: "ws-bp", seatId: "seat-bp" });
+    const rec = busyProbe.get(seat.computerId)!;
+    rec.status = "busy";
+    rec.remoteUrl = "http://openbot.test/view/bp";
+    let busyThrown = false;
+    try {
+      await busyProbe.probeSession(seat.computerId);
+    } catch (err) {
+      busyThrown = err instanceof Error && err.message === "computer-busy";
+    }
+    ok("probeSession throws computer-busy while status=busy", busyThrown);
   }
 
 
@@ -1244,8 +1315,9 @@ try {
     }
     {
       const idx = route.indexOf('case "session_probe"');
-      const block = idx >= 0 ? route.slice(idx, idx + 1200) : "";
+      const block = idx >= 0 ? route.slice(idx, idx + 1600) : "";
       const humanIdx = block.indexOf('control === "human"');
+      const busyIdx = block.indexOf('status === "busy"');
       const probeIdx = block.indexOf(".probeSession(");
       ok(
         "session_probe refuses human-held (no durable green mid-Take)",
@@ -1254,8 +1326,22 @@ try {
           block.includes("session_probe"),
       );
       ok(
+        "session_probe refuses busy (no /session-probe navigate mid-send)",
+        block.includes("computer-busy") && busyIdx >= 0 && busyIdx < probeIdx,
+      );
+      ok(
         "session_probe checks human before probeSession",
         humanIdx >= 0 && probeIdx >= 0 && humanIdx < probeIdx,
+      );
+    }
+    {
+      const reclaimIdx = route.indexOf('case "reclaim_healthy_orphan"');
+      const reclaimBlock = reclaimIdx >= 0 ? route.slice(reclaimIdx, reclaimIdx + 2200) : "";
+      ok(
+        "reclaim_healthy_orphan refuses busy before orphan hunt",
+        reclaimBlock.includes("computer-busy") &&
+          reclaimBlock.includes('status === "busy"') &&
+          reclaimBlock.includes("status: 409"),
       );
     }
   }

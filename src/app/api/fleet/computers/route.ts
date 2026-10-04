@@ -673,11 +673,17 @@ export async function POST(req: NextRequest) {
           computerId: computerId || undefined,
           campaignId: body.campaignId,
         });
-        // Probe navigates — refuse while human Holds (same mutex as navigate / OpenBot).
+        // Probe navigates — refuse while human Holds or mid-act busy (same mutex as navigate).
         const probeHeld = defaultComputerSupervisor.get(probeRec.computerId);
         if (probeHeld?.control === "human") {
           return NextResponse.json(
             { error: "computer-human-held", detail: "Release Take control before session_probe." },
+            { status: 409 },
+          );
+        }
+        if (probeHeld?.status === "busy") {
+          return NextResponse.json(
+            { error: "computer-busy", detail: "Wait for in-flight act before session_probe." },
             { status: 409 },
           );
         }
@@ -700,6 +706,16 @@ export async function POST(req: NextRequest) {
         if (seatHeld) {
           return NextResponse.json(
             { error: "computer-human-held", detail: "Release Take control before reclaim." },
+            { status: 409 },
+          );
+        }
+        // Mid-act: never /session-probe navigate the busy desk (or orphan-hunt while it sends).
+        const seatBusy = defaultComputerSupervisor
+          .list(workspaceId ?? "__local__")
+          .find((c) => c.seatId === seatId && c.status === "busy");
+        if (seatBusy) {
+          return NextResponse.json(
+            { error: "computer-busy", detail: "Wait for in-flight act before reclaim." },
             { status: 409 },
           );
         }
@@ -749,7 +765,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "computer action failed";
-    const status = message === "computer-human-held" ? 409 : 400;
+    const status =
+      message === "computer-human-held" || message === "computer-busy" ? 409 : 400;
     return NextResponse.json({ error: message }, { status });
   } finally {
     bindComputerSupervisorEndpoint(null);
