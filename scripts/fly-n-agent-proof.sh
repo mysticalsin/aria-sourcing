@@ -86,7 +86,7 @@ node -e '
 ' "$EXPECTED" "$http_code" "$ready_json"
 
 echo
-echo "PASS: tip SHA + migration 0087 + Hermes data plane ready for N-agent LI desks."
+echo "PASS: tip SHA + migration ≥0087 + Hermes data plane ready for N-agent LI desks."
 echo
 echo "Remaining manual proof (do not invent sessionHealthy=true):"
 echo "  1. Open each campaign LI desk on Floor/Fleet"
