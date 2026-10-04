@@ -494,11 +494,11 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         if (seat.provider === "LinkedIn Browser Computer") {
           const computerId = (seat.computerId ?? "").trim();
           const seatId = (msg.seat_id ?? seat.id ?? "").trim();
-          // Manual/Skip refuse at enqueue after claim would burn — defer here.
-          const permission = fleetSettings.browserAgentPermissionMode;
-          if (permission === "manual" || permission === "skip") {
+          // Manual refuses at enqueue after claim would burn — defer here.
+          // Skip ≡ auto for send (browser-agent-permissions); do not defer Skip.
+          if (fleetSettings.browserAgentPermissionMode === "manual") {
             safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
-              reason: permission === "skip" ? "permission_skip" : "manual_permission_mode",
+              reason: "manual_permission_mode",
             });
             continue;
           }
@@ -521,6 +521,14 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
             safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
               reason:
                 computerRec.control === "human" ? "human-has-control" : "help_requested",
+            });
+            continue;
+          }
+          // starting + durable healthy passes session gate but enqueue won't wait —
+          // soft-defer until ready/busy (stopped/error: enqueueJob starts after gate).
+          if (computerRec?.status === "starting") {
+            safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+              reason: "computer_starting",
             });
             continue;
           }

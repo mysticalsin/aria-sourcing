@@ -140,10 +140,12 @@ ok(
     dispatch.indexOf("evaluateSendPace") < dispatch.indexOf("claim_linkedin_outbound_queued"),
 );
 ok(
-  "dispatch soft-defers Manual/Skip and human/help before claim",
+  "dispatch soft-defers Manual and human/help/starting before claim (not Skip)",
   /manual_permission_mode/.test(dispatch) &&
     /human-has-control/.test(dispatch) &&
     /help_requested/.test(dispatch) &&
+    /computer_starting/.test(dispatch) &&
+    !/permission_skip/.test(dispatch) &&
     dispatch.indexOf("manual_permission_mode") < dispatch.indexOf("claim_linkedin_outbound_queued"),
 );
 ok(
