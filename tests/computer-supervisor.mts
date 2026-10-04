@@ -1244,6 +1244,12 @@ try {
         ) &&
         /!postClickAmbiguous\(j\.detail/.test(src),
     );
+    ok(
+      "probeSession discards mid-Take (no invent green)",
+      /Discarded — human took control mid-probe/.test(src) &&
+        /Skipped — human has control \(no green mid-Take\)/.test(src) &&
+        /isHumanHeld\(computerId\)/.test(src),
+    );
     {
       const startIdx = src.indexOf("async start(");
       const startBlock = startIdx >= 0 ? src.slice(startIdx, startIdx + 4500) : "";

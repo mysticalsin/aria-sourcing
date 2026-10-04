@@ -69,6 +69,11 @@ ok(
     /Clicked Send invitation but no Sent\/Pending proof[\s\S]{0,80}\(\$\{msg\}\)/.test(src),
 );
 ok(
+  "Send/Send-invitation click throw maps to no-proof unknown (not deferred dual-send)",
+  /Send click itself is ambiguous on throw/.test(src) &&
+    /Send-invitation click throw is ambiguous/.test(src),
+);
+ok(
   "never truncates invite notes at 280",
   !/\b280\b/.test(src) || /false allowance|was a false/.test(src),
 );

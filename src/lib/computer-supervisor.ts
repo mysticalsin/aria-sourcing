@@ -1179,6 +1179,21 @@ export class ComputerSupervisor {
    */
   async probeSession(computerId: string): Promise<ComputerRecord> {
     const rec = this.require(computerId);
+    // Never paint green while Take holds — refreshSessionHealthForList filters
+    // human at select time, but Take mid-await must not invent sessionHealthy=true.
+    if (this.isHumanHeld(computerId)) {
+      rec.sessionHealthy = null;
+      rec.sessionProbedAt = isoNow();
+      rec.updatedAt = isoNow();
+      this.audit(
+        computerId,
+        "session_probe",
+        "Skipped — human has control (no green mid-Take)",
+        "system",
+        { meta: { healthy: null } },
+      );
+      return rec;
+    }
     const agent = agentCfg(rec);
     if (!agent) {
       rec.sessionHealthy = null;
@@ -1189,6 +1204,20 @@ export class ComputerSupervisor {
     }
     try {
       const probe = await openBotSessionProbe(agent);
+      // Take mid-probe: discard result — never invent green under human mutex.
+      if (this.isHumanHeld(computerId)) {
+        rec.sessionHealthy = null;
+        rec.sessionProbedAt = isoNow();
+        rec.updatedAt = isoNow();
+        this.audit(
+          computerId,
+          "session_probe",
+          "Discarded — human took control mid-probe",
+          "system",
+          { meta: { healthy: null } },
+        );
+        return rec;
+      }
       rec.sessionHealthy = probe.healthy;
       rec.sessionProbedAt = isoNow();
       if (probe.healthy) {
@@ -1258,20 +1287,38 @@ export class ComputerSupervisor {
       // Real LinkedIn probe — never invent healthy=true without this.
       try {
         const probe = await openBotSessionProbe(agent);
-        rec.sessionHealthy = probe.healthy;
-        rec.sessionProbedAt = isoNow();
-        probedHealthy = probe.healthy;
-        if (probe.healthy) {
-          rec.lastError = null;
+        // Rare: Take again mid-release probe — never invent green under human.
+        if (this.isHumanHeld(computerId)) {
+          rec.sessionHealthy = null;
+          rec.sessionProbedAt = isoNow();
+          probedHealthy = null;
+          this.audit(
+            computerId,
+            "session_probe",
+            "Discarded — human took control mid-release probe",
+            "system",
+            {
+              correlationId,
+              campaignId: opts?.campaignId,
+              meta: { healthy: null },
+            },
+          );
         } else {
-          rec.lastError = probe.detail;
+          rec.sessionHealthy = probe.healthy;
+          rec.sessionProbedAt = isoNow();
+          probedHealthy = probe.healthy;
+          if (probe.healthy) {
+            rec.lastError = null;
+          } else {
+            rec.lastError = probe.detail;
+          }
+          rec.updatedAt = isoNow();
+          this.audit(computerId, "session_probe", probe.detail, "system", {
+            correlationId,
+            campaignId: opts?.campaignId,
+            meta: { healthy: probe.healthy === true, url: probe.url ?? null },
+          });
         }
-        rec.updatedAt = isoNow();
-        this.audit(computerId, "session_probe", probe.detail, "system", {
-          correlationId,
-          campaignId: opts?.campaignId,
-          meta: { healthy: probe.healthy === true, url: probe.url ?? null },
-        });
       } catch (err) {
         rec.sessionHealthy = null;
         rec.sessionProbedAt = isoNow();
