@@ -886,7 +886,9 @@ export class ComputerSupervisor {
     }
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     rec.status = "starting";
+    // Invalidate + stamp so durable restore cannot re-green from a pre-start probe.
     rec.sessionHealthy = null;
+    rec.sessionProbedAt = isoNow();
     rec.updatedAt = isoNow();
     this.audit(computerId, "start", "Booting isolated Chromium via OpenBot ensure", "system", {
       campaignId: opts?.campaignId,
@@ -984,6 +986,7 @@ export class ComputerSupervisor {
     rec.lastError = null;
     // Process up ≠ LinkedIn login. Never carry a stale probe across stop→start.
     rec.sessionHealthy = null;
+    rec.sessionProbedAt = isoNow();
     rec.updatedAt = isoNow();
     rec.lastAudit = "ready";
     this.audit(
@@ -1010,11 +1013,18 @@ export class ComputerSupervisor {
         this.audit(computerId, "stop_failed", rec.lastError, "system");
       }
     }
+    // Take mid-stop: do not clear mutex after remote stop returns.
+    if (this.isHumanHeld(computerId)) {
+      this.audit(computerId, "stop_refused", "human-has-control (Take mid-stop)", "system");
+      throw new Error("computer-human-held");
+    }
     rec.status = "stopped";
     rec.control = "bot";
     rec.remoteUrl = null;
     rec.viewUrl = null;
+    // Invalidate + stamp probedAt so durable restore cannot re-green from older probe.
     rec.sessionHealthy = null;
+    rec.sessionProbedAt = isoNow();
     rec.updatedAt = isoNow();
     this.audit(computerId, "stop", "Computer stopped", "system");
     return rec;
@@ -1035,6 +1045,10 @@ export class ComputerSupervisor {
         this.audit(computerId, "reset_failed", rec.lastError, "system");
       }
     }
+    if (this.isHumanHeld(computerId)) {
+      this.audit(computerId, "reset_refused", "human-has-control (Take mid-reset)", "system");
+      throw new Error("computer-human-held");
+    }
     rec.remoteUrl = null;
     rec.viewUrl = null;
     await this.stop(computerId);
@@ -1054,7 +1068,9 @@ export class ComputerSupervisor {
     rec.control = "human";
     // Operator may log in / change cookies — prior probe is no longer authoritative.
     // Floor must not stay green-working while human holds the mutex.
+    // Stamp probedAt so durable restore cannot re-green from a pre-Take probe.
     rec.sessionHealthy = null;
+    rec.sessionProbedAt = isoNow();
     rec.updatedAt = isoNow();
     rec.lastAudit = "human_takeover";
     this.audit(
@@ -1163,9 +1179,10 @@ export class ComputerSupervisor {
       const probedAtMs = Date.parse(ev.at);
       // Future audit timestamps are poison — never restore green past wall-clock.
       if (!Number.isFinite(probedAtMs) || probedAtMs > now || now - probedAtMs > SESSION_HEALTH_TTL_MS) continue;
-      // Fresher in-memory probe wins — do not clobber with older durable receipt.
+      // Fresher in-memory probe OR invalidate stamp wins — do not clobber with older durable.
+      // sessionHealthy may be null after start/stop/Take invalidate; still honor memAt.
       const memAt = rec.sessionProbedAt ? Date.parse(rec.sessionProbedAt) : NaN;
-      if (Number.isFinite(memAt) && memAt >= probedAtMs && rec.sessionHealthy != null) {
+      if (Number.isFinite(memAt) && memAt >= probedAtMs) {
         continue;
       }
       const healthyMeta = ev.meta?.healthy;

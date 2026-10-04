@@ -1283,9 +1283,9 @@ try {
     );
     {
       const stopIdx = src.indexOf("async stop(");
-      const stopBlock = stopIdx >= 0 ? src.slice(stopIdx, stopIdx + 900) : "";
+      const stopBlock = stopIdx >= 0 ? src.slice(stopIdx, stopIdx + 1400) : "";
       const resetIdx = src.indexOf("async reset(");
-      const resetBlock = resetIdx >= 0 ? src.slice(resetIdx, resetIdx + 900) : "";
+      const resetBlock = resetIdx >= 0 ? src.slice(resetIdx, resetIdx + 1200) : "";
       ok(
         "stop refuses while human Holds (no clear Take mutex)",
         /isHumanHeld\(computerId\)/.test(stopBlock) &&
@@ -1293,15 +1293,31 @@ try {
           stopBlock.indexOf("isHumanHeld") < stopBlock.indexOf("openBotStopComputer"),
       );
       ok(
+        "stop re-checks human after await (Take mid-stop)",
+        /Take mid-stop/.test(stopBlock) &&
+          (stopBlock.match(/isHumanHeld\(computerId\)/g) ?? []).length >= 2,
+      );
+      ok(
         "reset refuses while human Holds (no remint mid-Take)",
         /isHumanHeld\(computerId\)/.test(resetBlock) &&
           /computer-human-held/.test(resetBlock) &&
           resetBlock.indexOf("isHumanHeld") < resetBlock.indexOf("openBotResetComputer"),
       );
+      ok(
+        "reset re-checks human after await (Take mid-reset)",
+        /Take mid-reset/.test(resetBlock) &&
+          (resetBlock.match(/isHumanHeld\(computerId\)/g) ?? []).length >= 2,
+      );
     }
+    ok(
+      "durable restore honors memAt even when sessionHealthy is null (no re-green)",
+      /sessionHealthy may be null after start\/stop\/Take invalidate/.test(src) &&
+        /memAt >= probedAtMs\)/.test(src) &&
+        !/memAt >= probedAtMs && rec\.sessionHealthy != null/.test(src),
+    );
     {
       const startIdx = src.indexOf("async start(");
-      const startBlock = startIdx >= 0 ? src.slice(startIdx, startIdx + 4500) : "";
+      const startBlock = startIdx >= 0 ? src.slice(startIdx, startIdx + 6000) : "";
       const ensureIdx = startBlock.indexOf("openBotEnsureComputer");
       const midEnsure =
         ensureIdx >= 0
@@ -1803,6 +1819,42 @@ try {
     ok(
       "newer session_probe_failed stamps sessionProbedAt",
       cold5.get(seat5.computerId)?.sessionProbedAt === failAt,
+    );
+
+    // start/stop invalidate stamps probedAt — older durable green must not re-apply.
+    const cold6 = new ComputerSupervisor();
+    const seat6 = cold6.ensureComputer({ workspaceId: "ws-inv", seatId: "seat-inv" });
+    const rec6 = cold6.get(seat6.computerId)!;
+    rec6.status = "ready";
+    rec6.sessionHealthy = null;
+    const invalidateAt = new Date(Date.now() - 2_000).toISOString();
+    const olderProbeAt = new Date(Date.now() - 30_000).toISOString();
+    rec6.sessionProbedAt = invalidateAt;
+    await cold6.restoreSessionHealthFromDurableAudits("ws-inv", {
+      queryAudits: async (q) => {
+        if (q.action === "takeover" || q.action === "release" || q.action === "session_probe_failed") {
+          return [];
+        }
+        if (q.action === "session_probe") {
+          return [
+            {
+              id: "caud_old_green",
+              at: olderProbeAt,
+              workspaceId: "ws-inv",
+              computerId: seat6.computerId,
+              action: "session_probe",
+              detail: "ok",
+              actor: "system",
+              meta: { healthy: true },
+            },
+          ];
+        }
+        return [];
+      },
+    });
+    ok(
+      "invalidate stamp blocks older durable green restore",
+      cold6.get(seat6.computerId)?.sessionHealthy == null,
     );
   }
 
