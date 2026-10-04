@@ -1,29 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 361
+shift: 362
 agent: cursor-cloud
-updated: 2026-10-04T05:30Z
-status: tip-restore-probe-family-awaiting-ci-approve
+updated: 2026-10-04T05:45Z
+status: tip-stop-reset-take-awaiting-ci-approve
 ---
 
-# Handoff — Shift 361
+# Handoff — Shift 362
 
 ## Current state
 
-- **Branch tip:** pending on `cursor/fly-deploy-land-n-agent-b91d` (durable restore probe-family)
-- #150 squash auto-merge armed, `REVIEW_REQUIRED`
-- Fly prod still `21a42e7` / migration `0084`
-- 3rd residual ([Third residual hunt tip 828d9aa](bc-8862f733-fde9-5264-aa99-6f5ee12c2c40)) → fixed
+- **Branch tip:** pending push — stop/reset Take refuse
+- #150 `REVIEW_REQUIRED`; Fly still `21a42e7` / `0084`
+- 4th residual ([Fourth residual hunt tip 5770bac](bc-60a14313-fa93-5f9f-9c06-2c6c4c77f39a)) → stop/reset fixed
 
 ## Done this shift
 
-1. `restoreSessionHealthFromDurableAudits` merges `session_probe` + `session_probe_failed`; newest fail/null wins (no invent green)
-2. Local: tsc + computer-supervisor 164 pass
+1. `stop`/`reset` throw `computer-human-held` while Take holds (no clear mutex / remint)
+2. Local: tsc + computer-supervisor 170 pass
 
 ## Blockers
 
 1. Owner Approve #150 → squash → Deploy → fly-n-agent-proof → LI Take→login→Release
-2. Never invent sessionHealthy; UpdateGoal complete only after tip SHA + ≥0087–0090 + LI healthy
+2. Never invent sessionHealthy; UpdateGoal complete only after tip + ≥0087–0090 + LI healthy
 
 ## Next steps
 
@@ -32,8 +31,8 @@ status: tip-restore-probe-family-awaiting-ci-approve
 
 ## Decisions made (don't relitigate)
 
+- Take mutex covers start/stop/reset/navigate/session_probe/reclaim/adopt/restore/probe
 - Never invent sessionHealthy=true; ignore Vercel-only when Quality/Release pass
-- Durable restore uses newest probe-family event (fail/null wipe older green)
 
 ## Watch out
 

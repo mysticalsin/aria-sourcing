@@ -58,6 +58,30 @@ try {
   }
   ok("start refuses while human has control", startHeld);
 
+  let stopHeld = false;
+  try {
+    await supervisor.stop(computer.computerId);
+  } catch (err) {
+    stopHeld = err instanceof Error && err.message === "computer-human-held";
+  }
+  ok("stop refuses while human has control", stopHeld);
+  ok(
+    "stop refuse leaves control=human (no silent release)",
+    supervisor.get(computer.computerId)?.control === "human",
+  );
+
+  let resetHeld = false;
+  try {
+    await supervisor.reset(computer.computerId);
+  } catch (err) {
+    resetHeld = err instanceof Error && err.message === "computer-human-held";
+  }
+  ok("reset refuses while human has control", resetHeld);
+  ok(
+    "reset refuse leaves control=human",
+    supervisor.get(computer.computerId)?.control === "human",
+  );
+
   const refused = await supervisor.enqueueJob({
     computerId: computer.computerId,
     kind: "linkedin_send",
@@ -1250,6 +1274,24 @@ try {
         /Skipped — human has control \(no green mid-Take\)/.test(src) &&
         /isHumanHeld\(computerId\)/.test(src),
     );
+    {
+      const stopIdx = src.indexOf("async stop(");
+      const stopBlock = stopIdx >= 0 ? src.slice(stopIdx, stopIdx + 900) : "";
+      const resetIdx = src.indexOf("async reset(");
+      const resetBlock = resetIdx >= 0 ? src.slice(resetIdx, resetIdx + 900) : "";
+      ok(
+        "stop refuses while human Holds (no clear Take mutex)",
+        /isHumanHeld\(computerId\)/.test(stopBlock) &&
+          /computer-human-held/.test(stopBlock) &&
+          stopBlock.indexOf("isHumanHeld") < stopBlock.indexOf("openBotStopComputer"),
+      );
+      ok(
+        "reset refuses while human Holds (no remint mid-Take)",
+        /isHumanHeld\(computerId\)/.test(resetBlock) &&
+          /computer-human-held/.test(resetBlock) &&
+          resetBlock.indexOf("isHumanHeld") < resetBlock.indexOf("openBotResetComputer"),
+      );
+    }
     {
       const startIdx = src.indexOf("async start(");
       const startBlock = startIdx >= 0 ? src.slice(startIdx, startIdx + 4500) : "";

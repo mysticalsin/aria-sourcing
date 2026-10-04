@@ -997,6 +997,10 @@ export class ComputerSupervisor {
 
   async stop(computerId: string): Promise<ComputerRecord> {
     const rec = this.require(computerId);
+    // Never kill / clear Take while operator Holds — Release first.
+    if (this.isHumanHeld(computerId)) {
+      throw new Error("computer-human-held");
+    }
     const cfg = openBotSupervisorCfg();
     if (cfg) {
       try {
@@ -1018,6 +1022,10 @@ export class ComputerSupervisor {
 
   async reset(computerId: string): Promise<ComputerRecord> {
     const rec = this.require(computerId);
+    // Never reset under Take — would clear mutex + remint while operator logs in.
+    if (this.isHumanHeld(computerId)) {
+      throw new Error("computer-human-held");
+    }
     const cfg = openBotSupervisorCfg();
     if (cfg) {
       try {
