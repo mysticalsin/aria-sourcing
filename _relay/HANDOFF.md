@@ -1,23 +1,24 @@
 ---
 project: MSourcing / ARIA
-shift: 363
+shift: 364
 agent: cursor-cloud
-updated: 2026-10-04T06:05Z
-status: tip-ledger-release-retry-awaiting-ci-approve
+updated: 2026-10-04T06:25Z
+status: tip-stop-mid-take-invalidate-awaiting-ci-approve
 ---
 
-# Handoff — Shift 363
+# Handoff — Shift 364
 
 ## Current state
 
-- **Branch tip:** pending — Release retry skip ledger messageId
+- **Branch tip:** pending — stop mid-Take + invalidate probedAt
 - #150 `REVIEW_REQUIRED`; Fly still `21a42e7` / `0084`
-- 5th residual ([Fifth residual hunt tip 091e51c](bc-cdf40561-8c69-5f05-8c06-e5dd47dfaf53)) → fixed
+- 6th residual ([Sixth residual hunt tip 18ec458](bc-0f0a5cef-5671-5424-9826-ee03aaefd9c2)) → fixed
 
 ## Done this shift
 
-1. Release auto-retry skips `payload.messageId` jobs (dispatch owns requeue — no dual-send)
-2. Local: tsc + computer-supervisor 171 pass
+1. `stop`/`reset` re-check `isHumanHeld` after await (Take mid-stop cannot clear mutex)
+2. start/stop/Take invalidate stamps `sessionProbedAt`; durable restore honors memAt even when healthy null
+3. Local: tsc + computer-supervisor 175 pass
 
 ## Blockers
 
@@ -31,9 +32,8 @@ status: tip-ledger-release-retry-awaiting-ci-approve
 
 ## Decisions made (don't relitigate)
 
-- Ledger-backed sends: dispatch deferred owns retry; Release never re-enqueues messageId jobs
-- Take mutex covers start/stop/reset/navigate/session_probe/reclaim/adopt/restore/probe
-- Never invent sessionHealthy=true
+- Invalidate stamps probedAt so durable restore cannot re-green from older probe
+- Take mutex covers start/stop/reset (incl. mid-await)
 
 ## Watch out
 
