@@ -125,6 +125,45 @@ export function sendWindowWallClock(
   return { day, hour };
 }
 
+/**
+ * UTC Instant of local midnight for `now` in the seat send-window timezone.
+ * Used so durable sentToday / claim daily caps share the same calendar day as
+ * business_hours (default CET → Europe/Berlin), not host/UTC midnight.
+ */
+export function startOfDayInTimeZone(now: Date, timezone: string): Date {
+  const timeZone = resolveSendWindowTimeZone(timezone);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type: string): number => {
+    const raw = parts.find((p) => p.type === type)?.value ?? "";
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const y = get("year");
+  const m = get("month");
+  const d = get("day");
+  const h = get("hour");
+  const mi = get("minute");
+  const s = get("second");
+  if (![y, m, d, h, mi, s].every((n) => Number.isFinite(n))) {
+    // Fail closed: UTC midnight so caps never invent a lenient local day.
+    const fallback = new Date(now);
+    fallback.setUTCHours(0, 0, 0, 0);
+    return fallback;
+  }
+  const asUtc = Date.UTC(y, m - 1, d, h, mi, s);
+  const offset = asUtc - now.getTime();
+  return new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - offset);
+}
+
 export function isWithinSendWindow(seat: AgentSeat, now = new Date(), enforce = true): boolean {
   if (!enforce) return true;
   const w = seat.sendWindow;

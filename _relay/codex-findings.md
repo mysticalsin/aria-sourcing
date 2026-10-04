@@ -1376,56 +1376,58 @@ Historical and current findings follow. The current consolidated audit is
 
 ## 2026-10-03 — claim_linkedin excludes Browser Computer (all-N send dead)
 **Severity:** correctness
-**File:** supabase/migrations/0055_autopilot_entitlements_and_templates.sql:642
-**Issue:** Tip-applied `claim_linkedin_outbound_queued` allowlists only `LinkedIn Assisted Manual` / `LinkedIn Vendor API`. `LinkedIn Browser Computer` (enqueue 0086/0087) always gets `seat-not-live` at durable dispatch — N AriaBot desks cannot complete FE→enqueue→claim→deliver.
-**Repro/evidence:** Live BC seat + queued LinkedIn outbox → claim returns seat-not-live; openbot e2e bypasses claim via direct `enqueueJob`.
-**Suggested fix:** Migration replacing claim to allow Browser Computer (+ browser-computer backend branch).
-**Status:** open
+**File:** supabase/migrations/0055_autopilot_entitlements_and_templates.sql (superseded by 0088)
+**Issue:** Tip-applied `claim_linkedin_outbound_queued` allowlists only Assisted Manual / Vendor API. Browser Computer always gets seat-not-live.
+**Repro/evidence:** Live BC seat + queued LinkedIn outbox → claim seat-not-live.
+**Suggested fix:** Migration allowlisting Browser Computer.
+**Status:** fixed (223c211; migration 0088)
 
 ## 2026-10-03 — dispatch LI pacing seat has sentToday=0 / lastSendAt=null
 **Severity:** correctness
-**File:** src/lib/fleet-seats.ts:67; src/lib/dispatch-outbound.ts:351
-**Issue:** `agentSeatRowToSeat(row)` with no Hermes existing forces `sentToday: 0` and `lastSendAt: null`. Dispatch passes that seat into `evaluateSendPace`, so min_gap / Hermes daily_cap are no-ops on the real LI deliver path.
-**Repro/evidence:** Two BC sends minutes apart both see lastSendAt=null → gap never blocks.
-**Suggested fix:** Persist/load last_send_at + day counts (or derive from outreach_ledger) before evaluateSendPace.
-**Status:** open
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** agentSeatRowToSeat zeros sentToday/lastSendAt so min_gap/daily_cap no-ops on durable deliver.
+**Suggested fix:** Hydrate from outreach_ledger.
+**Status:** fixed (223c211)
 
 ## 2026-10-03 — dispatch LI sendWindow always defaultSendWindow
 **Severity:** correctness
-**File:** src/lib/fleet-seats.ts:66; src/lib/dispatch-outbound.ts:438
-**Issue:** DB seat rows have no send_window; dispatch pacing always uses `defaultSendWindow()` (CET 8–18) + `defaultFleetSettings()`, ignoring per-seat Hermes timezone/window after the Intl fix.
-**Repro/evidence:** Seat Hermes window UTC 0–24 still paced as CET weekdays on deliver.
-**Suggested fix:** Persist send_window on agent_seats or load workspace Hermes seat snapshot in dispatch.
-**Status:** open
+**File:** src/lib/fleet-seats.ts; src/lib/dispatch-outbound.ts
+**Issue:** No durable send_window column; dispatch ignored Hermes seat window.
+**Suggested fix:** Load Hermes seat snapshot in dispatch.
+**Status:** fixed (hermesSeatOverlay on BC path)
 
 ## 2026-10-03 — nextEligibleAt hour-step overshoots window open
 **Severity:** correctness
-**File:** src/lib/send-pacing.ts:117
-**Issue:** business_hours scan does `probe = now + i*1h` then first in-window instant; never aligns to startHour:00 — nextEligibleAt can be up to ~59m late into the open window.
-**Repro/evidence:** Outside at 07:01 with window 8–18 → nextEligibleAt ≈ 08:01 not 08:00.
-**Suggested fix:** Jump to next window boundary in seat TZ (or minute-level scan near boundary).
-**Status:** open
+**File:** src/lib/send-pacing.ts
+**Issue:** 1h step overshoots window open by up to ~59m.
+**Status:** fixed (223c211; 5-minute step)
 
 ## 2026-10-03 — SESSION_HEALTH_TTL accepts future sessionProbedAt
 **Severity:** correctness
-**File:** src/lib/computer-supervisor.ts:556; src/lib/computer-supervisor.ts:1054
-**Issue:** `expireStaleSessionHealth` / durable restore only test `now - at > TTL`. Future `sessionProbedAt` (clock skew) keeps/restores `sessionHealthy=true` past wall-clock TTL.
-**Repro/evidence:** probedAt = now+1h → expire leaves true; cold restore also accepts.
-**Suggested fix:** Treat `at > now` (or skew skewMs) as stale/null.
-**Status:** open
+**File:** src/lib/computer-supervisor.ts
+**Issue:** Future probedAt keeps sessionHealthy true past TTL.
+**Status:** fixed (223c211)
 
 ## 2026-10-03 — LI queued client commit skips sentToday/lastSendAt
 **Severity:** correctness
-**File:** src/lib/store.ts:3158
-**Issue:** When `/api/outreach/send` returns `queued` (common LI path), Hermes commit updates outreach only — does not bump `sentToday`/`lastSendAt`, so send-route Hermes pacing counters never advance.
-**Repro/evidence:** deliveryQueued branch vs sent branch at store.ts:3194+ which does increment.
-**Suggested fix:** On queued LI success, still update lastSendAt + sentToday (or rely solely on durable ledger caps).
-**Status:** open
+**File:** src/lib/store.ts
+**Issue:** Queued LI Hermes commit skips sentToday bump.
+**Status:** wontfix (durable ledger + claim Europe day is authority; Hermes bump would double-count)
 
 ## 2026-10-03 — claim daily cap uses UTC calendar day
 **Severity:** correctness
-**File:** supabase/migrations/0055_autopilot_entitlements_and_templates.sql:671
-**Issue:** `l.at::date = now()::date` is UTC midnight, not seat sendWindow timezone — CET seats near midnight mis-count "today".
-**Repro/evidence:** Seat TZ Europe/Berlin 00:30 local still on prior UTC date.
-**Suggested fix:** Count in seat TZ (or America/… IANA from seat window).
-**Status:** open
+**File:** supabase/migrations/0088 (superseded by 0089)
+**Issue:** used_today used UTC midnight; CET seats mis-count near midnight.
+**Status:** fixed (migration 0089 Europe/Berlin + startOfDayInTimeZone hydrate)
+
+## 2026-10-04 — dispatch hardcodes defaultFleetSettings (Manual + BH drift)
+**Severity:** correctness | security
+**File:** src/lib/dispatch-outbound.ts
+**Issue:** BC deliver always defaultFleetSettings — ignores Manual/Skip and BH override.
+**Status:** fixed (fleetSettingsFromHermesState on BC path)
+
+## 2026-10-04 tip residual hunt — floor/go-live/openbot claim bypass
+**Severity:** (audit note)
+**File:** multi
+**Issue:** Floor/PacketFX invent-healthy closed; go-live all-N closed; openbot enqueueJob is test-only.
+**Status:** wontfix (no tip residual in those focus areas)

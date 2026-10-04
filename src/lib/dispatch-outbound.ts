@@ -46,14 +46,62 @@ import {
 } from "@/lib/linkedin-credentials";
 import { AGENT_SEAT_SELECT, agentSeatRowToSeat, type AgentSeatRow } from "@/lib/fleet-seats";
 import { seatAttachedToCampaign } from "@/lib/campaign-seat-attach";
-import { defaultFleetSettings } from "@/lib/fleet";
+import { defaultFleetSettings, defaultSendWindow, startOfDayInTimeZone } from "@/lib/fleet";
+import type { AgentSeat, FleetSettings, SendWindow } from "@/lib/types";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** Hermes fleet settings from workspace_state — Manual/BH/jitter must reach deliver. */
+function fleetSettingsFromHermesState(state: unknown): FleetSettings {
+  const fleetRec = record(record(record(state)?.settings)?.fleet);
+  if (!fleetRec) return defaultFleetSettings();
+  const permission =
+    fleetRec.browserAgentPermissionMode === "manual" ||
+    fleetRec.browserAgentPermissionMode === "skip" ||
+    fleetRec.browserAgentPermissionMode === "auto"
+      ? fleetRec.browserAgentPermissionMode
+      : undefined;
+  return {
+    ...defaultFleetSettings(),
+    ...fleetRec,
+    deliveryMode: fleetRec.deliveryMode === "manual" ? "manual" : "automatic",
+    ...(permission ? { browserAgentPermissionMode: permission } : {}),
+  } as FleetSettings;
+}
+
+function sendWindowFromUnknown(value: unknown): SendWindow | null {
+  const rec = record(value);
+  if (!rec) return null;
+  const startHour = Number(rec.startHour);
+  const endHour = Number(rec.endHour);
+  const timezone = typeof rec.timezone === "string" ? rec.timezone.trim() : "";
+  const days = Array.isArray(rec.days)
+    ? rec.days.filter((d): d is number => typeof d === "number" && d >= 0 && d <= 6)
+    : [];
+  if (!timezone || !Number.isFinite(startHour) || !Number.isFinite(endHour) || days.length === 0) {
+    return null;
+  }
+  return { startHour, endHour, timezone, days };
+}
+
+/** Overlay Hermes seat pacing fields (sendWindow) onto the durable DB seat. */
+function hermesSeatOverlay(
+  seat: AgentSeat,
+  state: unknown,
+): Pick<AgentSeat, "sendWindow"> {
+  const seats = record(state)?.seats;
+  if (!Array.isArray(seats)) return { sendWindow: seat.sendWindow ?? defaultSendWindow() };
+  const match = seats.find((item) => record(item)?.id === seat.id);
+  const window = sendWindowFromUnknown(record(match)?.sendWindow);
+  return { sendWindow: window ?? seat.sendWindow ?? defaultSendWindow() };
 }
 
 function disclosureInternalFromBrief(value: unknown): Parameters<typeof validateCandidateBoundText>[1] {
@@ -354,12 +402,32 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
           continue;
         }
+        // Hermes workspace_state carries sendWindow + fleet Manual/BH — load once for BC.
+        let hermesState: unknown = null;
+        let fleetSettings = defaultFleetSettings();
+        if (seatBase.provider === "LinkedIn Browser Computer") {
+          const { data: wsRow } = await supabase
+            .from("workspace_state")
+            .select("state")
+            .eq("workspace_id", msg.workspace_id)
+            .maybeSingle();
+          hermesState = wsRow?.state ?? null;
+          fleetSettings = fleetSettingsFromHermesState(hermesState);
+        }
         // Hydrate pacing counters from durable ledger — agentSeatRowToSeat alone
         // zeros sentToday/lastSendAt so min_gap / daily_cap would be theater.
-        let seat = seatBase;
+        // Day boundary must match seat sendWindow TZ (Hermes overlay → default CET).
+        let seat: AgentSeat = {
+          ...seatBase,
+          ...(seatBase.provider === "LinkedIn Browser Computer"
+            ? hermesSeatOverlay(seatBase, hermesState)
+            : {}),
+        };
         if (seat.provider === "LinkedIn Browser Computer") {
-          const dayStart = new Date();
-          dayStart.setUTCHours(0, 0, 0, 0);
+          const dayStart = startOfDayInTimeZone(
+            new Date(),
+            seat.sendWindow?.timezone ?? "CET",
+          );
           const [{ data: lastRow }, { count: todayCount }] = await Promise.all([
             supabase
               .from("outreach_ledger")
@@ -466,10 +534,11 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           seatId: msg.seat_id ?? undefined,
           computerId: seat.computerId ?? undefined,
           credentials: linkedInCreds,
-          // Pass full seat + fleet defaults so Browser Computer pacing
-          // (sessionHealthy / gap / cap) cannot be skipped.
+          // Pass full seat + Hermes fleet settings so Browser Computer pacing
+          // (sessionHealthy / gap / cap / Manual permission / BH) cannot be skipped
+          // or forced to defaults that ignore operator Computers options.
           seat,
-          fleetSettings: defaultFleetSettings(),
+          fleetSettings,
         });
         const outcomeKind =
           outcome.status === "sent" && outcome.deliveryState === "accepted"

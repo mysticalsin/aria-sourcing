@@ -111,6 +111,29 @@ ok(
     /seat\.provider not in \([\s\S]*LinkedIn Browser Computer/.test(claimBcMigration),
 );
 
+const claimEuropeDayMigration = readFileSync(
+  "supabase/migrations/0089_claim_linkedin_daily_cap_europe.sql",
+  "utf8",
+);
+ok(
+  "claim_linkedin daily cap uses Europe/Berlin calendar day (0089)",
+  /timezone\('Europe\/Berlin', l\.at\)\)::date/.test(claimEuropeDayMigration) &&
+    /timezone\('Europe\/Berlin', now\(\)\)\)::date/.test(claimEuropeDayMigration) &&
+    /LinkedIn Browser Computer/.test(claimEuropeDayMigration),
+);
+ok(
+  "dispatch hydrates sentToday with startOfDayInTimeZone (not UTC midnight)",
+  /startOfDayInTimeZone/.test(dispatch) &&
+    !/dayStart\.setUTCHours\(0,\s*0,\s*0,\s*0\)/.test(dispatch),
+);
+ok(
+  "dispatch loads Hermes fleet settings for Browser Computer deliver",
+  /fleetSettingsFromHermesState/.test(dispatch) &&
+    /hermesSeatOverlay/.test(dispatch) &&
+    /browserAgentPermissionMode/.test(dispatch) &&
+    !/fleetSettings:\s*defaultFleetSettings\(\)/.test(dispatch),
+);
+
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
 const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
 delete process.env.LINKEDIN_VENDOR_API_URL;

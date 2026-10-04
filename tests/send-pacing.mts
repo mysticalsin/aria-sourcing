@@ -8,7 +8,7 @@ import {
   LINKEDIN_BROWSER_SEAT_DEFAULTS,
   pacingJitterMinutes,
 } from "../src/lib/send-pacing";
-import { defaultFleetSettings, defaultSendWindow, isWithinSendWindow } from "../src/lib/fleet";
+import { defaultFleetSettings, defaultSendWindow, isWithinSendWindow, startOfDayInTimeZone } from "../src/lib/fleet";
 import type { AgentSeat } from "../src/lib/types";
 
 let pass = 0;
@@ -147,6 +147,26 @@ const berlinEveningUtc = new Date("2026-06-26T16:30:00.000Z");
 ok(
   "CET window excludes Berlin evening (16:30Z → 18:30 CEST)",
   isWithinSendWindow(cetSeat, berlinEveningUtc, true) === false,
+);
+
+// Daily-cap day boundary: CET local midnight, not UTC.
+// 2026-06-26T00:30Z = 02:30 Berlin → still 26 Jun Berlin; local midnight was 25 Jun 22:00Z (CEST).
+const afterUtcMidnight = new Date("2026-06-26T00:30:00.000Z");
+const cetDayStart = startOfDayInTimeZone(afterUtcMidnight, "CET");
+ok(
+  "CET day start is Europe/Berlin midnight (not UTC)",
+  cetDayStart.toISOString() === "2026-06-25T22:00:00.000Z",
+);
+// 2026-06-25T23:30Z = 01:30 Berlin on the 26th → Berlin day already rolled.
+const beforeUtcMidnightBerlinNext = new Date("2026-06-25T23:30:00.000Z");
+ok(
+  "CET day rolls at Berlin midnight (before UTC midnight)",
+  startOfDayInTimeZone(beforeUtcMidnightBerlinNext, "CET").toISOString() ===
+    "2026-06-25T22:00:00.000Z",
+);
+ok(
+  "UTC day start stays UTC midnight",
+  startOfDayInTimeZone(afterUtcMidnight, "UTC").toISOString() === "2026-06-26T00:00:00.000Z",
 );
 
 ok("jitter is deterministic", pacingJitterMinutes("abc", 5) === pacingJitterMinutes("abc", 5));
