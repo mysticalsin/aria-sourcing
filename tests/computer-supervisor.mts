@@ -1103,6 +1103,54 @@ try {
     );
   }
 
+  // Release must not /session-probe while a live act owns the desk (computerChains).
+  {
+    const relBusy = new ComputerSupervisor();
+    const seat = relBusy.ensureComputer({ workspaceId: "ws-relb", seatId: "seat-relb" });
+    const rec = relBusy.get(seat.computerId)!;
+    rec.status = "busy";
+    rec.control = "human";
+    rec.remoteUrl = "http://openbot.test/view/relb";
+    // Simulate in-flight act so Release keeps busy and skips probe.
+    const chains = (relBusy as unknown as { computerChains: Map<string, Promise<unknown>> })
+      .computerChains;
+    chains.set(seat.computerId, new Promise(() => {}));
+    process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok";
+    process.env.OPENBOT_COMPUTER_TOKEN = "ctok";
+    const prevFetch = globalThis.fetch;
+    let probed = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("session-probe")) {
+        probed++;
+        return new Response(JSON.stringify({ healthy: true, detail: "ok" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    await relBusy.releaseControl(seat.computerId);
+    globalThis.fetch = prevFetch;
+    chains.delete(seat.computerId);
+    ok("release with in-flight act skips session-probe HTTP", probed === 0);
+    ok(
+      "release with in-flight act leaves sessionHealthy null (no invent green)",
+      relBusy.get(seat.computerId)?.sessionHealthy == null,
+    );
+    ok(
+      "release with in-flight act keeps busy (chain still owns tab)",
+      relBusy.get(seat.computerId)?.status === "busy",
+    );
+    delete process.env.COMPUTER_SUPERVISOR_URL;
+    delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    delete process.env.OPENBOT_COMPUTER_TOKEN;
+  }
+
   // humanMutex catch mid-run clears busy (OpenBot 409 while Take).
   {
     const mutex = new ComputerSupervisor();

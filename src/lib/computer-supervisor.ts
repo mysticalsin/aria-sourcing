@@ -1374,51 +1374,71 @@ export class ComputerSupervisor {
         );
       }
       // Real LinkedIn probe — never invent healthy=true without this.
-      try {
-        const probe = await openBotSessionProbe(agent);
-        // Rare: Take again mid-release probe — never invent green under human.
-        if (this.isHumanHeld(computerId)) {
-          rec.sessionHealthy = null;
-          rec.sessionProbedAt = isoNow();
-          probedHealthy = null;
-          this.audit(
-            computerId,
-            "session_probe",
-            "Discarded — human took control mid-release probe",
-            "system",
-            {
-              correlationId,
-              campaignId: opts?.campaignId,
-              meta: { healthy: null },
-            },
-          );
-        } else {
-          rec.sessionHealthy = probe.healthy;
-          rec.sessionProbedAt = isoNow();
-          probedHealthy = probe.healthy;
-          if (probe.healthy) {
-            rec.lastError = null;
-          } else {
-            rec.lastError = probe.detail;
-          }
-          rec.updatedAt = isoNow();
-          this.audit(computerId, "session_probe", probe.detail, "system", {
-            correlationId,
-            campaignId: opts?.campaignId,
-            meta: { healthy: probe.healthy === true, url: probe.url ?? null },
-          });
-        }
-      } catch (err) {
+      // Skip while live act owns the desk — /session-probe navigates mid-send.
+      const actOwnsDesk =
+        this.require(computerId).status === "busy" || this.computerChains.has(computerId);
+      if (actOwnsDesk) {
         rec.sessionHealthy = null;
         rec.sessionProbedAt = isoNow();
         probedHealthy = null;
         this.audit(
           computerId,
-          "session_probe_failed",
-          err instanceof Error ? err.message : "session probe failed",
+          "session_probe",
+          "Skipped — computer busy / in-flight act (no probe mid-send on Release)",
           "system",
           { correlationId, campaignId: opts?.campaignId, meta: { healthy: null } },
         );
+      } else {
+        try {
+          const probe = await openBotSessionProbe(agent);
+          // Take again or act marked busy mid-release probe — never invent green.
+          const midBusy =
+            this.require(computerId).status === "busy" || this.computerChains.has(computerId);
+          if (this.isHumanHeld(computerId) || midBusy) {
+            rec.sessionHealthy = null;
+            rec.sessionProbedAt = isoNow();
+            probedHealthy = null;
+            this.audit(
+              computerId,
+              "session_probe",
+              this.isHumanHeld(computerId)
+                ? "Discarded — human took control mid-release probe"
+                : "Discarded — computer became busy mid-release probe",
+              "system",
+              {
+                correlationId,
+                campaignId: opts?.campaignId,
+                meta: { healthy: null },
+              },
+            );
+          } else {
+            rec.sessionHealthy = probe.healthy;
+            rec.sessionProbedAt = isoNow();
+            probedHealthy = probe.healthy;
+            if (probe.healthy) {
+              rec.lastError = null;
+            } else {
+              rec.lastError = probe.detail;
+            }
+            rec.updatedAt = isoNow();
+            this.audit(computerId, "session_probe", probe.detail, "system", {
+              correlationId,
+              campaignId: opts?.campaignId,
+              meta: { healthy: probe.healthy === true, url: probe.url ?? null },
+            });
+          }
+        } catch (err) {
+          rec.sessionHealthy = null;
+          rec.sessionProbedAt = isoNow();
+          probedHealthy = null;
+          this.audit(
+            computerId,
+            "session_probe_failed",
+            err instanceof Error ? err.message : "session probe failed",
+            "system",
+            { correlationId, campaignId: opts?.campaignId, meta: { healthy: null } },
+          );
+        }
       }
     } else {
       // No agent endpoint — cannot probe; never leave a stale healthy=true.
