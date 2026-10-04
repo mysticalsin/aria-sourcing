@@ -1380,7 +1380,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Tip-applied `claim_linkedin_outbound_queued` allowlists only `LinkedIn Assisted Manual` / `LinkedIn Vendor API`. `LinkedIn Browser Computer` (enqueue 0086/0087) always gets `seat-not-live` at durable dispatch — N AriaBot desks cannot complete FE→enqueue→claim→deliver.
 **Repro/evidence:** Live BC seat + queued LinkedIn outbox → claim returns seat-not-live; openbot e2e bypasses claim via direct `enqueueJob`.
 **Suggested fix:** Migration replacing claim to allow Browser Computer (+ browser-computer backend branch).
-**Status:** open
+**Status:** fixed (223c211; migration 0088 allowlists Browser Computer + computer_id + campaign attach)
 
 ## 2026-10-03 — dispatch LI pacing seat has sentToday=0 / lastSendAt=null
 **Severity:** correctness
@@ -1388,15 +1388,15 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** `agentSeatRowToSeat(row)` with no Hermes existing forces `sentToday: 0` and `lastSendAt: null`. Dispatch passes that seat into `evaluateSendPace`, so min_gap / Hermes daily_cap are no-ops on the real LI deliver path.
 **Repro/evidence:** Two BC sends minutes apart both see lastSendAt=null → gap never blocks.
 **Suggested fix:** Persist/load last_send_at + day counts (or derive from outreach_ledger) before evaluateSendPace.
-**Status:** open
+**Status:** fixed (223c211; dispatch hydrates lastSendAt/sentToday from outreach_ledger for BC) — residual UTC day boundary tracked below
 
 ## 2026-10-03 — dispatch LI sendWindow always defaultSendWindow
 **Severity:** correctness
-**File:** src/lib/fleet-seats.ts:66; src/lib/dispatch-outbound.ts:438
+**File:** src/lib/fleet-seats.ts:66; src/lib/dispatch-outbound.ts:351
 **Issue:** DB seat rows have no send_window; dispatch pacing always uses `defaultSendWindow()` (CET 8–18) + `defaultFleetSettings()`, ignoring per-seat Hermes timezone/window after the Intl fix.
 **Repro/evidence:** Seat Hermes window UTC 0–24 still paced as CET weekdays on deliver.
 **Suggested fix:** Persist send_window on agent_seats or load workspace Hermes seat snapshot in dispatch.
-**Status:** open
+**Status:** open (reconfirmed tip 117a57f — still defaultSendWindow; no send_window column)
 
 ## 2026-10-03 — nextEligibleAt hour-step overshoots window open
 **Severity:** correctness
@@ -1404,7 +1404,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** business_hours scan does `probe = now + i*1h` then first in-window instant; never aligns to startHour:00 — nextEligibleAt can be up to ~59m late into the open window.
 **Repro/evidence:** Outside at 07:01 with window 8–18 → nextEligibleAt ≈ 08:01 not 08:00.
 **Suggested fix:** Jump to next window boundary in seat TZ (or minute-level scan near boundary).
-**Status:** open
+**Status:** fixed (223c211; 5-minute step scan in send-pacing.ts)
 
 ## 2026-10-03 — SESSION_HEALTH_TTL accepts future sessionProbedAt
 **Severity:** correctness
@@ -1412,20 +1412,34 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** `expireStaleSessionHealth` / durable restore only test `now - at > TTL`. Future `sessionProbedAt` (clock skew) keeps/restores `sessionHealthy=true` past wall-clock TTL.
 **Repro/evidence:** probedAt = now+1h → expire leaves true; cold restore also accepts.
 **Suggested fix:** Treat `at > now` (or skew skewMs) as stale/null.
-**Status:** open
+**Status:** fixed (223c211; expire + restore reject `at > now`)
 
 ## 2026-10-03 — LI queued client commit skips sentToday/lastSendAt
 **Severity:** correctness
-**File:** src/lib/store.ts:3158
+**File:** src/lib/store.ts:3159
 **Issue:** When `/api/outreach/send` returns `queued` (common LI path), Hermes commit updates outreach only — does not bump `sentToday`/`lastSendAt`, so send-route Hermes pacing counters never advance.
 **Repro/evidence:** deliveryQueued branch vs sent branch at store.ts:3194+ which does increment.
 **Suggested fix:** On queued LI success, still update lastSendAt + sentToday (or rely solely on durable ledger caps).
-**Status:** open
+**Status:** open (reconfirmed tip 117a57f)
 
 ## 2026-10-03 — claim daily cap uses UTC calendar day
 **Severity:** correctness
-**File:** supabase/migrations/0055_autopilot_entitlements_and_templates.sql:671
-**Issue:** `l.at::date = now()::date` is UTC midnight, not seat sendWindow timezone — CET seats near midnight mis-count "today".
-**Repro/evidence:** Seat TZ Europe/Berlin 00:30 local still on prior UTC date.
-**Suggested fix:** Count in seat TZ (or America/… IANA from seat window).
+**File:** supabase/migrations/0088_claim_linkedin_browser_computer.sql:124
+**Issue:** `l.at::date = now()::date` is UTC midnight, not seat sendWindow timezone — CET seats near midnight mis-count "today". Dispatch hydrate mirrors UTC via `setUTCHours(0,0,0,0)`.
+**Repro/evidence:** Seat TZ Europe/Berlin 00:30 local still on prior UTC date; dispatch-outbound.ts:361–379 same UTC dayStart.
+**Suggested fix:** Count in seat TZ IANA (persist send_window or seat timezone) in claim + hydrate.
+**Status:** open (reconfirmed tip 117a57f — 0088 still UTC)
+
+## 2026-10-04 — dispatch hardcodes defaultFleetSettings (Manual + BH drift)
+**Severity:** correctness | security
+**File:** src/lib/dispatch-outbound.ts:472
+**Issue:** BC `adapter.deliver` always gets `defaultFleetSettings()` (`enforceBusinessHours:true`, `jitter:true`, `browserAgentPermissionMode:"auto"`). Send-route paces with Hermes `settings.fleet` merge; durable deliver ignores Manual/Skip and any BH/jitter override.
+**Repro/evidence:** Fleet Computers options set Manual → send queues → dispatch passes permissionMode auto → enqueueJob bot-sends. Hermes `enforceBusinessHours:false` still forced true on deliver.
+**Suggested fix:** Load workspace Hermes fleet settings (same merge as send/route.ts:342) into deliver.
 **Status:** open
+
+## 2026-10-04 tip residual hunt — floor/go-live/openbot claim bypass
+**Severity:** (audit note)
+**File:** multi
+**Issue:** Priority re-check after 223c211: Floor/PacketFX invent-healthy closed; go-live all-N attach+healthy closed; production LI path is enqueue→claim→deliver (fleet route only enqueueJob warmup_nav). openbot e2e direct enqueueJob is test-only, not a production claim bypass.
+**Status:** wontfix (no tip residual in those focus areas)
