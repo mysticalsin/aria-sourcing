@@ -662,7 +662,8 @@ export class ComputerSupervisor {
       const host = byBot.get(botId);
       if (!host) {
         // Successful host listing without this bot → not running. Don't leave stale ready.
-        if (rec.control !== "human" && rec.status !== "stopped") {
+        // Never yank busy mid-send — Floor busy-skip + computerChains still own the tab.
+        if (rec.control !== "human" && rec.status !== "stopped" && rec.status !== "busy") {
           rec.status = "stopped";
           rec.sessionHealthy = null;
           rec.remoteUrl = null;
@@ -725,7 +726,8 @@ export class ComputerSupervisor {
     const raw = (host.status || "").toLowerCase();
     // Human takeover owns status — host sync must not yank the desk to
     // starting/error/stopped mid–Take control (operator is on the VM).
-    if (rec.control !== "human") {
+    // Busy owns status too — mid-send host flap must not clear Floor busy-skip.
+    if (rec.control !== "human" && rec.status !== "busy") {
       if (raw === "running" || raw === "ready" || raw === "idle") {
         if (rec.status === "stopped" || rec.status === "starting" || rec.status === "error") {
           rec.status = "ready";
@@ -1011,6 +1013,10 @@ export class ComputerSupervisor {
     if (this.isHumanHeld(computerId)) {
       throw new Error("computer-human-held");
     }
+    // Never kill mid-act — computerChains still awaits OpenBot.
+    if (rec.status === "busy") {
+      throw new Error("computer-busy");
+    }
     const cfg = openBotSupervisorCfg();
     if (cfg) {
       try {
@@ -1024,6 +1030,10 @@ export class ComputerSupervisor {
     if (this.isHumanHeld(computerId)) {
       this.audit(computerId, "stop_refused", "human-has-control (Take mid-stop)", "system");
       throw new Error("computer-human-held");
+    }
+    if (this.require(computerId).status === "busy") {
+      this.audit(computerId, "stop_refused", "computer-busy (act mid-stop)", "system");
+      throw new Error("computer-busy");
     }
     rec.status = "stopped";
     rec.control = "bot";
@@ -1043,6 +1053,10 @@ export class ComputerSupervisor {
     if (this.isHumanHeld(computerId)) {
       throw new Error("computer-human-held");
     }
+    // Never remint/warm-navigate mid-send.
+    if (rec.status === "busy") {
+      throw new Error("computer-busy");
+    }
     const cfg = openBotSupervisorCfg();
     if (cfg) {
       try {
@@ -1055,6 +1069,10 @@ export class ComputerSupervisor {
     if (this.isHumanHeld(computerId)) {
       this.audit(computerId, "reset_refused", "human-has-control (Take mid-reset)", "system");
       throw new Error("computer-human-held");
+    }
+    if (this.require(computerId).status === "busy") {
+      this.audit(computerId, "reset_refused", "computer-busy (act mid-reset)", "system");
+      throw new Error("computer-busy");
     }
     rec.remoteUrl = null;
     rec.viewUrl = null;
@@ -1269,6 +1287,20 @@ export class ComputerSupervisor {
         );
         return rec;
       }
+      // Act marked busy during probe HTTP — discard (navigate may have raced mid-click).
+      if (this.require(computerId).status === "busy") {
+        rec.sessionHealthy = null;
+        rec.sessionProbedAt = isoNow();
+        rec.updatedAt = isoNow();
+        this.audit(
+          computerId,
+          "session_probe",
+          "Discarded — computer became busy mid-probe",
+          "system",
+          { meta: { healthy: null } },
+        );
+        return rec;
+      }
       rec.sessionHealthy = probe.healthy;
       rec.sessionProbedAt = isoNow();
       if (probe.healthy) {
@@ -1301,11 +1333,14 @@ export class ComputerSupervisor {
     if (opts?.campaignId) rec.campaignId = opts.campaignId;
     const correlationId = this.takeoverCorrelation.get(computerId) ?? null;
     rec.control = "bot";
-    // Operator finished Take control — clear help_requested / stuck busy so the bot may act.
-    // Take mid-send leaves status=busy after humanMutex refuse; Floor skips busy forever.
+    // Operator finished Take control — clear help_requested so the bot may act again.
+    // Stuck busy after Take mid-send refuse: unstick only when no in-flight act remains
+    // (computerChains empty). Never clear busy under a live send then /session-probe.
     // Do NOT invent sessionHealthy=true: login may have failed or been skipped.
-    // Leave null until a real LinkedIn probe (or a later help_requested) decides.
-    if (rec.status === "help_requested" || rec.status === "busy") {
+    if (rec.status === "help_requested") {
+      rec.status = "ready";
+      rec.lastError = null;
+    } else if (rec.status === "busy" && !this.computerChains.has(computerId)) {
       rec.status = "ready";
       rec.lastError = null;
     }
@@ -1443,6 +1478,8 @@ export class ComputerSupervisor {
     const rec = this.require(computerId);
     rec.status = "help_requested";
     rec.sessionHealthy = false;
+    // Stamp probedAt — null would let durable restore re-green past this wipe.
+    rec.sessionProbedAt = isoNow();
     rec.lastError = detail;
     rec.updatedAt = isoNow();
     this.audit(computerId, "help_requested", detail, "bot");

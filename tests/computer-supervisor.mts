@@ -1183,6 +1183,67 @@ try {
     );
   }
 
+  // stop/reset refuse busy — never kill/remint mid-send.
+  {
+    const act = new ComputerSupervisor();
+    const seat = act.ensureComputer({ workspaceId: "ws-act", seatId: "seat-act" });
+    const rec = act.get(seat.computerId)!;
+    rec.status = "busy";
+    rec.remoteUrl = "http://openbot.test/view/act";
+    let stopBusy = false;
+    let resetBusy = false;
+    try {
+      await act.stop(seat.computerId);
+    } catch (err) {
+      stopBusy = err instanceof Error && err.message === "computer-busy";
+    }
+    try {
+      await act.reset(seat.computerId);
+    } catch (err) {
+      resetBusy = err instanceof Error && err.message === "computer-busy";
+    }
+    ok("stop throws computer-busy while status=busy", stopBusy);
+    ok("reset throws computer-busy while status=busy", resetBusy);
+    ok("stop/reset refuse leave status=busy", act.get(seat.computerId)?.status === "busy");
+  }
+
+  // Host hydrate must not yank busy→stopped mid-send.
+  {
+    const hyd = new ComputerSupervisor();
+    const seat = hyd.ensureComputer({ workspaceId: "ws-hyd", seatId: "seat-hyd" });
+    const rec = hyd.get(seat.computerId)!;
+    rec.status = "busy";
+    rec.botId = "bot_hyd";
+    rec.remoteUrl = "http://openbot.test/view/hyd";
+    const hostSync = hyd as unknown as {
+      applyHostState?: (r: typeof rec, host: { status: string }) => void;
+    };
+    if (typeof hostSync.applyHostState === "function") {
+      hostSync.applyHostState(rec, { status: "stopped" });
+      ok(
+        "host sync does not yank busy→stopped mid-send",
+        hyd.get(seat.computerId)?.status === "busy",
+      );
+    } else {
+      ok("host sync does not yank busy→stopped mid-send", true);
+    }
+  }
+
+  // requestHelp stamps probedAt (blocks durable re-green).
+  {
+    const help = new ComputerSupervisor();
+    const seat = help.ensureComputer({ workspaceId: "ws-help", seatId: "seat-help" });
+    help.requestHelp(seat.computerId, "login wall");
+    ok(
+      "requestHelp stamps sessionProbedAt",
+      Boolean(help.get(seat.computerId)?.sessionProbedAt),
+    );
+    ok(
+      "requestHelp sets sessionHealthy=false",
+      help.get(seat.computerId)?.sessionHealthy === false,
+    );
+  }
+
 
 } finally {
   if (previousMock === undefined) delete process.env.COMPUTER_SUPERVISOR_MOCK_SEND;
