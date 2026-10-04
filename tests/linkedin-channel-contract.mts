@@ -121,6 +121,23 @@ ok(
     /timezone\('Europe\/Berlin', now\(\)\)\)::date/.test(claimEuropeDayMigration) &&
     /LinkedIn Browser Computer/.test(claimEuropeDayMigration),
 );
+
+const claimMinGapMigration = readFileSync(
+  "supabase/migrations/0090_claim_linkedin_min_gap_and_defer.sql",
+  "utf8",
+);
+ok(
+  "claim_linkedin enforces durable min_gap (0090)",
+  /seat-min-gap/.test(claimMinGapMigration) &&
+    /min_gap_minutes/.test(claimMinGapMigration) &&
+    /make_interval\(mins => seat\.min_gap_minutes\)/.test(claimMinGapMigration),
+);
+ok(
+  "record_linkedin_delivery_outcome accepts deferred requeue (0090)",
+  /p_outcome not in \('sent', 'skipped', 'ambiguous', 'deferred'\)/.test(claimMinGapMigration) &&
+    /status = 'queued'/.test(claimMinGapMigration) &&
+    /outbound_message_id = null/.test(claimMinGapMigration),
+);
 ok(
   "dispatch hydrates sentToday with startOfDayInTimeZone (not UTC midnight)",
   /startOfDayInTimeZone/.test(dispatch) &&
@@ -147,6 +164,16 @@ ok(
     /computer_starting/.test(dispatch) &&
     !/permission_skip/.test(dispatch) &&
     dispatch.indexOf("manual_permission_mode") < dispatch.indexOf("claim_linkedin_outbound_queued"),
+);
+ok(
+  "dispatch soft-defers claim cap/gap losers (leave queued)",
+  /seat-daily-cap-reached/.test(dispatch) &&
+    /seat-min-gap/.test(dispatch) &&
+    /soft-defer on claim/.test(dispatch),
+);
+ok(
+  "dispatch records deferred outcome for BC soft refuse after claim",
+  /"deferred"/.test(dispatch) && /soft-refuse deferred/.test(dispatch),
 );
 ok(
   "dispatch sentToday day boundary pinned to CET (claim 0089 Europe/Berlin)",

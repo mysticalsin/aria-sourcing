@@ -566,6 +566,16 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           if (claimObj?.reason === "not-queued" || claimObj?.reason === "message-not-found") {
             continue;
           }
+          // Cap/gap losers after soft-defer race — leave queued, do not burn.
+          if (
+            claimObj?.reason === "seat-daily-cap-reached" ||
+            claimObj?.reason === "seat-min-gap"
+          ) {
+            safeLog("dispatch-outbound: LinkedIn soft-defer on claim", {
+              reason: claimObj.reason,
+            });
+            continue;
+          }
           await finish("blocked", { pass: false, reasons: [`guardrail:${claimObj?.reason ?? "blocked"}`] });
           continue;
         }
@@ -598,8 +608,16 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           seat,
           fleetSettings,
         });
-        const outcomeKind =
-          outcome.status === "sent" && outcome.deliveryState === "accepted"
+        // Soft refuse after claim (TOCTOU / session / human) — requeue, do not fail.
+        const softRefuse =
+          seat.provider === "LinkedIn Browser Computer" &&
+          outcome.deliveryState === "not-sent" &&
+          /Deferred:|session_unverified|session_unhealthy|human-has-control|help_requested|manual_permission_mode|Computer refused|session snapshot required|seat snapshot required|OpenBot supervisor URL/i.test(
+            outcome.detail ?? "",
+          );
+        const outcomeKind = softRefuse
+          ? "deferred"
+          : outcome.status === "sent" && outcome.deliveryState === "accepted"
             ? "sent"
             : outcome.deliveryState === "unknown"
               ? "ambiguous"
@@ -621,6 +639,12 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         }
         if (outcomeKind === "sent") {
           stats.sent++;
+        } else if (outcomeKind === "deferred") {
+          // Left queued — no terminal counter; clear local attempt so finish paths stay safe.
+          deliveryAttemptId = null;
+          safeLog("dispatch-outbound: LinkedIn soft-refuse deferred (requeued)", {
+            detail: outcome.detail,
+          });
         } else if (outcome.status === "dry-run") {
           stats.unconfigured++;
         } else {
