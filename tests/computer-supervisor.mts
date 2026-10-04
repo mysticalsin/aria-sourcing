@@ -1269,6 +1269,13 @@ try {
         /!postClickAmbiguous\(j\.detail/.test(src),
     );
     ok(
+      "Release auto-retry skips ledger-backed jobs (messageId — dispatch owns retry)",
+      /ledgerOwned/.test(src) &&
+        /payload\.messageId/.test(src) &&
+        /!ledgerOwned\(j\.payload\)/.test(src) &&
+        /dispatch deferred→requeue owns retry/.test(src),
+    );
+    ok(
       "probeSession discards mid-Take (no invent green)",
       /Discarded — human took control mid-probe/.test(src) &&
         /Skipped — human has control \(no green mid-Take\)/.test(src) &&

@@ -1356,10 +1356,15 @@ export class ComputerSupervisor {
 
     // Auto-retry only when LinkedIn is confirmed healthy — never on missing probe.
     // Never re-drive post-click / no-proof failures (may already have landed) — dual-send.
+    // Never re-drive ledger-backed jobs (payload.messageId) — dispatch deferred→requeue owns retry.
     const postClickAmbiguous = (detail: string) =>
       /Clicked Send but no Message-sent proof|Clicked Send invitation but no Sent\/Pending proof/i.test(
         detail,
       );
+    const ledgerOwned = (payload: Record<string, unknown>) => {
+      const mid = payload.messageId;
+      return typeof mid === "string" && mid.trim().length > 0;
+    };
     const allowRetry = probedHealthy === true;
     if (allowRetry) {
       const failed = [...this.jobs.values()]
@@ -1369,7 +1374,8 @@ export class ComputerSupervisor {
             j.kind === "linkedin_send" &&
             j.status === "failed" &&
             !this.retriedJobIds.has(j.jobId) &&
-            !postClickAmbiguous(j.detail ?? ""),
+            !postClickAmbiguous(j.detail ?? "") &&
+            !ledgerOwned(j.payload),
         )
         .sort((a, b) => Date.parse(b.finishedAt ?? b.createdAt) - Date.parse(a.finishedAt ?? a.createdAt))
         .slice(0, ComputerSupervisor.RELEASE_RETRY_CAP);
