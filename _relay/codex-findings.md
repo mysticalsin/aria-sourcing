@@ -1456,3 +1456,27 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** sentToday used Hermes sendWindow TZ; claim 0089 hardcodes Europe/Berlin.
 **Status:** fixed (hydrate dayStart pinned to CET)
 
+## 2026-10-04 tip residual — runJob humanMutex leaves status=busy
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:1772
+**Issue:** After `rec.status="busy"`, OpenBot human-mutex throw maps job→refused but does not clear busy. `releaseControl` only flips `help_requested`→ready, so post-Take/Release desk stays busy; `refreshSessionHealthForList` skips busy forever → Floor stuck "VM busy" / never re-probes.
+**Repro/evidence:** ready+healthy send in flight → Take → OpenBot 409 human-has-control → catch humanMutex path → status remains busy after Release.
+**Suggested fix:** on humanMutex (and any runJob exit): if control===human leave status untouched or ready; else set ready; `releaseControl` also clear stuck busy→ready before probe.
+**Status:** open
+
+## 2026-10-04 tip residual — session_probe/reclaim navigate mid-busy
+**Severity:** correctness
+**File:** src/app/api/fleet/computers/route.ts:678
+**Issue:** Floor refresh skips busy, but POST `session_probe` only guards human-held, and `reclaimHealthyOrphan` probes currentId with no busy check — `/session-probe` navigates and clobbers mid-send tab.
+**Repro/evidence:** linkedin_send status=busy; Login/session_probe or reclaim on same computerId → openBotSessionProbe navigates away from composer/send.
+**Suggested fix:** refuse probe/reclaim while status===busy (409), or teach probeSession to no-op+stamp like mid-Take.
+**Status:** open
+
+## 2026-10-04 tip residual — durable restore probe queries truncate at 200
+**Severity:** correctness
+**File:** src/lib/computer-supervisor.ts:1159
+**Issue:** `restoreSessionHealthFromDurableAudits` loads session_probe / session_probe_failed with workspace-wide limit 200 inside 120s TTL. Floor refresh (~5 probes/GET) can exceed 200 events/2min; a newer probe_failed for desk X can drop while an older healthy meta remains → cold restore invents sessionHealthy=true past a real fail.
+**Repro/evidence:** N desks × Floor poll → >200 session_probe rows in TTL; desk X probe_failed evicted from fail query; older session_probe healthy=true still in OK query → restore greens X.
+**Suggested fix:** query per-computer (or raise limit / select distinct on computer_id ordered by created_at), or merge fail+ok in SQL with ROW_NUMBER per computer.
+**Status:** open
+
