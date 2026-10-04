@@ -1773,6 +1773,10 @@ try {
   // Multi-instance: restore sessionHealthy from durable probe audits within TTL.
   {
     const { SESSION_HEALTH_TTL_MS } = await import("../src/lib/computer-supervisor");
+    /** Match both legacy `action` and probe/control-family `actions[]` queries. */
+    const wants = (q: { action?: string; actions?: string[] }, action: string) =>
+      (Array.isArray(q.actions) && q.actions.includes(action)) || q.action === action;
+
     const cold = new ComputerSupervisor();
     const seat = cold.ensureComputer({ workspaceId: "ws-durable", seatId: "seat-durable" });
     const rec = cold.get(seat.computerId)!;
@@ -1863,41 +1867,36 @@ try {
     const takeAt = new Date(Date.now() - 5_000).toISOString();
     const takeResult = await cold4.restoreSessionHealthFromDurableAudits("ws-take", {
       queryAudits: async (q) => {
-        if (q.action === "takeover") {
-          return [
-            {
-              id: "caud_take",
-              at: takeAt,
-              workspaceId: "ws-take",
-              computerId: seat4.computerId,
-              seatId: seat4.seatId,
-              campaignId: null,
-              action: "takeover",
-              detail: "Operator took control",
-              actor: "human",
-              meta: {},
-            },
-          ];
+        const out = [];
+        if (wants(q, "takeover")) {
+          out.push({
+            id: "caud_take",
+            at: takeAt,
+            workspaceId: "ws-take",
+            computerId: seat4.computerId,
+            seatId: seat4.seatId,
+            campaignId: null,
+            action: "takeover",
+            detail: "Operator took control",
+            actor: "human" as const,
+            meta: {},
+          });
         }
-        if (q.action === "release") return [];
-        if (q.action === "session_probe_failed") return [];
-        if (q.action === "session_probe") {
-          return [
-            {
-              id: "caud_probe_pre_take",
-              at: probeAt,
-              workspaceId: "ws-take",
-              computerId: seat4.computerId,
-              seatId: seat4.seatId,
-              campaignId: null,
-              action: "session_probe",
-              detail: "ok",
-              actor: "system",
-              meta: { healthy: true },
-            },
-          ];
+        if (wants(q, "session_probe")) {
+          out.push({
+            id: "caud_probe_pre_take",
+            at: probeAt,
+            workspaceId: "ws-take",
+            computerId: seat4.computerId,
+            seatId: seat4.seatId,
+            campaignId: null,
+            action: "session_probe",
+            detail: "ok",
+            actor: "system" as const,
+            meta: { healthy: true },
+          });
         }
-        return [];
+        return out;
       },
     });
     ok("open Take does not restore healthy=true", takeResult.restored === 0);
@@ -1919,36 +1918,32 @@ try {
     const failAt = new Date(Date.now() - 5_000).toISOString();
     await cold5.restoreSessionHealthFromDurableAudits("ws-fail", {
       queryAudits: async (q) => {
-        if (q.action === "takeover" || q.action === "release") return [];
-        if (q.action === "session_probe") {
-          return [
-            {
-              id: "caud_ok_old",
-              at: okAt,
-              workspaceId: "ws-fail",
-              computerId: seat5.computerId,
-              action: "session_probe",
-              detail: "ok",
-              actor: "system",
-              meta: { healthy: true },
-            },
-          ];
+        const out = [];
+        if (wants(q, "session_probe")) {
+          out.push({
+            id: "caud_ok_old",
+            at: okAt,
+            workspaceId: "ws-fail",
+            computerId: seat5.computerId,
+            action: "session_probe",
+            detail: "ok",
+            actor: "system" as const,
+            meta: { healthy: true },
+          });
         }
-        if (q.action === "session_probe_failed") {
-          return [
-            {
-              id: "caud_fail_new",
-              at: failAt,
-              workspaceId: "ws-fail",
-              computerId: seat5.computerId,
-              action: "session_probe_failed",
-              detail: "probe blew up",
-              actor: "system",
-              meta: { healthy: null },
-            },
-          ];
+        if (wants(q, "session_probe_failed")) {
+          out.push({
+            id: "caud_fail_new",
+            at: failAt,
+            workspaceId: "ws-fail",
+            computerId: seat5.computerId,
+            action: "session_probe_failed",
+            detail: "probe blew up",
+            actor: "system" as const,
+            meta: { healthy: null },
+          });
         }
-        return [];
+        return out;
       },
     });
     ok(
@@ -1971,24 +1966,19 @@ try {
     rec6.sessionProbedAt = invalidateAt;
     await cold6.restoreSessionHealthFromDurableAudits("ws-inv", {
       queryAudits: async (q) => {
-        if (q.action === "takeover" || q.action === "release" || q.action === "session_probe_failed") {
-          return [];
-        }
-        if (q.action === "session_probe") {
-          return [
-            {
-              id: "caud_old_green",
-              at: olderProbeAt,
-              workspaceId: "ws-inv",
-              computerId: seat6.computerId,
-              action: "session_probe",
-              detail: "ok",
-              actor: "system",
-              meta: { healthy: true },
-            },
-          ];
-        }
-        return [];
+        if (!wants(q, "session_probe")) return [];
+        return [
+          {
+            id: "caud_old_green",
+            at: olderProbeAt,
+            workspaceId: "ws-inv",
+            computerId: seat6.computerId,
+            action: "session_probe",
+            detail: "ok",
+            actor: "system" as const,
+            meta: { healthy: true },
+          },
+        ];
       },
     });
     ok(
@@ -2006,30 +1996,42 @@ try {
     const olderGreen = new Date(Date.now() - 30_000).toISOString();
     await cold7.restoreSessionHealthFromDurableAudits("ws-rel", {
       queryAudits: async (q) => {
-        if (q.action === "takeover" || q.action === "release" || q.action === "session_probe_failed") {
-          return [];
-        }
-        if (q.action === "session_probe") {
-          return [
-            {
-              id: "caud_pre_take_green",
-              at: olderGreen,
-              workspaceId: "ws-rel",
-              computerId: seat7.computerId,
-              action: "session_probe",
-              detail: "ok",
-              actor: "system",
-              meta: { healthy: true },
-            },
-          ];
-        }
-        return [];
+        if (!wants(q, "session_probe")) return [];
+        return [
+          {
+            id: "caud_pre_take_green",
+            at: olderGreen,
+            workspaceId: "ws-rel",
+            computerId: seat7.computerId,
+            action: "session_probe",
+            detail: "ok",
+            actor: "system" as const,
+            meta: { healthy: true },
+          },
+        ];
       },
     });
     ok(
       "release invalidate stamp blocks older durable green mid-Release window",
       cold7.get(seat7.computerId)?.sessionHealthy == null,
     );
+
+    // Source contract: restore uses one probe-family + one control-family stream.
+    {
+      const { readFileSync } = await import("node:fs");
+      const src = readFileSync("src/lib/computer-supervisor.ts", "utf8");
+      const restoreIdx = src.indexOf("async restoreSessionHealthFromDurableAudits");
+      const block = restoreIdx >= 0 ? src.slice(restoreIdx, restoreIdx + 3500) : "";
+      ok(
+        "restore uses single probe-family actions query (no split invent-green)",
+        /actions:\s*\["session_probe",\s*"session_probe_failed"\]/.test(block) &&
+          !/action:\s*"session_probe_failed"/.test(block),
+      );
+      ok(
+        "restore uses single control-family actions query",
+        /actions:\s*\["takeover",\s*"release"\]/.test(block),
+      );
+    }
   }
 
 console.log(`RESULT computer-supervisor: ${pass} passed, ${fail} failed`);

@@ -111,7 +111,10 @@ export type ComputerAuditQuery = {
   workspaceId: string;
   computerId?: string;
   campaignId?: string;
+  /** Single action filter. Prefer `actions` when querying a family (probe/control). */
   action?: string;
+  /** OR filter across actions — one ordered stream so split caps cannot invent green. */
+  actions?: string[];
   actor?: ComputerAuditActor;
   correlationId?: string;
   /** Inclusive lower bound (ISO). */
@@ -146,7 +149,11 @@ function matches(event: ComputerAuditEvent, q: ComputerAuditQuery): boolean {
   if (event.workspaceId !== q.workspaceId) return false;
   if (q.computerId && event.computerId !== q.computerId) return false;
   if (q.campaignId && event.campaignId !== q.campaignId) return false;
-  if (q.action && event.action !== q.action) return false;
+  if (q.actions && q.actions.length > 0) {
+    if (!q.actions.includes(event.action)) return false;
+  } else if (q.action && event.action !== q.action) {
+    return false;
+  }
   if (q.actor && event.actor !== q.actor) return false;
   if (q.correlationId && event.correlationId !== q.correlationId) return false;
   if (q.since && event.at < q.since) return false;
@@ -187,7 +194,8 @@ export async function queryComputerAuditsDurable(
         .limit(limit);
       if (q.computerId) req = req.eq("computer_id", q.computerId);
       if (q.campaignId) req = req.eq("campaign_id", q.campaignId);
-      if (q.action) req = req.eq("action", q.action);
+      if (q.actions && q.actions.length > 0) req = req.in("action", q.actions);
+      else if (q.action) req = req.eq("action", q.action);
       if (q.actor) req = req.eq("actor", q.actor);
       if (q.correlationId) req = req.eq("correlation_id", q.correlationId);
       if (q.since) req = req.gte("created_at", q.since);

@@ -1116,26 +1116,27 @@ export class ComputerSupervisor {
     const query = opts?.queryAudits ?? queryComputerAuditsDurable;
 
     // Durable human mutex — Take may outlive probe TTL; look back further.
+    // One control-family stream (not split takeover/release caps) so open Take
+    // cannot fall out of newest-200 while older releases remain.
     const controlSinceIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const [takeovers, releases] = await Promise.all([
-      query({ workspaceId, action: "takeover", since: controlSinceIso, limit: 200 }),
-      query({ workspaceId, action: "release", since: controlSinceIso, limit: 200 }),
-    ]);
+    const controlEvents = await query({
+      workspaceId,
+      actions: ["takeover", "release"],
+      since: controlSinceIso,
+      limit: 2_000,
+    });
     const latestTakeoverAt = new Map<string, number>();
     const latestReleaseAt = new Map<string, number>();
-    for (const ev of takeovers) {
-      if (ev.action !== "takeover") continue;
+    for (const ev of controlEvents) {
       const at = Date.parse(ev.at);
       if (!Number.isFinite(at)) continue;
-      const prev = latestTakeoverAt.get(ev.computerId) ?? 0;
-      if (at >= prev) latestTakeoverAt.set(ev.computerId, at);
-    }
-    for (const ev of releases) {
-      if (ev.action !== "release") continue;
-      const at = Date.parse(ev.at);
-      if (!Number.isFinite(at)) continue;
-      const prev = latestReleaseAt.get(ev.computerId) ?? 0;
-      if (at >= prev) latestReleaseAt.set(ev.computerId, at);
+      if (ev.action === "takeover") {
+        const prev = latestTakeoverAt.get(ev.computerId) ?? 0;
+        if (at >= prev) latestTakeoverAt.set(ev.computerId, at);
+      } else if (ev.action === "release") {
+        const prev = latestReleaseAt.get(ev.computerId) ?? 0;
+        if (at >= prev) latestReleaseAt.set(ev.computerId, at);
+      }
     }
     const humanHeld = new Set<string>();
     for (const [computerId, takeAt] of latestTakeoverAt) {
@@ -1156,13 +1157,18 @@ export class ComputerSupervisor {
       }
     }
 
-    const [probeOk, probeFail] = await Promise.all([
-      query({ workspaceId, action: "session_probe", since: sinceIso, limit: 200 }),
-      query({ workspaceId, action: "session_probe_failed", since: sinceIso, limit: 200 }),
-    ]);
+    // One probe-family ordered stream — split session_probe / session_probe_failed
+    // newest-200 caps invent green when fails push a desk's wipe out while older
+    // healthy stays in the ok stream (Floor skips re-probing healthy desks).
+    const probeFamily = await query({
+      workspaceId,
+      actions: ["session_probe", "session_probe_failed"],
+      since: sinceIso,
+      limit: 2_000,
+    });
     // Newest probe-family event per computer (ok or failed) — never re-green past a newer fail/null.
-    const latestByComputer = new Map<string, (typeof probeOk)[number]>();
-    const merged = [...probeOk, ...probeFail].sort(
+    const latestByComputer = new Map<string, (typeof probeFamily)[number]>();
+    const merged = [...probeFamily].sort(
       (a, b) => Date.parse(a.at) - Date.parse(b.at),
     );
     for (let i = merged.length - 1; i >= 0; i--) {

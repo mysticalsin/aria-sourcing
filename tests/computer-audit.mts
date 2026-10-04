@@ -75,6 +75,10 @@ ok(
   queryComputerAudits({ workspaceId: "ws1", actor: "human" }).length === 2,
 );
 ok(
+  "filters by actions family (takeover|release)",
+  queryComputerAudits({ workspaceId: "ws1", actions: ["takeover", "release"] }).length === 2,
+);
+ok(
   "filters by correlation",
   queryComputerAudits({ workspaceId: "ws1", correlationId: "takeover_1" }).length === 2,
 );
