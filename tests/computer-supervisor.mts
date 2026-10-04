@@ -995,6 +995,22 @@ try {
         humanIdx >= 0 && startIdx >= 0 && humanIdx < startIdx,
       );
     }
+    {
+      const idx = route.indexOf('case "session_probe"');
+      const block = idx >= 0 ? route.slice(idx, idx + 1200) : "";
+      const humanIdx = block.indexOf('control === "human"');
+      const probeIdx = block.indexOf(".probeSession(");
+      ok(
+        "session_probe refuses human-held (no durable green mid-Take)",
+        block.includes("computer-human-held") &&
+          block.includes("status: 409") &&
+          block.includes("session_probe"),
+      );
+      ok(
+        "session_probe checks human before probeSession",
+        humanIdx >= 0 && probeIdx >= 0 && humanIdx < probeIdx,
+      );
+    }
   }
 
 

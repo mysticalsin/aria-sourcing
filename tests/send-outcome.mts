@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { classifySendOutcome } from "../src/lib/send-outcome";
 
 let pass = 0;
@@ -39,6 +40,15 @@ ok(
 ok(
   "real failure still errors",
   classifySendOutcome({ status: "error", detail: "boom" }).kind === "error",
+);
+
+const card = readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8");
+ok(
+  "outreach card toasts deferred as warning (not Send blocked error)",
+  /res\.status === "deferred"/.test(card) &&
+    /classifySendOutcome/.test(card) &&
+    /variant: "warning"/.test(card) &&
+    /title: "Send blocked"[\s\S]*variant: "error"/.test(card),
 );
 
 console.log(`RESULT send-outcome: ${pass} passed, ${fail} failed`);

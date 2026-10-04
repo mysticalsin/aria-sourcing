@@ -46,6 +46,7 @@ import {
   Clock,
 } from "lucide-react";
 import { SendOutcomeChip } from "@/components/outreach/send-outcome-chip";
+import { classifySendOutcome } from "@/lib/send-outcome";
 
 /** "waiting 3d" style label for how long a draft has sat in the queue — reuses
  *  formatTimeAgo's tested duration math, just drops the trailing "ago" so it
@@ -315,6 +316,19 @@ export function OutreachMessageCard({
       dryRun: res.dryRun,
     });
     if (!res.ok) {
+      if (res.status === "deferred") {
+        const outcome = classifySendOutcome({
+          status: res.status,
+          detail: res.detail ?? res.error,
+          paceReason: res.paceReason,
+        });
+        toast({
+          title: outcome.title,
+          description: outcome.detail,
+          variant: "warning",
+        });
+        return;
+      }
       toast({ title: "Send blocked", description: res.error, variant: "error" });
       return;
     }

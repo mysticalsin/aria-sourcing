@@ -207,7 +207,22 @@ ok(
 ok(
   "browser-computer deliver maps remote human-mutex failed to not-sent (no outbox burn)",
   /human has control\|human-has-control\|human mutex/i.test(linkedInChannel) &&
-    /deliveryState: humanMutex \? "not-sent" : "unknown"/.test(linkedInChannel),
+    /deliveryState: postActAmbiguous \? "unknown" : preActNotSent \? "not-sent" : "unknown"/.test(
+      linkedInChannel,
+    ),
+);
+ok(
+  "browser-computer deliver keeps post-click no-proof as unknown (ambiguous)",
+  /Clicked Send but no Message-sent proof\|Clicked Send invitation but no Sent\\\/Pending proof/.test(
+    linkedInChannel,
+  ),
+);
+ok(
+  "browser-computer deliver maps pre-act fails (login wall / composer / note) to not-sent",
+  linkedInChannel.includes("login\\/2FA|login wall") &&
+    linkedInChannel.includes("composer did not open") &&
+    linkedInChannel.includes("Connect note is \\d+ chars") &&
+    linkedInChannel.includes("preActNotSent"),
 );
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;

@@ -642,6 +642,14 @@ export async function POST(req: NextRequest) {
           computerId: computerId || undefined,
           campaignId: body.campaignId,
         });
+        // Probe navigates — refuse while human Holds (same mutex as navigate / OpenBot).
+        const probeHeld = defaultComputerSupervisor.get(probeRec.computerId);
+        if (probeHeld?.control === "human") {
+          return NextResponse.json(
+            { error: "computer-human-held", detail: "Release Take control before session_probe." },
+            { status: 409 },
+          );
+        }
         rec = await defaultComputerSupervisor.probeSession(probeRec.computerId);
         break;
       }

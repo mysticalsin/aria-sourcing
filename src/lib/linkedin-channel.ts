@@ -303,12 +303,19 @@ const browserComputerAdapter: LinkedInAdapter = {
       }
       if (job.status === "failed") {
         const detail = job.detail || "Browser-computer job failed.";
-        // Remote OpenBot 409 "human has control" lands as failed — soft-defer, don't burn outbox.
-        const humanMutex =
-          /human has control|human-has-control|human mutex/i.test(detail);
+        // Post-click without UI proof is ambiguous (may have landed) — keep unknown.
+        const postActAmbiguous =
+          /Clicked Send but no Message-sent proof|Clicked Send invitation but no Sent\/Pending proof/i.test(
+            detail,
+          );
+        // Pre-act / soft fails never contacted LinkedIn — requeue via not-sent → deferred.
+        const preActNotSent =
+          /human has control|human-has-control|human mutex|login\/2FA|login wall|help_requested|session_unhealthy|session_unverified|composer did not open|no text box|could not find Send|Send is disabled|no note field|Connect note is \d+ chars|Send invitation is disabled|Could not find Message or Connect|Neither Message nor Connect|profileUrl is required|message body is required|not ready|COMPUTER_TOKEN|manual_permission/i.test(
+            detail,
+          );
         return {
           status: "error",
-          deliveryState: humanMutex ? "not-sent" : "unknown",
+          deliveryState: postActAmbiguous ? "unknown" : preActNotSent ? "not-sent" : "unknown",
           provider: "LinkedIn Browser Computer",
           detail,
         };
