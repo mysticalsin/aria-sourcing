@@ -1163,7 +1163,9 @@ try {
         /keeping computer_id FK/.test(route) &&
         /adopt durable skipped — human held/.test(route) &&
         // Emit desk so Hermes patches don't null computerId mid-Take.
-        /computers\.push\(held\)/.test(route),
+        /computers\.push\(held\)/.test(route) &&
+        // Prefer seat human-held twin over durable cid when detach blocked.
+        /seatDesks\.find\(\(c\) => c\.control === "human"\)/.test(route),
     );
     ok(
       "GET/POST hydrate treat orphan-claim-blocked like ownership-mismatch (no fleet 500)",

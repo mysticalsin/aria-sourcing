@@ -232,11 +232,15 @@ export async function GET(req: NextRequest) {
                 "adopt durable skipped — human held; keeping computer_id FK",
                 seat.id,
               );
+              // Prefer the seat's human-held twin (detach-blocked) over durable cid
+              // when adopt refused because another desk on this seat is Held.
+              const seatDesks = defaultComputerSupervisor
+                .list(String(wid))
+                .filter((c) => c.seatId === seat.id);
               const held =
+                seatDesks.find((c) => c.control === "human") ??
                 defaultComputerSupervisor.get(cid) ??
-                defaultComputerSupervisor
-                  .list(String(wid))
-                  .find((c) => c.seatId === seat.id);
+                seatDesks[0];
               if (held) computers.push(held);
               continue;
             }
