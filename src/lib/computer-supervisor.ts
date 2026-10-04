@@ -748,6 +748,19 @@ export class ComputerSupervisor {
     await this.hydrateFromHost(opts.workspaceId);
 
     const currentId = typeof opts.computerId === "string" ? opts.computerId.trim() : "";
+    // Take mid-login: never probe/claim orphans onto a human-held seat binding.
+    const seatDesk =
+      (currentId ? this.computers.get(currentId) : undefined) ??
+      [...this.computers.values()].find(
+        (c) =>
+          c.workspaceId === opts.workspaceId &&
+          c.seatId === opts.seatId &&
+          c.seatId !== HOST_ORPHAN_SEAT_ID,
+      );
+    if (seatDesk?.control === "human") {
+      throw new Error("computer-human-held");
+    }
+
     if (currentId) {
       const existing = this.computers.get(currentId);
       if (existing && existing.workspaceId === opts.workspaceId) {

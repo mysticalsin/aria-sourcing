@@ -622,6 +622,46 @@ try {
       reclaimSup.get("comp_tony_01")?.seatId === HOST_ORPHAN_SEAT_ID,
     );
 
+    // Mid-Take: refuse reclaim (do not hunt orphans onto a human-held desk).
+    {
+      const heldSup = new ComputerSupervisor();
+      const desk = heldSup.ensureComputer({
+        workspaceId: "ws",
+        seatId: "seat-held",
+        computerId: "comp_held",
+      });
+      desk.control = "human";
+      desk.sessionHealthy = null;
+      desk.remoteUrl = "http://127.0.0.1:9010";
+      const orphan = heldSup.ensureComputer({
+        workspaceId: "ws",
+        seatId: HOST_ORPHAN_SEAT_ID,
+        computerId: "comp_orphan_healthy",
+      });
+      orphan.remoteUrl = "http://127.0.0.1:9011";
+      orphan.status = "ready";
+      heldSup.probeSession = async (computerId: string) => {
+        const rec = heldSup.get(computerId)!;
+        rec.sessionHealthy = computerId === "comp_orphan_healthy";
+        return rec;
+      };
+      let heldErr = "";
+      try {
+        await heldSup.reclaimHealthyOrphan({
+          workspaceId: "ws",
+          seatId: "seat-held",
+          computerId: "comp_held",
+        });
+      } catch (err) {
+        heldErr = err instanceof Error ? err.message : String(err);
+      }
+      ok("reclaimHealthyOrphan refuses while human Holds", heldErr === "computer-human-held");
+      ok(
+        "human-held reclaim did not claim orphan",
+        heldSup.get("comp_orphan_healthy")?.seatId === HOST_ORPHAN_SEAT_ID,
+      );
+    }
+
     // Already-healthy stored id must not steal another orphan.
     const healthy = reclaimSup.ensureComputer({
       workspaceId: "ws",
@@ -890,7 +930,7 @@ try {
     const { readFileSync } = await import("node:fs");
     const route = readFileSync("src/app/api/fleet/computers/route.ts", "utf8");
     const reclaimIdx = route.indexOf('case "reclaim_healthy_orphan"');
-    const reclaimBlock = reclaimIdx >= 0 ? route.slice(reclaimIdx, reclaimIdx + 1800) : "";
+    const reclaimBlock = reclaimIdx >= 0 ? route.slice(reclaimIdx, reclaimIdx + 2800) : "";
     ok(
       "reclaim_healthy_orphan persists agent_seats.computer_id on claim",
       reclaimBlock.includes(".from(\"agent_seats\")") &&
@@ -901,6 +941,18 @@ try {
       "reclaim persist fails closed when DB write errors",
       reclaimBlock.includes("computer_id persist failed"),
     );
+    {
+      const humanIdx = reclaimBlock.indexOf('control === "human"');
+      const reclaimCallIdx = reclaimBlock.indexOf(".reclaimHealthyOrphan(");
+      ok(
+        "reclaim_healthy_orphan refuses human-held before orphan hunt",
+        reclaimBlock.includes("computer-human-held") &&
+          reclaimBlock.includes("status: 409") &&
+          humanIdx >= 0 &&
+          reclaimCallIdx >= 0 &&
+          humanIdx < reclaimCallIdx,
+      );
+    }
 
     ok(
       "POST pre-hydrates seat bindings before ensure/reclaim",

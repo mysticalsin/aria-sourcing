@@ -1,24 +1,23 @@
 ---
 project: MSourcing / ARIA
-shift: 348
+shift: 349
 agent: cursor-cloud
-updated: 2026-10-04T03:35Z
-status: tip-preact-not-sent-probe-take-awaiting-ci
+updated: 2026-10-04T03:40Z
+status: tip-reclaim-take-preproof-awaiting-ci
 ---
 
-# Handoff — Shift 348
+# Handoff — Shift 349
 
 ## Current state
 
-- **Branch tip:** pending commit on `cursor/fly-deploy-land-n-agent-b91d` (pre-act not-sent + deferred toast + probe Take)
-- Prior tip `f04486a` Take mutex harden; #150 still `REVIEW_REQUIRED`
+- **Branch tip:** pending commit on `cursor/fly-deploy-land-n-agent-b91d` (reclaim Take guard + pre-proof not-sent)
+- Prior tip `10d5cfe`; #150 still `REVIEW_REQUIRED`
 - Fly prod still `21a42e7` / migration `0084`
 
 ## Done this shift
 
-1. BC `failed` pre-act (login wall / composer / note / help) → `not-sent`; post-click no-proof stays `unknown`
-2. Outreach card deferred toast uses classifySendOutcome + warning (not "Send blocked" error)
-3. Fleet `session_probe` returns 409 while human Holds (before probeSession)
+1. `reclaimHealthyOrphan` + route refuse while human Holds (no orphan claim mid-login)
+2. BC pre-Send OpenBot throws (`stale snapshot` / `ref not found` / 4xx) → `not-sent`
 
 ## Blockers
 
@@ -34,15 +33,12 @@ status: tip-preact-not-sent-probe-take-awaiting-ci
 
 ## Decisions made (don't relitigate)
 
-- Probe remoteUrl + sessionProbedAt rotate; durable adopt; hermes local-only
-- Never invent sessionHealthy=true; ignore Vercel-only when Quality/Release pass
-- All-N for go-live/strip/setup/stack/agents; send remains per-seat fail-closed
-- Open durable Take blocks cold restore green; `/navigate`+/session-probe share human mutex
-- Post-click no-proof stays unknown (may have landed); other soft fails → not-sent → deferred
+- Never invent sessionHealthy=true
+- Open durable Take blocks cold restore green; navigate/session_probe/reclaim share human mutex
+- Post-click no-proof stays unknown; pre-act/pre-proof soft fails → not-sent → deferred
 
 ## Watch out
 
-- openbot e2e enqueueJob bypasses claim (test-only)
-- Fingerprint pin required after every claim function replace migration
+- Fingerprint pin after claim function replace migrations
 - No agent review/approve / FLY_API_TOKEN / workflow_dispatch
-- click-xy/type-text/key/scroll stay allowed during Take (operator input path)
+- click-xy/type-text/key/scroll stay allowed during Take (operator input)

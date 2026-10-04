@@ -659,6 +659,29 @@ export async function POST(req: NextRequest) {
         // next GET hydrate cannot re-attach the login-wall twin from a stale FK
         // (Login updateSeat alone races the 5s floor/fleet poll).
         const seatId = (body.seatId ?? "").trim();
+        if (!seatId) {
+          return NextResponse.json({ error: "seatId required for reclaim_healthy_orphan" }, { status: 400 });
+        }
+        // Mid-Take login: refuse orphan hunt (Take nulls health; probe 409 → false reclaim).
+        if (computerId) {
+          const reclaimHeld = defaultComputerSupervisor.get(computerId);
+          if (reclaimHeld?.control === "human") {
+            return NextResponse.json(
+              { error: "computer-human-held", detail: "Release Take control before reclaim." },
+              { status: 409 },
+            );
+          }
+        } else {
+          const seatHeld = defaultComputerSupervisor
+            .list(workspaceId ?? "__local__")
+            .find((c) => c.seatId === seatId && c.control === "human");
+          if (seatHeld) {
+            return NextResponse.json(
+              { error: "computer-human-held", detail: "Release Take control before reclaim." },
+              { status: 409 },
+            );
+          }
+        }
         const result = await defaultComputerSupervisor.reclaimHealthyOrphan({
           workspaceId: workspaceId ?? "__local__",
           seatId,
