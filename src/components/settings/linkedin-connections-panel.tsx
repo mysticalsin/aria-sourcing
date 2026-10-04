@@ -611,50 +611,64 @@ function useLinkedInConnectionsState(opts?: { enabled?: boolean }) {
       }
 
       await fleetAct("ensure");
-      await fleetAct("start");
+      // Re-Login while operator already Holds Take: start/probe/reclaim 409 —
+      // skip warm path and continue to take_control / viewport (do not abort).
+      let humanAlreadyHolds = false;
+      try {
+        await fleetAct("start");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/computer-human-held/i.test(msg)) {
+          humanAlreadyHolds = true;
+        } else {
+          throw err;
+        }
+      }
       // If LinkedIn cookies already live on this durable profile, open the feed —
       // do not bounce to /login and wipe the operator's session after every deploy.
       // When the stored id is a login-wall twin, probe host orphans and reclaim a
       // healthy durable profile instead of reminting (preserves cookies across deploys).
       let sessionHealthy = false;
-      try {
-        const probed = await fleetAct("session_probe");
-        sessionHealthy =
-          probed?.sessionHealthy === true || probed?.computer?.sessionHealthy === true;
-      } catch {
-        sessionHealthy = false;
-      }
-      if (!sessionHealthy) {
+      if (!humanAlreadyHolds) {
         try {
-          const reclaimed = await fleetAct("reclaim_healthy_orphan");
-          const healthy =
-            reclaimed?.sessionHealthy === true ||
-            reclaimed?.computer?.sessionHealthy === true;
-          const nextId = reclaimed?.computer?.computerId?.trim();
-          if (healthy && nextId) {
-            sessionHealthy = true;
-            if (nextId !== computerId) {
-              computerId = nextId;
-              const saved = await actions.updateSeat(seat.id, {
-                computerId,
-                linkedinDeliveryBackend: "browser-computer",
-                connectedAccount: seat.connectedAccount || label.trim() || "AriaBot LinkedIn",
-              });
-              if (!saved) {
-                toast({
-                  title: "Reclaimed VM not saved",
-                  description:
-                    "Found a healthy host profile but could not persist computerId — fix Fleet, then retry Log in.",
-                  variant: "error",
-                });
-                return;
-              }
-              await fleetAct("ensure", computerId);
-              await fleetAct("start", computerId);
-            }
-          }
+          const probed = await fleetAct("session_probe");
+          sessionHealthy =
+            probed?.sessionHealthy === true || probed?.computer?.sessionHealthy === true;
         } catch {
-          // Keep sessionHealthy false — fall through to /login on the stored profile.
+          sessionHealthy = false;
+        }
+        if (!sessionHealthy) {
+          try {
+            const reclaimed = await fleetAct("reclaim_healthy_orphan");
+            const healthy =
+              reclaimed?.sessionHealthy === true ||
+              reclaimed?.computer?.sessionHealthy === true;
+            const nextId = reclaimed?.computer?.computerId?.trim();
+            if (healthy && nextId) {
+              sessionHealthy = true;
+              if (nextId !== computerId) {
+                computerId = nextId;
+                const saved = await actions.updateSeat(seat.id, {
+                  computerId,
+                  linkedinDeliveryBackend: "browser-computer",
+                  connectedAccount: seat.connectedAccount || label.trim() || "AriaBot LinkedIn",
+                });
+                if (!saved) {
+                  toast({
+                    title: "Reclaimed VM not saved",
+                    description:
+                      "Found a healthy host profile but could not persist computerId — fix Fleet, then retry Log in.",
+                    variant: "error",
+                  });
+                  return;
+                }
+                await fleetAct("ensure", computerId);
+                await fleetAct("start", computerId);
+              }
+            }
+          } catch {
+            // Keep sessionHealthy false — fall through to /login on the stored profile.
+          }
         }
       }
       const loginUrl =

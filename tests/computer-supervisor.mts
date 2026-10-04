@@ -69,6 +69,27 @@ try {
     supervisor.recentAudits(computer.computerId).some((a) => a.action === "act_refused" && a.jobId === refused.jobId),
   );
 
+  // Take TOCTOU: session gate OK, then start() hits human-held → refuse (not failed/unknown).
+  {
+    const toctou = new ComputerSupervisor();
+    const seat = toctou.ensureComputer({ workspaceId: "ws", seatId: "seat-toctou" });
+    const rec = toctou.get(seat.computerId)!;
+    rec.status = "stopped";
+    rec.control = "bot";
+    rec.sessionHealthy = true;
+    rec.sessionProbedAt = new Date().toISOString();
+    toctou.start = async () => {
+      throw new Error("computer-human-held");
+    };
+    const job = await toctou.enqueueJob({
+      computerId: seat.computerId,
+      kind: "linkedin_send",
+      payload: { profileUrl: "https://linkedin.com/in/toctou" },
+    });
+    ok("enqueueJob start TOCTOU refuses human-held", job.status === "refused");
+    ok("enqueueJob start TOCTOU detail is human-has-control", job.detail === "human-has-control");
+  }
+
   await supervisor.releaseControl(computer.computerId);
   ok("releaseControl returns bot", supervisor.get(computer.computerId)?.control === "bot");
 

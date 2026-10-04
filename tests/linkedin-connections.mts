@@ -141,9 +141,12 @@ ok("auth linkedin encrypts tokens", /encryptSecret/.test(oauthCb));
 
 
 ok("settings stack plug-and-play 2-step title", /Connect AriaBot in 2 steps/.test(stack));
+ok("settings panel primary CTA Open LinkedIn login for agents", /Open LinkedIn login for agents/.test(panel));
 ok(
-  "settings panel primary CTA Open LinkedIn login for agents",
-  /Open LinkedIn login for agents/.test(panel),
+  "settings panel re-Login mid-Take soft-skips start (continues to take_control)",
+  /humanAlreadyHolds/.test(panel) &&
+    /computer-human-held/.test(panel) &&
+    /fleetAct\("take_control"\)/.test(panel),
 );
 
 const setupGuide = readFileSync("src/components/settings/setup-guide-panel.tsx", "utf8");

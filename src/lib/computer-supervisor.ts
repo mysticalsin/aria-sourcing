@@ -1380,7 +1380,27 @@ export class ComputerSupervisor {
 
     if (rec.status !== "ready" && rec.status !== "busy") {
       if (rec.status === "stopped" || rec.status === "error") {
-        await this.start(opts.computerId);
+        try {
+          await this.start(opts.computerId);
+        } catch (err) {
+          // Take TOCTOU: session gate passed, then operator Took before start().
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/computer-human-held/i.test(msg)) {
+            job.status = "refused";
+            job.detail = "human-has-control";
+            job.finishedAt = isoNow();
+            this.jobs.set(jobId, job);
+            this.audit(
+              opts.computerId,
+              "act_refused",
+              `${opts.kind} refused — human-has-control (start TOCTOU)`,
+              "bot",
+              { jobId },
+            );
+            return job;
+          }
+          throw err;
+        }
       }
     }
 
@@ -1586,7 +1606,7 @@ export class ComputerSupervisor {
         const detail = err instanceof Error ? err.message : "OpenBot remote job failed";
         // OpenBot /click|/type|/navigate 409 while operator Holds → soft refuse, not hard fail.
         const humanMutex =
-          /human has control|human-has-control|human mutex/i.test(detail);
+          /human has control|human-has-control|human mutex|computer-human-held/i.test(detail);
         job.status = humanMutex ? "refused" : "failed";
         job.detail = humanMutex ? "human-has-control" : detail;
         job.finishedAt = isoNow();

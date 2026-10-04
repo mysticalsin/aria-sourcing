@@ -311,7 +311,7 @@ const browserComputerAdapter: LinkedInAdapter = {
         // Pre-act / soft fails never contacted LinkedIn — requeue via not-sent → deferred.
         // Includes pre-Send OpenBot throws (stale snapshot / missing ref / HTTP 4xx).
         const preActNotSent =
-          /human has control|human-has-control|human mutex|login\/2FA|login wall|help_requested|session_unhealthy|session_unverified|composer did not open|no text box|could not find Send|Send is disabled|no note field|Connect note is \d+ chars|Send invitation is disabled|Could not find Message or Connect|Neither Message nor Connect|profileUrl is required|message body is required|not ready|COMPUTER_TOKEN|manual_permission|stale snapshot|ref not found|OpenBot (navigate|click|type) [45]\d\d/i.test(
+          /human has control|human-has-control|human mutex|computer-human-held|login\/2FA|login wall|help_requested|session_unhealthy|session_unverified|composer did not open|no text box|could not find Send|Send is disabled|no note field|Connect note is \d+ chars|Send invitation is disabled|Could not find Message or Connect|Neither Message nor Connect|profileUrl is required|message body is required|not ready|COMPUTER_TOKEN|manual_permission|stale snapshot|ref not found|OpenBot (navigate|click|type) [45]\d\d/i.test(
             detail,
           );
         return {
@@ -354,9 +354,11 @@ const browserComputerAdapter: LinkedInAdapter = {
       };
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Browser-computer delivery failed.";
-      // Pre-act ensure failures are soft (retry after reclaim) — not ambiguous wire outcomes.
+      // Pre-act ensure/start failures are soft (retry after Release) — not ambiguous wire outcomes.
       const softEnsure =
-        /ownership-mismatch|orphan-claim-blocked/i.test(detail);
+        /ownership-mismatch|orphan-claim-blocked|computer-human-held|human-has-control/i.test(
+          detail,
+        );
       return {
         status: "error",
         deliveryState: softEnsure ? "not-sent" : "unknown",

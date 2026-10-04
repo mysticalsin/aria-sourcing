@@ -201,8 +201,9 @@ ok(
 );
 ok(
   "browser-computer deliver maps ownership/orphan ensure throws to not-sent",
-  /ownership-mismatch\|orphan-claim-blocked/.test(linkedInChannel) &&
-    /deliveryState: softEnsure \? "not-sent"/.test(linkedInChannel),
+  /ownership-mismatch\|orphan-claim-blocked\|computer-human-held\|human-has-control/.test(
+    linkedInChannel,
+  ) && /deliveryState: softEnsure \? "not-sent"/.test(linkedInChannel),
 );
 ok(
   "browser-computer deliver maps remote human-mutex failed to not-sent (no outbox burn)",
@@ -222,6 +223,7 @@ ok(
   linkedInChannel.includes("login\\/2FA|login wall") &&
     linkedInChannel.includes("composer did not open") &&
     linkedInChannel.includes("Connect note is \\d+ chars") &&
+    linkedInChannel.includes("computer-human-held") &&
     linkedInChannel.includes("preActNotSent"),
 );
 ok(
