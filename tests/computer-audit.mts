@@ -129,6 +129,22 @@ ok(
   zAudits.some((e) => e.action === "takeover" && Boolean(e.correlationId)),
 );
 
+{
+  // void appendPostgres: durable query must merge in-memory so same-instance
+  // Release restore cannot miss the release row and re-hydrate control=human.
+  const src = fs.readFileSync(
+    new URL("../src/lib/computer-audit.ts", import.meta.url),
+    "utf8",
+  );
+  const durableIdx = src.indexOf("export async function queryComputerAuditsDurable");
+  const durableBlock = durableIdx >= 0 ? src.slice(durableIdx, durableIdx + 2500) : "";
+  ok(
+    "queryComputerAuditsDurable merges in-memory with Postgres rows",
+    durableBlock.includes("for (const e of memory)") &&
+      durableBlock.includes("merged.set") &&
+      /void appendPostgres|void-fires PG|Merge in-memory/.test(durableBlock),
+  );
+}
 
 {
   const rows = [

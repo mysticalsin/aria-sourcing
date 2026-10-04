@@ -1083,6 +1083,10 @@ try {
       supervisor.get(seat.computerId)?.sessionHealthy == null,
     );
     ok(
+      "release without agent stamps sessionProbedAt (blocks durable re-green)",
+      Boolean(supervisor.get(seat.computerId)?.sessionProbedAt),
+    );
+    ok(
       "release without agent returns control to bot",
       supervisor.get(seat.computerId)?.control === "bot",
     );
@@ -1514,6 +1518,55 @@ try {
     delete process.env.OPENBOT_COMPUTER_TOKEN;
   }
 
+  // Never /session-probe navigate mid-send — busy desks stay out of Floor refresh budget.
+  {
+    const busyRefresh = new ComputerSupervisor();
+    const ready = busyRefresh.ensureComputer({ workspaceId: "ws-busy", seatId: "seat-ready" });
+    const busy = busyRefresh.ensureComputer({ workspaceId: "ws-busy", seatId: "seat-busy" });
+    for (const [rec, status] of [
+      [busyRefresh.get(ready.computerId)!, "ready"] as const,
+      [busyRefresh.get(busy.computerId)!, "busy"] as const,
+    ]) {
+      rec.status = status;
+      rec.sessionHealthy = null;
+      rec.remoteUrl = `http://openbot.test/view/${rec.computerId}`;
+    }
+    process.env.COMPUTER_SUPERVISOR_URL = "http://openbot.test";
+    process.env.COMPUTER_SUPERVISOR_TOKEN = "tok";
+    process.env.OPENBOT_COMPUTER_TOKEN = "comp_tok";
+    const prevFetch = globalThis.fetch;
+    const probedIds: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("session-probe")) {
+        probedIds.push(url);
+        return new Response(JSON.stringify({ healthy: false, detail: "auth wall" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ computers: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    await busyRefresh.refreshSessionHealthForList("ws-busy", { limit: 5 });
+    globalThis.fetch = prevFetch;
+    ok(
+      "refreshSessionHealthForList probes ready desks",
+      busyRefresh.get(ready.computerId)?.sessionHealthy === false,
+    );
+    ok(
+      "refreshSessionHealthForList skips busy (no mid-send navigate)",
+      busyRefresh.get(busy.computerId)?.sessionHealthy == null &&
+        busyRefresh.get(busy.computerId)?.sessionProbedAt == null,
+    );
+    ok("refreshSessionHealthForList busy not probed via HTTP", probedIds.length === 1);
+    delete process.env.COMPUTER_SUPERVISOR_URL;
+    delete process.env.COMPUTER_SUPERVISOR_TOKEN;
+    delete process.env.OPENBOT_COMPUTER_TOKEN;
+  }
+
   // N desks: rotate probe budget — never-probed / oldest first (not Map-order starve).
   {
     process.env.COMPUTER_SUPERVISOR_URL = "https://openbot.example.test";
@@ -1855,6 +1908,41 @@ try {
     ok(
       "invalidate stamp blocks older durable green restore",
       cold6.get(seat6.computerId)?.sessionHealthy == null,
+    );
+
+    // releaseControl stamps probedAt — concurrent restore must not re-green mid-await.
+    const cold7 = new ComputerSupervisor();
+    const seat7 = cold7.ensureComputer({ workspaceId: "ws-rel", seatId: "seat-rel" });
+    await cold7.takeControl(seat7.computerId);
+    await cold7.releaseControl(seat7.computerId);
+    const releaseStamp = cold7.get(seat7.computerId)?.sessionProbedAt;
+    ok("releaseControl stamps sessionProbedAt on invalidate", Boolean(releaseStamp));
+    const olderGreen = new Date(Date.now() - 30_000).toISOString();
+    await cold7.restoreSessionHealthFromDurableAudits("ws-rel", {
+      queryAudits: async (q) => {
+        if (q.action === "takeover" || q.action === "release" || q.action === "session_probe_failed") {
+          return [];
+        }
+        if (q.action === "session_probe") {
+          return [
+            {
+              id: "caud_pre_take_green",
+              at: olderGreen,
+              workspaceId: "ws-rel",
+              computerId: seat7.computerId,
+              action: "session_probe",
+              detail: "ok",
+              actor: "system",
+              meta: { healthy: true },
+            },
+          ];
+        }
+        return [];
+      },
+    });
+    ok(
+      "release invalidate stamp blocks older durable green mid-Release window",
+      cold7.get(seat7.computerId)?.sessionHealthy == null,
     );
   }
 

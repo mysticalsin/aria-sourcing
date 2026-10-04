@@ -194,8 +194,11 @@ export async function queryComputerAuditsDurable(
       if (q.until) req = req.lte("created_at", q.until);
       const { data, error } = await req;
       if (!error && data) {
-        return data
-          .map((row) => ({
+        // Merge in-memory events: recordComputerAudit void-fires PG, so same-instance
+        // Take/Release restore can miss the release row and re-hydrate control=human.
+        const merged = new Map<string, ComputerAuditEvent>();
+        for (const row of data) {
+          const ev: ComputerAuditEvent = {
             id: String(row.id),
             at: String(row.created_at),
             workspaceId: String(row.workspace_id),
@@ -208,8 +211,15 @@ export async function queryComputerAuditsDurable(
             correlationId: row.correlation_id ? String(row.correlation_id) : null,
             jobId: row.job_id ? String(row.job_id) : null,
             meta: (row.meta as Record<string, unknown>) ?? {},
-          }))
-          .reverse();
+          };
+          merged.set(ev.id, ev);
+        }
+        for (const e of memory) {
+          if (matches(e, q)) merged.set(e.id, e);
+        }
+        return [...merged.values()]
+          .sort((a, b) => a.at.localeCompare(b.at))
+          .slice(-limit);
       }
     }
   } catch {

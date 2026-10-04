@@ -596,7 +596,8 @@ export class ComputerSupervisor {
 
   /**
    * Opportunistic LinkedIn probes for Floor/Fleet GET freshness.
-   * Re-probes ready/busy bot-held seats when health is null or TTL-stale.
+   * Re-probes ready bot-held seats when health is null or TTL-stale.
+   * Never probes `busy` — /session-probe navigates and would clobber mid-send/warmup.
    * Never invents healthy=true — only openBotSessionProbe can set true.
    * Rotates by sessionProbedAt (never-probed / oldest first) so N desks are
    * not starved by the first ≤limit Map-order seats stuck at false.
@@ -609,7 +610,8 @@ export class ComputerSupervisor {
     const candidates = this.list(workspaceId).filter((c) => {
       if (c.seatId === HOST_ORPHAN_SEAT_ID) return false;
       if (c.control === "human") return false;
-      if (c.status !== "ready" && c.status !== "busy") return false;
+      // ready only — busy means computerChains owns the tab (send/nav); do not probe.
+      if (c.status !== "ready") return false;
       if (c.sessionHealthy === true) return false; // list() already TTL-expired stale true→null
       // No remoteUrl ⇒ probeSession cannot HTTP-probe (sets probedAt null) and would
       // monopolize never-probed sort forever — starve real Floor desks.
@@ -1146,9 +1148,10 @@ export class ComputerSupervisor {
         // Same-instance Take already set control=human; cold Map defaults to bot.
         rec.control = "human";
         // Do not invent healthy from a pre-Take probe while operator holds mutex.
+        // Stamp probedAt so post-Release restore cannot re-green from an older probe.
         if (rec.sessionHealthy === true) {
           rec.sessionHealthy = null;
-          rec.sessionProbedAt = null;
+          rec.sessionProbedAt = isoNow();
         }
       }
     }
@@ -1229,7 +1232,8 @@ export class ComputerSupervisor {
     const agent = agentCfg(rec);
     if (!agent) {
       rec.sessionHealthy = null;
-      rec.sessionProbedAt = null;
+      // Stamp probedAt — null would let durable restore re-green from an older probe.
+      rec.sessionProbedAt = isoNow();
       rec.updatedAt = isoNow();
       this.audit(computerId, "session_probe", "No agent endpoint — cannot probe", "system");
       return rec;
@@ -1290,8 +1294,10 @@ export class ComputerSupervisor {
       rec.lastError = null;
     }
     // Always invalidate until probe below (or leave null when no agent endpoint).
+    // Stamp probedAt — null lets concurrent restoreSessionHealth re-apply a TTL-fresh
+    // pre-Take session_probe healthy=true while openBotReleaseControl/probe await.
     rec.sessionHealthy = null;
-    rec.sessionProbedAt = null;
+    rec.sessionProbedAt = isoNow();
     rec.updatedAt = isoNow();
     rec.lastAudit = "control_released";
     this.audit(
