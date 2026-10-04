@@ -1,26 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 367
+shift: 368
 agent: cursor-cloud
-updated: 2026-10-04T06:55Z
-status: tip-busy-mutex-residuals-awaiting-ci-approve
+updated: 2026-10-04T07:05Z
+status: tip-restore-family-query-awaiting-ci-approve
 ---
 
-# Handoff — Shift 367
+# Handoff — Shift 368
 
 ## Current state
 
-- **Branch tip:** pending — stuck busy clear + probe/reclaim refuse busy (`32b1bfe`+)
-- Prior tip `2f82edc` / feature `d50fbb8`: full CI green incl Vercel; still `REVIEW_REQUIRED`
-- 8th residual ([Eighth residual hunt](bc-69fd851b-9101-508c-add2-cc2d6f5b4f9c)) → fixed (busy stuck + mid-busy probe)
+- **Branch tip:** pending — restore probe/control-family single `actions[]` query
+- Prior tip `19a71ed` / feature `32b1bfe`: Quality+Release SUCCESS; Vercel FAILURE (ignore); still `REVIEW_REQUIRED`
+- 9th residual ([Hunt restore limit residual](bc-206e25fa-b16b-5adc-98b0-2fd5f4998265)) → fixed
 - Fly still `21a42e7` / `0084`
 
 ## Done this shift
 
-1. Confirmed tip CI full green on `2f82edc` (Quality+Release+Vercel)
-2. `releaseControl` clears stuck `busy`→ready; humanMutex catch clears busy
-3. `probeSession` throws `computer-busy`; route session_probe/reclaim 409 on busy
-4. Local: tsc + computer-supervisor 187 pass
+1. Confirmed tip CI Quality+Release green on `19a71ed`
+2. `ComputerAuditQuery.actions[]` + durable `.in("action")`
+3. restoreSessionHealth: one probe-family + one control-family stream (no split invent-green)
+4. Local: tsc + computer-supervisor 189 + computer-audit 23
 
 ## Blockers
 
@@ -29,17 +29,14 @@ status: tip-busy-mutex-residuals-awaiting-ci-approve
 
 ## Next steps
 
-1. Tip CI green on this residual (ignore Vercel-only if rate-limit)
+1. Tip CI green (ignore Vercel-only)
 2. Owner Approve; deploy; proof; LI health
 
 ## Decisions made (don't relitigate)
 
-- Invalidate stamps probedAt so durable restore cannot re-green from older probe
-- Floor refresh never probes busy; probeSession/reclaim also refuse busy
-- Release/humanMutex unstick busy so Floor can re-probe after Take mid-send
-- Durable audit reads merge memory when PG is configured
+- Restore uses family `actions[]` streams — never split probe/fail or takeover/release caps
+- Ignore Vercel rate-limit when Quality/Release pass
 
 ## Watch out
 
-- restoreSessionHealth workspace-wide limit 200 under huge N (yellow from hunt8) — not fixed this shift
 - Fingerprint pin; no agent Approve / FLY_API_TOKEN / workflow_dispatch
