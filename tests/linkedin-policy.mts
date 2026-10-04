@@ -86,6 +86,17 @@ ok(
     /hydrateFromHost/.test(sendRoute),
 );
 ok(
+  "outreach Send mirrors dispatch Manual/human/help/starting soft-gates",
+  /manual_permission_mode/.test(sendRoute) &&
+    /human-has-control/.test(sendRoute) &&
+    /computer_starting/.test(sendRoute),
+);
+ok(
+  "outreach Send hydrates sentToday from outreach_ledger (CET day)",
+  /startOfDayInTimeZone\(new Date\(\),\s*"CET"\)/.test(sendRoute) &&
+    /outreach_ledger/.test(sendRoute),
+);
+ok(
   "outreach send selects assigned_campaign_ids and refuses unattached BC",
   /assigned_campaign_ids/.test(sendRoute) &&
     /This Browser Computer seat is not attached to the campaign/.test(sendRoute),

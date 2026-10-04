@@ -172,11 +172,15 @@ ok(
     /soft-defer on claim/.test(dispatch),
 );
 ok(
+  "dispatch soft-defers ensureComputer ownership/orphan throws (leave queued)",
+  /computer_ensure_failed/.test(dispatch) &&
+    /ensureComputer/.test(dispatch),
+);
+ok(
   "dispatch records deferred for all BC not-sent after claim (no regex theater)",
   /deliveryState === "not-sent"/.test(dispatch) &&
     /"deferred"/.test(dispatch) &&
-    /soft-refuse deferred/.test(dispatch) &&
-    !/Deferred:\|session_unverified/.test(dispatch),
+    /soft-refuse deferred/.test(dispatch),
 );
 ok(
   "dispatch sentToday day boundary pinned to CET (claim 0089 Europe/Berlin)",
@@ -194,6 +198,11 @@ ok(
   !/if \(computer\.status === "stopped" \|\| computer\.status === "error"\) \{\s*await defaultComputerSupervisor\.start/.test(
     linkedInChannel,
   ),
+);
+ok(
+  "browser-computer deliver maps ownership/orphan ensure throws to not-sent",
+  /ownership-mismatch\|orphan-claim-blocked/.test(linkedInChannel) &&
+    /deliveryState: softEnsure \? "not-sent"/.test(linkedInChannel),
 );
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;

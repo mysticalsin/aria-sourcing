@@ -341,11 +341,15 @@ const browserComputerAdapter: LinkedInAdapter = {
           "OpenBot remote computer did not acknowledge send. Check COMPUTER_SUPERVISOR_URL / token and Fleet → Computers → Open view.",
       };
     } catch (err) {
+      const detail = err instanceof Error ? err.message : "Browser-computer delivery failed.";
+      // Pre-act ensure failures are soft (retry after reclaim) — not ambiguous wire outcomes.
+      const softEnsure =
+        /ownership-mismatch|orphan-claim-blocked/i.test(detail);
       return {
         status: "error",
-        deliveryState: "unknown",
+        deliveryState: softEnsure ? "not-sent" : "unknown",
         provider: "LinkedIn Browser Computer",
-        detail: err instanceof Error ? err.message : "Browser-computer delivery failed.",
+        detail,
       };
     } finally {
       bindComputerSupervisorEndpoint(null);

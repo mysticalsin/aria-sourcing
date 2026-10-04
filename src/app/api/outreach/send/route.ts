@@ -24,7 +24,7 @@ import {
 } from "@/lib/linkedin-credentials";
 import { evaluateSendPace } from "@/lib/send-pacing";
 import { defaultComputerSupervisor } from "@/lib/computer-supervisor";
-import { defaultFleetSettings } from "@/lib/fleet";
+import { defaultFleetSettings, startOfDayInTimeZone } from "@/lib/fleet";
 import type { AgentSeat } from "@/lib/types";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
@@ -296,6 +296,7 @@ export async function POST(req: NextRequest) {
     }
 
     let browserSessionHealthy: boolean | null = null;
+    let browserComputerRec: ReturnType<typeof defaultComputerSupervisor.get> | undefined;
     if (liSeat.provider === "LinkedIn Browser Computer") {
       const boundId = String(liSeat.computer_id ?? "").trim();
       if (boundId) {
@@ -314,11 +315,13 @@ export async function POST(req: NextRequest) {
           // Only trust health from a successful seat-owned hydrate. Never
           // get(computer_id) after ownership/orphan throw — that can pick up a
           // foreign/orphan sessionHealthy=true and green pace theater.
-          browserSessionHealthy = hydrated
-            ? (defaultComputerSupervisor.get(hydrated.computerId)?.sessionHealthy ?? null)
-            : null;
+          browserComputerRec = hydrated
+            ? defaultComputerSupervisor.get(hydrated.computerId)
+            : undefined;
+          browserSessionHealthy = browserComputerRec?.sessionHealthy ?? null;
         } catch {
           browserSessionHealthy = null;
+          browserComputerRec = undefined;
         }
       }
     }
@@ -348,9 +351,87 @@ export async function POST(req: NextRequest) {
       const fleetSettings = {
         ...defaultFleetSettings(),
         ...(fleetRec as Record<string, unknown>),
-      };
+      } as ReturnType<typeof defaultFleetSettings>;
+      // Mirror dispatch soft-gates so enqueue cannot 202 while dispatch forever defers.
+      if (liSeat.provider === "LinkedIn Browser Computer") {
+        if (fleetSettings.browserAgentPermissionMode === "manual") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "Manual permission mode — Take control to send, then Release.",
+              paceReason: "manual_permission_mode",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+        if (browserComputerRec?.control === "human") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "Human has control of this computer — Release before send.",
+              paceReason: "human-has-control",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+        if (browserComputerRec?.status === "help_requested") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "help_requested — Take control, finish LinkedIn login, then Release.",
+              paceReason: "help_requested",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+        if (browserComputerRec?.status === "starting") {
+          return NextResponse.json(
+            {
+              status: "deferred",
+              detail: "Computer is still starting — retry shortly.",
+              paceReason: "computer_starting",
+              nextEligibleAt: null,
+            },
+            { status: 429 },
+          );
+        }
+      }
+      // Hermes queued path never bumps sentToday — hydrate from durable ledger (CET day).
+      let paceSeat = seatState;
+      if (liSeat.provider === "LinkedIn Browser Computer") {
+        const dayStart = startOfDayInTimeZone(new Date(), "CET");
+        const [{ data: lastRow }, { count: todayCount }] = await Promise.all([
+          supabase
+            .from("outreach_ledger")
+            .select("at")
+            .eq("seat_id", seatId)
+            .eq("workspace_id", approvalWid)
+            .in("status", ["claimed", "sent", "ambiguous"])
+            .order("at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("outreach_ledger")
+            .select("id", { count: "exact", head: true })
+            .eq("seat_id", seatId)
+            .eq("workspace_id", approvalWid)
+            .in("status", ["claimed", "sent", "ambiguous"])
+            .gte("at", dayStart.toISOString()),
+        ]);
+        paceSeat = {
+          ...seatState,
+          lastSendAt:
+            lastRow && typeof (lastRow as { at?: string }).at === "string"
+              ? (lastRow as { at: string }).at
+              : null,
+          sentToday: typeof todayCount === "number" ? todayCount : 0,
+        };
+      }
       const pace = evaluateSendPace({
-        seat: seatState,
+        seat: paceSeat,
         settings: fleetSettings,
         // Browser Computer: fail closed unless probed true (undefined would skip the check).
         sessionHealthy:

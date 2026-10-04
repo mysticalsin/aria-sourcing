@@ -503,16 +503,25 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
             continue;
           }
           if (computerId && seatId) {
-            defaultComputerSupervisor.ensureComputer({
-              workspaceId: msg.workspace_id,
-              seatId,
-              computerId,
-              campaignId: attachCampaignId || undefined,
-            });
-            await defaultComputerSupervisor.hydrateFromHost(msg.workspace_id);
-            await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(
-              msg.workspace_id,
-            );
+            try {
+              defaultComputerSupervisor.ensureComputer({
+                workspaceId: msg.workspace_id,
+                seatId,
+                computerId,
+                campaignId: attachCampaignId || undefined,
+              });
+              await defaultComputerSupervisor.hydrateFromHost(msg.workspace_id);
+              await defaultComputerSupervisor.restoreSessionHealthFromDurableAudits(
+                msg.workspace_id,
+              );
+            } catch (err) {
+              // orphan-claim-blocked / ownership-mismatch — leave queued, do not burn.
+              safeLog("dispatch-outbound: LinkedIn soft-defer before claim", {
+                reason: "computer_ensure_failed",
+                detail: err instanceof Error ? err.message : "ensure-failed",
+              });
+              continue;
+            }
           }
           const computerRec = computerId
             ? defaultComputerSupervisor.get(computerId)
