@@ -19,6 +19,14 @@ every `open` entry at the start of each session/loop iteration. See
 Historical and current findings follow. The current consolidated audit is
 `_relay/2026-07-11-enterprise-audit.md`.
 
+## 2026-10-05 — Enrich/GitHub were suffixes on harvest 8, not Tony-bar rows
+**Severity:** spec-mismatch
+**File:** src/lib/store/sourcing-actions.ts:719; src/lib/sourcing/people-first-fallthrough.ts:225
+**Issue:** Fly `5728ad4` POSTed empty-URL enrich (`invalid-input`), logged GitHub only on `aria_harvest` stdout, and stuffed `github=` onto harvest 8 EMPTY notes. Ultron never saw own enrich/GitHub/web campaign activities. Eight harvest POSTs burned the 10/min bucket, so Auto source died on `SOURCING_AGENT_RATE_LIMITED` before trading-platform BA / finance BA.
+**Repro/evidence:** Fly `5728ad4`, camp_1788068519249. `_relay/evidence/2026-09-02-never0-chain/fly-harvest-5728ad4.log`
+**Suggested fix:** `peopleFirstTrailActivities` + persist own rows; skip empty-URL POST; rate-limit 20/180s. Do not invent people.
+**Status:** fixed (2e781e02)
+
 ## 2026-09-02 — Live 8-query expansion skipped enrich/GitHub on items=0
 **Severity:** correctness
 **File:** src/lib/store.ts (enrichCampaign); src/lib/sourcing/apify.ts (enrichProfilesByUrl / scrapeGithubTechStack)
