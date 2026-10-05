@@ -13,9 +13,11 @@ status: pr-open-tony-bar-awaiting-fly
 - Branch `cursor/empty-harvest-enrich-9f77` → **PR #156 OPEN** https://github.com/mysticalsin/aria-sourcing/pull/156
 - Closed **PR #54**. Do not reopen. Do not merge #156
 - Product: **`2e781e02`** — Tony bar owns enrich/GitHub/web as distinct campaign activities; rate-limit 20/180s
+- CI follow-up: **`dd072023`** — CodeQL host check, Gitleaks fingerprints, next 16.3.8, sharp 0.35.4, Debian apt-get upgrade on `Dockerfile.prod`
 - STATUS.md date bump: **`f17fe378`**. Merge of `origin/main` js-yaml 4.3.2 is in the PR
 - Parent one-request chain: `523ca9a5`. Live FAIL tip was `5728ad4` (empty-URL enrich POST = Apify invalid-input; github= suffix on harvest 8; 10/min burned before trading-platform BA / finance BA)
-- Local gate green on `f17fe378`: `./node_modules/.bin/tsc --noEmit && npm run typecheck:tests && npm test`
+- Local gate green on `dd072023`: `./node_modules/.bin/tsc --noEmit && npm run typecheck:tests && npm test`
+- CI Quality on `24da71a5` was green. Remaining HIGH is `braces` with no published 3.0.4; do not force Tailwind v4; do not weaken `npm audit --audit-level=high` or Trivy `--exit-code 1`
 - This VM did not Path-B / Fly / Vercel
 - Proof host is **https://aria-mantu-app.fly.dev/** only. Ignore the red Vercel GitHub check. Aria is Fly-only
 - READY TO MERGE stays **no**
@@ -29,7 +31,7 @@ status: pr-open-tony-bar-awaiting-fly
 4. Empty urls skip the enrich POST (invalid-input is not a run). When URLs exist, POST `/runs` and the row carries `run=` + `items=`
 5. Rate-limit `windowMs: 180_000` / `max: 20` so Auto source can reach trading-platform BA / finance BA. Rate-limit is not success
 6. Merged `origin/main` (kept `eslint-config-next` 16.3.3). Bumped `production-readiness/STATUS.md` date only
-7. Tests: people-first-chain trail rows (started + skipped); contract pins trail persist + 20/180s; store-sourcing-actions factory wiring
+8. CI on `24da71a5`: Quality green. CodeQL Incomplete URL substring in `tests/auto-source.mts` → `URL.hostname`. Gitleaks 3 LinkedIn-rule false positives in deleted history → exact fingerprints. next 16.3.8 + sharp 0.35.4. `Dockerfile.prod` runner `apt-get upgrade`. braces HIGH has no published 3.0.4. Vercel ignored.
 
 ## Blockers
 
@@ -41,7 +43,7 @@ status: pr-open-tony-bar-awaiting-fly
 ## Next steps
 
 ```bash
-# Devon: Path-B PR 156 (product 2e781e02) onto aria-mantu-app (Fly only)
+# Devon: Path-B PR 156 (tip dd072023, product 2e781e02) onto aria-mantu-app (Fly only)
 # Ultron: camp_1788068519249 query=Calypso Business Analyst
 # KEEP: H1 Your next move is ready. Overflow WRAP. Apify off chrome. 8 harvestapi run ids
 # After those 8 are SUCCEEDED items=0, Tony bar MUST show own enrich and GitHub rows
