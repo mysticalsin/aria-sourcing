@@ -62,6 +62,21 @@ function accepted(n: number): SourceNextBatchResult {
   };
 }
 
+/** Host check, not a substring. `github.com` can appear anywhere in a URL. */
+function acceptedHasGithubHost(people: SourceNextBatchResult["accepted"]): boolean {
+  return people.some((row) => {
+    if (!row || typeof row !== "object") return false;
+    return Object.values(row).some((value) => {
+      if (typeof value !== "string" || !/^https?:\/\//i.test(value)) return false;
+      try {
+        return new URL(value).hostname === "github.com";
+      } catch {
+        return false;
+      }
+    });
+  });
+}
+
 {
   let searches = 0;
   let enrichCalls = 0;
@@ -86,7 +101,7 @@ function accepted(n: number): SourceNextBatchResult {
     stackCalls === 1 &&
       result.techStackMerged === true &&
       result.ok === true &&
-      !JSON.stringify(result.accepted).includes("github.com"),
+      !acceptedHasGithubHost(result.accepted),
   );
 }
 
