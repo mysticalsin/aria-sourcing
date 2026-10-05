@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { hermesRuntimeMisconfigured } from "@/lib/api/url";
+import { ariaReleaseIdentitySha } from "@/lib/build-info";
 import { evaluateReadiness, type MigrationIdentity, type MigrationState } from "@/lib/readiness";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 import { getServiceSupabase } from "@/lib/supabase/server";
@@ -13,7 +14,7 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const releaseSha = process.env.ARIA_RELEASE_SHA ?? "";
+const releaseSha = ariaReleaseIdentitySha();
 const expectedMigration = process.env.ARIA_EXPECTED_MIGRATION ?? "";
 const expectedMigrationSha = process.env.ARIA_EXPECTED_MIGRATION_SHA ?? "";
 const expectedMigrationCountRaw = process.env.ARIA_EXPECTED_MIGRATION_COUNT ?? "";

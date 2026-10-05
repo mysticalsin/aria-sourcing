@@ -16,6 +16,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
@@ -32,6 +33,9 @@ import {
   useFollowUpsDue,
   useCandidate,
   useActions,
+  useApiKeys,
+  useIntegrations,
+  useSeats,
 } from "@/lib/store";
 import type { FollowUpDueItem } from "@/lib/recommendations";
 import type { Candidate, OutreachMessage } from "@/lib/types";
@@ -181,6 +185,9 @@ function OutreachView() {
   const settings = useSettings();
   const followUpsDue = useFollowUpsDue();
   const actions = useActions();
+  const apiKeys = useApiKeys();
+  const integrations = useIntegrations();
+  const seats = useSeats();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const campaignParam = searchParams.get("campaign");
@@ -364,6 +371,7 @@ function OutreachView() {
         }
       >
         <div className="space-y-6">
+        <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} className="mt-0" />
         <QuickDraft />
         <WhatsAppTemplatePicker />
         <div className="grid gap-6 lg:grid-cols-3">

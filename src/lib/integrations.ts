@@ -54,23 +54,56 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Apify (LinkedIn profile search)",
       category: "Sourcing",
       description:
-        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation.",
+        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation. Add the key in Access & Keys.",
       status: "connected",
       mode: "mock",
       lastSync: isoHoursBefore(0.6),
       errors: [],
       real: true,
+      setupHref: "/settings",
+    },
+    {
+      id: "int_linkedin",
+      name: "LinkedIn Sourcing",
+      category: "Sourcing",
+      description:
+        "Official LinkedIn partner search is not wired. This card does not accept a pasted API key. Fleet OAuth is identity and messaging only — not partner search. Source people with a valid Apify key in Access & Keys.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [
+        "Partner search is not available. Use Access & Keys → Apify for the live harvest that is wired.",
+      ],
+      real: false,
+      setupHref: "/settings",
     },
     {
       id: "int_linkedin_rsc",
       name: "LinkedIn Recruiter System Connect",
       category: "Sourcing",
-      description: "Official LinkedIn ATS integration for automated profile import and InMail. Requires a LinkedIn partnership agreement.",
+      description:
+        "Official LinkedIn partner search is not wired. Fleet OAuth connects identity and messaging only — not partner search. This card does not accept a pasted API key. Source next batch when a harvest key is valid. Add the Apify key in Access & Keys.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
-      errors: ["Not connected. Apply for RSC at LinkedIn Talent Solutions, then enter OAuth credentials."],
+      errors: [
+        "Official partner search is not available. Source people with a valid Apify key in Access & Keys.",
+      ],
       real: false,
+      setupHref: "/settings",
+    },
+    {
+      id: "int_heyreach",
+      name: "HeyReach",
+      category: "Comms",
+      description:
+        "LinkedIn send account for drafted campaigns. Connect the API or MCP key in Access & Keys. Send stays dry-run until you approve.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [],
+      real: true,
+      setupHref: "/settings",
     },
     {
       id: "int_twenty",
@@ -213,12 +246,41 @@ export function defaultIntegrations(): IntegrationStatus[] {
 
 /** Configuration catalogue for a new live tenant. Seed connection timestamps
  * are demo fixtures, so every adapter starts explicitly unconfigured. Real
- * adapters remain labelled live to expose their actual setup surfaces. */
+ * adapters stay `real: true` so Configure/Test remain visible; they are not
+ * labelled Live until credentials exist. */
+/** LinkedIn people-search cards. Partner search is not wired — never an API-key paste. */
+export function isLinkedInSourcingCard(
+  integration: Pick<IntegrationStatus, "id" | "name" | "category">,
+): boolean {
+  if (integration.id === "int_apify" || /apify/i.test(integration.name)) return false;
+  if (integration.id === "int_linkedin" || integration.id === "int_linkedin_rsc") return true;
+  if (integration.id.startsWith("int_linkedin")) return true;
+  return integration.category === "Sourcing" && /linkedin/i.test(integration.name);
+}
+
+function honestLinkedInSourcingCard(
+  card: IntegrationStatus,
+  seed: IntegrationStatus,
+): IntegrationStatus {
+  return {
+    ...card,
+    name: seed.name,
+    description: seed.description,
+    setupHref: "/settings",
+    real: false,
+    status: "not_configured",
+    mode: "mock",
+    lastSync: null,
+    errors: seed.errors,
+    connectedAccount: undefined,
+  };
+}
+
 export function defaultLiveIntegrations(): IntegrationStatus[] {
   return defaultIntegrations().map((integration) => ({
     ...integration,
     status: "not_configured",
-    mode: integration.real ? "live" : "mock",
+    mode: "mock",
     lastSync: null,
     connectedAccount: undefined,
   }));
@@ -288,4 +350,76 @@ export function integrationHealthSummary(integrations: IntegrationStatus[]): {
  *  full roadmap list of cards. */
 export function realIntegrationSummary(integrations: IntegrationStatus[]): ReturnType<typeof integrationHealthSummary> {
   return integrationHealthSummary(integrations.filter((i) => i.real));
+}
+
+/** Keep stored workspace cards aligned with the seed catalogue so a live
+ *  tenant cannot lose Apify (or any later real card). Extra stored cards stay. */
+export function mergeSeedIntegrations(stored: IntegrationStatus[]): IntegrationStatus[] {
+  const seed = defaultIntegrations();
+  const byId = new Map(stored.map((row) => [row.id, row]));
+  const merged = seed.map((card) => {
+    const existing = byId.get(card.id);
+    if (!existing) {
+      return {
+        ...card,
+        status: card.id === "int_supabase" ? card.status : "not_configured",
+        mode: card.id === "int_supabase" ? card.mode : "mock",
+        lastSync: card.id === "int_supabase" ? card.lastSync : null,
+        real: card.real,
+      };
+    }
+    if (card.id === "int_apify") {
+      return {
+        ...existing,
+        name: card.name,
+        description: card.description,
+        setupHref: card.setupHref ?? "/settings",
+        real: true,
+        mode: existing.real === true ? existing.mode : "live",
+      };
+    }
+    if (isLinkedInSourcingCard(card)) {
+      return honestLinkedInSourcingCard(existing, card);
+    }
+    if (card.id === "int_heyreach") {
+      return {
+        ...existing,
+        name: card.name,
+        description: card.description,
+        setupHref: card.setupHref,
+        real: true,
+        status: "not_configured" as const,
+        mode: "mock" as const,
+        lastSync: null,
+      };
+    }
+    if (!card.real) {
+      return {
+        ...existing,
+        name: card.name,
+        description: card.description,
+        setupHref: card.setupHref,
+        real: false,
+        status: "not_configured" as const,
+        lastSync: null,
+      };
+    }
+    return {
+      ...existing,
+      name: card.name,
+      description: card.description,
+      setupHref: card.setupHref,
+      real: true,
+    };
+  });
+  const leftoverLinkedIn = seed.find((card) => card.id === "int_linkedin") ?? seed.find(isLinkedInSourcingCard);
+  for (const extra of stored) {
+    if (seed.some((card) => card.id === extra.id)) continue;
+    if (leftoverLinkedIn && isLinkedInSourcingCard(extra)) {
+      merged.push(honestLinkedInSourcingCard(extra, leftoverLinkedIn));
+      continue;
+    }
+    merged.push(extra);
+  }
+  return merged;
 }

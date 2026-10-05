@@ -63,6 +63,25 @@ import {
 } from "./sourcing/sourcing-agent-contract";
 import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
 import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
+import {
+  EMPTY_PEOPLE_FIRST_HARVEST,
+  isGithubOnlyEmptyBatch,
+  isPeopleFirstRole,
+  missingPeoplePluginsToast,
+  peopleFirstFailActivity,
+  remapPeopleFirstSourcingError,
+  visiblePeopleFirstLearningReceipts,
+} from "./sourcing/people-plugins";
+import { liveMailboxSeat, liveSendBlocker } from "./sourcing/people-connect";
+import {
+  FIXTURE_NOT_ON_LIVE_TOAST,
+  isLabFixtureCandidate,
+  liveVisibleCandidates,
+  stripLabFixturePeople,
+} from "./sourcing/lab-fixture-people";
+import { formatHarvestEvidenceError } from "./sourcing/harvest-evidence";
+import { runAutoSourcePipeline } from "./sourcing/auto-source";
+import { isPeopleFirstContactComplete } from "./sourcing/people-first-contact";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
   defaultLiveIntegrations,
@@ -82,6 +101,7 @@ import type {
   CandidateErasureStatus,
   HermesActions,
   HermesContextValue,
+  SourceNextBatchResult,
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
 } from "./store/contracts";
@@ -131,6 +151,7 @@ import type {
   OutreachStatus,
   OutreachTone,
   ReplyIntent,
+  SourcePlatform,
   SavedModel,
   SkillKey,
   SkillUpdate,
@@ -210,7 +231,12 @@ function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[
     const row = item as Record<string, unknown>;
     if (
       Object.keys(row).some(
-        (key) => key !== "receiptId" && key !== "platform" && key !== "candidateCount",
+        (key) =>
+          key !== "receiptId" &&
+          key !== "platform" &&
+          key !== "candidateCount" &&
+          key !== "query" &&
+          key !== "createdAt",
       ) ||
       typeof row.receiptId !== "string" ||
       !UUID_RE.test(row.receiptId) ||
@@ -229,6 +255,8 @@ function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[
       receiptId: row.receiptId,
       platform: row.platform as SourcingFeedbackReceipt["platform"],
       candidateCount: row.candidateCount,
+      ...(typeof row.query === "string" ? { query: row.query } : {}),
+      ...(typeof row.createdAt === "string" ? { createdAt: row.createdAt } : {}),
     });
   }
   return receipts;
@@ -290,11 +318,63 @@ function withActivity(
   };
 }
 
+function applyLivePeopleFirstHygiene(state: HermesState): {
+  state: HermesState;
+  removedIds: string[];
+  metricsRealigned: boolean;
+} {
+  const stripped = stripLabFixturePeople(state);
+  let next = stripped.removedIds.length === 0 ? state : stripped.state;
+  if (stripped.removedIds.length > 0) {
+    const { title, notes } = peopleFirstFailActivity(FIXTURE_NOT_ON_LIVE_TOAST);
+    for (const campaignId of stripped.campaignIds) {
+      next = recomputeMetrics(next, campaignId);
+      next = withActivity(
+        next,
+        makeActivity({
+          type: "sourcing",
+          title,
+          notes,
+          outcome: `${stripped.removedIds.length} leftover GitHub / example.com row(s) removed — fail-loud, not a harvest`,
+          campaignId,
+          linkedEntityType: "campaign",
+          linkedEntityId: campaignId,
+        }),
+        campaignId,
+      );
+    }
+  }
+  let metricsRealigned = false;
+  for (const campaign of next.campaigns) {
+    if (!isPeopleFirstRole(campaign.jobAnalysis)) continue;
+    const visibleCount = next.candidates.filter(
+      (candidate) =>
+        candidate.campaignId === campaign.id && isPeopleFirstContactComplete(candidate),
+    ).length;
+    if (campaign.metrics.sourced !== visibleCount) {
+      next = recomputeMetrics(next, campaign.id);
+      metricsRealigned = true;
+    }
+  }
+  if (stripped.removedIds.length === 0 && !metricsRealigned) {
+    return { state, removedIds: [], metricsRealigned: false };
+  }
+  return { state: next, removedIds: stripped.removedIds, metricsRealigned };
+}
+
 function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
-  const candidates = state.candidates.filter(
-    (candidate) => candidate.campaignId === campaignId,
-  );
   const campaign = state.campaigns.find((item) => item.id === campaignId);
+  const candidates = state.candidates.filter((candidate) => {
+    if (candidate.campaignId !== campaignId) return false;
+    if (
+      campaign &&
+      isPeopleFirstRole(campaign.jobAnalysis) &&
+      !isPeopleFirstContactComplete(candidate)
+    ) {
+      return false;
+    }
+    return true;
+  });
   const firstInterviewHours = campaign
     ? firstInterviewElapsedHours(
         state.bookings.filter((booking) => booking.campaignId === campaignId),
@@ -545,12 +625,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
-      const liveState = {
+      const stripped = applyLivePeopleFirstHygiene({
         ...base,
         seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
-      };
+      });
+      const liveState = stripped.state;
       const next = applyAuthoritativeRole(liveState, remote.role);
-      if (remote.state) {
+      if (remote.state && stripped.removedIds.length === 0 && !stripped.metricsRealigned) {
         skipNextPersist.current = true;
         skipPersistSnapshot.current = next;
       }
@@ -585,10 +666,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     if (serverSeats.status === "unavailable") return null;
 
     const base = normalizeHermesState(latest.state);
-    const liveState = {
+    const hygiened = applyLivePeopleFirstHygiene({
       ...base,
       seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
-    };
+    });
     const notice: Activity = {
       id: genId("act"),
       type: "system",
@@ -602,19 +683,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
     };
     const next = applyAuthoritativeRole(
-      { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
+      { ...hygiened.state, activities: [notice, ...hygiened.state.activities].slice(0, 300) },
       liveRoleRef.current,
     );
-    return { latest, next };
+    return {
+      latest,
+      next,
+      persistHygiene: hygiened.removedIds.length > 0 || hygiened.metricsRealigned,
+    };
   }, []);
 
   const applyRemoteConflict = useCallback((prepared: {
     latest: RemoteStateVersion;
     next: HermesState;
+    persistHygiene?: boolean;
   }) => {
     remoteUpdatedAtRef.current = prepared.latest.updatedAt;
-    skipNextPersist.current = true;
-    skipPersistSnapshot.current = prepared.next;
+    if (!prepared.persistHygiene) {
+      skipNextPersist.current = true;
+      skipPersistSnapshot.current = prepared.next;
+    }
     stateRef.current = prepared.next;
     setState(prepared.next);
     setWorkspaceStatus({ phase: "ready", mode: "live" });
@@ -960,7 +1048,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const {
-    sourceNextBatch,
+    sourceNextBatch: sourceNextBatchRaw,
     addCandidateFromGithub,
     addCandidateManual,
     sourceFromApollo,
@@ -1396,9 +1484,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!out?.ok) return { ok: false, error: out?.error ?? "Apify status check failed." };
       if (out.status === "processing") return { ok: true, status: "processing" };
       if (out.status !== "completed") return { ok: false, error: out.error ?? "Apify run did not complete." };
+      if (!Array.isArray(out.profiles) || out.profiles.length === 0) {
+        return {
+          ok: false,
+          error: "Empty harvest is not a result. Do not stop at 0 people.",
+        };
+      }
 
       const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const { accepted, skipped } = mapApifyCandidates(out.profiles ?? [], campaign, query, s.candidates, weights);
+      const { accepted, skipped } = mapApifyCandidates(out.profiles, campaign, query, s.candidates, weights);
 
       commit((prev) => {
         let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
@@ -1606,6 +1700,62 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [candidatePersistenceAllowed, commit, current, enrichCandidate, workspaceEffectAllowed],
   );
 
+  const autoSource = useCallback(
+    async (
+      campaignId: string,
+      opts?: {
+        platform?: SourcePlatform;
+        count?: number;
+        agentFramework?: { runId: string; capabilityToken: string; query: string };
+      },
+    ): Promise<SourceNextBatchResult & { enriched?: boolean; techStackMerged?: boolean }> => {
+      const campaign = current().campaigns.find((row) => row.id === campaignId);
+      if (!campaign) {
+        return { ok: false, error: "Campaign not found.", source: "not_found" };
+      }
+      return runAutoSourcePipeline({
+        job: campaign.jobAnalysis,
+        // One POST per click. The reviewed-batch action owns the resume loop.
+        search: () => sourceNextBatchRaw(campaignId, opts),
+        enrich: async () => {
+          const result = await enrichCampaign(campaignId);
+          return { ok: result.ok, error: result.error };
+        },
+        mergeTechStack: async () => {
+          await enrichCampaign(campaignId, { want: ["skills"] });
+        },
+      });
+    },
+    [current, enrichCampaign, sourceNextBatchRaw],
+  );
+
+  // People-first Source next batch is the same chain as Auto source: the
+  // server runs expanded harvests, LinkedIn web, enrich, and GitHub merge in
+  // one request. harvestQuery is a resume step only. Keep the factory
+  // boundary: do not re-declare the reviewed-batch action as a store useCallback.
+  const sourcePeopleFirstBatch = useCallback(
+    async (
+      campaignId: string,
+      opts?: {
+        platform?: SourcePlatform;
+        count?: number;
+        agentFramework?: { runId: string; capabilityToken: string; query: string };
+        harvestQuery?: string;
+        currentJobTitles?: string[];
+      },
+    ): Promise<SourceNextBatchResult> => {
+      if (!opts?.harvestQuery?.trim()) {
+        const campaign = current().campaigns.find((row) => row.id === campaignId);
+        if (campaign && isPeopleFirstRole(campaign.jobAnalysis)) {
+          return autoSource(campaignId, opts);
+        }
+      }
+      return sourceNextBatchRaw(campaignId, opts);
+    },
+    [autoSource, current, sourceNextBatchRaw],
+  );
+  const sourceNextBatch = sourcePeopleFirstBatch;
+
   const runSourcingAgent = useCallback(
     async (
       campaignId: string,
@@ -1613,7 +1763,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     ): Promise<{
       ok: boolean;
       added: number;
-      mode?: "cloud" | "deterministic";
+      mode?: "cloud" | "deterministic" | "fixture";
       feedbackReceipts?: SourcingFeedbackReceipt[];
       error?: string;
     }> => {
@@ -1640,11 +1790,118 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         requestedCount,
       );
       if (!reviewed.ok) {
-        return { ok: false, added: 0, error: reviewed.error };
+        const error = remapPeopleFirstSourcingError(
+          reviewed.error,
+          campaign.jobAnalysis,
+          s.integrations,
+          s.apiKeys,
+        );
+        if (isPeopleFirstRole(campaign.jobAnalysis)) {
+          const { title, notes } = peopleFirstFailActivity(error);
+          await commitPersisted((prev) =>
+            withActivity(
+              prev,
+              makeActivity({
+                type: "sourcing",
+                title,
+                notes,
+                outcome: "0 accepted — fail-loud, not a harvest",
+                campaignId,
+                linkedEntityType: "campaign",
+                linkedEntityId: campaignId,
+              }),
+              campaignId,
+            ),
+          );
+        }
+        return {
+          ok: false,
+          added: 0,
+          error,
+        };
+      }
+      if (
+        isPeopleFirstRole(campaign.jobAnalysis) &&
+        isGithubOnlyEmptyBatch(reviewed.value)
+      ) {
+        const error =
+          missingPeoplePluginsToast(campaign.jobAnalysis, s.integrations, s.apiKeys) ??
+          EMPTY_PEOPLE_FIRST_HARVEST;
+        const { title, notes } = peopleFirstFailActivity(error);
+        await commitPersisted((prev) =>
+          withActivity(
+            prev,
+            makeActivity({
+              type: "sourcing",
+              title,
+              notes,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
+        return {
+          ok: false,
+          added: 0,
+          error,
+        };
       }
       const out = reviewed.value;
       const executionMode = out.mode;
-      const received = out.candidates;
+      const received = out.candidates.filter(
+        (dto) => !isLabFixtureCandidate(candidateFromSourcingAgentDto(dto)),
+      );
+      if (
+        isPeopleFirstRole(campaign.jobAnalysis) &&
+        received.length > 0 &&
+        received.every((dto) => !isPeopleFirstContactComplete(candidateFromSourcingAgentDto(dto)))
+      ) {
+        const incomplete = formatHarvestEvidenceError("incomplete_contacts", {
+          query: received.find((dto) => dto.sourceQuery)?.sourceQuery || campaign.jobAnalysis.title,
+          runId: "",
+          itemCount: received.length,
+          started: true,
+        });
+        const { title, notes } = peopleFirstFailActivity(incomplete);
+        await commitPersisted((prev) =>
+          withActivity(
+            prev,
+            makeActivity({
+              type: "sourcing",
+              title,
+              notes,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
+        return { ok: false, added: 0, error: incomplete };
+      }
+      if (out.candidates.length > 0 && received.length === 0) {
+        const { title, notes } = peopleFirstFailActivity(FIXTURE_NOT_ON_LIVE_TOAST);
+        await commitPersisted((prev) =>
+          withActivity(
+            prev,
+            makeActivity({
+              type: "sourcing",
+              title,
+              notes,
+              outcome: "0 accepted — fail-loud, not a harvest",
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          ),
+        );
+        return { ok: false, added: 0, error: FIXTURE_NOT_ON_LIVE_TOAST };
+      }
       const feedbackReceipts = out.feedbackReceipts;
       if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) {
         return { ok: false, added: 0, error: "Sourcing authority changed during the operation." };
@@ -1694,7 +1951,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             return { dto, candidate: { ...candidate, matchScore: scored.score, matchBreakdown: scored.breakdown } };
           });
         const unique = dedupeCandidates(
-          candidates.map((item) => item.candidate),
+          candidates
+            .map((item) => item.candidate)
+            .filter((candidate) => !isLabFixtureCandidate(candidate))
+            .filter(
+              (candidate) =>
+                !isPeopleFirstRole(latestCampaign.jobAnalysis) ||
+                isPeopleFirstContactComplete(candidate),
+            ),
           prev.candidates,
           { excludedCompanies: latestCampaign.sourcingStrategy.excludedCompanies },
         ).accepted;
@@ -1741,8 +2005,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             title: `Sourcing agent found ${unique.length} candidates`,
             notes:
               executionMode === "cloud"
-                ? `${messages.length} drafted for human review after a cloud tool-calling pass.`
-                : `${messages.length} drafted for human review after direct GitHub search. No cloud model ran.`,
+                ? `${messages.length} in-product first-touch drafts queued for approval after a cloud tool-calling pass. Dry-run until a human approves a send.`
+                : `${messages.length} in-product first-touch drafts queued for approval after LinkedIn + Apify search. Dry-run until a human approves a send.`,
             outcome: `${unique.length} added, ${messages.length} drafted`,
             campaignId,
             linkedEntityType: "campaign",
@@ -1763,7 +2027,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ...(drafted === 0 && added > 0 ? { error: "Candidates were saved without drafts." } : {}),
       };
     },
-    [candidatePersistenceAllowed, commitPersisted, current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, commitPersisted, current, sourceNextBatch, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
   );
 
   const recordSourcingFeedback = useCallback(
@@ -1829,9 +2093,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
       if (body?.ok !== true || !Array.isArray(body.receipts)) return null;
       if (body.receipts.length === 0) return [];
-      return parseSourcingFeedbackReceipts(body.receipts);
+      const parsed = parseSourcingFeedbackReceipts(body.receipts);
+      if (!parsed) return null;
+      const latest = current();
+      const campaign = latest.campaigns.find((item) => item.id === campaignId);
+      if (!campaign) return parsed;
+      return visiblePeopleFirstLearningReceipts(
+        parsed,
+        campaign.jobAnalysis,
+        latest.integrations,
+      );
     },
-    [sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+    [current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
   );
 
   const generateOutreachFor = useCallback(
@@ -2471,6 +2744,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       const campaign = s.campaigns.find((c) => c.id === msg.campaignId);
       if (!candidate || !campaign) return { ok: false, error: "Linked candidate/campaign missing." };
+      const sendBlock = liveSendBlocker(
+        msg.channel,
+        msg.status,
+        s.seats,
+        s.integrations,
+        s.apiKeys,
+        candidate.email,
+      );
+      if (sendBlock) return { ok: false, error: sendBlock };
 
       const now = new Date().toISOString();
       commit((prev) => {
@@ -2554,17 +2836,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (msg.status !== "Approved") return { ok: false, error: "Only an approved message can be sent." };
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       if (!candidate) return { ok: false, error: "Linked candidate missing." };
-      // Resolve a live seat for the message's channel: a live mailbox for Email
-      // (domain verification is checked — and persisted — server-side on send,
-      // not pre-filtered here, since that's the only place it can ever become
-      // true), or a live WhatsApp / SMS sender for the phone channels.
+      const sendBlock = liveSendBlocker(
+        msg.channel,
+        msg.status,
+        s.seats,
+        s.integrations,
+        s.apiKeys,
+        candidate.email,
+      );
+      if (sendBlock) return { ok: false, error: sendBlock };
+      // Resolve a live seat for the message's channel: a connected Outlook /
+      // Gmail mailbox for Email, or a live WhatsApp / SMS sender.
       const channel = msg.channel;
       const seat =
         channel === "WhatsApp"
-          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
+          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud" && x.connectedAccount.trim())
           : channel === "SMS"
-            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
-            : s.seats.find((x) => x.status === "active" && x.mode === "live");
+            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS" && x.connectedAccount.trim())
+            : liveMailboxSeat(s.seats);
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"
@@ -6033,6 +6322,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateCampaign,
       regenerateQueries,
       sourceNextBatch,
+      autoSource,
       addCandidateFromGithub,
       addCandidateManual,
       startSillageMapping,
@@ -6157,7 +6447,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, autoSource, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,
@@ -6309,18 +6599,41 @@ export function useActiveCampaignId(): string | null {
   return useStateOrEmpty().activeCampaignId;
 }
 
+function visibleWorkspaceCandidates(candidates: Candidate[], campaigns: { id: string; jobAnalysis: Campaign["jobAnalysis"] }[]): Candidate[] {
+  const visible = supabaseEnabled ? liveVisibleCandidates(candidates) : candidates;
+  if (!supabaseEnabled) return visible;
+  const peopleFirstIds = new Set(
+    campaigns.filter((campaign) => isPeopleFirstRole(campaign.jobAnalysis)).map((campaign) => campaign.id),
+  );
+  return visible.filter(
+    (candidate) =>
+      !peopleFirstIds.has(candidate.campaignId) || isPeopleFirstContactComplete(candidate),
+  );
+}
+
 export function useCandidates(): Candidate[] {
-  return useStateOrEmpty().candidates;
+  const s = useStateOrEmpty();
+  return visibleWorkspaceCandidates(s.candidates, s.campaigns);
 }
 
 export function useCampaignCandidates(campaignId: string | null | undefined): Candidate[] {
   const s = useStateOrEmpty();
-  return campaignId ? s.candidates.filter((c) => c.campaignId === campaignId) : [];
+  const rows = campaignId ? s.candidates.filter((c) => c.campaignId === campaignId) : [];
+  return visibleWorkspaceCandidates(rows, s.campaigns);
 }
 
 export function useCandidate(id: string | null | undefined): Candidate | undefined {
   const s = useStateOrEmpty();
-  return id ? s.candidates.find((c) => c.id === id) : undefined;
+  const found = id ? s.candidates.find((c) => c.id === id) : undefined;
+  if (!found) return undefined;
+  if (supabaseEnabled && isLabFixtureCandidate(found)) return undefined;
+  if (supabaseEnabled) {
+    const campaign = s.campaigns.find((item) => item.id === found.campaignId);
+    if (campaign && isPeopleFirstRole(campaign.jobAnalysis) && !isPeopleFirstContactComplete(found)) {
+      return undefined;
+    }
+  }
+  return found;
 }
 
 /** Scored chatbox applications awaiting recruiter handoff (TAnIA §5). */
@@ -6330,7 +6643,8 @@ export function useChatboxSubmissions(): ChatboxSubmission[] {
 
 /** Candidates in #Vivier (the talent pool), newest first. */
 export function useVivier(): Candidate[] {
-  return useStateOrEmpty().candidates.filter((c) => c.vivier);
+  const s = useStateOrEmpty();
+  return visibleWorkspaceCandidates(s.candidates.filter((c) => c.vivier), s.campaigns);
 }
 
 export function useOutreach(): OutreachMessage[] {

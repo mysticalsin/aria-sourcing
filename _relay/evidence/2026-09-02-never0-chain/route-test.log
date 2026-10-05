@@ -1,0 +1,570 @@
+(node:17997) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:17998) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:17998) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:17998) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: active campaign is loaded from authoritative workspace state before and after provider I/O
+ok 1 - active campaign is loaded from authoritative workspace state before and after provider I/O
+  ---
+  duration_ms: 12.279917
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"INVALID_REQUEST"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"INVALID_REQUEST"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CROSS_ORIGIN_REQUEST"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CROSS_ORIGIN_REQUEST"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"INVALID_REQUEST"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: cloud provider, model, and key are selected only from current workspace settings
+ok 2 - cloud provider, model, and key are selected only from current workspace settings
+  ---
+  duration_ms: 2.241959
+  type: 'test'
+  ...
+# Subtest: client-owned campaign objects, unknown fields, cross-origin, and non-JSON requests fail before egress
+ok 3 - client-owned campaign objects, unknown fields, cross-origin, and non-JSON requests fail before egress
+  ---
+  duration_ms: 2.255916
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":false,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"detail":"MISSING_PLUGIN"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":false,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"detail":"PEOPLE_FIRST_HARVEST_MOCK"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst Linux","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CAMPAIGN_NOT_FOUND"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CAMPAIGN_NOT_ACTIVE"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CAMPAIGN_NOT_ACTIVE"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: product-host Origin on the Fly bind address is not CROSS_ORIGIN_REQUEST
+ok 4 - product-host Origin on the Fly bind address is not CROSS_ORIGIN_REQUEST
+  ---
+  duration_ms: 2.924
+  type: 'test'
+  ...
+# Subtest: people-first product-host click reaches request_entry even when LLM settings are invalid
+ok 5 - people-first product-host click reaches request_entry even when LLM settings are invalid
+  ---
+  duration_ms: 1.626584
+  type: 'test'
+  ...
+# Subtest: Mock Apify card logs PEOPLE_FIRST_HARVEST_MOCK after request_entry, not SOURCING_AGENT_UNAVAILABLE
+ok 6 - Mock Apify card logs PEOPLE_FIRST_HARVEST_MOCK after request_entry, not SOURCING_AGENT_UNAVAILABLE
+  ---
+  duration_ms: 0.8695
+  type: 'test'
+  ...
+# Subtest: Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVEST_MOCK
+ok 7 - Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVEST_MOCK
+  ---
+  duration_ms: 1.593875
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"CAMPAIGN_CHANGED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"INSUFFICIENT_PERMISSIONS"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: missing, paused, and revoked campaigns fail closed before or after provider I/O
+ok 8 - missing, paused, and revoked campaigns fail closed before or after provider I/O
+  ---
+  duration_ms: 5.430875
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"CAMPAIGN_CHANGED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"CAMPAIGN_CHANGED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"INSUFFICIENT_PERMISSIONS"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CAMPAIGN_NOT_READY"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CAMPAIGN_NOT_READY:campaign_invalid_state codes=invalid_enum_value,invalid_type"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","runId":"apify-run-test","status":"SUCCEEDED","items":1,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"apify-run-test","status":"SUCCEEDED","items":1,"started":true,"nextQuery":"Calypso Business Analysis","detail":"nextQuery=Calypso Business Analysis"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","started":false,"nextQuery":"Calypso Business Analysis","detail":"attempt=3/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","runId":"apify-run-test","status":"SUCCEEDED","items":1,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=4/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"apify-run-test","status":"SUCCEEDED","items":1,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=5/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","runId":"apify-run-test","status":"SUCCEEDED","items":1,"started":true,"nextQuery":"trading-platform BA","detail":"nextQuery=trading-platform BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","started":false,"nextQuery":"trading-platform BA","detail":"attempt=6/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","runId":"apify-run-test","status":"SUCCEEDED","items":1,"started":true,"nextQuery":"finance BA","detail":"nextQuery=finance BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"nextQuery":"finance BA","detail":"attempt=7/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst","status":"NOT_STARTED","started":false,"detail":"no Tavily key in Access & Keys"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"enrich_skipped","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"SKIPPED","items":0,"started":false,"detail":"nobody to enrich: harvest pool=0, web=not started. Empty urls is an Apify invalid-input, not a run. Do not invent people."}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"detail":"PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CAMPAIGN_INPUT_UNSAFE"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"NOT_AUTHENTICATED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: workspace and provider configuration changes during egress fail closed
+ok 9 - workspace and provider configuration changes during egress fail closed
+  ---
+  duration_ms: 3.581792
+  type: 'test'
+  ...
+# Subtest: authority revoked during credential resolution blocks provider egress
+ok 10 - authority revoked during credential resolution blocks provider egress
+  ---
+  duration_ms: 1.290833
+  type: 'test'
+  ...
+# Subtest: an incomplete need cannot reach provider, vault, or sourcing transport
+ok 11 - an incomplete need cannot reach provider, vault, or sourcing transport
+  ---
+  duration_ms: 0.313625
+  type: 'test'
+  ...
+# Subtest: people-first invalid_state is CAMPAIGN_NOT_READY, not Access & Keys unavailable
+ok 12 - people-first invalid_state is CAMPAIGN_NOT_READY, not Access & Keys unavailable
+  ---
+  duration_ms: 0.427667
+  type: 'test'
+  ...
+# Subtest: people-first reviewed Calypso brief with leftover GitHub rows starts harvest
+ok 13 - people-first reviewed Calypso brief with leftover GitHub rows starts harvest
+  ---
+  duration_ms: 2.052041
+  type: 'test'
+  ...
+# Subtest: prompt-like instructions in persisted role fields are quarantined before provider I/O
+ok 14 - prompt-like instructions in persisted role fields are quarantined before provider I/O
+  ---
+  duration_ms: 0.244209
+  type: 'test'
+  ...
+# Subtest: typed errors are bounded, correlated, and non-cacheable
+ok 15 - typed errors are bounded, correlated, and non-cacheable
+  ---
+  duration_ms: 0.13825
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: response exposes only exact bounded candidate evidence and validates subject disclosure
+ok 16 - response exposes only exact bounded candidate evidence and validates subject disclosure
+  ---
+  duration_ms: 9.973542
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_UPSTREAM_FAILED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_RESPONSE_INVALID"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"CAMPAIGN_CHANGED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","started":false,"detail":"CAMPAIGN_NOT_READY"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_RATE_LIMITED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_REPLAY_BLOCKED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_REPLAY_BLOCKED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_REPLAY_BLOCKED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_REPLAY_BLOCKED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: invalid or failed model output never becomes a partial success
+ok 17 - invalid or failed model output never becomes a partial success
+  ---
+  duration_ms: 3.132042
+  type: 'test'
+  ...
+# Subtest: deterministic mode runs real GitHub search without a cloud model or provider key
+ok 18 - deterministic mode runs real GitHub search without a cloud model or provider key
+  ---
+  duration_ms: 1.207875
+  type: 'test'
+  ...
+# Subtest: a completed real search with no matches reports an honest empty result
+ok 19 - a completed real search with no matches reports an honest empty result
+  ---
+  duration_ms: 0.889625
+  type: 'test'
+  ...
+# Subtest: deterministic search stops before a second query after campaign authority changes
+ok 20 - deterministic search stops before a second query after campaign authority changes
+  ---
+  duration_ms: 0.614875
+  type: 'test'
+  ...
+# Subtest: deterministic mode requires a reviewed persisted query and never invents one from a skill
+ok 21 - deterministic mode requires a reviewed persisted query and never invents one from a skill
+  ---
+  duration_ms: 0.232333
+  type: 'test'
+  ...
+# Subtest: deterministic mode searches LinkedIn and Apify from the reviewed plan before GitHub
+ok 22 - deterministic mode searches LinkedIn and Apify from the reviewed plan before GitHub
+  ---
+  duration_ms: 0.806667
+  type: 'test'
+  ...
+# Subtest: quota and idempotency replays never reach provider or sourcing transport
+ok 23 - quota and idempotency replays never reach provider or sourcing transport
+  ---
+  duration_ms: 3.192834
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_UPSTREAM_FAILED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# Subtest: a cloud model that performs no real search fails and records the run failure
+ok 24 - a cloud model that performs no real search fails and records the run failure
+  ---
+  duration_ms: 2.154958
+  type: 'test'
+  ...
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"SOURCING_AGENT_UNAVAILABLE"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"campaign":"Senior Backend Engineer","apifyKeyPresent":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Go Kubernetes PostgreSQL","started":false,"detail":"CAMPAIGN_CHANGED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":false,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"detail":"MISSING_PLUGIN"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":false,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"detail":"MISSING_PLUGIN"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":false,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"detail":"MISSING_PLUGIN"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"detail":"PEOPLE_FIRST_HARVEST_NOT_STARTED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"detail":"PEOPLE_FIRST_HARVEST_STILL_RUNNING"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","runId":"run-no-contacts","status":"SUCCEEDED","items":3,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-no-contacts","status":"SUCCEEDED","items":3,"started":true,"nextQuery":"Calypso Linux","detail":"nextQuery=Calypso Linux"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux","started":false,"nextQuery":"Calypso Linux","detail":"attempt=3/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux","runId":"run-no-contacts","status":"SUCCEEDED","items":3,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=4/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-no-contacts","status":"SUCCEEDED","items":3,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=5/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Application Support","status":"NOT_STARTED","started":false,"detail":"no Tavily key in Access & Keys"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"enrich_skipped","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"SKIPPED","items":0,"started":false,"detail":"nobody to enrich: harvest pool=0, web=not started. Empty urls is an Apify invalid-input, not a run. Do not invent people."}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"detail":"PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","runId":"run-empty","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso Linux","detail":"nextQuery=Calypso Linux"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux","started":false,"nextQuery":"Calypso Linux","detail":"attempt=3/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux","runId":"run-empty","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=4/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=5/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Application Support","status":"NOT_STARTED","started":false,"detail":"no Tavily key in Access & Keys"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"enrich_skipped","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"SKIPPED","items":0,"started":false,"detail":"nobody to enrich: harvest pool=0, web=not started. Empty urls is an Apify invalid-input, not a run. Do not invent people."}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"detail":"PEOPLE_FIRST_HARVEST_EMPTY"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","started":false,"campaign":"Calypso Application Support","apifyKeyPresent":true,"detail":"plannedHarvests=5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Linux Python","runId":"run-empty-1","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/5"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","runId":"Etz5JWFCQGm1605KE","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-calypso-only","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso Business Analysis","detail":"nextQuery=Calypso Business Analysis"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","started":false,"nextQuery":"Calypso Business Analysis","detail":"attempt=3/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","runId":"run-analysis","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=4/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-calypso-only","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=5/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","runId":"run-empty-fallback","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"trading-platform BA","detail":"nextQuery=trading-platform BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","started":false,"nextQuery":"trading-platform BA","detail":"attempt=6/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","runId":"run-empty-fallback","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"finance BA","detail":"nextQuery=finance BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"nextQuery":"finance BA","detail":"attempt=7/7"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst","status":"NOT_STARTED","started":false,"detail":"no Tavily key in Access & Keys"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"enrich_skipped","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"SKIPPED","items":0,"started":false,"detail":"nobody to enrich: harvest pool=0, web=not started. Empty urls is an Apify invalid-input, not a run. Do not invent people."}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"detail":"PEOPLE_FIRST_HARVEST_EMPTY"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso Business Analysis","detail":"nextQuery=Calypso Business Analysis"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","started":false,"nextQuery":"Calypso Business Analysis","detail":"attempt=3/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=4/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Business Analyst Montreal","detail":"nextQuery=Business Analyst Montreal"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","started":false,"nextQuery":"Business Analyst Montreal","detail":"attempt=5/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=6/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"trading-platform BA","detail":"nextQuery=trading-platform BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","started":false,"nextQuery":"trading-platform BA","detail":"attempt=7/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"finance BA","detail":"nextQuery=finance BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"nextQuery":"finance BA","detail":"attempt=8/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst Montreal","status":"NOT_STARTED","started":false,"detail":"no Tavily key in Access & Keys"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"enrich_skipped","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"SKIPPED","items":0,"started":false,"detail":"nobody to enrich: harvest pool=0, web=not started. Empty urls is an Apify invalid-input, not a run. Do not invent people."}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"detail":"PEOPLE_FIRST_HARVEST_EMPTY"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso Business Analysis","detail":"nextQuery=Calypso Business Analysis"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","started":false,"nextQuery":"Calypso Business Analysis","detail":"attempt=3/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=4/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Business Analyst Montreal","detail":"nextQuery=Business Analyst Montreal"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","started":false,"nextQuery":"Business Analyst Montreal","detail":"attempt=5/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=6/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"trading-platform BA","detail":"nextQuery=trading-platform BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","started":false,"nextQuery":"trading-platform BA","detail":"attempt=7/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"finance BA","detail":"nextQuery=finance BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"nextQuery":"finance BA","detail":"attempt=8/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst Montreal","status":"SUCCEEDED","items":2,"started":true,"detail":"LinkedIn web after harvestapi items=0, not another Calypso string"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=2/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso Business Analysis","detail":"nextQuery=Calypso Business Analysis"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","started":false,"nextQuery":"Calypso Business Analysis","detail":"attempt=3/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analysis","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso","started":false,"nextQuery":"Calypso","detail":"attempt=4/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Business Analyst Montreal","detail":"nextQuery=Business Analyst Montreal"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","started":false,"nextQuery":"Business Analyst Montreal","detail":"attempt=5/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=6/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"trading-platform BA","detail":"nextQuery=trading-platform BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","started":false,"nextQuery":"trading-platform BA","detail":"attempt=7/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","runId":"run-empty-all","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"finance BA","detail":"nextQuery=finance BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"nextQuery":"finance BA","detail":"attempt=8/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst Montreal","status":"SUCCEEDED","items":1,"started":true,"detail":"LinkedIn web after harvestapi items=0, not another Calypso string"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"detail":"PEOPLE_FIRST_HARVEST_EMPTY"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso","runId":"run-resume","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Business Analyst Montreal","detail":"nextQuery=Business Analyst Montreal"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","started":false,"nextQuery":"Business Analyst Montreal","detail":"attempt=5/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Business Analyst Montreal","runId":"run-resume","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso consultant","detail":"nextQuery=Calypso consultant"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","started":false,"nextQuery":"Calypso consultant","detail":"attempt=6/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso consultant","runId":"run-resume","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"trading-platform BA","detail":"nextQuery=trading-platform BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","started":false,"nextQuery":"trading-platform BA","detail":"attempt=7/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"trading-platform BA","runId":"run-resume","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"finance BA","detail":"nextQuery=finance BA"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"next_search_start","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"nextQuery":"finance BA","detail":"attempt=8/8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst Montreal","status":"NOT_STARTED","started":false,"detail":"no Tavily key in Access & Keys"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"enrich_skipped","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"SKIPPED","items":0,"started":false,"detail":"nobody to enrich: harvest pool=0, web=not started. Empty urls is an Apify invalid-input, not a run. Do not invent people."}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"finance BA","started":false,"detail":"PEOPLE_FIRST_HARVEST_EMPTY"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"detail":"CAMPAIGN_CHANGED"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_received","actor":"harvestapi~linkedin-profile-search","started":false}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_entry","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"campaign":"Senior Calypso Business Analyst","apifyKeyPresent":true,"detail":"plannedHarvests=8"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"empty_next_search","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","runId":"run-slow","status":"SUCCEEDED","items":0,"started":true,"nextQuery":"Calypso","detail":"nextQuery=Calypso"}
+# {"event":"aria_harvest","tag":"[aria-harvest]","phase":"request_exit","actor":"harvestapi~linkedin-profile-search","query":"Calypso Business Analyst","started":false,"detail":"PEOPLE_FIRST_HARVEST_CONTINUE"}
+# Subtest: candidate data is withheld when the sourcing receipt cannot be completed
+ok 25 - candidate data is withheld when the sourcing receipt cannot be completed
+  ---
+  duration_ms: 1.376208
+  type: 'test'
+  ...
+# Subtest: deterministic sourcing applies a human-promoted role lesson before baseline queries
+ok 26 - deterministic sourcing applies a human-promoted role lesson before baseline queries
+  ---
+  duration_ms: 1.126958
+  type: 'test'
+  ...
+# Subtest: framework sourcing executes only its exact reviewed query and stages a durable result
+ok 27 - framework sourcing executes only its exact reviewed query and stages a durable result
+  ---
+  duration_ms: 1.040792
+  type: 'test'
+  ...
+# Subtest: framework sourcing records only a promoted lesson bound to its exact reviewed query
+ok 28 - framework sourcing records only a promoted lesson bound to its exact reviewed query
+  ---
+  duration_ms: 0.752791
+  type: 'test'
+  ...
+# Subtest: framework sourcing recovers a staged result without repeating provider egress
+ok 29 - framework sourcing recovers a staged result without repeating provider egress
+  ---
+  duration_ms: 0.686
+  type: 'test'
+  ...
+# Subtest: framework kill-switch revocation blocks an already claimed real search
+ok 30 - framework kill-switch revocation blocks an already claimed real search
+  ---
+  duration_ms: 0.611375
+  type: 'test'
+  ...
+# Subtest: people-first role without LinkedIn/Apify keys fails loud and does not search GitHub
+ok 31 - people-first role without LinkedIn/Apify keys fails loud and does not search GitHub
+  ---
+  duration_ms: 0.731458
+  type: 'test'
+  ...
+# Subtest: people-first role with only a Tavily key still fails loud — Tavily is not LinkedIn
+ok 32 - people-first role with only a Tavily key still fails loud — Tavily is not LinkedIn
+  ---
+  duration_ms: 0.671417
+  type: 'test'
+  ...
+# Subtest: people-first role with Apify ignores promoted GitHub lessons
+ok 33 - people-first role with Apify ignores promoted GitHub lessons
+  ---
+  duration_ms: 1.059958
+  type: 'test'
+  ...
+# Subtest: people-first role with a cloud model still searches Apify first, not GitHub or Tavily LinkedIn
+ok 34 - people-first role with a cloud model still searches Apify first, not GitHub or Tavily LinkedIn
+  ---
+  duration_ms: 1.0305
+  type: 'test'
+  ...
+# Subtest: people-first framework run without Apify fails loud and does not search GitHub
+ok 35 - people-first framework run without Apify fails loud and does not search GitHub
+  ---
+  duration_ms: 0.626083
+  type: 'test'
+  ...
+# Subtest: people-first harvest that never starts Apify fails loud and does not complete 0-row receipts
+ok 36 - people-first harvest that never starts Apify fails loud and does not complete 0-row receipts
+  ---
+  duration_ms: 1.098459
+  type: 'test'
+  ...
+# Subtest: people-first harvest still running is not stamped as 0 people
+ok 37 - people-first harvest still running is not stamped as 0 people
+  ---
+  duration_ms: 1.466292
+  type: 'test'
+  ...
+# Subtest: people-first harvest without email+phone+LinkedIn fails loud with query and run-id
+ok 38 - people-first harvest without email+phone+LinkedIn fails loud with query and run-id
+  ---
+  duration_ms: 1.348542
+  type: 'test'
+  ...
+# Subtest: people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receipts
+ok 39 - people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receipts
+  ---
+  duration_ms: 1.122542
+  type: 'test'
+  ...
+# Subtest: people-first empty first query continues and keeps a real shortlist from the next search
+ok 40 - people-first empty first query continues and keeps a real shortlist from the next search
+  ---
+  duration_ms: 2.463708
+  type: 'test'
+  ...
+# Subtest: BA SUCCEEDED items=0 starts a broader harvestapi run with a new run id
+ok 41 - BA SUCCEEDED items=0 starts a broader harvestapi run with a new run id
+  ---
+  duration_ms: 0.996125
+  type: 'test'
+  ...
+# Subtest: one click is one request: every planned harvest runs server-side, then web, enrich, GitHub
+ok 42 - one click is one request: every planned harvest runs server-side, then web, enrich, GitHub
+  ---
+  duration_ms: 1.271042
+  type: 'test'
+  ...
+# Subtest: after 8 empty harvests the same click POSTs enrich with the LinkedIn URLs it holds and lands a real shortlist
+ok 43 - after 8 empty harvests the same click POSTs enrich with the LinkedIn URLs it holds and lands a real shortlist
+  ---
+  duration_ms: 0.929209
+  type: 'test'
+  ...
+# Subtest: enrich that lands nobody is a fail with the run id and item count on it, never 0 as success
+ok 44 - enrich that lands nobody is a fail with the run id and item count on it, never 0 as success
+  ---
+  duration_ms: 0.705416
+  type: 'test'
+  ...
+# Subtest: harvestQuery resumes the server chain from that reviewed step and runs the rest in the same request
+ok 45 - harvestQuery resumes the server chain from that reviewed step and runs the rest in the same request
+  ---
+  duration_ms: 1.204542
+  type: 'test'
+  ...
+# Subtest: a harvestQuery off the reviewed plan is rejected before any harvest starts
+ok 46 - a harvestQuery off the reviewed plan is rejected before any harvest starts
+  ---
+  duration_ms: 0.692334
+  type: 'test'
+  ...
+# Subtest: chain budget exhausted answers PEOPLE_FIRST_HARVEST_CONTINUE with the next reviewed step, not 0 people
+ok 47 - chain budget exhausted answers PEOPLE_FIRST_HARVEST_CONTINUE with the next reviewed step, not 0 people
+  ---
+  duration_ms: 0.726084
+  type: 'test'
+  ...
+1..47
+# tests 47
+# suites 0
+# pass 47
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 413.164708

@@ -10,6 +10,18 @@ import {
 import { scoreCandidate } from "../src/lib/scoring";
 import { buildOutreachPrompt } from "../src/lib/ai/hermes";
 import { generateOutreach } from "../src/lib/mock-ai";
+import { defaultLiveIntegrations } from "../src/lib/integrations";
+import {
+  CROSS_ORIGIN_SOURCING_TOAST,
+  EMPTY_PEOPLE_FIRST_HARVEST,
+  PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+  SOURCING_AGENT_UNAVAILABLE_TOAST,
+  peopleFirstFailActivity,
+  peoplePluginFailLoudUi,
+  sourceRejectedToast,
+} from "../src/lib/sourcing/people-plugins";
+import { formatHarvestEvidenceError } from "../src/lib/sourcing/harvest-evidence";
+import { peopleFirstHarvestQueue } from "../src/lib/sourcing/multi-source-plan";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
 
@@ -56,6 +68,15 @@ const sourcingHelpersSource = readFileSync(
 test("sourcing action boundary is React-free and wired through one stable factory", () => {
   assert.doesNotMatch(sourcingActionsSource, /["']use client["']/);
   assert.doesNotMatch(sourcingActionsSource, /from ["']react["']/);
+  assert.doesNotMatch(
+    sourcingActionsSource,
+    /sourceEngineFixtureCandidates|jobUsesEngineFixture|@fixture\.example/,
+  );
+  assert.match(sourcingActionsSource, /isLabFixtureCandidate/);
+  assert.match(sourcingActionsSource, /isPeopleFirstContactComplete/);
+  assert.match(storeSource, /isPeopleFirstContactComplete/);
+  assert.match(sourcingActionsSource, /FIXTURE_NOT_ON_LIVE_TOAST/);
+  assert.doesNotMatch(sourcingActionsSource, /\/api\/source\/need/);
   assert.match(
     storeSource,
     /createSourcingActions\([\s\S]*?\),\n\s*\[[\s\S]*?commit,[\s\S]*?sourcingMutationAllowed,[\s\S]*?syntheticSourcingAllowed,[\s\S]*?workspaceEffectAllowed,[\s\S]*?workspaceFetch,[\s\S]*?\],/,
@@ -66,6 +87,18 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.equal((storeSource.match(/const sourceFromApollo = useCallback/g) ?? []).length, 0);
   assert.match(storeSource, /createSourcingActions\([\s\S]*?commitPersisted,/);
   assert.match(sourcingActionsSource, /await commitPersisted\(/);
+  assert.match(sourcingActionsSource, /peopleFirstFailActivity/);
+  assert.match(sourcingActionsSource, /persistPeopleFirstFailAudit/);
+  assert.match(sourcingActionsSource, /peopleFirstTrailActivities/);
+  assert.match(storeSource, /peopleFirstFailActivity/);
+  assert.match(storeSource, /applyLivePeopleFirstHygiene/);
+  assert.match(storeSource, /metricsRealigned/);
+  assert.match(storeSource, /leftover GitHub \/ example\.com/);
+  assert.match(
+    readFileSync(new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url), "utf8"),
+    /StagePipeline metrics=\{visibleCampaign.metrics\}/,
+  );
+  assert.match(sourcingActionsSource, /0 accepted — fail-loud, not a harvest/);
   assert.match(
     launchSource,
     /platform: supabaseEnabled \? undefined : "Talent Pool"/,
@@ -75,6 +108,8 @@ test("sourcing action boundary is React-free and wired through one stable factor
     agentRunSource,
     /executePrimaryAgentSourcing\(\{[\s\S]*?demoAuthorized: !supabaseEnabled && \(!isProduction \|\| demoLoginEnabled\),[\s\S]*?sourceNextBatch: actions\.sourceNextBatch,/,
   );
+  assert.match(agentRunSource, /emptyPeopleFirstToast|sourceRejectedToast|peoplePluginFailLoudUi/);
+  assert.match(agentRunSource, /sourceRejectedToast/);
   assert.doesNotMatch(
     agentRunSource,
     /\bplatform\s*:/,
@@ -129,7 +164,9 @@ function createHarness(options: {
   responseBody?: unknown;
   responseBodies?: unknown[];
   responseStatus?: number;
+  responseStatuses?: number[];
   responseText?: string;
+  responseContentType?: string;
   fetchError?: Error;
   afterFetch?: () => void;
   beforeCommit?: (state: HermesState) => HermesState;
@@ -189,8 +226,8 @@ function createHarness(options: {
                 : options.responseBody ?? automaticBody),
           ),
         {
-          status: options.responseStatus ?? 200,
-          headers: { "Content-Type": "application/json" },
+          status: options.responseStatuses?.[fetchCalls - 1] ?? options.responseStatus ?? 200,
+          headers: { "Content-Type": options.responseContentType ?? "application/json" },
         },
       );
     },
@@ -327,6 +364,82 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
   ]);
   assert.equal(harness.persistedCalls, 1);
   assert.equal(harness.events.length, 1);
+});
+
+test("live Source next batch drafts a dry-run first-touch for the shortlist, not below the floor", async () => {
+  const seed = buildSeedState();
+  const campaign = { ...seed.campaigns[0], status: "Sourcing" as const };
+  const skills = campaign.jobAnalysis.requiredSkills;
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], settings: { ...seed.settings, dryRunMode: true } },
+    syntheticSourcingAllowed: false,
+    responseBody: {
+      ok: true,
+      campaignId: campaign.id,
+      campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+      mode: "deterministic",
+      totalFound: 2,
+      requestId: "request-sequence-1",
+      idempotencyKey: "77777777-7777-4777-8777-777777777777",
+      sourcingRunId: "88888888-8888-4888-8888-888888888888",
+      appliedLessonIds: [],
+      candidates: [
+        {
+          id: "shortlist-go-1",
+          campaignId: campaign.id,
+          name: "Pat Go",
+          currentTitle: campaign.jobAnalysis.title,
+          currentCompany: "Example",
+          location: campaign.jobAnalysis.location ?? "Toronto",
+          linkedinUrl: "https://www.linkedin.com/in/pat-go",
+          githubUrl: "https://github.com/pat-go",
+          sourceUrl: "https://github.com/pat-go",
+          sourcePlatform: "GitHub",
+          sourceQuery: campaign.sourcingStrategy.githubQueries[0]?.query ?? "",
+          matchScore: 88,
+          matchBreakdown: [],
+          techStack: skills,
+          recentActivity: "Shipped Kubernetes and Go work this week.",
+          createdAt: "2026-07-14T12:00:00.000Z",
+        },
+        {
+          id: "below-floor-1",
+          campaignId: campaign.id,
+          name: "Calypso Martinez",
+          currentTitle: "Unrelated role",
+          currentCompany: "Elsewhere",
+          location: "Unknown",
+          linkedinUrl: "",
+          githubUrl: "https://github.com/calypso-name-only",
+          sourceUrl: "https://github.com/calypso-name-only",
+          sourcePlatform: "GitHub",
+          sourceQuery: campaign.sourcingStrategy.githubQueries[0]?.query ?? "",
+          matchScore: 12,
+          matchBreakdown: [],
+          techStack: [],
+          recentActivity: "",
+          createdAt: "2026-07-14T12:00:00.000Z",
+        },
+      ],
+      feedbackReceipts: [
+        { receiptId: "33333333-3333-4333-8333-333333333333", platform: "GitHub", candidateCount: 2 },
+      ],
+    },
+  });
+
+  const beforeOutreach = harness.state.outreach.length;
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 2 });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const newDrafts = harness.state.outreach.slice(0, harness.state.outreach.length - beforeOutreach);
+  assert.ok(newDrafts.length >= 1, "agent must draft first-touch for the shortlist");
+  assert.ok(newDrafts.every((message) => message.status === "Needs Approval"));
+  assert.ok(newDrafts.every((message) => message.dryRun === true));
+  assert.ok(newDrafts.every((message) => message.sentAt === null));
+  assert.ok(newDrafts.some((message) => message.candidateId === "shortlist-go-1"));
+  assert.ok(!newDrafts.some((message) => message.candidateId === "below-floor-1"));
+  assert.match(harness.activityDrafts[0]?.notes ?? "", /dry-run/i);
 });
 
 test("a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates", async () => {
@@ -1696,6 +1809,594 @@ test("a rejected persisted commit never reports or emits sourcing success", asyn
     harness.state.candidates.some((candidate) => candidate.githubUrl === githubUser.htmlUrl),
     false,
   );
+});
+
+test("people-first Source next batch hits sourcing-agent when Apify looks unkeyed, not a silent fixture", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_github" ? { ...item, mode: "live" as const, status: "not_configured" as const } : item,
+  );
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
+    syntheticSourcingAllowed: false,
+    responseStatus: 503,
+    responseBody: {
+      ok: false,
+      code: "MISSING_PLUGIN",
+      error:
+        "MISSING_PLUGIN: Add a valid Apify key in Access & Keys, or connect official LinkedIn. GitHub Sourcing cannot fill this people-first role.",
+      requestId: "req-unkeyed",
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /MISSING_PLUGIN|Add a valid Apify key|Mock mode/);
+  }
+  assert.equal(harness.fetchCalls, 1);
+  assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
+  assert.doesNotMatch(String(harness.requests[0]?.input), /source\/need/);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.match(String(harness.activityDrafts[0]?.notes), /MISSING_PLUGIN|Mock mode|Apify/);
+});
+
+test("CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
+    syntheticSourcingAllowed: false,
+    responseStatus: 403,
+    responseBody: {
+      ok: false,
+      code: "CROSS_ORIGIN_REQUEST",
+      error: "Cross-origin sourcing is not allowed.",
+      requestId: "req-cross-origin",
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, CROSS_ORIGIN_SOURCING_TOAST);
+    assert.doesNotMatch(result.error, /unavailable/i);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  assert.equal(harness.fetchCalls, 1);
+  assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
+  const toast = peoplePluginFailLoudUi(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.equal(toast?.title, "Sourcing failed");
+  assert.match(String(toast?.description), /cross-origin/i);
+  assert.match(String(toast?.description), /do not treat this as 0 people/i);
+  const rejected = sourceRejectedToast(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.equal(rejected.title, "Sourcing failed");
+  assert.equal(rejected.description, CROSS_ORIGIN_SOURCING_TOAST);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.match(String(harness.activityDrafts[0]?.notes), /cross-origin/i);
+});
+
+test("SOURCING_AGENT_UNAVAILABLE on Source next batch is fail-loud, never silent 0", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
+    syntheticSourcingAllowed: false,
+    responseStatus: 503,
+    responseBody: {
+      ok: false,
+      code: "SOURCING_AGENT_UNAVAILABLE",
+      error: "Live sourcing authority is unavailable.",
+      requestId: "req-unavailable",
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, SOURCING_AGENT_UNAVAILABLE_TOAST);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  const rejected = sourceRejectedToast(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.equal(rejected.title, "Sourcing failed");
+  assert.equal(rejected.description, SOURCING_AGENT_UNAVAILABLE_TOAST);
+  assert.match(rejected.description, /This is not 0 people/i);
+  assert.equal(harness.fetchCalls, 1);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts[0]?.title, "Sourcing failed");
+  assert.match(String(harness.activityDrafts[0]?.notes), /SOURCING_AGENT_UNAVAILABLE/);
+  assert.match(String(harness.activityDrafts[0]?.notes), /This is not 0 people/);
+  assert.match(String(harness.activityDrafts[0]?.notes), /Sourcing is unavailable/);
+});
+
+test("non-JSON 403 on Source next batch is fail-loud, never silent 0", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys: [] },
+    syntheticSourcingAllowed: false,
+    responseStatus: 403,
+    responseText: "<html>Forbidden</html>",
+    responseContentType: "text/html",
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /Sourcing request failed \(HTTP 403\)|unavailable|Mock mode|MISSING_PLUGIN|Apify/i);
+    assert.doesNotMatch(result.error, /^$/);
+  }
+  const rejected = sourceRejectedToast(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+  );
+  assert.ok(rejected.title);
+  assert.ok(rejected.description);
+  assert.equal(harness.fetchCalls, 1);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+});
+
+test("Mock Apify card with a valid Access & Keys row still POSTs and fails loud", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations();
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseStatus: 503,
+    responseBody: {
+      ok: false,
+      code: "PEOPLE_FIRST_HARVEST_MOCK",
+      error:
+        "Apify is in Mock mode. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python. Connect a real Apify key and switch the card to Live.",
+      requestId: "req-mock-apify",
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /Mock mode/);
+    assert.match(result.error, /Calypso Linux Python/);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  assert.equal(harness.fetchCalls, 1);
+  assert.match(String(harness.requests[0]?.input), /\/api\/sourcing-agent/);
+  const toast = peoplePluginFailLoudUi(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+    apiKeys,
+  );
+  assert.equal(toast?.title, "Connect Apify");
+  assert.match(String(toast?.description), /Mock mode/);
+  assert.equal(toast?.href, "/settings");
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts[0]?.title, "Connect Apify");
+  assert.match(String(harness.activityDrafts[0]?.notes), /PEOPLE_FIRST_HARVEST_MOCK/);
+  assert.match(String(harness.activityDrafts[0]?.notes), /Mock mode/);
+});
+
+test("valid Apify key does not throw MISSING_PLUGIN on people-first Source next batch", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseBody: {
+      ok: true,
+      campaignId: campaign.id,
+      campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+      mode: "deterministic",
+      totalFound: 1,
+      requestId: "request-keyed-apify",
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      sourcingRunId: "22222222-2222-4222-8222-222222222222",
+      appliedLessonIds: [],
+      candidates: [
+        {
+          id: "keyed-candidate-1",
+          campaignId: campaign.id,
+          name: "Elena Varga",
+          email: "elena.varga@bnpp-cib.com",
+          phone: "+1 514 555 0142",
+          currentTitle: "Calypso Application Support",
+          currentCompany: "BNPP CIB",
+          location: "Montreal",
+          linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+          githubUrl: "",
+          sourceUrl: "https://www.linkedin.com/in/elena-varga",
+          sourcePlatform: "Apify",
+          sourceQuery: "Calypso Linux Python",
+          matchScore: 88,
+          matchBreakdown: [],
+          techStack: ["Linux", "Python", "Calypso"],
+          recentActivity: "Production support",
+          createdAt: "2026-07-15T00:00:00.000Z",
+        },
+      ],
+      feedbackReceipts: [
+        { receiptId: "33333333-3333-4333-8333-333333333333", platform: "Apify", candidateCount: 1 },
+      ],
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.notEqual(result.source, "mock");
+    assert.doesNotMatch(JSON.stringify(result), /MISSING_PLUGIN/);
+  }
+  assert.match(String(harness.requests[0]?.input), /sourcing-agent|source\/need|source"/);
+  assert.ok(harness.fetchCalls >= 1);
+});
+
+test("keyed people-first Source next batch does not toast invalid-response on a non-JSON sourcing-agent crash", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseText: "Internal Server Error",
+    responseStatus: 500,
+    responseContentType: "text/plain",
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, PEOPLE_FIRST_HARVEST_UNAVAILABLE);
+    assert.doesNotMatch(result.error, /invalid response/i);
+    assert.doesNotMatch(result.error, /invalid result/i);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+  }
+  const toast = peoplePluginFailLoudUi(
+    result.ok ? "" : result.error,
+    campaign.jobAnalysis,
+    integrations,
+    apiKeys,
+  );
+  assert.equal(toast?.title, "Sourcing failed");
+  assert.equal(toast?.href, "/settings");
+  assert.match(String(toast?.actionLabel), /Access & Keys/);
+  assert.doesNotMatch(String(toast?.description), /invalid response/i);
+  assert.doesNotMatch(String(toast?.description), /MISSING_PLUGIN/);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+});
+
+test("people-first GitHub-only empty batch is fail-loud, not a successful search", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseBody: {
+      ok: true,
+      campaignId: campaign.id,
+      campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+      mode: "deterministic",
+      totalFound: 0,
+      requestId: "request-empty-github",
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      sourcingRunId: "22222222-2222-4222-8222-222222222222",
+      appliedLessonIds: [],
+      candidates: [],
+      feedbackReceipts: [
+        { receiptId: "33333333-3333-4333-8333-333333333333", platform: "GitHub", candidateCount: 0 },
+        { receiptId: "44444444-4444-4444-8444-444444444444", platform: "GitHub", candidateCount: 0 },
+        { receiptId: "55555555-5555-4555-8555-555555555555", platform: "GitHub", candidateCount: 0 },
+      ],
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error, EMPTY_PEOPLE_FIRST_HARVEST);
+    assert.doesNotMatch(result.error, /MISSING_PLUGIN/);
+    assert.doesNotMatch(result.error, /invalid response/i);
+  }
+  assert.equal(
+    harness.fetchCalls,
+    1,
+    "one click is one request; the server owns the harvest chain (8 POSTs per click was the Fly 5728ad4 rate-limit fail)",
+  );
+  assert.ok(harness.persistedCalls >= 1);
+  assert.ok(harness.activityDrafts.length >= 1);
+  assert.equal(harness.activityDrafts[0]?.title, peopleFirstFailActivity(EMPTY_PEOPLE_FIRST_HARVEST).title);
+  assert.match(String(harness.activityDrafts[0]?.notes), /0 candidates|harvest/i);
+});
+
+test("people-first Source next batch re-POSTs only the server's CONTINUE resume step, in the same click", async () => {
+  const seed = buildSeedState();
+  const campaign = {
+    ...seed.campaigns[0],
+    status: "Sourcing" as const,
+    jobAnalysis: {
+      ...seed.campaigns[0].jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Business Analysis",
+      requiredSkills: ["Calypso", "Business Analysis"],
+      industryExperience: ["Finance"],
+    },
+  };
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  assert.ok(queue.length >= 2, "BA queue must have a second harvest");
+  assert.equal(queue[0]?.query, "Calypso Business Analyst");
+  const integrations = defaultLiveIntegrations().map((item) =>
+    item.id === "int_apify" ? { ...item, mode: "live" as const, status: "connected" as const } : item,
+  );
+  const apiKeys = [
+    {
+      id: "key_apify",
+      name: "Apify",
+      provider: "Apify" as const,
+      last4: "lRfy",
+      status: "valid" as const,
+      lastTestedAt: "2026-07-15T00:00:00.000Z",
+      createdBy: "tony",
+      createdAt: "2026-07-15T00:00:00.000Z",
+    },
+  ];
+  // The server ran harvests 1..3 (fresh 90s each) and hit its chain budget
+  // with planned steps left. It names the resume step; the same click re-POSTs it.
+  const resume = queue[3]!;
+  const continueOne = {
+    ok: false,
+    code: "PEOPLE_FIRST_HARVEST_CONTINUE",
+    error: formatHarvestEvidenceError("continue", { query: resume.query }),
+    requestId: "req-continue-1",
+    resume: {
+      query: resume.query,
+      ...(resume.currentJobTitles?.length ? { currentJobTitles: resume.currentJobTitles } : {}),
+    },
+  };
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign], integrations, apiKeys },
+    syntheticSourcingAllowed: false,
+    responseStatuses: [502, 200],
+    responseBodies: [
+      continueOne,
+      {
+        ok: true,
+        campaignId: campaign.id,
+        campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+        mode: "deterministic",
+        totalFound: 1,
+        requestId: "request-harvest-2",
+        idempotencyKey: "11111111-1111-4111-8111-111111111111",
+        sourcingRunId: "22222222-2222-4222-8222-222222222222",
+        appliedLessonIds: [],
+        candidates: [
+          {
+            id: "ba-harvest-2",
+            campaignId: campaign.id,
+            name: "Elena Varga",
+            email: "elena.varga@bnpp-cib.com",
+            phone: "+1 514 555 0142",
+            currentTitle: "Calypso Business Analyst",
+            currentCompany: "BNPP CIB",
+            location: "Paris",
+            linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+            githubUrl: "",
+            sourceUrl: "https://www.linkedin.com/in/elena-varga",
+            sourcePlatform: "Apify",
+            sourceQuery: queue[1]!.query,
+            matchScore: 72,
+            matchBreakdown: [],
+            techStack: ["Calypso", "Business Analysis"],
+            recentActivity: "Calypso BA",
+            createdAt: "2026-09-01T12:00:00.000Z",
+          },
+        ],
+        feedbackReceipts: [
+          { receiptId: "33333333-3333-4333-8333-333333333333", platform: "Apify", candidateCount: 1 },
+        ],
+      },
+    ],
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 6 });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  if (result.ok) {
+    assert.equal(result.accepted.length, 1);
+    assert.equal(result.accepted[0]?.email, "elena.varga@bnpp-cib.com");
+    assert.equal(result.accepted[0]?.phone, "+1 514 555 0142");
+    assert.match(result.accepted[0]?.linkedinUrl ?? "", /linkedin\.com/);
+    assert.doesNotMatch(result.accepted[0]?.email ?? "", /example\.com/);
+  }
+  assert.equal(harness.fetchCalls, 2, `CONTINUE is one extra POST in the same click, got ${harness.fetchCalls}`);
+  const posted = harness.requests
+    .filter((row) => String(row.input).includes("/api/sourcing-agent"))
+    .map((row) => JSON.parse(String(row.init?.body ?? "{}")) as {
+      harvestQuery?: string;
+      currentJobTitles?: string[];
+    });
+  assert.equal(posted.length, 2, `need exactly two sourcing-agent POSTs, got ${posted.length}`);
+  assert.equal(posted[0]?.harvestQuery, undefined, "the first POST starts the server chain, not one step");
+  assert.equal(posted[1]?.harvestQuery, resume.query, `resume must POST the server's step: ${JSON.stringify(posted)}`);
+  assert.deepEqual(posted[1]?.currentJobTitles ?? [], resume.currentJobTitles ?? []);
+  assert.ok(
+    harness.activityDrafts.every((draft) => /^Sourced /.test(draft.title)),
+    `a CONTINUE is mid-chain, not a fail audit row: ${JSON.stringify(harness.activityDrafts.map((draft) => draft.title))}`,
+  );
+  const idempotency = harness.requests.map((row) => {
+    const headers = row.init?.headers;
+    if (headers && typeof headers === "object" && !Array.isArray(headers) && "Idempotency-Key" in headers) {
+      return String((headers as Record<string, string>)["Idempotency-Key"]);
+    }
+    return "";
+  });
+  assert.ok(
+    idempotency[0] && idempotency[1] && idempotency[0] !== idempotency[1],
+    `second harvest must use a new idempotency key: ${JSON.stringify(idempotency)}`,
+  );
+  assert.doesNotMatch(JSON.stringify(result), /@example\.com/);
 });
 
 test("Apollo search commits only exact validated profiles through the sourcing boundary", async () => {

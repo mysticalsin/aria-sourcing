@@ -36,7 +36,7 @@ import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { integrationHealthSummary } from "@/lib/integrations";
+import { realIntegrationSummary } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -492,7 +492,7 @@ export default function SettingsPage() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [activeTab, queueHashScroll]);
 
-  const summary = integrationHealthSummary(integrations);
+  const summary = realIntegrationSummary(integrations);
 
   function savedToast() {
     toast({ title: "Settings saved", variant: "success" });
@@ -837,7 +837,7 @@ export default function SettingsPage() {
                   {summary.notConfigured} not configured
                 </Badge>
               )}
-              <span className="text-xs text-muted">of {summary.total} total · mock is the safe default</span>
+              <span className="text-xs text-muted">of {summary.total} total · sample data until Live is on</span>
             </div>
 
             {integrations.length === 0 ? (

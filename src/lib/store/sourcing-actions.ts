@@ -1,8 +1,27 @@
 import { redactEmail, redactSecrets } from "../log-redact";
-import { sourceCandidates } from "../mock-ai";
+import { generateOutreach, newOutreachMessage, sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
+import {
+  FIXTURE_NOT_ON_LIVE_TOAST,
+  isLabFixtureCandidate,
+} from "../sourcing/lab-fixture-people";
+import { isPeopleFirstContactComplete } from "../sourcing/people-first-contact";
+import { formatHarvestEvidenceError } from "../sourcing/harvest-evidence";
+import type { PlannedSearch } from "../sourcing/multi-source-plan";
+import { runPeopleFirstClickChain } from "../sourcing/people-first-chain";
+import { peopleFirstTrailActivities } from "../sourcing/people-first-fallthrough";
+import {
+  EMPTY_PEOPLE_FIRST_HARVEST,
+  isGithubOnlyEmptyBatch,
+  isPeopleFirstRole,
+  missingPeoplePluginsToast,
+  peopleFirstFailActivity,
+  remapPeopleFirstSourcingError,
+  visiblePeopleFirstLearningReceipts,
+} from "../sourcing/people-plugins";
 import { scoreCandidate } from "../scoring";
+import { effectiveTone } from "../skills";
 import { evaluateNeedReadiness } from "../needs/readiness";
 import {
   mapApolloCandidates,
@@ -93,6 +112,9 @@ export interface SourcingActionDependencies {
 }
 
 const MAX_SOURCE_COUNT = 20;
+/** Same contract as `SHORTLIST_FLOOR` / `SHORTLIST_CAP` in the sourcing engine. */
+const SHORTLIST_DRAFT_FLOOR = 60;
+const SHORTLIST_DRAFT_CAP = 20;
 const SYNTHETIC_PLATFORMS = new Set<SourcePlatform>(["Referral", "Talent Pool"]);
 const DEDICATED_PLATFORMS = new Set<SourcePlatform>([
   "Sillage",
@@ -653,6 +675,21 @@ function invalidRequest(error: string) {
   return { ok: false as const, error, source: "invalid" as const };
 }
 
+function draftFirstTouchPair(
+  candidate: Candidate,
+  campaign: HermesState["campaigns"][number],
+  tone: Parameters<typeof generateOutreach>[2],
+  settings: HermesState["settings"],
+  language: string | undefined,
+) {
+  const email = generateOutreach(candidate, campaign, tone, "Email", 1, undefined, language);
+  const linkedin = generateOutreach(candidate, campaign, tone, "LinkedIn", 1, undefined, language);
+  return [
+    newOutreachMessage(candidate, campaign, email, tone, settings, 1),
+    newOutreachMessage(candidate, campaign, linkedin, tone, settings, 1),
+  ];
+}
+
 function liveSourcingUnavailable(status: CampaignStatus): string {
   return status === "Paused"
     ? "Campaign is paused."
@@ -679,20 +716,85 @@ export function createSourcingActions({
   effectiveWeights,
   emitSource,
 }: SourcingActionDependencies): SourcingActions {
+  const persistPeopleFirstFailAudit = async (campaignId: string, error: string) => {
+    if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return;
+    const { title, notes } = peopleFirstFailActivity(error);
+    const trail = peopleFirstTrailActivities(error);
+    await commitPersisted((previous) => {
+      let next = previous;
+      for (const extra of trail.slice().reverse()) {
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: extra.title,
+            notes: extra.notes,
+            outcome: "0 accepted — fail-loud, not a harvest",
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+      }
+      return withActivity(
+        next,
+        makeActivity({
+          type: "sourcing",
+          title,
+          notes,
+          outcome: "0 accepted — fail-loud, not a harvest",
+          campaignId,
+          linkedEntityType: "campaign",
+          linkedEntityId: campaignId,
+        }),
+        campaignId,
+      );
+    });
+  };
+
   const sourceReviewedCampaignBatch = async (
     campaignId: string,
     count: number,
     initialFingerprint: string,
     agentFramework?: { runId: string; capabilityToken: string; query: string },
+    harvestStep?: PlannedSearch,
   ): Promise<SourceNextBatchResult> => {
     const reviewed = await requestReviewedSourcing(
       workspaceFetch,
       campaignId,
       count,
       agentFramework,
+      harvestStep,
     );
     if (!reviewed.ok) {
-      return { ok: false, error: reviewed.error, source: "unavailable" };
+      if (reviewed.resume) {
+        // Chain budget ran out with planned harvests left. Same click
+        // re-POSTs from this step. Not a fail, not 0 people, not audited.
+        return { ok: false, error: reviewed.error, source: "unavailable", resume: reviewed.resume };
+      }
+      const latestForError = currentState();
+      const campaignForError = latestForError?.campaigns.find((item) => item.id === campaignId);
+      const error = latestForError && campaignForError
+        ? remapPeopleFirstSourcingError(
+            reviewed.error,
+            campaignForError.jobAnalysis,
+            latestForError.integrations,
+            latestForError.apiKeys,
+          )
+        : reviewed.error;
+      if (
+        latestForError &&
+        campaignForError &&
+        isPeopleFirstRole(campaignForError.jobAnalysis)
+      ) {
+        await persistPeopleFirstFailAudit(campaignId, error);
+      }
+      return {
+        ok: false,
+        error,
+        source: "unavailable",
+      };
     }
     if (!workspaceEffectAllowed()) {
       return {
@@ -723,6 +825,57 @@ export function createSourcingActions({
       );
     }
 
+    if (
+      isPeopleFirstRole(latestCampaign.jobAnalysis) &&
+      isGithubOnlyEmptyBatch(reviewed.value)
+    ) {
+      const error =
+        missingPeoplePluginsToast(
+          latestCampaign.jobAnalysis,
+          latest.integrations,
+          latest.apiKeys,
+        ) ?? EMPTY_PEOPLE_FIRST_HARVEST;
+      await persistPeopleFirstFailAudit(campaignId, error);
+      return {
+        ok: false,
+        error,
+        source: "unavailable",
+      };
+    }
+
+    const previewPeople = reviewed.value.candidates.map((dto) =>
+      candidateFromSourcingAgentDto(dto),
+    );
+    if (previewPeople.length > 0 && previewPeople.every(isLabFixtureCandidate)) {
+      if (isPeopleFirstRole(latestCampaign.jobAnalysis)) {
+        await persistPeopleFirstFailAudit(campaignId, FIXTURE_NOT_ON_LIVE_TOAST);
+      }
+      return {
+        ok: false,
+        error: FIXTURE_NOT_ON_LIVE_TOAST,
+        source: "unavailable",
+      };
+    }
+    if (
+      isPeopleFirstRole(latestCampaign.jobAnalysis) &&
+      previewPeople.length > 0 &&
+      previewPeople.every((candidate) => !isPeopleFirstContactComplete(candidate))
+    ) {
+      const incomplete = formatHarvestEvidenceError("incomplete_contacts", {
+        query: previewPeople.find((candidate) => candidate.sourceQuery)?.sourceQuery
+          || latestCampaign.jobAnalysis.title,
+        runId: "",
+        itemCount: previewPeople.length,
+        started: true,
+      });
+      await persistPeopleFirstFailAudit(campaignId, incomplete);
+      return {
+        ok: false,
+        error: incomplete,
+        source: "unavailable",
+      };
+    }
+
     const observedPlatforms = [
       ...reviewed.value.feedbackReceipts.map((receipt) => receipt.platform),
       ...reviewed.value.candidates.map((candidate) => candidate.sourcePlatform),
@@ -745,34 +898,92 @@ export function createSourcingActions({
       }
       authorized = true;
       const weights = effectiveWeights(campaign.scoringWeights, previous.skills);
-      const scored = reviewed.value.candidates.map((dto) => {
-        const candidate = candidateFromSourcingAgentDto(dto);
-        const score = scoreCandidate(candidate, campaign.jobAnalysis, weights);
-        return {
-          ...candidate,
-          matchScore: score.score,
-          matchBreakdown: score.breakdown,
-        };
-      });
+      const scored = reviewed.value.candidates
+        .map((dto) => {
+          const candidate = candidateFromSourcingAgentDto(dto);
+          const score = scoreCandidate(candidate, campaign.jobAnalysis, weights);
+          return {
+            ...candidate,
+            matchScore: score.score,
+            matchBreakdown: score.breakdown,
+          };
+        })
+        .filter((candidate) => !isLabFixtureCandidate(candidate))
+        .filter(
+          (candidate) =>
+            !isPeopleFirstRole(campaign.jobAnalysis) || isPeopleFirstContactComplete(candidate),
+        );
       result = dedupeCandidates(scored, previous.candidates, {
         excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       });
+      const pendingDraftIds = new Set(
+        previous.outreach
+          .filter((message) => message.status === "Needs Approval")
+          .map((message) => message.candidateId),
+      );
+      const tone = effectiveTone(previous.skills);
+      const language = campaign.jobAnalysis.language ?? previous.settings.defaultLanguage;
+      const drafts = result.accepted
+        .filter((candidate) => {
+          const reported =
+            reviewed.value.candidates.find((item) => item.id === candidate.id)?.matchScore ??
+            candidate.matchScore;
+          return reported >= SHORTLIST_DRAFT_FLOOR;
+        })
+        .filter((candidate) => !pendingDraftIds.has(candidate.id))
+        .slice(0, SHORTLIST_DRAFT_CAP)
+        .flatMap((candidate) => {
+          const dto = reviewed.value.candidates.find((item) => item.id === candidate.id);
+          const email =
+            dto?.draftSubject && dto.draftBody
+              ? newOutreachMessage(
+                  candidate,
+                  campaign,
+                  {
+                    subject: dto.draftSubject,
+                    body: dto.draftBody,
+                    personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
+                    channel: "Email",
+                  },
+                  tone,
+                  previous.settings,
+                  1,
+                )
+              : newOutreachMessage(
+                  candidate,
+                  campaign,
+                  generateOutreach(candidate, campaign, tone, "Email", 1, undefined, language),
+                  tone,
+                  previous.settings,
+                  1,
+                );
+          const linkedin = newOutreachMessage(
+            candidate,
+            campaign,
+            generateOutreach(candidate, campaign, tone, "LinkedIn", 1, undefined, language),
+            tone,
+            previous.settings,
+            1,
+          );
+          return [email, linkedin];
+        });
       let next: HermesState = {
         ...previous,
         candidates: [...result.accepted, ...previous.candidates],
+        outreach: drafts.length > 0 ? [...drafts, ...previous.outreach] : previous.outreach,
       };
       if (result.accepted.length > 0) next = recomputeMetrics(next, campaignId);
       const executionLabel =
         reviewed.value.mode === "cloud"
           ? "Reviewed cloud tool-calling"
-          : "Reviewed deterministic GitHub";
+          : "Reviewed LinkedIn + Apify";
       return withActivity(
         next,
         makeActivity({
           type: "sourcing",
           title: `Sourced ${result.accepted.length} candidates`,
-          notes: `${executionLabel} batch. ${result.skipped.length} skipped by dedupe and exclusions.`,
-          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
+          notes: `${executionLabel} batch. ${result.skipped.length} skipped by dedupe and exclusions. ${drafts.length} in-product first-touch draft${drafts.length === 1 ? "" : "s"} queued for approval (dry-run).`,
+          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped, ${drafts.length} drafted (live)`,
           campaignId,
           linkedEntityType: "campaign",
           linkedEntityId: campaignId,
@@ -810,7 +1021,12 @@ export function createSourcingActions({
       source,
       ok: true,
       mode: reviewed.value.mode,
-      feedbackReceipts: reviewed.value.feedbackReceipts,
+      feedbackReceipts: visiblePeopleFirstLearningReceipts(
+        reviewed.value.feedbackReceipts,
+        latestCampaign.jobAnalysis,
+        latest.integrations,
+        latest.apiKeys,
+      ),
     };
   };
 
@@ -898,11 +1114,49 @@ export function createSourcingActions({
     }
 
     if (!demoSourcing) {
+      // People-first must hit /api/sourcing-agent. The server is the source of
+      // truth for a stored Apify key. Do not infer "no key" from integrations
+      // 1/7 and silently run a fixture dry-run.
+      const explicitStep =
+        opts?.harvestQuery?.trim()
+          ? {
+              platform: "Apify" as const,
+              query: opts.harvestQuery.trim(),
+              ...(opts.currentJobTitles?.length ? { currentJobTitles: opts.currentJobTitles } : {}),
+            }
+          : null;
+      if (
+        !explicitStep &&
+        isPeopleFirstRole(initialCampaign.jobAnalysis)
+      ) {
+        // One click, one server-owned chain. The server runs every planned
+        // harvest, then LinkedIn web, enrich, and GitHub merge. This side
+        // re-POSTs only on PEOPLE_FIRST_HARVEST_CONTINUE (resume step).
+        // Rate limit, quota, mock, empty: the click's honest fail. Never 0
+        // people as success.
+        const chain = await runPeopleFirstClickChain({
+          job: initialCampaign.jobAnalysis,
+          search: (resume) =>
+            sourceReviewedCampaignBatch(
+              campaignId,
+              count,
+              initialFingerprint,
+              opts?.agentFramework,
+              resume ?? undefined,
+            ),
+        });
+        const last = chain.result;
+        if (last.ok && last.accepted.length === 0) {
+          return { ok: false, error: EMPTY_PEOPLE_FIRST_HARVEST, source: "unavailable" };
+        }
+        return last;
+      }
       return await sourceReviewedCampaignBatch(
         campaignId,
         count,
         initialFingerprint,
         opts?.agentFramework,
+        explicitStep ?? undefined,
       );
     }
 

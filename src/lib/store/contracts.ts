@@ -83,6 +83,8 @@ export type SourceNextBatchResult =
       error: string;
       source: SourceNextBatchErrorSource;
       retryable?: "agent_framework_reconcile";
+      /** PEOPLE_FIRST_HARVEST_CONTINUE: the same click re-POSTs this planned step. */
+      resume?: { query: string; currentJobTitles?: string[] };
     };
 
 export type CandidateIntakeResult =
@@ -155,8 +157,23 @@ export interface HermesActions {
       platform?: SourcePlatform;
       count?: number;
       agentFramework?: { runId: string; capabilityToken: string; query: string };
+      harvestQuery?: string;
+      currentJobTitles?: string[];
     },
   ) => Promise<SourceNextBatchResult>;
+  /** Unattended chain: search → enrich → GitHub profile-scraper merge onto the
+   *  same people. Empty LinkedIn search is not terminal. Empty first harvest
+   *  continues to the next expanded search in the same click. Actors stay in
+   *  the backend. Does not invent people. People-first Source next batch uses
+   *  this same chain. */
+  autoSource: (
+    campaignId: string,
+    opts?: {
+      platform?: SourcePlatform;
+      count?: number;
+      agentFramework?: { runId: string; capabilityToken: string; query: string };
+    },
+  ) => Promise<SourceNextBatchResult & { enriched?: boolean; techStackMerged?: boolean }>;
   /** Searches real provider results and drafts for human review. Cloud mode uses
    * a tool-capable model; deterministic mode executes persisted GitHub queries
    * directly and never presents itself as an LLM run. */
@@ -166,7 +183,7 @@ export interface HermesActions {
   ) => Promise<{
     ok: boolean;
     added: number;
-    mode?: "cloud" | "deterministic";
+    mode?: "cloud" | "deterministic" | "fixture";
     feedbackReceipts?: SourcingFeedbackReceipt[];
     error?: string;
   }>;

@@ -161,6 +161,12 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
     requireAdmin: async () => ({ ok: false, response: new Response(null, { status: 403 }) }),
   },
 });
+mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
+  namedExports: { resolveStoredTavilyKey: async () => null },
+});
+mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
+  namedExports: { resolveStoredApifyKey: async () => null },
+});
 mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   namedExports: {
     resolveVaultSecret: async (id?: string, provider?: string) => {
@@ -191,6 +197,7 @@ mock.module(moduleUrl("src/lib/ai/tool-loop.ts"), {
 mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
   namedExports: {
     SOURCING_TOOL_DEFS: [{ name: "search_candidates", description: "test" }],
+    peopleFirstEnrichmentClearance: () => ({ ok: true, clearance: {} }),
     makeSourcingToolRunner: () => {
       const executions: Array<Record<string, unknown>> = [];
       return {

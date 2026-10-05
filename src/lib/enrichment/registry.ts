@@ -63,12 +63,24 @@ export const ENRICHMENT_PROVIDERS: EnrichmentProvider[] = [
   {
     id: "Apify",
     label: "Apify (LinkedIn full profile)",
-    enriches: ["email", "headline", "skills", "experience", "education", "languages", "location"],
+    enriches: ["email", "phone", "headline", "skills", "experience", "education", "languages", "location"],
     costUnits: 1,
     keyField(c) {
       const linkedinUrl = nonEmpty(c.linkedinUrl);
       if (!linkedinUrl) return null;
       return { kind: "linkedinUrl", value: linkedinUrl };
+    },
+  },
+  // GitHub tech-stack only. Merge onto an existing person. Never mint a leftover.
+  {
+    id: "GitHub",
+    label: "GitHub tech stack",
+    enriches: ["skills"],
+    costUnits: 1,
+    keyField(c) {
+      const githubUrl = nonEmpty(c.githubUrl);
+      if (!githubUrl) return null;
+      return { kind: "githubUrl", value: githubUrl };
     },
   },
   // Apollo — free mixed_people/search resolves an apolloId from name+company

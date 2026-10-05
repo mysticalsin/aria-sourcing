@@ -9,6 +9,7 @@ import {
   seatHealthStatus,
   suppressionMatch,
   allocateBatch,
+  EMAIL_ALLOCATION_PROVIDERS,
   ledgerHasActiveContact,
   recentlyContacted,
   defaultFleetSettings,
@@ -230,7 +231,10 @@ if (result) {
 
   // (e) total assignments <= sum of per-seat remaining capacity
   const capSum = state.seats.reduce((acc, s) => {
-    const blocked = s.status !== "active" || seatHealthStatus(s, fs).shouldPause;
+    const blocked =
+      s.status !== "active" ||
+      !EMAIL_ALLOCATION_PROVIDERS.has(s.provider) ||
+      seatHealthStatus(s, fs).shouldPause;
     return acc + (blocked ? 0 : seatRemainingToday(s, NOW));
   }, 0);
   ok("(e) total assignments <= fleet remaining capacity", r.assignments.length <= capSum);

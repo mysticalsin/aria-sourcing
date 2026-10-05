@@ -1,13 +1,19 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Badge, Button, Card, CardBody, EmptyState, Eyebrow, Progress } from "@/components/ui";
 import { RevealStream } from "@/components/reveal/reveal-stream";
 import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { executePrimaryAgentSourcing } from "@/lib/agents/studio-runner";
-import { useActions, useCampaign, useCampaignOutreach, useSettings } from "@/lib/store";
+import { useActions, useApiKeys, useCampaign, useCampaignOutreach, useIntegrations, useSettings } from "@/lib/store";
+import {
+  emptyPeopleFirstToast,
+  isPeopleFirstRole,
+  sourceRejectedToast,
+} from "@/lib/sourcing/people-plugins";
 import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, OutreachMessage } from "@/lib/types";
 import { initialsFrom, scoreTone, toneForOutreachStatus } from "@/lib/utils";
@@ -139,6 +145,8 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
   const actions = useActions();
   const settings = useSettings();
   const campaign = useCampaign(campaignId);
+  const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
   const campaignOutreach = useCampaignOutreach(campaignId);
   const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
@@ -148,6 +156,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
   const [revealedCount, setRevealedCount] = React.useState(0);
   const [sourcedCount, setSourcedCount] = React.useState(0);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [errorCta, setErrorCta] = React.useState<{ href: string; label: string } | null>(null);
   const baselineQueuedRef = React.useRef(0);
 
   const handleRevealed = React.useCallback(() => {
@@ -160,6 +169,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
 
     baselineQueuedRef.current = campaignOutreach.filter((m) => m.status === "Needs Approval").length;
     setErrorMessage(null);
+    setErrorCta(null);
     setPhase("sourcing");
     setQueue([]);
     setRevealedCount(0);
@@ -170,7 +180,6 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       setPhase("error");
       return;
     }
-
     let retryStorage: Storage | null = null;
     try {
       retryStorage = globalThis.sessionStorage ?? null;
@@ -187,7 +196,14 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       sourceNextBatch: actions.sourceNextBatch,
     });
     if (!result.ok) {
-      setErrorMessage(result.error);
+      const failLoud = sourceRejectedToast(
+        result.error,
+        campaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setErrorMessage(failLoud.description);
+      setErrorCta({ href: failLoud.href, label: failLoud.actionLabel });
       setPhase("error");
       return;
     }
@@ -195,6 +211,30 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
 
     setSourcedCount(sourced.length);
     if (sourced.length === 0) {
+      const emptyPeopleFirst = emptyPeopleFirstToast(
+        campaign.jobAnalysis,
+        integrations,
+        { accepted: sourced, source: result.source },
+        apiKeys,
+      );
+      if (emptyPeopleFirst) {
+        setErrorMessage(emptyPeopleFirst.description);
+        setErrorCta({ href: emptyPeopleFirst.href, label: emptyPeopleFirst.actionLabel });
+        setPhase("error");
+        return;
+      }
+      if (isPeopleFirstRole(campaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          campaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setErrorMessage(failLoud.description);
+        setErrorCta({ href: failLoud.href, label: failLoud.actionLabel });
+        setPhase("error");
+        return;
+      }
       setPhase("empty");
       return;
     }
@@ -218,7 +258,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     setRunKey((k) => k + 1);
     // phase flips to "done" from the RevealStream's onDone once every card
     // has materialized (or instantly, on Skip / prefers-reduced-motion).
-  }, [phase, campaignId, campaign, campaignOutreach, actions]);
+  }, [phase, campaignId, campaign, campaignOutreach, actions, integrations, apiKeys]);
 
   const autoStartedRef = React.useRef(false);
   React.useEffect(() => {
@@ -290,9 +330,24 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
         </div>
 
         {phase === "error" && errorMessage && (
-          <div className="flex items-start gap-2.5 rounded-2xl bg-danger-soft px-3.5 py-3 text-sm text-danger ring-1 ring-inset ring-danger/20">
+          <div
+            role="alert"
+            data-testid="source-next-batch-error"
+            className="flex items-start gap-2.5 rounded-2xl bg-danger-soft px-3.5 py-3 text-sm text-danger ring-1 ring-inset ring-danger/20"
+          >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>{errorMessage}</span>
+            <div className="min-w-0 space-y-2">
+              <span>{errorMessage}</span>
+              {errorCta ? (
+                <Link
+                  data-testid="toast-cta"
+                  href={errorCta.href}
+                  className="inline-flex h-8 items-center rounded-full bg-ink px-3 text-xs font-semibold text-paper"
+                >
+                  {errorCta.label}
+                </Link>
+              ) : null}
+            </div>
           </div>
         )}
 

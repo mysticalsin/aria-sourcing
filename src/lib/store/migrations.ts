@@ -1,8 +1,30 @@
-import { defaultIntegrations } from "../integrations";
+import { defaultIntegrations, mergeSeedIntegrations } from "../integrations";
+import { applyHarvestKeysToIntegrations } from "../sourcing/people-connect";
+import { repairGithubQueries } from "../sourcing/github-search-language";
+import { repairLinkedinBoolean } from "../sourcing/linkedin-boolean";
+import { tokenizeMustHaveSkills } from "../sourcing/vss-need";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
-import type { HermesState } from "../types";
+import type { Campaign, HermesState } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
+
+function repairCampaignSkillQueries(campaign: Campaign): Campaign {
+  if (!campaign?.jobAnalysis || !campaign.sourcingStrategy?.githubQueries) return campaign;
+  const jobAnalysis = {
+    ...campaign.jobAnalysis,
+    requiredSkills: tokenizeMustHaveSkills(campaign.jobAnalysis.requiredSkills),
+    niceToHaveSkills: tokenizeMustHaveSkills(campaign.jobAnalysis.niceToHaveSkills),
+  };
+  return {
+    ...campaign,
+    jobAnalysis,
+    sourcingStrategy: {
+      ...campaign.sourcingStrategy,
+      githubQueries: repairGithubQueries(jobAnalysis, campaign.sourcingStrategy.githubQueries),
+      linkedinBoolean: repairLinkedinBoolean(jobAnalysis, campaign.sourcingStrategy.linkedinBoolean),
+    },
+  };
+}
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 
@@ -25,7 +47,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     ...parsed,
     version: STATE_VERSION,
     // D-2: fill every required root field that may be absent in older blobs.
-    campaigns: parsed.campaigns ?? [],
+    campaigns: (parsed.campaigns ?? []).map(repairCampaignSkillQueries),
     // STATE_VERSION 13 — backfill the TAnIA layer (lead source + star rating) on
     // any candidate that predates it, without clobbering explicit values.
     candidates: (parsed.candidates ?? []).map((c) => ({
@@ -43,14 +65,10 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
     // the current seed. Roadmap placeholders (`real: false`) also lose any older
     // fabricated connected/lastSync state; real cards keep their usage history.
-    integrations:
-      parsed.integrations && parsed.integrations.length > 0
-        ? parsed.integrations.map((i) => {
-            const seed = defaultIntegrations().find((d) => d.id === i.id);
-            if (!seed) return i;
-            return seed.real ? { ...i, real: true } : { ...i, real: false, status: "not_configured", lastSync: null };
-          })
-        : defaultIntegrations(),
+    integrations: applyHarvestKeysToIntegrations(
+      mergeSeedIntegrations(parsed.integrations ?? defaultIntegrations()),
+      parsed.apiKeys ?? [],
+    ),
     activities: parsed.activities ?? [],
     activeCampaignId: parsed.activeCampaignId ?? null,
     apiKeys: parsed.apiKeys ?? [],
@@ -105,8 +123,13 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
   return {
     ...parsed,
+    campaigns: (parsed.campaigns ?? []).map(repairCampaignSkillQueries),
     wins: parsed.wins ?? [],
     settings: withoutLegacyIntegrationAuthority(parsed.settings),
+    integrations: applyHarvestKeysToIntegrations(
+      mergeSeedIntegrations(parsed.integrations ?? []),
+      parsed.apiKeys ?? [],
+    ),
   };
 }
 

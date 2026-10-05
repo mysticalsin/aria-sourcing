@@ -23,13 +23,20 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import {
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
+  SAMPLE_CALYPSO_APP_SUPPORT_NEED,
   SAMPLE_MANTU_EMAIL,
   isNeedEmail,
   type ParsedIntake,
 } from "@/lib/mock-ai";
+import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
-import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
+import { useActions, useApiKeys, useCampaigns, useHydrated, useIntegrations, useSettings } from "@/lib/store";
+import {
+  emptyPeopleFirstToast,
+  isPeopleFirstRole,
+  sourceRejectedToast,
+} from "@/lib/sourcing/people-plugins";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   copyToClipboard,
@@ -92,6 +99,8 @@ export default function IntakePage() {
   const actions = useActions();
   const settings = useSettings();
   const campaigns = useCampaigns();
+  const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
 
   const [email, setEmail] = useState("");
   const [jd, setJd] = useState("");
@@ -153,12 +162,42 @@ export default function IntakePage() {
     });
   }
 
+  function isCalypsoAppSupportBrief(text: string): boolean {
+    return /calypso application support/i.test(text) || /calypso application support/i.test(job?.title ?? "");
+  }
+
   function loadMantu() {
-    setEmail(SAMPLE_MANTU_EMAIL);
+    if (isCalypsoAppSupportBrief(email) || isCalypsoAppSupportBrief(jd)) {
+      toast({
+        title: "Calypso Application Support stays loaded",
+        description: "Load Mantu will not replace this need with the Murex sample.",
+        variant: "info",
+      });
+      return;
+    }
+    setEmail(SAMPLE_CALYPSO_APP_SUPPORT_NEED);
     setJd("");
     toast({
       title: "Mantu need loaded",
-      description: "A real Mantu/Amaris “need is now ACTIVE” email is ready to parse.",
+      description: "Calypso Application Support (AMACAN / BNPP CIB) is ready to parse.",
+      variant: "info",
+    });
+  }
+
+  function loadMurex() {
+    if (isCalypsoAppSupportBrief(email) || isCalypsoAppSupportBrief(jd)) {
+      toast({
+        title: "Calypso Application Support stays loaded",
+        description: "The Murex sample will not overwrite this need.",
+        variant: "warning",
+      });
+      return;
+    }
+    setEmail(SAMPLE_MANTU_EMAIL);
+    setJd("");
+    toast({
+      title: "Murex sample loaded",
+      description: "Crédit Agricole Murex Support is ready to parse. This is not the Calypso Application Support bar.",
       variant: "info",
     });
   }
@@ -207,7 +246,7 @@ export default function IntakePage() {
       });
       return;
     }
-    if (!incoming) incoming = SAMPLE_MANTU_EMAIL;
+    if (!incoming) incoming = SAMPLE_CALYPSO_APP_SUPPORT_NEED;
 
     setEmail(incoming);
     setJd("");
@@ -215,7 +254,11 @@ export default function IntakePage() {
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
-    setJob(result.jobAnalysis);
+    setJob({
+      ...result.jobAnalysis,
+      requiredSkills: tokenizeMustHaveSkills(result.jobAnalysis.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(result.jobAnalysis.niceToHaveSkills),
+    });
     setSenderName(result.sender.name);
     setSenderEmail(result.sender.email);
     maybeRunDustJdAnalysis("", incoming);
@@ -231,7 +274,7 @@ export default function IntakePage() {
         ? `${result.jobAnalysis.title} parsed from the newest need email${
             needCount > 1 ? ` (${needCount - 1} older need email${needCount > 2 ? "s" : ""} also in the inbox)` : ""
           }.`
-        : `No need email found in a connected mailbox. Parsed the sample Mantu need instead. (${result.jobAnalysis.title})`,
+        : `No need email found in a connected mailbox. Parsed the sample Calypso Application Support need instead. (${result.jobAnalysis.title})`,
       variant: result.providerWarning ? "warning" : fromInbox ? "success" : "info",
     });
   }
@@ -239,21 +282,30 @@ export default function IntakePage() {
   /** Routes through the live LLM when a cloud provider is configured for chat.
    * Provider failures return a visible warning and an evidence-only parse. */
   async function handleParse() {
-    if (!email.trim()) {
+    const brief = email.trim();
+    const jdText = jd.trim();
+    if (!brief && !jdText) {
       toast({
         title: "Nothing to parse",
-        description: "Paste the recruiter email or brief first.",
+        description: "Paste the recruiter email/brief or the job description.",
         variant: "warning",
       });
       return;
     }
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
-    const result = await parseIntakeLive(settings, { email, jd: jd.trim() ? jd : undefined });
+    const result = await parseIntakeLive(settings, {
+      email: brief || jdText,
+      jd: brief && jdText ? jdText : undefined,
+    });
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
-    setJob(result.jobAnalysis);
+    setJob({
+      ...result.jobAnalysis,
+      requiredSkills: tokenizeMustHaveSkills(result.jobAnalysis.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(result.jobAnalysis.niceToHaveSkills),
+    });
     setSenderName(result.sender.name);
     setSenderEmail(result.sender.email);
     maybeRunDustJdAnalysis(jd, email);
@@ -269,11 +321,20 @@ export default function IntakePage() {
   function addSkill() {
     const value = skillDraft.trim();
     if (!value || !job) return;
-    if (job.requiredSkills.some((s) => s.toLowerCase() === value.toLowerCase())) {
+    const added = tokenizeMustHaveSkills(value);
+    if (added.length === 0) {
       setSkillDraft("");
       return;
     }
-    patchJob({ requiredSkills: [...job.requiredSkills, value] });
+    const existing = new Set(job.requiredSkills.map((s) => s.toLowerCase()));
+    const next = [...job.requiredSkills];
+    for (const skill of added) {
+      if (!existing.has(skill.toLowerCase())) {
+        existing.add(skill.toLowerCase());
+        next.push(skill);
+      }
+    }
+    patchJob({ requiredSkills: next });
     setSkillDraft("");
   }
 
@@ -333,7 +394,13 @@ export default function IntakePage() {
       if (!proceed) return;
     }
 
-    const campaign = actions.createCampaignFromAnalysis(job, {
+    const readyJob = {
+      ...job,
+      requiredSkills: tokenizeMustHaveSkills(job.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(job.niceToHaveSkills),
+    };
+    readyJob.validationWarnings = deriveValidationWarnings(readyJob);
+    const campaign = actions.createCampaignFromAnalysis(readyJob, {
       hiringManager: senderName.trim(),
       hiringManagerEmail,
     });
@@ -350,22 +417,65 @@ export default function IntakePage() {
     // Fire-and-forget: the campaign page renders candidates as they land, and a
     // failure surfaces as a toast without blocking campaign creation.
     void actions.sourceNextBatch(campaign.id).then((res) => {
-      if (res.ok) {
-        const n = res.accepted.length;
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(res.error, readyJob, integrations, apiKeys);
         toast({
-          title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
-          description: n > 0
-            ? `Added ${n} real candidate${n === 1 ? "" : "s"} for ${campaign.title}.`
-            : `The first real search for ${campaign.title} completed without a matching result.`,
-          variant: n > 0 ? "success" : "info",
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
         });
-      } else {
-        toast({
-          title: "Sourcing couldn't start",
-          description: `${res.error} Retry with “Source next batch” on the campaign page.`,
-          variant: "warning",
-        });
+        return;
       }
+      const n = res.accepted.length;
+      const emptyPeopleFirst = emptyPeopleFirstToast(readyJob, integrations, res, apiKeys);
+      if (emptyPeopleFirst) {
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (n === 0 && isPeopleFirstRole(readyJob)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          readyJob,
+          integrations,
+          apiKeys,
+        );
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const fixtureBatch = res.accepted.every((c) => c.provenance === "synthetic");
+      toast({
+        title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
+        description: n > 0
+          ? `Added ${n} candidate${n === 1 ? "" : "s"} for ${campaign.title}${
+              fixtureBatch ? " (fixture evidence — not live people)." : "."
+            }`
+          : `The first search for ${campaign.title} completed without a matching result.`,
+        variant: n > 0 ? "success" : "info",
+      });
+    }).catch((error: unknown) => {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(thrown, readyJob, integrations, apiKeys);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
     });
     toast({
       title: "Campaign created",
@@ -460,6 +570,15 @@ export default function IntakePage() {
                     disabled={parsing}
                   >
                     Load Mantu need
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadMurex}
+                    disabled={parsing}
+                  >
+                    Load Murex sample
                   </Button>
                   <Button
                     type="button"

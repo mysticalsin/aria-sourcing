@@ -102,7 +102,12 @@ export function ActivityTimeline({
               </div>
               {a.notes && <p className="mt-0.5 line-clamp-2 text-sm text-muted">{a.notes}</p>}
               {a.outcome && (
-                <Badge tone={meta.tone} size="sm" className="mt-2">
+                <Badge
+                  tone={meta.tone}
+                  size="sm"
+                  data-testid="cc-activity-outcome"
+                  className="mt-2 max-w-full whitespace-normal break-words text-left leading-snug"
+                >
                   {a.outcome}
                 </Badge>
               )}

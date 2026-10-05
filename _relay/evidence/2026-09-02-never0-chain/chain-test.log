@@ -1,0 +1,10 @@
+(node:17131) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17131) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL: resuming the first step again is a replay, not a second POST
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst Montreal","status":"SUCCEEDED","items":2,"started":true,"detail":"LinkedIn web after harvestapi items=0, not another Calypso string"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"alternate_search","actor":"tavily~linkedin-web-search","query":"Business Analyst Montreal","status":"NOT_STARTED","started":false,"detail":"no Tavily key in Access & Keys"}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"enrich_skipped","actor":"harvestapi~linkedin-profile-scraper","query":"email-phone","status":"SKIPPED","items":0,"started":false,"detail":"nobody to enrich: harvest pool=0, web=not started. Empty urls is an Apify invalid-input, not a run. Do not invent people."}
+{"event":"aria_harvest","tag":"[aria-harvest]","phase":"github_skipped","actor":"apivault_labs~github-profile-scraper","query":"tech-stack-merge","status":"SKIPPED","items":0,"started":false,"detail":"no GitHub handle on the shortlist people; GitHub leftovers are not people"}
+RESULT people-first-chain: 21 passed, 1 failed

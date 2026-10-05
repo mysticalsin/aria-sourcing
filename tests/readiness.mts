@@ -1,4 +1,5 @@
 import { evaluateReadiness, type ReadinessProbes } from "../src/lib/readiness";
+import { ariaReleaseIdentitySha } from "../src/lib/build-info";
 import { readFileSync } from "node:fs";
 
 const releaseSha = "a".repeat(40);
@@ -139,6 +140,24 @@ ok(
   "production readiness requires frameworks by default but allows AGENT_FRAMEWORKS_REQUIRED=false opt-out",
   /AGENT_FRAMEWORKS_REQUIRED === "true"/.test(readinessRoute) &&
     /AGENT_FRAMEWORKS_REQUIRED !== "false"/.test(readinessRoute),
+);
+ok(
+  "ready.build prefers the baked image SHA over a leftover ARIA_RELEASE_SHA stamp",
+  /ariaReleaseIdentitySha/.test(readinessRoute),
+);
+ok(
+  "baked 40-char SHA wins over a leftover 7fe6702 stamp",
+  ariaReleaseIdentitySha({
+    NEXT_PUBLIC_ARIA_GIT_SHA: "d4399fc2b222ff5fe7db2a0e8ef91970e2f63946",
+    ARIA_RELEASE_SHA: "7fe6702b202376b69fb2dcab7e9f062273a3980b",
+  }) === "d4399fc2b222ff5fe7db2a0e8ef91970e2f63946",
+);
+ok(
+  "missing bake falls back to a valid ARIA_RELEASE_SHA stamp",
+  ariaReleaseIdentitySha({
+    NEXT_PUBLIC_ARIA_GIT_SHA: "",
+    ARIA_RELEASE_SHA: "4a5accf2d9850e8a66065ae97a52444e25e0e8ed",
+  }) === "4a5accf2d9850e8a66065ae97a52444e25e0e8ed",
 );
 
 const missingIdentity = await evaluateReadiness(

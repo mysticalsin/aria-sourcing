@@ -92,6 +92,17 @@ export async function POST(req: NextRequest) {
   const seatId = payload.seatId ?? "";
   const candidateId = payload.candidateId;
   const candidateEmail = payload.candidateEmail ?? payload.to ?? "";
+  const emailHost = candidateEmail.split("@")[1]?.trim().toLowerCase() ?? "";
+  if (
+    payload.channel !== "WhatsApp" &&
+    payload.channel !== "SMS" &&
+    (emailHost === "example.com" || emailHost === "fixture.example" || emailHost.endsWith(".example.com"))
+  ) {
+    return NextResponse.json(
+      { status: "error", detail: "Cannot send to a synthetic example.com address. Enrich a real mailbox first." },
+      { status: 422 },
+    );
+  }
   const campaignId = payload.campaignId;
   const body = payload.body;
   // Strip CR/LF + control chars from the subject to prevent header/MIME injection.

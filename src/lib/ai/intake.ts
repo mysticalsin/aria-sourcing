@@ -17,6 +17,7 @@ import {
 } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
+import { isVssRecruitmentNeed, tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
 import { resolveAiProvider } from "./provider";
 import { hermesAvailable, hermesGenerate } from "./hermes";
 
@@ -128,6 +129,9 @@ export function buildIntakeParsePrompt(text: string): string {
       2,
     ),
     "",
+    "Split Skill (Must) / must-have lists on spaces, commas, or semicolons into separate requiredSkills entries.",
+    "Never return one concatenated skill string such as \"Linux Python Shell Oracle\".",
+    "",
     "TEXT:",
     text.slice(0, 12_000),
   ].join("\n");
@@ -208,18 +212,18 @@ export function groundLiveIntakeFields(
   const sourceLower = source.toLowerCase();
   const seniority = fields.seniority &&
     (claimAppearsInSource(fields.seniority, source) ||
-      (fields.seniority === "Mid" && /\bmid[- ]level\b|\bintermediate\b/i.test(source)))
+      (fields.seniority === "Mid" && /\bmid(?:dle)?\b|\bmid[- ]level\b|\bintermediate\b/i.test(source)))
       ? fields.seniority
       : undefined;
   const employmentType = fields.employmentType &&
-    ((fields.employmentType === "Contract" && /\bcontract|contractor|freelance|day rate\b/i.test(source)) ||
+    ((fields.employmentType === "Contract" && /\bcontract|contractor|freelance|day rate|consulting|\bcdi\b/i.test(source)) ||
       (fields.employmentType === "Part-time" && /\bpart[- ]time\b/i.test(source)) ||
-      (fields.employmentType === "Full-time" && /\bfull[- ]time\b|\bpermanent\b/i.test(source)))
+      (fields.employmentType === "Full-time" && /\bfull[- ]time\b|\bpermanent\b|\bcdi\b/i.test(source)))
       ? fields.employmentType
       : undefined;
   const locationType = fields.locationType &&
     ((fields.locationType === "Remote" && /\bremote\b|work from home/i.test(source)) ||
-      (fields.locationType === "Hybrid" && /\bhybrid\b/i.test(source)) ||
+      (fields.locationType === "Hybrid" && /\bhybrid\b|partial(?:ly)?\s+remote|possible\s+partial/i.test(source)) ||
       (fields.locationType === "On-site" && /\bon-?site\b|in office|in-person/i.test(source)))
       ? fields.locationType
       : undefined;
@@ -283,7 +287,8 @@ export function deriveValidationWarnings(
   const warnings: ValidationWarning[] = [...evaluateNeedReadiness(job).issues];
   if (job.salaryMin == null && job.salaryMax == null)
     warnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
-  if (job.requiredSkills.length > 0 && job.requiredSkills.length < 3)
+  const skillCount = tokenizeMustHaveSkills(job.requiredSkills).length;
+  if (skillCount > 0 && skillCount < 3)
     warnings.push({
       field: "requiredSkills",
       severity: "warning",
@@ -292,6 +297,41 @@ export function deriveValidationWarnings(
   if (job.minYearsExperience == null)
     warnings.push({ field: "experience", severity: "warning", message: "No years-of-experience band specified." });
   return warnings;
+}
+
+/** Prefer the longer tokenized list. Cloud must not shrink a split Skill (Must). */
+export function coalesceRequiredSkills(
+  heuristic: string[] | undefined,
+  cloud?: string[] | undefined,
+): string[] {
+  const heur = tokenizeMustHaveSkills(heuristic);
+  const live = tokenizeMustHaveSkills(cloud);
+  if (heur.length >= live.length && heur.length > 0) return heur;
+  return live.length ? live : heur;
+}
+
+export function evidenceIntake(mock: ParsedIntake): ParsedIntake {
+  const requiredSkills = tokenizeMustHaveSkills(mock.jobAnalysis.requiredSkills);
+  const niceToHaveSkills = tokenizeMustHaveSkills(mock.jobAnalysis.niceToHaveSkills);
+  const jobAnalysis = {
+    ...mock.jobAnalysis,
+    requiredSkills,
+    niceToHaveSkills,
+  };
+  const validationWarnings = deriveValidationWarnings(jobAnalysis);
+  jobAnalysis.validationWarnings = validationWarnings;
+  return {
+    ...mock,
+    jobAnalysis,
+    validationWarnings,
+    extractionMode: "evidence",
+    providerWarning: undefined,
+  };
+}
+
+function vssEvidenceIsUsable(job: JobAnalysis): boolean {
+  const skills = tokenizeMustHaveSkills(job.requiredSkills);
+  return job.title.trim().length >= 2 && skills.length >= 2;
 }
 
 /**
@@ -306,10 +346,18 @@ export async function parseIntakeLive(
   settings: SystemSettings,
   input: { email: string; jd?: string },
 ): Promise<ParsedIntake> {
-  const mock = parseEmailAndJD(input);
+  const mock = evidenceIntake(parseEmailAndJD(input));
+  const sourceText = `${input.email}\n${input.jd ?? ""}`;
+  const vssUsable =
+    isVssRecruitmentNeed(sourceText) &&
+    (evaluateNeedReadiness(mock.jobAnalysis).ready || vssEvidenceIsUsable(mock.jobAnalysis));
+  if (vssUsable) {
+    return mock;
+  }
 
   const aiCfg = resolveAiProvider(settings, "chat");
   if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
+    if (evaluateNeedReadiness(mock.jobAnalysis).ready) return mock;
     return {
       ...mock,
       providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
@@ -330,56 +378,62 @@ export async function parseIntakeLive(
     }
   }
 
+  const cloudMiss = (warning: string): ParsedIntake =>
+    evaluateNeedReadiness(mock.jobAnalysis).ready
+      ? mock
+      : { ...mock, providerWarning: warning };
+
   let result: Awaited<ReturnType<typeof hermesGenerate>>;
   try {
     result = await hermesGenerate(genInput);
   } catch {
-    return {
-      ...mock,
-      providerWarning: "The cloud parser could not be reached. Only facts present in the submitted brief were extracted.",
-    };
+    return cloudMiss(
+      "The cloud parser could not be reached. Only facts present in the submitted brief were extracted.",
+    );
   }
   if (!result.ok || !result.text) {
-    return {
-      ...mock,
-      providerWarning: "The cloud parser did not complete. Only facts present in the submitted brief were extracted.",
-    };
+    return cloudMiss(
+      "The cloud parser did not complete. Only facts present in the submitted brief were extracted.",
+    );
   }
 
   const parsedFields = parseHermesIntakeJson(result.text);
   if (!parsedFields) {
-    return {
-      ...mock,
-      providerWarning: "The cloud parser returned an invalid result. Only facts present in the submitted brief were extracted.",
-    };
+    return cloudMiss(
+      "The cloud parser returned an invalid result. Only facts present in the submitted brief were extracted.",
+    );
   }
   const fields = groundLiveIntakeFields(parsedFields, `${input.email}\n${input.jd ?? ""}`);
+  const specified = <T,>(heuristic: T, live: T | undefined, unspecified: T): T =>
+    heuristic !== unspecified ? heuristic : (live ?? heuristic);
 
   const jobFields = {
     title: fields.title ?? mock.jobAnalysis.title,
     department: fields.department ?? mock.jobAnalysis.department,
-    seniority: fields.seniority ?? mock.jobAnalysis.seniority,
-    employmentType: fields.employmentType ?? mock.jobAnalysis.employmentType,
-    locationType: fields.locationType ?? mock.jobAnalysis.locationType,
-    regions: fields.regions?.length ? fields.regions : mock.jobAnalysis.regions,
+    seniority: specified(mock.jobAnalysis.seniority, fields.seniority, "Unspecified"),
+    employmentType: specified(mock.jobAnalysis.employmentType, fields.employmentType, "Unspecified"),
+    locationType: specified(mock.jobAnalysis.locationType, fields.locationType, "Unspecified"),
+    regions: mock.jobAnalysis.regions.length ? mock.jobAnalysis.regions : fields.regions?.length ? fields.regions : mock.jobAnalysis.regions,
     timezone: fields.timezone ?? mock.jobAnalysis.timezone,
-    salaryMin: fields.salaryMin !== undefined ? fields.salaryMin : mock.jobAnalysis.salaryMin,
-    salaryMax: fields.salaryMax !== undefined ? fields.salaryMax : mock.jobAnalysis.salaryMax,
+    salaryMin: fields.salaryMin ?? mock.jobAnalysis.salaryMin,
+    salaryMax: fields.salaryMax ?? mock.jobAnalysis.salaryMax,
     currency: fields.currency ?? mock.jobAnalysis.currency,
     equity: fields.equity ?? mock.jobAnalysis.equity,
-    requiredSkills: fields.requiredSkills?.length ? fields.requiredSkills : mock.jobAnalysis.requiredSkills,
-    niceToHaveSkills: fields.niceToHaveSkills ?? mock.jobAnalysis.niceToHaveSkills,
-    minYearsExperience:
-      fields.minYearsExperience !== undefined ? fields.minYearsExperience : mock.jobAnalysis.minYearsExperience,
-    maxYearsExperience:
-      fields.maxYearsExperience !== undefined ? fields.maxYearsExperience : mock.jobAnalysis.maxYearsExperience,
+    requiredSkills: coalesceRequiredSkills(mock.jobAnalysis.requiredSkills, fields.requiredSkills),
+    niceToHaveSkills: tokenizeMustHaveSkills(
+      mock.jobAnalysis.niceToHaveSkills.length
+        ? mock.jobAnalysis.niceToHaveSkills
+        : fields.niceToHaveSkills,
+    ),
+    minYearsExperience: mock.jobAnalysis.minYearsExperience ?? fields.minYearsExperience ?? null,
+    maxYearsExperience: mock.jobAnalysis.maxYearsExperience ?? fields.maxYearsExperience ?? null,
     education: fields.education ?? mock.jobAnalysis.education,
     industryExperience: fields.industryExperience ?? mock.jobAnalysis.industryExperience,
     companyStageTarget: fields.companyStageTarget?.length ? fields.companyStageTarget : mock.jobAnalysis.companyStageTarget,
     teamSize: fields.teamSize ?? mock.jobAnalysis.teamSize,
     reportingTo: fields.reportingTo ?? mock.jobAnalysis.reportingTo,
     urgency: fields.urgency ?? mock.jobAnalysis.urgency,
-    language: fields.language ?? mock.jobAnalysis.language,
+    language: mock.jobAnalysis.language || fields.language || "",
   };
   const validationWarnings = deriveValidationWarnings(jobFields);
   const jobAnalysis: JobAnalysis = { ...jobFields, validationWarnings };

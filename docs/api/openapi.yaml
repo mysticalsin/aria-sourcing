@@ -198,6 +198,127 @@ paths:
           $ref: '#/components/responses/SelectionRateLimitedError'
         '503':
           $ref: '#/components/responses/SearchDependencyError'
+  /api/source/need:
+    post:
+      operationId: sourceNeedShortlist
+      summary: Parse a need and return a scored shortlist
+      description: >-
+        Aria sourcing engine. Paste a JD, connected email, or text-layer PDF.
+        Fixture mode proves the matcher. Live mode fail-closes without provider
+        keys and never invents people. Score floor 60, cap 20, name-only fails.
+      x-aria-contract-version: '2026-08-31'
+      x-aria-max-body-bytes: 450000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 10
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Must exactly equal the request URL origin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                jd:
+                  type: string
+                  maxLength: 20000
+                email:
+                  type: string
+                  maxLength: 20000
+                pdfBase64:
+                  type: string
+                  maxLength: 400000
+                mode:
+                  type: string
+                  enum: [fixture, live]
+                  default: fixture
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 20
+                liveEvidence:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [id, name, skills, cvText, linkedinText, yearsExperience, provenance]
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      skills:
+                        type: array
+                        items:
+                          type: string
+                      cvText:
+                        type: string
+                      linkedinText:
+                        type: string
+                      yearsExperience:
+                        type: [integer, 'null']
+                      provenance:
+                        type: string
+                        enum: [live]
+      responses:
+        '200':
+          description: Need parsed and shortlist scored.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, requestId, mode, need, shortlist, rejected]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  requestId:
+                    type: string
+                  mode:
+                    type: string
+                    enum: [fixture, live]
+                  need:
+                    type: object
+                  shortlist:
+                    type: array
+                    maxItems: 20
+                  rejected:
+                    type: array
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '422':
+          $ref: '#/components/responses/BadRequestError'
+        '429':
+          $ref: '#/components/responses/SearchRateLimitedError'
+        '503':
+          $ref: '#/components/responses/SearchDependencyError'
   /api/admin/source/apollo/erasure:
     post:
       operationId: eraseApolloEnrichmentReceipt

@@ -26,6 +26,7 @@ import {
   type TabItem,
 } from "@/components/ui";
 import { HydrationGate } from "@/components/app/page-header";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
@@ -33,12 +34,7 @@ import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
-import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
-import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
-import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
-import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
-import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
@@ -55,8 +51,11 @@ import {
   useCampaignCandidates,
   useCampaignOutreach,
   useHermes,
+  useApiKeys,
   useHydrated,
+  useIntegrations,
   useReplies,
+  useSeats,
   useReportForCampaign,
   useRole,
 } from "@/lib/store";
@@ -64,6 +63,19 @@ import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import { formatHarvestEvidenceError } from "@/lib/sourcing/harvest-evidence";
+import {
+  emptyPeopleFirstToast,
+  isPeopleFirstRole,
+  missingPeoplePluginsToast,
+  peoplePluginFailLoudUi,
+  sourceRejectedToast,
+  visiblePeopleFirstLearningReceipts,
+} from "@/lib/sourcing/people-plugins";
+import { repairGithubQueries } from "@/lib/sourcing/github-search-language";
+import { repairLinkedinBoolean } from "@/lib/sourcing/linkedin-boolean";
+import { tokenizeMustHaveSkills } from "@/lib/sourcing/vss-need";
+import { deriveValidationWarnings } from "@/lib/ai/intake";
 import type {
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
@@ -102,7 +114,6 @@ function mergeSourcingFeedbackReceipts(
 import {
   ArrowLeft,
   Banknote,
-  Bot,
   CalendarCheck,
   CalendarPlus,
   CheckCircle2,
@@ -118,7 +129,6 @@ import {
   Pause,
   Pencil,
   Play,
-  PlayCircle,
   RefreshCw,
   Send,
   Sparkles,
@@ -202,10 +212,7 @@ function yearsLabel(min: number | null, max: number | null): string {
 }
 
 function parseSkillList(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return tokenizeMustHaveSkills(raw);
 }
 
 /**
@@ -348,6 +355,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const allBookings = useBookings();
   const report = useReportForCampaign(id);
   const actions = useActions();
+  const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
+  const seats = useSeats();
   const role = useRole();
   const hermesState = useHermes().state;
   const { toast } = useToast();
@@ -359,7 +369,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [stageFilter, setStageFilter] = React.useState("all");
   const [scoreFilter, setScoreFilter] = React.useState("all");
-  const [agentRunning, setAgentRunning] = React.useState(false);
   const [feedbackState, setFeedbackState] = React.useState<{
     campaignId: string;
     receipts: SourcingFeedbackReceipt[];
@@ -367,6 +376,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const feedbackReceipts = feedbackState.campaignId === id ? feedbackState.receipts : [];
   const [feedbackSubmitting, setFeedbackSubmitting] = React.useState<Set<string>>(new Set());
   const [sourcing, setSourcing] = React.useState(false);
+  const [sourceBatchError, setSourceBatchError] = React.useState<{
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel?: string;
+  } | null>(null);
   const [enrichingAll, setEnrichingAll] = React.useState(false);
   // The just-sourced batch, staged for the streaming reveal below — purely a
   // display buffer; the store already committed these candidates for real.
@@ -377,10 +392,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [bookingCandidateId, setBookingCandidateId] = React.useState<string | null>(null);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
-  // "Watch Aria Work" panel — remounted (via runToken as its key) on every
-  // "Run Aria" click so each click starts a genuinely fresh, replayable run.
-  const [runOpen, setRunOpen] = React.useState(false);
-  const [runToken, setRunToken] = React.useState(0);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -394,7 +405,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         current.campaignId === id
           ? {
               campaignId: id,
-              receipts: mergeSourcingFeedbackReceipts(current.receipts, receipts),
+              receipts: campaign
+                ? visiblePeopleFirstLearningReceipts(
+                    mergeSourcingFeedbackReceipts(current.receipts, receipts),
+                    campaign.jobAnalysis,
+                    integrations,
+                    apiKeys,
+                  )
+                : mergeSourcingFeedbackReceipts(current.receipts, receipts),
             }
           : current,
       );
@@ -402,7 +420,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     return () => {
       cancelled = true;
     };
-  }, [actions, hydrated, id]);
+  }, [actions, apiKeys, campaign, hydrated, id, integrations]);
 
   if (!hydrated) {
     return (
@@ -433,9 +451,37 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const liveSourcingAllowed = campaignAllowsLiveSourcing(c.status);
   const m = c.metrics;
   const jd = c.jobAnalysis;
+  const requiredSkillChips = tokenizeMustHaveSkills(jd.requiredSkills);
+  const niceSkillChips = tokenizeMustHaveSkills(jd.niceToHaveSkills);
+  const liveJdWarnings = deriveValidationWarnings({
+    ...jd,
+    requiredSkills: requiredSkillChips,
+  });
   const strategy = c.sourcingStrategy;
-  const health = campaignHealth(c);
-  const nextAction = nextActionForCampaign(c);
+  const githubQueries = repairGithubQueries(jd, strategy.githubQueries);
+  const linkedinBoolean = repairLinkedinBoolean(jd, strategy.linkedinBoolean);
+  const visibleFeedbackReceipts = visiblePeopleFirstLearningReceipts(
+    feedbackReceipts,
+    c.jobAnalysis,
+    integrations,
+    apiKeys,
+  );
+  const peopleFirst = isPeopleFirstRole(c.jobAnalysis);
+  const visibleSourced = peopleFirst ? candidates.length : m.sourced;
+  const visibleCampaign = {
+    ...c,
+    metrics: { ...c.metrics, sourced: visibleSourced },
+  };
+  const health = campaignHealth(visibleCampaign);
+  const nextAction = nextActionForCampaign(visibleCampaign);
+  const connectBlocker =
+    peopleFirst && candidates.length === 0
+      ? missingPeoplePluginsToast(c.jobAnalysis, integrations, apiKeys)
+      : null;
+  const peopleFirstConnectUi = connectBlocker
+    ? peoplePluginFailLoudUi(connectBlocker, c.jobAnalysis, integrations, apiKeys)
+    : null;
+  const failLoudBanner = sourceBatchError ?? peopleFirstConnectUi;
   const scores = candidates.map((cand) => cand.matchScore);
   const campaignReplies = allReplies.filter((r) => r.campaignId === c.id);
   const campaignBookings = allBookings.filter((b) => b.campaignId === c.id);
@@ -511,53 +557,111 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const handleSource = async () => {
     if (sourcing) return;
     setSourcing(true);
-    const res = await actions.sourceNextBatch(c.id);
-    setSourcing(false);
-    if (!res.ok) {
+    setSourceBatchError(null);
+    try {
+      const res = await actions.sourceNextBatch(c.id);
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(res.error, c.jobAnalysis, integrations, apiKeys);
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setFeedbackState((current) =>
+        current.campaignId === c.id
+          ? {
+              campaignId: c.id,
+              receipts: visiblePeopleFirstLearningReceipts(
+                mergeSourcingFeedbackReceipts(
+                  current.receipts,
+                  res.feedbackReceipts ?? [],
+                ),
+                c.jobAnalysis,
+                integrations,
+                apiKeys,
+              ),
+            }
+          : current,
+      );
+      // Stage the reveal with the exact, already-committed batch — never a
+      // re-derived or re-scored copy — and jump to the Candidates tab so the
+      // stream is immediately visible instead of resolving behind a toast.
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      if (res.accepted.length > 0) setTab("candidates");
+      const isLive = res.source === "github" || res.source === "web";
+      const emptyPeopleFirst = emptyPeopleFirstToast(c.jobAnalysis, integrations, res, apiKeys);
+      if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (res.accepted.length === 0) {
+        if (isPeopleFirstRole(c.jobAnalysis)) {
+          const failLoud = sourceRejectedToast(
+            "Source next batch returned 0 people. This is not a successful harvest.",
+            c.jobAnalysis,
+            integrations,
+            apiKeys,
+          );
+          setSourceBatchError(failLoud);
+          toast({
+            title: failLoud.title,
+            description: failLoud.description,
+            href: failLoud.href,
+            actionLabel: failLoud.actionLabel,
+            variant: "error",
+          });
+          return;
+        }
+        toast({
+          title: "No candidates were added",
+          description: res.skipped.length
+            ? `${res.skipped.length} real results were excluded or already present.`
+            : "The real search completed without a matching result.",
+          variant: "info",
+        });
+        return;
+      }
       toast({
-        title: res.source === "paused" ? "Campaign is paused" : "Sourcing failed",
-        description: res.error,
+        title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
+        description: res.skipped.length
+          ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
+          : isLive
+            ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
+            : "All matched candidates accepted into the pipeline.",
+        variant: "success",
+      });
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "";
+      const failLoud = sourceRejectedToast(
+        /cross-origin/i.test(thrown) ? thrown : formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
+        c.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
         variant: "error",
       });
-      return;
+    } finally {
+      setSourcing(false);
     }
-    setFeedbackState((current) =>
-      current.campaignId === c.id
-        ? {
-            campaignId: c.id,
-            receipts: mergeSourcingFeedbackReceipts(
-              current.receipts,
-              res.feedbackReceipts ?? [],
-            ),
-          }
-        : current,
-    );
-    // Stage the reveal with the exact, already-committed batch — never a
-    // re-derived or re-scored copy — and jump to the Candidates tab so the
-    // stream is immediately visible instead of resolving behind a toast.
-    setJustSourced(res.accepted);
-    setSourceBatchKey((k) => k + 1);
-    if (res.accepted.length > 0) setTab("candidates");
-    const isLive = res.source === "github" || res.source === "web";
-    if (res.accepted.length === 0) {
-      toast({
-        title: "No candidates were added",
-        description: res.skipped.length
-          ? `${res.skipped.length} real results were excluded or already present.`
-          : "The real search completed without a matching result.",
-        variant: "info",
-      });
-      return;
-    }
-    toast({
-      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
-      description: res.skipped.length
-        ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-        : isLive
-          ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
-          : "All matched candidates accepted into the pipeline.",
-      variant: "success",
-    });
   };
 
   // Batch variant of the drawer's unified enrichment waterfall (docs/
@@ -585,48 +689,108 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     });
   };
 
-  const handleRunAgent = async () => {
-    const campaignId = c.id;
-    setAgentRunning(true);
-    const res = await actions.runSourcingAgent(campaignId);
-    setAgentRunning(false);
-    if (!res.ok) {
-      toast({ title: "Sourcing agent didn't run", description: res.error, variant: "error" });
-      return;
-    }
-    setFeedbackState((current) =>
-      current.campaignId === campaignId
-        ? {
-            campaignId,
-            receipts: mergeSourcingFeedbackReceipts(
-              current.receipts,
-              res.feedbackReceipts ?? [],
-            ),
-          }
-        : current,
-    );
-    if (res.added === 0) {
+  const handleAutoSource = async () => {
+    if (sourcing) return;
+    setSourcing(true);
+    setSourceBatchError(null);
+    try {
+      const res = await actions.autoSource(c.id);
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(res.error, c.jobAnalysis, integrations, apiKeys);
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setFeedbackState((current) =>
+        current.campaignId === c.id
+          ? {
+              campaignId: c.id,
+              receipts: visiblePeopleFirstLearningReceipts(
+                mergeSourcingFeedbackReceipts(
+                  current.receipts,
+                  res.feedbackReceipts ?? [],
+                ),
+                c.jobAnalysis,
+                integrations,
+                apiKeys,
+              ),
+            }
+          : current,
+      );
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      if (res.accepted.length > 0) setTab("candidates");
+      const emptyPeopleFirst = emptyPeopleFirstToast(c.jobAnalysis, integrations, res, apiKeys);
+      if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (res.accepted.length === 0) {
+        if (isPeopleFirstRole(c.jobAnalysis)) {
+          const failLoud = sourceRejectedToast(
+            "Auto source returned 0 people. This is not a successful harvest.",
+            c.jobAnalysis,
+            integrations,
+            apiKeys,
+          );
+          setSourceBatchError(failLoud);
+          toast({
+            title: failLoud.title,
+            description: failLoud.description,
+            href: failLoud.href,
+            actionLabel: failLoud.actionLabel,
+            variant: "error",
+          });
+          return;
+        }
+        toast({
+          title: "No candidates were added",
+          description: res.skipped.length
+            ? `${res.skipped.length} real results were excluded or already present.`
+            : "The real search completed without a matching result.",
+          variant: "info",
+        });
+        return;
+      }
       toast({
-        title: "No candidates were added",
-        description:
-          res.mode === "cloud"
-            ? "The real provider search completed, but every result was empty, excluded, or already present."
-            : "The reviewed GitHub queries completed, but every result was empty, excluded, or already present. No cloud model ran.",
-        variant: "info",
+        title: `Auto sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}`,
+        description: res.enriched
+          ? "Search, enrich, and merge finished. One shortlist."
+          : "Search finished. Enrichment did not add new fields.",
+        variant: "success",
       });
-      return;
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "";
+      const failLoud = sourceRejectedToast(
+        /cross-origin/i.test(thrown) ? thrown : formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
+        c.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
+    } finally {
+      setSourcing(false);
     }
-    toast({
-      title:
-        res.mode === "cloud"
-          ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
-          : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
-      description:
-        res.mode === "cloud"
-          ? "Real provider search and cloud-assisted drafts are ready for human review."
-          : "Real GitHub results and locally generated drafts are ready for human review. No cloud model ran.",
-      variant: "success",
-    });
   };
 
   const handleSourcingFeedback = async (
@@ -664,11 +828,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       description: "This aggregate result can inform a future human-reviewed sourcing lesson.",
       variant: "success",
     });
-  };
-
-  const handleOpenRun = () => {
-    setRunOpen(true);
-    setRunToken((k) => k + 1);
   };
 
   const handlePause = () => {
@@ -775,7 +934,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSaveJd = (patch: Partial<JobAnalysis>) => {
     const candidateCount = candidates.length;
-    if (!actions.updateCampaign(c.id, { jobAnalysis: { ...c.jobAnalysis, ...patch } })) {
+    const nextJd: JobAnalysis = {
+      ...c.jobAnalysis,
+      ...patch,
+      requiredSkills: tokenizeMustHaveSkills(patch.requiredSkills ?? c.jobAnalysis.requiredSkills),
+      niceToHaveSkills: tokenizeMustHaveSkills(patch.niceToHaveSkills ?? c.jobAnalysis.niceToHaveSkills),
+    };
+    nextJd.validationWarnings = deriveValidationWarnings(nextJd);
+    if (!actions.updateCampaign(c.id, { jobAnalysis: nextJd })) {
       toast({ title: "Requirements not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
       return;
     }
@@ -812,7 +978,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     icon: React.ReactNode;
     tone: Tone;
   }[] = [
-    { label: "Sourced", value: formatNumber(m.sourced), hint: "Candidates in the pool", icon: <Users />, tone: "electric" },
+    { label: "Sourced", value: formatNumber(visibleSourced), hint: "Candidates in the pool", icon: <Users />, tone: "electric" },
     { label: "Contacted", value: formatNumber(m.contacted), hint: "Outreach delivered", icon: <Send />, tone: "tangerine" },
     { label: "Reply rate", value: formatPercent(m.replyRate), hint: "Replies per contact", icon: <MessageSquare />, tone: "aqua" },
     { label: "Interested", value: formatNumber(m.interested), hint: "Positive intent", icon: <Sparkles />, tone: "tangerine" },
@@ -899,7 +1065,27 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </dl>
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:max-w-[55%] lg:justify-end">
+          <div className="flex min-w-0 flex-col items-stretch gap-2 lg:max-w-[55%] lg:items-end">
+            <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
+            {failLoudBanner ? (
+              <div
+                role="alert"
+                data-testid="source-next-batch-error"
+                className="w-full rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-left text-sm"
+              >
+                <p className="font-semibold text-ink">{failLoudBanner.title}</p>
+                <p className="mt-0.5 text-muted">{failLoudBanner.description}</p>
+                {failLoudBanner.href && failLoudBanner.actionLabel ? (
+                  <Link
+                    href={failLoudBanner.href}
+                    className="mt-2 inline-flex h-8 items-center rounded-full bg-ink px-3 text-xs font-semibold text-paper"
+                  >
+                    {failLoudBanner.actionLabel}
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
             <Button
               variant="secondary"
               leftIcon={<Sparkles className="h-4 w-4" />}
@@ -911,26 +1097,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               {sourcing ? "Sourcing…" : "Source next batch"}
             </Button>
             <Button
-              variant="secondary"
-              leftIcon={<Bot className="h-4 w-4" />}
-              onClick={handleRunAgent}
-              disabled={agentRunning || !liveSourcingAllowed}
-              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run the sourcing agent" : undefined}
-            >
-              {agentRunning ? "Agent working…" : "Run sourcing agent"}
-            </Button>
-            <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApifyButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <Button
               variant="primary"
-              leftIcon={<PlayCircle className="h-4 w-4" />}
-              onClick={handleOpenRun}
-              disabled={!liveSourcingAllowed}
-              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run Aria" : undefined}
+              leftIcon={<Sparkles className="h-4 w-4" />}
+              onClick={handleAutoSource}
+              loading={sourcing}
+              disabled={sourcing || !liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to auto source" : undefined}
             >
-              Run Aria
+              {sourcing ? "Sourcing…" : "Auto source"}
             </Button>
             <Button
               variant="outline"
@@ -957,6 +1131,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 Mark filled
               </Button>
             )}
+            </div>
           </div>
         </div>
 
@@ -969,7 +1144,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </Card>
 
-      {feedbackReceipts.length > 0 && (
+      {visibleFeedbackReceipts.length > 0 && (
         <Card className="mb-6" aria-label="Sourcing lesson feedback">
           <CardHeader>
             <Eyebrow>Private role learning</Eyebrow>
@@ -980,7 +1155,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               Feedback stores aggregate query outcomes only. It never sends candidate profiles to Graphify,
               and no lesson can go live without a separate admin review.
             </p>
-            {feedbackReceipts.map((receipt) => {
+            {visibleFeedbackReceipts.map((receipt) => {
               const submitting = feedbackSubmitting.has(receipt.receiptId);
               return (
                 <div
@@ -989,6 +1164,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 >
                   <p className="text-sm font-medium text-ink">
                     {receipt.platform}: {receipt.candidateCount} real candidate{receipt.candidateCount === 1 ? "" : "s"}
+                    {receipt.query ? ` · ${receipt.query}` : ""}
+                    {receipt.createdAt ? ` · ${new Date(receipt.createdAt).toLocaleString()}` : ""}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -1023,22 +1200,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </Card>
       )}
 
-      {runOpen && (
-        <AgentRunStream
-          key={runToken}
-          campaignId={c.id}
-          autoStart
-          onClose={() => setRunOpen(false)}
-          className="mb-6 animate-fade-in"
-        />
-      )}
-
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 
       {/* Overview */}
       <TabPanel value="overview" active={tab === "overview"} idBase={idBase}>
         <div className="space-y-6">
-          <StagePipeline metrics={m} />
+          <StagePipeline metrics={visibleCampaign.metrics} />
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {overviewMetrics.map((mc) => (
@@ -1069,11 +1236,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   </Badge>
                   <p className="text-sm text-ink-soft">{health.detail}</p>
                 </div>
-                {jd.validationWarnings.length === 0 ? (
+                {liveJdWarnings.length === 0 ? (
                   <p className="text-sm text-muted">No outstanding validation warnings on this role.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {jd.validationWarnings.map((w, i) => (
+                    {liveJdWarnings.map((w, i) => (
                       <li key={`${w.field}-${i}`} className="rounded-2xl border border-line p-3">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wide text-muted">{w.field}</span>
@@ -1142,11 +1309,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <CardTitle className="mt-1">Validation</CardTitle>
             </CardHeader>
             <CardBody>
-              {jd.validationWarnings.length === 0 ? (
+              {liveJdWarnings.length === 0 ? (
                 <p className="text-sm text-muted">Clean parse. No assumptions flagged for review.</p>
               ) : (
                 <ul className="space-y-2">
-                  {jd.validationWarnings.map((w, i) => (
+                  {liveJdWarnings.map((w, i) => (
                     <li key={`${w.field}-${i}`} className="rounded-2xl border border-line p-3">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-semibold uppercase tracking-wide text-muted">{w.field}</span>
@@ -1166,11 +1333,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <CardBody className="grid gap-6 sm:grid-cols-2">
               <div className="space-y-2.5">
                 <Eyebrow>Required skills</Eyebrow>
-                <Chips items={jd.requiredSkills} label="Required skills" />
+                <Chips items={requiredSkillChips} label="Required skills" />
               </div>
               <div className="space-y-2.5">
                 <Eyebrow>Nice to have</Eyebrow>
-                <Chips items={jd.niceToHaveSkills} label="Nice to have skills" />
+                <Chips items={niceSkillChips} label="Nice to have skills" />
               </div>
               <div className="space-y-2.5">
                 <Eyebrow>Industry experience</Eyebrow>
@@ -1228,7 +1395,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </Card>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            {strategy.githubQueries.map((gq, i) => (
+            {githubQueries.map((gq, i) => (
               <Card key={`${gq.label}-${i}`}>
                 <CardBody className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1267,13 +1434,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   variant="ghost"
                   size="sm"
                   leftIcon={<Copy className="h-3.5 w-3.5" />}
-                  onClick={() => copy(strategy.linkedinBoolean, "Boolean string")}
+                  onClick={() => copy(linkedinBoolean, "Boolean string")}
                 >
                   Copy
                 </Button>
               </div>
               <p className="break-words rounded-2xl bg-ink/[0.03] px-3 py-2 font-mono text-xs text-ink-soft">
-                {strategy.linkedinBoolean || "No boolean string generated."}
+                {linkedinBoolean || "No boolean string generated."}
               </p>
             </CardBody>
           </Card>

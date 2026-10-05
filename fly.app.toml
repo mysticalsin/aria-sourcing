@@ -24,7 +24,7 @@ primary_region = "cdg"
 [env]
   NODE_ENV                      = "production"
   PORT                          = "3000"
-  HOSTNAME                      = "0.0.0.0"
+  HOSTNAME                      = "::"
   NEXT_TELEMETRY_DISABLED       = "1"
   # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
@@ -44,6 +44,9 @@ primary_region = "cdg"
   auto_stop_machines   = "suspend"
   auto_start_machines  = true
   min_machines_running = 1
+  # Default 60s idle kills a Source click after harvest 1 (90s poll) before
+  # harvest 2 can POST. One click is one request: the server runs the chain.
+  idle_timeout         = 360
   [http_service.concurrency]
     type       = "requests"
     soft_limit = 200

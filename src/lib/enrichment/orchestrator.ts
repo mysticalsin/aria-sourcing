@@ -12,7 +12,7 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, EnrichableField, EnrichmentAttempt, JobAnalysis, ScoringWeights, SourcePlatform } from "@/lib/types";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
 import { computeCoverage, mergeEnrichment, recordEnrichmentAttempt } from "@/lib/enrichment/merge";
-import { apolloRunner, devFusionRunner, POLL_BUDGET_MS, seamlessRunner, sillageRunner, type EnrichmentRunner } from "@/lib/enrichment/runners";
+import { apolloRunner, devFusionRunner, githubTechStackRunner, POLL_BUDGET_MS, seamlessRunner, sillageRunner, type EnrichmentRunner } from "@/lib/enrichment/runners";
 import { scoreCandidate } from "@/lib/scoring";
 
 /** Wall-clock budget for the whole waterfall, well under the platform's 60s
@@ -82,6 +82,7 @@ async function releaseProviderBudget(ledgerId: string): Promise<void> {
  *  the design calls for is wired below). */
 const RUNNERS: Partial<Record<SourcePlatform, EnrichmentRunner>> = {
   Apify: devFusionRunner,
+  GitHub: githubTechStackRunner,
   Apollo: apolloRunner,
   Seamless: seamlessRunner,
   Sillage: sillageRunner,

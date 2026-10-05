@@ -23,6 +23,7 @@ import {
   validateManifest,
 } from "./operator-core.mjs";
 import { verifySupplyChainForImage } from "./operator.mjs";
+import { validateFlyRoleToml } from "./validate-fly-toml.mjs";
 import {
   agentFrameworkConfigurationInputFromEnvironment,
   deriveAgentFrameworkConfiguration,
@@ -138,7 +139,7 @@ test("all reviewed Fly role configs validate and remain private without Fly Prox
   for (const role of CONFIGS) {
     const file = path.join(here, `${role}.toml`);
     const source = fs.readFileSync(file, "utf8");
-    execFileSync("flyctl", ["config", "validate", "--config", file], { stdio: "pipe" });
+    validateFlyRoleToml(source, role);
     assert.doesNotMatch(source, /^\s*\[\[?services?\]?\]/m, role);
     assert.doesNotMatch(source, /^\s*\[http_service\]/m, role);
     assert.doesNotMatch(source, /^\s*\[build\]/m, role);
@@ -148,6 +149,10 @@ test("all reviewed Fly role configs validate and remain private without Fly Prox
     assert.match(source, /persist_rootfs\s*=\s*"never"/, role);
     assert.doesNotMatch(source, /:latest|raw_value\s*=|local_path\s*=/, role);
   }
+  assert.throws(
+    () => validateFlyRoleToml('app = "aria-mantu-x"\n[[services]]\n  internal_port = 8080\n', "proxy"),
+    /services|http_service/i,
+  );
 });
 
 test("stateful apps use distinct volumes with scheduled snapshots and bounded growth", () => {

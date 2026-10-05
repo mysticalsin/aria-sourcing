@@ -13,6 +13,30 @@ test("approved role-bound query passes", () => {
   );
 });
 
+test("BA expansion harvest queries stay bound to the approved role", () => {
+  const ba = {
+    ...campaign,
+    jobAnalysis: {
+      ...campaign.jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Business Analysis",
+      requiredSkills: ["Calypso", "Business Analysis"],
+      industryExperience: ["Finance"],
+      location: "Montreal",
+      regions: ["Montreal"],
+    },
+  };
+  for (const query of [
+    "Calypso Business Analyst",
+    "Business Analyst Montreal",
+    "Calypso consultant",
+    "trading-platform BA",
+    "finance BA",
+  ]) {
+    assert.deepEqual(validateSourcingQuery("Apify", query, ba), { ok: true }, query);
+  }
+});
+
 test("unrelated, sensitive-proxy, and prompt-like queries fail closed", () => {
   assert.equal(
     validateSourcingQuery("GitHub", "language:Rust followers:>40", campaign).ok,

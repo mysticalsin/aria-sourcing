@@ -1,10 +1,25 @@
 import {
+  formatHarvestEvidenceError,
+  isHarvestEvidenceCode,
+  PEOPLE_FIRST_CLIENT_WAIT_MS,
+  PEOPLE_FIRST_HARVEST_CONTINUE,
+} from "./harvest-evidence";
+import {
+  CROSS_ORIGIN_SOURCING_TOAST,
+  MISSING_PEOPLE_PLUGINS_TOAST,
+  SOURCING_AGENT_UNAVAILABLE_TOAST,
+} from "./people-plugins";
+import {
   parseSourcingAgentCandidates,
   parseSourcingAgentSuccessResponse,
   type SourcingAgentSuccessResponse,
 } from "./sourcing-agent-contract";
 
+const MISSING_PLUGIN_TOAST = MISSING_PEOPLE_PLUGINS_TOAST;
+
 const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
+  CROSS_ORIGIN_REQUEST: CROSS_ORIGIN_SOURCING_TOAST,
+  SOURCING_AGENT_UNAVAILABLE: SOURCING_AGENT_UNAVAILABLE_TOAST,
   CAMPAIGN_NOT_FOUND: "Campaign not found.",
   CAMPAIGN_NOT_ACTIVE: "Campaign is not active for sourcing.",
   CAMPAIGN_NOT_READY: "Complete and review the campaign brief before sourcing.",
@@ -13,6 +28,7 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   INSUFFICIENT_PERMISSIONS: "Sourcing authority is no longer available.",
   SOURCING_AGENT_RATE_LIMITED: "The sourcing-agent rate limit was reached. Try again later.",
   SOURCING_AGENT_REPLAY_BLOCKED: "This sourcing request was already claimed. Start a new sourcing run.",
+  MISSING_PLUGIN: MISSING_PLUGIN_TOAST,
   SOURCING_AGENT_NOT_CONFIGURED: "The selected sourcing provider is not configured.",
   SOURCING_AGENT_UPSTREAM_FAILED: "The sourcing agent did not complete.",
   SOURCING_AGENT_RESPONSE_INVALID: "The sourcing agent returned an invalid result.",
@@ -20,7 +36,22 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
 
 export type ReviewedSourcingRequestResult =
   | { ok: true; value: SourcingAgentSuccessResponse }
-  | { ok: false; error: string };
+  | { ok: false; error: string; resume?: { query: string; currentJobTitles?: string[] } };
+
+/** Planned step the server asks the same click to resume from. Never invented client-side. */
+function parseResumeStep(record: Record<string, unknown> | null): { query: string; currentJobTitles?: string[] } | null {
+  const raw = record?.resume;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const query = typeof (raw as { query?: unknown }).query === "string" ? (raw as { query: string }).query.trim() : "";
+  if (!query || query.length > 256) return null;
+  const titles = Array.isArray((raw as { currentJobTitles?: unknown }).currentJobTitles)
+    ? ((raw as { currentJobTitles: unknown[] }).currentJobTitles)
+        .filter((title): title is string => typeof title === "string" && title.trim().length > 0)
+        .map((title) => title.trim().slice(0, 120))
+        .slice(0, 8)
+    : [];
+  return titles.length ? { query, currentJobTitles: titles } : { query };
+}
 
 export async function acknowledgeReviewedSourcing(
   workspaceFetch: typeof fetch,
@@ -59,6 +90,7 @@ export async function requestReviewedSourcing(
   campaignId: string,
   count: number,
   agentFramework?: { runId: string; capabilityToken: string; query: string },
+  harvestStep?: { query: string; currentJobTitles?: string[] },
 ): Promise<ReviewedSourcingRequestResult> {
   if (
     agentFramework &&
@@ -73,47 +105,108 @@ export async function requestReviewedSourcing(
   const operationId = agentFramework?.runId ?? crypto.randomUUID();
   let response: Response;
   try {
-    response = await workspaceFetch("/api/sourcing-agent", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": operationId,
-        "X-Request-Id": operationId,
-      },
-      body: JSON.stringify({
-        campaignId,
-        count,
-        ...(agentFramework
-          ? {
-              agentFrameworkRunId: agentFramework.runId,
-              agentFrameworkCapabilityToken: agentFramework.capabilityToken,
-              agentFrameworkQuery: agentFramework.query,
-            }
-          : {}),
-      }),
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const error = new Error("The operation was aborted due to timeout");
+        error.name = "TimeoutError";
+        reject(error);
+      }, PEOPLE_FIRST_CLIENT_WAIT_MS);
     });
-  } catch {
+    response = await Promise.race([
+      workspaceFetch("/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": operationId,
+          "X-Request-Id": operationId,
+        },
+        signal: AbortSignal.timeout(PEOPLE_FIRST_CLIENT_WAIT_MS),
+        body: JSON.stringify({
+          campaignId,
+          count,
+          ...(agentFramework
+            ? {
+                agentFrameworkRunId: agentFramework.runId,
+                agentFrameworkCapabilityToken: agentFramework.capabilityToken,
+                agentFrameworkQuery: agentFramework.query,
+              }
+            : {}),
+          ...(harvestStep?.query
+            ? {
+                harvestQuery: harvestStep.query,
+                ...(harvestStep.currentJobTitles?.length
+                  ? { currentJobTitles: harvestStep.currentJobTitles }
+                  : {}),
+              }
+            : {}),
+        }),
+      }),
+      timeout,
+    ]).finally(() => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    });
+  } catch (error) {
+    const aborted =
+      (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) ||
+      (typeof error === "object" &&
+        error !== null &&
+        "name" in error &&
+        (error.name === "AbortError" || error.name === "TimeoutError"));
+    if (aborted) {
+      return {
+        ok: false,
+        error: formatHarvestEvidenceError("aborted", { query: "(client wait)" }),
+      };
+    }
     return { ok: false, error: "The sourcing agent could not be reached." };
   }
 
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
-    return { ok: false, error: "The sourcing agent returned an invalid response." };
-  }
-  const body = (await response.json().catch(() => null)) as unknown;
+  const jsonBody =
+    contentType.split(";", 1)[0]?.trim() === "application/json"
+      ? ((await response.json().catch(() => null)) as unknown)
+      : null;
   if (!response.ok) {
-    const code =
-      body !== null && typeof body === "object" && !Array.isArray(body)
-        ? (body as Record<string, unknown>).code
+    const record =
+      jsonBody !== null && typeof jsonBody === "object" && !Array.isArray(jsonBody)
+        ? (jsonBody as Record<string, unknown>)
         : null;
+    const code = typeof record?.code === "string" ? record.code : null;
+    const apiError = typeof record?.error === "string" ? record.error : "";
+    if (code === "CROSS_ORIGIN_REQUEST" || /cross-origin/i.test(apiError)) {
+      return { ok: false, error: CROSS_ORIGIN_SOURCING_TOAST };
+    }
+    if (code === "SOURCING_AGENT_UNAVAILABLE" || /Sourcing is unavailable/i.test(apiError)) {
+      return { ok: false, error: SOURCING_AGENT_UNAVAILABLE_TOAST };
+    }
+    if (code === "MISSING_PLUGIN" || apiError.includes("MISSING_PLUGIN")) {
+      return {
+        ok: false,
+        error: apiError.includes("MISSING_PLUGIN") ? apiError : MISSING_PLUGIN_TOAST,
+      };
+    }
+    if (code === PEOPLE_FIRST_HARVEST_CONTINUE) {
+      const resume = parseResumeStep(record);
+      const error = apiError.trim() || formatHarvestEvidenceError("continue", { query: resume?.query ?? "" });
+      return resume ? { ok: false, error, resume } : { ok: false, error };
+    }
+    if (isHarvestEvidenceCode(code) && apiError.trim()) {
+      return { ok: false, error: apiError };
+    }
+    if (typeof code === "string" && SAFE_SOURCING_ERRORS[code]) {
+      return { ok: false, error: SAFE_SOURCING_ERRORS[code] };
+    }
+    const detail = apiError.trim() || code || `HTTP ${response.status}`;
     return {
       ok: false,
-      error:
-        typeof code === "string" && SAFE_SOURCING_ERRORS[code]
-          ? SAFE_SOURCING_ERRORS[code]
-          : "The sourcing agent is unavailable.",
+      error: `Sourcing request failed (${detail}). Do not treat this as 0 people.`,
     };
   }
+  if (jsonBody === null) {
+    return { ok: false, error: "The sourcing agent returned an invalid response." };
+  }
+  const body = jsonBody;
 
   const parsed = parseSourcingAgentSuccessResponse(
     body,

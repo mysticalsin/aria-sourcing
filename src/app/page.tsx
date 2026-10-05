@@ -20,11 +20,11 @@ import { HydrationGate } from "@/components/app/page-header";
 import { HeroPanel } from "@/components/dashboard/hero-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AttentionPanel } from "@/components/dashboard/attention-panel";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { IntegrationStrip } from "@/components/dashboard/integration-strip";
 import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
-import { AgentRunStream } from "@/components/run/agent-run-stream";
 import {
   commandCenterMode,
   resolveCommandCenterNextStep,
@@ -37,9 +37,17 @@ import {
   useCandidates,
   useDashboardKpis,
   useHydrated,
+  useApiKeys,
+  useIntegrations,
   usePendingApprovals,
   useReplies,
+  useSeats,
 } from "@/lib/store";
+import {
+  emptyPeopleFirstToast,
+  isPeopleFirstRole,
+  sourceRejectedToast,
+} from "@/lib/sourcing/people-plugins";
 import { funnelForCandidates } from "@/lib/metrics";
 import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/lib/utils";
 import {
@@ -48,7 +56,6 @@ import {
   FileText,
   GitBranch,
   Megaphone,
-  PlayCircle,
   Radar,
   Reply,
   Sparkles,
@@ -75,7 +82,9 @@ export default function DashboardPage() {
   const pendingApprovals = usePendingApprovals();
   const replies = useReplies();
   const activeCampaign = useActiveCampaign();
-
+  const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
+  const seats = useSeats();
   const unrepliedCount = React.useMemo(
     () => replies.filter((r) => !r.handled).length,
     [replies],
@@ -94,25 +103,24 @@ export default function DashboardPage() {
   const isFirstRun = ccMode === "first_run";
 
   const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
-  const funnel = React.useMemo(() => funnelForCandidates(candidates), [candidates]);
+  const pipelineCandidates = React.useMemo(
+    () =>
+      activeCampaign
+        ? candidates.filter((row) => row.campaignId === activeCampaign.id)
+        : candidates,
+    [candidates, activeCampaign],
+  );
+  const funnel = React.useMemo(
+    () => funnelForCandidates(pipelineCandidates),
+    [pipelineCandidates],
+  );
 
-  // "Watch Aria Work" panel — remounted (via runToken as its key) on every
-  // "Run Aria" click so each click starts a genuinely fresh, replayable run.
-  const [runOpen, setRunOpen] = React.useState(false);
-  const [runToken, setRunToken] = React.useState(0);
-
-  function handleOpenRun() {
-    if (!activeCampaign) {
-      toast({
-        title: "No active campaign",
-        description: "Create a campaign from an intake brief first.",
-        variant: "warning",
-      });
-      return;
-    }
-    setRunOpen(true);
-    setRunToken((k) => k + 1);
-  }
+  const [sourceBatchError, setSourceBatchError] = React.useState<{
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel?: string;
+  } | null>(null);
 
   const kpiCards: {
     label: string;
@@ -166,20 +174,57 @@ export default function DashboardPage() {
     },
   ];
 
-  async function handleSourceBatch() {
-    if (!activeCampaign) {
+  async function applySourceOutcome(
+    result: Awaited<ReturnType<typeof actions.sourceNextBatch>>,
+  ) {
+    if (!activeCampaign) return;
+    if (!result.ok) {
+      const failLoud = sourceRejectedToast(
+        result.error,
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
       toast({
-        title: "No active campaign",
-        description: "Create a campaign from an intake brief first.",
-        variant: "warning",
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
       });
       return;
     }
-    const result = await actions.sourceNextBatch(activeCampaign.id);
-    if (!result.ok) {
+    const emptyPeopleFirst = emptyPeopleFirstToast(
+      activeCampaign.jobAnalysis,
+      integrations,
+      result,
+      apiKeys,
+    );
+    if (emptyPeopleFirst) {
+      setSourceBatchError(emptyPeopleFirst);
       toast({
-        title: result.source === "paused" ? "Campaign is paused" : "Sourcing failed",
-        description: result.error,
+        title: emptyPeopleFirst.title,
+        description: emptyPeopleFirst.description,
+        href: emptyPeopleFirst.href,
+        actionLabel: emptyPeopleFirst.actionLabel,
+        variant: "error",
+      });
+      return;
+    }
+    if (result.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
+      const failLoud = sourceRejectedToast(
+        "Source next batch returned 0 people. This is not a successful harvest.",
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
         variant: "error",
       });
       return;
@@ -190,6 +235,48 @@ export default function DashboardPage() {
       description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
       variant: result.accepted.length > 0 ? "success" : "info",
     });
+  }
+
+  async function runSourcing(
+    run: (campaignId: string) => Promise<Awaited<ReturnType<typeof actions.sourceNextBatch>>>,
+  ) {
+    if (!activeCampaign) {
+      toast({
+        title: "No active campaign",
+        description: "Create a campaign from an intake brief first.",
+        variant: "warning",
+      });
+      return;
+    }
+    setSourceBatchError(null);
+    try {
+      const result = await run(activeCampaign.id);
+      await applySourceOutcome(result);
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(
+        thrown,
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
+    }
+  }
+
+  async function handleSourceBatch() {
+    await runSourcing((campaignId) => actions.sourceNextBatch(campaignId));
+  }
+
+  async function handleAutoSource() {
+    await runSourcing((campaignId) => actions.autoSource(campaignId));
   }
 
   function handleGenerateReport() {
@@ -246,8 +333,19 @@ export default function DashboardPage() {
                     <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
                     {nextStep.reason}
                   </p>
+                  <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} />
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {sourceBatchError ? (
+                    <div
+                      role="alert"
+                      data-testid="source-next-batch-error"
+                      className="w-full min-w-0 max-w-full break-words rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-left text-sm"
+                    >
+                      <p className="font-semibold text-ink">{sourceBatchError.title}</p>
+                      <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
+                    </div>
+                  ) : null}
                   <Button leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>
                     New intake
                   </Button>
@@ -260,10 +358,10 @@ export default function DashboardPage() {
                   </Button>
                   <Button
                     variant="primary"
-                    leftIcon={<PlayCircle aria-hidden />}
-                    onClick={handleOpenRun}
+                    leftIcon={<Radar aria-hidden />}
+                    onClick={handleAutoSource}
                   >
-                    Run Aria
+                    Auto source
                   </Button>
                   <Button
                     variant="outline"
@@ -283,16 +381,6 @@ export default function DashboardPage() {
               </div>
             </Card>
 
-            {runOpen && activeCampaign && (
-              <AgentRunStream
-                key={runToken}
-                campaignId={activeCampaign.id}
-                autoStart
-                onClose={() => setRunOpen(false)}
-                className="animate-fade-in"
-              />
-            )}
-
             {/* KPI grid */}
             <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {kpiCards.map((k) => (
@@ -310,7 +398,7 @@ export default function DashboardPage() {
             <IntegrationStrip />
 
             {/* Main two-column layout */}
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3">
               {/* Left: funnel + campaigns */}
               <div className="space-y-6 lg:col-span-2">
                 <Card className="animate-fade-in">
@@ -362,7 +450,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Right: attention + TAnIA summary + activity */}
-              <div className="space-y-6">
+              <div className="min-w-0 space-y-6">
                 <AttentionPanel />
 
                 <TaniaSummary />

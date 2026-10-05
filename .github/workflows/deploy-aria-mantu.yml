@@ -335,6 +335,7 @@ jobs:
             --build-arg NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN="$NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN" \
             --build-arg NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false \
             --build-arg NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false \
+            --build-arg NEXT_PUBLIC_ARIA_GIT_SHA="$ARIA_RELEASE_SHA" \
             .
           docker build --pull --platform linux/amd64 \
             --file docker/db/Dockerfile.fly \

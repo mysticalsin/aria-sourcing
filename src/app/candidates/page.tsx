@@ -16,10 +16,16 @@ import {
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
+import { ConnectChannels } from "@/components/dashboard/connect-channels";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
-import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
+import { useActions, useActiveCampaign, useApiKeys, useCandidates, useHydrated, useIntegrations, useSeats } from "@/lib/store";
+import {
+  emptyPeopleFirstToast,
+  isPeopleFirstRole,
+  sourceRejectedToast,
+} from "@/lib/sourcing/people-plugins";
 import { corpusServerReadEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
@@ -141,6 +147,9 @@ function CandidatesView() {
   const candidates = useCandidates();
   const actions = useActions();
   const activeCampaign = useActiveCampaign();
+  const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
+  const seats = useSeats();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const focus = searchParams.get("focus");
@@ -158,6 +167,12 @@ function CandidatesView() {
   const [page, setPage] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [sourcing, setSourcing] = React.useState(false);
+  const [sourceBatchError, setSourceBatchError] = React.useState<{
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel?: string;
+  } | null>(null);
   const [draftingOutreach, setDraftingOutreach] = React.useState(false);
   const [draftProgress, setDraftProgress] = React.useState({ done: 0, total: 0 });
   // The just-sourced batch, staged for the streaming reveal below — purely a
@@ -183,6 +198,7 @@ function CandidatesView() {
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     const result = candidates.filter((c) => {
+      if (activeCampaign && c.campaignId !== activeCampaign.id) return false;
       if (stage !== "all" && c.stage !== stage) return false;
       if (source !== "all" && c.sourcePlatform !== source) return false;
       if (!q) return true;
@@ -196,7 +212,7 @@ function CandidatesView() {
       sort === "match" ? b.matchScore - a.matchScore : lastActivityIso(b) - lastActivityIso(a),
     );
     return result;
-  }, [candidates, query, stage, source, sort]);
+  }, [candidates, query, stage, source, sort, activeCampaign]);
 
   // Reset to page 1 whenever the result set could reshuffle out from under the
   // current page (filter/sort change or a bigger page size) — never leave the
@@ -298,25 +314,183 @@ function CandidatesView() {
       });
       return;
     }
+    setSourceBatchError(null);
     setSourcing(true);
-    const res = await actions.sourceNextBatch(activeCampaign.id);
-    setSourcing(false);
-    if (!res.ok) {
+    try {
+      const res = await actions.sourceNextBatch(activeCampaign.id);
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(
+          res.error,
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const emptyPeopleFirst = emptyPeopleFirstToast(
+        activeCampaign.jobAnalysis,
+        integrations,
+        res,
+        apiKeys,
+      );
+      if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (res.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Source next batch returned 0 people. This is not a successful harvest.",
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      const isLive = res.source === "github" || res.source === "web";
       toast({
-        title: res.source === "paused" ? "Campaign is paused" : "Sourcing failed",
-        description: res.error,
+        title: `Sourced ${pluralize(res.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
+        description: `${activeCampaign.title} · ${pluralize(res.skipped.length, "candidate")} skipped by dedupe & exclusions.`,
+        variant: res.accepted.length > 0 ? "success" : "info",
+      });
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(
+        thrown,
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
         variant: "error",
+      });
+    } finally {
+      setSourcing(false);
+    }
+  }
+
+  async function handleAutoSource() {
+    if (sourcing) return;
+    if (!activeCampaign) {
+      toast({
+        title: "No active campaign",
+        description: "Open a campaign (or start a new intake) to auto source its shortlist.",
+        variant: "warning",
       });
       return;
     }
-    setJustSourced(res.accepted);
-    setSourceBatchKey((k) => k + 1);
-    const isLive = res.source === "github" || res.source === "web";
-    toast({
-      title: `Sourced ${pluralize(res.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
-      description: `${activeCampaign.title} · ${pluralize(res.skipped.length, "candidate")} skipped by dedupe & exclusions.`,
-      variant: res.accepted.length > 0 ? "success" : "info",
-    });
+    setSourceBatchError(null);
+    setSourcing(true);
+    try {
+      const res = await actions.autoSource(activeCampaign.id);
+      if (!res.ok) {
+        const failLoud = sourceRejectedToast(
+          res.error,
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      const emptyPeopleFirst = emptyPeopleFirstToast(
+        activeCampaign.jobAnalysis,
+        integrations,
+        res,
+        apiKeys,
+      );
+      if (emptyPeopleFirst) {
+        setSourceBatchError(emptyPeopleFirst);
+        toast({
+          title: emptyPeopleFirst.title,
+          description: emptyPeopleFirst.description,
+          href: emptyPeopleFirst.href,
+          actionLabel: emptyPeopleFirst.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      if (res.accepted.length === 0 && isPeopleFirstRole(activeCampaign.jobAnalysis)) {
+        const failLoud = sourceRejectedToast(
+          "Auto source returned 0 people. This is not a successful harvest.",
+          activeCampaign.jobAnalysis,
+          integrations,
+          apiKeys,
+        );
+        setSourceBatchError(failLoud);
+        toast({
+          title: failLoud.title,
+          description: failLoud.description,
+          href: failLoud.href,
+          actionLabel: failLoud.actionLabel,
+          variant: "error",
+        });
+        return;
+      }
+      setJustSourced(res.accepted);
+      setSourceBatchKey((k) => k + 1);
+      toast({
+        title: `Auto sourced ${pluralize(res.accepted.length, "candidate")}`,
+        description: res.enriched
+          ? `${activeCampaign.title} · search, enrich, and merge finished.`
+          : `${activeCampaign.title} · ${pluralize(res.skipped.length, "candidate")} skipped by dedupe & exclusions.`,
+        variant: res.accepted.length > 0 ? "success" : "info",
+      });
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : "Sourcing request failed";
+      const failLoud = sourceRejectedToast(
+        thrown,
+        activeCampaign.jobAnalysis,
+        integrations,
+        apiKeys,
+      );
+      setSourceBatchError(failLoud);
+      toast({
+        title: failLoud.title,
+        description: failLoud.description,
+        href: failLoud.href,
+        actionLabel: failLoud.actionLabel,
+        variant: "error",
+      });
+    } finally {
+      setSourcing(false);
+    }
   }
 
   /** Bulk stage move — routes every selected candidate through the SAME
@@ -464,9 +638,10 @@ function CandidatesView() {
           </span>{" "}
           {serverPreview
             ? pluralize(serverCandidates.total, "server candidate")
-            : `of ${pluralize(candidates.length, "candidate")} across all campaigns`}
+            : `of ${pluralize(candidates.length, "candidate")} ${activeCampaign ? `for ${activeCampaign.title}` : "across all campaigns"}`}
           {serverPreview && serverCandidates.loading ? " (loading)" : ""}
         </p>
+        <ConnectChannels seats={seats} integrations={integrations} apiKeys={apiKeys} className="mt-0" />
         <Button
           variant="secondary"
           size="sm"
@@ -478,7 +653,28 @@ function CandidatesView() {
         >
           {sourcing ? "Sourcing…" : "Source next batch"}
         </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          leftIcon={<Sparkles className="h-4 w-4" />}
+          onClick={handleAutoSource}
+          loading={sourcing}
+          disabled={sourcing}
+          title={activeCampaign ? `Auto source ${activeCampaign.title}` : "No active campaign"}
+        >
+          {sourcing ? "Sourcing…" : "Auto source"}
+        </Button>
       </div>
+      {sourceBatchError ? (
+        <div
+          role="alert"
+          data-testid="source-next-batch-error"
+          className="mb-4 rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm"
+        >
+          <p className="font-semibold text-ink">{sourceBatchError.title}</p>
+          <p className="mt-0.5 text-muted">{sourceBatchError.description}</p>
+        </div>
+      ) : null}
 
       {justSourced.length > 0 && (
         <div className="mb-6 space-y-2">

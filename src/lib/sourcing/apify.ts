@@ -22,9 +22,26 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
+import {
+  GITHUB_STACK_ACTOR,
+  HARVEST_ACTOR,
+  HARVEST_ENRICH_ACTOR,
+  logAriaHarvest,
+  type HarvestEvidence,
+} from "@/lib/sourcing/harvest-evidence";
+import { providerIsApify } from "@/lib/sourcing/people-connect";
+
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
+const ENRICH_RUN_PATH = "/actors/harvestapi~linkedin-profile-scraper/runs";
+const ENRICH_ACTOR_PATH = "/actors/harvestapi~linkedin-profile-scraper/run-sync-get-dataset-items";
+const GITHUB_RUN_PATH = "/actors/apivault_labs~github-profile-scraper/runs";
+const GITHUB_STACK_PATH = "/actors/apivault_labs~github-profile-scraper/run-sync-get-dataset-items";
 const DEV_FUSION_PATH = "/actors/dev_fusion~linkedin-profile-scraper/run-sync-get-dataset-items";
+
+/** Poll until terminal. Align with the 90s people-first client wait. Do not stamp 0 on a still-running actor. */
+export const APIFY_HARVEST_WAIT_MS = 90_000;
+export const APIFY_HARVEST_WAIT_CAP_MS = 90_000;
 
 // Actor input is capped server-side regardless of what the caller requests —
 // this is the single funnel every Apify run goes through.
@@ -99,6 +116,7 @@ export interface ApifyProfile {
   hiring: boolean;
   premium: boolean;
   email: string | null;
+  phone: string | null;
 }
 
 /* ---- Raw actor output (harvestapi/linkedin-profile-search, as observed live)
@@ -130,6 +148,12 @@ interface RawApifyEmail {
   free?: boolean | null;
   status?: string | null;
   qualityScore?: number | null;
+}
+
+interface RawApifyPhone {
+  phone?: string | null;
+  phoneNumber?: string | null;
+  number?: string | null;
 }
 
 interface RawApifySkill {
@@ -184,6 +208,10 @@ interface RawApifyProfile {
   headline?: string;
   about?: string;
   emails?: RawApifyEmail[] | null;
+  phones?: RawApifyPhone[] | null;
+  phoneNumbers?: RawApifyPhone[] | null;
+  phone?: string | null;
+  mobileNumber?: string | null;
   location?: RawApifyLocation | null;
   connectionsCount?: number;
   followerCount?: number;
@@ -204,6 +232,27 @@ function deriveEmail(emails?: RawApifyEmail[] | null): string | null {
   if (!Array.isArray(emails) || emails.length === 0) return null;
   const confirmed = emails.find((e) => e?.status === "valid" || e?.deliverable === true);
   return (confirmed ?? emails[0])?.email ?? null;
+}
+
+function phoneValue(row: RawApifyPhone | string | null | undefined): string | null {
+  if (typeof row === "string") {
+    const trimmed = row.trim();
+    return trimmed || null;
+  }
+  const raw = row?.phone ?? row?.phoneNumber ?? row?.number ?? "";
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
+/** First harvestapi phone that looks real. Never invent a number. */
+function derivePhone(profile: RawApifyProfile): string | null {
+  const listed = [...(profile.phones ?? []), ...(profile.phoneNumbers ?? [])]
+    .map(phoneValue)
+    .filter((value): value is string => Boolean(value));
+  const singles = [profile.phone, profile.mobileNumber]
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean);
+  return listed[0] ?? singles[0] ?? null;
 }
 
 function skillNames(skills?: RawApifySkill[] | null): string[] {
@@ -300,7 +349,17 @@ function mapProfile(p: RawApifyProfile): ApifyProfile {
     hiring: p.hiring ?? false,
     premium: p.premium ?? false,
     email: deriveEmail(p.emails),
+    phone: derivePhone(p),
   };
+}
+
+/**
+ * Exact harvestapi actor JSON. The field is `searchQuery` (keywords AND),
+ * not `keywords`, `q`, or the LinkedIn boolean. Planned tokens must equal
+ * this string or the harvest diverged before Apify ran.
+ */
+export function harvestapiActorInput(input: ApifyProfileSearchInput): Record<string, unknown> {
+  return buildActorInput(input);
 }
 
 /** Send only the actor input fields the caller actually set. */
@@ -365,7 +424,15 @@ export async function startProfileSearchRun(
   token: string,
   input: ApifyProfileSearchInput,
 ): Promise<ApifyResult<{ runId: string; datasetId: string; status: string }>> {
-  const body = buildActorInput(input);
+  const body = harvestapiActorInput(input);
+  const planned = (input.searchQuery ?? "").trim();
+  const sent = typeof body.searchQuery === "string" ? body.searchQuery.trim() : "";
+  logAriaHarvest("actor_input", {
+    query: planned,
+    actorInputField: "searchQuery",
+    actorSearchQuery: sent,
+    detail: sent === planned ? "actor_input_matches_planned" : "actor_input_diverges",
+  });
   const res = await apifyRequest<RawRunEnvelope>(clearance, ACTOR_PATH, token, { method: "POST", body, timeoutMs: 15_000 });
   if (!res.ok) return res;
   const r = res.data.data ?? {};
@@ -376,21 +443,373 @@ export async function startProfileSearchRun(
   };
 }
 
-interface RawStatusEnvelope {
-  data?: { status?: string };
+/**
+ * harvestapi/linkedin-profile-scraper input enum (actor build xZL6XUI7eo37jGWVY).
+ * Any other string is an Apify `invalid-input` and no run starts. Fly
+ * 2026-09-02T02:39:12Z proved that with "Full + email search" + `urls: []`.
+ */
+export const LINKEDIN_SCRAPER_MODE_EMAIL = "Profile details + email search ($10 per 1k)";
+/** One scraper run polls this long. Enrich is bounded so the click still answers. */
+export const APIFY_ENRICH_WAIT_MS = 75_000;
+export const APIFY_GITHUB_WAIT_MS = 45_000;
+const ENRICH_URL_CAP = 25;
+const GITHUB_HANDLE_CAP = 25;
+
+export interface ScraperRunReceipt {
+  runId: string;
+  datasetId: string;
+  status: string;
 }
 
-/** Poll the async run's status. Terminal: SUCCEEDED / FAILED / TIMED-OUT / ABORTED. */
+async function startActorRun(
+  clearance: ProviderClearance,
+  path: string,
+  token: string,
+  body: Record<string, unknown>,
+): Promise<ApifyResult<ScraperRunReceipt>> {
+  const res = await apifyRequest<RawRunEnvelope>(clearance, path, token, { method: "POST", body, timeoutMs: 15_000 });
+  if (!res.ok) return res;
+  const r = res.data.data ?? {};
+  return {
+    ok: true,
+    status: res.status,
+    data: { runId: String(r.id ?? ""), datasetId: String(r.defaultDatasetId ?? ""), status: r.status ?? "READY" },
+  };
+}
+
+/** Real LinkedIn people URLs only. The scraper cannot enrich a search slug or a GitHub page. */
+function linkedinProfileUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of urls) {
+    const url = raw.trim();
+    if (!/^https:\/\/([a-z0-9-]+\.)?linkedin\.com\/in\/[A-Za-z0-9._%-]+/i.test(url)) continue;
+    const key = url.toLowerCase().replace(/\/+$/, "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(url);
+    if (out.length >= ENRICH_URL_CAP) break;
+  }
+  return out;
+}
+
+/** GitHub login from a profile URL or a bare handle. */
+function githubLogins(handles: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of handles) {
+    const login = raw.trim().replace(/^https?:\/\/(www\.)?github\.com\//i, "").split(/[/?#]/)[0] ?? "";
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login)) continue;
+    const key = login.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(login);
+    if (out.length >= GITHUB_HANDLE_CAP) break;
+  }
+  return out;
+}
+
+/**
+ * Start harvestapi/linkedin-profile-scraper (email search mode) on real
+ * LinkedIn URLs. Requires at least one URL: an empty `urls` list is an Apify
+ * `invalid-input`, not a run, so the caller logs a skip instead of POSTing.
+ * Do not invent people from this start.
+ */
+export async function startLinkedinProfileScraperRun(
+  clearance: ProviderClearance,
+  token: string,
+  urls: string[],
+): Promise<ApifyResult<ScraperRunReceipt>> {
+  const profileUrls = linkedinProfileUrls(urls);
+  if (profileUrls.length === 0) {
+    return { ok: false, status: 0, title: "no_profile_urls", detail: "Nobody to enrich. Empty urls is an Apify invalid-input." };
+  }
+  const started = await startActorRun(clearance, ENRICH_RUN_PATH, token, {
+    urls: profileUrls,
+    profileScraperMode: LINKEDIN_SCRAPER_MODE_EMAIL,
+  });
+  if (!started.ok) {
+    logAriaHarvest("not_started", {
+      actor: HARVEST_ENRICH_ACTOR,
+      query: "email-phone",
+      started: false,
+      status: "NOT_STARTED",
+      itemCount: profileUrls.length,
+      detail: started.title,
+    });
+    return started;
+  }
+  logAriaHarvest("started", {
+    actor: HARVEST_ENRICH_ACTOR,
+    query: "email-phone",
+    runId: started.data.runId,
+    started: Boolean(started.data.runId),
+    status: started.data.status,
+    itemCount: profileUrls.length,
+  });
+  return started;
+}
+
+/**
+ * Start apivault_labs/github-profile-scraper on GitHub logins that belong to
+ * people already on the shortlist. Actor field is `profileUrls` (build
+ * DMxY2anIZs0yJeOSC); `usernames` is silently ignored and yields an empty
+ * run (Fly run uyQCE2eBvDjHFaNEp, items 0). Requires at least one login.
+ * Never mint a GitHub leftover shortlist.
+ */
+export async function startGithubProfileScraperRun(
+  clearance: ProviderClearance,
+  token: string,
+  handles: string[],
+): Promise<ApifyResult<ScraperRunReceipt>> {
+  const logins = githubLogins(handles);
+  if (logins.length === 0) {
+    return { ok: false, status: 0, title: "no_github_handles", detail: "No GitHub handle on the shortlist people." };
+  }
+  const started = await startActorRun(clearance, GITHUB_RUN_PATH, token, {
+    profileUrls: logins,
+    extractRepos: true,
+    includeLanguageStats: true,
+    includeSocialAccounts: false,
+    includeLeadScore: false,
+    includeOutreach: false,
+  });
+  if (!started.ok) {
+    logAriaHarvest("not_started", {
+      actor: GITHUB_STACK_ACTOR,
+      query: "tech-stack-merge",
+      started: false,
+      status: "NOT_STARTED",
+      itemCount: logins.length,
+      detail: started.title,
+    });
+    return started;
+  }
+  logAriaHarvest("started", {
+    actor: GITHUB_STACK_ACTOR,
+    query: "tech-stack-merge",
+    runId: started.data.runId,
+    started: Boolean(started.data.runId),
+    status: started.data.status,
+    itemCount: logins.length,
+  });
+  return started;
+}
+
+type ScraperWaitResult<T> =
+  | { ok: true; status: number; data: T[]; harvest: HarvestEvidence }
+  | { ok: false; status: number; title: string; detail: string; harvest: HarvestEvidence };
+
+/**
+ * Poll a started scraper run until terminal, then read its dataset. Same
+ * trail phases as the search harvest (`succeeded` carries `items`). Bounded:
+ * a run still going at the deadline is `still_running`, never 0 people.
+ */
+async function waitForScraperItems<T>(
+  clearance: ProviderClearance,
+  token: string,
+  run: ScraperRunReceipt,
+  meta: { actor: string; query: string; sent: number },
+  opts: { timeoutMs: number; limit: number; signal?: AbortSignal },
+): Promise<ScraperWaitResult<T>> {
+  const base = (patch: Partial<HarvestEvidence>): HarvestEvidence => ({
+    actor: meta.actor,
+    query: meta.query,
+    runId: run.runId,
+    status: patch.status ?? "",
+    itemCount: patch.itemCount ?? -1,
+    started: true,
+  });
+  if (!run.runId || !run.datasetId) {
+    const harvest = base({ status: "MISSING_IDS" });
+    logAriaHarvest("not_started", { ...harvest, started: false });
+    return { ok: false, status: 0, title: "Apify run missing ids", detail: "", harvest };
+  }
+  const deadline = Date.now() + Math.max(4_000, opts.timeoutMs);
+  let lastState = run.status.toUpperCase() || "READY";
+  let lastMessage = "";
+  const readItems = async (): Promise<ScraperWaitResult<T>> => {
+    const res = await apifyRequest<T[]>(
+      clearance,
+      `/datasets/${encodeURIComponent(run.datasetId)}/items?format=json&limit=${encodeURIComponent(String(opts.limit))}`,
+      token,
+      { timeoutMs: 30_000 },
+    );
+    if (!res.ok) {
+      const harvest = base({ status: lastState });
+      logAriaHarvest("dataset_failed", { ...harvest, detail: res.title });
+      return { ...res, harvest };
+    }
+    const items = Array.isArray(res.data) ? res.data : [];
+    const harvest = base({ status: lastState, itemCount: items.length });
+    logAriaHarvest("succeeded", { ...harvest, detail: `sent=${meta.sent}${lastMessage ? ` ${lastMessage}` : ""}` });
+    return { ok: true, status: res.status, data: items, harvest };
+  };
+  for (;;) {
+    if (opts.signal?.aborted) {
+      const harvest = base({ status: lastState || "ABORTED" });
+      logAriaHarvest("still_running", { ...harvest, detail: "signal aborted" });
+      return { ok: false, status: 0, title: "Apify run still running", detail: lastState, harvest };
+    }
+    const status = await getRunStatus(clearance, token, run.runId);
+    if (!status.ok) {
+      const harvest = base({ status: lastState || "STATUS_FAILED" });
+      logAriaHarvest("status_failed", { ...harvest, detail: status.title });
+      return { ...status, harvest };
+    }
+    lastState = status.data.status.toUpperCase();
+    lastMessage = status.data.statusMessage;
+    if (lastState === TERMINAL_OK) return await readItems();
+    if (TERMINAL_FAIL.has(lastState)) {
+      const harvest = base({ status: lastState, itemCount: 0 });
+      logAriaHarvest("terminal_fail", { ...harvest, detail: lastMessage || undefined });
+      return { ok: false, status: status.status, title: `Apify run ${lastState}`, detail: lastMessage, harvest };
+    }
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
+  const harvest = base({ status: lastState || "RUNNING" });
+  logAriaHarvest("still_running", { ...harvest, detail: lastMessage || undefined });
+  return { ok: false, status: 0, title: "Apify run still running", detail: harvest.status, harvest };
+}
+
+/**
+ * Enrich discovered LinkedIn people (email + phone + skills + experience).
+ * POST /runs, poll, read dataset. Every phase carries the run id and items.
+ */
+export async function runLinkedinProfileScraperAndWait(
+  clearance: ProviderClearance,
+  token: string,
+  urls: string[],
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<ApifyHarvestWaitResult> {
+  const sent = linkedinProfileUrls(urls).length;
+  const started = await startLinkedinProfileScraperRun(clearance, token, urls);
+  if (!started.ok) {
+    const harvest: HarvestEvidence = {
+      actor: HARVEST_ENRICH_ACTOR,
+      query: "email-phone",
+      runId: "",
+      status: "NOT_STARTED",
+      itemCount: -1,
+      started: false,
+    };
+    return { ...started, harvest };
+  }
+  const waited = await waitForScraperItems<RawApifyProfile>(
+    clearance,
+    token,
+    started.data,
+    { actor: HARVEST_ENRICH_ACTOR, query: "email-phone", sent },
+    { timeoutMs: opts?.timeoutMs ?? APIFY_ENRICH_WAIT_MS, limit: ENRICH_URL_CAP, signal: opts?.signal },
+  );
+  if (!waited.ok) return waited;
+  return { ok: true, status: waited.status, data: waited.data.map(mapProfile), harvest: waited.harvest };
+}
+
+export interface GithubStackRow {
+  login: string;
+  skills: string[];
+}
+
+interface RawGithubStackRow {
+  login?: string | null;
+  username?: string | null;
+  profileUrl?: string | null;
+  url?: string | null;
+  topLanguages?: unknown;
+  languages?: unknown;
+  languageStats?: unknown;
+  skills?: unknown;
+  techStack?: unknown;
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) =>
+        typeof item === "string"
+          ? item
+          : item && typeof item === "object" && "name" in item
+            ? String((item as { name?: unknown }).name ?? "")
+            : "",
+      )
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (value && typeof value === "object") return Object.keys(value as Record<string, unknown>);
+  return [];
+}
+
+function mapGithubStackRow(row: RawGithubStackRow): GithubStackRow {
+  const login = githubLogins([row.login ?? row.username ?? row.profileUrl ?? row.url ?? ""])[0] ?? "";
+  const skills = [
+    ...stringList(row.topLanguages),
+    ...stringList(row.languages),
+    ...stringList(row.languageStats),
+    ...stringList(row.skills),
+    ...stringList(row.techStack),
+  ];
+  return { login, skills: [...new Set(skills)] };
+}
+
+/** Tech-stack merge onto shortlist people who carry a GitHub handle. Never a shortlist source. */
+export async function runGithubProfileScraperAndWait(
+  clearance: ProviderClearance,
+  token: string,
+  handles: string[],
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<ScraperWaitResult<GithubStackRow>> {
+  const sent = githubLogins(handles).length;
+  const started = await startGithubProfileScraperRun(clearance, token, handles);
+  if (!started.ok) {
+    const harvest: HarvestEvidence = {
+      actor: GITHUB_STACK_ACTOR,
+      query: "tech-stack-merge",
+      runId: "",
+      status: "NOT_STARTED",
+      itemCount: -1,
+      started: false,
+    };
+    return { ...started, harvest };
+  }
+  const waited = await waitForScraperItems<RawGithubStackRow>(
+    clearance,
+    token,
+    started.data,
+    { actor: GITHUB_STACK_ACTOR, query: "tech-stack-merge", sent },
+    { timeoutMs: opts?.timeoutMs ?? APIFY_GITHUB_WAIT_MS, limit: GITHUB_HANDLE_CAP, signal: opts?.signal },
+  );
+  if (!waited.ok) return waited;
+  return { ok: true, status: waited.status, data: waited.data.map(mapGithubStackRow), harvest: waited.harvest };
+}
+
+interface RawStatusEnvelope {
+  data?: { status?: string; statusMessage?: string };
+}
+
+/**
+ * Poll the async run's status. Terminal: SUCCEEDED / FAILED / TIMED-OUT / ABORTED.
+ * `statusMessage` is the actor's own last line (why a SUCCEEDED run wrote 0
+ * items). It goes on the harvest trail so an all-zero walk is explainable.
+ */
 export async function getRunStatus(
   clearance: ProviderClearance,
   token: string,
   runId: string,
-): Promise<ApifyResult<{ status: string }>> {
+): Promise<ApifyResult<{ status: string; statusMessage: string }>> {
   const res = await apifyRequest<RawStatusEnvelope>(clearance, `/actor-runs/${encodeURIComponent(runId)}`, token, {
     timeoutMs: 15_000,
   });
   if (!res.ok) return res;
-  return { ok: true, status: res.status, data: { status: res.data.data?.status ?? "READY" } };
+  return {
+    ok: true,
+    status: res.status,
+    data: {
+      status: res.data.data?.status ?? "READY",
+      statusMessage: String(res.data.data?.statusMessage ?? "").slice(0, 200),
+    },
+  };
 }
 
 /** Fetch a completed run's dataset items, normalized into ApifyProfile[]. */
@@ -409,6 +828,132 @@ export async function fetchDatasetItems(
   if (!res.ok) return res;
   const items = Array.isArray(res.data) ? res.data : [];
   return { ok: true, status: res.status, data: items.map(mapProfile) };
+}
+
+const TERMINAL_FAIL = new Set(["FAILED", "TIMED-OUT", "ABORTED", "TIMED_OUT"]);
+const TERMINAL_OK = "SUCCEEDED";
+
+export type ApifyHarvestWaitResult =
+  | { ok: true; status: number; data: ApifyProfile[]; harvest: HarvestEvidence }
+  | { ok: false; status: number; title: string; detail: string; harvest: HarvestEvidence };
+
+function harvestMeta(
+  query: string,
+  patch: Partial<HarvestEvidence> = {},
+): HarvestEvidence {
+  return {
+    actor: HARVEST_ACTOR,
+    query,
+    runId: patch.runId ?? "",
+    status: patch.status ?? "",
+    itemCount: patch.itemCount ?? -1,
+    started: patch.started ?? false,
+  };
+}
+
+/** Start harvestapi search and poll until terminal. Used by search_candidates. */
+export async function runProfileSearchAndWait(
+  clearance: ProviderClearance,
+  token: string,
+  input: ApifyProfileSearchInput,
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<ApifyHarvestWaitResult> {
+  const query = (input.searchQuery ?? "").trim();
+  const started = await startProfileSearchRun(clearance, token, input);
+  if (!started.ok) {
+    const harvest = harvestMeta(query, { started: false, status: "NOT_STARTED" });
+    logAriaHarvest("not_started", { ...harvest, detail: started.title });
+    return { ...started, harvest };
+  }
+  const { runId, datasetId } = started.data;
+  if (!runId || !datasetId) {
+    const harvest = harvestMeta(query, { started: false, status: "MISSING_IDS" });
+    logAriaHarvest("not_started", harvest);
+    return { ok: false, status: 0, title: "Apify run missing ids", detail: "", harvest };
+  }
+  const harvestStart = harvestMeta(query, {
+    runId,
+    status: started.data.status || "READY",
+    started: true,
+  });
+  logAriaHarvest("started", harvestStart);
+  const deadline =
+    Date.now() + Math.min(Math.max(opts?.timeoutMs ?? APIFY_HARVEST_WAIT_MS, 4_000), APIFY_HARVEST_WAIT_CAP_MS);
+  let lastState = harvestStart.status;
+  let lastMessage = "";
+  while (Date.now() < deadline) {
+    if (opts?.signal?.aborted) {
+      const harvest = harvestMeta(query, { runId, status: lastState || "ABORTED", started: true });
+      logAriaHarvest("still_running", { ...harvest, detail: "signal aborted" });
+      return { ok: false, status: 0, title: "Apify search still running", detail: lastState, harvest };
+    }
+    const status = await getRunStatus(clearance, token, runId);
+    if (!status.ok) {
+      const harvest = harvestMeta(query, { runId, status: lastState || "STATUS_FAILED", started: true });
+      logAriaHarvest("status_failed", { ...harvest, detail: status.title });
+      return { ...status, harvest };
+    }
+    lastState = status.data.status.toUpperCase();
+    lastMessage = status.data.statusMessage;
+    if (lastState === TERMINAL_OK) {
+      const items = await fetchDatasetItems(clearance, token, datasetId, input.maxItems ?? 8);
+      if (!items.ok) {
+        const harvest = harvestMeta(query, { runId, status: lastState, started: true });
+        logAriaHarvest("dataset_failed", { ...harvest, detail: items.title });
+        return { ...items, harvest };
+      }
+      const harvest = harvestMeta(query, {
+        runId,
+        status: lastState,
+        itemCount: items.data.length,
+        started: true,
+      });
+      logAriaHarvest("succeeded", { ...harvest, detail: lastMessage || undefined });
+      return { ok: true, status: items.status, data: items.data, harvest };
+    }
+    if (TERMINAL_FAIL.has(lastState)) {
+      const harvest = harvestMeta(query, { runId, status: lastState, itemCount: 0, started: true });
+      logAriaHarvest("terminal_fail", { ...harvest, detail: lastMessage || undefined });
+      return { ok: false, status: status.status, title: `Apify run ${lastState}`, detail: "", harvest };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
+  const lateStatus = await getRunStatus(clearance, token, runId);
+  if (lateStatus.ok) {
+    lastState = lateStatus.data.status.toUpperCase();
+    lastMessage = lateStatus.data.statusMessage;
+  }
+  if (lateStatus.ok && lastState === TERMINAL_OK) {
+    const items = await fetchDatasetItems(clearance, token, datasetId, input.maxItems ?? 8);
+    if (items.ok) {
+      const harvest = harvestMeta(query, {
+        runId,
+        status: lastState,
+        itemCount: items.data.length,
+        started: true,
+      });
+      logAriaHarvest("succeeded", { ...harvest, detail: lastMessage || undefined });
+      return { ok: true, status: items.status, data: items.data, harvest };
+    }
+  }
+  if (lateStatus.ok && TERMINAL_FAIL.has(lastState)) {
+    const harvest = harvestMeta(query, { runId, status: lastState, itemCount: 0, started: true });
+    logAriaHarvest("terminal_fail", { ...harvest, detail: lastMessage || undefined });
+    return { ok: false, status: lateStatus.status, title: `Apify run ${lastState}`, detail: "", harvest };
+  }
+  const harvest = harvestMeta(query, {
+    runId,
+    status: lastState || "RUNNING",
+    started: true,
+  });
+  logAriaHarvest("still_running", harvest);
+  return {
+    ok: false,
+    status: 0,
+    title: "Apify search still running",
+    detail: harvest.status,
+    harvest,
+  };
 }
 
 /** Cheap, no-run connectivity check used by the API-key "Test connection" flow. */
@@ -438,6 +983,18 @@ export async function enrichProfilesByUrl(
 ): Promise<ApifyResult<ApifyProfile[]>> {
   const profileUrls = urls.map((u) => u.trim()).filter(Boolean);
   if (profileUrls.length === 0) return { ok: true, status: 200, data: [] };
+  const harvestapi = await apifyRequest<RawApifyProfile[]>(clearance, ENRICH_ACTOR_PATH, token, {
+    method: "POST",
+    body: {
+      urls: profileUrls,
+      profileScraperMode: LINKEDIN_SCRAPER_MODE_EMAIL,
+    },
+    timeoutMs: 60_000,
+  });
+  if (harvestapi.ok) {
+    const items = Array.isArray(harvestapi.data) ? harvestapi.data : [];
+    return { ok: true, status: harvestapi.status, data: items.map(mapProfile) };
+  }
   const res = await apifyRequest<RawApifyProfile[]>(clearance, DEV_FUSION_PATH, token, {
     method: "POST",
     body: { profileUrls },
@@ -447,10 +1004,28 @@ export async function enrichProfilesByUrl(
     if (res.status === 403 && res.title === "full-permission-actor-not-approved") {
       return { ok: false, status: res.status, title: "not_approved", detail: res.detail };
     }
-    return res;
+    return harvestapi.ok === false ? harvestapi : res;
   }
   const items = Array.isArray(res.data) ? res.data : [];
   return { ok: true, status: res.status, data: items.map(mapProfile) };
+}
+
+/** Tech-stack only. Merge onto an existing person. Never mint a GitHub leftover. */
+export async function scrapeGithubTechStack(
+  clearance: ProviderClearance,
+  token: string,
+  githubUrl: string,
+): Promise<ApifyResult<string[]>> {
+  const login = githubLogins([githubUrl])[0] ?? "";
+  if (!login) return { ok: true, status: 200, data: [] };
+  const res = await apifyRequest<RawGithubStackRow[]>(clearance, GITHUB_STACK_PATH, token, {
+    method: "POST",
+    body: { profileUrls: [login], extractRepos: true, includeLanguageStats: true },
+    timeoutMs: 45_000,
+  });
+  if (!res.ok) return res;
+  const row = Array.isArray(res.data) ? res.data[0] : undefined;
+  return { ok: true, status: res.status, data: row ? mapGithubStackRow(row).skills : [] };
 }
 
 /**
@@ -466,14 +1041,18 @@ export async function resolveStoredApifyKey(
   if (!svc) return null;
   const { data: wid } = await session.rpc("current_workspace_id");
   if (!wid) return null;
-  const { data: row } = await svc
+  const { data: rows } = await svc
     .from("api_keys")
-    .select("secret")
+    .select("secret, provider")
     .eq("workspace_id", wid)
-    .eq("provider", "Apify")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
+  const row = (rows ?? []).find(
+    (item) =>
+      providerIsApify(String(item.provider ?? "")) &&
+      typeof item.secret === "string" &&
+      item.secret.length > 0,
+  );
   if (!row?.secret || typeof row.secret !== "string") return null;
   return decryptSecret(row.secret);
 }
@@ -481,14 +1060,18 @@ export async function resolveStoredApifyKey(
 export async function resolveStoredApifyKeyForWorkspace(workspaceId: string): Promise<string | null> {
   const svc = getServiceSupabase();
   if (!svc) return null;
-  const { data: row } = await svc
+  const { data: rows } = await svc
     .from("api_keys")
-    .select("secret")
+    .select("secret, provider")
     .eq("workspace_id", workspaceId)
-    .eq("provider", "Apify")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
+  const row = (rows ?? []).find(
+    (item) =>
+      providerIsApify(String(item.provider ?? "")) &&
+      typeof item.secret === "string" &&
+      item.secret.length > 0,
+  );
   if (!row?.secret || typeof row.secret !== "string") return null;
   return decryptSecret(row.secret);
 }

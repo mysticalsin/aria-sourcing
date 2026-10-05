@@ -1,0 +1,334 @@
+(node:41416) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:41417) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:41417) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: sourcing action boundary is React-free and wired through one stable factory
+ok 1 - sourcing action boundary is React-free and wired through one stable factory
+  ---
+  duration_ms: 1.863875
+  type: 'test'
+  ...
+# Subtest: live batch sourcing uses reviewed campaign authority and returns durable feedback receipts
+ok 2 - live batch sourcing uses reviewed campaign authority and returns durable feedback receipts
+  ---
+  duration_ms: 25.772417
+  type: 'test'
+  ...
+# Subtest: live Source next batch drafts a dry-run first-touch for the shortlist, not below the floor
+ok 3 - live Source next batch drafts a dry-run first-touch for the shortlist, not below the floor
+  ---
+  duration_ms: 7.693459
+  type: 'test'
+  ...
+# Subtest: a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates
+ok 4 - a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates
+  ---
+  duration_ms: 4.964958
+  type: 'test'
+  ...
+# Subtest: live candidate providers reject every non-sourcing lifecycle before network I/O
+ok 5 - live candidate providers reject every non-sourcing lifecycle before network I/O
+  ---
+  duration_ms: 40.72925
+  type: 'test'
+  ...
+# Subtest: live candidate providers recheck lifecycle after I/O and inside the persisted commit
+ok 6 - live candidate providers recheck lifecycle after I/O and inside the persisted commit
+  ---
+  duration_ms: 18.456666
+  type: 'test'
+  ...
+# Subtest: manual intake uses its explicit non-terminal lifecycle and persists before success
+ok 7 - manual intake uses its explicit non-terminal lifecycle and persists before success
+  ---
+  duration_ms: 19.971208
+  type: 'test'
+  ...
+# Subtest: sourcing fails closed before network or state work when the operator cannot source
+ok 8 - sourcing fails closed before network or state work when the operator cannot source
+  ---
+  duration_ms: 2.123208
+  type: 'test'
+  ...
+# Subtest: specific GitHub and manual intake fail closed for unavailable or unauthorized workspaces
+ok 9 - specific GitHub and manual intake fail closed for unavailable or unauthorized workspaces
+  ---
+  duration_ms: 5.51975
+  type: 'test'
+  ...
+# Subtest: specific GitHub and manual intake reject missing and paused campaigns
+ok 10 - specific GitHub and manual intake reject missing and paused campaigns
+  ---
+  duration_ms: 2.377
+  type: 'test'
+  ...
+# Subtest: specific GitHub intake normalizes login and commits the exact validated profile
+ok 11 - specific GitHub intake normalizes login and commits the exact validated profile
+  ---
+  duration_ms: 2.888833
+  type: 'test'
+  ...
+# Subtest: specific GitHub intake rejects invalid identities and unrelated provider results
+ok 12 - specific GitHub intake rejects invalid identities and unrelated provider results
+  ---
+  duration_ms: 7.511375
+  type: 'test'
+  ...
+# Subtest: specific GitHub intake revalidates authority and latest dedupe state after I/O
+ok 13 - specific GitHub intake revalidates authority and latest dedupe state after I/O
+  ---
+  duration_ms: 14.755667
+  type: 'test'
+  ...
+# Subtest: specific GitHub intake rejects malformed, oversized, unsafe, or failed provider responses
+ok 14 - specific GitHub intake rejects malformed, oversized, unsafe, or failed provider responses
+  ---
+  duration_ms: 33.099417
+  type: 'test'
+  ...
+# Subtest: specific GitHub intake propagates persisted commit rejection without false success
+ok 15 - specific GitHub intake propagates persisted commit rejection without false success
+  ---
+  duration_ms: 2.997708
+  type: 'test'
+  ...
+# Subtest: manual intake validates bounded operator fields before mutation
+ok 16 - manual intake validates bounded operator fields before mutation
+  ---
+  duration_ms: 3.637583
+  type: 'test'
+  ...
+# Subtest: manual intake preserves unknown facts and canonicalizes supplied evidence
+ok 17 - manual intake preserves unknown facts and canonicalizes supplied evidence
+  ---
+  duration_ms: 2.257834
+  type: 'test'
+  ...
+# Subtest: manual intake projects only the documented fields and cannot override authority-owned state
+ok 18 - manual intake projects only the documented fields and cannot override authority-owned state
+  ---
+  duration_ms: 2.490541
+  type: 'test'
+  ...
+# Subtest: unknown experience never becomes a false score, prompt fact, or UI consent claim
+ok 19 - unknown experience never becomes a false score, prompt fact, or UI consent claim
+  ---
+  duration_ms: 1.96225
+  type: 'test'
+  ...
+# Subtest: manual intake requires an operator-selected lawful basis and generic drafts stay grammatical
+ok 20 - manual intake requires an operator-selected lawful basis and generic drafts stay grammatical
+  ---
+  duration_ms: 3.023166
+  type: 'test'
+  ...
+# Subtest: manual duplicate and persisted commit rejection never emit candidate success
+ok 21 - manual duplicate and persisted commit rejection never emit candidate success
+  ---
+  duration_ms: 5.596833
+  type: 'test'
+  ...
+# Subtest: sourcing rejects missing, paused, invalid, and dedicated-provider requests honestly
+ok 22 - sourcing rejects missing, paused, invalid, and dedicated-provider requests honestly
+  ---
+  duration_ms: 2.30575
+  type: 'test'
+  ...
+# Subtest: sourcing rejects an incomplete need or missing reviewed query before network egress
+ok 23 - sourcing rejects an incomplete need or missing reviewed query before network egress
+  ---
+  duration_ms: 4.677833
+  type: 'test'
+  ...
+# Subtest: sourcing rejects a need or query mutation after live I/O before commit
+ok 24 - sourcing rejects a need or query mutation after live I/O before commit
+  ---
+  duration_ms: 2.42075
+  type: 'test'
+  ...
+# Subtest: GitHub sourcing commits the exact live batch, activity, metrics, and event
+ok 25 - GitHub sourcing commits the exact live batch, activity, metrics, and event
+  ---
+  duration_ms: 3.691375
+  type: 'test'
+  ...
+# Subtest: web sourcing scopes the query and never falls back to synthetic profiles
+ok 26 - web sourcing scopes the query and never falls back to synthetic profiles
+  ---
+  duration_ms: 2.539916
+  type: 'test'
+  ...
+# Subtest: a zero-hit live batch records completion without a source event or metric rewrite
+ok 27 - a zero-hit live batch records completion without a source event or metric rewrite
+  ---
+  duration_ms: 2.434333
+  type: 'test'
+  ...
+# Subtest: malformed or failed live responses do not mutate state or emit success
+ok 28 - malformed or failed live responses do not mutate state or emit success
+  ---
+  duration_ms: 21.514875
+  type: 'test'
+  ...
+# Subtest: synthetic sourcing requires a demo capability independent of outbound send mode
+ok 29 - synthetic sourcing requires a demo capability independent of outbound send mode
+  ---
+  duration_ms: 3.631084
+  type: 'test'
+  ...
+# Subtest: demo candidate authority is synthetic-only and blocks real or manual intake before I/O
+ok 30 - demo candidate authority is synthetic-only and blocks real or manual intake before I/O
+  ---
+  duration_ms: 2.332125
+  type: 'test'
+  ...
+# Subtest: sourcing revalidates authority and current dedupe state after live I/O
+ok 31 - sourcing revalidates authority and current dedupe state after live I/O
+  ---
+  duration_ms: 7.75525
+  type: 'test'
+  ...
+# Subtest: a rejected persisted commit never reports or emits sourcing success
+ok 32 - a rejected persisted commit never reports or emits sourcing success
+  ---
+  duration_ms: 2.861
+  type: 'test'
+  ...
+# Subtest: people-first Source next batch hits sourcing-agent when Apify looks unkeyed, not a silent fixture
+ok 33 - people-first Source next batch hits sourcing-agent when Apify looks unkeyed, not a silent fixture
+  ---
+  duration_ms: 3.220875
+  type: 'test'
+  ...
+# Subtest: CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0
+ok 34 - CROSS_ORIGIN_REQUEST on Source next batch is fail-loud, never silent 0
+  ---
+  duration_ms: 2.571708
+  type: 'test'
+  ...
+# Subtest: SOURCING_AGENT_UNAVAILABLE on Source next batch is fail-loud, never silent 0
+ok 35 - SOURCING_AGENT_UNAVAILABLE on Source next batch is fail-loud, never silent 0
+  ---
+  duration_ms: 2.909583
+  type: 'test'
+  ...
+# Subtest: non-JSON 403 on Source next batch is fail-loud, never silent 0
+ok 36 - non-JSON 403 on Source next batch is fail-loud, never silent 0
+  ---
+  duration_ms: 3.38925
+  type: 'test'
+  ...
+# Subtest: Mock Apify card with a valid Access & Keys row still POSTs and fails loud
+ok 37 - Mock Apify card with a valid Access & Keys row still POSTs and fails loud
+  ---
+  duration_ms: 2.726708
+  type: 'test'
+  ...
+# Subtest: valid Apify key does not throw MISSING_PLUGIN on people-first Source next batch
+ok 38 - valid Apify key does not throw MISSING_PLUGIN on people-first Source next batch
+  ---
+  duration_ms: 3.198
+  type: 'test'
+  ...
+# Subtest: keyed people-first Source next batch does not toast invalid-response on a non-JSON sourcing-agent crash
+ok 39 - keyed people-first Source next batch does not toast invalid-response on a non-JSON sourcing-agent crash
+  ---
+  duration_ms: 2.451791
+  type: 'test'
+  ...
+# Subtest: people-first GitHub-only empty batch is fail-loud, not a successful search
+ok 40 - people-first GitHub-only empty batch is fail-loud, not a successful search
+  ---
+  duration_ms: 2.405875
+  type: 'test'
+  ...
+# Subtest: people-first Source next batch re-POSTs only the server's CONTINUE resume step, in the same click
+ok 41 - people-first Source next batch re-POSTs only the server's CONTINUE resume step, in the same click
+  ---
+  duration_ms: 5.115666
+  type: 'test'
+  ...
+# Subtest: Apollo search commits only exact validated profiles through the sourcing boundary
+ok 42 - Apollo search commits only exact validated profiles through the sourcing boundary
+  ---
+  duration_ms: 2.421083
+  type: 'test'
+  ...
+# Subtest: Apollo search fails closed before I/O for unavailable, unauthorized, missing, paused, or invalid requests
+ok 43 - Apollo search fails closed before I/O for unavailable, unauthorized, missing, paused, or invalid requests
+  ---
+  duration_ms: 11.674333
+  type: 'test'
+  ...
+# Subtest: Apollo search rejects malformed or overbroad provider profiles before state work
+ok 44 - Apollo search rejects malformed or overbroad provider profiles before state work
+  ---
+  duration_ms: 17.782875
+  type: 'test'
+  ...
+# Subtest: Apollo search revalidates workspace, role, and campaign after provider I/O
+ok 45 - Apollo search revalidates workspace, role, and campaign after provider I/O
+  ---
+  duration_ms: 9.061083
+  type: 'test'
+  ...
+# Subtest: Apollo search dedupes against commit-time state and emits only after an applied write
+ok 46 - Apollo search dedupes against commit-time state and emits only after an applied write
+  ---
+  duration_ms: 4.532542
+  type: 'test'
+  ...
+# Subtest: Apollo search saves before paid selection and preparation requires an exact selection receipt
+ok 47 - Apollo search saves before paid selection and preparation requires an exact selection receipt
+  ---
+  duration_ms: 7.351416
+  type: 'test'
+  ...
+# Subtest: Apollo search preserves not-configured truth without state work
+ok 48 - Apollo search preserves not-configured truth without state work
+  ---
+  duration_ms: 2.729333
+  type: 'test'
+  ...
+# Subtest: Apollo paid enrichment prepares before confirmation and commits one bound target
+ok 49 - Apollo paid enrichment prepares before confirmation and commits one bound target
+  ---
+  duration_ms: 2.58125
+  type: 'test'
+  ...
+# Subtest: Apollo no-contact completion does not invent an unverified credit outcome
+ok 50 - Apollo no-contact completion does not invent an unverified credit outcome
+  ---
+  duration_ms: 2.952875
+  type: 'test'
+  ...
+# Subtest: Apollo client preserves bounded server error codes for UI recovery
+ok 51 - Apollo client preserves bounded server error codes for UI recovery
+  ---
+  duration_ms: 2.427042
+  type: 'test'
+  ...
+# Subtest: Apollo enrichment rejects unbound, unauthorized, malformed, and unapplied results
+ok 52 - Apollo enrichment rejects unbound, unauthorized, malformed, and unapplied results
+  ---
+  duration_ms: 6.700334
+  type: 'test'
+  ...
+# Subtest: Apollo UI obtains the server nonce before asking for human confirmation
+ok 53 - Apollo UI obtains the server nonce before asking for human confirmation
+  ---
+  duration_ms: 0.193416
+  type: 'test'
+  ...
+1..53
+# tests 53
+# suites 0
+# pass 53
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 541.463792

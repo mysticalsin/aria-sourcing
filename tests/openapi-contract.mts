@@ -18,6 +18,7 @@ assert.deepEqual(Object.keys(paths).sort(), [
   "/api/source/apollo/enrich",
   "/api/source/apollo/search",
   "/api/source/apollo/select",
+  "/api/source/need",
 ]);
 
 const references: string[] = [];

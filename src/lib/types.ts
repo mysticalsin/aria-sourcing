@@ -1174,6 +1174,8 @@ export const API_KEY_PROVIDERS = [
   "Apollo",
   "Seamless",
   "Apify",
+  "HeyReach",
+  "HeyReach MCP",
   "Tavily",
   "Databricks",
   "Custom",

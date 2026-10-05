@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import { Button, Field, Input, Modal, Switch, useToast } from "@/components/ui";
+import { providerIsApify } from "@/lib/sourcing/people-connect";
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import type { ApifyProfileSearchInput } from "@/lib/sourcing/apify";
 import { Linkedin, Loader2 } from "lucide-react";
 
 const POLL_INTERVAL_MS = 4_000;
+const POLL_TIMEOUT_MS = 90_000;
 const DEFAULT_MAX_ITEMS = 25;
 const MAX_ITEMS_CEILING = 50;
 
@@ -50,7 +52,10 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
   const [emailSearch, setEmailSearch] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
   const [polling, setPolling] = React.useState<{ runId: string; datasetId: string; label: string } | null>(null);
+  const [searchError, setSearchError] = React.useState<string | null>(null);
   const pollTimer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStartedAt = React.useRef<number>(0);
+  const queryInputRef = React.useRef<HTMLInputElement>(null);
 
   const clearPoll = React.useCallback(() => {
     if (pollTimer.current) {
@@ -59,14 +64,7 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     }
   }, []);
 
-  // Stop polling on unmount so a closed/navigated-away tab never keeps hitting
-  // /api/source/apify/status in the background.
-  React.useEffect(() => clearPoll, [clearPoll]);
-
-  if (!can(role, "source")) return null;
-  if (!apiKeys.some((k) => k.provider === "Apify")) return null;
-
-  function resetAndClose() {
+  const resetAndClose = React.useCallback(() => {
     clearPoll();
     setSearchQuery("");
     setLocations("");
@@ -78,21 +76,49 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     setEmailSearch(false);
     setStarting(false);
     setPolling(null);
+    setSearchError(null);
     setOpen(false);
-  }
+  }, [clearPoll]);
+
+  // Stop polling on unmount so a closed/navigated-away tab never keeps hitting
+  // /api/source/apify/status in the background.
+  React.useEffect(() => clearPoll, [clearPoll]);
+
+  React.useEffect(() => {
+    const openFromHash = () => {
+      if (typeof window !== "undefined" && window.location.hash === "#source-apify") {
+        setOpen(true);
+      }
+    };
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, []);
+
+  if (!can(role, "source")) return null;
+  if (!apiKeys.some((k) => providerIsApify(k.provider))) return null;
 
   async function poll(runId: string, datasetId: string, query: string) {
+    if (Date.now() - pollStartedAt.current > POLL_TIMEOUT_MS) {
+      clearPoll();
+      setPolling(null);
+      setSearchError("Apify search timed out. No candidates were invented. Retry Start search.");
+      toast({ title: "Apify search timed out", description: "The harvest did not finish. Nothing was added.", variant: "error" });
+      return;
+    }
     const res = await actions.checkApifyRun(campaignId, runId, datasetId, query);
     if (!res.ok) {
       clearPoll();
       setPolling(null);
+      setSearchError(res.error);
       toast({ title: "Apify search failed", description: res.error, variant: "error" });
       return;
     }
     if (res.status === "processing") return;
     clearPoll();
-    resetAndClose();
     if (res.added === 0) {
+      setPolling(null);
+      setSearchError("Apify returned profiles that were all already in the campaign. No new shortlist.");
       toast({
         title: "No new candidates from Apify",
         description: "Every resolved profile already matched an existing candidate.",
@@ -100,6 +126,7 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
       });
       return;
     }
+    resetAndClose();
     toast({
       title: `Sourced ${res.added} candidate${res.added === 1 ? "" : "s"} via Apify`,
       description: "Real LinkedIn profiles resolved via Apify, scored and placed in Sourced.",
@@ -138,13 +165,17 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     const label = trimmedQuery || nameLabel || [titles.join(", "), companies.join(", "), locs.join(", ")].filter(Boolean).join(" · ") || "LinkedIn search";
 
     setStarting(true);
+    setSearchError(null);
     const res = await actions.startApifyRun(campaignId, criteria);
     setStarting(false);
     if (!res.ok) {
+      setSearchError(res.error);
       toast({ title: "Couldn't start Apify search", description: res.error, variant: "error" });
       return;
     }
+    pollStartedAt.current = Date.now();
     setPolling({ runId: res.runId, datasetId: res.datasetId, label });
+    void poll(res.runId, res.datasetId, label);
     pollTimer.current = setInterval(() => void poll(res.runId, res.datasetId, label), POLL_INTERVAL_MS);
   }
 
@@ -155,15 +186,15 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
         leftIcon={<Linkedin className="h-4 w-4" />}
         onClick={() => setOpen(true)}
         disabled={disabled}
-        title={disabled ? "Resume the campaign to source via Apify" : undefined}
+        title={disabled ? "Resume the campaign to source the next batch" : undefined}
       >
-        Source via Apify
+        Source next batch
       </Button>
       <Modal
         open={open}
         onClose={resetAndClose}
-        title="Source via Apify"
-        description="Real public LinkedIn profiles via a third-party provider (Apify harvestapi). No LinkedIn login, scraping, or session automation."
+        title="Source next batch"
+        description="Real public LinkedIn profiles via the harvest pipeline. No LinkedIn login, scraping, or session automation."
         footer={
           polling ? (
             <Button variant="ghost" size="md" onClick={resetAndClose}>
@@ -187,6 +218,11 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
           )
         }
       >
+        {searchError ? (
+          <p role="alert" data-testid="apify-search-error" className="mb-3 text-sm font-semibold text-danger">
+            {searchError}
+          </p>
+        ) : null}
         {polling ? (
           <div className="flex items-center gap-3 rounded-2xl bg-ink/[0.03] px-4 py-3.5 text-sm text-ink-soft">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
@@ -202,6 +238,9 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
             >
               <Input
                 id={`${idBase}-query`}
+                ref={queryInputRef}
+                autoFocus
+                data-autofocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="e.g. Staff Engineer Kubernetes"

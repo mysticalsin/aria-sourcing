@@ -89,6 +89,10 @@ test("Fleet sourcing uses the reviewed real-provider path and never the syntheti
   assert.doesNotMatch(store, /\bsourceCandidates\b/);
   assert.match(fleetPage, /await actions\.sourceNextBatch\(campaignId/);
   assert.match(fleetPage, /Select one reviewed campaign before sourcing/i);
+  assert.match(fleetPage, /ConnectChannels/);
+  assert.match(fleetPage, /Connect Outlook|Connect Microsoft|cc-connect-outlook|ConnectChannels/);
+  assert.match(fleetPage, /sourceRejectedToast|peoplePluginFailLoudUi|emptyPeopleFirstToast|ConnectChannels/);
+  assert.match(fleetPage, /source-next-batch-error/);
 });
 
 test("Fleet bulk demo seeding is unreachable in a live workspace", () => {

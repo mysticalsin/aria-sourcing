@@ -13,6 +13,7 @@ import {
   demoLoginEnabled,
 } from "@/lib/supabase/config";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { AriaBuildStamp } from "@/components/app/build-stamp";
 
 const VIDEO_URL =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260619_191346_9d19d66e-86a4-47f7-8dc6-712c1788c3b2.mp4";
@@ -306,6 +307,7 @@ function LoginInner() {
         </p>
 
         <p className="mt-6 text-xs font-light tracking-[0.18em] text-white/50">
+          <AriaBuildStamp className="mr-3 font-mono tracking-normal text-white/40" />
           Designed &amp; built by{" "}
           <a
             href="https://www.linkedin.com/in/tonywalteur/"

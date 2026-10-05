@@ -18,6 +18,67 @@ test("same-origin JSON with parameters is accepted", () => {
   );
 });
 
+test("Fly product-host Origin is same-site when nextUrl is the [::] bind", () => {
+  const headers = new Headers({
+    origin: "https://aria-mantu-app.fly.dev",
+    "content-type": "application/json",
+    host: "[::]:3000",
+    "x-forwarded-proto": "https",
+    "x-forwarded-host": "aria-mantu-app.fly.dev",
+  });
+  assert.equal(
+    classifySameOriginJsonRequest({
+      headers,
+      nextUrl: { origin: "http://[::]:3000" },
+    }),
+    "ok",
+  );
+  const publicHost = new Headers({
+    origin: "https://aria-mantu-app.fly.dev",
+    "content-type": "application/json",
+    host: "aria-mantu-app.fly.dev",
+    "x-forwarded-proto": "https",
+  });
+  assert.equal(
+    classifySameOriginJsonRequest({
+      headers: publicHost,
+      nextUrl: { origin: "http://[::]:3000" },
+    }),
+    "ok",
+  );
+});
+
+test("a real cross-origin stays rejected even when Fly bind nextUrl is [::]", () => {
+  const headers = new Headers({
+    origin: "https://attacker.test",
+    "content-type": "application/json",
+    host: "[::]:3000",
+    "x-forwarded-proto": "https",
+    "x-forwarded-host": "aria-mantu-app.fly.dev",
+  });
+  assert.equal(
+    classifySameOriginJsonRequest({
+      headers,
+      nextUrl: { origin: "http://[::]:3000" },
+    }),
+    "cross_origin_request",
+  );
+  const forgedForward = new Headers({
+    origin: "https://attacker.test",
+    "content-type": "application/json",
+    host: "aria-mantu-app.fly.dev",
+    "x-forwarded-proto": "https",
+    "x-forwarded-host": "attacker.test",
+  });
+  assert.equal(
+    classifySameOriginJsonRequest({
+      headers: forgedForward,
+      nextUrl: { origin: "http://[::]:3000" },
+    }),
+    "cross_origin_request",
+  );
+});
+
 test("hostile, missing, lookalike, and downgraded origins fail closed", () => {
   for (const origin of [
     null,

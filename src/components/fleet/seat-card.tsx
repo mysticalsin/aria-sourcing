@@ -120,7 +120,10 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
   const isLive = seat.mode === "live";
   const isPaused = seat.status === "paused";
   const isDisabled = seat.status === "disabled";
-  const isOAuthProvider = seat.provider === "Gmail API" || seat.provider === "Microsoft Graph";
+  const isOAuthProvider =
+    seat.provider === "Gmail API" ||
+    seat.provider === "Microsoft Graph" ||
+    seat.provider === "LinkedIn Vendor API";
 
   const accountEmailId = React.useId();
 
@@ -165,7 +168,12 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       });
       return;
     }
-    const path = seat.provider === "Gmail API" ? "/auth/google" : "/auth/microsoft";
+    const path =
+      seat.provider === "Gmail API"
+        ? "/auth/google"
+        : seat.provider === "LinkedIn Vendor API"
+          ? "/auth/linkedin"
+          : "/auth/microsoft";
     window.location.href = `${path}?seat_id=${encodeURIComponent(seat.id)}`;
   }
 
@@ -555,10 +563,16 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
           {isOAuthProvider ? (
             <div className="space-y-3">
               <p className="text-sm text-muted">
-                Connect the real mailbox via OAuth. Aria will send through the official {seat.provider} API.
+                {seat.provider === "LinkedIn Vendor API"
+                  ? "Connect LinkedIn through official OAuth. Fail-closed without LinkedIn app credentials. Search still uses Apify and other keyed sources — this is not a scrape."
+                  : `Connect the real mailbox via OAuth. Aria will send through the official ${seat.provider} API.`}
               </p>
               <Button variant="primary" size="sm" className="w-full" onClick={startOAuth}>
-                {seat.provider === "Gmail API" ? "Connect Google account" : "Connect Microsoft account"}
+                {seat.provider === "Gmail API"
+                  ? "Connect Google account"
+                  : seat.provider === "LinkedIn Vendor API"
+                    ? "Connect LinkedIn account"
+                    : "Connect Microsoft account"}
               </Button>
               {!supabaseEnabled && (
                 <p className="text-xs text-muted">

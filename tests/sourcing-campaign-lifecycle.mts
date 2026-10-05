@@ -38,6 +38,8 @@ test("campaign sourcing controls use the same canonical live-sourcing predicate"
 
   assert.match(page, /campaignAllowsLiveSourcing\(c\.status\)/);
   assert.match(page, /disabled=\{sourcing \|\| !liveSourcingAllowed\}/);
-  assert.match(page, /<SourceApolloButton campaignId=\{c\.id\} disabled=\{!liveSourcingAllowed\}/);
-  assert.match(page, /disabled=\{!liveSourcingAllowed\}/);
+  assert.match(page, /onClick=\{handleSource\}/);
+  assert.match(page, /onClick=\{handleAutoSource\}/);
+  assert.match(page, /Auto source/);
+  assert.doesNotMatch(page, /SourceApolloButton|SourceApifyButton|Source via Apify/);
 });

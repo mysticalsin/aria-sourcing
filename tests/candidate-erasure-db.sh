@@ -321,7 +321,7 @@ if wait "$inverse_writer_pid"; then
 fi
 inverse_writer_pid=""
 
-if ! rg -q '23514: candidate erasure tombstone blocks' "$race_dir/inverse-writer.log"; then
+if ! grep -q '23514: candidate erasure tombstone blocks' "$race_dir/inverse-writer.log"; then
   cat "$race_dir/inverse-writer.log" >&2
   echo "inverse writer failed without the expected candidate erasure SQLSTATE" >&2
   exit 1

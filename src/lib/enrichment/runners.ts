@@ -18,7 +18,7 @@
 // secret, and it stays local to this module's call stack.
 
 import type { getServerSupabase } from "@/lib/supabase/server";
-import { enrichProfilesByUrl, resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { enrichProfilesByUrl, resolveStoredApifyKey, scrapeGithubTechStack } from "@/lib/sourcing/apify";
 import { matchApolloPerson, resolveStoredApolloKey, searchApolloPeople, type ApolloPerson } from "@/lib/sourcing/apollo";
 import {
   pollSeamlessResearch,
@@ -122,6 +122,7 @@ export const devFusionRunner: EnrichmentRunner = async (session, candidate) => {
 
   const fields: EnrichedFields = {};
   if (profile.email) fields.email = { value: profile.email, confidence: 0.9 };
+  if (profile.phone) fields.phone = { value: profile.phone, confidence: 0.7 };
   if (profile.headline) fields.headline = { value: profile.headline };
   if (profile.location?.text) fields.location = { value: profile.location.text };
   const skills = [...profile.topSkills, ...profile.skills];
@@ -137,6 +138,28 @@ export const devFusionRunner: EnrichmentRunner = async (session, candidate) => {
   if (profile.languages.length) fields.languages = { value: profile.languages };
 
   return { fields, costUnits: 1, status: "ok" };
+};
+
+/* ---- GitHub tech-stack -----------------------------------------------------
+ * Merge languages/skills onto an existing person. Never mints a leftover. */
+
+export const githubTechStackRunner: EnrichmentRunner = async (session, candidate) => {
+  const githubUrl = candidate.githubUrl?.trim();
+  if (!githubUrl) {
+    return { fields: {}, costUnits: 0, status: "no_key_field", detail: "No githubUrl on this candidate." };
+  }
+  const token = await resolveStoredApifyKey(session);
+  if (!token) return { fields: {}, costUnits: 0, status: "not_configured", detail: "No harvest key configured." };
+
+  const clearance = clearIdentityResolution("Apify", { githubUrl });
+  if (!clearance.ok) return { fields: {}, costUnits: 0, status: "error", detail: clearance.error };
+
+  const res = await scrapeGithubTechStack(clearance.clearance, token, githubUrl);
+  if (!res.ok) return { fields: {}, costUnits: 0, status: "error", detail: res.detail || res.title };
+  if (res.data.length === 0) {
+    return { fields: {}, costUnits: 1, status: "no_data", detail: "GitHub scraper returned no tech stack." };
+  }
+  return { fields: { skills: { value: res.data } }, costUnits: 1, status: "ok" };
 };
 
 /* ---- Apollo ----------------------------------------------------------------

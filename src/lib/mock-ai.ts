@@ -5,6 +5,14 @@ import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
+import { githubSkillQueryToken } from "./sourcing/github-search-language";
+import {
+  isVssRecruitmentNeed,
+  parseVssNeeds,
+  tokenizeMustHaveSkills,
+  urgencyFromVssPriority,
+  vssToJobAnalysis,
+} from "./sourcing/vss-need";
 import type {
   Booking,
   Campaign,
@@ -199,6 +207,89 @@ Key required skills
 
 Skills: Murex, Finance, Pricing, Pricing Analysis`;
 
+/** Primary Mantu walk need — Calypso Application Support (AMACAN / BNPP CIB). */
+export const SAMPLE_CALYPSO_APP_SUPPORT_NEED = `From: MUNERA ALZATE Jacobo <jacobo.munera@amaris.com>
+Subject: Need is now ACTIVE — Calypso Application Support (AMACAN / Montreal)
+
+Summary
+Type
+Consulting
+Category
+Active
+Priority
+Urgent but not Critical
+Reason
+Opening Position
+Company Employed by
+AMACAN
+City
+Montreal
+Client
+BNPP CIB - Canada
+Company Billing To
+AMACAN
+Status
+Running
+Recruitment Need Purpose
+Title
+Calypso Application Support
+Status
+Running
+Reason
+Opening Position
+Priority
+Urgent but not Critical
+Main Manager
+MARGIOTTA Lisa
+Secondary Managers
+SOUSA ALVES Sara
+Main Recruiter
+MUNERA ALZATE Jacobo
+Secondary Recruiters
+Contract Type
+Undetermined Duration Contract (CDI, CTI...etc)
+Freelancer
+Start Date
+05/10/2026
+Number of people
+1
+City
+Montreal
+Project Information
+Company Employed by
+AMACAN
+Remote
+Possible partially remote
+Client
+BNPP CIB - Canada
+Client Sector
+Bank & Finance
+Project Type
+Expertise
+Project Duration
+12 Month
+Candidate requirement
+Profiles
+IS&D - Applicative Support
+Skill (Must)
+Linux Python Shell Oracle Grafana Dynatrace Linux Server
+Skill (Nice to have)
+Language (Must)
+English - Fluent
+Language (Nice to have)
+Level of Experience (in years)
+Middle - From 4 to 6 years
+Mission Description
+APS
+
+Profile Synthesis: Calypso Application Support
+
+1. Core Purpose & Scope
+
+Function: Providing production support for the Calypso settlement system within Capital Markets.
+Focus Areas: Supporting the Trade Life Cycle, specifically Settlements, Securities and Prime Brokerage.
+`;
+
 export interface ParsedIntake {
   sender: { name: string; email: string };
   intent: IntakeIntent;
@@ -209,6 +300,8 @@ export interface ParsedIntake {
   confidence: Record<string, number>;
   extractionMode: "evidence" | "cloud";
   providerWarning?: string;
+  /** Extra VSS Title blocks in the same paste (primary is jobAnalysis). */
+  additionalNeeds?: { title: string; requiredSkills: string[] }[];
   /** Optional enrichment from a locked Dust agent (task "jdAnalysis"). A sibling
    *  display field, never merged into jobAnalysis's typed fields — free text from
    *  an external agent shouldn't be able to corrupt the scoring/sourcing pipeline.
@@ -218,7 +311,47 @@ export interface ParsedIntake {
 }
 
 export function isMantuNeedEmail(text: string): boolean {
+  if (isVssRecruitmentNeed(text)) return true;
   return /this need is now|key required skills/i.test(text) || /^\s*recruiter\s*:/im.test(text);
+}
+
+function parseVssIntake(text: string): ParsedIntake {
+  const needs = parseVssNeeds(text);
+  const primary = needs[0];
+  if (!primary) {
+    return parseMantuNeed(text);
+  }
+  const jobAnalysis = vssToJobAnalysis(primary);
+  const validationWarnings: ValidationWarning[] = [
+    ...evaluateNeedReadiness(jobAnalysis).issues,
+    { field: "salary", severity: "warning", message: "No salary/rate in the need. Confirm the band." },
+  ];
+  jobAnalysis.validationWarnings = validationWarnings;
+  const urgency = urgencyFromVssPriority(primary.priority);
+  const senderName = primary.mainManager || primary.mainRecruiter;
+  const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
+  return {
+    sender: { name: senderName, email: emailMatch?.[0] ?? "" },
+    intent: urgency === "Critical" ? "Urgent Hire" : "New Role",
+    urgency,
+    jobAnalysis,
+    validationWarnings,
+    clarificationDraft: validationWarnings.some((w) => w.severity === "critical")
+      ? buildClarificationEmail(senderName, jobAnalysis, validationWarnings)
+      : null,
+    confidence: {
+      title: primary.title ? 0.95 : 0.4,
+      salary: 0.3,
+      skills: primary.skillsMust.length ? 0.95 : 0.5,
+      location: primary.city ? 0.92 : 0.5,
+      seniority: jobAnalysis.seniority === "Unspecified" ? 0 : 0.85,
+    },
+    extractionMode: "evidence",
+    additionalNeeds: needs.slice(1).map((need) => ({
+      title: need.title,
+      requiredSkills: need.skillsMust,
+    })),
+  };
 }
 
 /** Does an inbound mailbox message look like a hiring need / JD email (vs a
@@ -264,13 +397,11 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   // Skills — the explicit "Skills:" line is authoritative; augment from bullets.
   const skillsLine = field("Skills");
-  const lineSkills = skillsLine
-    ? skillsLine.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
-    : [];
+  const lineSkills = tokenizeMustHaveSkills(skillsLine);
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
   );
-  const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
+  const requiredSkills = tokenizeMustHaveSkills([...lineSkills, ...dictSkills]).slice(0, 8);
 
   const minYears = text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1];
   const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
@@ -440,6 +571,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const text = `${input.email}\n${input.jd ?? ""}`.slice(0, MAX_PARSE_CHARS);
   const lower = text.toLowerCase();
 
+  if (isVssRecruitmentNeed(text)) return parseVssIntake(text);
+
   // Structured Mantu/Amaris "need is now ACTIVE" email → dedicated parser.
   if (isMantuNeedEmail(text)) return parseMantuNeed(text);
 
@@ -593,8 +726,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     salaryMax,
     currency,
     equity,
-    requiredSkills,
-    niceToHaveSkills,
+    requiredSkills: tokenizeMustHaveSkills(requiredSkills),
+    niceToHaveSkills: tokenizeMustHaveSkills(niceToHaveSkills),
     minYearsExperience,
     maxYearsExperience,
     education: /phd|master|bachelor|degree/i.test(text)
@@ -677,7 +810,7 @@ Aria Sourcing`;
 const NON_LOCATION_REGIONS = new Set(["EU", "EMEA", "EEA", "APAC", "LATAM", "Remote", "Global"]);
 
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
-  const topSkills = jd.requiredSkills.slice(0, 4);
+  const topSkills = tokenizeMustHaveSkills(jd.requiredSkills).slice(0, 4);
   const europeHints = europeSourcingLocationHints(jd);
   const region = jd.regions[0];
   const concreteRegion =
@@ -685,24 +818,39 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const locationQualifier = concreteRegion ? ` location:${concreteRegion}` : "";
   // Note: only user-search qualifiers are valid here (language:, location:,
   // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
-  // out the whole query on /search/users.
-  const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
-    label: `${skill} contributors`,
-    query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-      i === 0 ? "repos:>10" : "repos:>5"
-    }`,
-    estimatedResults: 120 + i * 60,
-  }));
+  // out the whole query on /search/users. Platforms (Calypso) are not languages.
+  const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => {
+    const token = githubSkillQueryToken(skill);
+    return {
+      label: `${skill} contributors`,
+      query: `${token}${locationQualifier} followers:>40 ${
+        i === 0 ? "repos:>10" : "repos:>5"
+      }`,
+      estimatedResults: 120 + i * 60,
+    };
+  });
 
   const linkedinGeoTerms =
     europeHints.length > 0
       ? europeHints.slice(0, 4)
       : jd.regions.filter((r) => !NON_LOCATION_REGIONS.has(r));
-  const linkedinBoolean = `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
-    .map((s) => `"${s}"`)
-    .join(" OR ")}) AND (${(linkedinGeoTerms.length ? linkedinGeoTerms : jd.regions)
-    .map((r) => `"${r}"`)
-    .join(" OR ")}) NOT "recruiter"`;
+  const seniorityDept = [jd.seniority !== "Unspecified" ? jd.seniority : "", jd.department]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const titleClause = jd.title.trim()
+    ? seniorityDept
+      ? `("${jd.title}" OR "${seniorityDept}")`
+      : `"${jd.title}"`
+    : seniorityDept
+      ? `"${seniorityDept}"`
+      : "";
+  const skillClause = topSkills.length ? `(${topSkills.map((s) => `"${s}"`).join(" OR ")})` : "";
+  const geoSource = linkedinGeoTerms.length ? linkedinGeoTerms : jd.regions;
+  const geoClause = geoSource.length ? `(${geoSource.map((r) => `"${r}"`).join(" OR ")})` : "";
+  const linkedinBoolean = [titleClause, skillClause, geoClause].filter(Boolean).join(" AND ")
+    ? `${[titleClause, skillClause, geoClause].filter(Boolean).join(" AND ")} NOT "recruiter"`
+    : "";
 
   const profile = roleProfile(jd);
   return {
@@ -743,6 +891,11 @@ export function createCampaign(
   meta: { hiringManager: string; hiringManagerEmail: string },
 ): Campaign {
   const id = makeCampaignId(jd.title);
+  const jobAnalysis: JobAnalysis = {
+    ...jd,
+    requiredSkills: tokenizeMustHaveSkills(jd.requiredSkills),
+    niceToHaveSkills: tokenizeMustHaveSkills(jd.niceToHaveSkills),
+  };
   return {
     id,
     title: jd.title,
@@ -752,9 +905,9 @@ export function createCampaign(
     hiringManager: meta.hiringManager,
     hiringManagerEmail: meta.hiringManagerEmail,
     createdAt: new Date().toISOString(),
-    targetStartDate: jd.expectedStartDate ?? isoDaysAfter(45, new Date()),
-    jobAnalysis: jd,
-    sourcingStrategy: buildSourcingStrategy(jd),
+    targetStartDate: jobAnalysis.expectedStartDate ?? isoDaysAfter(45, new Date()),
+    jobAnalysis,
+    sourcingStrategy: buildSourcingStrategy(jobAnalysis),
     scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },
     metrics: emptyMetrics(),
     skillUpdates: [],

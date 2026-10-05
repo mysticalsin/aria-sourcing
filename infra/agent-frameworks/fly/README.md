@@ -184,11 +184,11 @@ and does not stage secrets or redeploy.
 
 ```sh
 npm run test:agent-framework-adapter
-
-for config in infra/agent-frameworks/fly/*.toml; do
-  flyctl config validate --config "$config"
-done
 ```
+
+Quality validates each role TOML offline (schema + private-no-proxy). Do not
+run `flyctl config validate` in CI — that command requires a Fly login.
+Operators who are already authenticated may still run it locally.
 
 The local tests prove config shape and operator contracts. They do not prove a
 registry signature, cloud model, production Machine, private Flowise

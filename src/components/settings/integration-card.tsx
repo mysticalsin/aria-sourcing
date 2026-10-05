@@ -15,7 +15,13 @@ import {
   Field,
   useToast,
 } from "@/components/ui";
-import { useActions } from "@/lib/store";
+import { useActions, useActiveCampaign, useApiKeys, useIntegrations } from "@/lib/store";
+import {
+  MISSING_PEOPLE_PLUGINS_TOAST,
+  githubLiveAllowed,
+  integrationShowsLive,
+} from "@/lib/sourcing/people-plugins";
+import { isLinkedInSourcingCard } from "@/lib/integrations";
 import type { IntegrationStatus } from "@/lib/types";
 import { toneForHealth, formatTimeAgo, cn } from "@/lib/utils";
 import {
@@ -54,6 +60,9 @@ const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
 
 export function IntegrationCard({ integration }: { integration: IntegrationStatus }) {
   const actions = useActions();
+  const integrations = useIntegrations();
+  const apiKeys = useApiKeys();
+  const activeCampaign = useActiveCampaign();
   const router = useRouter();
   const { toast } = useToast();
   const [configureOpen, setConfigureOpen] = React.useState(false);
@@ -73,9 +82,29 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
   const apiKeyId = React.useId();
   const accountId = React.useId();
 
-  const isLive = integration.mode === "live";
+  const isLive = integrationShowsLive(
+    integration,
+    integrations,
+    activeCampaign?.jobAnalysis,
+    apiKeys,
+  );
   const connected = integration.status === "connected";
   const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
+  const setupOnly =
+    isLinkedInSourcingCard(integration) ||
+    integration.id === "int_outlook" ||
+    integration.id === "int_graph_teams" ||
+    integration.id === "int_apify" ||
+    integration.id === "int_heyreach";
+  const configureLabel =
+    isLinkedInSourcingCard(integration) || integration.id === "int_apify"
+      ? "Access & Keys"
+      : integration.id === "int_outlook" || integration.id === "int_graph_teams"
+        ? "Connect Microsoft account"
+        : integration.id === "int_heyreach"
+          ? "Access & Keys"
+          : "Configure";
+  const setupHref = isLinkedInSourcingCard(integration) ? "/settings" : integration.setupHref;
 
   function handleCloseModal() {
     setConfigureOpen(false);
@@ -98,13 +127,27 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
   function handleToggleMode() {
     const nextMode = isLive ? "mock" : "live";
+    if (
+      nextMode === "live" &&
+      integration.id === "int_github" &&
+      !githubLiveAllowed(integrations, activeCampaign?.jobAnalysis, apiKeys)
+    ) {
+      toast({
+        title: "Add a valid Apify key",
+        description: MISSING_PEOPLE_PLUGINS_TOAST,
+        href: "/settings",
+        actionLabel: "Open Access & Keys",
+        variant: "error",
+      });
+      return;
+    }
     actions.toggleIntegrationMode(integration.id);
     toast({
       title: `${integration.name} → ${nextMode === "live" ? "Live" : "Mock"} mode`,
       description:
         nextMode === "live"
           ? "Live mode active: outreach routes through these credentials once the sending domain is verified."
-          : "Mock mode is the safe default. No real calls are made.",
+          : "Sample data until Live is on. No real calls are made.",
       variant: nextMode === "live" ? "warning" : "info",
     });
   }
@@ -252,14 +295,14 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           )}
 
           <div className="mt-auto space-y-3 pt-1">
-            {integration.real && (
+            {integration.real && integration.id !== "int_heyreach" && (
               <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
                 <div>
                   <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
                     Live mode
                   </label>
                   <p className="text-xs text-muted">
-                    {isLive ? "Real credentials path" : "Mock is the safe default"}
+                    {isLive ? "Real credentials path" : "Sample data until Live is on"}
                   </p>
                 </div>
                 <Switch
@@ -270,6 +313,11 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 />
               </div>
             )}
+            {integration.id === "int_heyreach" && (
+              <p className="rounded-2xl bg-canvas px-3 py-2.5 text-xs leading-relaxed text-ink-soft">
+                A HeyReach key in Access & Keys is the LinkedIn send account for drafts. There is no campaign or sender console here. Send stays dry-run until you approve.
+              </p>
+            )}
 
             <div className="flex gap-2">
               <Button
@@ -277,9 +325,15 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 size="sm"
                 className="flex-1"
                 leftIcon={<Plug className="h-4 w-4" />}
-                onClick={() => setConfigureOpen(true)}
+                onClick={() => {
+                  if (setupOnly && setupHref) {
+                    router.push(setupHref);
+                    return;
+                  }
+                  setConfigureOpen(true);
+                }}
               >
-                Configure
+                {configureLabel}
               </Button>
               {/* Only GitHub has a real, live connection check (testIntegration in
                   store.ts pings /api/source). Other real cards point to their actual
@@ -296,13 +350,13 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   Test connection
                 </Button>
               )}
-              {integration.real && integration.id !== "int_github" && integration.setupHref && (
+              {integration.real && integration.id !== "int_github" && setupHref && (
                 <Button
                   variant="subtle"
                   size="sm"
                   className="flex-1"
                   leftIcon={<Wrench className="h-4 w-4" />}
-                  onClick={() => router.push(integration.setupHref!)}
+                  onClick={() => router.push(setupHref)}
                 >
                   Setup guide
                 </Button>

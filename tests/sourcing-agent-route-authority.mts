@@ -5,7 +5,9 @@ import { NextRequest } from "next/server";
 
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
-import type { Campaign } from "../src/lib/types";
+import { isPeopleFirstContactComplete } from "../src/lib/sourcing/people-first-contact";
+import { peopleFirstHarvestQueue } from "../src/lib/sourcing/multi-source-plan";
+import type { Campaign, JobAnalysis } from "../src/lib/types";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -55,6 +57,13 @@ let stateReads = 0;
 let providerCalls = 0;
 let vaultCalls = 0;
 let runnerCalls = 0;
+/** Fallthrough state: what the click discovered, POSTed to enrich, and merged. */
+let enrichRuns: string[][] = [];
+let githubRuns: string[][] = [];
+let discoveredUrls: string[] = [];
+let incompleteUrls: string[] = [];
+let enrichedCandidates: unknown[] = [];
+let enrichRunResult: { ok: boolean; runId: string; status: string; itemCount: number } | null = null;
 let beginCalls = 0;
 let frameworkBeginCalls = 0;
 let frameworkCheckCalls = 0;
@@ -63,7 +72,7 @@ let listLessonCalls = 0;
 let completeCalls = 0;
 let failedRunCodes: string[] = [];
 let eventOrder: string[] = [];
-let runnerQueries: Array<{ platform: string; query: string }> = [];
+let runnerQueries: Array<{ platform: string; query: string; currentJobTitles?: string[]; enriched?: boolean }> = [];
 let mutateDuringProvider: (() => void) | null = null;
 let mutateDuringRunner: (() => void) | null = null;
 let mutateDuringVault: (() => void) | null = null;
@@ -89,6 +98,24 @@ let resolvedVaultKeyId = "";
 let resolvedVaultProvider = "";
 let requestedCloudProvider = "";
 let requestedCloudModel = "";
+let storedTavilyKey: string | null = null;
+let storedApifyKey: string | null = null;
+let workspaceIntegrations: Array<{ id: string; mode: string; real?: boolean }> = [];
+let runnerHarvest: {
+  started: boolean;
+  status: string;
+  itemCount: number;
+  runId?: string;
+} | null = {
+  started: true,
+  status: "SUCCEEDED",
+  itemCount: 1,
+  runId: "apify-run-test",
+};
+let runnerHarvestByQuery: Record<
+  string,
+  { started: boolean; status: string; itemCount: number; runId?: string }
+> = {};
 
 const query: Record<string, unknown> = {};
 Object.assign(query, {
@@ -104,6 +131,7 @@ Object.assign(query, {
           candidates: seed.candidates
             .slice(0, 1)
             .map((candidate) => ({ ...candidate, campaignId })),
+          integrations: workspaceIntegrations,
         },
         updated_at: `2026-07-13T14:00:0${stateReads}.000Z`,
       },
@@ -150,7 +178,46 @@ mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   },
 });
 mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
-  namedExports: { resolveStoredTavilyKey: async () => null },
+  namedExports: { resolveStoredTavilyKey: async () => storedTavilyKey },
+});
+mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
+  namedExports: {
+    resolveStoredApifyKey: async () => storedApifyKey,
+    // The real module refuses an empty URL list (Apify invalid-input). The
+    // mock records exactly what the route asked to enrich.
+    runLinkedinProfileScraperAndWait: async (_clearance: unknown, _token: string, urls: string[]) => {
+      enrichRuns.push([...urls]);
+      const run = enrichRunResult;
+      const harvest = {
+        actor: "harvestapi~linkedin-profile-scraper",
+        query: "email-phone",
+        runId: run?.runId ?? "",
+        status: run ? run.status : "NOT_STARTED",
+        itemCount: run ? run.itemCount : -1,
+        started: Boolean(run?.runId),
+      };
+      if (!run || !run.ok) {
+        return { ok: false, status: 0, title: run ? `Apify run ${run.status}` : "no_profile_urls", detail: "", harvest };
+      }
+      return { ok: true, status: 200, data: [], harvest };
+    },
+    runGithubProfileScraperAndWait: async (_clearance: unknown, _token: string, handles: string[]) => {
+      githubRuns.push([...handles]);
+      return {
+        ok: true,
+        status: 200,
+        data: [],
+        harvest: {
+          actor: "apivault_labs~github-profile-scraper",
+          query: "tech-stack-merge",
+          runId: "github-run-1",
+          status: "SUCCEEDED",
+          itemCount: 0,
+          started: true,
+        },
+      };
+    },
+  },
 });
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
@@ -256,28 +323,124 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
 mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
   namedExports: {
     SOURCING_TOOL_DEFS: [],
+    peopleFirstEnrichmentClearance: () => ({ ok: true, clearance: {} }),
     makeSourcingToolRunner: () => ({
-      run: async (_name: string, args: { platform?: string; query?: string }) => {
+      run: async (_name: string, args: { platform?: string; query?: string; currentJobTitles?: string[] }) => {
         runnerCalls += 1;
         eventOrder.push("runner");
+        const titles = Array.isArray(args.currentJobTitles)
+          ? args.currentJobTitles.filter((title): title is string => typeof title === "string" && title.trim().length > 0)
+          : [];
         runnerQueries.push({
           platform: String(args.platform ?? ""),
           query: String(args.query ?? ""),
+          ...(titles.length ? { currentJobTitles: titles } : {}),
         });
         mutateDuringRunner?.();
+        const harvestKey = titles.length
+          ? `${String(args.query ?? "")}|${titles.join(",")}`
+          : String(args.query ?? "");
+        const harvest = args.platform === "Apify"
+          ? (runnerHarvestByQuery[harvestKey] ?? runnerHarvestByQuery[String(args.query ?? "")] ?? runnerHarvest)
+          : null;
         if (runnerCandidatesAfterRun.length > 0) {
-          foundCandidates = runnerCandidatesAfterRun;
+          if (args.platform === "Apify") {
+            if ((harvest?.itemCount ?? 0) > 0) {
+              const complete = runnerCandidatesAfterRun.filter((row) =>
+                isPeopleFirstContactComplete(
+                  row && typeof row === "object"
+                    ? (row as {
+                        email?: string;
+                        phone?: string;
+                        linkedinUrl?: string;
+                        sourcePlatform?: string;
+                      })
+                    : {},
+                ),
+              );
+              if (complete.length > 0) foundCandidates = complete;
+            }
+          } else {
+            foundCandidates = runnerCandidatesAfterRun;
+          }
         }
-        return { ok: true, content: {} };
+        const harvestOk = args.platform !== "Apify" || harvest?.status === "SUCCEEDED";
+        return { ok: harvestOk, content: {} };
       },
       getFound: () => foundCandidates,
-      getExecutions: () => runnerQueries.map(({ platform, query }) => ({
+      getIncompleteLinkedinUrls: () => [...incompleteUrls],
+      discoverLinkedinUrls: async (query: string) => {
+        runnerQueries.push({ platform: "LinkedIn", query });
+        if (!storedTavilyKey) return { ok: false, urls: [], detail: "no Tavily key in Access & Keys" };
+        return { ok: true, urls: [...discoveredUrls] };
+      },
+      acceptEnrichedProfiles: (_profiles: unknown[], query: string) => {
+        runnerQueries.push({ platform: "Apify", query, enriched: true });
+        const complete = enrichedCandidates.filter((row) =>
+          isPeopleFirstContactComplete(
+            row && typeof row === "object"
+              ? (row as { email?: string; phone?: string; linkedinUrl?: string; sourcePlatform?: string })
+              : {},
+          ),
+        );
+        foundCandidates = [...foundCandidates, ...complete];
+        return { acceptedCount: complete.length, contactCompleteCount: complete.length };
+      },
+      mergeGithubStack: () => 0,
+      getExecutions: () => runnerQueries.map(({ platform, query, enriched }) => {
+        if (enriched) {
+          return {
+            platform,
+            query,
+            ok: true,
+            candidateCount: foundCandidates.length,
+            skippedCount: 0,
+            contactCompleteCount: foundCandidates.length,
+            harvest: {
+              actor: "harvestapi~linkedin-profile-scraper",
+              query: "email-phone",
+              runId: enrichRunResult?.runId ?? "",
+              status: enrichRunResult?.status ?? "SUCCEEDED",
+              itemCount: enrichRunResult?.itemCount ?? 0,
+              started: true,
+            },
+          };
+        }
+        const harvest = platform === "Apify"
+          ? (runnerHarvestByQuery[query] ?? runnerHarvest)
+          : null;
+        return {
         platform,
         query,
-        ok: true,
+        ok: platform !== "Apify" || harvest?.status === "SUCCEEDED",
         candidateCount: foundCandidates.length,
         skippedCount: 0,
-      })),
+        contactCompleteCount: foundCandidates.filter((row) =>
+          isPeopleFirstContactComplete(
+            row && typeof row === "object"
+              ? (row as {
+                  email?: string;
+                  phone?: string;
+                  linkedinUrl?: string;
+                  sourcePlatform?: string;
+                })
+              : {},
+          ),
+        ).length,
+        ...(platform === "Apify" && harvest
+          ? {
+              harvest: {
+                actor: "harvestapi~linkedin-profile-search",
+                query,
+                runId: harvest.runId ?? "apify-run-test",
+                status: harvest.status,
+                itemCount: harvest.itemCount,
+                started: harvest.started,
+              },
+            }
+          : {}),
+      };
+      }),
     }),
   },
 });
@@ -342,6 +505,12 @@ function reset() {
   providerCalls = 0;
   vaultCalls = 0;
   runnerCalls = 0;
+  enrichRuns = [];
+  githubRuns = [];
+  discoveredUrls = [];
+  incompleteUrls = [];
+  enrichedCandidates = [];
+  enrichRunResult = null;
   beginCalls = 0;
   frameworkBeginCalls = 0;
   frameworkCheckCalls = 0;
@@ -375,6 +544,16 @@ function reset() {
   resolvedVaultProvider = "";
   requestedCloudProvider = "";
   requestedCloudModel = "";
+  storedTavilyKey = null;
+  storedApifyKey = null;
+  workspaceIntegrations = [];
+  runnerHarvest = {
+    started: true,
+    status: "SUCCEEDED",
+    itemCount: 1,
+    runId: "apify-run-test",
+  };
+  runnerHarvestByQuery = {};
 }
 
 test("active campaign is loaded from authoritative workspace state before and after provider I/O", async () => {
@@ -425,11 +604,247 @@ test("client-owned campaign objects, unknown fields, cross-origin, and non-JSON 
   assert.equal(crossOrigin.status, 403);
   assert.equal((await crossOrigin.json()).code, "CROSS_ORIGIN_REQUEST");
 
+  const flyAttacker = await post(
+    new NextRequest("http://[::]:3000/api/sourcing-agent", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://attacker.test",
+        host: "[::]:3000",
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "aria-mantu-app.fly.dev",
+        "x-real-ip": `192.0.2.${++requestSequence}`,
+        "x-request-id": crypto.randomUUID(),
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ campaignId, count: 1 }),
+    }),
+  );
+  assert.equal(flyAttacker.status, 403);
+  assert.equal((await flyAttacker.json()).code, "CROSS_ORIGIN_REQUEST");
+
   const wrongMedia = await post(request({}, "http://localhost", "application/jsonp"));
   assert.equal(wrongMedia.status, 415);
   assert.equal((await wrongMedia.json()).code, "INVALID_REQUEST");
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
+});
+
+test("product-host Origin on the Fly bind address is not CROSS_ORIGIN_REQUEST", async () => {
+  reset();
+  const flyProduct = await post(
+    new NextRequest("http://[::]:3000/api/sourcing-agent", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://aria-mantu-app.fly.dev",
+        host: "[::]:3000",
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "aria-mantu-app.fly.dev",
+        "x-real-ip": `192.0.2.${++requestSequence}`,
+        "x-request-id": crypto.randomUUID(),
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ campaignId, count: 1 }),
+    }),
+  );
+  const body = (await flyProduct.json()) as { code?: string };
+  assert.notEqual(body.code, "CROSS_ORIGIN_REQUEST");
+  assert.notEqual(flyProduct.status, 403);
+});
+
+test("people-first product-host click reaches request_entry even when LLM settings are invalid", async () => {
+  reset();
+  campaign = {
+    ...baseCampaign,
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  liveSettings = {
+    llmProviders: [{ id: "", kind: "not-a-provider", label: "", enabled: true }],
+    savedModels: [{
+      id: "bad",
+      providerId: "x",
+      modelName: "has spaces and/slash",
+      label: "",
+      enabled: true,
+    }],
+    defaultModels: { sourcing: 12 },
+  } as unknown as typeof liveSettings;
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const flyProduct = await post(
+      new NextRequest("http://[::]:3000/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://aria-mantu-app.fly.dev",
+          host: "[::]:3000",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "aria-mantu-app.fly.dev",
+          "x-real-ip": `192.0.2.${++requestSequence}`,
+          "x-request-id": crypto.randomUUID(),
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId, count: 1 }),
+      }),
+    );
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /apifyKeyPresent/);
+    assert.match(entry, /Calypso Linux Python/);
+    const body = (await flyProduct.json()) as { code?: string };
+    assert.notEqual(body.code, "CROSS_ORIGIN_REQUEST");
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
+test("Mock Apify card logs PEOPLE_FIRST_HARVEST_MOCK after request_entry, not SOURCING_AGENT_UNAVAILABLE", async () => {
+  reset();
+  campaign = {
+    ...baseCampaign,
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  workspaceIntegrations = [{ id: "int_apify", mode: "mock", real: true }];
+  storedApifyKey = "apify_api_should_not_decrypt_on_mock";
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const flyProduct = await post(
+      new NextRequest("http://[::]:3000/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://aria-mantu-app.fly.dev",
+          host: "[::]:3000",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "aria-mantu-app.fly.dev",
+          "x-real-ip": `192.0.2.${++requestSequence}`,
+          "x-request-id": crypto.randomUUID(),
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId, count: 1 }),
+      }),
+    );
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /"apifyKeyPresent":false/);
+    assert.match(entry, /Calypso Linux Python/);
+    assert.match(exit, /PEOPLE_FIRST_HARVEST_MOCK/);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
+    const body = (await flyProduct.json()) as { code?: string; error?: string };
+    assert.equal(flyProduct.status, 503);
+    assert.equal(body.code, "PEOPLE_FIRST_HARVEST_MOCK");
+    assert.match(String(body.error), /Mock mode/);
+    assert.match(String(body.error), /Calypso Linux Python/);
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
+test("Concept Apify card with a valid key starts harvest, not PEOPLE_FIRST_HARVEST_MOCK", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  workspaceIntegrations = [{ id: "int_apify", mode: "mock", real: false }];
+  campaign = {
+    ...baseCampaign,
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+  };
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "concept-apify-1",
+    campaignId,
+    name: "Elena Varga",
+    currentTitle: "Calypso Production Support",
+    currentCompany: "BNPP CIB",
+    location: "Montreal",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga-concept",
+    githubUrl: "",
+    sourceExternalId: "elena-varga-concept",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 72,
+    matchBreakdown: [],
+    techStack: ["Linux", "Python", "Calypso"],
+    recentActivity: "Calypso settlement production support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+    lastContactedAt: null,
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
+  }];
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const response = await post(
+      new NextRequest("http://[::]:3000/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://aria-mantu-app.fly.dev",
+          host: "[::]:3000",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "aria-mantu-app.fly.dev",
+          "x-real-ip": `192.0.2.${++requestSequence}`,
+          "x-request-id": crypto.randomUUID(),
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId, count: 1 }),
+      }),
+    );
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    const body = (await response.json()) as {
+      code?: string;
+      ok?: boolean;
+      candidates?: Array<{ email?: string; phone?: string; linkedinUrl?: string }>;
+    };
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /"apifyKeyPresent":true/);
+    assert.doesNotMatch(exit, /PEOPLE_FIRST_HARVEST_MOCK/);
+    assert.notEqual(body.code, "PEOPLE_FIRST_HARVEST_MOCK");
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.equal(body.candidates?.[0]?.email, "elena.varga@bnpp-cib.com");
+    assert.equal(body.candidates?.[0]?.phone, "+1 514 555 0142");
+    assert.match(String(body.candidates?.[0]?.linkedinUrl), /linkedin\.com\/in\//);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
+  } finally {
+    process.stdout.write = origWrite;
+  }
 });
 
 test("missing, paused, and revoked campaigns fail closed before or after provider I/O", async () => {
@@ -521,6 +936,77 @@ test("an incomplete need cannot reach provider, vault, or sourcing transport", a
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
   assert.equal(runnerCalls, 0);
+});
+
+test("people-first invalid_state is CAMPAIGN_NOT_READY, not Access & Keys unavailable", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = {
+    ...baseCampaign,
+    status: "not-a-status",
+    jobAnalysis: null,
+  } as unknown as Campaign;
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const response = await post(request());
+    const body = await response.json();
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "CAMPAIGN_NOT_READY");
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+    assert.match(exit, /campaign_invalid_state/);
+    assert.match(exit, /codes=/);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
+    assert.equal(runnerCalls, 0);
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
+test("people-first reviewed Calypso brief with leftover GitHub rows starts harvest", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = {
+    ...financeCampaign(),
+    jobAnalysis: {
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Applicative Support",
+      seniority: "Senior (7-10 years)",
+      employmentType: "Consulting",
+      locationType: "Hybrid",
+      requiredSkills: "Calypso Business Analysis, MySQL",
+    },
+    scoringWeights: { skills: 50 },
+    sourcingStrategy: {
+      githubQueries: [{ label: "python", query: "language:Python", extra: true }],
+    },
+  } as unknown as Campaign;
+  const chunks: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    chunks.push(String(chunk));
+    return origWrite(chunk as Parameters<typeof origWrite>[0], encoding as never, callback as never);
+  }) as typeof process.stdout.write;
+  try {
+    const response = await post(request());
+    const body = await response.json();
+    const entry = chunks.find((chunk) => chunk.includes("request_entry")) ?? "";
+    const exit = chunks.find((chunk) => chunk.includes("request_exit")) ?? "";
+    assert.match(entry, /request_entry/);
+    assert.match(entry, /"apifyKeyPresent":true/);
+    assert.doesNotMatch(exit, /SOURCING_AGENT_UNAVAILABLE/);
+    assert.doesNotMatch(exit, /campaign_invalid_state/);
+    assert.notEqual(body.code, "SOURCING_AGENT_UNAVAILABLE");
+    assert.notEqual(body.code, "CAMPAIGN_NOT_READY");
+    assert.notEqual(response.status, 503, JSON.stringify(body));
+  } finally {
+    process.stdout.write = origWrite;
+  }
 });
 
 test("prompt-like instructions in persisted role fields are quarantined before provider I/O", async () => {
@@ -698,6 +1184,7 @@ test("deterministic mode requires a reviewed persisted query and never invents o
   reset();
   cloudConfigured = false;
   campaign.sourcingStrategy.githubQueries = [];
+  campaign.sourcingStrategy.linkedinBoolean = "";
 
   const response = await post(request());
   const body = await response.json();
@@ -705,6 +1192,29 @@ test("deterministic mode requires a reviewed persisted query and never invents o
   assert.equal(response.status, 409);
   assert.equal(body.code, "CAMPAIGN_NOT_READY");
   assert.equal(runnerCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+});
+
+test("deterministic mode searches LinkedIn and Apify from the reviewed plan before GitHub", async () => {
+  reset();
+  cloudConfigured = false;
+  campaign.sourcingStrategy.linkedinBoolean = '("Senior Backend Engineer") AND ("Go" OR "Kubernetes")';
+  campaign.sourcingStrategy.githubQueries = [
+    { label: "junk platform", query: "language:Calypso followers:>40", estimatedResults: 0 },
+    { label: "real language", query: "language:Go followers:>40 repos:>10", estimatedResults: 100 },
+  ];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "deterministic");
+  assert.equal(runnerQueries[0]?.platform, "LinkedIn");
+  assert.equal(runnerQueries[0]?.query, campaign.sourcingStrategy.linkedinBoolean);
+  assert.ok(runnerQueries.some((step) => step.platform === "Apify"));
+  assert.ok(!runnerQueries.some((step) => /language:Calypso/i.test(step.query)));
+  assert.ok(runnerQueries.some((step) => step.platform === "GitHub" && /language:Go/i.test(step.query)));
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
 });
@@ -961,4 +1471,611 @@ test("framework kill-switch revocation blocks an already claimed real search", a
   assert.equal(providerCalls, 0);
   assert.equal(vaultCalls, 0);
   assert.deepEqual(failedRunCodes, ["CAMPAIGN_CHANGED"]);
+});
+
+function financeCampaign(): Campaign {
+  return {
+    ...structuredClone(baseCampaign),
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Calypso Application Support",
+      department: "IS&D - Applicative Support",
+      requiredSkills: ["Linux", "Python", "Shell", "Oracle", "Grafana", "Dynatrace", "Linux Server", "Calypso"],
+      industryExperience: ["Fintech"],
+    },
+    sourcingStrategy: {
+      ...baseCampaign.sourcingStrategy,
+      linkedinBoolean: '("Calypso Application Support") AND ("Linux" OR "Python") NOT "recruiter"',
+      githubQueries: [
+        { label: "junk platform", query: "language:Calypso followers:>40", estimatedResults: 0 },
+        { label: "real language", query: "language:Python followers:>40 repos:>10", estimatedResults: 80 },
+      ],
+    },
+  };
+}
+
+function baCampaign(): Campaign {
+  return {
+    ...structuredClone(baseCampaign),
+    id: campaignId,
+    title: "Senior Calypso Business Analyst",
+    jobAnalysis: {
+      ...baseCampaign.jobAnalysis,
+      title: "Senior Calypso Business Analyst",
+      department: "IS&D - Business Analysis",
+      requiredSkills: ["Calypso", "Business Analysis", "MySQL"],
+      industryExperience: ["Finance"],
+    },
+    sourcingStrategy: {
+      ...baseCampaign.sourcingStrategy,
+      linkedinBoolean: '("Calypso Business Analyst") AND ("Calypso") NOT "recruiter"',
+      githubQueries: [],
+    },
+  };
+}
+
+test("people-first role without LinkedIn/Apify keys fails loud and does not search GitHub", async () => {
+  reset();
+  cloudConfigured = true;
+  campaign = financeCampaign();
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "MISSING_PLUGIN");
+  assert.match(String(body.error), /MISSING_PLUGIN/);
+  assert.match(String(body.error), /Apify/);
+  assert.doesNotMatch(String(body.error), /invalid response/i);
+  assert.equal(beginCalls, 0);
+  assert.equal(runnerCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+});
+
+test("people-first role with only a Tavily key still fails loud — Tavily is not LinkedIn", async () => {
+  reset();
+  cloudConfigured = true;
+  storedTavilyKey = "tvly-test";
+  storedApifyKey = null;
+  campaign = financeCampaign();
+  promotedLessons = [{
+    lessonId: "66666666-6666-4666-8666-666666666666",
+    platform: "GitHub",
+    query: "language:Python followers:>40 repos:>10",
+    graphifyClusterRef: "community:0",
+    graphifyClusterRank: 1,
+    evidenceRunCount: 2,
+    evidenceCampaignCount: 2,
+    usefulFeedbackCount: 2,
+    expiresAt: "2026-10-01T00:00:00.000Z",
+    rank: 1,
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "MISSING_PLUGIN");
+  assert.match(String(body.error), /MISSING_PLUGIN/);
+  assert.match(String(body.error), /Apify/);
+  assert.doesNotMatch(String(body.error), /invalid response/i);
+  assert.equal(runnerCalls, 0);
+  assert.equal(beginCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+});
+
+test("people-first role with Apify ignores promoted GitHub lessons", async () => {
+  reset();
+  cloudConfigured = true;
+  storedTavilyKey = "tvly-test";
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  promotedLessons = [{
+    lessonId: "66666666-6666-4666-8666-666666666666",
+    platform: "GitHub",
+    query: "language:Python followers:>40 repos:>10",
+    graphifyClusterRef: "community:0",
+    graphifyClusterRank: 1,
+    evidenceRunCount: 2,
+    evidenceCampaignCount: 2,
+    usefulFeedbackCount: 2,
+    expiresAt: "2026-10-01T00:00:00.000Z",
+    rank: 1,
+  }];
+
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "finance-apify-1",
+    campaignId,
+    name: "Elena Varga",
+    currentTitle: "Calypso Production Support",
+    currentCompany: "BNPP CIB",
+    location: "Montreal",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga-harvest",
+    githubUrl: "",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 72,
+    matchBreakdown: [],
+    techStack: ["Linux", "Python", "Calypso"],
+    recentActivity: "Calypso settlement production support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "deterministic");
+  assert.equal(runnerQueries[0]?.platform, "Apify");
+  assert.ok(!runnerQueries.some((step) => step.platform === "LinkedIn"));
+  assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
+});
+
+test("people-first role with a cloud model still searches Apify first, not GitHub or Tavily LinkedIn", async () => {
+  reset();
+  cloudConfigured = true;
+  storedTavilyKey = "tvly-test";
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "finance-apify-2",
+    campaignId,
+    name: "Elena Varga",
+    currentTitle: "Calypso Production Support",
+    currentCompany: "BNPP CIB",
+    location: "Montreal",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga-harvest-2",
+    githubUrl: "",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 72,
+    matchBreakdown: [],
+    techStack: ["Linux", "Python", "Calypso"],
+    recentActivity: "Calypso settlement production support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "deterministic");
+  assert.equal(runnerQueries.length, 1);
+  assert.equal(runnerQueries[0]?.platform, "Apify");
+  assert.match(String(runnerQueries[0]?.query), /^Calypso Linux Python$/);
+  assert.ok(!runnerQueries.some((step) => step.platform === "LinkedIn"));
+  assert.ok(!runnerQueries.some((step) => step.platform === "GitHub"));
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+});
+
+test("people-first framework run without Apify fails loud and does not search GitHub", async () => {
+  reset();
+  cloudConfigured = true;
+  campaign = financeCampaign();
+  const frameworkRunId = "77777777-7777-4777-8777-777777777777";
+  const reviewedQuery = campaign.sourcingStrategy.githubQueries[1]?.query ?? "language:Python followers:>40 repos:>10";
+
+  const response = await post(request({
+    agentFrameworkRunId: frameworkRunId,
+    agentFrameworkCapabilityToken: "s".repeat(43),
+    agentFrameworkQuery: reviewedQuery,
+  }, "http://localhost", "application/json", frameworkRunId));
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "MISSING_PLUGIN");
+  assert.match(String(body.error), /Apify/);
+  assert.equal(runnerCalls, 0);
+  assert.equal(beginCalls, 0);
+  assert.equal(frameworkBeginCalls, 0);
+});
+
+test("people-first harvest that never starts Apify fails loud and does not complete 0-row receipts", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = null;
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_NOT_STARTED");
+  assert.match(String(body.error), /did not start/);
+  assert.match(String(body.error), /Calypso Linux Python/);
+  assert.match(String(body.error), /Source next batch must start a real search/);
+  assert.doesNotMatch(String(body.error), /harvestapi~linkedin-profile-search/);
+  assert.doesNotMatch(String(body.error), /actor=/);
+  assert.equal(completeCalls, 0);
+  assert.deepEqual(failedRunCodes, ["PEOPLE_FIRST_HARVEST_NOT_STARTED"]);
+});
+
+test("people-first harvest still running is not stamped as 0 people", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = { started: true, status: "RUNNING", itemCount: -1, runId: "run-still" };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_STILL_RUNNING");
+  assert.match(String(body.error), /still running/);
+  assert.match(String(body.error), /run=run-still/);
+  assert.doesNotMatch(String(body.error), /items=0/);
+  assert.equal(completeCalls, 0);
+});
+
+test("people-first harvest without email+phone+LinkedIn fails loud with query and run-id", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 3, runId: "run-no-contacts" };
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "name-only-harvest",
+    campaignId,
+    name: "Calypso Martinez",
+    email: "",
+    phone: "",
+    linkedinUrl: "",
+    githubUrl: "https://github.com/calypso-martinez",
+    sourcePlatform: "GitHub",
+    sourceQuery: "Calypso Linux Python",
+    matchScore: 88,
+    matchBreakdown: [],
+    techStack: ["Calypso"],
+    recentActivity: "Name only.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    provenance: "live",
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_INCOMPLETE_CONTACTS");
+  assert.match(String(body.error), /email, phone, and LinkedIn/);
+  assert.match(String(body.error), /query=Calypso Linux Python/);
+  assert.match(String(body.error), /run=run-no-contacts/);
+  assert.match(String(body.error), /Do not invent contacts/);
+  assert.equal(completeCalls, 0);
+  assert.equal("feedbackReceipts" in body, false);
+});
+
+test("people-first harvestapi 0 is one evidenced fail, not LinkedIn 0-row receipts", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty" };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /Empty harvest is not a result/);
+  assert.match(String(body.error), /Do not stop at 0 people/);
+  assert.match(String(body.error), /Every planned search was tried/);
+  assert.match(String(body.error), /query=Calypso Linux Python/);
+  assert.match(String(body.error), /run=run-empty/);
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "Apify" && row.query === "Calypso Linux Python"),
+  );
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "Apify" && row.query !== "Calypso Linux Python"),
+    "empty first query must continue to the next planned harvest",
+  );
+  assert.ok(
+    runnerQueries.filter((row) => row.platform === "Apify").length >= 2,
+    `SUCCEEDED items=0 must start a second harvest: ${JSON.stringify(runnerQueries)}`,
+  );
+  assert.equal(completeCalls, 0);
+  assert.equal("feedbackReceipts" in body, false);
+});
+
+test("people-first empty first query continues and keeps a real shortlist from the next search", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = financeCampaign();
+  runnerHarvestByQuery = {
+    "Calypso Linux Python": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-1" },
+  };
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 2, runId: "run-hit" };
+  runnerCandidatesAfterRun = [{
+    ...seed.candidates[0],
+    id: "cand-next-search",
+    campaignId,
+    name: "Elena Varga",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+    githubUrl: "",
+    sourceUrl: "https://www.linkedin.com/in/elena-varga",
+    currentCompany: "BNPP CIB",
+    currentTitle: "Calypso Application Support",
+    sourcePlatform: "Apify",
+    sourceQuery: "Calypso Linux",
+    matchScore: 72,
+    matchBreakdown: seed.candidates[0].matchBreakdown,
+    techStack: ["Calypso", "Linux"],
+    recentActivity: "Calypso application support.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    lastContactedAt: null,
+    provenance: "live",
+  }];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+  assert.equal(body.candidates?.length, 1, JSON.stringify(body));
+  assert.equal(body.candidates[0]?.email, "elena.varga@bnpp-cib.com");
+  assert.ok(runnerQueries.some((row) => row.query === "Calypso Linux Python"));
+  assert.ok(runnerQueries.some((row) => row.query !== "Calypso Linux Python"));
+  assert.ok(
+    runnerQueries.filter((row) => row.platform === "Apify").length >= 2,
+    `one Source click must start the next harvest without a second click: ${JSON.stringify(runnerQueries)}`,
+  );
+  assert.equal(completeCalls, 1);
+});
+
+test("BA SUCCEEDED items=0 starts a broader harvestapi run with a new run id", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baCampaign();
+  runnerHarvestByQuery = {
+    "Calypso Business Analyst": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "Etz5JWFCQGm1605KE" },
+    "Calypso|Business Analyst": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "next-actor-input" },
+    Calypso: { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-calypso-only" },
+    "Calypso Business Analysis": { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-analysis" },
+  };
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-fallback" };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /Every planned search was tried/);
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "Apify" && row.query === "Calypso Business Analyst"),
+  );
+  assert.ok(
+    runnerQueries.some(
+      (row) =>
+        row.platform === "Apify" &&
+        (row.query !== "Calypso Business Analyst" ||
+          (row.currentJobTitles ?? []).includes("Business Analyst")),
+    ),
+    `first SUCCEEDED items=0 must enqueue a broader query or next actor-input: ${JSON.stringify(runnerQueries)}`,
+  );
+  assert.ok(
+    runnerQueries.filter((row) => row.platform === "Apify").length >= 2,
+    `one Source click must start harvest 2: ${JSON.stringify(runnerQueries)}`,
+  );
+  const runIds = runnerQueries.map((row) => {
+    const key = row.currentJobTitles?.length
+      ? `${row.query}|${row.currentJobTitles.join(",")}`
+      : row.query;
+    return runnerHarvestByQuery[key]?.runId ?? runnerHarvestByQuery[row.query]?.runId ?? runnerHarvest?.runId;
+  });
+  assert.ok(
+    new Set(runIds).size >= 2,
+    `second harvest must be a new run id: ${JSON.stringify({ runIds, runnerQueries })}`,
+  );
+  assert.equal(completeCalls, 0);
+});
+
+function baMontrealCampaign(): Campaign {
+  const base = baCampaign();
+  return {
+    ...base,
+    jobAnalysis: { ...base.jobAnalysis, location: "Montreal", regions: ["Montreal"] },
+  };
+}
+
+function enrichedElena() {
+  return {
+    ...seed.candidates[0],
+    id: "cand-enriched-elena",
+    campaignId,
+    name: "Elena Varga",
+    email: "elena.varga@bnpp-cib.com",
+    phone: "+1 514 555 0142",
+    linkedinUrl: "https://www.linkedin.com/in/elena-varga",
+    githubUrl: "",
+    sourceUrl: "https://www.linkedin.com/in/elena-varga",
+    currentCompany: "BNPP CIB",
+    currentTitle: "Calypso Business Analyst",
+    sourcePlatform: "Apify",
+    sourceQuery: "Business Analyst Montreal",
+    matchScore: 74,
+    matchBreakdown: seed.candidates[0].matchBreakdown,
+    techStack: ["Calypso", "Business Analysis"],
+    recentActivity: "Calypso back office BA.",
+    createdAt: "2026-09-01T12:00:00.000Z",
+    lastContactedAt: null,
+    provenance: "live",
+  };
+}
+
+test("one click is one request: every planned harvest runs server-side, then web, enrich, GitHub", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baMontrealCampaign();
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-all" };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /Every planned search was tried/);
+  assert.equal(beginCalls, 1, "one click is one sourcing run, not 8 (quota 10/day, limiter 10/min)");
+  assert.deepEqual(
+    runnerQueries.filter((row) => row.platform === "Apify" && !row.enriched).map((row) => row.query),
+    queue.map((step) => step.query),
+    "the same request runs the whole planned queue",
+  );
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "LinkedIn" && row.query === "Business Analyst Montreal"),
+    `alternate must be LinkedIn web role+geo, not another Calypso harvestapi string: ${JSON.stringify(runnerQueries)}`,
+  );
+  // No Tavily key and no harvest rows: nobody to enrich. An empty-URL POST is
+  // an Apify invalid-input (Fly 5728ad4), so the skip is explicit, never a fake run.
+  assert.equal(enrichRuns.length, 0);
+  assert.equal(githubRuns.length, 0);
+  assert.match(String(body.error), /web=Business Analyst Montreal:not_started \(no Tavily key/);
+  assert.match(String(body.error), /enrich=skipped/);
+  assert.match(String(body.error), /github=skipped/);
+  assert.doesNotMatch(String(body.error), /harvestapi/);
+  assert.doesNotMatch(String(body.error), /apivault/);
+  assert.equal(completeCalls, 0);
+  assert.deepEqual(failedRunCodes, ["PEOPLE_FIRST_HARVEST_EMPTY"]);
+});
+
+test("after 8 empty harvests the same click POSTs enrich with the LinkedIn URLs it holds and lands a real shortlist", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  storedTavilyKey = "tvly-test";
+  campaign = baMontrealCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-all" };
+  incompleteUrls = ["https://www.linkedin.com/in/harvest-no-phone"];
+  discoveredUrls = ["https://www.linkedin.com/in/elena-varga", "https://www.linkedin.com/in/harvest-no-phone"];
+  enrichRunResult = { ok: true, runId: "enrich-run-1", status: "SUCCEEDED", itemCount: 2 };
+  enrichedCandidates = [enrichedElena()];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+  assert.equal(body.candidates?.length, 1, JSON.stringify(body));
+  assert.equal(body.candidates[0]?.email, "elena.varga@bnpp-cib.com");
+  assert.equal(body.candidates[0]?.phone, "+1 514 555 0142");
+  assert.equal(body.candidates[0]?.linkedinUrl, "https://www.linkedin.com/in/elena-varga");
+  assert.equal(beginCalls, 1);
+  assert.equal(enrichRuns.length, 1, "enrich must POST exactly once, after discovery");
+  assert.deepEqual(
+    [...enrichRuns[0]!].sort(),
+    ["https://www.linkedin.com/in/elena-varga", "https://www.linkedin.com/in/harvest-no-phone"].sort(),
+    "enrich POSTs the harvest pool plus the web hits, deduped",
+  );
+  assert.equal(githubRuns.length, 0, "no GitHub handle on the accepted person: GitHub is a logged skip, not a leftover run");
+  const order = runnerQueries.map((row) => (row.enriched ? "enrich" : row.platform));
+  assert.ok(order.indexOf("LinkedIn") < order.indexOf("enrich"), `web discovery before enrich: ${order.join(",")}`);
+  assert.equal(completeCalls, 1);
+});
+
+test("enrich that lands nobody is a fail with the run id and item count on it, never 0 as success", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  storedTavilyKey = "tvly-test";
+  campaign = baMontrealCampaign();
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-empty-all" };
+  discoveredUrls = ["https://www.linkedin.com/in/name-only-hit"];
+  enrichRunResult = { ok: true, runId: "enrich-run-2", status: "SUCCEEDED", itemCount: 1 };
+  enrichedCandidates = [];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.match(String(body.error), /web=Business Analyst Montreal:1/);
+  assert.match(String(body.error), /enrich=enrich-run-2 items=1/);
+  assert.match(String(body.error), /github=skipped/);
+  assert.match(String(body.error), /Do not invent people/);
+  assert.deepEqual(enrichRuns, [["https://www.linkedin.com/in/name-only-hit"]]);
+  assert.equal(completeCalls, 0);
+});
+
+test("harvestQuery resumes the server chain from that reviewed step and runs the rest in the same request", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baMontrealCampaign();
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  const resume = queue[3];
+  assert.ok(resume, "BA queue must have a fourth harvest");
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-resume" };
+
+  const response = await post(
+    request({
+      harvestQuery: resume!.query,
+      ...(resume!.currentJobTitles?.length ? { currentJobTitles: resume!.currentJobTitles } : {}),
+    }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 502, JSON.stringify(body));
+  assert.equal(body.code, "PEOPLE_FIRST_HARVEST_EMPTY");
+  assert.deepEqual(
+    runnerQueries.filter((row) => row.platform === "Apify" && !row.enriched).map((row) => row.query),
+    queue.slice(3).map((step) => step.query),
+    "resume runs from the reviewed step to the end of the plan, not one step",
+  );
+  assert.ok(
+    runnerQueries.some((row) => row.platform === "LinkedIn" && row.query === "Business Analyst Montreal"),
+    "a resumed chain still falls through to LinkedIn web",
+  );
+  assert.equal(completeCalls, 0);
+});
+
+test("a harvestQuery off the reviewed plan is rejected before any harvest starts", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baMontrealCampaign();
+
+  const response = await post(request({ harvestQuery: "Calypso product page" }));
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "CAMPAIGN_CHANGED");
+  assert.equal(runnerCalls, 0);
+});
+
+test("chain budget exhausted answers PEOPLE_FIRST_HARVEST_CONTINUE with the next reviewed step, not 0 people", async () => {
+  reset();
+  storedApifyKey = "apify-test";
+  campaign = baMontrealCampaign();
+  const queue = peopleFirstHarvestQueue(campaign.jobAnalysis);
+  runnerHarvest = { started: true, status: "SUCCEEDED", itemCount: 0, runId: "run-slow" };
+  const realNow = Date.now;
+  let skew = 0;
+  Date.now = () => realNow() + skew;
+  mutateDuringRunner = () => {
+    skew += 201_000;
+  };
+  try {
+    const response = await post(request());
+    const body = await response.json();
+
+    assert.equal(response.status, 502, JSON.stringify(body));
+    assert.equal(body.code, "PEOPLE_FIRST_HARVEST_CONTINUE");
+    assert.match(String(body.error), /Harvest chain needs another request/);
+    assert.match(String(body.error), /Do not stop at 0 people/);
+    assert.equal(body.resume?.query, queue[1]!.query, "resume names the next reviewed step");
+    assert.equal(runnerCalls, 1, "no new harvest starts after the budget");
+    assert.equal(enrichRuns.length, 0, "enrich waits for the whole plan");
+    assert.deepEqual(failedRunCodes, ["PEOPLE_FIRST_HARVEST_CONTINUE"]);
+    assert.equal(completeCalls, 0);
+  } finally {
+    Date.now = realNow;
+    mutateDuringRunner = null;
+  }
 });

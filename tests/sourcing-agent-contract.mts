@@ -73,6 +73,99 @@ test("workspace projection owns campaign and dedupe context while stripping unre
   assert.equal(JSON.stringify(projected.value).includes("private"), false);
 });
 
+test("people-first projection coerces a reviewed Calypso brief instead of invalid_state", () => {
+  const campaignId = "camp_1788068519249_senior-calypso-business-analyst";
+  const projected = projectSourcingAgentWorkspace(
+    {
+      campaigns: [{
+        id: campaignId,
+        status: "Sourcing",
+        jobAnalysis: {
+          title: "Senior Calypso Business Analyst",
+          department: "IS&D - Applicative Support",
+          seniority: "Senior (7-10 years)",
+          employmentType: "Consulting",
+          locationType: "Hybrid",
+          requiredSkills: "Calypso Business Analysis, MySQL",
+          extraClientField: "strip-me",
+        },
+        scoringWeights: { skills: 50 },
+        sourcingStrategy: {
+          githubQueries: [{ label: "python", query: "language:Python", extra: true }],
+        },
+      }],
+      candidates: [
+        {
+          campaignId,
+          email: "calypso.martinez@example.com",
+          githubUrl: "https://github.com/calypso-martinez",
+          sourcePlatform: "GitHub",
+        },
+      ],
+    },
+    campaignId,
+  );
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(projected.value.campaign.status, "Sourcing");
+  assert.equal(projected.value.campaign.jobAnalysis.title, "Senior Calypso Business Analyst");
+  assert.equal(projected.value.campaign.jobAnalysis.seniority, "Senior");
+  assert.equal(projected.value.campaign.jobAnalysis.employmentType, "Contract");
+  assert.ok(projected.value.campaign.jobAnalysis.requiredSkills.includes("Calypso"));
+  assert.ok(projected.value.campaign.jobAnalysis.requiredSkills.includes("MySQL"));
+  assert.equal(projected.value.campaign.scoringWeights.skills, 50);
+  assert.ok(projected.value.campaign.scoringWeights.experience > 0);
+  assert.equal(projected.value.campaign.sourcingStrategy.githubQueries[0]?.query, "language:Python");
+});
+
+test("projection still fail-closes when a campaign cannot be coerced", () => {
+  const projected = projectSourcingAgentWorkspace(
+    {
+      campaigns: [{ id: campaignId, status: "not-a-status", jobAnalysis: null }],
+    },
+    campaignId,
+  );
+  assert.equal(projected.status, "invalid_state");
+  if (projected.status !== "invalid_state") return;
+  assert.ok((projected.issueCodes ?? []).length > 0);
+  assert.ok((projected.issueCodes ?? []).every((code) => /^[A-Za-z0-9._-]+$/.test(code)));
+});
+
+test("people-first projection survives a stale cloud-model settings blob", () => {
+  const state = {
+    campaigns: [{
+      ...campaign,
+      jobAnalysis: {
+        ...campaign.jobAnalysis,
+        title: "Calypso Application Support",
+        department: "IS&D - Applicative Support",
+        requiredSkills: ["Linux", "Python", "Calypso"],
+        extraClientField: "strip-me",
+      },
+    }],
+    settings: {
+      llmProviders: [{ id: "", kind: "not-a-provider", label: "", enabled: true }],
+      savedModels: [{
+        id: "bad",
+        providerId: "x",
+        modelName: "has spaces and/slash",
+        label: "",
+        enabled: true,
+      }],
+      defaultModels: { sourcing: 12 },
+    },
+  };
+  const projected = projectSourcingAgentWorkspace(state, campaignId);
+  assert.equal(projected.status, "ok");
+  if (projected.status !== "ok") return;
+  assert.equal(projected.value.campaign.jobAnalysis.title, "Calypso Application Support");
+  assert.deepEqual(projected.value.aiSettings, {
+    llmProviders: [],
+    savedModels: [],
+    defaultModels: {},
+  });
+});
+
 test("campaign fingerprint changes when the persisted need or search strategy changes", () => {
   const initial = sourcingAgentCampaignFingerprint(campaign);
   const changedRole = sourcingAgentCampaignFingerprint({
@@ -144,6 +237,11 @@ test("store consumer uses strict response parsing, current authority, commit-tim
   assert.match(action, /commitPersisted\(\(prev\)/);
   assert.match(action, /dedupeCandidates\(/);
   assert.match(action, /if \(!persisted \|\| !authorized\)/);
+  assert.match(action, /missingPeoplePluginsToast\(/);
+  assert.doesNotMatch(action, /if \(missingPeoplePluginsToast/);
+  assert.doesNotMatch(action, /mode: "fixture"/);
+  assert.match(action, /remapPeopleFirstSourcingError/);
+  assert.match(action, /isGithubOnlyEmptyBatch/);
 });
 
 test("campaign UI presents a completed zero-match search as information, not sourcing success", () => {
@@ -151,14 +249,564 @@ test("campaign UI presents a completed zero-match search as information, not sou
     new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
     "utf8",
   );
-  const start = page.indexOf("const handleRunAgent = async () =>");
-  const end = page.indexOf("const handleOpenRun", start);
+  const start = page.indexOf("const handleSource = async () =>");
+  const end = page.indexOf("const handleAutoSource", start);
   const action = page.slice(start, end);
 
   assert.ok(start >= 0 && end > start);
-  assert.match(action, /res\.added\s*===\s*0/);
+  assert.match(action, /res\.accepted\.length === 0/);
   assert.match(action, /No (?:candidates(?: were)? added|new matches)/i);
   assert.match(action, /variant:\s*"info"/);
+  assert.match(page, /peoplePluginFailLoudUi/);
+  assert.match(page, /sourceRejectedToast/);
+  assert.match(action, /emptyPeopleFirstToast/);
+  assert.doesNotMatch(page, /Source via Apify/);
+});
+
+test("people-first harvest route never statically loads Playwright or the cloud tool-loop", () => {
+  const route = readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8");
+  const toolLoop = readFileSync(new URL("../src/lib/ai/tool-loop.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(route, /from ["']@\/lib\/ai\/tool-loop["']/);
+  assert.doesNotMatch(route, /from ["']@\/lib\/ai\/browser-tools["']/);
+  assert.doesNotMatch(route, /from ["']playwright-core["']/);
+  assert.match(route, /await import\(["']@\/lib\/ai\/tool-loop["']\)/);
+  assert.doesNotMatch(toolLoop, /from ["']@\/lib\/ai\/browser-tools["']/);
+  assert.doesNotMatch(toolLoop, /from ["']playwright-core["']/);
+  assert.match(toolLoop, /import\(["']@\/lib\/ai\/browser-tools["']\)/);
+});
+
+test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", () => {
+  const route = readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8");
+  const plan = readFileSync(new URL("../src/lib/sourcing/multi-source-plan.ts", import.meta.url), "utf8");
+  const tools = readFileSync(new URL("../src/lib/ai/sourcing-tools.ts", import.meta.url), "utf8");
+  const apify = readFileSync(new URL("../src/lib/sourcing/apify.ts", import.meta.url), "utf8");
+  const helpers = readFileSync(new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url), "utf8");
+  const design = readFileSync(new URL("../docs/sourcing-engine/DESIGN.md", import.meta.url), "utf8");
+  assert.match(plan, /PEOPLE_FIRST_ATTEMPT_WAIT_MS = 90_000/);
+  assert.match(plan, /PEOPLE_FIRST_MAX_ATTEMPTS = 8/);
+  assert.match(plan, /PEOPLE_FIRST_CHAIN_BUDGET_MS = 200_000/);
+  assert.doesNotMatch(plan, /PEOPLE_FIRST_SEARCH_BUDGET_MS/);
+  assert.match(plan, /apifyHarvestQueryFromBrief/);
+  assert.match(plan, /peopleFirstHarvestQueries/);
+  assert.match(plan, /peopleFirstExpansionQueries/);
+  assert.match(plan, /harvestGeoTerms/);
+  assert.match(plan, /nextPeopleFirstHarvest/);
+  assert.match(plan, /peopleFirstHarvestQueue/);
+  assert.match(route, /peopleFirstHarvestQueue/);
+  assert.match(route, /continueAt/);
+  assert.match(route, /peopleFirstContinueAuthority/);
+  assert.match(route, /startedSearches/);
+  assert.doesNotMatch(route, /PEOPLE_FIRST_SEARCH_BUDGET_MS/);
+  assert.match(route, /export const maxDuration = 360/);
+  assert.match(route, /PEOPLE_FIRST_ATTEMPT_WAIT_MS/);
+  assert.match(route, /next_search_start/);
+  assert.match(route, /new AbortController\(\)/);
+  assert.match(design, /fresh 90s per attempt/);
+  assert.match(design, /up to\s+8 planned harvests|8 planned harvests/);
+  assert.match(design, /Business Analyst Montreal/);
+  assert.match(design, /Calypso consultant/);
+  assert.match(design, /trading-platform BA/);
+  assert.match(design, /finance BA/);
+  assert.match(design, /enqueue\/start the next planned harvest/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_NOT_STARTED/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_STILL_RUNNING/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_EMPTY/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_MOCK/);
+  assert.match(route, /request_entry/);
+  assert.match(route, /apifyKeyPresent: !apifyMock && Boolean\(apifyToken\)/);
+  assert.match(route, /logAriaHarvest\("request_received"/);
+  assert.doesNotMatch(route, /logAriaHarvest\("request_received", \{ query: ""/);
+  assert.match(route, /logAriaHarvest\("request_exit"/);
+  assert.match(route, /prod_fail_closed/);
+  assert.match(route, /supabase_disabled/);
+  assert.match(route, /session_null/);
+  assert.match(route, /workspace_read_error/);
+  assert.match(route, /campaign_invalid_state/);
+  assert.match(route, /campaign_invalid_state codes=/);
+  assert.match(route, /status === "invalid_state"/);
+  assert.match(design, /campaign_invalid_state/);
+  assert.match(design, /CAMPAIGN_NOT_READY/);
+  assert.match(design, /never Open Access & Keys/);
+  assert.match(route, /SOURCING_AGENT_UNAVAILABLE:unhandled/);
+  assert.match(route, /classifySameOriginJsonRequest/);
+  assert.doesNotMatch(route, /origin !== req\.nextUrl\.origin/);
+  assert.match(design, /public product host/);
+  assert.match(design, /must toast every people-first/);
+  assert.match(design, /source-next-batch-error/);
+  assert.match(design, /prod_fail_closed/);
+  assert.match(design, /stale cloud-model settings blob/);
+  assert.match(design, /PEOPLE_FIRST_HARVEST_MOCK/);
+  assert.match(design, /not a guessed 503/);
+  assert.match(design, /not toast-only/);
+  assert.match(design, /plus the toast text/);
+  assert.match(design, /Never 0 people/);
+  assert.match(design, /can never find 0 people/);
+  assert.match(design, /items=0 is not a product result/);
+  assert.match(design, /visible shortlist/);
+  assert.match(design, /actorInputField=searchQuery/);
+  const requestEntryAt = route.indexOf('logAriaHarvest("request_entry"');
+  const tavilyAwaitAt = route.indexOf("await resolveStoredTavilyKey");
+  assert.ok(requestEntryAt > 0 && tavilyAwaitAt > requestEntryAt, "request_entry before Tavily");
+  assert.match(route, /if \(!successfulQuery\)/);
+  assert.match(route, /peopleFirstHarvestQueue\(peopleFirstJob\)/);
+  assert.doesNotMatch(route, /filter\(\(step\) => step.platform === "Apify"\)\.slice\(0, 1\)/);
+  assert.match(route, /empty_next_search/);
+  assert.match(apify, /harvestapiActorInput/);
+  assert.match(apify, /actorInputField: "searchQuery"/);
+  assert.match(apify, /actor_input_matches_planned/);
+  assert.match(tools, /searchQuery: query/);
+  assert.match(tools, /currentJobTitles/);
+  assert.match(tools, /harvestGeoTerms/);
+  assert.match(tools, /profileScraperMode: "Full"/);
+  assert.doesNotMatch(tools, /profileScraperMode: "Short"/);
+  assert.match(tools, /APIFY_HARVEST_WAIT_MS/);
+  assert.match(apify, /APIFY_HARVEST_WAIT_CAP_MS = 90_000/);
+  assert.match(apify, /still_running/);
+  const harvest = readFileSync(new URL("../src/lib/sourcing/harvest-evidence.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../src/lib/sourcing/sourcing-agent-client.ts", import.meta.url), "utf8");
+  const actions = readFileSync(new URL("../src/lib/store/sourcing-actions.ts", import.meta.url), "utf8");
+  assert.match(harvest, /process\.stdout\.write/);
+  assert.doesNotMatch(harvest, /console\.(info|log|debug)\(/);
+  assert.match(harvest, /PEOPLE_FIRST_CLIENT_WAIT_MS = 360_000/);
+  assert.match(harvest, /Every planned search was tried/);
+  assert.match(harvest, /Next planned search must start now/);
+  assert.match(harvest, /startedSearches/);
+  assert.match(design, /peopleFirstHarvestQueue/);
+  assert.match(design, /nextPeopleFirstHarvest/);
+  assert.match(design, /≥2 distinct harvests actually started/);
+  assert.doesNotMatch(harvest, /Engine continues to the next planned search/);
+  assert.match(harvest, /PEOPLE_FIRST_HARVEST_ABORTED/);
+  assert.match(harvest, /PEOPLE_FIRST_HARVEST_MOCK/);
+  const flyApp = readFileSync(new URL("../fly.app.toml", import.meta.url), "utf8");
+  const autoSource = readFileSync(new URL("../src/lib/sourcing/auto-source.ts", import.meta.url), "utf8");
+  const chain = readFileSync(new URL("../src/lib/sourcing/people-first-chain.ts", import.meta.url), "utf8");
+  const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+  assert.match(flyApp, /idle_timeout\s*=\s*360/);
+  // One click, one server-owned chain. The client re-POSTs only on a resume
+  // step. One harvest per request was the Fly 5728ad4 rate-limit fail.
+  assert.match(actions, /runPeopleFirstClickChain/);
+  assert.doesNotMatch(actions, /for \(const step of peopleFirstHarvestQueue/);
+  assert.match(actions, /resume: reviewed\.resume/);
+  assert.match(route, /PEOPLE_FIRST_CHAIN_BUDGET_MS/);
+  assert.match(route, /PEOPLE_FIRST_HARVEST_CONTINUE/);
+  assert.match(route, /resumeIndex/);
+  assert.match(route, /harvestQuery/);
+  assert.match(client, /harvestQuery: harvestStep\.query/);
+  assert.match(client, /PEOPLE_FIRST_HARVEST_CONTINUE/);
+  assert.match(autoSource, /const result = await input\.search\(\)/);
+  assert.match(autoSource, /const enrich = await input.enrich/);
+  assert.match(autoSource, /if \(input.mergeTechStack\)/);
+  assert.doesNotMatch(autoSource, /queryStyle === ["']github["'] && input.mergeTechStack/);
+  const fallthrough = readFileSync(
+    new URL("../src/lib/sourcing/people-first-fallthrough.ts", import.meta.url),
+    "utf8",
+  );
+  // Fallthrough order: LinkedIn web, enrich the URLs held, GitHub merge.
+  // Enrich POSTs real URLs with the actor schema; empty is a logged skip.
+  assert.match(route, /runPeopleFirstEmptyFallthrough/);
+  assert.match(route, /runner\.getIncompleteLinkedinUrls\(\)/);
+  assert.match(route, /runLinkedinProfileScraperAndWait/);
+  assert.match(route, /runGithubProfileScraperAndWait/);
+  assert.match(route, /runner\.acceptEnrichedProfiles/);
+  assert.match(route, /runner\.mergeGithubStack/);
+  assert.match(route, /peopleFirstEnrichmentClearance/);
+  assert.match(fallthrough, /peopleFirstAlternateQuery/);
+  assert.match(fallthrough, /enrich_skipped/);
+  assert.match(fallthrough, /github_skipped/);
+  assert.match(fallthrough, /alternate_search/);
+  assert.match(apify, /startLinkedinProfileScraperRun/);
+  assert.match(apify, /startGithubProfileScraperRun/);
+  assert.match(apify, /linkedin-profile-scraper\/runs/);
+  assert.match(apify, /github-profile-scraper\/runs/);
+  assert.match(apify, /Profile details \+ email search \(\$10 per 1k\)/);
+  assert.doesNotMatch(apify, /profileScraperMode: "Full \+ email search"/);
+  assert.doesNotMatch(apify, /usernames: /);
+  assert.match(apify, /profileUrls: logins/);
+  assert.match(apify, /statusMessage/);
+  assert.doesNotMatch(apify, /mintProviderClearance/);
+  assert.match(harvest, /PEOPLE_FIRST_HARVEST_CONTINUE/);
+  assert.match(harvest, /harvest\.actor \|\| HARVEST_ACTOR/);
+  assert.match(design, /logged enrichment attempt/);
+  assert.match(design, /PEOPLE_FIRST_HARVEST_CONTINUE/);
+  assert.match(design, /one sourcing run/);
+  assert.match(autoSource, /parseEnrichmentRunIds/);
+  assert.match(autoSource, /enriched: false/);
+  assert.match(store, /sourcePeopleFirstBatch/);
+  assert.match(store, /sourceNextBatchRaw/);
+  assert.match(store, /return autoSource\(campaignId, opts\)/);
+  assert.match(chain, /while \(!result\.ok && result\.resume/);
+  assert.match(client, /AbortSignal\.timeout\(PEOPLE_FIRST_CLIENT_WAIT_MS\)/);
+  assert.match(client, /Promise\.race/);
+  assert.match(client, /formatHarvestEvidenceError\("aborted"/);
+  assert.match(client, /CROSS_ORIGIN_REQUEST/);
+  assert.match(client, /CROSS_ORIGIN_SOURCING_TOAST/);
+  assert.match(client, /SOURCING_AGENT_UNAVAILABLE/);
+  assert.match(client, /SOURCING_AGENT_UNAVAILABLE_TOAST/);
+  assert.match(client, /Sourcing request failed/);
+  assert.match(client, /Do not treat this as 0 people/);
+  assert.doesNotMatch(client, /The sourcing agent is unavailable\./);
+  assert.doesNotMatch(actions, /if \(missingPlugins\) \{\s*return await sourceFixtureDryRunBatch/);
+  assert.match(actions, /peopleFirstFailActivity/);
+  assert.match(actions, /persistPeopleFirstFailAudit/);
+  assert.match(actions, /peopleFirstTrailActivities/);
+  assert.match(fallthrough, /peopleFirstTrailActivities/);
+  assert.match(route, /windowMs:\s*180_000/);
+  assert.match(route, /max:\s*20/);
+  assert.match(helpers, /headline \|\| positionTitle/);
+  assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
+  assert.match(design, /recall-capable Apify harvestapi/);
+  assert.match(design, /Calypso Linux Python/);
+  assert.match(design, /Calypso Business Analysis MySQL/);
+  assert.match(design, /Business Analyst/);
+  assert.match(plan, /harvestRoleFromTitle|Business Analyst/);
+  assert.match(design, /\[aria-harvest\]/);
+  assert.match(design, /15 identical/);
+  assert.match(design, /do not toast[\s\S]*\*\*Open Access & Keys\*\*/);
+});
+
+test("reviewed sourcing request surfaces MISSING_PLUGIN instead of a generic unconfigured toast", async () => {
+  const { requestReviewedSourcing } = await import("../src/lib/sourcing/sourcing-agent-client.ts");
+  const {
+    CROSS_ORIGIN_SOURCING_TOAST,
+    MISSING_PEOPLE_PLUGINS_TOAST,
+    PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+    SOURCING_AGENT_UNAVAILABLE_TOAST,
+    remapPeopleFirstSourcingError,
+    peoplePluginFailLoudUi,
+    sourceRejectedToast,
+  } = await import("../src/lib/sourcing/people-plugins.ts");
+  const missing = MISSING_PEOPLE_PLUGINS_TOAST;
+  const mapped = await requestReviewedSourcing(
+    async () =>
+      new Response(JSON.stringify({ ok: false, code: "MISSING_PLUGIN", error: missing, requestId: "req-1" }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      }),
+    campaignId,
+    5,
+  );
+  assert.equal(mapped.ok, false);
+  if (mapped.ok) return;
+  assert.match(mapped.error, /MISSING_PLUGIN/);
+  assert.match(mapped.error, /Apify/);
+  assert.doesNotMatch(mapped.error, /invalid response/i);
+
+  const financeJob = {
+    ...campaign.jobAnalysis,
+    title: "Calypso Application Support",
+    department: "IS&D - Applicative Support",
+    requiredSkills: ["Linux", "Python", "Calypso"],
+    industryExperience: ["Fintech"],
+  };
+  const liveUnconfigured = [
+    {
+      id: "int_github",
+      name: "GitHub Sourcing",
+      category: "Sourcing" as const,
+      description: "",
+      status: "not_configured" as const,
+      mode: "live" as const,
+      lastSync: null,
+      errors: [],
+      real: true,
+    },
+    {
+      id: "int_apify",
+      name: "Apify (LinkedIn profile search)",
+      category: "Sourcing" as const,
+      description: "",
+      status: "not_configured" as const,
+      mode: "live" as const,
+      lastSync: null,
+      errors: [],
+      real: true,
+    },
+  ];
+  assert.equal(
+    remapPeopleFirstSourcingError(
+      "The sourcing agent returned an invalid response.",
+      financeJob,
+      liveUnconfigured,
+    ),
+    missing,
+  );
+  const staleConnected = [
+    {
+      ...liveUnconfigured[1],
+      status: "connected" as const,
+    },
+  ];
+  assert.equal(
+    remapPeopleFirstSourcingError(
+      "The sourcing agent returned an invalid response.",
+      financeJob,
+      staleConnected,
+    ),
+    missing,
+  );
+  const toast = peoplePluginFailLoudUi(
+    "The sourcing agent returned an invalid response.",
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(toast?.title, "Connect Apify");
+  assert.match(String(toast?.description), /MISSING_PLUGIN/);
+  assert.doesNotMatch(String(toast?.description), /invalid response/i);
+  assert.equal(toast?.href, "/settings");
+  assert.match(String(toast?.actionLabel), /Connect Apify/);
+  assert.match(missing, /Apify/);
+
+  const validApify = [{ provider: "Apify" as const, status: "valid" as const }];
+  const crashed = await requestReviewedSourcing(
+    async () =>
+      new Response("Internal Server Error", {
+        status: 500,
+        headers: { "content-type": "text/plain" },
+      }),
+    campaignId,
+    5,
+  );
+  assert.equal(crashed.ok, false);
+  if (crashed.ok) return;
+  assert.equal(
+    remapPeopleFirstSourcingError(crashed.error, financeJob, liveUnconfigured, validApify),
+    PEOPLE_FIRST_HARVEST_UNAVAILABLE,
+  );
+  assert.doesNotMatch(
+    remapPeopleFirstSourcingError(crashed.error, financeJob, liveUnconfigured, validApify),
+    /invalid response|invalid result|MISSING_PLUGIN/i,
+  );
+  const keyedToast = peoplePluginFailLoudUi(
+    crashed.error,
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.equal(keyedToast?.title, "Sourcing failed");
+  assert.equal(keyedToast?.description, PEOPLE_FIRST_HARVEST_UNAVAILABLE);
+  assert.doesNotMatch(String(keyedToast?.description), /invalid response/i);
+  assert.doesNotMatch(String(keyedToast?.description), /MISSING_PLUGIN/);
+  assert.equal(keyedToast?.href, "/settings");
+  assert.match(String(keyedToast?.actionLabel), /Access & Keys/);
+  const invalidResultToast = peoplePluginFailLoudUi(
+    "The sourcing agent returned an invalid result.",
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.ok(invalidResultToast?.href);
+  assert.doesNotMatch(String(invalidResultToast?.description), /invalid result/i);
+  assert.doesNotMatch(String(invalidResultToast?.description), /MISSING_PLUGIN/);
+
+  const harvestEmpty = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "PEOPLE_FIRST_HARVEST_EMPTY",
+          error:
+            "Empty harvest is not a result. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python run=run-empty status=SUCCEEDED items=0. Every planned search was tried. Do not stop at 0 people. Do not invent people.",
+          requestId: "req-harvest-empty",
+        }),
+        { status: 502, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(harvestEmpty.ok, false);
+  if (!harvestEmpty.ok) {
+    assert.match(harvestEmpty.error, /run=run-empty/);
+    assert.match(harvestEmpty.error, /Calypso Linux Python/);
+    assert.match(harvestEmpty.error, /Every planned search was tried/);
+    assert.doesNotMatch(harvestEmpty.error, /Engine continues/);
+    assert.doesNotMatch(harvestEmpty.error, /unavailable/i);
+  }
+  const harvestMock = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "PEOPLE_FIRST_HARVEST_MOCK",
+          error:
+            "Apify is in Mock mode. actor=harvestapi~linkedin-profile-search query=Calypso Linux Python. Connect a real Apify key and switch the card to Live.",
+          requestId: "req-harvest-mock",
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(harvestMock.ok, false);
+  if (!harvestMock.ok) {
+    assert.match(harvestMock.error, /Mock mode/);
+    assert.match(harvestMock.error, /Calypso Linux Python/);
+    assert.match(harvestMock.error, /Connect a real Apify key/);
+    assert.doesNotMatch(harvestMock.error, /unavailable/i);
+  }
+  const crossOriginBlocked = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "CROSS_ORIGIN_REQUEST",
+          error: "Cross-origin sourcing is not allowed.",
+          requestId: "req-cross-origin",
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(crossOriginBlocked.ok, false);
+  if (!crossOriginBlocked.ok) {
+    assert.equal(crossOriginBlocked.error, CROSS_ORIGIN_SOURCING_TOAST);
+    assert.match(crossOriginBlocked.error, /cross-origin/i);
+    assert.doesNotMatch(crossOriginBlocked.error, /unavailable/i);
+  }
+  assert.equal(
+    remapPeopleFirstSourcingError(
+      CROSS_ORIGIN_SOURCING_TOAST,
+      financeJob,
+      liveUnconfigured,
+      [{ provider: "Apify" as const, status: "valid" as const }],
+    ),
+    CROSS_ORIGIN_SOURCING_TOAST,
+  );
+  const crossOriginToast = peoplePluginFailLoudUi(
+    CROSS_ORIGIN_SOURCING_TOAST,
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(crossOriginToast?.title, "Sourcing failed");
+  assert.equal(crossOriginToast?.description, CROSS_ORIGIN_SOURCING_TOAST);
+  assert.match(String(crossOriginToast?.description), /do not treat this as 0 people/i);
+  const rejectedAlways = sourceRejectedToast(
+    "CROSS_ORIGIN_REQUEST",
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(rejectedAlways.title, "Sourcing failed");
+  assert.equal(rejectedAlways.description, CROSS_ORIGIN_SOURCING_TOAST);
+  const unavailableBlocked = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "SOURCING_AGENT_UNAVAILABLE",
+          error: "Live sourcing authority is unavailable.",
+          requestId: "req-unavailable",
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(unavailableBlocked.ok, false);
+  if (!unavailableBlocked.ok) {
+    assert.equal(unavailableBlocked.error, SOURCING_AGENT_UNAVAILABLE_TOAST);
+    assert.doesNotMatch(unavailableBlocked.error, /0 people were sourced/i);
+  }
+  const unavailableToast = sourceRejectedToast(
+    unavailableBlocked.ok ? "" : unavailableBlocked.error,
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.equal(unavailableToast.title, "Sourcing failed");
+  assert.equal(unavailableToast.description, SOURCING_AGENT_UNAVAILABLE_TOAST);
+  assert.match(unavailableToast.description, /do not treat this as 0 people|This is not 0 people/i);
+  const htmlForbidden = await requestReviewedSourcing(
+    async () =>
+      new Response("<html>Forbidden</html>", {
+        status: 403,
+        headers: { "content-type": "text/html" },
+      }),
+    campaignId,
+    5,
+  );
+  assert.equal(htmlForbidden.ok, false);
+  if (!htmlForbidden.ok) {
+    assert.match(htmlForbidden.error, /Sourcing request failed \(HTTP 403\)/);
+    assert.match(htmlForbidden.error, /Do not treat this as 0 people/);
+    assert.doesNotMatch(htmlForbidden.error, /unavailable/i);
+  }
+  const htmlForbiddenToast = sourceRejectedToast(
+    htmlForbidden.ok ? "" : htmlForbidden.error,
+    financeJob,
+    liveUnconfigured,
+  );
+  assert.ok(htmlForbiddenToast.title);
+  assert.ok(htmlForbiddenToast.description);
+  assert.match(htmlForbiddenToast.description, /Sourcing request failed|0 people|Apify|cross-origin/i);
+
+  const abortedWait = await requestReviewedSourcing(async () => {
+    const error = new Error("The operation was aborted.");
+    error.name = "AbortError";
+    throw error;
+  }, campaignId, 5);
+  assert.equal(abortedWait.ok, false);
+  if (!abortedWait.ok) {
+    assert.match(abortedWait.error, /aborted after 90s/);
+    assert.match(abortedWait.error, /Do not treat this as 0 people/);
+    assert.doesNotMatch(abortedWait.error, /unavailable/i);
+  }
+  const abortToast = peoplePluginFailLoudUi(
+    abortedWait.ok ? "" : abortedWait.error,
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.ok(abortToast);
+  assert.notEqual(abortToast?.title, "Sourcing failed");
+  assert.doesNotMatch(String(abortToast?.description), /0 candidates were added/i);
+
+  const harvestToast = peoplePluginFailLoudUi(
+    harvestEmpty.ok ? "" : harvestEmpty.error,
+    financeJob,
+    liveUnconfigured,
+    validApify,
+  );
+  assert.equal(harvestToast?.href, "");
+  assert.match(String(harvestToast?.actionLabel), /Source next batch/);
+  assert.doesNotMatch(String(harvestToast?.actionLabel), /Source via Apify|harvestapi|M2FMdjR|Access & Keys/);
+  assert.doesNotMatch(String(harvestToast?.actionLabel), /Access & Keys/);
+
+  const legacyCode = await requestReviewedSourcing(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          code: "SOURCING_AGENT_NOT_CONFIGURED",
+          error: missing,
+          requestId: "req-2",
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    campaignId,
+    5,
+  );
+  assert.equal(legacyCode.ok, false);
+  if (legacyCode.ok) return;
+  assert.match(legacyCode.error, /MISSING_PLUGIN/);
+
+  const { visiblePeopleFirstLearningReceipts } = await import("../src/lib/sourcing/people-plugins.ts");
+  const githubZero = {
+    receiptId: "00000000-0000-4000-8000-000000000001",
+    platform: "GitHub" as const,
+    candidateCount: 0,
+  };
+  const linkedinHit = {
+    receiptId: "00000000-0000-4000-8000-000000000002",
+    platform: "LinkedIn" as const,
+    candidateCount: 2,
+  };
+  assert.deepEqual(
+    visiblePeopleFirstLearningReceipts([githubZero, linkedinHit], financeJob, liveUnconfigured),
+    [linkedinHit],
+  );
+  assert.deepEqual(
+    visiblePeopleFirstLearningReceipts([githubZero], financeJob, liveUnconfigured),
+    [],
+  );
 });
 
 test("campaign UI keeps durable feedback scoped and merges new run receipts", () => {
@@ -166,8 +814,8 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url),
     "utf8",
   );
-  const start = page.indexOf("const handleRunAgent = async () =>");
-  const end = page.indexOf("const handleOpenRun", start);
+  const start = page.indexOf("const handleAutoSource = async () =>");
+  const end = page.indexOf("const handleSourcingFeedback", start);
   const action = page.slice(start, end);
   const batchStart = page.indexOf("const handleSource = async () =>");
   const batchAction = page.slice(batchStart, start);
@@ -178,11 +826,28 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
   );
   assert.match(
     action,
-    /current\.campaignId === campaignId[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
+    /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
   assert.doesNotMatch(action, /setFeedbackReceipts\(res\.feedbackReceipts/);
   assert.match(
     batchAction,
     /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
+  assert.match(page, /ConnectChannels|cc-connect-channels/);
+  assert.match(batchAction, /sourceRejectedToast/);
+  assert.match(batchAction, /emptyPeopleFirstToast|peoplePluginFailLoudUi/);
+  assert.match(batchAction, /href: failLoud|href: emptyPeopleFirst/);
+  assert.match(batchAction, /try \{/);
+  assert.match(batchAction, /finally/);
+  assert.match(batchAction, /isPeopleFirstRole/);
+  assert.match(batchAction, /variant: "error"/);
+  assert.match(page, /source-next-batch-error/);
+  assert.match(page, /role="alert"/);
+  assert.match(page, /visiblePeopleFirstLearningReceipts/);
+  assert.match(page, /visibleFeedbackReceipts/);
+  assert.match(page, /missingPeoplePluginsToast/);
+  assert.match(page, /visibleSourced/);
+  assert.match(page, /StagePipeline metrics=\{visibleCampaign.metrics\}/);
+  assert.match(page, /failLoudBanner/);
+  assert.match(page, /peopleFirstConnectUi/);
 });

@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { Eyebrow } from "@/components/ui";
-import { useIntegrations } from "@/lib/store";
+import { useActiveCampaign, useIntegrations } from "@/lib/store";
 import { realIntegrationSummary } from "@/lib/integrations";
+import { integrationShowsLive } from "@/lib/sourcing/people-plugins";
 import { cn, toneForHealth, pluralize, type Tone } from "@/lib/utils";
 import type { IntegrationStatus } from "@/lib/types";
 import { Plug } from "lucide-react";
@@ -28,11 +29,12 @@ const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
 
 export function IntegrationStrip() {
   const integrations = useIntegrations();
+  const activeCampaign = useActiveCampaign();
   const summary = realIntegrationSummary(integrations);
 
   return (
     <section className="rounded-3xl border border-line bg-surface p-5 shadow-soft animate-fade-in">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+      <div className="flex min-w-0 max-w-full flex-col gap-4 lg:flex-row lg:items-center">
         {/* Summary — left */}
         <div className="flex shrink-0 items-center gap-3 lg:w-56">
           <span
@@ -56,14 +58,22 @@ export function IntegrationStrip() {
           </div>
         </div>
 
-        {/* Chips — scrollable strip */}
+        {/* Chips — wrap inside the column. Do not nowrap a flex row (page
+            min-content grows past the viewport). Do not hide overflow-x on
+            html/body. */}
         <div
-          className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:flex-1"
+          data-testid="cc-integration-pills"
+          className="flex min-w-0 w-full max-w-full flex-wrap gap-2 lg:flex-1"
           role="list"
           aria-label="Integration status"
         >
           {integrations.map((integration) => {
             const tone = toneForHealth(integration.status);
+            const showsLive = integrationShowsLive(
+              integration,
+              integrations,
+              activeCampaign?.jobAnalysis,
+            );
             return (
               <span
                 key={integration.id}
@@ -76,12 +86,12 @@ export function IntegrationStrip() {
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide",
-                    integration.mode === "live"
+                    showsLive
                       ? "bg-success-soft text-success"
                       : "bg-ink/[0.06] text-ink-soft",
                   )}
                 >
-                  {integration.mode}
+                  {showsLive ? "live" : "mock"}
                 </span>
               </span>
             );

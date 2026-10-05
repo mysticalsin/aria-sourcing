@@ -19,6 +19,38 @@ every `open` entry at the start of each session/loop iteration. See
 Historical and current findings follow. The current consolidated audit is
 `_relay/2026-07-11-enterprise-audit.md`.
 
+## 2026-10-05 — Enrich/GitHub were suffixes on harvest 8, not Tony-bar rows
+**Severity:** spec-mismatch
+**File:** src/lib/store/sourcing-actions.ts:719; src/lib/sourcing/people-first-fallthrough.ts:225
+**Issue:** Fly `5728ad4` POSTed empty-URL enrich (`invalid-input`), logged GitHub only on `aria_harvest` stdout, and stuffed `github=` onto harvest 8 EMPTY notes. Ultron never saw own enrich/GitHub/web campaign activities. Eight harvest POSTs burned the 10/min bucket, so Auto source died on `SOURCING_AGENT_RATE_LIMITED` before trading-platform BA / finance BA.
+**Repro/evidence:** Fly `5728ad4`, camp_1788068519249. `_relay/evidence/2026-09-02-never0-chain/fly-harvest-5728ad4.log`
+**Suggested fix:** `peopleFirstTrailActivities` + persist own rows; skip empty-URL POST; rate-limit 20/180s. Do not invent people.
+**Status:** fixed (2e781e02)
+
+## 2026-09-02 — Live 8-query expansion skipped enrich/GitHub on items=0
+**Severity:** correctness
+**File:** src/lib/store.ts (enrichCampaign); src/lib/sourcing/apify.ts (enrichProfilesByUrl / scrapeGithubTechStack)
+**Issue:** After 8 empty harvestapi searches, the same click never started `harvestapi/linkedin-profile-scraper` or `apivault_labs/github-profile-scraper`. Zero enrich/github rows on the `aria_harvest` trail. Fall-through was gated on having LinkedIn URLs / GitHub logins to merge. `enrichCampaign` returned `{ ok: true, total: 0 }` with no Apify POST. Tests stubbed `enrich()` as a JS function, not an actor start with a run id. `logAriaHarvest` hardcoded `actor: HARVEST_ACTOR`.
+**Repro/evidence:** Fly `510c950`, Ultron camp_1788068519249. Query expansion PASS (8 distinct harvestapi run ids, all SUCCEEDED items=0). Product FAIL: 0 candidates, no enrich, no GitHub merge.
+**Suggested fix:** Last empty harvest POSTs both `/runs` even with empty URLs, logs those run ids, then LinkedIn web alternate. A click cannot return 0-and-stop success without a logged enrichment attempt.
+**Status:** fixed (5728ad4)
+
+## 2026-09-02 — Live never-0 stop after 4 canned Calypso harvests
+**Severity:** correctness
+**File:** src/lib/sourcing/multi-source-plan.ts; src/lib/sourcing/auto-source.ts
+**Issue:** One Source click ran 4 canned harvestapi queries (`Calypso Business Analyst` → `Calypso`+titles → `Calypso Business Analysis` → `Calypso`), all SUCCEEDED items=0, then stopped. Role+geo+synonym harvests never ran. Enrich and GitHub profile-scraper merge never ran. Empty LinkedIn search was treated as terminal. No invented people (correct) but also no shortlist.
+**Repro/evidence:** Fly `2b30d5f`, Ultron camp_1788068519249. Plumbing PASS (4 distinct run ids). Product FAIL: 0 candidates, no enrich, no GitHub merge, no email/phone/LinkedIn.
+**Suggested fix:** PEOPLE_FIRST_MAX_ATTEMPTS=8 with peopleFirstExpansionQueries; always enrich+merge after the search chain; people-first Source next batch uses the Auto source chain.
+**Status:** fixed (510c950)
+
+## 2026-09-01 — Live empty harvest stopped after one harvestapi run
+**Severity:** correctness
+**File:** src/app/api/sourcing-agent/route.ts + src/lib/sourcing/auto-source.ts
+**Issue:** Source next batch and Auto source ran one harvest, items=0, and did not start harvest 2. In-request queue + Fly idle 60s cut the connection after the 90s poll. Mock `makeSourcingToolRunner` tests were green without a second POST. Auto source called search once.
+**Repro/evidence:** Fly `396b316`, camp_1788068519249, query `Calypso Business Analyst`. Banner/plannedHarvests>=2 with one run id.
+**Suggested fix:** one harvest per HTTP request; client/chain loops; one-step items=0 returns EMPTY
+**Status:** fixed (2b30d5f)
+
 ## 2026-07-14 — Booking and report actions returned false success
 **Severity:** correctness
 **File:** src/lib/store.ts:2957
