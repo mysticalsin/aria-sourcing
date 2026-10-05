@@ -63,7 +63,7 @@ function accepted(n: number): SourceNextBatchResult {
 }
 
 /** Host check, not a substring. `github.com` can appear anywhere in a URL. */
-function acceptedHasGithubHost(people: SourceNextBatchResult["accepted"]): boolean {
+function acceptedHasGithubHost(people: readonly unknown[]): boolean {
   return people.some((row) => {
     if (!row || typeof row !== "object") return false;
     return Object.values(row).some((value) => {
