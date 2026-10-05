@@ -448,6 +448,10 @@ test("keyed people-first harvest is recall-capable Full Apify, not 0-or-toast", 
   assert.doesNotMatch(actions, /if \(missingPlugins\) \{\s*return await sourceFixtureDryRunBatch/);
   assert.match(actions, /peopleFirstFailActivity/);
   assert.match(actions, /persistPeopleFirstFailAudit/);
+  assert.match(actions, /peopleFirstTrailActivities/);
+  assert.match(fallthrough, /peopleFirstTrailActivities/);
+  assert.match(route, /windowMs:\s*180_000/);
+  assert.match(route, /max:\s*20/);
   assert.match(helpers, /headline \|\| positionTitle/);
   assert.doesNotMatch(helpers, /headline \|\| jd\.title/);
   assert.match(design, /recall-capable Apify harvestapi/);

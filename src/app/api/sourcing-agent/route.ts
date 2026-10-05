@@ -345,8 +345,12 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
 
   const limit = checkRateLimit(rateLimitKey(req, "sourcing-agent", user.id), {
-    windowMs: 60_000,
-    max: 10,
+    // Fly 5728ad4: 8 harvest POSTs burned the 10/min bucket, so Auto source
+    // died on SOURCING_AGENT_RATE_LIMITED and never reached trading-platform
+    // BA / finance BA. One click is now one (or CONTINUE) request; keep
+    // headroom for Source next batch + Auto source in the same walk.
+    windowMs: 180_000,
+    max: 20,
   });
   if (!limit.ok) {
     return fail(

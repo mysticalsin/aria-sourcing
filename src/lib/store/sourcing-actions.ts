@@ -10,6 +10,7 @@ import { isPeopleFirstContactComplete } from "../sourcing/people-first-contact";
 import { formatHarvestEvidenceError } from "../sourcing/harvest-evidence";
 import type { PlannedSearch } from "../sourcing/multi-source-plan";
 import { runPeopleFirstClickChain } from "../sourcing/people-first-chain";
+import { peopleFirstTrailActivities } from "../sourcing/people-first-fallthrough";
 import {
   EMPTY_PEOPLE_FIRST_HARVEST,
   isGithubOnlyEmptyBatch,
@@ -718,9 +719,26 @@ export function createSourcingActions({
   const persistPeopleFirstFailAudit = async (campaignId: string, error: string) => {
     if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return;
     const { title, notes } = peopleFirstFailActivity(error);
-    await commitPersisted((previous) =>
-      withActivity(
-        previous,
+    const trail = peopleFirstTrailActivities(error);
+    await commitPersisted((previous) => {
+      let next = previous;
+      for (const extra of trail.slice().reverse()) {
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: extra.title,
+            notes: extra.notes,
+            outcome: "0 accepted — fail-loud, not a harvest",
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+      }
+      return withActivity(
+        next,
         makeActivity({
           type: "sourcing",
           title,
@@ -731,8 +749,8 @@ export function createSourcingActions({
           linkedEntityId: campaignId,
         }),
         campaignId,
-      ),
-    );
+      );
+    });
   };
 
   const sourceReviewedCampaignBatch = async (

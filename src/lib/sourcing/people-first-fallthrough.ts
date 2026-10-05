@@ -217,6 +217,57 @@ export async function runPeopleFirstEmptyFallthrough(
   return result;
 }
 
+/**
+ * Tony-bar rows for LinkedIn web / enrich / GitHub. Fly 5728ad4 stuffed
+ * `github=` onto harvest 8's EMPTY notes, so Ultron never saw a scraper row.
+ * Actor names stay out of titles. A skip is its own row, never a fake run id.
+ */
+export function peopleFirstTrailActivities(error: string): Array<{ title: string; notes: string }> {
+  const rows: Array<{ title: string; notes: string }> = [];
+  const webMatch = error.match(/\bweb=(.+?):(\d+|not_started)(?: \(([^)]*)\))?/);
+  if (webMatch) {
+    const query = (webMatch[1] ?? "").trim();
+    const rest = webMatch[2] ?? "";
+    const why = webMatch[3];
+    const started = rest !== "not_started";
+    rows.push({
+      title: "LinkedIn web search",
+      notes: started
+        ? `query=${query} items=${rest}. Not another Calypso harvest string.`
+        : `query=${query} not started${why ? `. ${why}` : ""}. Do not invent people.`,
+    });
+  }
+  const enrichRun = error.match(/\benrich=([A-Za-z0-9._:-]+)/)?.[1];
+  if (enrichRun && enrichRun !== "skipped") {
+    const items = error.match(/\benrich=[A-Za-z0-9._:-]+ items=(\d+)/)?.[1];
+    rows.push({
+      title: "Email and phone enrich",
+      notes: `run=${enrichRun}${items != null ? ` items=${items}` : ""}. Own row, not a suffix on harvest 8.`,
+    });
+  } else if (/\benrich=skipped/.test(error)) {
+    const why = error.match(/\benrich=skipped \(([^)]*)\)/)?.[1] ?? "nobody to enrich";
+    rows.push({
+      title: "Email and phone enrich",
+      notes: `skipped. ${why}. Empty urls is invalid-input, not a run. Do not invent people.`,
+    });
+  }
+  const githubRun = error.match(/\bgithub=([A-Za-z0-9._:-]+)/)?.[1];
+  if (githubRun && githubRun !== "skipped") {
+    const items = error.match(/\bgithub=[A-Za-z0-9._:-]+ items=(\d+)/)?.[1];
+    rows.push({
+      title: "GitHub tech-stack merge",
+      notes: `run=${githubRun}${items != null ? ` items=${items}` : ""}. Merge onto the same people, never a leftover shortlist.`,
+    });
+  } else if (/\bgithub=skipped/.test(error)) {
+    const why = error.match(/\bgithub=skipped \(([^)]*)\)/)?.[1] ?? "no GitHub handle on the shortlist";
+    rows.push({
+      title: "GitHub tech-stack merge",
+      notes: `skipped. ${why}. GitHub leftovers are not people.`,
+    });
+  }
+  return rows;
+}
+
 /** Run ids the click logged, read back from the fail-loud copy. `skipped` is not a run. */
 export function parseEnrichmentRunIds(error: string): {
   enrichRunId?: string;

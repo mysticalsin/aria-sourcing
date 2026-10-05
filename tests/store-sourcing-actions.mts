@@ -89,6 +89,7 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.match(sourcingActionsSource, /await commitPersisted\(/);
   assert.match(sourcingActionsSource, /peopleFirstFailActivity/);
   assert.match(sourcingActionsSource, /persistPeopleFirstFailAudit/);
+  assert.match(sourcingActionsSource, /peopleFirstTrailActivities/);
   assert.match(storeSource, /peopleFirstFailActivity/);
   assert.match(storeSource, /applyLivePeopleFirstHygiene/);
   assert.match(storeSource, /metricsRealigned/);

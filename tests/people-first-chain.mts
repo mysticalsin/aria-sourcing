@@ -5,6 +5,7 @@ import {
   formatFallthroughEvidence,
   parseEnrichmentRunIds,
   peopleFirstAlternateQuery,
+  peopleFirstTrailActivities,
   runPeopleFirstEmptyFallthrough,
 } from "../src/lib/sourcing/people-first-fallthrough";
 import type { JobAnalysis } from "../src/lib/types";
@@ -232,6 +233,20 @@ function captureHarvestLogs(): { logs: Array<Record<string, unknown>>; restore: 
   );
   const parsed = parseEnrichmentRunIds(result.logged);
   ok("run ids parse back from the evidence", parsed.enrichRunId === "enrich-live-1" && parsed.githubRunId === "github-live-1");
+  const trail = peopleFirstTrailActivities(
+    `Empty harvest is not a result. query=finance BA run=harvest8 status=SUCCEEDED items=0. ${result.logged}`,
+  );
+  ok(
+    "Tony bar gets own enrich and GitHub rows, not a suffix on harvest 8",
+    trail.length === 3 &&
+      trail[0]?.title === "LinkedIn web search" &&
+      /query=Business Analyst Montreal items=2/.test(trail[0]?.notes ?? "") &&
+      trail[1]?.title === "Email and phone enrich" &&
+      /run=enrich-live-1 items=2/.test(trail[1]?.notes ?? "") &&
+      trail[2]?.title === "GitHub tech-stack merge" &&
+      /run=github-live-1 items=1/.test(trail[2]?.notes ?? "") &&
+      !/harvestapi|apivault|Source via Apify/.test(trail.map((row) => row.title + row.notes).join("\n")),
+  );
 }
 
 // Nothing to send: an empty-URL Apify POST is invalid-input (Fly 5728ad4), so the
@@ -273,6 +288,15 @@ function captureHarvestLogs(): { logs: Array<Record<string, unknown>>; restore: 
       result.acceptedCount === 0,
   );
   ok("no invented people", result.acceptedCount === 0 && formatFallthroughEvidence(result) === result.logged);
+  const skippedTrail = peopleFirstTrailActivities(
+    `Empty harvest is not a result. ${result.logged}`,
+  );
+  ok(
+    "skipped enrich and GitHub still get own Tony bar rows, never a harvest-8 suffix",
+    skippedTrail.some((row) => row.title === "LinkedIn web search" && /not started/.test(row.notes)) &&
+      skippedTrail.some((row) => row.title === "Email and phone enrich" && /skipped/.test(row.notes)) &&
+      skippedTrail.some((row) => row.title === "GitHub tech-stack merge" && /skipped/.test(row.notes)),
+  );
 }
 
 assert.ok(pass > 0);
