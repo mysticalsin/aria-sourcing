@@ -4,7 +4,7 @@
 # `.next` build dir lives on the container filesystem (a volume in compose), not on
 # the OneDrive-synced host checkout — which corrupts `.next` mid-write. Source is
 # bind-mounted at runtime (see docker-compose.yml) for hot reload.
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1 \

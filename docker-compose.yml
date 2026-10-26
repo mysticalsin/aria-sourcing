@@ -222,6 +222,9 @@ services:
       SUPABASE_SERVICE_ROLE_KEY: *service_key
       NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN: ""
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
+      # Public /careers board reads jobs published by the seeded workspace
+      # (fixed id set in docker/bootstrap/run.sh).
+      CAREERS_WORKSPACE_ID: "00000000-0000-4000-8000-000000000001"
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
     volumes:

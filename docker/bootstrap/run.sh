@@ -77,7 +77,7 @@ until curl -fsS -o /dev/null "http://auth:9999/health"; do
 done
 
 echo "[bootstrap] applying app migrations..."
-ARIA_BOOTSTRAP_PHASE=migrations /usr/local/bin/run.fly.sh
+/usr/local/bin/migrate.sh
 
 echo "[bootstrap] seeding login user $ADMIN_EMAIL via GoTrue admin API..."
 code="$(curl -s -o /tmp/seed.json -w "%{http_code}" -X POST "http://auth:9999/admin/users" \
@@ -87,21 +87,30 @@ code="$(curl -s -o /tmp/seed.json -w "%{http_code}" -X POST "http://auth:9999/ad
 echo "[bootstrap]   GoTrue /admin/users -> HTTP $code"
 case "$code" in
   200|201) echo "[bootstrap]   admin user created." ;;
-  422) echo "[bootstrap]   admin user already exists (ok)." ;;
+  422)
+    echo "[bootstrap]   admin user already exists (ok)."
+    curl -fsS -o /tmp/seed.json "http://auth:9999/admin/users?per_page=1000" \
+      -H "Authorization: Bearer ${SERVICE_ROLE_KEY}"
+    ;;
   *) echo "[bootstrap]   ERROR seeding user; body:" >&2; sed -n '1,20p' /tmp/seed.json >&2; exit 1 ;;
 esac
+# The postgres role cannot read auth.users, so take the user id from GoTrue's
+# own JSON (user objects serialize "id","aud","role","email" in that order).
+ADMIN_ID="$(grep -o "\"id\":\"[0-9a-f-]\{36\}\",\"aud\":\"[^\"]*\",\"role\":\"[^\"]*\",\"email\":\"$ADMIN_EMAIL\"" /tmp/seed.json \
+  | head -n 1 | cut -d'"' -f4)"
+[ -n "$ADMIN_ID" ] || { echo "[bootstrap] ERROR: could not resolve the admin user id" >&2; exit 1; }
 
 echo "[bootstrap] promoting $ADMIN_EMAIL to an admin profile..."
-psql_postgres -q <<'SQL'
-insert into public.workspaces (name, allowed_domain)
-  values ('Hermes Workspace', 'hermes.local')
+psql_postgres -q -v admin_id="$ADMIN_ID" -v admin_email="$ADMIN_EMAIL" <<'SQL'
+-- Fixed id so docker-compose can point CAREERS_WORKSPACE_ID at it.
+insert into public.workspaces (id, name, allowed_domain)
+  values ('00000000-0000-4000-8000-000000000001', 'Hermes Workspace', 'hermes.local')
   on conflict (allowed_domain) do nothing;
 
 insert into public.profiles (id, email, full_name, workspace_id, role)
-  select u.id, u.email, 'Admin', w.id, 'admin'
-    from auth.users u
-    join public.workspaces w on w.allowed_domain = 'hermes.local'
-   where u.email = 'admin@hermes.local'
+  select :'admin_id'::uuid, :'admin_email', 'Admin', w.id, 'admin'
+    from public.workspaces w
+   where w.allowed_domain = 'hermes.local'
   on conflict (id) do update
     set role = 'admin',
         workspace_id = excluded.workspace_id,

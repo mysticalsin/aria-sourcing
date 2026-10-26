@@ -5,7 +5,8 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 COPY run.sh /usr/local/bin/run.sh
+COPY migrate.sh /usr/local/bin/migrate.sh
 COPY supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
-RUN chmod +x /usr/local/bin/run.sh
+RUN chmod +x /usr/local/bin/run.sh /usr/local/bin/migrate.sh
 USER postgres
 ENTRYPOINT ["/usr/local/bin/run.sh"]
