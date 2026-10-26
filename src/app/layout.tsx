@@ -21,7 +21,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-scroll-behavior="smooth">
+    // Browser extensions (e.g. LanguageTool, Grammarly) add attributes to <html>
+    // before React hydrates; ignore attribute mismatches on this element only.
+    <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="antialiased">
         <Providers>
           <AppShell>{children}</AppShell>
