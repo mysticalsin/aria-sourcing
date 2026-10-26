@@ -1,6 +1,6 @@
 # Spec: trim ARIA to the recruiting-journey demo
 
-Status: ready-for-agent
+Status: done (follow-ups in issues/)
 Branch: `mbe-branch`
 Owner decision date: 2026-10-26
 
