@@ -1,112 +1,115 @@
 # ARIA (MSourcing)
 
-ARIA is a recruiting operations console. It takes a hiring need and runs the
-whole recruiting journey: sourcing, scoring, outreach that a human approves,
-reply handling, interview booking, and reporting for decision-makers.
+ARIA is a recruiting console. Give it a hiring need and it sources candidates,
+drafts outreach that a recruiter approves, tracks replies and interviews, and
+reports the results to leadership.
 
-The repository is named MSourcing; ARIA is the product name in the UI. Some
-identifiers still say `hermes` (package name, `/api/hermes/chat`, store types)
-for compatibility.
+![Command Center](docs/screenshots/command-center.jpg)
 
-## The recruiting journey
+## What it does
 
-```text
-Intake ─▶ Campaign ─▶ Sourcing agent ─▶ Candidates / Vivier
-                                           │
-           Calendar ◀─ Replies ◀─ Outreach (human approval) ◀─┘
+1. **Brief.** Paste a job description (or several) on **Launch** or **Intake**. ARIA turns
+   each role into a campaign.
+2. **Source.** The sourcing agent searches GitHub, the web (LinkedIn, Stack Overflow,
+   Dribbble, Behance via Tavily) and Apify LinkedIn search. It scores and dedupes the
+   candidates it finds.
+3. **Review candidates.** Every candidate has an explainable match score. The talent pool
+   (**Vivier**) keeps them across campaigns.
+4. **Reach out.** ARIA drafts a personal message per candidate. Nothing is sent until a
+   human approves the exact text.
+5. **Follow up.** Replies are classified, and interviews are booked on the **Calendar**.
+6. **Report.** **Exec** shows the conversion funnel, recruiter time saved and the return on
+   cost for a chosen period. You can export it as PDF or Markdown.
 
-Reporting: Command Center, Funnel, Exec, Reports, Winlog, Trust & ROI, Sessions
-Public:    Careers page ─▶ Applicants inbox
-```
+A public **Careers** page feeds applications into the **Applicants** inbox.
 
-| Step | Page | What happens |
-|---|---|---|
-| Intake | `/intake`, `/launch` | Paste a job description or email; ARIA parses it into a structured brief and opens a campaign (one role or a batch). |
-| Sourcing | `/campaigns/[id]` | **Run agent** finds real candidates on GitHub, on the web (LinkedIn, Stack Overflow, Dribbble, Behance via Tavily) and through Apify LinkedIn search, then scores and dedupes them. |
-| Candidates | `/candidates`, `/vivier` | Scored candidates with an explainable breakdown; the talent pool keeps them across campaigns. Apify can enrich a profile (email, skills, experience). |
-| Outreach | `/outreach` | Drafts are generated per candidate. Nothing is sent until a human approves the exact text. Email goes out from a connected Gmail / Outlook mailbox; LinkedIn is copy/paste assisted. |
-| Replies | `/replies` | Inbound replies are classified and routed for follow-up. |
-| Booking | `/calendar` | Interview slots and bookings. |
-| Reporting | `/`, `/funnel`, `/exec`, `/reports`, `/winlog`, `/trust`, `/sessions`, `/skills` | Candidates sourced, funnel conversion, ROI and compliance, per-candidate journeys with an audit pack, learned playbooks. |
-| Careers | `/careers`, `/applicants` | A public job board; applications land in the applicant inbox. |
-| Configuration | `/fleet` (Mailboxes), `/settings` | Sender mailboxes and suppression list; API keys, LLM provider, Dust and MCP servers, compliance settings. |
+| Launch a batch of roles | Ranked candidates |
+|---|---|
+| ![Launch](docs/screenshots/launch.jpg) | ![Candidates](docs/screenshots/candidates.jpg) |
+| **Human approval before any send** | **Funnel board** |
+| ![Outreach](docs/screenshots/outreach.jpg) | ![Funnel](docs/screenshots/funnel.jpg) |
 
-## Run it locally
+### Decision-maker report
 
-Requirements: Docker Desktop (about 4 GB of memory for Docker is enough).
+![Exec decision report](docs/screenshots/exec.jpg)
+
+The time-saved figures come from editable assumptions (hourly cost, minutes per profile,
+draft and booking, monthly tool cost) set in **Trust & ROI**. In demo mode, sends are
+simulated (dry-run) and the report says so.
+
+## Try it
+
+### Quick look: synthetic demo, no Docker
 
 ```bash
-# Optional but needed to store API keys from Settings (encrypted at rest):
+npm install
+npm run dev
+```
+
+Open <http://localhost:3000>. With no Supabase settings, the app runs on synthetic demo
+data in the browser. Nothing is stored and nothing is sent.
+
+### Full local stack with Docker
+
+You need Docker Desktop with about 4 GB of memory.
+
+```bash
+# Needed to store API keys from Settings (encrypted at rest):
 echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
 
 docker compose up --build
 ```
 
-Open <http://localhost:3000> and sign in with `admin@hermes.local` /
-`admindemo123`. The first run takes a few minutes (images, `npm ci`,
-53 database migrations). [`DOCKER.md`](DOCKER.md) covers ports, resets and
+Open <http://localhost:3000> and sign in as `admin@hermes.local` / `admindemo123`. The
+first build takes a few minutes. [`DOCKER.md`](DOCKER.md) covers ports, resets and
 troubleshooting.
 
-### Turn on the real integrations
+### Connect the real integrations
 
-The stack runs without any external key. Each integration lights up when its
-key is present:
+The stack runs without any external key. Each integration turns on once its key is set.
 
 | Capability | How to enable |
 |---|---|
-| GitHub sourcing | Works keyless (60 requests/hour). Set `GITHUB_TOKEN` in `.env.local` for 5,000/hour. |
-| Web sourcing (LinkedIn, Stack Overflow, Dribbble, Behance) | Tavily key in **Settings → API keys**, or `TAVILY_API_KEY` in `.env.local`. |
+| GitHub sourcing | Works without a key (60 requests/hour). `GITHUB_TOKEN` in `.env.local` raises it to 5,000/hour. |
+| Web sourcing | Tavily key in **Settings → API keys**. |
 | Apify LinkedIn search and enrichment | Apify token in **Settings → API keys**. |
-| Sourcing agent in `cloud` mode and AI drafting | An Anthropic or OpenAI-compatible key in **Settings → API keys**, then enable it under **Settings → LLM providers**. Without it the agent runs in `deterministic` mode. |
-| Email sending and reply sync | Connect a mailbox under **Mailboxes** (Gmail or Microsoft OAuth, see [`docs/runbooks/connect-gmail-outlook.md`](docs/runbooks/connect-gmail-outlook.md)), or use Resend / SendGrid. |
-| Dust agents, MCP tools | **Settings → Dust agents** and **Settings → Tools** (MCP tool servers). |
+| AI sourcing agent and drafting | Anthropic or OpenAI-compatible key in **Settings → API keys**, enabled under **Settings → LLM providers**. Without one, the agent runs in rule-based mode. |
+| Sending email and syncing replies | Connect a Gmail or Outlook mailbox under **Mailboxes** ([guide](docs/runbooks/connect-gmail-outlook.md)). |
+| Dust agents, MCP tools | **Settings → Dust agents** and **Settings → Tools**. |
 
-Every key stored in Settings is encrypted with `DATA_ENCRYPTION_KEY` and never
-returned to the browser. [`.env.local.example`](.env.local.example) lists every
-variable.
+[`.env.local.example`](.env.local.example) lists every variable.
 
-## Development
+## Ground rules
 
-To iterate on the app outside Docker, keep the backend services running and
-start Next.js on the host. Copy `NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321`
-and the anon / service-role keys from `docker-compose.yml` into `.env.local`,
-then:
+- No message reaches a candidate without a recorded human approval of its exact text.
+- LinkedIn is never automated: no login automation, no scraping, no rate-limit bypass.
+- Provider keys stay on the server and are encrypted at rest.
 
-```bash
-docker compose stop app
-npm install
-npm run dev
-```
-
-The quality gate every change must keep green:
-
-```bash
-npm run typecheck && npm run typecheck:tests && npm test
-npm run lint
-```
-
-`npm test` runs the inventory in [`tests/test-manifest.mjs`](tests/test-manifest.mjs);
-see [`docs/TESTING.md`](docs/TESTING.md).
-
-## Stack
+## For developers
 
 | Area | Technology |
 |---|---|
-| App | Next.js 16 (App Router), React 19, TypeScript, Tailwind, Recharts |
-| Data and auth | Self-hosted Supabase: Postgres with RLS tenancy, GoTrue, PostgREST, Kong |
-| AI | Server-side calls to Anthropic or OpenAI-compatible APIs through a bounded tool loop |
-| Runtime | Node 22, Docker Compose for local; internal Azure (Terraform) planned |
+| App | Next.js 16, React 19, TypeScript, Tailwind |
+| Data and auth | Self-hosted Supabase (Postgres with row-level security, GoTrue, PostgREST, Kong) |
+| AI | Server-side calls to Anthropic or OpenAI-compatible APIs |
+| Runtime | Docker Compose locally. An internal Azure deployment (Terraform) is planned. |
 
-## Documentation
+To work on the app with hot reload against the Docker backend, run
+`docker compose stop app`. Then put `NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321` and
+the keys from `docker-compose.yml` in `.env.local` and run `npm run dev`.
 
-- [`docs/README.md`](docs/README.md): documentation map
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): code layout, data authority, sourcing agent, outreach
+Every change must keep this gate green:
+
+```bash
+npm run typecheck && npm run typecheck:tests && npm test && npm run lint
+```
+
+More documentation:
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): code layout, data model, sourcing agent, outreach
 - [`docs/SOURCING.md`](docs/SOURCING.md): sourcing, scoring, enrichment, compliance
-- [`SECURITY.md`](SECURITY.md): security invariants and reporting
-- [`CONTRIBUTING.md`](CONTRIBUTING.md): change workflow
+- [`docs/TESTING.md`](docs/TESTING.md): test suites
+- [`SECURITY.md`](SECURITY.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
-## Non-negotiables
-
-- No message reaches a candidate without a recorded human approval of the exact text.
-- LinkedIn is never automated: no login automation, scraping, or rate-limit bypass.
-- Provider credentials stay server-side and encrypted at rest.
+The product is called ARIA; the repository is MSourcing. Some code identifiers still say
+`hermes` for compatibility.

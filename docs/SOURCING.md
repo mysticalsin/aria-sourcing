@@ -21,9 +21,7 @@ JD intake → campaign → multi-provider discovery → deterministic scoring
 ```
 
 Nothing sends itself. Every outbound message requires a recorded human approval
-(`outreach_approvals`, `supabase/migrations/0006_outreach_approvals.sql:1-4` — the
-migration's own header comment calls this "the human-approval gate ('never
-auto-send')"). Sourcing and enrichment are read/discovery operations against public or
+(the `outreach_approvals` table, the "never auto-send" gate). Sourcing and enrichment are read/discovery operations against public or
 vendor-licensed data; nothing in this document authorizes automated messaging.
 
 ### Two-mode runtime
@@ -309,49 +307,49 @@ predates `acd69a9` and should be treated as outdated; the code below it (`HOMED_
 
 ---
 
-## 5. The candidate corpus (migrations 0035 / 0036 / 0037)
+## 5. The candidate corpus
+
+All objects below are defined in `supabase/migrations/0001_baseline.sql`.
 
 The workspace's JSONB document (`workspace_state.state->'candidates'`) remains the
 single **authoritative** write path for candidates — nothing about the corpus changes
 where a client writes. The corpus is a read-side compounding foundation layered on top.
 
-### The shadow `candidates` table (0035)
+### The shadow `candidates` table
 
-`supabase/migrations/0035_candidate_corpus_mirror.sql` creates a normalized
+The schema creates a normalized
 `public.candidates` table and populates it entirely via **database triggers** —
 `candidates_corpus_mirror_ins`/`_upd` fire after every insert/update to
-`workspace_state` and call `sync_candidates_corpus()`
-(`0035_candidate_corpus_mirror.sql:235-245`), which flattens
+`workspace_state` and call `sync_candidates_corpus()`, which flattens
 `new.state->'candidates'` into rows. **Zero client change**: no app code calls this table
 directly to write; every existing sourcing/scoring/enrichment code path above continues
 writing the JSONB document exactly as before, and the mirror just happens.
 
 The table is locked down hard: RLS is force-enabled, all grants revoked from
 `public/anon/authenticated/service_role/authenticator`, and the only policy grants
-access to `postgres, supabase_admin` (`0035:45-51`) — this table is not directly
+access to `postgres, supabase_admin` — this table is not directly
 product-readable by a tenant session; it exists purely as raw material for the read RPC
 below and future corpus consumers (embeddings, redeployment).
 
 Erasure-safety is built into the same trigger: the mirror sync query filters out any
 candidate whose id matches a `candidate_erasure_suppression_tombstones` row before
-inserting (`0035:164-174`), and a dedicated
+inserting, and a dedicated
 `cleanup_erased_candidate_mirror()` trigger on `candidate_erasure_requests` deletes the
 mirrored row the moment an erasure request lands with any non-`blocked_legal_hold`
-status (`0035:247-271`).
+status.
 
-### The tenant-isolated read path (0036)
+### The tenant-isolated read path
 
-`0036_candidate_corpus_read.sql` adds:
+The schema also defines:
 
 - `list_workspace_candidates(campaignId, stage, source, search, sort, limit, offset)` —
   a `security definer` RPC that **checks `auth.uid()` and resolves
-  `current_workspace_id()` itself** (`0036:255-262`) rather than trusting a caller-passed
+  `current_workspace_id()` itself** rather than trusting a caller-passed
   workspace id, so cross-tenant reads are impossible even with a crafted argument. Only
-  `authenticated` has `execute` (`0036:313-314`); everyone else's grant is explicitly
+  `authenticated` has `execute`; everyone else's grant is explicitly
   revoked.
 - `backfill_candidates_corpus()` / `mirror_workspace_candidates()` — the same mirroring
-  logic as the trigger, callable directly for backfilling pre-existing workspaces (the
-  migration ends by calling `backfill_candidates_corpus()` for itself, `0036:316`).
+  logic as the trigger, callable directly for backfilling pre-existing workspaces.
 
 The app-facing surface is `GET /api/candidates` (`src/app/api/candidates/route.ts`),
 which fails closed the same way as every other production route
@@ -369,9 +367,9 @@ export const corpusServerReadEnabled =
 Default off — the existing store-backed `/candidates` page keeps working unchanged until
 this flag is explicitly turned on (`src/app/candidates/page.tsx:147`).
 
-### The person model (0037)
+### The person model
 
-`0037_person_identity_model.sql` adds a derived identity layer *over* the candidate
+The schema adds a derived identity layer *over* the candidate
 corpus: `public.persons` (one row per resolved real person) and
 `public.candidate_identities` (identity keys pointing at a person).
 
@@ -379,16 +377,16 @@ Linkage is **deliberately conservative**: the only identity key today is a canon
 LinkedIn personal-profile URL —
 
 ```sql
--- 0037_person_identity_model.sql:82-84
+-- link_one_candidate()
 if p_candidate.linkedin_url is not null
    and btrim(p_candidate.linkedin_url) ~* '^(https?://)?(www\.)?linkedin\.com/in/[^/?#]+/?(\?.*)?$' then
   v_key := lower(btrim(p_candidate.linkedin_url));
 ```
 
-— i.e. `/in/...` profile URLs only, byte-for-byte canonicalized the same way the 0033
+— i.e. `/in/...` profile URLs only, byte-for-byte canonicalized the same way the
 erasure tombstones are. Anything else (name-only match, email match) is out of scope for
 now — an ambiguous match (more than one existing identity row for the same normalized
-URL) is treated as **no link** rather than a guess (`0037:135-145`).
+URL) is treated as **no link** rather than a guess.
 
 `link_candidate_person()` is a trigger on `public.candidates` (fires after insert/update
 of `linkedin_url`) that calls `link_one_candidate()` to resolve or create the person row
@@ -396,12 +394,11 @@ and record the identity — this is how a candidate sourced under two different 
 (or re-sourced weeks later) still resolves to the same `person_id`.
 
 **Fail-closed erasure GC**: `link_one_candidate()` re-checks the same erasure tombstone
-table before linking (`0037:102-126`, with a documented STABLE-function hoisting guard so
+table before linking (with a documented STABLE-function hoisting guard so
 the check only fires when tombstones actually exist for the workspace) — a direct-DB
 attempt to relink a previously-erased LinkedIn identity is blocked as defense-in-depth,
-even though the migration's own analysis (`0037:297-307`) argues the normal erasure path
-already makes this unreachable in practice. `gc_deleted_candidacies()`
-(`0037:245-289`) is a statement-level trigger that removes now-orphaned
+even though the normal erasure path already makes this unreachable in practice.
+`gc_deleted_candidacies()` is a statement-level trigger that removes now-orphaned
 `candidate_identities`/`persons` rows whenever a candidacy is deleted, so the person
 layer never accumulates dangling identities.
 
@@ -422,22 +419,22 @@ endpoint off by default.
 
 | Control | Mechanism | Where |
 |---|---|---|
-| Never-auto-send | DB table `outreach_approvals`, keyed to the exact message body hash; send route refuses without a matching row | `supabase/migrations/0006_outreach_approvals.sql:1-4` |
+| Never-auto-send | DB table `outreach_approvals`, keyed to the exact message body hash; send route refuses without a matching row | `supabase/migrations/0001_baseline.sql` (`outreach_approvals`) |
 | App-level approval gate | Score floor, personalization evidence, do-not-contact/unsubscribed/suppressed checks, per-channel contact-info and rate-limit checks | `checkOutreachApproval`, `src/lib/rules.ts:52-160`+ |
-| Multi-tenancy | Row-Level Security on every workspace-scoped table; force-RLS on the corpus mirror and person tables | `0035:45-46`, `0037:28-31` |
-| GDPR erasure | Legal-hold-aware, idempotency-keyed erasure transaction scrubbing every candidate-addressable store; tombstones drive corpus-mirror and person-linkage suppression | `0033_candidate_erasure_authority.sql`, extended by `0035`/`0037` |
+| Multi-tenancy | Row-Level Security on every workspace-scoped table; force-RLS on the corpus mirror and person tables | `supabase/migrations/0001_baseline.sql` |
+| GDPR erasure | Legal-hold-aware, idempotency-keyed erasure transaction scrubbing every candidate-addressable store; tombstones drive corpus-mirror and person-linkage suppression | `request_candidate_erasure()` |
 | Lawful basis capture | Operator-recorded `consent` / `legitimate_interest` basis with source + timestamp, required before outreach approval on any manually-entered candidate | `src/lib/candidate-lawful-basis.ts`, enforced in `rules.ts:84-97` |
 | Field provenance | Per-field `{ provider, at, confidence }` on every enriched value | `src/lib/enrichment/merge.ts:225` |
 | Discrimination-proxy filter | Provider-backed sourcing egress requires a `ProviderClearance`; discovery clearances are minted only after every submitted discovery field is checked for protected-class terms (age/gender/race/religion/disability/marital/nationality/university-graduation wording) and the search is bound to the approved role's own JD terms; name fields are still screened for control characters, injection and length | `src/lib/sourcing/query-policy.ts`, `src/lib/sourcing/provider-egress.ts` |
 | LinkedIn policy | This app never logs into, scrapes, or automates LinkedIn itself; LinkedIn data comes from a licensed vendor API (Apify); LinkedIn *outreach* is assisted-manual only (draft → human copy/paste/send) | `src/lib/linkedin-policy.ts:1-89` |
 
-**Erasure request lifecycle** (`0033_candidate_erasure_authority.sql`): a request binds
+**Erasure request lifecycle** (`request_candidate_erasure()`): a request binds
 an exact workspace + campaign + candidate + administrator + idempotency key, blocks on
 an active legal hold (`candidate_legal_holds`), scrubs every candidate-addressable
 operational store, and records only row counts plus opaque provider-reference hashes.
 External provider-side deletion is never assumed complete — unsupported provider work is
-left `manual_required` until independently closed by an operator. `0035` and `0037`
-extend this same tombstone mechanism to the corpus mirror and the person-identity layer,
+left `manual_required` until independently closed by an operator. The same tombstone mechanism
+extends to the corpus mirror and the person-identity layer,
 so an erased candidate can't resurface through either.
 
 **Lawful basis**: `recordedCandidateLawfulBasis()` only returns a basis when all three of
