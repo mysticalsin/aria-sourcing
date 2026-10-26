@@ -22,7 +22,7 @@ import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateB
 const ApproveSchema = z.object({
   messageId: z.string().min(1).max(120),
   candidateId: z.string().min(1).max(120),
-  channel: z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]),
+  channel: z.enum(["Email", "LinkedIn"]),
   recipient: z.string().min(1).max(255),
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),

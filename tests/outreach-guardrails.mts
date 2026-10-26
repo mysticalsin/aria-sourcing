@@ -59,14 +59,9 @@ ok(
   approvalHash("Quick chat\r\nBcc: attacker@evil.example", "Hello") === approvalHash("Quick chat Bcc: attacker@evil.example", "Hello"),
 );
 ok(
-  "approval scope binds a WhatsApp approval to the candidate and canonical recipient",
-  approvalScopeHash({ candidateId: "cand-1", channel: "WhatsApp", recipient: "+33 6 12 34 56 78" }) ===
-    approvalScopeHash({ candidateId: "cand-1", channel: "WhatsApp", recipient: "33612345678" }),
-);
-ok(
   "approval scope changes when an approved message is redirected to another candidate",
-  approvalScopeHash({ candidateId: "cand-1", channel: "WhatsApp", recipient: "33612345678" }) !==
-    approvalScopeHash({ candidateId: "cand-2", channel: "WhatsApp", recipient: "33612345678" }),
+  approvalScopeHash({ candidateId: "cand-1", channel: "Email", recipient: "ada@example.com" }) !==
+    approvalScopeHash({ candidateId: "cand-2", channel: "Email", recipient: "ada@example.com" }),
 );
 
 /* ===========================================================================
@@ -135,8 +130,6 @@ ok("send route reads approval provenance", /select\("body_hash, approval_scope_h
 ok("send route rejects approval provenance other than human", /approval\.approval_source\s*!==\s*"human"/.test(sendRoute));
 ok("send route verifies the approval scope", /approval\.approval_scope_hash\s*!==\s*approvedScopeHash/.test(sendRoute));
 ok("send route never calls the WhatsApp adapter directly", !/await sendWhatsApp\(/.test(sendRoute));
-ok("send route routes WhatsApp through the durable outbox", /whatsapp-delivery-queued/.test(sendRoute));
-ok("client treats a queued WhatsApp delivery as queued, not sent", /deliveryQueued/.test(store));
 ok("client approval waits for server persistence", /await recordOutreachApproval\(/.test(store));
 ok("client approval never fire-and-forgets the approval request", !/void fetch\("\/api\/outreach\/approve"/.test(store));
 ok("client approval only commits from an actionable draft state", /Message is no longer awaiting approval\./.test(store));
@@ -180,10 +173,6 @@ ok(
 ok(
   "race migration binds each WhatsApp claim ledger to the approving message",
   /claim_whatsapp_outbound\(p_message_id uuid\)[\s\S]*?insert into public\.outreach_ledger\([\s\S]*?approval_message_id[\s\S]*?outbound_message_id[\s\S]*?approval_id/.test(approvalRaceMigration),
-);
-ok(
-  "send route reports an unreconciled WhatsApp dispatch instead of calling it queued",
-  /dispatched\?\.status === "dispatching"[\s\S]*?status: "reconciliation-required"/.test(sendRoute),
 );
 
 console.log(`RESULT outreach-guardrails: ${pass} passed, ${fail} failed`);

@@ -71,7 +71,7 @@ export const INTAKE_INTENTS = [
 ] as const;
 export type IntakeIntent = (typeof INTAKE_INTENTS)[number];
 
-export const OUTREACH_CHANNELS = ["Email", "LinkedIn", "WhatsApp", "SMS"] as const;
+export const OUTREACH_CHANNELS = ["Email", "LinkedIn"] as const;
 export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
 
 export const OUTREACH_TONES = [
@@ -342,7 +342,7 @@ export interface Candidate {
   campaignId: string;
   name: string;
   email: string;
-  /** E.164 phone (e.g. +14155552671) for WhatsApp / SMS outreach. Often empty
+  /** E.164 phone (e.g. +14155552671). Often empty
    *  until enriched; sourced profiles rarely expose one. */
   phone?: string;
   avatarInitials: string;
@@ -1009,8 +1009,6 @@ export const SEAT_PROVIDERS = [
   "Gmail API",
   "SendGrid",
   "Resend",
-  "WhatsApp Cloud",
-  "Twilio SMS",
   "LinkedIn Assisted Manual",
   "LinkedIn Vendor API",
 ] as const;
@@ -1169,7 +1167,6 @@ export const API_KEY_PROVIDERS = [
   "Dust",
   "Apify",
   "Tavily",
-  "Databricks",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -1306,15 +1303,6 @@ export interface DustSettings {
    *  re-entering the API key on every Settings visit — same convention as
    *  `McpServerConfig.toolNames`. Non-secret. */
   agents?: DustAgentSummary[];
-}
-
-export interface DatabricksSettings {
-  host: string;
-  warehouseId: string;
-  authMode: "pat" | "m2m";
-  clientId?: string;
-  apiKeyId: string;
-  needsQuery: string;
 }
 
 /** Stored metadata only — the secret value never lives in client state. */

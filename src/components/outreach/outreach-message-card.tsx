@@ -224,14 +224,6 @@ export function OutreachMessageCard({
       toast({ title: "Send blocked", description: res.error, variant: "error" });
       return;
     }
-    if (res.queued) {
-      toast({
-        title: "WhatsApp queued",
-        description: "ARIA will re-check consent, do-not-contact status, the reply window, and your approval before delivery.",
-        variant: "success",
-      });
-      return;
-    }
     toast({
       title: "Email sent",
       description: "Delivered from the live mailbox. The candidate is now marked as contacted.",

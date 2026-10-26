@@ -219,8 +219,6 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
   );
   for (const route of [
     "src/app/api/hermes/chat/route.ts",
-    "src/app/api/integrations/databricks/config/route.ts",
-    "src/app/api/integrations/databricks/needs/route.ts",
     "src/app/api/mcp/test/route.ts",
   ]) {
     ok(
@@ -254,8 +252,6 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
   );
   for (const route of [
     "src/app/api/hermes/chat/route.ts",
-    "src/app/api/integrations/databricks/config/route.ts",
-    "src/app/api/integrations/databricks/needs/route.ts",
     "src/app/api/mcp/test/route.ts",
     "src/app/api/source/route.ts",
     "src/app/api/sourcing-agent/route.ts",

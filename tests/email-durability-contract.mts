@@ -230,7 +230,7 @@ ok(
     /public\.enforce_active_email_approval\(\)'\s*,\s*'owner_only'/i.test(priv),
 );
 
-// ── dispatchDue gate order: Email served; LinkedIn adapter served; SMS refused
+// ── dispatchDue gate order: Email served; LinkedIn adapter served; others refused
 ok("dispatch-outbound.ts is present", dispatch.length > 0);
 ok(
   "the dispatcher serves Email through the durable claim + send + finalize path",
@@ -240,19 +240,15 @@ ok(
     dispatch.indexOf('rpc("record_email_send_message_id"') >= 0,
 );
 ok(
-  "the dispatcher still hard-blocks SMS before any claim",
-  dispatch.indexOf("sms-disabled-pending-consent-policy") >= 0,
+  "the dispatcher refuses every channel other than Email and LinkedIn before any claim",
+  dispatch.indexOf('msg.channel !== "Email" && msg.channel !== "LinkedIn"') >= 0 &&
+    dispatch.indexOf('msg.channel !== "Email" && msg.channel !== "LinkedIn"') < dispatch.indexOf('rpc("claim_email_outbound_queued"') &&
+    dispatch.indexOf('msg.channel !== "Email" && msg.channel !== "LinkedIn"') < dispatch.indexOf('rpc("claim_linkedin_outbound_queued"'),
 );
 ok(
-  "the dispatcher serves LinkedIn before the legacy non-dispatchable refusal",
-  dispatch.indexOf('msg.channel === "LinkedIn"') >= 0 &&
-    dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') > dispatch.indexOf('msg.channel === "LinkedIn"') &&
-    dispatch.indexOf('msg.channel === "LinkedIn"') < dispatch.indexOf("channel-not-dispatchable"),
-);
-ok(
-  "the Email branch is reached BEFORE the channel-not-dispatchable refusal (so Email is served, not blocked)",
-  dispatch.indexOf('if (msg.channel === "Email")') >= 0 &&
-    dispatch.indexOf('if (msg.channel === "Email")') < dispatch.indexOf("channel-not-dispatchable"),
+  "the dispatcher serves LinkedIn through its own claim",
+  dispatch.indexOf('if (msg.channel === "LinkedIn")') >= 0 &&
+    dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') > dispatch.indexOf('if (msg.channel === "LinkedIn")'),
 );
 
 // ── the interactive send route sends Email synchronously and stamps the

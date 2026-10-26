@@ -845,8 +845,8 @@ function synthCandidate(
     campaignId: campaign.id,
     name,
     email: `${handle}@${slugify(company)}.example`,
-    // Synthetic demo phone so the WhatsApp/SMS channels are demonstrable; real sourced
-    // candidates (e.g. GitHub) have no phone until enriched.
+    // Synthetic demo phone; real sourced candidates (e.g. GitHub) have no phone
+    // until enriched.
     phone: `+1415${Math.floor(rng() * 9_000_000 + 1_000_000)}`,
     avatarInitials: initialsFrom(name),
     currentTitle,
@@ -935,17 +935,7 @@ export function generateOutreach(
     ...(voice?.signature && voice.signature.trim() ? ["", voice.signature.trim()] : []),
   ].join("\n");
 
-  // WhatsApp / SMS are short-form: one tight message, no long role/why blocks and no
-  // subject line in the body (the channel adapters deliver the body only).
-  const phoneBody = [
-    greeting,
-    sequenceStep > 1 ? L.ctaFollow : L.cta,
-    ...(voice?.signature && voice.signature.trim() ? [voice.signature.trim()] : []),
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const body = channel === "WhatsApp" || channel === "SMS" ? phoneBody : emailBody;
+  const body = emailBody;
 
   // ALWAYS humanize — no AI slop ever.
   return {
@@ -1260,8 +1250,7 @@ export function generateWeeklyReport(
 }
 
 /** Real per-channel reply rate from actual outreach messages, instead of a fixed
- *  Email/LinkedIn split on the overall reply rate that could never surface
- *  WhatsApp or SMS even when they genuinely outperform. Each candidate's
+ *  Email/LinkedIn split on the overall reply rate. Each candidate's
  *  earliest outreach message decides which channel "gets credit" for a later
  *  reply; a channel only competes once it has actually been used. */
 function computeBestChannel(inCampaign: Candidate[], campaignMessages: OutreachMessage[]): OutreachChannel {

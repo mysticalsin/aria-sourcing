@@ -218,10 +218,8 @@ ok(
 
 const migrationUrl = new URL("../supabase/migrations/0023_conversation_identity.sql", import.meta.url);
 const authorityMigrationUrl = new URL("../supabase/migrations/0028_conversation_authority_hardening.sql", import.meta.url);
-const inboundProcessor = readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8");
 const storeText = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 const outreachSendRoute = readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8");
-const whatsappTemplateRoute = readFileSync(new URL("../src/app/api/outreach/whatsapp-template/route.ts", import.meta.url), "utf8");
 
 ok("conversation-identity migration exists", existsSync(migrationUrl));
 if (existsSync(migrationUrl)) {
@@ -340,44 +338,6 @@ if (existsSync(authorityMigrationUrl)) {
 
 // WhatsApp processor: identity comes from the conversation resolver, and the
 // latest-outbound-address lookup no longer supplies candidate/spec identity.
-ok(
-  "WhatsApp inbound resolves identity through the conversation RPC",
-  /rpc\(\s*"resolve_whatsapp_inbound_conversation"/.test(inboundProcessor),
-);
-ok(
-  "a failed conversation resolution routes to durable triage",
-  /convo\.ok !== true\) return complete\("triage", convo\?\.reason \?\? "no-conversation"\)/.test(inboundProcessor),
-);
-ok(
-  "the latest-outbound identity lookup is gone",
-  !/select\("candidate_id, spec_id/.test(inboundProcessor) && !/no-active-thread/.test(inboundProcessor),
-);
-ok(
-  "the review draft is bound to its conversation",
-  /conversation_id: conversationId/.test(inboundProcessor),
-);
-ok(
-  "the review draft dedupe identity comes from the conversation, not an outbound row",
-  /dedupeHash\(conversationCandidateId, "WhatsApp"/.test(inboundProcessor),
-);
-ok(
-  "the service worker binds agent lookup to workspace, owner, and spec",
-  /\.from\("agent_specs"\)[\s\S]*?\.eq\("id", convo\.spec_id\)[\s\S]*?\.eq\("workspace_id", workspaceId\)[\s\S]*?\.eq\("owner_id", convo\.owner_id\)/.test(inboundProcessor),
-);
-ok(
-  "the service worker persists exact owner authority on generated drafts",
-  /owner_id: convo\.owner_id/.test(inboundProcessor),
-);
-ok(
-  "human reply queueing no longer writes the message table as the authenticated role",
-  /rpc\(\s*"enqueue_whatsapp_outbound"/.test(outreachSendRoute) &&
-    !/\.from\("messages_outbound"\)\s*\.insert\(/.test(outreachSendRoute),
-);
-ok(
-  "approved-template queueing no longer writes the message table as the authenticated role",
-  /rpc\(\s*"enqueue_whatsapp_outbound"/.test(whatsappTemplateRoute) &&
-    !/\.from\("messages_outbound"\)\s*\.insert\(/.test(whatsappTemplateRoute),
-);
 
 // Email auto-match: the resolver replaces active-campaign arbitration, and
 // unmatched auto-ingested mail is never attributed to the active campaign or

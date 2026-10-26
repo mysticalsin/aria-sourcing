@@ -37,14 +37,6 @@ ok(
   "failure finalization releases only the claimed matching ledger",
   /update public\.outreach_ledger[\s\S]*?status = 'skipped'[\s\S]*?outbound_message_id = outbound\.id[\s\S]*?status = 'claimed'/i.test(migration),
 );
-ok(
-  "dispatcher rejects a malformed attempt before the provider call",
-  dispatcher.indexOf("UUID_PATTERN.test(deliveryAttemptId)") < dispatcher.indexOf("await sendWhatsApp"),
-);
-ok(
-  "dispatcher routes proven failures through the atomic function",
-  /outcome\.deliveryState !== "not-sent"[\s\S]*?finalize_whatsapp_provider_failure/.test(dispatcher),
-);
 
 console.log(`RESULT dispatch-concurrency: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -30,7 +30,6 @@ import { ModelsPanel } from "@/components/settings/models-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
-import { DatabricksPanel } from "@/components/settings/databricks-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
@@ -843,14 +842,11 @@ export default function SettingsPage() {
                 description="Integrations appear here once Aria is provisioned with its tool connections."
               />
             ) : (
-              <>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  {integrations.map((i) => (
-                    <IntegrationCard key={i.id} integration={i} />
-                  ))}
-                </div>
-                <DatabricksPanel />
-              </>
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {integrations.map((i) => (
+                  <IntegrationCard key={i.id} integration={i} />
+                ))}
+              </div>
             )}
           </Section>
 

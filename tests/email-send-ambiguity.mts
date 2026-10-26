@@ -132,11 +132,9 @@ try {
   }
   const providersSource = readFileSync(new URL("../src/lib/providers.ts", import.meta.url), "utf8");
   const oauthSource = readFileSync(new URL("../src/lib/email-oauth.ts", import.meta.url), "utf8");
-  const channelsSource = readFileSync(new URL("../src/lib/channels.ts", import.meta.url), "utf8");
   for (const [adapter, source] of [
     ["API-key email", providersSource],
     ["OAuth email", oauthSource],
-    ["messaging", channelsSource],
   ] as const) {
     ok(
       `${adapter} adapter imports the shared delivery classifier`,

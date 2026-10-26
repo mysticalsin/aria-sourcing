@@ -1285,7 +1285,7 @@ export function CandidateDrawer({
                     type="tel"
                     defaultValue={c.phone ?? ""}
                     onChange={handlePhoneChange}
-                    placeholder="Add phone for WhatsApp / SMS"
+                    placeholder="Add phone number"
                     aria-label="Candidate phone number"
                     className="w-56 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink placeholder:text-muted"
                   />

@@ -120,7 +120,7 @@ const state: HermesState = {
     message("msg-real-1", "Email", firstRealAt, false, "Technical", "First real", "First real body"),
     message("msg-dry", "Email", dryRunAt, true, "Casual Professional", "Dry run", "Dry run body"),
     message("msg-real-2", "LinkedIn", lastRealAt, false, "Executive", "Second real", "Second real body"),
-    message("msg-unjoined", "WhatsApp", "2026-07-10T11:30:00.000Z", false, "Technical", "Unjoined", "Must not count"),
+    message("msg-unjoined", "LinkedIn", "2026-07-10T11:30:00.000Z", false, "Technical", "Unjoined", "Must not count"),
   ],
   replies: [
     {

@@ -44,10 +44,6 @@ ok(
   guardBetween("src/app/api/outreach/send/route.ts", 'if (seat.mode !== "live")', "domainVerified("),
 );
 ok(
-  "WhatsApp send checks the live owned seat before the demo decision and checks the decision before queueing",
-  guardBetween("src/app/api/outreach/send/route.ts", 'phoneSeat.provider !== "WhatsApp Cloud"', '.from("messages_outbound")'),
-);
-ok(
   "approval validates recipient scope before the demo decision",
   guardBetween("src/app/api/outreach/approve/route.ts", "approvalScopeHash(", 'rpc("record_outreach_approval"'),
 );
@@ -60,14 +56,6 @@ ok(
   guardBetween("src/app/api/calendar/event/route.ts", 'seat.provider !== "Gmail API"', "getServiceSupabase()"),
 );
 ok(
-  "WhatsApp template queue validates trusted template scope before approval persistence",
-  guardBetween("src/app/api/outreach/whatsapp-template/route.ts", "approvalScopeHash(", 'rpc("record_outreach_approval"'),
-);
-ok(
-  "WhatsApp review validates the stored draft before queue mutation",
-  guardBetween("src/app/api/outreach/whatsapp-review/route.ts", "gateOutbound(current.body)", 'rpc("review_whatsapp_outbound"'),
-);
-ok(
   "mailbox disconnect verifies the RLS-owned seat before credential access",
   guardBetween("src/app/api/email/disconnect/route.ts", '.from("agent_seats")', "oauth2.googleapis.com/revoke"),
 );
@@ -77,7 +65,7 @@ ok(
 );
 ok(
   "dispatcher retains a final no-wire backstop",
-  guardBetween("src/lib/dispatch-outbound.ts", "const stats:", "sendWhatsApp("),
+  guardBetween("src/lib/dispatch-outbound.ts", "const stats:", "performEmailSend("),
 );
 ok(
   "Google mailbox connect validates seat_id after admin auth and before provider redirect",
@@ -96,15 +84,6 @@ ok(
   "a simulated approval returns before the live approval commit",
   dryRunBranch >= 0 && dryRunReturn > dryRunBranch && liveApprovalCommit > dryRunReturn,
 );
-
-for (const path of [
-  "src/app/api/outreach/whatsapp-template/route.ts",
-  "src/app/api/outreach/whatsapp-review/route.ts",
-]) {
-  const code = source(path);
-  const getBody = code.slice(code.indexOf("export async function GET"), code.indexOf("export async function POST"));
-  ok(`${path} keeps authenticated read-only data visible`, !getBody.includes("publicDemoSideEffectsDisabled()"));
-}
 
 // Behavioral route proof. The public-demo decision is injected while the rest
 // of the handler runs against a valid authenticated workspace, matching the
@@ -308,8 +287,8 @@ const invalidApproval = await approvalPost(new NextRequest("http://localhost/api
   body: JSON.stringify({
     messageId: "message-1",
     candidateId: "candidate-1",
-    channel: "WhatsApp",
-    recipient: "not-a-phone",
+    channel: "Email",
+    recipient: "   ",
     subject: "Hello",
     body: "Hello from Aria.",
   }),

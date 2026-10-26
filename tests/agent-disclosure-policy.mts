@@ -184,7 +184,6 @@ const allowed =
 ok("validate passes allowed skills/seniority and asks candidate target", validateCandidateBoundText(allowed, internal).safe);
 
 const sourceFiles = [
-  "src/lib/whatsapp-inbound.ts",
   "src/app/api/sourcing-agent/route.ts",
   "src/lib/store.ts",
   "src/lib/ai/hermes.ts",
@@ -192,7 +191,6 @@ const sourceFiles = [
 const sourceText = sourceFiles.map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8")).join("\n");
 ok("drift: no state.brief JSON serialization", !/JSON\.stringify\(state\.brief\)/.test(sourceText));
 ok("drift: no roleSummary raw JSON serialization", !/roleSummary:\s*JSON\.stringify/.test(sourceText));
-ok("drift: WhatsApp inbound uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8")));
 ok("drift: sourcing agent uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8")));
 
 const storeText = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
@@ -203,7 +201,6 @@ ok("drift: every store buildOutreachPrompt call passes policy context", outreach
 for (const file of [
   "src/app/api/outreach/approve/route.ts",
   "src/app/api/outreach/send/route.ts",
-  "src/app/api/outreach/whatsapp-review/route.ts",
   "src/lib/dispatch-outbound.ts",
   "src/lib/store.ts",
 ]) {
@@ -220,10 +217,6 @@ ok(
   /validateCandidateBoundText\(body,\s*disclosureInternalFromCampaignLike\(campaign\)\)/.test(readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8")),
 );
 ok("drift: email inbound injection is a human-review signal", /const inboundInjection = detectInjection\(input\.text\)/.test(storeText));
-ok(
-  "drift: WhatsApp inbound injection is a human-review signal",
-  /detectInjection\(body\)\.flagged/.test(readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8")),
-);
 
 console.log(`RESULT agent-disclosure-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -1900,11 +1900,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         warnings: [],
       });
       const recipientFor = (message: OutreachMessage, candidate: Candidate) =>
-        message.channel === "WhatsApp" || message.channel === "SMS"
-          ? candidate.phone ?? ""
-          : message.channel === "LinkedIn"
-            ? candidate.linkedinUrl ?? ""
-            : candidate.email;
+        message.channel === "LinkedIn" ? candidate.linkedinUrl ?? "" : candidate.email;
       const isActionable = (message: OutreachMessage) =>
         message.status === "Needs Approval" || message.status === "Draft";
 
@@ -2008,11 +2004,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // and ledger until the operator confirms the manual send.
       const isLive = !s.settings.dryRunMode;
       const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
-      // Email, WhatsApp, and SMS all have a real live provider wired up in
-      // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS).
-      // None of them may be delivered on approval alone.
-      const isLiveSendChannel =
-        (msg.channel === "Email" || msg.channel === "WhatsApp" || msg.channel === "SMS") && isLive;
+      // Email has a real live provider wired up in sendApprovedOutreach()
+      // (domain-verified mailbox). It may never be delivered on approval alone.
+      const isLiveSendChannel = msg.channel === "Email" && isLive;
       // HYBRID send model: in LIVE mode an approval records approval and holds the
       // de-dupe slot (ledger 'claimed') but NEVER sends — an explicit sendApprovedOutreach()
       // actually delivers and only then flips to 'sent'. In dry-run/demo we simulate the
@@ -2219,25 +2213,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Resolve a live seat for the message's channel: a live mailbox for Email
       // (domain verification is checked — and persisted — server-side on send,
       // not pre-filtered here, since that's the only place it can ever become
-      // true), or a live WhatsApp / SMS sender for the phone channels.
+      // true).
       const channel = msg.channel;
-      const seat =
-        channel === "WhatsApp"
-          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
-          : channel === "SMS"
-            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
-            : s.seats.find((x) => x.status === "active" && x.mode === "live");
+      const seat = s.seats.find((x) => x.status === "active" && x.mode === "live");
       if (!supabaseEnabled || !seat) {
-        const need =
-          channel === "WhatsApp"
-            ? "live WhatsApp sender"
-            : channel === "SMS"
-              ? "live SMS sender"
-              : "live mailbox";
-        return { ok: false, error: `No ${need} connected. Connect one in the Fleet first.` };
-      }
-      if ((channel === "WhatsApp" || channel === "SMS") && !candidate.phone) {
-        return { ok: false, error: "No phone number on file for this candidate. Enrich it before a phone send." };
+        return { ok: false, error: "No live mailbox connected. Connect one in Mailboxes first." };
       }
       let out: { status?: string; detail?: string };
       try {
@@ -2253,7 +2233,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             subject: msg.subject,
             body: msg.body,
             channel,
-            phone: candidate.phone,
             confirmLive: true,
           }),
         });
@@ -2264,33 +2243,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Send failed." };
       }
-      const deliveryQueued = channel === "WhatsApp" && out.status === "queued";
-      if (out.status !== "sent" && !deliveryQueued) {
+      if (out.status !== "sent") {
         return { ok: false, error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).` };
-      }
-      if (deliveryQueued) {
-        const now = new Date().toISOString();
-        commit((prev) => {
-          const outreach = prev.outreach.map((m) =>
-            m.id === messageId
-              ? { ...m, status: "Scheduled" as OutreachStatus, scheduledFor: now, sentAt: null }
-              : m,
-          );
-          return withActivity(
-            { ...prev, outreach },
-            makeActivity({
-              type: "outreach",
-              title: `WhatsApp delivery queued for ${candidate.name}`,
-              notes: "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
-              outcome: "Queued for policy check",
-              campaignId: msg.campaignId,
-              linkedEntityType: "candidate",
-              linkedEntityId: candidate.id,
-            }),
-            msg.campaignId,
-          );
-        });
-        return { ok: true, queued: true };
       }
       // Delivered. Flip the local record to sent (Scheduled + sentAt) and count it.
       const now = new Date().toISOString();

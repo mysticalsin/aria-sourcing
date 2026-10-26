@@ -261,7 +261,7 @@ export interface HermesActions {
   approveOutreach: (messageId: string) => Promise<ApprovalResult>;
   confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
   /** The deliberate gated send for a live-approved email — calls the server send route. */
-  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
+  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Drafts the next sequence-step follow-up for a candidate who has gone quiet
    *  past the configured gap (see deriveFollowUpsDue). Lands in the approval
