@@ -14,8 +14,7 @@
    ========================================================================== */
 
 import * as React from "react";
-import Link from "next/link";
-import { ShieldCheck, Ban, Gauge, FileLock2, ArrowRight } from "lucide-react";
+import { ShieldCheck, Ban, Gauge, FileLock2 } from "lucide-react";
 import { Card, CardBody, Badge } from "@/components/ui";
 import { useActivities, useCandidates, useOutreach, useSeats, useSuppression } from "@/lib/store";
 import { formatNumber, formatTimeAgo } from "@/lib/utils";
@@ -56,13 +55,6 @@ function Tile({
         </div>
         <p className="flex-1 text-sm text-muted">{detail}</p>
         <p className="text-sm font-bold text-ink">{title}</p>
-        <Link
-          href="/sessions"
-          className="inline-flex items-center gap-1 text-sm font-semibold text-electric hover:underline"
-        >
-          View in audit trail
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-        </Link>
       </CardBody>
     </Card>
   );

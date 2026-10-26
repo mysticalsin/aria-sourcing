@@ -135,26 +135,6 @@ const mockSettings = defaultSettings();
 const mockPath = !hermesAvailable(mockSettings);
 ok("sendChat takes mock path when live mode off", mockPath === true);
 
-const chatPage = readFileSync(new URL("../src/app/chat/page.tsx", import.meta.url), "utf8");
-ok(
-  "Chat records live runtime polling failures as unavailable",
-  chatPage.includes("sessionsError") && /catch\s*\(\s*\([^)]*\)\s*=>/s.test(chatPage),
-);
-ok(
-  "Chat exposes a retry control for unavailable live sessions",
-  chatPage.includes("Retry sessions") && chatPage.includes("loadHermesSessions"),
-);
-ok(
-  "Chat does not show a green Live badge when live session polling fails",
-  (/sessionsError\s*\?\s*\(\s*<Badge[^>]*tone="danger"/s.test(chatPage) ||
-    /live\s*&&\s*sessionsError\s*\?\s*\(\s*<Badge[^>]*tone="danger"/s.test(chatPage)) &&
-    chatPage.indexOf('tone="danger"') < chatPage.indexOf('tone="success"') &&
-    chatPage.includes(">Live</Badge>"),
-);
-ok(
-  "Chat unavailable copy replaces the misleading no-sessions empty state on polling failure",
-  chatPage.includes("Aria runtime unavailable") && chatPage.includes("No sessions on the runtime yet."),
-);
 
 /* ---- summary ------------------------------------------------------------ */
 

@@ -33,7 +33,6 @@ import {
   Sparkles,
   Inbox,
   FileText,
-  Brain,
 } from "lucide-react";
 
 export default function ReportsPage() {
@@ -195,13 +194,6 @@ export default function ReportsPage() {
                       {proposedCount} awaiting review
                     </Badge>
                   )}
-                  <Link
-                    href="/skills"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink/[0.05] px-3.5 text-xs font-semibold text-ink-soft transition hover:bg-ink/[0.08] hover:text-ink"
-                  >
-                    <Brain className="h-3.5 w-3.5" aria-hidden />
-                    Watch it learn
-                  </Link>
                 </div>
               </div>
 

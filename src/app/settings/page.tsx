@@ -1158,18 +1158,8 @@ export default function SettingsPage() {
                     className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-ink/25"
                   >
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-ink">Deploy agents</span>
-                      <span className="block text-xs text-muted">Spin up coordinated sourcing + outreach agents.</span>
-                    </span>
-                    <ArrowUpRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-                  </Link>
-                  <Link
-                    href="/skills"
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-ink/25"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-ink">Learning skills</span>
-                      <span className="block text-xs text-muted">The playbooks the agents learn and run.</span>
+                      <span className="block text-sm font-semibold text-ink">Manage mailboxes</span>
+                      <span className="block text-xs text-muted">Connect sender mailboxes and manage suppression.</span>
                     </span>
                     <ArrowUpRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
                   </Link>

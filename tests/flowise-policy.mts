@@ -28,7 +28,6 @@ for (const [method, path] of [
 
 const proxyRoute = readFileSync(new URL("../src/app/api/flowise/[...path]/route.ts", import.meta.url), "utf8");
 const specRoute = readFileSync(new URL("../src/app/api/agents/specs/route.ts", import.meta.url), "utf8");
-const studio = readFileSync(new URL("../src/app/studio/page.tsx", import.meta.url), "utf8");
 
 ok(
   "the public Flowise proxy is fail-closed until server-owned tenant bindings exist",
@@ -37,7 +36,6 @@ ok(
 ok("proxy no longer exposes Flowise API-key operations", !proxyRoute.includes('"apikey"'));
 ok("agent specs do not disclose a public Flowise URL", !specRoute.includes("FLOWISE_PUBLIC_URL"));
 ok("operators cannot create or patch raw Flowise identifiers", !specRoute.includes("flowise_chatflow_id"));
-ok("studio does not open the Flowise workbench directly", !studio.includes("window.open(flowiseUrl"));
 
 console.log(`RESULT flowise-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

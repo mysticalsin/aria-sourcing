@@ -16,8 +16,6 @@ function source(path: string): string {
 const migration = source("supabase/migrations/0032_agent_operational_authority.sql");
 const rollback = source("supabase/rollbacks/0032_agent_operational_authority.sql");
 const memoryRoute = source("src/app/api/agents/memories/route.ts");
-const memoryPanel = source("src/components/memory/memory-panel.tsx");
-const memoryPage = source("src/app/memory/page.tsx");
 const store = source("src/lib/store.ts");
 const storeContracts = source("src/lib/store/contracts.ts");
 const fleetPage = source("src/app/fleet/page.tsx");
@@ -126,39 +124,9 @@ test("normalized AgentSpec memory has an authenticated server-owned management A
   assert.match(memoryRoute, /Cache-Control[^\n]+no-store/i);
 });
 
-test("the Memory screen uses AgentSpecs and never reports legacy workspace memory as durable", () => {
-  assert.match(memoryPanel, /\/api\/agents\/memories/);
-  assert.match(memoryPanel, /specId/);
-  assert.doesNotMatch(memoryPanel, /useMemory|addMemory|updateMemory|removeMemory|togglePinMemory/);
-  assert.doesNotMatch(memoryPage, /HermesMemoryPanel/);
-});
 
-test("the Memory screen refetches exact-spec pages and exposes incremental loading", () => {
-  assert.match(memoryPanel, /params\.set\("specId",\s*specId\)/);
-  assert.match(memoryPanel, /params\.set\("limit",\s*String\(MEMORY_PAGE_LIMIT\)\)/);
-  assert.match(memoryPanel, /params\.set\("cursor",\s*cursor\)/);
-  assert.match(memoryPanel, /React\.useEffect\([\s\S]+selectedSpecId[\s\S]+loadMemories/);
-  assert.match(memoryPanel, /append[\s\S]+setMemories/);
-  assert.match(memoryPanel, />\s*Load more\s*</);
-  assert.doesNotMatch(memoryPanel, /memories\.filter\(\(memory\) => memory\.specId === selectedSpecId\)/);
-});
 
-test("the Memory screen incrementally pages AgentSpecs without duplicates", () => {
-  assert.match(memoryPanel, /params\.set\("specCursor",\s*specCursor\)/);
-  assert.match(memoryPanel, /append[\s\S]+setSpecs[\s\S]+new Set\(current\.map\(\(spec\) => spec\.id\)\)/);
-  assert.match(memoryPanel, />\s*Load more agents\s*</);
-  assert.match(memoryPanel, /nextSpecCursor/);
-});
 
-test("deferred mutations reload only the AgentSpec that is still selected", () => {
-  assert.match(memoryPanel, /selectedSpecIdRef/);
-  assert.match(memoryPanel, /mutationSpecId/);
-  assert.match(memoryPanel, /selectedSpecIdRef\.current === mutationSpecId/);
-  assert.doesNotMatch(
-    memoryPanel,
-    /if \(selectedSpecId\) await loadMemories\(selectedSpecId\)/,
-  );
-});
 
 test("framework runs persist immutable, bounded memory receipts", () => {
   assert.match(migration, /create table if not exists public\.agent_framework_run_memory_context/i);
@@ -201,7 +169,6 @@ test("framework memory plaintext crosses the adapter boundary only under a bound
 });
 
 test("memory content never returns to legacy workspace activity or state", () => {
-  assert.doesNotMatch(memoryPanel, /actions\.(?:add|update|remove|togglePin)Memory/);
   assert.doesNotMatch(store, /title:\s*`Memory stored/);
   assert.doesNotMatch(store, /notes:\s*content\.trim\(\)\.slice\(0,\s*80\)/);
 });

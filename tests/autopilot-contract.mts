@@ -50,17 +50,6 @@ if (!candidate || !campaign) {
   ok("a browser approval setting cannot label a generated draft Approved", message.status === "Needs Approval");
 }
 
-const studio = source("src/app/studio/page.tsx");
-ok(
-  "Studio names the governed graph output as a real search",
-  studio.includes("Running real search") && studio.includes("Sourced ${result.accepted} real candidate"),
-);
-ok(
-  "Studio keeps candidate persistence under ARIA authority with no delivery authority",
-  studio.includes("Candidate search and persistence remain under ARIA authority") &&
-    studio.includes("No delivery authority"),
-);
-ok("Studio exposes no Autopilot or canary control", !/autopilot|canary/i.test(studio));
 
 const settings = source("src/app/settings/page.tsx");
 ok("Settings presents human approval as required", settings.includes("Human approval required"));

@@ -98,17 +98,6 @@ try {
     !/"Senior"|"Full-time"|"Remote"|"Standard"/.test(runtimeSource),
   );
 
-  const studioSource = readFileSync(
-    new URL("../src/app/studio/page.tsx", import.meta.url),
-    "utf8",
-  );
-  ok(
-    "Agent Studio presents per-spec runtime eligibility without claiming delivery authority",
-    /owner-scoped specs/i.test(studioSource) &&
-      /runtime_eligible/.test(studioSource) &&
-      /No delivery authority/i.test(studioSource) &&
-      !/Generated Email drafts are stored in run history only/i.test(studioSource),
-  );
 } finally {
   globalThis.fetch = originalFetch;
   envScope.restore();

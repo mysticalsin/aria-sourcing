@@ -43,8 +43,6 @@ const ariaLiveSource = readFileSync(
 );
 const skillDecisionSources = [
   "../src/components/reports/skill-update-card.tsx",
-  "../src/app/skills/page.tsx",
-  "../src/components/skills/learning-session.tsx",
 ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
 
 test("booking and report actions are React-free and wired through one stable factory", () => {
