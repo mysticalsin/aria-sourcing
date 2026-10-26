@@ -82,7 +82,6 @@ export type SourceNextBatchResult =
       ok: false;
       error: string;
       source: SourceNextBatchErrorSource;
-      retryable?: "agent_framework_reconcile";
     };
 
 export type CandidateIntakeResult =
@@ -154,7 +153,6 @@ export interface HermesActions {
     opts?: {
       platform?: SourcePlatform;
       count?: number;
-      agentFramework?: { runId: string; capabilityToken: string; query: string };
     },
   ) => Promise<SourceNextBatchResult>;
   /** Searches real provider results and drafts for human review. Cloud mode uses

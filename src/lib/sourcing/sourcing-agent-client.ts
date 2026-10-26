@@ -22,55 +22,12 @@ export type ReviewedSourcingRequestResult =
   | { ok: true; value: SourcingAgentSuccessResponse }
   | { ok: false; error: string };
 
-export async function acknowledgeReviewedSourcing(
-  workspaceFetch: typeof fetch,
-  agentFramework: { runId: string; capabilityToken: string },
-  resultSha256: string,
-): Promise<boolean> {
-  if (!/^[0-9a-f]{64}$/.test(resultSha256)) return false;
-  try {
-    const response = await workspaceFetch("/api/sourcing-agent/ack", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Request-Id": agentFramework.runId,
-      },
-      body: JSON.stringify({
-        frameworkRunId: agentFramework.runId,
-        capabilityToken: agentFramework.capabilityToken,
-        resultSha256,
-      }),
-    });
-    if (!response.ok || response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
-      await response.body?.cancel().catch(() => undefined);
-      return false;
-    }
-    const body = await response.json().catch(() => null);
-    return body !== null && typeof body === "object" && !Array.isArray(body) &&
-      (body as Record<string, unknown>).ok === true &&
-      (body as Record<string, unknown>).status === "completed";
-  } catch {
-    return false;
-  }
-}
-
 export async function requestReviewedSourcing(
   workspaceFetch: typeof fetch,
   campaignId: string,
   count: number,
-  agentFramework?: { runId: string; capabilityToken: string; query: string },
 ): Promise<ReviewedSourcingRequestResult> {
-  if (
-    agentFramework &&
-    (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(agentFramework.runId) ||
-      !/^[A-Za-z0-9_-]{43}$/.test(agentFramework.capabilityToken)
-      || agentFramework.query.trim() !== agentFramework.query
-      || agentFramework.query.length < 3
-      || agentFramework.query.length > 256)
-  ) {
-    return { ok: false, error: "The agent framework sourcing authorization is invalid." };
-  }
-  const operationId = agentFramework?.runId ?? crypto.randomUUID();
+  const operationId = crypto.randomUUID();
   let response: Response;
   try {
     response = await workspaceFetch("/api/sourcing-agent", {
@@ -83,13 +40,6 @@ export async function requestReviewedSourcing(
       body: JSON.stringify({
         campaignId,
         count,
-        ...(agentFramework
-          ? {
-              agentFrameworkRunId: agentFramework.runId,
-              agentFrameworkCapabilityToken: agentFramework.capabilityToken,
-              agentFrameworkQuery: agentFramework.query,
-            }
-          : {}),
       }),
     });
   } catch {
@@ -119,7 +69,6 @@ export async function requestReviewedSourcing(
     body,
     campaignId,
     count,
-    agentFramework?.runId,
   );
   return parsed
     ? { ok: true, value: parsed }

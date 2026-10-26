@@ -115,22 +115,8 @@ export const SourcingAgentRequestSchema = z
   .object({
     campaignId: bounded(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
     count: z.number().int().min(1).max(8).default(5),
-    agentFrameworkRunId: z.string().uuid().optional(),
-    agentFrameworkCapabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
-    agentFrameworkQuery: z.string().trim().min(3).max(256).optional(),
   })
-  .strict()
-  .refine(
-    (request) => {
-      const fields = [
-        request.agentFrameworkRunId,
-        request.agentFrameworkCapabilityToken,
-        request.agentFrameworkQuery,
-      ];
-      return fields.every(Boolean) || fields.every((value) => value === undefined);
-    },
-    { message: "Framework run, capability, and reviewed query must be supplied together." },
-  );
+  .strict();
 
 const LlmProviderSchema = z
   .object({
@@ -344,16 +330,10 @@ const SourcingAgentSuccessResponseSchema = z
     requestId: bounded(100).regex(/^[A-Za-z0-9._:-]{1,100}$/),
     idempotencyKey: z.string().uuid(),
     sourcingRunId: z.string().uuid(),
-    agentFrameworkRunId: z.string().uuid().optional(),
-    agentFrameworkResultSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     appliedLessonIds: z.array(z.string().uuid()).max(100),
     feedbackReceipts: z.array(SourcingFeedbackReceiptDtoSchema).min(1).max(20),
   })
-  .strict()
-  .refine(
-    (response) => Boolean(response.agentFrameworkRunId) === Boolean(response.agentFrameworkResultSha256),
-    { message: "Framework run and staged result receipt must be supplied together." },
-  );
+  .strict();
 
 export type SourcingAgentSuccessResponse = z.infer<
   typeof SourcingAgentSuccessResponseSchema
@@ -434,13 +414,11 @@ export function parseSourcingAgentSuccessResponse(
   value: unknown,
   campaignId: string,
   maxCount: number,
-  expectedAgentFrameworkRunId?: string,
 ): SourcingAgentSuccessResponse | null {
   const parsed = SourcingAgentSuccessResponseSchema.safeParse(value);
   if (
     !parsed.success ||
-    parsed.data.campaignId !== campaignId ||
-    parsed.data.agentFrameworkRunId !== expectedAgentFrameworkRunId
+    parsed.data.campaignId !== campaignId
   ) return null;
   const candidates = parseSourcingAgentCandidates(
     parsed.data.candidates,

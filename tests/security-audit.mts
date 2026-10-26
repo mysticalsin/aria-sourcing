@@ -6,7 +6,6 @@
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { isAllowedHermesUrl } from "../src/lib/api/url";
-import { isAllowedHermesPath } from "../src/lib/api/hermes-proxy";
 
 let pass = 0,
   fail = 0;
@@ -57,9 +56,6 @@ ok("SSRF allows localhost Aria", isAllowedHermesUrl("http://127.0.0.1:8642/v1/ch
 ok("SSRF blocks metadata", isAllowedHermesUrl("http://169.254.169.254/latest/meta-data").ok === false);
 
 // 5) Aria proxy path allow-list blocks arbitrary paths.
-ok("proxy blocks arbitrary path", isAllowedHermesPath(["admin", "users"]).ok === false);
-ok("proxy blocks traversal", isAllowedHermesPath(["..", "etc", "passwd"]).ok === false);
-ok("proxy allows status", isAllowedHermesPath(["api", "status"]).ok === true);
 
 // 6) External links use rel="noreferrer".
 const targetBlankMatches = combined.match(/target=["']_blank["']/g) ?? [];

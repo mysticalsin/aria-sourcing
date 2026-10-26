@@ -6,7 +6,7 @@ import { RevealStream } from "@/components/reveal/reveal-stream";
 import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
-import { executePrimaryAgentSourcing } from "@/lib/agents/studio-runner";
+import { runCampaignSourcing } from "@/lib/sourcing/campaign-run";
 import { useActions, useCampaign, useCampaignOutreach, useSettings } from "@/lib/store";
 import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, OutreachMessage } from "@/lib/types";
@@ -127,10 +127,9 @@ export interface AgentRunStreamProps {
  * while a live "queued — awaiting approval" counter climbs next to the
  * approval-gate pill.
  *
- * Live sourcing first executes the campaign's one exact runtime-eligible,
- * independently approved Flowise workflow through DeerFlow, then passes its
- * short-lived command to the canonical store persistence action. An explicit
- * demo deployment may use the deterministic Talent Pool source. The reveal
+ * Live sourcing goes through the canonical store action, which calls the
+ * in-process sourcing agent (/api/sourcing-agent). An explicit demo
+ * deployment uses the deterministic Talent Pool source. The reveal
  * only stages presentation of data that is already committed.
  * `generateOutreachFor` never calls a send path; it only ever leaves a Draft
  * in the human approval queue.
@@ -140,7 +139,6 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
   const settings = useSettings();
   const campaign = useCampaign(campaignId);
   const campaignOutreach = useCampaignOutreach(campaignId);
-  const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
   const [phase, setPhase] = React.useState<RunPhase>("idle");
   const [queue, setQueue] = React.useState<DraftedPair[]>([]);
@@ -171,19 +169,10 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       return;
     }
 
-    let retryStorage: Storage | null = null;
-    try {
-      retryStorage = globalThis.sessionStorage ?? null;
-    } catch {
-      retryStorage = null;
-    }
-    const result = await executePrimaryAgentSourcing({
+    const result = await runCampaignSourcing({
       campaignId,
-      campaignTitle: campaign.jobAnalysis.title,
       count: 6,
       demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
-      idempotencyMemory: pendingRunIdempotencyKeys.current,
-      retryStorage,
       sourceNextBatch: actions.sourceNextBatch,
     });
     if (!result.ok) {
@@ -191,7 +180,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       setPhase("error");
       return;
     }
-    const sourced: Candidate[] = result.candidates;
+    const sourced: Candidate[] = result.accepted;
 
     setSourcedCount(sourced.length);
     if (sourced.length === 0) {

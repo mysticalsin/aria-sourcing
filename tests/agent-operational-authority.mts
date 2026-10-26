@@ -15,11 +15,9 @@ function source(path: string): string {
 
 const migration = source("supabase/migrations/0032_agent_operational_authority.sql");
 const rollback = source("supabase/rollbacks/0032_agent_operational_authority.sql");
-const memoryRoute = source("src/app/api/agents/memories/route.ts");
 const store = source("src/lib/store.ts");
 const storeContracts = source("src/lib/store/contracts.ts");
 const fleetPage = source("src/app/fleet/page.tsx");
-const specsRoute = source("src/app/api/agents/specs/route.ts");
 const dispatcher = source("src/lib/dispatch-outbound.ts");
 const complianceRoute = source("src/app/api/compliance/suppress/route.ts");
 
@@ -71,10 +69,6 @@ test("legacy cross-workspace seat bindings are neutralized before constraints va
   assert.match(migration, /validate constraint agent_specs_workspace_seat_fkey/i);
 });
 
-test("spec writes validate the seat against the authenticated workspace", () => {
-  assert.match(specsRoute, /validateWorkspaceSeat/i);
-  assert.match(specsRoute, /\.from\("agent_seats"\)[\s\S]+\.eq\("workspace_id",\s*workspaceId\)[\s\S]+\.eq\("id",\s*seatId\)/i);
-});
 
 test("the dispatcher scopes both spec and seat reads to the outbox workspace", () => {
   assert.match(dispatcher, /\.from\("agent_specs"\)[\s\S]+\.eq\("id",\s*msg\.spec_id\)[\s\S]+\.eq\("workspace_id",\s*msg\.workspace_id\)/i);
@@ -95,12 +89,6 @@ test("Fleet bulk demo seeding is unreachable in a live workspace", () => {
   assert.doesNotMatch(fleetPage, />\s*Deploy agents\s*</i);
 });
 
-test("Agent Studio demo mutations fail instead of claiming persistence", () => {
-  assert.match(
-    specsRoute,
-    /!supabaseEnabled[\s\S]+req\.method === "GET"[\s\S]+Agent persistence is unavailable in demo mode[\s\S]+status:\s*503/i,
-  );
-});
 
 test("live compliance persistence unavailability fails closed", () => {
   const unavailableBranches = [...complianceRoute.matchAll(/if \(!supabase\)\s*\{([\s\S]*?)\n\s*\}/g)];
@@ -111,18 +99,6 @@ test("live compliance persistence unavailability fails closed", () => {
   }
 });
 
-test("normalized AgentSpec memory has an authenticated server-owned management API", () => {
-  assert.match(memoryRoute, /export async function GET/);
-  assert.match(memoryRoute, /export async function POST/);
-  assert.match(memoryRoute, /export async function PATCH/);
-  assert.match(memoryRoute, /export async function DELETE/);
-  assert.match(memoryRoute, /encryptionRequiredButMissing|secretEncryptionEnabled/);
-  assert.match(memoryRoute, /encryptSecret/);
-  assert.match(memoryRoute, /content_sha256/);
-  assert.match(memoryRoute, /content_byte_count/);
-  assert.match(memoryRoute, /pending_review/);
-  assert.match(memoryRoute, /Cache-Control[^\n]+no-store/i);
-});
 
 
 

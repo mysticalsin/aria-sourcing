@@ -22,8 +22,6 @@ const director = readFileSync(new URL("../src/lib/demo/aria-live.ts", import.met
 const overlay = readFileSync(new URL("../src/components/demo/aria-live-overlay.tsx", import.meta.url), "utf8");
 const topbar = readFileSync(new URL("../src/components/app/topbar.tsx", import.meta.url), "utf8");
 const settingsPage = readFileSync(new URL("../src/app/settings/page.tsx", import.meta.url), "utf8");
-const specsRoute = readFileSync(new URL("../src/app/api/agents/specs/route.ts", import.meta.url), "utf8");
-const specsRouteBanner = specsRoute.slice(0, specsRoute.indexOf("const CreateSpecSchema"));
 
 ok("director applies the live-mode policy before starting a run", /getAriaLiveRunPolicy\(supabaseEnabled\)/.test(director));
 ok("overlay uses a native dialog", overlay.includes("<dialog") && overlay.includes("ref={dialogRef}"));
@@ -57,12 +55,6 @@ ok(
   topbar.includes("Synthetic demo reset") &&
     settingsPage.includes("Synthetic demo reset") &&
     !/variant:\s*"success"[^)]*Synthetic demo reset/s.test(`${topbar}\n${settingsPage}`),
-);
-ok(
-  "agent specs route truthfully describes run-history storage with no delivery authority",
-  specsRouteBanner.includes("run history") &&
-    specsRouteBanner.includes("no delivery authority") &&
-    !/autopilot|canary/i.test(specsRouteBanner),
 );
 
 console.log(`RESULT aria-live: ${pass} passed, ${fail} failed`);

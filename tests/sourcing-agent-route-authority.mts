@@ -56,9 +56,6 @@ let providerCalls = 0;
 let vaultCalls = 0;
 let runnerCalls = 0;
 let beginCalls = 0;
-let frameworkBeginCalls = 0;
-let frameworkCheckCalls = 0;
-let frameworkCompleteCalls = 0;
 let listLessonCalls = 0;
 let completeCalls = 0;
 let failedRunCodes: string[] = [];
@@ -73,11 +70,6 @@ let providerUsesTool = true;
 let foundCandidates: unknown[] = [];
 let runnerCandidatesAfterRun: unknown[] = [];
 let beginStatus = "claimed";
-let frameworkBeginStatus = "claimed";
-let frameworkExecutionAllowed = true;
-let frameworkBeginInput: Record<string, unknown> | null = null;
-let frameworkCompletionInput: Record<string, unknown> | null = null;
-let frameworkRecoveredPayload: Record<string, unknown> | null = null;
 let lessonsEnabled = true;
 let promotedLessons: unknown[] = [];
 let completionStatus = "completed";
@@ -173,55 +165,6 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
         };
       }
       return { status: beginStatus };
-    },
-    beginAgentFrameworkSourcingRun: async (input: Record<string, unknown>) => {
-      frameworkBeginCalls += 1;
-      frameworkBeginInput = input;
-      if (frameworkBeginStatus === "claimed") {
-        return {
-          status: "claimed",
-          runId: "55555555-5555-4555-8555-555555555555",
-          roleFingerprint: "a".repeat(64),
-          lessonsEnabled,
-          frameworkRunId: input.frameworkRunId,
-        };
-      }
-      if (frameworkBeginStatus === "result_ready") {
-        return {
-          status: "result_ready",
-          runId: "55555555-5555-4555-8555-555555555555",
-          frameworkRunId: input.frameworkRunId,
-          resultSha256: "d".repeat(64),
-          resultPayload: frameworkRecoveredPayload,
-        };
-      }
-      return { status: frameworkBeginStatus };
-    },
-    checkAgentFrameworkSourcingExecution: async () => {
-      frameworkCheckCalls += 1;
-      return frameworkExecutionAllowed;
-    },
-    completeAgentFrameworkSourcingEffect: async (input: Record<string, unknown>) => {
-      frameworkCompleteCalls += 1;
-      frameworkCompletionInput = input;
-      return {
-        status: "result_ready",
-        runId: input.sourcingRunId,
-        frameworkRunId: input.frameworkRunId,
-        resultSha256: "d".repeat(64),
-        resultPayload: {
-          ...(input.resultPayload as Record<string, unknown>),
-          feedbackReceipts: [{
-            receiptId: "00000000-0000-4000-8000-000000000001",
-            platform: "GitHub",
-            candidateCount: foundCandidates.length,
-          }],
-        },
-      };
-    },
-    failAgentFrameworkSourcingEffect: async (input: { errorCode: string }) => {
-      failedRunCodes.push(input.errorCode);
-      return true;
     },
     listPromotedSourcingLessons: async () => {
       listLessonCalls += 1;
@@ -343,9 +286,6 @@ function reset() {
   vaultCalls = 0;
   runnerCalls = 0;
   beginCalls = 0;
-  frameworkBeginCalls = 0;
-  frameworkCheckCalls = 0;
-  frameworkCompleteCalls = 0;
   listLessonCalls = 0;
   completeCalls = 0;
   failedRunCodes = [];
@@ -361,11 +301,6 @@ function reset() {
   runnerCandidatesAfterRun = [];
   cloudConfigured = true;
   beginStatus = "claimed";
-  frameworkBeginStatus = "claimed";
-  frameworkExecutionAllowed = true;
-  frameworkBeginInput = null;
-  frameworkCompletionInput = null;
-  frameworkRecoveredPayload = null;
   lessonsEnabled = true;
   promotedLessons = [];
   completionStatus = "completed";
@@ -797,168 +732,4 @@ test("deterministic sourcing applies a human-promoted role lesson before baselin
   assert.equal(runnerQueries[0]?.query, "language:Go followers:>10");
   assert.deepEqual(body.appliedLessonIds, [lessonId]);
   assert.equal(completeCalls, 1);
-});
-
-test("framework sourcing executes only its exact reviewed query and stages a durable result", async () => {
-  reset();
-  const frameworkRunId = "77777777-7777-4777-8777-777777777777";
-  const reviewedQuery = baseCampaign.sourcingStrategy.githubQueries[0]?.query ?? "language:TypeScript";
-  const candidate = {
-    ...seed.candidates[0],
-    id: "framework-github-candidate",
-    campaignId,
-    email: "",
-    phone: "",
-    linkedinUrl: "",
-    githubUrl: "https://github.com/framework-verified-profile",
-    sourceUrl: "https://github.com/framework-verified-profile",
-    sourcePlatform: "GitHub" as const,
-    sourceQuery: reviewedQuery,
-    provenance: "live" as const,
-    lastContactedAt: null,
-  };
-  runnerCandidatesAfterRun = [candidate];
-
-  const response = await post(request({
-    agentFrameworkRunId: frameworkRunId,
-    agentFrameworkCapabilityToken: "s".repeat(43),
-    agentFrameworkQuery: reviewedQuery,
-  }, "http://localhost", "application/json", frameworkRunId));
-  const body = await response.json();
-
-  assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(body.agentFrameworkRunId, frameworkRunId);
-  assert.equal(body.agentFrameworkResultSha256, "d".repeat(64));
-  assert.equal(body.candidates[0]?.id, candidate.id);
-  assert.deepEqual(runnerQueries, [{ platform: "GitHub", query: reviewedQuery }]);
-  assert.equal(providerCalls, 0);
-  assert.equal(vaultCalls, 0);
-  assert.equal(listLessonCalls, 1);
-  assert.equal(beginCalls, 0);
-  assert.equal(frameworkBeginCalls, 1);
-  assert.ok(frameworkCheckCalls >= 3);
-  assert.equal(frameworkCompleteCalls, 1);
-  assert.equal(frameworkBeginInput?.sourceQuery, reviewedQuery);
-  assert.equal(frameworkBeginInput?.idempotencyKey, frameworkRunId);
-  assert.equal(frameworkCompletionInput?.frameworkRunId, frameworkRunId);
-  assert.deepEqual(
-    (frameworkCompletionInput?.queryReceipts as Array<{ query: string }>).map((receipt) => receipt.query),
-    [reviewedQuery],
-  );
-  assert.deepEqual(
-    (frameworkCompletionInput?.resultPayload as { appliedLessonIds: string[] }).appliedLessonIds,
-    [],
-  );
-});
-
-test("framework sourcing records only a promoted lesson bound to its exact reviewed query", async () => {
-  reset();
-  const frameworkRunId = "77777777-7777-4777-8777-777777777777";
-  const reviewedQuery = baseCampaign.sourcingStrategy.githubQueries[0]?.query ?? "language:TypeScript";
-  const appliedLessonId = "66666666-6666-4666-8666-666666666666";
-  promotedLessons = [
-    {
-      lessonId: appliedLessonId,
-      platform: "GitHub",
-      query: reviewedQuery,
-      graphifyClusterRef: "community:0",
-      graphifyClusterRank: 1,
-      evidenceRunCount: 2,
-      evidenceCampaignCount: 2,
-      usefulFeedbackCount: 2,
-      expiresAt: "2026-10-01T00:00:00.000Z",
-      rank: 1,
-    },
-    {
-      lessonId: "99999999-9999-4999-8999-999999999999",
-      platform: "GitHub",
-      query: "language:python location:ottawa",
-      graphifyClusterRef: "community:1",
-      graphifyClusterRank: 1,
-      evidenceRunCount: 2,
-      evidenceCampaignCount: 2,
-      usefulFeedbackCount: 2,
-      expiresAt: "2026-10-01T00:00:00.000Z",
-      rank: 2,
-    },
-  ];
-
-  const response = await post(request({
-    agentFrameworkRunId: frameworkRunId,
-    agentFrameworkCapabilityToken: "s".repeat(43),
-    agentFrameworkQuery: reviewedQuery,
-  }, "http://localhost", "application/json", frameworkRunId));
-  const body = await response.json();
-
-  assert.equal(response.status, 200, JSON.stringify(body));
-  assert.deepEqual(body.appliedLessonIds, [appliedLessonId]);
-  assert.deepEqual(
-    (frameworkCompletionInput?.resultPayload as { appliedLessonIds: string[] }).appliedLessonIds,
-    [appliedLessonId],
-  );
-  assert.deepEqual(runnerQueries, [{ platform: "GitHub", query: reviewedQuery }]);
-  assert.equal(listLessonCalls, 1);
-});
-
-test("framework sourcing recovers a staged result without repeating provider egress", async () => {
-  reset();
-  const frameworkRunId = "77777777-7777-4777-8777-777777777777";
-  const sourcingRunId = "55555555-5555-4555-8555-555555555555";
-  const reviewedQuery = baseCampaign.sourcingStrategy.githubQueries[0]?.query ?? "language:TypeScript";
-  frameworkBeginStatus = "result_ready";
-  frameworkRecoveredPayload = {
-    ok: true,
-    mode: "deterministic",
-    campaignId,
-    campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
-    candidates: [],
-    totalFound: 0,
-    requestId: "framework-source-recovered",
-    idempotencyKey: frameworkRunId,
-    sourcingRunId,
-    agentFrameworkRunId: frameworkRunId,
-    appliedLessonIds: [],
-    feedbackReceipts: [{
-      receiptId: "00000000-0000-4000-8000-000000000001",
-      platform: "GitHub",
-      candidateCount: 0,
-    }],
-  };
-
-  const response = await post(request({
-    agentFrameworkRunId: frameworkRunId,
-    agentFrameworkCapabilityToken: "s".repeat(43),
-    agentFrameworkQuery: reviewedQuery,
-  }, "http://localhost", "application/json", frameworkRunId));
-  const body = await response.json();
-
-  assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(body.sourcingRunId, sourcingRunId);
-  assert.equal(body.agentFrameworkResultSha256, "d".repeat(64));
-  assert.equal(runnerCalls, 0);
-  assert.equal(providerCalls, 0);
-  assert.equal(vaultCalls, 0);
-  assert.equal(frameworkCheckCalls, 0);
-  assert.equal(frameworkCompleteCalls, 0);
-});
-
-test("framework kill-switch revocation blocks an already claimed real search", async () => {
-  reset();
-  const frameworkRunId = "77777777-7777-4777-8777-777777777777";
-  const reviewedQuery = baseCampaign.sourcingStrategy.githubQueries[0]?.query ?? "language:TypeScript";
-  frameworkExecutionAllowed = false;
-
-  const response = await post(request({
-    agentFrameworkRunId: frameworkRunId,
-    agentFrameworkCapabilityToken: "s".repeat(43),
-    agentFrameworkQuery: reviewedQuery,
-  }, "http://localhost", "application/json", frameworkRunId));
-  const body = await response.json();
-
-  assert.equal(response.status, 409);
-  assert.equal(body.code, "CAMPAIGN_CHANGED");
-  assert.equal(runnerCalls, 0);
-  assert.equal(providerCalls, 0);
-  assert.equal(vaultCalls, 0);
-  assert.deepEqual(failedRunCodes, ["CAMPAIGN_CHANGED"]);
 });

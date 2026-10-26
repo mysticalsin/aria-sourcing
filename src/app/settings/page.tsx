@@ -31,9 +31,7 @@ import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { DatabricksPanel } from "@/components/settings/databricks-panel";
-import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
-import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
@@ -54,8 +52,6 @@ import {
   Clock,
   Shuffle,
   Cpu,
-  BrainCircuit,
-  Wrench,
   Info,
   ChevronDown,
 } from "lucide-react";
@@ -1246,15 +1242,6 @@ export default function SettingsPage() {
             </div>
           </Section>
 
-          {/* 17 — Aria runtime */}
-          <Section
-            n="17"
-            eyebrow="Runtime"
-            title="Aria agent runtime"
-            description="Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Falls back to the built-in mock when off or misconfigured. Admin only."
-          >
-            <HermesRuntimePanel />
-          </Section>
 
           {/* 19 — Dust agent platform */}
           <Section
@@ -1274,9 +1261,6 @@ export default function SettingsPage() {
             description="Recurring fleet jobs: sourcing sweeps, outreach batches, and reports on a cadence. Each run still passes through the approval gate. Admin only."
           >
             <SchedulesPanel />
-            <div className="mt-6">
-              <HermesSchedulesPanel />
-            </div>
           </Section>
             </div>
             </SettingsAccordionContext.Provider>

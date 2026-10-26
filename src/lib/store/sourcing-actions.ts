@@ -21,7 +21,6 @@ import {
   sourcingAgentCampaignFingerprint,
 } from "../sourcing/sourcing-agent-contract";
 import {
-  acknowledgeReviewedSourcing,
   requestReviewedSourcing,
 } from "../sourcing/sourcing-agent-client";
 import {
@@ -683,13 +682,11 @@ export function createSourcingActions({
     campaignId: string,
     count: number,
     initialFingerprint: string,
-    agentFramework?: { runId: string; capabilityToken: string; query: string },
   ): Promise<SourceNextBatchResult> => {
     const reviewed = await requestReviewedSourcing(
       workspaceFetch,
       campaignId,
       count,
-      agentFramework,
     );
     if (!reviewed.ok) {
       return { ok: false, error: reviewed.error, source: "unavailable" };
@@ -786,21 +783,6 @@ export function createSourcingActions({
         error: "Workspace changed before the sourced candidates could be saved. Retry sourcing.",
         source: "unavailable",
       };
-    }
-    if (agentFramework) {
-      const resultSha256 = reviewed.value.agentFrameworkResultSha256;
-      if (!resultSha256 || !await acknowledgeReviewedSourcing(
-        workspaceFetch,
-        agentFramework,
-        resultSha256,
-      )) {
-        return {
-          ok: false,
-          error: "Candidates were saved, but the framework persistence receipt could not be confirmed. Retry this run to reconcile it.",
-          source: "unavailable",
-          retryable: "agent_framework_reconcile",
-        };
-      }
     }
     if (result.accepted.length > 0) {
       emitSource({ kind: "source", campaignId, count: result.accepted.length });
@@ -902,7 +884,6 @@ export function createSourcingActions({
         campaignId,
         count,
         initialFingerprint,
-        opts?.agentFramework,
       );
     }
 

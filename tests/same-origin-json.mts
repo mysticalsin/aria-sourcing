@@ -42,14 +42,10 @@ test("JSON-shaped bodies under simple or missing media types are rejected", () =
   }
 });
 
-test("changed spec and compliance mutations use the shared request boundary", () => {
-  const specs = readFileSync(new URL("../src/app/api/agents/specs/route.ts", import.meta.url), "utf8");
+test("compliance mutations use the shared request boundary", () => {
   const compliance = readFileSync(new URL("../src/app/api/compliance/suppress/route.ts", import.meta.url), "utf8");
-  const memories = readFileSync(new URL("../src/app/api/agents/memories/route.ts", import.meta.url), "utf8");
-  assert.match(specs, /classifySameOriginJsonRequest/);
   assert.match(compliance, /classifySameOriginJsonRequest/);
-  assert.match(memories, /classifySameOriginJsonRequest/);
-  for (const source of [specs, compliance, memories]) {
+  for (const source of [compliance]) {
     assert.match(source, /unsupported_media_type/);
     assert.match(source, /unsupported_media_type" \? 415 : 403/);
   }

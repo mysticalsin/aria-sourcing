@@ -40,35 +40,6 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build Obscura sidecar image
-        run: docker build -t aria-obscura-ci ./docker/obscura
-
-      - name: Start Obscura sidecar
-        run: docker run -d --name obscura-ci -p 9222:9222 aria-obscura-ci
-
-      - name: Wait for Obscura sidecar
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent --max-time 2 http://127.0.0.1:9222/json/version >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs obscura-ci
-          exit 1
-
-      - name: Obscura integration test
-        env:
-          ARIA_REQUIRE_OBSCURA_TEST: "true"
-          OBSCURA_URL: http://127.0.0.1:9222
-        run: npm run test:obscura
-
-      - name: Stop Obscura sidecar
-        if: always()
-        run: docker rm -f obscura-ci
-
       - name: Build
         run: npm run build
 
@@ -142,9 +113,6 @@ jobs:
       - name: Verify cross-channel cap serialization
         run: npm run test:db-cross-channel-cap
 
-      - name: Verify agent memory authority
-        run: npm run test:db-agent-memory
-
       - name: Verify agent operational rollback authority
         run: npm run test:db-agent-operational-rollback
 
@@ -157,9 +125,6 @@ jobs:
       - name: Verify person identity model
         run: npm run test:db-person-model
 
-      - name: Verify autonomous-loop job spine authority
-        run: npm run test:db-loop-jobs
-
       - name: Verify Apollo enrichment authority
         run: npm run test:db-apollo-enrichment
 
@@ -168,9 +133,6 @@ jobs:
 
       - name: Verify conversation and message authority
         run: npm run test:db-conversation-authority
-
-      - name: Verify DeerFlow and Flowise database authority
-        run: npm run test:db-agent-framework
 
   release-gate:
     name: Release gate

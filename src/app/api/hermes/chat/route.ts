@@ -5,7 +5,6 @@ import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } f
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
-import { getHermesBaseUrl } from "@/lib/api/hermes-proxy";
 import { can } from "@/lib/rbac";
 import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
@@ -24,7 +23,6 @@ import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
-import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { DISCLOSURE_SYSTEM, sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
 
@@ -56,22 +54,19 @@ const McpServerPayloadSchema = z
   });
 
 /**
- * Aria runtime proxy (SERVER ONLY).
+ * AI text generation (SERVER ONLY).
  *
- * Bridges the browser to the always-on NousResearch hermes-agent aiohttp server
- * (the Python service can't run in Vercel serverless, so we only proxy to it).
- * Uses the OpenAI-compatible endpoint POST /v1/chat/completions.
+ * Routes the browser's draft / classify / chat requests to the selected cloud
+ * LLM provider (Anthropic or an OpenAI-compatible API), optionally through the
+ * bounded tool loop (web research, campaign sourcing, MCP servers).
  *
  * SECURITY / SAFETY:
- *  - The bearer token is resolved server-side (from the api_keys vault by id, or
- *    a HERMES_API_KEY env fallback) and NEVER returned to the client.
- *  - TEXT GENERATION ONLY. This route never invokes any hermes tool that sends a
- *    message — it only asks the model to write text. The human approval gate and
- *    the never-auto-send invariant live upstream in the store; nothing here sends.
- *  - URL is validated against an SSRF allow-list; only local/private Aria hosts
- *    and explicit private IP ranges are permitted.
- *  - When not configured, returns { ok: false, reason } so the caller falls back
- *    to the deterministic mock.
+ *  - Provider keys are resolved server-side (vault by id, or env fallback) and
+ *    NEVER returned to the client.
+ *  - TEXT GENERATION ONLY. Nothing here sends a message; the human approval
+ *    gate and the never-auto-send invariant live in the store.
+ *  - With no provider selected it returns { ok: false, reason } so the caller
+ *    falls back to the deterministic mock.
  */
 
 const HermesChatSchema = z.object({
@@ -79,7 +74,7 @@ const HermesChatSchema = z.object({
   prompt: z.string().min(1).max(20_000),
   stream: z.boolean().default(false),
   hermesApiKeyId: z.string().uuid().optional(),
-  /** Cloud provider to route through. "hermes" = existing self-hosted path. */
+  /** Cloud provider to route through. "hermes" = none selected (deterministic mock). */
   provider: z
     .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi"])
     .default("hermes"),
@@ -200,14 +195,6 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ ok: false, reason: "Not authenticated." }, { status: 401 });
     userId = user.id;
-  } else if (process.env.HERMES_API_URL) {
-    // Demo mode but a live Aria runtime is configured — require a shared secret so
-    // the proxy isn't an open relay to the upstream runtime.
-    const secret = process.env.HERMES_PROXY_SECRET;
-    if (!secret) return NextResponse.json({ ok: false, reason: "Proxy authentication not configured." }, { status: 503 });
-    if ((req.headers.get("authorization") ?? "") !== `Bearer ${secret}`) {
-      return NextResponse.json({ ok: false, reason: "Not authenticated." }, { status: 401 });
-    }
   }
 
   // S-2: Rate limit — 60 req/min, keyed to the authenticated principal (and IP),
@@ -219,7 +206,7 @@ export async function POST(req: NextRequest) {
   // as /api/sourcing-agent, so allow a matching request body.
   const validated = await validateBody(req, HermesChatSchema, { maxBytes: 200_000 });
   if (!validated.ok) return validated.response;
-  const { task, prompt: rawPrompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
+  const { task, prompt: rawPrompt, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
     validated.data;
   // The classify task feeds candidate-authored reply text straight to the model.
   // Sanitize it and wrap it in the same untrusted-data envelope the autopilot
@@ -375,136 +362,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const production = process.env.NODE_ENV === "production";
-  let runtimeWorkspaceId: string | null = null;
-  if (production && supabaseEnabled && supabase) {
-    const { data: resolvedWorkspaceId, error: workspaceError } = await supabase.rpc("current_workspace_id");
-    runtimeWorkspaceId = typeof resolvedWorkspaceId === "string" ? resolvedWorkspaceId : null;
-    if (workspaceError || !runtimeWorkspaceId) {
-      return NextResponse.json({ ok: false, reason: "Workspace not available." }, { status: 403 });
-    }
-  }
-  const binding = evaluateHermesWorkspaceBinding({
-    production,
-    supabaseEnabled,
-    workspaceId: runtimeWorkspaceId,
-    boundWorkspaceId: process.env.HERMES_RUNTIME_WORKSPACE_ID,
-  });
-  if (!binding.ok) {
-    return NextResponse.json({ ok: false, reason: binding.reason }, { status: binding.status });
-  }
-
-  // S-1: URL is env-only — never use client-supplied hermesApiUrl (SSRF risk).
-  //
-  // Resolved through the shared getHermesBaseUrl rather than re-reading the env
-  // here. This route and the generic proxy previously each resolved the base URL
-  // and the bearer token independently, and the bearer pair had already drifted
-  // into two different security postures (the proxy's copy skipped the provider
-  // and status checks). One resolver per concern is the fix for that class.
-  // Chat is a gateway concern, hence the "api" base.
-  const baseUrlResult = getHermesBaseUrl("api");
-  if (!baseUrlResult.ok) {
-    logUpstream("error", "Aria runtime base URL unavailable", { reason: baseUrlResult.reason });
-    return NextResponse.json({ ok: false, reason: baseUrlResult.reason });
-  }
-  const baseUrl = baseUrlResult.baseUrl;
-
-  // Resolve the bearer token server-side. Vault by id (workspace-scoped) first;
-  // env fallback is allowed only when no key id was requested. A supplied id
-  // that does not resolve in this workspace must fail closed.
-  let bearerToken = process.env.HERMES_API_KEY ?? "";
-  if (hermesApiKeyId) {
-    const vaultSecret = await resolveVaultSecret(hermesApiKeyId, "Aria Agent");
-    if (!vaultSecret) {
-      return NextResponse.json({ ok: false, reason: "Aria runtime key is not available." }, { status: 403 });
-    }
-    bearerToken = vaultSecret;
-  }
-
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
-
-  const upstreamBody = JSON.stringify({
-    model,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: prompt },
-    ],
-    stream,
-  });
-
-  const upstreamUrl = `${baseUrl}/v1/chat/completions`;
-  logUpstream("info", "Proxying Aria request", { task, stream, model });
-
-  /* ---- Streaming: pipe the SSE through unchanged --------------------------- */
-  if (stream) {
-    try {
-      const upstream = await fetch(upstreamUrl, {
-        method: "POST",
-        headers,
-        body: upstreamBody,
-        // SSRF hardening: never auto-follow upstream redirects.
-        redirect: "manual",
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-      });
-      if (isRedirectResponse(upstream)) {
-        logUpstream("error", "Blocked Aria redirect", { status: upstream.status });
-        return NextResponse.json({ ok: false, reason: "Upstream redirect blocked (SSRF guard)." });
-      }
-      if (!upstream.ok || !upstream.body) {
-        const err = await upstream.text().catch(() => "");
-        logUpstream("error", "Aria upstream error", { status: upstream.status, err: err.slice(0, 500) });
-        // Generic message to the client; the (redacted) detail is logged above.
-        return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
-      }
-      return new Response(upstream.body, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-        },
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Network error.";
-      logUpstream("error", "Aria upstream network error", { error: msg });
-      return NextResponse.json({ ok: false, reason: redactSecrets(redactEmail(msg)) });
-    }
-  }
-
-  /* ---- Non-stream: return { ok, text } ------------------------------------- */
-  try {
-    const upstream = await fetch(upstreamUrl, {
-      method: "POST",
-      headers,
-      body: upstreamBody,
-      // SSRF hardening: never auto-follow upstream redirects.
-      redirect: "manual",
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-    if (isRedirectResponse(upstream)) {
-      logUpstream("error", "Blocked Aria redirect", { status: upstream.status });
-      return NextResponse.json({ ok: false, reason: "Upstream redirect blocked (SSRF guard)." });
-    }
-    if (!upstream.ok) {
-      const err = await upstream.text().catch(() => "");
-      logUpstream("error", "Aria upstream error", { status: upstream.status, err: err.slice(0, 500) });
-      // Generic message to the client; the (redacted) detail is logged above —
-      // matches the streaming path, never leaks the raw upstream error body.
-      return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
-    }
-    const json = (await upstream.json().catch(() => null)) as
-      | { choices?: { message?: { content?: string }; delta?: { content?: string } }[] }
-      | null;
-    const text =
-      json?.choices?.[0]?.message?.content ?? json?.choices?.[0]?.delta?.content ?? "";
-    if (!text) {
-      return NextResponse.json({ ok: false, reason: "Empty response from Aria runtime." });
-    }
-    return NextResponse.json({ ok: true, text });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Network error.";
-    logUpstream("error", "Aria upstream network error", { error: msg });
-    return NextResponse.json({ ok: false, reason: redactSecrets(redactEmail(msg)) });
-  }
+  // No cloud provider selected: the caller falls back to its deterministic mock.
+  return NextResponse.json({ ok: false, reason: "No AI provider configured." });
 }

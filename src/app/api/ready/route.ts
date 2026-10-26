@@ -1,14 +1,9 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { hermesRuntimeMisconfigured } from "@/lib/api/url";
 import { evaluateReadiness, type MigrationIdentity, type MigrationState } from "@/lib/readiness";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 import { getServiceSupabase } from "@/lib/supabase/server";
-import {
-  agentFrameworkRuntimeFromEnvironment,
-  probeAgentFrameworkAdapters,
-} from "@/lib/agents/framework/runtime-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,16 +16,10 @@ const expectedMigrationCount = /^[1-9][0-9]*$/.test(expectedMigrationCountRaw)
   ? Number(expectedMigrationCountRaw)
   : Number.NaN;
 const expectedLedgerSha256 = process.env.ARIA_EXPECTED_LEDGER_SHA ?? "";
-// Explicit AGENT_FRAMEWORKS_REQUIRED=false opts out of the production default.
-// Fly Mantu recruiting does not deploy DeerFlow/Flowise sidecars; without this
-// opt-out /api/ready can never become ok after tip migrate.
-const agentFrameworksRequired =
-  process.env.AGENT_FRAMEWORKS_REQUIRED === "true"
-  || (process.env.NODE_ENV === "production" && process.env.AGENT_FRAMEWORKS_REQUIRED !== "false");
 
 export async function GET(req: Request) {
-  // Unauthenticated deep-readiness probe: 3 DB queries + adapter network
-  // probes per call. Throttle per IP so it can't be turned into a cheap DoS.
+  // Unauthenticated deep-readiness probe: 3 DB queries + an auth probe per
+  // call. Throttle per IP so it can't be turned into a cheap DoS.
   // Liveness monitors should hit the far cheaper /api/health instead.
   const limit = checkRateLimit(rateLimitKey(req, "ready"), { windowMs: 60_000, max: 20 });
   if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
@@ -46,12 +35,6 @@ export async function GET(req: Request) {
         expectedMigrationSha,
         expectedMigrationCount,
         expectedLedgerSha256,
-        agentFrameworksRequired,
-        // Evaluated per request, not at module load: HERMES_API_URL and
-        // HERMES_ALLOWED_HOSTS are deployment config, and a probe that answered
-        // from a cached module-load reading would keep reporting the old verdict
-        // after the config was corrected.
-        hermesRuntimeMisconfigured: hermesRuntimeMisconfigured(process.env.HERMES_API_URL),
       },
       {
         database: async () => {
@@ -71,10 +54,6 @@ export async function GET(req: Request) {
             .limit(1)
             .abortSignal(AbortSignal.timeout(3_000));
           return error === null;
-        },
-        agentFrameworks: async () => {
-          const runtime = agentFrameworkRuntimeFromEnvironment();
-          return probeAgentFrameworkAdapters(runtime.config, runtime.tokens);
         },
         migration: async (): Promise<MigrationState | null> => {
           if (!client) return null;

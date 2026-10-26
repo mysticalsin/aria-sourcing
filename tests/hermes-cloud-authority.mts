@@ -29,7 +29,6 @@ envScope.set({
 let role: "viewer" | "member" | "admin" = "viewer";
 let upstreamCalls = 0;
 let toolLoopCalls = 0;
-let graphCalls = 0;
 let vaultProvider = "OpenAI";
 let agentSpecAvailable = true;
 let runPersistenceFails = false;
@@ -38,7 +37,6 @@ let agentSpecGuardrails: Record<string, unknown> = { autopilot: false, canary_re
 let agentSpecOwnerId = "user-1";
 let agentSpecReadCount = 0;
 let agentSpecRemainsActive = true;
-let capturedAgentPolicy: Record<string, unknown> | undefined;
 const resolverCalls: Array<{ id?: string; provider?: string }> = [];
 const serviceReadTables: string[] = [];
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
@@ -229,29 +227,6 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
     failSourcingRun: async () => true,
   },
 });
-mock.module(moduleUrl("src/lib/agents/graph.ts"), {
-  namedExports: {
-    initialState: (_brief: unknown, _count: unknown, policy?: Record<string, unknown>) => {
-      capturedAgentPolicy = policy;
-      return { drafts: [], planCursor: 0, errors: [], report: "", executionPolicy: policy };
-    },
-    runGraph: async (
-      state: Record<string, unknown>,
-      deps: { generate: (system: string, prompt: string) => Promise<string> },
-      onStep?: (node: string, state: Record<string, unknown>, event: { type: string; payload: Record<string, unknown> }) => Promise<void>,
-      _startNode?: string,
-      _startStep?: number,
-      beforeStep?: (node: string, state: Record<string, unknown>, step: number) => Promise<void>,
-    ) => {
-      graphCalls += 1;
-      if (beforeStep) await beforeStep("planner", state, 0);
-      await deps.generate("system", "prompt");
-      if (onStep) await onStep("done", state, { type: "report", payload: {} });
-      return { state, node: "done", steps: 1 };
-    },
-  },
-});
-
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async () => {
   upstreamCalls += 1;
@@ -264,7 +239,6 @@ globalThis.fetch = (async () => {
 try {
   const hermesRoute = await import("../src/app/api/hermes/chat/route");
   const sourcingRoute = await import("../src/app/api/sourcing-agent/route");
-  const agentRoute = await import("../src/app/api/agents/run/route");
   const hermesRequest = (provider = "openai") =>
     new NextRequest("http://localhost/api/hermes/chat", {
       method: "POST",
@@ -296,26 +270,10 @@ try {
         count: 1,
       }),
     });
-  const agentRequest = (includeSpec = true) =>
-    new NextRequest("http://localhost/api/agents/run", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
-      body: JSON.stringify({
-        campaign,
-        existing: [],
-        count: 1,
-        provider: "openai",
-        apiKeyId: "11111111-1111-4111-8111-111111111111",
-        model: "gpt-4o-mini",
-        ...(includeSpec ? { specId: agentSpecId } : {}),
-      }),
-    });
   const resetCalls = () => {
     resolverCalls.length = 0;
     upstreamCalls = 0;
     toolLoopCalls = 0;
-    graphCalls = 0;
-    capturedAgentPolicy = undefined;
     serviceReadTables.length = 0;
     agentSpecReadCount = 0;
     agentSpecRemainsActive = true;
@@ -389,32 +347,6 @@ try {
   const mismatchSourcing = await sourcingRoute.POST(sourcingRequest());
   ok("sourcing cross-provider key mismatch fails closed before model egress", mismatchSourcing.status === 403 && toolLoopCalls === 0);
 
-  role = "member";
-  vaultProvider = "OpenAI";
-  resetCalls();
-  const memberAgent = await agentRoute.POST(agentRequest());
-  const memberAgentBody = (await memberAgent.json()) as { code?: string };
-  ok(
-    "unconfigured private framework execution fails closed for members",
-    memberAgent.status === 503 && memberAgentBody.code === "agent_framework_unavailable",
-  );
-  ok(
-    "member graph-agent denial happens before authority, persistence, vault, or model access",
-    agentSpecReadCount === 0 && serviceReadTables.length === 0 && resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
-  );
-
-  role = "admin";
-  resetCalls();
-  const adminAgent = await agentRoute.POST(agentRequest());
-  const adminAgentBody = (await adminAgent.json()) as { code?: string };
-  ok(
-    "unconfigured private framework execution fails closed for administrators",
-    adminAgent.status === 503 && adminAgentBody.code === "agent_framework_unavailable",
-  );
-  ok(
-    "administrator denial ignores caller-selected spec, provider, model, key, and candidates",
-    agentSpecReadCount === 0 && serviceReadTables.length === 0 && resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
-  );
 } finally {
   globalThis.fetch = originalFetch;
   envScope.restore();

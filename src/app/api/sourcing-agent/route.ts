@@ -20,18 +20,13 @@ import { dedupeCandidates } from "@/lib/rules";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import {
   beginSourcingRun,
-  beginAgentFrameworkSourcingRun,
   completeSourcingRun,
-  completeAgentFrameworkSourcingEffect,
-  checkAgentFrameworkSourcingExecution,
   failSourcingRun,
-  failAgentFrameworkSourcingEffect,
   listPromotedSourcingLessons,
   type SourcingLearningLesson,
   type SourcingRoleBasis,
 } from "@/lib/sourcing/learning-authority";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
-import { appliedPromotedLessonIds } from "@/lib/sourcing/framework-learning-selection";
 import { sourcingRoleBasisForCampaign } from "@/lib/sourcing/role-basis";
 import {
   SourcingAgentRequestSchema,
@@ -287,20 +282,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const configuredQueries = initial.value.campaign.sourcingStrategy.githubQueries
     .map((query) => query.query.trim())
     .filter(Boolean);
-  const frameworkAuthorization = validated.data.agentFrameworkRunId &&
-    validated.data.agentFrameworkCapabilityToken &&
-    validated.data.agentFrameworkQuery
-    ? {
-        runId: validated.data.agentFrameworkRunId,
-        capabilityToken: validated.data.agentFrameworkCapabilityToken,
-        query: validated.data.agentFrameworkQuery,
-      }
-    : null;
-  if (frameworkAuthorization && !configuredQueries.includes(frameworkAuthorization.query)) {
-    return fail(409, "CAMPAIGN_CHANGED", "The framework query is no longer approved for this campaign.");
-  }
   const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
-  const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
+  const deterministic = !cloudConfig;
   if (deterministic && configuredQueries.length === 0) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
   }
@@ -311,7 +294,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
   let cloudSlug: AiProviderSlug | null = null;
   let toolModel: string | null = null;
-  if (!frameworkAuthorization && cloudConfig) {
+  if (cloudConfig) {
     cloudSlug = cloudConfig.provider as AiProviderSlug;
     toolModel = cloudConfig.model || DEFAULT_MODEL[cloudSlug];
     if (!cloudConfig.apiKeyId) {
@@ -344,38 +327,15 @@ async function handlePost(req: NextRequest, correlationId: string) {
     idempotencyKey,
     requestId: correlationId,
   };
-  const begun = frameworkAuthorization
-    ? await beginAgentFrameworkSourcingRun({
-        ...beginInput,
-        count,
-        campaignFingerprint: createHash("sha256")
-          .update(initial.value.fingerprint, "utf8")
-          .digest("hex"),
-        sourceQuery: frameworkAuthorization.query,
-        frameworkRunId: frameworkAuthorization.runId,
-        capabilityToken: frameworkAuthorization.capabilityToken,
-      })
-    : await beginSourcingRun(beginInput);
+  const begun = await beginSourcingRun(beginInput);
   if (begun.status === "quota_exceeded") {
     return fail(429, "SOURCING_AGENT_RATE_LIMITED", "Daily live-sourcing limit reached.");
-  }
-  if (begun.status === "result_ready" && frameworkAuthorization) {
-    const recovered = parseSourcingAgentSuccessResponse({
-      ...(begun.resultPayload as Record<string, unknown>),
-      agentFrameworkResultSha256: begun.resultSha256,
-    }, campaignId, count, frameworkAuthorization.runId);
-    return recovered && recovered.sourcingRunId === begun.runId
-      ? noStoreJson(recovered)
-      : fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
   }
   if (
     begun.status === "in_progress" ||
     begun.status === "completed" ||
     begun.status === "failed" ||
-    begun.status === "idempotency_conflict" ||
-    begun.status === "already_consumed" ||
-    begun.status === "authorization_expired"
-    || begun.status === "framework_disabled"
+    begun.status === "idempotency_conflict"
   ) {
     return fail(409, "SOURCING_AGENT_REPLAY_BLOCKED", "This sourcing request was already claimed.");
   }
@@ -387,15 +347,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
 
   const recordClaimFailure = async (code: ErrorCode | "RUN_COMPLETION_FAILED" | "UNHANDLED_EXECUTION_FAILURE") => {
-    if (frameworkAuthorization) {
-      return failAgentFrameworkSourcingEffect({
-        workspaceId,
-        actorId: user.id,
-        frameworkRunId: frameworkAuthorization.runId,
-        sourcingRunId: begun.runId,
-        errorCode: code,
-      });
-    }
     return failSourcingRun({
       workspaceId,
       actorId: user.id,
@@ -451,19 +402,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
         message: "Campaign authority changed during the operation.",
       };
     }
-    if (frameworkAuthorization && !await checkAgentFrameworkSourcingExecution({
-      workspaceId,
-      actorId: user.id,
-      frameworkRunId: frameworkAuthorization.runId,
-      sourcingRunId: begun.runId,
-    })) {
-      return {
-        ok: false,
-        status: 409,
-        code: "CAMPAIGN_CHANGED",
-        message: "Agent framework execution authority changed during the operation.",
-      };
-    }
     return { ok: true, workspace: latest };
   };
 
@@ -513,11 +451,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
             lesson.query,
             initial.value.campaign,
           ).ok;
-          return valid && (!frameworkAuthorization || (
-            lesson.platform === "GitHub" &&
-            lesson.query === frameworkAuthorization.query &&
-            configuredQueries.includes(lesson.query)
-          ));
+          return valid;
         });
       } else if (listed.status !== "learning_disabled") {
         return await failClaimed(
@@ -551,16 +485,14 @@ async function handlePost(req: NextRequest, correlationId: string) {
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
       const searchSignal = AbortSignal.timeout(45_000);
-      const queries = frameworkAuthorization
-        ? [frameworkAuthorization.query]
-        : [
-            ...promotedLessons
-              .filter((lesson) => lesson.platform === "GitHub")
-              .map((lesson) => lesson.query),
-            ...configuredQueries,
-          ]
-            .filter((query, index, all) => all.indexOf(query) === index)
-            .slice(0, 3);
+      const queries = [
+        ...promotedLessons
+          .filter((lesson) => lesson.platform === "GitHub")
+          .map((lesson) => lesson.query),
+        ...configuredQueries,
+      ]
+        .filter((query, index, all) => all.indexOf(query) === index)
+        .slice(0, 3);
       let successfulQuery = false;
       for (const query of queries) {
         const remaining = count - runner.getFound().length;
@@ -725,15 +657,9 @@ async function handlePost(req: NextRequest, correlationId: string) {
     const executed = new Set(
       executions.map((execution) => lessonExecutionKey(execution.platform, execution.query)),
     );
-    const appliedLessonIds = frameworkAuthorization
-      ? appliedPromotedLessonIds(
-          frameworkAuthorization.query,
-          configuredQueries,
-          promotedLessons,
-        )
-      : promotedLessons
-          .filter((lesson) => executed.has(lessonExecutionKey(lesson.platform, lesson.query)))
-          .map((lesson) => lesson.lessonId);
+    const appliedLessonIds = promotedLessons
+      .filter((lesson) => executed.has(lessonExecutionKey(lesson.platform, lesson.query)))
+      .map((lesson) => lesson.lessonId);
     const resultPayload = {
       ok: true,
       mode: deterministic ? "deterministic" : "cloud",
@@ -744,30 +670,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
       requestId: correlationId,
       idempotencyKey,
       sourcingRunId: begun.runId,
-      ...(frameworkAuthorization ? { agentFrameworkRunId: frameworkAuthorization.runId } : {}),
       appliedLessonIds,
     };
-    if (frameworkAuthorization) {
-      const completion = await completeAgentFrameworkSourcingEffect({
-        workspaceId,
-        actorId: user.id,
-        frameworkRunId: frameworkAuthorization.runId,
-        sourcingRunId: begun.runId,
-        queryReceipts: executions,
-        resultPayload,
-      });
-      if (completion.status !== "result_ready" || completion.runId !== begun.runId) {
-        await recordClaimFailure("RUN_COMPLETION_FAILED");
-        return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Sourcing result staging could not be recorded.");
-      }
-      const staged = parseSourcingAgentSuccessResponse({
-        ...(completion.resultPayload as Record<string, unknown>),
-        agentFrameworkResultSha256: completion.resultSha256,
-      }, campaignId, count, frameworkAuthorization.runId);
-      return staged
-        ? noStoreJson(staged)
-        : fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
-    }
     const completion = await completeSourcingRun({
       workspaceId,
       actorId: user.id,

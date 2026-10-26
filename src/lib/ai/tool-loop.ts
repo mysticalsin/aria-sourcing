@@ -17,7 +17,6 @@ import {
 } from "@/lib/mcp-client";
 import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
-import { BUILTIN_BROWSER_URL, runBrowserTool } from "@/lib/ai/browser-tools";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 export const MAX_TOTAL_TOOL_DEFINITIONS = 32;
@@ -74,7 +73,7 @@ function isDeadlineError(error: unknown): boolean {
 }
 
 function isRemoteMcpServer(server: ResolvedMcpServer): boolean {
-  return !server.run && server.url !== BUILTIN_WEB_URL && server.url !== BUILTIN_BROWSER_URL;
+  return !server.run && server.url !== BUILTIN_WEB_URL;
 }
 
 function runtimeEligibleServers(servers: ResolvedMcpServer[]): ResolvedMcpServer[] {
@@ -127,11 +126,9 @@ function toolResultForModel(server: ResolvedMcpServer | undefined, output: ToolE
     ? "unavailable_tool"
     : server.url === BUILTIN_WEB_URL
       ? "public_web"
-      : server.url === BUILTIN_BROWSER_URL
-        ? "public_browser"
-        : isRemoteMcpServer(server)
-          ? "remote_mcp"
-          : "in_process_tool";
+      : isRemoteMcpServer(server)
+        ? "remote_mcp"
+        : "in_process_tool";
   const payload = serializedPayload(output.ok ? output.content ?? null : { error: output.error ?? "Tool failed." });
   return JSON.stringify({
     ariaToolResult: {
@@ -173,8 +170,8 @@ export interface ToolCallRecord {
 
 /**
  * Execute one tool call. A server with a `run` override (a stateful in-process
- * tool set) is dispatched directly; the built-in web-research and browser-research
- * servers (the BUILTIN_WEB_URL / BUILTIN_BROWSER_URL sentinels) run in-process;
+ * tool set) is dispatched directly; the built-in web-research
+ * server (the BUILTIN_WEB_URL sentinel) runs in-process;
  * everything else reaches the remote MCP client, whose independent runtime policy
  * denies production and default-off execution. Same {ok, content, error} contract.
  */
@@ -186,7 +183,6 @@ async function execTool(
 ): Promise<ToolExecutionResult> {
   if (server.run) return server.run(name, args, signal);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey, signal });
-  if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
   return callMcpTool(server.url, server.token, name, args, { signal });
 }
 

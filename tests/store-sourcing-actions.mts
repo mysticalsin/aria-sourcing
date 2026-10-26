@@ -73,7 +73,7 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.match(launchSource, /sourcingComplete: sourcedCount > 0/);
   assert.match(
     agentRunSource,
-    /executePrimaryAgentSourcing\(\{[\s\S]*?demoAuthorized: !supabaseEnabled && \(!isProduction \|\| demoLoginEnabled\),[\s\S]*?sourceNextBatch: actions\.sourceNextBatch,/,
+    /runCampaignSourcing\(\{[\s\S]*?demoAuthorized: !supabaseEnabled && \(!isProduction \|\| demoLoginEnabled\),[\s\S]*?sourceNextBatch: actions\.sourceNextBatch,/,
   );
   assert.doesNotMatch(
     agentRunSource,
@@ -327,96 +327,6 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
   ]);
   assert.equal(harness.persistedCalls, 1);
   assert.equal(harness.events.length, 1);
-});
-
-test("a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates", async () => {
-  const seed = buildSeedState();
-  const campaign = { ...seed.campaigns[0], status: "Sourcing" as const };
-  const frameworkRunId = "44444444-4444-4444-8444-444444444444";
-  const capabilityToken = "s".repeat(43);
-  const query = campaign.sourcingStrategy.githubQueries[0]?.query ?? "language:typescript";
-  const candidate = {
-    id: "reviewed-framework-candidate",
-    campaignId: campaign.id,
-    name: "Reviewed Framework Candidate",
-    currentTitle: "Staff Platform Engineer",
-    currentCompany: "Example",
-    location: "Toronto",
-    linkedinUrl: "",
-    githubUrl: "https://github.com/reviewed-framework-candidate",
-    sourceUrl: "https://github.com/reviewed-framework-candidate",
-    sourcePlatform: "GitHub",
-    sourceQuery: query,
-    matchScore: 88,
-    matchBreakdown: [],
-    techStack: ["TypeScript"],
-    recentActivity: "Verified public GitHub work.",
-    createdAt: "2026-07-14T12:00:00.000Z",
-  };
-  const stagedResult = {
-    ok: true,
-    campaignId: campaign.id,
-    campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
-    mode: "deterministic",
-    totalFound: 1,
-    requestId: "request-framework-reconcile",
-    idempotencyKey: frameworkRunId,
-    sourcingRunId: "55555555-5555-4555-8555-555555555555",
-    agentFrameworkRunId: frameworkRunId,
-    agentFrameworkResultSha256: "d".repeat(64),
-    appliedLessonIds: [],
-    candidates: [candidate],
-    feedbackReceipts: [{
-      receiptId: "66666666-6666-4666-8666-666666666666",
-      platform: "GitHub",
-      candidateCount: 1,
-    }],
-  };
-  const harness = createHarness({
-    state: { ...seed, campaigns: [campaign] },
-    syntheticSourcingAllowed: false,
-    responseBodies: [
-      stagedResult,
-      { ok: false, code: "SOURCING_AGENT_UNAVAILABLE" },
-      stagedResult,
-      { ok: true, status: "completed" },
-    ],
-  });
-  const options = {
-    count: 1,
-    agentFramework: { runId: frameworkRunId, capabilityToken, query },
-  };
-
-  const lostAck = await harness.actions.sourceNextBatch(campaign.id, options);
-
-  assert.deepEqual(lostAck, {
-    ok: false,
-    error: "Candidates were saved, but the framework persistence receipt could not be confirmed. Retry this run to reconcile it.",
-    source: "unavailable",
-    retryable: "agent_framework_reconcile",
-  });
-  assert.equal(harness.state.candidates.filter((item) => item.id === candidate.id).length, 1);
-  assert.equal(String(harness.requests[0]?.input), "/api/sourcing-agent");
-  assert.equal(String(harness.requests[1]?.input), "/api/sourcing-agent/ack");
-  assert.equal(
-    new Headers(harness.requests[0]?.init?.headers).get("idempotency-key"),
-    frameworkRunId,
-  );
-
-  const reconciled = await harness.actions.sourceNextBatch(campaign.id, options);
-
-  assert.equal(reconciled.ok, true);
-  if (!reconciled.ok) return;
-  assert.equal(reconciled.accepted.length, 0);
-  assert.equal(reconciled.skipped.length, 1);
-  assert.equal(harness.state.candidates.filter((item) => item.id === candidate.id).length, 1);
-  assert.equal(harness.fetchCalls, 4);
-  assert.equal(String(harness.requests[2]?.input), "/api/sourcing-agent");
-  assert.equal(String(harness.requests[3]?.input), "/api/sourcing-agent/ack");
-  assert.equal(
-    new Headers(harness.requests[2]?.init?.headers).get("idempotency-key"),
-    frameworkRunId,
-  );
 });
 
 async function runLiveSourceAction(
