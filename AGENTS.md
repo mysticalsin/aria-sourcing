@@ -60,3 +60,17 @@ npm run typecheck && npm run typecheck:tests && npm test
 The command list is owned by `package.json`; do not copy a suite count into
 this contract. If either tool's change breaks the gate, fix it before
 committing. Never commit red.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local markdown files under `.scratch/<feature-slug>/` (committed, shared across tools). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/domain.md`.
