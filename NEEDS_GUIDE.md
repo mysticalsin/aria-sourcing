@@ -28,19 +28,13 @@ cd MSourcing
 docker compose up --build          # app + its own Supabase (Postgres, GoTrue, PostgREST, Kong)
 ```
 
-- App: **http://localhost:3003** (mapped from container port 3000; override with `APP_PORT`)
-- Sign in: **admin / admin** (or `admin@hermes.local` / `admindemo123`)
+- App: **http://localhost:3000** (override with `APP_PORT`)
+- Sign in: `admin@hermes.local` / `admindemo123`
 - Supabase API on `:54321`, Postgres on `:54322` — stop any host `supabase start` first to avoid port clashes.
 - The app container bind-mounts this repo and runs `npm run dev`, so **code edits are live** without a rebuild. Only rebuild (`docker compose build app`) after dependency changes.
 - `docker compose down` keeps your data; `down -v` wipes and re-seeds.
 
-### B. Public Vercel demo
-
-- **https://aria-sourcing-demo.vercel.app** — sign in **admin / admin**.
-- Runs against hosted Supabase; all demo users share one workspace.
-- Deploy runbook: `production-readiness/DEPLOYMENT_RUNBOOK.md`.
-
-### C. Bare local dev
+### B. Bare local dev
 
 ```bash
 npm install && npm run dev         # http://localhost:3000
@@ -83,7 +77,7 @@ Requirements (all three, live/Supabase mode only):
 2. **`DATA_ENCRYPTION_KEY`** — tokens are encrypted at rest; in production the OAuth callback refuses to store tokens without it.
 3. **Connect the mailbox**: go to **Agent Fleet** (`/fleet`), pick a seat, and connect Gmail / Outlook from the seat card (admin only). Tokens land encrypted in the `email_connections` table.
 
-Put the env vars in `.env.local` (Docker passes it through) or the Vercel dashboard, then restart.
+Put the env vars in `.env.local` (Docker passes it through), then restart.
 
 ### Day-to-day flow
 
@@ -133,14 +127,14 @@ Real batches are authoritative: zero real hits is reported as zero, never backfi
 Everything is dry-run until ALL of these are true (each is checked server-side):
 
 1. Live/Supabase mode (Docker stack or hosted Supabase) and a signed-in `admin`/`member`.
-2. A **send provider**: `RESEND_API_KEY` or `SENDGRID_API_KEY`, or a connected Gmail/Graph mailbox seat. WhatsApp additionally needs `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` and its consent/template/window policy. **SMS is intentionally disabled** until it has equivalent consent, suppression, opt-out, and durable dispatch controls.
-3. The seat's **sending domain verified** — click **Verify domain** on the seat card (Agent Fleet): it runs a real SPF/DMARC/DKIM DNS check and persists the result. No DNS records → no send.
+2. A **send provider**: `RESEND_API_KEY` or `SENDGRID_API_KEY`, or a connected Gmail/Graph mailbox seat.
+3. The seat's **sending domain verified** — click **Verify domain** on the seat card (Mailboxes): it runs a real SPF/DMARC/DKIM DNS check and persists the result. No DNS records → no send.
 4. The seat toggled **Live**.
 5. The exact message **human-approved** (the server stores a hash of the approved subject+body; editing after approval invalidates it).
-6. `OUTREACH_UNSUBSCRIBE_BASE_URL` is set to a canonical HTTPS app origin and migrations through `0015_whatsapp_webhook_late_event_safety.sql` are applied. Every live email gets a recipient-specific opaque one-click link, standard headers, and a visible footer.
+6. `OUTREACH_UNSUBSCRIBE_BASE_URL` is set to a canonical HTTPS app origin and every migration is applied. Every live email gets a recipient-specific opaque one-click link, standard headers, and a visible footer.
 7. Recipient not suppressed, within re-contact windows and the seat's daily/warm-up caps (enforced atomically in Postgres).
 
-Before real volume, run the controlled unsubscribe smoke test in `production-readiness/DEPLOYMENT_RUNBOOK.md`: inspect raw headers, submit one-click POST, and prove a later send is blocked.
+Before real volume, run a controlled unsubscribe smoke test: send to a mailbox you own, inspect raw headers, submit the one-click POST, and prove a later send is blocked.
 
 ## 7. Interviewers & booking
 
@@ -149,9 +143,8 @@ The interviewer roster is editable on `/calendar` (admin): add real names/emails
 ## 8. Troubleshooting
 
 - **"Sourcing started — 0 candidates"** on a LinkedIn-family platform → set `TAVILY_API_KEY` (see §5). On GitHub → you may have hit the anonymous 60/hr rate limit; set `GITHUB_TOKEN`.
-- **Chat / live parse falls back to heuristic (Kimi 401)** — a Kimi-Code subscription key is scoped to `https://api.kimi.com/coding/v1`, not the default Moonshot endpoint. Set `KIMI_BASE_URL=https://api.kimi.com/coding/v1` next to `KIMI_API_KEY` (fixed in `.env.local` 2026-07-06; mirror it in Vercel env if prod ever 401s).
-- **Stuck at login locally** → the app is in live mode but its Supabase isn't running (see §1C).
+- **Chat / live parse falls back to heuristic (Kimi 401)** — a Kimi-Code subscription key is scoped to `https://api.kimi.com/coding/v1`, not the default Moonshot endpoint. Set `KIMI_BASE_URL=https://api.kimi.com/coding/v1` next to `KIMI_API_KEY`.
+- **Stuck at login locally** → the app is in live mode but its Supabase isn't running (see §1B).
 - **`aria-sourcing-rest-1` shows unhealthy** → fixed 2026-07-06 (`PGRST_ADMIN_SERVER_PORT` added to `docker-compose.yml`); recreate with `docker compose up -d rest`.
 - **Scan inbox always loads the sample** → no mailbox connected (§3 setup), or the need email's subject doesn't match the recognizer — resend with a subject like `NEED: <role>` or just paste it (§2).
-- **Edits don't show up on :3003** → the container dev server hot-reloads from this repo; hard-refresh the browser. Rebuild only after `package.json` changes.
-- **Deploying to prod** → follow `production-readiness/DEPLOYMENT_RUNBOOK.md`; verify the deployed artifact and the unsubscribe/approval smoke checks, not just a source push.
+- **Edits don't show up on :3000** → the container dev server hot-reloads from this repo; hard-refresh the browser. Rebuild only after `package.json` changes.

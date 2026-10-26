@@ -1,11 +1,10 @@
 # ARIA Sourcing — Architecture & Operations Guide
 
-This document describes the sourcing experience as it is actually implemented in this
-repository (MSourcing / ARIA) on `integration/sourcing-enrichment-on-main`
-(HEAD `3ff4852`). Every claim below is grounded in a real file; line references point at
-the code that backs the claim as of this commit and will drift as the code moves.
+This document describes the sourcing experience as implemented on `mbe-branch` after
+the demo cleanup (October 2026). Line references point at the code that backed each
+claim when it was written and drift as the code moves; the file paths stay accurate.
 
-For the broader system map (agent runtime, outreach, deployment), see
+For the broader system map (sourcing agent, outreach, local stack), see
 [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md). This file goes one layer deeper on sourcing,
 scoring, enrichment, and the candidate corpus specifically.
 
@@ -54,9 +53,6 @@ behavior (no login gate, implicit admin) in production. The one sanctioned excep
 | GitHub | `GitHub` | GitHub Users Search API, read-only | None — keyless by default (60 req/hr/IP anonymous, 5,000/hr with optional `GITHUB_TOKEN`) | `src/lib/sourcing/github.ts:1-17` |
 | Web search (LinkedIn / Stack Overflow / Dribbble / Behance) | `LinkedIn`, `Stack Overflow`, `Dribbble`, `Behance` | `site:`-scoped Tavily web search, honest User-Agent, SSRF-guarded | Workspace-stored Tavily key, or `TAVILY_API_KEY` env fallback | `src/lib/sourcing/web-leads.ts:1-9`, `src/lib/ai/web-tools.ts:191-256` |
 | Apify — profile search | `Apify` | `harvestapi~linkedin-profile-search` actor, async run + poll + dataset fetch | Workspace-stored Apify key | `src/lib/sourcing/apify.ts:1-25`; supports `firstNames`/`lastNames` as explicit search filters (§below) |
-| Apollo | `Apollo` | Free `mixed_people/search`, then a paid `people/match` for email/phone | Workspace-stored Apollo key | `src/lib/sourcing/apollo.ts`, receipt-ledgered via `src/lib/sourcing/source-authority.ts` |
-| Seamless.AI | `Seamless` | Free search + async paid research/poll | Workspace-stored key | **Production-disabled by design** (see below) |
-| Sillage | `Sillage` | Company-domain account mapping, async | Workspace-stored key | **Production-disabled by design** (see below) |
 
 All provider keys except `GITHUB_TOKEN` and the Tavily env fallback are entered via
 **Settings → API Keys**, encrypted at rest, and never sent to the browser
@@ -74,33 +70,29 @@ server-side at `src/app/api/source/apify/start/route.ts:34-48`). This is what le
 recruiter resolve one *specific* named person (e.g. "find exactly this candidate's
 current profile") instead of only running a broad boolean search.
 
-**Seamless/Sillage are production-disabled by design**, not by accident:
+### The sourcing agent
 
-```ts
-// src/lib/supabase/config.ts:33-39
-// Sillage and Seamless do not yet have the server-owned receipt authority used
-// by Apollo. They remain available only for explicit local development and
-// can never be enabled in a production build.
-export const experimentalPaidSourcingEnabled =
-  !isProduction && process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING === "true";
-```
+A campaign's **Run agent** button (`src/components/run/agent-run-stream.tsx`) calls
+`runCampaignSourcing` (`src/lib/sourcing/campaign-run.ts`), which goes through the
+canonical store action `sourceNextBatch`. In a live workspace that action calls
+`/api/sourcing-agent`, which runs in-process in one of two modes:
 
-Apollo has a server-owned claim/receipt ledger (`prepare → claim → complete/ambiguous →
-reconcile → erase`, `src/lib/sourcing/source-authority.ts:152-488`, backed by RPCs like
-`prepare_apollo_enrichment`/`claim_apollo_enrichment`) that makes a paid spend
-idempotent, auditable, and erasure-safe. Seamless and Sillage don't have that authority
-layer yet, so their discovery/enrichment paths are gated off entirely in a production
-build (`isProduction` check, not just a feature flag) — keys alone won't turn them on in
-prod. This is the same design principle the enrichment orchestrator's runners inherit
-(§4).
+| Mode | When | What happens |
+|---|---|---|
+| `cloud` | An LLM provider (Anthropic or an OpenAI-compatible API) is configured in Settings with a workspace key | A bounded tool loop (`src/lib/ai/tool-loop.ts`) lets the model call `search_candidates` (`src/lib/ai/sourcing-tools.ts`), which runs the real GitHub / web-search pipeline. The model only picks already-scored real people and drafts first-touch copy; it never invents a candidate, score or URL. |
+| `deterministic` | No LLM provider configured | The reviewed GitHub queries of the campaign run directly; no model is called. |
+
+Every run is recorded through `src/lib/sourcing/learning-authority.ts`
+(`beginSourcingRun` / `completeSourcingRun`), which also enforces a daily quota and
+returns feedback receipts. An explicit demo deployment (no Supabase) uses the synthetic
+`Talent Pool` source instead.
 
 ### Discover → map → score → dedupe → commit
 
-The canonical path (the DeerFlow-reviewed sourcing-agent flow,
-`src/lib/store/sourcing-actions.ts:735-782`) runs:
+The canonical path (the sourcing-agent flow in `src/lib/store/sourcing-actions.ts`) runs:
 
 1. **Discover** — a provider adapter returns raw results (GitHub users, web-search hits,
-   Apify/Apollo profiles).
+   Apify profiles).
 2. **Map** — `candidateFromSourcingAgentDto` / the platform-specific mapper
    (`src/lib/sourcing/candidate-mappers.ts`) normalizes raw provider data into the
    `Candidate` shape.
@@ -249,25 +241,19 @@ after discovery.
    | Provider | `costUnits` | Fills |
    |---|---|---|
    | Apify (dev_fusion, LinkedIn full profile) | 1 | email, headline, skills, experience, education, languages, location |
-   | Apollo | 2 | email, phone |
-   | Seamless.AI | 3 | email, phone |
-   | Sillage (account mapping) | 4 | email, phone, headline, location |
+
+   Apify is currently the only enrichment provider; the waterfall is kept so another
+   licensed provider can be added as one registry entry plus one runner.
 
 3. Runs each provider in turn until the wanted fields are covered, the caller's
    `budgetRemaining` (cost-unit budget) hits zero, or a **45-second wall-clock deadline**
    (`ORCH_DEADLINE_MS = 45_000`, `orchestrator.ts:22`) is reached — kept comfortably under
    the platform's 60s route cap so a request never 504s and strands an already-spent
    cheap-provider result.
-4. Slow async pollers (Seamless research, Sillage account mapping,
-   `POLL_BUDGET_MS = 30_000`) get a pre-flight runway check before starting — a provider
-   that can't finish its own worst-case poll within the remaining deadline is recorded as
-   `"deferred"` and simply not started, rather than run into the cutoff mid-poll.
-5. **Cross-provider identity resolution** is the core design principle: every provider
-   resolves its *own* identity from the candidate's universal fields (name, company,
-   `linkedinUrl`, `externalIds`) via its own free search/lookup step, so a candidate
-   discovered by GitHub can still be enriched by Apollo, and vice versa
-   (`registry.ts:11-17`).
-6. On completion, if a `JobAnalysis` was supplied, the candidate is re-scored
+4. Each provider resolves its *own* identity from the candidate's universal fields
+   (Apify keys on `linkedinUrl`), so a candidate discovered on GitHub or the web can
+   still be enriched when a LinkedIn URL is known.
+5. On completion, if a `JobAnalysis` was supplied, the candidate is re-scored
    (`scoreCandidate`, `orchestrator.ts:185-188`) — enrichment can move a candidate's
    composite once real skills/experience/location data replaces an `unknown` anchor.
 
@@ -471,27 +457,15 @@ candidate without one.
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Presence switches the app from DEMO to LIVE mode (`supabase/config.ts:15-19`) |
 | `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` | Sanctioned public-demo exception to the prod fail-closed rule; outreach stays dry-run regardless |
-| `NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING` | Combined with a non-production build, unlocks Seamless/Sillage locally — never in prod |
 | `NEXT_PUBLIC_ENABLE_CORPUS_SERVER_READ` | Preview flag for the `/api/candidates` server-corpus read path; default off |
 | `GITHUB_TOKEN` | Optional; raises GitHub Users Search API from 60 to 5,000 req/hr — never required |
 | `TAVILY_API_KEY` | Server-side fallback for web-search sourcing when no workspace Tavily key is stored |
-| Apify / Apollo / Seamless / Sillage keys | Entered via Settings → API Keys, encrypted at rest, never env vars |
+| Apify key, LLM provider keys | Entered via Settings → API Keys, encrypted at rest (requires `DATA_ENCRYPTION_KEY`) |
 
-### Fly topology (as deployed)
+### Local stack
 
-```
-Internet
-  -> aria-mantu-app         (Next.js)
-  -> aria-mantu-kong        (API gateway)
-       -> aria-mantu-auth   (self-hosted Supabase Auth/GoTrue)
-       -> aria-mantu-rest   (PostgREST)
-            -> aria-mantu-db (Postgres)
-
-aria-mantu-bootstrap  -> privileged reconciliation + ordered migrations, exits after
-```
-
-Five long-running Fly services plus a one-shot migration/bootstrap app — self-hosted
-Supabase, not the managed Supabase cloud (`docs/ARCHITECTURE.md:184-200`).
+The demo runs with `docker compose up --build` (Next.js app + self-hosted Supabase:
+Postgres, GoTrue, PostgREST, Kong). See [`DOCKER.md`](../DOCKER.md).
 
 ### Running one role end to end
 
@@ -499,8 +473,8 @@ Supabase, not the managed Supabase cloud (`docs/ARCHITECTURE.md:184-200`).
    (required/nice-to-have skills, experience band, company-stage target, industry,
    regions) and a campaign is created.
 2. **Source** — the recruiter triggers one or more providers from the campaign page
-   (GitHub / web-search / Apify / Apollo, gated by `campaignAllowsLiveSourcing(status)`
-   and, in prod, further gated off for Seamless/Sillage). Each run discovers → maps →
+   (the sourcing agent, GitHub / web-search, or Apify, gated by
+   `campaignAllowsLiveSourcing(status)`). Each run discovers → maps →
    scores → dedupes → commits into the campaign's candidate list.
 3. **Review** — candidates land sorted by match score, each with a rationale-annotated
    breakdown (§3) so a low score is explainable, not just a number.
@@ -510,36 +484,31 @@ Supabase, not the managed Supabase cloud (`docs/ARCHITECTURE.md:184-200`).
 5. **Draft** — an outreach draft is generated with personalization evidence attached.
 6. **Approve** — a human reviews and approves the exact draft; the approval is recorded
    against the exact message body hash.
-7. **Send** — only now does `/api/outreach/send` deliver (email via Resend/SendGrid;
-   WhatsApp via signed webhook adapters, currently dry-run pending Meta WABA
-   provisioning; LinkedIn is always assisted-manual copy/paste).
+7. **Send** — only now does `/api/outreach/send` deliver (email from a connected
+   Gmail / Outlook mailbox, or Resend / SendGrid; LinkedIn is always assisted-manual
+   copy/paste).
 8. **Reply / schedule** — inbound replies are classified and routed to a human-review
    queue; a durable calendar-booking authority (commit `99419a1`) handles interview
    proposals with a fail-closed claim ledger.
 
-### Current owner-gated items
-
-These require Tony personally (credentials, account approval, or a deliberate spend
-decision) — compiled from `_relay/2026-07-16-owner-actions.md`:
+### Owner-gated items
 
 | Item | What it unlocks | Action |
 |---|---|---|
-| **dev_fusion Apify actor approval** | The secondary LinkedIn profile enricher used by the enrichment waterfall (currently returns `403 full-permission-actor-not-approved`, surfaced gracefully as `not_configured`) | One click in the Apify console — approve the actor's permissions |
-| **Apollo / Seamless / Sillage API keys** | The full cost-ascending enrichment waterfall beyond Apify | Enter via Settings → API Keys (Seamless/Sillage still won't run in prod without the receipt-authority work described in §2) |
-| **GitHub Actions budget** | CI/CodeQL — every job currently fails at startup with "Actions budget…" | Raise the spending limit / add payment in GitHub billing |
+| **dev_fusion Apify actor approval** | The Apify enrichment runner (otherwise surfaced as `not_configured`) | Approve the actor's permissions in the Apify console |
+| **LLM provider key** | `cloud` mode of the sourcing agent and AI drafting | Settings → API Keys, then select the provider in Settings |
 
-harvestapi (the primary Apify discovery actor) already covers discover + enrich + email
-on its own without the dev_fusion approval — that approval only unlocks the *secondary*
-enricher in the cost-ascending waterfall.
+harvestapi (the Apify discovery actor) already covers discover + email on its own without
+the dev_fusion approval.
 
 ---
 
 ## Section index
 
 1. Overview — two-mode runtime, fail-closed production posture
-2. The sourcing pipeline — providers, discover→map→score→dedupe→commit, dedupe keys, 90-day recontact window
+2. The sourcing pipeline — providers, sourcing agent, discover→map→score→dedupe→commit, dedupe keys, 90-day recontact window
 3. Signal-aware scoring — six dimensions, three-state model, `UNKNOWN_ANCHOR`
 4. Enrichment — cost-ascending waterfall, per-field provenance, homed experience/education/languages
 5. The candidate corpus — shadow mirror, tenant-isolated read RPC, person-identity model
 6. Compliance & safety — never-auto-send, RLS, GDPR erasure, lawful basis, discrimination-proxy filter, LinkedIn policy
-7. Operating it — env/flags, Fly topology, end-to-end run, owner-gated items
+7. Operating it — env/flags, local stack, end-to-end run, owner-gated items

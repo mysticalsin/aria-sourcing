@@ -84,6 +84,4 @@ Security fixes target the current integration source and the exact protected
 release candidate. Historical audit documents and older deployed builds are not
 supported evidence of the current security posture.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for trust boundaries and
-[`production-readiness/DEPLOYMENT_RUNBOOK.md`](production-readiness/DEPLOYMENT_RUNBOOK.md)
-for protected release controls.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for trust boundaries.

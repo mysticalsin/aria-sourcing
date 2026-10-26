@@ -48,29 +48,20 @@ its exact lockfile or digest.
 These commands require Docker and create disposable databases:
 
 ```bash
-npm run test:db-privileges
-npm run test:db-agent-memory
-npm run test:db-agent-operational-rollback
 npm run test:db-candidate-erasure
 npm run test:db-candidates-corpus
 npm run test:db-person-model
+npm run test:db-agent-operational-rollback
 npm run test:db-cross-channel-cap
-npm run test:db-apollo-enrichment
+npm run test:db-sequence-engine
 npm run test:db-sourcing-learning
 npm run test:db-conversation-authority
-npm run test:db-agent-framework
-npm run test:db-owner-recovery
-npm run test:fly-db-volume
 ```
 
-They cover direct-session privilege separation, migration idempotence, retired
-credentials, exact-scope agent memory, current-tip operational fallback and
-forward recovery, candidate-erasure authority, cross-channel daily-cap
-serialization, candidate-corpus mirror authority, derived person identity,
-Apollo authority,
-adaptive-sourcing lessons, conversation and framework authority, orphan-owner
-recovery, legacy-volume refusal, and restart
-persistence. This list mirrors the disposable-database jobs in
+They cover candidate-erasure authority, candidate-corpus mirror authority,
+derived person identity, operational fallback, cross-channel daily-cap
+serialization, the outreach sequence engine, sourcing-run receipts, and
+conversation authority. This list mirrors the `database-security` job in
 `.github/workflows/ci.yml`; update both when adding a database gate.
 
 Static SQL-text tests are useful regression guards but do not replace these
@@ -137,13 +128,11 @@ Do not summarize a partial gate as full production readiness.
 
 The chained source gate does not currently include:
 
-- a real-browser Agent Studio journey;
-- two-user concurrent Agent execution through deployed application APIs;
+- a real-browser journey through the recruiting pages (a manual Docker smoke
+  is the current check);
 - axe, keyboard, and mobile-viewport acceptance;
 - behavioral coverage instrumentation and enforced thresholds;
-- a real email and official WhatsApp send-and-reply round trip;
-- production restart, recovery, and exact-release acceptance for the current
-  migration tip.
+- a real email send-and-reply round trip;
 
 Static source assertions and mock-server harnesses remain useful regression
 checks, but they do not close these gaps.

@@ -1,195 +1,112 @@
-# MSourcing / ARIA
+# ARIA (MSourcing)
 
-MSourcing is the repo name; ARIA is the product identity used in the UI; older
-Hermes names remain on some runtime and adapter surfaces for continuity. Today
-the product is a recruiting operations console that turns intake into sourced
-candidates, guarded outreach, reply handling, booking workflows, executive
-visibility, and audit evidence with Supabase-backed live mode and a dry-run demo
-mode.
+ARIA is a recruiting operations console. It takes a hiring need and runs the
+whole recruiting journey: sourcing, scoring, outreach that a human approves,
+reply handling, interview booking, and reporting for decision-makers.
 
-## Current Stack
+The repository is named MSourcing; ARIA is the product name in the UI. Some
+identifiers still say `hermes` (package name, `/api/hermes/chat`, store types)
+for compatibility.
 
-Verified from `package.json` on 2026-07-14:
+## The recruiting journey
 
-| Area | Current truth |
-|---|---|
-| App | Next.js `^16.2.6` App Router, React `^19.2.7`, TypeScript `^5.6.3` |
-| Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
-| UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
-| Node | `22.x` |
-| Verification | `npm test` executes the validated inventory in `tests/test-manifest.mjs`; inspect it with `node scripts/run-test-manifest.mjs --list all` |
-| Quality gates | `npm run typecheck`, `npm run typecheck:tests`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
+```text
+Intake ─▶ Campaign ─▶ Sourcing agent ─▶ Candidates / Vivier
+                                           │
+           Calendar ◀─ Replies ◀─ Outreach (human approval) ◀─┘
 
-## Shipped Surfaces
+Reporting: Command Center, Funnel, Exec, Reports, Winlog, Trust & ROI, Sessions
+Public:    Careers page ─▶ Applicants inbox
+```
 
-| Surface | Where it lives | Status |
+| Step | Page | What happens |
 |---|---|---|
-| Sourcing and campaign flow | `src/app/intake`, `src/app/campaigns`, `src/app/api/source`, `src/app/api/sourcing-agent` | Built |
-| Review-gated sourcing lessons | `supabase/migrations/0027_sourcing_learning_authority.sql`, `workers/graphify-lessons`, `docs/operations/SOURCING_LEARNING.md` | Built in source; database migration, digest-pinned worker image, and human review operations required |
-| Outreach guardrails | `src/app/outreach`, `src/lib/dispatch-outbound.ts`, `src/lib/gate.ts`, `src/lib/outreach-*` | Built |
-| Candidate disclosure security layer | `src/lib/agent-disclosure-policy.ts`, `tests/agent-disclosure-policy.mts`, `tests/salary-boundary-adversarial.mts` | Built |
-| Public careers intake | `src/app/careers`, `src/app/api/careers/route.ts`, `src/lib/careers*` | Built |
-| Executive dashboard | `src/app/exec`, `src/lib/exec-dashboard.ts` | Built |
-| Win log | `src/app/winlog`, `tests/winlog.mts` | Built |
-| Databricks intake | `src/app/api/integrations/databricks/{config,needs}`, `src/lib/integrations/databricks-authority.ts`, `tests/{databricks-intake,integration-authority}.mts` | Built in source; migration 0019, deployment `DATABRICKS_ALLOWED_ORIGINS`, and admin rebinding required |
-| MCP discovery and query auth | `src/app/api/mcp/test`, `tests/mcp-query-auth.mts` | Built; HTTPS port 443 only |
-| Third-party MCP execution | `src/lib/mcp-client.ts`, `tests/mcp-runtime-policy.mts` | Disabled in production; nonproduction requires explicit opt-in |
-| Hermes runtime proxy | `src/app/api/hermes/*`, `src/lib/api/hermes-proxy.ts` | Built, private runtime required |
-| Google/Microsoft mailbox OAuth | `src/app/auth/google/*`, `src/app/auth/microsoft/*`, `src/lib/email-oauth.ts` | Built, provider credentials required |
-| WhatsApp review and inbound safety | `src/app/api/webhooks/whatsapp/route.ts`, `src/app/api/outreach/whatsapp-review/route.ts`, `src/lib/channels.ts` | Built, Meta credentials required |
+| Intake | `/intake`, `/launch` | Paste a job description or email; ARIA parses it into a structured brief and opens a campaign (one role or a batch). |
+| Sourcing | `/campaigns/[id]` | **Run agent** finds real candidates on GitHub, on the web (LinkedIn, Stack Overflow, Dribbble, Behance via Tavily) and through Apify LinkedIn search, then scores and dedupes them. |
+| Candidates | `/candidates`, `/vivier` | Scored candidates with an explainable breakdown; the talent pool keeps them across campaigns. Apify can enrich a profile (email, skills, experience). |
+| Outreach | `/outreach` | Drafts are generated per candidate. Nothing is sent until a human approves the exact text. Email goes out from a connected Gmail / Outlook mailbox; LinkedIn is copy/paste assisted. |
+| Replies | `/replies` | Inbound replies are classified and routed for follow-up. |
+| Booking | `/calendar` | Interview slots and bookings. |
+| Reporting | `/`, `/funnel`, `/exec`, `/reports`, `/winlog`, `/trust`, `/sessions`, `/skills` | Candidates sourced, funnel conversion, ROI and compliance, per-candidate journeys with an audit pack, learned playbooks. |
+| Careers | `/careers`, `/applicants` | A public job board; applications land in the applicant inbox. |
+| Configuration | `/fleet` (Mailboxes), `/settings` | Sender mailboxes and suppression list; API keys, LLM provider, Dust and MCP servers, compliance settings. |
 
-LinkedIn remains compliant assisted-manual unless an official signed integration
-is provided. The app must not automate LinkedIn login, scraping, or rate-limit
-bypass.
+## Run it locally
 
-## Local Run
-
-Install and run the demo UI:
+Requirements: Docker Desktop (about 4 GB of memory for Docker is enough).
 
 ```bash
+# Optional but needed to store API keys from Settings (encrypted at rest):
+echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
+
+docker compose up --build
+```
+
+Open <http://localhost:3000> and sign in with `admin@hermes.local` /
+`admindemo123`. The first run takes a few minutes (images, `npm ci`,
+53 database migrations). [`DOCKER.md`](DOCKER.md) covers ports, resets and
+troubleshooting.
+
+### Turn on the real integrations
+
+The stack runs without any external key. Each integration lights up when its
+key is present:
+
+| Capability | How to enable |
+|---|---|
+| GitHub sourcing | Works keyless (60 requests/hour). Set `GITHUB_TOKEN` in `.env.local` for 5,000/hour. |
+| Web sourcing (LinkedIn, Stack Overflow, Dribbble, Behance) | Tavily key in **Settings → API keys**, or `TAVILY_API_KEY` in `.env.local`. |
+| Apify LinkedIn search and enrichment | Apify token in **Settings → API keys**. |
+| Sourcing agent in `cloud` mode and AI drafting | An Anthropic or OpenAI-compatible key in **Settings → API keys**, then enable it under **Settings → LLM providers**. Without it the agent runs in `deterministic` mode. |
+| Email sending and reply sync | Connect a mailbox under **Mailboxes** (Gmail or Microsoft OAuth, see [`docs/runbooks/connect-gmail-outlook.md`](docs/runbooks/connect-gmail-outlook.md)), or use Resend / SendGrid. |
+| Dust agents, MCP tools | **Settings → Dust agents** and **Settings → Tools** (MCP tool servers). |
+
+Every key stored in Settings is encrypted with `DATA_ENCRYPTION_KEY` and never
+returned to the browser. [`.env.local.example`](.env.local.example) lists every
+variable.
+
+## Development
+
+To iterate on the app outside Docker, keep the backend services running and
+start Next.js on the host. Copy `NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321`
+and the anon / service-role keys from `docker-compose.yml` into `.env.local`,
+then:
+
+```bash
+docker compose stop app
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
-
-To run against local Supabase instead of browser demo state:
+The quality gate every change must keep green:
 
 ```bash
-bash scripts/local-supabase-up.sh
-npm run dev
-```
-
-The script starts local Supabase, applies every numbered migration in
-`supabase/migrations/`, and writes a local `.env.local`. It requires Docker
-Desktop and the Supabase CLI.
-
-## Verification
-
-```bash
-npm run typecheck
-npm run typecheck:tests
+npm run typecheck && npm run typecheck:tests && npm test
 npm run lint
-npm test
-npm run build:isolated
 ```
 
-Use `npm run build:isolated` in this OneDrive-synced checkout. It copies the
-project to a temporary workspace and runs the normal Next build there.
+`npm test` runs the inventory in [`tests/test-manifest.mjs`](tests/test-manifest.mjs);
+see [`docs/TESTING.md`](docs/TESTING.md).
+
+## Stack
+
+| Area | Technology |
+|---|---|
+| App | Next.js 16 (App Router), React 19, TypeScript, Tailwind, Recharts |
+| Data and auth | Self-hosted Supabase: Postgres with RLS tenancy, GoTrue, PostgREST, Kong |
+| AI | Server-side calls to Anthropic or OpenAI-compatible APIs through a bounded tool loop |
+| Runtime | Node 22, Docker Compose for local; internal Azure (Terraform) planned |
 
 ## Documentation
 
-[`docs/README.md`](docs/README.md) is the documentation map. It says what every
-top-level directory and doc is for, and separates product docs from the operational
-dossier (`production-readiness/`) and agent working-state (`_relay/`, `_agent_state/`).
-Start there when you're looking for something and don't know which file holds it.
+- [`docs/README.md`](docs/README.md): documentation map
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): code layout, data authority, sourcing agent, outreach
+- [`docs/SOURCING.md`](docs/SOURCING.md): sourcing, scoring, enrichment, compliance
+- [`SECURITY.md`](SECURITY.md): security invariants and reporting
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): change workflow
 
-The current developer architecture is
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-Change workflow and verification are documented in
-[`CONTRIBUTING.md`](CONTRIBUTING.md) and
-[`docs/TESTING.md`](docs/TESTING.md). Security reporting and invariants are in
-[`SECURITY.md`](SECURITY.md).
+## Non-negotiables
 
-Developer maps:
-
-- Domain and runtime logic: [`src/lib/README.md`](src/lib/README.md)
-- Test suite: [`tests/README.md`](tests/README.md)
-- Operational scripts: [`scripts/README.md`](scripts/README.md)
-- Infrastructure source: [`infra/README.md`](infra/README.md)
-- Responsibility and document authority: [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md)
-
-## Deployment
-
-The canonical deploy story is
-[`production-readiness/DEPLOYMENT_RUNBOOK.md`](production-readiness/DEPLOYMENT_RUNBOOK.md).
-The short root pointer is [`DEPLOYMENT.md`](DEPLOYMENT.md).
-
-Production requires, at minimum:
-
-- Fly-hosted PostgreSQL recovered and migrated only through the protected
-  bootstrap ledger path in the canonical workflow. Do not run `supabase db
-  push` against the Fly production database.
-- Required production env vars from `.env.production.example`.
-- Protected GitHub `Production` environment secrets for the Fly deployment and
-  a separate registry-only `FLY_REGISTRY_TOKEN` restricted to the app, DB,
-  bootstrap, Kong, and Graphify worker registries. Do not reuse a general
-  operator token.
-- A verified delivery provider path before any live outreach.
-- Domain, OAuth, and unsubscribe settings matching the deployment URL.
-- Green local/CI gates against the release SHA.
-
-The protected Fly workflow builds the app, DB, bootstrap, Kong, and one-shot
-Graphify lesson-worker images from the exact release SHA, pushes isolated
-candidates, pulls and scans their exact registry digests, signs provenance and
-SBOM attestations for all 5 local images, promotes immutable SHA tags, and
-deploys without rebuilding.
-It also pulls the config-pinned upstream Auth and REST images for `linux/amd64`,
-applies the same CycloneDX, HIGH/CRITICAL, and secret gates, and records them as
-upstream rather than claiming local build attestations. All 7 images are bound
-into release evidence; running-digest equality applies to the 6 deployed
-services. The Graphify worker has a pre-publication container test plus immutable
-scan, attestation, and promotion evidence; this workflow does not claim a
-post-promotion worker execution receipt. The always-run evidence upload retains rollback, manifest,
-schema-validated SBOM, vulnerability, filesystem plus image-config/history
-secret, attestation, and release receipts even when a later gate fails.
-The workflow must exist on the repository default branch before manual dispatch
-is available.
-
-The current dated status page is
-[`production-readiness/STATUS.md`](production-readiness/STATUS.md).
-
-## Architecture map
-
-```text
-src/
-  app/                       Next App Router pages and API routes
-  components/                App shell, feature UI, dashboard, settings, trust, 3D floor
-  lib/                       Domain logic, providers, Supabase helpers, security gates
-  styles/                    Global CSS and design tokens
-
-supabase/
-  migrations/                Root-level Supabase SQL migrations, apply in order
-
-tests/                       Root-level TypeScript test suites
-scripts/                     Local setup, backup/restore, smoke, build helpers
-production-readiness/        Canonical deployment runbook, checklist, status, older evidence pack
-```
-
-For data ownership, agent isolation, request flows, and deployment boundaries,
-read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
-Important code anchors:
-
-- `src/lib/types.ts` is the central domain model.
-- `src/lib/store.ts` owns client state and local/demo persistence.
-- `src/lib/store/contracts.ts` owns the React-free public action and context
-  contracts used to decompose the client store without breaking callers.
-- `src/lib/store/campaign-actions.ts` owns campaign/intake mutations, editable
-  field filtering, and viewer-safe mutation checks.
-- `src/lib/store/campaign-launch.ts` summarizes multi-role creation and sourcing
-  results without allowing partial success to appear complete.
-- `src/lib/supabase/*` owns live-mode Supabase config and server helpers.
-- `src/lib/crypto-secrets.ts` encrypts provider/OAuth secrets at rest when
-  `DATA_ENCRYPTION_KEY` is set and supports bounded rotation through
-  `DATA_ENCRYPTION_PREVIOUS_KEYS`.
-- `src/lib/agent-disclosure-policy.ts` blocks candidate-facing disclosure leaks.
-- `src/lib/metrics.ts` and `src/lib/exec-dashboard.ts` define metric semantics.
-- `src/app/api/cron/dispatch-outbound/route.ts` is protected by `CRON_SECRET`.
-
-## Environment
-
-Use `.env.local.example` for local development and `.env.production.example` for
-Vercel/self-hosted production. Both examples are regenerated from the actual
-`process.env.*` reads under `src/`, plus the provider-map keys used through
-`process.env[PROVIDER_ENV[provider]]`.
-
-Do not commit real secrets.
-
-## Migration Rule
-
-Do not hand-pick a partial migration range. Apply every file in
-`supabase/migrations/` in order. Fly production uses only the protected
-bootstrap ledger path. `supabase db push` is limited to a separately linked
-legacy Vercel demo project, and `supabase db reset` is local development only.
-The only annotated per-migration list lives in the canonical deploy runbook.
+- No message reaches a candidate without a recorded human approval of the exact text.
+- LinkedIn is never automated: no login automation, scraping, or rate-limit bypass.
+- Provider credentials stay server-side and encrypted at rest.

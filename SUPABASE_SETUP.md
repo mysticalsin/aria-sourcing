@@ -31,8 +31,8 @@ supabase db push
 For local development, `bash scripts/local-supabase-up.sh` starts Supabase and
 uses `supabase db reset`, which also applies every numbered migration. If you
 must use the SQL Editor, run every file in lexical order and do not stop at an
-older range. The canonical annotated migration list is maintained only in
-[`production-readiness/DEPLOYMENT_RUNBOOK.md`](production-readiness/DEPLOYMENT_RUNBOOK.md).
+older range. The local Docker stack does this automatically through
+`docker/bootstrap/migrate.sh`.
 
 **Email sending (optional, live):**
 - API-key providers: set `RESEND_API_KEY` or `SENDGRID_API_KEY` in `.env.local`.

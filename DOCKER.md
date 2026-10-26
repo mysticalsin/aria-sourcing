@@ -10,10 +10,9 @@ Supabase backend (Postgres, GoTrue auth, PostgREST, Kong) — all in Docker. No 
 docker compose up --build      # first run: builds images, applies migrations, seeds admin
 ```
 
-Then open **http://localhost:3000** and sign in:
-
-- one-click **`admin` / `admin`**, or
-- the email form: **admin@hermes.local** / **admindemo123**
+Then open **http://localhost:3000** and sign in with **admin@hermes.local** /
+**admindemo123** (email form). The bootstrap seeds this admin into the
+"Hermes Workspace" (fixed id `00000000-0000-4000-8000-000000000001`).
 
 First run pulls the Supabase images and runs `npm ci`, so it takes a few minutes. Later
 runs are fast. Use `docker compose up -d` to run detached.
@@ -36,8 +35,7 @@ docker compose restart app     # restart just the app after a code change
 | `auth` | supabase/gotrue | email+password login, JWT issuance |
 | `rest` | postgrest | RLS-enforced CRUD + RPCs over `/rest/v1` |
 | `kong` | kong | single API gateway (routes `/auth/v1` + `/rest/v1`), exposed on `:54321` |
-| `supabase-bootstrap` | postgres+curl | one-shot: applies every numbered migration in `supabase/migrations/`, seeds + promotes the local admin user, reloads PostgREST |
-| `obscura` | pinned Rust source build | read-only browser-research sidecar; no host port, stealth, or private-network access |
+| `supabase-bootstrap` | postgres+curl | one-shot: owner reconciliation, then `migrate.sh` applies every numbered migration in `supabase/migrations/` (hash-checked ledger), seeds + promotes the local admin user, reloads PostgREST |
 | `app` | (this repo) | the Next.js dev server on `:3000` |
 
 `docker compose ps` should show `db/auth/rest/kong` healthy and the two one-shots
@@ -69,25 +67,15 @@ APP_PORT=3001 KONG_PORT=54331 DB_HOST_PORT=54332 docker compose up
 - The Supabase keys in `docker-compose.yml` are the **public Supabase sample keys** — fine
   for a local stack only. For any non-local use, regenerate `JWT_SECRET` and the matching
   anon/service-role JWTs and override them.
-- `.env.local` is optional and loaded if present — put provider keys there (GitHub, WhatsApp,
-  Twilio, OAuth, `DATA_ENCRYPTION_KEY`, …) to light up those integrations. The core stack
-  runs without it.
-- Inspect the database directly: `docker compose exec db psql -U postgres`, or point any
-  client at `localhost:54322` (user `postgres`, password `postgres`).
+- `.env.local` is optional and loaded if present. Put `DATA_ENCRYPTION_KEY` there
+  (`openssl rand -base64 32`) so Settings can store API keys, plus any of `GITHUB_TOKEN`,
+  `TAVILY_API_KEY`, Google / Microsoft OAuth, `RESEND_API_KEY`. The core stack runs
+  without it.
+- The public `/careers` board reads the seeded workspace (`CAREERS_WORKSPACE_ID` is set in
+  `docker-compose.yml`). It answers 503 until the admin has signed in once, because the
+  first sign-in creates the workspace document.
+- Inspect the database directly: `docker compose exec db psql -U postgres -d postgres`.
+  The `postgres` role cannot read `auth.users` (ownership hardening); use
+  `-U supabase_admin` for auth tables.
 - The `.next` build dir lives on an anonymous volume (not the OneDrive-synced checkout), so
   Next's output never corrupts the host copy.
-
-### Restricted build egress
-
-The `obscura` image caches Rusty's pinned V8 archive with BuildKit. If the
-builder cannot reach GitHub Releases on its first build, provide a
-non-secret, owner-controlled mirror with the upstream layout, for example:
-
-```bash
-RUSTY_V8_MIRROR=https://artifacts.example.internal/rusty_v8 docker compose build obscura
-```
-
-For the currently pinned dependency, that mirror must serve
-`v137.3.0/librusty_v8_release_aarch64-unknown-linux-gnu.a.gz`. Verify the
-artifact’s checksum before publishing it. Do not put credentials in
-`RUSTY_V8_MIRROR`, because Compose passes it as a build argument.

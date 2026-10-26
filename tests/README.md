@@ -36,5 +36,4 @@ credentials, private evidence, decrypted memory, or production identifiers in
 test source, snapshots, logs, or fixtures. Database harnesses must use unique
 project names and clean only resources they created.
 
-See [`docs/TESTING.md`](../docs/TESTING.md) for the full verification tiers and
-[`docs/OWNERSHIP.md`](../docs/OWNERSHIP.md) for review responsibility.
+See [`docs/TESTING.md`](../docs/TESTING.md) for the full verification tiers.

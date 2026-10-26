@@ -7,12 +7,10 @@ reviewable changes are preferred over broad rewrites.
 
 1. Read [`README.md`](README.md) and
    [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-2. Read [`production-readiness/STATUS.md`](production-readiness/STATUS.md) for
-   the source and release boundary.
-3. If another agent or developer is active, read
+2. If another agent or developer is active, read
    [`_relay/HANDOFF.md`](_relay/HANDOFF.md) and preserve every existing
    working-tree change.
-4. Use Node 22 and install from the lockfile with `npm ci`.
+3. Use Node 22 and install from the lockfile with `npm ci`.
 
 ## Change workflow
 
@@ -65,8 +63,8 @@ release gates.
 - Preserve direct-session owner and migrator boundaries.
 - Add static contract tests and a disposable-Postgres behavior test when the
   change affects RLS, privileges, claims, memory, or migrations.
-- Do not run `supabase db push` against Fly production. The protected
-  bootstrap ledger is the only production migration path.
+- Apply migrations through the bootstrap ledger (`docker/bootstrap/migrate.sh`),
+  never by hand-picking a range.
 
 ## API and integration changes
 
@@ -81,12 +79,9 @@ release gates.
 ## Documentation changes
 
 - Put current developer guidance under `docs/`.
-- Put current Fly release procedures under `production-readiness/`.
 - Mark historical evidence as historical; do not update an old audit body to
   resemble current evidence.
-- Keep source readiness, release eligibility, and live health as separate
-  claims.
-- Update `tests/docs-truth.mts` when a current documentation contract changes.
+- Write documentation in English.
 
 ## Commit and review
 
