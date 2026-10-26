@@ -1,6 +1,6 @@
 # ensure_workspace() cannot read auth.users, so new users land in a generic workspace
 
-Status: needs-triage
+Status: done
 
 ## Evidence
 After the owner/ACL reconciliation, the `postgres` role sees zero rows in
@@ -18,3 +18,7 @@ fine. Any second user (teammate) still hits this bug.
 Read the email from the JWT claims (`auth.jwt() ->> 'email'`) inside
 `ensure_workspace()` in a new migration, or grant the function owner a narrow
 read on `auth.users(id, email)`. Add a disposable-DB test.
+
+## Resolution (2026-10-26)
+
+Fixed in `8650e9a8`: `ensure_workspace()` reads the caller email from the JWT claims (`request.jwt.claims`), not `auth.users`. Covered by `tests/db/ensure-workspace-authority.sql`. Adding more users is a later step.
