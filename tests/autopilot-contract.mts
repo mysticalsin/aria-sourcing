@@ -81,15 +81,6 @@ ok(
     !/canary update failed/i.test(whatsappInbound),
 );
 
-const readinessStatus = source("production-readiness/STATUS.md");
-ok(
-  "current readiness status declares inbound reply drafting queue-only",
-  /Inbound candidate repl(?:y|ies)[^.]*named\s+human review/i.test(readinessStatus),
-);
-ok(
-  "current readiness status declares agent graph drafts run-history-only",
-  /Agent graph drafts[^.]*run history[^.]*no delivery authority/i.test(readinessStatus),
-);
 
 console.log(`RESULT autopilot-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

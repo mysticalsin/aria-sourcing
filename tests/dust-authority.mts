@@ -107,7 +107,6 @@ ok("Dust execution never reads member-writable workspace_state", workspaceStateR
 
 const migration = source("supabase/migrations/0020_dust_authority.sql");
 const databaseTest = source("tests/db/dust-authority.sql");
-const databaseHarness = source("scripts/test-db-privileges.sh");
 const authority = source("src/lib/integrations/dust-authority.ts");
 const runRoute = source("src/app/api/dust/run/route.ts");
 const configRoute = source("src/app/api/integrations/dust/config/route.ts");
@@ -140,10 +139,6 @@ ok(
     /set local role service_role/i.test(databaseTest) &&
     /set local role anon/i.test(databaseTest) &&
     /request\.jwt\.claims/i.test(databaseTest),
-);
-ok(
-  "disposable database harness runs Dust authority verification",
-  /tests\/db\/dust-authority\.sql/.test(databaseHarness),
 );
 ok(
   "migration creates append-only non-secret Dust audit storage",

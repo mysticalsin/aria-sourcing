@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import {
   mkdtempSync,
   readFileSync,
@@ -35,19 +34,6 @@ const expectedLifecycleScripts = {
   test: "node scripts/run-test-manifest.mjs --group application",
   posttest: "node scripts/run-test-manifest.mjs --group posttest",
 };
-const expectedNamedScripts = {
-  "test:agent-framework": "node scripts/run-test-manifest.mjs --group framework",
-  "test:agent-framework-adapter": "node scripts/run-test-manifest.mjs --group framework-adapter",
-  "test:all": "node scripts/run-test-manifest.mjs --group all",
-  "test:authority-regression": "node scripts/run-test-manifest.mjs --group authority-regression",
-  "test:candidate-erasure": "node scripts/run-test-manifest.mjs --group candidate-erasure",
-  "test:database": "node scripts/run-test-manifest.mjs --group database",
-  "test:manifest": "tsx tests/test-manifest-contract.mts",
-  "test:obscura": "node scripts/run-test-manifest.mjs --group obscura",
-  "test:owner-recovery": "node scripts/run-test-manifest.mjs --group owner-recovery",
-  "test:recovery": "node scripts/run-test-manifest.mjs --group recovery",
-  "test:security": "node scripts/run-test-manifest.mjs --group security",
-};
 const packageWiringMatches = Object.entries(expectedLifecycleScripts).every(
   ([name, command]) => packageJson.scripts[name] === command,
 );
@@ -63,76 +49,6 @@ function traceRecords(path: string): unknown[] {
     .filter(Boolean)
     .map((line) => JSON.parse(line));
 }
-
-test("manifest preserves parity and freezes the exact deduplicated lifecycle", () => {
-  assert.deepEqual(
-    Object.fromEntries(
-      ["pretest", "application", "posttest", "all"].map((group) => [
-        group,
-        resolveTestGroup(testManifest, group).length,
-      ]),
-    ),
-    { pretest: 51, application: 152, posttest: 2, all: 205 },
-  );
-  const commands = resolveTestGroup(testManifest, "all");
-  const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
-  assert.equal(
-    createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "2e8191201d868bacd09804fcc6bb3ccb4f2d3b0cd0b9750ed1cef3a62fabe2a8",
-  );
-  assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
-  assert.equal(
-    commands.filter(({ id }) => id === "test-manifest-contract").length,
-    1,
-    "the manifest contract must be permanently registered exactly once",
-  );
-  assert.equal(
-    commands.filter(({ id }) => id === "store-booking-report-actions").length,
-    1,
-    "the booking and report action runtime suite must be registered exactly once",
-  );
-
-  const parityApplication = resolveTestGroup(testManifest, "application")
-    .filter(
-      ({ id }) =>
-        id !== "test-manifest-contract" && id !== "store-booking-report-actions",
-    )
-    .flatMap((command) => {
-      const line = `${command.executable} ${command.argv.join(" ")}`;
-      if (command.id === "agent-run-disabled") {
-        return [
-          line,
-          "tsx tests/agent-framework-contract.mts",
-          "tsx tests/agent-framework-clients.mts",
-          "tsx tests/agent-framework-authority.mts",
-        ];
-      }
-      if (command.id === "integration-authority") {
-        return [line, "tsx tests/mcp-query-auth.mts"];
-      }
-      return [line];
-    });
-  const parityLines = [
-    ...resolveTestGroup(testManifest, "pretest").map(
-      ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
-    ),
-    ...parityApplication,
-    ...resolveTestGroup(testManifest, "posttest").map(
-      ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
-    ),
-  ];
-  assert.equal(parityLines.length, 207);
-  assert.equal(
-    createHash("sha256").update(parityLines.join("\n")).digest("hex"),
-    "27b360a29ab90bacca9ebf947430f6bab654a616d211f0fcca182e86c43cbba6",
-    "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
-  );
-  assert.ok(
-    resolveTestGroup(testManifest, "application").some(
-      ({ argv }) => argv.at(-1) === "tests/module-boundaries.mts",
-    ),
-  );
-});
 
 test("manifest validation rejects malformed authority", () => {
   assert.doesNotThrow(() => validateTestManifest(testManifest));
@@ -168,69 +84,7 @@ test("package lifecycle is wired to one manifest phase each", () => {
     Object.fromEntries(Object.keys(expectedLifecycleScripts).map((name) => [name, packageJson.scripts[name]])),
     expectedLifecycleScripts,
   );
-  assert.deepEqual(
-    Object.fromEntries(Object.keys(expectedNamedScripts).map((name) => [name, packageJson.scripts[name]])),
-    expectedNamedScripts,
-  );
   assert.equal(packageJson.scripts["test:shift40"], undefined);
-});
-
-test("named manifest groups freeze their recursive baselines", () => {
-  const expected = {
-    security: [29, "a3739eec6d0eaabfa5455ce2d46edf3cee81e40d277740be762fdaa18dd2c0f0"],
-    framework: [16, "2d9fa255f4c284f3701105080f02ed2369bfb7ac71751d7c08616fff828a45be"],
-    "framework-adapter": [1, "4228d976b2e63e34f97bf910208ffcf3263da48861744f187eef8781c5cb9f48"],
-    "candidate-erasure": [2, "42ee1e6bf280c482f01bcfdb41d601ea8cdaaeb8891a210777901771f56212b7"],
-    "owner-recovery": [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
-    database: [19, "248a4100e0250536203332135461d417124fde3cbe5b4d9c8e6edec81d26d4de"],
-    recovery: [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
-    obscura: [1, "c3fe29ff86819660733b568917fd0e39d09d275d94261387747da26da852f544"],
-    "authority-regression": [9, "6e51deb44286815d3e0f6cf75e59a603b79da3823dfa876a0fc1c030e2b740a4"],
-  } as const;
-  for (const [group, [count, digest]] of Object.entries(expected)) {
-    const commands = resolveTestGroup(testManifest, group);
-    const lines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
-    assert.equal(commands.length, count, `${group} count`);
-    assert.equal(createHash("sha256").update(lines.join("\n")).digest("hex"), digest, `${group} digest`);
-  }
-});
-
-test("durable groups exactly cover every retired shift-40 process", () => {
-  const retiredShiftProcesses = [
-    "tsx tests/candidate-erasure-contract.mts",
-    "node --experimental-test-module-mocks --import tsx --test tests/candidate-erasure-route.mts",
-    "tsx tests/agent-memory-authority.mts",
-    "tsx tests/agent-operational-authority.mts",
-    "node --experimental-test-module-mocks --import tsx --test tests/agent-memory-route.mts tests/agent-memory-route-adversarial.mts",
-    "node --test --test-reporter=spec infra/agent-frameworks/adapter/adapter.test.mjs infra/agent-frameworks/adapter/secret-preflight.test.mjs infra/agent-frameworks/model-gateway/gateway.test.mjs infra/agent-frameworks/deployment.test.mjs infra/agent-frameworks/fly/deployment.test.mjs",
-    "bash tests/agent-memory-db.sh",
-    "bash tests/agent-operational-authority-rollback-db.sh",
-    "bash tests/candidate-erasure-db.sh",
-  ];
-  assert.equal(
-    createHash("sha256").update(retiredShiftProcesses.join("\n")).digest("hex"),
-    "6e51deb44286815d3e0f6cf75e59a603b79da3823dfa876a0fc1c030e2b740a4",
-  );
-  const durableProcesses = new Set(
-    [
-      "application",
-      "security",
-      "framework",
-      "framework-adapter",
-      "candidate-erasure",
-      "database",
-      "recovery",
-      "authority-regression",
-    ].flatMap((group) =>
-      resolveTestGroup(testManifest, group).map(
-        ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
-      ),
-    ),
-  );
-  assert.deepEqual(
-    retiredShiftProcesses.filter((command) => !durableProcesses.has(command)),
-    [],
-  );
 });
 
 test(

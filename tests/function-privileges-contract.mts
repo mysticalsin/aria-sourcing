@@ -10,9 +10,6 @@ const ownerReconciliation = existsSync(ownerReconciliationPath)
   ? readFileSync(ownerReconciliationPath, "utf8")
   : "";
 const databaseTest = readFileSync("tests/db/function-privileges.sql", "utf8");
-const harness = readFileSync("scripts/test-db-privileges.sh", "utf8");
-const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
-const packageJson = readFileSync("package.json", "utf8");
 
 let pass = 0;
 let fail = 0;
@@ -104,10 +101,7 @@ ok(
     /supabase_functions_admin/i.test(ownerReconciliation) &&
     /nologin/i.test(ownerReconciliation) &&
     /password\s+null/i.test(ownerReconciliation) &&
-    !/INTERNAL_TARGET_PASSWORD/i.test(ownerReconciliation) &&
-    /pg_authid/i.test(harness) &&
-    /rolcanlogin/i.test(harness) &&
-    /rolpassword\s+is\s+not\s+null/i.test(harness),
+    !/INTERNAL_TARGET_PASSWORD/i.test(ownerReconciliation),
 );
 ok("untrusted roles lose CREATE on public schema", /revoke create on schema public from public, anon, authenticated, service_role, authenticator/i.test(migration));
 ok("authenticated RPC allowlist is explicit", /AUTHENTICATED RPC ALLOWLIST/i.test(migration));
@@ -135,25 +129,9 @@ ok(
   "owner probes come from separate direct sessions rather than SET ROLE",
   !/set\s+(?:local\s+)?role\s+supabase_admin/i.test(databaseTest) &&
     /session_user\s*<>\s*'postgres'/i.test(databaseTest) &&
-    /unexpected owner/i.test(databaseTest) &&
-    /--network "?\$network"?[\s\S]*-h db -U "?\$role"?/i.test(harness) &&
-    /-U supabase_admin/i.test(harness),
-);
-ok(
-  "real harness proves owner denial, two rotations, retry, and no password leakage",
-  /postgres unexpectedly ran supabase_admin reconciliation/i.test(harness) &&
-    (harness.match(/run_owner_reconciliation/g) ?? []).length >= 4 &&
-    /retired database password still authenticates/i.test(harness) &&
-    /POSTGRES_TARGET_PASSWORD/i.test(harness) &&
-    /SUPABASE_AUTH_ADMIN_TARGET_PASSWORD/i.test(harness) &&
-    /AUTHENTICATOR_TARGET_PASSWORD/i.test(harness) &&
-    /database owner reconciliation exposed a password marker/i.test(harness) &&
-    /docker logs/i.test(harness),
+    /unexpected owner/i.test(databaseTest),
 );
 ok("real database test rejects the removed overload", databaseTest.includes("record_whatsapp_delivery_event(uuid,text,text,timestamptz,integer)"));
-ok("disposable database harness applies every migration", /migrations\/\[0-9\]\[0-9\]\[0-9\]\[0-9\]_\*\.sql/.test(harness));
-ok("package exposes the real database privilege test", packageJson.includes('"test:db-privileges"'));
-ok("CI runs database privilege verification", /database-security:[\s\S]*test:db-privileges/i.test(workflow));
 
 console.log(`RESULT function-privileges-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

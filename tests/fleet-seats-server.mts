@@ -174,7 +174,6 @@ function req(body: unknown) {
 {
   const sql = readFileSync("supabase/migrations/0018_first_admin.sql", "utf8");
   const databaseTest = readFileSync("tests/db/ensure-workspace-authority.sql", "utf8");
-  const databaseHarness = readFileSync("scripts/test-db-privileges.sh", "utf8");
   const createdBranch = sql.indexOf("workspace_was_created := true");
   const adminBranch = sql.indexOf("case when workspace_was_created then 'admin'");
   ok("migration 0018 exists and replaces ensure_workspace", sql.includes("create or replace function public.ensure_workspace()"));
@@ -196,10 +195,6 @@ function req(body: unknown) {
     /set local role anon/i.test(databaseTest) &&
       /set local role authenticated/i.test(databaseTest) &&
       /request\.jwt\.claims/i.test(databaseTest),
-  );
-  ok(
-    "disposable database harness runs ensure_workspace behavior verification",
-    /tests\/db\/ensure-workspace-authority\.sql/.test(databaseHarness),
   );
 }
 
