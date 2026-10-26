@@ -144,9 +144,6 @@ export const SOURCE_PLATFORMS = [
   "Stack Overflow",
   "Dribbble",
   "Behance",
-  "Sillage",
-  "Apollo",
-  "Seamless",
   "Manual",
   "Apify",
   "Referral",
@@ -366,7 +363,7 @@ export interface Candidate {
   sourceAuthorityId?: string;
   /** Per-provider external record ids, keyed by SourcePlatform, so a candidate
    *  discovered by one provider can still be precisely re-identified by every
-   *  OTHER configured provider (Apollo person id, Seamless searchResultId, …)
+   *  OTHER configured provider (e.g. a provider-side person id)
    *  instead of colliding on the single legacy `sourceExternalId` slot. Mapping
    *  helpers seed `externalIds[sourcePlatform] = sourceExternalId` on migration. */
   externalIds?: Partial<Record<SourcePlatform, string>>;
@@ -1170,9 +1167,6 @@ export const API_KEY_PROVIDERS = [
   "SendGrid",
   "Aria Agent",
   "Dust",
-  "Sillage",
-  "Apollo",
-  "Seamless",
   "Apify",
   "Tavily",
   "Databricks",

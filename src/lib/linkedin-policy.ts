@@ -10,8 +10,8 @@
    data from an approved third-party vendor API (Apify's harvestapi actor): no
    recruiter cookies, no headless browser, no session reuse, no login of any
    kind by this app. That data purchase is not automation this module blocks;
-   it is a vendor integration in the same trust category as Apollo, Sillage,
-   and Seamless. The guardrails below stay fully intact regardless.
+   it is a vendor integration in the same trust category as other
+   licensed data vendors. The guardrails below stay fully intact regardless.
    ========================================================================== */
 
 export interface LinkedInPolicyResult {

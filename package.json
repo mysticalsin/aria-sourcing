@@ -27,7 +27,6 @@
     "test:security": "node scripts/run-test-manifest.mjs --group security",
     "test:db-cross-channel-cap": "bash tests/cross-channel-cap-postgres.sh",
     "test:db-sequence-engine": "bash tests/sequence-engine-db.sh",
-    "test:db-apollo-enrichment": "bash tests/apollo-enrichment-db.sh",
     "test:db-sourcing-learning": "bash tests/sourcing-learning-db.sh",
     "test:db-conversation-authority": "bash tests/conversation-authority-db.sh",
     "test:manifest": "tsx tests/test-manifest-contract.mts",

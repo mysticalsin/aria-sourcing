@@ -45,7 +45,7 @@ const HOMED_FIELDS: ReadonlySet<EnrichableField> = new Set(["email", "phone", "h
  *  narrower than the full `ENRICHABLE_FIELDS` set: `company` is never
  *  produced by any registered provider today and `experience`/`education`/
  *  `languages` are Apify-only bonus richness — requiring them would make
- *  "enriched" unreachable via the Apollo/Seamless/Sillage-only paths. */
+ *  "enriched" unreachable via contact-only paths. */
 const COMMON_ENRICHMENT_FIELDS: readonly EnrichableField[] = ["email", "phone"];
 
 /** Fields that merge additively (union of items) rather than overwrite. These

@@ -20,7 +20,7 @@ function splitList(v: string): string[] {
 
 /**
  * Apify (harvestapi/linkedin-profile-search) — the sixth real sourcing channel
- * alongside GitHub/web search, Sillage account mapping, Apollo, and Seamless:
+ * alongside GitHub/web search:
  * the operator sets a LinkedIn search query and/or filters (location, current
  * title, current company) and gets back real public LinkedIn profiles, scored
  * and deduped into the campaign. This is third-party public-profile data

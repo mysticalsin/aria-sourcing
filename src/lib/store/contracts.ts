@@ -124,19 +124,6 @@ export type SourcingFeedbackReceipt = SourcingFeedbackReceiptDto;
 
 export type SourcingFeedbackVerdict = "useful" | "dead_end" | "corrected";
 
-export type ApolloEnrichmentErrorCode =
-  | "APOLLO_TARGET_NOT_FOUND"
-  | "APOLLO_ENRICHMENT_IN_PROGRESS"
-  | "APOLLO_RECONCILIATION_REQUIRED"
-  | "APOLLO_CONFIRMATION_INVALID"
-  | "APOLLO_IDEMPOTENCY_CONFLICT"
-  | "APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION"
-  | "APOLLO_QUOTA_EXCEEDED"
-  | "APOLLO_NOT_CONFIGURED"
-  | "APOLLO_AUTHORITY_UNAVAILABLE"
-  | "APOLLO_RECEIPT_UNAVAILABLE"
-  | "APOLLO_OUTCOME_UNKNOWN";
-
 export interface HermesActions {
   // campaigns
   setActiveCampaign: (id: string | null) => void;
@@ -199,94 +186,8 @@ export interface HermesActions {
       lawfulBasis: CandidateLawfulBasis;
     },
   ) => Promise<CandidateIntakeResult>;
-  /** Sillage Account Mapping (third real sourcing channel): resolves a company
-   *  (domain or LinkedIn URL) into real enriched employee profiles. Enrichment is
-   *  async — this kicks off the job server-side and returns a requestId to poll
-   *  with checkSillageMapping. Requires a stored Sillage key (Settings). */
-  startSillageMapping: (
-    campaignId: string,
-    identifier: string,
-  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
-  /** Polls one Sillage mapping job. While processing: {ok:true, status:"processing"}.
-   *  On completion: maps + scores + dedupes the real profiles exactly like
-   *  sourceNextBatch, commits the accepted candidates, logs an activity entry, and
-   *  updates campaign metrics. Never backfills a failed/empty result with synthetic
-   *  profiles. */
-  checkSillageMapping: (
-    campaignId: string,
-    requestId: string,
-  ) => Promise<
-    | { ok: true; status: "processing" }
-    | { ok: true; status: "completed"; added: number; company: string }
-    | { ok: false; error: string }
-  >;
-  /** Real Apollo.io search (fourth real sourcing channel) — free, synchronous,
-   *  no mock fallback: Apollo is a real channel, so an unconfigured key
-   *  surfaces honestly as "not_configured" rather than synthesizing fake
-   *  candidates. Requires a stored Apollo key (Settings). */
-  sourceFromApollo: (
-    campaignId: string,
-    filters: {
-      titles?: string[];
-      seniorities?: string[];
-      locations?: string[];
-      organizationDomains?: string[];
-      keywords?: string;
-      count?: number;
-    },
-  ) => Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }>;
-  /** Creates a short-lived, server-bound confirmation for one Apollo email
-   *  reveal. This performs no provider call and must precede the human modal. */
-  prepareApolloEnrichment: (
-    candidateId: string,
-  ) => Promise<
-    | { ok: true; confirmationNonce: string; expiresAt: string }
-    | { ok: false; error: string; code?: ApolloEnrichmentErrorCode }
-  >;
-  /** Commits one previously prepared Apollo email reveal. The server owns the
-   *  provider id, idempotency, quota, replay, and ambiguity boundaries. */
-  enrichApolloCandidate: (
-    candidateId: string,
-    confirmationNonce: string,
-  ) => Promise<
-    | { ok: true; revealed: boolean; detail: string }
-    | { ok: false; revealed: false; detail: string; code?: ApolloEnrichmentErrorCode }
-  >;
-  /** Real Seamless.AI search (fifth real sourcing channel) — synchronous, no
-   *  mock fallback. Requires a stored Seamless key (Settings). */
-  sourceFromSeamless: (
-    campaignId: string,
-    filters: {
-      jobTitles?: string[];
-      seniorities?: string[];
-      departments?: string[];
-      industries?: string[];
-      countries?: string[];
-      states?: string[];
-      companyNames?: string[];
-      companyDomains?: string[];
-      count?: number;
-    },
-  ) => Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }>;
-  /** Explicit, confirmed, single-candidate Seamless contact reveal. Async
-   *  (research → poll) — kicks off the job and returns a requestId to poll
-   *  with checkSeamlessResearch. Never call this for a whole batch. */
-  startSeamlessResearch: (
-    candidateId: string,
-  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
-  /** Polls one Seamless research job. On completion, patches the candidate's
-   *  email/phone in place (same PII convention as enrichApolloCandidate) and
-   *  never fabricates contact info on failure. */
-  checkSeamlessResearch: (
-    candidateId: string,
-    requestId: string,
-  ) => Promise<
-    | { ok: true; status: "processing" }
-    | { ok: true; status: "completed"; revealed: boolean }
-    | { ok: false; error: string }
-  >;
-  /** Real Apify search (harvestapi/linkedin-profile-search — sixth real
-   *  sourcing channel): third-party public LinkedIn profile data, not a
+  /** Real Apify search (harvestapi/linkedin-profile-search — real
+   *  LinkedIn sourcing channel): third-party public LinkedIn profile data, not a
    *  first-party scrape (see sourcing/apify.ts). Enrichment is async — this
    *  kicks off the actor run server-side and returns a runId + datasetId to
    *  poll with checkApifyRun. Requires a stored Apify key (Settings). */
@@ -296,7 +197,7 @@ export interface HermesActions {
   ) => Promise<{ ok: true; runId: string; datasetId: string } | { ok: false; error: string }>;
   /** Polls one Apify actor run. While processing: {ok:true, status:"processing"}.
    *  On completion: maps + scores + dedupes the real profiles exactly like
-   *  checkSillageMapping, commits the accepted candidates, logs an activity
+   *  sourceNextBatch, commits the accepted candidates, logs an activity
    *  entry, and updates campaign metrics. Never backfills a failed/empty
    *  result with synthetic profiles. */
   checkApifyRun: (
@@ -309,10 +210,9 @@ export interface HermesActions {
     | { ok: true; status: "completed"; added: number }
     | { ok: false; error: string }
   >;
-  /** Unified cross-provider enrichment orchestrator (docs/superpowers/plans/
-   *  2026-07-15-enrichment-orchestrator.md) — a candidate discovered by ANY
-   *  provider can be enriched by every OTHER configured provider (Apify
-   *  dev_fusion, Apollo, Seamless, Sillage). Calls /api/source/enrich, which
+  /** Unified enrichment orchestrator — a candidate discovered by ANY
+   *  provider can be enriched by every configured enrichment provider
+   *  (currently Apify dev_fusion). Calls /api/source/enrich, which
    *  runs the cost-ordered waterfall server-side, then merges the returned
    *  patch (email/phone/headline/location/company/skills/enrichment/
    *  externalIds/matchScore) into the candidate and logs one Activity

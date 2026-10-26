@@ -33,9 +33,6 @@ import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
-import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
-import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
-import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
 import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
@@ -919,9 +916,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
-            <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <SourceApifyButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <Button
               variant="primary"

@@ -27,7 +27,7 @@ export const runtime = "nodejs";
  * Unified cross-provider enrichment
  * (docs/superpowers/plans/2026-07-15-enrichment-orchestrator.md, "Routes").
  * Runs the cost-ordered waterfall (orchestrateEnrichment) against every
- * configured provider (Apify dev_fusion, Apollo, Seamless, Sillage) that can
+ * configured provider (currently Apify dev_fusion) that can
  * resolve an identity from the candidate's universal fields (name, company,
  * linkedinUrl, email, externalIds) and fill at least one `want` field —
  * cheapest first, stopping once `want` is covered or the budget runs out.

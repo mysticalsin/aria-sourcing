@@ -125,9 +125,6 @@ jobs:
       - name: Verify person identity model
         run: npm run test:db-person-model
 
-      - name: Verify Apollo enrichment authority
-        run: npm run test:db-apollo-enrichment
-
       - name: Verify adaptive sourcing authority
         run: npm run test:db-sourcing-learning
 

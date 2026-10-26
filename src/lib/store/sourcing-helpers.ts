@@ -3,7 +3,6 @@ import type { SourceResult } from "../sourcing/candidate-mappers";
 import { dedupeCandidates } from "../rules";
 import { scoreCandidate } from "../scoring";
 import type { ApifyProfile } from "../sourcing/apify";
-import type { SillageProfile } from "../sourcing/sillage";
 import type { WebSearchPlatform } from "../sourcing/web-leads";
 import type { Campaign, Candidate, CandidateEnrichment, EnrichableField, FieldProvenance, ScoringWeights, SourcePlatform } from "../types";
 import { genId, initialsFrom } from "../utils";
@@ -65,109 +64,8 @@ export function baseWebQuery(campaign: Campaign, platform: WebSearchPlatform): s
 }
 
 /**
- * Parse the "Source via Sillage" dialog's single free-text field into the
- * identifier shape /api/source/sillage/start expects — a linkedin.com URL is
- * sent as linkedinUrl, anything else as a bare domain (protocol/www/path
- * stripped if the operator pasted a full URL).
- */
-export function parseSillageIdentifier(input: string): { domain?: string; linkedinUrl?: string } {
-  const trimmed = input.trim();
-  if (/linkedin\.com\//i.test(trimmed)) {
-    return { linkedinUrl: /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}` };
-  }
-  return { domain: trimmed.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0] };
-}
-
-/**
- * Map real Sillage account-mapping profiles into scored, deduped Candidates —
- * the live counterpart to mapGithubCandidates/mapWebSearchCandidates,
- * same scoring + dedupe pipeline, real data. Kept here rather than mock-ai.ts
- * because it needs the campaign's live effective weights, which only exist in
- * this client-side store — /api/source/sillage/status has no access to campaign
- * state and returns raw profiles only.
- */
-export function mapSillageCandidates(
-  profiles: SillageProfile[],
-  campaign: Campaign,
-  companyLabel: string,
-  existing: Candidate[],
-  weights: ScoringWeights = campaign.scoringWeights,
-): SourceResult {
-  const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = profiles.map((p) => {
-    const name = [p.firstName, p.lastName].filter(Boolean).join(" ").trim() || "Unknown";
-    const headline = (p.headline ?? "").trim();
-    const about = (p.about ?? "").trim();
-    const hay = `${p.position ?? ""} ${headline} ${about}`.toLowerCase();
-    const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
-    const location = [p.location?.city, p.location?.region, p.location?.country].filter(Boolean).join(", ");
-    const at = new Date().toISOString();
-    const base: Candidate = {
-      id: genId("cand"),
-      campaignId: campaign.id,
-      name,
-      email: p.email ?? "",
-      phone: p.phone ?? undefined,
-      avatarInitials: initialsFrom(name),
-      currentTitle: p.position || "",
-      currentCompany: companyLabel,
-      location,
-      timezone: "",
-      linkedinUrl: p.linkedinUrl ?? "",
-      githubUrl: "",
-      sourceExternalId: p.id || undefined,
-      externalIds: p.id ? { Sillage: p.id } : undefined,
-      sourcePlatform: "Sillage",
-      sourceQuery: companyLabel,
-      matchScore: 0,
-      matchBreakdown: [],
-      techStack,
-      yearsExperience: null,
-      companyStageExperience: [],
-      industryExperience: [],
-      recentActivity: headline || about.slice(0, 140) || `Sourced via Sillage account mapping: ${companyLabel}.`,
-      stage: "Sourced",
-      lastContactedAt: null,
-      outreachHistory: [],
-      replyHistory: [],
-      booking: null,
-      complianceFlags: {
-        doNotContact: false,
-        suppressed: false,
-        unsubscribed: false,
-        gdprExportRequested: false,
-        anonymized: false,
-        suppressedUntil: null,
-      },
-      createdAt: at,
-      provenance: "live",
-    };
-    return {
-      ...base,
-      enrichment: seedEnrichmentCoverage(base, "Sillage", at, {
-        email: Boolean(p.email),
-        phone: Boolean(p.phone),
-        headline: Boolean(p.position),
-        location: Boolean(location),
-        skills: techStack.length > 0,
-      }),
-    };
-  });
-
-  const { accepted, skipped } = dedupeCandidates(raw, existing, {
-    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-  });
-  const scored = accepted.map((c) => {
-    const { score, breakdown } = scoreCandidate(c, jd, weights);
-    return { ...c, matchScore: score, matchBreakdown: breakdown };
-  });
-  return { accepted: scored, skipped };
-}
-
-/**
  * Map real Apify (harvestapi/linkedin-profile-search) profiles into scored,
- * deduped Candidates — same scoring + dedupe pipeline as mapSillageCandidates,
+ * deduped Candidates — same scoring + dedupe pipeline as the other mappers,
  * real data. This is third-party public-profile data bought from a vendor API,
  * not a first-party LinkedIn scrape (see sourcing/apify.ts's header comment
  * and linkedin-policy.ts): every candidate is stamped with a recruiter-facing

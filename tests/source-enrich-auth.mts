@@ -37,23 +37,23 @@ let orchestrateResult: OrchestrateEnrichmentResult = {
     location: "Paris, France",
     linkedinUrl: "https://www.linkedin.com/in/jane-doe-sample",
     techStack: ["TypeScript"],
-    externalIds: { Apollo: "apollo_person_id_test_1" },
+    externalIds: { Apify: "apify_person_id_test_1" },
     matchScore: 0,
     matchBreakdown: [],
     enrichment: {
       status: "partial",
       lastEnrichedAt: "2026-07-15T00:00:00.000Z",
       fieldProvenance: {
-        email: { provider: "Apollo", at: "2026-07-15T00:00:00.000Z", confidence: 0.9 },
+        email: { provider: "Apify", at: "2026-07-15T00:00:00.000Z", confidence: 0.9 },
       },
-      attempts: [{ provider: "Apollo", at: "2026-07-15T00:00:00.000Z", status: "ok", fieldsFilled: ["email"], costUnits: 2 }],
+      attempts: [{ provider: "Apify", at: "2026-07-15T00:00:00.000Z", status: "ok", fieldsFilled: ["email"], costUnits: 2 }],
       coverage: ["email"],
     },
     // Deliberately partial fixture — only the fields this test asserts on.
     // `unknown` (not `any`) is the honest cast: it still requires an explicit
     // opt-out but doesn't silently disable checking on every later use.
   } as unknown as Candidate,
-  attempts: [{ provider: "Apollo", at: "2026-07-15T00:00:00.000Z", status: "ok", fieldsFilled: ["email"], costUnits: 2 }],
+  attempts: [{ provider: "Apify", at: "2026-07-15T00:00:00.000Z", status: "ok", fieldsFilled: ["email"], costUnits: 2 }],
   spend: 2,
 };
 
@@ -181,7 +181,7 @@ const validBody = { candidate: validCandidate, want: ["email", "phone"] };
       json.patch?.enrichment?.status === "partial" &&
       Array.isArray(json.attempts) &&
       json.attempts.length === 1 &&
-      json.attempts[0].provider === "Apollo" &&
+      json.attempts[0].provider === "Apify" &&
       json.spend === 2,
   );
   ok("happy path never echoes a raw provider key/token", JSON.stringify(json).includes("TEST_PLACEHOLDER") === false);

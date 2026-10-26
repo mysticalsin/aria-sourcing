@@ -19,7 +19,7 @@ import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
-import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   downloadText,
   formatTimeAgo,
@@ -499,8 +499,6 @@ export function CandidateDrawer({
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [enrichingApollo, setEnrichingApollo] = useState(false);
-  const [revealingSeamless, setRevealingSeamless] = useState(false);
   const [erasing, setErasing] = useState(false);
   const [erasureNotice, setErasureNotice] = useState<{
     status: CandidateErasureStatus;
@@ -520,7 +518,6 @@ export function CandidateDrawer({
   const [attemptsBaseline, setAttemptsBaseline] = useState<number | null>(null);
   const rejectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const seamlessPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Latest not-yet-committed edit for each debounced field, so the unmount
   // cleanup below can flush it instead of dropping it — the cleanup closure is
   // fixed at mount time, so it can't read fresh render-scoped state directly.
@@ -687,15 +684,6 @@ export function CandidateDrawer({
     });
     return true;
   }, [isErasureScopeCurrent, toast]);
-
-  // Stop polling on unmount so a closed drawer never keeps hitting
-  // /api/source/seamless/research-status in the background.
-  useEffect(
-    () => () => {
-      if (seamlessPollTimer.current) clearInterval(seamlessPollTimer.current);
-    },
-    [],
-  );
 
   // Latest drafted/queued outreach for this candidate (any status — Draft
   // through Scheduled), newest first, so the "why this person" chips below
@@ -1118,57 +1106,9 @@ export function CandidateDrawer({
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
   };
 
-  const handleEnrichApollo = async () => {
-    setEnrichingApollo(true);
-    try {
-      const prepared = await actions.prepareApolloEnrichment(c.id);
-      if (!prepared.ok) {
-        toast({
-          title: prepared.code === "APOLLO_QUOTA_EXCEEDED"
-            ? "Apollo limit reached"
-            : prepared.code === "APOLLO_RECONCILIATION_REQUIRED"
-              ? "Reconciliation required"
-              : "Apollo enrichment unavailable",
-          description: prepared.error,
-          variant: "error",
-        });
-        return;
-      }
-
-      if (!(await confirm({
-        title: `Enrich ${c.name} via Apollo?`,
-        description: "Reveals email only for this candidate and may use up to 1 Apollo credit.",
-        confirmLabel: "Reveal email (up to 1 credit)",
-      }))) {
-        return;
-      }
-
-      const res = await actions.enrichApolloCandidate(c.id, prepared.confirmationNonce);
-      toast({
-        title: res.revealed
-          ? "Email revealed"
-          : res.ok
-            ? "No email found"
-            : res.code === "APOLLO_RECONCILIATION_REQUIRED" || res.code === "APOLLO_OUTCOME_UNKNOWN"
-              ? "Reconciliation required"
-              : res.code === "APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION" || res.code === "APOLLO_CONFIRMATION_INVALID"
-                ? "New confirmation required"
-                : res.code === "APOLLO_QUOTA_EXCEEDED"
-                  ? "Apollo limit reached"
-                  : "Enrichment failed",
-        description: res.detail,
-        variant: res.revealed ? "success" : res.ok ? "info" : "error",
-      });
-    } finally {
-      setEnrichingApollo(false);
-    }
-  };
-
-  // Unified cross-provider enrichment (docs/superpowers/plans/
-  // 2026-07-15-enrichment-orchestrator.md) — runs the cost-ordered waterfall
-  // across every configured provider that can identify this candidate,
-  // regardless of which platform originally sourced them. Complements
-  // (does not replace) the single-provider Apollo/Seamless actions above.
+  // Unified enrichment — runs the cost-ordered waterfall across every
+  // configured provider that can identify this candidate, regardless of which
+  // platform originally sourced them.
   const handleEnrich = async () => {
     setAttemptsBaseline((c.enrichment?.attempts ?? []).length);
     setEnriching(true);
@@ -1179,41 +1119,6 @@ export function CandidateDrawer({
       description: res.detail,
       variant: res.ok ? (res.filled.length > 0 ? "success" : "info") : "error",
     });
-  };
-
-  const handleRevealSeamless = async () => {
-    if (
-      !(await confirm({
-        title: `Reveal ${c.name}'s contact via Seamless?`,
-        description: "Starts an async research job to find their email/phone. Costs Seamless research credits.",
-        confirmLabel: "Reveal contact",
-      }))
-    )
-      return;
-    const start = await actions.startSeamlessResearch(c.id);
-    if (!start.ok) {
-      toast({ title: "Seamless research failed to start", description: start.error, variant: "error" });
-      return;
-    }
-    setRevealingSeamless(true);
-    const candidateId = c.id;
-    const requestId = start.requestId;
-    seamlessPollTimer.current = setInterval(async () => {
-      const res = await actionsRef.current.checkSeamlessResearch(candidateId, requestId);
-      if (res.ok && res.status === "processing") return; // keep polling
-      if (seamlessPollTimer.current) clearInterval(seamlessPollTimer.current);
-      seamlessPollTimer.current = null;
-      setRevealingSeamless(false);
-      if (!res.ok) {
-        toast({ title: "Seamless research failed", description: res.error, variant: "error" });
-        return;
-      }
-      toast({
-        title: res.revealed ? "Contact details revealed" : "No contact details found",
-        description: res.revealed ? "Revealed via Seamless." : "Research completed but found no email or phone.",
-        variant: res.revealed ? "success" : "info",
-      });
-    }, 4_000);
   };
 
   const handleUnsubscribe = async () => {
@@ -1369,30 +1274,6 @@ export function CandidateDrawer({
                   <Lock className="h-3.5 w-3.5" aria-hidden />
                   PII minimized (confidential)
                 </span>
-              )}
-              {!erasureTombstone && c.sourcePlatform === "Apollo" && !c.email && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Zap className="h-4 w-4" />}
-                  onClick={handleEnrichApollo}
-                  loading={enrichingApollo}
-                  disabled={enrichingApollo}
-                >
-                  {enrichingApollo ? "Preparing…" : "Enrich via Apollo"}
-                </Button>
-              )}
-              {!erasureTombstone && experimentalPaidSourcingEnabled && c.sourcePlatform === "Seamless" && !c.email && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Zap className="h-4 w-4" />}
-                  onClick={handleRevealSeamless}
-                  loading={revealingSeamless}
-                  disabled={revealingSeamless}
-                >
-                  {revealingSeamless ? "Researching…" : "Reveal via Seamless"}
-                </Button>
               )}
             </div>
             {!masked && !erasureTombstone && (

@@ -140,8 +140,8 @@ const campaign = {
 const candidates = [
   candidate("real-completed", "GitHub"),
   candidate("dry-run-contact", "LinkedIn"),
-  candidate("approved-unsent", "Apollo"),
-  candidate("synthetic-real", "Seamless", "synthetic"),
+  candidate("approved-unsent", "Apify"),
+  candidate("synthetic-real", "Behance", "synthetic"),
 ];
 
 const outreachMessages = [

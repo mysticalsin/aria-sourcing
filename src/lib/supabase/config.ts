@@ -42,14 +42,6 @@ export const SUPABASE_COOKIE_OPTIONS = {
   secure: isProduction,
 } as const;
 
-/**
- * Sillage and Seamless do not yet have the server-owned receipt authority used
- * by Apollo. They remain available only for explicit local development and
- * can never be enabled in a production build.
- */
-export const experimentalPaidSourcingEnabled =
-  !isProduction && process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING === "true";
-
 /** Preview-only: read /candidates listing rows from the server corpus mirror.
  *  Default off keeps the existing store-backed page path unchanged. */
 export const corpusServerReadEnabled =

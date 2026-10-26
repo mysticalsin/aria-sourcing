@@ -177,9 +177,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
     },
     {
       id: "int_enrichment",
-      name: "Apollo / Hunter / Clearbit",
+      name: "Apify LinkedIn enrichment",
       category: "Enrichment",
-      description: "Contact enrichment via official APIs only: no scraping.",
+      description: "Profile and contact enrichment through the Apify dev_fusion actor (Settings → API keys).",
       status: "not_configured",
       mode: "mock",
       lastSync: null,

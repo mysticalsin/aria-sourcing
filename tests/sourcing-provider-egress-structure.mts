@@ -73,9 +73,6 @@ test("provider egress chokepoint owns provider sockets", () => {
   for (const [provider, host] of [
     ["GitHub", "api.github.com"],
     ["Apify", "api.apify.com"],
-    ["Apollo", "api.apollo.io"],
-    ["Seamless", "api.seamless.ai"],
-    ["Sillage", "api.getsillage.com"],
     ["Tavily", "api.tavily.com"],
     ["DuckDuckGo", "api.duckduckgo.com"],
   ]) {

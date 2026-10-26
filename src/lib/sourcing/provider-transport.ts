@@ -3,9 +3,6 @@ import "server-only";
 export const SOURCING_PROVIDER_HOSTS = Object.freeze({
   GitHub: "api.github.com",
   Apify: "api.apify.com",
-  Apollo: "api.apollo.io",
-  Seamless: "api.seamless.ai",
-  Sillage: "api.getsillage.com",
   Tavily: "api.tavily.com",
   DuckDuckGo: "api.duckduckgo.com",
 } as const);

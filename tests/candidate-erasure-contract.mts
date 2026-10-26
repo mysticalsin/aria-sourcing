@@ -101,7 +101,6 @@ test("a validated erasure receipt masks stale PII and cannot be undone", () => {
     /result\.status === "blocked_legal_hold"[\s\S]*applyErasureLegalHold\(scope, result\.requestId\)[\s\S]*await refreshErasureQueue\(\)/,
   );
   assert.match(drawer, /const erasureTombstone = isCandidateErasureTombstone\(c\)/);
-  assert.match(drawer, /!erasureTombstone && c\.sourcePlatform === "Apollo"/);
   assert.match(drawer, /masked && !erasureTombstone/);
   assert.doesNotMatch(
     drawer.match(/\{\(flags\.suppressed \|\| flags\.doNotContact\)[\s\S]*?Undo: restore contact[\s\S]*?\}\)/)?.[0] ?? "",

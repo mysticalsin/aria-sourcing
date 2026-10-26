@@ -278,7 +278,7 @@ export function McpServersPanel() {
             {adding ? (
               <div className="flex flex-wrap items-end gap-3">
                 <Field label="Name" htmlFor="new-mcp-name" className="min-w-[160px]">
-                  <Input id="new-mcp-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Apollo MCP" />
+                  <Input id="new-mcp-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Dust MCP" />
                 </Field>
                 <Field label="Server URL" htmlFor="new-mcp-url" className="min-w-[260px]">
                   <Input

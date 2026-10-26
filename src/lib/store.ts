@@ -16,12 +16,6 @@ import {
   type GeneratedOutreach,
   type ReplyClassification,
 } from "./mock-ai";
-import {
-  mapSeamlessCandidates,
-  type SourceResult,
-} from "./sourcing/candidate-mappers";
-import type { SillageProfile } from "./sourcing/sillage";
-import type { SeamlessContact, SeamlessResearchContact } from "./sourcing/seamless";
 import type { ApifyProfile, ApifyProfileSearchInput } from "./sourcing/apify";
 import {
   buildOutreachPrompt,
@@ -75,7 +69,7 @@ import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
-import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
+import { mapApifyCandidates } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
 import type {
   CandidateErasureObligation,
@@ -963,9 +957,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     sourceNextBatch,
     addCandidateFromGithub,
     addCandidateManual,
-    sourceFromApollo,
-    prepareApolloEnrichment,
-    enrichApolloCandidate,
   } = useMemo(
     () =>
       createSourcingActions({
@@ -998,335 +989,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) =>
       commit((s) => withActivity(s, makeActivity(a), a.campaignId ?? null)),
     [commit],
-  );
-
-  const startSillageMapping = useCallback(
-    async (
-      campaignId: string,
-      identifier: string,
-    ): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
-      if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Sillage candidate sourcing requires a live workspace." };
-      }
-      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-      const trimmed = identifier.trim();
-      if (!trimmed) return { ok: false, error: "Enter a company domain or LinkedIn URL." };
-
-      let res: Response;
-      try {
-        res = await workspaceFetch("/api/source/sillage/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ campaignId, ...parseSillageIdentifier(trimmed) }),
-        });
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Sillage." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | { ok?: boolean; requestId?: string; error?: string }
-        | null;
-      if (!out?.ok || !out.requestId) {
-        return { ok: false, error: out?.error ?? "Sillage enrichment failed to start." };
-      }
-      return { ok: true, requestId: out.requestId };
-    },
-    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const checkSillageMapping = useCallback(
-    async (
-      campaignId: string,
-      requestId: string,
-    ): Promise<
-      | { ok: true; status: "processing" }
-      | { ok: true; status: "completed"; added: number; company: string }
-      | { ok: false; error: string }
-    > => {
-      if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Sillage candidate sourcing requires a live workspace." };
-      }
-      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-
-      let res: Response;
-      try {
-        res = await workspaceFetch(`/api/source/sillage/status?requestId=${encodeURIComponent(requestId)}`);
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Sillage." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            status?: string;
-            error?: string;
-            company?: { name?: string };
-            profiles?: SillageProfile[];
-          }
-        | null;
-      if (!out?.ok) return { ok: false, error: out?.error ?? "Sillage status check failed." };
-      if (out.status === "processing") return { ok: true, status: "processing" };
-      if (out.status !== "completed") return { ok: false, error: out.error ?? "Sillage enrichment did not complete." };
-
-      const companyLabel = out.company?.name || "this company";
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const { accepted, skipped } = mapSillageCandidates(
-        out.profiles ?? [],
-        campaign,
-        companyLabel,
-        s.candidates,
-        weights,
-      );
-
-      commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
-        next = recomputeMetrics(next, campaignId);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Sourced ${accepted.length} candidates via Sillage account mapping: ${companyLabel}`,
-            notes: `Live Sillage batch. ${skipped.length} skipped by dedupe (${skipped
-              .slice(0, 3)
-              .map((x) => x.reason)
-              .join(", ")}${skipped.length > 3 ? "…" : ""}).`,
-            outcome: `${accepted.length} accepted, ${skipped.length} skipped (live)`,
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
-      return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
-    },
-    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const sourceFromSeamless = useCallback(
-    async (
-      campaignId: string,
-      filters: {
-        jobTitles?: string[];
-        seniorities?: string[];
-        departments?: string[];
-        industries?: string[];
-        countries?: string[];
-        states?: string[];
-        companyNames?: string[];
-        companyDomains?: string[];
-        count?: number;
-      },
-    ): Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }> => {
-      if (!candidatePersistenceAllowed("live")) {
-        return {
-          accepted: [],
-          skipped: [],
-          source: "error",
-          error: "Seamless candidate sourcing requires a live workspace.",
-        };
-      }
-      if (!workspaceEffectAllowed()) {
-        return { accepted: [], skipped: [], source: "error", error: "Workspace unavailable. Retry before sourcing." };
-      }
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const count = filters.count ?? 25;
-      const queryLabel =
-        [
-          filters.jobTitles?.length ? `titles:${filters.jobTitles.join("|")}` : null,
-          filters.seniorities?.length ? `seniority:${filters.seniorities.join("|")}` : null,
-          filters.departments?.length ? `dept:${filters.departments.join("|")}` : null,
-          filters.industries?.length ? `industry:${filters.industries.join("|")}` : null,
-          filters.countries?.length ? `country:${filters.countries.join("|")}` : null,
-          filters.companyNames?.length ? `company:${filters.companyNames.join("|")}` : null,
-          filters.companyDomains?.length ? `domains:${filters.companyDomains.join("|")}` : null,
-        ]
-          .filter(Boolean)
-          .join(" ") || "Seamless search";
-
-      let result: SourceResult = { accepted: [], skipped: [] };
-      let source: "seamless" | "not_configured" | "error" = "error";
-      let error: string | undefined;
-
-      try {
-        const res = await workspaceFetch("/api/source/seamless/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ campaignId, ...filters, count }),
-        });
-        const out = (await res.json().catch(() => null)) as
-          | { ok?: boolean; source?: string; contacts?: SeamlessContact[]; error?: string }
-          | null;
-        if (out?.ok && out.source === "seamless") {
-          result =
-            out.contacts && out.contacts.length > 0
-              ? mapSeamlessCandidates(out.contacts, campaign, queryLabel, s.candidates, weights)
-              : { accepted: [], skipped: [] };
-          source = "seamless";
-        } else if (out?.source === "not_configured") {
-          source = "not_configured";
-          error = out.error ?? "Add a Seamless key in Settings to source real candidates.";
-        } else {
-          source = "error";
-          error = out?.error ?? "Seamless search failed.";
-        }
-      } catch (e) {
-        source = "error";
-        error = e instanceof Error ? e.message : "Network error.";
-      }
-
-      if (result.accepted.length > 0) {
-        commit((prev) => {
-          let next: HermesState = {
-            ...prev,
-            candidates: [...result.accepted, ...prev.candidates],
-          };
-          next = recomputeMetrics(next, campaignId);
-          next = withActivity(
-            next,
-            makeActivity({
-              type: "sourcing",
-              title: `Sourced ${result.accepted.length} candidates via Seamless`,
-              notes: `Live Seamless batch. ${result.skipped.length} skipped by dedupe (${result.skipped
-                .slice(0, 3)
-                .map((x) => x.reason)
-                .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
-              outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
-              campaignId,
-              linkedEntityType: "campaign",
-              linkedEntityId: campaignId,
-            }),
-            campaignId,
-          );
-          return next;
-        });
-        emit({ kind: "source", campaignId, count: result.accepted.length });
-      }
-      return { ...result, source, error };
-    },
-    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const startSeamlessResearch = useCallback(
-    async (candidateId: string): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
-      if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Seamless enrichment requires a live workspace." };
-      }
-      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
-      const s = current();
-      const cand = s.candidates.find((c) => c.id === candidateId);
-      if (!cand) return { ok: false, error: "Candidate not found." };
-      if (cand.sourcePlatform !== "Seamless" || !cand.sourceExternalId) {
-        return { ok: false, error: "Not a Seamless-sourced candidate." };
-      }
-      let res: Response;
-      try {
-        res = await workspaceFetch("/api/source/seamless/research", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ searchResultId: cand.sourceExternalId }),
-        });
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Seamless." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | { ok?: boolean; requestId?: string; error?: string }
-        | null;
-      if (!out?.ok || !out.requestId) {
-        return { ok: false, error: out?.error ?? "Seamless research failed to start." };
-      }
-      return { ok: true, requestId: out.requestId };
-    },
-    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const checkSeamlessResearch = useCallback(
-    async (
-      candidateId: string,
-      requestId: string,
-    ): Promise<
-      | { ok: true; status: "processing" }
-      | { ok: true; status: "completed"; revealed: boolean }
-      | { ok: false; error: string }
-    > => {
-      if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Seamless enrichment requires a live workspace." };
-      }
-      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
-      const s = current();
-      const cand = s.candidates.find((c) => c.id === candidateId);
-      if (!cand) return { ok: false, error: "Candidate not found." };
-
-      let res: Response;
-      try {
-        res = await workspaceFetch(`/api/source/seamless/research-status?requestId=${encodeURIComponent(requestId)}`);
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Seamless." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | { ok?: boolean; status?: string; error?: string; contact?: SeamlessResearchContact }
-        | null;
-      if (!out?.ok) {
-        if (out?.status === "processing") return { ok: true, status: "processing" };
-        return { ok: false, error: out?.error ?? "Seamless research failed." };
-      }
-      if (out.status === "processing") return { ok: true, status: "processing" };
-      if (out.status !== "completed") return { ok: false, error: out.error ?? "Seamless research did not complete." };
-
-      const email = out.contact?.email ?? "";
-      const phone = out.contact?.phone ?? "";
-      if (!email && !phone) {
-        commit((prev) =>
-          withActivity(
-            prev,
-            makeActivity({
-              type: "sourcing",
-              title: `No contact found via Seamless: ${cand.name}`,
-              notes: "Research completed but returned no email or phone.",
-              outcome: "0 contact fields revealed",
-              campaignId: cand.campaignId,
-              linkedEntityType: "candidate",
-              linkedEntityId: cand.id,
-            }),
-            cand.campaignId,
-          ),
-        );
-        return { ok: true, status: "completed", revealed: false };
-      }
-
-      commit((prev) => {
-        const next: HermesState = {
-          ...prev,
-          candidates: prev.candidates.map((c) =>
-            c.id === candidateId ? { ...c, email: email || c.email, phone: phone || c.phone } : c,
-          ),
-        };
-        return withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Enriched via Seamless: ${cand.name}`,
-            notes: "Revealed contact details via Seamless.",
-            outcome: email && phone ? "Email + phone revealed" : email ? "Email revealed" : "Phone revealed",
-            campaignId: cand.campaignId,
-            linkedEntityType: "candidate",
-            linkedEntityId: cand.id,
-          }),
-          cand.campaignId,
-        );
-      });
-      return { ok: true, status: "completed", revealed: true };
-    },
-    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const startApifyRun = useCallback(
@@ -6035,14 +5697,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch,
       addCandidateFromGithub,
       addCandidateManual,
-      startSillageMapping,
-      checkSillageMapping,
-      sourceFromApollo,
-      prepareApolloEnrichment,
-      enrichApolloCandidate,
-      sourceFromSeamless,
-      startSeamlessResearch,
-      checkSeamlessResearch,
       startApifyRun,
       checkApifyRun,
       enrichCandidate,
@@ -6157,7 +5811,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,

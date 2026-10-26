@@ -1,8 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { buildSeedState } from "../src/lib/seed";
-import { mapApolloCandidates, mapGithubCandidates, mapWebSearchCandidates } from "../src/lib/mock-ai";
-import type { ApolloSearchProfile } from "../src/lib/sourcing/apollo";
+import { mapGithubCandidates, mapWebSearchCandidates } from "../src/lib/mock-ai";
 import type { GithubUser } from "../src/lib/sourcing/github";
 import { extractLead, buildWebQuery, isWebSearchPlatform, type SearchHit } from "../src/lib/sourcing/web-leads";
 import { dedupeCandidates } from "../src/lib/rules";
@@ -35,12 +34,11 @@ const sourcingToolsSource = readFileSync(new URL("../src/lib/ai/sourcing-tools.t
 ok(
   "mock AI only re-exports live candidate mappers for compatibility",
   /export\s+\{[\s\S]*mapGithubCandidates[\s\S]*\}\s+from\s+["']\.\/sourcing\/candidate-mappers["']/.test(mockAiSource) &&
-    !/export function map(?:Github|Apollo|Seamless|WebSearch)Candidates\s*\(/.test(mockAiSource),
+    !/export function map(?:Github|WebSearch)Candidates\s*\(/.test(mockAiSource),
 );
 ok(
   "live store and sourcing tools import candidate mappers from the neutral module",
-  storeSource.includes('from "./sourcing/candidate-mappers"') &&
-    sourcingToolsSource.includes('from "@/lib/sourcing/candidate-mappers"') &&
+  sourcingToolsSource.includes('from "@/lib/sourcing/candidate-mappers"') &&
     !sourcingToolsSource.includes('from "@/lib/mock-ai"'),
 );
 
@@ -85,27 +83,6 @@ ok("sourcePlatform is GitHub", a?.sourcePlatform === "GitHub");
 ok("stage is Sourced", a?.stage === "Sourced");
 ok("GitHub account age is not presented as professional tenure", a?.yearsExperience === null);
 ok("GitHub biography is not presented as a job title", a?.currentTitle === "");
-
-const apolloProfile: ApolloSearchProfile = {
-  targetId: "22222222-2222-4222-8222-222222222222",
-  candidateId: "apollo-candidate",
-  name: "Apollo Candidate",
-  title: "Platform Engineer",
-  company: "Example Corp",
-  linkedinUrl: "https://www.linkedin.com/in/apollo-candidate",
-  city: "Toronto",
-  state: "Ontario",
-  country: "Canada",
-  headline: "Platform Engineer",
-  seniority: "senior",
-  departments: ["engineering"],
-};
-const apolloMapped = mapApolloCandidates([apolloProfile], campaign, "titles:Platform Engineer", [], W);
-ok(
-  "Apollo mapper preserves only the opaque enrichment authority",
-  apolloMapped.accepted[0]?.sourceAuthorityId === apolloProfile.targetId &&
-    apolloMapped.accepted[0]?.sourceExternalId === undefined,
-);
 
 // --- Name fallback + honest blank email ------------------------------------
 const bob = mk({ login: "bob", htmlUrl: "https://github.com/bob" });

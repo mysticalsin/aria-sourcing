@@ -50,9 +50,7 @@ import {
 
 export type { SourceResult } from "./sourcing/candidate-mappers";
 export {
-  mapApolloCandidates,
   mapGithubCandidates,
-  mapSeamlessCandidates,
   mapWebSearchCandidates,
 } from "./sourcing/candidate-mappers";
 

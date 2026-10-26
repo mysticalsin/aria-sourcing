@@ -1,8 +1,6 @@
 import { dedupeCandidates } from "@/lib/rules";
 import { scoreCandidate } from "@/lib/scoring";
-import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
 import type { GithubUser } from "@/lib/sourcing/github-identity";
-import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
@@ -56,124 +54,6 @@ export function mapGithubCandidates(
       companyStageExperience: [],
       industryExperience: [],
       recentActivity: `${user.publicRepos} public repos, ${user.followers} followers`,
-      stage: "Sourced",
-      lastContactedAt: null,
-      outreachHistory: [],
-      replyHistory: [],
-      booking: null,
-      complianceFlags: {
-        doNotContact: false,
-        suppressed: false,
-        unsubscribed: false,
-        gdprExportRequested: false,
-        anonymized: false,
-        suppressedUntil: null,
-      },
-      createdAt: new Date().toISOString(),
-      provenance: "live",
-    };
-  });
-
-  return scoreAndDedupe(raw, campaign, existing, weights);
-}
-
-export function mapApolloCandidates(
-  people: ApolloSearchProfile[],
-  campaign: CandidateMappingCampaign,
-  query: string,
-  existing: CandidateDedupeIdentity[],
-  weights: ScoringWeights = campaign.scoringWeights,
-): SourceResult {
-  const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = people.map((person) => {
-    const headline = (person.headline || person.title || "").toLowerCase();
-    const matched = allSkills.filter((skill) => headline.includes(skill.toLowerCase()));
-    const location = [person.city, person.state, person.country].filter(Boolean).join(", ");
-    const recentActivity = person.seniority
-      ? `${person.seniority}${person.departments.length ? ` · ${person.departments.join(", ")}` : ""}`
-      : "Apollo profile";
-    return {
-      id: person.candidateId,
-      campaignId: campaign.id,
-      name: person.name,
-      email: "",
-      avatarInitials: initialsFrom(person.name),
-      currentTitle: person.title || "",
-      currentCompany: person.company,
-      location,
-      timezone: "",
-      linkedinUrl: person.linkedinUrl,
-      githubUrl: "",
-      sourceAuthorityId: person.targetId,
-      sourcePlatform: "Apollo",
-      sourceQuery: query,
-      matchScore: 0,
-      matchBreakdown: [],
-      techStack: matched,
-      yearsExperience: null,
-      companyStageExperience: [],
-      industryExperience: [],
-      recentActivity,
-      stage: "Sourced",
-      lastContactedAt: null,
-      outreachHistory: [],
-      replyHistory: [],
-      booking: null,
-      complianceFlags: {
-        doNotContact: false,
-        suppressed: false,
-        unsubscribed: false,
-        gdprExportRequested: false,
-        anonymized: false,
-        suppressedUntil: null,
-      },
-      createdAt: new Date().toISOString(),
-      provenance: "live",
-    };
-  });
-
-  return scoreAndDedupe(raw, campaign, existing, weights);
-}
-
-export function mapSeamlessCandidates(
-  contacts: SeamlessContact[],
-  campaign: CandidateMappingCampaign,
-  query: string,
-  existing: CandidateDedupeIdentity[],
-  weights: ScoringWeights = campaign.scoringWeights,
-): SourceResult {
-  const jd = campaign.jobAnalysis;
-  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = contacts.map((contact) => {
-    const headline = (contact.title || "").toLowerCase();
-    const matched = allSkills.filter((skill) => headline.includes(skill.toLowerCase()));
-    const location = [contact.city, contact.state, contact.country].filter(Boolean).join(", ");
-    const recentActivity = contact.seniority
-      ? `${contact.seniority}${contact.department ? ` · ${contact.department}` : ""}`
-      : "Seamless profile";
-    return {
-      id: genId("cand"),
-      campaignId: campaign.id,
-      name: contact.name,
-      email: "",
-      avatarInitials: initialsFrom(contact.name),
-      currentTitle: contact.title || "",
-      currentCompany: contact.company,
-      location,
-      timezone: "",
-      linkedinUrl: contact.liUrl,
-      githubUrl: "",
-      sourceExternalId: contact.searchResultId || undefined,
-      sourcePlatform: "Seamless",
-      sourceQuery: query,
-      matchScore: 0,
-      matchBreakdown: [],
-      techStack: matched,
-      yearsExperience: null,
-      companyStageExperience: [],
-      industryExperience: [],
-      recentActivity,
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],

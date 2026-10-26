@@ -6,7 +6,7 @@
 // This is third-party public-profile data bought from a vendor API. The app
 // performs no direct LinkedIn login, scraping, or session automation of its
 // own — no recruiter cookies, no headless browser against linkedin.com, no
-// session reuse. Enrichment is asynchronous, mirroring the Sillage account-
+// session reuse. Enrichment is asynchronous, like any account-
 // mapping flow: POST .../runs starts the actor and returns a runId +
 // datasetId, which the caller polls via getRunStatus() until a terminal
 // status (SUCCEEDED / FAILED / TIMED-OUT / ABORTED), then fetches the
