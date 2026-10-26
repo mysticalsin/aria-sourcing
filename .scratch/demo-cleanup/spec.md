@@ -22,7 +22,8 @@ Public: Careers → Applicants
 
 Pages kept: `/` (Command Center), `/intake`, `/launch`, `/campaigns`,
 `/candidates`, `/vivier`, `/applicants`, `/careers`, `/outreach`, `/replies`,
-`/calendar`, `/funnel`, `/exec`, `/reports`, `/winlog`, `/trust`, `/settings`,
+`/calendar`, `/funnel`, `/exec`, `/reports`, `/winlog`, `/trust`, `/sessions`,
+`/skills`, `/fleet` (labelled Mailboxes: sender mailboxes + suppression), `/settings`,
 `/login`, `/unsubscribe`.
 
 Decision-maker reporting (candidates sourced, ROI, funnel conversion) is a
@@ -47,7 +48,7 @@ be consolidated later.
 | Ops dossier | `production-readiness/` |
 | Heavy assets | `docs/screenshots/`, `public/office3d/`, `docs/superpowers/` |
 | Stale docs | engagement / lessons / roadmap docs, `CLAUDE_RELAY_BATON.md` |
-| Pages | `/fleet`, `/floor`, `/chat`, `/replay`, `/sessions`, `/studio`, `/architecture`, `/skills`, `/memory`, `/curator`, `/soul` and their components |
+| Pages | `/floor`, `/chat`, `/replay`, `/studio`, `/architecture`, `/memory`, `/curator`, `/soul` and their components (done; `/sessions` and `/skills` restored on owner request) |
 | Agent frameworks | DeerFlow / Flowise (`infra/agent-frameworks`, framework run / capability / ack path), Hermes private-runtime proxy, swarm, autonomous loop worker, Graphify lessons worker, Obscura browser, voice / TTS |
 | Sources | Apollo, Seamless, Sillage |
 | Channels | WhatsApp (Meta), Databricks intake |
