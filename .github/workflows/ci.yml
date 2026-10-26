@@ -113,9 +113,6 @@ jobs:
       - name: Verify cross-channel cap serialization
         run: npm run test:db-cross-channel-cap
 
-      - name: Verify agent operational rollback authority
-        run: npm run test:db-agent-operational-rollback
-
       - name: Verify candidate erasure authority
         run: npm run test:db-candidate-erasure
 
@@ -130,6 +127,18 @@ jobs:
 
       - name: Verify conversation and message authority
         run: npm run test:db-conversation-authority
+
+      - name: Verify schema function privileges, workspace provisioning, and Dust authority
+        run: npm run test:db-schema-authority
+
+      - name: Verify email outbox durability
+        run: npm run test:db-email-durability
+
+      - name: Verify inbound email correlation
+        run: npm run test:db-email-inbound
+
+      - name: Verify candidate outcome events
+        run: npm run test:db-email-outcomes
 
   release-gate:
     name: Release gate

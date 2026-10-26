@@ -6,9 +6,8 @@ import {
   linkedInBackendForProvider,
 } from "../src/lib/linkedin-channel";
 
-const migration = readFileSync("supabase/migrations/0054_linkedin_channel_adapter_authority.sql", "utf8");
-const whatsappMigration = readFileSync("supabase/migrations/0013_outreach_approval_race_safety.sql", "utf8");
-const emailMigration = readFileSync("supabase/migrations/0039_email_channel_durability.sql", "utf8");
+const migration = readFileSync("supabase/migrations/0001_baseline.sql", "utf8");
+const emailMigration = readFileSync("supabase/migrations/0001_baseline.sql", "utf8");
 const dispatch = readFileSync("src/lib/dispatch-outbound.ts", "utf8");
 const priv = readFileSync("tests/db/function-privileges.sql", "utf8");
 
@@ -22,10 +21,11 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-function functionBlock(source: string, name: string): string {
-  const match = source.match(new RegExp(`create or replace function public\\.${name}\\(\\)[\\s\\S]*?\\$\\$;`, "i"));
+/** The plpgsql body of a trigger function in the baseline (pg_dump format). */
+function functionBody(source: string, name: string): string {
+  const match = source.match(new RegExp(`CREATE FUNCTION public\\.${name}\\(\\)[\\s\\S]*?AS \\$\\$([\\s\\S]*?)\\n\\$\\$;`));
   if (!match) throw new Error(`Missing function block: ${name}`);
-  return match[0].replace(/\r\n/g, "\n");
+  return match[1].replace(/\r\n/g, "\n");
 }
 
 function sha256(value: string): string {
@@ -34,28 +34,22 @@ function sha256(value: string): string {
 
 ok(
   "LinkedIn has a separate channel-guarded approval trigger function",
-  /create or replace function public\.enforce_active_linkedin_approval\(\)/i.test(migration) &&
+  /CREATE FUNCTION public\.enforce_active_linkedin_approval\(\)/.test(migration) &&
     /new\.channel <> 'LinkedIn' or old\.status <> 'queued' or new\.status <> 'dispatching'/i.test(migration) &&
-    /create trigger messages_outbound_active_linkedin_approval[\s\S]*execute function public\.enforce_active_linkedin_approval\(\)/i.test(migration),
+    /CREATE TRIGGER messages_outbound_active_linkedin_approval BEFORE UPDATE OF status ON public\.messages_outbound FOR EACH ROW EXECUTE FUNCTION public\.enforce_active_linkedin_approval\(\)/.test(migration),
 );
 ok(
-  "0054 does not replace Email or WhatsApp approval triggers",
-  !/create or replace function public\.enforce_active_email_approval\(\)/i.test(migration) &&
-    !/create or replace function public\.enforce_active_whatsapp_approval\(\)/i.test(migration),
-);
-ok(
-  "WhatsApp approval trigger body stayed byte-identical",
-  sha256(functionBlock(whatsappMigration, "enforce_active_whatsapp_approval")) ===
-    "a29527e849df4109e05c349823b297954626bf6a45c7277549210716995cd700",
+  "Email and LinkedIn approval gates are separate trigger functions",
+  /CREATE TRIGGER messages_outbound_active_email_approval BEFORE UPDATE OF status ON public\.messages_outbound FOR EACH ROW EXECUTE FUNCTION public\.enforce_active_email_approval\(\)/.test(migration),
 );
 ok(
   "Email approval trigger body stayed byte-identical",
-  sha256(functionBlock(emailMigration, "enforce_active_email_approval")) ===
-    "6f29521257debcd1f8cebf50f1d7fb2e50dba4929dd814b6de68b0e2acb11203",
+  sha256(functionBody(emailMigration, "enforce_active_email_approval")) ===
+    "f7ce922904b166c4ef084e555da33b2185c41028ba8d6f0c194ea08ad93cfeff",
 );
 ok(
   "LinkedIn claim reuses approval hash, scope hash, suppression, contact window, and cap before ledger insert",
-  /create or replace function public\.claim_linkedin_outbound_queued\(p_message_id uuid\)/i.test(migration) &&
+  /CREATE FUNCTION public\.claim_linkedin_outbound_queued\(p_message_id uuid\)/.test(migration) &&
     /approval\.body_hash is distinct from encode\(digest\(coalesce\(outbound\.subject, ''\) \|\| E'\\n' \|\| outbound\.body, 'sha256'\), 'hex'\)/i.test(migration) &&
     /approval\.approval_scope_hash is distinct from encode\(digest\(outbound\.candidate_id \|\| E'\\n' \|\| outbound\.channel \|\| E'\\n' \|\| recipient, 'sha256'\), 'hex'\)/i.test(migration) &&
     /s\.type = 'linkedin'/i.test(migration) &&
@@ -65,7 +59,7 @@ ok(
 );
 ok(
   "LinkedIn outcome records into the shared ledger",
-  /create or replace function public\.record_linkedin_delivery_outcome\(/i.test(migration) &&
+  /CREATE FUNCTION public\.record_linkedin_delivery_outcome\(/.test(migration) &&
     /from public\.outreach_ledger l[\s\S]*outbound_message_id = outbound\.id[\s\S]*send_attempt_id = p_delivery_attempt_id[\s\S]*for update/i.test(migration) &&
     /update public\.outreach_ledger[\s\S]*set status = next_ledger_status/i.test(migration),
 );

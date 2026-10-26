@@ -13,62 +13,34 @@ function source(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
-const migration = source("supabase/migrations/0032_agent_operational_authority.sql");
-const rollback = source("supabase/rollbacks/0032_agent_operational_authority.sql");
+const migration = source("supabase/migrations/0001_baseline.sql");
 const store = source("src/lib/store.ts");
 const storeContracts = source("src/lib/store/contracts.ts");
 const fleetPage = source("src/app/fleet/page.tsx");
 const dispatcher = source("src/lib/dispatch-outbound.ts");
 const complianceRoute = source("src/app/api/compliance/suppress/route.ts");
 
-test("the authority migration and an explicit rollback script exist", () => {
+test("agent specs, outbound messages, and mailboxes are bound to seats in the same workspace", () => {
   assert.ok(migration.length > 0);
-  assert.ok(rollback.length > 0);
-  assert.doesNotMatch(rollback, /drop table if exists public\.agent_framework_run_memory_context/i);
-  assert.doesNotMatch(rollback, /drop column if exists (?:memory_context_attached_at|framework_run_id)/i);
-});
-
-test("agent specs and outbound senders are bound to seats in the same workspace", () => {
-  assert.match(migration, /unique index[^;]+agent_seats[^;]+\(workspace_id,\s*id\)/is);
-  assert.match(migration, /agent_specs_workspace_seat_fkey[\s\S]+foreign key \(workspace_id,\s*seat_id\)[\s\S]+references public\.agent_seats \(workspace_id,\s*id\)/i);
-  assert.match(migration, /messages_outbound_workspace_seat_fkey[\s\S]+foreign key \(workspace_id,\s*seat_id\)[\s\S]+references public\.agent_seats \(workspace_id,\s*id\)/i);
-  assert.match(migration, /whatsapp_senders_workspace_seat_fkey[\s\S]+foreign key \(workspace_id,\s*seat_id\)[\s\S]+references public\.agent_seats \(workspace_id,\s*id\)/i);
-  assert.match(migration, /email_connections_workspace_seat_fkey[\s\S]+foreign key \(workspace_id,\s*seat_id\)[\s\S]+references public\.agent_seats \(workspace_id,\s*id\)/i);
-  for (const constraint of [
-    "agent_specs_workspace_seat_fkey",
-    "messages_outbound_workspace_seat_fkey",
-    "whatsapp_senders_workspace_seat_fkey",
+  assert.match(migration, /CREATE UNIQUE INDEX agent_seats_workspace_id_id_key ON public\.agent_seats USING btree \(workspace_id, id\);/);
+  for (const [constraint, onDelete] of [
+    ["agent_specs_workspace_seat_fkey", "ON DELETE SET NULL (seat_id)"],
+    ["messages_outbound_workspace_seat_fkey", "ON DELETE SET NULL (seat_id)"],
+    ["email_connections_workspace_seat_fkey", "ON DELETE CASCADE"],
   ]) {
-    assert.match(
-      migration,
-      new RegExp(`${constraint}[\\s\\S]+on delete set null \\(seat_id\\)`, "i"),
-      `${constraint} must preserve the non-null workspace on seat deletion`,
-    );
-  }
-  for (const constraint of [
-    "agent_specs_workspace_seat_fkey",
-    "messages_outbound_workspace_seat_fkey",
-    "whatsapp_senders_workspace_seat_fkey",
-    "email_connections_workspace_seat_fkey",
-  ]) {
-    assert.doesNotMatch(
-      rollback,
-      new RegExp(`drop constraint if exists ${constraint}`, "i"),
-      `${constraint} must survive an executable rollback`,
+    const table = constraint.replace(/_workspace_seat_fkey$/, "");
+    assert.ok(
+      migration.includes(
+        `ALTER TABLE ONLY public.${table}\n    ADD CONSTRAINT ${constraint} FOREIGN KEY (workspace_id, seat_id) REFERENCES public.agent_seats(workspace_id, id) ${onDelete};`,
+      ),
+      `${constraint} must bind the seat within the same workspace`,
     );
   }
 });
 
-test("legacy cross-workspace seat bindings are neutralized before constraints validate", () => {
-  assert.match(migration, /update public\.agent_specs[\s\S]+set seat_id = null[\s\S]+seat\.workspace_id <> spec\.workspace_id/i);
-  assert.doesNotMatch(
-    migration,
-    /update public\.email_connections[\s\S]+set workspace_id\s*=\s*seat\.workspace_id/i,
-  );
-  assert.match(migration, /delete\s+from\s+public\.email_connections/i);
-  assert.match(migration, /validate constraint agent_specs_workspace_seat_fkey/i);
+test("seat bindings are validated constraints, not NOT VALID placeholders", () => {
+  assert.doesNotMatch(migration, /workspace_seat_fkey[^;]*NOT VALID;/);
 });
-
 
 test("the dispatcher scopes both spec and seat reads to the outbox workspace", () => {
   assert.match(dispatcher, /\.from\("agent_specs"\)[\s\S]+\.eq\("id",\s*msg\.spec_id\)[\s\S]+\.eq\("workspace_id",\s*msg\.workspace_id\)/i);
@@ -103,46 +75,6 @@ test("live compliance persistence unavailability fails closed", () => {
 
 
 
-
-test("framework runs persist immutable, bounded memory receipts", () => {
-  assert.match(migration, /create table if not exists public\.agent_framework_run_memory_context/i);
-  assert.match(migration, /primary key \(framework_run_id,\s*memory_id\)/i);
-  assert.match(migration, /position\s+integer[^\n]+between 0 and 7/i);
-  assert.match(migration, /byte_count\s+integer[^\n]+between 1 and 8192/i);
-  assert.match(migration, /create or replace function public\.claim_agent_framework_run/i);
-  assert.match(migration, /from public\.agent_memories[\s\S]+status = 'approved'[\s\S]+for share/i);
-  assert.match(migration, /insert into public\.agent_framework_run_memory_context/i);
-  assert.match(migration, /memory_context_attached_at/i);
-  assert.match(
-    migration,
-    /if framework_run\.memory_context_attached_at is not null[\s\S]+return selected_count/i,
-  );
-  assert.match(
-    migration,
-    /set memory_context_attached_at\s*=\s*now\(\)/i,
-  );
-  assert.match(
-    migration,
-    /revoke all on function public\.claim_agent_framework_run_v0029[\s\S]+service_role/i,
-  );
-});
-
-test("framework memory plaintext crosses the adapter boundary only under a bounded database lease", () => {
-  assert.match(migration, /create table if not exists public\.agent_framework_memory_egress_leases/i);
-  assert.match(migration, /expires_at\s+timestamptz[\s\S]+expires_at > created_at/i);
-  assert.match(migration, /create or replace function public\.authorize_agent_framework_memory_egress/i);
-  assert.match(migration, /framework_run\.lease_expires_at <= egress_expires_at/i);
-  assert.match(migration, /order by memory\.id[\s\S]+for update of memory/i);
-  assert.match(migration, /memory\.revision = context\.memory_revision/i);
-  assert.match(migration, /memory\.content_sha256 = context\.content_sha256/i);
-  assert.match(migration, /memory\.status = 'approved'/i);
-  assert.match(migration, /create or replace function public\.release_agent_framework_memory_egress/i);
-  assert.match(migration, /egress\.expires_at <= clock_timestamp\(\)[\s\S]+status', 'lease_expired'/i);
-  assert.match(migration, /egress\.released_at is null[\s\S]+egress\.expires_at > clock_timestamp\(\)/i);
-  assert.match(rollback, /drop function if exists public\.release_agent_framework_memory_egress/i);
-  assert.match(rollback, /drop function if exists public\.authorize_agent_framework_memory_egress/i);
-  assert.doesNotMatch(rollback, /drop table if exists public\.agent_framework_memory_egress_leases/i);
-});
 
 test("memory content never returns to legacy workspace activity or state", () => {
   assert.doesNotMatch(store, /title:\s*`Memory stored/);

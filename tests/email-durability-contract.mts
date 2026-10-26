@@ -1,12 +1,14 @@
+import { loadBaselineSchema } from "./lib/baseline-schema.mts";
 import { existsSync, readFileSync } from "node:fs";
 
-// Rock 2 — email joins the durable outbox. This contract pins the migration 0039
-// authority shape AND the dispatchDue gate order (Email is served through the
+// Email joins the durable outbox. This contract pins the email authority shape in
+// the baseline schema AND the dispatchDue gate order (Email is served through the
 // durable claim while LinkedIn/SMS stay refused), so a future edit that weakens
 // the never-auto-send guarantee or re-opens a synchronous email send fails here.
 
-const migrationPath = "supabase/migrations/0039_email_channel_durability.sql";
+const migrationPath = "supabase/migrations/0001_baseline.sql";
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
+const schema = loadBaselineSchema();
 const dispatchPath = "src/lib/dispatch-outbound.ts";
 const dispatch = existsSync(dispatchPath) ? readFileSync(dispatchPath, "utf8") : "";
 const routePath = "src/app/api/outreach/send/route.ts";
@@ -24,62 +26,52 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-function section(source: string, start: string, end?: string): string {
-  const startAt = source.indexOf(start);
-  if (startAt < 0) return "";
-  const endAt = end ? source.indexOf(end, startAt + start.length) : source.length;
-  return source.slice(startAt, endAt < 0 ? source.length : endAt);
-}
-
-// ── migration 0039 exists and owns no transaction ─────────────────────────
-ok("migration 0039 exists", migration.length > 0);
+// ── baseline schema owns no transaction ──────────────────────────────────
+ok("baseline schema exists", migration.length > 0);
 ok(
-  "migration leaves transaction ownership to the bootstrap runner",
+  "baseline leaves transaction ownership to the bootstrap runner",
   !/^\s*(?:begin|commit|rollback)\s*;\s*(?:--.*)?$/im.test(migration),
 );
 
 // ── outreach_ledger.rfc_message_id: format-checked + unique per workspace ──
 ok(
-  "adds a format-checked rfc_message_id column",
-  /add column if not exists rfc_message_id text/i.test(migration) &&
-    /rfc_message_id\s*~\s*'\^<\[\^<>@\\s\]\+@\[\^<>@\\s\]\+>\$'/i.test(migration),
+  "outreach_ledger has a format-checked rfc_message_id column",
+  /^    rfc_message_id text,$/m.test(schema.table("outreach_ledger")) &&
+    migration.includes(
+      "ADD CONSTRAINT outreach_ledger_rfc_message_id_check CHECK (((rfc_message_id IS NULL) OR (rfc_message_id ~ '^<[^<>@\\s]+@[^<>@\\s]+>$'::text)))",
+    ),
 );
 ok(
   "rfc_message_id is unique per workspace",
-  /create unique index if not exists outreach_ledger_rfc_message_id_uniq[\s\S]*?on public\.outreach_ledger \(workspace_id, rfc_message_id\)/i.test(
-    migration,
+  migration.includes(
+    "CREATE UNIQUE INDEX outreach_ledger_rfc_message_id_uniq ON public.outreach_ledger USING btree (workspace_id, rfc_message_id) WHERE (rfc_message_id IS NOT NULL);",
   ),
 );
 
 // ── email_delivery_events: append-only, force RLS, service-writes-only ─────
-const events = section(migration, "create table if not exists public.email_delivery_events");
+const events = schema.table("email_delivery_events");
 ok(
-  "email_delivery_events mirrors the whatsapp event set for email",
-  /event_status\s+text not null check \(event_status in \('delivered', 'bounced', 'complained', 'opened'\)\)/i.test(
-    events,
-  ) && /unique \(workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at\)/i.test(events),
+  "email_delivery_events accepts exactly the email delivery event set",
+  events.includes(
+    "CONSTRAINT email_delivery_events_event_status_check CHECK ((event_status = ANY (ARRAY['delivered'::text, 'bounced'::text, 'complained'::text, 'opened'::text])))",
+  ) &&
+    migration.includes(
+      "ADD CONSTRAINT email_delivery_events_dedupe_uniq UNIQUE (workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at);",
+    ),
 );
 ok(
-  "email_delivery_events forces RLS and grants only SELECT to authenticated",
-  /alter table public\.email_delivery_events force row level security/i.test(migration) &&
-    /revoke all on public\.email_delivery_events from anon, public, authenticated, service_role, authenticator/i.test(
-      migration,
-    ) &&
-    /grant select on public\.email_delivery_events to authenticated/i.test(migration),
+  "email_delivery_events forces RLS and clients may only read it",
+  schema.rls("email_delivery_events").forced &&
+    JSON.stringify(schema.tableGrants("email_delivery_events").authenticated) === JSON.stringify(["SELECT"]) &&
+    !Object.values(schema.tableGrants("email_delivery_events")).flat().some((privilege) => privilege !== "SELECT"),
 );
 
 // ── enqueue_email_outbound: authenticated definer, pg_temp-terminated path ─
-const enqueue = section(
-  migration,
-  "create or replace function public.enqueue_email_outbound(",
-  "revoke all on function public.enqueue_email_outbound",
-);
+const enqueue = schema.fn("enqueue_email_outbound");
 ok(
   "enqueue is an authenticated SECURITY DEFINER with a pg_temp-terminated search_path",
-  /security definer\s+set search_path = pg_catalog, public, extensions, pg_temp/i.test(enqueue) &&
-    /grant execute on function public\.enqueue_email_outbound\(text, text, text, uuid, text, text, text\) to authenticated;/i.test(
-      migration,
-    ),
+  /SECURITY DEFINER\n    SET search_path TO 'pg_catalog', 'public', 'extensions', 'pg_temp'\n/.test(enqueue) &&
+    JSON.stringify(schema.functionGrantees("enqueue_email_outbound")) === JSON.stringify(["authenticated"]),
 );
 ok(
   "enqueue writes a queued Email row and returns 'duplicate' on a re-enqueue",
@@ -87,11 +79,7 @@ ok(
 );
 
 // ── claim_email_outbound_queued: the full service-only gate set ────────────
-const claim = section(
-  migration,
-  "create or replace function public.claim_email_outbound_queued(",
-  "revoke all on function public.claim_email_outbound_queued",
-);
+const claim = schema.fn("claim_email_outbound_queued");
 ok(
   "email claim is service-only",
   /auth\.role\(\)[\s\S]*?<> 'service_role'[\s\S]*?'service-only'/i.test(claim),
@@ -128,17 +116,11 @@ ok(
 );
 ok(
   "email claim is granted to service_role only",
-  /revoke all on function public\.claim_email_outbound_queued\(uuid\) from public, anon, authenticated, authenticator;/i.test(
-    migration,
-  ) && /grant execute on function public\.claim_email_outbound_queued\(uuid\) to service_role;/i.test(migration),
+  JSON.stringify(schema.functionGrantees("claim_email_outbound_queued")) === JSON.stringify(["service_role"]),
 );
 
 // ── enforce_active_email_approval: the never-auto-send trigger ─────────────
-const trigger = section(
-  migration,
-  "create or replace function public.enforce_active_email_approval()",
-  "drop trigger if exists messages_outbound_active_email_approval",
-);
+const trigger = schema.fn("enforce_active_email_approval");
 ok(
   "the Email approval trigger fires ONLY on an Email queued -> dispatching status change",
   /if new\.channel <> 'Email' or old\.status <> 'queued' or new\.status <> 'dispatching' then\s+return new;/i.test(
@@ -153,30 +135,18 @@ ok(
 );
 ok(
   "the Email trigger is installed as a separate before-update-of-status trigger",
-  /create trigger messages_outbound_active_email_approval\s+before update of status on public\.messages_outbound\s+for each row execute function public\.enforce_active_email_approval\(\)/i.test(
-    migration,
+  migration.includes(
+    "CREATE TRIGGER messages_outbound_active_email_approval BEFORE UPDATE OF status ON public.messages_outbound FOR EACH ROW EXECUTE FUNCTION public.enforce_active_email_approval();",
   ),
-);
-ok(
-  "migration 0039 does NOT redefine the WhatsApp approval trigger or claim (comments may reference them)",
-  !/create or replace function public\.enforce_active_whatsapp_approval/i.test(migration) &&
-    !/create or replace function public\.claim_whatsapp_outbound/i.test(migration) &&
-    !/create trigger [a-z_]*whatsapp/i.test(migration),
 );
 
 // ── send + failure + delivery-event RPCs remain service-only ──────────────
 ok(
   "record_email_send_message_id transitions dispatching -> sent, service-only",
-  /create or replace function public\.record_email_send_message_id\(/i.test(migration) &&
-    /grant execute on function public\.record_email_send_message_id\(uuid, uuid, text\) to service_role;/i.test(
-      migration,
-    ),
+  schema.fn("record_email_send_message_id").length > 0 &&
+    JSON.stringify(schema.functionGrantees("record_email_send_message_id")) === JSON.stringify(["service_role"]),
 );
-const deliveryEvent = section(
-  migration,
-  "create or replace function public.record_email_delivery_event(",
-  "revoke all on function public.record_email_delivery_event",
-);
+const deliveryEvent = schema.fn("record_email_delivery_event");
 ok(
   "a permanent bounce or complaint upserts the suppression list, reactivating an expired row",
   /suppress := \(p_event_status = 'bounced' and coalesce\(p_permanent, false\)\) or p_event_status = 'complained'/i.test(
@@ -190,8 +160,9 @@ ok(
 );
 ok(
   "the delivery-event dedup key includes is_permanent (soft->permanent is a distinct event)",
-  /constraint email_delivery_events_dedupe_uniq\s*unique \(workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at\)/i.test(migration)
-    && /on conflict on constraint email_delivery_events_dedupe_uniq do nothing/i.test(deliveryEvent),
+  migration.includes(
+    "ADD CONSTRAINT email_delivery_events_dedupe_uniq UNIQUE (workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at);",
+  ) && /on conflict on constraint email_delivery_events_dedupe_uniq do nothing/i.test(deliveryEvent),
 );
 ok(
   "the ledger branch suppresses only on a genuinely new receipt (replay-idempotent)",
@@ -206,20 +177,18 @@ ok(
 );
 ok(
   "the ledger dedup receipts table is force-RLS + postgres-only with an is_permanent key, and has a bounded cleanup",
-  /create table if not exists public\.email_ledger_delivery_receipts/i.test(migration)
-    && /alter table public\.email_ledger_delivery_receipts force row level security/i.test(migration)
-    && /revoke all on public\.email_ledger_delivery_receipts from anon, public, authenticated, service_role, authenticator/i.test(migration)
-    && /create or replace function public\.cleanup_email_ledger_delivery_receipts\(p_retention_days integer/i.test(migration)
-    && /greatest\(coalesce\(p_retention_days, 180\), 90\)/i.test(migration),
+  schema.table("email_ledger_delivery_receipts").length > 0 &&
+    schema.rls("email_ledger_delivery_receipts").forced &&
+    Object.keys(schema.tableGrants("email_ledger_delivery_receipts")).length === 0 &&
+    /^CREATE FUNCTION public\.cleanup_email_ledger_delivery_receipts\(p_retention_days integer/.test(
+      schema.fn("cleanup_email_ledger_delivery_receipts"),
+    ) &&
+    /greatest\(coalesce\(p_retention_days, 180\), 90\)/i.test(schema.fn("cleanup_email_ledger_delivery_receipts")),
 );
 ok(
   "record_email_delivery_event and finalize_email_provider_failure are service-only",
-  /grant execute on function public\.record_email_delivery_event\(uuid, text, text, timestamptz, integer, boolean\) to service_role;/i.test(
-    migration,
-  ) &&
-    /grant execute on function public\.finalize_email_provider_failure\(uuid, uuid, text\) to service_role;/i.test(
-      migration,
-    ),
+  JSON.stringify(schema.functionGrantees("record_email_delivery_event")) === JSON.stringify(["service_role"]) &&
+    JSON.stringify(schema.functionGrantees("finalize_email_provider_failure")) === JSON.stringify(["service_role"]),
 );
 
 // ── the privilege registry knows the new authority ────────────────────────

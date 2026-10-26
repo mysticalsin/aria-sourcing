@@ -3,7 +3,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 
-const migrationPath = "supabase/migrations/0019_agent_authority_and_integrations.sql";
+const migrationPath = "supabase/migrations/0001_baseline.sql";
 const migration = readFileSync(migrationPath, "utf8");
 const ownerReconciliationPath = "docker/bootstrap/supabase-admin-reconciliation.sql";
 const ownerReconciliation = existsSync(ownerReconciliationPath)
@@ -21,30 +21,13 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-const signatures = [
-  "public.current_workspace_id()",
-  "public.current_profile_role()",
-  "public.ensure_workspace()",
-  "public.touch_updated_at()",
-  "public.claim_and_record(text,text,text,uuid,text,integer)",
-  "public.normalize_whatsapp_e164(text)",
-  "public.claim_whatsapp_outbound(uuid)",
-  "public.record_whatsapp_provider_acceptance(uuid,uuid,text)",
-  "public.record_whatsapp_delivery_event(uuid,uuid,text,text,timestamptz,integer)",
-  "public.record_outreach_approval(text,text,text)",
-  "public.revoke_outreach_approval(text,text)",
-  "public.claim_email_outbound(text,text,text,text,text,text,uuid)",
-  "public.enforce_active_whatsapp_approval()",
-  "public.review_whatsapp_outbound(uuid,text)",
-  "public.claim_whatsapp_inbound_processing(uuid,uuid)",
-  "public.complete_whatsapp_inbound_processing(uuid,uuid,text,text)",
-  "public.finalize_whatsapp_provider_failure(uuid,uuid,text)",
-  "public.stamp_databricks_connection_authority()",
-  "public.audit_databricks_connection_authority()",
-  "public.strip_legacy_databricks_authority()",
-];
+const functionCount = (migration.match(/^CREATE FUNCTION public\./gm) ?? []).length;
 
-ok("migration resets every public routine before allowlisting", signatures.every((signature) => migration.includes(`'${signature}'`)));
+ok(
+  "every public routine has PUBLIC execute revoked, so only explicit grants apply",
+  functionCount > 0 &&
+    (migration.match(/^REVOKE ALL ON FUNCTION public\..+ FROM PUBLIC;$/gm) ?? []).length === functionCount,
+);
 ok(
   "postgres-owned future public-schema objects lose default API-role privileges",
   /alter default privileges revoke all on tables from public/i.test(migration) &&
@@ -104,9 +87,32 @@ ok(
     !/INTERNAL_TARGET_PASSWORD/i.test(ownerReconciliation),
 );
 ok("untrusted roles lose CREATE on public schema", /revoke create on schema public from public, anon, authenticated, service_role, authenticator/i.test(migration));
-ok("authenticated RPC allowlist is explicit", /AUTHENTICATED RPC ALLOWLIST/i.test(migration));
-ok("service worker RPC allowlist is explicit", /SERVICE RPC ALLOWLIST/i.test(migration));
-ok("saved function search paths end with pg_temp", /pg_catalog, public(?:, extensions)?, pg_temp/i.test(migration));
+const authenticatedRpcs = [
+  ...migration.matchAll(/^GRANT (?:ALL|EXECUTE) ON FUNCTION public\.(\w+)\(.*\) TO authenticated;$/gm),
+].map((match) => match[1]).sort();
+ok(
+  "authenticated RPC allowlist is explicit",
+  JSON.stringify(authenticatedRpcs) ===
+    JSON.stringify([
+      "claim_email_outbound",
+      "current_profile_role",
+      "current_workspace_id",
+      "enqueue_email_outbound",
+      "ensure_workspace",
+      "list_workspace_candidates",
+      "record_outreach_approval",
+      "revoke_outreach_approval",
+    ]),
+);
+ok(
+  "service worker RPC grants are explicit and never extend to anon",
+  /^GRANT (?:ALL|EXECUTE) ON FUNCTION public\.\w+\(.*\) TO service_role;$/m.test(migration) &&
+    !/^GRANT .* TO anon;$/m.test(migration),
+);
+ok(
+  "saved function search paths end with pg_temp",
+  (migration.match(/^    SET search_path TO .*'pg_temp'$/gm) ?? []).length === functionCount,
+);
 ok("real database test checks effective role privileges", /has_function_privilege/i.test(databaseTest) && /aclexplode/i.test(databaseTest));
 ok(
   "real database test uses valid PL/pgSQL query iteration",

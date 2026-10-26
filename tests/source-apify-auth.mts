@@ -95,7 +95,6 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
             : { data: { ok: false, reason: "sourcing_run_quota_exceeded" }, error: null };
         }
         if (name === "attach_provider_run") return { data: { ok: true }, error: null };
-        if (name === "enqueue_aria_job") return { data: { status: "enqueued", id: "job-1" }, error: null };
         if (name === "settle_provider_run") return { data: { ok: true }, error: null };
         if (name === "settle_provider_run_by_external") return { data: { ok: true }, error: null };
         if (name === "read_provider_run_for_loop") {
@@ -149,7 +148,6 @@ mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
 
 const startRoute = await import("../src/app/api/source/apify/start/route.ts");
 const statusRoute = await import("../src/app/api/source/apify/status/route.ts");
-const pollRoute = await import("../src/app/api/cron/poll-provider-run/route.ts");
 
 const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.id, searchQuery: "language:Go" }) =>
   new NextRequest("http://localhost/api/source/apify/start", {
@@ -159,14 +157,6 @@ const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.i
   });
 
 const statusReq = (query: string) => new NextRequest(`http://localhost/api/source/apify/status${query}`);
-const pollReq = () =>
-  new NextRequest("http://localhost/api/cron/poll-provider-run", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer cron_secret_TEST_12345678901234567890" },
-    body: JSON.stringify({ workspaceId: "51111111-1111-4111-8111-111111111111", providerRunId: "81111111-1111-4111-8111-111111111111" }),
-  });
-
-process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
 
 /* ---- prodFailClosed blocks in prod ----------------------------------------- */
 {
@@ -256,7 +246,7 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
       startCalls === 1 &&
       resolveKeyCalls === 1,
   );
-  ok("start: persists and enqueues the provider run server-side", serviceRpcCalls.some((call) => call.name === "begin_provider_run") && serviceRpcCalls.some((call) => call.name === "attach_provider_run") && serviceRpcCalls.some((call) => call.name === "enqueue_aria_job"));
+  ok("start: persists the provider run server-side and enqueues no loop job", serviceRpcCalls.some((call) => call.name === "begin_provider_run") && serviceRpcCalls.some((call) => call.name === "attach_provider_run") && !serviceRpcCalls.some((call) => call.name === "enqueue_aria_job"));
   ok("start: never echoes the stored token in the response", JSON.stringify(startJson).includes("TEST_PLACEHOLDER") === false);
   const startInput = lastStartInput as ApifyProfileSearchInput | null;
   ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === "language:Go");
@@ -281,30 +271,6 @@ process.env.CRON_SECRET = "cron_secret_TEST_12345678901234567890";
   );
   ok("status: settles the durable provider run after completion", serviceRpcCalls.some((call) => call.name === "settle_provider_run_by_external"));
   ok("status: never echoes the stored token in the response", JSON.stringify(statusJson).includes("TEST_PLACEHOLDER") === false);
-}
-
-/* ---- browser-gone recovery: cron poll settles a persisted run ------------- */
-{
-  statusCalls = 0;
-  itemsCalls = 0;
-  serviceRpcCalls = [];
-  statusResult = { ok: true, status: 200, data: { status: "SUCCEEDED" } };
-  itemsResult = { ok: true, status: 200, data: [sampleProfile] };
-
-  const res = await pollRoute.POST(pollReq());
-  const json = await res.json();
-  ok(
-    "cron provider poll recovers and settles a persisted Apify run without browser session",
-    res.status === 200 &&
-      json.ok === true &&
-      json.status === "completed" &&
-      Array.isArray(json.candidates) &&
-      json.candidates.length === 1 &&
-      statusCalls === 1 &&
-      itemsCalls === 1 &&
-      serviceRpcCalls.some((call) => call.name === "read_provider_run_for_loop") &&
-      serviceRpcCalls.some((call) => call.name === "settle_provider_run"),
-  );
 }
 
 /* ---- provider run cap blocks before Apify is reached ---------------------- */

@@ -112,14 +112,14 @@ begin
 end;
 $$;
 
-create function aria_cap_test.claim_whatsapp(message_id uuid)
+create function aria_cap_test.claim_email_queued(message_id uuid)
 returns json
 language plpgsql
 set search_path = pg_catalog, public, pg_temp
 as $$
 begin
   perform aria_cap_test.set_claims(null, 'service_role');
-  return public.claim_whatsapp_outbound(message_id);
+  return public.claim_email_outbound_queued(message_id);
 end;
 $$;
 
@@ -178,35 +178,8 @@ insert into public.agent_seats (
 ) values (
   'ca000000-0000-4000-8000-000000000003',
   'ca000000-0000-4000-8000-000000000001',
-  'Cap seat', 'sender@example.test', 'WhatsApp Cloud', 'active', 'live',
+  'Cap seat', 'sender@example.test', 'Resend', 'active', 'live',
   true, 1, false
-);
-
-insert into public.whatsapp_senders (
-  id, workspace_id, seat_id, meta_phone_number_id, status
-) values (
-  'ca000000-0000-4000-8000-000000000004',
-  'ca000000-0000-4000-8000-000000000001',
-  'ca000000-0000-4000-8000-000000000003',
-  'cap-test-phone-number-id', 'active'
-);
-
-insert into public.whatsapp_contacts (
-  workspace_id, recipient_e164, consent_status, consent_source,
-  recorded_at, expires_at, last_inbound_at
-) values (
-  'ca000000-0000-4000-8000-000000000001',
-  '14155550123', 'opted_in', 'synthetic-test',
-  now(), now() + interval '1 day', now()
-);
-
-insert into public.whatsapp_conversation_windows (
-  workspace_id, sender_id, recipient_e164,
-  last_inbound_message_id, last_inbound_at, freeform_until
-) values (
-  'ca000000-0000-4000-8000-000000000001',
-  'ca000000-0000-4000-8000-000000000004',
-  '14155550123', 'cap-test-inbound', now(), now() + interval '1 hour'
 );
 
 insert into public.outreach_approvals (
@@ -226,8 +199,8 @@ insert into public.outreach_approvals (
   (
     'ca000000-0000-4000-8000-000000000001',
     'ca000000-0000-4000-8000-000000000005',
-    encode(digest('Cap race' || E'\n' || 'WhatsApp cap race body', 'sha256'), 'hex'),
-    encode(digest('candidate-whatsapp-race' || E'\n' || 'WhatsApp' || E'\n' || '14155550123', 'sha256'), 'hex'),
+    encode(digest('Cap race' || E'\n' || 'Queued email cap race body', 'sha256'), 'hex'),
+    encode(digest('candidate-queued-race' || E'\n' || 'Email' || E'\n' || 'queued-race@example.test', 'sha256'), 'hex'),
     'ca000000-0000-4000-8000-000000000002', 'human'
   ),
   (
@@ -252,11 +225,11 @@ insert into public.messages_outbound (
 ) values (
   'ca000000-0000-4000-8000-000000000005',
   'ca000000-0000-4000-8000-000000000001',
-  'candidate-whatsapp-race',
+  'candidate-queued-race',
   'ca000000-0000-4000-8000-000000000003',
-  'WhatsApp', '14155550123', 'candidate_reply',
-  'Cap race', 'WhatsApp cap race body', 'queued',
-  'cap-race-whatsapp-dedupe', now(), '14155550123',
+  'Email', 'queued-race@example.test', 'candidate_reply',
+  'Cap race', 'Queued email cap race body', 'queued',
+  'cap-race-queued-dedupe', now(), null,
   'ca000000-0000-4000-8000-000000000005'
 ),
 (
@@ -300,24 +273,34 @@ if [ "$email_paused" != "1" ]; then
   exit 1
 fi
 
-whatsapp_result="$(psql_external -qAtc \
-  "set lock_timeout = '5s'; set statement_timeout = '15s'; select aria_cap_test.claim_whatsapp('ca000000-0000-4000-8000-000000000005');")"
+queued_result="$(psql_external -qAtc \
+  "set lock_timeout = '5s'; set statement_timeout = '15s'; select aria_cap_test.claim_email_queued('ca000000-0000-4000-8000-000000000005');")"
 wait "$email_pid"
 email_pid=""
 email_result="$(tail -n 1 "$email_result_file")"
 
 email_allowed="$(json_field "$email_result" '.allowed')"
-whatsapp_allowed="$(json_field "$whatsapp_result" '.allowed')"
+queued_allowed="$(json_field "$queued_result" '.allowed')"
 allowed_count=0
 [ "$email_allowed" = "true" ] && allowed_count=$((allowed_count + 1))
-[ "$whatsapp_allowed" = "true" ] && allowed_count=$((allowed_count + 1))
+[ "$queued_allowed" = "true" ] && allowed_count=$((allowed_count + 1))
 active_count="$(psql_external -qAtc \
   "select count(*) from public.outreach_ledger where seat_id = 'ca000000-0000-4000-8000-000000000003' and status in ('claimed', 'sent', 'ambiguous')")"
 
 if [ "$allowed_count" != "1" ] || [ "$active_count" != "1" ]; then
-  echo "cross-channel cap violated: cap=1 email=$email_result whatsapp=$whatsapp_result active=$active_count" >&2
+  echo "cross-channel cap violated: cap=1 email=$email_result queued=$queued_result active=$active_count" >&2
   failures=$((failures + 1))
 fi
+# The losing claim must lose on the shared seat cap, not on an unrelated gate.
+loser_reason="$(json_field "$queued_result" '.reason')"
+[ "$queued_allowed" = "true" ] && loser_reason="$(json_field "$email_result" '.reason')"
+case "$loser_reason" in
+  "seat daily cap reached"|"seat-daily-cap-reached") ;;
+  *)
+    echo "cross-channel loser was not refused by the seat cap: email=$email_result queued=$queued_result" >&2
+    failures=$((failures + 1))
+    ;;
+esac
 
 psql_external_stdin -q <<'SQL'
 delete from public.outreach_ledger;
@@ -385,8 +368,8 @@ privileges="$(psql_external -qAtc "
   select
     has_function_privilege('authenticated', 'public.claim_and_record(text,text,text,uuid,text,integer)', 'EXECUTE')::text || '|' ||
     has_function_privilege('service_role', 'public.claim_and_record(text,text,text,uuid,text,integer)', 'EXECUTE')::text || '|' ||
-    has_function_privilege('authenticated', 'public.claim_whatsapp_outbound(uuid)', 'EXECUTE')::text || '|' ||
-    has_function_privilege('service_role', 'public.claim_whatsapp_outbound(uuid)', 'EXECUTE')::text || '|' ||
+    has_function_privilege('authenticated', 'public.claim_email_outbound_queued(uuid)', 'EXECUTE')::text || '|' ||
+    has_function_privilege('service_role', 'public.claim_email_outbound_queued(uuid)', 'EXECUTE')::text || '|' ||
     has_function_privilege('authenticated', 'public.claim_linkedin_outbound_queued(uuid)', 'EXECUTE')::text || '|' ||
     has_function_privilege('service_role', 'public.claim_linkedin_outbound_queued(uuid)', 'EXECUTE')::text
 ")"

@@ -2,20 +2,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const migration = readFileSync("supabase/migrations/0033_candidate_erasure_authority.sql", "utf8");
+import { loadBaselineSchema } from "./lib/baseline-schema.mts";
+
+const migration = readFileSync("supabase/migrations/0001_baseline.sql", "utf8");
+const schema = loadBaselineSchema();
 const store = readFileSync("src/lib/store.ts", "utf8");
 const contracts = readFileSync("src/lib/store/contracts.ts", "utf8");
 const drawer = readFileSync("src/components/candidates/candidate-drawer.tsx", "utf8");
 const openapi = readFileSync("docs/api/openapi.yaml", "utf8");
 
-test("migration defines tenant-bound erasure, legal hold, content-free receipts, and provider outbox authority", () => {
+test("schema defines tenant-bound erasure, legal hold, content-free receipts, and provider outbox authority", () => {
   for (const table of [
     "candidate_legal_holds",
     "candidate_erasure_requests",
     "candidate_erasure_receipts",
     "candidate_erasure_obligations",
   ]) {
-    assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
+    assert.match(migration, new RegExp(`^CREATE TABLE public\\.${table} \\(`, "m"));
+    assert.ok(schema.rls(table).enabled && schema.rls(table).forced, `${table} must force RLS`);
   }
   assert.match(migration, /request_candidate_erasure\(/);
   assert.match(migration, /workspace_id[\s\S]*candidate_id[\s\S]*campaign_id/);
@@ -28,7 +32,7 @@ test("migration defines tenant-bound erasure, legal hold, content-free receipts,
   assert.match(migration, /existing_count >= 100/);
   assert.match(migration, /errcode = '54000'/);
   assert.doesNotMatch(
-    migration.match(/create table if not exists public\.candidate_erasure_receipts[\s\S]*?\);/)?.[0] ?? "",
+    schema.table("candidate_erasure_receipts").replace(/CONSTRAINT candidate_erasure_receipts_store_name_check[^\n]*/, ""),
     /\b(content|email|phone|name|address|payload)\b/i,
   );
 });

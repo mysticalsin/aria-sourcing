@@ -172,11 +172,11 @@ function req(body: unknown) {
 }
 
 {
-  const sql = readFileSync("supabase/migrations/0018_first_admin.sql", "utf8");
+  const sql = readFileSync("supabase/migrations/0001_baseline.sql", "utf8");
   const databaseTest = readFileSync("tests/db/ensure-workspace-authority.sql", "utf8");
   const createdBranch = sql.indexOf("workspace_was_created := true");
   const adminBranch = sql.indexOf("case when workspace_was_created then 'admin'");
-  ok("migration 0018 exists and replaces ensure_workspace", sql.includes("create or replace function public.ensure_workspace()"));
+  ok("baseline defines ensure_workspace", sql.includes("CREATE FUNCTION public.ensure_workspace() RETURNS uuid"));
   ok("migration contains role='admin' marker", sql.includes("role='admin'"));
   ok("admin assignment is tied to workspace creation branch", createdBranch > 0 && adminBranch > createdBranch);
   ok("join branch keeps existing/default role", /else 'member'/.test(sql) && /else public\.profiles\.role/.test(sql));

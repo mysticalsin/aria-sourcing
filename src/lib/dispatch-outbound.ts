@@ -51,20 +51,6 @@ export interface DispatchStats {
 
 type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
 
-async function loopSendControlsPermit(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("sourcing_loop_controls")
-    .select("kill_switch, sequences_enabled")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  if (error) {
-    safeLog("dispatch-outbound: loop controls lookup error", { message: error.message });
-    return false;
-  }
-  const controls = record(data);
-  return controls?.kill_switch === false && controls.sequences_enabled === true;
-}
-
 export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageId?: string): Promise<DispatchStats> {
   const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0, unconfigured: 0 };
 
@@ -74,7 +60,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   let dueQuery = supabase
     .from("messages_outbound")
-    .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
+    .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, approval_message_id")
     .eq("status", "queued")
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
@@ -88,7 +74,6 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   for (const msg of due ?? []) {
     stats.processed++;
-    if (!(await loopSendControlsPermit(supabase, msg.workspace_id))) continue;
     let deliveryAttemptId: string | null = null;
     const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown, countAs?: DispatchOutcomeCounter) => {
       let transition = supabase

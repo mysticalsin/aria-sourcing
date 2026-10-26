@@ -51,16 +51,14 @@ These commands require Docker and create disposable databases:
 npm run test:db-candidate-erasure
 npm run test:db-candidates-corpus
 npm run test:db-person-model
-npm run test:db-agent-operational-rollback
 npm run test:db-cross-channel-cap
-npm run test:db-sequence-engine
 npm run test:db-sourcing-learning
 npm run test:db-conversation-authority
 ```
 
 They cover candidate-erasure authority, candidate-corpus mirror authority,
-derived person identity, operational fallback, cross-channel daily-cap
-serialization, the outreach sequence engine, sourcing-run receipts, and
+derived person identity, cross-channel daily-cap
+serialization, sourcing-run receipts, and
 conversation authority. This list mirrors the `database-security` job in
 `.github/workflows/ci.yml`; update both when adding a database gate.
 

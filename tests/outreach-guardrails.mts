@@ -23,6 +23,7 @@
         the same email / domain / expiry semantics the server guardrail relies on.
    ========================================================================== */
 
+import { loadBaselineSchema } from "./lib/baseline-schema.mts";
 import { existsSync, readFileSync } from "fs";
 import { suppressionMatch } from "../src/lib/fleet";
 import type { SuppressionEntry } from "../src/lib/types";
@@ -123,8 +124,9 @@ const sendRoute = readFileSync(new URL("../src/app/api/outreach/send/route.ts", 
 const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 const approveRoute = readFileSync(new URL("../src/app/api/outreach/approve/route.ts", import.meta.url), "utf8");
 const revokeRoute = readFileSync(new URL("../src/app/api/outreach/revoke/route.ts", import.meta.url), "utf8");
-const approvalLifecycleMigration = readFileSync(new URL("../supabase/migrations/0011_outreach_approval_lifecycle.sql", import.meta.url), "utf8");
-const approvalRaceMigrationPath = new URL("../supabase/migrations/0013_outreach_approval_race_safety.sql", import.meta.url);
+const baselineSchema = loadBaselineSchema();
+const approvalLifecycleMigration = readFileSync(new URL("../supabase/migrations/0001_baseline.sql", import.meta.url), "utf8");
+const approvalRaceMigrationPath = new URL("../supabase/migrations/0001_baseline.sql", import.meta.url);
 const approvalRaceMigration = existsSync(approvalRaceMigrationPath) ? readFileSync(approvalRaceMigrationPath, "utf8") : "";
 ok("send route reads approval provenance", /select\("body_hash, approval_scope_hash, approval_source"\)/.test(sendRoute));
 ok("send route rejects approval provenance other than human", /approval\.approval_source\s*!==\s*"human"/.test(sendRoute));
@@ -139,40 +141,47 @@ ok("revoke route calls the authoritative lifecycle RPC", /rpc\("revoke_outreach_
 ok("send route excludes revoked approvals", /revoked_at/.test(sendRoute));
 ok("send route claims email with the locked approval RPC", /rpc\("claim_email_outbound"/.test(sendRoute));
 ok("send route refuses live email without an unsubscribe link", /createEmailUnsubscribeLink\(\)/.test(sendRoute));
-ok("lifecycle migration blocks a WhatsApp dispatch without an active approval", /enforce_active_whatsapp_approval/.test(approvalLifecycleMigration));
-ok("lifecycle migration binds an email claim to its approval id", /claim_email_outbound/.test(approvalLifecycleMigration));
+const emailClaim = baselineSchema.fn("claim_email_outbound_queued");
+const emailApprovalGate = baselineSchema.fn("enforce_active_email_approval");
+const linkedinApprovalGate = baselineSchema.fn("enforce_active_linkedin_approval");
 ok(
-  "race migration keeps approval-id uniqueness only while a ledger is claimed or sent",
-  /outreach_ledger_approval_message_live_uniq[\s\S]*?where approval_message_id is not null\s+and status in \('claimed', 'sent'\)/.test(approvalRaceMigration),
+  "outbox dispatch triggers block Email and LinkedIn without an active approval",
+  /approval\.revoked_at is not null/.test(emailApprovalGate) && /approval\.revoked_at is not null/.test(linkedinApprovalGate),
+);
+ok("lifecycle binds an email claim to its approval id", /claim_email_outbound/.test(approvalLifecycleMigration));
+ok(
+  "approval-id uniqueness holds while a ledger is claimed, sent, or ambiguous",
+  /CREATE UNIQUE INDEX \w+ ON public\.outreach_ledger USING btree \(workspace_id, approval_message_id\) WHERE \(\(approval_message_id IS NOT NULL\) AND \(status = ANY \(ARRAY\['claimed'::text, 'sent'::text, 'ambiguous'::text\]\)\)\)/.test(
+    approvalRaceMigration,
+  ),
 );
 ok(
-  "race migration serializes record, revoke, and the WhatsApp pre-dispatch gate with the same approval lock",
-  (approvalRaceMigration.match(/pg_advisory_xact_lock/g) ?? []).length >= 3,
+  "record, revoke, and the dispatch gates serialize on the same approval lock",
+  [baselineSchema.fn("record_outreach_approval"), baselineSchema.fn("revoke_outreach_approval"), emailApprovalGate, emailClaim].every(
+    (body) => /pg_advisory_xact_lock\(hashtextextended\(/.test(body),
+  ),
 );
 ok(
-  "race migration checks the claimed-or-sent ledger after the approval lock before re-approval",
-  /record_outreach_approval[\s\S]*?pg_advisory_xact_lock[\s\S]*?outreach_ledger[\s\S]*?status in \('claimed', 'sent'\)[\s\S]*?insert into public\.outreach_approvals/.test(approvalRaceMigration),
+  "re-approval checks the claimed-or-sent ledger after the approval lock",
+  /pg_advisory_xact_lock[\s\S]*?outreach_ledger[\s\S]*?status in \('claimed', 'sent'\)[\s\S]*?insert into public\.outreach_approvals/.test(
+    baselineSchema.fn("record_outreach_approval"),
+  ),
 );
 ok(
-  "race migration rejects a revoked WhatsApp approval inside the locked pre-dispatch gate",
-  /enforce_active_whatsapp_approval[\s\S]*?approval\.revoked_at is not null/.test(approvalRaceMigration),
+  "the queued email claim rejects a revoked approval inside the locked gate",
+  /pg_advisory_xact_lock[\s\S]*?approval\.revoked_at is not null/.test(emailClaim),
 );
 ok(
-  "race migration preserves canonical WhatsApp E.164 numbers without a literal backslash",
-  approvalRaceMigration.includes("p_value ~ '^\\+?[1-9][0-9]{7,14}$'") &&
-    approvalRaceMigration.includes("regexp_replace(p_value, '^\\+', '')"),
+  "the queued email claim can reach pgcrypto through its pinned search_path",
+  /SET search_path TO 'pg_catalog', 'public', 'extensions', 'pg_temp'/.test(emailClaim),
 );
 ok(
-  "race migration gives the WhatsApp claim access to pgcrypto",
-  /claim_whatsapp_outbound\(p_message_id uuid\)[\s\S]*?set search_path = public, extensions/.test(approvalRaceMigration),
+  "the queued email claim locks the outbox row before its per-approval lock",
+  /from public\.messages_outbound[\s\S]*?for update[\s\S]*?pg_advisory_xact_lock/.test(emailClaim),
 );
 ok(
-  "race migration locks the WhatsApp outbox before its per-approval lock",
-  /claim_whatsapp_outbound\(p_message_id uuid\)[\s\S]*?from public\.messages_outbound[\s\S]*?for update[\s\S]*?pg_advisory_xact_lock/.test(approvalRaceMigration),
-);
-ok(
-  "race migration binds each WhatsApp claim ledger to the approving message",
-  /claim_whatsapp_outbound\(p_message_id uuid\)[\s\S]*?insert into public\.outreach_ledger\([\s\S]*?approval_message_id[\s\S]*?outbound_message_id[\s\S]*?approval_id/.test(approvalRaceMigration),
+  "the queued email claim binds its ledger row to the approving and outbound messages",
+  /insert into public\.outreach_ledger\([\s\S]*?approval_message_id, outbound_message_id[\s\S]*?approval_id, outbound\.id/.test(emailClaim),
 );
 
 console.log(`RESULT outreach-guardrails: ${pass} passed, ${fail} failed`);

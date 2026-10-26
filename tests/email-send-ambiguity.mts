@@ -13,7 +13,7 @@
         'unknown' parks the ledger claim as 'ambiguous' + 502
         reconciliation-required; 'not-sent' stays retryable 'skipped'; a
         known-sent email is reconciled 'sent' BEFORE token bookkeeping.
-     3. Migration 0022 source pins (build-before-drop index supersession).
+     3. Schema pins for ambiguous-send reconciliation (baseline schema).
      4. Route/type source pins (phase-aware catch, LEDGER_STATUSES).
    ========================================================================== */
 
@@ -496,46 +496,38 @@ try {
   emailConnRow = null;
 
   /* =========================================================================
-     3. Migration 0022 source pins.
+     3. Schema pins for ambiguous-send reconciliation (baseline schema).
      ======================================================================= */
-  const migration = readFileSync(new URL("../supabase/migrations/0022_email_send_reconciliation.sql", import.meta.url), "utf8");
-  const fleetMigration = readFileSync(new URL("../supabase/migrations/0002_fleet.sql", import.meta.url), "utf8");
-  const raceMigration = readFileSync(new URL("../supabase/migrations/0013_outreach_approval_race_safety.sql", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/0001_baseline.sql", import.meta.url), "utf8");
 
-  ok("0022 adds the immutable send_attempt_id column", /add column if not exists send_attempt_id uuid/.test(migration));
+  ok("the ledger carries an immutable send_attempt_id column", /^    send_attempt_id uuid,$/m.test(migration));
   ok(
-    "0022 makes the attempt identity unique when present",
-    /outreach_ledger_send_attempt_uniq[\s\S]*?where send_attempt_id is not null/.test(migration),
+    "the attempt identity is unique when present",
+    migration.includes(
+      "CREATE UNIQUE INDEX outreach_ledger_send_attempt_uniq ON public.outreach_ledger USING btree (send_attempt_id) WHERE (send_attempt_id IS NOT NULL);",
+    ),
   );
   ok(
-    "0022 extends the candidate de-dupe index to ambiguous rows",
-    /outreach_ledger_active_reconcile_uniq[\s\S]*?\(workspace_id, candidate_id\)[\s\S]*?where status in \('claimed', 'sent', 'ambiguous'\)/.test(migration),
+    "the candidate de-dupe index covers ambiguous rows",
+    migration.includes(
+      "CREATE UNIQUE INDEX outreach_ledger_active_reconcile_uniq ON public.outreach_ledger USING btree (workspace_id, candidate_id) WHERE (status = ANY (ARRAY['claimed'::text, 'sent'::text, 'ambiguous'::text]));",
+    ),
   );
   ok(
-    "0022 extends the approval-id de-dupe index to ambiguous rows",
-    /outreach_ledger_approval_message_reconcile_uniq[\s\S]*?\(workspace_id, approval_message_id\)[\s\S]*?approval_message_id is not null[\s\S]*?status in \('claimed', 'sent', 'ambiguous'\)/.test(migration),
+    "the approval-id de-dupe index covers ambiguous rows",
+    migration.includes(
+      "CREATE UNIQUE INDEX outreach_ledger_approval_message_reconcile_uniq ON public.outreach_ledger USING btree (workspace_id, approval_message_id) WHERE ((approval_message_id IS NOT NULL) AND (status = ANY (ARRAY['claimed'::text, 'sent'::text, 'ambiguous'::text])));",
+    ),
   );
   ok(
-    "0022 builds the candidate index before dropping the superseded one",
-    migration.indexOf("outreach_ledger_active_reconcile_uniq") >= 0 &&
-      migration.indexOf("outreach_ledger_active_reconcile_uniq") < migration.indexOf("drop index if exists public.outreach_ledger_active_uniq"),
+    "the superseded claimed/sent-only de-dupe indexes are gone",
+    !/outreach_ledger_active_uniq\b/.test(migration) && !/outreach_ledger_approval_message_live_uniq\b/.test(migration),
   );
   ok(
-    "0022 builds the approval index before dropping the superseded one",
-    migration.indexOf("outreach_ledger_approval_message_reconcile_uniq") >= 0 &&
-      migration.indexOf("outreach_ledger_approval_message_reconcile_uniq") <
-        migration.indexOf("drop index if exists public.outreach_ledger_approval_message_live_uniq"),
-  );
-  ok(
-    "0022 leaves transaction ownership to the bootstrap runner",
+    "the baseline leaves transaction ownership to the bootstrap runner",
     !/^\s*(?:begin|commit|rollback)\s*;\s*(?:--.*)?$/im.test(migration),
   );
-  ok("0022 never rebuilds indexes concurrently inside the runner transaction", !/concurrently/i.test(migration));
-  ok(
-    "0002 and 0013 are superseded in place, never edited",
-    /create unique index if not exists outreach_ledger_active_uniq/.test(fleetMigration) &&
-      /create unique index if not exists outreach_ledger_approval_message_live_uniq/.test(raceMigration),
-  );
+  ok("the baseline never builds indexes concurrently inside the runner transaction", !/index\s+concurrently/i.test(migration));
 
   /* =========================================================================
      4. Route/type source pins.

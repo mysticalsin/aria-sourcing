@@ -94,7 +94,11 @@ insert into public.workspace_state(workspace_id, state) values (
 );
 SQL
 
-psql_stdin -q < supabase/migrations/0037_person_identity_model.sql
+# The schema is already applied; run the one-shot backfill that the person
+# identity migration used to execute over pre-existing candidates.
+psql_stdin -q <<'SQL'
+select * from public.backfill_candidate_person_identities();
+SQL
 
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on

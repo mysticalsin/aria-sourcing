@@ -165,22 +165,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Provider run could not be persisted." }, { status: 503 });
   }
 
-  const pollJob = await svc.rpc("enqueue_aria_job", {
-    p_workspace_id: workspaceId,
-    p_kind: "provider_poll",
-    p_idempotency_key: `poll:${providerRunId}`,
-    p_payload: {
-      campaignId,
-      providerRunId,
-    },
-    p_run_at: new Date().toISOString(),
-    p_priority: 90,
-  });
-  const pollJobBody = pollJob.data as { status?: string } | null;
-  if (pollJob.error || pollJobBody?.status !== "enqueued") {
-    return NextResponse.json({ ok: false, error: "Provider run persisted but loop poll could not be enqueued." }, { status: 503 });
-  }
-
   return NextResponse.json({
     ok: true,
     runId: result.data.runId,

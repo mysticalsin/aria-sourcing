@@ -60,9 +60,14 @@ language plpgsql
 set search_path = pg_catalog
 as $$
 begin
+  -- GoTrue access tokens carry the verified email claim; mirror that here.
   perform set_config(
     'request.jwt.claims',
-    jsonb_build_object('sub', subject, 'role', jwt_role)::text,
+    jsonb_strip_nulls(jsonb_build_object(
+      'sub', subject,
+      'role', jwt_role,
+      'email', (select email from auth.users where id = subject)
+    ))::text,
     true
   );
   perform set_config('request.jwt.claim.sub', coalesce(subject::text, ''), true);

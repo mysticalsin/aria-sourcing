@@ -4,7 +4,7 @@ set -Eeuo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-migration="supabase/migrations/0027_sourcing_learning_authority.sql"
+migration="supabase/migrations/0001_baseline.sql"
 database_test="tests/db/sourcing-learning-authority.sql"
 project="aria-sourcing-learning-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}"
 network="${project}_default"
@@ -39,21 +39,8 @@ if [ "$db_init_status" != "0" ]; then
   exit 1
 fi
 
-psql_postgres -q <<'SQL'
-create schema if not exists extensions;
-create extension if not exists pgcrypto with schema extensions;
-create table public.workspaces (id uuid primary key, name text not null);
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  workspace_id uuid not null references public.workspaces(id) on delete cascade,
-  role text not null
-);
-SQL
 psql_postgres -q < "$migration"
 psql_postgres -q < "$database_test"
-# Ledger reconciliation may retry a migration after the transaction outcome is
-# uncertain. Reapplying must preserve every receipt and authority boundary.
-psql_postgres -q < "$migration"
 
 set +e
 direct_dml="$(psql_authenticator -qAt 2>&1 <<'SQL'

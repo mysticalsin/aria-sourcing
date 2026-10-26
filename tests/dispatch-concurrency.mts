@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 
-const migration = readFileSync("supabase/migrations/0017_dispatch_concurrency.sql", "utf8");
+import { loadBaselineSchema } from "./lib/baseline-schema.mts";
+
+const migration = readFileSync("supabase/migrations/0001_baseline.sql", "utf8");
 const dispatcher = readFileSync("src/lib/dispatch-outbound.ts", "utf8");
 
 let pass = 0;
@@ -15,7 +17,8 @@ function ok(name: string, condition: boolean) {
 
 ok(
   "failure finalization is service-role only",
-  /finalize_whatsapp_provider_failure[\s\S]*?auth\.role\(\)[\s\S]*?service_role[\s\S]*?revoke all[\s\S]*?authenticated[\s\S]*?grant execute[\s\S]*?service_role/i.test(migration),
+  /auth\.role\(\)[\s\S]*?service_role/.test(loadBaselineSchema().fn("finalize_email_provider_failure")) &&
+    JSON.stringify(loadBaselineSchema().functionGrantees("finalize_email_provider_failure")) === JSON.stringify(["service_role"]),
 );
 ok(
   "failure finalization locks the outbox ownership row",
