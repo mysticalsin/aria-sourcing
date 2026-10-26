@@ -779,6 +779,7 @@ export function buildSeedState(): HermesState {
     accepted.forEach((cand, i) => {
       const stage: Stage = spec.stagePlan[i] ?? "Sourced";
       cand.stage = stage;
+      cand.createdAt = isoDaysBefore(16 - specIndex * 4);
       const rank = RANK[stage] ?? 0;
 
       // Outreach
@@ -840,6 +841,7 @@ export function buildSeedState(): HermesState {
         const start = new Date(now + (isPast ? -1 : 1 + (i % 3)) * 86_400_000 + 14 * 3_600_000);
         const booking = createBooking(cand, campaign, interviewer, start);
         booking.status = isPast ? "Completed" : "Confirmed";
+        booking.createdAt = isoDaysBefore(7 - specIndex * 2 - (i % 3)); // booked after the reply
         bookings.push(booking);
         cand.booking = booking;
         campaignActivities.push(

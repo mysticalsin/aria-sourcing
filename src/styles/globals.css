@@ -452,3 +452,17 @@ body::before {
 .liquid-glass:active {
   transform: scale(0.98);
 }
+
+/* Printed reports (Exec "Download PDF"): plain white page, no app chrome. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .skip-link {
+    display: none !important;
+  }
+}

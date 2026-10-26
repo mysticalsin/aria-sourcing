@@ -108,6 +108,9 @@ export interface RealFunnelFacts {
 export interface RealFunnelOptions {
   live: boolean;
   campaignId?: string;
+  /** Count approved dry-run sends as contacts. For clearly labelled demo
+   *  reporting only; canonical KPIs never set this. */
+  includeSimulatedSends?: boolean;
 }
 
 export type RealFunnelState = Pick<
@@ -119,6 +122,13 @@ export function isRealSendFact(
   message: Pick<OutreachMessage, "dryRun" | "sentAt">,
 ): boolean {
   return message.dryRun === false && message.sentAt != null;
+}
+
+/** An approved send that the dry-run gate stopped before any provider call. */
+export function isSimulatedSendFact(
+  message: Pick<OutreachMessage, "dryRun" | "sentAt">,
+): boolean {
+  return message.dryRun === true && message.sentAt != null;
 }
 
 function candidatesInScope(
@@ -155,7 +165,7 @@ export function realFunnelFacts(
         (message) =>
           inCampaign(message.campaignId) &&
           eligibleCandidateIds.has(message.candidateId) &&
-          isRealSendFact(message),
+          (isRealSendFact(message) || (options.includeSimulatedSends === true && isSimulatedSendFact(message))),
       )
       .map((message) => message.candidateId),
   );

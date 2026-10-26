@@ -19,7 +19,7 @@ export function Sidebar() {
   const sections = ["Operate", "Analyze", "System"] as const;
 
   return (
-    <aside className="hidden lg:flex w-[260px] shrink-0 flex-col sidebar-glass sticky top-0 h-screen">
+    <aside className="hidden lg:flex w-[260px] shrink-0 flex-col sidebar-glass sticky top-0 h-screen print:!hidden">
       <div className="px-5 py-5">
         <Link href="/" className="flex justify-center rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric">
           <HermesWordmark />

@@ -4,7 +4,8 @@
  * Run: node --import tsx tests/exec-dashboard.mts
  */
 import { readFileSync } from "fs";
-import { deriveExecDashboard, execCanExport, execWinCandidateLabel } from "../src/lib/exec-dashboard";
+import { deriveExecDashboard, execCanExport, execConversionSteps, execWinCandidateLabel, scopeExecStateToPeriod } from "../src/lib/exec-dashboard";
+import { DEFAULT_ROI_ASSUMPTIONS, estimateRoi } from "../src/lib/roi";
 import { globalKpis, isRealSendFact, realFunnelFacts } from "../src/lib/metrics";
 import type { Activity, Booking, Campaign, Candidate, HermesState, OutreachMessage, WinRecord } from "../src/lib/types";
 
@@ -276,6 +277,47 @@ ok("open-rate tile renders Not tracked yet", pageSource.includes("Not tracked ye
 ok("open-rate tile explains no email-open events exist", pageSource.includes("No email-open events exist"));
 ok("open-rate tile does not format an open-rate number", !/formatPercent\([^)]*openRate|openRate\s*[:=]\s*\d/.test(pageSource));
 ok("page gates export through RBAC helper", pageSource.includes("execCanExport(role)"));
+
+/* ---- decision report: period, conversion, simulated sends, value -------- */
+const fixtureNow = Date.parse("2026-07-12T00:00:00.000Z");
+const recent = deriveExecDashboard(state, false, { period: "7d", nowMs: fixtureNow });
+ok("7-day period keeps records from the last week", recent.kpis.candidatesSourced === model.kpis.candidatesSourced);
+const stale = scopeExecStateToPeriod(state, "7d", Date.parse("2026-08-30T00:00:00.000Z"));
+ok("7-day period drops records older than the window", stale.candidates.length === 0 && stale.outreach.length === 0 && stale.bookings.length === 0);
+ok("all-time period keeps the full state", scopeExecStateToPeriod(state, "all").candidates.length === state.candidates.length);
+ok("the report carries its period", recent.report.period === "7d");
+
+const liveReport = model.report;
+ok("live report is not simulated", liveReport.simulated === false);
+ok("live report funnel matches canonical facts", liveReport.facts.contacted === canonicalFacts.contacted && liveReport.facts.booked === canonicalFacts.booked);
+ok(
+  "conversion steps run sourced -> contacted -> replied -> interested -> booked -> accepted",
+  liveReport.conversion.map((step) => step.key).join(",") === "sourced,contacted,replied,positive,booked,accepted",
+);
+ok("the first conversion step has no rate", liveReport.conversion[0].rateFromPrevious === null);
+ok(
+  "contact rate is contacted over sourced",
+  liveReport.conversion[1].rateFromPrevious === canonicalFacts.contacted / canonicalFacts.sourced,
+);
+ok("a step after an empty step has a zero rate, not NaN", execConversionSteps({ ...canonicalFacts, sourced: 0, contacted: 0 }, 0)[1].rateFromPrevious === 0);
+ok("accepted meetings come from win records", liveReport.acceptedMeetings === wins.length);
+
+const demoReport = deriveExecDashboard(state, true).report;
+ok("demo report is labelled simulated", demoReport.simulated === true);
+ok("demo report counts approved dry-run sends as contacts", demoReport.facts.contacted === 2);
+ok("demo report still excludes synthetic candidates", !demoReport.facts.contactedCandidateIds.includes("synthetic-real"));
+ok("demo mode never changes the canonical KPI tiles", deriveExecDashboard(state, true).kpis.contacted === model.kpis.contacted);
+
+const expectedValue = estimateRoi(
+  { sourced: liveReport.facts.sourced, drafted: 3, booked: liveReport.facts.booked, spanDays: liveReport.value.spanDays },
+  DEFAULT_ROI_ASSUMPTIONS,
+);
+ok("report value uses the shared ROI estimate", Math.abs(liveReport.value.valueSaved - expectedValue.valueSaved) < 1e-9);
+ok(
+  "value per interview divides time saved by interviews booked",
+  liveReport.value.valuePerBooking === liveReport.value.valueSaved / liveReport.facts.booked,
+);
+ok("ROI multiple is zero when cost is zero", estimateRoi({ sourced: 1, drafted: 0, booked: 0, spanDays: 1 }, { ...DEFAULT_ROI_ASSUMPTIONS, monthlyCost: 0 }).multiple === 0);
 
 console.log(`RESULT exec-dashboard: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -45,14 +45,14 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+        <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10 print:p-0">
           <div className="mx-auto w-full max-w-[1400px]">{children}</div>
         </main>
       </div>
 
       {/* Mobile bottom nav */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-violet/10 bg-paper/85 px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden"
+        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-violet/10 bg-paper/85 px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden print:hidden"
         aria-label="Primary mobile"
       >
         {MOBILE_NAV.map((item) => {

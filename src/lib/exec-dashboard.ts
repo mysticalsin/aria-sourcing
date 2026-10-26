@@ -7,8 +7,9 @@ import {
   type RealFunnelFacts,
 } from "./metrics";
 import { can } from "./rbac";
+import { DEFAULT_ROI_ASSUMPTIONS, activitySpanDays, estimateRoi, type RoiAssumptions, type RoiEstimate } from "./roi";
 import type { Activity, Campaign, Candidate, HermesState, Role, SourcePlatform, WinRecord } from "./types";
-import { round } from "./utils";
+import { round, SEED_NOW } from "./utils";
 
 export type ExecDashboardState = Pick<
   HermesState,
@@ -30,6 +31,45 @@ export interface ExecTrends {
   booked: number[];
 }
 
+export const EXEC_PERIODS = ["7d", "30d", "90d", "all"] as const;
+export type ExecPeriod = (typeof EXEC_PERIODS)[number];
+
+export const EXEC_PERIOD_LABEL: Record<ExecPeriod, string> = {
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+  "90d": "Last 90 days",
+  all: "All time",
+};
+
+const PERIOD_DAYS: Record<ExecPeriod, number | null> = { "7d": 7, "30d": 30, "90d": 90, all: null };
+
+export interface ExecConversionStep {
+  key: "sourced" | "contacted" | "replied" | "positive" | "booked" | "accepted";
+  label: string;
+  count: number;
+  /** Share of the previous step that reached this one; null for the first step. */
+  rateFromPrevious: number | null;
+}
+
+export interface ExecValueSummary extends RoiEstimate {
+  assumptions: RoiAssumptions;
+  spanDays: number;
+  /** Value of time saved per interview booked; null without bookings. */
+  valuePerBooking: number | null;
+}
+
+/** The decision-maker report: one period, one funnel, one value estimate. */
+export interface ExecDecisionReport {
+  period: ExecPeriod;
+  /** True when contacts are approved dry-run sends (demo); no email left the system. */
+  simulated: boolean;
+  facts: RealFunnelFacts;
+  /** Accepted meetings (win records) in the period. */
+  acceptedMeetings: number;
+  conversion: ExecConversionStep[];
+  value: ExecValueSummary;
+}
+
 export interface ExecDashboardModel {
   kpis: GlobalKpis;
   facts: RealFunnelFacts;
@@ -38,6 +78,14 @@ export interface ExecDashboardModel {
   trends: ExecTrends;
   recentWins: WinRecord[];
   demoMode: boolean;
+  report: ExecDecisionReport;
+}
+
+export interface ExecDashboardOptions {
+  period?: ExecPeriod;
+  /** Clock for period scoping; defaults to Date.now(). */
+  nowMs?: number;
+  assumptions?: RoiAssumptions;
 }
 
 const TREND_POINTS = 8;
@@ -151,10 +199,95 @@ function campaignRows(state: ExecDashboardState, live: boolean): ExecFunnelRow[]
     .filter((row) => row.facts.sourced > 0 || row.facts.contacted > 0 || row.facts.booked > 0);
 }
 
-export function deriveExecDashboard(state: ExecDashboardState, demoMode: boolean): ExecDashboardModel {
+function withinPeriod(iso: string | null | undefined, sinceMs: number | null): boolean {
+  if (sinceMs == null) return true;
+  if (!iso) return false;
+  const at = new Date(iso).getTime();
+  return Number.isFinite(at) && at >= sinceMs;
+}
+
+/** Keeps only the records that happened inside the period (by their own event time). */
+export function scopeExecStateToPeriod(
+  state: ExecDashboardState,
+  period: ExecPeriod,
+  nowMs: number = Date.now(),
+): ExecDashboardState {
+  const days = PERIOD_DAYS[period];
+  if (days == null) return state;
+  const sinceMs = nowMs - days * 86_400_000;
+  return {
+    ...state,
+    candidates: state.candidates.filter((candidate) => withinPeriod(candidate.createdAt, sinceMs)),
+    outreach: state.outreach.filter((message) => withinPeriod(message.sentAt ?? message.createdAt, sinceMs)),
+    replies: state.replies.filter((reply) => withinPeriod(reply.receivedAt, sinceMs)),
+    bookings: state.bookings.filter((booking) => withinPeriod(booking.createdAt, sinceMs)),
+    activities: state.activities.filter((activity) => withinPeriod(activity.createdAt, sinceMs)),
+    wins: (state.wins ?? []).filter((win) => withinPeriod(win.at, sinceMs)),
+  };
+}
+
+export function execConversionSteps(facts: RealFunnelFacts, accepted: number): ExecConversionStep[] {
+  const steps: Array<Omit<ExecConversionStep, "rateFromPrevious">> = [
+    { key: "sourced", label: "Sourced", count: facts.sourced },
+    { key: "contacted", label: "Contacted", count: facts.contacted },
+    { key: "replied", label: "Replied", count: facts.repliedCount },
+    { key: "positive", label: "Interested", count: facts.positiveReplies },
+    { key: "booked", label: "Interview booked", count: facts.booked },
+    { key: "accepted", label: "Meeting accepted", count: accepted },
+  ];
+  return steps.map((step, index) => {
+    if (index === 0) return { ...step, rateFromPrevious: null };
+    const previous = steps[index - 1].count;
+    return { ...step, rateFromPrevious: previous > 0 ? step.count / previous : 0 };
+  });
+}
+
+function decisionReport(
+  state: ExecDashboardState,
+  demoMode: boolean,
+  live: boolean,
+  period: ExecPeriod,
+  assumptions: RoiAssumptions,
+): ExecDecisionReport {
+  const facts = realFunnelFacts(state, { live, includeSimulatedSends: demoMode });
+  const acceptedMeetings = (state.wins ?? []).length;
+  const counted = new Set(facts.candidateIds);
+  const drafted = state.outreach.filter((message) => counted.has(message.candidateId)).length;
+  const spanDays = activitySpanDays([
+    ...state.candidates.filter((candidate) => counted.has(candidate.id)).map((candidate) => candidate.createdAt),
+    ...state.outreach.filter((message) => counted.has(message.candidateId)).map((message) => message.createdAt),
+    ...state.bookings.map((booking) => booking.createdAt),
+  ]);
+  const roi = estimateRoi({ sourced: facts.sourced, drafted, booked: facts.booked, spanDays }, assumptions);
+  return {
+    period,
+    simulated: demoMode,
+    facts,
+    acceptedMeetings,
+    conversion: execConversionSteps(facts, acceptedMeetings),
+    value: {
+      ...roi,
+      assumptions,
+      spanDays,
+      valuePerBooking: facts.booked > 0 ? roi.valueSaved / facts.booked : null,
+    },
+  };
+}
+
+export function deriveExecDashboard(
+  fullState: ExecDashboardState,
+  demoMode: boolean,
+  options: ExecDashboardOptions = {},
+): ExecDashboardModel {
+  const period = options.period ?? "all";
+  // Seeded demo data is dated on the fixed seed clock, so demo periods are
+  // measured from it rather than from the wall clock.
+  const nowMs = options.nowMs ?? (demoMode ? SEED_NOW.getTime() : Date.now());
+  const state = scopeExecStateToPeriod(fullState, period, nowMs);
   const live = !state.settings.dryRunMode;
   const facts = realFunnelFacts(state, { live });
   return {
+    report: decisionReport(state, demoMode, live, period, options.assumptions ?? DEFAULT_ROI_ASSUMPTIONS),
     kpis: globalKpis(state),
     facts,
     platformFunnels: platformRows(state, live),

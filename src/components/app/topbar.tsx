@@ -172,7 +172,7 @@ export function TopBar() {
 
   return (
     <>
-    <header className="sticky top-0 z-40 topbar-glass">
+    <header className="sticky top-0 z-40 topbar-glass print:hidden">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
         {/* Mobile / tablet nav trigger — exposes the full nav below lg. */}
         <button
