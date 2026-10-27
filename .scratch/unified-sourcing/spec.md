@@ -62,3 +62,12 @@ all guards. Modals portal to body with bounded height/internal scrolling and
 stable input focus. A fresh 1280x720 browser fixture passed source review,
 refresh recovery, intake creation and manually typed candidate creation without
 force clicks. Final type/test/lint gate and production build passed again.
+
+Real PostgreSQL and Docker acceptance passed in CI 40498433529 at 0be6b3ca.
+The SQL job executed the unified-sourcing scenario and preserved private provider
+ACLs. The Docker receipt includes refresh/restart and encrypted fixture-key
+decryption, with externalProviderCalls=0. Final preview confidentiality alignment
+43b9db34 passed local full gate/build and browser masking checks. CI 40499885119
+and CodeQL 40499885130 on that exact code tip completed SUCCESS, including the
+real PostgreSQL and Docker/browser jobs. Real paid Apify sourcing remains an
+operator acceptance step.

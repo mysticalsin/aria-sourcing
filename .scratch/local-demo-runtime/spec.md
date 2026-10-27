@@ -39,3 +39,14 @@ Do not install Docker or WSL in the current Windows session. Docker startup and
 restart acceptance will be performed on another machine. The implementation,
 unit/route tests, dependency audit and production build are checked here. The actual Compose/browser recipe is provided in DOCKER.md and
 automated as a CI job. Do not mark Docker acceptance passed without its receipt.
+## Linux CI receipt (2026-10-27)
+
+Implementation 0be6b3ca passed the full CI release gate in run 40498433529.
+The real Docker/browser receipt passed clean startup, readiness, browser login,
+UI campaign and candidate creation, encrypted credential storage, refresh, stack
+restart, fresh login, restored state and credential decryption, with zero
+external-provider calls. The owner can repeat this on another machine; Docker
+and WSL were not installed on this Windows session.
+
+Confirmed again at final code 43b9db34 by successful CI 40499885119 and CodeQL
+40499885130. All required jobs, including Docker and Database security, passed.

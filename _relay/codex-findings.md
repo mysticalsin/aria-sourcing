@@ -1168,30 +1168,30 @@ Historical and current findings follow. The current consolidated audit is
 **File:** src/lib/mock-ai.ts:157; scripts/accept-local-demo.mjs:109
 **Issue:** The labelled backend sample omits employment type. Campaign creation correctly refuses this incomplete brief, so the connected demo acceptance times out after Create campaign.
 **Repro/evidence:** CI 40496031702 passes direct Auth login, browser login and workspace readiness before the stack points to waitForURL after Create campaign. evaluateNeedReadiness reports the missing employment type. Added explicit Full-time text to the sample JD and a parser/readiness regression. This corrects the earlier attribution of the timeout to sign-in.
-**Status:** open
+**Status:** fixed (33fd5765)
 
 ## 2026-10-27 - SQL fixture needs both Supabase JWT settings
 **Severity:** test-gap
 **File:** tests/db/unified-sourcing.sql:35
 **Issue:** The new direct-session scenario set request.jwt.claims but omitted request.jwt.claim.role; the image's auth.role() therefore correctly refused a service-only reservation.
 **Repro/evidence:** Database security job 122161278880 returns service-only in the new scenario. Existing SQL fixtures set both settings. Added the separate role/sub settings without changing production authorization or removing any assertion.
-**Status:** open
+**Status:** fixed (33fd5765)
 ## 2026-10-27 - Provider binding lookup must use the private-table RPC boundary
 **Severity:** correctness
 **File:** src/app/api/source/apify/status/route.ts:62; tests/db/unified-sourcing.sql:43
 **Issue:** The ownership fix initially used a direct service-role SELECT on sourcing_provider_runs, but this table deliberately grants no direct service access. The new SQL fixture also attempted a service-role INSERT to prepare quota rows. Both would fail with permission denied.
 **Repro/evidence:** Baseline ACL inspection and CI job 122165080501 confirm the private table boundary. Added migration 0004 with a minimal workspace-bound, service-only read RPC; fixture setup inserts as the owner before assuming service_role. No broad table grant was added. SQL tests exercise the scoped read and retain the private-table boundary.
-**Status:** open
+**Status:** fixed (0be6b3ca)
 
 ## 2026-10-27 - Tall modals make candidate creation unreachable on laptop viewports
 **Severity:** correctness
 **File:** src/components/ui/modal.tsx:65
 **Issue:** The manual-candidate dialog has no viewport height bound/scroll area and renders beneath animated ancestors. With body scrolling locked, its Add candidate button can remain outside a 720px viewport.
 **Repro/evidence:** Docker browser job 122165080649 reaches candidate creation but Playwright repeatedly reports the enabled button outside the viewport. The same workflow succeeds at 1050px height. Portal modals to document.body and bound their height with internal scrolling; verify with a real browser at 1280x720 without force-clicks.
-**Status:** open
+**Status:** fixed (0be6b3ca)
 ## 2026-10-27 - Shortlist preview must honor confidentiality mode
 **Severity:** spec-mismatch
 **File:** src/components/run/campaign-sourcing-panel.tsx:163
 **Issue:** The new preview originally displayed raw candidate names and profile links even when the candidate list would mask them under confidentiality mode.
 **Repro/evidence:** A freshly sourced candidate with confidentialityMode=true had its full identity/link rendered by the preview. Reused applyConfidentiality/hasOutreachPurpose and added a regression proving hidden identity links until an existing outreach purpose or mode-off setting permits them.
-**Status:** open
+**Status:** fixed (43b9db34)
