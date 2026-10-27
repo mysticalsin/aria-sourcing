@@ -193,7 +193,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Approval requires an operator-recorded lawful basis for every profile, but provider-sourced candidates have no editor to record one. The passport instead infers legitimate interest from sourcing/public profile provenance, displaying a basis the actual gate rejects.
 **Repro/evidence:** Import a live candidate without a basis, open its passport, then attempt approval: the passport shows legitimate interest while approval blocks on the missing operator receipt. Only manual intake had a basis input.
 **Suggested fix:** Show only the same complete receipt as the approval gate; add explicit persisted operator selection/evidence for existing candidates, independently from recording profile facts.
-**Status:** fixed (working tree; code commit pending)
+**Status:** fixed (29967509)
 
 ## 2026-10-27 - Provider quota references a retired record
 **Severity:** correctness
@@ -1216,7 +1216,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** An authenticated member can supply an arbitrary profile/LinkedIn URL to spend workspace provider credentials. Candidate ownership, campaign state and erasure/contact exclusions are not read from the saved workspace. The constructed candidate also defaults unknown experience to zero.
 **Repro/evidence:** POST with a made-up candidate ID and another profile URL reaches the orchestrator; only role and payload format are checked.
 **Suggested fix:** Resolve the candidate and reviewed campaign from the session's workspace, reject excluded state, and ignore browser profile/score claims.
-**Status:** fixed (working tree; code commit pending)
+**Status:** fixed (29967509)
 
 ## 2026-10-27 - Enrichment drops rich fields and reports unpersisted results as complete
 **Severity:** correctness
@@ -1224,4 +1224,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The orchestrator fills experience/education/languages but the response patch omits them and the store never rescores against the brief. The store reports success after only an optimistic local commit, including provider errors with zero filled fields.
 **Repro/evidence:** A fixture returning rich arrays never transfers them to the candidate; no jd is forwarded to the orchestrator; attempts:error returns ok:true and the drawer says No new data found.
 **Suggested fix:** Return all enriched fields with authoritative scoring, persist before success, and expose provider failure/configuration outcomes.
-**Status:** fixed (working tree; code commit pending)
+**Status:** fixed (29967509)

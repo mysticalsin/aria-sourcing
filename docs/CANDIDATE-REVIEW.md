@@ -5,7 +5,7 @@ drawer. The **Next action** column and drawer summary explain what remains:
 
 | Next action | Recruiter action |
 |---|---|
-| Contact blocked / outside active shortlist | Respect the exclusion or existing disposition. No enrichment/new draft from this drawer. |
+| Contact blocked / outside active shortlist | Respect the exclusion or existing disposition. Excluded profiles cannot enrich; profiles outside the active shortlist cannot start a new draft. |
 | Review campaign | Complete the brief and use an active Sourcing/Outreach campaign. |
 | Verify fit | Compare observed skills with the brief; check missing skills and required experience. A search query is not evidence. |
 | Find email contact | Verify contact details or review enrichment. A LinkedIn-only profile can have an assisted LinkedIn draft. |
@@ -53,7 +53,7 @@ public-profile provenance alone never supplies it.
   provider. Phone is not promised by the current provider. Confirm the reviewed
   request before a paid call; profile/count/unit limits are not currency prices.
 - The server loads the saved candidate and campaign, rejects excluded profiles
-  or inactive/incomplete briefs, and rescales the score from actual returned
+  or inactive/incomplete briefs, and recomputes the score from actual returned
   evidence. Experience, education and languages are preserved.
 - A provider refusal, missing key/identity or exhausted budget is distinct from
   a successful provider response containing no new data. Review the saved

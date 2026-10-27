@@ -1,97 +1,121 @@
 ---
 project: MSourcing / ARIA
-shift: 445
+shift: 446
 agent: codex
 updated: 2026-10-27
-status: other-machine-sourcing-checklist-ready
+status: qualification-implemented-local-and-ci-green
 ---
 
-# Handoff - Shift 445
+# Handoff - Shift 446
 
 ## Current state
 
-- Branch mbe-branch; starting head 261670f7. This shift changes documentation
-  only, with no application, schema, dependency or infrastructure modification.
-- docs/LOCAL-SOURCING-TEST.md is the operator checklist for the owner's OTHER
-  machine. DOCKER.md and unified-sourcing issue 02 link to it.
-- Last product change dfc9839f passed local typechecks/tests/lint/build and CI
-  40519528306 (Quality, PostgreSQL security, Docker demo, audit, secret scan,
-  Release gate). CodeQL 40519528305 passed. Those are prior product receipts;
-  the full code gate was not rerun for this documentation-only shift.
-- Local Docker fixture acceptance is separate from live provider acceptance.
-  No real candidate has been retrieved for the supplied Apify account.
-- Apify authentication/input validation passed previously, but the one real
-  actor returned SUCCEEDED with "free user run limit reached" and zero items.
-  The correction reports this as account_limit; it is not an empty success.
-- ARIA runs locally on another machine, not Azure. Its workspace vault has not
-  been configured here; no reachable authenticated instance is available.
+- Branch mbe-branch. Product commit 29967509 is pushed and matches the remote.
+- The existing candidate list/drawer now guides evidence review, verified facts
+  and contact, explicit processing-basis recording, enrichment and draft review.
+  Operator guide: docs/CANDIDATE-REVIEW.md, linked from SOURCING and the other-
+  machine setup checklist. Spec: .scratch/candidate-qualification/spec.md.
+- Local typecheck, typecheck:tests, complete npm test lifecycle, lint and production
+  build passed. Lint has only the two pre-existing topbar/seat-card navigation
+  warnings. Final focused regressions also passed after batch-save serialization
+  and workspace-change guards. No dependency, schema or infra change.
+- Edge browser fixture journey passed at 1280x720: fit review, full enrichment
+  arrays, honest unknown years, manual verified experience, assisted LinkedIn
+  draft without email, verified email, explicit basis, draft review and refresh.
+  No force clicks, real provider starts or outbound messages. The fixture starts
+  a temporary local backend/app; both were stopped after the check.
+- CI 40540178013 completed SUCCESS for exact product commit 29967509: Quality,
+  Database security, Local Docker demo, dependency audit, secret scan and Release
+  gate. CodeQL 40540177843 also completed SUCCESS.
+  https://github.com/mysticalsin/aria-sourcing/actions/runs/40540178013
+- Real Apify retrieval remains blocked by the earlier actor allowance refusal.
+  The application/key vault still runs on the owner's OTHER local machine;
+  nothing has been deployed to Azure or configured into that remote workspace.
 
 ## Done this shift
 
-1. Documented required/optional configuration, checkout/update, five permanent
-   containers plus initialization jobs, startup, readiness and admin login.
-2. Documented port overrides, connected versus synthetic modes, stable encryption
-   key, paired volumes and non-destructive update/restart commands.
-3. Documented workspace Apify key storage, the Format check limitation, account
-   allowance blocker and pricing review before any new paid start.
-4. Added a bounded reviewed campaign search procedure, refresh recovery, result
-   honesty, source evidence, restart persistence, optional dedupe acceptance and
-   an aggregate-only receipt template without private provider identifiers.
-5. Linked the guide from DOCKER.md and the outstanding account acceptance issue.
-   Checked document links and fenced blocks against the checkout. Docker/provider
-   commands are instructions for the other machine, not executions this shift.
-6. Archived shift 444 before replacing this baton.
+1. Added shared candidate-review next actions with observed/missing requirements
+   and explicit unknown experience. Added the list column and drawer guidance.
+2. Added persisted operator evidence editing for contact, observed skills and
+   verified numeric experience, with source notes, validation, duplicate identity
+   refusal and score/metrics recomputation. No automatic parsing of work dates.
+3. Found/fixed the dead-end contact-basis journey: live candidates could not record
+   the receipt required by approval, while the passport inferred a basis from
+   provenance. The passport now reflects only complete operator receipts, and a
+   separate explicit selection/reference action saves the decision.
+4. Hardened /api/source/enrich: accepts candidateId/want/budget hint only; loads
+   candidate/campaign from the authenticated workspace; checks source role,
+   origin, active reviewed brief, exclusions and evidence again after the call.
+   Unknown years remain unknown. Scores use the saved brief/weights.
+5. Preserved experience/education/languages in the patch. Store saves before
+   provider access and verifies result persistence before success. Concurrent
+   evidence/identity edits, erasure and session switches cannot overwrite newer
+   state. Batch enrichment serializes saves within the current store; it is not
+   cross-process paid-request idempotency.
+6. Added explicit paid enrichment review and actionable missing-key/identity and
+   provider-failure outcomes. Drafting selects assisted LinkedIn when no email;
+   draft functions honor role, active campaign, exclusions and channel details.
+   Missing personalization evidence is shown as missing, not invented fit text.
+7. Recorded findings in _relay/codex-findings.md, added route/domain/store/SSR
+   regressions to the canonical manifest, updated the action contract fixture,
+   and documented the remaining synchronous recovery limit in issue 02.
+8. Exact supplied account/token scans of the Git index passed. Gitleaks found no
+   leaks in introduced content. A raw full-patch stdin scan flagged only a
+   REMOVED synthetic provider-ID fixture; no scanner exception/rule was added.
+9. Archived shift 445 before replacing the baton. The final documentation-only commit
+   follows the product commit; any docs-tip CI is a separate run.
 
 ## Blockers
 
-- External: actor reports "free user run limit reached". Check account/actor
-  allowance before another paid search. Do not infer past usage or force billing
-  changes from this message. Live profile retrieval/import remains unverified.
-- The connected Docker instance is on the owner's other machine. Its key and
-  full live acceptance must be configured/executed there using the new guide.
+- External live acceptance: the previous Apify actor returned SUCCEEDED with
+  "free user run limit reached" and zero profiles. Authentication alone passed.
+  Check actor/account allowance before any new paid start. No new provider test
+  was attempted in this shift; raw private receipt remains outside Git.
+- Other-machine setup and real profile import/restart/dedupe acceptance remain
+  owner actions in docs/LOCAL-SOURCING-TEST.md.
 
 ## Next steps
 
-1. Owner: follow docs/LOCAL-SOURCING-TEST.md on the other machine; preserve the
-   existing Compose project, db_data, app_config and encryption key.
-2. Resolve the actor allowance, save Apify in Settings -> API keys, then run one
-   reviewed low-cap campaign search. GitHub-only can validate the complementary
-   path while LinkedIn remains explicitly blocked.
-3. Fill the aggregate acceptance receipt: mapping/source links, refresh, stack
-   restart, encryption diagnostics, and optional explicitly authorized dedupe
-   rerun. Keep raw provider data and candidate screenshots outside Git.
-4. Proposed next product slice, awaiting the owner's next implementation request:
-   connect and verify the EXISTING qualification/enrichment/shortlist journey
-   from sourced profile to a clear next action, with honest missing data and
-   contact permission/human review before outreach. Do not build a parallel
-   pipeline or make hosted GPT/Claude a sourcing prerequisite.
-5. Do not treat any queued documentation-tip CI as already passed; product CI
-   receipts above refer to dfc9839f.
+1. Product CI and CodeQL are verified green above. The final documentation-only
+   wrap-up commit triggers separate runs; do not present those as checked.
+2. On the other machine, update mbe-branch normally, preserve db_data/app_config
+   and the existing encryption key. Follow LOCAL-SOURCING-TEST.md, then
+   CANDIDATE-REVIEW.md for the actual candidate journey.
+3. Resolve discovery actor allowance before a paid start. Enrichment uses the
+   separate dev_fusion/linkedin-profile-scraper actor and requires its own access/
+   owner approval. No billing or subscription changes were authorized/performed.
+4. Next engineering slice: durable enrichment recovery/idempotency across tabs,
+   server interruptions and operators; see candidate-qualification issue 02.
+   It needs its own forward migration and PostgreSQL concurrency acceptance.
+5. GPT/Claude configuration can follow for hosted drafting, then real mailbox/
+   approval/delivery acceptance as a separate explicit test. Template drafts
+   already work without an LLM. No outreach was sent here.
 
 ## Decisions made (don't relitigate)
 
-- No private account identifier, token or raw provider receipt in Git, examples,
-  tests, logs or relay. The existing protected credential store is outside Git
-  under current LocalAppData/ARIA and is tied to Windows DPAPI on this machine.
-- Apify authority is the encrypted per-workspace vault, with no env fallback.
-  API key Format check is syntax-only, not an upstream authentication test.
-- No Docker/WSL installation on this Windows session, no Azure deployment and
-  no new provider/LLM/outreach calls for the documentation request.
-- Preserve five permanent services/two init jobs, forward migrations and paired
-  durable volumes. Do not reset working data or replace encryption keys.
-- No automatic retry of uncertain/blocked paid starts or silent source fallback.
-  Hosted GPT/Claude remains deferred; human approval remains before outreach.
+- No private account identifier, token or raw provider receipt in Git, env
+  examples, tests, logs or relay. Current DPAPI store under LocalAppData/ARIA is
+  external and not portable to the other machine. Apify stays workspace-vault
+  authority, no environment fallback. Format check is not a live provider test.
+- No Docker/WSL installation here, Azure deployment, model setup or paid calls.
+  Keep five permanent containers/two init jobs and stable paired volumes/key.
+- Qualification uses existing scoring/enrichment/consent/approval workflows, not
+  a parallel pipeline. Source/public provenance never implies contact permission.
+- A verified profile/contact fact is distinct from explicit basis selection and
+  exact-message human approval. None of these actions sends a candidate message.
+- No automatic paid retry after uncertainty, lost responses, provider refusal or
+  failed saving. Keep failures/partial results honest and unknown fields unknown.
 
 ## Watch out
 
-- A per-source profile cap is not a monetary cap. USD0.10 was set only on the
-  previous standalone provider check, not through the campaign UI. Its actual
-  invoice was not audited. Do not launch another actor just to verify key presence.
-- Closing a campaign page does not stop an actor already launched at Apify.
-  Return as the initiating operator; new steps wait for the page to resume.
-- Current live dataset was empty: fixture/database/Docker checks do not prove
-  successful retrieval for this account. Genuine completed empty results must
-  remain distinguishable from an account refusal.
-- Temporary provider helper and private acceptance artifacts from shift 444
-  must not be copied into the new operator guide or committed. Use the existing
-  persisted receipt for read-only diagnostics instead of creating a new run.
+- Enrichment is still synchronous. Keep the page open until saving completes;
+  closing it can lose the response. Local store serialization is not a durable
+  cross-tab lease. Do not claim campaign discovery recovery covers enrichment.
+- User-supplied budget hints/profile caps are not currency spending guarantees.
+  USD0.10 belonged only to the earlier standalone check; actual invoice unaudited.
+- API change: /api/source/enrich uses candidateId rather than a browser profile.
+  All repository callers/tests were updated. No raw key is accepted or returned.
+- Local logs: ignored tmp/qualification-*. Browser screenshots contain fixtures
+  only and remain ignored. Raw real candidate screenshots/receipts stay private.
+- Genuine provider no-data success stays distinct from account/refusal/error.
+  Existing human approval and real delivery checks remain authoritative.
