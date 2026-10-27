@@ -64,6 +64,7 @@ const sampleProfile: ApifyProfile = {
 
 let itemsResult: ApifyResult<ApifyProfile[]> = { ok: true, status: 200, data: [sampleProfile] };
 let itemsCalls = 0;
+let ownsRun = true;
 
 function makeFakeSupabase() {
   return {
@@ -87,6 +88,11 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
   namedExports: {
     getServerSupabase: async () => makeFakeSupabase(),
     getServiceSupabase: () => ({
+      from: () => {
+        const query = { select: () => query, eq: () => query,
+          maybeSingle: async () => ({ data: ownsRun ? { external_run_id: "run_test_1", dataset_id: "dataset_test_1", campaign_id: policyCampaign.id } : null, error: null }) };
+        return query;
+      },
       rpc: async (name: string, args: Record<string, unknown>) => {
         serviceRpcCalls.push({ name, args });
         if (name === "begin_provider_run") {
@@ -317,5 +323,14 @@ const statusReq = (query: string) => new NextRequest(`http://localhost/api/sourc
   );
 }
 
+{
+  const previous = statusCalls;
+  ownsRun = false;
+  const missing = await statusRoute.GET(statusReq("?runId=unowned"));
+  ok("status: unowned run refused before provider access", missing.status === 404 && statusCalls === previous);
+  ownsRun = true;
+  const mismatched = await statusRoute.GET(statusReq("?runId=run_test_1&datasetId=another-dataset"));
+  ok("status: client cannot substitute another dataset", mismatched.status === 404 && statusCalls === previous);
+}
 console.log(`RESULT source-apify-auth: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

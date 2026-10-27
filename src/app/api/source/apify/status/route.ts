@@ -55,7 +55,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Workspace authority is unavailable." }, { status: 503 });
   }
 
-  const clearance = clearIdentityResolution("Apify", { runId, datasetId: datasetId ?? "" });
+  // A syntactically valid ID is not proof that the workspace owns a dataset.
+  // Use the persisted provider binding before any provider network request.
+  const svc = getServiceSupabase();
+  if (!svc) return NextResponse.json({ ok: false, error: "Provider run authority is unavailable." }, { status: 503 });
+  const owned = await svc.from("sourcing_provider_runs").select("external_run_id,dataset_id,campaign_id")
+    .eq("workspace_id", workspaceId).eq("provider", "Apify").eq("external_run_id", runId).maybeSingle();
+  if (owned.error) return NextResponse.json({ ok: false, error: "Provider run authority is unavailable." }, { status: 503 });
+  if (!owned.data || (datasetId && datasetId !== owned.data.dataset_id)) {
+    return NextResponse.json({ ok: false, error: "Provider run not found." }, { status: 404 });
+  }
+  const boundDatasetId = owned.data.dataset_id as string | null;
+
+  const clearance = clearIdentityResolution("Apify", { runId, datasetId: boundDatasetId ?? "" });
   if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
 
   const statusRes = await getRunStatus(clearance.clearance, apiKey, runId);
@@ -68,7 +80,6 @@ export async function GET(req: NextRequest) {
 
   const { status } = statusRes.data;
   if (TERMINAL_FAILED.has(status)) {
-    const svc = getServiceSupabase();
     await svc?.rpc("settle_provider_run_by_external", {
       p_workspace_id: workspaceId,
       p_provider: "Apify",
@@ -80,11 +91,11 @@ export async function GET(req: NextRequest) {
   if (status !== "SUCCEEDED") {
     return NextResponse.json({ ok: true, status: "processing" });
   }
-  if (!datasetId) {
+  if (!boundDatasetId) {
     return NextResponse.json({ ok: false, error: "datasetId is required." }, { status: 400 });
   }
 
-  const itemsRes = await fetchDatasetItems(clearance.clearance, apiKey, datasetId, DATASET_ITEMS_LIMIT);
+  const itemsRes = await fetchDatasetItems(clearance.clearance, apiKey, boundDatasetId, DATASET_ITEMS_LIMIT);
   if (!itemsRes.ok) {
     return NextResponse.json(
       { ok: false, status: itemsRes.status, error: itemsRes.detail || itemsRes.title },
@@ -92,7 +103,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const svc = getServiceSupabase();
   await svc?.rpc("settle_provider_run_by_external", {
     p_workspace_id: workspaceId,
     p_provider: "Apify",

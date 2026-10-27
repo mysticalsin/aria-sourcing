@@ -187,6 +187,20 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** Revoke it, issue a least-privilege replacement, update local and deployment secrets, and record only rotation metadata.
 **Status:** open
 
+## 2026-10-27 - Provider quota references a retired record
+**Severity:** correctness
+**File:** supabase/migrations/0001_baseline.sql:282
+**Issue:** begin_provider_run reads controls.max_sourcing_runs_per_day although controls is not declared after loop-control retirement. A real provider launch raises an SQL error before starting.
+**Repro/evidence:** Function body contains no controls declaration or assignment. Added an executable provider-reservation regression in tests/db/unified-sourcing.sql and a forward migration with an independent 100/day cap; baseline stays untouched.
+**Status:** open
+
+## 2026-10-27 - Query filters were treated as profile evidence
+**Severity:** correctness
+**File:** src/lib/sourcing/github.ts:127; src/lib/store/sourcing-helpers.ts:137
+**Issue:** GitHub language qualifiers populated topLanguage without observing the person's language, and a missing Apify headline fell back to the requested role title. Both could present requested criteria as candidate facts.
+**Repro/evidence:** A language:Go search whose user bio has no language still returned topLanguage=Go; an empty LinkedIn headline returned the campaign title. Fixture regression now keeps both unknown.
+**Status:** open
+
 ## 2026-07-09 — Aria runtime proxy shares global memory across tenants
 **Severity:** security
 **File:** src/app/api/hermes/proxy/route.ts:48
@@ -1134,3 +1148,18 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Candidate-erasure SQL tests passed but the harness failed because rg was absent on the runner. The secret scan flagged seven historical code identifiers/type annotations and mocked test fixtures. The dependency audit found high/critical advisories in the old lockfile.
 **Repro/evidence:** Downloaded failed job logs and reproduced the fully redacted scan. Replaced the single fixed-string rg call with portable grep; reviewed and added only the exact seven false-positive fingerprints. Removed unused 3D dependencies and updated Next/ESLint, PostCSS and Zod to patched supported versions. Local npm audit reports zero vulnerabilities; full application/type gates pass after the update. No detection rule or required CI gate was disabled.
 **Status:** fixed (66d5df99); remote rerun pending
+## 2026-10-27 — Apify status trusts client dataset ownership
+**Severity:** security
+**File:** src/app/api/source/apify/status/route.ts:58
+**Issue:** Status resolves arbitrary client-supplied run/dataset IDs with the workspace Apify credential without checking the durable provider run's ownership or dataset binding.
+**Repro/evidence:** A member can pass another campaign's or unrelated dataset ID; clearIdentityResolution validates syntax/policy but does not establish ownership.
+**Suggested fix:** Resolve and bind run and dataset from sourcing_provider_runs before provider access.
+**Status:** open
+
+## 2026-10-27 — Campaign launch loses async sourcing on refresh
+**Severity:** spec-mismatch
+**File:** src/components/candidates/source-apify-dialog.tsx:59
+**Issue:** The only LinkedIn actor launch stores its polling identity in React state; the main campaign run cannot select it, and closing/navigation loses recovery. Campaign creation also starts sourcing before a source/limit review.
+**Repro/evidence:** Refresh after actor launch removes runId/datasetId from the UI while the paid actor continues; Run Aria uses only the sourcing-agent path.
+**Suggested fix:** A unified durable campaign run with source/limit review and resumable steps.
+**Status:** open
