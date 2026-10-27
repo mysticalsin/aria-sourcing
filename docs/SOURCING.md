@@ -80,7 +80,9 @@ review/enrichment action; outreach still requires human approval.
 
 Provider reservations share an independent 100-runs/day workspace ceiling. This
 replaces a stale reference to retired loop controls in the baseline function;
-apply migration `0003_unified_campaign_sourcing.sql`, never edit the baseline.
+apply migrations `0003_unified_campaign_sourcing.sql` and
+`0004_provider_run_binding.sql`, never edit the baseline. Provider tables retain
+their private ACL; the legacy status route uses a scoped service-only read RPC.
 Only the initiating operator can advance a run; an administrator can also close
 it if that operator loses access. Closing a run does not
 abort an actor already running at Apify, and the UI states that explicitly.

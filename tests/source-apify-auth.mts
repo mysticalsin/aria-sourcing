@@ -88,13 +88,11 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
   namedExports: {
     getServerSupabase: async () => makeFakeSupabase(),
     getServiceSupabase: () => ({
-      from: () => {
-        const query = { select: () => query, eq: () => query,
-          maybeSingle: async () => ({ data: ownsRun ? { external_run_id: "run_test_1", dataset_id: "dataset_test_1", campaign_id: policyCampaign.id } : null, error: null }) };
-        return query;
-      },
       rpc: async (name: string, args: Record<string, unknown>) => {
         serviceRpcCalls.push({ name, args });
+        if (name === "read_sourcing_provider_run") {
+          return { data: ownsRun ? { ok: true, run: { external_run_id: "run_test_1", dataset_id: "dataset_test_1", campaign_id: policyCampaign.id } } : { ok: false, reason: "not_found" }, error: null };
+        }
         if (name === "begin_provider_run") {
           return providerRunAllowed
             ? { data: { ok: true, run_id: "81111111-1111-4111-8111-111111111111" }, error: null }

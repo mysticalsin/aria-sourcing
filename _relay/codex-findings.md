@@ -1176,3 +1176,16 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The new direct-session scenario set request.jwt.claims but omitted request.jwt.claim.role; the image's auth.role() therefore correctly refused a service-only reservation.
 **Repro/evidence:** Database security job 122161278880 returns service-only in the new scenario. Existing SQL fixtures set both settings. Added the separate role/sub settings without changing production authorization or removing any assertion.
 **Status:** open
+## 2026-10-27 - Provider binding lookup must use the private-table RPC boundary
+**Severity:** correctness
+**File:** src/app/api/source/apify/status/route.ts:62; tests/db/unified-sourcing.sql:43
+**Issue:** The ownership fix initially used a direct service-role SELECT on sourcing_provider_runs, but this table deliberately grants no direct service access. The new SQL fixture also attempted a service-role INSERT to prepare quota rows. Both would fail with permission denied.
+**Repro/evidence:** Baseline ACL inspection and CI job 122165080501 confirm the private table boundary. Added migration 0004 with a minimal workspace-bound, service-only read RPC; fixture setup inserts as the owner before assuming service_role. No broad table grant was added. SQL tests exercise the scoped read and retain the private-table boundary.
+**Status:** open
+
+## 2026-10-27 - Tall modals make candidate creation unreachable on laptop viewports
+**Severity:** correctness
+**File:** src/components/ui/modal.tsx:65
+**Issue:** The manual-candidate dialog has no viewport height bound/scroll area and renders beneath animated ancestors. With body scrolling locked, its Add candidate button can remain outside a 720px viewport.
+**Repro/evidence:** Docker browser job 122165080649 reaches candidate creation but Playwright repeatedly reports the enabled button outside the viewport. The same workflow succeeds at 1050px height. Portal modals to document.body and bound their height with internal scrolling; verify with a real browser at 1280x720 without force-clicks.
+**Status:** open

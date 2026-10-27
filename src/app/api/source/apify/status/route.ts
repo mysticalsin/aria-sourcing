@@ -59,13 +59,13 @@ export async function GET(req: NextRequest) {
   // Use the persisted provider binding before any provider network request.
   const svc = getServiceSupabase();
   if (!svc) return NextResponse.json({ ok: false, error: "Provider run authority is unavailable." }, { status: 503 });
-  const owned = await svc.from("sourcing_provider_runs").select("external_run_id,dataset_id,campaign_id")
-    .eq("workspace_id", workspaceId).eq("provider", "Apify").eq("external_run_id", runId).maybeSingle();
+  const owned = await svc.rpc("read_sourcing_provider_run", { p_workspace_id: workspaceId, p_external_run_id: runId });
   if (owned.error) return NextResponse.json({ ok: false, error: "Provider run authority is unavailable." }, { status: 503 });
-  if (!owned.data || (datasetId && datasetId !== owned.data.dataset_id)) {
+  const binding = owned.data?.ok === true ? owned.data.run : null;
+  if (!binding || binding.external_run_id !== runId || (datasetId && datasetId !== binding.dataset_id)) {
     return NextResponse.json({ ok: false, error: "Provider run not found." }, { status: 404 });
   }
-  const boundDatasetId = owned.data.dataset_id as string | null;
+  const boundDatasetId = binding.dataset_id as string | null;
 
   const clearance = clearIdentityResolution("Apify", { runId, datasetId: boundDatasetId ?? "" });
   if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });

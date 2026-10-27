@@ -10,8 +10,9 @@ status: unified-sourcing-prepared-provider-acceptance-pending
 
 ## Current state
 
-- Branch mbe-branch. Security fix 8c3376b6 and unified sourcing 56d165bf are
-  committed and pushed. Final relay documentation follows them. The final tip CI
+- Branch mbe-branch. Security fix 8c3376b6, unified sourcing 56d165bf, relay
+  3300fd7d and intake/SQL fixture correction 33fd5765 are pushed. Follow-up
+  private-provider RPC and small-viewport modal fixes follow. The final tip CI
   must still prove the new SQL scenario and Docker campaign creation/restart
   acceptance; do not label those receipts successful yet.
 - New primary connected campaign flow: Run sourcing -> review LinkedIn/Apify and
@@ -19,7 +20,9 @@ status: unified-sourcing-prepared-provider-acceptance-pending
   Dashboard, Candidates and Fleet link to this same review. Intake and connected
   bulk launch prepare campaigns without starting searches.
 - New migration 0003_unified_campaign_sourcing.sql adds service-owned durable
-  jobs, one active run per campaign and atomic workspace/step completion. Apply
+  jobs, one active run per campaign and atomic workspace/step completion.
+  Migration 0004 adds a minimal service-only provider binding read; the private
+  provider table keeps its ACL. Apply
   through the normal bootstrap; do not edit/reset the baseline or existing data.
 - Full required type/test gate, lint (zero errors; two existing navigation
   warnings), production build and final browser fixture smoke passed. Screenshots in
@@ -55,7 +58,14 @@ status: unified-sourcing-prepared-provider-acceptance-pending
 8. Corrected the bundled intake sample to explicitly declare Full-time, and the
    direct SQL fixture to set both legacy and JSON JWT settings expected by the
    Supabase image. Added regressions and retained all readiness/authority gates.
-9. Added runtime/API fixture suites and actual SQL scenarios to the existing
+10. Preserved private provider-table ACLs: legacy status uses the scoped
+   read_sourcing_provider_run RPC from migration 0004. Quota fixture rows are
+   prepared as owner, then service-only behavior is exercised as service_role.
+11. Modals now portal to body, bound height to the viewport and scroll internally.
+   Stable focus handling permits normal typing. A fresh compiled browser fixture
+   at 1280x720 passed source review/refresh plus intake and manual candidate entry
+   without force clicks; full type/test/lint gate and build passed again.
+12. Added runtime/API fixture suites and actual SQL scenarios to the existing
    database security job. Updated public context and changed-workflow contracts.
    Findings and feature/acceptance tracking are committed with the implementation.
 
@@ -66,7 +76,10 @@ status: unified-sourcing-prepared-provider-acceptance-pending
 - CI 40496031702 failed at the post-Create campaign waitForURL. The complete
   sample fix is awaiting a fresh acceptance receipt; no readiness gate was
   relaxed. The new SQL fixture also needed both JWT claims settings; the
-  fixture is corrected without changing service-only production guards.
+  fixture is corrected without changing service-only production guards. A later
+  run proved private provider-table INSERT is also forbidden; setup now occurs as
+  owner. Docker reached the manual dialog but its button was outside 720px height;
+  that modal defect is fixed and browser-verified, pending the next Docker run.
 - Real Apify acceptance requires the owner's configured account and an explicitly
   reviewed small profile cap. No provider key or paid call was used here.
 - Azure managed PostgreSQL remains a separate design gap (true superuser owner
@@ -104,7 +117,7 @@ status: unified-sourcing-prepared-provider-acceptance-pending
 
 ## Watch out
 
-- Existing workspaces need migration 0003 and a rebuilt app/migration metadata.
+- Existing workspaces need migrations 0003/0004 and rebuilt app/migration metadata.
   Current SQL test is part of the DB gate, not a claim of a Windows DB execution.
 - Leases last three minutes. An interrupted start may wait for lease expiry before
   becoming Needs review. Its paid actor must never be started automatically again.

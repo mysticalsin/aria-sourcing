@@ -55,3 +55,10 @@ Local final gate passed: npm run typecheck, npm run typecheck:tests, npm test
 warnings), production build and final browser fixture smoke. Staged redacted
 Gitleaks scan found no leaks. Code pushed as 8c3376b6 + 56d165bf. CI database and
 Docker/provider receipts are separate from these local results.
+
+Follow-up: migration 0004 keeps the provider table private and exposes only a
+scoped service read. Quota fixture writes now run as owner; service calls retain
+all guards. Modals portal to body with bounded height/internal scrolling and
+stable input focus. A fresh 1280x720 browser fixture passed source review,
+refresh recovery, intake creation and manually typed candidate creation without
+force clicks. Final type/test/lint gate and production build passed again.

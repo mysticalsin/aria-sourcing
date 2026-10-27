@@ -20,10 +20,19 @@ do $$ begin
   end;
   if has_table_privilege('authenticated','public.campaign_sourcing_jobs','SELECT')
     or has_table_privilege('authenticated','public.campaign_sourcing_jobs','INSERT')
+    or has_function_privilege('authenticated','public.read_sourcing_provider_run(uuid,text)','EXECUTE')
     or has_function_privilege('authenticated','public.finish_campaign_sourcing_step(uuid,uuid,jsonb,text,timestamptz,jsonb)','EXECUTE') then
     raise exception 'Browser must not own sourcing run authority';
   end if;
+  if has_table_privilege('service_role','public.sourcing_provider_runs','SELECT')
+    or has_table_privilege('service_role','public.sourcing_provider_runs','INSERT') then
+    raise exception 'Provider table must remain private behind service RPCs';
+  end if;
 end $$;
+-- Fixture writes happen as the owner. The private provider table intentionally
+-- grants no direct service-role INSERT/SELECT; production uses bounded RPCs.
+insert into public.sourcing_provider_runs(workspace_id,provider,external_run_id,campaign_id)
+  select 'e2222222-2222-4222-8222-222222222222','Apify','quota-fixture-'||n,'fixture-campaign' from generate_series(1,99) n;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 select set_config('request.jwt.claim.role','service_role',true);
 select set_config('request.jwt.claim.sub','e1111111-1111-4111-8111-111111111111',true);
@@ -36,8 +45,10 @@ declare result jsonb; version timestamptz; before_state jsonb; begin
   if result->>'ok' <> 'true' then raise exception 'Provider reservation failed: %', result; end if;
   result := public.begin_provider_run('e2222222-2222-4222-8222-222222222222','Apify','quota-fixture','fixture-campaign')::jsonb;
   if result->>'duplicate' <> 'true' then raise exception 'Provider reservation replay not deduplicated'; end if;
-  insert into public.sourcing_provider_runs(workspace_id,provider,external_run_id,campaign_id)
-    select 'e2222222-2222-4222-8222-222222222222','Apify','quota-fixture-'||n,'fixture-campaign' from generate_series(1,99) n;
+  result := public.read_sourcing_provider_run('e2222222-2222-4222-8222-222222222222','quota-fixture');
+  if result->'run'->>'external_run_id' <> 'quota-fixture' then raise exception 'Scoped provider binding not readable'; end if;
+  result := public.read_sourcing_provider_run('e9999999-9999-4999-8999-999999999999','quota-fixture');
+  if result->>'reason' <> 'not_found' then raise exception 'Cross-workspace provider binding exposed'; end if;
   result := public.begin_provider_run('e2222222-2222-4222-8222-222222222222','Apify','quota-over-cap','fixture-campaign')::jsonb;
   if result->>'reason' <> 'sourcing_run_quota_exceeded' then raise exception 'Provider quota cap bypassed: %',result; end if;
   select updated_at,state into version,before_state from public.workspace_state where workspace_id='e2222222-2222-4222-8222-222222222222';
