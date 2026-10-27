@@ -1,112 +1,97 @@
 ---
 project: MSourcing / ARIA
-shift: 444
+shift: 445
 agent: codex
 updated: 2026-10-27
-status: apify-auth-verified-actor-allowance-blocked
+status: other-machine-sourcing-checklist-ready
 ---
 
-# Handoff - Shift 444
+# Handoff - Shift 445
 
 ## Current state
 
-- Branch mbe-branch. Code dfc9839f is pushed. Local typecheck, test typecheck,
-  full npm test lifecycle, lint and production build passed. Lint has zero errors
-  and the two existing navigation warnings. No dependency/schema change this shift.
-- Code CI 40519528306 completed SUCCESS: Quality, Database security, Local Docker
-  demo, dependency audit, secret scan and Release gate. CodeQL 40519528305 passed.
-  https://github.com/mysticalsin/aria-sourcing/actions/runs/40519528306
-- Owner provided Apify account credentials and explicitly forbade committing them.
-  They are protected with Windows DPAPI under current LocalAppData/ARIA/credentials,
-  OUTSIDE the repository. Do not print, commit or copy their contents into env,
-  examples, tests, relay or logs. Only safe outcomes are recorded here.
-- GET /v2/users/me authenticated successfully (HTTP 200) and matched the supplied
-  account. Actor metadata and the bounded input validation also returned HTTP 200.
-- One real provider-only smoke run used the sample Backend Go/Kubernetes brief,
-  France, Short mode, maxItems=3, takePages=1, timeout=120 and API charge cap USD0.1.
-  It returned SUCCEEDED but statusMessage "free user run limit reached", with
-  dataset itemCount=0. No candidate was retrieved. Actual invoice cost was not
-  audited; do not call this a free run. No second actor was launched.
-- A read-only poll of that SAME run verified the new account_limit classification
-  with actorStarts=0. Its metadata is under LocalAppData/ARIA/acceptance, outside Git;
-  the result payload uses DPAPI. Never automatically start a replacement test.
-- Owner clarified ARIA currently runs only locally on ANOTHER machine, not Azure.
-  No reachable instance URL/backend/session is available on this Windows machine.
-  The key has NOT been saved into that other instance's application vault.
-- Exact supplied-credential scans of tracked/staged files found no values. Staged
-  redacted Gitleaks scan passed. No real credential or private run ID is in Git.
+- Branch mbe-branch; starting head 261670f7. This shift changes documentation
+  only, with no application, schema, dependency or infrastructure modification.
+- docs/LOCAL-SOURCING-TEST.md is the operator checklist for the owner's OTHER
+  machine. DOCKER.md and unified-sourcing issue 02 link to it.
+- Last product change dfc9839f passed local typechecks/tests/lint/build and CI
+  40519528306 (Quality, PostgreSQL security, Docker demo, audit, secret scan,
+  Release gate). CodeQL 40519528305 passed. Those are prior product receipts;
+  the full code gate was not rerun for this documentation-only shift.
+- Local Docker fixture acceptance is separate from live provider acceptance.
+  No real candidate has been retrieved for the supplied Apify account.
+- Apify authentication/input validation passed previously, but the one real
+  actor returned SUCCEEDED with "free user run limit reached" and zero items.
+  The correction reports this as account_limit; it is not an empty success.
+- ARIA runs locally on another machine, not Azure. Its workspace vault has not
+  been configured here; no reachable authenticated instance is available.
 
 ## Done this shift
 
-1. Safely stored the supplied credentials outside Git, encrypted for the current
-   Windows user, and verified account identity without printing secret values.
-2. Validated provider access/input and ran exactly one bounded provider-only test.
-   Investigated the zero-result outcome using read-only run/dataset/log requests.
-3. Found that an actor can report SUCCEEDED while refusing discovery because of
-   its free-run allowance. The old adapter stripped statusMessage, making this
-   refusal look like a genuine successful empty search.
-4. Added apify-status.ts to classify the observed exact refusal into a safe
-   account_limit reason, without returning arbitrary provider status text.
-5. Unified and legacy sourcing now fail that source with account-allowance guidance
-   and settle the provider receipt as failed. Other selected sources can continue;
-   genuine successful empty searches remain successful. No automatic paid retry.
-6. Added adapter/route/orchestration regressions, verified the classification on
-   the existing real run, documented findings and opened unified-sourcing issue 02.
-7. Tests/build and complete remote CI passed for dfc9839f. The final wrap-up commit
-   changes relay/issue documentation only; any new docs-tip CI is a separate run.
+1. Documented required/optional configuration, checkout/update, five permanent
+   containers plus initialization jobs, startup, readiness and admin login.
+2. Documented port overrides, connected versus synthetic modes, stable encryption
+   key, paired volumes and non-destructive update/restart commands.
+3. Documented workspace Apify key storage, the Format check limitation, account
+   allowance blocker and pricing review before any new paid start.
+4. Added a bounded reviewed campaign search procedure, refresh recovery, result
+   honesty, source evidence, restart persistence, optional dedupe acceptance and
+   an aggregate-only receipt template without private provider identifiers.
+5. Linked the guide from DOCKER.md and the outstanding account acceptance issue.
+   Checked document links and fenced blocks against the checkout. Docker/provider
+   commands are instructions for the other machine, not executions this shift.
+6. Archived shift 444 before replacing this baton.
 
 ## Blockers
 
-- The actor reports "free user run limit reached" for the supplied account. It
-  returned no profiles, so real profile retrieval/import acceptance is still open.
-  This message is the provider's stated reason; do not claim the owner used ten
-  runs, that the token is invalid, or that a subscription upgrade is the only fix.
-- The connected application is on another local machine. Its workspace key vault
-  cannot be configured from this session without an accessible authenticated
-  instance. No Azure deployment or Windows Docker installation is needed here.
+- External: actor reports "free user run limit reached". Check account/actor
+  allowance before another paid search. Do not infer past usage or force billing
+  changes from this message. Live profile retrieval/import remains unverified.
+- The connected Docker instance is on the owner's other machine. Its key and
+  full live acceptance must be configured/executed there using the new guide.
 
 ## Next steps
 
-1. Owner: review the actor/account allowance in Apify before another paid search.
-   Do not automatically upgrade the account, change billing or retry the actor.
-2. On the machine running connected Docker/Supabase ARIA, update mbe-branch and
-   rebuild normally, preserving db_data and app_config. Settings -> Workspace ->
-   Check connections should verify the core backend.
-3. Settings -> API Keys -> Apify: save the token there. Browser-local synthetic
-   demo mode intentionally does not persist real provider secrets. The Windows
-   DPAPI file is not a portable credential file for another machine.
-4. After the provider limitation is resolved, review an active campaign, select
-   LinkedIn (and GitHub if useful), inspect the query and choose a low cap (3).
-   Record actual profile retrieval, mapping, refresh recovery and dedupe results.
-5. Reuse the existing provider receipt for read-only diagnostics, never launch a
-   replacement simply because the last result was empty. No candidate/outreach
-   state was written by this provider-only check.
-6. See .scratch/unified-sourcing/issues/02-apify-account-acceptance.md for the safe
-   receipt and remaining owner actions. Check any final docs-only CI separately.
+1. Owner: follow docs/LOCAL-SOURCING-TEST.md on the other machine; preserve the
+   existing Compose project, db_data, app_config and encryption key.
+2. Resolve the actor allowance, save Apify in Settings -> API keys, then run one
+   reviewed low-cap campaign search. GitHub-only can validate the complementary
+   path while LinkedIn remains explicitly blocked.
+3. Fill the aggregate acceptance receipt: mapping/source links, refresh, stack
+   restart, encryption diagnostics, and optional explicitly authorized dedupe
+   rerun. Keep raw provider data and candidate screenshots outside Git.
+4. Proposed next product slice, awaiting the owner's next implementation request:
+   connect and verify the EXISTING qualification/enrichment/shortlist journey
+   from sourced profile to a clear next action, with honest missing data and
+   contact permission/human review before outreach. Do not build a parallel
+   pipeline or make hosted GPT/Claude a sourcing prerequisite.
+5. Do not treat any queued documentation-tip CI as already passed; product CI
+   receipts above refer to dfc9839f.
 
 ## Decisions made (don't relitigate)
 
-- No real account identifier or API token in Git, env examples, tests, relay or logs.
-  Keep secrets in the protected external store until the application vault can be
-  configured on the other machine; retain per-workspace authority (no env fallback).
-- No Docker/WSL installation on this Windows machine. Docker tests run in Linux CI
-  or the owner's other machine. No Azure deployment is requested.
-- Preserve the five permanent services and two init jobs, forward migrations,
-  stateful volumes and stable encryption key. Sourcing adds no worker/container.
-- No automatic retry of ambiguous or provider-blocked paid starts; no silent
-  source fallback. Human approval remains required before outreach.
-- Hosted GPT/Claude remains deferred; no LLM, mailbox/calendar or outbound action
-  was performed. No subscription or payment configuration was changed.
+- No private account identifier, token or raw provider receipt in Git, examples,
+  tests, logs or relay. The existing protected credential store is outside Git
+  under current LocalAppData/ARIA and is tied to Windows DPAPI on this machine.
+- Apify authority is the encrypted per-workspace vault, with no env fallback.
+  API key Format check is syntax-only, not an upstream authentication test.
+- No Docker/WSL installation on this Windows session, no Azure deployment and
+  no new provider/LLM/outreach calls for the documentation request.
+- Preserve five permanent services/two init jobs, forward migrations and paired
+  durable volumes. Do not reset working data or replace encryption keys.
+- No automatic retry of uncertain/blocked paid starts or silent source fallback.
+  Hosted GPT/Claude remains deferred; human approval remains before outreach.
 
 ## Watch out
 
-- The actor's top-level status alone is insufficient: this observed SUCCEEDED
-  refusal must remain a failed source. Keep normal empty result success intact.
-- Do not dump Apify user/run objects or logs; they can contain identifiers or
-  personal data. Current safe receipt contains counts/classifications only.
-- Source profile data could not be tested live because the dataset was empty.
-  Fixture mapping tests and real PostgreSQL/Docker CI remain green, but they do
-  not prove real candidate retrieval for this blocked account.
-- Local logs: TEMP/aria-apify-limit-*.log. Ignored tmp contains the credential-free
-  provider helper and redacted scan receipt. Sensitive credentials/run artifacts
-  are under LocalAppData/ARIA outside the repository, never in those logs.
+- A per-source profile cap is not a monetary cap. USD0.10 was set only on the
+  previous standalone provider check, not through the campaign UI. Its actual
+  invoice was not audited. Do not launch another actor just to verify key presence.
+- Closing a campaign page does not stop an actor already launched at Apify.
+  Return as the initiating operator; new steps wait for the page to resume.
+- Current live dataset was empty: fixture/database/Docker checks do not prove
+  successful retrieval for this account. Genuine completed empty results must
+  remain distinguishable from an account refusal.
+- Temporary provider helper and private acceptance artifacts from shift 444
+  must not be copied into the new operator guide or committed. Use the existing
+  persisted receipt for read-only diagnostics instead of creating a new run.

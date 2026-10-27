@@ -5,6 +5,9 @@ PostgreSQL persistence. It needs Docker Engine/Desktop and Compose 2.24 or newer
 Windows Docker Desktop needs WSL 2 or its supported virtualization backend.
 No host Supabase CLI, Node installation, or LLM key is required for the core demo.
 
+For the other machine's provider configuration and live LinkedIn/GitHub test,
+follow [the real sourcing checklist](docs/LOCAL-SOURCING-TEST.md).
+
 ## Start and sign in
 
 ```bash

@@ -2,6 +2,9 @@
 Status: ready-for-human
 Type: task
 
+Other-machine setup and acceptance procedure:
+[Real sourcing test](../../../docs/LOCAL-SOURCING-TEST.md).
+
 2026-10-27 provider-only check:
 
 - Token accepted with HTTP 200; the account matched the owner-supplied identity.
