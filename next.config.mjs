@@ -1,5 +1,14 @@
 import path from "node:path";
 
+export function supabaseConnectSources(configuredUrl) {
+  if (!configuredUrl) return [];
+  const url = new URL(configuredUrl);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL must be a credential-free HTTP(S) origin.");
+  }
+  return [url.origin, `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`];
+}
+
 /**
  * Turbopack deliberately rejects output directories outside its project root.
  * Keep this setting relative and use `npm run build:isolated` when a synced
@@ -19,8 +28,7 @@ export function resolveNextDistDir(configuredDistDir) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Emit a self-contained server bundle (.next/standalone/server.js) for the Fly
-  // production container (Dockerfile.prod). Vercel ignores it; local dev unaffected.
+  // One standalone server image for the local demo and the future Azure target.
   output: "standalone",
   // Do not advertise the framework via X-Powered-By (information disclosure).
   poweredByHeader: false,
@@ -30,21 +38,17 @@ const nextConfig = {
   async headers() {
     // Security headers for a console that renders candidate PII.
     const isProd = process.env.NODE_ENV === "production";
+    const localHttpApp = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(process.env.NEXT_PUBLIC_APP_URL ?? "");
     // 'unsafe-eval' is only needed by Next's dev/HMR runtime; drop it in prod.
     // 'unsafe-inline' is kept because Next injects inline hydration scripts
     // (and Recharts inline styles) without a nonce in this app.
     const scriptSrc = isProd
       ? "script-src 'self' 'unsafe-inline'"
       : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
-    // connect-src: always allow hosted Supabase (Vercel demo) + the self-hosted Fly Kong
-    // gateway (Fly prod). Local Supabase on :54321 is dev-only (compose end-to-end).
+    // Bind browser egress to the configured backend, including custom local ports.
     const connectSrc = [
       "connect-src 'self' blob:",
-      "https://*.supabase.co wss://*.supabase.co",
-      "https://aria-mantu-kong.fly.dev wss://aria-mantu-kong.fly.dev",
-      ...(isProd
-        ? []
-        : ["http://127.0.0.1:54321 ws://127.0.0.1:54321 http://localhost:54321 ws://localhost:54321"]),
+      ...supabaseConnectSources(process.env.NEXT_PUBLIC_SUPABASE_URL),
     ].join(" ");
     const csp = [
       "default-src 'self'",
@@ -70,7 +74,7 @@ const nextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
-          ...(isProd
+          ...(isProd && !localHttpApp
             ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
             : []),
         ],

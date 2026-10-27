@@ -26,12 +26,13 @@ import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
+import { SetupStatusPanel } from "@/components/settings/setup-status-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
-import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
+import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -303,6 +304,7 @@ const BANNED_AI_ISMS = [
 /* ---- page --------------------------------------------------------------- */
 
 export default function SettingsPage() {
+  const isAdmin = useRole() === "admin";
   const hydrated = useHydrated();
   const settings = useSettings();
   const storedIntegrations = useIntegrations();
@@ -618,6 +620,7 @@ export default function SettingsPage() {
               tabIndex={0}
             >
           {/* 01 — System identity */}
+          {activeTab === "workspace" && isAdmin && <div className="mb-6"><SetupStatusPanel /></div>}
           <Section
             n="01"
             eyebrow="Identity"

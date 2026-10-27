@@ -49,9 +49,10 @@ Logo.png
 .claude
 scratchpad
 # infra config (not needed at app runtime)
-Dockerfile
 Dockerfile.prod
 docker-compose.yml
+docker-compose.dev.yml
+build-metadata.json
 fly.*.toml
 .dockerignore
 deploy-fly.sh

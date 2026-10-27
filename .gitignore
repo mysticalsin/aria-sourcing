@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+/build-metadata.json
 /.localbin/
 /.rocket-fuel/
 /graphify-out/

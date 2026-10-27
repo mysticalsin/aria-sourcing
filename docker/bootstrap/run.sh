@@ -1,7 +1,6 @@
 #!/bin/sh
-# Local one-shot bootstrap. The same direct owner boundary used in production
-# rotates split credentials, secures default ACLs, reconciles Auth ownership,
-# and writes JWT settings before migrations or demo seeding run as postgres.
+# Apply app migrations and seed the local user after db-init reconciled roles
+# and GoTrue initialized its own schema. This job needs no owner credential.
 set -eu
 umask 077
 
@@ -11,30 +10,9 @@ DB_NAME="${DB_NAME:-postgres}"
 PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-3}"
 export PGCONNECT_TIMEOUT
 
-cleanup() {
-  unset \
-    OWNER_PASSWORD \
-    SUPABASE_ADMIN_CURRENT_PASSWORD \
-    SUPABASE_ADMIN_TARGET_PASSWORD \
-    POSTGRES_TARGET_PASSWORD \
-    SUPABASE_AUTH_ADMIN_TARGET_PASSWORD \
-    AUTHENTICATOR_TARGET_PASSWORD \
-    JWT_SECRET \
-    JWT_EXP 2>/dev/null || :
-}
-trap cleanup EXIT HUP INT TERM
-
-: "${SUPABASE_ADMIN_CURRENT_PASSWORD:?SUPABASE_ADMIN_CURRENT_PASSWORD required}"
-: "${SUPABASE_ADMIN_TARGET_PASSWORD:?SUPABASE_ADMIN_TARGET_PASSWORD required}"
-: "${POSTGRES_TARGET_PASSWORD:?POSTGRES_TARGET_PASSWORD required}"
-: "${SUPABASE_AUTH_ADMIN_TARGET_PASSWORD:?SUPABASE_AUTH_ADMIN_TARGET_PASSWORD required}"
-: "${AUTHENTICATOR_TARGET_PASSWORD:?AUTHENTICATOR_TARGET_PASSWORD required}"
-: "${JWT_SECRET:?JWT_SECRET required}"
-: "${JWT_EXP:?JWT_EXP required}"
-
 ADMIN_EMAIL="admin@hermes.local"
 ADMIN_PW="${DEMO_ADMIN_PASSWORD:-admindemo123}"
-OWNER_SQL="/opt/aria/supabase-admin-reconciliation.sql"
+
 
 psql_postgres() {
   PGPASSWORD="$POSTGRES_TARGET_PASSWORD" \
@@ -43,27 +21,12 @@ psql_postgres() {
 }
 
 echo "[bootstrap] waiting for Postgres ($DB_HOST:$DB_PORT)..."
-until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U supabase_admin -q; do sleep 2; done
-
-OWNER_PASSWORD=""
-if PGPASSWORD="$SUPABASE_ADMIN_CURRENT_PASSWORD" \
-  psql -X -w -h "$DB_HOST" -p "$DB_PORT" -U supabase_admin -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -qc 'select 1' >/dev/null 2>&1; then
-  OWNER_PASSWORD="$SUPABASE_ADMIN_CURRENT_PASSWORD"
-elif PGPASSWORD="$SUPABASE_ADMIN_TARGET_PASSWORD" \
-  psql -X -w -h "$DB_HOST" -p "$DB_PORT" -U supabase_admin -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -qc 'select 1' >/dev/null 2>&1; then
-  OWNER_PASSWORD="$SUPABASE_ADMIN_TARGET_PASSWORD"
-else
-  echo "[bootstrap] ERROR: no direct supabase_admin credential works" >&2
-  exit 1
-fi
-
-echo "[bootstrap] reconciling owner ACLs, split credentials, Auth ownership, and JWT settings..."
-PGPASSWORD="$OWNER_PASSWORD" \
-  psql -X -w -h "$DB_HOST" -p "$DB_PORT" -U supabase_admin -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -q -f "$OWNER_SQL"
-unset OWNER_PASSWORD
+i=0
+until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U postgres -q; do
+  i=$((i + 1))
+  [ "$i" -le 90 ] || { echo "[bootstrap] Postgres did not become ready" >&2; exit 1; }
+  sleep 2
+done
 
 echo "[bootstrap] proving the rotated postgres credential..."
 psql_postgres -qc 'select 1' >/dev/null
@@ -83,7 +46,7 @@ echo "[bootstrap] seeding login user $ADMIN_EMAIL via GoTrue admin API..."
 code="$(curl -s -o /tmp/seed.json -w "%{http_code}" -X POST "http://auth:9999/admin/users" \
   -H "Authorization: Bearer ${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY required}" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PW\",\"email_confirm\":true}")"
+  --data-binary "$(jq -cn --arg email "$ADMIN_EMAIL" --arg password "$ADMIN_PW" '{email:$email,password:$password,email_confirm:true}')")"
 echo "[bootstrap]   GoTrue /admin/users -> HTTP $code"
 case "$code" in
   200|201) echo "[bootstrap]   admin user created." ;;
@@ -92,12 +55,13 @@ case "$code" in
     curl -fsS -o /tmp/seed.json "http://auth:9999/admin/users?per_page=1000" \
       -H "Authorization: Bearer ${SERVICE_ROLE_KEY}"
     ;;
-  *) echo "[bootstrap]   ERROR seeding user; body:" >&2; sed -n '1,20p' /tmp/seed.json >&2; exit 1 ;;
+  *) echo "[bootstrap]   ERROR seeding user (response body withheld)." >&2; exit 1 ;;
 esac
-# The postgres role cannot read auth.users, so take the user id from GoTrue's
-# own JSON (user objects serialize "id","aud","role","email" in that order).
-ADMIN_ID="$(grep -o "\"id\":\"[0-9a-f-]\{36\}\",\"aud\":\"[^\"]*\",\"role\":\"[^\"]*\",\"email\":\"$ADMIN_EMAIL\"" /tmp/seed.json \
-  | head -n 1 | cut -d'"' -f4)"
+# GoTrue response ordering is not an API contract. Match the exact email in
+# either the created user or the users array returned on an idempotent restart.
+ADMIN_ID="$(jq -er --arg email "$ADMIN_EMAIL" '
+  (if .users then .users[] else . end) | select(.email == $email) | .id
+' /tmp/seed.json | head -n 1)"
 [ -n "$ADMIN_ID" ] || { echo "[bootstrap] ERROR: could not resolve the admin user id" >&2; exit 1; }
 
 echo "[bootstrap] promoting $ADMIN_EMAIL to an admin profile..."

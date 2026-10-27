@@ -1,22 +1,42 @@
 # syntax=docker/dockerfile:1
-#
-# Dev-oriented image for Aria Sourcing. Runs `next dev` INSIDE the container so the
-# `.next` build dir lives on the container filesystem (a volume in compose), not on
-# the OneDrive-synced host checkout — which corrupts `.next` mid-write. Source is
-# bind-mounted at runtime (see docker-compose.yml) for hot reload.
-FROM node:22-bookworm-slim
-
+FROM node:22-bookworm-slim AS dependencies
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1 \
-    NODE_ENV=development
-
-# Install dependencies first for layer caching. `npm ci` needs the lockfile.
+ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
-# Copy the source as a fallback for `docker run` without a bind mount; in compose
-# the bind mount + anonymous volumes (node_modules, .next) shadow this at runtime.
-COPY . .
-
+FROM dependencies AS development
+ENV NODE_ENV=development
+COPY --chown=node:node . .
+RUN mkdir -p /app/config /app/.next && chown node:node /app/config /app/.next
+USER node
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+CMD ["node", "scripts/container-runtime.mjs", "--development"]
+
+FROM dependencies AS builder
+ARG NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG ARIA_RELEASE_SHA
+ENV NODE_ENV=production \
+    NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+COPY . .
+RUN ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" node scripts/build-container-metadata.mjs \
+    && npm run build
+
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/build-metadata.json ./build-metadata.json
+COPY --chown=node:node scripts/container-runtime.mjs ./scripts/container-runtime.mjs
+RUN mkdir -p /app/config && chown node:node /app/config
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+  CMD node -e "require('http').get('http://127.0.0.1:3000/api/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+CMD ["node", "scripts/container-runtime.mjs"]

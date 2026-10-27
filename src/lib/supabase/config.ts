@@ -30,6 +30,16 @@ export const SUPABASE_AUTH_COOKIE_NAME = "sb-auth-token";
 /** True for production builds (`next build` / `next start`). */
 export const isProduction = process.env.NODE_ENV === "production";
 
+/** An explicitly configured loopback origin supports the compiled local demo.
+ * Remote/HTTPS deployments keep Secure cookies, including missing configuration. */
+export function isLoopbackHttpOrigin(value: string | undefined): boolean {
+  try {
+    const url = new URL(value ?? "");
+    return url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname) &&
+      !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash;
+  } catch { return false; }
+}
+
 /**
  * Shared cookie options for every @supabase/ssr client. `secure` is set in
  * production so the session cookie is only ever sent over HTTPS (the Fly proxy
@@ -39,7 +49,7 @@ export const isProduction = process.env.NODE_ENV === "production";
  */
 export const SUPABASE_COOKIE_OPTIONS = {
   name: SUPABASE_AUTH_COOKIE_NAME,
-  secure: isProduction,
+  secure: isProduction && !isLoopbackHttpOrigin(process.env.NEXT_PUBLIC_APP_URL),
 } as const;
 
 /** Preview-only: read /candidates listing rows from the server corpus mirror.

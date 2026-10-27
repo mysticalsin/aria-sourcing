@@ -46,7 +46,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
-      - "${DB_HOST_PORT:-54322}:5432"   # host access for psql / Studio parity
+      - "127.0.0.1:${DB_HOST_PORT:-54322}:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
       interval: 5s
@@ -72,10 +72,13 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - 'owner_password="";
+         attempt=0;
          until [ -n "$$owner_password" ]; do
            if PGPASSWORD="$$SUPABASE_ADMIN_CURRENT_PASSWORD" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -qc "select 1" >/dev/null 2>&1; then owner_password="$$SUPABASE_ADMIN_CURRENT_PASSWORD";
            elif PGPASSWORD="$$SUPABASE_ADMIN_TARGET_PASSWORD" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -qc "select 1" >/dev/null 2>&1; then owner_password="$$SUPABASE_ADMIN_TARGET_PASSWORD";
-           else sleep 2; fi;
+           else attempt=$$((attempt + 1));
+             if [ "$$attempt" -ge 60 ]; then echo "[db-init] No configured owner credential works; preserve the database volume and check its credentials." >&2; exit 1; fi;
+             sleep 2; fi;
          done;
          PGPASSWORD="$$owner_password" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q -f /opt/aria/supabase-admin-reconciliation.sql'
     restart: "no"
@@ -92,11 +95,11 @@ services:
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: "9999"
-      API_EXTERNAL_URL: http://localhost:54321
+      API_EXTERNAL_URL: "http://localhost:${KONG_PORT:-54321}"
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: *auth_db_url
-      GOTRUE_SITE_URL: http://localhost:3000
-      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_SITE_URL: "http://localhost:${APP_PORT:-3000}"
+      GOTRUE_URI_ALLOW_LIST: "http://localhost:${APP_PORT:-3000}/**,http://127.0.0.1:${APP_PORT:-3000}/**"
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_JWT_ADMIN_ROLES: service_role
       GOTRUE_JWT_AUD: authenticated
@@ -131,10 +134,10 @@ services:
       # Health endpoints (/ready, /live) live on the admin server; without this
       # port the healthcheck errors forever while the API itself serves fine.
       PGRST_ADMIN_SERVER_PORT: "3001"
-    # `postgrest --ready` refuses the default server-host (!4), and the image
-    # ships no curl/wget — probe /ready with bash's /dev/tcp instead.
+      PGRST_SERVER_HOST: "0.0.0.0"
+    # The amd64 image has no shell. A concrete host enables its native probe.
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/3001 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q 200"]
+      test: ["CMD", "postgrest", "--ready"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -145,11 +148,11 @@ services:
     restart: unless-stopped
     depends_on:
       auth:
-        condition: service_started
+        condition: service_healthy
       rest:
-        condition: service_started
+        condition: service_healthy
     ports:
-      - "${KONG_PORT:-54321}:8000"
+      - "127.0.0.1:${KONG_PORT:-54321}:8000"
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
@@ -179,41 +182,45 @@ services:
       db:
         condition: service_healthy
       auth:
-        condition: service_started
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     environment:
       DB_HOST: db
       DB_PORT: "5432"
       DB_NAME: postgres
-      SUPABASE_ADMIN_CURRENT_PASSWORD: *owner_current_password
-      SUPABASE_ADMIN_TARGET_PASSWORD: *owner_password
       POSTGRES_TARGET_PASSWORD: *postgres_password
-      SUPABASE_AUTH_ADMIN_TARGET_PASSWORD: *auth_password
-      AUTHENTICATOR_TARGET_PASSWORD: *rest_password
-      JWT_SECRET: *jwt_secret
-      JWT_EXP: *jwt_exp
       SERVICE_ROLE_KEY: *service_key
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
     volumes:
       - ./supabase/migrations:/migrations:ro
     restart: "no"
 
-  # ---- The Next.js app (dev server; .next on an anon volume to dodge OneDrive corruption) --
+  # ---- Built application: no dev compiler, source mount, or dependency volume --------
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: "http://localhost:${KONG_PORT:-54321}"
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: *anon_key
+        NEXT_PUBLIC_APP_URL: "http://localhost:${APP_PORT:-3000}"
+        ARIA_RELEASE_SHA: "${ARIA_RELEASE_SHA:-}"
     depends_on:
       supabase-bootstrap:
         condition: service_completed_successfully
       kong:
-        condition: service_started
+        condition: service_healthy
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     env_file:
       - path: .env.local
         required: false
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
+      ARIA_LOCAL_DEMO: "true"
+      NEXT_PUBLIC_APP_URL: "http://localhost:${APP_PORT:-3000}"
       # Server (in-container) reaches Supabase via Kong by service name; the browser
       # uses the host-mapped localhost URL. config.ts prefers SUPABASE_URL on the server.
       SUPABASE_URL: http://kong:8000
@@ -225,16 +232,11 @@ services:
       # Public /careers board reads jobs published by the seeded workspace
       # (fixed id set in docker/bootstrap/run.sh).
       CAREERS_WORKSPACE_ID: "00000000-0000-4000-8000-000000000001"
-      WATCHPACK_POLLING: "true"
-      CHOKIDAR_USEPOLLING: "true"
     volumes:
-      - .:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
+      - app_config:/app/config
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -242,3 +244,4 @@ services:
 
 volumes:
   db_data:
+  app_config:
