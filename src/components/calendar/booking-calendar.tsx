@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { Badge, Button, EmptyState, Field, Input, useToast } from "@/components/ui";
 import { useActions } from "@/lib/store";
+import { supabaseEnabled } from "@/lib/supabase/config";
+import { SEED_NOW } from "@/lib/utils";
 import type { Booking, BookingStatus } from "@/lib/types";
 import { cn, formatTime, formatDate, formatDateTime, ianaForAbbrev, toneForBookingStatus } from "@/lib/utils";
 
@@ -314,7 +316,7 @@ function Section({
 
 export function BookingCalendar({ bookings }: { bookings: Booking[] }) {
   const { upcoming, past } = React.useMemo(() => {
-    const now = Date.now();
+    const now = supabaseEnabled ? Date.now() : SEED_NOW.getTime();
     const up: Booking[] = [];
     const old: Booking[] = [];
     for (const b of bookings) {
@@ -341,6 +343,7 @@ export function BookingCalendar({ bookings }: { bookings: Booking[] }) {
 
   return (
     <div className="space-y-10">
+      {!supabaseEnabled && <p className="text-xs text-muted">Demo date: {formatDate(SEED_NOW.toISOString())}</p>}
       <Section
         title="Upcoming"
         icon={<CalendarClock className="h-3.5 w-3.5" aria-hidden />}

@@ -838,7 +838,9 @@ export function buildSeedState(): HermesState {
       if (rank >= RANK.Booked) {
         const interviewer = interviewers[bookingCounter++ % interviewers.length];
         const isPast = stage === "Interviewed";
-        const start = new Date(now + (isPast ? -1 : 1 + (i % 3)) * 86_400_000 + 14 * 3_600_000);
+        const start = new Date(SEED_NOW);
+        start.setUTCDate(start.getUTCDate() + (isPast ? -1 : 1 + (i % 3)));
+        start.setUTCHours(14, 0, 0, 0);
         const booking = createBooking(cand, campaign, interviewer, start);
         booking.status = isPast ? "Completed" : "Confirmed";
         booking.createdAt = isoDaysBefore(7 - specIndex * 2 - (i % 3)); // booked after the reply

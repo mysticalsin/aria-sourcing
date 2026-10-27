@@ -25,6 +25,7 @@ import {
 import { FUNNEL_STAGES } from "../src/lib/types";
 import type { Candidate, JobAnalysis, ScoringWeights } from "../src/lib/types";
 import { buildSeedState } from "../src/lib/seed";
+import { formatTimeAgo, SEED_NOW } from "../src/lib/utils";
 
 let pass = 0,
   fail = 0;
@@ -498,5 +499,14 @@ ok("mock JD parse tags EU for Europe/CET text", europeParsed.jobAnalysis.regions
 ok("mock JD parse captures CET timezone", europeParsed.jobAnalysis.timezone === "CET");
 
 /* ---- summary ------------------------------------------------------------- */
+const demoDates = buildSeedState();
+for (const campaign of demoDates.campaigns) {
+  const hours = firstInterviewElapsedHours(demoDates.bookings.filter((b) => b.campaignId === campaign.id), campaign.createdAt);
+  ok("seed interview elapsed hours stay within the demo campaign lifetime", hours === null || (hours > 0 && hours < 24 * 30));
+  ok("seed KPI uses the canonical booking elapsed time", hours === campaign.metrics.timeToFirstInterviewHours);
+}
+ok("old activity renders a date without ago", !formatTimeAgo("2026-06-18T09:00:00Z", Date.parse("2026-10-27T09:00:00Z")).includes("ago"));
+ok("recent activity remains relative", formatTimeAgo("2026-06-25T09:00:00Z", SEED_NOW.getTime()) === "1d ago");
+ok("distant future renders a date without in prefix", !formatTimeAgo("2027-06-18T09:00:00Z", SEED_NOW.getTime()).startsWith("in "));
 console.log(`RESULT scoring: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
