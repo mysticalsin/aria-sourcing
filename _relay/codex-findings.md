@@ -1101,3 +1101,36 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** SQL and source assertions assumed LF; the provider structure scan compared Windows paths with Unix allow-lists; native curl could not read POSIX config paths; the provision harness used a Unix PATH separator and CURL_CA_BUNDLE that Schannel ignores.
 **Repro/evidence:** The full gate failed first on search_path assertions, then curl data-binary file loading, then certificate trust. Normalize SQL line endings and Git Bash temp paths, use the platform PATH delimiter and explicitly trust only the generated test certificate with --cacert.
 **Status:** fixed (a0d0c179)
+## 2026-10-27 - Docker readiness did not prove the connected workspace was usable
+**Severity:** correctness
+**File:** docker-compose.yml; src/app/api/ready/route.ts
+**Issue:** PostgREST's amd64 image has no bash but its healthcheck invoked bash. App health accepted every HTTP status below 500, including login/error responses. The local image supplied none of the release/migration identities required by deep readiness.
+**Repro/evidence:** Pinned PostgREST image source builds an executable-only amd64 image; upstream documents postgrest --ready with a concrete server host. Runtime/unit tests now check image/config identity, and the new Docker acceptance exercises actual readiness before login.
+**Status:** fixed (48af1fab); Docker acceptance pending
+
+## 2026-10-27 - Local setup could destroy existing state and lose provider credentials
+**Severity:** correctness
+**File:** scripts/local-supabase-up.sh; Dockerfile; scripts/container-runtime.mjs
+**Issue:** The older setup script reset the Supabase database and overwrote .env.local. The Compose path supplied no persistent encryption key even though connected workspaces refuse unencrypted key storage.
+**Repro/evidence:** The old script called supabase db reset then redirected a generated file over .env.local. New setup never deletes volumes or rewrites that file; key persistence/invalid-key/replacement tests pass.
+**Status:** fixed (48af1fab)
+
+## 2026-10-27 - Local URL and bootstrap assumptions broke reproducible startup
+**Severity:** correctness
+**File:** docker-compose.yml; docker/bootstrap/run.sh; next.config.mjs; src/lib/supabase/config.ts
+**Issue:** Auth URLs ignored custom ports, redirects allowed every origin, the owner wait had no limit, and seeded-user lookup depended on JSON property order. A compiled local app also needed an explicit loopback cookie/CSP policy.
+**Repro/evidence:** Custom APP_PORT/KONG_PORT are now used consistently; the native probe replaces missing-shell health; owner authentication is bounded and GoTrue JSON is parsed with jq. Tests reject non-loopback HTTP cookie exceptions and invalid CSP origins.
+**Status:** fixed (48af1fab); custom-port browser acceptance pending
+
+## 2026-10-27 - Azure managed PostgreSQL is not a drop-in target for the current bootstrap
+**Severity:** spec-mismatch
+**File:** docker/bootstrap/supabase-admin-reconciliation.sql:18; docs/adr/0001-local-runtime-and-azure-target.md
+**Issue:** The bootstrap explicitly requires supabase_admin with rolsuper=true. Azure PostgreSQL Flexible Server administrators are not true PostgreSQL superusers. Copying this bootstrap into a managed-database Terraform target would not work.
+**Repro/evidence:** Compared the direct-superuser SQL guard with Microsoft's access-control documentation. ADR records a compatible initial VM/Compose pilot, an image reusable on Azure, and the authorization work required before a managed-service migration.
+**Status:** open; managed-database migration intentionally deferred, no Azure resources deployed
+## 2026-10-27 - Existing CI blockers reproduced and corrected
+**Severity:** test-gap
+**File:** tests/candidate-erasure-db.sh:321; .gitleaksignore; package.json
+**Issue:** Candidate-erasure SQL tests passed but the harness failed because rg was absent on the runner. The secret scan flagged seven historical code identifiers/type annotations and mocked test fixtures. The dependency audit found high/critical advisories in the old lockfile.
+**Repro/evidence:** Downloaded failed job logs and reproduced the fully redacted scan. Replaced the single fixed-string rg call with portable grep; reviewed and added only the exact seven false-positive fingerprints. Removed unused 3D dependencies and updated Next/ESLint, PostCSS and Zod to patched supported versions. Local npm audit reports zero vulnerabilities; full application/type gates pass after the update. No detection rule or required CI gate was disabled.
+**Status:** fixed (66d5df99); remote rerun pending

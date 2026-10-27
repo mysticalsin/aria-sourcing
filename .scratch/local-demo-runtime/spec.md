@@ -1,6 +1,6 @@
 # Working connected local demo
 
-Status: in-progress
+Status: ready-for-human
 
 ## Scope
 
@@ -32,3 +32,10 @@ LinkedIn-first discovery remain later slices.
 See docs/adr/0001-local-runtime-and-azure-target.md. Retain the current Supabase
 boundaries; optimize the app runtime and health/startup semantics. Do not present
 Azure Flexible Server as compatible with the existing superuser bootstrap.
+
+## Validation boundary (owner instruction, 2026-10-27)
+
+Do not install Docker or WSL in the current Windows session. Docker startup and
+restart acceptance will be performed on another machine. The implementation,
+unit/route tests, dependency audit and production build are checked here. The actual Compose/browser recipe is provided in DOCKER.md and
+automated as a CI job. Do not mark Docker acceptance passed without its receipt.

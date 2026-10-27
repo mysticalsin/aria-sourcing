@@ -1,86 +1,118 @@
 ---
 project: MSourcing / ARIA
-shift: 440
+shift: 441
 agent: codex
 updated: 2026-10-27
-status: demo-readiness-assessed-hosted-llm-preferred
+status: connected-demo-prepared-docker-acceptance-deferred-by-owner
 ---
 
-# Handoff - Shift 440
+# Handoff - Shift 441
 
 ## Current state
 
-- User confirmed the push. `git ls-remote origin refs/heads/mbe-branch` verified
-  remote tip `44544b4ede5868564b5f5629ff8bc4f7d7fc77da` during this shift.
-- Worktree was clean at shift start. This shift made no application changes and
-  did not rerun tests; previous implementation checks are in shift 439 archive.
-- CI on 44544b4e was in progress when checked:
-  https://github.com/mysticalsin/aria-sourcing/actions/runs/40478448840
-  CodeQL on that tip completed successfully (run 40478448814).
-- Existing sourcing code supports GitHub and site-scoped web discovery for
-  LinkedIn, Stack Overflow, Dribbble and Behance through search_candidates.
-- Apify LinkedIn structured search is implemented through separate start/status
-  routes and UI actions. The agent tool does not invoke the Apify adapter.
-- Web discovery maps snippets/URLs, leaves email blank and has less complete
-  profile evidence. Enrichment is a separate implemented path.
-- Real sourcing requires the authenticated Supabase workspace. The synthetic
-  browser demo uses Talent Pool and deliberately does not persist real profiles.
+- Branch mbe-branch. Code commits 48af1fab and 66d5df99 pushed successfully.
+  Final documentation/relay snapshot follows them in this shift.
+- Part 1 implementation is ready for Docker acceptance on another machine.
+  `.scratch/local-demo-runtime/spec.md` is ready-for-human for that acceptance.
+- No Docker/WSL installation was attempted. Owner explicitly asked to test Docker
+  on another machine; respect this instruction in future Windows sessions.
+- Local required gate passed after dependency updates: npm run typecheck,
+  npm run typecheck:tests, npm test. Production Next build also passed with the
+  connected local public URLs/key. Lint passed with zero errors and two existing
+  navigation warnings surfaced by the new Next plugin.
+- npm audit --audit-level=high reports zero vulnerabilities. Redacted full-history
+  Gitleaks scan reports no leaks after exact reviewed false-positive exceptions.
+- CI on 66d5df99 was in progress at the last check:
+  https://github.com/mysticalsin/aria-sourcing/actions/runs/40488057356
+  CodeQL run 40488057141 was also in progress. Do not call either successful yet.
+- Earlier own run 40485334903 was cancelled while the browser install stalled;
+  its Quality job passed and CodeQL passed. No Docker acceptance receipt exists.
+  The current job uses the runner's preinstalled Chrome instead of downloading it.
 
 ## Done this shift
 
-- Read current sourcing, campaign routing, Apify start, candidate mapping,
-  dispatch and enrichment code to assess the working-demo gaps.
-- Verified LinkedIn's primary documentation: Recruiter System Connect requires
-  approved partner access; it is not an immediate generic search API option.
-- Verified the existing HarvestAPI Apify actor is still published and documents
-  structured profile search and separate, non-guaranteed email discovery.
-- Prepared a proposed delivery order: working local stack/setup; unified
-  LinkedIn-first campaign sourcing with GitHub and web backup; candidate
-  evidence/enrichment/deduplication; contact/reply/calendar acceptance; guided
-  campaign UX and repeatable end-to-end acceptance. This is advice, not a claim
-  those additional changes have been implemented or approved as a detailed spec.
+1. Reviewed container roles: five justified permanent services (app, db, auth,
+   rest, kong) and two short-lived initialization jobs (db-init, bootstrap).
+   No Studio, Realtime, Storage, Redis or local AI container added.
+2. 48af1fab: multi-stage non-root compiled image by default; development with
+   source/node_modules/.next mounts moved to docker-compose.dev.yml.
+3. Native PostgREST --ready replaces a bash probe absent from the amd64 image.
+   App health now requires /api/ready=200 and verifies baked migration identities.
+   Added custom-port Auth origins, bounded owner wait, JSON-safe seeded-user
+   extraction and reduced bootstrap credentials to its required postgres scope.
+4. Paired db_data/app_config volumes preserve state and the local generated
+   encryption key. Runtime rejects corrupt/replaced keys and public build/runtime
+   configuration mismatches. Normal helpers never reset DB or overwrite .env.local.
+5. Settings -> Workspace -> Check connections verifies core backend/encryption,
+   distinguishes saved optional integrations from proven connectivity, makes no
+   paid provider calls and requires administrator authentication for live details.
+6. Added a guarded disposable Docker/browser acceptance recipe: clean startup,
+   real login, UI-created campaign/manual fixture candidate, encrypted fixture key,
+   refresh, down/up preserving volumes, fresh login, state and decryption checks.
+   It blocks browser external-provider traffic and uses synthetic fixture data.
+7. 66d5df99: cleared existing CI blockers without weakening gates. One SQL test
+   harness used absent rg; portable fixed-string grep now checks the same SQLSTATE.
+   Seven exact historical secret-scan matches were reviewed: mocked fixtures,
+   TypeScript type annotations, boolean reporting/profile-mapping fields. Only
+   their exact fingerprints were excluded; no paths/rules/history were removed.
+8. Removed unused 3D packages; patched Next/ESLint to 16.4.3, Zod to 4.6.7 and
+   PostCSS to 8.5.32 with a direct-dependency override. Full type/test gates passed.
+9. DOCKER.md now describes start/stop, diagnostics, durable keys, custom ports,
+   development override and acceptance. ADR 0001 records the Azure target review.
+   No Azure resource, production database or real provider account was changed.
 
 ## Blockers
 
-- Actual provider, mailbox and calendar acceptance has not been demonstrated in
-  this session. Docker/Ollama availability was not rechecked; see shift 439.
-- New CI is in progress, so neither the old failed checks nor their resolution
-  may be inferred for the new tip. Inspect run 40478448840 on completion.
-- Prior noninteractive git authentication failed; user performed the push. Do
-  not infer that this session's write credentials are now configured.
+- Actual Compose/browser acceptance is intentionally deferred to another machine
+  by the owner. Do not describe the recipe as executed or passed until a real
+  receipt is produced. The CI job is pending at the recorded run above.
+- Azure Flexible Server is not a drop-in replacement: current reconciliation
+  requires a true supabase_admin superuser; Azure administrators do not have it.
+  Managed-database bootstrap adaptation stays a separate open finding.
+- No GPT/Claude, sourcing, mailbox or calendar provider acceptance was performed
+  here; those integrations belong to later slices of the recruiting journey.
 
 ## Next steps
 
-1. Check CI run 40478448840 to completion and triage issue 06 from current logs.
-2. Implement the agreed next demo slice after user steering: connect Apify
-   LinkedIn to the main campaign run and make source selection, limits, progress,
-   provider errors and result provenance visible in one guided flow.
-3. Prove real discovery on LinkedIn plus one other source from a reviewed brief,
-   with persisted candidates, evidence, dedupe and honest missing contact fields.
-4. Prove approval -> one test email -> real reply sync -> calendar booking ->
-   executive report, including refresh/restart/retry without duplicates.
-5. Configure one hosted LLM provider when requested; the owner defers that setup
-   and favors a GPT or Claude API key for simplicity in the demo.
+1. On the owner's Docker machine, update mbe-branch without discarding local work.
+   Follow DOCKER.md: docker compose up --build --detach --wait --wait-timeout 300.
+2. Sign in at localhost:3000/login with the documented local sample account.
+   Check Settings -> Workspace -> Check connections, create a campaign, refresh,
+   stop via docker compose down, start again without deleting volumes, and verify
+   the campaign remains. Preserve db_data and app_config together.
+3. Run the guarded test:local-demo recipe on a new aria-acceptance-* project if
+   Node 22 and an acceptance browser are available. Never use normal workspace
+   volumes. Fix observed errors and mark the spec done only after its receipt.
+4. Check CI 40488057356 (or the final docs tip's run) to completion, especially
+   Local Docker demo and all database security suites. Keep all required gates.
+5. After part 1 acceptance, begin the agreed LinkedIn-first unified campaign run
+   slice. Configure one GPT/Claude provider later when requested.
 
 ## Decisions made (don't relitigate)
 
-- Demo favors one hosted GPT/Claude API provider; local LLM work is deferred.
-  The implemented local provider remains available, but its real-model
-  acceptance is not a blocker for the chosen hosted-provider demo path.
-- LinkedIn is the first sourcing priority; other sites remain in scope.
-- Target stays local Docker/Supabase now, Azure/Terraform later. No Fly/Vercel.
-- Preserve `_relay/`, `_agent_state/`, the baseline schema and human approval
-  for every outreach send. Repo documentation remains English.
-- Existing features must be connected and verified; do not rebuild working
-  scoring, dedupe, enrichment, OAuth or calendar components without evidence.
+- No Docker or WSL installation in this Windows session. Runtime test elsewhere.
+- Retain five permanent Supabase/app boundaries and two ordered init jobs;
+  optimize the app image and reliability instead of combining unrelated processes.
+- Local connected Docker demo first; hosted GPT/Claude for demo simplicity; local
+  LLM acceptance deferred. No Fly/Vercel or external agent framework work.
+- Proposed first Azure internal pilot reuses the standalone image and current
+  boundaries on a private Linux VM with durable storage, Key Vault and HTTPS.
+  ADR is a target design, not a deployed/executable production configuration.
+  Managed PostgreSQL/Container Apps require a proven authorization migration.
+- Preserve `_relay/`, `_agent_state/`, baseline migrations, existing state and
+  human approval for outreach. No real sourcing/outreach was executed this shift.
 
 ## Watch out
 
-- A GPT/Claude key configures inference; actual candidate discovery still needs
-  its own providers/credentials. LinkedIn web hits are not full profiles.
-- Apify is a third-party provider, not LinkedIn's official partner API.
-- Current LinkedIn messaging is assisted/manual; retain accurate status rather
-  than equating a prepared message with an actual send.
-- Settings task-default Saved Models override the default provider.
-- Existing demo snapshots retain their old saved dates until Reset synthetic demo.
-- Do not present this planning review as new live-provider acceptance evidence.
+- Default Docker app is compiled; changing public origins/ports requires rebuild.
+  Only explicit loopback HTTP gets local cookie/HSTS exceptions; remote origins
+  keep production security. Server still uses internal Kong URL.
+- Existing DATA_ENCRYPTION_KEY must remain stable. An existing generated key is
+  not silently replaced. Back up database plus key together; never reset to fix
+  an initialization or decryption error.
+- The optional dev override shares app_config. On Linux, ensure its node user can
+  write generated checkout files. Development health is liveness, not release identity.
+- GitHub default-branch vulnerability warnings describe another branch; use the
+  current lockfile audit and current CI results for mbe-branch status.
+- Local logs are under $env:TEMP/aria-part1-*.log; ignored tmp contains only test
+  helpers and fully redacted scan reports. No secrets are recorded in the relay.

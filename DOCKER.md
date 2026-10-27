@@ -127,7 +127,8 @@ a fresh login, and checks record persistence and credential decryption. It uses
 custom ports to exercise URL/CSP/cookie configuration. External discovery and
 outreach are deliberately excluded.
 
-To run it locally with Node 22 and Playwright's installed Chromium:
+On the Docker machine, use Node 22 and Playwright's installed Chromium, or set
+`ARIA_BROWSER_CHANNEL=chrome` (or `msedge`) for an installed browser:
 
 ```bash
 ARIA_LOCAL_ACCEPTANCE=1 ARIA_ACCEPTANCE_PROJECT=aria-acceptance-local-001 \
