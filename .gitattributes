@@ -1,0 +1,3 @@
+# SQL migration hashes and executable shell scripts must match Linux checkouts.
+*.sql text eol=lf
+*.sh text eol=lf

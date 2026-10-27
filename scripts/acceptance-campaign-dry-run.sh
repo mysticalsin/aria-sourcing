@@ -61,6 +61,8 @@ APP_URL="$(normalize_origin "$APP_URL" 2>/dev/null)" || fail "APP_URL must be a 
 KONG_URL="$(normalize_origin "$KONG_URL" 2>/dev/null)" || fail "KONG_URL must be a credential-free HTTPS origin."
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aria-acceptance.XXXXXX")"
+# Paths embedded in curl config files bypass Git Bash's argument conversion.
+if command -v cygpath >/dev/null 2>&1; then WORK="$(cygpath -m "$WORK")"; fi
 HTTP_CODE=""
 HTTP_BODY=""
 WORKSPACE_ID=""

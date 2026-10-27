@@ -12,11 +12,11 @@ import type { Activity, HermesState } from "../src/lib/types";
 const storeSource = readFileSync(
   new URL("../src/lib/store.ts", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 const bookingReportActionsSource = readFileSync(
   new URL("../src/lib/store/booking-report-actions.ts", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 const contractsSource = readFileSync(
   new URL("../src/lib/store/contracts.ts", import.meta.url),
   "utf8",

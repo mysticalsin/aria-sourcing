@@ -30,7 +30,7 @@ ok(
 const workspaceSource = readFileSync(new URL("../src/lib/supabase/workspace.ts", import.meta.url), "utf8");
 ok("workspace load resolves current_profile_role", /rpc\("current_profile_role"\)/.test(workspaceSource));
 
-const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const integrationsSource = readFileSync(new URL("../src/lib/integrations.ts", import.meta.url), "utf8");
 ok("live hydration applies the profile role", /applyAuthoritativeRole/.test(storeSource));
 ok(

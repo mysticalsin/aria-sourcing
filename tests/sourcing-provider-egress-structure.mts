@@ -43,7 +43,7 @@ function read(rel: string): string {
 function walk(dir: string): string[] {
   return readdirSync(join(root, dir)).flatMap((entry) => {
     const abs = join(root, dir, entry);
-    const rel = relative(root, abs);
+    const rel = relative(root, abs).replaceAll("\\", "/");
     const stats = statSync(abs);
     if (stats.isDirectory()) return walk(rel);
     return /\.(?:ts|tsx|mts)$/.test(entry) ? [rel] : [];

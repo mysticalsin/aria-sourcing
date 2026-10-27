@@ -71,6 +71,8 @@ case "$ADMIN_PASSWORD" in
 esac
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aria-first-admin.XXXXXX")"
+# Paths embedded in curl config files bypass Git Bash's argument conversion.
+if command -v cygpath >/dev/null 2>&1; then WORK="$(cygpath -m "$WORK")"; fi
 CREATED_USER_ID=""
 CREATED_USER_MARKER=""
 CREATED_USER_EMAIL=""

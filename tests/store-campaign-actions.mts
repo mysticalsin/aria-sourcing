@@ -20,11 +20,11 @@ type ActivityDraft = Parameters<CampaignActionDependencies["makeActivity"]>[0];
 const campaignActionsSource = readFileSync(
   new URL("../src/lib/store/campaign-actions.ts", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 const storeSource = readFileSync(
   new URL("../src/lib/store.ts", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 const intakePageSource = readFileSync(
   new URL("../src/app/intake/page.tsx", import.meta.url),
   "utf8",

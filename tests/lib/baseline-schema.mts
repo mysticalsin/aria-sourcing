@@ -12,7 +12,8 @@ export interface SchemaBlock {
 export const BASELINE_PATH = "supabase/migrations/0001_baseline.sql";
 
 export function loadBaselineSchema(path = BASELINE_PATH) {
-  const source = readFileSync(path, "utf8");
+  // Git may check the dump out with CRLF on Windows; SQL semantics are identical.
+  const source = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
   const blocks: SchemaBlock[] = [];
   const header = /^-- Name: (.+?); Type: ([A-Z ]+); Schema: [^;]*; Owner: -$/gm;
   const matches = [...source.matchAll(header)];
