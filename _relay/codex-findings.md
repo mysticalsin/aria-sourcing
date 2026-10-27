@@ -1065,3 +1065,39 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
 **Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
 **Status:** open; browser-agent capability remains NO-GO
+
+## 2026-10-27 - Demo interview dates used a different clock from campaign dates
+**Severity:** correctness
+**File:** src/lib/seed.ts:841
+**Issue:** Seed bookings used Date.now() while campaign creation used SEED_NOW, inflating time to first interview as the calendar advanced.
+**Repro/evidence:** Issue 08 reported about 3272 hours. The canonical metric subtracts campaign.createdAt from booking.startTime. Regression assertions now bound seeded durations to the campaign lifetime.
+**Suggested fix:** Build seeded booking slots on SEED_NOW and classify the demo calendar using that same clock; retain wall time for live workspaces.
+**Status:** fixed (51a0e7a5)
+
+## 2026-10-27 - Absolute activity dates received a relative suffix
+**Severity:** correctness
+**File:** src/lib/utils.ts:204
+**Issue:** formatTimeAgo fell back to a formatted date after 30 days and then appended ago or prepended in.
+**Repro/evidence:** June 18 activity viewed on October 27 rendered Jun 18, 2026 ago. Regression covers old, recent and distant future timestamps.
+**Status:** fixed (51a0e7a5)
+
+## 2026-10-27 - Local provider configuration was never callable
+**Severity:** spec-mismatch
+**File:** src/lib/ai/provider.ts:17; src/app/api/sourcing-agent/route.ts:303
+**Issue:** Local/Custom had editable settings but no callable slug; cloud sourcing required a key unconditionally. Model validation rejected Ollama tags containing a colon.
+**Repro/evidence:** Issue 01; new resolver, HTTP tool-loop and route authority tests cover local resolution, optional credentials, model tags, metadata URL rejection and redirect refusal.
+**Status:** fixed (52136c69); real Ollama campaign acceptance still requires an installed runtime/model and Docker stack
+
+## 2026-10-27 - Found profiles with no drafts could appear successful
+**Severity:** correctness
+**File:** src/app/api/sourcing-agent/route.ts:580
+**Issue:** An empty drafts array was truthy, so a model could find profiles but produce no usable drafts and return an empty success. Invented candidate IDs and drafts rejected by disclosure validation could also leave an empty success.
+**Repro/evidence:** Route test returns drafts:[] with one found profile and now asserts 502 with an actionable message. Tests also cover invented profile IDs and drafts rejected by disclosure checks. A genuinely empty search remains successful.
+**Status:** fixed (52136c69)
+
+## 2026-10-27 - Test gate was not portable to Windows checkout and Git Bash
+**Severity:** test-gap
+**File:** tests/lib/baseline-schema.mts:15; scripts/acceptance-campaign-dry-run.sh:63; scripts/provision-first-admin.sh:74; tests/provision-first-admin-behavior.mts:462; tests/sourcing-provider-egress-structure.mts:46
+**Issue:** SQL and source assertions assumed LF; the provider structure scan compared Windows paths with Unix allow-lists; native curl could not read POSIX config paths; the provision harness used a Unix PATH separator and CURL_CA_BUNDLE that Schannel ignores.
+**Repro/evidence:** The full gate failed first on search_path assertions, then curl data-binary file loading, then certificate trust. Normalize SQL line endings and Git Bash temp paths, use the platform PATH delimiter and explicitly trust only the generated test certificate with --cacert.
+**Status:** fixed (a0d0c179)
