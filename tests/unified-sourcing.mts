@@ -3,6 +3,7 @@ import { mock, test } from "node:test";
 import { buildSeedState } from "../src/lib/seed";
 import type { Candidate } from "../src/lib/types";
 import type { ApifyProfile } from "../src/lib/sourcing/apify";
+import { shortlistIdentity } from "../src/lib/sourcing/shortlist-preview";
 import { campaignSourcingBasis, orderedSteps, jobStatus, publicSourcingJob, SourcePlanSchema, type CampaignSourcingJob } from "../src/lib/sourcing/unified-contract";
 import type { UnifiedRunRepository, UnifiedProviders } from "../src/lib/sourcing/unified-run";
 mock.module("server-only", { namedExports: {} });
@@ -59,6 +60,15 @@ test("source plan rejects duplicates, unbounded limits and caller-owned authorit
   assert.equal(SourcePlanSchema.safeParse([{ source: "LinkedIn", query: "Go", limit: 51 }]).success, false);
   assert.equal(SourcePlanSchema.safeParse([{ source: "LinkedIn", query: "Go", limit: 2, datasetId: "injected" }]).success, false);
   assert.equal(SourcePlanSchema.safeParse([{ source: "GitHub", query: "Go", limit: 2 }, { source: "GitHub", query: "Go", limit: 2 }]).success, false);
+});
+test("shortlist identities obey confidentiality and the existing outreach-purpose policy", () => {
+  const candidate = { ...buildSeedState().candidates[0], stage: "Sourced" as const,
+    name: "Aria Confidential Fixture", linkedinUrl: "https://linkedin.com/in/aria-private-fixture", githubUrl: "" };
+  const masked = shortlistIdentity(candidate, true);
+  assert.notEqual(masked.name, candidate.name);
+  assert.equal(masked.profileUrl, "");
+  assert.equal(shortlistIdentity(candidate, false).profileUrl, candidate.linkedinUrl);
+  assert.equal(shortlistIdentity({ ...candidate, stage: "Contacted" }, true).name, candidate.name);
 });
 test("LinkedIn first, refresh recovery, authoritative dedupe and saved GitHub complement", async () => {
   const f = fixture();

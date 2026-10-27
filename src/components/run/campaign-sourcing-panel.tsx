@@ -3,10 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { Button, Card, CardBody, Field, Input } from "@/components/ui";
-import { useApiKeys, useCampaign, useCampaignCandidates, useHermes, useRole } from "@/lib/store";
+import { useApiKeys, useCampaign, useCampaignCandidates, useHermes, useRole, useSettings } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import { shortlistIdentity } from "@/lib/sourcing/shortlist-preview";
 import type { PublicSourcingJob, SourceChoice } from "@/lib/sourcing/unified-contract";
 
 const activeStep = (job: PublicSourcingJob) => job.steps.find((s) => ["queued", "starting", "running"].includes(s.status));
@@ -19,6 +20,7 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates 
   const candidates = useCampaignCandidates(campaignId);
   const apiKeys = useApiKeys();
   const role = useRole();
+  const settings = useSettings();
   const idBase = React.useId();
   const { retryWorkspace, flushWorkspace, workspaceStatus } = useHermes();
   const [runs, setRuns] = React.useState<PublicSourcingJob[]>([]);
@@ -157,11 +159,11 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates 
         {!active && <Button variant="secondary" onClick={onCandidates}>Review saved candidates</Button>}
       </div>}
       {newCandidates.length > 0 && <div className="space-y-2"><h3 className="text-sm font-semibold">Shortlist preview</h3>
-        {newCandidates.map((c) => <div key={c.id} className="flex flex-wrap justify-between gap-2 border-t border-ink/10 pt-2 text-sm">
-          <div><button className="font-semibold underline" onClick={onCandidates}>{c.name}</button> · {Math.round(c.matchScore)}/100 · {c.sourcePlatform}
+        {newCandidates.map((c) => { const identity = shortlistIdentity(c, settings.confidentialityMode); return <div key={c.id} className="flex flex-wrap justify-between gap-2 border-t border-ink/10 pt-2 text-sm">
+          <div><button className="font-semibold underline" onClick={onCandidates}>{identity.name}</button> · {Math.round(c.matchScore)}/100 · {c.sourcePlatform}
             <p className="text-xs text-muted">{c.techStack.length ? `Observed skills: ${c.techStack.join(", ")}` : "Skills need verification"} · {c.email ? "Review fit and contact permission" : "Find contact details before email outreach"}{c.yearsExperience === null ? " · Experience unknown" : ""}</p></div>
-          {(c.linkedinUrl || c.githubUrl) && <a className="underline" href={c.linkedinUrl || c.githubUrl} target="_blank" rel="noreferrer">Source profile</a>}
-        </div>)}
+          {identity.profileUrl ? <a className="underline" href={identity.profileUrl} target="_blank" rel="noreferrer">Source profile</a> : <button className="underline" onClick={onCandidates}>Review candidate details</button>}
+        </div>; })}
       </div>}
       {runs.length > 1 && <details><summary className="cursor-pointer text-sm">Previous searches ({runs.length - 1})</summary>{runs.slice(1).map((r) => <p key={r.id} className="mt-2 text-xs text-muted">{new Date(r.createdAt).toLocaleString()} · {r.status} · {r.steps.map((s) => `${s.source}: ${s.added} added`).join(" / ")}</p>)}</details>}
     </CardBody>

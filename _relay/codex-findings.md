@@ -1189,3 +1189,9 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The manual-candidate dialog has no viewport height bound/scroll area and renders beneath animated ancestors. With body scrolling locked, its Add candidate button can remain outside a 720px viewport.
 **Repro/evidence:** Docker browser job 122165080649 reaches candidate creation but Playwright repeatedly reports the enabled button outside the viewport. The same workflow succeeds at 1050px height. Portal modals to document.body and bound their height with internal scrolling; verify with a real browser at 1280x720 without force-clicks.
 **Status:** open
+## 2026-10-27 - Shortlist preview must honor confidentiality mode
+**Severity:** spec-mismatch
+**File:** src/components/run/campaign-sourcing-panel.tsx:163
+**Issue:** The new preview originally displayed raw candidate names and profile links even when the candidate list would mask them under confidentiality mode.
+**Repro/evidence:** A freshly sourced candidate with confidentialityMode=true had its full identity/link rendered by the preview. Reused applyConfidentiality/hasOutreachPurpose and added a regression proving hidden identity links until an existing outreach purpose or mode-off setting permits them.
+**Status:** open
