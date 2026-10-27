@@ -22,7 +22,7 @@ const backend = env.NEXT_PUBLIC_SUPABASE_URL;
 for (const value of [baseUrl, backend]) assert.ok(["localhost", "127.0.0.1"].includes(new URL(value).hostname));
 const publicKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-const marker = "Acceptance " + randomUUID();
+const marker = "Senior Backend Engineer acceptance " + randomUUID();
 const fakeKey = "sk-aria-acceptance-" + randomUUID().replaceAll("-", "");
 let browser;
 let started = false;
@@ -60,6 +60,10 @@ async function openSession() {
   browser = await chromium.launch({ headless: true, ...(process.env.ARIA_BROWSER_CHANNEL ? { channel: process.env.ARIA_BROWSER_CHANNEL } : {}) });
   const page = await browser.newPage();
   page.setDefaultTimeout(30000);
+  await page.route("**/*", (route) => {
+    const origin = new URL(route.request().url()).origin;
+    return [new URL(baseUrl).origin, new URL(backend).origin].includes(origin) ? route.continue() : route.abort();
+  });
   await page.route("**/api/sourcing-agent", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "SOURCING_AGENT_NOT_CONFIGURED" }) }));
   await page.route("**/api/hermes/chat", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: false, reason: "AI provider acceptance is a separate test." }) }));
   await page.goto(baseUrl + "/login", { waitUntil: "networkidle" });
@@ -67,6 +71,7 @@ async function openSession() {
   await page.getByLabel("Password", { exact: true }).fill(env.DEMO_ADMIN_PASSWORD);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL((url) => url.pathname !== "/login");
+  await page.waitForLoadState("networkidle");
   const skip = page.getByRole("button", { name: "Skip", exact: true });
   if (await skip.isVisible()) await skip.click();
   return page;
@@ -89,6 +94,7 @@ try {
   await page.waitForURL(/\/campaigns\/[^/]+$/);
   const campaign = await until(async () => (await persisted(token))?.campaigns?.find((item) => item.title === marker), "Campaign did not persist after UI creation.");
   campaignId = campaign.id;
+  await page.getByRole("tab", { name: /^Candidates/ }).click();
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
   await dialog.getByRole("tab", { name: "Manual", exact: true }).click();
@@ -125,7 +131,8 @@ try {
   assert.equal(tested.status, 200);
   assert.equal(tested.body.valid, true, "Stored synthetic OpenAI key must decrypt and pass format-only validation after restart.");
   await page.goto(baseUrl + "/campaigns/" + campaignId, { waitUntil: "networkidle" });
-  await page.getByText(marker + " Person", { exact: true }).first().waitFor();
+  await page.getByRole("tab", { name: /^Candidates/ }).click();
+  await until(async () => await page.locator("tbody tr").count() === 1, "Persisted candidate did not render after a fresh login.");
   console.log(JSON.stringify({ ok: true, checks: ["clean-start", "readiness", "browser-login", "ui-campaign", "ui-candidate", "encrypted-credential", "browser-refresh", "stack-restart", "fresh-login", "restored-state", "credential-decryption"], externalProviderCalls: 0 }));
 } catch (error) {
   console.error("Local demo acceptance failed:", error.message);

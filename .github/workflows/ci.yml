@@ -154,8 +154,8 @@ jobs:
           cache: npm
       - name: Install test dependencies
         run: npm ci
-      - name: Install acceptance browser
-        run: npx playwright install --with-deps chromium
+      - name: Verify the runner's installed browser
+        run: google-chrome --version
       - name: Prove clean startup, login, persistence and restart
         env:
           ARIA_LOCAL_ACCEPTANCE: "1"
@@ -164,6 +164,7 @@ jobs:
           APP_PORT: "3101"
           KONG_PORT: "54331"
           DB_HOST_PORT: "54332"
+          ARIA_BROWSER_CHANNEL: chrome
         run: npm run test:local-demo
 
   release-gate:
