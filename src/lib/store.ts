@@ -16,6 +16,9 @@ import {
   type GeneratedOutreach,
   type ReplyClassification,
 } from "./mock-ai";
+import { createCandidateEnrichment } from "./store/enrichment-actions";
+import { recordVerifiedEvidence, type VerifiedEvidenceInput } from "./candidate-evidence";
+import { candidateDraftBlocker } from "./candidate-review";
 import type { ApifyProfile, ApifyProfileSearchInput } from "./sourcing/apify";
 import {
   buildOutreachPrompt,
@@ -113,7 +116,6 @@ import type {
   DustRegion,
   DustTask,
   EnrichableField,
-  EnrichmentAttempt,
   HermesState,
   IntegrationStatus,
   Interviewer,
@@ -231,7 +233,7 @@ function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[
 /** Core contact/richness fields enrichCandidate/enrichCampaign fill when the
  *  caller doesn't specify `want` explicitly (docs/superpowers/plans/
  *  2026-07-15-enrichment-orchestrator.md). */
-const DEFAULT_ENRICH_FIELDS: EnrichableField[] = ["email", "phone", "skills", "experience", "headline"];
+const DEFAULT_ENRICH_FIELDS: EnrichableField[] = ["email", "skills", "experience", "headline", "education", "languages"];
 /** Generous per-workspace fallback spend cap (registry cost units, not real
  *  currency) used when `state.enrichmentBudgetUnits` hasn't been configured. */
 const DEFAULT_ENRICHMENT_BUDGET_UNITS = 1000;
@@ -1089,112 +1091,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
-  const enrichCandidate = useCallback(
-    async (
-      candidateId: string,
-      opts?: { want?: EnrichableField[] },
-    ): Promise<{ ok: boolean; filled: EnrichableField[]; spend: number; detail: string }> => {
-      if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, filled: [], spend: 0, detail: "Enrichment requires a live workspace." };
-      }
-      if (!workspaceEffectAllowed()) {
-        return { ok: false, filled: [], spend: 0, detail: "Workspace unavailable. Retry before enrichment." };
-      }
-      const s = current();
-      const cand = s.candidates.find((c) => c.id === candidateId);
-      if (!cand) return { ok: false, filled: [], spend: 0, detail: "Candidate not found." };
-
-      const want = opts?.want ?? DEFAULT_ENRICH_FIELDS;
-      const budgetCap = s.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
-      const alreadySpent = (s.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
-      const budgetRemaining = Math.max(0, budgetCap - alreadySpent);
-
-      let res: Response;
-      try {
-        res = await workspaceFetch("/api/source/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ candidate: cand, want, budgetRemaining }),
-        });
-      } catch (err) {
-        return {
-          ok: false,
-          filled: [],
-          spend: 0,
-          detail: err instanceof Error ? err.message : "Network error reaching the enrichment service.",
-        };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            patch?: Partial<
-              Pick<
-                Candidate,
-                | "email"
-                | "phone"
-                | "currentTitle"
-                | "location"
-                | "currentCompany"
-                | "techStack"
-                | "externalIds"
-                | "matchScore"
-                | "matchBreakdown"
-                | "enrichment"
-              >
-            >;
-            attempts?: EnrichmentAttempt[];
-            spend?: number;
-            error?: string;
-          }
-        | null;
-      if (!out?.ok || !out.patch) {
-        return { ok: false, filled: [], spend: 0, detail: out?.error ?? "Enrichment failed." };
-      }
-
-      const patch = out.patch;
-      const attempts = out.attempts ?? [];
-      const spend = out.spend ?? 0;
-      const filled = Array.from(new Set(attempts.flatMap((a) => a.fieldsFilled)));
-      const byProvider = attempts
-        .filter((a) => a.fieldsFilled.length > 0)
-        .map((a) => `${a.provider}: ${a.fieldsFilled.join(", ")}`);
-      // One ledger entry per provider CALL this run, whether or not it found
-      // data (costUnits may be 0) — the audit trail behind
-      // state.enrichmentBudgetUnits (see HermesState.enrichmentLedger).
-      const ledgerEntries = attempts.map((a) => ({ provider: a.provider, candidateId, units: a.costUnits, at: a.at }));
-
-      commit((prev) => {
-        const next: HermesState = {
-          ...prev,
-          candidates: prev.candidates.map((c) => (c.id === candidateId ? { ...c, ...patch } : c)),
-          enrichmentLedger: ledgerEntries.length
-            ? [...(prev.enrichmentLedger ?? []), ...ledgerEntries]
-            : prev.enrichmentLedger,
-        };
-        return withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Enriched: ${cand.name}`,
-            notes: byProvider.length
-              ? `${byProvider.join("; ")}.`
-              : "No configured provider had new data for this candidate.",
-            outcome: filled.length
-              ? `${filled.length} field(s) filled (${spend} unit(s) spent)`
-              : `No new data (${spend} unit(s) spent)`,
-            campaignId: cand.campaignId,
-            linkedEntityType: "candidate",
-            linkedEntityId: cand.id,
-          }),
-          cand.campaignId,
-        );
-      });
-
-      return { ok: true, filled, spend, detail: byProvider.join("; ") || "No new data found." };
-    },
-    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
+  const enrichCandidate = useMemo(() => createCandidateEnrichment({
+    allowed: () => candidatePersistenceAllowed("live") && workspaceEffectAllowed() && sourcingMutationAllowed(),
+    scope: () => `${workspaceIdRef.current}:${hydrationGeneration.current}`,
+    current,
+    persist: commitPersisted,
+    fetch: workspaceFetch,
+    defaults: DEFAULT_ENRICH_FIELDS,
+    decorate: (state, candidate, attempts, spend) => withActivity(recomputeMetrics(state, candidate.campaignId), makeActivity({
+      type: "sourcing", title: `Enrichment reviewed: ${candidate.name}`,
+      notes: attempts.map((a) => `${a.provider}: ${a.status}${a.fieldsFilled.length ? ` (${a.fieldsFilled.join(", ")})` : ""}`).join("; ") || "No eligible enrichment provider.",
+      outcome: `${new Set(attempts.flatMap((a) => a.fieldsFilled)).size} field(s) filled (${spend} unit(s) spent)`,
+      campaignId: candidate.campaignId, linkedEntityType: "candidate", linkedEntityId: candidate.id,
+    }), candidate.campaignId),
+  }), [candidatePersistenceAllowed, current, commitPersisted, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch]);
   const enrichCampaign = useCallback(
     async (
       campaignId: string,
@@ -1499,9 +1409,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const generateOutreachFor = useCallback(
     (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
       const s = current();
+      if (!workspaceEffectAllowed() || !can(supabaseEnabled ? liveRoleRef.current : s.currentRole, "outreach")) return null;
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
-      if (!candidate || !campaign) return null;
+      if (!candidate || !campaign || candidateDraftBlocker(candidate, campaign, channel)) return null;
       const finalTone = tone ?? effectiveTone(s.skills); // learned default tone
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
@@ -1509,7 +1420,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
       const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
-      commit((prev) => {
+      const saved = commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
           next,
@@ -1525,10 +1436,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaign.id,
         );
       });
+      if (!saved) return null;
       emit({ kind: "allocate", candidateName: candidate.name, campaignId: campaign.id });
       return msg;
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed],
   );
 
   // Live outreach drafting. When live mode is configured, ask the Aria runtime
@@ -1540,9 +1452,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     async (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
       if (!workspaceEffectAllowed()) return null;
       const s = current();
+      if (!can(supabaseEnabled ? liveRoleRef.current : s.currentRole, "outreach")) return null;
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
-      if (!candidate || !campaign) return null;
+      if (!candidate || !campaign || candidateDraftBlocker(candidate, campaign, channel)) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
@@ -1633,8 +1546,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!workspaceEffectAllowed()) return null;
+      const latestState = current();
+      const latestCandidate = latestState.candidates.find((c) => c.id === candidateId);
+      const latestCampaign = latestState.campaigns.find((c) => c.id === latestCandidate?.campaignId);
+      if (!latestCandidate || candidateDraftBlocker(latestCandidate, latestCampaign, channel) || !can(supabaseEnabled ? liveRoleRef.current : latestState.currentRole, "outreach")) return null;
       const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
-      commit((prev) => {
+      const saved = commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
           next,
@@ -1650,7 +1567,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaign.id,
         );
       });
-      return msg;
+      return saved ? msg : null;
     },
     [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
@@ -2928,6 +2845,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       })),
     [commit],
   );
+
+  const recordCandidateEvidence = useCallback(async (id: string, input: VerifiedEvidenceInput) => {
+    if (!supabaseEnabled || !workspaceEffectAllowed() || !sourcingMutationAllowed()) return { ok: false, error: "Contact editing requires a connected workspace and sourcing permission." };
+    let error: string | undefined;
+    const saved = await commitPersisted((state) => {
+      const result = recordVerifiedEvidence(state, id, input, new Date().toISOString(), genId("note"));
+      if (!result.ok) { error = result.error; return state; }
+      const candidate = state.candidates.find((c) => c.id === id)!;
+      return withActivity(recomputeMetrics(result.state, candidate.campaignId), makeActivity({ type: "system", title: input.lawfulBasis ? "Candidate contact basis recorded" : "Candidate evidence recorded",
+        notes: input.lawfulBasis ? `Operator selected ${input.lawfulBasis}; evidence is in the candidate notes. Message approval is still required.` : "Operator reviewed profile/contact facts. Contact permission and outreach approval are separate.",
+        outcome: input.lawfulBasis ? "Explicit contact basis saved" : "Profile/contact facts saved",
+        campaignId: candidate.campaignId, linkedEntityType: "candidate", linkedEntityId: id,
+      }), candidate.campaignId);
+    });
+    return { ok: saved && !error, error: error ?? (!saved ? "Contact details were not saved. Reload the workspace and review." : undefined) };
+  }, [commitPersisted, sourcingMutationAllowed, workspaceEffectAllowed]);
 
   const addCandidateNote = useCallback(
     (candidateId: string, text: string) => {
@@ -5678,6 +5611,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       setSkillUpdateStatus,
       setCandidateStage,
       setCandidatePhone,
+      recordCandidateEvidence,
       addCandidateNote,
       setRejectionReason,
       setCandidateRating,
@@ -5768,7 +5702,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch, addCandidateFromGithub, addCandidateManual, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
-      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,
+      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, recordCandidateEvidence, addCandidateNote, setRejectionReason,
       setCandidateRating, setCandidateLeadSource, toggleVivier, savePrequal, setPrequalOutcome, addInterview, updateInterview,
       advanceChatboxSubmission, setChatboxSubmissionStatus, addChatboxSubmission,
       suppressCandidate, markDoNotContact, restoreCandidateContact,

@@ -1,210 +1,128 @@
-import { mock } from "node:test";
+import assert from "node:assert/strict";
+import { mock, test } from "node:test";
 import { NextRequest } from "next/server";
-import type { OrchestrateEnrichmentResult } from "../src/lib/enrichment/orchestrator.ts";
-import type { Candidate } from "../src/lib/types.ts";
-
-let pass = 0;
-let fail = 0;
-function ok(name: string, condition: boolean) {
-  if (condition) pass++;
-  else {
-    fail++;
-    console.log("FAIL:", name);
-  }
-}
+import { buildSeedState } from "../src/lib/seed.ts";
+import { scoreCandidate } from "../src/lib/scoring.ts";
+import type { Candidate, HermesState } from "../src/lib/types.ts";
+import type { OrchestrateEnrichmentInput } from "../src/lib/enrichment/orchestrator.ts";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
-
-/* ---- mutable fixtures the mocked modules read at call time ---------------- */
-
-let prodBlockResponse: Response | null = null;
-let currentUser: { id: string; email: string } | null = { id: "user-1", email: "recruiter@example.test" };
-let currentRole: "admin" | "member" | "viewer" = "member";
-
-let orchestrateCalls = 0;
-let lastOrchestrateInput: { candidate: unknown; want: unknown; budgetRemaining: unknown } | null = null;
-
-// Never a real key/credit — a synthetic placeholder + fixed patch the mocked
-// orchestrator "hands back", standing in for a real waterfall run.
-let orchestrateResult: OrchestrateEnrichmentResult = {
-  candidate: {
-    id: "cand-1",
-    name: "Jane Doe",
-    email: "jane.doe@example.test",
-    phone: "+33000000000",
-    currentTitle: "Senior Engineer",
-    currentCompany: "Example Corp",
-    location: "Paris, France",
-    linkedinUrl: "https://www.linkedin.com/in/jane-doe-sample",
-    techStack: ["TypeScript"],
-    externalIds: { Apify: "apify_person_id_test_1" },
-    matchScore: 0,
-    matchBreakdown: [],
-    enrichment: {
-      status: "partial",
-      lastEnrichedAt: "2026-07-15T00:00:00.000Z",
-      fieldProvenance: {
-        email: { provider: "Apify", at: "2026-07-15T00:00:00.000Z", confidence: 0.9 },
-      },
-      attempts: [{ provider: "Apify", at: "2026-07-15T00:00:00.000Z", status: "ok", fieldsFilled: ["email"], costUnits: 2 }],
-      coverage: ["email"],
-    },
-    // Deliberately partial fixture — only the fields this test asserts on.
-    // `unknown` (not `any`) is the honest cast: it still requires an explicit
-    // opt-out but doesn't silently disable checking on every later use.
-  } as unknown as Candidate,
-  attempts: [{ provider: "Apify", at: "2026-07-15T00:00:00.000Z", status: "ok", fieldsFilled: ["email"], costUnits: 2 }],
-  spend: 2,
+let state: HermesState;
+let role = "member";
+let signedIn = true;
+let calls = 0;
+let reads = 0;
+let changeDuringCall: (() => void) | undefined;
+let lastInput: OrchestrateEnrichmentInput | undefined;
+let failProvider = false;
+let throwProvider = false;
+let prodBlock: Response | null = null;
+let connected = true;
+const session = {
+  auth: { getUser: async () => ({ data: { user: signedIn ? { id: "user-1" } : null } }) },
+  rpc: async (fn: string) => ({ data: fn === "current_profile_role" ? role : "workspace-1", error: null }),
+  from: (table: string) => {
+    assert.equal(table, "workspace_state");
+    return { select: () => ({ eq: (field: string, id: string) => {
+      assert.equal(field, "workspace_id"); assert.equal(id, "workspace-1");
+      return { single: async () => { reads++; return { data: { state: structuredClone(state) }, error: null }; } };
+    } }) };
+  },
 };
-
-function makeFakeSupabase() {
-  return {
-    auth: { getUser: async () => ({ data: { user: currentUser }, error: null }) },
-    rpc: async (fn: string) => {
-      if (fn === "current_profile_role") return { data: currentRole, error: null };
-      if (fn === "current_workspace_id") return { data: "workspace-1", error: null };
-      return { data: null, error: null };
-    },
-  };
-}
-
-mock.module(moduleUrl("src/lib/supabase/config.ts"), {
-  namedExports: {
-    supabaseEnabled: true,
-    prodFailClosed: () => prodBlockResponse,
+mock.module(moduleUrl("src/lib/supabase/config.ts"), { namedExports: {
+  get supabaseEnabled() { return connected; }, prodFailClosed: () => prodBlock,
+} });
+mock.module(moduleUrl("src/lib/supabase/server.ts"), { namedExports: { getServerSupabase: async () => session } });
+mock.module(moduleUrl("src/lib/rate-limit.ts"), { namedExports: {
+  checkRateLimit: () => ({ ok: true }), rateLimitKey: () => "fixture", tooManyRequests: () => new Response(null, { status: 429 }),
+} });
+mock.module(moduleUrl("src/lib/enrichment/orchestrator.ts"), { namedExports: {
+  orchestrateEnrichment: async (input: OrchestrateEnrichmentInput) => {
+    calls++; lastInput = input;
+    if (throwProvider) throw new Error("private upstream content");
+    const candidate: Candidate = { ...input.candidate,
+      experience: ["Engineer @ Fixture (2020-present)"], education: ["Fixture university"], languages: ["French"],
+      techStack: ["Go", "Kubernetes"],
+    };
+    const scored = scoreCandidate(candidate, input.jd!, input.weights);
+    candidate.matchScore = scored.score; candidate.matchBreakdown = scored.breakdown;
+    changeDuringCall?.();
+    return { candidate, attempts: [{ provider: "Apify", at: new Date().toISOString(), status: failProvider ? "error" : "ok", fieldsFilled: failProvider ? [] : ["skills", "experience", "education", "languages"], costUnits: 1, detail: failProvider ? "Provider refused the request." : undefined }], spend: 1 };
   },
+} });
+const { POST } = await import("../src/app/api/source/enrich/route.ts");
+function reset() {
+  state = buildSeedState();
+  state.campaigns[0].status = "Sourcing";
+  Object.assign(state.campaigns[0].jobAnalysis, { title: "Backend Engineer", requiredSkills: ["Go", "Kubernetes"], seniority: "Senior", locationType: "Remote", employmentType: "Full-time" });
+  state.candidates = [{ ...state.candidates[0], id: "cand-1", campaignId: state.campaigns[0].id, stage: "Sourced", provenance: "live", yearsExperience: null, matchScore: 1, techStack: [], email: "", experience: undefined, education: undefined, languages: undefined,
+    complianceFlags: { doNotContact: false, suppressed: false, unsubscribed: false, anonymized: false, gdprExportRequested: false, suppressedUntil: null } }];
+  role = "member"; signedIn = true; calls = 0; reads = 0; changeDuringCall = undefined; failProvider = false; throwProvider = false; prodBlock = null; connected = true;
+}
+const body = (extra = {}) => ({ candidateId: "cand-1", want: ["skills", "experience"], ...extra });
+const req = (data = body(), origin = "http://localhost") => new NextRequest("http://localhost/api/source/enrich", { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify(data) });
+
+test("authority and input guards run before any paid provider work", async () => {
+  reset(); prodBlock = new Response(null, { status: 503 }); assert.equal((await POST(req())).status, 503);
+  reset(); signedIn = false; assert.equal((await POST(req())).status, 401);
+  reset(); role = "viewer"; assert.equal((await POST(req())).status, 403);
+  reset(); assert.equal((await POST(req(body(), "https://other.example"))).status, 403);
+  reset(); assert.equal((await POST(req(body({ want: [] })))).status, 400);
+  reset(); assert.equal((await POST(req(body({ candidateId: "foreign-candidate" })))).status, 404);
+  reset(); assert.equal((await POST(req(body({ candidate: { id: "cand-1", linkedinUrl: "https://linkedin.com/in/forged" } })))).status, 400);
+  assert.equal(calls, 0);
 });
-mock.module(moduleUrl("src/lib/supabase/server.ts"), {
-  namedExports: {
-    getServerSupabase: async () => makeFakeSupabase(),
-  },
+
+test("excluded candidates and inactive/incomplete campaigns never call the provider", async () => {
+  for (const flag of ["doNotContact", "suppressed", "unsubscribed", "anonymized"] as const) {
+    reset(); state.candidates[0].complianceFlags[flag] = true;
+    assert.equal((await POST(req())).status, 409, flag); assert.equal(calls, 0);
+  }
+  for (const stage of ["Rejected", "Suppressed", "Hired"] as const) {
+    reset(); state.candidates[0].stage = stage;
+    assert.equal((await POST(req())).status, 409, stage); assert.equal(calls, 0);
+  }
+  reset(); state.candidates[0].provenance = "synthetic"; assert.equal((await POST(req())).status, 409); assert.equal(calls, 0);
+  reset(); state.campaigns[0].status = "Paused"; assert.equal((await POST(req())).status, 409); assert.equal(calls, 0);
+  reset(); state.campaigns[0].jobAnalysis.employmentType = "Unspecified"; assert.equal((await POST(req())).status, 409); assert.equal(calls, 0);
 });
-mock.module(moduleUrl("src/lib/enrichment/orchestrator.ts"), {
-  namedExports: {
-    orchestrateEnrichment: async (input: { candidate: unknown; want: unknown; budgetRemaining: unknown }) => {
-      orchestrateCalls++;
-      lastOrchestrateInput = input;
-      return orchestrateResult;
-    },
-  },
+
+test("saved identity and brief drive enrichment; full richness and updated score cross the boundary", async () => {
+  reset(); const response = await POST(req()); const result = await response.json();
+  assert.equal(response.status, 200); assert.equal(calls, 1); assert.equal(reads, 2);
+  assert.equal(lastInput?.candidate.yearsExperience, null);
+  assert.equal(lastInput?.candidate.linkedinUrl, state.candidates[0].linkedinUrl);
+  assert.deepEqual(lastInput?.jd, state.campaigns[0].jobAnalysis);
+  assert.deepEqual(result.patch.languages, ["French"]); assert.equal(result.patch.experience.length, 1); assert.equal(result.patch.education.length, 1);
+  assert.ok(result.patch.matchScore > 1); assert.equal(result.patch.stage, undefined); assert.equal(result.patch.yearsExperience, undefined);
+  assert.equal(result.outcome.ok, true); assert.equal(response.headers.get("cache-control"), "no-store");
 });
 
-const enrichRoute = await import("../src/app/api/source/enrich/route.ts");
+test("only budget hints are accepted, with a bounded server ceiling", async () => {
+  for (const [value, expected] of [[undefined, 10], [5, 5], [999, 10]] as const) {
+    reset(); await POST(req(body({ budgetRemaining: value }))); assert.equal(lastInput?.budgetRemaining, expected);
+  }
+});
 
-const validCandidate = {
-  id: "cand-1",
-  name: "Jane Doe",
-  sourcePlatform: "Apify",
-  currentCompany: "Example Corp",
-  linkedinUrl: "https://www.linkedin.com/in/jane-doe-sample",
-};
+test("provider errors remain distinct from completed no-data responses and arbitrary errors stay private", async () => {
+  reset(); failProvider = true; const error = await (await POST(req())).json();
+  assert.equal(error.ok, true); assert.equal(error.outcome.ok, false); assert.equal(error.attempts[0].status, "error");
+  reset(); throwProvider = true; const response = await POST(req()); assert.equal(response.status, 502);
+  assert.doesNotMatch(JSON.stringify(await response.json()), /private upstream content/);
+});
 
-const enrichReq = (body: unknown) =>
-  new NextRequest("http://localhost/api/source/enrich", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-const validBody = { candidate: validCandidate, want: ["email", "phone"] };
-
-/* ---- prodFailClosed blocks in prod ----------------------------------------- */
-{
-  prodBlockResponse = new Response(JSON.stringify({ ok: false, error: "service_unavailable" }), {
-    status: 503,
-    headers: { "Content-Type": "application/json" },
-  });
-  orchestrateCalls = 0;
-  const res = await enrichRoute.POST(enrichReq(validBody));
-  ok("prodFailClosed blocks before any auth/orchestrator work", res.status === 503 && orchestrateCalls === 0);
-
-  prodBlockResponse = null;
-}
-
-/* ---- unauthenticated -> 401 ------------------------------------------------ */
-{
-  currentUser = null;
-  orchestrateCalls = 0;
-  const res = await enrichRoute.POST(enrichReq(validBody));
-  ok("unauthenticated is rejected", res.status === 401 && orchestrateCalls === 0);
-
-  currentUser = { id: "user-1", email: "recruiter@example.test" };
-}
-
-/* ---- role lacking "source" -> 403 ------------------------------------------ */
-{
-  currentRole = "viewer";
-  orchestrateCalls = 0;
-  const res = await enrichRoute.POST(enrichReq(validBody));
-  ok("role without source permission gets 403", res.status === 403 && orchestrateCalls === 0);
-
-  currentRole = "member";
-}
-
-/* ---- invalid body -> 400 ---------------------------------------------------- */
-{
-  orchestrateCalls = 0;
-  const emptyWantRes = await enrichRoute.POST(enrichReq({ candidate: validCandidate, want: [] }));
-  ok("empty `want` array is rejected with 400", emptyWantRes.status === 400 && orchestrateCalls === 0);
-
-  const badPlatformRes = await enrichRoute.POST(
-    enrichReq({ candidate: { ...validCandidate, sourcePlatform: "NotARealPlatform" }, want: ["email"] }),
-  );
-  ok("unknown sourcePlatform is rejected with 400", badPlatformRes.status === 400 && orchestrateCalls === 0);
-
-  const missingNameRes = await enrichRoute.POST(
-    enrichReq({ candidate: { id: "cand-2", sourcePlatform: "Apify" }, want: ["email"] }),
-  );
-  ok("candidate missing required `name` is rejected with 400", missingNameRes.status === 400 && orchestrateCalls === 0);
-}
-
-/* ---- happy path: orchestrator mocked, returns a merged patch --------------- */
-{
-  orchestrateCalls = 0;
-  lastOrchestrateInput = null;
-  const res = await enrichRoute.POST(enrichReq(validBody));
-  const json = await res.json();
-
-  ok("happy path returns 200 ok:true and invokes the orchestrator once", res.status === 200 && json.ok === true && orchestrateCalls === 1);
-  const forwarded = lastOrchestrateInput as { candidate: unknown; want: unknown; budgetRemaining: unknown } | null;
-  ok(
-    "happy path forwards the validated candidate + want to the orchestrator",
-    forwarded !== null &&
-      (forwarded.candidate as { id?: string } | undefined)?.id === "cand-1" &&
-      Array.isArray(forwarded.want) &&
-      (forwarded.want as string[]).includes("email"),
-  );
-  ok(
-    "happy path echoes the orchestrator's patch fields",
-    json.patch?.email === "jane.doe@example.test" &&
-      json.patch?.phone === "+33000000000" &&
-      json.patch?.enrichment?.status === "partial" &&
-      Array.isArray(json.attempts) &&
-      json.attempts.length === 1 &&
-      json.attempts[0].provider === "Apify" &&
-      json.spend === 2,
-  );
-  ok("happy path never echoes a raw provider key/token", JSON.stringify(json).includes("TEST_PLACEHOLDER") === false);
-}
-
-/* ---- budgetRemaining is clamped to the server ceiling, never client-trusted */
-{
-  // budgetRemaining is client-supplied and only ever a hint — the route
-  // clamps it to MAX_ENRICH_UNITS_PER_REQUEST (10) server-side so a request
-  // can never authorize more spend than the server allows, regardless of
-  // what the client sends (or omits).
-  type OrchestrateInput = { candidate: unknown; want: unknown; budgetRemaining: unknown } | null;
-  orchestrateCalls = 0;
-  lastOrchestrateInput = null;
-  await enrichRoute.POST(enrichReq(validBody));
-  ok("omitted budgetRemaining defaults to the server ceiling, not Infinity", (lastOrchestrateInput as OrchestrateInput)?.budgetRemaining === 10);
-
-  await enrichRoute.POST(enrichReq({ ...validBody, budgetRemaining: 5 }));
-  ok("a supplied budgetRemaining under the ceiling is forwarded as-is", (lastOrchestrateInput as OrchestrateInput)?.budgetRemaining === 5);
-
-  await enrichRoute.POST(enrichReq({ ...validBody, budgetRemaining: 999 }));
-  ok("a supplied budgetRemaining above the ceiling is clamped down to it", (lastOrchestrateInput as OrchestrateInput)?.budgetRemaining === 10);
-}
-
-console.log(`RESULT source-enrich-auth: ${pass} passed, ${fail} failed`);
-if (fail > 0) process.exitCode = 1;
+test("concurrent erasure, role revocation, evidence and campaign edits invalidate the result", async () => {
+  for (const change of [
+    () => { state.candidates = []; },
+    () => { role = "viewer"; },
+    () => { state.candidates[0].complianceFlags.doNotContact = true; },
+    () => { state.candidates[0].linkedinUrl = "https://linkedin.com/in/new-fixture"; },
+    () => { state.campaigns[0].jobAnalysis.requiredSkills = ["Rust"]; },
+  ]) {
+    reset(); changeDuringCall = change;
+    const response = await POST(req()); assert.equal(response.status, 409); assert.equal(calls, 1);
+    assert.equal((await response.json()).patch, undefined);
+  }
+  reset(); changeDuringCall = () => { state.candidates[0].notes = [{ id: "note", text: "Concurrent recruiter note", at: new Date().toISOString() }]; };
+  assert.equal((await POST(req())).status, 200);
+});

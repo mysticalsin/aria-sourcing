@@ -212,9 +212,11 @@ export interface HermesActions {
   >;
   /** Unified enrichment orchestrator — a candidate discovered by ANY
    *  provider can be enriched by every configured enrichment provider
-   *  (currently Apify dev_fusion). Calls /api/source/enrich, which
+   *  (currently Apify dev_fusion). Saves current workspace edits, then calls
+   *  /api/source/enrich with only candidateId and requested fields; the server
+   *  resolves profile ownership and scoring evidence from the saved workspace,
    *  runs the cost-ordered waterfall server-side, then merges the returned
-   *  patch (email/phone/headline/location/company/skills/enrichment/
+   *  patch (email/phone/headline/location/company/skills/experience/education/languages/enrichment/
    *  externalIds/matchScore) into the candidate and logs one Activity
    *  summarizing which provider filled what. Respects
    *  `state.enrichmentBudgetUnits` (generous default when unset); a
@@ -315,6 +317,7 @@ export interface HermesActions {
   // candidates / compliance
   setCandidateStage: (id: string, stage: CandidateStage) => void;
   setCandidatePhone: (id: string, phone: string) => void;
+  recordCandidateEvidence: (id: string, input: { email: string; linkedinUrl: string; source: string; skills?: string[]; yearsExperience?: number | null; lawfulBasis?: CandidateLawfulBasis }) => Promise<{ ok: boolean; error?: string }>;
   /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
    *  an Activity, not just a UI notification. No-ops on blank text. */
   addCandidateNote: (candidateId: string, text: string) => void;

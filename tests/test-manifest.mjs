@@ -2,6 +2,7 @@
 export const testManifest = {
   version: 1,
   commands: [
+    {"id":"candidate-qualification","executable":"node","argv":["--import","tsx","--test","tests/candidate-qualification.mts"]},
     {"id":"unified-sourcing-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/unified-sourcing-route.mts"]},
     {"id":"unified-sourcing","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/unified-sourcing.mts"]},
     {"id":"candidate-privacy","executable":"tsx","argv":["tests/candidate-privacy.mts"]},
@@ -161,6 +162,7 @@ export const testManifest = {
   ],
   groups: {
     "pretest": [
+      "candidate-qualification",
       "unified-sourcing-route",
       "unified-sourcing",
       "candidate-privacy",

@@ -24,6 +24,7 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
 import { SourceBadge, StarBadge } from "@/components/tania/badges";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
+import { candidateReview } from "@/lib/candidate-review";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
 import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
 
@@ -117,12 +118,14 @@ export function CandidateTable({
           <TH>Source</TH>
           <TH>Match</TH>
           <TH>Stage</TH>
+          <TH>Next action</TH>
           <TH>Last activity</TH>
           <TH>Flags</TH>
         </TR>
       </THead>
       <TBody>
         {candidates.map((c) => {
+          const review = candidateReview(c, campaigns.find((campaign) => campaign.id === c.campaignId), settings);
           const flags = activeFlags(c.complianceFlags);
           const lastIso = c.lastContactedAt ?? c.createdAt;
           const masked = confidentialityMode && !hasOutreachPurpose(c.stage);
@@ -236,6 +239,9 @@ export function CandidateTable({
                 <Badge tone={toneForStage(c.stage)} size="sm" dot>
                   {c.stage}
                 </Badge>
+              </TD>
+              <TD>
+                <span className="text-xs font-semibold text-ink-soft" title={review.detail}>{review.label}</span>
               </TD>
               <TD>
                 <span className="whitespace-nowrap text-sm text-muted tabular-nums">

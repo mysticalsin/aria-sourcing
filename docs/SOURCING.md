@@ -278,6 +278,13 @@ invented.
 
 ## 4. Enrichment
 
+Operator flow: [Review a sourced candidate](CANDIDATE-REVIEW.md). The unified
+enrichment route accepts a saved `candidateId`, requested `want` fields and an
+optional bounded budget hint. It resolves profile ownership, campaign readiness,
+exclusions and scoring from the authenticated workspace rather than a client
+profile payload. The caller persists the complete richness/scoring patch before
+reporting success; provider failures retain distinct attempt outcomes.
+
 `src/lib/enrichment/*` (commit `8bda068`, "unified multi-provider enrichment
 orchestrator"; commit `acd69a9`, "home experience/education/languages instead of
 discarding them") is the cost-aware waterfall that fills in missing candidate fields

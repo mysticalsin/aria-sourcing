@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Badge,
@@ -17,7 +17,8 @@ import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { bookingCalendarSummary } from "@/lib/booking-status";
-import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
+import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
+import { candidateEnrichmentBlocker, candidateReview } from "@/lib/candidate-review";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import {
@@ -241,28 +242,12 @@ function Chips({ items, label }: { items: string[]; label: string }) {
   );
 }
 
-/** View-only "why this person" fallback — guarantees the chip(s) below are
- *  never blank, even for the rare draft whose stored personalizationEvidence
- *  came back empty (e.g. a live-sourced draft with no recentActivity). Derived
- *  purely from fields already on the candidate; never written back to the
- *  message, and never substitutes for real evidence when it's present — the
- *  personalization-required approval gate in rules.ts still reads the stored
- *  personalizationEvidence unchanged. */
-function personalizationFallbackHook(candidate: Candidate): string {
-  const topSkill = candidate.techStack[0];
-  if (topSkill) return `${topSkill} background fits this role`;
-  if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
-  if (candidate.yearsExperience == null) return "Matched against the role requirements";
-  return `${candidate.yearsExperience} yrs of relevant experience`;
-}
-
 /** "Why this person" — the personalization evidence behind this candidate's
- *  latest outreach draft, matching the same aqua chip styling the outreach
- *  queue uses (see OutreachMessageCard). Falls back to a single derived hook
- *  when the draft's real evidence is empty, so the section is never blank. */
-function WhyThisPerson({ candidate, message }: { candidate: Candidate; message: OutreachMessage }) {
+ *  latest outreach draft. Missing evidence stays explicit; no derived fit claim
+ *  substitutes for the message's actual personalization evidence. */
+function WhyThisPerson({ message }: { message: OutreachMessage }) {
   const real = message.personalizationEvidence.filter((e) => e.trim().length > 0);
-  const chips = real.length > 0 ? real : [personalizationFallbackHook(candidate)];
+  const chips = real.length > 0 ? real : ["No personalization evidence recorded. Verify before approval."];
   return (
     <Section title="Why this person" icon={<Sparkles className="h-4 w-4" />}>
       <div className="flex flex-wrap gap-1.5">
@@ -495,7 +480,9 @@ export function CandidateDrawer({
   // reflect immediately instead of showing the click-time snapshot.
   const liveCandidate = useCandidate(candidate?.id);
   const campaign = useCampaign(candidate?.campaignId);
-  const confidentialityMode = Boolean(useSettings().confidentialityMode);
+  const settings = useSettings();
+  const confidentialityMode = Boolean(settings.confidentialityMode);
+  const apiKeys = useApiKeys();
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -511,6 +498,8 @@ export function CandidateDrawer({
   const [erasureActionId, setErasureActionId] = useState<string | null>(null);
   const [erasureQueueError, setErasureQueueError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
+  const [savingContact, setSavingContact] = useState(false);
+  const enrichmentClick = useRef(false);
   // Index into enrichment.attempts marking where the LAST "Enrich" click's
   // results start — null until the first click this session, so the
   // per-provider progress list stays empty (not a wall of prior history)
@@ -587,6 +576,8 @@ export function CandidateDrawer({
     setErasureActionId(null);
     setErasureQueueError(null);
     setAttemptsBaseline(null);
+    setEnriching(false);
+    setSavingContact(false);
     return invalidateErasureRequests;
   }, [candidateId, invalidateErasureRequests, open]);
 
@@ -742,6 +733,8 @@ export function CandidateDrawer({
     flags.gdprExportRequested;
 
   const campaignPaused = campaign?.status === "Paused";
+  const review = candidateReview(c, campaign, settings);
+  const draftChannel = !c.email.trim() && c.linkedinUrl.trim() ? "LinkedIn" : "Email";
 
   const handleGenerate = async () => {
     if (campaignPaused) {
@@ -755,11 +748,11 @@ export function CandidateDrawer({
     setGenerating(true);
     let msg: ReturnType<typeof actions.generateOutreachFor> = null;
     try {
-      msg = await actions.generateOutreachLive(c.id);
+      msg = await actions.generateOutreachLive(c.id, undefined, draftChannel);
     } catch {
       // A live-runtime hiccup (network error, thrown rejection) should never block
       // drafting — fall back to the template path so the human still gets a draft.
-      msg = actions.generateOutreachFor(c.id);
+      msg = actions.generateOutreachFor(c.id, undefined, draftChannel);
       toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
     }
     setGenerating(false);
@@ -1110,15 +1103,57 @@ export function CandidateDrawer({
   // configured provider that can identify this candidate, regardless of which
   // platform originally sourced them.
   const handleEnrich = async () => {
-    setAttemptsBaseline((c.enrichment?.attempts ?? []).length);
-    setEnriching(true);
-    const res = await actions.enrichCandidate(c.id);
-    setEnriching(false);
-    toast({
-      title: res.ok ? (res.filled.length > 0 ? "Enrichment complete" : "No new data found") : "Enrichment failed",
-      description: res.detail,
-      variant: res.ok ? (res.filled.length > 0 ? "success" : "info") : "error",
-    });
+    if (enrichmentClick.current || enriching || enrichBlocker || !plannedFields.length) return;
+    enrichmentClick.current = true;
+    const scope = captureErasureScope();
+    try {
+      if (!(await confirm({ title: "Review paid enrichment", confirmLabel: "Enrich reviewed profile",
+        description: `Look for ${plannedFields.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")} via Apify. Provider pricing and account limits apply; data is not guaranteed. Keep this page open until the result is saved. No message will be sent.`,
+      }))) return;
+      if (!isErasureScopeCurrent(scope)) return;
+      setAttemptsBaseline((c.enrichment?.attempts ?? []).length);
+      setEnriching(true);
+      const res = await actions.enrichCandidate(c.id, { want: plannedFields });
+      if (!isErasureScopeCurrent(scope)) return;
+      setEnriching(false);
+      toast({
+        title: res.ok ? (res.filled.length > 0 ? "Enrichment complete" : "No new data found") : "Enrichment failed",
+        description: res.detail,
+        variant: res.ok ? (res.filled.length > 0 ? "success" : "info") : "error",
+      });
+    } finally { enrichmentClick.current = false; }
+  };
+
+  const handleSaveContact = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (savingContact || enriching) return;
+    const scope = captureErasureScope();
+    const values = new FormData(event.currentTarget);
+    setSavingContact(true);
+    try {
+      const result = await actions.recordCandidateEvidence(c.id, {
+        email: String(values.get("email") ?? ""), linkedinUrl: String(values.get("linkedinUrl") ?? ""), source: String(values.get("source") ?? ""),
+        skills: String(values.get("skills") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+        yearsExperience: String(values.get("years") ?? "").trim() ? Number(values.get("years")) : null,
+      });
+      if (!isErasureScopeCurrent(scope)) return;
+      toast({ title: result.ok ? "Candidate evidence saved" : "Candidate evidence not saved", description: result.ok ? "Facts and score updated. Contact permission and message approval are still required." : result.error, variant: result.ok ? "success" : "error" });
+    } finally { if (isErasureScopeCurrent(scope)) setSavingContact(false); }
+  };
+
+  const handleRecordBasis = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (savingContact || enriching) return;
+    const scope = captureErasureScope();
+    const values = new FormData(event.currentTarget);
+    const basis = values.get("basis");
+    if (basis !== "consent" && basis !== "legitimate_interest") return;
+    setSavingContact(true);
+    try {
+      const result = await actions.recordCandidateEvidence(c.id, { email: c.email, linkedinUrl: c.linkedinUrl, lawfulBasis: basis, source: String(values.get("reason") ?? "") });
+      if (!isErasureScopeCurrent(scope)) return;
+      toast({ title: result.ok ? "Contact basis recorded" : "Contact basis not saved", description: result.ok ? "Your explicit decision is recorded. Review the message and remaining approval checks before contact." : result.error, variant: result.ok ? "success" : "error" });
+    } finally { if (isErasureScopeCurrent(scope)) setSavingContact(false); }
   };
 
   const handleUnsubscribe = async () => {
@@ -1172,6 +1207,12 @@ export function CandidateDrawer({
   const enrichmentCoverage = computeCoverage(c);
   const fieldProvenance: Partial<Record<EnrichableField, FieldProvenance>> = c.enrichment?.fieldProvenance ?? {};
   const eligibleProviders = ENRICHMENT_PROVIDERS.filter((p) => p.keyField(c) != null);
+  const configuredProviders = eligibleProviders.filter((p) => apiKeys.some((key) => key.provider === p.id));
+  const plannedFields = DRAWER_ENRICHMENT_FIELDS.filter((field) => !enrichmentCoverage.includes(field) && configuredProviders.some((p) => p.enriches.includes(field)));
+  const enrichBlocker = candidateEnrichmentBlocker(c, campaign)
+    ?? (!supabaseEnabled ? "Connect the persisted workspace to enrich real profiles." : null)
+    ?? (!eligibleProviders.length ? "The current provider needs a LinkedIn profile URL. Review the source profile before adding contact details." : null)
+    ?? (!configuredProviders.length ? "Connect an Apify key in Settings to enrich this profile." : null);
   const enrichmentSpend = (c.enrichment?.attempts ?? []).reduce((sum, a) => sum + a.costUnits, 0);
   const recentEnrichmentAttempts: EnrichmentAttempt[] =
     attemptsBaseline !== null ? (c.enrichment?.attempts ?? []).slice(attemptsBaseline) : [];
@@ -1184,7 +1225,7 @@ export function CandidateDrawer({
         leftIcon={<Send className="h-4 w-4" />}
         onClick={handleGenerate}
         loading={generating}
-        disabled={contactBlocked || campaignPaused || generating}
+        disabled={contactBlocked || review.key === "blocked" || review.key === "brief" || campaignPaused || generating || !can(role, "outreach") || (!c.email.trim() && !c.linkedinUrl.trim())}
         title={
           contactBlocked
             ? "Candidate is suppressed / do-not-contact"
@@ -1193,7 +1234,7 @@ export function CandidateDrawer({
               : undefined
         }
       >
-        {generating ? "Drafting…" : "Generate outreach"}
+        {generating ? "Drafting…" : draftChannel === "LinkedIn" ? "Draft LinkedIn message" : "Generate outreach"}
       </Button>
       <Button
         variant="primary"
@@ -1228,6 +1269,16 @@ export function CandidateDrawer({
       width="max-w-2xl"
     >
       <div className="space-y-8 animate-fade-in">
+        <section aria-label="Candidate next action" className="space-y-3 rounded-2xl border border-electric/20 bg-electric-soft/30 p-4">
+          <Eyebrow>Next action</Eyebrow>
+          <h3 className="font-semibold text-ink">{review.label}</h3>
+          <p className="text-sm text-muted">{review.detail}</p>
+          <p className="text-xs text-muted">Observed requirements: {review.observedSkills.join(", ") || "None confirmed"}. Still to verify: {review.missingSkills.join(", ") || "No missing required skill recorded"}.</p>
+          {review.key === "permission" && <a href="#candidate-consent" className="text-sm font-semibold text-electric underline">Review consent passport</a>}
+          {review.key === "brief" && campaign && <Link href={`/campaigns/${campaign.id}`} className="text-sm font-semibold text-electric underline">Review campaign brief</Link>}
+          {(review.key === "fit" || review.key === "contact") && <a href="#candidate-enrichment" className="text-sm font-semibold text-electric underline">Review evidence and enrichment</a>}
+          <p className="text-xs text-muted">Drafting does not send a message. The exact text still requires human approval.</p>
+        </section>
         <div className="space-y-3">
           {campaign && (
             <Badge tone="electric" size="sm">
@@ -1387,6 +1438,27 @@ export function CandidateDrawer({
           )}
         </div>
 
+        <div id="candidate-enrichment" className="scroll-mt-4" />
+        {!masked && supabaseEnabled && canEnrich && !candidateEnrichmentBlocker(c, campaign) && (
+          <Section title="Verified profile and contact" icon={<Mail className="h-4 w-4" />}>
+            <p className="mb-3 text-sm text-muted">Record facts you verified on the source profile. Leave unknown experience blank. This updates the score; it does not record consent or send a message.</p>
+            <form key={`${c.id}:${c.email}:${c.linkedinUrl}:${c.techStack.join(",")}:${c.yearsExperience}`} onSubmit={handleSaveContact} className="space-y-3">
+              <fieldset disabled={savingContact || enriching} className="space-y-3">
+                <Label htmlFor="verified-contact-email">Email</Label>
+                <Input id="verified-contact-email" name="email" type="email" maxLength={320} defaultValue={c.email} placeholder="Public professional email, if available" />
+                <Label htmlFor="verified-contact-linkedin">LinkedIn profile URL</Label>
+                <Input id="verified-contact-linkedin" name="linkedinUrl" type="url" maxLength={500} defaultValue={c.linkedinUrl} placeholder="https://www.linkedin.com/in/..." />
+                <Label htmlFor="verified-profile-skills">Observed skills (comma-separated)</Label>
+                <Input id="verified-profile-skills" name="skills" maxLength={5000} defaultValue={c.techStack.join(", ")} placeholder="Only skills supported by the profile evidence" />
+                <Label htmlFor="verified-profile-years">Verified years of experience (optional)</Label>
+                <Input id="verified-profile-years" name="years" type="number" min={0} max={80} step="0.5" defaultValue={c.yearsExperience ?? ""} placeholder="Unknown" />
+                <Label htmlFor="verified-contact-source">Where you verified it</Label>
+                <Input id="verified-contact-source" name="source" required minLength={8} maxLength={500} placeholder="Source URL or recruiter verification note" />
+                <Button type="submit" variant="outline" size="sm" loading={savingContact}>Save verified evidence</Button>
+              </fieldset>
+            </form>
+          </Section>
+        )}
         <Section title="Enrichment" icon={<Zap className="h-4 w-4" />}>
           {!canEnrich ? (
             <p className="text-sm text-muted">You don&apos;t have permission to enrich candidates.</p>
@@ -1429,14 +1501,16 @@ export function CandidateDrawer({
                   leftIcon={<Zap className="h-4 w-4" />}
                   onClick={handleEnrich}
                   loading={enriching}
-                  disabled={enriching}
+                disabled={enriching || savingContact || Boolean(enrichBlocker) || !plannedFields.length}
                 >
-                  {enriching ? "Enriching…" : "Enrich"}
+                  {enriching ? "Enriching…" : "Review enrichment"}
                 </Button>
                 <span className="text-xs text-muted">
                   {enrichmentSpend > 0 ? `${enrichmentSpend} unit(s) spent on this candidate` : "No spend yet"}
                 </span>
               </div>
+              <p className="text-xs text-muted">{enrichBlocker || (plannedFields.length ? `Will look for: ${plannedFields.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")}. Paid provider call; review before starting.` : "All supported fields are already present. Review their evidence before drafting.")}</p>
+              {enrichBlocker && !configuredProviders.length && eligibleProviders.length > 0 && <Link href="/settings" className="text-sm text-electric underline">Configure provider key</Link>}
 
               {(enriching || recentEnrichmentAttempts.length > 0) && (
                 <ul
@@ -1498,7 +1572,7 @@ export function CandidateDrawer({
 
         {/* Why this person — personalization evidence behind the latest
             drafted/queued outreach, if any (view-only; never blank). */}
-        {latestOutreachMessage && <WhyThisPerson candidate={c} message={latestOutreachMessage} />}
+        {latestOutreachMessage && <WhyThisPerson message={latestOutreachMessage} />}
 
         {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
         {!erasureTombstone && <TaniaPanel c={c} />}
@@ -1852,7 +1926,25 @@ export function CandidateDrawer({
             retention countdown, and the reveal ledger for this candidate.
             Display-only; does not itself reveal masked PII. */}
         <Section title="Consent passport" icon={<ShieldCheck className="h-4 w-4" />}>
-          <ConsentPassport candidate={c} />
+          <div id="candidate-consent" className="scroll-mt-4 space-y-3">
+            <ConsentPassport candidate={c} />
+            {supabaseEnabled && can(role, "compliance") && !candidateEnrichmentBlocker(c, campaign) && (
+              <form onSubmit={handleRecordBasis} className="space-y-3 rounded-2xl border border-line p-4">
+                <p className="text-sm text-muted">Record your explicit processing decision and its evidence. ARIA does not determine whether that basis is legally applicable.</p>
+                <fieldset disabled={savingContact || enriching} className="space-y-3">
+                  <Label htmlFor="candidate-contact-basis">Contact basis</Label>
+                  <select id="candidate-contact-basis" name="basis" required defaultValue="" className="w-full rounded-lg border border-line bg-surface p-2 text-sm">
+                    <option value="" disabled>Select your decision</option>
+                    <option value="consent">Consent</option>
+                    <option value="legitimate_interest">Legitimate interest</option>
+                  </select>
+                  <Label htmlFor="candidate-contact-reason">Basis evidence or reference</Label>
+                  <Input id="candidate-contact-reason" name="reason" required minLength={8} maxLength={500} placeholder="Record the evidence supporting your decision" />
+                  <Button type="submit" variant="outline" size="sm" loading={savingContact}>Record contact basis</Button>
+                </fieldset>
+              </form>
+            )}
+          </div>
         </Section>
       </div>
     </Drawer>

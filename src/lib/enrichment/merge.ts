@@ -12,14 +12,11 @@
 //   location  -> candidate.location
 //   company   -> candidate.currentCompany
 //   skills    -> candidate.techStack (union-merged, case-insensitive de-dupe)
-// `experience`, `education` and `languages` have NO dedicated slot on
-// `Candidate` today (see src/lib/types.ts) — only `enrichment.fieldProvenance`
-// + `enrichment.coverage` track that a provider supplied them, so the
-// waterfall correctly stops re-querying for a field it already has. The raw
-// string[] payload for those three fields is intentionally not persisted
-// here: inventing a side-channel (e.g. stuffing it into `candidate.notes`)
-// would surprise every other reader of that field for a gap that belongs to
-// a `Candidate` schema change, not this narrowly-scoped merge module.
+//   experience -> candidate.experience
+//   education  -> candidate.education
+//   languages  -> candidate.languages
+// These arrays are preserved as provider evidence. Free-text work history is
+// deliberately never converted into a fabricated numeric yearsExperience.
 
 import { ENRICHABLE_FIELDS } from "@/lib/types";
 import type { Candidate, CandidateEnrichment, EnrichableField, EnrichmentAttempt, FieldProvenance, SourcePlatform } from "@/lib/types";

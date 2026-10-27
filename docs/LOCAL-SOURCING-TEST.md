@@ -253,6 +253,10 @@ account acceptance is tracked in
 
 ## 9. Following product step
 
+The candidate journey now has a dedicated operator procedure:
+[Review a sourced candidate](CANDIDATE-REVIEW.md). Use it after the initial live
+profile import to check evidence, manual facts/contact, enrichment and drafting.
+
 After the live sourcing check, validate and polish the existing qualification
 and enrichment journey: take a discovered candidate through evidence-based fit
 review, explicit missing-data/contact discovery and a useful shortlist with a

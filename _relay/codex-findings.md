@@ -187,6 +187,14 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** Revoke it, issue a least-privilege replacement, update local and deployment secrets, and record only rotation metadata.
 **Status:** open
 
+## 2026-10-27 - Provider candidates cannot record the basis required by approval
+**Severity:** correctness
+**File:** src/components/candidates/consent-passport.tsx:43; src/components/candidates/candidate-drawer.tsx
+**Issue:** Approval requires an operator-recorded lawful basis for every profile, but provider-sourced candidates have no editor to record one. The passport instead infers legitimate interest from sourcing/public profile provenance, displaying a basis the actual gate rejects.
+**Repro/evidence:** Import a live candidate without a basis, open its passport, then attempt approval: the passport shows legitimate interest while approval blocks on the missing operator receipt. Only manual intake had a basis input.
+**Suggested fix:** Show only the same complete receipt as the approval gate; add explicit persisted operator selection/evidence for existing candidates, independently from recording profile facts.
+**Status:** fixed (working tree; code commit pending)
+
 ## 2026-10-27 - Provider quota references a retired record
 **Severity:** correctness
 **File:** supabase/migrations/0001_baseline.sql:282
@@ -1201,3 +1209,19 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The actor can return SUCCEEDED with statusMessage "free user run limit reached" and an empty dataset. The adapter discarded the message, causing a refused search to appear as an ordinary successful empty batch.
 **Repro/evidence:** One real provider-only smoke test with maxItems=3, Short mode, one page and API maxTotalChargeUsd=0.1 produced that exact refusal and zero profiles. No automatic paid restart occurred. The normalizer now emits a safe account_limit reason; both source paths fail that source with an actionable message, while independent sources can continue. Genuine empty results remain successful. Unit/API regressions pass; a read-only poll of the same real run confirmed the classification with actorStarts=0.
 **Status:** fixed (dfc9839f)
+
+## 2026-10-27 - Enrichment trusts browser profiles instead of workspace authority
+**Severity:** security
+**File:** src/app/api/source/enrich/route.ts:103
+**Issue:** An authenticated member can supply an arbitrary profile/LinkedIn URL to spend workspace provider credentials. Candidate ownership, campaign state and erasure/contact exclusions are not read from the saved workspace. The constructed candidate also defaults unknown experience to zero.
+**Repro/evidence:** POST with a made-up candidate ID and another profile URL reaches the orchestrator; only role and payload format are checked.
+**Suggested fix:** Resolve the candidate and reviewed campaign from the session's workspace, reject excluded state, and ignore browser profile/score claims.
+**Status:** fixed (working tree; code commit pending)
+
+## 2026-10-27 - Enrichment drops rich fields and reports unpersisted results as complete
+**Severity:** correctness
+**File:** src/app/api/source/enrich/route.ts:238; src/lib/store.ts:1162
+**Issue:** The orchestrator fills experience/education/languages but the response patch omits them and the store never rescores against the brief. The store reports success after only an optimistic local commit, including provider errors with zero filled fields.
+**Repro/evidence:** A fixture returning rich arrays never transfers them to the candidate; no jd is forwarded to the orchestrator; attempts:error returns ok:true and the drawer says No new data found.
+**Suggested fix:** Return all enriched fields with authoritative scoring, persist before success, and expose provider failure/configuration outcomes.
+**Status:** fixed (working tree; code commit pending)
