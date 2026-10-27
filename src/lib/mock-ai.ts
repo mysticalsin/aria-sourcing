@@ -156,6 +156,8 @@ VP People, Northwind Labs`;
 
 export const SAMPLE_INTAKE_JD = `Senior Backend Engineer (Remote, EU)
 
+Employment type: Full-time.
+
 About the role:
 - Design and operate Go services on Kubernetes handling high-throughput traffic.
 - Own PostgreSQL data models and gRPC service contracts across the platform.

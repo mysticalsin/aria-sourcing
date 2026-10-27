@@ -25,6 +25,8 @@ do $$ begin
   end if;
 end $$;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
+select set_config('request.jwt.claim.role','service_role',true);
+select set_config('request.jwt.claim.sub','e1111111-1111-4111-8111-111111111111',true);
 set local role service_role;
 do $$
 declare result jsonb; version timestamptz; before_state jsonb; begin

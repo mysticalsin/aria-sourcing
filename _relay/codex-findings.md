@@ -1163,3 +1163,16 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Refresh after actor launch removes runId/datasetId from the UI while the paid actor continues; Run Aria uses only the sourcing-agent path.
 **Suggested fix:** A unified durable campaign run with source/limit review and resumable steps.
 **Status:** fixed (56d165bf)
+## 2026-10-27 - Intake demo sample cannot pass its own readiness gate
+**Severity:** correctness
+**File:** src/lib/mock-ai.ts:157; scripts/accept-local-demo.mjs:109
+**Issue:** The labelled backend sample omits employment type. Campaign creation correctly refuses this incomplete brief, so the connected demo acceptance times out after Create campaign.
+**Repro/evidence:** CI 40496031702 passes direct Auth login, browser login and workspace readiness before the stack points to waitForURL after Create campaign. evaluateNeedReadiness reports the missing employment type. Added explicit Full-time text to the sample JD and a parser/readiness regression. This corrects the earlier attribution of the timeout to sign-in.
+**Status:** open
+
+## 2026-10-27 - SQL fixture needs both Supabase JWT settings
+**Severity:** test-gap
+**File:** tests/db/unified-sourcing.sql:35
+**Issue:** The new direct-session scenario set request.jwt.claims but omitted request.jwt.claim.role; the image's auth.role() therefore correctly refused a service-only reservation.
+**Repro/evidence:** Database security job 122161278880 returns service-only in the new scenario. Existing SQL fixtures set both settings. Added the separate role/sub settings without changing production authorization or removing any assertion.
+**Status:** open

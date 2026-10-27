@@ -12,8 +12,8 @@ status: unified-sourcing-prepared-provider-acceptance-pending
 
 - Branch mbe-branch. Security fix 8c3376b6 and unified sourcing 56d165bf are
   committed and pushed. Final relay documentation follows them. The final tip CI
-  must still prove the new SQL scenario and resolve the previous Docker login
-  acceptance failure; do not label those receipts successful yet.
+  must still prove the new SQL scenario and Docker campaign creation/restart
+  acceptance; do not label those receipts successful yet.
 - New primary connected campaign flow: Run sourcing -> review LinkedIn/Apify and
   GitHub queries and profile caps -> persistent source steps -> saved shortlist.
   Dashboard, Candidates and Fleet link to this same review. Intake and connected
@@ -27,9 +27,10 @@ status: unified-sourcing-prepared-provider-acceptance-pending
 - No paid source, GPT/Claude, mailbox or calendar acceptance was performed. The
   browser smoke used a local fixture backend; it is not real provider/DB proof.
 - Previous f97f203d CI: Quality, audit, DB security, secret scan and CodeQL passed;
-  Local Docker demo failed waiting for browser sign-in navigation. The next CI
-  run includes safe auth status/path/cookie-metadata diagnostics and direct API
-  login before the browser. See local-demo-runtime issue 06.
+  The later exact stack (CI 40496031702) proves the Docker failure is after
+  Create campaign, not sign-in: login and Settings readiness passed. The sample
+  JD omitted employment type, so readiness correctly refused it. Explicit
+  Full-time sample text and a readiness regression are added. See issue 06.
 
 ## Done this shift
 
@@ -51,7 +52,10 @@ status: unified-sourcing-prepared-provider-acceptance-pending
    migration, retaining an independent 100/day workspace reservation ceiling.
 7. Removed fabricated profile evidence: missing Apify headline stays unknown;
    GitHub query-language filters no longer become observed person skills.
-8. Added runtime/API fixture suites and actual SQL scenarios to the existing
+8. Corrected the bundled intake sample to explicitly declare Full-time, and the
+   direct SQL fixture to set both legacy and JSON JWT settings expected by the
+   Supabase image. Added regressions and retained all readiness/authority gates.
+9. Added runtime/API fixture suites and actual SQL scenarios to the existing
    database security job. Updated public context and changed-workflow contracts.
    Findings and feature/acceptance tracking are committed with the implementation.
 
@@ -59,8 +63,10 @@ status: unified-sourcing-prepared-provider-acceptance-pending
 
 - Docker/WSL is absent and MUST NOT be installed on this Windows machine. Owner
   tests Docker on another machine. No new local Docker receipt is claimed.
-- The previous Docker browser auth acceptance failed at waitForURL (30 seconds).
-  Inspect the next CI's safe diagnostics rather than guessing or weakening gates.
+- CI 40496031702 failed at the post-Create campaign waitForURL. The complete
+  sample fix is awaiting a fresh acceptance receipt; no readiness gate was
+  relaxed. The new SQL fixture also needed both JWT claims settings; the
+  fixture is corrected without changing service-only production guards.
 - Real Apify acceptance requires the owner's configured account and an explicitly
   reviewed small profile cap. No provider key or paid call was used here.
 - Azure managed PostgreSQL remains a separate design gap (true superuser owner
