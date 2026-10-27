@@ -1,106 +1,86 @@
 ---
 project: MSourcing / ARIA
-shift: 439
+shift: 440
 agent: codex
 updated: 2026-10-27
-status: local-provider-implemented-tested-push-and-live-acceptance-blocked
+status: demo-readiness-assessed-hosted-llm-preferred
 ---
 
-# Handoff - Shift 439
+# Handoff - Shift 440
 
 ## Current state
 
-- Branch `mbe-branch`; code tip `52136c69`. This shift has three code commits
-  plus the relay/issue snapshot commit. No unrelated initial changes existed.
-- Remote `mbe-branch` remains `9c70015b137a5ef4626d69380020a46cb6a367db`
-  (verified with `git ls-remote`). Nothing from this shift was pushed.
-- Required local gate passed: `npm run typecheck`, `npm run typecheck:tests`,
-  `npm test`. Full lint passed; final client-error changes also passed targeted
-  ESLint, TypeScript checks and sourcing-agent-contract tests.
-- Edge headless smoke: `/exec`, `/candidates`, `/calendar`, `/settings` return
-  200 with no page errors. Local provider URL/model survive a browser reload.
-  Calendar shows its fixed demo date. Report still shows 30.9 h saved.
-- Demo server used port 3100 and has been stopped. No database or live candidate
-  data was changed. `_agent_state/` is untouched.
+- User confirmed the push. `git ls-remote origin refs/heads/mbe-branch` verified
+  remote tip `44544b4ede5868564b5f5629ff8bc4f7d7fc77da` during this shift.
+- Worktree was clean at shift start. This shift made no application changes and
+  did not rerun tests; previous implementation checks are in shift 439 archive.
+- CI on 44544b4e was in progress when checked:
+  https://github.com/mysticalsin/aria-sourcing/actions/runs/40478448840
+  CodeQL on that tip completed successfully (run 40478448814).
+- Existing sourcing code supports GitHub and site-scoped web discovery for
+  LinkedIn, Stack Overflow, Dribbble and Behance through search_candidates.
+- Apify LinkedIn structured search is implemented through separate start/status
+  routes and UI actions. The agent tool does not invoke the Apify adapter.
+- Web discovery maps snippets/URLs, leaves email blank and has less complete
+  profile evidence. Enrichment is a separate implemented path.
+- Real sourcing requires the authenticated Supabase workspace. The synthetic
+  browser demo uses Talent Pool and deliberately does not persist real profiles.
 
 ## Done this shift
 
-1. `a0d0c179` - Windows/Git Bash test portability: LF SQL/shell checkout policy,
-   curl config paths, platform PATH delimiter, explicit test-certificate trust,
-   source-text and repository-path normalization. No schema content changed.
-2. `51a0e7a5` - issue 08: bookings use the fixed seed date at 14:00 UTC; demo
-   calendar uses the same date; absolute activity dates no longer say "ago".
-   Regression tests cover elapsed interview timing and time formatting.
-3. `52136c69` - issue 01 implementation: Local / OpenAI-compatible provider,
-   admin URL/model fields, optional Custom vault key, server-side URL validation,
-   model tags, drafting/intake/classification/chat and campaign tool-loop wiring.
-   The neutral validator retains its legacy runtime alias. Redirects and
-   metadata/credential/query/fragment URLs remain blocked.
-4. Empty, invented-ID, or fully rejected model drafts cannot turn found eligible
-   profiles into an empty success. The client shows safe recovery guidance.
-   Real empty searches and deterministic real sourcing remain available.
-5. Added actual loopback HTTP tool-roundtrip and route/authority regressions;
-   documented setup and acceptance in DOCKER.md. Findings have commit references
-   in `_relay/codex-findings.md`; issues 01, 06 and 08 contain current evidence.
-6. Checked yesterday's public CI at 9c70015b: Quality passed; Dependency audit,
-   Secret scan, Database security and their aggregate Release gate failed.
-   See `.scratch/demo-cleanup/issues/06-ci-after-cleanup.md` for the exact run.
+- Read current sourcing, campaign routing, Apify start, candidate mapping,
+  dispatch and enrichment code to assess the working-demo gaps.
+- Verified LinkedIn's primary documentation: Recruiter System Connect requires
+  approved partner access; it is not an immediate generic search API option.
+- Verified the existing HarvestAPI Apify actor is still published and documents
+  structured profile search and separate, non-guaranteed email discovery.
+- Prepared a proposed delivery order: working local stack/setup; unified
+  LinkedIn-first campaign sourcing with GitHub and web backup; candidate
+  evidence/enrichment/deduplication; contact/reply/calendar acceptance; guided
+  campaign UX and repeatable end-to-end acceptance. This is advice, not a claim
+  those additional changes have been implemented or approved as a detailed spec.
 
 ## Blockers
 
-- `git -c credential.interactive=never push origin mbe-branch` failed with:
-  `fatal: Cannot prompt because user interactivity has been disabled.`
-  `fatal: unable to get password from user`.
-  GitHub credentials are unavailable to this noninteractive Windows session.
-  The previous account permission denial was not re-established this shift.
-- No Docker executable found and no Ollama service at `127.0.0.1:11434`.
-  Issue 01 stays open until a real campaign completes against an installed
-  Ollama model and the Docker database. Protocol/authority tests are not that
-  acceptance test. Database suites were not rerun here.
-- Existing CI failures are on the old remote tip, not these new commits:
-  Dependency audit / Audit high and critical advisories;
-  Secret scan / Scan full history including the current release commit;
-  Database security / Verify candidate erasure authority.
-  Public annotations expose exit code 1 only; underlying causes are not yet
-  diagnosed. Do not label the release gate green.
+- Actual provider, mailbox and calendar acceptance has not been demonstrated in
+  this session. Docker/Ollama availability was not rechecked; see shift 439.
+- New CI is in progress, so neither the old failed checks nor their resolution
+  may be inferred for the new tip. Inspect run 40478448840 on completion.
+- Prior noninteractive git authentication failed; user performed the push. Do
+  not infer that this session's write credentials are now configured.
 
 ## Next steps
 
-1. Configure repository credentials for this session, then run
-   `git push origin mbe-branch`; verify the remote SHA and all required CI jobs.
-   Do not force-push or rewrite shared history.
-2. Triage issue 06 using failed job logs. Reproduce the candidate-erasure DB
-   authority suite on disposable Postgres and audit dependencies; keep secret
-   scan output redacted and preserve all required gates.
-3. Follow DOCKER.md to start Supabase/app and host Ollama. Configure the local
-   provider and task-default Saved Models, review a campaign, run its agent,
-   verify cloud mode, real search receipts and usable drafts, then close 01.
-4. For an existing browser demo snapshot, use Settings -> Reset synthetic demo
-   to reload corrected seed dates. Saved snapshots are deliberately preserved.
+1. Check CI run 40478448840 to completion and triage issue 06 from current logs.
+2. Implement the agreed next demo slice after user steering: connect Apify
+   LinkedIn to the main campaign run and make source selection, limits, progress,
+   provider errors and result provenance visible in one guided flow.
+3. Prove real discovery on LinkedIn plus one other source from a reviewed brief,
+   with persisted candidates, evidence, dedupe and honest missing contact fields.
+4. Prove approval -> one test email -> real reply sync -> calendar booking ->
+   executive report, including refresh/restart/retry without duplicates.
+5. Configure one hosted LLM provider when requested; the owner defers that setup
+   and favors a GPT or Claude API key for simplicity in the demo.
 
 ## Decisions made (don't relitigate)
 
-- Target is a working local Docker product now; internal Azure/Terraform later.
-  No Fly/Vercel work. Repo docs remain English.
-- Clean baseline schema remains 0001 + 0002; no migration edited semantically.
-- `_relay/` and `_agent_state/` stay. One in-process sourcing agent; no external
-  agent framework. Decision reporting remains in `/exec`, with shared ROI inputs.
-- Existing real-send metrics remain strict. Simulated sends are included only
-  by the demo decision report.
+- Demo favors one hosted GPT/Claude API provider; local LLM work is deferred.
+  The implemented local provider remains available, but its real-model
+  acceptance is not a blocker for the chosen hosted-provider demo path.
+- LinkedIn is the first sourcing priority; other sites remain in scope.
+- Target stays local Docker/Supabase now, Azure/Terraform later. No Fly/Vercel.
+- Preserve `_relay/`, `_agent_state/`, the baseline schema and human approval
+  for every outreach send. Repo documentation remains English.
+- Existing features must be connected and verified; do not rebuild working
+  scoring, dedupe, enrichment, OAuth or calendar components without evidence.
 
 ## Watch out
 
-- Task-default Saved Models take priority over the default provider. Configure
-  them or disable hosted providers when all inference must stay local. Search
-  still calls GitHub/public sources; local inference does not mean offline.
-- Direct Azure api-key/api-version endpoints need a dedicated adapter; this
-  provider expects the OpenAI-compatible chat/completions and Bearer protocol.
-- Local URL allow-list: `PROVIDER_ALLOWED_HOSTS` adds deployment-owned exact DNS
-  hosts; legacy HERMES_ALLOWED_HOSTS remains supported. No hosted environment
-  key is forwarded to a custom endpoint.
-- Standard Node/npm were absent from PATH. Temporary verified Node 22.23.4 and
-  jq live under `$env:TEMP/aria-node-runtime/node-v22.23.4-win-x64`. Tests also
-  need `C:/Program Files/Git/usr/bin` and `C:/Program Files/Git/bin` for OpenSSL
-  and Bash. Normal `npm ci` installed the lockfile without changing it.
-- Ignored `tmp/aria-*.mjs` contain the reproducible browser/diagnostic scripts;
-  test logs are under `$env:TEMP/aria-*.log`. No secrets are stored in the relay.
+- A GPT/Claude key configures inference; actual candidate discovery still needs
+  its own providers/credentials. LinkedIn web hits are not full profiles.
+- Apify is a third-party provider, not LinkedIn's official partner API.
+- Current LinkedIn messaging is assisted/manual; retain accurate status rather
+  than equating a prepared message with an actual send.
+- Settings task-default Saved Models override the default provider.
+- Existing demo snapshots retain their old saved dates until Reset synthetic demo.
+- Do not present this planning review as new live-provider acceptance evidence.
