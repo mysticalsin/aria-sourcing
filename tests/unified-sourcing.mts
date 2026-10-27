@@ -130,6 +130,33 @@ test("missing LinkedIn key remains explicit and does not swallow GitHub results"
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
   assert.equal(f.job().status, "partial"); assert.equal(f.ws().state.candidates.length, 1);
 });
+test("a provider success blocked by account allowance fails LinkedIn and preserves the other source", async () => {
+  const f = fixture(); await advanceUnifiedRun(f.job(), f.repo, f.providers);
+  f.providers.poll = async () => ({ ok: true, status: 200, data: { status: "SUCCEEDED", blockedReason: "account_limit" } });
+  let itemsFetched = false;
+  f.providers.items = async () => { itemsFetched = true; throw new Error("No dataset should be imported for a refusal."); };
+  await advanceUnifiedRun(f.job(), f.repo, f.providers);
+  assert.equal(f.job().steps[0].status, "failed");
+  assert.match(f.job().steps[0].error!, /account allowance/);
+  assert.equal(itemsFetched, false); assert.equal(f.ws().state.candidates.length, 0);
+  await advanceUnifiedRun(f.job(), f.repo, f.providers);
+  assert.equal(f.job().status, "partial"); assert.equal(f.counts().starts, 1);
+});
+test("the real provider adapter recognizes the explicit free-run refusal without rejecting normal empty searches", async () => {
+  const { getRunStatus } = await import("../src/lib/sourcing/apify");
+  const { clearProviderProbe } = await import("../src/lib/sourcing/provider-egress");
+  const realFetch = globalThis.fetch;
+  let statusMessage = "free user run limit reached";
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ data: { status: "SUCCEEDED", statusMessage } }), { status: 200 });
+    const blocked = await getRunStatus(clearProviderProbe("Apify"), "fixture-key", "fixture-run");
+    assert.ok(blocked.ok); assert.equal(blocked.data.blockedReason, "account_limit");
+    assert.doesNotMatch(JSON.stringify(blocked), /statusMessage/);
+    statusMessage = "Finished with no matching profiles";
+    const empty = await getRunStatus(clearProviderProbe("Apify"), "fixture-key", "fixture-run");
+    assert.ok(empty.ok); assert.deepEqual(empty.data, { status: "SUCCEEDED" });
+  } finally { globalThis.fetch = realFetch; }
+});
 test("transient status failure keeps the exact binding and resumes without paid restart", async () => {
   const f = fixture(); await advanceUnifiedRun(f.job(), f.repo, f.providers);
   const poll = f.providers.poll;

@@ -6,6 +6,7 @@ import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { getRunStatus, fetchDatasetItems, resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
+import { APIFY_ACCOUNT_LIMIT_ERROR } from "@/lib/sourcing/apify-status";
 
 export const runtime = "nodejs";
 
@@ -79,14 +80,17 @@ export async function GET(req: NextRequest) {
   }
 
   const { status } = statusRes.data;
-  if (TERMINAL_FAILED.has(status)) {
+  const accountLimit = statusRes.data.blockedReason === "account_limit";
+  if (TERMINAL_FAILED.has(status) || accountLimit) {
     await svc?.rpc("settle_provider_run_by_external", {
       p_workspace_id: workspaceId,
       p_provider: "Apify",
       p_external_run_id: runId,
       p_succeeded: false,
     });
-    return NextResponse.json({ ok: false, status: "failed", error: `Apify run ${status.toLowerCase()}.` });
+    return NextResponse.json({ ok: false, status: "failed",
+      ...(accountLimit ? { code: "APIFY_ACCOUNT_LIMIT" } : {}),
+      error: accountLimit ? APIFY_ACCOUNT_LIMIT_ERROR : `Apify run ${status.toLowerCase()}.` });
   }
   if (status !== "SUCCEEDED") {
     return NextResponse.json({ ok: true, status: "processing" });

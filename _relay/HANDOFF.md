@@ -10,6 +10,18 @@ status: unified-sourcing-verified-paid-provider-smoke-pending
 
 ## Current state
 
+- Next-shift milestone: owner supplied Apify credentials; they are encrypted with
+  Windows DPAPI under LocalAppData/ARIA/credentials, outside the repository. No
+  token/account identifier is recorded in Git. Authentication/account matching
+  and input-schema checks passed. Do not print or commit the protected contents.
+- One provider-only real smoke test (3 Short profiles, one page, API USD0.1 cap)
+  returned SUCCEEDED but "free user run limit reached", itemCount=0. No second
+  actor was launched. The current working-tree fix surfaces account_limit as a
+  failed source instead of a successful empty search. See unified-sourcing issue 02.
+- ARIA runs locally on the owner's other machine, not Azure. No reachable URL or
+  connected backend exists in this Windows session; the key has not been saved
+  into that instance's application vault. Keep the no-Docker-install decision.
+
 - Branch mbe-branch. Runtime/test code tip 43b9db34 is committed and pushed.
   This wrap-up changes only relay/spec/issue documentation after that code tip.
 - CI 40499885119 on 43b9db34 completed SUCCESS: Quality (types, tests, lint,

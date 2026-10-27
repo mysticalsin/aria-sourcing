@@ -71,6 +71,13 @@ Transient polling failures retain the same provider binding. A source failure
 does not discard the other source's successful results. The legacy status route
 also verifies its workspace-owned run/dataset binding before provider access.
 
+Provider-only acceptance observed an actor returning `SUCCEEDED` with status
+message `free user run limit reached` and an empty dataset. The adapter classifies
+this explicit refusal as `account_limit`: the affected source fails with account
+allowance guidance, rather than reporting an ordinary empty successful search.
+Other selected sources can continue. Unrecognized provider messages stay private;
+genuine successful searches with no matching profiles remain successful.
+
 Candidates and source completion commit in one database transaction, with a
 workspace version check and dedupe against the latest state. Reruns normalize
 LinkedIn/GitHub URL variants and nonblank email; names alone are not identity

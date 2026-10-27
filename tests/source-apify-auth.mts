@@ -2,6 +2,7 @@ import { mock } from "node:test";
 import { NextRequest } from "next/server";
 import type { ApifyResult, ApifyProfile, ApifyProfileSearchInput } from "../src/lib/sourcing/apify.ts";
 import { buildSeedState } from "../src/lib/seed";
+import type { ApifyRunStatus } from "../src/lib/sourcing/apify-status";
 
 let pass = 0;
 let fail = 0;
@@ -36,7 +37,7 @@ let startResult: ApifyResult<{ runId: string; datasetId: string; status: string 
 let startCalls = 0;
 let lastStartInput: ApifyProfileSearchInput | null = null;
 
-let statusResult: ApifyResult<{ status: string }> = { ok: true, status: 200, data: { status: "SUCCEEDED" } };
+let statusResult: ApifyResult<ApifyRunStatus> = { ok: true, status: 200, data: { status: "SUCCEEDED" } };
 let statusCalls = 0;
 
 const sampleProfile: ApifyProfile = {
@@ -329,6 +330,14 @@ const statusReq = (query: string) => new NextRequest(`http://localhost/api/sourc
   ownsRun = true;
   const mismatched = await statusRoute.GET(statusReq("?runId=run_test_1&datasetId=another-dataset"));
   ok("status: client cannot substitute another dataset", mismatched.status === 404 && statusCalls === previous);
+}
+{
+  statusResult = { ok: true, status: 200, data: { status: "SUCCEEDED", blockedReason: "account_limit" } };
+  itemsCalls = 0; serviceRpcCalls = [];
+  const blocked = await statusRoute.GET(statusReq("?runId=run_test_1&datasetId=dataset_test_1"));
+  const body = await blocked.json();
+  ok("status: provider account limit is an actionable failure, not an empty search", body.ok === false && body.code === "APIFY_ACCOUNT_LIMIT" && /allowance/.test(body.error));
+  ok("status: provider-limited success is settled as failure before any dataset fetch", itemsCalls === 0 && serviceRpcCalls.some((call) => call.name === "settle_provider_run_by_external" && call.args.p_succeeded === false));
 }
 console.log(`RESULT source-apify-auth: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

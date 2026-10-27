@@ -13,6 +13,7 @@ import type { ProviderClearance } from "./provider-transport";
 import type { ApifyProfile, ApifyProfileSearchInput, ApifyResult } from "./apify";
 import type { GithubUser } from "./github-identity";
 import { campaignSourcingBasis, jobStatus, type CampaignSourcingJob, type SourceStep } from "./unified-contract";
+import { APIFY_ACCOUNT_LIMIT_ERROR, type ApifyRunStatus } from "./apify-status";
 
 export interface SourcingWorkspace { state: HermesState; updatedAt: string }
 export interface UnifiedRunRepository {
@@ -26,7 +27,7 @@ export interface UnifiedRunRepository {
 export interface UnifiedProviders {
   apifyKey(): Promise<string | null>;
   start(clearance: ProviderClearance, key: string, input: ApifyProfileSearchInput): Promise<ApifyResult<{runId: string; datasetId: string; status: string}>>;
-  poll(clearance: ProviderClearance, key: string, runId: string): Promise<ApifyResult<{status: string}>>;
+  poll(clearance: ProviderClearance, key: string, runId: string): Promise<ApifyResult<ApifyRunStatus>>;
   items(clearance: ProviderClearance, key: string, datasetId: string, limit: number): Promise<ApifyResult<ApifyProfile[]>>;
   github(clearance: ProviderClearance, query: string, count: number, signal: AbortSignal): Promise<GithubUser[]>;
 }
@@ -156,6 +157,10 @@ export async function advanceUnifiedRun(job: CampaignSourcingJob, repo: UnifiedR
     await finish(); return;
   }
   delete step.error;
+  if (polled.data.blockedReason === "account_limit") {
+    step.status = "failed"; step.error = APIFY_ACCOUNT_LIMIT_ERROR;
+    await finish(); if (step.providerRunId) await repo.settle(step.providerRunId, false); return;
+  }
   if (["FAILED", "TIMED-OUT", "ABORTED"].includes(polled.data.status)) {
     step.status = "failed"; step.error = `Apify run ${polled.data.status.toLowerCase()}. Check its run log.`;
     await finish(); if (step.providerRunId) await repo.settle(step.providerRunId, false); return;

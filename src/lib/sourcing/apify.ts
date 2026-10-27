@@ -21,6 +21,7 @@ import type { getServerSupabase } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
+import { normalizeApifyRunStatus, type ApifyRunStatus } from "@/lib/sourcing/apify-status";
 
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
@@ -377,7 +378,7 @@ export async function startProfileSearchRun(
 }
 
 interface RawStatusEnvelope {
-  data?: { status?: string };
+  data?: { status?: string; statusMessage?: string };
 }
 
 /** Poll the async run's status. Terminal: SUCCEEDED / FAILED / TIMED-OUT / ABORTED. */
@@ -385,12 +386,12 @@ export async function getRunStatus(
   clearance: ProviderClearance,
   token: string,
   runId: string,
-): Promise<ApifyResult<{ status: string }>> {
+): Promise<ApifyResult<ApifyRunStatus>> {
   const res = await apifyRequest<RawStatusEnvelope>(clearance, `/actor-runs/${encodeURIComponent(runId)}`, token, {
     timeoutMs: 15_000,
   });
   if (!res.ok) return res;
-  return { ok: true, status: res.status, data: { status: res.data.data?.status ?? "READY" } };
+  return { ok: true, status: res.status, data: normalizeApifyRunStatus(res.data?.data) };
 }
 
 /** Fetch a completed run's dataset items, normalized into ApifyProfile[]. */
