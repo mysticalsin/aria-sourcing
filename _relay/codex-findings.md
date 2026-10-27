@@ -192,14 +192,14 @@ Historical and current findings follow. The current consolidated audit is
 **File:** supabase/migrations/0001_baseline.sql:282
 **Issue:** begin_provider_run reads controls.max_sourcing_runs_per_day although controls is not declared after loop-control retirement. A real provider launch raises an SQL error before starting.
 **Repro/evidence:** Function body contains no controls declaration or assignment. Added an executable provider-reservation regression in tests/db/unified-sourcing.sql and a forward migration with an independent 100/day cap; baseline stays untouched.
-**Status:** open
+**Status:** fixed (56d165bf)
 
 ## 2026-10-27 - Query filters were treated as profile evidence
 **Severity:** correctness
 **File:** src/lib/sourcing/github.ts:127; src/lib/store/sourcing-helpers.ts:137
 **Issue:** GitHub language qualifiers populated topLanguage without observing the person's language, and a missing Apify headline fell back to the requested role title. Both could present requested criteria as candidate facts.
 **Repro/evidence:** A language:Go search whose user bio has no language still returned topLanguage=Go; an empty LinkedIn headline returned the campaign title. Fixture regression now keeps both unknown.
-**Status:** open
+**Status:** fixed (56d165bf)
 
 ## 2026-07-09 — Aria runtime proxy shares global memory across tenants
 **Severity:** security
@@ -1162,4 +1162,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The only LinkedIn actor launch stores its polling identity in React state; the main campaign run cannot select it, and closing/navigation loses recovery. Campaign creation also starts sourcing before a source/limit review.
 **Repro/evidence:** Refresh after actor launch removes runId/datasetId from the UI while the paid actor continues; Run Aria uses only the sourcing-agent path.
 **Suggested fix:** A unified durable campaign run with source/limit review and resumable steps.
-**Status:** open
+**Status:** fixed (56d165bf)

@@ -49,3 +49,9 @@ Execute it through the Docker CI/other machine; do not install Docker/WSL here.
 Real acceptance: connect Apify in Settings, review a low-limit LinkedIn + GitHub
 search, refresh during processing, verify source links and counters, rerun and
 verify identity dedupe. Hosted GPT/Claude configuration remains deferred.
+
+Local final gate passed: npm run typecheck, npm run typecheck:tests, npm test
+(including pre/post lifecycle), npm run lint (zero errors; two existing navigation
+warnings), production build and final browser fixture smoke. Staged redacted
+Gitleaks scan found no leaks. Code pushed as 8c3376b6 + 56d165bf. CI database and
+Docker/provider receipts are separate from these local results.
