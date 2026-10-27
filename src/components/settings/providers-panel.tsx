@@ -52,7 +52,7 @@ function ProviderRow({
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-ink">{provider.label}</span>
-            <Badge tone="neutral" size="sm">{provider.kind}</Badge>
+            <Badge tone="neutral" size="sm">{provider.kind === "Local/Custom" ? "Local / OpenAI-compatible" : provider.kind}</Badge>
             {provider.isDefault && (
               <Badge tone="electric" size="sm">
                 <Star className="h-2.5 w-2.5" /> default
@@ -62,7 +62,12 @@ function ProviderRow({
 
           {isAdmin && (
             <div className="grid gap-2 sm:grid-cols-2">
-              <Field label="Base URL (optional)" htmlFor={`baseUrl-${provider.id}`} hint="Leave blank to use the provider's default endpoint.">
+              {provider.kind === "Local/Custom" && (
+                <Field label="Model name" htmlFor={`model-${provider.id}`} hint="Exact installed model name, e.g. qwen3:8b. Saved Models can override this per task.">
+                  <Input id={`model-${provider.id}`} value={provider.modelName ?? ""} onChange={(e) => onUpdate({ modelName: e.target.value })} placeholder="qwen3:8b" />
+                </Field>
+              )}
+              <Field label={provider.kind === "Local/Custom" ? "Base URL" : "Base URL (optional)"} htmlFor={`baseUrl-${provider.id}`} hint={provider.kind === "Local/Custom" ? "Required. Include /v1; use localhost or host.docker.internal for Ollama." : "Leave blank to use the provider's default endpoint."}>
                 <Input
                   id={`baseUrl-${provider.id}`}
                   value={provider.baseUrl ?? ""}
@@ -70,7 +75,7 @@ function ProviderRow({
                   placeholder="https://api.example.com/v1"
                 />
               </Field>
-              <Field label="API key" htmlFor={`apiKey-${provider.id}`} hint="Select a saved key for this provider.">
+              <Field label="API key" htmlFor={`apiKey-${provider.id}`} hint={provider.kind === "Local/Custom" ? "Optional. For authenticated gateways, select a saved Custom key." : "Select a saved key for this provider."}>
                 <Select
                   id={`apiKey-${provider.id}`}
                   value={provider.apiKeyId ?? ""}
@@ -176,7 +181,7 @@ export function ProvidersPanel() {
                     id="new-prov-kind"
                     value={newKind}
                     onChange={(e) => setNewKind(e.target.value as LlmProviderKind)}
-                    options={LLM_PROVIDERS.map((k) => ({ value: k, label: k }))}
+                    options={LLM_PROVIDERS.map((k) => ({ value: k, label: k === "Local/Custom" ? "Local / OpenAI-compatible" : k }))}
                   />
                 </Field>
                 <Field label="Label (optional)" htmlFor="new-prov-label" className="min-w-[200px]">

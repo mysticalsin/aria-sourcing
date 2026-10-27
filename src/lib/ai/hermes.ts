@@ -22,6 +22,7 @@ export interface HermesGenerateInput {
   apiKeyId?: string;
   /** Model name/slug to request. Absent → route uses its own default. */
   model?: string;
+  baseUrl?: string;
 }
 
 export interface HermesResult {

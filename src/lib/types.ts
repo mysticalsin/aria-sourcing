@@ -1193,6 +1193,8 @@ export interface LlmProvider {
   label: string;
   /** Override the provider's default base URL (e.g. proxy or local endpoint). */
   baseUrl?: string;
+  /** Explicit model name for a local/OpenAI-compatible endpoint. */
+  modelName?: string;
   /** References an ApiKey.id — the raw secret never lives in provider state. */
   apiKeyId?: string;
   enabled: boolean;

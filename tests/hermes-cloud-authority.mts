@@ -239,7 +239,7 @@ globalThis.fetch = (async () => {
 try {
   const hermesRoute = await import("../src/app/api/hermes/chat/route");
   const sourcingRoute = await import("../src/app/api/sourcing-agent/route");
-  const hermesRequest = (provider = "openai") =>
+  const hermesRequest = (provider = "openai", overrides: Record<string, unknown> = {}) =>
     new NextRequest("http://localhost/api/hermes/chat", {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
@@ -249,6 +249,7 @@ try {
         provider,
         model: provider === "hermes" ? "hermes" : "gpt-4o-mini",
         ...(provider === "hermes" ? {} : { apiKeyId: "11111111-1111-4111-8111-111111111111" }),
+        ...overrides,
       }),
     });
   const campaign = {
@@ -308,6 +309,18 @@ try {
     "admin cloud chat binds the vault key before one provider call",
     resolverCalls.some((call) => call.provider === "OpenAI") && upstreamCalls === 1,
   );
+
+  resetCalls();
+  const localChat = await hermesRoute.POST(hermesRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
+  ok("admin can draft with a keyless local model tag", localChat.status === 200 && (await localChat.json()).ok === true);
+  ok("keyless local drafting does not consult the vault", resolverCalls.length === 0 && upstreamCalls === 1);
+  resetCalls();
+  const unsafeLocal = await hermesRoute.POST(hermesRequest("local", { apiKeyId: undefined, baseUrl: "http://169.254.169.254/v1", model: "qwen3:8b" }));
+  ok("local drafting blocks metadata URL before egress", unsafeLocal.status === 400 && upstreamCalls === 0 && resolverCalls.length === 0);
+  role = "member";
+  const memberLocal = await hermesRoute.POST(hermesRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
+  ok("keyless local drafting retains admin authority", memberLocal.status === 403 && upstreamCalls === 0);
+  role = "admin";
 
   vaultProvider = "Anthropic";
   resetCalls();

@@ -24,3 +24,28 @@ Azure OpenAI for the planned internal Azure deployment.
 ## Done when
 A campaign "Run agent" completes in `cloud` mode against a local Ollama model,
 with tests for URL validation and provider resolution.
+
+## Implementation (2026-10-27)
+
+Local/Custom now displays as Local / OpenAI-compatible and resolves to the local
+slug. Admins can set its base URL and exact model name; a saved Custom key is
+optional. Saved Models still override provider-level models per task.
+
+The server validates the URL with isAllowedProviderUrl (legacy runtime alias
+retained). Metadata URLs, URL credentials/query/fragment and redirects are
+rejected. PROVIDER_ALLOWED_HOSTS allows deployment-owned exact DNS names. Chat,
+AI drafting/intake/classification and authoritative campaign sourcing pass the
+local endpoint through. Model tags such as qwen3:8b are supported. Empty drafts
+are an explicit error if the real search found profiles; genuinely empty search
+results remain honest successful empty results. Deterministic sourcing remains
+available with the provider disabled.
+
+Tests: ai-provider, mcp-tool-loop (actual loopback HTTP tool roundtrip),
+hermes-cloud-authority and sourcing-agent-route-authority. DOCKER.md documents
+setup, task-default selection, privacy limits, and the campaign acceptance steps.
+Direct Azure api-key/api-version endpoints need a later dedicated adapter;
+OpenAI-compatible gateways can use this provider.
+
+Acceptance is still pending: this Windows session has no Docker executable and
+no Ollama service/model at localhost:11434. Do not close this issue until a real
+campaign completes against an installed local model with the Docker database.

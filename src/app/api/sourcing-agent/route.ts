@@ -10,6 +10,7 @@ import {
   validateCandidateBoundText,
 } from "@/lib/agent-disclosure-policy";
 import { DEFAULT_MODEL, VAULT_PROVIDER, resolveAiProvider, type AiProviderSlug } from "@/lib/ai/provider";
+import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
@@ -297,7 +298,14 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (cloudConfig) {
     cloudSlug = cloudConfig.provider as AiProviderSlug;
     toolModel = cloudConfig.model || DEFAULT_MODEL[cloudSlug];
-    if (!cloudConfig.apiKeyId) {
+    if (cloudSlug === "local") {
+      try { resolveProviderEndpoint(cloudSlug, cloudConfig.baseUrl); }
+      catch { return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "Configure an allowed local provider base URL."); }
+      if (!toolModel || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(toolModel)) {
+        return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "Configure the exact local model name.");
+      }
+    }
+    if (!cloudConfig.apiKeyId && cloudSlug !== "local") {
       return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "The selected provider has no workspace key.");
     }
   }
@@ -415,7 +423,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     const beforeSecrets = await failIfAuthorityChanged();
     if (beforeSecrets) return await beforeSecrets;
     let vaultKey: string | null = null;
-    if (cloudConfig && cloudSlug) {
+    if (cloudConfig && cloudSlug && cloudConfig.apiKeyId) {
       vaultKey = await resolveVaultSecret(cloudConfig.apiKeyId, VAULT_PROVIDER[cloudSlug]);
       if (!vaultKey) {
         return await failClaimed(
@@ -525,7 +533,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
     } else {
-      if (!cloudSlug || !toolModel || !vaultKey) {
+      if (!cloudSlug || !toolModel || (!vaultKey && cloudSlug !== "local")) {
         return await failClaimed(
           503,
           "SOURCING_AGENT_NOT_CONFIGURED",
@@ -539,17 +547,18 @@ async function handlePost(req: NextRequest, correlationId: string) {
               model: toolModel,
               system: SYSTEM_PROMPT,
               prompt,
-              key: vaultKey,
+              key: vaultKey ?? "",
               servers,
               maxRounds: 6,
               beforeExternalCall: async () => (await currentAuthority()).ok,
             })
           : await runOpenAiWithTools({
               provider: cloudSlug,
+              baseUrl: cloudConfig?.baseUrl,
               model: toolModel,
               system: SYSTEM_PROMPT,
               prompt,
-              key: vaultKey,
+              key: vaultKey ?? "",
               servers,
               maxRounds: 6,
               beforeExternalCall: async () => (await currentAuthority()).ok,
@@ -564,11 +573,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       drafts = parseDrafts(result.text ?? "", count);
-      if (!drafts) {
+      if (!drafts || (drafts.length === 0 && runner.getFound().length > 0)) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_RESPONSE_INVALID",
-          "The sourcing-agent response was invalid.",
+          "The model returned no valid drafts. Use a tool-capable model or disable the provider to use deterministic sourcing.",
         );
       }
     }
@@ -651,6 +660,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
         502,
         "SOURCING_AGENT_RESPONSE_INVALID",
         "The sourcing-agent result was invalid.",
+      );
+    }
+    if (!deterministic && found.length > 0 && projected.length === 0) {
+      return await failClaimed(
+        502,
+        "SOURCING_AGENT_RESPONSE_INVALID",
+        "The model returned no valid drafts for the found profiles. Use a tool-capable model or disable the provider to use deterministic sourcing.",
       );
     }
 

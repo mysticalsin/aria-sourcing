@@ -124,6 +124,7 @@ const LlmProviderSchema = z
     kind: z.enum(LLM_PROVIDERS),
     label: bounded(200),
     baseUrl: bounded(2_048).optional(),
+    modelName: bounded(200).optional(),
     apiKeyId: bounded(100).min(1).optional(),
     enabled: z.boolean(),
     isDefault: z.boolean().optional(),
@@ -134,7 +135,7 @@ const SavedModelSchema = z
   .object({
     id: bounded(100).min(1),
     providerId: bounded(100).min(1),
-    modelName: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/),
+    modelName: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/),
     label: bounded(200),
     contextWindow: z.number().int().positive().max(10_000_000).optional(),
     enabled: z.boolean(),

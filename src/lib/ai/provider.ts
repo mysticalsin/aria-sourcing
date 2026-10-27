@@ -11,7 +11,7 @@
 
 import type { LlmProviderKind, ModelTask, SystemSettings } from "@/lib/types";
 
-export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi";
+export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi" | "local";
 
 /** Maps LlmProviderKind → AiProviderSlug. Absent = not directly callable. */
 export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
@@ -21,8 +21,8 @@ export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
   xAI: "xai",
   Mistral: "mistral",
   Kimi: "kimi",
-  // Google, OpenRouter, and "Local/Custom" intentionally absent —
-  // they require different auth schemes or a user-supplied base URL.
+  "Local/Custom": "local",
+  // Google and OpenRouter are not directly callable here.
 };
 
 /** Sensible default model per slug when no SavedModel is configured. */
@@ -35,6 +35,7 @@ export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
   // Kimi (Moonshot) is OpenAI-compatible. moonshot-v1-8k is the cheap, always-available
   // default; override per-workspace with a SavedModel (e.g. kimi-k2-0711-preview).
   kimi: "moonshot-v1-8k",
+  local: "",
 };
 
 export interface AiResolved {
@@ -42,6 +43,7 @@ export interface AiResolved {
   model: string;
   /** ApiKey.id — the raw secret is NEVER held here. Resolved server-side only. */
   apiKeyId?: string;
+  baseUrl?: string;
 }
 
 export type AiProviderSettings = Pick<
@@ -110,9 +112,9 @@ export function resolveAiProvider(
   const slug = KIND_TO_SLUG[provider.kind];
   if (!slug) return null;
 
-  const model = savedModel?.modelName ?? DEFAULT_MODEL[slug];
+  const model = savedModel?.modelName ?? (slug === "local" ? provider.modelName ?? "" : DEFAULT_MODEL[slug]);
 
-  return { provider: slug, model, apiKeyId: provider.apiKeyId };
+  return { provider: slug, model, apiKeyId: provider.apiKeyId, ...(slug === "local" ? { baseUrl: provider.baseUrl } : {}) };
 }
 
 /** True when at least one enabled provider has a supported slug. */
@@ -139,6 +141,7 @@ export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   xai: "https://api.x.ai/v1/chat/completions",
   mistral: "https://api.mistral.ai/v1/chat/completions",
   kimi: `${KIMI_BASE}/chat/completions`,
+  local: "",
 };
 
 export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
@@ -148,6 +151,7 @@ export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
   xai: "XAI_API_KEY",
   mistral: "MISTRAL_API_KEY",
   kimi: "KIMI_API_KEY",
+  local: "LOCAL_LLM_API_KEY",
 };
 
 /** Canonical api_keys.provider value for each callable cloud provider. The
@@ -160,6 +164,7 @@ export const VAULT_PROVIDER: Record<AiProviderSlug, string> = {
   xai: "xAI",
   mistral: "Mistral",
   kimi: "Kimi (Moonshot)",
+  local: "Custom",
 };
 
 /**
@@ -177,6 +182,7 @@ export function buildCloudRequest(
   /** Output ceiling. Defaults to 2048 — enough headroom for JSON drafts, CV
    *  analysis and screening-question generation that 1024 silently truncated. */
   maxTokens = 2048,
+  endpoint?: string,
 ): { url: string; headers: Record<string, string>; body: string } {
   if (provider === "anthropic") {
     return {
@@ -196,10 +202,10 @@ export function buildCloudRequest(
   }
 
   return {
-    url: CLOUD_ENDPOINT[provider],
+    url: endpoint ?? CLOUD_ENDPOINT[provider],
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${key}`,
+      ...(key ? { authorization: `Bearer ${key}` } : {}),
     },
     body: JSON.stringify({
       model,

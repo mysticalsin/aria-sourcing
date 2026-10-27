@@ -15,7 +15,8 @@ import {
   remoteMcpExecutionEnabled,
   type McpTool,
 } from "@/lib/mcp-client";
-import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
+import { type AiProviderSlug } from "@/lib/ai/provider";
+import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -418,6 +419,7 @@ interface OpenAiMessage {
 /** OpenAI-compatible completion that may call MCP tools, looping to a final answer. */
 export async function runOpenAiWithTools(args: {
   provider: AiProviderSlug;
+  baseUrl?: string;
   model: string;
   system: string;
   prompt: string;
@@ -435,7 +437,9 @@ export async function runOpenAiWithTools(args: {
     MAX_TOOL_LOOP_TIMEOUT_MS,
   );
   const deadlineAt = Date.now() + timeoutMs;
-  const url = CLOUD_ENDPOINT[provider];
+  let url: string;
+  try { url = resolveProviderEndpoint(provider, args.baseUrl); }
+  catch { return { ok: false, reason: "Invalid local provider URL.", toolCalls: [] }; }
   const toolCallLog: ToolCallRecord[] = [];
   let toolCallAttempts = 0;
 
@@ -457,7 +461,7 @@ export async function runOpenAiWithTools(args: {
         (signal) =>
           fetch(url, {
             method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+            headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
             body: JSON.stringify({ model, messages, tools: toolDefs, stream: false }),
             redirect: "manual",
             signal,

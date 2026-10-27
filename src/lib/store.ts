@@ -375,7 +375,7 @@ async function attemptLiveFollowUpGen(opts: {
 
   let genInput: Parameters<typeof hermesGenerate>[0];
   if (aiCfg) {
-    genInput = { task: "outreach", prompt, provider: aiCfg.provider, model: aiCfg.model, apiKeyId: aiCfg.apiKeyId };
+    genInput = { task: "outreach", prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
   } else {
     const outreachModelId = seat?.modelId ?? settings.defaultModels?.outreach;
     genInput = {
@@ -1592,7 +1592,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             prompt,
             provider: aiCfg.provider,
             model: aiCfg.model,
-            apiKeyId: aiCfg.apiKeyId,
+            baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId,
           };
         } else {
           // F-7: resolve the configured model for outreach (seat override → task default).
@@ -1839,7 +1839,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             prompt,
             provider: aiCfg.provider,
             model: aiCfg.model,
-            apiKeyId: aiCfg.apiKeyId,
+            baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId,
           };
         } else {
           const outreachModelId = s.settings.defaultModels?.outreach;
@@ -2442,7 +2442,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 prompt: input.text,
                 provider: classifyAiCfg.provider,
                 model: classifyAiCfg.model,
-                apiKeyId: classifyAiCfg.apiKeyId,
+                baseUrl: classifyAiCfg.baseUrl, apiKeyId: classifyAiCfg.apiKeyId,
               }
             : {
                 task: "classify",
@@ -5361,7 +5361,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             body: JSON.stringify({
               task: "chat",
               prompt: fullPrompt,
-              provider: chatAiCfg.provider,
+              provider: chatAiCfg.provider, baseUrl: chatAiCfg.baseUrl,
               ...(chatAiCfg.model && { model: chatAiCfg.model }),
               ...(chatAiCfg.apiKeyId && { apiKeyId: chatAiCfg.apiKeyId }),
               mcpServers: enabledMcp,

@@ -18,6 +18,7 @@ import {
 } from "../src/lib/ai/provider.js";
 import type { SystemSettings, LlmProvider, SavedModel } from "../src/lib/types.js";
 import { defaultSettings } from "../src/lib/seed.js";
+import { resolveProviderEndpoint } from "../src/lib/ai/endpoint";
 
 let pass = 0,
   fail = 0;
@@ -204,6 +205,24 @@ const groqJson = { choices: [{ message: { content: "Hello from Groq" } }] };
 ok("parseCloudResponse works for groq shape", parseCloudResponse("groq", groqJson) === "Hello from Groq");
 
 /* ---- Report ---------------------------------------------------------------- */
+
+const localSettings = settingsWith([makeProvider({
+  kind: "Local/Custom", baseUrl: "http://127.0.0.1:11434/v1/", modelName: "qwen3:8b",
+})]);
+const local = resolveAiProvider(localSettings, "sourcing");
+ok("local provider resolves without a key", local?.provider === "local" && !local.apiKeyId);
+ok("local model tags and endpoint survive resolution", local?.model === "qwen3:8b" && local.baseUrl === "http://127.0.0.1:11434/v1/");
+const localEndpoint = resolveProviderEndpoint("local", local?.baseUrl);
+ok("local endpoint joins v1 without duplicate slash", localEndpoint === "http://127.0.0.1:11434/v1/chat/completions");
+const localRequest = buildCloudRequest("local", "qwen3:8b", "System", "Hello", "", 2048, localEndpoint);
+ok("keyless local request omits authorization", !("authorization" in localRequest.headers));
+for (const url of ["http://169.254.169.254/v1", "https://example.com/v1", "http://user:secret@localhost/v1", "http://localhost/v1?key=secret", "http://localhost/v1#fragment", "file:///tmp/model"]) {
+  let blocked = false;
+  try { resolveProviderEndpoint("local", url); } catch { blocked = true; }
+  ok(`unsafe local endpoint blocked: ${url}`, blocked);
+}
+ok("Docker host endpoint allowed", resolveProviderEndpoint("local", "http://host.docker.internal:11434/v1").includes("host.docker.internal"));
+ok("hosted provider ignores custom URL", resolveProviderEndpoint("openai", "http://localhost:1234") === "https://api.openai.com/v1/chat/completions");
 
 console.log(`RESULT ai-provider: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

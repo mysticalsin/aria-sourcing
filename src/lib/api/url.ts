@@ -19,7 +19,7 @@ import { BlockList, isIP } from "node:net";
  * BEFORE this, so naming a cloud metadata endpoint here cannot unblock it.
  */
 function deploymentAllowedHermesHosts(): Set<string> {
-  const raw = process.env.HERMES_ALLOWED_HOSTS ?? "";
+  const raw = [process.env.HERMES_ALLOWED_HOSTS, process.env.PROVIDER_ALLOWED_HOSTS].filter(Boolean).join(",");
   const hosts = new Set<string>();
   for (const entry of raw.split(",")) {
     const host = entry.trim().toLowerCase().replace(/^\[|\]$/g, "");
@@ -40,7 +40,7 @@ function deploymentAllowedHermesHosts(): Set<string> {
  * HERMES_ALLOWED_HOSTS. Blocks file/ftp/gopher, metadata endpoints, and
  * ambiguous hostnames that could resolve to internal services.
  */
-export function isAllowedHermesUrl(urlString: string): { ok: boolean; reason?: string } {
+export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?: string } {
   let url: URL;
   try {
     url = new URL(urlString);
@@ -50,6 +50,9 @@ export function isAllowedHermesUrl(urlString: string): { ok: boolean; reason?: s
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return { ok: false, reason: "Only http/https schemes are allowed." };
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    return { ok: false, reason: "Credentials, query and fragment are not allowed." };
   }
 
   // WHATWG URL keeps the surrounding brackets on an IPv6 literal, so
@@ -104,6 +107,9 @@ export function isAllowedHermesUrl(urlString: string): { ok: boolean; reason?: s
 
   return { ok: true };
 }
+
+/** Compatibility alias for the internal runtime. */
+export const isAllowedHermesUrl = isAllowedProviderUrl;
 
 /**
  * True when a Hermes runtime URL is configured but would be refused by the

@@ -64,6 +64,42 @@ APP_PORT=3001 KONG_PORT=54331 DB_HOST_PORT=54332 docker compose up
 
 ## Notes
 
+### Local LLM (Ollama / OpenAI-compatible)
+
+Run Ollama on the host and install a model that supports tools. On macOS, run
+Ollama outside Docker to use the host GPU. The app container connects through
+`http://host.docker.internal:11434/v1`; a host-run `npm run dev` uses
+`http://127.0.0.1:11434/v1`. Ensure Ollama listens on an address reachable from
+Docker, with host firewall access restricted to your local app.
+
+In Settings -> LLM providers, add **Local / OpenAI-compatible**, enter that base
+URL and the exact installed model name (including its tag, e.g. `qwen3:8b`),
+enable it and set it as default. No API key is needed for local Ollama. A gateway
+requiring Bearer authentication can use a saved **Custom** key. Local requests
+never borrow a hosted provider's environment key.
+
+In Saved Models, assign a model from this provider as the default for each task
+you want to run locally. Existing task defaults take priority over the default
+provider. Disable hosted providers when all model inference must remain local.
+Candidate search still queries GitHub/public search services: local inference
+does not make sourcing offline.
+
+For a functional test, start the Docker stack, sign in, create/review a campaign,
+and click **Run agent**. The result must report `cloud` mode, include candidates
+backed by actual search results, and include model drafts. A completed search
+with zero matches returns an empty result. Profiles found without valid model
+drafts return an explicit error; disable the provider to use deterministic real
+search. Warm the model before testing to avoid the bounded request timeout.
+
+Only private/loopback hosts are accepted by default. Deployment-owned exact DNS
+names can be added via server environment `PROVIDER_ALLOWED_HOSTS` (comma-separated);
+metadata addresses, URL credentials, query strings, fragments and redirects stay
+blocked. The URL must expose OpenAI-compatible `/chat/completions` under the base
+path. Direct Azure endpoints requiring `api-key` or `api-version` need a separate
+adapter; a compatible gateway can use this provider.
+
+See [Ollama's protocol documentation](https://github.com/ollama/ollama/blob/main/docs/api/openai-compatibility.mdx).
+
 - The Supabase keys in `docker-compose.yml` are the **public Supabase sample keys** — fine
   for a local stack only. For any non-local use, regenerate `JWT_SECRET` and the matching
   anon/service-role JWTs and override them.

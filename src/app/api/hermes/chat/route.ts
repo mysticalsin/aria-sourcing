@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
+import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
@@ -76,12 +77,13 @@ const HermesChatSchema = z.object({
   hermesApiKeyId: z.string().uuid().optional(),
   /** Cloud provider to route through. "hermes" = none selected (deterministic mock). */
   provider: z
-    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi"])
+    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "local"])
     .default("hermes"),
   /** ApiKey.id for the cloud provider — raw secret resolved server-side only. */
   apiKeyId: z.string().uuid().optional(),
   // Reject path-traversal / injection in the model id; allow valid model slugs.
-  model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).default("hermes"),
+  model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/).default("hermes"),
+  baseUrl: z.string().max(2048).optional(),
   /** Enabled MCP servers to expose to the model as tools (chat task only). The raw
    *  secret is resolved server-side from the vault, so the browser never holds it. */
   mcpServers: z
@@ -206,7 +208,7 @@ export async function POST(req: NextRequest) {
   // as /api/sourcing-agent, so allow a matching request body.
   const validated = await validateBody(req, HermesChatSchema, { maxBytes: 200_000 });
   if (!validated.ok) return validated.response;
-  const { task, prompt: rawPrompt, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
+  const { task, prompt: rawPrompt, model, provider, baseUrl, apiKeyId, mcpServers, webResearch, campaign, existing } =
     validated.data;
   // The classify task feeds candidate-authored reply text straight to the model.
   // Sanitize it and wrap it in the same untrusted-data envelope the autopilot
@@ -267,6 +269,12 @@ export async function POST(req: NextRequest) {
     // Key resolution: vault by id (workspace-scoped) → env fallback → error.
     // The raw secret is NEVER logged or returned to the caller.
     const slug = provider as AiProviderSlug;
+    let endpoint: string;
+    try { endpoint = resolveProviderEndpoint(slug, baseUrl); }
+    catch { return NextResponse.json({ ok: false, reason: "Invalid local provider URL." }, { status: 400 }); }
+    if (slug === "local" && model === "hermes") {
+      return NextResponse.json({ ok: false, reason: "Configure the exact local model name." }, { status: 400 });
+    }
     const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
     // A supplied id is an explicit authority choice. Never fall back to an env
     // credential when it is missing, invalid, or belongs to another provider.
@@ -278,8 +286,8 @@ export async function POST(req: NextRequest) {
     if (!apiKeyId && supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
       return NextResponse.json({ ok: false, reason: "A workspace provider key is required." }, { status: 403 });
     }
-    const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
-    if (!key) {
+    const key = vaultKey || (slug === "local" ? "" : process.env[PROVIDER_ENV[slug]]) || "";
+    if (!key && slug !== "local") {
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
     }
     // A well-formed campaign context enables the search_candidates tool, gated by the
@@ -323,7 +331,7 @@ export async function POST(req: NextRequest) {
         const result =
           slug === "anthropic"
             ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers })
-            : await runOpenAiWithTools({ provider: slug, model: toolModel, system, prompt, key, servers: resolvedServers });
+            : await runOpenAiWithTools({ provider: slug, baseUrl, model: toolModel, system, prompt, key, servers: resolvedServers });
         if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
         // Tool loop failed or returned empty (e.g. a provider that rejects the tools
         // param) → fall through to a normal single-shot completion so chat still answers
@@ -331,7 +339,7 @@ export async function POST(req: NextRequest) {
         if (!result.ok) logUpstream("info", "Tool loop unavailable; using plain completion", { provider, reason: result.reason });
       }
     }
-    const { url, headers, body } = buildCloudRequest(slug, model ?? "hermes", system, prompt, key);
+    const { url, headers, body } = buildCloudRequest(slug, model ?? "hermes", system, prompt, key, 2048, endpoint);
     try {
       const upstream = await fetch(url, {
         method: "POST",

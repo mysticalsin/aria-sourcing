@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { Campaign } from "../src/lib/types";
+import type { AiProviderSettings } from "../src/lib/ai/provider";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -76,7 +77,7 @@ let completionStatus = "completed";
 let cloudConfigured = true;
 let requestSequence = 0;
 let currentWorkspaceId = workspaceId;
-let liveSettings = structuredClone(cloudSettings);
+let liveSettings: AiProviderSettings = structuredClone(cloudSettings);
 let resolvedVaultKeyId = "";
 let resolvedVaultProvider = "";
 let requestedCloudProvider = "";
@@ -312,6 +313,42 @@ function reset() {
   requestedCloudModel = "";
 }
 
+test("local cloud mode uses workspace endpoint and model without requiring a vault key", async () => {
+  reset();
+  liveSettings = {
+    llmProviders: [{ id: "local", kind: "Local/Custom", label: "Ollama", enabled: true, isDefault: true, baseUrl: "http://127.0.0.1:11434/v1", modelName: "qwen3:8b" }],
+    savedModels: [], defaultModels: {},
+  };
+  const response = await post(request());
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "cloud");
+  assert.equal(requestedCloudProvider, "local");
+  assert.equal(requestedCloudModel, "qwen3:8b");
+  assert.equal(vaultCalls, 0);
+});
+
+test("unsafe local endpoints and missing model fail before claiming or egress", async () => {
+  for (const config of [{ baseUrl: "http://169.254.169.254/v1", modelName: "qwen3:8b" }, { baseUrl: "http://localhost:11434/v1", modelName: "" }]) {
+    reset();
+    liveSettings = { llmProviders: [{ id: "local", kind: "Local/Custom", label: "Ollama", enabled: true, ...config }], savedModels: [], defaultModels: {} };
+    const response = await post(request());
+    assert.equal(response.status, 503);
+    assert.equal(beginCalls, 0);
+    assert.equal(vaultCalls, 0);
+    assert.equal(providerCalls, 0);
+  }
+});
+
+test("found profiles without valid model drafts fail with an actionable error", async () => {
+  reset();
+  foundCandidates = [{ ...seed.candidates[0], id: "found-profile" }];
+  const response = await post(request());
+  const body = await response.json();
+  assert.equal(response.status, 502);
+  assert.match(JSON.stringify(body), /no valid drafts/);
+});
+
 test("active campaign is loaded from authoritative workspace state before and after provider I/O", async () => {
   reset();
   const response = await post(request());
@@ -536,8 +573,20 @@ test("response exposes only exact bounded candidate evidence and validates subje
     ],
   });
   const unsafe = await post(request());
-  assert.equal(unsafe.status, 200);
-  assert.equal((await unsafe.json()).candidates.length, 0);
+  assert.equal(unsafe.status, 502);
+  assert.equal((await unsafe.json()).code, "SOURCING_AGENT_RESPONSE_INVALID");
+});
+
+test("drafts referring to invented profile IDs never become an empty success", async () => {
+  reset();
+  foundCandidates = [{
+    ...seed.candidates[0], id: "eligible-profile", name: "Eligible Profile", email: "eligible@example.test",
+    githubUrl: "https://github.com/eligible-profile", linkedinUrl: "", sourceUrl: "https://github.com/eligible-profile", currentCompany: "Unique Example Company", lastContactedAt: null,
+  }];
+  modelText = JSON.stringify({ drafts: [{ candidateId: "invented-profile", subject: "Your public work", body: "Would you be open to a conversation?" }] });
+  const response = await post(request());
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).code, "SOURCING_AGENT_RESPONSE_INVALID");
 });
 
 test("invalid or failed model output never becomes a partial success", async () => {

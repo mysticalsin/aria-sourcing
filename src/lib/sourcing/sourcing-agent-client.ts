@@ -15,7 +15,7 @@ const SAFE_SOURCING_ERRORS: Readonly<Record<string, string>> = {
   SOURCING_AGENT_REPLAY_BLOCKED: "This sourcing request was already claimed. Start a new sourcing run.",
   SOURCING_AGENT_NOT_CONFIGURED: "The selected sourcing provider is not configured.",
   SOURCING_AGENT_UPSTREAM_FAILED: "The sourcing agent did not complete.",
-  SOURCING_AGENT_RESPONSE_INVALID: "The sourcing agent returned an invalid result.",
+  SOURCING_AGENT_RESPONSE_INVALID: "The model returned no usable sourcing result. Choose a tool-capable model, or disable the provider to use deterministic sourcing.",
 };
 
 export type ReviewedSourcingRequestResult =

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { requestReviewedSourcing } from "../src/lib/sourcing/sourcing-agent-client";
 
 import { buildSeedState } from "../src/lib/seed";
 import {
@@ -12,6 +13,18 @@ import {
 
 const campaignId = "campaign-1";
 const seed = buildSeedState();
+
+test("invalid model drafts surface recovery guidance without trusting provider error text", async () => {
+  const result = await requestReviewedSourcing(async () => new Response(JSON.stringify({
+    code: "SOURCING_AGENT_RESPONSE_INVALID", message: "untrusted-provider-detail",
+  }), { status: 502, headers: { "content-type": "application/json" } }), "campaign-1", 1);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /tool-capable model/);
+    assert.match(result.error, /deterministic sourcing/);
+    assert.doesNotMatch(result.error, /untrusted-provider-detail/);
+  }
+});
 const campaign = { ...seed.campaigns[0], id: campaignId, status: "Sourcing" as const };
 
 function dto(overrides: Record<string, unknown> = {}) {
