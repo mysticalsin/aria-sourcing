@@ -81,7 +81,16 @@ export function mapApifyCandidates(
 ): SourceResult {
   const jd = campaign.jobAnalysis;
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = profiles.map((p) => {
+  const invalid: { name: string; reason: string }[] = [];
+  const validProfiles = profiles.filter((p) => {
+    try {
+      const url = new URL(p.linkedinUrl);
+      if (url.protocol === "https:" && /^(www\.)?linkedin\.com$/i.test(url.hostname) && /^\/in\/[^/]+\/?$/.test(url.pathname) && !url.username && !url.password && !url.port) return true;
+    } catch { /* invalid provider identity */ }
+    invalid.push({ name: [p.firstName, p.lastName].filter(Boolean).join(" ") || "Unknown", reason: "Invalid LinkedIn profile URL" });
+    return false;
+  });
+  const raw: Candidate[] = validProfiles.map((p) => {
     const name = [p.firstName, p.lastName].filter(Boolean).join(" ").trim() || "Unknown";
     const headline = p.headline.trim();
     const about = p.about.trim();
@@ -96,7 +105,7 @@ export function mapApifyCandidates(
       name,
       email: p.email ?? "",
       avatarInitials: initialsFrom(name),
-      currentTitle: headline || jd.title,
+      currentTitle: headline,
       currentCompany,
       location: p.location?.text ?? "",
       timezone: "",
@@ -159,5 +168,5 @@ export function mapApifyCandidates(
     const { score, breakdown } = scoreCandidate(c, jd, weights);
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
-  return { accepted: scored, skipped };
+  return { accepted: scored, skipped: [...invalid, ...skipped] };
 }

@@ -487,6 +487,7 @@ export interface HermesContextValue {
   hydrated: boolean;
   workspaceStatus: WorkspaceStatus;
   retryWorkspace: () => Promise<void>;
+  flushWorkspace: () => Promise<boolean>;
   retrySave: () => Promise<void>;
   actions: HermesActions;
   /** Computed once per state change (not per consumer) — the TopBar bell and

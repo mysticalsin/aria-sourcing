@@ -59,6 +59,15 @@ async function until(check, label) {
 async function openSession() {
   browser = await chromium.launch({ headless: true, ...(process.env.ARIA_BROWSER_CHANNEL ? { channel: process.env.ARIA_BROWSER_CHANNEL } : {}) });
   const page = await browser.newPage();
+  const authResponses = [];
+  const failedRequests = [];
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname.startsWith("/auth/v1/")) authResponses.push(response.status());
+  });
+  page.on("requestfailed", (request) => {
+    const url = new URL(request.url());
+    failedRequests.push({ origin: url.origin, path: url.pathname }); // Never log tokens, headers or query strings.
+  });
   page.setDefaultTimeout(30000);
   await page.route("**/*", (route) => {
     const origin = new URL(route.request().url()).origin;
@@ -70,7 +79,13 @@ async function openSession() {
   await page.getByLabel("Username or email").fill("admin@hermes.local");
   await page.getByLabel("Password", { exact: true }).fill(env.DEMO_ADMIN_PASSWORD);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.waitForURL((url) => url.pathname !== "/login");
+  try {
+    await page.waitForURL((url) => url.pathname !== "/login");
+  } catch (error) {
+    const cookies = (await page.context().cookies()).map(({ name, domain, path, secure }) => ({ name, domain, path, secure }));
+    console.error("Browser login diagnostics:", JSON.stringify({ path: new URL(page.url()).pathname, authResponses, failedRequests, cookies }));
+    throw error;
+  }
   await page.waitForLoadState("networkidle");
   const skip = page.getByRole("button", { name: "Skip", exact: true });
   if (await skip.isVisible()) await skip.click();
@@ -81,8 +96,8 @@ try {
   compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300"]);
   assert.equal((await fetch(baseUrl + "/api/ready")).status, 200);
   assert.equal((await fetch(baseUrl + "/api/setup/status")).status, 401, "Setup details must require authentication.");
+  let token = await loginApi(); // Separate seeded-account auth from browser/CSP/cookie failures.
   let page = await openSession();
-  let token = await loginApi();
   await page.goto(baseUrl + "/settings?tab=workspace", { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Check connections", exact: true }).click();
   await page.getByText("Core workspace ready", { exact: true }).waitFor();

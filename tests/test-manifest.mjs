@@ -2,6 +2,8 @@
 export const testManifest = {
   version: 1,
   commands: [
+    {"id":"unified-sourcing-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/unified-sourcing-route.mts"]},
+    {"id":"unified-sourcing","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/unified-sourcing.mts"]},
     {"id":"candidate-privacy","executable":"tsx","argv":["tests/candidate-privacy.mts"]},
     {"id":"demo-auth-edge","executable":"tsx","argv":["tests/demo-auth-edge.mts"]},
     {"id":"readiness","executable":"tsx","argv":["tests/readiness.mts"]},
@@ -159,6 +161,8 @@ export const testManifest = {
   ],
   groups: {
     "pretest": [
+      "unified-sourcing-route",
+      "unified-sourcing",
       "candidate-privacy",
       "demo-auth-edge",
       "readiness",

@@ -156,6 +156,7 @@ test("context contract keeps its exact public shape", () => {
     .sort();
   assert.deepEqual(contextNames, [
     "actions",
+    "flushWorkspace",
     "hydrated",
     "recommendations",
     "retrySave",

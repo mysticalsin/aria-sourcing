@@ -30,7 +30,7 @@ psql_as() {
 
 docker info >/dev/null
 
-for scenario in function-privileges ensure-workspace-authority dust-authority; do
+for scenario in function-privileges ensure-workspace-authority dust-authority unified-sourcing; do
   # Each scenario seeds fixed identities, so it gets a fresh database.
   docker compose -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
   docker compose -p "$project" up -d db db-init >/dev/null

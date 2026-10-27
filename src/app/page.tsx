@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   Button,
   Card,
@@ -175,6 +176,7 @@ export default function DashboardPage() {
       });
       return;
     }
+    if (supabaseEnabled) { router.push(`/campaigns/${activeCampaign.id}#campaign-sourcing`); return; }
     const result = await actions.sourceNextBatch(activeCampaign.id);
     if (!result.ok) {
       toast({

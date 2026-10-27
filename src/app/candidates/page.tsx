@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Badge,
   Button,
@@ -20,7 +20,7 @@ import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
-import { corpusServerReadEnabled } from "@/lib/supabase/config";
+import { corpusServerReadEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
 import { Bookmark, Radar, Search, Sparkles } from "lucide-react";
@@ -143,6 +143,7 @@ function CandidatesView() {
   const activeCampaign = useActiveCampaign();
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const focus = searchParams.get("focus");
   const serverPreview = corpusServerReadEnabled;
 
@@ -298,6 +299,7 @@ function CandidatesView() {
       });
       return;
     }
+    if (supabaseEnabled) { router.push(`/campaigns/${activeCampaign.id}#campaign-sourcing`); return; }
     setSourcing(true);
     const res = await actions.sourceNextBatch(activeCampaign.id);
     setSourcing(false);

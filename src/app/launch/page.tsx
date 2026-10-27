@@ -106,6 +106,10 @@ export default function LaunchPage() {
       hiringManagerEmail: parsed.sender.email,
     });
     if (!campaign) return { created: false, sourcingComplete: false };
+    if (supabaseEnabled) {
+      setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: false }]);
+      return { created: true, sourcingComplete: false };
+    }
     if (launchSeqRef.current !== seq) return null;
     setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: true }]);
 
@@ -175,7 +179,9 @@ export default function LaunchPage() {
       setLaunching(false);
       const summary = summarizeCampaignLaunch(roleBlocks.length, results);
 
-      if (summary.status === "success") {
+      if (supabaseEnabled && summary.created > 0) {
+        toast({ title: "Campaigns ready for source review", description: `${summary.created} of ${summary.requested} campaigns created. Open each campaign to review sources and limits before searching.`, variant: summary.creationFailed ? "warning" : "success" });
+      } else if (summary.status === "success") {
         toast({
           title: "War room live",
           description: `${summary.sourcingComplete} role${summary.sourcingComplete === 1 ? "" : "s"} sourced in parallel: nothing sent, drafts only.`,
@@ -213,7 +219,7 @@ export default function LaunchPage() {
       <PageHeader
         eyebrow="Launch"
         title="Sourcing war room"
-        description="Paste a multi-role brief and Aria spins up one campaign per role, sourcing all of them in parallel."
+        description={supabaseEnabled ? "Create one campaign per role, then review each source plan before searching." : "Paste a multi-role brief and Aria spins up one campaign per role, sourcing all of them in parallel."}
         actions={
           <Badge tone="aqua" dot>
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />

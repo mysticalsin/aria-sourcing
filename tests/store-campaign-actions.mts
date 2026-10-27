@@ -64,8 +64,10 @@ test("campaign action boundary is React-free and memoized from stable dependenci
 test("campaign callers handle rejected creation, updates, queries, and sourcing", () => {
   assert.match(
     intakePageSource,
-    /const campaign = actions\.createCampaignFromAnalysis[\s\S]*?if \(!campaign\)[\s\S]*?return;[\s\S]*?actions\.sourceNextBatch/,
+    /const campaign = actions\.createCampaignFromAnalysis[\s\S]*?if \(!campaign\)[\s\S]*?return;[\s\S]*?router\.push/,
   );
+  assert.doesNotMatch(intakePageSource, /actions\.sourceNextBatch/, "Intake must wait for explicit source/limit review");
+  assert.match(launchPageSource, /if \(supabaseEnabled\)[\s\S]*?return \{ created: true, sourcingComplete: false \};[\s\S]*?actions\.sourceNextBatch/, "Connected bulk launch prepares campaigns before any synthetic sourcing wave");
   assert.match(
     launchPageSource,
     /if \(!campaign\) return \{ created: false, sourcingComplete: false \};/,

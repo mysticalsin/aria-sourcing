@@ -1,118 +1,106 @@
 ---
 project: MSourcing / ARIA
-shift: 441
+shift: 442
 agent: codex
 updated: 2026-10-27
-status: connected-demo-prepared-docker-acceptance-deferred-by-owner
+status: unified-sourcing-prepared-provider-acceptance-pending
 ---
 
-# Handoff - Shift 441
+# Handoff - Shift 442
 
 ## Current state
 
-- Branch mbe-branch. Code commits 48af1fab and 66d5df99 pushed successfully.
-  Final documentation/relay snapshot follows them in this shift.
-- Part 1 implementation is ready for Docker acceptance on another machine.
-  `.scratch/local-demo-runtime/spec.md` is ready-for-human for that acceptance.
-- No Docker/WSL installation was attempted. Owner explicitly asked to test Docker
-  on another machine; respect this instruction in future Windows sessions.
-- Local required gate passed after dependency updates: npm run typecheck,
-  npm run typecheck:tests, npm test. Production Next build also passed with the
-  connected local public URLs/key. Lint passed with zero errors and two existing
-  navigation warnings surfaced by the new Next plugin.
-- npm audit --audit-level=high reports zero vulnerabilities. Redacted full-history
-  Gitleaks scan reports no leaks after exact reviewed false-positive exceptions.
-- CI on 66d5df99 was in progress at the last check:
-  https://github.com/mysticalsin/aria-sourcing/actions/runs/40488057356
-  CodeQL run 40488057141 was also in progress. Do not call either successful yet.
-- Earlier own run 40485334903 was cancelled while the browser install stalled;
-  its Quality job passed and CodeQL passed. No Docker acceptance receipt exists.
-  The current job uses the runner's preinstalled Chrome instead of downloading it.
+- Branch mbe-branch. Security fix 8c3376b6 is committed; the unified sourcing
+  implementation follows it in this shift. Publication is recorded below.
+- New primary connected campaign flow: Run sourcing -> review LinkedIn/Apify and
+  GitHub queries and profile caps -> persistent source steps -> saved shortlist.
+  Dashboard, Candidates and Fleet link to this same review. Intake and connected
+  bulk launch prepare campaigns without starting searches.
+- New migration 0003_unified_campaign_sourcing.sql adds service-owned durable
+  jobs, one active run per campaign and atomic workspace/step completion. Apply
+  through the normal bootstrap; do not edit/reset the baseline or existing data.
+- Full required type/test gate, lint (zero errors; two existing navigation
+  warnings), production build and final browser fixture smoke passed. Screenshots in
+  ignored tmp/unified-review.png and tmp/unified-results.png were inspected.
+- No paid source, GPT/Claude, mailbox or calendar acceptance was performed. The
+  browser smoke used a local fixture backend; it is not real provider/DB proof.
+- Previous f97f203d CI: Quality, audit, DB security, secret scan and CodeQL passed;
+  Local Docker demo failed waiting for browser sign-in navigation. The next CI
+  run includes safe auth status/path/cookie-metadata diagnostics and direct API
+  login before the browser. See local-demo-runtime issue 06.
 
 ## Done this shift
 
-1. Reviewed container roles: five justified permanent services (app, db, auth,
-   rest, kong) and two short-lived initialization jobs (db-init, bootstrap).
-   No Studio, Realtime, Storage, Redis or local AI container added.
-2. 48af1fab: multi-stage non-root compiled image by default; development with
-   source/node_modules/.next mounts moved to docker-compose.dev.yml.
-3. Native PostgREST --ready replaces a bash probe absent from the amd64 image.
-   App health now requires /api/ready=200 and verifies baked migration identities.
-   Added custom-port Auth origins, bounded owner wait, JSON-safe seeded-user
-   extraction and reduced bootstrap credentials to its required postgres scope.
-4. Paired db_data/app_config volumes preserve state and the local generated
-   encryption key. Runtime rejects corrupt/replaced keys and public build/runtime
-   configuration mismatches. Normal helpers never reset DB or overwrite .env.local.
-5. Settings -> Workspace -> Check connections verifies core backend/encryption,
-   distinguishes saved optional integrations from proven connectivity, makes no
-   paid provider calls and requires administrator authentication for live details.
-6. Added a guarded disposable Docker/browser acceptance recipe: clean startup,
-   real login, UI-created campaign/manual fixture candidate, encrypted fixture key,
-   refresh, down/up preserving volumes, fresh login, state and decryption checks.
-   It blocks browser external-provider traffic and uses synthetic fixture data.
-7. 66d5df99: cleared existing CI blockers without weakening gates. One SQL test
-   harness used absent rg; portable fixed-string grep now checks the same SQLSTATE.
-   Seven exact historical secret-scan matches were reviewed: mocked fixtures,
-   TypeScript type annotations, boolean reporting/profile-mapping fields. Only
-   their exact fingerprints were excluded; no paths/rules/history were removed.
-8. Removed unused 3D packages; patched Next/ESLint to 16.4.3, Zod to 4.6.7 and
-   PostCSS to 8.5.32 with a direct-dependency override. Full type/test gates passed.
-9. DOCKER.md now describes start/stop, diagnostics, durable keys, custom ports,
-   development override and acceptance. ADR 0001 records the Azure target review.
-   No Azure resource, production database or real provider account was changed.
+1. Persistent LinkedIn-first source plan, independent GitHub step, 1-20 profiles
+   per selected source, editable role-bound queries, explicit missing-key errors.
+2. Compare-and-swap leases protect async paid starts. Lost/ambiguous actor starts
+   are never retried automatically. Refresh/restart recovers the stored binding.
+   Transient status/data failures keep that same binding for a safe resume.
+3. Actual found/added/duplicate/excluded counts, partial results, source history,
+   shortlist source links/observed skills/missing data/next action. No fake live
+   progress or model requirement. Original operator resumes; admin can close an
+   orphaned run. Closing does not abort an already launched Apify actor.
+4. Candidates and completion persist together with current role, campaign basis
+   and workspace version checks. Concurrent edits are preserved and deduped
+   again; erased identities are excluded through the existing SQL authority.
+5. Fixed the legacy Apify status ownership/dataset substitution gap. Normalized
+   LinkedIn/GitHub URL variants for rerun dedupe. Rejected invalid LinkedIn links.
+6. Fixed baseline provider quota's undeclared controls reference through forward
+   migration, retaining an independent 100/day workspace reservation ceiling.
+7. Removed fabricated profile evidence: missing Apify headline stays unknown;
+   GitHub query-language filters no longer become observed person skills.
+8. Added runtime/API fixture suites and actual SQL scenarios to the existing
+   database security job. Updated public context and changed-workflow contracts.
+   Findings and feature/acceptance tracking are committed with the implementation.
 
 ## Blockers
 
-- Actual Compose/browser acceptance is intentionally deferred to another machine
-  by the owner. Do not describe the recipe as executed or passed until a real
-  receipt is produced. The CI job is pending at the recorded run above.
-- Azure Flexible Server is not a drop-in replacement: current reconciliation
-  requires a true supabase_admin superuser; Azure administrators do not have it.
-  Managed-database bootstrap adaptation stays a separate open finding.
-- No GPT/Claude, sourcing, mailbox or calendar provider acceptance was performed
-  here; those integrations belong to later slices of the recruiting journey.
+- Docker/WSL is absent and MUST NOT be installed on this Windows machine. Owner
+  tests Docker on another machine. No new local Docker receipt is claimed.
+- The previous Docker browser auth acceptance failed at waitForURL (30 seconds).
+  Inspect the next CI's safe diagnostics rather than guessing or weakening gates.
+- Real Apify acceptance requires the owner's configured account and an explicitly
+  reviewed small profile cap. No provider key or paid call was used here.
+- Azure managed PostgreSQL remains a separate design gap (true superuser owner
+  reconciliation). No cloud resource/deployment was changed.
 
 ## Next steps
 
-1. On the owner's Docker machine, update mbe-branch without discarding local work.
-   Follow DOCKER.md: docker compose up --build --detach --wait --wait-timeout 300.
-2. Sign in at localhost:3000/login with the documented local sample account.
-   Check Settings -> Workspace -> Check connections, create a campaign, refresh,
-   stop via docker compose down, start again without deleting volumes, and verify
-   the campaign remains. Preserve db_data and app_config together.
-3. Run the guarded test:local-demo recipe on a new aria-acceptance-* project if
-   Node 22 and an acceptance browser are available. Never use normal workspace
-   volumes. Fix observed errors and mark the spec done only after its receipt.
-4. Check CI 40488057356 (or the final docs tip's run) to completion, especially
-   Local Docker demo and all database security suites. Keep all required gates.
-5. After part 1 acceptance, begin the agreed LinkedIn-first unified campaign run
-   slice. Configure one GPT/Claude provider later when requested.
+1. Verify the final published tip's CI, especially Local Docker demo and the
+   schema-authority-db/unified-sourcing SQL scenario. Record its exact outcome.
+2. On the owner's other machine, update mbe-branch, preserve db_data/app_config,
+   rebuild the normal Docker stack and let bootstrap apply migration 0003.
+3. Sign in and check Settings -> Workspace -> Check connections. Connect Apify
+   in Settings -> API Keys; no LLM is necessary for this sourcing slice.
+4. Open a reviewed active campaign, Run sourcing, select LinkedIn + GitHub, inspect
+   each query and use a low cap (e.g. 3). Refresh while Apify processes; check saved
+   profiles and real counters, then rerun to verify identity dedupe.
+5. If a start is uncertain, inspect Apify's console before a new launch. Resume
+   polls the existing binding; Close run does not stop a remote actor.
+6. Once the real source receipt is green, continue candidate qualification,
+   contact enrichment and human-reviewed outreach. Hosted GPT/Claude is deferred
+   until requested; do not start a local LLM/infrastructure tangent.
 
 ## Decisions made (don't relitigate)
 
-- No Docker or WSL installation in this Windows session. Runtime test elsewhere.
-- Retain five permanent Supabase/app boundaries and two ordered init jobs;
-  optimize the app image and reliability instead of combining unrelated processes.
-- Local connected Docker demo first; hosted GPT/Claude for demo simplicity; local
-  LLM acceptance deferred. No Fly/Vercel or external agent framework work.
-- Proposed first Azure internal pilot reuses the standalone image and current
-  boundaries on a private Linux VM with durable storage, Key Vault and HTTPS.
-  ADR is a target design, not a deployed/executable production configuration.
-  Managed PostgreSQL/Container Apps require a proven authorization migration.
-- Preserve `_relay/`, `_agent_state/`, baseline migrations, existing state and
-  human approval for outreach. No real sourcing/outreach was executed this shift.
+- Local connected Docker first, with five permanent services and two init jobs.
+  Unified sourcing adds no container/worker/framework. Page-driven advancement
+  pauses subsequent steps on navigation; an existing remote actor can continue.
+- No Docker/WSL installation on this Windows session; actual runtime test elsewhere.
+- Hosted GPT/Claude later for demo simplicity; sourcing selection is deterministic
+  and independent of a model deciding whether to call LinkedIn.
+- Never automatically retry an ambiguous paid start; no silent source fallback.
+- Preserve relay/state folders, baseline migrations, stateful volumes and stable
+  encryption keys. Human approval remains required before outreach.
+- No Azure deploy, Fly/Vercel work or external agent framework migration.
 
 ## Watch out
 
-- Default Docker app is compiled; changing public origins/ports requires rebuild.
-  Only explicit loopback HTTP gets local cookie/HSTS exceptions; remote origins
-  keep production security. Server still uses internal Kong URL.
-- Existing DATA_ENCRYPTION_KEY must remain stable. An existing generated key is
-  not silently replaced. Back up database plus key together; never reset to fix
-  an initialization or decryption error.
-- The optional dev override shares app_config. On Linux, ensure its node user can
-  write generated checkout files. Development health is liveness, not release identity.
-- GitHub default-branch vulnerability warnings describe another branch; use the
-  current lockfile audit and current CI results for mbe-branch status.
-- Local logs are under $env:TEMP/aria-part1-*.log; ignored tmp contains only test
-  helpers and fully redacted scan reports. No secrets are recorded in the relay.
+- Existing workspaces need migration 0003 and a rebuilt app/migration metadata.
+  Current SQL test is part of the DB gate, not a claim of a Windows DB execution.
+- Leases last three minutes. An interrupted start may wait for lease expiry before
+  becoming Needs review. Its paid actor must never be started automatically again.
+- Candidate sourceRunId identifies exact run results; names alone are not dedupe
+  identities. Missing email/title/tenure must not be fabricated from the brief.
+- Local test logs: TEMP/aria-unified-*.log. Ignored tmp contains fixture UI helpers,
+  screenshots and a redacted staged Gitleaks report; no relay secrets are recorded.

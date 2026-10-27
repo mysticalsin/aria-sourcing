@@ -38,5 +38,5 @@ test("campaign sourcing controls use the same canonical live-sourcing predicate"
 
   assert.match(page, /campaignAllowsLiveSourcing\(c\.status\)/);
   assert.match(page, /disabled=\{sourcing \|\| !liveSourcingAllowed\}/);
-  assert.match(page, /disabled=\{!liveSourcingAllowed\}/);
+  assert.match(page, /disabled=\{!liveSourcingAllowed \|\| !can\(role, "source"\)\}/);
 });

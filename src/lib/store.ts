@@ -5803,11 +5803,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       hydrated: workspaceStatus.phase === "ready" && state !== null,
       workspaceStatus,
       retryWorkspace: hydrateWorkspace,
+      flushWorkspace: () => commitPersisted((current) => ({ ...current })),
       retrySave,
       actions,
       recommendations,
     }),
-    [state, workspaceStatus, hydrateWorkspace, retrySave, actions, recommendations],
+    [state, workspaceStatus, hydrateWorkspace, retrySave, commitPersisted, actions, recommendations],
   );
 
   return React.createElement(HermesContext.Provider, { value }, children);

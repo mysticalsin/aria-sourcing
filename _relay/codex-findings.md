@@ -1154,7 +1154,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Status resolves arbitrary client-supplied run/dataset IDs with the workspace Apify credential without checking the durable provider run's ownership or dataset binding.
 **Repro/evidence:** A member can pass another campaign's or unrelated dataset ID; clearIdentityResolution validates syntax/policy but does not establish ownership.
 **Suggested fix:** Resolve and bind run and dataset from sourcing_provider_runs before provider access.
-**Status:** open
+**Status:** fixed (8c3376b6)
 
 ## 2026-10-27 — Campaign launch loses async sourcing on refresh
 **Severity:** spec-mismatch

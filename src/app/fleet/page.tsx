@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -90,6 +91,7 @@ export default function FleetPage() {
   const activeId = useActiveCampaignId();
   const actions = useActions();
   const { toast } = useToast();
+  const router = useRouter();
   const maxAgents = useSettings().fleet.maxAgents || 300;
   const role = useRole();
   const canManage = hydrated && can(role, "manage_fleet");
@@ -189,6 +191,7 @@ export default function FleetPage() {
       return;
     }
 
+    if (supabaseEnabled) { router.push(`/campaigns/${campaignId}#campaign-sourcing`); return; }
     setSourcing(true);
     try {
       const result = await actions.sourceNextBatch(campaignId);

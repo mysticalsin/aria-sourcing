@@ -358,6 +358,8 @@ export interface Candidate {
   /** External record id on a source platform whose later API still accepts a
    *  raw result id. Never use this field as paid-provider authority. */
   sourceExternalId?: string;
+  /** Durable discovery run that persisted this candidate (when available). */
+  sourceRunId?: string;
   /** Opaque server-issued authority for a paid provider action. The browser
    *  never receives the underlying provider person id. */
   sourceAuthorityId?: string;

@@ -33,7 +33,8 @@ import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
-import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
+import { CampaignSourcingPanel } from "@/components/run/campaign-sourcing-panel";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
@@ -377,6 +378,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // "Watch Aria Work" panel — remounted (via runToken as its key) on every
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (window.location.hash === "#campaign-sourcing") setRunOpen(true);
+  }, []);
   const [runToken, setRunToken] = React.useState(0);
 
   React.useEffect(() => {
@@ -665,6 +669,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleOpenRun = () => {
     setRunOpen(true);
+    if (supabaseEnabled) requestAnimationFrame(() => document.getElementById("campaign-sourcing")?.scrollIntoView({ behavior: "smooth", block: "center" }));
     setRunToken((k) => k + 1);
   };
 
@@ -897,7 +902,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 lg:max-w-[55%] lg:justify-end">
-            <Button
+            {!supabaseEnabled && <><Button
               variant="secondary"
               leftIcon={<Sparkles className="h-4 w-4" />}
               onClick={handleSource}
@@ -916,15 +921,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
-            <SourceApifyButton campaignId={c.id} disabled={!liveSourcingAllowed} />
+            </>}
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
               onClick={handleOpenRun}
-              disabled={!liveSourcingAllowed}
+              disabled={!liveSourcingAllowed || !can(role, "source")}
               title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run Aria" : undefined}
             >
-              Run Aria
+              {supabaseEnabled ? "Run sourcing" : "Run Aria"}
             </Button>
             <Button
               variant="outline"
@@ -1017,7 +1022,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </Card>
       )}
 
-      {runOpen && (
+      {!supabaseEnabled && runOpen && (
         <AgentRunStream
           key={runToken}
           campaignId={c.id}
@@ -1026,6 +1031,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           className="mb-6 animate-fade-in"
         />
       )}
+
+      {supabaseEnabled && <CampaignSourcingPanel key={c.id} campaignId={c.id} open={runOpen} onClose={() => setRunOpen(false)} onCandidates={() => setTab("candidates")} />}
 
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 

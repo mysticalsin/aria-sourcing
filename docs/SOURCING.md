@@ -44,6 +44,53 @@ behavior (no login gate, implicit admin) in production. The one sanctioned excep
 
 ## 2. The sourcing pipeline
 
+### Reviewed campaign launch
+
+In a connected workspace, **Run sourcing** opens one source review: LinkedIn
+(Apify) first, GitHub optionally alongside it, editable role-bound queries and
+a maximum of 1–20 profiles per selected source. Creating a campaign makes no
+provider call. No LLM is required for this flow.
+
+`/api/source/campaign` records a `campaign_sourcing_jobs` row before executing
+any source. The campaign page advances persisted steps every four seconds;
+closing the page pauses subsequent operations. An already started actor can
+continue at Apify. Returning resumes the stored run/dataset, including after a
+server restart. No additional container or background worker is required.
+
+Each source displays actual found, added, duplicate and excluded counts. LinkedIn
+uses Short mode, `maxItems` and one search page. Profile limits are not a quoted
+price; the [actor's pricing](https://apify.com/harvestapi/linkedin-profile-search/pricing)
+applies to the connected Apify account. Email discovery is separate. The
+[actor input schema](https://apify.com/harvestapi/linkedin-profile-search/input-schema)
+documents these options. Missing configuration is reported explicitly.
+
+Paid starts are marked before egress and protected by a compare-and-swap lease.
+A lost/ambiguous start is marked **Needs review** and is never started again
+automatically. Check the Apify console before launching a new run in that state.
+Transient polling failures retain the same provider binding. A source failure
+does not discard the other source's successful results. The legacy status route
+also verifies its workspace-owned run/dataset binding before provider access.
+
+Candidates and source completion commit in one database transaction, with a
+workspace version check and dedupe against the latest state. Reruns normalize
+LinkedIn/GitHub URL variants and nonblank email; names alone are not identity
+proof. Each candidate retains its source run, profile link and observed signals.
+Unknown titles, email, and tenure remain unknown. The preview proposes the next
+review/enrichment action; outreach still requires human approval.
+
+Provider reservations share an independent 100-runs/day workspace ceiling. This
+replaces a stale reference to retired loop controls in the baseline function;
+apply migration `0003_unified_campaign_sourcing.sql`, never edit the baseline.
+Only the initiating operator can advance a run; an administrator can also close
+it if that operator loses access. Closing a run does not
+abort an actor already running at Apify, and the UI states that explicitly.
+
+Fixture tests cover source ordering, refresh, concurrency, ambiguous starts,
+partial failures, role/workspace authority, URL validation and concurrent state
+edits. `tests/db/unified-sourcing.sql` exercises the actual SQL transaction in
+the Docker database security gate. A real provider smoke test still requires
+an operator-selected low cap and a configured account.
+
 ### Providers
 
 | Provider | Platform id | Discovery mechanism | Key requirement | Notes |

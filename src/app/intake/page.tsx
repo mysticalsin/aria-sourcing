@@ -346,30 +346,9 @@ export default function IntakePage() {
       });
       return;
     }
-    // Sourcing starts immediately — first batch on the strategy's lead platform.
-    // Fire-and-forget: the campaign page renders candidates as they land, and a
-    // failure surfaces as a toast without blocking campaign creation.
-    void actions.sourceNextBatch(campaign.id).then((res) => {
-      if (res.ok) {
-        const n = res.accepted.length;
-        toast({
-          title: n > 0 ? "First sourcing batch complete" : "No candidates were added",
-          description: n > 0
-            ? `Added ${n} real candidate${n === 1 ? "" : "s"} for ${campaign.title}.`
-            : `The first real search for ${campaign.title} completed without a matching result.`,
-          variant: n > 0 ? "success" : "info",
-        });
-      } else {
-        toast({
-          title: "Sourcing couldn't start",
-          description: `${res.error} Retry with “Source next batch” on the campaign page.`,
-          variant: "warning",
-        });
-      }
-    });
     toast({
       title: "Campaign created",
-      description: `${campaign.title} is ready. The first real sourcing search is starting.`,
+      description: `${campaign.title} is ready. Review sources and profile limits on the campaign page.`,
       variant: "success",
     });
     router.push(`/campaigns/${campaign.id}`);

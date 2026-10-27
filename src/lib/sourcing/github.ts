@@ -99,12 +99,12 @@ export async function searchGithubUsers(
     .filter((l): l is string => typeof l === "string" && l.length > 0)
     .slice(0, perPage);
 
-  const lang = effectiveQuery.match(/language:([A-Za-z0-9+#.\-]+)/i)?.[1] ?? null;
-
   const users: GithubUser[] = [];
   for (const login of logins) {
     try {
-      users.push(await fetchGithubUser(clearance, login, token, lang, signal));
+      // A search qualifier is a filter, not observed per-person evidence. The
+      // public user endpoint does not return a verified primary language.
+      users.push(await fetchGithubUser(clearance, login, token, null, signal));
     } catch {
       // Skip a user whose detail fetch fails; keep the rest of the batch.
     }

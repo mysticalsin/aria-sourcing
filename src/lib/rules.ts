@@ -218,6 +218,18 @@ export type CandidateDedupeIdentity = Pick<
   "email" | "linkedinUrl" | "githubUrl" | "sourceUrl" | "lastContactedAt"
 >;
 
+/** Provider links often differ only by tracking parameters, www or a trailing
+ * slash. Those variants must not create another person on a sourcing rerun. */
+export function candidateProfileIdentity(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return value.trim().toLowerCase();
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const path = url.pathname.replace(/\/+$/, "").toLowerCase();
+    return `${host}${path}${["linkedin.com", "github.com"].includes(host) ? "" : url.search}`;
+  } catch { return value.trim().toLowerCase(); }
+}
+
 export function dedupeCandidates(
   incoming: Candidate[],
   existing: CandidateDedupeIdentity[],
@@ -226,17 +238,17 @@ export function dedupeCandidates(
   const accepted: Candidate[] = [];
   const skipped: { name: string; reason: string }[] = [];
 
-  const seenEmail = new Set(existing.map((c) => c.email.toLowerCase()));
-  const seenLinkedin = new Set(existing.map((c) => c.linkedinUrl.toLowerCase()).filter(Boolean));
-  const seenGithub = new Set(existing.map((c) => c.githubUrl.toLowerCase()).filter(Boolean));
-  const seenSourceUrl = new Set(existing.map((c) => (c.sourceUrl ?? "").toLowerCase()).filter(Boolean));
+  const seenEmail = new Set(existing.map((c) => c.email.trim().toLowerCase()));
+  const seenLinkedin = new Set(existing.map((c) => candidateProfileIdentity(c.linkedinUrl)).filter(Boolean));
+  const seenGithub = new Set(existing.map((c) => candidateProfileIdentity(c.githubUrl)).filter(Boolean));
+  const seenSourceUrl = new Set(existing.map((c) => candidateProfileIdentity(c.sourceUrl ?? "")).filter(Boolean));
   const excluded = new Set(opts.excludedCompanies.map((c) => c.toLowerCase()));
 
   for (const cand of incoming) {
-    const email = cand.email.toLowerCase();
-    const li = cand.linkedinUrl.toLowerCase();
-    const gh = cand.githubUrl.toLowerCase();
-    const su = (cand.sourceUrl ?? "").toLowerCase();
+    const email = cand.email.trim().toLowerCase();
+    const li = candidateProfileIdentity(cand.linkedinUrl);
+    const gh = candidateProfileIdentity(cand.githubUrl);
+    const su = candidateProfileIdentity(cand.sourceUrl ?? "");
     const company = cand.currentCompany.toLowerCase();
 
     // Only treat a non-blank email as a dedupe key. Real sourced profiles (e.g.
