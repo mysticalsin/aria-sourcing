@@ -1200,4 +1200,4 @@ Historical and current findings follow. The current consolidated audit is
 **File:** src/lib/sourcing/apify.ts:390; src/lib/sourcing/unified-run.ts:157
 **Issue:** The actor can return SUCCEEDED with statusMessage "free user run limit reached" and an empty dataset. The adapter discarded the message, causing a refused search to appear as an ordinary successful empty batch.
 **Repro/evidence:** One real provider-only smoke test with maxItems=3, Short mode, one page and API maxTotalChargeUsd=0.1 produced that exact refusal and zero profiles. No automatic paid restart occurred. The normalizer now emits a safe account_limit reason; both source paths fail that source with an actionable message, while independent sources can continue. Genuine empty results remain successful. Unit/API regressions pass; a read-only poll of the same real run confirmed the classification with actorStarts=0.
-**Status:** open
+**Status:** fixed (dfc9839f)

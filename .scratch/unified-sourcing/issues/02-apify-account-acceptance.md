@@ -23,3 +23,8 @@ Credentials and the provider receipt are outside Git, under the current Windows
 user's LocalAppData/ARIA. Credentials and the result payload use Windows DPAPI.
 Do not copy token/account values or raw provider receipts into relay, tests, env
 examples, logs or commits. No Docker/WSL was installed in this Windows session.
+
+Code correction dfc9839f passed local type/test/lint/build checks and CI
+40519528306 (Quality, PostgreSQL security, Docker, audit, secrets, release gate),
+plus CodeQL 40519528305. The external allowance and other-machine vault setup
+remain the owner acceptance steps. No supplied identifier is recorded here.
