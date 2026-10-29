@@ -99,7 +99,7 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
             description="No candidate cleared the guardrails. See skipped and deferred below for why."
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {groups.map((g) => (
               <div key={g.seatId} className="rounded-2xl border border-line bg-surface p-4">
                 <div className="mb-3 flex items-center gap-2">
@@ -124,7 +124,7 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
         )}
 
         {(result.skipped.length > 0 || result.deferred.length > 0) && (
-          <div className="grid gap-5 border-t border-line pt-5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 border-t border-line pt-5 sm:grid-cols-2">
             <SkipList
               title="Skipped"
               items={result.skipped}

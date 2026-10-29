@@ -110,7 +110,7 @@ export function SuppressionPanel() {
         </div>
 
         {/* Add form */}
-        <div className="grid gap-3 rounded-2xl bg-canvas p-4 sm:grid-cols-[8rem,1fr,1fr,auto] sm:items-end">
+        <div className="grid grid-cols-1 gap-3 rounded-2xl bg-canvas p-4 sm:grid-cols-[8rem,1fr,1fr,auto] sm:items-end">
           <Field label="Type" htmlFor={typeId}>
             <Select
               id={typeId}

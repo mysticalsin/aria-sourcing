@@ -202,7 +202,7 @@ export function ModelsPanel() {
             {adding ? (
               <div className="space-y-3 rounded-2xl border border-dashed border-line p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Add model</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Provider" htmlFor="new-model-prov">
                     <Select
                       id="new-model-prov"

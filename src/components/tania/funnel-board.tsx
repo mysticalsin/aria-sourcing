@@ -183,7 +183,7 @@ export function FunnelBoard({
         </div>
       </div>
 
-      <div className="overflow-x-auto no-scrollbar pb-1">
+      <div className="relative overflow-x-auto pb-2">
         <div className="flex min-w-max gap-4">
           {/* Chatbox — pre-Stage I (Applicant only) */}
           <Column

@@ -58,7 +58,7 @@ export function IntegrationStrip() {
 
         {/* Chips — scrollable strip */}
         <div
-          className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:flex-1"
+          className="relative -mx-1 flex min-w-0 gap-2 overflow-x-auto px-1 pb-1 lg:flex-1"
           role="list"
           aria-label="Integration status"
         >

@@ -212,7 +212,7 @@ export default function ReportsPage() {
                   description="Generate a report to surface proposed refinements to the sourcing, outreach, scoring, and reply-classification skills."
                 />
               ) : (
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   {skillUpdates.map((s) => (
                     <SkillUpdateCard key={s.id} skillUpdate={s} campaignId={effectiveId} />
                   ))}

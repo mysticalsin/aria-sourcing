@@ -1,7 +1,7 @@
 # 08 — Vocabulaire et échelle de notation
 
-Status: needs-info
-Blocked by: décisions 1 et 3
+Status: ready-for-agent
+Blocked by: —
 Spec: ../spec.md
 
 ## Critères d'acceptation

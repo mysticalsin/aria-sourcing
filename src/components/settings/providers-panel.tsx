@@ -61,7 +61,7 @@ function ProviderRow({
           </div>
 
           {isAdmin && (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {provider.kind === "Local/Custom" && (
                 <Field label="Model name" htmlFor={`model-${provider.id}`} hint="Exact installed model name, e.g. qwen3:8b. Saved Models can override this per task.">
                   <Input id={`model-${provider.id}`} value={provider.modelName ?? ""} onChange={(e) => onUpdate({ modelName: e.target.value })} placeholder="qwen3:8b" />

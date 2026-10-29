@@ -193,7 +193,7 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
             Searching LinkedIn via Apify for {polling.label}. This can take a minute.
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field
               label="Search query"
               htmlFor={`${idBase}-query`}

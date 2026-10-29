@@ -91,7 +91,7 @@ export function ApiKeysPanel() {
         )}
 
         {isAdmin && (
-          <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <Field label="Label" htmlFor="key-name">
               <Input id="key-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Anthropic (primary)" />
             </Field>

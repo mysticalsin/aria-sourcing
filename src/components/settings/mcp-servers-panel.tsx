@@ -67,7 +67,7 @@ function McpRow({
             </div>
           )}
           {isAdmin && (
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Field label="Auth style" htmlFor={`mcp-auth-style-${server.id}`}>
                 <Select
                   id={`mcp-auth-style-${server.id}`}

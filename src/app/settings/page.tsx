@@ -576,7 +576,7 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[220px_1fr]">
           {/* Tab rail — jump straight to a section, no scrolling */}
           <div className="lg:sticky lg:top-4 lg:self-start lg:border-r lg:border-line lg:pr-5">
             <div
@@ -628,7 +628,7 @@ export default function SettingsPage() {
             description="How Aria signs its work and who it acts on behalf of."
           >
             <Card>
-              <CardContent className="grid gap-5 sm:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <Field
                   label="Operator name"
                   htmlFor="operatorName"
@@ -691,7 +691,7 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <Field
                     label="Minimum score to contact"
                     htmlFor="minScoreToContact"
@@ -742,7 +742,7 @@ export default function SettingsPage() {
             description="Daily ceilings and cool-downs that keep outreach human-paced and deliverable."
           >
             <Card>
-              <CardContent className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 <Field
                   label="Emails / day"
                   htmlFor="emailsPerDay"
@@ -845,7 +845,7 @@ export default function SettingsPage() {
                 description="Integrations appear here once Aria is provisioned with its tool connections."
               />
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {integrations.map((i) => (
                   <IntegrationCard key={i.id} integration={i} />
                 ))}
@@ -992,7 +992,7 @@ export default function SettingsPage() {
           >
             <Card>
               <CardContent className="space-y-5">
-                <div className="grid gap-5 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
                   <Field
                     label="Re-contact window (days)"
                     htmlFor="recontactWindowDays"
@@ -1107,7 +1107,7 @@ export default function SettingsPage() {
           >
             <Card>
               <CardContent className="space-y-5">
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <Field
                     label="Outreach language (default)"
                     htmlFor="defaultLanguage"
@@ -1147,7 +1147,7 @@ export default function SettingsPage() {
                   within its provider's official limits. Scale, not rate-limit evasion.
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Link
                     href="/fleet"
                     className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-ink/25"

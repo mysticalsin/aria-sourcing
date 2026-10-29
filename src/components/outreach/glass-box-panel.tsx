@@ -290,7 +290,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
           ))}
         </ul>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex flex-col items-center rounded-2xl border border-line bg-surface p-4">
             <Eyebrow className="flex w-full items-center gap-1.5">
               <RadarIcon className="h-3 w-3" aria-hidden /> Fit radar

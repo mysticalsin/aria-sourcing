@@ -226,7 +226,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                   maxLength={3_029}
                 />
               </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Email" htmlFor={`${idBase}-email`} hint="Optional.">
                   <Input
                     id={`${idBase}-email`}

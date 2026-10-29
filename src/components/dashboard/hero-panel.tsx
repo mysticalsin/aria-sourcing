@@ -64,7 +64,7 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
           </Link>
         </div>
 
-        <ol className="mt-10 grid gap-4 sm:grid-cols-3">
+        <ol className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {FIRST_RUN_GUIDE_STEPS.map((step, index) => (
             <li key={step.id} className="rounded-2xl border border-line/70 bg-canvas/40 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">

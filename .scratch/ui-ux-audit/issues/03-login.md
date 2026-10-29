@@ -1,7 +1,7 @@
 # 03 — Nouveau login
 
-Status: needs-info
-Blocked by: décision langue (spec, Décisions 1 et 4)
+Status: ready-for-agent
+Blocked by: —
 Spec: ../spec.md
 
 ## Critères d'acceptation

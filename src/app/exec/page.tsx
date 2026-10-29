@@ -186,7 +186,7 @@ function DecisionReport({ report }: { report: ExecDecisionReport }) {
           )}
         </div>
 
-        <div className="grid gap-8 xl:grid-cols-[1.1fr_1fr]">
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1.1fr_1fr]">
           <div>
             <p className="mb-3 text-sm font-bold text-ink">Conversion funnel</p>
             <ConversionFunnel report={report} />
@@ -194,7 +194,7 @@ function DecisionReport({ report }: { report: ExecDecisionReport }) {
           </div>
           <div>
             <p className="mb-3 text-sm font-bold text-ink">Value of recruiter time saved</p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <ValueStat
                 icon={<Clock className="h-4 w-4" aria-hidden />}
                 label="Hours saved"
@@ -354,7 +354,7 @@ function TrendPanel({ model }: { model: ExecDashboardModel }) {
           <Eyebrow>Trends</Eyebrow>
           <CardTitle className="mt-1 text-base">Real activity history</CardTitle>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Spark label="Sourced" data={model.trends.sourced} tone="electric" />
           <Spark label="Contacted" data={model.trends.contacted} tone="tangerine" />
           <Spark label="Replies" data={model.trends.replied} tone="aqua" />
@@ -394,7 +394,7 @@ function WinsFeed({ model, role }: { model: ExecDashboardModel; role: ReturnType
             description="The next accepted meeting will add a structured win record here."
           />
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {model.recentWins.map((win) => (
               <div key={win.id} className="rounded-2xl border border-line bg-surface/70 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -565,7 +565,7 @@ export default function ExecPage() {
 
           <TrendPanel model={model} />
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <FunnelRows title="By platform" rows={model.platformFunnels} />
             <FunnelRows title="By campaign" rows={model.campaignFunnels} />
           </div>

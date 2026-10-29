@@ -351,7 +351,7 @@ function OutreachView() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">
               <SkeletonCard />
               <SkeletonCard />
@@ -364,7 +364,7 @@ function OutreachView() {
       >
         <div className="space-y-6">
         <QuickDraft />
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Main queue */}
           <div className="space-y-6 lg:col-span-2">
             <section className="space-y-4">
@@ -662,7 +662,7 @@ export default function OutreachPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
             <SkeletonCard />
             <SkeletonCard />

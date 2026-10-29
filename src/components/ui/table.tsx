@@ -17,7 +17,8 @@ export function Table({
   children: React.ReactNode;
 }) {
   return (
-    <div className="w-full overflow-x-auto">
+    // relative: keeps absolutely positioned sr-only cell text inside the scroll box.
+    <div className="relative w-full overflow-x-auto">
       <table className={cn("w-full border-collapse text-sm", className)}>
         <caption
           className={cn(

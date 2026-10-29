@@ -416,7 +416,7 @@ function CandidatesView() {
       }
     >
       <Card className="mb-6">
-        <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Search" htmlFor="candidate-search">
             <div className="relative">
               <Search

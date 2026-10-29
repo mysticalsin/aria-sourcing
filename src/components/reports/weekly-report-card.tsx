@@ -135,7 +135,7 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <InsightList
             icon={<Lightbulb className="h-4 w-4 text-electric" aria-hidden />}
             title="Insights"

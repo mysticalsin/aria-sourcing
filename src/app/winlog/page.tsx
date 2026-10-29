@@ -114,7 +114,7 @@ export default function WinlogPage() {
         }
       />
       <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card>
             <CardContent>
               <Eyebrow>Records</Eyebrow>

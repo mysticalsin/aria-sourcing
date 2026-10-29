@@ -230,7 +230,7 @@ function CoordinatorCard() {
               {COORDINATOR.mission}
             </p>
 
-            <ul className="mt-5 grid gap-2 sm:grid-cols-3">
+            <ul className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {COORDINATOR.principles.map((p) => (
                 <li
                   key={p}
@@ -306,7 +306,7 @@ export function AgentOrg() {
         <span className="h-px flex-1 bg-line" aria-hidden />
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         {MANAGERS.map((m) => (
           <ManagerCard key={m.id} m={m} />
         ))}
@@ -348,7 +348,7 @@ export function GuardrailsPanel() {
         </div>
 
         {/* The six gated actions */}
-        <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+        <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {NEVER_ALONE.map((rule, i) => (
             <li
               key={rule.action}

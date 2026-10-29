@@ -97,7 +97,7 @@ export default function CampaignsPage() {
         fallback={
           <div className="space-y-6">
             <SkeletonCard />
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
               <SkeletonCard />
               <SkeletonCard />
               <SkeletonCard />
@@ -123,7 +123,7 @@ export default function CampaignsPage() {
         ) : (
           <>
             <Card className="mb-6">
-              <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label="Search" htmlFor="campaign-search">
                   <div className="relative">
                     <Search
@@ -191,7 +191,7 @@ export default function CampaignsPage() {
                 }
               />
             ) : (
-              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
                 {filtered.map((campaign) => (
                   <CampaignCard key={campaign.id} campaign={campaign} />
                 ))}

@@ -315,7 +315,7 @@ export default function CalendarPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <SkeletonCard />
             </div>
@@ -326,7 +326,7 @@ export default function CalendarPage() {
           </div>
         }
       >
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Agenda */}
           <div className="lg:col-span-2">
             <Card>

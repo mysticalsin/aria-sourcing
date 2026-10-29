@@ -240,7 +240,7 @@ function JdEditForm({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Seniority" htmlFor="jd-seniority">
           <Select
             id="jd-seniority"
@@ -311,7 +311,7 @@ function WeightsEditForm({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {(Object.keys(draft) as (keyof ScoringWeights)[]).map((key) => (
           <Field key={key} label={WEIGHT_LABELS[key]} htmlFor={`weight-${key}`}>
             <Input
@@ -1041,13 +1041,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         <div className="space-y-6">
           <StagePipeline metrics={m} />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {overviewMetrics.map((mc) => (
               <MetricCard key={mc.label} label={mc.label} value={mc.value} hint={mc.hint} icon={mc.icon} tone={mc.tone} />
             ))}
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader>
                 <Eyebrow>Match quality</Eyebrow>
@@ -1108,7 +1108,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* JD Analysis */}
       <TabPanel value="jd" active={tab === "jd"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader className="flex items-center justify-between gap-3">
               <div>
@@ -1164,7 +1164,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </Card>
 
           <Card className="lg:col-span-3">
-            <CardBody className="grid gap-6 sm:grid-cols-2">
+            <CardBody className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div className="space-y-2.5">
                 <Eyebrow>Required skills</Eyebrow>
                 <Chips items={jd.requiredSkills} label="Required skills" />
@@ -1228,7 +1228,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {strategy.githubQueries.map((gq, i) => (
               <Card key={`${gq.label}-${i}`}>
                 <CardBody className="space-y-3">
@@ -1279,7 +1279,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <Card>
               <CardBody className="space-y-2.5">
                 <Eyebrow>Stack Overflow tags</Eyebrow>
@@ -1364,7 +1364,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           )}
 
           <Card>
-            <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Stage" htmlFor="cand-stage">
                 <Select
                   id="cand-stage"
@@ -1438,7 +1438,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Outreach */}
       <TabPanel value="outreach" active={tab === "outreach"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
           <div className="space-y-6">
             {outreach.length === 0 ? (
               <EmptyState
@@ -1494,7 +1494,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Replies */}
       <TabPanel value="replies" active={tab === "replies"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.2fr]">
           <div className="lg:sticky lg:top-6 lg:self-start">
             <ReplyClassifier campaignId={c.id} />
           </div>
@@ -1514,7 +1514,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Booking */}
       <TabPanel value="booking" active={tab === "booking"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
           <div className="space-y-6">
             <Card>
               <CardHeader className="flex items-center justify-between gap-2">
@@ -1606,7 +1606,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 outreach, and scoring skills.
               </p>
             ) : (
-              <div className="grid gap-5 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                 {c.skillUpdates.map((su) => (
                   <SkillUpdateCard key={su.id} skillUpdate={su} campaignId={c.id} />
                 ))}

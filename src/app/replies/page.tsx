@@ -196,7 +196,7 @@ export default function RepliesPage() {
         fallback={
           <div className="space-y-6">
             <SkeletonCard />
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SkeletonCard />
               <SkeletonCard />
             </div>
@@ -269,7 +269,7 @@ export default function RepliesPage() {
                       {sla.length}
                     </Badge>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {sla.map((r) => (
                       <ReplyCard key={r.id} reply={r} />
                     ))}
@@ -294,7 +294,7 @@ export default function RepliesPage() {
                       </Badge>
                     </div>
                   )}
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {rest.map((r) => (
                       <ReplyCard key={r.id} reply={r} />
                     ))}

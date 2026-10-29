@@ -266,12 +266,13 @@ Chaque lot passe la porte de test (`npm run typecheck && npm run
 typecheck:tests && npm test`) et une nouvelle capture des 21 routes à 1440 et
 390 px. Critère : aucune page plus large que le viewport.
 
-## Décisions à prendre
+## Décisions (prises le 2026-10-29, ne pas rediscuter)
 
-1. Langue de l'interface : anglais partout (et « Vivier » renommé « Talent
-   pool »), ou français partout ?
-2. Regroupement de la navigation proposé au §4 : accepté tel quel, ou ajusté ?
-3. Échelle de notation unique : score /100 seul, ou lettres A–D dérivées du
-   score ?
-4. Crédit « Designed & built by Tony Walteur » : le garder dans À propos ou le
-   pied de la sidebar plutôt que sur le login ?
+1. **Interface en anglais partout.** « #Vivier » devient « Talent pool ».
+2. **Navigation regroupée comme au §4**, avec Intake et Launch fusionnés en une
+   seule « New campaign ». Les anciennes URL redirigent.
+3. **Score /100 seul** pour noter les candidats. Top Gun / A Player / lettres /
+   étoiles disparaissent de l'écran.
+4. **Plus de crédit personnel.** « Designed & built by Tony Walteur » et
+   « Created by Tony Walteur » sont retirés et remplacés par une mention de
+   Mantu Group.

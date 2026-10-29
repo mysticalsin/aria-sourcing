@@ -1,7 +1,7 @@
 # 04 — Navigation et entrée de création unique
 
-Status: needs-info
-Blocked by: décision IA (spec, Décision 2)
+Status: ready-for-agent
+Blocked by: —
 Spec: ../spec.md
 
 ## Critères d'acceptation

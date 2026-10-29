@@ -1559,7 +1559,7 @@ export function CandidateDrawer({
         </Section>
 
         <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
-          <div className="grid gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">
             <div className="flex justify-center sm:justify-start">
               <ScoreGauge score={c.matchScore} label="Overall fit" />
             </div>

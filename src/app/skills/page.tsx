@@ -85,7 +85,7 @@ function LoopExplainer() {
           </p>
         </div>
 
-        <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {LOOP_STEPS.map((step, i) => (
             <li key={step.label} className="relative">
               <div className="flex h-full flex-col gap-2 rounded-2xl bg-ink/[0.04] px-4 py-3.5">
@@ -184,7 +184,7 @@ function ProposalCard({
 
         <p className="text-sm leading-relaxed text-ink-soft">{proposal.rationale}</p>
 
-        <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
           <div className="rounded-2xl bg-ink/[0.04] px-3.5 py-3">
             <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted">
               Before
@@ -300,7 +300,7 @@ export default function SkillsPage() {
         fallback={
           <div className="space-y-6">
             <SkeletonCard />
-            <div className="grid gap-5 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <SkeletonCard />
               <SkeletonCard />
             </div>
@@ -378,7 +378,7 @@ export default function SkillsPage() {
                 }
               />
             ) : (
-              <div className={cn("grid gap-5", proposals.length > 1 && "lg:grid-cols-2")}>
+              <div className={cn("grid grid-cols-1 gap-5", proposals.length > 1 && "lg:grid-cols-2")}>
                 {proposals.map((p) => (
                   <ProposalCard
                     key={p.id}
@@ -409,7 +409,7 @@ export default function SkillsPage() {
                 description="The default sourcing, scoring, outreach, and reply-classification playbooks will appear here once the demo data initializes."
               />
             ) : (
-              <div className="grid gap-5 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                 {orderedSkills.map((skill) => (
                   <SkillCard key={skill.key} skill={skill} canEdit={canEditSkills} />
                 ))}

@@ -338,7 +338,7 @@ export default function FleetPage() {
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {GUARDRAILS.map((g) => {
                   const Icon = g.icon;
                   return (
@@ -479,7 +479,7 @@ export default function FleetPage() {
               />
             ) : (
               <>
-                <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto]">
                   <Field label="Search" htmlFor="roster-search">
                     <div className="relative">
                       <Search
@@ -544,7 +544,7 @@ export default function FleetPage() {
                       Showing {visibleSeats.length} of {filteredSeats.length}
                       {filteredSeats.length !== seats.length ? ` (filtered from ${seats.length})` : ""}
                     </p>
-                    <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
                       {visibleSeats.map((seat) => (
                         <SeatCard key={seat.id} seat={seat} />
                       ))}
@@ -620,7 +620,7 @@ export default function FleetPage() {
             />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Provider" htmlFor={providerId}>
               <Select
                 id={providerId}

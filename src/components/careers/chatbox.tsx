@@ -818,7 +818,7 @@ export function Chatbox() {
           );
         }
         return (
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <BigChoice icon={<Compass className="h-4 w-4" />} title="Apply to a role" hint="I know what I want" onClick={chooseA} />
             <BigChoice icon={<Sparkles className="h-4 w-4" />} title="Explore openings" hint="Show me what fits" onClick={chooseB} />
           </div>

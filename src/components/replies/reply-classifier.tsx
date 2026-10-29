@@ -234,7 +234,7 @@ export function ReplyClassifier({
               </Badge>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
                   <Lightbulb className="h-3.5 w-3.5" aria-hidden />
