@@ -216,9 +216,11 @@ lien direct. Attendu : il ne s'ouvre que sur l'accueil, à la première connexio
   - Aucune police n'est servie par l'app (choix documenté dans
     `globals.css:44` pour éviter `next/font/google` au build).
 
-  Recommandation : auto-héberger une famille (fichiers `woff2` dans `public/`)
-  pour un rendu identique sur toutes les machines, ce qui reste compatible avec
-  la contrainte de build.
+  Correction (2026-10-29) : Calibri est la police de marque Mantu (commentaire
+  dans `globals.css`). On ne change donc pas de famille : on auto-héberge
+  Carlito (équivalent métrique libre de Calibri, `woff2` dans `public/`) pour un
+  rendu identique sur toutes les machines, ce qui reste compatible avec la
+  contrainte de build. La serif du login a été retirée avec le lot 03.
 - **Étiquettes en capitales espacées au-dessus de chaque bloc** (« COMMAND
   CENTER », « TALENT POOL », « PIPELINE », « PRIORITY QUEUE », « AUDIT
   TRAIL »…). Elles répètent souvent le titre juste en dessous. Il faut les

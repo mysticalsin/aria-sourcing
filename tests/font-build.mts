@@ -17,8 +17,7 @@ const styles = readFileSync(new URL("../src/styles/globals.css", import.meta.url
 ok("root layout does not trigger a build-time Google font fetch", !layout.includes("next/font/google"));
 ok("root layout does not instantiate Google font loaders", !layout.includes("Geist(") && !layout.includes("EB_Garamond("));
 ok("system typography supplies the sans display variable", styles.includes("--font-geist:"));
-ok("system typography supplies the serif display variable", styles.includes("--font-garamond:"));
-ok("login display typography retains a serif fallback stack", styles.includes('.font-garamond') && styles.includes('"Baskerville"'));
+ok("the retired serif display face stays removed", !styles.includes("--font-garamond") && !styles.includes(".font-garamond"));
 
 console.log(`RESULT font-build: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

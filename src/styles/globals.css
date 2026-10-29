@@ -45,7 +45,6 @@
      depend on a third-party font request. */
   --font-geist: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-garamond: "Iowan Old Style", "Baskerville", "Baskerville Old Face", "Times New Roman", serif;
   /* Mantu Brand DNA: Calibri (Carlito open-source fallback), then system. */
   --font-sans: "Calibri", "Carlito", var(--font-geist);
   --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Fira Code",
@@ -391,66 +390,6 @@ body::before {
 
 .aria-live-overlay::backdrop {
   background: transparent;
-}
-
-/* ============================================================================
-   Cinematic login hero — scoped classes (used only on /login).
-   ========================================================================== */
-.font-garamond {
-  font-family: var(--font-garamond), "Times New Roman", serif;
-}
-
-.login-hero {
-  font-family: var(--font-geist), -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-.mobile-menu-glass {
-  background: rgba(10, 10, 10, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.liquid-glass {
-  background: rgba(255, 255, 255, 0.01);
-  background-blend-mode: luminosity;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: none;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  position: relative;
-  overflow: hidden;
-}
-
-.liquid-glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.4px;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.45) 0%,
-    rgba(255, 255, 255, 0.15) 20%,
-    rgba(255, 255, 255, 0) 40%,
-    rgba(255, 255, 255, 0) 60%,
-    rgba(255, 255, 255, 0.15) 80%,
-    rgba(255, 255, 255, 0.45) 100%
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-.liquid-glass:hover {
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15);
-}
-
-.liquid-glass:active {
-  transform: scale(0.98);
 }
 
 /* Printed reports (Exec "Download PDF"): plain white page, no app chrome. */

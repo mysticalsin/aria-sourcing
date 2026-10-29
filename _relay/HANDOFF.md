@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 447
 agent: claude-code
 updated: 2026-10-29
-status: ux-audit-in-progress-login-uncommitted-gate-blocked-by-host-load
+status: ux-audit-in-progress-overflow-and-login-pushed
 ---
 
 # Handoff - Shift 447
@@ -16,7 +16,7 @@ status: ux-audit-in-progress-login-uncommitted-gate-blocked-by-host-load
 - Owner asked for a full UI/UX audit and a polished UX BEFORE any AI integration.
   Audit: .scratch/ui-ux-audit/spec.md (French), one issue per work package in
   .scratch/ui-ux-audit/issues/01..10. 01 and 03 resolved; 02, 04-10 ready-for-agent.
-- UNCOMMITTED in the working tree (work package 03, login + credit):
+- Committed and pushed (work package 03, login + credit):
   src/app/login/page.tsx (rewritten), src/components/app/sidebar.tsx,
   src/components/app/logo.tsx (comment), src/components/ui/button.tsx
   (justify-center), src/styles/globals.css (login-only CSS + --font-garamond
@@ -43,20 +43,15 @@ status: ux-audit-in-progress-login-uncommitted-gate-blocked-by-host-load
 
 ## Blockers
 
-- npm test exits 1 ONLY on tests/acceptance-campaign-dry-run.mts: spawnSync of
-  scripts/acceptance-campaign-dry-run.sh returns status null (killed by its
-  30_000 ms timeout) during "Cleaning the marked ephemeral acceptance tenant".
-  Cause is host load, not the change: 50 trivial `date` spawns took 22 s, then
-  >120 s (normal ~1 s). The test uses a mock HTTP server, none of the changed
-  files. It passed in the same session before the load spike (240/0).
+- None. The earlier npm test failure (tests/acceptance-campaign-dry-run.mts,
+  spawnSync status null after its 30 s timeout) was host load: once process
+  spawning was back to normal (50 spawns in 1.5 s) the full gate passed with the
+  login package: typecheck, typecheck:tests, npm test 240 pass / 0 fail.
 
 ## Next steps
 
-1. When process spawning is normal again (`time bash -c 'for i in $(seq 1 50);
-   do date >/dev/null; done'` under ~2 s), run
-   `npm run typecheck && npm run typecheck:tests && npm test`. If green, commit
-   the uncommitted login package as "feat(ui): replace cinematic login with a
-   sign-in screen" (exclude AGENTS.md), then push mbe-branch and check CI.
+1. Login package is committed and pushed. Check CI for the pushed tip; if a
+   test times out again, measure spawn cost before suspecting the code.
 2. Continue the audit packages in order: 02 metric labels, 07 tour scope,
    05 work queues first, 06 candidate table, 04 navigation, 08 vocabulary,
    09 visual system, 10 careers. Each: gate + re-capture of affected routes at

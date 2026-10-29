@@ -24,14 +24,9 @@ export function Sidebar() {
         <Link href="/" className="flex justify-center rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric">
           <HermesWordmark />
         </Link>
-        <a
-          href="https://www.linkedin.com/in/tonywalteur/"
-          target="_blank"
-          rel="noreferrer"
-          className="mt-2.5 block text-center text-[0.65rem] font-medium tracking-wide text-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
-        >
-          Created by Tony Walteur
-        </a>
+        <p className="mt-2.5 text-center text-[0.65rem] font-medium tracking-wide text-muted">
+          A Mantu Group product
+        </p>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Primary">

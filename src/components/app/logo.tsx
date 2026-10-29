@@ -21,8 +21,8 @@ export function HermesMark({ className }: { className?: string }) {
  * Full brand lockup for light surfaces — the complete ARIA logo, rendered
  * transparent (no dark backdrop): the gradient M-mark above a spaced ink "ARIA"
  * wordmark and a gradient "AGENTIC SOURCING PLATFORM" tagline. Mirrors the
- * marketing logo (aria-logo.png), but with ink "ARIA" so it reads on the light
- * sidebar (the white-on-transparent aria-logo.png is used on the dark login).
+ * marketing logo (aria-logo.png, white wordmark for dark surfaces), but with
+ * an ink "ARIA" so it reads on the light sidebar.
  */
 export function HermesWordmark({ className, compact }: { className?: string; compact?: boolean }) {
   if (compact) return <HermesMark className={className} />;
