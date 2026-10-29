@@ -1,121 +1,91 @@
 ---
 project: MSourcing / ARIA
-shift: 446
-agent: codex
-updated: 2026-10-27
-status: qualification-implemented-local-and-ci-green
+shift: 447
+agent: claude-code
+updated: 2026-10-29
+status: ux-audit-in-progress-login-uncommitted-gate-blocked-by-host-load
 ---
 
-# Handoff - Shift 446
+# Handoff - Shift 447
 
 ## Current state
 
-- Branch mbe-branch. Product commit 29967509 is pushed and matches the remote.
-- The existing candidate list/drawer now guides evidence review, verified facts
-  and contact, explicit processing-basis recording, enrichment and draft review.
-  Operator guide: docs/CANDIDATE-REVIEW.md, linked from SOURCING and the other-
-  machine setup checklist. Spec: .scratch/candidate-qualification/spec.md.
-- Local typecheck, typecheck:tests, complete npm test lifecycle, lint and production
-  build passed. Lint has only the two pre-existing topbar/seat-card navigation
-  warnings. Final focused regressions also passed after batch-save serialization
-  and workspace-change guards. No dependency, schema or infra change.
-- Edge browser fixture journey passed at 1280x720: fit review, full enrichment
-  arrays, honest unknown years, manual verified experience, assisted LinkedIn
-  draft without email, verified email, explicit basis, draft review and refresh.
-  No force clicks, real provider starts or outbound messages. The fixture starts
-  a temporary local backend/app; both were stopped after the check.
-- CI 40540178013 completed SUCCESS for exact product commit 29967509: Quality,
-  Database security, Local Docker demo, dependency audit, secret scan and Release
-  gate. CodeQL 40540177843 also completed SUCCESS.
-  https://github.com/mysticalsin/aria-sourcing/actions/runs/40540178013
-- Real Apify retrieval remains blocked by the earlier actor allowance refusal.
-  The application/key vault still runs on the owner's OTHER local machine;
-  nothing has been deployed to Azure or configured into that remote workspace.
+- Branch mbe-branch. Local commits NOT yet pushed: 93b73347 (UI/UX audit spec)
+  and f2765db0 (overflow fixes, gate green when committed: typecheck,
+  typecheck:tests, npm test 240 pass / 0 fail).
+- Owner asked for a full UI/UX audit and a polished UX BEFORE any AI integration.
+  Audit: .scratch/ui-ux-audit/spec.md (French), one issue per work package in
+  .scratch/ui-ux-audit/issues/01..10. 01 and 03 resolved; 02, 04-10 ready-for-agent.
+- UNCOMMITTED in the working tree (work package 03, login + credit):
+  src/app/login/page.tsx (rewritten), src/components/app/sidebar.tsx,
+  src/components/app/logo.tsx (comment), src/components/ui/button.tsx
+  (justify-center), src/styles/globals.css (login-only CSS + --font-garamond
+  removed), tests/login-page.mts and tests/font-build.mts (contract updated),
+  .scratch/ui-ux-audit/{spec.md,issues/03-login.md}. Typecheck and
+  typecheck:tests pass on it. Visually checked at 1440 and 390 px in local mode
+  and with NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true.
+- AGENTS.md is modified in the working tree by another tool; not touched or
+  committed by Claude Code. Its owner should review/commit it.
 
 ## Done this shift
 
-1. Added shared candidate-review next actions with observed/missing requirements
-   and explicit unknown experience. Added the list column and drawer guidance.
-2. Added persisted operator evidence editing for contact, observed skills and
-   verified numeric experience, with source notes, validation, duplicate identity
-   refusal and score/metrics recomputation. No automatic parsing of work dates.
-3. Found/fixed the dead-end contact-basis journey: live candidates could not record
-   the receipt required by approval, while the passport inferred a basis from
-   provenance. The passport now reflects only complete operator receipts, and a
-   separate explicit selection/reference action saves the decision.
-4. Hardened /api/source/enrich: accepts candidateId/want/budget hint only; loads
-   candidate/campaign from the authenticated workspace; checks source role,
-   origin, active reviewed brief, exclusions and evidence again after the call.
-   Unknown years remain unknown. Scores use the saved brief/weights.
-5. Preserved experience/education/languages in the patch. Store saves before
-   provider access and verifies result persistence before success. Concurrent
-   evidence/identity edits, erasure and session switches cannot overwrite newer
-   state. Batch enrichment serializes saves within the current store; it is not
-   cross-process paid-request idempotency.
-6. Added explicit paid enrichment review and actionable missing-key/identity and
-   provider-failure outcomes. Drafting selects assisted LinkedIn when no email;
-   draft functions honor role, active campaign, exclusions and channel details.
-   Missing personalization evidence is shown as missing, not invented fit text.
-7. Recorded findings in _relay/codex-findings.md, added route/domain/store/SSR
-   regressions to the canonical manifest, updated the action contract fixture,
-   and documented the remaining synchronous recovery limit in issue 02.
-8. Exact supplied account/token scans of the Git index passed. Gitleaks found no
-   leaks in introduced content. A raw full-patch stdin scan flagged only a
-   REMOVED synthetic provider-ID fixture; no scanner exception/rule was added.
-9. Archived shift 445 before replacing the baton. The final documentation-only commit
-   follows the product commit; any docs-tip CI is a separate run.
+1. Captured 21 routes at 1440x900 and 390x844 against the synthetic demo (Edge
+   via Playwright, onboarding flag hermes:onboarded:v1 preset), with automated
+   overflow detection; traced metric definitions in code. Wrote the audit.
+2. Owner decisions recorded in spec (see below).
+3. Overflow fix (f2765db0): sr-only spans (position:absolute) inside unpositioned
+   overflow-x containers escaped clipping (home was 3708 px wide); made
+   containers relative (integration strip, ui/Table, funnel kanban). Added a
+   grid-cols-1 base to 81 breakpoint-only grids. All 42 captures fit.
+4. Login redesign (uncommitted, see above): form visible without a click, no
+   third-party CloudFront video, no personal credit, Mantu Group mention,
+   desktop ink panel with the 3-step approval sequence (Mantu-yellow human step).
 
 ## Blockers
 
-- External live acceptance: the previous Apify actor returned SUCCEEDED with
-  "free user run limit reached" and zero profiles. Authentication alone passed.
-  Check actor/account allowance before any new paid start. No new provider test
-  was attempted in this shift; raw private receipt remains outside Git.
-- Other-machine setup and real profile import/restart/dedupe acceptance remain
-  owner actions in docs/LOCAL-SOURCING-TEST.md.
+- npm test exits 1 ONLY on tests/acceptance-campaign-dry-run.mts: spawnSync of
+  scripts/acceptance-campaign-dry-run.sh returns status null (killed by its
+  30_000 ms timeout) during "Cleaning the marked ephemeral acceptance tenant".
+  Cause is host load, not the change: 50 trivial `date` spawns took 22 s, then
+  >120 s (normal ~1 s). The test uses a mock HTTP server, none of the changed
+  files. It passed in the same session before the load spike (240/0).
 
 ## Next steps
 
-1. Product CI and CodeQL are verified green above. The final documentation-only
-   wrap-up commit triggers separate runs; do not present those as checked.
-2. On the other machine, update mbe-branch normally, preserve db_data/app_config
-   and the existing encryption key. Follow LOCAL-SOURCING-TEST.md, then
-   CANDIDATE-REVIEW.md for the actual candidate journey.
-3. Resolve discovery actor allowance before a paid start. Enrichment uses the
-   separate dev_fusion/linkedin-profile-scraper actor and requires its own access/
-   owner approval. No billing or subscription changes were authorized/performed.
-4. Next engineering slice: durable enrichment recovery/idempotency across tabs,
-   server interruptions and operators; see candidate-qualification issue 02.
-   It needs its own forward migration and PostgreSQL concurrency acceptance.
-5. GPT/Claude configuration can follow for hosted drafting, then real mailbox/
-   approval/delivery acceptance as a separate explicit test. Template drafts
-   already work without an LLM. No outreach was sent here.
+1. When process spawning is normal again (`time bash -c 'for i in $(seq 1 50);
+   do date >/dev/null; done'` under ~2 s), run
+   `npm run typecheck && npm run typecheck:tests && npm test`. If green, commit
+   the uncommitted login package as "feat(ui): replace cinematic login with a
+   sign-in screen" (exclude AGENTS.md), then push mbe-branch and check CI.
+2. Continue the audit packages in order: 02 metric labels, 07 tour scope,
+   05 work queues first, 06 candidate table, 04 navigation, 08 vocabulary,
+   09 visual system, 10 careers. Each: gate + re-capture of affected routes at
+   1440/390 with scrollWidth <= viewport.
+3. Node is not on Git Bash PATH here; use the portable runtime:
+   `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
 
 ## Decisions made (don't relitigate)
 
-- No private account identifier, token or raw provider receipt in Git, env
-  examples, tests, logs or relay. Current DPAPI store under LocalAppData/ARIA is
-  external and not portable to the other machine. Apify stays workspace-vault
-  authority, no environment fallback. Format check is not a live provider test.
-- No Docker/WSL installation here, Azure deployment, model setup or paid calls.
-  Keep five permanent containers/two init jobs and stable paired volumes/key.
-- Qualification uses existing scoring/enrichment/consent/approval workflows, not
-  a parallel pipeline. Source/public provenance never implies contact permission.
-- A verified profile/contact fact is distinct from explicit basis selection and
-  exact-message human approval. None of these actions sends a candidate message.
-- No automatic paid retry after uncertainty, lost responses, provider refusal or
-  failed saving. Keep failures/partial results honest and unknown fields unknown.
+- UI language: English everywhere; "#Vivier" becomes "Talent pool".
+- Navigation regrouped as in spec section 4; Intake + Launch merge into one
+  "New campaign"; old URLs redirect.
+- Candidate rating: a single /100 score; Top Gun / A-D letters / stars removed
+  from screens.
+- No personal credit (Tony Walteur) anywhere in the UI; use a Mantu Group mention.
+- Calibri is the Mantu brand font: keep it, self-host Carlito for consistency
+  (package 09), do not switch typeface.
+- KPI "0 contacted" vs funnel "35" is not a calculation bug: realFunnelFacts
+  counts real sends only. Fix is labelling (package 02), not the math.
+- Plus every decision from shift 446 (archive 2026-10-29-1300-claude-code.md):
+  no secrets in Git/relay, no paid calls, no Docker/WSL install, no auto retry.
 
 ## Watch out
 
-- Enrichment is still synchronous. Keep the page open until saving completes;
-  closing it can lose the response. Local store serialization is not a durable
-  cross-tab lease. Do not claim campaign discovery recovery covers enrichment.
-- User-supplied budget hints/profile caps are not currency spending guarantees.
-  USD0.10 belonged only to the earlier standalone check; actual invoice unaudited.
-- API change: /api/source/enrich uses candidateId rather than a browser profile.
-  All repository callers/tests were updated. No raw key is accepted or returned.
-- Local logs: ignored tmp/qualification-*. Browser screenshots contain fixtures
-  only and remain ignored. Raw real candidate screenshots/receipts stay private.
-- Genuine provider no-data success stays distinct from account/refusal/error.
-  Existing human approval and real delivery checks remain authoritative.
+- Removing tests' old assertions (video pause, email disclosure) was deliberate:
+  the video and disclosure no longer exist. Security assertions were kept.
+- ui/Button now centers content; full-width buttons elsewhere change alignment
+  (intended: fleet seat cards, integration cards, overlay).
+- Supabase/Azure login mode was not rendered (needs a backend); verify on the
+  other machine that "Sign in with Microsoft" and the email form both show.
+- scripts/accept-local-demo.mjs uses getByLabel("Username or email") and
+  getByLabel("Password", { exact: true }); the new labels keep those exact names.
