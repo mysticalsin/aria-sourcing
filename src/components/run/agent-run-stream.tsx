@@ -7,24 +7,21 @@ import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { runCampaignSourcing } from "@/lib/sourcing/campaign-run";
+import { runMission } from "@/lib/agents/mission";
+import { campaignLaunchPlan, MAX_MISSION_DRAFTS, type DraftedPair } from "@/lib/agents/campaign-mission";
 import { useActions, useCampaign, useCampaignOutreach, useSettings } from "@/lib/store";
 import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
-import type { Candidate, OutreachMessage } from "@/lib/types";
+import type { Candidate } from "@/lib/types";
 import { initialsFrom, scoreTone, toneForOutreachStatus } from "@/lib/utils";
 import { AlertTriangle, Bot, PlayCircle, ShieldCheck, Sparkles, X } from "lucide-react";
 
 type RunPhase = "idle" | "sourcing" | "drafting" | "done" | "empty" | "error";
 
-interface DraftedPair {
-  candidate: Candidate;
-  message: OutreachMessage;
-}
-
 /**
  * One materializing card per just-drafted candidate: the fit score counts up
  * next to the real radar (reusing FitRadar exactly as the sourcing feed
  * does), and the drafted body types out cosmetically over the ALREADY
- * committed `message.body` — generateOutreachFor already wrote this message
+ * committed `message.body` — the drafting agent already wrote this message
  * into the approval queue before this card ever renders, so nothing here is
  * computed, re-scored, or sent. `onRevealed` fires once per card the instant
  * it mounts (mirrors SourcedCandidateCard's per-card bus ping) purely to
@@ -67,6 +64,11 @@ function DraftedCandidateCard({
                 {candidate.currentTitle} · {candidate.currentCompany}
               </p>
             </div>
+            {message.draftedBy && (
+              <Badge tone={message.draftedBy === "ai" ? "electric" : "neutral"} size="sm" className="shrink-0">
+                {message.draftedBy === "ai" ? "Drafted by Claude" : "Template draft"}
+              </Badge>
+            )}
             <Badge tone={toneForOutreachStatus(message.status)} size="sm" className="shrink-0">
               {message.status}
             </Badge>
@@ -121,18 +123,19 @@ export interface AgentRunStreamProps {
 }
 
 /**
- * "Watch Aria Work" — a single client-side orchestration that sources a
- * batch for a campaign, then loops drafting outreach for every sourced
- * candidate, streaming each as a revealed card (fit radar + a typing body)
+ * "Watch Aria Work" — runs the campaign launch mission (campaignLaunchPlan):
+ * a sourcing agent, then one drafting agent per top candidate, two at a
+ * time, streaming each draft as a revealed card (fit radar + a typing body)
  * while a live "queued — awaiting approval" counter climbs next to the
  * approval-gate pill.
  *
  * Live sourcing goes through the canonical store action, which calls the
  * in-process sourcing agent (/api/sourcing-agent). An explicit demo
- * deployment uses the deterministic Talent Pool source. The reveal
- * only stages presentation of data that is already committed.
- * `generateOutreachFor` never calls a send path; it only ever leaves a Draft
- * in the human approval queue.
+ * deployment uses the deterministic Talent Pool source. Drafts are written by
+ * Claude through generateOutreachLive, which keeps a template draft when the
+ * model is unavailable. The reveal only stages presentation of data that is
+ * already committed. No agent calls a send path; every draft stops in the
+ * human approval queue.
  */
 export function AgentRunStream({ campaignId, autoStart = false, onClose, className }: AgentRunStreamProps) {
   const actions = useActions();
@@ -147,6 +150,22 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
   const [sourcedCount, setSourcedCount] = React.useState(0);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const baselineQueuedRef = React.useRef(0);
+  const missionAbortRef = React.useRef<AbortController | null>(null);
+  // Leaving the page stops queued agents; drafts already committed stay queued.
+  // The abort is deferred one tick: Strict Mode unmounts and immediately
+  // remounts in development, and that simulated unmount must not cancel the
+  // auto-started run (the autoStart guard would not start it again).
+  const mountedRef = React.useRef(false);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const controller = missionAbortRef.current;
+      setTimeout(() => {
+        if (!mountedRef.current) controller?.abort();
+      }, 0);
+    };
+  }, []);
 
   const handleRevealed = React.useCallback(() => {
     setRevealedCount((n) => n + 1);
@@ -169,36 +188,46 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
       return;
     }
 
-    const result = await runCampaignSourcing({
-      campaignId,
-      count: 6,
-      demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
-      sourceNextBatch: actions.sourceNextBatch,
+    missionAbortRef.current?.abort();
+    const controller = new AbortController();
+    missionAbortRef.current = controller;
+    const plan = campaignLaunchPlan(campaignId, {
+      sourceBatch: () =>
+        runCampaignSourcing({
+          campaignId,
+          count: MAX_MISSION_DRAFTS,
+          demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
+          sourceNextBatch: actions.sourceNextBatch,
+        }),
+      draftLive: (candidateId) => actions.generateOutreachLive(candidateId),
+      draftTemplate: (candidateId) => actions.generateOutreachFor(candidateId),
     });
-    if (!result.ok) {
-      setErrorMessage(result.error);
+    const report = await runMission(plan, {
+      // Two drafts in flight keeps the run quick without bursting the API.
+      concurrency: 2,
+      agentTimeoutMs: 90_000,
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (event.type === "step_started" && event.stepId === "drafts") setPhase("drafting");
+      },
+    });
+    // Unmounted or restarted meanwhile: this run's results are no longer shown.
+    if (controller.signal.aborted) return;
+
+    const sourceStep = report.steps.source;
+    if (sourceStep?.status === "failed") {
+      setErrorMessage(sourceStep.error ?? "Sourcing failed.");
       setPhase("error");
       return;
     }
-    const sourced: Candidate[] = result.accepted;
-
+    const sourced = (report.results.source as Candidate[] | undefined) ?? [];
     setSourcedCount(sourced.length);
     if (sourced.length === 0) {
       setPhase("empty");
       return;
     }
 
-    setPhase("drafting");
-    const pairs: DraftedPair[] = [];
-    for (const candidate of sourced) {
-      try {
-        const msg = actions.generateOutreachFor(candidate.id);
-        if (msg) pairs.push({ candidate, message: msg });
-      } catch {
-        // Degrade gracefully — a single failed draft never aborts the run.
-      }
-    }
-
+    const pairs = (report.results.drafts as DraftedPair[] | undefined) ?? [];
     if (pairs.length === 0) {
       setPhase("empty");
       return;
@@ -225,6 +254,8 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
   const liveQueuedCount = campaignOutreach.filter((m) => m.status === "Needs Approval").length;
   const queuedTarget = phase === "drafting" ? baselineQueuedRef.current + revealedCount : liveQueuedCount;
   const displayQueued = useCountUp(queuedTarget, { durationMs: 400 });
+
+  const aiDrafted = queue.filter((pair) => pair.message.draftedBy === "ai").length;
 
   const runLabel = running
     ? phase === "sourcing"
@@ -273,7 +304,8 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
           </Badge>
           {phase === "done" && (
             <Badge tone="electric" size="sm">
-              Sourced {sourcedCount} · drafted {queue.length} · 0 sent
+              Sourced {sourcedCount} · drafted {queue.length}
+              {aiDrafted > 0 && ` (${aiDrafted} by Claude)`} · 0 sent
             </Badge>
           )}
         </div>

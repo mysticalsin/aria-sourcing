@@ -610,6 +610,10 @@ export interface OutreachMessage {
   body: string;
   tone: OutreachTone;
   personalizationEvidence: string[];
+  /** Who wrote the copy: the configured model, or the deterministic template
+   *  (no provider, budget reached, failed or unparseable reply). Absent on
+   *  drafts created before this field existed. */
+  draftedBy?: "ai" | "template";
   status: OutreachStatus;
   sequenceStep: number;
   scheduledFor: string | null;

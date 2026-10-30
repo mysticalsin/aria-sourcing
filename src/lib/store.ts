@@ -1419,7 +1419,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Compose in the seat's language, else the need's, else the workspace default.
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      const msg: OutreachMessage = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        draftedBy: "template",
+      };
       const saved = commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -1550,7 +1553,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const latestCandidate = latestState.candidates.find((c) => c.id === candidateId);
       const latestCampaign = latestState.campaigns.find((c) => c.id === latestCandidate?.campaignId);
       if (!latestCandidate || candidateDraftBlocker(latestCandidate, latestCampaign, channel) || !can(supabaseEnabled ? liveRoleRef.current : latestState.currentRole, "outreach")) return null;
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      const msg: OutreachMessage = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        draftedBy: live ? "ai" : "template",
+      };
       const saved = commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
