@@ -47,10 +47,19 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
    Opus 5.5 (saved, no task default). Migration resets the model layer of
    pre-18 blobs and keeps any provider's linked `apiKeyId`.
 6. Tests: tests/ai-provider.mts and tests/admin-config.mts updated/extended.
+7. Owner answers (2026-10-30): GDPR validated for Claude; budget 20-30 EUR/month;
+   goal is a usable demo with every feature; public demo host will get the keys.
+8. `src/lib/ai/usage.ts`: price table (Haiku/Sonnet/Opus 5.5, unknown ids
+   priced above Opus), per-instance in-memory ledger for the UTC day/month,
+   caps AI_MONTHLY_BUDGET_USD (default 30) and AI_DAILY_BUDGET_USD (default 6).
+   Checked before every Anthropic call in /api/hermes/chat and each tool-loop
+   round; usage recorded from every response (one JSON log line, no content).
+   Past a cap: chat returns ok:false (client uses its mock), sourcing runs
+   deterministic.
 
 ## Blockers
 
-- Anthropic workspace id needed from the owner (`wrkspc_...`, Console ->
+- Still open after the owner's answers: Anthropic workspace id needed from the owner (`wrkspc_...`, Console ->
   Settings -> Workspaces), or a workspace-scoped key. Add to `.secret` as
   `ANTHROPIC_WORKSPACE_ID=wrkspc_...` on its own line.
 
@@ -58,7 +67,9 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
 
 1. When the workspace id is in `.secret`: run issue 01 (free count_tokens on
    haiku/sonnet/opus 5.5, then one real call per task, total < $0.05).
-2. Issue 02 usage ledger + budgets before any feature that fans out calls.
+2. Issue 02 remainder: persist the ledger (DB table in the Supabase stack, so
+   it survives restarts and is shared) and show month/day spend in Settings.
+   Do it before any feature that fans out calls.
 3. Issue 03 (Haiku extraction task for intake), 04 (prompt caching).
 4. 05 orchestrator needs triage with the owner (spec section 5 and 7).
 5. Resume UX audit packages (02, 07, 05, 06, 04, 08, 09, 10) when the owner
@@ -72,6 +83,8 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
 - Model per task: Haiku for classification/extraction, Sonnet for drafting,
   chat and the sourcing loop, Opus only by explicit choice or escalation.
 - Agents run in-process (ADR 0001: no separate AI server or worker platform).
+- Budget 20-30 EUR/month for a demo with all features; GDPR for candidate data
+  sent to Claude is validated by the owner (2026-10-30).
 - Sourcing spends only an admin-created workspace (vault) key; the env/.secret
   key serves the admin chat path and local dev.
 - Deterministic fallbacks stay for every AI surface; human approval before any send.
@@ -82,7 +95,7 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
 
 - The public demo (vercel-demo) ran on a Kimi env key. After merging this
   branch it needs ANTHROPIC_API_KEY (+ ANTHROPIC_WORKSPACE_ID for this key type).
-- Candidate PII will go to Anthropic: owner must confirm the GDPR frame before
-  real candidate data is processed (spec section 7).
+- The in-app spend cap is per server instance and resets on restart. The hard
+  ceiling must be a spend limit on the Anthropic workspace (owner, Console).
 - Requests still use anthropic-version 2023-06-01 and raw fetch; SDK move is issue 08.
 - `max_tokens` / `refusal` stop reasons are not handled explicitly yet (issue 07).

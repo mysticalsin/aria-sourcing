@@ -82,7 +82,7 @@ Le schéma contient encore des tables `agent_runs` et `agent_specs`, héritées 
 |---|---|---|
 | 00 | Socle : clé locale, routage Claude par tâche, effort, lecture des blocs `thinking` | fait |
 | 01 | ID du workspace Anthropic et test réel de bout en bout | bloqué, en attente du propriétaire |
-| 02 | Journal d'usage et budgets par workspace | ready-for-agent |
+| 02 | Journal d'usage et budgets | plafond fait ; persistance en base et panneau Réglages à faire |
 | 03 | Tâche `extraction` sur Haiku pour l'analyse de brief, avec sortie structurée | ready-for-agent |
 | 04 | Cache des prompts système et des outils | ready-for-agent |
 | 05 | Orchestrateur de missions et agents (§5) | needs-triage |
@@ -90,9 +90,31 @@ Le schéma contient encore des tables `agent_runs` et `agent_specs`, héritées 
 | 07 | Escalade vers Opus et gestion des refus (`stop_reason: refusal`) | needs-triage |
 | 08 | Passer le chemin Anthropic sur le SDK officiel `@anthropic-ai/sdk` | needs-triage |
 
-## 7. Questions ouvertes pour le propriétaire
+## 7. Réponses du propriétaire (2026-10-30)
+
+- **RGPD :** validé. Les données candidats peuvent être traitées par Claude.
+- **Budget :** de 20 à 30 € par mois. L'objectif est une démo utilisable avec toutes les fonctionnalités.
+- **Démo publique :** les clés Anthropic seront posées sur l'hébergeur.
+
+### Le budget est-il tenable ?
+
+Estimations par appel, à confirmer avec le journal d'usage (WP 01) :
+
+| Action | Modèle | Coût estimé |
+|---|---|---|
+| Classer une réponse | Haiku | < 0,001 $ |
+| Message de chat ou analyse de brief | Sonnet, effort low | ≈ 0,01 à 0,03 $ |
+| Message d'approche | Sonnet, effort medium | ≈ 0,02 $ |
+| Lancement de l'agent de sourcing (jusqu'à 6 tours) | Sonnet, effort medium | ≈ 0,15 à 0,30 $ |
+
+Avec 30 $ par mois, on peut faire par exemple 60 lancements de sourcing, 400 messages d'approche, 300 échanges de chat et des milliers de classifications. Le budget suffit pour préparer et jouer une démo.
+
+### Garde-fous en place
+
+- **Plafond dans l'app** (`src/lib/ai/usage.ts`) : 30 $ par mois et 6 $ par jour par défaut (`AI_MONTHLY_BUDGET_USD`, `AI_DAILY_BUDGET_USD`). Au-delà, chaque surface bascule sur son repli sans IA. Les compteurs vivent en mémoire et repartent de zéro au redémarrage.
+- **Plafond ferme :** une limite de dépense sur le workspace dans la Console Anthropic. C'est au propriétaire de la poser, car la clé n'a pas les droits d'administration.
+
+## 8. Questions encore ouvertes
 
 1. **ID du workspace Anthropic.** La clé fournie n'est rattachée à aucun workspace. L'API exige l'en-tête `anthropic-workspace-id`, et la clé n'a pas le droit de lister les workspaces. Il faut l'ID `wrkspc_…`, visible dans la Console, ou une clé rattachée à un workspace.
-2. **Données personnelles.** Les profils candidats et les réponses partiront chez Anthropic. Il faut valider le cadre RGPD (DPA, rétention, région d'inférence) avant tout usage sur des données réelles.
-3. **Budget cible** mensuel, pour fixer les plafonds du WP 02.
-4. **Démo publique.** Elle tournait sur une clé Kimi d'environnement. Après fusion de cette branche, elle aura besoin de `ANTHROPIC_API_KEY` (et de l'ID de workspace) sur l'hébergeur.
+2. **Limite de dépense dans la Console** sur ce workspace, recommandée à 30 $ par mois.
