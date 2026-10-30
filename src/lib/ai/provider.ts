@@ -10,6 +10,7 @@
    ========================================================================== */
 
 import type { LlmProviderKind, ModelTask, SystemSettings } from "@/lib/types";
+import type { HermesTask } from "./hermes";
 
 export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi" | "local";
 
@@ -27,7 +28,7 @@ export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
 
 /** Sensible default model per slug when no SavedModel is configured. */
 export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
-  anthropic: "claude-sonnet-4-6",
+  anthropic: "claude-sonnet-5-5",
   openai: "gpt-4o-mini",
   groq: "llama-3.3-70b-versatile",
   xai: "grok-2-latest",
@@ -167,6 +168,43 @@ export const VAULT_PROVIDER: Record<AiProviderSlug, string> = {
   local: "Custom",
 };
 
+/* ---- Anthropic request shaping --------------------------------------------
+   Current Claude models think adaptively by default, and thinking tokens count
+   against max_tokens. Each task therefore gets an explicit effort level (how
+   much the model may think) and an output ceiling with room for that thinking.
+   Cheap, high-volume tasks stay at low effort; drafting gets more. */
+
+export interface AnthropicTaskProfile {
+  effort: "low" | "medium" | "high";
+  maxTokens: number;
+}
+
+export const ANTHROPIC_TASK_PROFILE: Record<HermesTask, AnthropicTaskProfile> = {
+  classify: { effort: "low", maxTokens: 1024 },
+  chat: { effort: "low", maxTokens: 8192 },
+  outreach: { effort: "medium", maxTokens: 8192 },
+  sourcing: { effort: "medium", maxTokens: 16000 },
+};
+
+/** True for models that accept output_config.effort with low/medium/high.
+ *  Older ids (Sonnet/Haiku 4.5 and before) reject the field, so they keep the
+ *  legacy request shape. */
+export function anthropicSupportsEffort(model: string): boolean {
+  return /^claude-(?:fable|mythos|opus|sonnet|haiku)-5(?:-|$)|^claude-(?:opus|sonnet)-4-[6-9](?:-|$)/.test(model);
+}
+
+/** Messages API headers. A key that is not scoped to an Anthropic workspace
+ *  must name one, read server-side from ANTHROPIC_WORKSPACE_ID. */
+export function anthropicHeaders(key: string): Record<string, string> {
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  return {
+    "content-type": "application/json",
+    "x-api-key": key,
+    "anthropic-version": "2023-06-01",
+    ...(workspaceId ? { "anthropic-workspace-id": workspaceId } : {}),
+  };
+}
+
 /**
  * Build the fetch args for a cloud provider call.
  *
@@ -183,18 +221,18 @@ export function buildCloudRequest(
    *  analysis and screening-question generation that 1024 silently truncated. */
   maxTokens = 2048,
   endpoint?: string,
+  /** Anthropic only: selects the effort level and output ceiling. */
+  task?: HermesTask,
 ): { url: string; headers: Record<string, string>; body: string } {
   if (provider === "anthropic") {
+    const profile = task && anthropicSupportsEffort(model) ? ANTHROPIC_TASK_PROFILE[task] : undefined;
     return {
       url: CLOUD_ENDPOINT.anthropic,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: anthropicHeaders(key),
       body: JSON.stringify({
         model,
-        max_tokens: maxTokens,
+        max_tokens: profile ? profile.maxTokens : maxTokens,
+        ...(profile ? { output_config: { effort: profile.effort } } : {}),
         system,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -225,9 +263,10 @@ export function buildCloudRequest(
  */
 export function parseCloudResponse(provider: AiProviderSlug, json: unknown): string {
   if (provider === "anthropic") {
-    return (
-      (json as { content?: { text?: string }[] } | null)?.content?.[0]?.text ?? ""
-    );
+    // Thinking blocks come first and carry no `text`; join the text blocks.
+    const content = (json as { content?: { text?: unknown }[] } | null)?.content;
+    if (!Array.isArray(content)) return "";
+    return content.map((block) => (typeof block?.text === "string" ? block.text : "")).join("");
   }
   return (
     (json as { choices?: { message?: { content?: string } }[] } | null)?.choices?.[0]

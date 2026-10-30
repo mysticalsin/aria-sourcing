@@ -61,7 +61,9 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // connected/lastSync state after the default seed became honest.
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
-export const STATE_VERSION = 17;
+// STATE_VERSION 18 - the AI layer moved to Claude: Anthropic is the default
+// provider and each task has its own model tier (see defaultSavedModels).
+export const STATE_VERSION = 18;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -84,47 +86,49 @@ export function defaultLlmProviders(): LlmProvider[] {
     id: `prov_${kind.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
     kind,
     label: kind,
-    // The public demo resolves its chat/agent models to a Kimi (Kimi Code) key held in
-    // the server env, so Kimi is the enabled default provider; the rest activate once a
-    // key is added in Settings → AI & Models.
-    enabled: kind === "Kimi",
-    isDefault: kind === "Kimi",
+    // All AI work runs on Claude. The key comes from the workspace vault or, on a
+    // developer machine, the server env (ANTHROPIC_API_KEY, or the gitignored
+    // .secret file). Other providers activate once a key is added in Settings.
+    enabled: kind === "Anthropic",
+    isDefault: kind === "Anthropic",
   }));
 }
 
+/**
+ * One model tier per kind of work, cheapest that does the job well:
+ * - Haiku: high-volume, short, structured calls (reply classification).
+ * - Sonnet: drafting, chat, and the sourcing tool loop.
+ * - Opus: saved but not a task default; pick it per task in Settings when a
+ *   workload measurably needs deeper reasoning.
+ * Effort and output ceilings per task live in ANTHROPIC_TASK_PROFILE.
+ */
 export function defaultSavedModels(): SavedModel[] {
   return [
     {
-      // The demo's active model — Kimi Code, resolved to the server-env KIMI_API_KEY.
-      id: "model_kimi_coding",
-      providerId: "prov_kimi",
-      modelName: "kimi-for-coding",
-      label: "Kimi K2 (Code)",
-      contextWindow: 256000,
+      id: "model_claude_haiku",
+      providerId: "prov_anthropic",
+      modelName: "claude-haiku-5-5",
+      label: "Claude Haiku 5.5",
+      contextWindow: 1000000,
       enabled: true,
-      // No "sourcing": the sourcing agent requires tool-calling, which Kimi doesn't
-      // support (runSourcingAgent in store.ts hard-rejects it). Leaving it out of
-      // this list — and out of defaultModels.sourcing below — lets resolveAiProvider
-      // fall through to its "no provider configured" path instead of a guaranteed failure.
-      defaultForTask: ["outreach", "classification", "chat"],
+      defaultForTask: ["classification"],
     },
     {
-      id: "model_claude_opus_4",
+      id: "model_claude_sonnet",
       providerId: "prov_anthropic",
-      modelName: "claude-opus-4-5",
-      label: "Claude Opus 4.5",
-      contextWindow: 200000,
+      modelName: "claude-sonnet-5-5",
+      label: "Claude Sonnet 5.5",
+      contextWindow: 1000000,
       enabled: true,
-      defaultForTask: ["sourcing", "outreach"],
+      defaultForTask: ["sourcing", "outreach", "chat"],
     },
     {
-      id: "model_claude_sonnet_4",
+      id: "model_claude_opus",
       providerId: "prov_anthropic",
-      modelName: "claude-sonnet-4-5",
-      label: "Claude Sonnet 4.5",
-      contextWindow: 200000,
+      modelName: "claude-opus-5-5",
+      label: "Claude Opus 5.5",
+      contextWindow: 1000000,
       enabled: true,
-      defaultForTask: ["classification", "chat"],
     },
   ];
 }
@@ -174,12 +178,10 @@ export function defaultSettings(): SystemSettings {
     tools: defaultTools(),
     mcpServers: [],
     defaultModels: {
-      // No sourcing default: Kimi can't run it (no tool-calling) and no other
-      // provider is enabled out of the box, so resolveAiProvider correctly reports
-      // "not configured" until an operator sets a tool-calling-capable provider.
-      outreach: "model_kimi_coding",
-      classification: "model_kimi_coding",
-      chat: "model_kimi_coding",
+      sourcing: "model_claude_sonnet",
+      outreach: "model_claude_sonnet",
+      classification: "model_claude_haiku",
+      chat: "model_claude_sonnet",
     },
     hermesLiveMode: false,
     hermesApiUrl: "",

@@ -330,7 +330,7 @@ export async function POST(req: NextRequest) {
         const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
         const result =
           slug === "anthropic"
-            ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers })
+            ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers, task })
             : await runOpenAiWithTools({ provider: slug, baseUrl, model: toolModel, system, prompt, key, servers: resolvedServers });
         if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
         // Tool loop failed or returned empty (e.g. a provider that rejects the tools
@@ -339,7 +339,9 @@ export async function POST(req: NextRequest) {
         if (!result.ok) logUpstream("info", "Tool loop unavailable; using plain completion", { provider, reason: result.reason });
       }
     }
-    const { url, headers, body } = buildCloudRequest(slug, model ?? "hermes", system, prompt, key, 2048, endpoint);
+    // A cloud provider never receives the "hermes" placeholder: it has no such model.
+    const cloudModel = slug !== "local" && (!model || model === "hermes") ? DEFAULT_MODEL[slug] : model ?? "hermes";
+    const { url, headers, body } = buildCloudRequest(slug, cloudModel, system, prompt, key, 2048, endpoint, task);
     try {
       const upstream = await fetch(url, {
         method: "POST",

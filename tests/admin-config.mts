@@ -12,7 +12,11 @@ import {
   defaultTools,
   STATE_VERSION,
 } from "../src/lib/seed.js";
+import { resolveAiProvider } from "../src/lib/ai/provider.js";
+import { migrateToCurrentVersion } from "../src/lib/store/migrations.js";
 import { LLM_PROVIDERS, TOOL_IDS } from "../src/lib/types.js";
+
+const models = defaultSavedModels;
 
 let pass = 0,
   fail = 0;
@@ -57,15 +61,36 @@ ok("seed has tools array", Array.isArray(seed.settings.tools));
 ok("seed tools cover all TOOL_IDS", seed.settings.tools.length === TOOL_IDS.length);
 ok("seed has defaultModels object", typeof seed.settings.defaultModels === "object" && seed.settings.defaultModels !== null);
 
-// Verify Kimi is the default provider (the public demo runs on a Kimi Code key).
-const kimiProv = seed.settings.llmProviders.find((p) => p.kind === "Kimi");
-ok("Kimi provider exists", !!kimiProv);
-ok("Kimi provider is default", !!kimiProv?.isDefault);
-ok("Kimi provider is enabled", !!kimiProv?.enabled);
+// Verify Anthropic is the default provider (all AI work runs on Claude).
+const anthropicProv = seed.settings.llmProviders.find((p) => p.kind === "Anthropic");
+ok("Anthropic provider exists", !!anthropicProv);
+ok("Anthropic provider is default", !!anthropicProv?.isDefault);
+ok("Anthropic provider is enabled", !!anthropicProv?.enabled);
 
 // Other providers should be disabled by default.
-const otherProviders = seed.settings.llmProviders.filter((p) => p.kind !== "Kimi");
-ok("non-Kimi providers are disabled by default", otherProviders.every((p) => !p.enabled));
+const otherProviders = seed.settings.llmProviders.filter((p) => p.kind !== "Anthropic");
+ok("non-Anthropic providers are disabled by default", otherProviders.every((p) => !p.enabled));
+
+// Each task resolves to its own Claude tier: Haiku for classification, Sonnet elsewhere.
+const tierFor = (task: "sourcing" | "outreach" | "classification" | "chat") =>
+  resolveAiProvider(seed.settings, task)?.model;
+ok("classification runs on Haiku", tierFor("classification") === "claude-haiku-5-5");
+ok("outreach runs on Sonnet", tierFor("outreach") === "claude-sonnet-5-5");
+ok("chat runs on Sonnet", tierFor("chat") === "claude-sonnet-5-5");
+ok("sourcing runs on Sonnet", tierFor("sourcing") === "claude-sonnet-5-5");
+ok("Opus is saved but is no task default", models().some((m) => m.modelName === "claude-opus-5-5" && !m.defaultForTask?.length));
+
+// A pre-18 blob gets the Claude model layer and keeps a provider's linked vault key.
+const legacy = { ...seed, version: 17, settings: { ...seed.settings,
+  llmProviders: seed.settings.llmProviders.map((p) =>
+    p.kind === "Kimi" ? { ...p, enabled: true, isDefault: true } :
+    p.kind === "Anthropic" ? { ...p, enabled: false, isDefault: false, apiKeyId: "key_anthropic" } : p),
+  defaultModels: { chat: "model_kimi_coding" } } };
+const claudeMigrated = migrateToCurrentVersion(legacy);
+const claudeMigratedAnthropic = claudeMigrated.settings.llmProviders.find((p) => p.kind === "Anthropic");
+ok("migration enables Anthropic as default", !!claudeMigratedAnthropic?.enabled && !!claudeMigratedAnthropic?.isDefault);
+ok("migration keeps the linked vault key", claudeMigratedAnthropic?.apiKeyId === "key_anthropic");
+ok("migration resets task defaults to Claude tiers", claudeMigrated.settings.defaultModels?.chat === "model_claude_sonnet");
 
 // LLM_PROVIDERS coverage.
 ok("all LLM_PROVIDERS have an entry", LLM_PROVIDERS.every((k) => seed.settings.llmProviders.some((p) => p.kind === k)));
@@ -79,10 +104,10 @@ ok("every provider has id, kind, label", providers.every((p) => p.id && p.kind &
 
 /* ---- defaultSavedModels helper ------------------------------------------ */
 
-const models = defaultSavedModels();
-ok("defaultSavedModels returns array", Array.isArray(models));
-ok("default models are enabled", models.every((m) => m.enabled));
-ok("default models have providerId", models.every((m) => !!m.providerId));
+const savedModels = models();
+ok("defaultSavedModels returns array", Array.isArray(savedModels));
+ok("default models are enabled", savedModels.every((m) => m.enabled));
+ok("default models have providerId", savedModels.every((m) => !!m.providerId));
 
 /* ---- defaultTools helper ------------------------------------------------ */
 

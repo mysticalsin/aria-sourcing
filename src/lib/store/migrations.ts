@@ -20,6 +20,17 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   // Blobs older than 12 have their model layer reset below so returning visitors
   // leave the previous Anthropic default (which would fall back to the mock).
   const preKimi = (parsed.version ?? 0) < 12;
+  // STATE_VERSION 18 — the AI layer moved to Claude with one model tier per task.
+  // Older blobs get the new model layer; a vault key already linked to a
+  // provider is kept so an admin does not have to re-link it.
+  const preClaude = (parsed.version ?? 0) < 18;
+  const linkedKeys = new Map(
+    (parsed.settings?.llmProviders ?? []).filter((p) => p.apiKeyId).map((p) => [p.id, p.apiKeyId]),
+  );
+  const claudeProviders = defs.llmProviders.map((p) =>
+    linkedKeys.has(p.id) ? { ...p, apiKeyId: linkedKeys.get(p.id) } : p,
+  );
+  const resetModels = preKimi || preClaude;
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   return {
     ...parsed,
@@ -74,12 +85,12 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     interviewers: parsed.interviewers ?? seedInterviewers(),
     settings: {
       ...withoutLegacyIntegrationAuthority(parsed.settings),
-      llmProviders: preKimi ? defs.llmProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
-      savedModels: preKimi ? defs.savedModels : (parsed.settings.savedModels ?? defs.savedModels),
+      llmProviders: resetModels ? claudeProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
+      savedModels: resetModels ? defs.savedModels : (parsed.settings.savedModels ?? defs.savedModels),
       tools: parsed.settings.tools ?? defs.tools,
       mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
       webResearch: parsed.settings.webResearch ?? defs.webResearch,
-      defaultModels: preKimi ? defs.defaultModels : (parsed.settings.defaultModels ?? defs.defaultModels),
+      defaultModels: resetModels ? defs.defaultModels : (parsed.settings.defaultModels ?? defs.defaultModels),
       // STATE_VERSION 8 — live Aria runtime config.
       hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
       hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,

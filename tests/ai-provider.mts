@@ -15,7 +15,10 @@ import {
   aiProviderConfigured,
   buildCloudRequest,
   parseCloudResponse,
+  anthropicSupportsEffort,
+  ANTHROPIC_TASK_PROFILE,
 } from "../src/lib/ai/provider.js";
+import { parseLocalSecret } from "../src/lib/ai/local-secret.js";
 import type { SystemSettings, LlmProvider, SavedModel } from "../src/lib/types.js";
 import { defaultSettings } from "../src/lib/seed.js";
 import { resolveProviderEndpoint } from "../src/lib/ai/endpoint";
@@ -203,6 +206,47 @@ ok("parseCloudResponse returns empty for null (openai)", parseCloudResponse("ope
 // Groq / Mistral / xAI use same OpenAI path
 const groqJson = { choices: [{ message: { content: "Hello from Groq" } }] };
 ok("parseCloudResponse works for groq shape", parseCloudResponse("groq", groqJson) === "Hello from Groq");
+
+/* ---- 12. Claude task profiles (effort + output ceiling) ------------------- */
+
+const thinkingJson = { content: [{ type: "thinking", thinking: "" }, { type: "text", text: "After thinking" }] };
+ok("parseCloudResponse skips a leading thinking block", parseCloudResponse("anthropic", thinkingJson) === "After thinking");
+
+const classifyBody = JSON.parse(
+  buildCloudRequest("anthropic", "claude-haiku-5-5", "S", "P", "k", 2048, undefined, "classify").body,
+) as { max_tokens: number; output_config?: { effort?: string } };
+ok("classify runs at low effort", classifyBody.output_config?.effort === "low");
+ok("classify uses its own output ceiling", classifyBody.max_tokens === ANTHROPIC_TASK_PROFILE.classify.maxTokens);
+
+const outreachBody = JSON.parse(
+  buildCloudRequest("anthropic", "claude-sonnet-5-5", "S", "P", "k", 2048, undefined, "outreach").body,
+) as { max_tokens: number; output_config?: { effort?: string } };
+ok("outreach runs at medium effort", outreachBody.output_config?.effort === "medium");
+ok("outreach leaves room for thinking", outreachBody.max_tokens > 2048);
+
+const legacyBody = JSON.parse(
+  buildCloudRequest("anthropic", "claude-sonnet-4-5", "S", "P", "k", 2048, undefined, "outreach").body,
+) as Record<string, unknown>;
+ok("models without effort support keep the legacy shape", !("output_config" in legacyBody) && legacyBody.max_tokens === 2048);
+ok("effort support covers current tiers", ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-4-8"].every(anthropicSupportsEffort));
+ok("effort support excludes 4.5 and older", !["claude-sonnet-4-5", "claude-haiku-4-5", "claude-3-7-sonnet"].some(anthropicSupportsEffort));
+
+const priorWorkspace = process.env.ANTHROPIC_WORKSPACE_ID;
+process.env.ANTHROPIC_WORKSPACE_ID = "wrkspc_test";
+ok("workspace id is sent when configured",
+  buildCloudRequest("anthropic", "claude-haiku-5-5", "S", "P", "k").headers["anthropic-workspace-id"] === "wrkspc_test");
+delete process.env.ANTHROPIC_WORKSPACE_ID;
+ok("no workspace header when unset",
+  !("anthropic-workspace-id" in buildCloudRequest("anthropic", "claude-haiku-5-5", "S", "P", "k").headers));
+if (priorWorkspace !== undefined) process.env.ANTHROPIC_WORKSPACE_ID = priorWorkspace;
+
+/* ---- 13. Local .secret file parsing --------------------------------------- */
+
+ok("a bare key is read as ANTHROPIC_API_KEY", parseLocalSecret("sk-ant-api03-abc_DEF-1\n").ANTHROPIC_API_KEY === "sk-ant-api03-abc_DEF-1");
+const named = parseLocalSecret("# local\nANTHROPIC_API_KEY=\"sk-ant-x\"\r\nexport ANTHROPIC_WORKSPACE_ID=wrkspc_1\nNODE_OPTIONS=--inspect\n");
+ok("KEY=VALUE lines are read and unquoted", named.ANTHROPIC_API_KEY === "sk-ant-x" && named.ANTHROPIC_WORKSPACE_ID === "wrkspc_1");
+ok("variables outside the allow-list are ignored", !("NODE_OPTIONS" in named));
+ok("a bare non-Anthropic line is ignored", Object.keys(parseLocalSecret("hello world")).length === 0);
 
 /* ---- Report ---------------------------------------------------------------- */
 

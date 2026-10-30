@@ -283,7 +283,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const configuredQueries = initial.value.campaign.sourcingStrategy.githubQueries
     .map((query) => query.query.trim())
     .filter(Boolean);
-  const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
+  // Live sourcing spends only an admin-created workspace key, never the server
+  // env key. A cloud provider that is enabled but has no linked workspace key is
+  // therefore not configured here, and deterministic sourcing stays available
+  // (the default seed enables Anthropic before any key is saved).
+  const resolvedCloud = resolveAiProvider(initial.value.aiSettings, "sourcing");
+  const cloudConfig =
+    resolvedCloud && (resolvedCloud.provider === "local" || resolvedCloud.apiKeyId) ? resolvedCloud : null;
   const deterministic = !cloudConfig;
   if (deterministic && configuredQueries.length === 0) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
@@ -304,9 +310,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
       if (!toolModel || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(toolModel)) {
         return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "Configure the exact local model name.");
       }
-    }
-    if (!cloudConfig.apiKeyId && cloudSlug !== "local") {
-      return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "The selected provider has no workspace key.");
     }
   }
   const configurationFingerprint = createHash("sha256")
@@ -551,6 +554,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
               servers,
               maxRounds: 6,
               beforeExternalCall: async () => (await currentAuthority()).ok,
+              task: "sourcing",
             })
           : await runOpenAiWithTools({
               provider: cloudSlug,

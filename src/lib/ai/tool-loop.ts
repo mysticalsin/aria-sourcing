@@ -15,7 +15,13 @@ import {
   remoteMcpExecutionEnabled,
   type McpTool,
 } from "@/lib/mcp-client";
-import { type AiProviderSlug } from "@/lib/ai/provider";
+import {
+  ANTHROPIC_TASK_PROFILE,
+  anthropicHeaders,
+  anthropicSupportsEffort,
+  type AiProviderSlug,
+} from "@/lib/ai/provider";
+import type { HermesTask } from "@/lib/ai/hermes";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
 
@@ -279,8 +285,14 @@ export async function runAnthropicWithTools(args: {
   maxRounds?: number;
   timeoutMs?: number;
   beforeExternalCall?: () => Promise<boolean>;
+  /** Selects effort and output ceiling on models that support effort. */
+  task?: HermesTask;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { model, system, prompt, key, servers } = args;
+  const profile = args.task && anthropicSupportsEffort(model) ? ANTHROPIC_TASK_PROFILE[args.task] : undefined;
+  const requestShape = profile
+    ? { max_tokens: profile.maxTokens, output_config: { effort: profile.effort } }
+    : { max_tokens: 4096 };
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
   const timeoutMs = boundedPositiveInteger(
     args.timeoutMs,
@@ -306,8 +318,8 @@ export async function runAnthropicWithTools(args: {
         (signal) =>
           fetch(ANTHROPIC_URL, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({ model, max_tokens: 4096, system, messages, tools: toolDefs }),
+            headers: anthropicHeaders(key),
+            body: JSON.stringify({ model, ...requestShape, system, messages, tools: toolDefs }),
             redirect: "manual",
             signal,
           }),
