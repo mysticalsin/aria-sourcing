@@ -56,6 +56,21 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
    round; usage recorded from every response (one JSON log line, no content).
    Past a cap: chat returns ok:false (client uses its mock), sourcing runs
    deterministic.
+9. Agent system, first slice (owner: "tests then the agentic part"):
+   `src/lib/agents/mission.ts` (plan runner: deps, fan-out, shared concurrency
+   semaphore, per-agent timeout, abort, fallback, events) and
+   `src/lib/agents/campaign-mission.ts` (sourcing agent -> one Sonnet drafting
+   agent per top-6 candidate, 2 at a time). Wired into
+   `src/components/run/agent-run-stream.tsx` (campaign "Run Aria"), which
+   previously drafted with the template only. New optional
+   `OutreachMessage.draftedBy: "ai" | "template"`; UI badge shows it.
+   Tests: tests/agent-mission.mts (registered in tests/test-manifest.mjs).
+   Verified in the synthetic demo with Playwright (camp_seed_design, the one in
+   Sourcing): 6 sourced + 6 drafts in 8 s; the 6 Claude calls got 400 (no
+   workspace id) and fell back to templates; scrollWidth 390 at 390 px.
+10. Live tests still blocked: `.secret` has only the key. `/v1/organizations/me`
+   works (org "Tony's Individual Org"); every other endpoint needs the
+   workspace header.
 
 ## Blockers
 
@@ -71,7 +86,8 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
    it survives restarts and is shared) and show month/day spend in Settings.
    Do it before any feature that fans out calls.
 3. Issue 03 (Haiku extraction task for intake), 04 (prompt caching).
-4. 05 orchestrator needs triage with the owner (spec section 5 and 7).
+4. 05 orchestrator: next mission = inbound replies (Haiku classify -> reply
+   draft). Same engine; keep agents on top of store actions.
 5. Resume UX audit packages (02, 07, 05, 06, 04, 08, 09, 10) when the owner
    asks; AI work does not depend on them.
 6. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
@@ -99,3 +115,10 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
   ceiling must be a spend limit on the Anthropic workspace (owner, Console).
 - Requests still use anthropic-version 2023-06-01 and raw fetch; SDK move is issue 08.
 - `max_tokens` / `refusal` stop reasons are not handled explicitly yet (issue 07).
+- Missions run in the browser: closing the tab stops queued agents. React
+  Strict Mode double-mounts in dev; the panel defers its unmount abort one
+  tick for that reason (an immediate abort froze the run on "Sourcing...").
+- Under tsx tests a module can load twice (ESM + CJS), so cross-module
+  `instanceof` on custom errors fails; use `isAgentTimeout` (name check).
+- `/api/sourcing-learning/feedback` returns 503 in the synthetic demo on page
+  load (pre-existing, unrelated to AI).

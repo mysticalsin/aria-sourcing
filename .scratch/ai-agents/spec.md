@@ -76,6 +76,17 @@ Règles :
 
 Le schéma contient encore des tables `agent_runs` et `agent_specs`, héritées d'un framework retiré (voir `docs/ARCHITECTURE.md`). Il faut évaluer leur réutilisation avant d'en créer de nouvelles.
 
+### Ce qui est construit (2026-10-30)
+
+- **Moteur** `src/lib/agents/mission.ts` : plan d'étapes avec dépendances, fan-out, sémaphore de concurrence partagé, délai par agent, annulation, repli, journal d'événements. TypeScript pur, sans React. Testé dans `tests/agent-mission.mts`.
+- **Mission « Run Aria »** `src/lib/agents/campaign-mission.ts` : un agent de sourcing, puis un agent de rédaction par candidat (les 6 meilleurs scores), deux à la fois, sur Claude via `generateOutreachLive`.
+  - Si le délai d'un agent de rédaction est dépassé, aucun brouillon gabarit n'est créé : l'appel en retard pourrait encore enregistrer le sien, et on aurait un doublon.
+- **Écran** : le panneau « Watch Aria work » d'une campagne (`src/components/run/agent-run-stream.tsx`) exécute cette mission. Avant, il rédigeait uniquement avec le gabarit. Chaque brouillon porte `draftedBy: "ai" | "template"`, et l'écran affiche « Drafted by Claude » ou « Template draft ».
+- **Choix d'exécution** : la mission tourne dans le navigateur, au-dessus des actions du store. Chaque appel passe ainsi par les routes serveur existantes, avec leurs contrôles d'autorité, de quotas, d'idempotence et de budget. Limite : fermer l'onglet arrête les agents en attente. Les brouillons déjà créés restent.
+- **Vérifié dans l'app** (démo synthétique, Playwright) : 6 sourcés et 6 brouillons en 8 s. Les 6 appels Claude ont reçu un 400 (ID de workspace manquant) et ont basculé sur le gabarit. Pas de débordement à 390 px.
+
+Missions suivantes possibles, sur le même moteur : traiter les réponses entrantes (classification Haiku, puis brouillon de réponse), relances en lot, préparation d'entretien.
+
 ## 6. Lots de travail
 
 | WP | Sujet | Statut |
@@ -85,7 +96,7 @@ Le schéma contient encore des tables `agent_runs` et `agent_specs`, héritées 
 | 02 | Journal d'usage et budgets | plafond fait ; persistance en base et panneau Réglages à faire |
 | 03 | Tâche `extraction` sur Haiku pour l'analyse de brief, avec sortie structurée | ready-for-agent |
 | 04 | Cache des prompts système et des outils | ready-for-agent |
-| 05 | Orchestrateur de missions et agents (§5) | needs-triage |
+| 05 | Orchestrateur de missions et agents (§5) | moteur et mission « Run Aria » faits ; autres missions à faire |
 | 06 | Batch API pour le rapport hebdo et la requalification en masse | needs-triage |
 | 07 | Escalade vers Opus et gestion des refus (`stop_reason: refusal`) | needs-triage |
 | 08 | Passer le chemin Anthropic sur le SDK officiel `@anthropic-ai/sdk` | needs-triage |
