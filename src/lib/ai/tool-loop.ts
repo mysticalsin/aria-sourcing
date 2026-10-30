@@ -22,6 +22,7 @@ import {
   type AiProviderSlug,
 } from "@/lib/ai/provider";
 import type { HermesTask } from "@/lib/ai/hermes";
+import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
 
@@ -312,6 +313,8 @@ export async function runAnthropicWithTools(args: {
     if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
       return { ok: false, reason: "Authority changed.", toolCalls };
     }
+    const budget = aiBudgetStatus();
+    if (!budget.ok) return { ok: false, reason: budget.reason, toolCalls };
     let res: Response;
     try {
       res = await withinDeadline(
@@ -334,12 +337,12 @@ export async function runAnthropicWithTools(args: {
     }
     if (!res.ok) return { ok: false, reason: `Upstream error ${res.status}`, toolCalls };
 
-    let json: { content?: AnthropicContentBlock[]; stop_reason?: string } | null;
+    let json: { content?: AnthropicContentBlock[]; stop_reason?: string; usage?: AnthropicUsage } | null;
     try {
       json = await withinDeadline(
         async () =>
           (await res.json().catch(() => null)) as
-            | { content?: AnthropicContentBlock[]; stop_reason?: string }
+            | { content?: AnthropicContentBlock[]; stop_reason?: string; usage?: AnthropicUsage }
             | null,
         deadlineAt,
       );
@@ -350,6 +353,7 @@ export async function runAnthropicWithTools(args: {
         toolCalls,
       };
     }
+    if (json?.usage) recordAiUsage({ task: args.task ?? "chat", model, usage: json.usage });
     const content = json?.content;
     if (!Array.isArray(content)) return { ok: false, reason: "Empty response from provider.", toolCalls };
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
+import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
@@ -290,6 +291,11 @@ export async function POST(req: NextRequest) {
     if (!key && slug !== "local") {
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
     }
+    // Spend cap: past it the caller gets ok:false and uses its deterministic fallback.
+    if (slug === "anthropic") {
+      const budget = aiBudgetStatus();
+      if (!budget.ok) return NextResponse.json({ ok: false, reason: budget.reason });
+    }
     // A well-formed campaign context enables the search_candidates tool, gated by the
     // same "source" permission as /api/sourcing-agent (never for a viewer/no-permission
     // caller, even if they can reach chat).
@@ -360,6 +366,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
       }
       const json = await upstream.json().catch(() => null);
+      if (slug === "anthropic") {
+        recordAiUsage({ task, model: cloudModel, usage: (json as { usage?: AnthropicUsage } | null)?.usage });
+      }
       const text = parseCloudResponse(slug, json);
       if (!text) {
         return NextResponse.json({ ok: false, reason: "Empty response from provider." });

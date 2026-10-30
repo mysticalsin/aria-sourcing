@@ -19,6 +19,7 @@ import {
   ANTHROPIC_TASK_PROFILE,
 } from "../src/lib/ai/provider.js";
 import { parseLocalSecret } from "../src/lib/ai/local-secret.js";
+import { aiBudgetStatus, estimateCostUsd, recordAiUsage, resetAiUsageForTests } from "../src/lib/ai/usage.js";
 import type { SystemSettings, LlmProvider, SavedModel } from "../src/lib/types.js";
 import { defaultSettings } from "../src/lib/seed.js";
 import { resolveProviderEndpoint } from "../src/lib/ai/endpoint";
@@ -267,6 +268,37 @@ for (const url of ["http://169.254.169.254/v1", "https://example.com/v1", "http:
 }
 ok("Docker host endpoint allowed", resolveProviderEndpoint("local", "http://host.docker.internal:11434/v1").includes("host.docker.internal"));
 ok("hosted provider ignores custom URL", resolveProviderEndpoint("openai", "http://localhost:1234") === "https://api.openai.com/v1/chat/completions");
+
+/* ---- 14. Claude spend ledger and budget gate ------------------------------ */
+
+const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+ok("Haiku pricing", near(estimateCostUsd("claude-haiku-5-5", { input_tokens: 1_000_000, output_tokens: 1_000_000 }), 0.6));
+ok("Sonnet pricing with cache read", near(estimateCostUsd("claude-sonnet-5-5", { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 10_000 }), 0.002 + 0.005 + 0.002));
+ok("unknown model priced conservatively", estimateCostUsd("claude-mystery", { output_tokens: 1000 }) >= estimateCostUsd("claude-opus-5-5", { output_tokens: 1000 }));
+ok("missing usage costs nothing", estimateCostUsd("claude-sonnet-5-5", undefined) === 0);
+
+const budgetEnv = { AI_MONTHLY_BUDGET_USD: "1", AI_DAILY_BUDGET_USD: "0.5" } as unknown as NodeJS.ProcessEnv;
+const day1 = new Date("2026-11-03T10:00:00Z");
+const quietLog = console.info;
+console.info = () => {};
+try {
+  resetAiUsageForTests();
+  ok("fresh ledger is within budget", aiBudgetStatus(day1, budgetEnv).ok);
+  recordAiUsage({ task: "outreach", model: "claude-sonnet-5-5", usage: { output_tokens: 50_000 } }, day1);
+  const dayCapped = aiBudgetStatus(day1, budgetEnv);
+  ok("daily cap blocks further calls", !dayCapped.ok && dayCapped.reason === "Daily AI budget reached.");
+  const day2 = new Date("2026-11-04T10:00:00Z");
+  ok("a new day reopens the daily budget", aiBudgetStatus(day2, budgetEnv).ok);
+  recordAiUsage({ task: "sourcing", model: "claude-sonnet-5-5", usage: { output_tokens: 60_000 } }, day2);
+  const nextDay = new Date("2026-11-05T10:00:00Z");
+  const monthCapped = aiBudgetStatus(nextDay, budgetEnv);
+  ok("monthly cap holds across days", !monthCapped.ok && monthCapped.reason === "Monthly AI budget reached.");
+  ok("a new month resets the ledger", aiBudgetStatus(new Date("2026-12-01T00:00:00Z"), budgetEnv).ok);
+  ok("default caps apply without env", aiBudgetStatus(day1, {} as unknown as NodeJS.ProcessEnv).monthlyLimitUsd === 30);
+} finally {
+  console.info = quietLog;
+  resetAiUsageForTests();
+}
 
 console.log(`RESULT ai-provider: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

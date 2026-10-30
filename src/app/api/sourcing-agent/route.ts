@@ -10,6 +10,7 @@ import {
   validateCandidateBoundText,
 } from "@/lib/agent-disclosure-policy";
 import { DEFAULT_MODEL, VAULT_PROVIDER, resolveAiProvider, type AiProviderSlug } from "@/lib/ai/provider";
+import { aiBudgetStatus } from "@/lib/ai/usage";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
@@ -286,10 +287,15 @@ async function handlePost(req: NextRequest, correlationId: string) {
   // Live sourcing spends only an admin-created workspace key, never the server
   // env key. A cloud provider that is enabled but has no linked workspace key is
   // therefore not configured here, and deterministic sourcing stays available
-  // (the default seed enables Anthropic before any key is saved).
+  // (the default seed enables Anthropic before any key is saved). The same
+  // fallback applies once the Claude spend cap is reached.
   const resolvedCloud = resolveAiProvider(initial.value.aiSettings, "sourcing");
   const cloudConfig =
-    resolvedCloud && (resolvedCloud.provider === "local" || resolvedCloud.apiKeyId) ? resolvedCloud : null;
+    resolvedCloud &&
+    (resolvedCloud.provider === "local" || resolvedCloud.apiKeyId) &&
+    (resolvedCloud.provider !== "anthropic" || aiBudgetStatus().ok)
+      ? resolvedCloud
+      : null;
   const deterministic = !cloudConfig;
   if (deterministic && configuredQueries.length === 0) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
