@@ -1,86 +1,88 @@
 ---
 project: MSourcing / ARIA
-shift: 447
+shift: 448
 agent: claude-code
-updated: 2026-10-29
-status: ux-audit-in-progress-overflow-and-login-pushed
+updated: 2026-10-30
+status: ai-layer-on-claude-foundation-blocked-on-workspace-id
 ---
 
-# Handoff - Shift 447
+# Handoff - Shift 448
 
 ## Current state
 
-- Branch mbe-branch. Local commits NOT yet pushed: 93b73347 (UI/UX audit spec)
-  and f2765db0 (overflow fixes, gate green when committed: typecheck,
-  typecheck:tests, npm test 240 pass / 0 fail).
-- Owner asked for a full UI/UX audit and a polished UX BEFORE any AI integration.
-  Audit: .scratch/ui-ux-audit/spec.md (French), one issue per work package in
-  .scratch/ui-ux-audit/issues/01..10. 01 and 03 resolved; 02, 04-10 ready-for-agent.
-- Committed and pushed (work package 03, login + credit):
-  src/app/login/page.tsx (rewritten), src/components/app/sidebar.tsx,
-  src/components/app/logo.tsx (comment), src/components/ui/button.tsx
-  (justify-center), src/styles/globals.css (login-only CSS + --font-garamond
-  removed), tests/login-page.mts and tests/font-build.mts (contract updated),
-  .scratch/ui-ux-audit/{spec.md,issues/03-login.md}. Typecheck and
-  typecheck:tests pass on it. Visually checked at 1440 and 390 px in local mode
-  and with NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true.
-- AGENTS.md is modified in the working tree by another tool; not touched or
-  committed by Claude Code. Its owner should review/commit it.
+- Branch mbe-branch. Owner (2026-10-30) switched the whole AI layer to one
+  Anthropic key, with a model tier per task and a future agent system.
+- The key is in `.secret` at the repo root (bare `sk-ant-...` line). `.secret`
+  is now in `.gitignore` AND `.dockerignore` (it was in neither; the Dockerfile
+  does `COPY . .`). Verified with `git check-ignore -v .secret`.
+- The key authenticates but is NOT scoped to an Anthropic workspace. Every call
+  returns 400 "This API key is not scoped to a workspace, so this request must
+  include the anthropic-workspace-id header". `/v1/organizations/workspaces`
+  returns 403 for this key. No paid call has been made; only free
+  `count_tokens` probes.
+- Foundation code is in place (see Done). Gate green on it: typecheck,
+  typecheck:tests, npm test (exit 0). Live behavior against the API is untested
+  (blocked, below).
+- Spec and tickets: `.scratch/ai-agents/spec.md`, `.scratch/ai-agents/issues/01..08`.
 
 ## Done this shift
 
-1. Captured 21 routes at 1440x900 and 390x844 against the synthetic demo (Edge
-   via Playwright, onboarding flag hermes:onboarded:v1 preset), with automated
-   overflow detection; traced metric definitions in code. Wrote the audit.
-2. Owner decisions recorded in spec (see below).
-3. Overflow fix (f2765db0): sr-only spans (position:absolute) inside unpositioned
-   overflow-x containers escaped clipping (home was 3708 px wide); made
-   containers relative (integration strip, ui/Table, funnel kanban). Added a
-   grid-cols-1 base to 81 breakpoint-only grids. All 42 captures fit.
-4. Login redesign (uncommitted, see above): form visible without a click, no
-   third-party CloudFront video, no personal credit, Mantu Group mention,
-   desktop ink panel with the 3-step approval sequence (Mantu-yellow human step).
+1. `src/lib/ai/local-secret.ts` + `src/instrumentation.ts`: at server start
+   (nodejs runtime) copy `ANTHROPIC_API_KEY` / `ANTHROPIC_WORKSPACE_ID` from
+   `.secret` into process.env when unset. Allow-list only; logs names, never values.
+2. `src/lib/ai/provider.ts`: `anthropicHeaders()` adds `anthropic-workspace-id`
+   from env; `ANTHROPIC_TASK_PROFILE` (classify low/1024, chat low/8192,
+   outreach medium/8192, sourcing medium/16000) sent as `output_config.effort`
+   only for models that support effort (`anthropicSupportsEffort`);
+   `parseCloudResponse` joins text blocks (Claude 5.5 returns a thinking block
+   first, the old `content[0].text` read would be empty); DEFAULT_MODEL
+   anthropic = claude-sonnet-5-5.
+3. `src/lib/ai/tool-loop.ts`: same headers and task profile in the Anthropic loop.
+4. Routes: `/api/hermes/chat` passes `task`, never sends the "hermes" model
+   placeholder to a cloud provider. `/api/sourcing-agent` treats a cloud
+   provider with no linked workspace key as not configured -> deterministic
+   sourcing (was a 503 that the new Anthropic default would have triggered).
+5. Seed STATE_VERSION 18: Anthropic enabled+default, Kimi disabled; saved
+   models Haiku 5.5 (classification), Sonnet 5.5 (sourcing, outreach, chat),
+   Opus 5.5 (saved, no task default). Migration resets the model layer of
+   pre-18 blobs and keeps any provider's linked `apiKeyId`.
+6. Tests: tests/ai-provider.mts and tests/admin-config.mts updated/extended.
 
 ## Blockers
 
-- None. The earlier npm test failure (tests/acceptance-campaign-dry-run.mts,
-  spawnSync status null after its 30 s timeout) was host load: once process
-  spawning was back to normal (50 spawns in 1.5 s) the full gate passed with the
-  login package: typecheck, typecheck:tests, npm test 240 pass / 0 fail.
+- Anthropic workspace id needed from the owner (`wrkspc_...`, Console ->
+  Settings -> Workspaces), or a workspace-scoped key. Add to `.secret` as
+  `ANTHROPIC_WORKSPACE_ID=wrkspc_...` on its own line.
 
 ## Next steps
 
-1. Login package is committed and pushed. Check CI for the pushed tip; if a
-   test times out again, measure spawn cost before suspecting the code.
-2. Continue the audit packages in order: 02 metric labels, 07 tour scope,
-   05 work queues first, 06 candidate table, 04 navigation, 08 vocabulary,
-   09 visual system, 10 careers. Each: gate + re-capture of affected routes at
-   1440/390 with scrollWidth <= viewport.
-3. Node is not on Git Bash PATH here; use the portable runtime:
-   `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
+1. When the workspace id is in `.secret`: run issue 01 (free count_tokens on
+   haiku/sonnet/opus 5.5, then one real call per task, total < $0.05).
+2. Issue 02 usage ledger + budgets before any feature that fans out calls.
+3. Issue 03 (Haiku extraction task for intake), 04 (prompt caching).
+4. 05 orchestrator needs triage with the owner (spec section 5 and 7).
+5. Resume UX audit packages (02, 07, 05, 06, 04, 08, 09, 10) when the owner
+   asks; AI work does not depend on them.
+6. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
 
 ## Decisions made (don't relitigate)
 
-- UI language: English everywhere; "#Vivier" becomes "Talent pool".
-- Navigation regrouped as in spec section 4; Intake + Launch merge into one
-  "New campaign"; old URLs redirect.
-- Candidate rating: a single /100 score; Top Gun / A-D letters / stars removed
-  from screens.
-- No personal credit (Tony Walteur) anywhere in the UI; use a Mantu Group mention.
-- Calibri is the Mantu brand font: keep it, self-host Carlito for consistency
-  (package 09), do not switch typeface.
-- KPI "0 contacted" vs funnel "35" is not a calculation bug: realFunnelFacts
-  counts real sends only. Fix is labelling (package 02), not the math.
-- Plus every decision from shift 446 (archive 2026-10-29-1300-claude-code.md):
-  no secrets in Git/relay, no paid calls, no Docker/WSL install, no auto retry.
+- All AI runs on Claude via one Anthropic key (owner, 2026-10-30). This
+  supersedes the shift-446 "no paid calls" rule for Anthropic, within budgets.
+- Model per task: Haiku for classification/extraction, Sonnet for drafting,
+  chat and the sourcing loop, Opus only by explicit choice or escalation.
+- Agents run in-process (ADR 0001: no separate AI server or worker platform).
+- Sourcing spends only an admin-created workspace (vault) key; the env/.secret
+  key serves the admin chat path and local dev.
+- Deterministic fallbacks stay for every AI surface; human approval before any send.
+- Earlier: English UI, no personal credit, Calibri/Carlito, single /100 score,
+  no secrets in Git/relay, no Docker/WSL install, no auto retry.
 
 ## Watch out
 
-- Removing tests' old assertions (video pause, email disclosure) was deliberate:
-  the video and disclosure no longer exist. Security assertions were kept.
-- ui/Button now centers content; full-width buttons elsewhere change alignment
-  (intended: fleet seat cards, integration cards, overlay).
-- Supabase/Azure login mode was not rendered (needs a backend); verify on the
-  other machine that "Sign in with Microsoft" and the email form both show.
-- scripts/accept-local-demo.mjs uses getByLabel("Username or email") and
-  getByLabel("Password", { exact: true }); the new labels keep those exact names.
+- The public demo (vercel-demo) ran on a Kimi env key. After merging this
+  branch it needs ANTHROPIC_API_KEY (+ ANTHROPIC_WORKSPACE_ID for this key type).
+- Candidate PII will go to Anthropic: owner must confirm the GDPR frame before
+  real candidate data is processed (spec section 7).
+- Requests still use anthropic-version 2023-06-01 and raw fetch; SDK move is issue 08.
+- `max_tokens` / `refusal` stop reasons are not handled explicitly yet (issue 07).
