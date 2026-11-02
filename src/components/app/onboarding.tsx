@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Modal, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ONBOARDING_TOUR_STEPS } from "@/lib/command-center-firstrun";
@@ -17,24 +17,28 @@ const STEP_ICONS = [
 
 /**
  * First-run guided tour. Shows once per browser (localStorage flag) and can be
- * skipped at any step. Mounted in the app shell so it appears on first load of
- * any page. Persistence is client-only, so it never touches the workspace state.
+ * skipped at any step. Mounted in the app shell but opens only on the home
+ * page: someone following a direct link to Campaigns or Candidates gets that
+ * page, not a modal in front of it. Persistence is client-only, so it never
+ * touches the workspace state.
  *
  * Copy is consumer-grade (see ONBOARDING_TOUR_STEPS) — no fleet/soul/ops jargon.
  * Finishing on the last step routes to Intake so the next click is obvious.
  */
 export function Onboarding() {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState(0);
 
   React.useEffect(() => {
+    if (pathname !== "/") return;
     try {
       if (!localStorage.getItem(KEY)) setOpen(true);
     } catch {
       /* private mode — skip the tour silently */
     }
-  }, []);
+  }, [pathname]);
 
   const finish = React.useCallback(
     (opts?: { goToIntake?: boolean }) => {
