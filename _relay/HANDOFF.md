@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 449
 agent: claude-code
 updated: 2026-11-02
-status: claude-live-verified-app-replay-next
+status: claude-live-in-app-verified
 ---
 
 # Handoff - Shift 449
@@ -56,16 +56,27 @@ UX audit packages:
   so). Offline copy written for candidates; header and chat share one column;
   no stars shown to candidates.
 
+Live Claude (2026-11-02, after the owner added the workspace id + spend limit):
+- Issue 01: count_tokens 200 on Haiku/Sonnet/Opus 5.5; one call per task $0.0047.
+- In-app replay (synthetic demo): Run Aria 6/6 drafts by Claude (43 s);
+  Triage inbox 6 reply drafts (10 s); Draft all due 13/13 by Claude (19 s).
+  App ledger: 31 calls, $0.083 (Sonnet outreach ~$0.004 per draft).
+- Fix: reply drafts had "[Day 1] at [Time]" or invented slots. Classify prompt
+  now forbids placeholders and invented times (asks the candidate instead);
+  `hasTemplatePlaceholder` (agent-disclosure-policy.ts) makes
+  `parseHermesOutreach` and `classifyReplyWithModel` keep the template draft
+  when a slot is left.
+
 ## Blockers
 
 - None.
 
 ## Next steps
 
-1. Replay "Run Aria" (camp_seed_design) and "Triage inbox" with Claude and check
-   the "Drafted by Claude" badges, that drafts carry no [Name]/[Company]
-   placeholders, and the Settings usage card.
-2. AI issue 04 (prompt caching on the long system prompts), then triage 06-08.
+1. AI issue 04 (prompt caching on the long system prompts), then triage 06-08.
+   Reply drafts carry no `draftedBy` yet (badge shows nothing for them).
+2. Public demo: merge mbe-branch into vercel-demo and set ANTHROPIC_API_KEY +
+   ANTHROPIC_WORKSPACE_ID on the host. Waits for the owner's go-ahead.
 3. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
 4. Screen checks: Playwright scripts in `%TEMP%/aria-e2e/ux0*.mjs`
    (`PROJ=<repo> node <script> <outdir>`, dev server on port 3123).
