@@ -18,6 +18,7 @@ import {
 import {
   ANTHROPIC_TASK_PROFILE,
   anthropicHeaders,
+  cloudStopProblem,
   anthropicSupportsEffort,
   type AiProviderSlug,
 } from "@/lib/ai/provider";
@@ -354,6 +355,8 @@ export async function runAnthropicWithTools(args: {
       };
     }
     if (json?.usage) recordAiUsage({ task: args.task ?? "chat", model, usage: json.usage });
+    const stopProblem = cloudStopProblem("anthropic", json);
+    if (stopProblem) return { ok: false, reason: stopProblem, toolCalls };
     const content = json?.content;
     if (!Array.isArray(content)) return { ok: false, reason: "Empty response from provider.", toolCalls };
 
@@ -509,6 +512,8 @@ export async function runOpenAiWithTools(args: {
         toolCalls: toolCallLog,
       };
     }
+    const stopProblem = cloudStopProblem(args.provider, json);
+    if (stopProblem) return { ok: false, reason: stopProblem, toolCalls: toolCallLog };
     const choice = json?.choices?.[0];
     const message = choice?.message;
     if (!message) return { ok: false, reason: "Empty response from provider.", toolCalls: toolCallLog };

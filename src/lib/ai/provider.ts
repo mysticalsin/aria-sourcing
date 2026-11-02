@@ -180,7 +180,7 @@ export interface AnthropicTaskProfile {
 }
 
 export const ANTHROPIC_TASK_PROFILE: Record<HermesTask, AnthropicTaskProfile> = {
-  classify: { effort: "low", maxTokens: 1024 },
+  classify: { effort: "low", maxTokens: 2048 },
   chat: { effort: "low", maxTokens: 8192 },
   outreach: { effort: "medium", maxTokens: 8192 },
   sourcing: { effort: "medium", maxTokens: 16000 },
@@ -255,6 +255,25 @@ export function buildCloudRequest(
       stream: false,
     }),
   };
+}
+
+/**
+ * Why a completed response must not be used, or null when it is complete.
+ * A reply cut at the output ceiling would put half a draft in front of a
+ * recruiter, and a declined request has no usable text; both make the caller
+ * fall back to its deterministic path instead.
+ */
+export function cloudStopProblem(provider: AiProviderSlug, json: unknown): string | null {
+  if (provider === "anthropic") {
+    const stop = (json as { stop_reason?: unknown } | null)?.stop_reason;
+    if (stop === "max_tokens") return "Response truncated at the output limit.";
+    if (stop === "refusal") return "The model declined this request.";
+    return null;
+  }
+  const finish = (json as { choices?: { finish_reason?: unknown }[] } | null)?.choices?.[0]?.finish_reason;
+  if (finish === "length") return "Response truncated at the output limit.";
+  if (finish === "content_filter") return "The model declined this request.";
+  return null;
 }
 
 /**

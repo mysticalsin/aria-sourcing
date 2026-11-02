@@ -12,6 +12,7 @@ import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
 import {
   buildCloudRequest,
+  cloudStopProblem,
   parseCloudResponse,
   PROVIDER_ENV,
   type AiProviderSlug,
@@ -368,6 +369,11 @@ export async function POST(req: NextRequest) {
       const json = await upstream.json().catch(() => null);
       if (slug === "anthropic") {
         recordAiUsage({ task, model: cloudModel, usage: (json as { usage?: AnthropicUsage } | null)?.usage });
+      }
+      const stopProblem = cloudStopProblem(slug, json);
+      if (stopProblem) {
+        logUpstream("info", "Cloud provider response unusable", { provider, reason: stopProblem });
+        return NextResponse.json({ ok: false, reason: stopProblem });
       }
       const text = parseCloudResponse(slug, json);
       if (!text) {

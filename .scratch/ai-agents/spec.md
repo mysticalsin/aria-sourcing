@@ -42,7 +42,7 @@ Le socle est livré : les tâches existantes passent sur Claude.
 
 | Tâche | Modèle | Effort | `max_tokens` | Pourquoi |
 |---|---|---|---|---|
-| `classify` : réponse candidat → intention | Claude Haiku 5.5 | low | 1024 | volume élevé, sortie courte et structurée |
+| `classify` : réponse candidat → intention | Claude Haiku 5.5 | low | 2048 | volume élevé, sortie courte et structurée |
 | `chat` : assistant, analyse de brief | Claude Sonnet 5.5 | low | 8192 | réponses conversationnelles, outils web |
 | `outreach` : message d'approche | Claude Sonnet 5.5 | medium | 8192 | qualité rédactionnelle, ton, langue |
 | `sourcing` : boucle d'outils | Claude Sonnet 5.5 | medium | 16000 | appels d'outils fiables sur plusieurs tours |

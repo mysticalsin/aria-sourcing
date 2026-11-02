@@ -17,6 +17,7 @@ import {
   parseCloudResponse,
   anthropicSupportsEffort,
   ANTHROPIC_TASK_PROFILE,
+  cloudStopProblem,
 } from "../src/lib/ai/provider.js";
 import { parseLocalSecret } from "../src/lib/ai/local-secret.js";
 import { aiBudgetStatus, estimateCostUsd, recordAiUsage, resetAiUsageForTests } from "../src/lib/ai/usage.js";
@@ -240,6 +241,15 @@ delete process.env.ANTHROPIC_WORKSPACE_ID;
 ok("no workspace header when unset",
   !("anthropic-workspace-id" in buildCloudRequest("anthropic", "claude-haiku-5-5", "S", "P", "k").headers));
 if (priorWorkspace !== undefined) process.env.ANTHROPIC_WORKSPACE_ID = priorWorkspace;
+
+/* ---- 12b. Unusable stop reasons ------------------------------------------- */
+
+ok("complete Anthropic answer has no stop problem", cloudStopProblem("anthropic", { stop_reason: "end_turn" }) === null);
+ok("Anthropic max_tokens is a truncation", cloudStopProblem("anthropic", { stop_reason: "max_tokens" }) === "Response truncated at the output limit.");
+ok("Anthropic refusal is a decline", cloudStopProblem("anthropic", { stop_reason: "refusal" }) === "The model declined this request.");
+ok("OpenAI-compatible length is a truncation", cloudStopProblem("openai", { choices: [{ finish_reason: "length" }] }) === "Response truncated at the output limit.");
+ok("OpenAI-compatible stop is complete", cloudStopProblem("groq", { choices: [{ finish_reason: "stop" }] }) === null);
+ok("missing body has no stop problem", cloudStopProblem("anthropic", null) === null);
 
 /* ---- 13. Local .secret file parsing --------------------------------------- */
 
