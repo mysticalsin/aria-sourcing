@@ -12,11 +12,13 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
 import { ReplyCard } from "@/components/replies/reply-card";
-import { useHydrated, useReplies, useActions, useRole } from "@/lib/store";
+import { useHydrated, useReplies, useActions, useRole, useOutreach } from "@/lib/store";
 import { REPLY_INTENTS, type ReplyIntent } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { Inbox, Flame, Filter, AlarmClock, RefreshCw } from "lucide-react";
 import type { InboundMessage } from "@/lib/email-sync";
+import { runMission } from "@/lib/agents/mission";
+import { inboxTriagePlan, type InboxFetchResult } from "@/lib/agents/inbox-mission";
 
 const INTENT_LABELS: Record<ReplyIntent, string> = {
   INTERESTED: "Interested",
@@ -30,7 +32,7 @@ const INTENT_LABELS: Record<ReplyIntent, string> = {
 
 const HOT_INTENTS: ReplyIntent[] = ["INTERESTED", "QUALIFIED_INTEREST"];
 
-// ── Inbox sync button ────────────────────────────────────────────────────────
+// ── Inbox triage button ──────────────────────────────────────────────────────
 
 type SyncApiResponse = {
   ok: boolean;
@@ -40,84 +42,84 @@ type SyncApiResponse = {
   errors?: string[];
 };
 
-function SyncInboxButton() {
+async function fetchInbox(): Promise<InboxFetchResult> {
+  let res: Response;
+  try {
+    res = await fetch("/api/email/sync", { method: "POST", signal: AbortSignal.timeout(60_000) });
+  } catch (err) {
+    throw new Error(
+      err instanceof Error && err.name === "TimeoutError" ? "Sync timed out. Try again." : "Couldn't reach the mailbox sync.",
+    );
+  }
+  const json = (await res.json().catch(() => ({ ok: false }))) as SyncApiResponse;
+  if (!res.ok || !json.ok) throw new Error("Couldn't reach the mailbox sync.");
+  // The public demo has no mailbox: triage still drafts the waiting replies.
+  if (json.status === "dry-run") return { messages: [], skipped: 0, note: json.detail ?? "Public demo only." };
+  return { messages: json.messages ?? [], skipped: (json.errors ?? []).length };
+}
+
+/**
+ * Runs the inbox triage mission: sync the mailbox, classify each new reply
+ * (Haiku, three at a time), then queue a response draft for every reply that
+ * needs one. Drafts wait for approval; reply actions stay on the cards.
+ */
+function TriageInboxButton() {
   const actions = useActions();
+  const replies = useReplies();
+  const outreach = useOutreach();
   const { toast } = useToast();
   const role = useRole();
-  const [syncing, setSyncing] = React.useState(false);
+  const [running, setRunning] = React.useState(false);
 
   if (!can(role, "source")) return null;
 
-  async function handleSync() {
-    setSyncing(true);
+  async function handleTriage() {
+    setRunning(true);
     try {
-      const res = await fetch("/api/email/sync", {
-        method: "POST",
-        signal: AbortSignal.timeout(60_000),
+      const plan = inboxTriagePlan({
+        fetchInbox,
+        classify: async (m) =>
+          (
+            await actions.classifyAndStoreReply({
+              text: m.body,
+              fromAddress: m.from,
+              messageId: m.messageId,
+              inboxThreadId: m.threadId,
+              externalReceivedAt: m.receivedAt,
+            })
+          ).reply,
+        pending: replies,
+        outreach,
+        draftResponse: can(role, "outreach") ? actions.draftReplyResponse : undefined,
+        prepareResponse: actions.prepareReplyResponse,
       });
-      const json = (await res.json().catch(() => ({ ok: false }))) as SyncApiResponse;
+      const report = await runMission(plan, { concurrency: 3 });
+      const fetched = report.results.fetch as InboxFetchResult | undefined;
+      // The mailbox step falls back instead of failing; its note says why.
+      const mailboxDown = report.steps.fetch?.status === "degraded";
 
-      if (!res.ok || !json.ok) {
-        toast({
-          title: "Couldn't reach the mailbox sync.",
-          description: "Check your connection settings and try again.",
-          variant: "error",
-        });
-        return;
-      }
+      const classify = report.steps.classify;
+      const respond = report.steps.respond;
+      const drafted = respond ? respond.succeeded : 0;
+      const parts: string[] = [];
+      if (classify && classify.runs > 0) parts.push(`${classify.succeeded} synced`);
+      if (classify && classify.failed > 0) parts.push(`${classify.failed} failed`);
+      if (fetched && fetched.skipped > 0) parts.push(`${fetched.skipped} skipped`);
+      parts.push(drafted === 1 ? "1 response drafted for approval" : `${drafted} responses drafted for approval`);
+      if (respond && respond.failed > 0) parts.push(`${respond.failed} left for your review`);
 
-      if (json.status === "dry-run") {
-        toast({ title: "Public demo only", description: json.detail, variant: "info" });
-        return;
-      }
-
-      const msgs = json.messages ?? [];
-      const errs = json.errors ?? [];
-
-      if (msgs.length === 0 && errs.length === 0) {
-        toast({ title: "No new mail to sync." });
-        return;
-      }
-
-      let clientFailed = 0;
-      for (const m of msgs) {
-        try {
-          await actions.classifyAndStoreReply({
-            text: m.body,
-            fromAddress: m.from,
-            messageId: m.messageId,
-            inboxThreadId: m.threadId,
-            externalReceivedAt: m.receivedAt,
-          });
-        } catch {
-          // One bad message doesn't abort the rest.
-          clientFailed++;
-        }
-      }
-
-      const synced = msgs.length - clientFailed;
-      const parts: string[] = [`${synced} synced`];
-      if (clientFailed > 0) parts.push(`${clientFailed} failed`);
-      if (errs.length > 0) parts.push(`${errs.length} skipped`);
-      const errDetail = errs.slice(0, 2).join("; ");
-
+      const didWork = Boolean(classify?.runs || respond?.runs);
       toast({
-        title: parts.join(", ") + ".",
-        description: errDetail || undefined,
-      });
-    } catch (err) {
-      const isTimeout = err instanceof Error && err.name === "TimeoutError";
-      toast({
-        title: isTimeout
-          ? "Sync timed out. Try again."
-          : "Couldn't reach the mailbox sync.",
-        description: isTimeout
-          ? undefined
-          : "Check your connection settings and try again.",
-        variant: "error",
+        title: didWork
+          ? parts.join(", ") + "."
+          : mailboxDown
+            ? "Couldn't reach the mailbox sync."
+            : "No new mail and no reply waiting for a response.",
+        description: fetched?.note,
+        variant: mailboxDown && !didWork ? "error" : fetched?.note ? "info" : undefined,
       });
     } finally {
-      setSyncing(false);
+      setRunning(false);
     }
   }
 
@@ -125,11 +127,12 @@ function SyncInboxButton() {
     <Button
       variant="outline"
       size="sm"
-      loading={syncing}
+      loading={running}
       leftIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
-      onClick={handleSync}
+      onClick={handleTriage}
+      title="Sync the mailbox, classify new replies and draft responses for approval"
     >
-      {syncing ? "Syncing..." : "Sync inbox"}
+      {running ? "Triaging..." : "Triage inbox"}
     </Button>
   );
 }
@@ -186,7 +189,7 @@ export default function RepliesPage() {
                 {negative} negative
               </Badge>
             )}
-            <SyncInboxButton />
+            <TriageInboxButton />
           </div>
         }
       />

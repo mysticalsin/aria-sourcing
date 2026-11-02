@@ -292,6 +292,11 @@ export interface HermesActions {
    *  for threading when present. Returns null when the reply/candidate can't
    *  be resolved or there's no draft text to send. */
   draftReplyResponse: (replyId: string) => OutreachMessage | null;
+  /** Fills in a missing draftResponse on a reply: classify task (model first,
+   *  rule-based fallback), behind the same disclosure and injection checks as
+   *  ingestion. Leaves the reply alone and returns null when the model now
+   *  reads a different intent, so a recruiter decides. */
+  prepareReplyResponse: (replyId: string) => Promise<ClassifiedReply | null>;
 
   // bookings
   createBookingFor: (

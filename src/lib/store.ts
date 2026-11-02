@@ -254,6 +254,77 @@ function unavailableWorkspaceStatus(dependency: WorkspaceDependency): WorkspaceS
   return { phase: "unavailable", mode: "live", dependency, message: messages[dependency] };
 }
 
+/** Model-first reply classification through the classify task (Haiku by
+ *  default). The rule-based classifier is the result whenever no model is
+ *  configured, the call fails, or the reply does not parse. */
+async function classifyReplyWithModel(
+  settings: SystemSettings,
+  text: string,
+  candidateName: string | undefined,
+  generate: (input: Parameters<typeof hermesGenerate>[0]) => Promise<Awaited<ReturnType<typeof hermesGenerate>>>,
+): Promise<ReplyClassification> {
+  const fallback = classifyReply(text, candidateName);
+  const aiCfg = resolveAiProvider(settings, "classification", { providerId: undefined });
+  if (!aiCfg && !hermesAvailable(settings)) return fallback;
+  try {
+    const result = await generate(
+      aiCfg
+        ? { task: "classify", prompt: text, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId }
+        : { task: "classify", prompt: text, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId },
+    );
+    if (!result.ok || !result.text) return fallback;
+    // Models sometimes wrap the JSON in a code fence despite the instruction.
+    const json = result.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const parsed = JSON.parse(json) as ReplyClassification;
+    if (!parsed.intent || typeof parsed.confidence !== "number" || !parsed.reasoning) return fallback;
+    return {
+      ...fallback,
+      intent: parsed.intent,
+      confidence: parsed.confidence,
+      reasoning: parsed.reasoning,
+      ...(parsed.suggestedAction ? { suggestedAction: parsed.suggestedAction } : {}),
+      ...(parsed.draftResponse ? { draftResponse: parsed.draftResponse } : {}),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+/** Disclosure and injection checks on a reply's suggested draft: an unsafe
+ *  draft is replaced by a neutral holding line and flagged for human review. */
+function guardReplyClassification(
+  classification: ReplyClassification,
+  campaign: Campaign | undefined,
+  inboundText: string,
+): ReplyClassification {
+  const inboundInjection = detectInjection(inboundText);
+  if (classification.draftResponse) {
+    const disclosure = validateCandidateBoundText(classification.draftResponse, {
+      salaryMin: campaign?.jobAnalysis.salaryMin ?? null,
+      salaryMax: campaign?.jobAnalysis.salaryMax ?? null,
+      forbidden: campaign
+        ? [
+            campaign.jobAnalysis.department,
+            campaign.jobAnalysis.teamSize,
+            campaign.jobAnalysis.reportingTo,
+            campaign.jobAnalysis.currency,
+          ]
+        : [],
+    });
+    const injection = detectInjection(classification.draftResponse);
+    if (!disclosure.safe || injection.flagged || inboundInjection.flagged) {
+      return {
+        ...classification,
+        suggestedAction: `Queue for human review: ${disclosure.reason ?? "injection-suspected"}.`,
+        draftResponse: "Thanks for the reply. A recruiter will review and follow up.",
+      };
+    }
+  } else if (inboundInjection.flagged) {
+    return { ...classification, suggestedAction: "Queue for human review: injection-suspected." };
+  }
+  return classification;
+}
+
 function makeActivity(
   activity: Omit<Activity, "id" | "createdAt"> & { createdAt?: string },
 ): Activity {
@@ -2354,78 +2425,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // attributed to the active campaign or an arbitrary first campaign.
       const campaignId = input.campaignId ?? candidate?.campaignId ?? threadCampaignId ?? "";
 
-      // F-1: route through live provider when available; mock is the fallback on any failure.
-      let classification = classifyReply(input.text, candidate?.name);
-      const classifyAiCfg = resolveAiProvider(s.settings, "classification", { providerId: undefined });
-      if (classifyAiCfg || hermesAvailable(s.settings)) {
-        try {
-          const classifyInput: Parameters<typeof hermesGenerate>[0] = classifyAiCfg
-            ? {
-                task: "classify",
-                prompt: input.text,
-                provider: classifyAiCfg.provider,
-                model: classifyAiCfg.model,
-                baseUrl: classifyAiCfg.baseUrl, apiKeyId: classifyAiCfg.apiKeyId,
-              }
-            : {
-                task: "classify",
-                prompt: input.text,
-                hermesApiUrl: s.settings.hermesApiUrl,
-                hermesApiKeyId: s.settings.hermesApiKeyId,
-              };
-          const attempt = runWorkspaceEffect(() => hermesGenerate(classifyInput));
-          if (!attempt.allowed) throw new Error("Workspace unavailable. Retry before classifying replies.");
-          const result = await attempt.value;
-          if (result.ok && result.text) {
-            const parsed = JSON.parse(result.text) as ReplyClassification;
-            if (
-              parsed.intent &&
-              typeof parsed.confidence === "number" &&
-              parsed.reasoning
-            ) {
-              classification = {
-                ...classification,
-                intent: parsed.intent,
-                confidence: parsed.confidence,
-                reasoning: parsed.reasoning,
-                ...(parsed.suggestedAction ? { suggestedAction: parsed.suggestedAction } : {}),
-                ...(parsed.draftResponse ? { draftResponse: parsed.draftResponse } : {}),
-              };
-            }
-          }
-        } catch {
-          // fall back to mock classification already assigned above
-        }
-      }
+      // F-1: model first (classify task); the rule-based classifier is the fallback.
       const campaign = s.campaigns.find((c) => c.id === campaignId);
-      const inboundInjection = detectInjection(input.text);
-      if (classification.draftResponse) {
-        const disclosure = validateCandidateBoundText(classification.draftResponse, {
-          salaryMin: campaign?.jobAnalysis.salaryMin ?? null,
-          salaryMax: campaign?.jobAnalysis.salaryMax ?? null,
-          forbidden: campaign
-            ? [
-                campaign.jobAnalysis.department,
-                campaign.jobAnalysis.teamSize,
-                campaign.jobAnalysis.reportingTo,
-                campaign.jobAnalysis.currency,
-              ]
-            : [],
-        });
-        const injection = detectInjection(classification.draftResponse);
-        if (!disclosure.safe || injection.flagged || inboundInjection.flagged) {
-          classification = {
-            ...classification,
-            suggestedAction: `Queue for human review: ${disclosure.reason ?? "injection-suspected"}.`,
-            draftResponse: "Thanks for the reply. A recruiter will review and follow up.",
-          };
-        }
-      } else if (inboundInjection.flagged) {
-        classification = {
-          ...classification,
-          suggestedAction: "Queue for human review: injection-suspected.",
-        };
-      }
+      let classification = guardReplyClassification(
+        await classifyReplyWithModel(s.settings, input.text, candidate?.name, (genInput) => {
+          const attempt = runWorkspaceEffect(() => hermesGenerate(genInput));
+          if (!attempt.allowed) throw new Error("Workspace unavailable. Retry before classifying replies.");
+          return attempt.value;
+        }),
+        campaign,
+        input.text,
+      );
       if (ambiguousSender) {
         classification = {
           ...classification,
@@ -2749,6 +2759,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const s = current();
       const reply = s.replies.find((r) => r.id === replyId);
       if (!reply || !reply.candidateId || !reply.draftResponse.trim()) return null;
+      // Idempotent: a repeat click or a re-run triage returns the live draft.
+      const existing = s.outreach.find((m) => m.inReplyTo === replyId && m.status !== "Rejected");
+      if (existing) return existing;
       const candidate = s.candidates.find((c) => c.id === reply.candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
@@ -2769,6 +2782,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const msg: OutreachMessage = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, priorMaxStep + 1),
         ...(reply.inboxThreadId ? { inboxThreadId: reply.inboxThreadId } : {}),
+        inReplyTo: reply.id,
       };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -2789,6 +2803,39 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return msg;
     },
     [commit, current],
+  );
+
+  const prepareReplyResponse = useCallback(
+    async (replyId: string): Promise<ClassifiedReply | null> => {
+      if (!workspaceEffectAllowed()) return null;
+      const s = current();
+      const reply = s.replies.find((r) => r.id === replyId);
+      if (!reply || !reply.candidateId) return null;
+      if (reply.draftResponse.trim()) return reply;
+      const candidate = s.candidates.find((c) => c.id === reply.candidateId);
+      const campaign = s.campaigns.find((c) => c.id === (reply.campaignId || candidate?.campaignId));
+      const fresh = guardReplyClassification(
+        await classifyReplyWithModel(s.settings, reply.body, candidate?.name, (genInput) => {
+          const attempt = runWorkspaceEffect(() => hermesGenerate(genInput));
+          if (!attempt.allowed) throw new Error("Workspace unavailable.");
+          return attempt.value;
+        }),
+        campaign,
+        reply.body,
+      );
+      // A draft written for another reading of the reply would answer the
+      // wrong message; that disagreement is a recruiter's call.
+      if (fresh.intent !== reply.intent || !fresh.draftResponse.trim()) return null;
+      if (!workspaceEffectAllowed()) return null;
+      const saved = commit((prev) => ({
+        ...prev,
+        replies: prev.replies.map((r) =>
+          r.id === replyId && !r.draftResponse.trim() ? { ...r, draftResponse: fresh.draftResponse } : r,
+        ),
+      }));
+      return saved ? { ...reply, draftResponse: fresh.draftResponse } : null;
+    },
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const {
@@ -5611,6 +5658,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       markReplyHandled,
       applyReplyAction,
       draftReplyResponse,
+      prepareReplyResponse,
       createBookingFor,
       updateBooking,
       generateReport,
@@ -5707,7 +5755,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
       sourceNextBatch, addCandidateFromGithub, addCandidateManual, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
-      applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
+      applyReplyAction, draftReplyResponse, prepareReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, recordCandidateEvidence, addCandidateNote, setRejectionReason,
       setCandidateRating, setCandidateLeadSource, toggleVivier, savePrequal, setPrequalOutcome, addInterview, updateInterview,
       advanceChatboxSubmission, setChatboxSubmissionStatus, addChatboxSubmission,

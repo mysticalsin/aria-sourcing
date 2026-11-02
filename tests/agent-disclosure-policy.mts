@@ -216,7 +216,14 @@ ok(
   "drift: send route validates even when campaign context is unresolved",
   /validateCandidateBoundText\(body,\s*disclosureInternalFromCampaignLike\(campaign\)\)/.test(readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8")),
 );
-ok("drift: email inbound injection is a human-review signal", /const inboundInjection = detectInjection\(input\.text\)/.test(storeText));
+// The guard lives in one helper; both reply paths (ingestion and preparing a
+// missing draft) must pass it the candidate's inbound text.
+ok(
+  "drift: email inbound injection is a human-review signal",
+  /function guardReplyClassification\([\s\S]*?const inboundInjection = detectInjection\(inboundText\)/.test(storeText) &&
+    /guardReplyClassification\([\s\S]{0,400}?campaign,\s*input\.text,\s*\)/.test(storeText) &&
+    /guardReplyClassification\([\s\S]{0,400}?campaign,\s*reply\.body,\s*\)/.test(storeText),
+);
 
 console.log(`RESULT agent-disclosure-policy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

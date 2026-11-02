@@ -614,6 +614,9 @@ export interface OutreachMessage {
    *  (no provider, budget reached, failed or unparseable reply). Absent on
    *  drafts created before this field existed. */
   draftedBy?: "ai" | "template";
+  /** ClassifiedReply.id this message answers, set by draftReplyResponse so a
+   *  reply never gets two response drafts. */
+  inReplyTo?: string;
   status: OutreachStatus;
   sequenceStep: number;
   scheduledFor: string | null;

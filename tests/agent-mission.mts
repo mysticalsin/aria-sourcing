@@ -10,7 +10,8 @@ import {
   type MissionPlan,
 } from "../src/lib/agents/mission.js";
 import { campaignLaunchPlan, MAX_MISSION_DRAFTS, type DraftedPair } from "../src/lib/agents/campaign-mission.js";
-import type { Candidate, OutreachMessage } from "../src/lib/types.js";
+import { inboxTriagePlan, needsResponse, RESPONSE_INTENTS } from "../src/lib/agents/inbox-mission.js";
+import type { Candidate, ClassifiedReply, OutreachMessage, ReplyIntent } from "../src/lib/types.js";
 
 let pass = 0,
   fail = 0;
@@ -178,6 +179,70 @@ const noSource = await runMission(
 ok("a sourcing failure surfaces its reason", noSource.steps.source?.error === "Campaign has no reviewed real-sourcing query.");
 ok("no drafts are attempted after a sourcing failure", noSource.steps.drafts?.status === "skipped");
 ok("maxDrafts is clamped to the cost cap", campaignLaunchPlan("x", { sourceBatch: async () => ({ ok: true, accepted: [] }), draftLive: async () => null, draftTemplate: () => null }, { maxDrafts: 50 }).steps.length === 2);
+
+/* ---- 8. Inbox triage mission ---------------------------------------------- */
+
+const reply = (id: string, intent: ReplyIntent, extra: Partial<ClassifiedReply> = {}) =>
+  ({ id, candidateId: `cand-${id}`, intent, draftResponse: "Thanks!", handled: false, ...extra }) as unknown as ClassifiedReply;
+const inbound = (id: string) => ({ messageId: id, threadId: `t-${id}`, from: `${id}@x.example`, subject: "Re", body: `body ${id}`, receivedAt: "2026-11-02T09:00:00Z" });
+
+const drafted: string[] = [];
+const classifyIntent: Record<string, ReplyIntent> = { n1: "INTERESTED", n2: "NEGATIVE", n3: "OOO" };
+const triage = await runMission(
+  inboxTriagePlan({
+    fetchInbox: async () => ({ messages: ["n1", "n2", "n3", "bad"].map(inbound), skipped: 1 }),
+    classify: async (m) => {
+      if (m.messageId === "bad") throw new Error("workspace unavailable");
+      return reply(m.messageId, classifyIntent[m.messageId] as ReplyIntent);
+    },
+    pending: [
+      reply("p1", "REFERRAL"),
+      reply("p2", "UNCLEAR", { handled: true }),
+      reply("p3", "QUALIFIED_INTEREST"),
+      reply("p4", "INTERESTED", { draftResponse: "  " }),
+      reply("n1", "INTERESTED"),
+    ],
+    outreach: [{ inReplyTo: "p3", status: "Needs Approval" } as unknown as OutreachMessage],
+    draftResponse: (id) => { drafted.push(id); return { id: `out-${id}` } as unknown as OutreachMessage; },
+  }),
+  { concurrency: 3 },
+);
+ok("a failed classification does not stop triage", triage.steps.classify?.failed === 1 && triage.steps.classify.succeeded === 3);
+ok("only replies that call for a response are drafted", drafted.sort().join() === "n1,p1");
+ok("negative and out-of-office replies are never answered", !drafted.includes("n2") && !drafted.includes("n3"));
+ok("handled, empty and already-drafted replies are skipped", !drafted.some((id) => ["p2", "p3", "p4"].includes(id)));
+ok("a reply both new and pending is drafted once", drafted.filter((id) => id === "n1").length === 1);
+
+const readOnly = inboxTriagePlan({ fetchInbox: async () => ({ messages: [], skipped: 0 }), classify: async () => reply("x", "INTERESTED"), pending: [], outreach: [] });
+ok("without drafting authority triage stops at classification", !readOnly.steps.some((s) => s.id === "respond"));
+const rejectedDraft = { inReplyTo: "r1", status: "Rejected" } as unknown as OutreachMessage;
+ok("a rejected draft does not block a new response", needsResponse(reply("r1", "INTERESTED"), [rejectedDraft]));
+ok("response intents exclude refusals", !RESPONSE_INTENTS.includes("NOT_INTERESTED") && !RESPONSE_INTENTS.includes("NEGATIVE"));
+
+const prepared: string[] = [];
+const draftedAfterPrepare: string[] = [];
+const withPrepare = await runMission(inboxTriagePlan({
+  fetchInbox: async () => ({ messages: [], skipped: 0 }),
+  classify: async () => reply("x", "INTERESTED"),
+  pending: [reply("e1", "INTERESTED", { draftResponse: "" }), reply("e2", "QUALIFIED_INTEREST", { draftResponse: "" }), reply("ok1", "UNCLEAR")],
+  outreach: [],
+  draftResponse: (id) => { draftedAfterPrepare.push(id); return { id: `out-${id}` } as unknown as OutreachMessage; },
+  prepareResponse: async (id) => { prepared.push(id); return id === "e2" ? null : reply(id, "INTERESTED"); },
+}));
+ok("replies without a draft are prepared first", prepared.sort().join() === "e1,e2");
+ok("a reply with a draft is not sent to the model again", !prepared.includes("ok1"));
+ok("an unprepared reply is left for a recruiter", !draftedAfterPrepare.includes("e2") && withPrepare.steps.respond?.failed === 1);
+ok("prepared and ready replies are drafted", draftedAfterPrepare.sort().join() === "e1,ok1");
+
+const offline = await runMission(inboxTriagePlan({
+  fetchInbox: async () => { throw new Error("Couldn't reach the mailbox sync."); },
+  classify: async () => reply("x", "INTERESTED"),
+  pending: [reply("p9", "INTERESTED")],
+  outreach: [],
+  draftResponse: () => null,
+}));
+ok("a mailbox failure degrades the sync step with its reason", offline.steps.fetch?.status === "degraded" && (offline.results.fetch as { note?: string }).note === "Mailbox not synced: Couldn't reach the mailbox sync.");
+ok("waiting replies are still answered when the mailbox is down", offline.steps.respond?.runs === 1);
 
 console.log(`RESULT agent-mission: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
