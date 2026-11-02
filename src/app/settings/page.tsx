@@ -28,6 +28,7 @@ import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { SetupStatusPanel } from "@/components/settings/setup-status-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
+import { AiUsagePanel } from "@/components/settings/ai-usage-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
@@ -1221,6 +1222,9 @@ export default function SettingsPage() {
             description="Register the specific models your fleet uses and set which model handles each task type: sourcing, outreach, reply classification, brief extraction and chat. Admin only."
           >
             <ModelsPanel />
+            <div className="mt-6 border-t border-line pt-5">
+              <AiUsagePanel />
+            </div>
           </Section>
 
           {/* 16 — Tools */}

@@ -22,7 +22,10 @@ import {
 import { parseLocalSecret } from "../src/lib/ai/local-secret.js";
 import { INTAKE_OUTPUT_SCHEMA } from "../src/lib/ai/intake-schema.js";
 import { buildIntakeParsePrompt } from "../src/lib/ai/intake.js";
-import { aiBudgetStatus, estimateCostUsd, recordAiUsage, resetAiUsageForTests } from "../src/lib/ai/usage.js";
+import { aiBudgetStatus, aiUsageReport, estimateCostUsd, recordAiUsage, resetAiUsageForTests } from "../src/lib/ai/usage.js";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { SystemSettings, LlmProvider, SavedModel } from "../src/lib/types.js";
 import { defaultSettings } from "../src/lib/seed.js";
 import { resolveProviderEndpoint } from "../src/lib/ai/endpoint";
@@ -323,6 +326,9 @@ const budgetEnv = { AI_MONTHLY_BUDGET_USD: "1", AI_DAILY_BUDGET_USD: "0.5" } as 
 const day1 = new Date("2026-11-03T10:00:00Z");
 const quietLog = console.info;
 console.info = () => {};
+const usageDir = mkdtempSync(path.join(tmpdir(), "aria-usage-"));
+const priorUsageFile = process.env.AI_USAGE_FILE;
+process.env.AI_USAGE_FILE = path.join(usageDir, "nested", "ai-usage.json");
 try {
   resetAiUsageForTests();
   ok("fresh ledger is within budget", aiBudgetStatus(day1, budgetEnv).ok);
@@ -335,11 +341,26 @@ try {
   const nextDay = new Date("2026-11-05T10:00:00Z");
   const monthCapped = aiBudgetStatus(nextDay, budgetEnv);
   ok("monthly cap holds across days", !monthCapped.ok && monthCapped.reason === "Monthly AI budget reached.");
-  ok("a new month resets the ledger", aiBudgetStatus(new Date("2026-12-01T00:00:00Z"), budgetEnv).ok);
   ok("default caps apply without env", aiBudgetStatus(day1, {} as unknown as NodeJS.ProcessEnv).monthlyLimitUsd === 30);
+
+  // Per task + model breakdown, and the totals survive a restart.
+  const report = aiUsageReport(nextDay, budgetEnv);
+  ok("report breaks spend down by task and model", report.byTask.length === 2 && report.byTask[0]?.task === "sourcing" && report.byTask[0]?.outputTokens === 60_000);
+  ok("report counts calls", report.calls === 2 && report.month === "2026-11");
+  ok("ledger is written to the usage file", existsSync(process.env.AI_USAGE_FILE as string));
+  resetAiUsageForTests(); // simulates a process restart
+  const restarted = aiUsageReport(nextDay, budgetEnv);
+  ok("a restart reloads month-to-date spend", Math.abs(restarted.monthUsd - 1.1) < 1e-9 && restarted.byTask.length === 2);
+  ok("a new month resets the ledger", aiBudgetStatus(new Date("2026-12-01T00:00:00Z"), budgetEnv).ok);
+  writeFileSync(process.env.AI_USAGE_FILE as string, "{not json");
+  resetAiUsageForTests();
+  ok("a corrupt usage file starts a fresh ledger", aiUsageReport(nextDay, budgetEnv).monthUsd === 0);
 } finally {
   console.info = quietLog;
   resetAiUsageForTests();
+  if (priorUsageFile === undefined) delete process.env.AI_USAGE_FILE;
+  else process.env.AI_USAGE_FILE = priorUsageFile;
+  rmSync(usageDir, { recursive: true, force: true });
 }
 
 console.log(`RESULT ai-provider: ${pass} passed, ${fail} failed`);

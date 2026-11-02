@@ -1,6 +1,6 @@
 # 02 — Journal d'usage et budgets
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 
@@ -11,3 +11,5 @@ Spec: ../spec.md
 - Un panneau Réglages montre la consommation du jour et du mois.
 
 ## Comments
+
+2026-11-02 (claude-code) : fait, avec un écart assumé. Les compteurs sont persistés dans un fichier JSON et non en base : le plafond porte sur la clé Anthropic, globale au serveur, et le déploiement prévu a un seul conteneur app (ADR 0001). Pas d'interrupteur admin dédié : mettre `AI_MONTHLY_BUDGET_USD=0` coupe l'IA.

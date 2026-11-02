@@ -372,9 +372,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
       }
       const json = await upstream.json().catch(() => null);
-      if (slug === "anthropic") {
-        recordAiUsage({ task, model: cloudModel, usage: (json as { usage?: AnthropicUsage } | null)?.usage });
-      }
+      const usage = (json as { usage?: AnthropicUsage } | null)?.usage;
+      if (slug === "anthropic" && usage) recordAiUsage({ task, model: cloudModel, usage });
       const stopProblem = cloudStopProblem(slug, json);
       if (stopProblem) {
         logUpstream("info", "Cloud provider response unusable", { provider, reason: stopProblem });

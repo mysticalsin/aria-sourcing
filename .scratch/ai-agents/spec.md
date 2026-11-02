@@ -104,7 +104,7 @@ Missions suivantes possibles, sur le même moteur : relances en lot, préparatio
 |---|---|---|
 | 00 | Socle : clé locale, routage Claude par tâche, effort, lecture des blocs `thinking` | fait |
 | 01 | ID du workspace Anthropic et test réel de bout en bout | bloqué, en attente du propriétaire |
-| 02 | Journal d'usage et budgets | plafond fait ; persistance en base et panneau Réglages à faire |
+| 02 | Journal d'usage et budgets | fait (plafond, persistance fichier, panneau Réglages) |
 | 03 | Tâche `extraction` sur Haiku pour l'analyse de brief, avec sortie structurée | fait |
 | 04 | Cache des prompts système et des outils | ready-for-agent |
 | 05 | Orchestrateur de missions et agents (§5) | moteur et mission « Run Aria » faits ; autres missions à faire |
@@ -133,7 +133,8 @@ Avec 30 $ par mois, on peut faire par exemple 60 lancements de sourcing, 400 mes
 
 ### Garde-fous en place
 
-- **Plafond dans l'app** (`src/lib/ai/usage.ts`) : 30 $ par mois et 6 $ par jour par défaut (`AI_MONTHLY_BUDGET_USD`, `AI_DAILY_BUDGET_USD`). Au-delà, chaque surface bascule sur son repli sans IA. Les compteurs vivent en mémoire et repartent de zéro au redémarrage.
+- **Plafond dans l'app** (`src/lib/ai/usage.ts`) : 30 $ par mois et 6 $ par jour par défaut (`AI_MONTHLY_BUDGET_USD`, `AI_DAILY_BUDGET_USD`). Au-delà, chaque surface bascule sur son repli sans IA. Les compteurs sont écrits dans un fichier JSON (`/app/config/ai-usage.json` en conteneur, `var/ai-usage.json` en dev, ou `AI_USAGE_FILE`) et survivent aux redémarrages.
+- **Panneau « Claude usage »** dans Réglages → AI & Models (section 15) : dépense du mois et du jour face aux plafonds, coût par tâche et modèle. Route admin `GET /api/ai/usage`, agrégats seulement.
 - **Plafond ferme :** une limite de dépense sur le workspace dans la Console Anthropic. C'est au propriétaire de la poser, car la clé n'a pas les droits d'administration.
 
 ## 8. Questions encore ouvertes

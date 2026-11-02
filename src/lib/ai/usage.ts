@@ -2,17 +2,23 @@
    Claude spend ledger and budget gate (server-only, no content stored).
 
    Every Anthropic response reports its token usage. We price it, keep running
-   totals for the current UTC day and month, and refuse new calls once a cap is
-   reached; callers then use their deterministic fallback, so the app keeps
-   working without AI.
+   totals for the current UTC day and month (overall and per task + model),
+   and refuse new calls once a cap is reached; callers then use their
+   deterministic fallback, so the app keeps working without AI.
 
    Caps (USD, server env): AI_MONTHLY_BUDGET_USD (default 30) and
    AI_DAILY_BUDGET_USD (default 6, so one heavy demo day cannot spend the month).
 
-   The totals live in this server instance's memory and restart from zero with
-   the process. This is a soft guard; the hard ceiling is the spend limit set
-   on the Anthropic workspace in the Console.
+   The cap is about the Anthropic key, which is global to the server, so the
+   ledger is too. It is kept in memory and written through to a small JSON
+   file so a restart does not reset it: AI_USAGE_FILE, else /app/config (the
+   container's durable volume) when present, else var/ in the working tree.
+   Persistence is best effort; on a read-only disk the totals stay in memory.
+   The hard ceiling remains the spend limit set on the Anthropic workspace.
    ========================================================================== */
+
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 export interface AnthropicUsage {
   input_tokens?: number;
@@ -39,17 +45,28 @@ const FALLBACK_PRICE: Price = { input: 5, output: 25, cacheRead: 0.5 };
 export const DEFAULT_MONTHLY_BUDGET_USD = 30;
 export const DEFAULT_DAILY_BUDGET_USD = 6;
 
+const tokens = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+
 export function estimateCostUsd(model: string, usage: AnthropicUsage | null | undefined): number {
   if (!usage) return 0;
   const price = PRICE_PER_MTOK[model] ?? FALLBACK_PRICE;
-  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
   return (
-    (n(usage.input_tokens) * price.input +
-      n(usage.cache_creation_input_tokens) * price.input * 1.25 +
-      n(usage.cache_read_input_tokens) * price.cacheRead +
-      n(usage.output_tokens) * price.output) /
+    (tokens(usage.input_tokens) * price.input +
+      tokens(usage.cache_creation_input_tokens) * price.input * 1.25 +
+      tokens(usage.cache_read_input_tokens) * price.cacheRead +
+      tokens(usage.output_tokens) * price.output) /
     1_000_000
   );
+}
+
+export interface TaskUsage {
+  task: string;
+  model: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  costUsd: number;
 }
 
 interface Ledger {
@@ -58,17 +75,59 @@ interface Ledger {
   monthUsd: number;
   dayUsd: number;
   calls: number;
+  /** Month-to-date, keyed "task model". */
+  byTask: Record<string, TaskUsage>;
 }
 
 const LEDGER_KEY = Symbol.for("aria.ai.usageLedger");
+type LedgerStore = Record<symbol, Ledger | undefined>;
+
+export function usageFilePath(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.AI_USAGE_FILE?.trim()) return env.AI_USAGE_FILE.trim();
+  if (existsSync("/app/config")) return "/app/config/ai-usage.json";
+  return path.join(process.cwd(), "var", "ai-usage.json");
+}
+
+function readPersisted(file: string): Ledger | undefined {
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Partial<Ledger>;
+    if (typeof raw.month !== "string" || typeof raw.day !== "string") return undefined;
+    return {
+      month: raw.month,
+      day: raw.day,
+      monthUsd: tokens(raw.monthUsd),
+      dayUsd: tokens(raw.dayUsd),
+      calls: tokens(raw.calls),
+      byTask: raw.byTask && typeof raw.byTask === "object" ? raw.byTask : {},
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Write-then-rename so a crash never leaves a half-written file. */
+function persist(ledgerValue: Ledger): boolean {
+  if (process.env.AI_USAGE_PERSIST === "off") return false;
+  const file = usageFilePath();
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(ledgerValue));
+    renameSync(tmp, file);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function ledger(now: Date): Ledger {
-  const store = globalThis as unknown as Record<symbol, Ledger | undefined>;
+  const store = globalThis as unknown as LedgerStore;
   const day = now.toISOString().slice(0, 10);
   const month = day.slice(0, 7);
   let current = store[LEDGER_KEY];
+  if (!current && process.env.AI_USAGE_PERSIST !== "off") current = readPersisted(usageFilePath());
   if (!current || current.month !== month) {
-    current = { month, day, monthUsd: 0, dayUsd: 0, calls: 0 };
+    current = { month, day, monthUsd: 0, dayUsd: 0, calls: 0, byTask: {} };
   } else if (current.day !== day) {
     current = { ...current, day, dayUsd: 0 };
   }
@@ -111,14 +170,30 @@ export function recordAiUsage(
   current.monthUsd += cost;
   current.dayUsd += cost;
   current.calls += 1;
+  const key = `${entry.task} ${entry.model}`;
+  const row = (current.byTask[key] ??= {
+    task: entry.task,
+    model: entry.model,
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    costUsd: 0,
+  });
+  row.calls += 1;
+  row.inputTokens += tokens(entry.usage?.input_tokens);
+  row.outputTokens += tokens(entry.usage?.output_tokens);
+  row.cacheReadTokens += tokens(entry.usage?.cache_read_input_tokens);
+  row.costUsd += cost;
+  persist(current);
   console.info(
     JSON.stringify({
       event: "ai_usage",
       task: entry.task,
       model: entry.model,
-      inputTokens: entry.usage?.input_tokens ?? 0,
-      outputTokens: entry.usage?.output_tokens ?? 0,
-      cacheReadTokens: entry.usage?.cache_read_input_tokens ?? 0,
+      inputTokens: tokens(entry.usage?.input_tokens),
+      outputTokens: tokens(entry.usage?.output_tokens),
+      cacheReadTokens: tokens(entry.usage?.cache_read_input_tokens),
       costUsd: Number(cost.toFixed(6)),
       monthUsd: Number(current.monthUsd.toFixed(4)),
     }),
@@ -126,6 +201,26 @@ export function recordAiUsage(
   return cost;
 }
 
+export interface AiUsageReport extends AiBudgetStatus {
+  month: string;
+  day: string;
+  calls: number;
+  byTask: TaskUsage[];
+}
+
+/** Month-to-date snapshot for the admin usage panel. */
+export function aiUsageReport(now = new Date(), env: NodeJS.ProcessEnv = process.env): AiUsageReport {
+  const status = aiBudgetStatus(now, env);
+  const current = ledger(now);
+  return {
+    ...status,
+    month: current.month,
+    day: current.day,
+    calls: current.calls,
+    byTask: Object.values(current.byTask).sort((a, b) => b.costUsd - a.costUsd),
+  };
+}
+
 export function resetAiUsageForTests(): void {
-  delete (globalThis as unknown as Record<symbol, Ledger | undefined>)[LEDGER_KEY];
+  delete (globalThis as unknown as LedgerStore)[LEDGER_KEY];
 }
