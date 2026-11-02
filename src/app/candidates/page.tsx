@@ -295,7 +295,7 @@ function CandidatesView() {
     if (!activeCampaign) {
       toast({
         title: "No active campaign",
-        description: "Open a campaign (or start a new intake) to source its next batch.",
+        description: "Open a campaign (or create a new one) to source its next batch.",
         variant: "warning",
       });
       return;

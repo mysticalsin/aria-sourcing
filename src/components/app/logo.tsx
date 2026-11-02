@@ -49,3 +49,17 @@ export function HermesWordmark({ className, compact }: { className?: string; com
     </span>
   );
 }
+
+/** Compact horizontal lockup for navigation: mark, ARIA and the Mantu Group
+ *  mention on two short lines, so the full nav fits a 900px-high screen. */
+export function HermesLockup({ className }: { className?: string }) {
+  return (
+    <span className={cn("flex items-center gap-3", className)}>
+      <HermesMark className="h-8" />
+      <span className="leading-none">
+        <span className="block text-lg font-extrabold tracking-[0.3em] text-ink">ARIA</span>
+        <span className="mt-1 block text-[0.65rem] font-medium tracking-wide text-muted">A Mantu Group product</span>
+      </span>
+    </span>
+  );
+}

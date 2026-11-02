@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  Badge,
   Button,
   Card,
   CardBody,
@@ -13,7 +12,7 @@ import {
   Textarea,
   useToast,
 } from "@/components/ui";
-import { PageHeader, HydrationGate } from "@/components/app/page-header";
+import { HydrationGate } from "@/components/app/page-header";
 import { WarRoomBoard, type WarRoomLane } from "@/components/launch/war-room-board";
 import { parseIntakeLive } from "@/lib/ai/intake";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
@@ -25,7 +24,7 @@ import {
   type LaunchRoleResult,
 } from "@/lib/store/campaign-launch";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { Radio, Rocket, ShieldCheck, Sparkles } from "lucide-react";
+import { Radio, Rocket, Sparkles } from "lucide-react";
 
 /* ============================================================================
    2.2 Sourcing War Room — paste a multi-role brief, launch N campaigns that
@@ -69,7 +68,7 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export default function LaunchPage() {
+export function MultiRoleLaunch() {
   const hydrated = useHydrated();
   const { toast } = useToast();
   const actions = useActions();
@@ -216,18 +215,6 @@ export default function LaunchPage() {
 
   return (
     <div>
-      <PageHeader
-        eyebrow="Launch"
-        title="Sourcing war room"
-        description={supabaseEnabled ? "Create one campaign per role, then review each source plan before searching." : "Paste a multi-role brief and Aria spins up one campaign per role, sourcing all of them in parallel."}
-        actions={
-          <Badge tone="aqua" dot>
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-            Dry-run · nothing sent
-          </Badge>
-        }
-      />
-
       <HydrationGate hydrated={hydrated} fallback={<LaunchFallback />}>
         <div className="space-y-6">
           <Card className="animate-fade-in">

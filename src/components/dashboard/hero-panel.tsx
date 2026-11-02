@@ -27,7 +27,7 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
   const reason =
     nextStep?.reason ??
     "Aria will find people and draft messages — you approve before anything sends.";
-  const href = nextStep?.href ?? "/intake";
+  const href = nextStep?.href ?? "/campaigns/new";
 
   return (
     <section
@@ -83,8 +83,8 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
 function ReturningHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
   // One header, one primary action: the next step. Secondary actions live in
   // the command bar below the hero.
-  const primaryHref = nextStep?.href ?? "/intake";
-  const primaryLabel = nextStep?.cta ?? "New intake";
+  const primaryHref = nextStep?.href ?? "/campaigns/new";
+  const primaryLabel = nextStep?.cta ?? "New campaign";
 
   return (
     <section

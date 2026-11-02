@@ -114,7 +114,7 @@ const runRoute = source("src/app/api/dust/run/route.ts");
 const configRoute = source("src/app/api/integrations/dust/config/route.ts");
 const stateMigration = source("src/lib/store/migrations.ts");
 const settingsPanel = source("src/components/settings/dust-agent-panel.tsx");
-const intakePage = source("src/app/intake/page.tsx");
+const intakePage = source("src/components/campaigns/single-role-intake.tsx");
 
 ok("normalized Dust authority migration exists", migration.length > 0);
 ok("Dust authority resolver exists", authority.length > 0);

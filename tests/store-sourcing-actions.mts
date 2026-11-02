@@ -21,7 +21,7 @@ const sourcingActionsSource = readFileSync(
 );
 const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 const launchSource = readFileSync(
-  new URL("../src/app/launch/page.tsx", import.meta.url),
+  new URL("../src/components/campaigns/multi-role-launch.tsx", import.meta.url),
   "utf8",
 );
 const agentRunSource = readFileSync(

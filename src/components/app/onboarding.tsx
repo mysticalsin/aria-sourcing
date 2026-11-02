@@ -49,7 +49,7 @@ export function Onboarding() {
       }
       setOpen(false);
       if (opts?.goToIntake) {
-        router.push("/intake");
+        router.push("/campaigns/new");
       }
     },
     [router],

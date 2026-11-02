@@ -35,6 +35,13 @@ const nextConfig = {
   // Defaults to `.next` so CI/Vercel are unaffected. For synced checkouts,
   // `build:isolated` creates a temporary copy rather than escaping this root.
   distDir: resolveNextDistDir(process.env.NEXT_DIST_DIR),
+  async redirects() {
+    // Intake and Launch merged into one "New campaign" flow; old links still work.
+    return [
+      { source: "/intake", destination: "/campaigns/new", permanent: false },
+      { source: "/launch", destination: "/campaigns/new?roles=several", permanent: false },
+    ];
+  },
   async headers() {
     // Security headers for a console that renders candidate PII.
     const isProd = process.env.NODE_ENV === "production";

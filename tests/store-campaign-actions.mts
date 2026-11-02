@@ -26,11 +26,11 @@ const storeSource = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 const intakePageSource = readFileSync(
-  new URL("../src/app/intake/page.tsx", import.meta.url),
+  new URL("../src/components/campaigns/single-role-intake.tsx", import.meta.url),
   "utf8",
 );
 const launchPageSource = readFileSync(
-  new URL("../src/app/launch/page.tsx", import.meta.url),
+  new URL("../src/components/campaigns/multi-role-launch.tsx", import.meta.url),
   "utf8",
 );
 const campaignPageSource = readFileSync(

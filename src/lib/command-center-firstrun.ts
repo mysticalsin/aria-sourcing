@@ -38,14 +38,14 @@ export function commandCenterMode(snapshot: Pick<CommandCenterSnapshot, "campaig
 /**
  * Single next action for the Command Center command bar / hero.
  * Priority: approve drafts → handle replies → keep sourcing active campaign →
- * otherwise start an intake. First-run always points at intake.
+ * otherwise start a new campaign. First-run always points at the new-campaign flow.
  */
 export function resolveCommandCenterNextStep(snapshot: CommandCenterSnapshot): CommandCenterNextStep {
   if (isFirstRunWorkspace(snapshot)) {
     return {
       cta: "Paste a job brief",
       reason: "Aria will find people and draft messages — you approve before anything sends.",
-      href: "/intake",
+      href: "/campaigns/new",
     };
   }
 
@@ -134,6 +134,6 @@ export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = [
   },
   {
     title: "Start with one job",
-    body: "That’s it. Open Intake, paste a brief, and Aria takes the first step.",
+    body: "That’s it. Click New campaign, paste a brief, and Aria takes the first step.",
   },
 ] as const;

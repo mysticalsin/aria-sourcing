@@ -19,7 +19,7 @@ import {
   useConfirm,
   useToast,
 } from "@/components/ui";
-import { PageHeader, HydrationGate } from "@/components/app/page-header";
+import { HydrationGate } from "@/components/app/page-header";
 import {
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
@@ -60,7 +60,6 @@ import {
   Plus,
   Rocket,
   ScanText,
-  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
@@ -84,7 +83,7 @@ const SEVERITY_ICON: Record<ValidationWarning["severity"], React.ReactNode> = {
   info: <Info className="h-4 w-4" aria-hidden />,
 };
 
-export default function IntakePage() {
+export function SingleRoleIntake() {
   const hydrated = useHydrated();
   const router = useRouter();
   const { toast } = useToast();
@@ -369,18 +368,6 @@ export default function IntakePage() {
 
   return (
     <div>
-      <PageHeader
-        eyebrow="Intake"
-        title="Email + JD intake"
-        description="Paste a hiring request and Aria parses it into a structured, editable brief, then spins up an autonomous sourcing campaign."
-        actions={
-          <Badge tone="aqua" dot>
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-            Dry-run · nothing sent
-          </Badge>
-        }
-      />
-
       <HydrationGate hydrated={hydrated} fallback={<IntakeFallback />}>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* LEFT — inbound brief form */}

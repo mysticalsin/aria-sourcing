@@ -85,9 +85,9 @@ export default function CampaignsPage() {
           <Button
             variant="secondary"
             leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => router.push("/intake")}
+            onClick={() => router.push("/campaigns/new")}
           >
-            New intake
+            New campaign
           </Button>
         }
       />
@@ -109,14 +109,14 @@ export default function CampaignsPage() {
           <EmptyState
             icon={<FolderSearch className="h-6 w-6" />}
             title="No campaigns yet"
-            description="Paste a hiring manager's request into intake and Aria will parse the role, build a sourcing strategy, and open a campaign."
+            description="Paste a hiring manager's request and Aria will parse the role, build a sourcing strategy, and open a campaign."
             action={
               <Button
                 variant="secondary"
                 leftIcon={<Plus className="h-4 w-4" />}
-                onClick={() => router.push("/intake")}
+                onClick={() => router.push("/campaigns/new")}
               >
-                Start a new intake
+                New campaign
               </Button>
             }
           />
@@ -127,7 +127,7 @@ export default function CampaignsPage() {
                 <Field label="Search" htmlFor="campaign-search">
                   <div className="relative">
                     <Search
-                      className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                      className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted"
                       aria-hidden
                     />
                     <Input

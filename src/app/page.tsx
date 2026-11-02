@@ -250,8 +250,8 @@ export default function DashboardPage() {
           <>
             {/* Secondary actions. The hero above holds the one primary action. */}
             <div className="flex flex-wrap items-center gap-2 animate-fade-in" data-testid="cc-returning-body" role="toolbar" aria-label="Quick actions">
-              <Button variant="outline" size="sm" leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>
-                New intake
+              <Button variant="outline" size="sm" leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/campaigns/new")}>
+                New campaign
               </Button>
               <Button variant="outline" size="sm" leftIcon={<Radar aria-hidden />} onClick={handleSourceBatch}>
                 Source next batch
@@ -326,7 +326,7 @@ export default function DashboardPage() {
                       action={
                         <Button
                           leftIcon={<FilePlus2 aria-hidden />}
-                          onClick={() => router.push("/intake")}
+                          onClick={() => router.push("/campaigns/new")}
                         >
                           Paste a job brief
                         </Button>

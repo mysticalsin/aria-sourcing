@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
-import { NAV_ITEMS } from "./nav";
+import { SEARCH_PAGES } from "./nav";
 import {
   useActions,
   useActiveCampaignId,
@@ -90,7 +90,7 @@ export function CommandSearch() {
   const results = React.useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
     const out: Result[] = [];
-    NAV_ITEMS.forEach((n) => {
+    SEARCH_PAGES.forEach((n) => {
       if (!q || n.label.toLowerCase().includes(q) || n.description.toLowerCase().includes(q))
         out.push({ id: `nav-${n.href}`, label: n.label, hint: n.description, group: "Pages", run: () => router.push(n.href) });
     });

@@ -12,7 +12,10 @@ function ok(name: string, condition: boolean) {
 
 const login = readFileSync(new URL("../src/app/login/page.tsx", import.meta.url), "utf8");
 const config = readFileSync(new URL("../src/lib/supabase/config.ts", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("../src/components/app/sidebar.tsx", import.meta.url), "utf8");
+// The nav lockup (sidebar and mobile drawer) carries the product credit.
+const sidebar =
+  readFileSync(new URL("../src/components/app/sidebar.tsx", import.meta.url), "utf8") +
+  readFileSync(new URL("../src/components/app/logo.tsx", import.meta.url), "utf8");
 
 ok("login has no dead hash navigation", !login.includes('href="#"'));
 ok("login removes the unbacked public navigation list", !login.includes("NAV_LINKS"));

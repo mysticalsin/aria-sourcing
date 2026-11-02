@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { ConfirmProvider } from "@/components/ui";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
-import { MOBILE_NAV } from "./nav";
+import { MOBILE_NAV, isNavActive } from "./nav";
+import { SectionTabs } from "./section-tabs";
 import { Onboarding } from "./onboarding";
 import { WorkspaceStatusPanel } from "./workspace-status-panel";
 import { useHermes } from "@/lib/store";
@@ -46,7 +47,10 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10 print:p-0">
-          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
+          <div className="mx-auto w-full max-w-[1400px]">
+            <SectionTabs pathname={pathname} />
+            {children}
+          </div>
         </main>
       </div>
 
@@ -56,7 +60,7 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
         aria-label="Primary mobile"
       >
         {MOBILE_NAV.map((item) => {
-          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const active = isNavActive(item, pathname);
           const Icon = item.icon;
           return (
             <Link

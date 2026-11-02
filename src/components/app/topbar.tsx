@@ -3,11 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Sparkles, X } from "lucide-react";
+import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandSearch } from "./command-search";
-import { HermesWordmark } from "./logo";
-import { NAV_ITEMS } from "./nav";
+import { HermesLockup, HermesWordmark } from "./logo";
+import { NAV_ITEMS, NAV_SECTIONS, NEW_CAMPAIGN_HREF, isNavActive } from "./nav";
 import {
   useActions,
   useActiveCampaign,
@@ -400,10 +400,10 @@ export function TopBar() {
           />
           <nav
             ref={mobileNavPanelRef}
-            className="sidebar-glass absolute left-0 top-0 flex h-full w-[17rem] max-w-[82%] flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)] animate-fade-in shadow-lift"
+            className="sidebar-glass absolute left-0 top-0 flex h-full w-[17rem] max-w-[82%] flex-col overflow-y-auto pb-[calc(5rem+env(safe-area-inset-bottom))] animate-fade-in shadow-lift"
           >
             <div className="flex items-center justify-between px-5 py-4">
-              <HermesWordmark />
+              <HermesLockup />
               <button
                 type="button"
                 onClick={() => setMobileNavOpen(false)}
@@ -413,14 +413,25 @@ export function TopBar() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            {(["Operate", "Analyze", "System"] as const).map((section) => (
+            <div className="px-3 pb-1">
+              <Link
+                href={NEW_CAMPAIGN_HREF}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-tangerine px-3 py-2.5 text-sm font-semibold text-white shadow-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                New campaign
+              </Link>
+            </div>
+            {(["Home", ...NAV_SECTIONS] as const).map((section) => (
               <div key={section} className="px-3 py-2">
-                <p className="px-3 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">
-                  {section}
-                </p>
+                {section !== "Home" && (
+                  <p className="px-3 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">
+                    {section}
+                  </p>
+                )}
                 <ul className="space-y-0.5">
                   {NAV_ITEMS.filter((n) => n.section === section).map((item) => {
-                    const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+                    const active = isNavActive(item, pathname);
                     const Icon = item.icon;
                     return (
                       <li key={item.href}>

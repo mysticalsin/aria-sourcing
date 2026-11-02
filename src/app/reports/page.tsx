@@ -116,11 +116,11 @@ export default function ReportsPage() {
             description="Run an intake to spin up your first sourcing campaign, then generate a weekly report here."
             action={
               <Link
-                href="/intake"
+                href="/campaigns/new"
                 className="inline-flex h-11 items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-paper shadow-soft transition-all hover:bg-ink/90 active:scale-[0.98]"
               >
                 <Sparkles className="h-4 w-4" aria-hidden />
-                New intake
+                New campaign
               </Link>
             }
           />
