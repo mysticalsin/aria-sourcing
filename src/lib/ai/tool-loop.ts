@@ -18,6 +18,7 @@ import {
 import {
   ANTHROPIC_TASK_PROFILE,
   anthropicHeaders,
+  anthropicOutputConfig,
   cloudStopProblem,
   anthropicSupportsEffort,
   type AiProviderSlug,
@@ -293,7 +294,7 @@ export async function runAnthropicWithTools(args: {
   const { model, system, prompt, key, servers } = args;
   const profile = args.task && anthropicSupportsEffort(model) ? ANTHROPIC_TASK_PROFILE[args.task] : undefined;
   const requestShape = profile
-    ? { max_tokens: profile.maxTokens, output_config: { effort: profile.effort } }
+    ? { max_tokens: profile.maxTokens, output_config: anthropicOutputConfig(profile) }
     : { max_tokens: 4096 };
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
   const timeoutMs = boundedPositiveInteger(

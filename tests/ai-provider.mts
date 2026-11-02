@@ -20,6 +20,8 @@ import {
   cloudStopProblem,
 } from "../src/lib/ai/provider.js";
 import { parseLocalSecret } from "../src/lib/ai/local-secret.js";
+import { INTAKE_OUTPUT_SCHEMA } from "../src/lib/ai/intake-schema.js";
+import { buildIntakeParsePrompt } from "../src/lib/ai/intake.js";
 import { aiBudgetStatus, estimateCostUsd, recordAiUsage, resetAiUsageForTests } from "../src/lib/ai/usage.js";
 import type { SystemSettings, LlmProvider, SavedModel } from "../src/lib/types.js";
 import { defaultSettings } from "../src/lib/seed.js";
@@ -241,6 +243,36 @@ delete process.env.ANTHROPIC_WORKSPACE_ID;
 ok("no workspace header when unset",
   !("anthropic-workspace-id" in buildCloudRequest("anthropic", "claude-haiku-5-5", "S", "P", "k").headers));
 if (priorWorkspace !== undefined) process.env.ANTHROPIC_WORKSPACE_ID = priorWorkspace;
+
+/* ---- 12a. Brief extraction: structured output ------------------------------ */
+
+const extractBody = JSON.parse(
+  buildCloudRequest("anthropic", "claude-haiku-5-5", "S", "P", "k", 2048, undefined, "extract").body,
+) as { max_tokens: number; output_config?: { effort?: string; format?: { type?: string; schema?: unknown } } };
+ok("extract runs at low effort", extractBody.output_config?.effort === "low");
+ok("extract constrains the answer to the intake schema", extractBody.output_config?.format?.type === "json_schema" && JSON.stringify(extractBody.output_config.format.schema) === JSON.stringify(INTAKE_OUTPUT_SCHEMA));
+ok("other tasks send no schema", !("format" in (classifyBody.output_config ?? {})));
+
+// Structured outputs reject open objects, missing required keys and numeric/length constraints.
+const schemaProblems: string[] = [];
+const walk = (node: unknown, path: string) => {
+  if (!node || typeof node !== "object") return;
+  const n = node as Record<string, unknown>;
+  for (const banned of ["minimum", "maximum", "multipleOf", "minLength", "maxLength", "minItems", "maxItems"]) {
+    if (banned in n) schemaProblems.push(`${path}.${banned}`);
+  }
+  if (n.type === "object") {
+    if (n.additionalProperties !== false) schemaProblems.push(`${path} is open`);
+    const keys = Object.keys((n.properties as object) ?? {});
+    if (JSON.stringify([...(n.required as string[])].sort()) !== JSON.stringify(keys.sort())) schemaProblems.push(`${path} required mismatch`);
+  }
+  for (const [k, v] of Object.entries(n)) walk(v, `${path}.${k}`);
+};
+walk(INTAKE_OUTPUT_SCHEMA, "schema");
+ok(`intake schema fits structured-output limits${schemaProblems.length ? `: ${schemaProblems.join(", ")}` : ""}`, schemaProblems.length === 0);
+const promptShape = JSON.parse(buildIntakeParsePrompt("x").split("\n").slice(2).join("\n").split("\n\nTEXT:")[0] as string) as object;
+ok("schema and prompt describe the same fields", JSON.stringify(Object.keys(INTAKE_OUTPUT_SCHEMA.properties).sort()) === JSON.stringify(Object.keys(promptShape).sort()));
+ok("extraction runs on Haiku by default", resolveAiProvider(defaultSettings(), "extraction")?.model === "claude-haiku-5-5");
 
 /* ---- 12b. Unusable stop reasons ------------------------------------------- */
 

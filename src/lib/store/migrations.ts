@@ -31,6 +31,15 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     linkedKeys.has(p.id) ? { ...p, apiKeyId: linkedKeys.get(p.id) } : p,
   );
   const resetModels = preKimi || preClaude;
+  // STATE_VERSION 19 — brief extraction got its own task. A kept model layer
+  // routes it to the saved Haiku model when there is one and no choice yet.
+  const keptDefaults = parsed.settings?.defaultModels ?? defs.defaultModels ?? {};
+  const hasHaiku = (parsed.settings?.savedModels ?? []).some((m) => m.id === "model_claude_haiku" && m.enabled);
+  const defaultModels = resetModels
+    ? defs.defaultModels
+    : keptDefaults.extraction || !hasHaiku
+      ? keptDefaults
+      : { ...keptDefaults, extraction: "model_claude_haiku" };
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   return {
     ...parsed,
@@ -90,7 +99,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       tools: parsed.settings.tools ?? defs.tools,
       mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
       webResearch: parsed.settings.webResearch ?? defs.webResearch,
-      defaultModels: resetModels ? defs.defaultModels : (parsed.settings.defaultModels ?? defs.defaultModels),
+      defaultModels,
       // STATE_VERSION 8 — live Aria runtime config.
       hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
       hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,

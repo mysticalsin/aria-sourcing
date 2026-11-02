@@ -14,7 +14,7 @@ import {
 } from "../src/lib/seed.js";
 import { resolveAiProvider } from "../src/lib/ai/provider.js";
 import { migrateToCurrentVersion } from "../src/lib/store/migrations.js";
-import { LLM_PROVIDERS, TOOL_IDS } from "../src/lib/types.js";
+import { LLM_PROVIDERS, TOOL_IDS, type ModelTask } from "../src/lib/types.js";
 
 const models = defaultSavedModels;
 
@@ -72,7 +72,7 @@ const otherProviders = seed.settings.llmProviders.filter((p) => p.kind !== "Anth
 ok("non-Anthropic providers are disabled by default", otherProviders.every((p) => !p.enabled));
 
 // Each task resolves to its own Claude tier: Haiku for classification, Sonnet elsewhere.
-const tierFor = (task: "sourcing" | "outreach" | "classification" | "chat") =>
+const tierFor = (task: ModelTask) =>
   resolveAiProvider(seed.settings, task)?.model;
 ok("classification runs on Haiku", tierFor("classification") === "claude-haiku-5-5");
 ok("outreach runs on Sonnet", tierFor("outreach") === "claude-sonnet-5-5");
@@ -91,6 +91,17 @@ const claudeMigratedAnthropic = claudeMigrated.settings.llmProviders.find((p) =>
 ok("migration enables Anthropic as default", !!claudeMigratedAnthropic?.enabled && !!claudeMigratedAnthropic?.isDefault);
 ok("migration keeps the linked vault key", claudeMigratedAnthropic?.apiKeyId === "key_anthropic");
 ok("migration resets task defaults to Claude tiers", claudeMigrated.settings.defaultModels?.chat === "model_claude_sonnet");
+ok("brief extraction runs on Haiku", tierFor("extraction") === "claude-haiku-5-5");
+
+// A version-18 blob keeps its model layer and gains the Haiku extraction default.
+const v18 = { ...seed, version: 18, settings: { ...seed.settings,
+  defaultModels: { chat: "model_claude_opus", classification: "model_claude_haiku" } } };
+const v19 = migrateToCurrentVersion(v18);
+ok("v18 migration adds the extraction default", v19.settings.defaultModels?.extraction === "model_claude_haiku");
+ok("v18 migration keeps the operator's other choices", v19.settings.defaultModels?.chat === "model_claude_opus");
+const v18NoHaiku = migrateToCurrentVersion({ ...v18, settings: { ...v18.settings,
+  savedModels: v18.settings.savedModels.filter((m) => m.id !== "model_claude_haiku") } });
+ok("no extraction default is invented without a saved Haiku model", v18NoHaiku.settings.defaultModels?.extraction === undefined);
 
 // LLM_PROVIDERS coverage.
 ok("all LLM_PROVIDERS have an entry", LLM_PROVIDERS.every((k) => seed.settings.llmProviders.some((p) => p.kind === k)));

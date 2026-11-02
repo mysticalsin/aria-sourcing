@@ -11,6 +11,7 @@
 
 import type { LlmProviderKind, ModelTask, SystemSettings } from "@/lib/types";
 import type { HermesTask } from "./hermes";
+import { INTAKE_OUTPUT_SCHEMA } from "./intake-schema";
 
 export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi" | "local";
 
@@ -177,14 +178,25 @@ export const VAULT_PROVIDER: Record<AiProviderSlug, string> = {
 export interface AnthropicTaskProfile {
   effort: "low" | "medium" | "high";
   maxTokens: number;
+  /** Structured output: the answer is constrained to this JSON schema. */
+  outputSchema?: Record<string, unknown>;
 }
 
 export const ANTHROPIC_TASK_PROFILE: Record<HermesTask, AnthropicTaskProfile> = {
   classify: { effort: "low", maxTokens: 2048 },
+  extract: { effort: "low", maxTokens: 4096, outputSchema: INTAKE_OUTPUT_SCHEMA },
   chat: { effort: "low", maxTokens: 8192 },
   outreach: { effort: "medium", maxTokens: 8192 },
   sourcing: { effort: "medium", maxTokens: 16000 },
 };
+
+/** output_config for a task profile: effort, plus the schema when set. */
+export function anthropicOutputConfig(profile: AnthropicTaskProfile): Record<string, unknown> {
+  return {
+    effort: profile.effort,
+    ...(profile.outputSchema ? { format: { type: "json_schema", schema: profile.outputSchema } } : {}),
+  };
+}
 
 /** True for models that accept output_config.effort with low/medium/high.
  *  Older ids (Sonnet/Haiku 4.5 and before) reject the field, so they keep the
@@ -232,7 +244,7 @@ export function buildCloudRequest(
       body: JSON.stringify({
         model,
         max_tokens: profile ? profile.maxTokens : maxTokens,
-        ...(profile ? { output_config: { effort: profile.effort } } : {}),
+        ...(profile ? { output_config: anthropicOutputConfig(profile) } : {}),
         system,
         messages: [{ role: "user", content: prompt }],
       }),

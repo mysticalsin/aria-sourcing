@@ -1210,7 +1210,7 @@ export interface LlmProvider {
   isDefault?: boolean;
 }
 
-export type ModelTask = "sourcing" | "outreach" | "classification" | "chat";
+export type ModelTask = "sourcing" | "outreach" | "classification" | "extraction" | "chat";
 
 export interface SavedModel {
   id: string;

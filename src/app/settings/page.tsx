@@ -1218,7 +1218,7 @@ export default function SettingsPage() {
             n="15"
             eyebrow="Models"
             title="Saved models"
-            description="Register the specific models your fleet uses and set which model handles each task type: sourcing, outreach, classification, and chat. Admin only."
+            description="Register the specific models your fleet uses and set which model handles each task type: sourcing, outreach, reply classification, brief extraction and chat. Admin only."
           >
             <ModelsPanel />
           </Section>

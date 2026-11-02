@@ -10,7 +10,7 @@ import type { OutreachChannel, SystemSettings } from "@/lib/types";
    deterministic mock when this returns { ok: false }.
    ========================================================================== */
 
-export type HermesTask = "outreach" | "classify" | "sourcing" | "chat";
+export type HermesTask = "outreach" | "classify" | "extract" | "sourcing" | "chat";
 
 export interface HermesGenerateInput {
   task: HermesTask;

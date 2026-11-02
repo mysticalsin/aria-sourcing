@@ -23,12 +23,13 @@ import type { LlmProviderKind, ModelTask, SavedModel } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { BrainCircuit, Plus, Star, Trash2 } from "lucide-react";
 
-const TASKS: ModelTask[] = ["sourcing", "outreach", "classification", "chat"];
+const TASKS: ModelTask[] = ["sourcing", "outreach", "classification", "extraction", "chat"];
 
 const TASK_LABEL: Record<ModelTask, string> = {
   sourcing: "Sourcing",
   outreach: "Outreach",
   classification: "Classification",
+  extraction: "Brief extraction",
   chat: "Chat",
 };
 

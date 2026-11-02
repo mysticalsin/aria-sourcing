@@ -63,7 +63,8 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // workspace JSON and into an admin-owned normalized database record.
 // STATE_VERSION 18 - the AI layer moved to Claude: Anthropic is the default
 // provider and each task has its own model tier (see defaultSavedModels).
-export const STATE_VERSION = 18;
+// STATE_VERSION 19 - brief extraction gets its own task (Haiku, structured output).
+export const STATE_VERSION = 19;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -96,7 +97,8 @@ export function defaultLlmProviders(): LlmProvider[] {
 
 /**
  * One model tier per kind of work, cheapest that does the job well:
- * - Haiku: high-volume, short, structured calls (reply classification).
+ * - Haiku: high-volume, short, structured calls (reply classification, brief
+ *   extraction).
  * - Sonnet: drafting, chat, and the sourcing tool loop.
  * - Opus: saved but not a task default; pick it per task in Settings when a
  *   workload measurably needs deeper reasoning.
@@ -111,7 +113,7 @@ export function defaultSavedModels(): SavedModel[] {
       label: "Claude Haiku 5.5",
       contextWindow: 1000000,
       enabled: true,
-      defaultForTask: ["classification"],
+      defaultForTask: ["classification", "extraction"],
     },
     {
       id: "model_claude_sonnet",
@@ -181,6 +183,7 @@ export function defaultSettings(): SystemSettings {
       sourcing: "model_claude_sonnet",
       outreach: "model_claude_sonnet",
       classification: "model_claude_haiku",
+      extraction: "model_claude_haiku",
       chat: "model_claude_sonnet",
     },
     hermesLiveMode: false,

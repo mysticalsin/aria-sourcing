@@ -308,7 +308,8 @@ export async function parseIntakeLive(
 ): Promise<ParsedIntake> {
   const mock = parseEmailAndJD(input);
 
-  const aiCfg = resolveAiProvider(settings, "chat");
+  // Extraction tier (Haiku by default) with a schema-constrained answer.
+  const aiCfg = resolveAiProvider(settings, "extraction");
   if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
     return {
       ...mock,
@@ -320,10 +321,10 @@ export async function parseIntakeLive(
 
   let genInput: Parameters<typeof hermesGenerate>[0];
   if (aiCfg) {
-    genInput = { task: "chat", prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
+    genInput = { task: "extract", prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
   } else {
-    const chatModelId = settings.defaultModels?.chat;
-    genInput = { task: "chat", prompt, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId };
+    const chatModelId = settings.defaultModels?.extraction ?? settings.defaultModels?.chat;
+    genInput = { task: "extract", prompt, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId };
     if (chatModelId) {
       const modelName = (settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName;
       if (modelName) genInput.model = modelName;

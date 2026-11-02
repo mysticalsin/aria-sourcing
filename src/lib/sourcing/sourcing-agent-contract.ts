@@ -140,8 +140,8 @@ const SavedModelSchema = z
     contextWindow: z.number().int().positive().max(10_000_000).optional(),
     enabled: z.boolean(),
     defaultForTask: z
-      .array(z.enum(["sourcing", "outreach", "classification", "chat"]))
-      .max(4)
+      .array(z.enum(["sourcing", "outreach", "classification", "extraction", "chat"]))
+      .max(5)
       .optional(),
   })
   .strict();

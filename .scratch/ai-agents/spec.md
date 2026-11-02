@@ -43,7 +43,8 @@ Le socle est livré : les tâches existantes passent sur Claude.
 | Tâche | Modèle | Effort | `max_tokens` | Pourquoi |
 |---|---|---|---|---|
 | `classify` : réponse candidat → intention | Claude Haiku 5.5 | low | 2048 | volume élevé, sortie courte et structurée |
-| `chat` : assistant, analyse de brief | Claude Sonnet 5.5 | low | 8192 | réponses conversationnelles, outils web |
+| `extract` : brief → fiche de poste | Claude Haiku 5.5 | low | 4096 | sortie structurée (schéma JSON imposé), puis ancrage dans le texte source |
+| `chat` : assistant | Claude Sonnet 5.5 | low | 8192 | réponses conversationnelles, outils web |
 | `outreach` : message d'approche | Claude Sonnet 5.5 | medium | 8192 | qualité rédactionnelle, ton, langue |
 | `sourcing` : boucle d'outils | Claude Sonnet 5.5 | medium | 16000 | appels d'outils fiables sur plusieurs tours |
 | Escalade (WP 07) | Claude Opus 5.5 | high | | seulement si un agent échoue ou doute |
@@ -104,7 +105,7 @@ Missions suivantes possibles, sur le même moteur : relances en lot, préparatio
 | 00 | Socle : clé locale, routage Claude par tâche, effort, lecture des blocs `thinking` | fait |
 | 01 | ID du workspace Anthropic et test réel de bout en bout | bloqué, en attente du propriétaire |
 | 02 | Journal d'usage et budgets | plafond fait ; persistance en base et panneau Réglages à faire |
-| 03 | Tâche `extraction` sur Haiku pour l'analyse de brief, avec sortie structurée | ready-for-agent |
+| 03 | Tâche `extraction` sur Haiku pour l'analyse de brief, avec sortie structurée | fait |
 | 04 | Cache des prompts système et des outils | ready-for-agent |
 | 05 | Orchestrateur de missions et agents (§5) | moteur et mission « Run Aria » faits ; autres missions à faire |
 | 06 | Batch API pour le rapport hebdo et la requalification en masse | needs-triage |

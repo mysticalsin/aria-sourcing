@@ -110,3 +110,32 @@ test("placeholder whitespace is never accepted as a real title or skill", () => 
   assert.ok(readiness.issues.some((issue) => issue.field === "title"));
   assert.ok(readiness.issues.some((issue) => issue.field === "requiredSkills"));
 });
+
+test("brief extraction asks the extract task on Haiku and uses its grounded answer", async () => {
+  const brief = "Senior Backend Engineer, remote. Must have TypeScript and PostgreSQL.";
+  const sent: { task?: string; model?: string; provider?: string }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+    sent.push(JSON.parse(init?.body ?? "{}"));
+    const answer = {
+      title: "Senior Backend Engineer",
+      seniority: "Senior",
+      locationType: "Remote",
+      requiredSkills: ["TypeScript", "PostgreSQL", "Kubernetes"],
+    };
+    return new Response(JSON.stringify({ ok: true, text: JSON.stringify(answer) }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const parsed = await parseIntakeLive(buildSeedState().settings, { email: brief });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]?.task, "extract");
+    assert.equal(sent[0]?.provider, "anthropic");
+    assert.equal(sent[0]?.model, "claude-haiku-5-5");
+    assert.equal(parsed.extractionMode, "cloud");
+    assert.equal(parsed.jobAnalysis.seniority, "Senior");
+    // Grounding still drops a skill the brief never mentions.
+    assert.deepEqual(parsed.jobAnalysis.requiredSkills, ["TypeScript", "PostgreSQL"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
