@@ -217,7 +217,7 @@ export function MultiRoleLaunch() {
     <div>
       <HydrationGate hydrated={hydrated} fallback={<LaunchFallback />}>
         <div className="space-y-6">
-          <Card className="animate-fade-in">
+          <Card data-tour="launch-brief" className="animate-fade-in">
             <CardHeader>
               <Eyebrow>Multi-role brief</Eyebrow>
               <CardTitle className="mt-1">Paste one brief per role</CardTitle>

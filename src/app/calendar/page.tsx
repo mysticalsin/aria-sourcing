@@ -329,7 +329,7 @@ export default function CalendarPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Agenda */}
           <div className="lg:col-span-2">
-            <Card>
+            <Card data-tour="calendar">
               <CardHeader className="flex items-start justify-between gap-3">
                 <div>
                   <Eyebrow>Agenda</Eyebrow>

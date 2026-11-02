@@ -371,7 +371,7 @@ export function SingleRoleIntake() {
       <HydrationGate hydrated={hydrated} fallback={<IntakeFallback />}>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* LEFT — inbound brief form */}
-          <Card className="animate-fade-in lg:sticky lg:top-6 lg:self-start">
+          <Card data-tour="intake-brief" className="animate-fade-in lg:sticky lg:top-6 lg:self-start">
             <CardHeader>
               <Eyebrow>Inbound brief</Eyebrow>
               <CardTitle className="mt-1">Paste the hiring request</CardTitle>
@@ -876,6 +876,7 @@ export function SingleRoleIntake() {
                   size="lg"
                   leftIcon={<Rocket aria-hidden />}
                   onClick={handleCreateCampaign}
+                  data-tour="create-campaign"
                   className="shrink-0"
                 >
                   Create campaign

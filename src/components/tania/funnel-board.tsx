@@ -145,7 +145,7 @@ export function FunnelBoard({
     source === "all" ? list : list.filter((c) => deriveLeadSource(c) === source);
 
   return (
-    <Card className="p-4 animate-fade-in sm:p-5">
+    <Card data-tour="pipeline-board" className="p-4 animate-fade-in sm:p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Eyebrow>Pipeline</Eyebrow>

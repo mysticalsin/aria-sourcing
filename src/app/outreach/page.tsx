@@ -474,7 +474,7 @@ function OutreachView() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Main queue */}
           <div className="space-y-6 lg:col-span-2">
-            <section className="space-y-4">
+            <section data-tour="approval-queue" className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span
@@ -598,6 +598,7 @@ function OutreachView() {
                     variant="outline"
                     leftIcon={<Sparkles className="h-3.5 w-3.5" aria-hidden />}
                     onClick={handleDraftAllDue}
+                    data-tour="draft-due"
                     loading={draftingAllDue}
                     disabled={draftingAllDue}
                   >

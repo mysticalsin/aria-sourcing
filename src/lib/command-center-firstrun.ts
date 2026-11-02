@@ -134,6 +134,6 @@ export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = [
   },
   {
     title: "Start with one job",
-    body: "That’s it. Click New campaign, paste a brief, and Aria takes the first step.",
+    body: "That’s it. Click New campaign, paste a brief, and Aria takes the first step. For a guided walkthrough of every page, open Tutorial in the menu.",
   },
 ] as const;

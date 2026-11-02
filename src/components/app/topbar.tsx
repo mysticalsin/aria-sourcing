@@ -3,7 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Plus, Sparkles, X } from "lucide-react";
+import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Plus, Sparkles, X, GraduationCap } from "lucide-react";
+import { useTutorial } from "@/components/tutorial/tutorial";
 import { cn } from "@/lib/utils";
 import { CommandSearch } from "./command-search";
 import { HermesLockup, HermesWordmark } from "./logo";
@@ -58,6 +59,7 @@ export function TopBar() {
   const active = useActiveCampaign();
   const recommendations = useRecommendations();
   const settings = useSettings();
+  const tutorial = useTutorial();
   const actions = useActions();
   const { setActiveCampaign, resetDemo } = actions;
   const { state: hermesState } = useHermes();
@@ -219,6 +221,7 @@ export function TopBar() {
         {/* The one mode indicator: data source and send mode in a single chip.
             Pages and the sidebar no longer repeat it. */}
         <span
+          data-tour="mode-chip"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success-soft/80 px-2.5 py-1.5 text-xs font-bold text-success ring-1 ring-success/15 lg:px-3"
           title={[
             supabaseEnabled ? "Live workspace data." : "Synthetic demo data, not real people.",
@@ -462,6 +465,20 @@ export function TopBar() {
                 </ul>
               </div>
             ))}
+            <div className="border-t border-line px-3 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  tutorial.openTutorial();
+                }}
+                className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-ink-soft transition hover:bg-ink/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+              >
+                <GraduationCap className="h-5 w-5 shrink-0 text-muted" aria-hidden />
+                <span className="flex-1 text-left">Tutorial</span>
+                <span className="rounded-full bg-electric-soft px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-electric">Learn</span>
+              </button>
+            </div>
           </nav>
         </div>
       )}

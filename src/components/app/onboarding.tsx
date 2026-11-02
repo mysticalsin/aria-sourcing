@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Modal, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ONBOARDING_TOUR_STEPS } from "@/lib/command-center-firstrun";
+import { useTutorial } from "@/components/tutorial/tutorial";
 import { Sparkles, ShieldCheck, FilePlus2, ArrowLeft } from "lucide-react";
 
 const KEY = "hermes:onboarded:v1";
@@ -30,15 +31,17 @@ export function Onboarding() {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState(0);
+  const tutorial = useTutorial();
 
   React.useEffect(() => {
-    if (pathname !== "/") return;
+    // Never stack on top of the tutorial someone just opened.
+    if (pathname !== "/" || tutorial.open) return;
     try {
       if (!localStorage.getItem(KEY)) setOpen(true);
     } catch {
       /* private mode — skip the tour silently */
     }
-  }, [pathname]);
+  }, [pathname, tutorial.open]);
 
   const finish = React.useCallback(
     (opts?: { goToIntake?: boolean }) => {

@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 449
 agent: claude-code
 updated: 2026-11-02
-status: claude-live-in-app-verified
+status: tutorial-mode-shipped
 ---
 
 # Handoff - Shift 449
@@ -67,6 +67,15 @@ Live Claude (2026-11-02, after the owner added the workspace id + spend limit):
   `parseHermesOutreach` and `classifyReplyWithModel` keep the template draft
   when a slot is left.
 
+Tutorial mode (owner request, 2026-11-02; spec `.scratch/tutorial-mode/spec.md`):
+- Opened only from the menu: sidebar "Tutorial", mobile drawer, command search.
+  Docked panel, 5 chapters / 22 steps, ring highlight via `data-tour` attributes,
+  exercises detected from store counts (`src/lib/tutorial/curriculum.ts`),
+  progress in localStorage `aria:tutorial:v1`. Verified end to end at 1440 and 390.
+- Owner decision: the "Contact basis" form now works in the synthetic demo
+  (before, no demo draft could be approved). Basis-only recording uses
+  `candidateExclusionBlocker`; new facts on synthetic profiles stay refused.
+
 ## Blockers
 
 - None.
@@ -94,6 +103,8 @@ Live Claude (2026-11-02, after the owner added the workspace id + spend limit):
   Group mention), Carlito self-hosted, nav per audit §4 with one "New campaign".
 - Careers stays outside the workspace store provider (test-enforced); demo
   roles come from the API, not the browser store.
+- Tutorial never opens on its own (owner, 2026-11-02). Contact basis can be
+  recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
 

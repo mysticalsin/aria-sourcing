@@ -130,6 +130,7 @@ function TriageInboxButton() {
       loading={running}
       leftIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
       onClick={handleTriage}
+      data-tour="triage-inbox"
       title="Sync the mailbox, classify new replies and draft responses for approval"
     >
       {running ? "Triaging..." : "Triage inbox"}

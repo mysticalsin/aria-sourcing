@@ -46,6 +46,12 @@ mock.module(moduleUrl("src/components/app/topbar.tsx"), {
 mock.module(moduleUrl("src/components/app/onboarding.tsx"), {
   namedExports: { Onboarding: () => React.createElement("div", { "data-testid": "onboarding" }) },
 });
+mock.module(moduleUrl("src/components/tutorial/tutorial.tsx"), {
+  namedExports: {
+    TutorialProvider: ({ children }: { children: React.ReactNode }) => children,
+    useTutorial: () => ({ open: false, openTutorial: () => undefined }),
+  },
+});
 
 const { AppShell } = await import("../src/components/app/app-shell.tsx");
 const child = React.createElement("div", { "data-testid": "product-child" }, "Private product");

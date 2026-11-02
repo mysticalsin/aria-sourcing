@@ -6,6 +6,7 @@ import { Search, CornerDownLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
 import { SEARCH_PAGES } from "./nav";
+import { useTutorial } from "@/components/tutorial/tutorial";
 import {
   useActions,
   useActiveCampaignId,
@@ -36,6 +37,7 @@ interface Result {
 
 export function CommandSearch() {
   const router = useRouter();
+  const tutorial = useTutorial();
   const campaigns = useCampaigns();
   const candidates = useCandidates();
   const actions = useActions();
@@ -94,6 +96,8 @@ export function CommandSearch() {
       if (!q || n.label.toLowerCase().includes(q) || n.description.toLowerCase().includes(q))
         out.push({ id: `nav-${n.href}`, label: n.label, hint: n.description, group: "Pages", run: () => router.push(n.href) });
     });
+    if (!q || "tutorial learn guide help walkthrough".includes(q))
+      out.push({ id: "tutorial", label: "Tutorial", hint: "Learn each part of Aria step by step", group: "Pages", run: () => tutorial.openTutorial() });
     campaigns.forEach((c) => {
       if (!q || c.title.toLowerCase().includes(q) || c.department.toLowerCase().includes(q))
         out.push({
@@ -182,6 +186,7 @@ export function CommandSearch() {
     activeCampaignId,
     seats,
     toast,
+    tutorial,
   ]);
 
   const grouped = React.useMemo(() => {

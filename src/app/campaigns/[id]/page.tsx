@@ -926,6 +926,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
               onClick={handleOpenRun}
+              data-tour="run-aria"
               disabled={!liveSourcingAllowed || !can(role, "source")}
               title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run Aria" : undefined}
             >

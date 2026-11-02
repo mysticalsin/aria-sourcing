@@ -10,6 +10,7 @@ import { TopBar } from "./topbar";
 import { MOBILE_NAV, isNavActive } from "./nav";
 import { SectionTabs } from "./section-tabs";
 import { Onboarding } from "./onboarding";
+import { TutorialProvider } from "@/components/tutorial/tutorial";
 import { WorkspaceStatusPanel } from "./workspace-status-panel";
 import { useHermes } from "@/lib/store";
 import { workspaceBlocksProduct } from "@/lib/workspace-status";
@@ -39,6 +40,8 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
 
   return (
     <ConfirmProvider>
+    {/* Tutorial mode: opened from the menu only, never on its own. */}
+    <TutorialProvider>
     <div className="flex min-h-screen">
       <a href="#main-content" className="skip-link">
         Skip to content
@@ -82,6 +85,7 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
       {/* First-run guided tour (shows once per browser) */}
       <Onboarding />
     </div>
+    </TutorialProvider>
     </ConfirmProvider>
   );
 }

@@ -31,6 +31,7 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
 
   return (
     <section
+      data-tour="home-hero"
       className="relative isolate overflow-hidden rounded-3xl border border-line bg-surface px-7 py-12 shadow-soft animate-fade-in sm:px-12 sm:py-16"
       data-testid="cc-hero-first-run"
       aria-labelledby="cc-first-run-title"
@@ -90,6 +91,7 @@ function ReturningHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
     <section
       className="relative isolate overflow-hidden rounded-3xl border border-line bg-surface px-7 py-10 shadow-soft animate-fade-in sm:px-12 sm:py-12"
       data-testid="cc-hero-returning"
+      data-tour="home-hero"
       aria-labelledby="cc-returning-title"
     >
       <div className="pointer-events-none absolute inset-0 bg-dot-grid opacity-50" aria-hidden />

@@ -8,12 +8,14 @@ import { NAV_ITEMS, NAV_SECTIONS, NEW_CAMPAIGN_HREF, isNavActive, type NavItem }
 import { HermesLockup } from "./logo";
 import { useIntegrations } from "@/lib/store";
 import { integrationCounts } from "@/lib/integrations";
-import { Activity, Plus } from "lucide-react";
+import { Activity, GraduationCap, Plus } from "lucide-react";
+import { useTutorial } from "@/components/tutorial/tutorial";
 
 export function Sidebar() {
   const pathname = usePathname();
   const integrations = useIntegrations();
   const health = integrationCounts(integrations);
+  const tutorial = useTutorial();
 
   return (
     <aside className="hidden lg:flex w-[260px] shrink-0 flex-col sidebar-glass sticky top-0 h-screen print:!hidden">
@@ -53,7 +55,18 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-violet/10 p-3">
+      <div className="space-y-2 border-t border-violet/10 p-3">
+        {/* The tutorial opens only from here (and the mobile menu or search). */}
+        <button
+          type="button"
+          onClick={tutorial.openTutorial}
+          aria-pressed={tutorial.open}
+          className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-semibold text-ink-soft transition hover:bg-violet/[0.06] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+        >
+          <GraduationCap className="h-[18px] w-[18px] text-muted" aria-hidden />
+          <span className="flex-1 text-left">Tutorial</span>
+          <span className="rounded-full bg-electric-soft px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-electric">Learn</span>
+        </button>
         <Link
           href="/settings#integrations"
           title={`${health.live} live, ${health.simulated} simulated, ${health.notConfigured} not configured, of ${health.total} built integrations`}
