@@ -4,6 +4,7 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { parseCareersWorkspaceId } from "@/lib/careers-server";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   loadPublicCareerJobs,
   submitPublicCareerApplication,
@@ -71,6 +72,39 @@ function configuredWorkspaceId(): string | null {
   return parseCareersWorkspaceId(process.env.CAREERS_WORKSPACE_ID);
 }
 
+const DEMO_WORKSPACE_ID = "synthetic-demo";
+const DEMO_UPDATED_AT = "2026-01-01T00:00:00.000Z";
+
+/** The synthetic demo (no Supabase, no careers tenant) serves the seed's
+ *  published roles so the candidate journey can be shown end to end.
+ *  Applications run through the same validation and are then dropped:
+ *  nothing is stored and no real person is contacted. */
+function demoRepository(): CareerWorkspaceRepository {
+  return {
+    async load() {
+      // Loaded lazily: the seed is large and shared with client bundles.
+      const { buildSeedState } = await import("@/lib/seed");
+      return { state: buildSeedState() as unknown as Record<string, unknown>, updatedAt: DEMO_UPDATED_AT };
+    },
+    async compareAndSet() {
+      return true;
+    },
+  };
+}
+
+interface CareersTarget {
+  workspaceId: string;
+  repository: CareerWorkspaceRepository | null;
+  demo: boolean;
+}
+
+function careersTarget(): CareersTarget | null {
+  const workspaceId = configuredWorkspaceId();
+  if (workspaceId) return { workspaceId, repository: serviceRepository(), demo: false };
+  if (!supabaseEnabled) return { workspaceId: DEMO_WORKSPACE_ID, repository: demoRepository(), demo: true };
+  return null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -107,20 +141,21 @@ function serviceRepository(): CareerWorkspaceRepository | null {
   }
 }
 
-/** Returns only jobs deliberately published for the explicitly configured tenant. */
+/** Returns only jobs deliberately published for the explicitly configured tenant
+ *  (or the synthetic demo seed when no backend is configured). */
 export async function GET(req: NextRequest) {
-  const workspaceId = configuredWorkspaceId();
-  if (!workspaceId) return json({ ok: false }, 503);
+  const target = careersTarget();
+  if (!target) return json({ ok: false }, 503);
+  const { workspaceId, repository, demo } = target;
 
   const limit = checkRateLimit(rateLimitKey(req, "careers-public-read"), { windowMs: 60_000, max: 120 });
   if (!limit.ok) return limitedResponse(limit.retryAfterSec);
 
-  const repository = serviceRepository();
   if (!repository) return json({ ok: false }, 503);
   try {
     const jobs = await loadPublicCareerJobs(repository, workspaceId);
     if (!jobs) return json({ ok: false }, 503);
-    return json({ ok: true, jobs });
+    return json({ ok: true, jobs, ...(demo ? { demo: true } : {}) });
   } catch {
     return json({ ok: false }, 503);
   }
@@ -128,8 +163,9 @@ export async function GET(req: NextRequest) {
 
 /** Accept a bounded application without authenticating or hydrating a workspace in the browser. */
 export async function POST(req: NextRequest) {
-  const workspaceId = configuredWorkspaceId();
-  if (!workspaceId) return json({ ok: false }, 503);
+  const target = careersTarget();
+  if (!target) return json({ ok: false }, 503);
+  const { workspaceId, repository, demo } = target;
 
   const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/json")) return json({ ok: false }, 415);
@@ -145,12 +181,12 @@ export async function POST(req: NextRequest) {
     return validated.response;
   }
 
-  const repository = serviceRepository();
   if (!repository) return json({ ok: false }, 503);
   try {
     const result = await submitPublicCareerApplication(repository, workspaceId, validated.data);
-    if (result === "accepted") return json({ ok: true }, 201);
-    if (result === "duplicate") return json({ ok: true }, 202);
+    const demoFlag = demo ? { demo: true } : {};
+    if (result === "accepted") return json({ ok: true, ...demoFlag }, 201);
+    if (result === "duplicate") return json({ ok: true, ...demoFlag }, 202);
     if (result === "invalid") return json({ ok: false }, 409);
     return json({ ok: false }, 503);
   } catch {

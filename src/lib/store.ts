@@ -3273,7 +3273,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "parse",
             title: `New application: ${sub.firstName} ${sub.lastName}`,
-            notes: `Career-site chatbox (Path ${sub.path}) · score ${sub.score.total}/100 · ${sub.starRating}.`,
+            notes: `Career-site chatbox (${sub.path === "A" ? "job application" : "open application"}) · score ${sub.score.total}/100.`,
             outcome: "Awaiting screener",
             campaignId: sub.campaignId,
             linkedEntityType: sub.campaignId ? "campaign" : null,

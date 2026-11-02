@@ -140,7 +140,6 @@ function makeInitialDraft(): Draft {
   };
 }
 
-const STAR_FILLED: Record<StarRating, number> = { TopGun: 5, A: 4, B: 3, C: 2, D: 1 };
 
 const GENERIC_SCREENING = DEFAULT_CAREER_SCREENING;
 
@@ -261,6 +260,8 @@ export function Chatbox() {
   const [draft, setDraft] = React.useState<Draft>(makeInitialDraft);
   const [jobs, setJobs] = React.useState<PublicCareerJob[]>([]);
   const [careersAvailability, setCareersAvailability] = React.useState<"loading" | "ready" | "unavailable">("loading");
+  /** The server serves example roles (synthetic demo): applications are not stored. */
+  const [demoCareers, setDemoCareers] = React.useState(false);
   const [matches, setMatches] = React.useState<PublicCareerJob[]>([]);
 
   const historyRef = React.useRef<Step[]>([]);
@@ -273,12 +274,13 @@ export function Chatbox() {
     setCareersAvailability("loading");
     try {
       const response = await fetch("/api/careers", { cache: "no-store", signal });
-      const body = (await response.json().catch(() => null)) as { ok?: boolean; jobs?: unknown } | null;
+      const body = (await response.json().catch(() => null)) as { ok?: boolean; jobs?: unknown; demo?: unknown } | null;
       const publicJobs = Array.isArray(body?.jobs) ? body.jobs.filter(isPublicCareerJob) : [];
       if (!response.ok || body?.ok !== true || publicJobs.length !== (body?.jobs as unknown[] | undefined)?.length) {
         throw new Error("careers unavailable");
       }
       setJobs(publicJobs);
+      setDemoCareers(body.demo === true);
       setCareersAvailability("ready");
     } catch {
       if (!signal?.aborted) {
@@ -590,13 +592,16 @@ export function Chatbox() {
             "Thank you! Your application has been submitted. Our team will review your profile and get back to you soon.",
           delay: 520,
         },
-        { node: <ScoreSummary total={sub.score.total} rating={sub.starRating} />, delay: 420 },
+        { node: <ScoreSummary total={sub.score.total} />, delay: 420 },
+        ...(demoCareers
+          ? [{ text: "This is a demo site: the role is an example and your answers were not stored.", delay: 360 }]
+          : []),
         { text: "While you're here, anything else I can help with?", delay: 480 },
       ]);
       if (!mounted.current) return;
       setBusy(false);
     },
-    [step, buildSubmission, submitPublicApplication, say],
+    [step, buildSubmission, submitPublicApplication, say, demoCareers],
   );
 
   /* ---- step handlers ----------------------------------------------------- */
@@ -801,11 +806,11 @@ export function Chatbox() {
         }
         if (careersAvailability === "unavailable") {
           return (
-            <div role="alert" className="rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-muted">
-              <p className="font-semibold text-danger">Applications are unavailable right now.</p>
-              <p className="mt-1 text-xs">Careers offline. Please retry before treating this as no open roles.</p>
+            <div role="status" className="rounded-2xl border border-violet/12 bg-surface/70 px-4 py-3 text-sm text-muted">
+              <p className="font-semibold text-ink">Applications are unavailable right now.</p>
+              <p className="mt-1 text-xs">We can't show our open roles at the moment. Please come back a little later; nothing you typed has been sent.</p>
               <Button type="button" size="sm" variant="outline" className="mt-3" onClick={retryCareers}>
-                Retry loading roles
+                Try again
               </Button>
             </div>
           );
@@ -996,20 +1001,20 @@ export function Chatbox() {
             <span
               className={cn(
                 "inline-flex items-center gap-1 text-[0.625rem] font-semibold uppercase tracking-wide",
-                careersAvailability === "unavailable" ? "text-danger" : careersAvailability === "loading" ? "text-muted" : "text-success",
+                careersAvailability === "ready" ? "text-success" : "text-muted",
               )}
             >
               <span
                 className={cn(
                   "h-1.5 w-1.5 rounded-full",
-                  careersAvailability === "unavailable" ? "bg-danger" : careersAvailability === "loading" ? "bg-muted" : "bg-success status-live",
+                  careersAvailability === "ready" ? "bg-success status-live" : "bg-muted",
                 )}
                 aria-hidden
               />
-              {careersAvailability === "unavailable" ? "Careers offline" : careersAvailability === "loading" ? "checking roles" : "careers available"}
+              {careersAvailability === "unavailable" ? "Applications closed" : careersAvailability === "loading" ? "checking roles" : "roles open"}
             </span>
           </p>
-          <p className="truncate text-xs text-muted">Your talent partner at Mantu</p>
+          <p className="truncate text-xs text-muted">{demoCareers ? "Demo site · example roles, nothing is stored" : "Your talent partner at Mantu"}</p>
         </div>
       </div>
 
@@ -1459,21 +1464,16 @@ function DetectedNode({ detected }: { detected: ChatboxSubmission["detected"] })
   );
 }
 
-function ScoreSummary({ total, rating }: { total: number; rating: StarRating }) {
-  const filled = STAR_FILLED[rating];
+/** One scale everywhere, the /100 match score; a person always reviews it. */
+function ScoreSummary({ total }: { total: number }) {
   return (
     <div className="rounded-2xl bg-gradient-to-br from-electric-soft to-violet-soft p-3">
       <p className="text-xs font-semibold text-ink">Your profile snapshot</p>
-      <div className="mt-1.5 flex items-center gap-1" aria-hidden>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <Star
-            key={n}
-            className={cn("h-5 w-5", n <= filled ? "fill-mantu-yellow text-mantu-yellow" : "text-ink/15")}
-            fill={n <= filled ? "currentColor" : "none"}
-          />
-        ))}
-      </div>
-      <p className="mt-1 text-[0.6875rem] text-muted">Looking strong. Match score {total}/100.</p>
+      <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
+        {total}
+        <span className="text-sm font-semibold text-muted">/100</span>
+      </p>
+      <p className="mt-0.5 text-[0.6875rem] text-muted">Match with the role. A recruiter reads every application.</p>
     </div>
   );
 }
