@@ -15,7 +15,7 @@ import { ReplyCard } from "@/components/replies/reply-card";
 import { useHydrated, useReplies, useActions, useRole, useOutreach } from "@/lib/store";
 import { REPLY_INTENTS, type ReplyIntent } from "@/lib/types";
 import { can } from "@/lib/rbac";
-import { Inbox, Flame, Filter, AlarmClock, RefreshCw } from "lucide-react";
+import { Inbox, Flame, Filter, AlarmClock, RefreshCw, ClipboardPaste } from "lucide-react";
 import type { InboundMessage } from "@/lib/email-sync";
 import { runMission } from "@/lib/agents/mission";
 import { inboxTriagePlan, type InboxFetchResult } from "@/lib/agents/inbox-mission";
@@ -143,6 +143,7 @@ export default function RepliesPage() {
   const hydrated = useHydrated();
   const replies = useReplies();
   const [intentFilter, setIntentFilter] = React.useState<string>("all");
+  const [classifierOpen, setClassifierOpen] = React.useState(false);
 
   const filtered = replies.filter(
     (r) => intentFilter === "all" || r.intent === intentFilter,
@@ -207,10 +208,8 @@ export default function RepliesPage() {
         }
       >
         <div className="space-y-8">
-          {/* Classifier — full width */}
-          <ReplyClassifier />
-
-          {/* Filter bar */}
+          {/* Filter bar. The work queue comes first; the manual classifier
+              is a tool, opened on demand. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span
@@ -240,14 +239,30 @@ export default function RepliesPage() {
                 aria-label="Filter replies by intent"
                 className="w-52"
               />
+              <Button
+                variant={classifierOpen ? "subtle" : "outline"}
+                size="sm"
+                leftIcon={<ClipboardPaste className="h-3.5 w-3.5" aria-hidden />}
+                onClick={() => setClassifierOpen((v) => !v)}
+                aria-expanded={classifierOpen}
+                aria-controls="reply-classifier-panel"
+              >
+                {classifierOpen ? "Hide classifier" : "Paste a reply"}
+              </Button>
             </div>
           </div>
+
+          {classifierOpen && (
+            <div id="reply-classifier-panel">
+              <ReplyClassifier />
+            </div>
+          )}
 
           {replies.length === 0 ? (
             <EmptyState
               icon={<Inbox className="h-6 w-6" aria-hidden />}
               title="No replies yet"
-              description="Once outreach lands and candidates respond, classified replies appear here. Paste a reply above to try the triage engine."
+              description="Once outreach lands and candidates respond, classified replies appear here. Use Paste a reply to try the triage engine."
             />
           ) : filtered.length === 0 ? (
             <EmptyState

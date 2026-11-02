@@ -13,10 +13,11 @@ import {
   EmptyState,
   Progress,
   SkeletonCard,
+  Drawer,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
-import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
+import { OutreachMessageCard, waitingLabel } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
 import { SequenceLadder } from "@/components/outreach/sequence-ladder";
@@ -47,6 +48,7 @@ import {
   Linkedin,
   Repeat,
   CheckCheck,
+  PenLine,
 } from "lucide-react";
 
 /** View-only "why this person" fallback — guarantees the chip on a queue row
@@ -72,9 +74,9 @@ function whyThisPersonHook(message: OutreachMessage, candidate: Candidate | unde
   return real ?? personalizationFallbackHook(candidate);
 }
 
-/** Compact "why this person" chip for a queue row — distinct per candidate
- *  since it's sourced from that candidate's own evidence/skills, never a
- *  shared template string. */
+/** Compact "why this person" chip for the scheduled and sent lists — distinct
+ *  per candidate since it's sourced from that candidate's own evidence/skills,
+ *  never a shared template string. */
 function WhyThisPersonChip({ message }: { message: OutreachMessage }) {
   const candidate = useCandidate(message.candidateId);
   const hook = whyThisPersonHook(message, candidate);
@@ -83,6 +85,90 @@ function WhyThisPersonChip({ message }: { message: OutreachMessage }) {
       <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
       {hook}
     </Badge>
+  );
+}
+
+/** One pending draft as a compact, collapsed row: who, subject, why this
+ *  person, channel and queue age. Clicking unfolds the full editable card
+ *  (approve, reject, edit) and its guardrail detail, one row at a time, so a
+ *  long queue stays scannable instead of a wall of open editors. */
+function PendingRow({
+  message,
+  expanded,
+  onToggle,
+  selected,
+  onToggleSelect,
+  glassBoxOpen,
+  onToggleGlassBox,
+}: {
+  message: OutreachMessage;
+  expanded: boolean;
+  onToggle: () => void;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
+  glassBoxOpen: boolean;
+  onToggleGlassBox: () => void;
+}) {
+  const candidate = useCandidate(message.candidateId);
+  const name = candidate?.name ?? "Unknown candidate";
+  const hook = whyThisPersonHook(message, candidate);
+  const panelId = `draft-${message.id}`;
+  return (
+    <div className={cn("rounded-2xl border bg-surface transition-colors", expanded ? "border-electric/30" : "border-line")}>
+      <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(message.id)}
+          aria-label={`Select the draft to ${name}`}
+          className="h-4 w-4 shrink-0 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-ink">
+              {name}
+              <span className="font-normal text-muted"> · {message.subject}</span>
+            </span>
+            <span className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-soft" title={hook}>
+              <Sparkles className="h-3 w-3 shrink-0 text-aqua" aria-hidden />
+              <span className="truncate">{hook}</span>
+            </span>
+          </span>
+          {message.draftedBy === "ai" && (
+            <Badge tone="electric" size="sm" className="hidden shrink-0 md:inline-flex">
+              Claude
+            </Badge>
+          )}
+          <Badge tone="neutral" size="sm" className="shrink-0">
+            {message.channel}
+          </Badge>
+          <span className="hidden shrink-0 text-xs tabular-nums text-muted sm:inline">{waitingLabel(message.createdAt)}</span>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted transition-transform", expanded && "rotate-180")} aria-hidden />
+        </button>
+      </div>
+      {expanded && (
+        <div id={panelId} className="space-y-2 border-t border-line p-2 sm:p-3">
+          <OutreachMessageCard message={message} />
+          <button
+            type="button"
+            onClick={onToggleGlassBox}
+            aria-expanded={glassBoxOpen}
+            className="inline-flex items-center gap-1.5 rounded-full px-1 text-xs font-semibold text-electric transition hover:text-electric/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+            {glassBoxOpen ? "Hide guardrail detail" : "Show guardrail detail"}
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", glassBoxOpen && "rotate-180")} aria-hidden />
+          </button>
+          {glassBoxOpen && <GlassBoxPanel message={message} />}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -186,6 +272,9 @@ function OutreachView() {
   // Collapsed by default so the queue doesn't render every candidate's radar
   // + claim map at once; the panel is one click away for every draft.
   const [glassBoxId, setGlassBoxId] = React.useState<string | null>(null);
+  // One pending draft unfolded at a time; the composer lives in a drawer.
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = React.useState(false);
 
   function toggleGlassBox(messageId: string) {
     setGlassBoxId((prev) => (prev === messageId ? null : messageId));
@@ -336,7 +425,7 @@ function OutreachView() {
         title="Human approval. Machine speed."
         description="Every message is drafted by the system and held here for your sign-off. Nothing reaches a candidate without your approval."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label
               htmlFor="outreach-campaign-filter"
               className="text-sm font-semibold text-ink-soft"
@@ -351,9 +440,21 @@ function OutreachView() {
               aria-label="Filter outreach by campaign"
               className="w-56"
             />
+            <Button variant="outline" leftIcon={<PenLine className="h-4 w-4" aria-hidden />} onClick={() => setComposerOpen(true)}>
+              New message
+            </Button>
           </div>
         }
       />
+
+      <Drawer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        title="New message"
+        description="Draft a one-off message. It joins the approval queue like every other draft."
+      >
+        <QuickDraft />
+      </Drawer>
 
       <HydrationGate
         hydrated={hydrated}
@@ -370,7 +471,6 @@ function OutreachView() {
         }
       >
         <div className="space-y-6">
-        <QuickDraft />
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Main queue */}
           <div className="space-y-6 lg:col-span-2">
@@ -432,31 +532,18 @@ function OutreachView() {
                   }
                 />
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-2">
                   {pendingFiltered.map((m) => (
-                    <div key={m.id} className="space-y-2">
-                      <WhyThisPersonChip message={m} />
-                      <OutreachMessageCard
-                        message={m}
-                        selectable
-                        selected={selectedIds.has(m.id)}
-                        onToggleSelect={toggleSelect}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleGlassBox(m.id)}
-                        aria-expanded={glassBoxId === m.id}
-                        className="inline-flex items-center gap-1.5 rounded-full px-1 text-xs font-semibold text-electric transition hover:text-electric/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
-                      >
-                        <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-                        {glassBoxId === m.id ? "Hide guardrail detail" : "Show guardrail detail"}
-                        <ChevronDown
-                          className={cn("h-3.5 w-3.5 transition-transform", glassBoxId === m.id && "rotate-180")}
-                          aria-hidden
-                        />
-                      </button>
-                      {glassBoxId === m.id && <GlassBoxPanel message={m} />}
-                    </div>
+                    <PendingRow
+                      key={m.id}
+                      message={m}
+                      expanded={expandedId === m.id}
+                      onToggle={() => setExpandedId((prev) => (prev === m.id ? null : m.id))}
+                      selected={selectedIds.has(m.id)}
+                      onToggleSelect={toggleSelect}
+                      glassBoxOpen={glassBoxId === m.id}
+                      onToggleGlassBox={() => toggleGlassBox(m.id)}
+                    />
                   ))}
                 </div>
               )}

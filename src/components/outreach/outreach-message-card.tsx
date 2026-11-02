@@ -16,6 +16,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { useActions, useCandidate, useCampaign, useSettings } from "@/lib/store";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
 import {
   initialsFrom,
@@ -45,14 +46,20 @@ import {
 /** "waiting 3d" style label for how long a draft has sat in the queue — reuses
  *  formatTimeAgo's tested duration math, just drops the trailing "ago" so it
  *  reads naturally as a waiting duration instead of a past event. */
-function waitingLabel(createdAt: string): string {
-  const ago = formatTimeAgo(createdAt);
+export function waitingLabel(createdAt: string, now: number = Date.now()): string {
+  const days = (now - new Date(createdAt).getTime()) / 86_400_000;
+  // formatTimeAgo switches to a calendar date after 30 days; a queue age
+  // stays a duration.
+  if (days >= 30) return `waiting ${Math.round(days / 30)} mo`;
+  const ago = formatTimeAgo(createdAt, now);
   return ago === "just now" ? "waiting <1m" : `waiting ${ago.replace(/ ago$/, "")}`;
 }
 
 /** Escalates tone the longer a draft has been waiting on a human — mirrors the
- *  SLA countdown badge on reply cards (see reply-card.tsx). */
-function agingTone(createdAt: string): Tone {
+ *  SLA countdown badge on reply cards (see reply-card.tsx). The synthetic demo
+ *  ships with frozen seed dates, so its drafts never read as overdue. */
+export function agingTone(createdAt: string, synthetic = !supabaseEnabled): Tone {
+  if (synthetic) return "neutral";
   const days = (Date.now() - new Date(createdAt).getTime()) / 86_400_000;
   if (days >= 3) return "danger";
   if (days >= 1) return "warning";
