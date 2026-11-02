@@ -234,18 +234,24 @@ function DecisionReport({ report }: { report: ExecDecisionReport }) {
   );
 }
 
+/** What a figure counts, shown on every tile so two screens never disagree
+ *  silently: real sends, the sourced pool, or campaign timing. */
+type KpiBasis = "Real sends" | "Sourced pool" | "Campaign timing";
+
 function KpiTile({
   icon,
   label,
   value,
   hint,
   tone,
+  basis,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   hint: string;
   tone: Tone;
+  basis: KpiBasis;
 }) {
   return (
     <Card className="h-full">
@@ -255,7 +261,7 @@ function KpiTile({
             {icon}
           </div>
           <Badge tone={tone} size="sm" dot>
-            Canonical
+            {basis}
           </Badge>
         </div>
         <div>
@@ -517,41 +523,59 @@ export default function ExecPage() {
               value={formatNumber(model.kpis.candidatesSourced)}
               hint="Live mode excludes synthetic candidate records."
               tone="electric"
+              basis="Sourced pool"
             />
             <KpiTile
               icon={<Mail className="h-5 w-5" aria-hidden />}
               label="Contacted"
               value={formatNumber(model.kpis.contacted)}
-              hint="Completed real sends only."
+              hint={
+                model.kpis.contacted === 0 && model.kpis.simulatedContacted > 0
+                  ? `No real send yet. ${formatNumber(model.kpis.simulatedContacted)} simulated in the demo; the funnel above counts pipeline stages.`
+                  : "Completed real sends only."
+              }
               tone="tangerine"
+              basis="Real sends"
             />
             <KpiTile
               icon={<Reply className="h-5 w-5" aria-hidden />}
               label="Reply rate"
-              value={formatPercent(model.kpis.replyRate)}
-              hint="Replies tied to contacted candidates."
+              value={model.kpis.contacted > 0 ? formatPercent(model.kpis.replyRate) : "—"}
+              hint={model.kpis.contacted > 0 ? "Replies from candidates contacted by real send." : "Shown once a real send exists."}
               tone="aqua"
+              basis="Real sends"
             />
             <KpiTile
               icon={<Target className="h-5 w-5" aria-hidden />}
               label="Positive-reply rate"
-              value={formatPercent(model.facts.positiveReplyRate)}
-              hint="Interested or qualified-interest replies."
+              value={model.kpis.contacted > 0 ? formatPercent(model.facts.positiveReplyRate) : "—"}
+              hint={model.kpis.contacted > 0 ? "Interested or qualified-interest replies." : "Shown once a real send exists."}
               tone="success"
+              basis="Real sends"
             />
             <KpiTile
               icon={<CalendarCheck className="h-5 w-5" aria-hidden />}
               label="Meetings booked"
               value={formatNumber(model.kpis.interviewsBooked)}
-              hint="Bookings tied to real contacted candidates."
+              hint={
+                model.kpis.interviewsBooked === 0 && model.kpis.simulatedBooked > 0
+                  ? `None from real sends yet. ${formatNumber(model.kpis.simulatedBooked)} in the demo data.`
+                  : "Bookings tied to real contacted candidates."
+              }
               tone="violet"
+              basis="Real sends"
             />
             <KpiTile
               icon={<Timer className="h-5 w-5" aria-hidden />}
               label="Time to first interview"
-              value={formatHours(model.kpis.timeToFirstInterviewHours)}
-              hint="Canonical campaign timing from metrics.ts."
+              value={model.kpis.interviewsBooked > 0 ? formatHours(model.kpis.timeToFirstInterviewHours) : "—"}
+              hint={
+                model.kpis.interviewsBooked > 0
+                  ? "Hours from campaign start to first interview, mean across active campaigns."
+                  : "Shown once a real interview is booked."
+              }
               tone="neutral"
+              basis="Campaign timing"
             />
             <KpiTile
               icon={<BarChart3 className="h-5 w-5" aria-hidden />}
@@ -559,6 +583,7 @@ export default function ExecPage() {
               value={formatNumber(model.kpis.avgMatchScore)}
               hint="Average across in-scope sourced candidates."
               tone="electric"
+              basis="Sourced pool"
             />
             <OpenRateTile />
           </div>

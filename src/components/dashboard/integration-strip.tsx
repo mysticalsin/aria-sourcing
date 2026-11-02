@@ -3,9 +3,8 @@
 import * as React from "react";
 import { Eyebrow } from "@/components/ui";
 import { useIntegrations } from "@/lib/store";
-import { realIntegrationSummary } from "@/lib/integrations";
+import { integrationCounts, integrationStateLabel } from "@/lib/integrations";
 import { cn, toneForHealth, pluralize, type Tone } from "@/lib/utils";
-import type { IntegrationStatus } from "@/lib/types";
 import { Plug } from "lucide-react";
 
 const DOT: Record<Tone, string> = {
@@ -19,16 +18,16 @@ const DOT: Record<Tone, string> = {
   danger: "bg-danger",
 };
 
-const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
-  connected: "Connected",
-  degraded: "Degraded",
-  error: "Error",
-  not_configured: "Not configured",
-};
-
 export function IntegrationStrip() {
   const integrations = useIntegrations();
-  const summary = realIntegrationSummary(integrations);
+  // Same count as the sidebar and Settings: built integrations, live apart from simulated.
+  const summary = integrationCounts(integrations);
+  const detail = [
+    summary.simulated > 0 ? `${summary.simulated} simulated` : "",
+    summary.degraded > 0 ? pluralize(summary.degraded, "degraded", "degraded") : "",
+    summary.error > 0 ? pluralize(summary.error, "error") : "",
+    summary.notConfigured > 0 ? `${summary.notConfigured} not configured` : "",
+  ].filter(Boolean);
 
   return (
     <section className="rounded-3xl border border-line bg-surface p-5 shadow-soft animate-fade-in">
@@ -44,15 +43,9 @@ export function IntegrationStrip() {
           <div>
             <Eyebrow>Integrations</Eyebrow>
             <p className="mt-0.5 text-sm font-semibold text-ink">
-              {summary.connected}/{summary.total} connected
+              {summary.live}/{summary.total} live
             </p>
-            <p className="text-xs text-muted">
-              {summary.degraded > 0 && `${pluralize(summary.degraded, "degraded", "degraded")} · `}
-              {summary.error > 0 && `${pluralize(summary.error, "error")} · `}
-              {summary.notConfigured > 0
-                ? `${summary.notConfigured} not configured`
-                : "all systems nominal"}
-            </p>
+            <p className="text-xs text-muted">{detail.length > 0 ? detail.join(" · ") : "all systems nominal"}</p>
           </div>
         </div>
 
@@ -63,7 +56,8 @@ export function IntegrationStrip() {
           aria-label="Integration status"
         >
           {integrations.map((integration) => {
-            const tone = toneForHealth(integration.status);
+            const state = integrationStateLabel(integration);
+            const tone: Tone = state === "Simulated" || state === "Concept" ? "neutral" : toneForHealth(integration.status);
             return (
               <span
                 key={integration.id}
@@ -71,17 +65,14 @@ export function IntegrationStrip() {
                 className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-line bg-canvas/50 py-1.5 pl-3 pr-2 text-sm"
               >
                 <span className={cn("h-2 w-2 rounded-full", DOT[tone])} aria-hidden />
-                <span className="sr-only">{HEALTH_LABEL[integration.status]}</span>
                 <span className="font-medium text-ink">{integration.name}</span>
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide",
-                    integration.mode === "live"
-                      ? "bg-success-soft text-success"
-                      : "bg-ink/[0.06] text-ink-soft",
+                    state === "Live" ? "bg-success-soft text-success" : "bg-ink/[0.06] text-ink-soft",
                   )}
                 >
-                  {integration.mode}
+                  {state}
                 </span>
               </span>
             );

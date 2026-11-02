@@ -1,4 +1,4 @@
-import { defaultIntegrations, testConnection } from "../src/lib/integrations";
+import { defaultIntegrations, integrationCounts, integrationStateLabel, testConnection } from "../src/lib/integrations";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -52,6 +52,17 @@ ok(
   "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",
   linkedinRsc?.real === false && linkedinRsc.status !== "connected",
 );
+
+// One count for every screen: a mock-mode integration is "Simulated", never "Connected".
+const seeded = defaultIntegrations();
+const counts = integrationCounts(seeded);
+ok("mock-mode connections count as simulated, not live", counts.live === 0 && counts.simulated === seeded.filter((i) => i.real && i.status === "connected").length);
+ok("counts cover built integrations only", counts.total === seeded.filter((i) => i.real).length && counts.concepts === seeded.length - counts.total);
+ok("every built integration lands in exactly one state", counts.live + counts.simulated + counts.degraded + counts.error + counts.notConfigured === counts.total);
+const firstMock = seeded.find((i) => i.real && i.status === "connected");
+ok("a mock-mode card reads Simulated", Boolean(firstMock) && integrationStateLabel(firstMock!) === "Simulated");
+ok("the same card in live mode reads Live", Boolean(firstMock) && integrationStateLabel({ ...firstMock!, mode: "live" }) === "Live");
+ok("a roadmap card reads Concept", seeded.filter((i) => !i.real).every((i) => integrationStateLabel(i) === "Concept"));
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

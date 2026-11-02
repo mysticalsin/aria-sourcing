@@ -294,6 +294,10 @@ export interface GlobalKpis {
   timeToFirstInterviewHours: number | null;
   pendingApprovals: number;
   hotReplies: number;
+  /** Dry-run sends and their bookings, counted apart from the real figures
+   *  above so a demo can say "0 real, 35 simulated" instead of a bare 0. */
+  simulatedContacted: number;
+  simulatedBooked: number;
 }
 
 export function globalKpis(
@@ -304,6 +308,7 @@ export function globalKpis(
 ): GlobalKpis {
   const active = state.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   const facts = realFunnelFacts(state, { live: !state.settings.dryRunMode });
+  const withSimulated = realFunnelFacts(state, { live: !state.settings.dryRunMode, includeSimulatedSends: true });
   const candidateIds = new Set(facts.candidateIds);
   const cands = state.candidates.filter((c) => candidateIds.has(c.id));
   const interested = cands.filter(
@@ -322,6 +327,8 @@ export function globalKpis(
     totalCampaigns: state.campaigns.length,
     candidatesSourced: facts.sourced,
     contacted: facts.contacted,
+    simulatedContacted: withSimulated.contacted - facts.contacted,
+    simulatedBooked: withSimulated.booked - facts.booked,
     replyRate: facts.replyRate,
     interviewsBooked: facts.booked,
     interested,

@@ -18,6 +18,7 @@ import {
 import { useActions } from "@/lib/store";
 import type { IntegrationStatus } from "@/lib/types";
 import { toneForHealth, formatTimeAgo, cn } from "@/lib/utils";
+import { integrationStateLabel } from "@/lib/integrations";
 import {
   Inbox,
   Search,
@@ -43,13 +44,6 @@ const CATEGORY_ICON: Record<IntegrationStatus["category"], React.ReactNode> = {
   Calendar: <Calendar className="h-5 w-5" />,
   Comms: <MessageSquare className="h-5 w-5" />,
   Infra: <Server className="h-5 w-5" />,
-};
-
-const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
-  connected: "Connected",
-  degraded: "Degraded",
-  error: "Error",
-  not_configured: "Not configured",
 };
 
 export function IntegrationCard({ integration }: { integration: IntegrationStatus }) {
@@ -181,7 +175,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     handleCloseModal();
   }
 
-  const tone = toneForHealth(integration.status);
+  const stateLabel = integrationStateLabel(integration);
+  // A simulated (mock) integration is healthy but not connected to anything.
+  const tone = stateLabel === "Simulated" ? "neutral" : toneForHealth(integration.status);
 
   return (
     <>
@@ -228,7 +224,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={tone} dot>
-              {HEALTH_LABEL[integration.status]}
+              {stateLabel}
             </Badge>
             <span className="text-xs text-muted">
               {integration.lastSync

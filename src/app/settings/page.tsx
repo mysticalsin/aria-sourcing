@@ -35,7 +35,7 @@ import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { integrationHealthSummary } from "@/lib/integrations";
+import { integrationCounts } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -490,7 +490,7 @@ export default function SettingsPage() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [activeTab, queueHashScroll]);
 
-  const summary = integrationHealthSummary(integrations);
+  const summary = integrationCounts(integrations);
 
   function savedToast() {
     toast({ title: "Settings saved", variant: "success" });
@@ -818,9 +818,14 @@ export default function SettingsPage() {
             description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
           >
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="success" size="sm" dot>
-                {summary.connected} connected
+              <Badge tone={summary.live > 0 ? "success" : "neutral"} size="sm" dot>
+                {summary.live} live
               </Badge>
+              {summary.simulated > 0 && (
+                <Badge tone="aqua" size="sm" dot>
+                  {summary.simulated} simulated
+                </Badge>
+              )}
               {summary.degraded > 0 && (
                 <Badge tone="warning" size="sm" dot>
                   {summary.degraded} degraded
@@ -836,7 +841,9 @@ export default function SettingsPage() {
                   {summary.notConfigured} not configured
                 </Badge>
               )}
-              <span className="text-xs text-muted">of {summary.total} total · mock is the safe default</span>
+              <span className="text-xs text-muted">
+                of {summary.total} built integrations · {summary.concepts} more on the roadmap · simulated (mock) is the safe default
+              </span>
             </div>
 
             {integrations.length === 0 ? (

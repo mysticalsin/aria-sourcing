@@ -289,3 +289,41 @@ export function integrationHealthSummary(integrations: IntegrationStatus[]): {
 export function realIntegrationSummary(integrations: IntegrationStatus[]): ReturnType<typeof integrationHealthSummary> {
   return integrationHealthSummary(integrations.filter((i) => i.real));
 }
+
+/** What one integration card is, in a single word. A mock-mode integration
+ *  answers with simulated data, so "connected" there means "Simulated", never
+ *  "Connected"; cards that are not built yet are "Concept". */
+export function integrationStateLabel(integration: IntegrationStatus): string {
+  if (!integration.real) return "Concept";
+  if (integration.status === "connected") return integration.mode === "live" ? "Live" : "Simulated";
+  if (integration.status === "degraded") return "Degraded";
+  if (integration.status === "error") return "Error";
+  return "Not configured";
+}
+
+/** The one integration count every screen shows (sidebar, home strip,
+ *  Settings): built integrations only, live connections apart from simulated
+ *  ones, and roadmap cards counted separately. */
+export function integrationCounts(integrations: IntegrationStatus[]): {
+  live: number;
+  simulated: number;
+  degraded: number;
+  error: number;
+  notConfigured: number;
+  /** Built integrations (`real: true`). */
+  total: number;
+  /** Roadmap cards with no backend yet. */
+  concepts: number;
+} {
+  const built = integrations.filter((i) => i.real);
+  const state = (label: string) => built.filter((i) => integrationStateLabel(i) === label).length;
+  return {
+    live: state("Live"),
+    simulated: state("Simulated"),
+    degraded: state("Degraded"),
+    error: state("Error"),
+    notConfigured: state("Not configured"),
+    total: built.length,
+    concepts: integrations.length - built.length,
+  };
+}
