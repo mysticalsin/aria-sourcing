@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 449
 agent: claude-code
 updated: 2026-11-02
-status: ai-layer-and-ux-audit-done-live-claude-blocked-on-workspace-id
+status: claude-live-verified-app-replay-next
 ---
 
 # Handoff - Shift 449
@@ -12,13 +12,11 @@ status: ai-layer-and-ux-audit-done-live-claude-blocked-on-workspace-id
 
 - Branch mbe-branch. Gate green at the last commit (typecheck, typecheck:tests,
   npm test exit 0).
-- AI layer runs on one Anthropic key from `.secret` (gitignored and
-  dockerignored). Live calls still fail with 400 "not scoped to a workspace":
-  `ANTHROPIC_WORKSPACE_ID` is not in `.secret` yet. Every AI surface falls back
-  to its deterministic path, labelled "Template draft" in the UI.
+- AI layer runs on one Anthropic key + `ANTHROPIC_WORKSPACE_ID` from `.secret`
+  (gitignored and dockerignored). Live calls verified 2026-11-02 (issue 01:
+  4 tasks, $0.0047). The owner set a spend limit on the workspace.
 - UI/UX audit (`.scratch/ui-ux-audit/`): issues 01-10 all `Status: resolved`.
-- AI issues (`.scratch/ai-agents/issues/`): 02, 03 resolved; 01 ready-for-human
-  (workspace id); 04 ready-for-agent; 05 ready-for-agent (launch, inbox and
+- AI issues (`.scratch/ai-agents/issues/`): 01, 02, 03 resolved; 04 ready-for-agent; 05 ready-for-agent (launch, inbox and
   follow-up missions done); 06, 07, 08 needs-triage.
 
 ## Done this shift
@@ -60,21 +58,16 @@ UX audit packages:
 
 ## Blockers
 
-- `ANTHROPIC_WORKSPACE_ID` missing (Console -> Settings -> Workspaces,
-  `wrkspc_...`), or a workspace-scoped key. Add to `.secret` as
-  `ANTHROPIC_WORKSPACE_ID=wrkspc_...` on its own line.
+- None.
 
 ## Next steps
 
-1. When the workspace id is in `.secret`: issue 01 (free `count_tokens` on
-   Haiku/Sonnet/Opus 5.5, then one real call per task, total < $0.05), then
-   replay "Run Aria" (camp_seed_design) and "Triage inbox" with Claude and check
-   the "Drafted by Claude" badges and the Settings usage card.
+1. Replay "Run Aria" (camp_seed_design) and "Triage inbox" with Claude and check
+   the "Drafted by Claude" badges, that drafts carry no [Name]/[Company]
+   placeholders, and the Settings usage card.
 2. AI issue 04 (prompt caching on the long system prompts), then triage 06-08.
-3. Owner: set a ~$30/month spend limit on the Anthropic workspace (the in-app
-   cap is per instance).
-4. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
-5. Screen checks: Playwright scripts in `%TEMP%/aria-e2e/ux0*.mjs`
+3. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
+4. Screen checks: Playwright scripts in `%TEMP%/aria-e2e/ux0*.mjs`
    (`PROJ=<repo> node <script> <outdir>`, dev server on port 3123).
 
 ## Decisions made (don't relitigate)
