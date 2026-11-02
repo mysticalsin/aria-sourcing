@@ -93,6 +93,15 @@ ok("parser synthesizes subject from first line when none", !!noSubject && noSubj
 
 ok("parser returns null on empty text (→ caller falls back to mock)", parseHermesOutreach("", "Email", "fb") === null);
 ok("parser returns null on whitespace-only text", parseHermesOutreach("   \n  ", "Email", "fb") === null);
+ok(
+  "parser rejects a draft with an unfilled slot (→ caller keeps the template)",
+  parseHermesOutreach("Subject: Hello\n\nHi Maya, I'm [Name] from [Company]. 15 minutes?", "Email", "fb") === null &&
+    parseHermesOutreach("Subject: Hello\n\nHi {{first_name}}, quick note.", "Email", "fb") === null,
+);
+ok(
+  "parser keeps ordinary punctuation and links",
+  parseHermesOutreach("Subject: Hello\n\nHi Maya (Go, Rust): see https://example.com/a?b=1. 15 minutes?", "Email", "fb") !== null,
+);
 
 /* ---- 6. buildOutreachPrompt is self-contained --------------------------- */
 

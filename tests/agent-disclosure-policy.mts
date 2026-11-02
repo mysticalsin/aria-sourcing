@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import {
   candidateDisclosureContextForCampaignLike,
   detectInjection,
+  hasTemplatePlaceholder,
   isSafeCompResponse,
   mentionsCompensationTopic,
   sanitizeCandidateText,
@@ -223,6 +224,19 @@ ok(
   /function guardReplyClassification\([\s\S]*?const inboundInjection = detectInjection\(inboundText\)/.test(storeText) &&
     /guardReplyClassification\([\s\S]{0,400}?campaign,\s*input\.text,\s*\)/.test(storeText) &&
     /guardReplyClassification\([\s\S]{0,400}?campaign,\s*reply\.body,\s*\)/.test(storeText),
+);
+
+ok(
+  "unfilled template slots are detected; ordinary brackets in prose are short enough to matter only as slots",
+  hasTemplatePlaceholder("I'm free on [Day 1] at [Time].") &&
+    hasTemplatePlaceholder("Grab a slot here: [scheduling link]") &&
+    hasTemplatePlaceholder("Hi {{first_name}}") &&
+    !hasTemplatePlaceholder("Would Tuesday or Wednesday suit you? Happy to send a calendar invite.") &&
+    !hasTemplatePlaceholder("Go (Golang), Kubernetes; see https://example.com/x?y=1"),
+);
+ok(
+  "drift: a reply draft with a slot keeps the deterministic draft",
+  /parsed\.draftResponse && !hasTemplatePlaceholder\(parsed\.draftResponse\)/.test(storeText),
 );
 
 console.log(`RESULT agent-disclosure-policy: ${pass} passed, ${fail} failed`);

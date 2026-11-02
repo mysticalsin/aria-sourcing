@@ -1,4 +1,5 @@
 import type { OutreachChannel, SystemSettings } from "@/lib/types";
+import { hasTemplatePlaceholder } from "@/lib/agent-disclosure-policy";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -124,8 +125,9 @@ export function buildOutreachPrompt(opts: {
 /**
  * Parse a Aria text reply into the GeneratedOutreach shape. Tolerant: extracts
  * the `Subject:` line if present, otherwise synthesizes a subject from the first
- * body line. Returns null only when there is no usable body at all (caller then
- * falls back to the mock).
+ * body line. Returns null when there is no usable body, or when the text still
+ * has an unfilled slot like "[Name]" (not sendable); the caller then falls back
+ * to the mock.
  */
 export function parseHermesOutreach(
   text: string,
@@ -144,5 +146,6 @@ export function parseHermesOutreach(
     subject = firstLine.slice(0, 80) || fallbackSubject;
   }
   if (!body) return null;
+  if (hasTemplatePlaceholder(`${subject}\n${body}`)) return null;
   return { subject, body };
 }

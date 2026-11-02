@@ -35,6 +35,7 @@ import {
 import {
   candidateDisclosureContextForCampaignLike,
   detectInjection,
+  hasTemplatePlaceholder,
   validateCandidateBoundText,
 } from "./agent-disclosure-policy";
 import { emit } from "./agent-events";
@@ -283,7 +284,9 @@ async function classifyReplyWithModel(
       confidence: parsed.confidence,
       reasoning: parsed.reasoning,
       ...(parsed.suggestedAction ? { suggestedAction: parsed.suggestedAction } : {}),
-      ...(parsed.draftResponse ? { draftResponse: parsed.draftResponse } : {}),
+      // A model draft with an unfilled slot ("[Time]") is not sendable: keep
+      // the deterministic draft instead.
+      ...(parsed.draftResponse && !hasTemplatePlaceholder(parsed.draftResponse) ? { draftResponse: parsed.draftResponse } : {}),
     };
   } catch {
     return fallback;

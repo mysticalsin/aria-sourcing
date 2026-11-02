@@ -211,6 +211,13 @@ export function disclosureInternalFromCampaignLike(value: unknown): DisclosureIn
   };
 }
 
+/** Fill-in slots a model leaves when it lacks a fact ("[Day 1]", "[scheduling
+ *  link]", "{{name}}"). A draft that still has one is not ready to send, so
+ *  callers keep their deterministic draft instead. */
+export function hasTemplatePlaceholder(text: string): boolean {
+  return /\[[^\]\n]{1,40}\]|\{\{[^}\n]{1,40}\}\}/.test(text);
+}
+
 export function validateCandidateBoundText(
   draft: string,
   internal: DisclosureInternal = {},
