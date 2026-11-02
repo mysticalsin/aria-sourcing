@@ -96,7 +96,9 @@ Le schéma contient encore des tables `agent_runs` et `agent_specs`, héritées 
   - **Robustesse :** la classification tolère maintenant un JSON entouré de balises de code.
   - **Vérifié** en démo synthétique : 2 brouillons créés, 4 laissés pour revue (sans Claude, le classifieur à règles lit d'autres intentions), aucun doublon au second passage, pas de débordement à 390 px.
 
-Missions suivantes possibles, sur le même moteur : relances en lot, préparation d'entretien.
+- **Mission « relances en lot »** (`src/lib/agents/follow-up-mission.ts`, bouton « Draft all due follow-ups » de la page Outreach, 2026-11-02) : un agent de relance par candidat dû, 3 à la fois, les meilleurs scores d'abord, 20 au plus par clic (le reste est annoncé dans le toast). Chaque agent appelle `draftFollowUpFor` (Sonnet, gabarit en repli). Les relances portent `draftedBy`. Vérifié en démo : 13 relances en 2 s, progression 0/13 → 13/13.
+
+Mission suivante possible, sur le même moteur : préparation d'entretien.
 
 ## 6. Lots de travail
 

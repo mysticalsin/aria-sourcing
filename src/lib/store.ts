@@ -1693,9 +1693,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         runEffect: runWorkspaceEffect,
       });
       if (!workspaceEffectAllowed()) return null;
-      const msg = {
+      const msg: OutreachMessage = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep),
         createdAt: draftedAt,
+        draftedBy: live ? "ai" : "template",
       };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -1754,7 +1755,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         runEffect: runWorkspaceEffect,
       });
       if (!workspaceEffectAllowed()) return null;
-      const msg = { ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1), createdAt: draftedAt };
+      const msg: OutreachMessage = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1),
+        createdAt: draftedAt,
+        draftedBy: live ? "ai" : "template",
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(

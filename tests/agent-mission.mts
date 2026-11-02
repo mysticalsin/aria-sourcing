@@ -11,6 +11,7 @@ import {
 } from "../src/lib/agents/mission.js";
 import { campaignLaunchPlan, MAX_MISSION_DRAFTS, type DraftedPair } from "../src/lib/agents/campaign-mission.js";
 import { inboxTriagePlan, needsResponse, RESPONSE_INTENTS } from "../src/lib/agents/inbox-mission.js";
+import { followUpPlan, MAX_FOLLOW_UPS_PER_RUN } from "../src/lib/agents/follow-up-mission.js";
 import type { Candidate, ClassifiedReply, OutreachMessage, ReplyIntent } from "../src/lib/types.js";
 
 let pass = 0,
@@ -243,6 +244,32 @@ const offline = await runMission(inboxTriagePlan({
 }));
 ok("a mailbox failure degrades the sync step with its reason", offline.steps.fetch?.status === "degraded" && (offline.results.fetch as { note?: string }).note === "Mailbox not synced: Couldn't reach the mailbox sync.");
 ok("waiting replies are still answered when the mailbox is down", offline.steps.respond?.runs === 1);
+
+/* ---- 9. Follow-up mission -------------------------------------------------- */
+
+const dueItem = (id: string, matchScore: number) => ({ candidateId: id, campaignId: "c", matchScore, daysSinceContact: 5, nextSequenceStep: 2 });
+const backlog = Array.from({ length: 25 }, (_, i) => dueItem(`f${i}`, i));
+const followDrafted: string[] = [];
+let followActive = 0;
+let followPeak = 0;
+const followRun = await runMission(
+  followUpPlan(backlog, async (id) => {
+    followActive++;
+    followPeak = Math.max(followPeak, followActive);
+    await wait(2);
+    followActive--;
+    if (id === "f24") return null; // moved on since the list was computed
+    followDrafted.push(id);
+    return { id: `fu-${id}`, draftedBy: "ai" } as unknown as OutreachMessage;
+  }),
+  { concurrency: 3 },
+);
+ok("a run drafts at most the per-run cap", followRun.steps["follow-ups"]?.runs === MAX_FOLLOW_UPS_PER_RUN);
+ok("best matches are drafted first", !followDrafted.includes("f0") && !followDrafted.includes("f4"));
+ok("a candidate no longer due is skipped without failing the run", followRun.status === "degraded" && followRun.steps["follow-ups"]?.failed === 1);
+ok("follow-up drafting respects the concurrency cap", followPeak <= 3);
+ok("follow-up results are the drafted messages", (followRun.results["follow-ups"] as unknown[]).length === MAX_FOLLOW_UPS_PER_RUN - 1);
+ok("a lower max is honored", followUpPlan(backlog, async () => null, { max: 5 }).steps[0]?.fanOut?.({}).length === 5);
 
 console.log(`RESULT agent-mission: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

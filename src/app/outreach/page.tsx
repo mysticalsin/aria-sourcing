@@ -34,6 +34,8 @@ import {
 } from "@/lib/store";
 import type { FollowUpDueItem } from "@/lib/recommendations";
 import type { Candidate, OutreachMessage } from "@/lib/types";
+import { runMission } from "@/lib/agents/mission";
+import { followUpPlan } from "@/lib/agents/follow-up-mission";
 import { cn, pluralize } from "@/lib/utils";
 import {
   Inbox,
@@ -113,18 +115,6 @@ function StatTile({
   );
 }
 
-/** Small concurrent batches so drafting the whole due backlog (40+) never
- *  freezes the store or the UI -- mirrors handleBulkDraftOutreach's
- *  commit-loop pattern in candidates/page.tsx. draftFollowUpFor is itself
- *  async (it may attempt a live-gen round trip), so each batch runs its
- *  calls concurrently via Promise.all, then yields one tick before the next
- *  batch so the Progress meter actually paints. */
-const FOLLOWUP_DRAFT_BATCH_SIZE = 5;
-
-function nextTick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 /** One row in the "Follow-ups due" list (Task 1) — drafts a step-N follow-up
  *  straight into the approval queue above. Never sends. */
 function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
@@ -190,6 +180,8 @@ function OutreachView() {
   const [approvingAll, setApprovingAll] = React.useState(false);
   const [draftingAllDue, setDraftingAllDue] = React.useState(false);
   const [draftAllProgress, setDraftAllProgress] = React.useState({ done: 0, total: 0 });
+  const followUpAbortRef = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => followUpAbortRef.current?.abort(), []);
   // Which pending draft (if any) has its glass-box guardrail detail expanded.
   // Collapsed by default so the queue doesn't render every candidate's radar
   // + claim map at once; the panel is one click away for every draft.
@@ -278,35 +270,50 @@ function OutreachView() {
     }
   }
 
-  /** Draft-all-due autopilot (Task 2.4): clears the entire follow-up backlog
-   *  in one click by calling the SAME draftFollowUpFor the single-row button
-   *  uses for every currently-due item — never sends, only adds drafts to
-   *  the approval queue above, each already tagged with its own sequence
-   *  step. Batches with a small concurrency cap (see FOLLOWUP_DRAFT_BATCH_SIZE)
-   *  so a large backlog (40+) never freezes the store or the UI. */
+  /** Draft-all-due mission: one follow-up drafting agent per due candidate
+   *  (followUpPlan), three at a time, best matches first, at most
+   *  MAX_FOLLOW_UPS_PER_RUN per click. Each agent calls the SAME
+   *  draftFollowUpFor as the single-row button, so it never sends; it only
+   *  adds drafts to the approval queue above, each tagged with its own
+   *  sequence step. Leaving the page stops the agents not yet started. */
   async function handleDraftAllDue() {
     if (draftingAllDue) return;
     const items = followUpsDueFiltered;
     if (items.length === 0) return;
 
+    const plan = followUpPlan(items, (candidateId) => actions.draftFollowUpFor(candidateId));
+    const runs = plan.steps[0]?.fanOut?.({}).length ?? 0;
+    followUpAbortRef.current?.abort();
+    const controller = new AbortController();
+    followUpAbortRef.current = controller;
     setDraftingAllDue(true);
-    setDraftAllProgress({ done: 0, total: items.length });
-    let drafted = 0;
-    for (let i = 0; i < items.length; i += FOLLOWUP_DRAFT_BATCH_SIZE) {
-      const batch = items.slice(i, i + FOLLOWUP_DRAFT_BATCH_SIZE);
-      const results = await Promise.all(batch.map((item) => actions.draftFollowUpFor(item.candidateId)));
-      drafted += results.filter((msg) => msg !== null).length;
-      setDraftAllProgress({ done: Math.min(i + FOLLOWUP_DRAFT_BATCH_SIZE, items.length), total: items.length });
-      await nextTick();
-    }
+    setDraftAllProgress({ done: 0, total: runs });
+    let finished = 0;
+    const report = await runMission(plan, {
+      concurrency: 3,
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (event.type === "agent_finished") setDraftAllProgress({ done: ++finished, total: runs });
+      },
+    });
+    if (controller.signal.aborted) return;
     setDraftingAllDue(false);
 
-    const skipped = items.length - drafted;
+    const messages = (report.results["follow-ups"] as OutreachMessage[] | undefined) ?? [];
+    const drafted = messages.length;
+    const byClaude = messages.filter((m) => m.draftedBy === "ai").length;
+    const skipped = runs - drafted;
+    const remaining = items.length - runs;
+    const notes = [
+      byClaude > 0 ? `${byClaude} written by Claude.` : "",
+      skipped > 0 ? `${pluralize(skipped, "candidate")} skipped (already handled).` : "",
+      remaining > 0 ? `${remaining} more due: run again after reviewing these.` : "",
+    ].filter(Boolean);
     toast({
       title: `Drafted ${pluralize(drafted, "follow-up")}`,
       description:
-        skipped > 0
-          ? `${pluralize(skipped, "candidate")} skipped (already handled). Each draft carries its own sequence step, review above.`
+        notes.length > 0
+          ? `${notes.join(" ")} Each draft carries its own sequence step, review above.`
           : "Each draft carries its own sequence step. Review and approve above; nothing was sent.",
       variant: drafted > 0 ? "success" : "warning",
     });
