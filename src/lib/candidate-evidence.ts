@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { CandidateLawfulBasis, HermesState } from "./types";
-import { candidateEnrichmentBlocker } from "./candidate-review";
+import { candidateEnrichmentBlocker, candidateExclusionBlocker } from "./candidate-review";
 import { candidateProfileIdentity } from "./rules";
 import { computeCoverage } from "./enrichment/merge";
 import { scoreCandidate } from "./scoring";
@@ -11,7 +11,15 @@ export interface VerifiedEvidenceInput { email: string; linkedinUrl: string; sou
 export function recordVerifiedEvidence(state: HermesState, id: string, input: VerifiedEvidenceInput, at: string, noteId: string): { ok: true; state: HermesState } | { ok: false; error: string } {
   const candidate = state.candidates.find((c) => c.id === id);
   const campaign = state.campaigns.find((c) => c.id === candidate?.campaignId);
-  if (!candidate || candidateEnrichmentBlocker(candidate, campaign)) return { ok: false, error: "An active, non-excluded candidate is required." };
+  if (!candidate || !campaign) return { ok: false, error: "An active, non-excluded candidate is required." };
+  // Recording only a contact basis (the profile facts are passed back as they
+  // are) is an operator decision, not paid enrichment, so it also works on
+  // synthetic demo profiles. Excluded candidates stay closed either way.
+  const basisOnly = input.lawfulBasis !== undefined && input.email.trim() === candidate.email.trim()
+    && input.linkedinUrl.trim() === candidate.linkedinUrl.trim() && input.skills === undefined && input.yearsExperience === undefined;
+  if (basisOnly ? candidateExclusionBlocker(candidate) : candidateEnrichmentBlocker(candidate, campaign)) {
+    return { ok: false, error: "An active, non-excluded candidate is required." };
+  }
   const email = input.email.trim();
   if (email && !z.email().safeParse(email).success) return { ok: false, error: "Enter a valid email address." };
   let linkedinUrl = input.linkedinUrl.trim();

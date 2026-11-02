@@ -170,3 +170,18 @@ test("batch candidates serialize workspace saves without silently dropping a wor
   const results = await Promise.all(state.candidates.map((c) => enrich(c.id)));
   assert.equal(calls, 2); assert.ok(results.every((r) => r.ok)); assert.equal(state.enrichmentLedger?.length, 2);
 });
+
+test("a contact basis alone can be recorded on a synthetic demo profile; new facts cannot", () => {
+  const state = fixture(); const candidate = state.candidates[0]; const id = candidate.id;
+  candidate.provenance = "synthetic";
+  const same = { email: candidate.email, linkedinUrl: candidate.linkedinUrl, source: "Public profile, relevant work" };
+  const basis = recordVerifiedEvidence(state, id, { ...same, lawfulBasis: "legitimate_interest" }, "2026-11-02T10:00:00.000Z", "basis-note");
+  assert.equal(basis.ok && recordedCandidateLawfulBasis(basis.state.candidates[0]), "legitimate_interest");
+  assert.equal(basis.ok && basis.state.candidates[0].stage, "Sourced");
+  // New facts on a synthetic profile are still enrichment, which stays closed.
+  assert.equal(recordVerifiedEvidence(state, id, { ...same, email: "new@example.test", lawfulBasis: "consent" }, "now", "note").ok, false);
+  assert.equal(recordVerifiedEvidence(state, id, { ...same, skills: ["Go"] }, "now", "note").ok, false);
+  // An excluded candidate stays closed, basis or not.
+  candidate.complianceFlags.doNotContact = true;
+  assert.equal(recordVerifiedEvidence(state, id, { ...same, lawfulBasis: "consent" }, "now", "note").ok, false);
+});

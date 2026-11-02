@@ -2908,7 +2908,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const recordCandidateEvidence = useCallback(async (id: string, input: VerifiedEvidenceInput) => {
-    if (!supabaseEnabled || !workspaceEffectAllowed() || !sourcingMutationAllowed()) return { ok: false, error: "Contact editing requires a connected workspace and sourcing permission." };
+    if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return { ok: false, error: "Contact editing requires sourcing permission." };
     let error: string | undefined;
     const saved = await commitPersisted((state) => {
       const result = recordVerifiedEvidence(state, id, input, new Date().toISOString(), genId("note"));

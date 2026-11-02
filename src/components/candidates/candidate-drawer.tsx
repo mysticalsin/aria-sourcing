@@ -18,7 +18,7 @@ import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
-import { candidateEnrichmentBlocker, candidateReview } from "@/lib/candidate-review";
+import { candidateEnrichmentBlocker, candidateExclusionBlocker, candidateReview } from "@/lib/candidate-review";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import {
@@ -1911,7 +1911,7 @@ export function CandidateDrawer({
         <Section title="Consent passport" icon={<ShieldCheck className="h-4 w-4" />}>
           <div id="candidate-consent" className="scroll-mt-4 space-y-3">
             <ConsentPassport candidate={c} />
-            {supabaseEnabled && can(role, "compliance") && !candidateEnrichmentBlocker(c, campaign) && (
+            {can(role, "compliance") && !candidateExclusionBlocker(c) && (
               <form onSubmit={handleRecordBasis} className="space-y-3 rounded-2xl border border-line p-4">
                 <p className="text-sm text-muted">Record your explicit processing decision and its evidence. ARIA does not determine whether that basis is legally applicable.</p>
                 <fieldset disabled={savingContact || enriching} className="space-y-3">

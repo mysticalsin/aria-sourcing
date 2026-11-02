@@ -37,10 +37,17 @@ export function candidateReview(candidate: Candidate, campaign: Campaign | undef
   return step("draft", "Review outreach draft", "Review fit and prepare a draft. Approval of the exact message and delivery checks are still required.");
 }
 
-export function candidateEnrichmentBlocker(candidate: Candidate, campaign: Campaign | undefined): string | null {
+/** Erased, opted-out or closed candidates: nobody records anything new for them. */
+export function candidateExclusionBlocker(candidate: Candidate): string | null {
   if (isCandidateErasureTombstone(candidate) || candidate.complianceFlags.doNotContact || candidate.complianceFlags.suppressed || candidate.complianceFlags.unsubscribed || ["Rejected", "Suppressed", "Hired"].includes(candidate.stage)) {
     return "This candidate is excluded from enrichment.";
   }
+  return null;
+}
+
+export function candidateEnrichmentBlocker(candidate: Candidate, campaign: Campaign | undefined): string | null {
+  const excluded = candidateExclusionBlocker(candidate);
+  if (excluded) return excluded;
   if (candidate.provenance === "synthetic") return "Synthetic profiles cannot use paid enrichment.";
   if (!campaign || !campaignAllowsLiveSourcing(campaign.status) || !evaluateNeedReadiness(campaign.jobAnalysis).ready) {
     return "Review an active campaign brief before enrichment.";
