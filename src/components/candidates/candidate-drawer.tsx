@@ -34,14 +34,13 @@ import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
-import { StarBadge, SourceBadge } from "@/components/tania/badges";
+import { ScoreBadge, SourceBadge } from "@/components/tania/badges";
 import {
   deriveLeadSource,
   deriveStarRating,
   DEFAULT_STAR_THRESHOLDS,
   prequalSlaHours,
   isCandidate as isTaniaCandidate,
-  STAR_RATING_META,
 } from "@/lib/tania";
 import type {
   Candidate,
@@ -54,9 +53,8 @@ import type {
   LeadSource,
   OutreachMessage,
   PrequalOutcome,
-  StarRating,
 } from "@/lib/types";
-import { INTERVIEW_OUTCOMES, LEAD_SOURCES, STAR_RATINGS } from "@/lib/types";
+import { INTERVIEW_OUTCOMES, LEAD_SOURCES } from "@/lib/types";
 import {
   Ban,
   Bookmark,
@@ -282,15 +280,11 @@ function TaniaPanel({ c }: { c: Candidate }) {
   const sla = prequalSlaHours(rating);
   const INTERVIEW_STEPS: InterviewKind[] = ["Intw1", "Intw2", "Intw3", "QM"];
 
-  const setRating = (r: StarRating) => {
-    actions.setCandidateRating(c.id, r);
-    toast({ title: `Rating set: ${STAR_RATING_META[r].label}`, variant: "success" });
-  };
   const setSource = (s: LeadSource) => actions.setCandidateLeadSource(c.id, s);
   const decide = (outcome: PrequalOutcome) => {
     actions.setPrequalOutcome(c.id, outcome);
     toast({
-      title: outcome === "advance" ? "Advanced: lead is now a Candidate" : outcome === "reject" ? "Prequal rejected: added to #Vivier" : "Held for review",
+      title: outcome === "advance" ? "Advanced: lead is now a Candidate" : outcome === "reject" ? "Prequal rejected: added to the talent pool" : "Held for review",
       variant: outcome === "reject" ? "warning" : "success",
     });
   };
@@ -307,33 +301,22 @@ function TaniaPanel({ c }: { c: Candidate }) {
   };
   const toggleVivier = () => {
     actions.toggleVivier(c.id);
-    toast({ title: c.vivier ? "Removed from #Vivier" : "Added to #Vivier", variant: c.vivier ? "info" : "success" });
+    toast({ title: c.vivier ? "Removed from the talent pool" : "Added to the talent pool", variant: c.vivier ? "info" : "success" });
   };
 
   return (
-    <Section title="TAnIA: source, rating & prequal" icon={<PhoneCall className="h-4 w-4" />}>
-      {/* Source + rating */}
+    <Section title="Source & prequalification" icon={<PhoneCall className="h-4 w-4" />}>
+      {/* Source + the one rating scale: the /100 match score */}
       <div className="flex flex-wrap items-center gap-2">
         <SourceBadge source={source} />
-        <StarBadge rating={rating} />
+        <ScoreBadge score={c.matchScore} />
+        {sla ? <span className="text-xs text-muted">Prequalify within {sla}h</span> : null}
         {c.vivier && (
           <Badge tone="violet" size="sm">
-            <Bookmark className="h-3 w-3" aria-hidden /> #Vivier
+            <Bookmark className="h-3 w-3" aria-hidden /> Talent pool
           </Badge>
         )}
         {c.referredBy && <span className="text-xs text-muted">Referred by {c.referredBy}</span>}
-      </div>
-
-      {/* Rating override */}
-      <div className="space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Star rating {sla ? `· ${sla}h prequal SLA` : "· rejection tier"}</p>
-        <div className="flex flex-wrap gap-1.5">
-          {STAR_RATINGS.map((r) => (
-            <Button key={r} variant={rating === r ? "primary" : "outline"} size="sm" onClick={() => setRating(r)}>
-              {r === "TopGun" ? "Top Gun" : r}
-            </Button>
-          ))}
-        </div>
       </div>
 
       {/* Source reclassify */}
@@ -416,7 +399,7 @@ function TaniaPanel({ c }: { c: Candidate }) {
       </div>
 
       <Button variant="outline" size="sm" leftIcon={<Bookmark className="h-3.5 w-3.5" />} onClick={toggleVivier}>
-        {c.vivier ? "Remove from #Vivier" : "Add to #Vivier"}
+        {c.vivier ? "Remove from talent pool" : "Add to talent pool"}
       </Button>
     </Section>
   );

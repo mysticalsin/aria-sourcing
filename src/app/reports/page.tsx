@@ -83,8 +83,8 @@ export default function ReportsPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Intelligence"
-        title="Weekly reports"
+        eyebrow="Reports"
+        title="Learning loop"
         description="Funnel economics, performance signals, and the self-improvement updates Aria proposes from every campaign it runs."
         actions={
           <Button

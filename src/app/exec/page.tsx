@@ -469,8 +469,8 @@ export default function ExecPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Executive"
-        title="Exec Dashboard"
+        eyebrow="Reports"
+        title="Overview"
         description="Recruiting performance and value for leadership: candidates sourced, conversion to interviews, and recruiter time saved."
         actions={
           <div className="flex flex-wrap items-center gap-2 print:hidden">

@@ -63,13 +63,13 @@ export interface Coordinator {
 
 /** A single sentence for the header — the whole page in one line. */
 export const HUMAN_PRINCIPLE =
-  "Human Always Decides. TAnIA does the work; the recruiter makes every call that touches a person, a brand, or a contract.";
+  "Human Always Decides. Aria does the work; the recruiter makes every call that touches a person, a brand, or a contract.";
 
 /* ---- Tier 1 — the Coordinator -------------------------------------------- */
 
 export const COORDINATOR: Coordinator = {
   id: "coordinator",
-  name: "TAnIA Coordinator",
+  name: "Aria Coordinator",
   role: "Orchestrator",
   mission:
     "The single orchestrator. It reads each lead's source and funnel stage, routes the work to the right manager, and holds the line on human sign-off.",
@@ -333,7 +333,7 @@ export interface GuardrailException {
 /** The single exception — still recruiter-confirmed, always pooled. */
 export const GATED_EXCEPTION: GuardrailException = {
   action: "Auto-reject on a self-declared hard disqualifier (Applicants only)",
-  why: "When an applicant states a non-negotiable blocker (no obtainable work authorisation, or unwilling to relocate for an on-site-only role), TAnIA may pre-file the rejection to save the recruiter time.",
+  why: "When an applicant states a non-negotiable blocker (no obtainable work authorisation, or unwilling to relocate for an on-site-only role), Aria may pre-file the rejection to save the recruiter time.",
   safeguards: [
     "Applicants only, never referrals or outbound leads.",
     "The recruiter still confirms before it sends.",

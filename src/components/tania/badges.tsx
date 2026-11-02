@@ -1,60 +1,51 @@
 import * as React from "react";
-import { Star, UserRoundCheck, UserRoundPlus, Radar } from "lucide-react";
+import { UserRoundCheck, UserRoundPlus, Radar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   LEAD_SOURCE_META,
-  STAR_RATING_META,
   TANIA_STAGE_META,
 } from "@/lib/tania";
-import type { LeadSource, StarRating, TaniaStage } from "@/lib/types";
+import type { LeadSource, TaniaStage } from "@/lib/types";
 
 /* ============================================================================
-   TAnIA badges — reuse the Mantu design tokens (globals.css) so new surfaces
+   Pipeline badges — reuse the Mantu design tokens (globals.css) so new surfaces
    inherit the existing visual language. No new palette.
    ========================================================================== */
 
-const STAR_CLASSES: Record<StarRating, string> = {
-  TopGun: "bg-mantu-yellow text-mantu-yellow-ink ring-mantu-yellow/50",
-  A: "bg-electric-soft text-electric ring-electric/25",
-  B: "bg-aqua-soft text-aqua ring-aqua/25",
-  C: "bg-ink/[0.06] text-ink-soft ring-ink/10",
-  D: "bg-danger-soft text-danger ring-danger/20",
-};
+/** Match score bands, shared by every surface that rates a person: one scale,
+ *  the /100 score, instead of tiers, letters or stars. */
+export const SCORE_BANDS = [
+  { id: "strong", label: "80+", min: 80, className: "bg-success-soft text-success ring-success/25" },
+  { id: "fair", label: "60–79", min: 60, className: "bg-electric-soft text-electric ring-electric/25" },
+  { id: "weak", label: "Under 60", min: 0, className: "bg-ink/[0.06] text-ink-soft ring-ink/10" },
+] as const;
 
-export function StarBadge({
-  rating,
+export function scoreBand(score: number) {
+  return SCORE_BANDS.find((b) => score >= b.min) ?? SCORE_BANDS[SCORE_BANDS.length - 1];
+}
+
+export function ScoreBadge({
+  score,
   size = "md",
-  showLabel = true,
   className,
 }: {
-  rating: StarRating;
+  score: number;
   size?: "sm" | "md";
-  showLabel?: boolean;
   className?: string;
 }) {
-  const meta = STAR_RATING_META[rating];
-  const filled = { TopGun: 5, A: 4, B: 3, C: 2, D: 1 }[rating];
+  const value = Math.round(score);
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full font-semibold ring-1 ring-inset whitespace-nowrap",
+        "inline-flex items-baseline rounded-full font-semibold tabular-nums ring-1 ring-inset whitespace-nowrap",
         size === "sm" ? "px-2 py-0.5 text-[0.6875rem]" : "px-2.5 py-1 text-xs",
-        STAR_CLASSES[rating],
+        scoreBand(value).className,
         className,
       )}
-      title={`${meta.label}: ${meta.criteria} (${meta.yes})`}
+      title={`Match score ${value} of 100`}
     >
-      <Star
-        className={cn("shrink-0", size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5")}
-        fill={rating === "TopGun" || rating === "A" ? "currentColor" : "none"}
-        strokeWidth={2}
-        aria-hidden
-      />
-      {showLabel && (rating === "TopGun" ? "Top Gun" : rating === "A" || rating === "B" ? `${rating} Player` : rating)}
-      {!showLabel && <span className="sr-only">{meta.label}</span>}
-      {size === "md" && showLabel && rating !== "C" && rating !== "D" && (
-        <span className="tabular-nums opacity-70">{filled}★</span>
-      )}
+      {value}
+      <span className="opacity-60">/100</span>
     </span>
   );
 }

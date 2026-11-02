@@ -77,7 +77,7 @@ export default function SessionsPage() {
     <HydrationGate hydrated={hydrated} fallback={<div className="space-y-4"><SkeletonCard /><SkeletonCard /></div>}>
       <PageHeader
         eyebrow="System"
-        title="Sessions"
+        title="History"
         description="Browse and search every agent conversation and the full activity history across the workspace. Open any candidate's Decision Replay to see the full sourced-to-booked chain."
       />
 

@@ -124,7 +124,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       status: "not_configured",
       mode: "mock",
       lastSync: null,
-      errors: ["Onboarding target system pending scope with HR (per TAnIA open items)."],
+      errors: ["Onboarding target system pending scope with HR (open item)."],
       real: false,
     },
     {

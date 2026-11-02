@@ -174,8 +174,8 @@ export default function RepliesPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Reply triage"
-        title="Inbound replies"
+        eyebrow="Engage"
+        title="Replies"
         description="Classify intent, honour SLAs and respond fast. Hot replies surface first; negatives are escalated. Drafts are never sent automatically."
         actions={
           <div className="flex flex-wrap items-center gap-2">

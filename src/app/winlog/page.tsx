@@ -89,7 +89,7 @@ export default function WinlogPage() {
   function exportWinlog() {
     downloadText("winlog.md", winlogMarkdown(sortedWins));
     toast({
-      title: "Winlog exported",
+      title: "Wins exported",
       description: "winlog.md downloaded from this browser session.",
       variant: "success",
     });
@@ -98,8 +98,8 @@ export default function WinlogPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Learning"
-        title="Winlog"
+        eyebrow="Reports"
+        title="Wins"
         description="Private booked-win records captured at the booking commit."
         actions={
           <Button

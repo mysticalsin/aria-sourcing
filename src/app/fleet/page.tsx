@@ -8,7 +8,6 @@ import {
   CardContent,
   CardTitle,
   Eyebrow,
-  SectionNumeral,
   Button,
   Field,
   Select,
@@ -293,8 +292,8 @@ export default function FleetPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Agent fleet"
-        title="An army of agents. One set of rules."
+        eyebrow="System"
+        title="Mailboxes"
         description="Coordinated multi-agent sourcing and outreach that never double-contacts a candidate and stays inside every account's official API limits. No scraping, no LinkedIn automation."
         actions={canManage ? (
           <Button
@@ -415,7 +414,6 @@ export default function FleetPage() {
           <section>
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div className="flex items-start gap-3">
-                <SectionNumeral n="04" />
                 <div>
                   <Eyebrow>The roster</Eyebrow>
                   <CardTitle>Agents · {seats.length}/{maxAgents}</CardTitle>

@@ -219,7 +219,7 @@ export function MultiRoleLaunch() {
         <div className="space-y-6">
           <Card className="animate-fade-in">
             <CardHeader>
-              <Eyebrow>01: Multi-role brief</Eyebrow>
+              <Eyebrow>Multi-role brief</Eyebrow>
               <CardTitle className="mt-1">Paste one brief per role</CardTitle>
             </CardHeader>
             <CardBody className="space-y-4 pt-0">

@@ -12,7 +12,6 @@ import {
   useConfirm,
   useToast,
 } from "@/components/ui";
-import { StarBadge } from "@/components/tania/badges";
 import { useActions, useCampaigns, useChatboxSubmissions } from "@/lib/store";
 import { chatboxHandoff, CHATBOX_WEIGHTS } from "@/lib/tania";
 import { cn, formatTimeAgo } from "@/lib/utils";
@@ -95,7 +94,7 @@ export function ApplicantInbox() {
       <EmptyState
         icon={<Inbox className="h-6 w-6" />}
         title="No applications yet"
-        description="Scored applications from the career-site chatbox land here for the Applicant Screener. Open the public chatbox at /careers to try it."
+        description="Scored applications from the career-site chatbox land here for screening. Open the public chatbox at /careers to try it."
       />
     );
   }
@@ -131,22 +130,21 @@ export function ApplicantInbox() {
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink/[0.06] text-xs font-bold text-ink-soft" aria-hidden>
                   {(s.firstName[0] ?? "") + (s.lastName[0] ?? "")}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-ink">{s.firstName} {s.lastName}</p>
+                <div className="min-w-0 flex-1 basis-48">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="min-w-0 truncate text-sm font-semibold text-ink">{s.firstName} {s.lastName}</p>
                     <Badge tone={STATUS_TONE[s.status]} size="sm">{s.status}</Badge>
-                    <Badge tone="neutral" size="sm">Path {s.path}</Badge>
+                    <Badge tone="neutral" size="sm">{s.path === "A" ? "Job application" : "Open application"}</Badge>
                   </div>
                   <p className="truncate text-xs text-muted">
-                    {s.roleTitle}{s.campaignId && campaignTitle.get(s.campaignId) ? ` · ${campaignTitle.get(s.campaignId)}` : ""} · {formatTimeAgo(s.createdAt)}
+                    {s.roleTitle}{s.campaignId && campaignTitle.get(s.campaignId) && campaignTitle.get(s.campaignId) !== s.roleTitle ? ` · ${campaignTitle.get(s.campaignId)}` : ""} · {formatTimeAgo(s.createdAt)}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <StarBadge rating={s.starRating} size="sm" />
-                    <p className="mt-0.5 text-[0.6875rem] text-muted">{handoff.route}</p>
+                    <p className="text-[0.6875rem] text-muted">{handoff.route}</p>
                   </div>
-                  <span className="text-lg font-bold tabular-nums text-ink">{s.score.total}</span>
+                  <span className="text-lg font-bold tabular-nums text-ink">{s.score.total}<span className="text-xs font-semibold text-muted">/100</span></span>
                 </div>
               </CardBody>
             </Card>
@@ -159,7 +157,7 @@ export function ApplicantInbox() {
         open={open !== null}
         onClose={() => setOpenId(null)}
         title={open ? `${open.firstName} ${open.lastName}` : "Applicant"}
-        description={open ? `${open.roleTitle} · Path ${open.path} · applied ${formatTimeAgo(open.createdAt)}` : undefined}
+        description={open ? `${open.roleTitle} · ${open.path === "A" ? "Job application" : "Open application"} · applied ${formatTimeAgo(open.createdAt)}` : undefined}
         footer={
           open && open.status !== "advanced" ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -187,7 +185,6 @@ export function ApplicantInbox() {
                 <p className="text-3xl font-bold tabular-nums text-ink">{open.score.total}<span className="text-lg text-muted">/100</span></p>
               </div>
               <div className="text-right">
-                <StarBadge rating={open.starRating} />
                 <p className="mt-1 text-xs text-muted">{chatboxHandoff(open.starRating).sla}</p>
               </div>
             </div>

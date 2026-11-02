@@ -264,7 +264,7 @@ const derivationSource = readFileSync(new URL("../src/lib/exec-dashboard.ts", im
 const navSource = readFileSync(new URL("../src/components/app/nav.ts", import.meta.url), "utf8");
 const combinedSource = `${pageSource}\n${derivationSource}`;
 
-ok("exec page exists as client page", pageSource.includes('title="Exec Dashboard"'));
+ok("exec page exists as client page", pageSource.includes('title="Overview"'));
 ok("exec nav route is registered", navSource.includes('href: "/exec"'));
 ok("exec source contains no Math.random", !combinedSource.includes("Math.random"));
 ok(

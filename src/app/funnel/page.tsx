@@ -9,25 +9,21 @@ import {
   useCampaigns,
   useCandidates,
   useChatboxSubmissions,
-  useSettings,
   useHydrated,
 } from "@/lib/store";
-import { DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
 
 export default function FunnelPage() {
   const hydrated = useHydrated();
   const candidates = useCandidates();
   const campaigns = useCampaigns();
   const submissions = useChatboxSubmissions();
-  const settings = useSettings();
-  const thresholds = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
 
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="TAnIA funnel"
-        title="Funnel board"
-        description="The Mantu 4-stage hiring funnel: from the chatbox and open needs through Leads, Candidates, Offered and Employees, with the stage × source flow that keeps a human in the loop at every gate."
+        eyebrow="Recruit"
+        title="Pipeline"
+        description="The hiring pipeline: from the chatbox and open needs through Leads, Candidates, Offered and Employees, with the stage × source flow that keeps a human in the loop at every gate."
       />
 
       <HydrationGate
@@ -44,7 +40,6 @@ export default function FunnelPage() {
             candidates={candidates}
             submissions={submissions}
             campaigns={campaigns}
-            thresholds={thresholds}
           />
           <FlowMatrix />
         </div>

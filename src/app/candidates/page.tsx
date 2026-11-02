@@ -385,11 +385,11 @@ function CandidatesView() {
       (id) => !candidates.find((c) => c.id === id)?.vivier,
     );
     if (ids.length === 0) {
-      toast({ title: "Selected candidates are already in #Vivier", variant: "info" });
+      toast({ title: "Selected candidates are already in the talent pool", variant: "info" });
       return;
     }
     ids.forEach((id) => actions.toggleVivier(id));
-    toast({ title: `Added ${pluralize(ids.length, "candidate")} to #Vivier`, variant: "success" });
+    toast({ title: `Added ${pluralize(ids.length, "candidate")} to the talent pool`, variant: "success" });
     clearSelection();
   }
 
@@ -551,7 +551,7 @@ function CandidatesView() {
               onClick={handleBulkVivier}
               disabled={draftingOutreach}
             >
-              Add to #Vivier
+              Add to talent pool
             </Button>
             <Button
               size="sm"
@@ -648,7 +648,7 @@ export default function CandidatesPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Talent pool"
+        eyebrow="Recruit"
         title="Candidates"
         description="Every sourced candidate, ranked by fit. Open a profile to score, message or book."
       />

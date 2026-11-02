@@ -4,10 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight, Inbox } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle, Eyebrow, Button, Badge } from "@/components/ui";
-import { SourceBadge, StarBadge } from "@/components/tania/badges";
-import { useCandidates, useChatboxSubmissions, useSettings } from "@/lib/store";
-import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
-import { LEAD_SOURCES, STAR_RATINGS } from "@/lib/types";
+import { SCORE_BANDS, SourceBadge, scoreBand } from "@/components/tania/badges";
+import { useCandidates, useChatboxSubmissions } from "@/lib/store";
+import { deriveLeadSource } from "@/lib/tania";
+import { LEAD_SOURCES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const SOURCE_BAR: Record<(typeof LEAD_SOURCES)[number], string> = {
@@ -16,12 +16,11 @@ const SOURCE_BAR: Record<(typeof LEAD_SOURCES)[number], string> = {
   Outbound: "bg-tangerine",
 };
 
-/** Command-center summary of the TAnIA layer: inbound applicant queue, lead-source
- *  mix and star-tier distribution. Reuses existing tokens — no new design language. */
+/** Home summary of the pipeline: inbound applicant queue, lead-source mix and
+ *  match-score distribution. Reuses existing tokens — no new design language. */
 export function TaniaSummary() {
   const candidates = useCandidates();
   const submissions = useChatboxSubmissions();
-  const thresholds = useSettings().starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
 
   const newApplicants = submissions.filter((s) => s.status === "new").length;
 
@@ -31,26 +30,26 @@ export function TaniaSummary() {
     return counts;
   }, [candidates]);
 
-  const starCounts = React.useMemo(() => {
-    const counts: Record<string, number> = { TopGun: 0, A: 0, B: 0, C: 0, D: 0 };
-    for (const c of candidates) counts[c.starRating ?? deriveStarRating(c.matchScore, thresholds)] += 1;
+  const bandCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of candidates) {
+      const band = scoreBand(c.matchScore).id;
+      counts[band] = (counts[band] ?? 0) + 1;
+    }
     return counts;
-  }, [candidates, thresholds]);
+  }, [candidates]);
 
   const total = candidates.length || 1;
 
   return (
     <Card className="animate-fade-in">
       <CardHeader className="flex items-center justify-between">
-        <div>
-          <Eyebrow>TAnIA pipeline</Eyebrow>
-          <CardTitle className="mt-1">Sources & ratings</CardTitle>
-        </div>
+        <CardTitle>Sources & scores</CardTitle>
         <Link
           href="/funnel"
           className="inline-flex items-center gap-1 text-sm font-semibold text-electric hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
         >
-          Funnel <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+          Pipeline <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
         </Link>
       </CardHeader>
       <CardBody className="space-y-5 pt-0">
@@ -97,14 +96,17 @@ export function TaniaSummary() {
           </div>
         </div>
 
-        {/* Star tiers */}
+        {/* Match score bands: the one rating scale */}
         <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Star rating distribution</p>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Match score</p>
           <div className="flex flex-wrap gap-2">
-            {STAR_RATINGS.map((r) => (
-              <span key={r} className="inline-flex items-center gap-1">
-                <StarBadge rating={r} size="sm" showLabel={false} />
-                <span className="text-xs font-semibold tabular-nums text-ink-soft">{starCounts[r]}</span>
+            {SCORE_BANDS.map((b) => (
+              <span
+                key={b.id}
+                className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ring-1 ring-inset", b.className)}
+              >
+                {b.label}
+                <span className="tabular-nums">{bandCounts[b.id] ?? 0}</span>
               </span>
             ))}
           </div>

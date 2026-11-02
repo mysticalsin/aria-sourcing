@@ -78,7 +78,7 @@ export default function CampaignsPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Recruiting operations"
+        eyebrow="Recruit"
         title="Campaigns"
         description="Every open role Aria is sourcing for. Track the funnel, spot the bottleneck, and act on the next best move."
         actions={

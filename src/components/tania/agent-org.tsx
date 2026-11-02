@@ -338,10 +338,10 @@ export function GuardrailsPanel() {
           <div className="min-w-0">
             <Eyebrow className="text-electric">Guardrails</Eyebrow>
             <h2 id="guardrails-title" className="display mt-1 text-2xl text-ink sm:text-3xl">
-              TAnIA never does these alone
+              Aria never does these alone
             </h2>
             <p className="mt-2 max-w-2xl text-[0.95rem] leading-relaxed text-ink-soft">
-              Six actions are always recruiter-gated. TAnIA prepares the work and waits: a human
+              Six actions are always recruiter-gated. Aria prepares the work and waits: a human
               makes the call.
             </p>
           </div>

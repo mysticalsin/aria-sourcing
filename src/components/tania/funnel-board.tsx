@@ -4,16 +4,13 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { Card, Eyebrow, useToast } from "@/components/ui";
-import { StarBadge, SourceBadge, StageBadge } from "@/components/tania/badges";
+import { ScoreBadge, SourceBadge, StageBadge } from "@/components/tania/badges";
 import { useActions } from "@/lib/store";
 import {
   TANIA_STAGE_META,
   LEAD_SOURCE_META,
-  DEFAULT_STAR_THRESHOLDS,
   taniaStageForCandidate,
   deriveLeadSource,
-  deriveStarRating,
-  type StarThresholds,
 } from "@/lib/tania";
 import {
   LEAD_SOURCES,
@@ -76,12 +73,10 @@ export function FunnelBoard({
   candidates,
   submissions,
   campaigns,
-  thresholds = DEFAULT_STAR_THRESHOLDS,
 }: {
   candidates: Candidate[];
   submissions: ChatboxSubmission[];
   campaigns: Campaign[];
-  thresholds?: StarThresholds;
 }) {
   const [source, setSource] = React.useState<SourceFilter>("all");
   const actions = useActions();
@@ -226,7 +221,7 @@ export function FunnelBoard({
                 onDropCandidate={(id) => handleDropCandidate(id, stage)}
               >
                 {shown.length > 0 ? (
-                  shown.map((c) => <CandidateCard key={c.id} candidate={c} thresholds={thresholds} />)
+                  shown.map((c) => <CandidateCard key={c.id} candidate={c} />)
                 ) : (
                   <ColumnEmpty label={source === "all" ? "Empty" : `No ${source} here`} />
                 )}
@@ -321,8 +316,7 @@ function SourceMini({ counts }: { counts: Record<LeadSource, number> }) {
   );
 }
 
-function CandidateCard({ candidate, thresholds }: { candidate: Candidate; thresholds: StarThresholds }) {
-  const rating = candidate.starRating ?? deriveStarRating(candidate.matchScore, thresholds);
+function CandidateCard({ candidate }: { candidate: Candidate }) {
   const src = deriveLeadSource(candidate);
   const [dragging, setDragging] = React.useState(false);
   return (
@@ -351,7 +345,7 @@ function CandidateCard({ candidate, thresholds }: { candidate: Candidate; thresh
           />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <StarBadge rating={rating} size="sm" />
+          <ScoreBadge score={candidate.matchScore} size="sm" />
           <SourceBadge source={src} size="sm" />
         </div>
         <p className="mt-2 truncate text-xs text-muted">{candidate.currentTitle}</p>
@@ -375,7 +369,6 @@ function ChatboxCard({ submission }: { submission: ChatboxSubmission }) {
         </span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <StarBadge rating={submission.starRating} size="sm" />
         <SourceBadge source="Applicant" size="sm" />
       </div>
       <p className="mt-2 truncate text-xs text-muted">{submission.roleTitle}</p>

@@ -373,7 +373,7 @@ export function SingleRoleIntake() {
           {/* LEFT — inbound brief form */}
           <Card className="animate-fade-in lg:sticky lg:top-6 lg:self-start">
             <CardHeader>
-              <Eyebrow>01: Inbound brief</Eyebrow>
+              <Eyebrow>Inbound brief</Eyebrow>
               <CardTitle className="mt-1">Paste the hiring request</CardTitle>
             </CardHeader>
             <CardBody className="space-y-5 pt-0">
@@ -474,7 +474,7 @@ export function SingleRoleIntake() {
                 <CardHeader className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <Eyebrow>02: Structured analysis</Eyebrow>
+                      <Eyebrow>Structured analysis</Eyebrow>
                       <CardTitle className="mt-1">Extracted brief</CardTitle>
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">

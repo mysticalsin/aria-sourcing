@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   Eyebrow,
-  SectionNumeral,
   Field,
   Input,
   Select,
@@ -153,7 +152,6 @@ function Section({
         className="scroll-mt-20 border-t border-line py-4 first:border-t-0 first:pt-0"
       >
         <div className="mb-3 flex items-start gap-3">
-          <SectionNumeral n={n} />
           <div className="min-w-0">
             <Eyebrow>{eyebrow}</Eyebrow>
             <h2 className="display text-lg text-ink sm:text-xl">{title}</h2>
@@ -184,7 +182,6 @@ function Section({
             isOpen ? "bg-ink/[0.02]" : "",
           )}
         >
-          <SectionNumeral n={n} />
           <div className="min-w-0 flex-1">
             <Eyebrow>{eyebrow}</Eyebrow>
             <span className="display block text-base text-ink sm:text-lg">{title}</span>

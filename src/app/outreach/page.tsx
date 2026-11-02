@@ -421,8 +421,8 @@ function OutreachView() {
   return (
     <>
       <PageHeader
-        eyebrow="Outreach approvals"
-        title="Human approval. Machine speed."
+        eyebrow="Engage"
+        title="Outreach"
         description="Every message is drafted by the system and held here for your sign-off. Nothing reaches a candidate without your approval."
         actions={
           <div className="flex flex-wrap items-center gap-2">
