@@ -23,7 +23,7 @@ import { parseLocalSecret } from "../src/lib/ai/local-secret.js";
 import { INTAKE_OUTPUT_SCHEMA } from "../src/lib/ai/intake-schema.js";
 import { buildIntakeParsePrompt } from "../src/lib/ai/intake.js";
 import { aiBudgetStatus, aiUsageReport, estimateCostUsd, recordAiUsage, resetAiUsageForTests } from "../src/lib/ai/usage.js";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SystemSettings, LlmProvider, SavedModel } from "../src/lib/types.js";
@@ -362,6 +362,76 @@ try {
   else process.env.AI_USAGE_FILE = priorUsageFile;
   rmSync(usageDir, { recursive: true, force: true });
 }
+
+/* ---- Cost by activity (AI costs page) ------------------------------------ */
+{
+  const activityDir = mkdtempSync(path.join(tmpdir(), "aria-activity-"));
+  const priorFile = process.env.AI_USAGE_FILE;
+  const quiet = console.info;
+  console.info = () => {};
+  process.env.AI_USAGE_FILE = path.join(activityDir, "ai-usage.json");
+  try {
+    resetAiUsageForTests();
+    const d1 = new Date("2026-11-02T09:00:00Z");
+    const d2 = new Date("2026-11-03T09:00:00Z");
+    recordAiUsage({ task: "outreach", activity: "first-contact", model: "claude-sonnet-5-5", usage: { input_tokens: 600, output_tokens: 300 } }, d1);
+    recordAiUsage({ task: "outreach", activity: "follow-up", model: "claude-sonnet-5-5", usage: { input_tokens: 600, output_tokens: 300 } }, d1);
+    recordAiUsage({ task: "classify", model: "claude-haiku-5-5", usage: { input_tokens: 400, output_tokens: 100 } }, d2);
+    const report = aiUsageReport(d2, budgetEnv);
+    const ids = report.byActivity.map((a) => a.activity);
+    ok("the same task splits into its activities", ids.includes("first-contact") && ids.includes("follow-up"));
+    ok("a call without an activity is filed under its task's default", ids.includes("reply-triage"));
+    ok("activities are ranked most expensive first", report.byActivity[0].costUsd >= report.byActivity.at(-1)!.costUsd);
+    ok(
+      "activity totals add up to the month",
+      Math.abs(report.byActivity.reduce((sum, a) => sum + a.costUsd, 0) - report.monthUsd) < 1e-12,
+    );
+    ok("each activity remembers its model", report.byActivity.find((a) => a.activity === "reply-triage")?.models["claude-haiku-5-5"] === 1);
+    ok("the daily series covers 30 days ending today", report.daily.length === 30 && report.daily.at(-1)?.day === "2026-11-03");
+    const nov2 = report.daily.find((d) => d.day === "2026-11-02");
+    ok("a day keeps its cost per activity", nov2?.calls === 2 && Boolean(nov2?.byActivity["first-contact"]) && Boolean(nov2?.byActivity["follow-up"]));
+    ok("days without spend are zero, not missing", report.daily[0].costUsd === 0 && report.daily[0].calls === 0);
+    ok("the projection extends the month at today's pace", Math.abs(report.projectedMonthUsd - (report.monthUsd / 3) * 30) < 1e-12);
+    ok("history starts on the first day with spend", report.trackedSince === "2026-11-02");
+
+    // A new month restarts the totals but keeps the history.
+    const dec = new Date("2026-12-01T09:00:00Z");
+    recordAiUsage({ task: "chat", model: "claude-sonnet-5-5", usage: { output_tokens: 100 } }, dec);
+    const december = aiUsageReport(dec, budgetEnv);
+    ok("a new month restarts activity totals", december.byActivity.length === 1 && december.byActivity[0].activity === "assistant-chat");
+    ok("month history keeps the previous month", december.months.map((m) => m.month).join(",") === "2026-11,2026-12");
+    ok("day history crosses the month boundary", december.daily.some((d) => d.day === "2026-11-03" && d.costUsd > 0));
+
+    // A file written before activities existed keeps its total, labelled.
+    writeFileSync(
+      process.env.AI_USAGE_FILE as string,
+      JSON.stringify({
+        month: "2026-11",
+        day: "2026-11-02",
+        monthUsd: 0.08,
+        dayUsd: 0.08,
+        calls: 31,
+        byTask: { "outreach claude-sonnet-5-5": { task: "outreach", model: "claude-sonnet-5-5", calls: 19, inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, costUsd: 0.07 } },
+      }),
+    );
+    resetAiUsageForTests();
+    const legacy = aiUsageReport(new Date("2026-11-02T12:00:00Z"), budgetEnv);
+    ok(
+      "an older usage file shows up as 'before activity tracking'",
+      legacy.byActivity.length === 1 && legacy.byActivity[0].activity === "untracked" && legacy.byActivity[0].costUsd === 0.08 && legacy.byActivity[0].calls === 31,
+    );
+    ok("an older usage file still feeds today's bar", legacy.daily.at(-1)?.costUsd === 0.08 && legacy.daily.at(-1)?.calls === 31);
+  } finally {
+    console.info = quiet;
+    resetAiUsageForTests();
+    if (priorFile === undefined) delete process.env.AI_USAGE_FILE;
+    else process.env.AI_USAGE_FILE = priorFile;
+    rmSync(activityDir, { recursive: true, force: true });
+  }
+}
+
+const routeSource = readFileSync(new URL("../src/app/api/hermes/chat/route.ts", import.meta.url), "utf8");
+ok("the chat route accepts an activity and records it", /activity: z\.enum\(AI_ACTIVITY_IDS\)\.optional\(\)/.test(routeSource) && /recordAiUsage\(\{ task, activity,/.test(routeSource));
 
 console.log(`RESULT ai-provider: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

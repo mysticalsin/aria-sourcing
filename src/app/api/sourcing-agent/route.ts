@@ -561,6 +561,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
               maxRounds: 6,
               beforeExternalCall: async () => (await currentAuthority()).ok,
               task: "sourcing",
+              activity: "sourcing-agent",
             })
           : await runOpenAiWithTools({
               provider: cloudSlug,

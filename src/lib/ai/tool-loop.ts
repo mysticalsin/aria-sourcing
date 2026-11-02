@@ -25,6 +25,7 @@ import {
 } from "@/lib/ai/provider";
 import type { HermesTask } from "@/lib/ai/hermes";
 import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
+import type { AiActivity } from "@/lib/ai/activities";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
 
@@ -290,6 +291,8 @@ export async function runAnthropicWithTools(args: {
   beforeExternalCall?: () => Promise<boolean>;
   /** Selects effort and output ceiling on models that support effort. */
   task?: HermesTask;
+  /** Business reason for the cost page; derived from the task when absent. */
+  activity?: AiActivity;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { model, system, prompt, key, servers } = args;
   const profile = args.task && anthropicSupportsEffort(model) ? ANTHROPIC_TASK_PROFILE[args.task] : undefined;
@@ -355,7 +358,7 @@ export async function runAnthropicWithTools(args: {
         toolCalls,
       };
     }
-    if (json?.usage) recordAiUsage({ task: args.task ?? "chat", model, usage: json.usage });
+    if (json?.usage) recordAiUsage({ task: args.task ?? "chat", activity: args.activity, model, usage: json.usage });
     const stopProblem = cloudStopProblem("anthropic", json);
     if (stopProblem) return { ok: false, reason: stopProblem, toolCalls };
     const content = json?.content;

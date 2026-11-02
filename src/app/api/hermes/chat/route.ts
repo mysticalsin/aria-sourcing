@@ -4,6 +4,7 @@ import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
+import { AI_ACTIVITY_IDS } from "@/lib/ai/activities";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
@@ -74,6 +75,9 @@ const McpServerPayloadSchema = z
 
 const HermesChatSchema = z.object({
   task: z.enum(["outreach", "classify", "extract", "sourcing", "chat"]).default("chat"),
+  /** Why the call is made (first-contact draft, reply sorting...), for the AI
+   *  costs page. Absent: derived from the task. */
+  activity: z.enum(AI_ACTIVITY_IDS).optional(),
   prompt: z.string().min(1).max(20_000),
   stream: z.boolean().default(false),
   hermesApiKeyId: z.string().uuid().optional(),
@@ -218,7 +222,7 @@ export async function POST(req: NextRequest) {
   // as /api/sourcing-agent, so allow a matching request body.
   const validated = await validateBody(req, HermesChatSchema, { maxBytes: 200_000 });
   if (!validated.ok) return validated.response;
-  const { task, prompt: rawPrompt, model, provider, baseUrl, apiKeyId, mcpServers, webResearch, campaign, existing } =
+  const { task, activity, prompt: rawPrompt, model, provider, baseUrl, apiKeyId, mcpServers, webResearch, campaign, existing } =
     validated.data;
   // The classify task feeds candidate-authored reply text straight to the model.
   // Sanitize it and wrap it in the same untrusted-data envelope the autopilot
@@ -346,7 +350,7 @@ export async function POST(req: NextRequest) {
         const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
         const result =
           slug === "anthropic"
-            ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers, task })
+            ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers, task, activity })
             : await runOpenAiWithTools({ provider: slug, baseUrl, model: toolModel, system, prompt, key, servers: resolvedServers });
         if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
         // Tool loop failed or returned empty (e.g. a provider that rejects the tools
@@ -377,7 +381,7 @@ export async function POST(req: NextRequest) {
       }
       const json = await upstream.json().catch(() => null);
       const usage = (json as { usage?: AnthropicUsage } | null)?.usage;
-      if (slug === "anthropic" && usage) recordAiUsage({ task, model: cloudModel, usage });
+      if (slug === "anthropic" && usage) recordAiUsage({ task, activity, model: cloudModel, usage });
       const stopProblem = cloudStopProblem(slug, json);
       if (stopProblem) {
         logUpstream("info", "Cloud provider response unusable", { provider, reason: stopProblem });

@@ -1,5 +1,6 @@
 import type { OutreachChannel, SystemSettings } from "@/lib/types";
 import { hasTemplatePlaceholder } from "@/lib/agent-disclosure-policy";
+import type { AiActivity } from "@/lib/ai/activities";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -15,6 +16,8 @@ export type HermesTask = "outreach" | "classify" | "extract" | "sourcing" | "cha
 
 export interface HermesGenerateInput {
   task: HermesTask;
+  /** What the call is for, so its cost lands on the right line of the AI costs page. */
+  activity?: AiActivity;
   system?: string;
   prompt: string;
   /** Cloud provider slug (e.g. "anthropic"). Absent → route uses hermes path. */

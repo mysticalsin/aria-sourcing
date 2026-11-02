@@ -263,6 +263,8 @@ async function classifyReplyWithModel(
   text: string,
   candidateName: string | undefined,
   generate: (input: Parameters<typeof hermesGenerate>[0]) => Promise<Awaited<ReturnType<typeof hermesGenerate>>>,
+  /** Sorting an incoming reply, or preparing the answer to one that waits. */
+  activity: "reply-triage" | "reply-answer" = "reply-triage",
 ): Promise<ReplyClassification> {
   const fallback = classifyReply(text, candidateName);
   const aiCfg = resolveAiProvider(settings, "classification", { providerId: undefined });
@@ -270,8 +272,8 @@ async function classifyReplyWithModel(
   try {
     const result = await generate(
       aiCfg
-        ? { task: "classify", prompt: text, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId }
-        : { task: "classify", prompt: text, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId },
+        ? { task: "classify", activity, prompt: text, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId }
+        : { task: "classify", activity, prompt: text, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId },
     );
     if (!result.ok || !result.text) return fallback;
     // Models sometimes wrap the JSON in a code fence despite the instruction.
@@ -417,8 +419,9 @@ async function attemptLiveFollowUpGen(opts: {
   seat?: AgentSeat;
   touchNote: string;
   runEffect: <T>(effect: () => T) => WorkspaceEffectAttempt<T>;
+  activity: "follow-up" | "re-contact";
 }): Promise<{ gen: GeneratedOutreach; live: boolean }> {
-  const { settings, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote, runEffect } = opts;
+  const { settings, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote, runEffect, activity } = opts;
   const aiCfg = resolveAiProvider(settings, "outreach", {
     providerId: seat?.providerId,
     modelId: seat?.modelId,
@@ -451,11 +454,12 @@ async function attemptLiveFollowUpGen(opts: {
 
   let genInput: Parameters<typeof hermesGenerate>[0];
   if (aiCfg) {
-    genInput = { task: "outreach", prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
+    genInput = { task: "outreach", activity, prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
   } else {
     const outreachModelId = seat?.modelId ?? settings.defaultModels?.outreach;
     genInput = {
       task: "outreach",
+      activity,
       prompt,
       hermesApiUrl: settings.hermesApiUrl,
       hermesApiKeyId: settings.hermesApiKeyId,
@@ -1579,6 +1583,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (aiCfg) {
           outreachGenInput = {
             task: "outreach",
+            activity: "first-contact",
             prompt,
             provider: aiCfg.provider,
             model: aiCfg.model,
@@ -1589,6 +1594,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           const outreachModelId = seat?.modelId ?? s.settings.defaultModels?.outreach;
           outreachGenInput = {
             task: "outreach",
+            activity: "first-contact",
             prompt,
             hermesApiUrl: s.settings.hermesApiUrl,
             hermesApiKeyId: s.settings.hermesApiKeyId,
@@ -1694,6 +1700,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         seat,
         touchNote: `This is follow-up touch #${due.nextSequenceStep} after ${Math.floor(due.daysSinceContact)}d of silence since the last message — vary the angle/urgency from a first touch, keep it short, no guilt-tripping.`,
         runEffect: runWorkspaceEffect,
+        activity: "follow-up",
       });
       if (!workspaceEffectAllowed()) return null;
       const msg: OutreachMessage = {
@@ -1754,8 +1761,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         lang,
         mockGen,
         seat,
-        touchNote: `This is a #Vivier re-engagement of a previously ${candidate.stage} candidate${candidate.silverMedalist ? " (Silver Medalist)" : ""} — acknowledge the gap briefly, lead with what's different now, no guilt-tripping.`,
+        touchNote: `This is a talent-pool re-engagement of a previously ${candidate.stage} candidate${candidate.silverMedalist ? " (a strong finalist)" : ""} — acknowledge the gap briefly, lead with what's different now, no guilt-tripping.`,
         runEffect: runWorkspaceEffect,
+        activity: "re-contact",
       });
       if (!workspaceEffectAllowed()) return null;
       const msg: OutreachMessage = {
@@ -1838,6 +1846,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (aiCfg) {
           regenGenInput = {
             task: "outreach",
+            activity: "rewrite",
             prompt,
             provider: aiCfg.provider,
             model: aiCfg.model,
@@ -1847,6 +1856,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           const outreachModelId = s.settings.defaultModels?.outreach;
           regenGenInput = {
             task: "outreach",
+            activity: "rewrite",
             prompt,
             hermesApiUrl: s.settings.hermesApiUrl,
             hermesApiKeyId: s.settings.hermesApiKeyId,
@@ -2827,7 +2837,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           const attempt = runWorkspaceEffect(() => hermesGenerate(genInput));
           if (!attempt.allowed) throw new Error("Workspace unavailable.");
           return attempt.value;
-        }),
+        }, "reply-answer"),
         campaign,
         reply.body,
       );
@@ -5354,6 +5364,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               task: "chat",
+              activity: "assistant-chat",
               prompt: fullPrompt,
               provider: chatAiCfg.provider, baseUrl: chatAiCfg.baseUrl,
               ...(chatAiCfg.model && { model: chatAiCfg.model }),
@@ -5399,6 +5410,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               task: "chat",
+              activity: "assistant-chat",
               // S-3: persona goes in the prompt, NOT as a separate system field.
               prompt: fullPrompt,
               stream: true,

@@ -321,10 +321,10 @@ export async function parseIntakeLive(
 
   let genInput: Parameters<typeof hermesGenerate>[0];
   if (aiCfg) {
-    genInput = { task: "extract", prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
+    genInput = { task: "extract", activity: "brief-extraction", prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
   } else {
     const chatModelId = settings.defaultModels?.extraction ?? settings.defaultModels?.chat;
-    genInput = { task: "extract", prompt, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId };
+    genInput = { task: "extract", activity: "brief-extraction", prompt, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId };
     if (chatModelId) {
       const modelName = (settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName;
       if (modelName) genInput.model = modelName;
