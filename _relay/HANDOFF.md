@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 448
 agent: claude-code
-updated: 2026-10-30
+updated: 2026-11-02
 status: ai-layer-on-claude-foundation-blocked-on-workspace-id
 ---
 
@@ -68,6 +68,17 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
    Verified in the synthetic demo with Playwright (camp_seed_design, the one in
    Sourcing): 6 sourced + 6 drafts in 8 s; the 6 Claude calls got 400 (no
    workspace id) and fell back to templates; scrollWidth 390 at 390 px.
+11. (2026-11-02) Inbox triage mission: `src/lib/agents/inbox-mission.ts`,
+   run by the Replies page button "Triage inbox" (was "Sync inbox"): mailbox
+   sync (degrades, never blocks) -> Haiku classify per message (3 at a time)
+   -> response draft per waiting reply with intent INTERESTED,
+   QUALIFIED_INTEREST, REFERRAL or UNCLEAR. New store action
+   `prepareReplyResponse` fills an empty draftResponse via the classify task
+   and refuses (null) when the model reads another intent. Reply
+   classification logic moved to module helpers `classifyReplyWithModel` and
+   `guardReplyClassification` in store.ts (same behavior, plus code-fence
+   tolerant JSON). `draftReplyResponse` is idempotent via
+   `OutreachMessage.inReplyTo`. Verified in synthetic demo with Playwright.
 10. Live tests still blocked: `.secret` has only the key. `/v1/organizations/me`
    works (org "Tony's Individual Org"); every other endpoint needs the
    workspace header.
@@ -86,8 +97,9 @@ status: ai-layer-on-claude-foundation-blocked-on-workspace-id
    it survives restarts and is shared) and show month/day spend in Settings.
    Do it before any feature that fans out calls.
 3. Issue 03 (Haiku extraction task for intake), 04 (prompt caching).
-4. 05 orchestrator: next mission = inbound replies (Haiku classify -> reply
-   draft). Same engine; keep agents on top of store actions.
+4. 05 orchestrator: launch and inbox missions done. Candidates next: batch
+   follow-ups (draftFollowUpFor, today a UI Promise.all in batches of 5 on
+   /outreach) and interview prep. Same engine, on top of store actions.
 5. Resume UX audit packages (02, 07, 05, 06, 04, 08, 09, 10) when the owner
    asks; AI work does not depend on them.
 6. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.

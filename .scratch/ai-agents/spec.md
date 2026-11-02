@@ -85,7 +85,17 @@ Le schéma contient encore des tables `agent_runs` et `agent_specs`, héritées 
 - **Choix d'exécution** : la mission tourne dans le navigateur, au-dessus des actions du store. Chaque appel passe ainsi par les routes serveur existantes, avec leurs contrôles d'autorité, de quotas, d'idempotence et de budget. Limite : fermer l'onglet arrête les agents en attente. Les brouillons déjà créés restent.
 - **Vérifié dans l'app** (démo synthétique, Playwright) : 6 sourcés et 6 brouillons en 8 s. Les 6 appels Claude ont reçu un 400 (ID de workspace manquant) et ont basculé sur le gabarit. Pas de débordement à 390 px.
 
-Missions suivantes possibles, sur le même moteur : traiter les réponses entrantes (classification Haiku, puis brouillon de réponse), relances en lot, préparation d'entretien.
+- **Mission « Triage inbox »** (`src/lib/agents/inbox-mission.ts`, bouton de la page Réponses, 2026-11-02) :
+  1. Synchro de la boîte mail. Si elle est injoignable, l'étape est dégradée et la mission continue.
+  2. Un agent de classification par message reçu (Haiku, 3 à la fois).
+  3. Un brouillon de réponse pour chaque réponse en attente qui en mérite une : intéressé, intérêt qualifié, recommandation, ambigu. Jamais pour les négatifs, les absences ou les refus.
+  - **Réponses sans brouillon :** `prepareReplyResponse` en écrit un avec le même appel Haiku de classification, derrière les mêmes contrôles de divulgation et d'injection. Si le modèle lit une autre intention que celle enregistrée, la réponse est laissée au recruteur.
+  - **Doublons :** `draftReplyResponse` est désormais idempotent, grâce au lien `OutreachMessage.inReplyTo`.
+  - **Décisions humaines :** les actions lourdes (changement d'étape, suppression d'un candidat après une réponse négative) restent un clic du recruteur.
+  - **Robustesse :** la classification tolère maintenant un JSON entouré de balises de code.
+  - **Vérifié** en démo synthétique : 2 brouillons créés, 4 laissés pour revue (sans Claude, le classifieur à règles lit d'autres intentions), aucun doublon au second passage, pas de débordement à 390 px.
+
+Missions suivantes possibles, sur le même moteur : relances en lot, préparation d'entretien.
 
 ## 6. Lots de travail
 
