@@ -1,6 +1,6 @@
 # 07 — Tour d'accueil limité à l'accueil
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: —
 Spec: ../spec.md
 
@@ -11,3 +11,7 @@ Spec: ../spec.md
 Vérification : porte de test complète, plus une nouvelle capture des routes concernées à 1440×900 et 390×844.
 
 ## Comments
+
+## Resolution (2026-11-02, commit 6f7e0b51)
+
+- `Onboarding` opens only when `pathname === "/"` and the browser has not seen it; a direct link to any other page never shows the modal.

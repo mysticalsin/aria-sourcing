@@ -1,136 +1,107 @@
 ---
 project: MSourcing / ARIA
-shift: 448
+shift: 449
 agent: claude-code
 updated: 2026-11-02
-status: ai-layer-on-claude-foundation-blocked-on-workspace-id
+status: ai-layer-and-ux-audit-done-live-claude-blocked-on-workspace-id
 ---
 
-# Handoff - Shift 448
+# Handoff - Shift 449
 
 ## Current state
 
-- Branch mbe-branch. Owner (2026-10-30) switched the whole AI layer to one
-  Anthropic key, with a model tier per task and a future agent system.
-- The key is in `.secret` at the repo root (bare `sk-ant-...` line). `.secret`
-  is now in `.gitignore` AND `.dockerignore` (it was in neither; the Dockerfile
-  does `COPY . .`). Verified with `git check-ignore -v .secret`.
-- The key authenticates but is NOT scoped to an Anthropic workspace. Every call
-  returns 400 "This API key is not scoped to a workspace, so this request must
-  include the anthropic-workspace-id header". `/v1/organizations/workspaces`
-  returns 403 for this key. No paid call has been made; only free
-  `count_tokens` probes.
-- Foundation code is in place (see Done). Gate green on it: typecheck,
-  typecheck:tests, npm test (exit 0). Live behavior against the API is untested
-  (blocked, below).
-- Spec and tickets: `.scratch/ai-agents/spec.md`, `.scratch/ai-agents/issues/01..08`.
+- Branch mbe-branch. Gate green at the last commit (typecheck, typecheck:tests,
+  npm test exit 0).
+- AI layer runs on one Anthropic key from `.secret` (gitignored and
+  dockerignored). Live calls still fail with 400 "not scoped to a workspace":
+  `ANTHROPIC_WORKSPACE_ID` is not in `.secret` yet. Every AI surface falls back
+  to its deterministic path, labelled "Template draft" in the UI.
+- UI/UX audit (`.scratch/ui-ux-audit/`): issues 01-10 all `Status: resolved`.
+- AI issues (`.scratch/ai-agents/issues/`): 02, 03 resolved; 01 ready-for-human
+  (workspace id); 04 ready-for-agent; 05 ready-for-agent (launch, inbox and
+  follow-up missions done); 06, 07, 08 needs-triage.
 
 ## Done this shift
 
-1. `src/lib/ai/local-secret.ts` + `src/instrumentation.ts`: at server start
-   (nodejs runtime) copy `ANTHROPIC_API_KEY` / `ANTHROPIC_WORKSPACE_ID` from
-   `.secret` into process.env when unset. Allow-list only; logs names, never values.
-2. `src/lib/ai/provider.ts`: `anthropicHeaders()` adds `anthropic-workspace-id`
-   from env; `ANTHROPIC_TASK_PROFILE` (classify low/1024, chat low/8192,
-   outreach medium/8192, sourcing medium/16000) sent as `output_config.effort`
-   only for models that support effort (`anthropicSupportsEffort`);
-   `parseCloudResponse` joins text blocks (Claude 5.5 returns a thinking block
-   first, the old `content[0].text` read would be empty); DEFAULT_MODEL
-   anthropic = claude-sonnet-5-5.
-3. `src/lib/ai/tool-loop.ts`: same headers and task profile in the Anthropic loop.
-4. Routes: `/api/hermes/chat` passes `task`, never sends the "hermes" model
-   placeholder to a cloud provider. `/api/sourcing-agent` treats a cloud
-   provider with no linked workspace key as not configured -> deterministic
-   sourcing (was a 503 that the new Anthropic default would have triggered).
-5. Seed STATE_VERSION 18: Anthropic enabled+default, Kimi disabled; saved
-   models Haiku 5.5 (classification), Sonnet 5.5 (sourcing, outreach, chat),
-   Opus 5.5 (saved, no task default). Migration resets the model layer of
-   pre-18 blobs and keeps any provider's linked `apiKeyId`.
-6. Tests: tests/ai-provider.mts and tests/admin-config.mts updated/extended.
-7. Owner answers (2026-10-30): GDPR validated for Claude; budget 20-30 EUR/month;
-   goal is a usable demo with every feature; public demo host will get the keys.
-8. `src/lib/ai/usage.ts`: price table (Haiku/Sonnet/Opus 5.5, unknown ids
-   priced above Opus), per-instance in-memory ledger for the UTC day/month,
-   caps AI_MONTHLY_BUDGET_USD (default 30) and AI_DAILY_BUDGET_USD (default 6).
-   Checked before every Anthropic call in /api/hermes/chat and each tool-loop
-   round; usage recorded from every response (one JSON log line, no content).
-   Past a cap: chat returns ok:false (client uses its mock), sourcing runs
-   deterministic.
-9. Agent system, first slice (owner: "tests then the agentic part"):
-   `src/lib/agents/mission.ts` (plan runner: deps, fan-out, shared concurrency
-   semaphore, per-agent timeout, abort, fallback, events) and
-   `src/lib/agents/campaign-mission.ts` (sourcing agent -> one Sonnet drafting
-   agent per top-6 candidate, 2 at a time). Wired into
-   `src/components/run/agent-run-stream.tsx` (campaign "Run Aria"), which
-   previously drafted with the template only. New optional
-   `OutreachMessage.draftedBy: "ai" | "template"`; UI badge shows it.
-   Tests: tests/agent-mission.mts (registered in tests/test-manifest.mjs).
-   Verified in the synthetic demo with Playwright (camp_seed_design, the one in
-   Sourcing): 6 sourced + 6 drafts in 8 s; the 6 Claude calls got 400 (no
-   workspace id) and fell back to templates; scrollWidth 390 at 390 px.
-11. (2026-11-02) Inbox triage mission: `src/lib/agents/inbox-mission.ts`,
-   run by the Replies page button "Triage inbox" (was "Sync inbox"): mailbox
-   sync (degrades, never blocks) -> Haiku classify per message (3 at a time)
-   -> response draft per waiting reply with intent INTERESTED,
-   QUALIFIED_INTEREST, REFERRAL or UNCLEAR. New store action
-   `prepareReplyResponse` fills an empty draftResponse via the classify task
-   and refuses (null) when the model reads another intent. Reply
-   classification logic moved to module helpers `classifyReplyWithModel` and
-   `guardReplyClassification` in store.ts (same behavior, plus code-fence
-   tolerant JSON). `draftReplyResponse` is idempotent via
-   `OutreachMessage.inReplyTo`. Verified in synthetic demo with Playwright.
-10. Live tests still blocked: `.secret` has only the key. `/v1/organizations/me`
-   works (org "Tony's Individual Org"); every other endpoint needs the
-   workspace header.
+AI (owner: "Fais les 5 étapes"):
+1. 18919c81 stop reasons: `max_tokens`/`refusal` (and OpenAI `length`/
+   `content_filter`) are failures (`cloudStopProblem`), so callers fall back.
+2. 7a12ae4a brief extraction on Haiku: task `extract`, `INTAKE_OUTPUT_SCHEMA`
+   via `output_config.format`, model default `extraction` (STATE_VERSION 19).
+3. 3555b90d spend persisted to `AI_USAGE_FILE` (else /app/config or
+   var/ai-usage.json), admin `GET /api/ai/usage`, "Claude usage" card in
+   Settings (month/day meters, per-task table).
+4. c6998192 follow-up mission: `src/lib/agents/follow-up-mission.ts`, used by
+   "Draft all due" on /outreach (3 at a time, best matches first, max 20).
+
+UX audit packages:
+- 6f7e0b51 (07) tour on `/` only. 7bd03fba (02) KPIs name their basis, one
+  integration count.
+- ef1aba2d (05) home: one primary action; replies: stream first; outreach:
+  collapsed draft rows + composer drawer (page 14,300 px -> 2,700 px).
+- 734c2e40 (06) candidates: one toolbar row, 10 rows at 1440x900, cards and a
+  Filters toggle under 640 px, flags beside the name.
+- b1665c7a (04) nav regrouped (Home; Recruit; Engage; Analyze; System, 12
+  entries, fits 900 px). One "New campaign" at `/campaigns/new` (One role /
+  Several roles); `/intake` and `/launch` redirect (next.config.mjs). Intake
+  and Launch bodies moved to `src/components/campaigns/`. Candidates and
+  Reports have tabs drawn by the shell (`SectionTabs`, `nav.ts` tab lists).
+- 4f857323 (08) one /100 score (`ScoreBadge`, star picker removed), jargon
+  removed (TAnIA, Path A/B, TOFU/MOFU, #Vivier, silver medalist), titles = nav
+  labels, no fake numbering.
+- d8e65492 (09) Carlito self-hosted in `public/fonts/carlito` (OFL), first in
+  `--font-sans`; `.woff2` excluded from the auth proxy; one mode chip in the
+  top bar; quieter active nav; eyebrows = nav group.
+- (10) careers: in the synthetic demo (no Supabase, no `CAREERS_WORKSPACE_ID`)
+  `/api/careers` serves the seed's 3 published roles and validates
+  applications without storing them (`demo: true` in the response; chat says
+  so). Offline copy written for candidates; header and chat share one column;
+  no stars shown to candidates.
 
 ## Blockers
 
-- Still open after the owner's answers: Anthropic workspace id needed from the owner (`wrkspc_...`, Console ->
-  Settings -> Workspaces), or a workspace-scoped key. Add to `.secret` as
+- `ANTHROPIC_WORKSPACE_ID` missing (Console -> Settings -> Workspaces,
+  `wrkspc_...`), or a workspace-scoped key. Add to `.secret` as
   `ANTHROPIC_WORKSPACE_ID=wrkspc_...` on its own line.
 
 ## Next steps
 
-1. When the workspace id is in `.secret`: run issue 01 (free count_tokens on
-   haiku/sonnet/opus 5.5, then one real call per task, total < $0.05).
-2. Issue 02 remainder: persist the ledger (DB table in the Supabase stack, so
-   it survives restarts and is shared) and show month/day spend in Settings.
-   Do it before any feature that fans out calls.
-3. Issue 03 (Haiku extraction task for intake), 04 (prompt caching).
-4. 05 orchestrator: launch and inbox missions done. Candidates next: batch
-   follow-ups (draftFollowUpFor, today a UI Promise.all in batches of 5 on
-   /outreach) and interview prep. Same engine, on top of store actions.
-5. Resume UX audit packages (02, 07, 05, 06, 04, 08, 09, 10) when the owner
-   asks; AI work does not depend on them.
-6. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
+1. When the workspace id is in `.secret`: issue 01 (free `count_tokens` on
+   Haiku/Sonnet/Opus 5.5, then one real call per task, total < $0.05), then
+   replay "Run Aria" (camp_seed_design) and "Triage inbox" with Claude and check
+   the "Drafted by Claude" badges and the Settings usage card.
+2. AI issue 04 (prompt caching on the long system prompts), then triage 06-08.
+3. Owner: set a ~$30/month spend limit on the Anthropic workspace (the in-app
+   cap is per instance).
+4. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
+5. Screen checks: Playwright scripts in `%TEMP%/aria-e2e/ux0*.mjs`
+   (`PROJ=<repo> node <script> <outdir>`, dev server on port 3123).
 
 ## Decisions made (don't relitigate)
 
-- All AI runs on Claude via one Anthropic key (owner, 2026-10-30). This
-  supersedes the shift-446 "no paid calls" rule for Anthropic, within budgets.
-- Model per task: Haiku for classification/extraction, Sonnet for drafting,
-  chat and the sourcing loop, Opus only by explicit choice or escalation.
-- Agents run in-process (ADR 0001: no separate AI server or worker platform).
-- Budget 20-30 EUR/month for a demo with all features; GDPR for candidate data
-  sent to Claude is validated by the owner (2026-10-30).
-- Sourcing spends only an admin-created workspace (vault) key; the env/.secret
-  key serves the admin chat path and local dev.
-- Deterministic fallbacks stay for every AI surface; human approval before any send.
-- Earlier: English UI, no personal credit, Calibri/Carlito, single /100 score,
-  no secrets in Git/relay, no Docker/WSL install, no auto retry.
+- All AI runs on Claude via one Anthropic key, within 20-30 EUR/month; GDPR
+  validated by the owner (2026-10-30).
+- Model per task: Haiku for classify/extract, Sonnet for chat, outreach and
+  sourcing, Opus only by explicit choice.
+- Agents run in-process, client-side on top of store actions (ADR 0001).
+- Sourcing spends only an admin vault key; the env/.secret key serves chat and
+  local dev. Deterministic fallbacks everywhere; human approval before any send.
+- UX: English UI ("Talent pool"), one /100 score, no personal credit (Mantu
+  Group mention), Carlito self-hosted, nav per audit §4 with one "New campaign".
+- Careers stays outside the workspace store provider (test-enforced); demo
+  roles come from the API, not the browser store.
 
 ## Watch out
 
-- The public demo (vercel-demo) ran on a Kimi env key. After merging this
-  branch it needs ANTHROPIC_API_KEY (+ ANTHROPIC_WORKSPACE_ID for this key type).
-- The in-app spend cap is per server instance and resets on restart. The hard
-  ceiling must be a spend limit on the Anthropic workspace (owner, Console).
-- Requests still use anthropic-version 2023-06-01 and raw fetch; SDK move is issue 08.
-- `max_tokens` / `refusal` stop reasons are not handled explicitly yet (issue 07).
-- Missions run in the browser: closing the tab stops queued agents. React
-  Strict Mode double-mounts in dev; the panel defers its unmount abort one
-  tick for that reason (an immediate abort froze the run on "Sourcing...").
-- Under tsx tests a module can load twice (ESM + CJS), so cross-module
-  `instanceof` on custom errors fails; use `isAgentTimeout` (name check).
-- `/api/sourcing-learning/feedback` returns 503 in the synthetic demo on page
-  load (pre-existing, unrelated to AI).
+- Public demo (vercel-demo) needs ANTHROPIC_API_KEY (+ workspace id) after the merge.
+- `next dev` can get stuck in a Fast Refresh full-reload loop on every route
+  (seen 2026-11-02, not caused by code: same with the committed version).
+  Restarting the dev server fixes it.
+- Several files use CRLF line endings: multi-line `perl`/`sed` edits silently
+  miss on them; use the Edit tool.
+- `git add` with a path that no longer exists aborts the add; a following
+  `git commit` then commits only what was already staged. Check `git show --stat`.
+- `.next/types` and `.next/dev/types` keep stale routes after a page moves:
+  run `npx next typegen` and restart the dev server before `npm run typecheck`.
+- Missions run in the browser: closing the tab stops queued agents.
+- Under tsx a module can load twice; use `isAgentTimeout`, not `instanceof`.
