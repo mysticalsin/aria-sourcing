@@ -216,12 +216,22 @@ export function TopBar() {
           </div>
         )}
 
+        {/* The one mode indicator: data source and send mode in a single chip.
+            Pages and the sidebar no longer repeat it. */}
         <span
-          className="hidden items-center gap-1.5 rounded-full bg-success-soft/80 px-3 py-1.5 text-xs font-bold text-success ring-1 ring-success/15 lg:inline-flex"
-          title="Human approval is required for every external message"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success-soft/80 px-2.5 py-1.5 text-xs font-bold text-success ring-1 ring-success/15 lg:px-3"
+          title={[
+            supabaseEnabled ? "Live workspace data." : "Synthetic demo data, not real people.",
+            settings.dryRunMode ? "Dry-run: nothing leaves the system." : null,
+            "Human approval is required for every external message.",
+          ].filter(Boolean).join(" ")}
         >
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Approval required
+          <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+          <span className="lg:hidden">{supabaseEnabled ? "Live" : "Demo"}</span>
+          <span className="hidden lg:inline">
+            {supabaseEnabled ? "Live" : "Synthetic demo"}
+            {settings.dryRunMode ? " · dry-run" : " · approval on"}
+          </span>
         </span>
 
         {/* Synthetic demo director — plays the whole hire funnel hands-free
@@ -231,11 +241,11 @@ export function TopBar() {
           <button
             type="button"
             onClick={playAriaLive}
-            className="hidden items-center gap-1.5 rounded-full bg-gradient-to-br from-electric to-violet px-3 py-1.5 text-xs font-bold text-white shadow-soft transition hover:from-tangerine hover:to-violet focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
+            className="hidden items-center gap-1.5 rounded-full border border-violet/20 bg-surface/80 px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:border-violet/40 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
             title="Play the synthetic demo hire funnel (~20s)"
           >
-            <Sparkles className="h-3.5 w-3.5" />
-            Synthetic demo
+            <Sparkles className="h-3.5 w-3.5 text-violet" aria-hidden />
+            Play demo
           </button>
         )}
 

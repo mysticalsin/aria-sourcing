@@ -6,14 +6,13 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS, NAV_SECTIONS, NEW_CAMPAIGN_HREF, isNavActive, type NavItem } from "./nav";
 import { HermesLockup } from "./logo";
-import { useIntegrations, useSettings } from "@/lib/store";
+import { useIntegrations } from "@/lib/store";
 import { integrationCounts } from "@/lib/integrations";
-import { ShieldCheck, Activity, Plus } from "lucide-react";
+import { Activity, Plus } from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
   const integrations = useIntegrations();
-  const settings = useSettings();
   const health = integrationCounts(integrations);
 
   return (
@@ -54,7 +53,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-violet/10 p-3 space-y-2">
+      <div className="border-t border-violet/10 p-3">
         <Link
           href="/settings#integrations"
           title={`${health.live} live, ${health.simulated} simulated, ${health.notConfigured} not configured, of ${health.total} built integrations`}
@@ -69,12 +68,6 @@ export function Sidebar() {
             <span className="sr-only">, {health.simulated} simulated</span>
           </span>
         </Link>
-        {settings.dryRunMode && (
-          <div className="flex items-center gap-2 rounded-2xl bg-tangerine-soft px-3 py-2 text-xs font-semibold text-tangerine">
-            <ShieldCheck className="h-4 w-4" />
-            Dry-run mode enabled
-          </div>
-        )}
       </div>
     </aside>
   );
@@ -90,11 +83,11 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
         className={cn(
           "group flex items-center gap-3 rounded-2xl px-3 py-2 text-sm font-semibold transition-all",
           active
-            ? "bg-gradient-to-r from-electric/90 to-violet/80 text-white shadow-soft"
+            ? "bg-violet/[0.10] text-ink"
             : "text-ink-soft hover:bg-violet/[0.06] hover:text-ink",
         )}
       >
-        <Icon className={cn("h-[18px] w-[18px]", active ? "text-mantu-yellow" : "text-muted group-hover:text-ink")} />
+        <Icon className={cn("h-[18px] w-[18px]", active ? "text-violet" : "text-muted group-hover:text-ink")} />
         <span className="flex-1">{item.label}</span>
       </Link>
     </li>

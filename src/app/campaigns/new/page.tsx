@@ -3,13 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Badge } from "@/components/ui";
 import { PageHeader } from "@/components/app/page-header";
 import { SingleRoleIntake } from "@/components/campaigns/single-role-intake";
 import { MultiRoleLaunch } from "@/components/campaigns/multi-role-launch";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
-import { ShieldCheck } from "lucide-react";
 
 /** The single place to create campaigns: one role from an email and a job
  *  description, or several roles from one brief. /intake and /launch redirect
@@ -32,7 +30,7 @@ function NewCampaign() {
   return (
     <div>
       <PageHeader
-        eyebrow="Campaigns"
+        eyebrow="Recruit"
         title="New campaign"
         description={
           several
@@ -40,12 +38,6 @@ function NewCampaign() {
               ? "Create one campaign per role, then review each source plan before searching."
               : "Paste a brief with several roles. Aria creates one campaign per role and sources them in parallel."
             : "Paste a hiring request. Aria turns it into an editable brief, then starts a sourcing campaign."
-        }
-        actions={
-          <Badge tone="aqua" dot>
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-            Dry-run · nothing sent
-          </Badge>
         }
       />
       <nav aria-label="Campaign type" className="mb-6">

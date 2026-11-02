@@ -547,7 +547,7 @@ export default function SettingsPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Control"
+        eyebrow="System"
         title="Settings"
         description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Aria runs against lives here."
         actions={

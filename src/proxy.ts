@@ -159,6 +159,6 @@ export const config = {
   // bypass the organization gate. Static assets and image files stay excluded.
   matcher: [
     "/api/:path*",
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2)$).*)",
   ],
 };

@@ -487,7 +487,7 @@ export default function ExecPage() {
                   Download PDF
                 </Button>
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   leftIcon={<Download className="h-4 w-4" aria-hidden />}
                   onClick={exportDashboard}
@@ -503,12 +503,6 @@ export default function ExecPage() {
 
       <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
         <div className="space-y-6">
-          {model.demoMode ? (
-            <div className="rounded-2xl border border-tangerine/25 bg-tangerine-soft px-4 py-3 text-sm font-semibold text-tangerine">
-              Demo data - synthetic
-            </div>
-          ) : null}
-
           <DecisionReport report={model.report} />
 
           <p className="hidden text-xs text-muted print:block">

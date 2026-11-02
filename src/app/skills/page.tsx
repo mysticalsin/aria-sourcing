@@ -277,8 +277,8 @@ export default function SkillsPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Self-improvement"
-        title="Skills that learn from experience."
+        eyebrow="System"
+        title="Skills"
         description="Living playbooks the agent reads at runtime and rewrites as it learns what books interviews. Every change is proposed, reviewed, and reversible."
         actions={
           <Button
