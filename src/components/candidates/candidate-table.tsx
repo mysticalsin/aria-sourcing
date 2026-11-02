@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { useCampaigns, useSettings } from "@/lib/store";
 import {
+  cn,
   formatTimeAgo,
   initialsFrom,
   scoreTone,
@@ -21,8 +22,6 @@ import {
   type Tone,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
-import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
-import { SourceBadge, StarBadge } from "@/components/tania/badges";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
 import { candidateReview } from "@/lib/candidate-review";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
@@ -74,7 +73,6 @@ export function CandidateTable({
   const campaigns = useCampaigns();
   const settings = useSettings();
   const confidentialityMode = Boolean(settings.confidentialityMode);
-  const starThresholds = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   const campaignTitle = React.useMemo(() => {
     const map = new Map<string, string>();
     campaigns.forEach((c) => map.set(c.id, c.title));
@@ -99,7 +97,58 @@ export function CandidateTable({
   const allSelected = selectable && candidates.every((c) => selectedIds!.has(c.id));
 
   return (
-    <Table caption="Candidates" className="min-w-[40rem]">
+    <>
+    {/* Under 640px a table cannot fit: one card per candidate instead. */}
+    <ul className="space-y-2 sm:hidden" aria-label="Candidates">
+      {candidates.map((c) => {
+        const review = candidateReview(c, campaigns.find((campaign) => campaign.id === c.campaignId), settings);
+        const display = applyConfidentiality(c, { confidentialityMode, reveal: hasOutreachPurpose(c.stage) });
+        return (
+          <li key={c.id} className="flex items-start gap-3 rounded-2xl border border-line bg-surface p-3">
+            {selectable && (
+              <input
+                type="checkbox"
+                checked={selectedIds!.has(c.id)}
+                onChange={() => onToggleSelect!(c.id)}
+                aria-label={`Select ${c.name}`}
+                className="mt-1 h-4 w-4 shrink-0 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => onSelect(c)}
+              className="min-w-0 flex-1 rounded-xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-semibold text-ink">{display.name}</span>
+                <span className="shrink-0 text-sm font-bold tabular-nums text-ink" aria-label={`Match score ${Math.round(c.matchScore)} of 100`}>
+                  {Math.round(c.matchScore)}
+                </span>
+              </span>
+              <span className="mt-0.5 block truncate text-xs text-muted">
+                {[c.currentTitle, c.currentCompany].filter(Boolean).join(" @ ") || "Role not provided"}
+              </span>
+              <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge tone={toneForStage(c.stage)} size="sm" dot>
+                  {c.stage}
+                </Badge>
+                <ProvenanceChip candidate={c} />
+                {activeFlags(c.complianceFlags).map((f) => (
+                  <Badge key={f.key} tone={f.tone} size="sm">
+                    {f.label}
+                  </Badge>
+                ))}
+                <span className="truncate text-xs font-semibold text-ink-soft" title={review.detail}>{review.label}</span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+    {/* Compact rows (about 56px): one line per cell, so a laptop screen shows
+        ten or more candidates at once. */}
+    <div className="hidden sm:block">
+    <Table caption="Candidates" className="min-w-[40rem] [&_td]:py-2">
       <THead>
         <TR className="border-b border-line">
           {selectable && (
@@ -118,9 +167,8 @@ export function CandidateTable({
           <TH>Source</TH>
           <TH>Match</TH>
           <TH>Stage</TH>
-          <TH>Next action</TH>
-          <TH>Last activity</TH>
-          <TH>Flags</TH>
+          <TH className="whitespace-nowrap">Next action</TH>
+          <TH className="whitespace-nowrap">Last activity</TH>
         </TR>
       </THead>
       <TBody>
@@ -155,7 +203,7 @@ export function CandidateTable({
               <TD>
                 <div className="flex items-center gap-3">
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink/[0.06] text-xs font-bold text-ink-soft"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/[0.06] text-[11px] font-bold text-ink-soft"
                     aria-hidden
                   >
                     {initials}
@@ -181,6 +229,27 @@ export function CandidateTable({
                           <Lock className="h-3.5 w-3.5" aria-hidden />
                         </span>
                       )}
+                      {/* Compliance flags are rare, so they sit beside the name
+                          instead of holding a column of dashes. */}
+                      {flags.map((f) => (
+                        <span
+                          key={f.key}
+                          title={f.label}
+                          aria-label={f.label}
+                          className={cn(
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                            f.tone === "danger"
+                              ? "bg-danger-soft text-danger"
+                              : f.tone === "warning"
+                                ? "bg-warning-soft text-[hsl(32_90%_34%)]"
+                                : f.tone === "violet"
+                                  ? "bg-violet-soft text-violet"
+                                  : "bg-aqua-soft text-aqua",
+                          )}
+                        >
+                          {f.icon}
+                        </span>
+                      ))}
                     </div>
                     <p className="truncate text-xs text-muted">
                       {[c.currentTitle, c.currentCompany].filter(Boolean).join(" @ ") ||
@@ -191,42 +260,29 @@ export function CandidateTable({
               </TD>
               {showCampaign && (
                 <TD>
-                  <span className="text-sm text-ink-soft">
+                  <span className="block max-w-[10rem] truncate text-sm text-ink-soft" title={campaignTitle.get(c.campaignId)}>
                     {campaignTitle.get(c.campaignId) ?? "—"}
                   </span>
                 </TD>
               )}
               <TD>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <SourceBadge source={deriveLeadSource(c)} size="sm" />
-                  {/* The "Source" filter above narrows by the literal sourcePlatform
-                      (GitHub, LinkedIn, ...), but SourceBadge only shows the collapsed
-                      lead-source taxonomy (Applicant/Referral/Outbound) — surface the
-                      literal platform too so a platform filter stays visually verifiable
-                      (see CAND-P1-1). */}
-                  <span className="text-xs text-muted">{c.sourcePlatform}</span>
+                {/* One source pill: the literal platform (what the Source filter
+                    narrows by) or "Manual entry", coloured by lawful-basis status,
+                    with the basis in its tooltip. Demo provenance is shown once in
+                    the top bar, not on every row. */}
+                <div className="flex items-center gap-1.5">
                   <ProvenanceChip candidate={c} />
                   {c.vivier && (
-                    <Badge tone="violet" size="sm" title="In #Vivier (talent pool)">
-                      <Bookmark className="h-3 w-3" aria-hidden /> Vivier
-                    </Badge>
-                  )}
-                  {c.provenance === "synthetic" && (
-                    <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
-                      Synthetic
-                    </Badge>
-                  )}
-                  {c.provenance === "manual" && (
-                    <Badge tone="warning" size="sm" title="Operator-entered profile">
-                      Manual
-                    </Badge>
+                    <span title="In the talent pool" className="shrink-0 text-violet">
+                      <Bookmark className="h-3.5 w-3.5" aria-hidden />
+                      <span className="sr-only">In the talent pool</span>
+                    </span>
                   )}
                 </div>
               </TD>
               <TD>
                 <div className="flex items-center gap-2">
-                  <StarBadge rating={c.starRating ?? deriveStarRating(c.matchScore, starThresholds)} size="sm" showLabel={false} />
-                  <span className="text-xs font-semibold tabular-nums text-ink-soft">{Math.round(c.matchScore)}</span>
+                  <span className="w-7 text-xs font-semibold tabular-nums text-ink-soft">{Math.round(c.matchScore)}</span>
                   <Progress
                     value={c.matchScore}
                     tone={scoreTone(c.matchScore)}
@@ -241,45 +297,19 @@ export function CandidateTable({
                 </Badge>
               </TD>
               <TD>
-                <span className="text-xs font-semibold text-ink-soft" title={review.detail}>{review.label}</span>
+                <span className="block max-w-[12rem] truncate text-xs font-semibold text-ink-soft" title={review.detail}>{review.label}</span>
               </TD>
               <TD>
                 <span className="whitespace-nowrap text-sm text-muted tabular-nums">
                   {formatTimeAgo(lastIso)}
                 </span>
               </TD>
-              <TD>
-                {flags.length === 0 ? (
-                  <span className="text-muted" aria-label="No compliance flags">
-                    —
-                  </span>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    {flags.map((f) => (
-                      <span
-                        key={f.key}
-                        title={f.label}
-                        aria-label={f.label}
-                        className={
-                          f.tone === "danger"
-                            ? "flex h-6 w-6 items-center justify-center rounded-full bg-danger-soft text-danger"
-                            : f.tone === "warning"
-                              ? "flex h-6 w-6 items-center justify-center rounded-full bg-warning-soft text-[hsl(32_90%_34%)]"
-                              : f.tone === "violet"
-                                ? "flex h-6 w-6 items-center justify-center rounded-full bg-violet-soft text-violet"
-                                : "flex h-6 w-6 items-center justify-center rounded-full bg-aqua-soft text-aqua"
-                        }
-                      >
-                        {f.icon}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </TD>
             </TR>
           );
         })}
       </TBody>
     </Table>
+    </div>
+    </>
   );
 }

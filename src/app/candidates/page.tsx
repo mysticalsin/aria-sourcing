@@ -8,7 +8,6 @@ import {
   Card,
   CardBody,
   Eyebrow,
-  Field,
   Input,
   Progress,
   Select,
@@ -22,8 +21,8 @@ import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
 import { corpusServerReadEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
-import { pluralize } from "@/lib/utils";
-import { Bookmark, Radar, Search, Sparkles } from "lucide-react";
+import { cn, pluralize } from "@/lib/utils";
+import { Bookmark, Radar, Search, SlidersHorizontal, Sparkles } from "lucide-react";
 
 /** Small batches so a bulk draft over dozens of candidates never blocks the
  *  main thread — each batch commits synchronously (generateOutreachFor is
@@ -243,6 +242,8 @@ function CandidatesView() {
   ];
 
   const hasActiveFilters = query.trim() !== "" || stage !== "all" || source !== "all";
+  const activeFilterCount = (stage !== "all" ? 1 : 0) + (source !== "all" ? 1 : 0);
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
 
   function clearFilters() {
     setQuery("");
@@ -415,60 +416,65 @@ function CandidatesView() {
         </div>
       }
     >
-      <Card className="mb-6">
-        <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Search" htmlFor="candidate-search">
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
-                aria-hidden
-              />
-              <Input
-                id="candidate-search"
-                className="pl-10"
-                placeholder="Name, title, company"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-          </Field>
-          <Field label="Sort by" htmlFor="candidate-sort">
-            <Select
-              id="candidate-sort"
-              options={SORT_OPTIONS}
-              value={sort}
-              onChange={(e) => setSort(e.target.value === "recent" ? "recent" : "match")}
-            />
-          </Field>
-          <Field label="Stage" htmlFor="candidate-stage">
-            <Select
-              id="candidate-stage"
-              options={stageOptions}
-              value={stage}
-              onChange={(e) => setStage(e.target.value)}
-            />
-          </Field>
-          <Field label="Source" htmlFor="candidate-source">
-            <Select
-              id="candidate-source"
-              options={sourceOptions}
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-            />
-          </Field>
-        </CardBody>
-      </Card>
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">
-          <span className="font-semibold text-ink">
-            {serverPreview ? serverCandidates.total : filtered.length}
-          </span>{" "}
-          {serverPreview
-            ? pluralize(serverCandidates.total, "server candidate")
-            : `of ${pluralize(candidates.length, "candidate")} across all campaigns`}
-          {serverPreview && serverCandidates.loading ? " (loading)" : ""}
-        </p>
+      {/* One toolbar row: search, sort, filters, then the batch action. Labels
+          live on the controls (aria-label) so the table starts high enough to
+          show ten rows on a laptop screen. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[12rem] flex-1">
+          <Search
+            className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted"
+            aria-hidden
+          />
+          <Input
+            id="candidate-search"
+            aria-label="Search candidates"
+            className="pl-10"
+            placeholder="Search name, title, company"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        {/* On a phone the list comes first: sort and filters fold away. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="sm:hidden"
+          leftIcon={<SlidersHorizontal className="h-4 w-4" aria-hidden />}
+          onClick={() => setFiltersOpen((v) => !v)}
+          aria-expanded={filtersOpen}
+          aria-controls="candidate-filters"
+        >
+          {filtersOpen ? "Hide filters" : `Filters${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
+        </Button>
+        <div
+          id="candidate-filters"
+          className={cn("flex w-full flex-col gap-2 sm:w-auto sm:flex-row", !filtersOpen && "max-sm:hidden")}
+        >
+          <Select
+            id="candidate-sort"
+            aria-label="Sort by"
+            className="sm:w-40"
+            options={SORT_OPTIONS}
+            value={sort}
+            onChange={(e) => setSort(e.target.value === "recent" ? "recent" : "match")}
+          />
+          <Select
+            id="candidate-stage"
+            aria-label="Stage"
+            className="sm:w-40"
+            options={stageOptions}
+            value={stage}
+            onChange={(e) => setStage(e.target.value)}
+          />
+          <Select
+            id="candidate-source"
+            aria-label="Source"
+            className="sm:w-40"
+            options={sourceOptions}
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+          />
+        </div>
         <Button
           variant="secondary"
           size="sm"
@@ -481,6 +487,16 @@ function CandidatesView() {
           {sourcing ? "Sourcing…" : "Source next batch"}
         </Button>
       </div>
+
+      <p className="mb-3 text-sm text-muted">
+        <span className="font-semibold text-ink">
+          {serverPreview ? serverCandidates.total : filtered.length}
+        </span>{" "}
+        {serverPreview
+          ? pluralize(serverCandidates.total, "server candidate")
+          : `of ${pluralize(candidates.length, "candidate")} across all campaigns`}
+        {serverPreview && serverCandidates.loading ? " (loading)" : ""}
+      </p>
 
       {justSourced.length > 0 && (
         <div className="mb-6 space-y-2">
@@ -634,7 +650,7 @@ export default function CandidatesPage() {
       <PageHeader
         eyebrow="Talent pool"
         title="Candidates"
-        description="Every sourced candidate, ranked by fit across all campaigns. Filter, sort, and open a profile to score, message, or book."
+        description="Every sourced candidate, ranked by fit. Open a profile to score, message or book."
       />
       <React.Suspense
         fallback={
