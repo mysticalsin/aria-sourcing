@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Badge, Button, Progress } from "@/components/ui";
 import { useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
@@ -135,6 +136,9 @@ export function AiUsagePanel() {
           )}
         </>
       )}
+      <Link href="/costs" className="inline-block text-sm font-semibold text-electric hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric">
+        See costs by activity on the AI costs page
+      </Link>
     </div>
   );
 }

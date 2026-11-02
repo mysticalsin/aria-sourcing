@@ -11,6 +11,7 @@ import {
   Mail,
   History,
   Brain,
+  Coins,
   type LucideIcon,
 } from "lucide-react";
 
@@ -72,6 +73,7 @@ export const NAV_ITEMS: NavItem[] = [
     description: "KPIs, learning loop, wins and ROI",
     match: REPORT_TABS.map((t) => t.href),
   },
+  { href: "/costs", label: "AI costs", icon: Coins, section: "Analyze", description: "What Claude costs, by activity" },
   { href: "/fleet", label: "Mailboxes", icon: Mail, section: "System", description: "Sender mailboxes & suppression" },
   { href: "/skills", label: "Skills", icon: Brain, section: "System", description: "Learned playbooks" },
   { href: "/sessions", label: "History", icon: History, section: "System", description: "Candidate journeys & audit pack" },

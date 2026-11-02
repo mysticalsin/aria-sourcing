@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 449
 agent: claude-code
 updated: 2026-11-02
-status: tutorial-mode-shipped
+status: ai-cost-page-shipped
 ---
 
 # Handoff - Shift 449
@@ -75,6 +75,13 @@ Tutorial mode (owner request, 2026-11-02; spec `.scratch/tutorial-mode/spec.md`)
 - Owner decision: the "Contact basis" form now works in the synthetic demo
   (before, no demo draft could be approved). Basis-only recording uses
   `candidateExclusionBlocker`; new facts on synthetic profiles stay refused.
+
+AI costs page (owner request, 2026-11-02; `.scratch/ai-agents/issues/09-cost-monitoring.md`):
+- Every Claude call carries a business `activity` (`src/lib/ai/activities.ts`);
+  the ledger keeps month totals per activity, 92 days of daily history and 12
+  months. `/costs` (Analyze → AI costs, admin only) ranks activities, names the
+  most expensive with its justification, shows cost per result and what the
+  budget buys. Estimates from token counts; the Console stays the bill.
 
 ## Blockers
 

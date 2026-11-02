@@ -326,6 +326,16 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         target: ["#settings-section-15"],
       },
       {
+        id: "control-costs",
+        title: "What the AI costs",
+        body:
+          "AI costs splits Claude's spend by activity: which one costs most, what one result costs, and why it runs on that model. It is the page to open when someone asks what the AI is worth.",
+        tryIt: "Find the most expensive activity, then read its line in “What each activity buys”.",
+        route: "/costs",
+        page: "AI costs",
+        target: ['[data-tour="cost-activities"]', '[data-tour="cost-kpis"]'],
+      },
+      {
         id: "control-careers",
         title: "What candidates see",
         body:
