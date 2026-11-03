@@ -108,7 +108,27 @@ export function extractLead(hit: SearchHit, platform: WebSearchPlatform): WebLea
     rawName ||
     cleanedTitle.slice(0, 60) ||
     "Unknown";
-  const title = parts[1] || hit.snippet.slice(0, 120);
-  const company = parts[2] || "";
-  return { name, title, company, url: hit.url, snippet: hit.snippet.slice(0, 300) };
+  let title = parts[1] ?? "";
+  let company = parts[2] ?? "";
+  // "Name - X": LinkedIn shows the current company there when the profile has
+  // no public headline, so X is a title only if it reads like one.
+  if (parts.length === 2 && !looksLikeJobTitle(title)) {
+    company = title;
+    title = "";
+  }
+  // "Senior Engineer at Acme" / "Ingénieur chez Acme"
+  const atCompany = !company ? /^(.+?)\s+(?:at|chez|@)\s+(.+)$/i.exec(title) : null;
+  if (atCompany) {
+    title = atCompany[1]!.trim();
+    company = atCompany[2]!.trim();
+  }
+  return { name, title: title || hit.snippet.slice(0, 120), company, url: hit.url, snippet: hit.snippet.slice(0, 300) };
+}
+
+/** Job-title vocabulary (English and French) that a company name rarely contains. */
+const JOB_TITLE_WORDS =
+  /\b(?:engineer|developer|programmer|architect|manager|lead|head of|director|consultant|analyst|scientist|designer|devops|sre|administrator|specialist|officer|cto|ceo|cfo|coo|cio|vp|founder|co-founder|recruiter|intern|student|freelance|freelancer|expert|technician|coordinator|product owner|scrum master|tester|ing[ée]nieure?|d[ée]veloppeu(?:r|se)|chef de projet|responsable|directeur|directrice|architecte|stagiaire|alternante?|technicienne?|charg[ée]e? de)\b/i;
+
+function looksLikeJobTitle(text: string): boolean {
+  return JOB_TITLE_WORDS.test(text);
 }

@@ -221,6 +221,22 @@ ok("LinkedIn lead: title parsed", liLead.title === "Senior Product Designer");
 ok("LinkedIn lead: company parsed", liLead.company === "Acme Corp");
 ok("LinkedIn lead: url kept verbatim", liLead.url === liHit.url);
 
+const companyOnly = extractLead(
+  { title: "Jean Martin - Capgemini | LinkedIn", url: "https://www.linkedin.com/in/jean-martin", snippet: "Backend engineer working on Go services." },
+  "LinkedIn",
+);
+ok("two-part LinkedIn title: a company is not taken for the job title", companyOnly.company === "Capgemini");
+ok("two-part LinkedIn title: the title falls back to the result text", companyOnly.title === "Backend engineer working on Go services.");
+
+const titleOnly = extractLead({ title: "Jean Martin - Ingénieur DevOps | LinkedIn", url: "https://www.linkedin.com/in/jean-martin", snippet: "" }, "LinkedIn");
+ok("two-part LinkedIn title: a job title stays the title", titleOnly.title === "Ingénieur DevOps" && titleOnly.company === "");
+
+const atCompany = extractLead({ title: "Jean Martin - Senior Go Engineer at Acme | LinkedIn", url: "https://www.linkedin.com/in/jean-martin", snippet: "" }, "LinkedIn");
+ok("'Title at Company' is split", atCompany.title === "Senior Go Engineer" && atCompany.company === "Acme");
+
+const internationalCo = extractLead({ title: "Jean Martin - Acme International | LinkedIn", url: "https://www.linkedin.com/in/jean-martin", snippet: "" }, "LinkedIn");
+ok("a company containing a title-like prefix stays a company", internationalCo.company === "Acme International" && internationalCo.title === "");
+
 const noisyHit: SearchHit = {
   title: "jane-doe-4471 | LinkedIn",
   url: "https://www.linkedin.com/in/jane-doe-4471",
