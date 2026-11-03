@@ -13,6 +13,7 @@
 import {
   resolveAiProvider,
   aiProviderConfigured,
+  anthropicCachedSystem,
   buildCloudRequest,
   parseCloudResponse,
   anthropicSupportsEffort,
@@ -177,6 +178,12 @@ ok("Anthropic request has no authorization header", !("authorization" in anthrop
 
 const anthropicBody = JSON.parse(anthropicReq.body) as Record<string, unknown>;
 ok("Anthropic body has system field", anthropicBody.system === "System msg");
+const cachedSystem = anthropicCachedSystem("System msg");
+ok(
+  "the tool loop's system prompt carries a cache breakpoint",
+  Array.isArray(cachedSystem) && cachedSystem[0]?.text === "System msg" && cachedSystem[0]?.cache_control.type === "ephemeral",
+);
+ok("an empty system prompt is not sent as an empty text block", anthropicCachedSystem("") === "");
 ok("Anthropic body has max_tokens", typeof anthropicBody.max_tokens === "number");
 ok("Anthropic body messages is user-only", Array.isArray(anthropicBody.messages) && (anthropicBody.messages as {role:string}[]).length === 1 && (anthropicBody.messages as {role:string}[])[0]?.role === "user");
 

@@ -17,6 +17,7 @@ import {
 } from "@/lib/mcp-client";
 import {
   ANTHROPIC_TASK_PROFILE,
+  anthropicCachedSystem,
   anthropicHeaders,
   anthropicOutputConfig,
   cloudStopProblem,
@@ -327,7 +328,18 @@ export async function runAnthropicWithTools(args: {
           fetch(ANTHROPIC_URL, {
             method: "POST",
             headers: anthropicHeaders(key),
-            body: JSON.stringify({ model, ...requestShape, system, messages, tools: toolDefs }),
+            // Each round resends tools, system and the whole history. The system
+            // breakpoint keeps the fixed prefix cached across runs; top-level
+            // caching moves a second breakpoint to the end of the history, so
+            // round N+1 reads everything round N already sent.
+            body: JSON.stringify({
+              model,
+              ...requestShape,
+              cache_control: { type: "ephemeral" },
+              system: anthropicCachedSystem(system),
+              messages,
+              tools: toolDefs,
+            }),
             redirect: "manual",
             signal,
           }),

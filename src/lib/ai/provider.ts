@@ -217,6 +217,19 @@ export function anthropicHeaders(key: string): Record<string, string> {
   };
 }
 
+export type AnthropicSystemBlock = { type: "text"; text: string; cache_control: { type: "ephemeral" } };
+
+/**
+ * The system prompt as one block with a cache breakpoint, for the tool loop:
+ * its prefix (tool definitions + the fixed task prompt) is the same on every
+ * run, so later runs read it at a tenth of the input price. A prefix under the
+ * model's minimum (512 tokens on the 5.5 models) is simply not cached, at no
+ * extra cost. An empty prompt stays a string: the API rejects empty text blocks.
+ */
+export function anthropicCachedSystem(system: string): string | AnthropicSystemBlock[] {
+  return system ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] : system;
+}
+
 /**
  * Build the fetch args for a cloud provider call.
  *
@@ -245,6 +258,8 @@ export function buildCloudRequest(
         model,
         max_tokens: profile ? profile.maxTokens : maxTokens,
         ...(profile ? { output_config: anthropicOutputConfig(profile) } : {}),
+        // No cache breakpoint: every TASK_SYSTEM prompt is far below the
+        // 512-token caching minimum and the user content is unique per call.
         system,
         messages: [{ role: "user", content: prompt }],
       }),
