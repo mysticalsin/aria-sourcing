@@ -5,6 +5,8 @@ export const SOURCING_PROVIDER_HOSTS = Object.freeze({
   Apify: "api.apify.com",
   Tavily: "api.tavily.com",
   DuckDuckGo: "api.duckduckgo.com",
+  // Claude's server-side web search: the search runs at Anthropic, not here.
+  Anthropic: "api.anthropic.com",
 } as const);
 
 export type SourcingProvider = keyof typeof SOURCING_PROVIDER_HOSTS;

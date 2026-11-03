@@ -9,7 +9,11 @@ import type { Role } from "@/lib/types";
 import { SourcePlanSchema, campaignSourcingBasis, orderedSteps, publicSourcingJob, jobStatus, type CampaignSourcingJob } from "@/lib/sourcing/unified-contract";
 import { advanceUnifiedRun, reviewedCampaign } from "@/lib/sourcing/unified-run";
 import { loadUnifiedJob, startUnifiedJob, unifiedRepository } from "@/lib/sourcing/unified-repository";
-import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
+import { clearDiscoveryCriteria, clearWebSearchDiscovery } from "@/lib/sourcing/provider-egress";
+import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
+import { searchLinkedInWithClaude, webSearchAnthropicConfig } from "@/lib/sourcing/claude-web-search";
+import { resolveVaultSecret } from "@/lib/ai/vault-secret";
+import { aiBudgetStatus, recordAiUsage } from "@/lib/ai/usage";
 import { resolveStoredApifyKey, startProfileSearchRun, getRunStatus, fetchDatasetItems } from "@/lib/sourcing/apify";
 import { searchGithubUsers } from "@/lib/sourcing/github";
 
@@ -60,12 +64,21 @@ export async function POST(req: NextRequest) {
       try { campaign = reviewedCampaign(ws, input.campaignId); }
       catch { return json({ ok: false, error: "Complete and review the campaign brief, then move it to Sourcing or Outreach." }, 409); }
       for (const source of input.sources) {
-        const cleared = clearDiscoveryCriteria(source.source === "LinkedIn" ? "Apify" : "GitHub", { query: source.query }, campaign);
+        const cleared = source.source === "WebSearch"
+          ? clearWebSearchDiscovery({ query: source.query }, campaign)
+          : clearDiscoveryCriteria(source.source === "LinkedIn" ? "Apify" : "GitHub", { query: source.query }, campaign);
         if (!cleared.ok) return json({ ok: false, error: cleared.error }, 422);
       }
       // Missing configuration is explicit before launch, with no silent fallback.
       if (input.sources.some((s) => s.source === "LinkedIn") && !(await resolveStoredApifyKey(auth.session))) {
         return json({ ok: false, error: "Connect an Apify key in Settings or deselect LinkedIn." }, 409);
+      }
+      if (input.sources.some((s) => s.source === "WebSearch")) {
+        if (!webSearchAnthropicConfig(ws.state.settings)) {
+          return json({ ok: false, error: "Add an Anthropic key in Settings → AI & Models or deselect web search." }, 409);
+        }
+        const budget = aiBudgetStatus();
+        if (!budget.ok) return json({ ok: false, error: `${budget.reason} Deselect web search or wait for the next period.` }, 409);
       }
       const job = await startUnifiedJob({ ...auth, campaignId: input.campaignId, requestKey: input.requestKey,
         snapshot: campaignSourcingBasis(campaign), steps: orderedSteps(input.sources) });
@@ -89,6 +102,21 @@ export async function POST(req: NextRequest) {
         apifyKey: async () => { await repo.readWorkspace(); return resolveStoredApifyKey(auth.session); },
         start: startProfileSearchRun, poll: getRunStatus, items: fetchDatasetItems,
         github: (clearance, query, count, signal) => searchGithubUsers(clearance, query, count, process.env.GITHUB_TOKEN ?? "", signal),
+        webSearch: async (clearance, query, count, campaign, signal) => {
+          const config = webSearchAnthropicConfig((await repo.readWorkspace()).state.settings);
+          const key = config ? await resolveVaultSecret(config.apiKeyId, "Anthropic") : "";
+          if (!config || !key) return { ok: false, error: "Add an Anthropic key in Settings → AI & Models before searching the web." };
+          const budget = aiBudgetStatus();
+          if (!budget.ok) return { ok: false, error: `${budget.reason} No search was made.` };
+          const outcome = await searchLinkedInWithClaude(clearance, key, { query, limit: count, model: config.model, signal,
+            role: campaign.jobAnalysis.title, location: campaign.jobAnalysis.location ?? "",
+            queryAllowed: (q) => validateSourcingQuery("LinkedIn", q, campaign).ok });
+          recordAiUsage({ task: "sourcing", activity: "web-sourcing", model: config.model, usage: outcome.usage });
+          if (outcome.ok) return { ok: true, hits: outcome.hits };
+          return { ok: false, error: outcome.reason === "refused"
+            ? "Anthropic refused the web search. Check the key, its credits and that web search is enabled for your Anthropic organization."
+            : "Web search is temporarily unavailable. Start a new run later; no automatic retry was made." };
+        },
       }); } catch {
         // Completion may have committed before a secondary quota receipt failed.
         const latest = await loadUnifiedJob(auth.workspaceId, input.runId);

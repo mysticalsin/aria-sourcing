@@ -18,6 +18,7 @@ export const AI_ACTIVITY_IDS = [
   "brief-extraction",
   "assistant-chat",
   "sourcing-agent",
+  "web-sourcing",
   "untracked",
 ] as const;
 
@@ -107,6 +108,14 @@ export const AI_ACTIVITIES: Record<AiActivity, AiActivityInfo> = {
     unit: "round",
     model: "Sonnet",
     why: "Deciding where and how to search is the hardest reasoning in the app; rounds are capped per run.",
+  },
+  "web-sourcing": {
+    id: "web-sourcing",
+    label: "Web search sourcing",
+    produces: "Public LinkedIn profiles found by searching the web for a reviewed campaign query.",
+    unit: "search run",
+    model: "Sonnet",
+    why: "Claude runs at most five searches per run ($0.01 each) and reads the results; the profiles come from the search results, never from the model's own words.",
   },
   untracked: {
     id: "untracked",

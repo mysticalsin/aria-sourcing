@@ -53,6 +53,14 @@ test("missing LinkedIn config cannot silently fall back or create a paid run", a
   assert.equal((await POST(request(start()))).status, 409); assert.equal(startCalls, 0);
   apifyKey = "fixture";
 });
+test("web search without the workspace's Anthropic key is refused before any run is created", async () => {
+  const saved = state.settings.llmProviders;
+  state.settings.llmProviders = saved.map((p) => ({ ...p, apiKeyId: undefined }));
+  const body = { ...start(), sources: [{ source: "WebSearch", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }] };
+  const response = await POST(request(body));
+  assert.equal(response.status, 409); assert.match((await response.json()).error, /Anthropic key/); assert.equal(startCalls, 0);
+  state.settings.llmProviders = saved;
+});
 test("start uses server campaign and workspace; progress DTO excludes private bindings", async () => {
   const response = await POST(request(start()));
   assert.equal(response.status, 200); assert.equal(startCalls, 1);

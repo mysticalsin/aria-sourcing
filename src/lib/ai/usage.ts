@@ -27,6 +27,8 @@ export interface AnthropicUsage {
   output_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+  /** Server tools run at Anthropic; web search is billed per search. */
+  server_tool_use?: { web_search_requests?: number };
 }
 
 interface Price {
@@ -43,6 +45,8 @@ const PRICE_PER_MTOK: Record<string, Price> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2 },
 };
 const FALLBACK_PRICE: Price = { input: 5, output: 25, cacheRead: 0.5 };
+/** USD per web search, on top of the tokens that read its results. */
+export const WEB_SEARCH_PRICE_USD = 0.01;
 
 export const DEFAULT_MONTHLY_BUDGET_USD = 30;
 export const DEFAULT_DAILY_BUDGET_USD = 6;
@@ -57,7 +61,8 @@ export function estimateCostUsd(model: string, usage: AnthropicUsage | null | un
       tokens(usage.cache_creation_input_tokens) * price.input * 1.25 +
       tokens(usage.cache_read_input_tokens) * price.cacheRead +
       tokens(usage.output_tokens) * price.output) /
-    1_000_000
+      1_000_000 +
+    tokens(usage.server_tool_use?.web_search_requests) * WEB_SEARCH_PRICE_USD
   );
 }
 

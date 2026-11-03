@@ -49,6 +49,7 @@ function fixture() {
     poll: async () => { polls++; return { ok: true, status: 200, data: { status: "SUCCEEDED" } }; },
     items: async () => ({ ok: true, status: 200, data: [profile, { ...profile, linkedinUrl: "https://linkedin.com/in/aria-fixture?trk=search" }] }),
     github: async () => { githubCalls++; return [{ login: "aria-other-fixture", name: "Other Fixture", email: null, company: null, location: null, bio: query, blog: null, htmlUrl: "https://github.com/aria-other-fixture", publicRepos: 2, followers: 1, createdAt: null, topLanguage: null }]; },
+    webSearch: async () => { throw new Error("This fixture plans no web search."); },
   };
   return { job: () => structuredClone(stored), ws: () => ws, repo, providers, profile,
     counts: () => ({ starts, polls, githubCalls, reservations }), conflict: () => { conflicts++; },

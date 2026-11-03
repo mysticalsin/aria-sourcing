@@ -39,7 +39,7 @@ export function unifiedRepository(session: Session, workspaceId: string, actorId
     },
     async reserve(source, key, campaign) {
       const { data, error } = await service.rpc("begin_provider_run", { p_workspace_id: workspaceId,
-        p_provider: source === "LinkedIn" ? "Apify" : "GitHub", p_external_run_id: key, p_campaign_id: campaign });
+        p_provider: { LinkedIn: "Apify", WebSearch: "ClaudeWebSearch", GitHub: "GitHub" }[source], p_external_run_id: key, p_campaign_id: campaign });
       if (error || !data?.ok || typeof data.run_id !== "string") throw new Error("Daily provider quota is reached or unavailable.");
       return data.run_id as string;
     },

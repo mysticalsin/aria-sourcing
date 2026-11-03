@@ -2,11 +2,12 @@ import { z } from "zod";
 import type { Campaign } from "@/lib/types";
 
 export const SourceChoiceSchema = z.object({
-  source: z.enum(["LinkedIn", "GitHub"]),
+  // WebSearch: public LinkedIn profiles found through Claude's web search.
+  source: z.enum(["LinkedIn", "WebSearch", "GitHub"]),
   query: z.string().trim().min(1).max(256),
   limit: z.number().int().min(1).max(20),
 }).strict();
-export const SourcePlanSchema = z.array(SourceChoiceSchema).min(1).max(2)
+export const SourcePlanSchema = z.array(SourceChoiceSchema).min(1).max(3)
   .refine((sources) => new Set(sources.map((s) => s.source)).size === sources.length);
 export type SourceChoice = z.infer<typeof SourceChoiceSchema>;
 export type SourceStep = SourceChoice & {
@@ -28,8 +29,19 @@ export function campaignSourcingBasis(campaign: Campaign): Record<string, unknow
   return { jobAnalysis: campaign.jobAnalysis, scoringWeights: campaign.scoringWeights,
     sourcingStrategy: campaign.sourcingStrategy, status: campaign.status };
 }
+/** Labels for the operator. The enum values are stored in saved runs. */
+export const SOURCE_LABELS: Record<SourceChoice["source"], string> = {
+  LinkedIn: "LinkedIn via Apify",
+  WebSearch: "LinkedIn via web search",
+  GitHub: "GitHub",
+};
+/** Claude web searches allowed for one run: the reviewed query plus variants. */
+export function webSearchBudget(limit: number): number {
+  return Math.min(5, Math.max(2, Math.ceil(limit / 5) + 1));
+}
+const SOURCE_ORDER: SourceChoice["source"][] = ["LinkedIn", "WebSearch", "GitHub"];
 export function orderedSteps(plan: SourceChoice[]): SourceStep[] {
-  return [...plan].sort((a, b) => Number(b.source === "LinkedIn") - Number(a.source === "LinkedIn"))
+  return [...plan].sort((a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source))
     .map((s) => ({ ...s, status: "queued", found: 0, added: 0, duplicates: 0, excluded: 0 }));
 }
 export function jobStatus(steps: SourceStep[]): CampaignSourcingJob["status"] {
