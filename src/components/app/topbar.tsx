@@ -13,7 +13,7 @@ import {
   useActions,
   useActiveCampaign,
   useCampaigns,
-  useHermes,
+  useHermesStateGetter,
   useHydrated,
   useRecommendations,
   useSeats,
@@ -23,7 +23,7 @@ import { useToast, useConfirm } from "@/components/ui";
 import { supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import { getCurrentUser, type CurrentUser } from "@/lib/supabase/workspace";
 import { beginAriaLiveRun } from "@/lib/demo/aria-live";
-import { AriaLiveOverlay } from "@/components/demo/aria-live-overlay";
+import { AriaLiveHost } from "@/components/demo/aria-live-host";
 
 /**
  * Keyboard handler shared by both dropdown menus.
@@ -62,7 +62,7 @@ export function TopBar() {
   const tutorial = useTutorial();
   const actions = useActions();
   const { setActiveCampaign, resetDemo } = actions;
-  const { state: hermesState } = useHermes();
+  const getHermesState = useHermesStateGetter();
   const hydrated = useHydrated();
   const seats = useSeats();
   const { toast } = useToast();
@@ -71,7 +71,7 @@ export function TopBar() {
   const playAriaLive = React.useCallback(() => {
     const result = beginAriaLiveRun({
       actions,
-      state: hermesState,
+      state: getHermesState(),
       campaigns,
       activeCampaignId: active?.id ?? null,
       seats,
@@ -79,7 +79,7 @@ export function TopBar() {
     if (!result.ok) {
       toast({ title: "Can't start Aria Live", description: result.reason, variant: "warning" });
     }
-  }, [actions, hermesState, campaigns, active, seats, toast]);
+  }, [actions, getHermesState, campaigns, active, seats, toast]);
 
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [userOpen, setUserOpen] = React.useState(false);
@@ -483,7 +483,7 @@ export function TopBar() {
         </div>
       )}
     </header>
-    <AriaLiveOverlay />
+    <AriaLiveHost />
     </>
   );
 }

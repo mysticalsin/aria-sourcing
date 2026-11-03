@@ -12,7 +12,7 @@ import {
   useActiveCampaignId,
   useCampaigns,
   useCandidates,
-  useHermes,
+  useHermesStateGetter,
   useHydrated,
   useSeats,
 } from "@/lib/store";
@@ -42,7 +42,7 @@ export function CommandSearch() {
   const candidates = useCandidates();
   const actions = useActions();
   const { setActiveCampaign } = actions;
-  const { state: hermesState } = useHermes();
+  const getHermesState = useHermesStateGetter();
   const hydrated = useHydrated();
   const seats = useSeats();
   const activeCampaignId = useActiveCampaignId();
@@ -137,7 +137,7 @@ export function CommandSearch() {
         run: () => {
           const result = beginAriaLiveRun({
             actions,
-            state: hermesState,
+            state: getHermesState(),
             campaigns,
             activeCampaignId,
             seats,
@@ -182,7 +182,7 @@ export function CommandSearch() {
     setActiveCampaign,
     hydrated,
     actions,
-    hermesState,
+    getHermesState,
     activeCampaignId,
     seats,
     toast,

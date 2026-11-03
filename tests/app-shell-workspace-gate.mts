@@ -30,7 +30,7 @@ mock.module("next/navigation", {
 });
 mock.module(moduleUrl("src/lib/store.ts"), {
   namedExports: {
-    useHermes: () => ({
+    useWorkspaceStatus: () => ({
       workspaceStatus,
       retryWorkspace: async () => undefined,
       retrySave: async () => undefined,

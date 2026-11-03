@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -12,7 +13,6 @@ import {
   useToast,
   useConfirm,
 } from "@/components/ui";
-import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
@@ -89,6 +89,12 @@ import {
   UserX,
   Zap,
 } from "lucide-react";
+
+// Recharts loads with the gauge, not with every page that can open the drawer.
+const ScoreGauge = dynamic(() => import("@/components/charts/score-gauge").then((mod) => mod.ScoreGauge), {
+  ssr: false,
+  loading: () => <div className="h-[140px] w-[140px]" aria-hidden />,
+});
 
 type CandidateErasureAuthority = {
   obligationId: string;

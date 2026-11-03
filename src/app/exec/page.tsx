@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   BarChart3,
@@ -21,7 +22,6 @@ import {
   Users,
 } from "lucide-react";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { TrendSpark } from "@/components/charts/trend-spark";
 import { Badge, Button, Card, CardContent, CardTitle, EmptyState, Eyebrow, SkeletonCard, useToast } from "@/components/ui";
 import {
   useActivities,
@@ -49,6 +49,11 @@ import {
 import { ROLE_LABEL } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn, downloadText, formatCurrency, formatDateTime, formatNumber, formatPercent, formatTimeAgo, round, type Tone } from "@/lib/utils";
+
+const TrendSpark = dynamic(() => import("@/components/charts/trend-spark").then((mod) => mod.TrendSpark), {
+  ssr: false,
+  loading: () => <div className="h-10 w-full" aria-hidden />,
+});
 
 function formatHours(hours: number | null): string {
   return hours == null ? "Not tracked yet" : `${formatNumber(hours)}h`;

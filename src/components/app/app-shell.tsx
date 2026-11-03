@@ -12,7 +12,7 @@ import { SectionTabs } from "./section-tabs";
 import { Onboarding } from "./onboarding";
 import { TutorialProvider } from "@/components/tutorial/tutorial";
 import { WorkspaceStatusPanel } from "./workspace-status-panel";
-import { useHermes } from "@/lib/store";
+import { useWorkspaceStatus } from "@/lib/store";
 import { workspaceBlocksProduct } from "@/lib/workspace-status";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -26,7 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; pathname: string }) {
-  const { workspaceStatus, retryWorkspace, retrySave } = useHermes();
+  const { workspaceStatus, retryWorkspace, retrySave } = useWorkspaceStatus();
 
   if (workspaceBlocksProduct(workspaceStatus)) {
     return (

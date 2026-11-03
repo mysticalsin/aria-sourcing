@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { MotionConfig } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { HermesProvider } from "@/lib/store";
 import { ToastProvider } from "@/components/ui";
@@ -12,10 +11,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // avoiding a needless authenticated request, this keeps recipient-facing
   // unsubscribe links independent from console state.
   const barePath = pathname.startsWith("/login") || pathname.startsWith("/careers") || pathname.startsWith("/unsubscribe");
-  const content = (
-    <MotionConfig reducedMotion="user">
-      <ToastProvider>{children}</ToastProvider>
-    </MotionConfig>
-  );
+  // No global MotionConfig: it would put the animation library in every page's bundle.
+  // The few animated components read usePrefersReducedMotion themselves.
+  const content = <ToastProvider>{children}</ToastProvider>;
   return barePath ? content : <HermesProvider>{content}</HermesProvider>;
 }

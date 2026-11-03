@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import {
   Card,
   CardContent,
@@ -10,7 +11,6 @@ import {
   Badge,
   useToast,
 } from "@/components/ui";
-import { FunnelChart } from "@/components/charts/funnel-chart";
 import type { WeeklyReport } from "@/lib/types";
 import { exportMarkdownReport } from "@/lib/mock-ai";
 import {
@@ -29,6 +29,11 @@ import {
   AlertTriangle,
   TrendingUp,
 } from "lucide-react";
+
+const FunnelChart = dynamic(() => import("@/components/charts/funnel-chart").then((mod) => mod.FunnelChart), {
+  ssr: false,
+  loading: () => <div className="h-[260px] w-full" aria-hidden />,
+});
 
 export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
   const { toast } = useToast();

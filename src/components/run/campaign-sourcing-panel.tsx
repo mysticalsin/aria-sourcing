@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Button, Card, CardBody, Field, Input } from "@/components/ui";
-import { useApiKeys, useCampaign, useCampaignCandidates, useHermes, useRole, useSettings } from "@/lib/store";
+import { useApiKeys, useCampaign, useCampaignCandidates, useRole, useWorkspaceStatus, useSettings } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
@@ -22,7 +22,7 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates 
   const role = useRole();
   const settings = useSettings();
   const idBase = React.useId();
-  const { retryWorkspace, flushWorkspace, workspaceStatus } = useHermes();
+  const { retryWorkspace, flushWorkspace, workspaceStatus } = useWorkspaceStatus();
   const [runs, setRuns] = React.useState<PublicSourcingJob[]>([]);
   const [loaded, setLoaded] = React.useState(false);
   const [error, setError] = React.useState("");

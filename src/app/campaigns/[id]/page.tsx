@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -29,7 +30,6 @@ import { HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
-import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
@@ -126,6 +126,11 @@ import {
   X,
   Zap,
 } from "lucide-react";
+
+const ScoreDistribution = dynamic(
+  () => import("@/components/charts/score-distribution").then((mod) => mod.ScoreDistribution),
+  { ssr: false, loading: () => <div className="h-[220px] w-full" aria-hidden /> },
+);
 
 /** Core contact/richness fields the "Enrich all" panel reports coverage % for
  *  — mirrors `DEFAULT_ENRICH_FIELDS` in store.ts (enrichCandidate/

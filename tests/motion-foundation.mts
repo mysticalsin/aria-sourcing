@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 
 let pass = 0;
 let fail = 0;
@@ -19,7 +19,15 @@ const card = source("src/components/ui/card.tsx");
 const tabs = source("src/components/ui/tabs.tsx");
 const progress = source("src/components/ui/progress.tsx");
 
-ok("MotionConfig respects the OS preference", /<MotionConfig\s+reducedMotion="user"/.test(providers));
+// framer-motion stays out of the shared bundle: no global MotionConfig, so
+// every component that animates with it must honour the OS preference itself.
+ok("the root providers do not load framer-motion", !providers.includes("framer-motion"));
+const motionUsers = (readdirSync(new URL("../src", import.meta.url), { recursive: true }) as string[])
+  .filter((file) => file.endsWith(".tsx"))
+  .map((file) => source(`src/${file.replaceAll("\\", "/")}`))
+  .filter((text) => text.includes('from "framer-motion"'));
+ok("framer-motion is still used somewhere", motionUsers.length > 0);
+ok("every framer-motion component respects the OS preference", motionUsers.every((text) => text.includes("usePrefersReducedMotion")));
 ok("motion uses one named ease-out token", globals.includes("--ease-motion-out"));
 ok("Tailwind exposes the shared motion easing", tailwind.includes('"motion-out": "var(--ease-motion-out)"'));
 ok("reduced motion uses an opacity-only entry keyframe", globals.includes("@keyframes reduced-fade-in"));

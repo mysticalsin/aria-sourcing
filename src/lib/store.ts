@@ -5,9 +5,11 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   classifyReply,
@@ -240,8 +242,23 @@ const DEFAULT_ENRICH_FIELDS: EnrichableField[] = ["email", "skills", "experience
 const DEFAULT_ENRICHMENT_BUDGET_UNITS = 1000;
 /** Concurrency cap enrichCampaign uses when the caller doesn't specify one. */
 const DEFAULT_ENRICH_CONCURRENCY = 3;
+/** Chat messages sent to the model per turn (the thread itself keeps them all). */
+const CHAT_HISTORY_MESSAGES = 20;
 
-const HermesContext = createContext<HermesContextValue | null>(null);
+/** Stable handle on the provider. Hooks subscribe to the slice they read
+ *  (useSyncExternalStore), so a commit only re-renders the components whose
+ *  slice changed instead of every consumer of one big context value. */
+interface HermesStore {
+  subscribe: (listener: () => void) => () => void;
+  getState: () => HermesState | null;
+  getRecommendations: () => Recommendation[];
+  actions: HermesActions;
+}
+type WorkspaceStatusValue = Omit<HermesContextValue, "state" | "actions" | "recommendations">;
+
+const HermesStoreContext = createContext<HermesStore | null>(null);
+/** Changes only when the workspace load/save status does, not on every commit. */
+const WorkspaceStatusContext = createContext<WorkspaceStatusValue | null>(null);
 const UNSAVED_WORKSPACE_MESSAGE =
   "Your latest changes are still in this browser but are not saved to the shared workspace.";
 
@@ -5301,8 +5318,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       // 3. Build conversation context (stateRef is current after appendChatMessage calls).
       const latestThread = current().chats.find((t) => t.id === threadId);
+      // Only the latest turns go to the model: sending the whole thread on
+      // every turn made each message of a long conversation cost more.
       const history = (latestThread?.messages ?? [])
         .filter((m) => !m.pending && m.id !== assistantId && m.role !== "system")
+        .slice(-CHAT_HISTORY_MESSAGES)
         .map((m) => `${m.role === "user" ? "User" : "Aria"}: ${m.content}`)
         .join("\n");
       const conversationPrompt = history ? `${history}\nAria:` : "Aria:";
@@ -5805,39 +5825,101 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [state],
   );
 
-  const value = useMemo<HermesContextValue>(
+  // Published to subscribers after each render that changed them. Children read
+  // the refs during render, so a component rendering in the same pass already
+  // sees the new state; the layout effect wakes the ones that did not render.
+  const publishedStateRef = useRef<HermesState | null>(state);
+  publishedStateRef.current = state;
+  const publishedRecommendationsRef = useRef<Recommendation[]>(recommendations);
+  publishedRecommendationsRef.current = recommendations;
+  const listenersRef = useRef(new Set<() => void>());
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+
+  const store = useMemo<HermesStore>(
     () => ({
-      state,
-      hydrated: workspaceStatus.phase === "ready" && state !== null,
-      workspaceStatus,
-      retryWorkspace: hydrateWorkspace,
-      flushWorkspace: () => commitPersisted((current) => ({ ...current })),
-      retrySave,
-      actions,
-      recommendations,
+      subscribe: (listener) => {
+        listenersRef.current.add(listener);
+        return () => {
+          listenersRef.current.delete(listener);
+        };
+      },
+      getState: () => publishedStateRef.current,
+      getRecommendations: () => publishedRecommendationsRef.current,
+      get actions() {
+        return actionsRef.current;
+      },
     }),
-    [state, workspaceStatus, hydrateWorkspace, retrySave, commitPersisted, actions, recommendations],
+    [],
   );
 
-  return React.createElement(HermesContext.Provider, { value }, children);
+  useLayoutEffect(() => {
+    for (const listener of listenersRef.current) listener();
+  }, [state, recommendations]);
+
+  const hydrated = workspaceStatus.phase === "ready" && state !== null;
+  const flushWorkspace = useCallback(() => commitPersisted((current) => ({ ...current })), [commitPersisted]);
+  const status = useMemo<WorkspaceStatusValue>(
+    () => ({ hydrated, workspaceStatus, retryWorkspace: hydrateWorkspace, flushWorkspace, retrySave }),
+    [hydrated, workspaceStatus, hydrateWorkspace, flushWorkspace, retrySave],
+  );
+
+  return React.createElement(
+    HermesStoreContext.Provider,
+    { value: store },
+    React.createElement(WorkspaceStatusContext.Provider, { value: status }, children),
+  );
 }
 
 /* ============================================================================
    Hooks
    ========================================================================== */
 
+function useHermesStore(): HermesStore {
+  const store = useContext(HermesStoreContext);
+  // Same message as before the split: every store hook used to go through useHermes.
+  if (!store) throw new Error("useHermes must be used within <HermesProvider>.");
+  return store;
+}
+
+/** Workspace load/save status without subscribing to the workspace data. */
+export function useWorkspaceStatus(): WorkspaceStatusValue {
+  const status = useContext(WorkspaceStatusContext);
+  if (!status) throw new Error("useWorkspaceStatus must be used within <HermesProvider>.");
+  return status;
+}
+
+/** Raw state (null until hydrated). Re-renders on every commit: prefer a slice hook. */
+function useRawState(): HermesState | null {
+  const store = useHermesStore();
+  return useSyncExternalStore(store.subscribe, store.getState, store.getState);
+}
+
+/** Everything at once. Re-renders on every commit: prefer the slice hooks
+ *  below, or useHermesStateGetter() when the state is only read in a handler. */
 export function useHermes(): HermesContextValue {
-  const ctx = useContext(HermesContext);
-  if (!ctx) throw new Error("useHermes must be used within <HermesProvider>.");
-  return ctx;
+  const store = useHermesStore();
+  const status = useWorkspaceStatus();
+  const state = useRawState();
+  const recommendations = useRecommendations();
+  return useMemo(
+    () => ({ ...status, state, actions: store.actions, recommendations }),
+    [status, state, store, recommendations],
+  );
+}
+
+/** Reads the current state on demand (event handlers, callbacks) without
+ *  re-rendering the caller when the state changes. */
+export function useHermesStateGetter(): () => HermesState | null {
+  return useHermesStore().getState;
 }
 
 export function useHydrated(): boolean {
-  return useHermes().hydrated;
+  return useWorkspaceStatus().hydrated;
 }
 
 export function useActions(): HermesActions {
-  return useHermes().actions;
+  return useHermesStore().actions;
 }
 
 function buildLiveEmptyState(): HermesState {
@@ -5899,101 +5981,114 @@ function buildLiveEmptyState(): HermesState {
 }
 
 const EMPTY: HermesState = buildLiveEmptyState();
+// Fallbacks for optional slices: a fresh `[]` per call would make
+// useSyncExternalStore see a new snapshot on every read.
+const NO_ITEMS: never[] = [];
+const NO_DEFAULT_MODELS: NonNullable<SystemSettings["defaultModels"]> = {};
 
-function useStateOrEmpty(): HermesState {
-  return useHermes().state ?? EMPTY;
+/** Subscribes to one slice of the state. `select` must return a value that
+ *  keeps its identity while the slice is unchanged (a field or a found item,
+ *  never a freshly built array: derive those with useMemo on the slice). */
+function useSlice<T>(select: (state: HermesState) => T): T {
+  const store = useHermesStore();
+  const read = () => select(store.getState() ?? EMPTY);
+  return useSyncExternalStore(store.subscribe, read, read);
 }
 
 export function useSettings(): SystemSettings {
-  return useStateOrEmpty().settings;
+  return useSlice((s) => s.settings);
 }
 
 export function useCampaigns(): Campaign[] {
-  return useStateOrEmpty().campaigns;
+  return useSlice((s) => s.campaigns);
 }
 
 export function useCampaign(id: string | null | undefined): Campaign | undefined {
-  const s = useStateOrEmpty();
-  return id ? s.campaigns.find((c) => c.id === id) : undefined;
+  return useSlice((s) => (id ? s.campaigns.find((c) => c.id === id) : undefined));
 }
 
 export function useActiveCampaign(): Campaign | undefined {
-  const s = useStateOrEmpty();
-  return s.campaigns.find((c) => c.id === s.activeCampaignId) ?? s.campaigns[0];
+  return useSlice((s) => s.campaigns.find((c) => c.id === s.activeCampaignId) ?? s.campaigns[0]);
 }
 
 export function useActiveCampaignId(): string | null {
-  return useStateOrEmpty().activeCampaignId;
+  return useSlice((s) => s.activeCampaignId);
 }
 
 export function useCandidates(): Candidate[] {
-  return useStateOrEmpty().candidates;
+  return useSlice((s) => s.candidates);
 }
 
 export function useCampaignCandidates(campaignId: string | null | undefined): Candidate[] {
-  const s = useStateOrEmpty();
-  return campaignId ? s.candidates.filter((c) => c.campaignId === campaignId) : [];
+  const candidates = useCandidates();
+  return useMemo(
+    () => (campaignId ? candidates.filter((c) => c.campaignId === campaignId) : NO_ITEMS),
+    [candidates, campaignId],
+  );
 }
 
 export function useCandidate(id: string | null | undefined): Candidate | undefined {
-  const s = useStateOrEmpty();
-  return id ? s.candidates.find((c) => c.id === id) : undefined;
+  return useSlice((s) => (id ? s.candidates.find((c) => c.id === id) : undefined));
 }
 
 /** Scored chatbox applications awaiting recruiter handoff (TAnIA §5). */
 export function useChatboxSubmissions(): ChatboxSubmission[] {
-  return useStateOrEmpty().chatboxSubmissions ?? [];
+  return useSlice((s) => s.chatboxSubmissions ?? NO_ITEMS);
 }
 
 /** Candidates in #Vivier (the talent pool), newest first. */
 export function useVivier(): Candidate[] {
-  return useStateOrEmpty().candidates.filter((c) => c.vivier);
+  const candidates = useCandidates();
+  return useMemo(() => candidates.filter((c) => c.vivier), [candidates]);
 }
 
 export function useOutreach(): OutreachMessage[] {
-  return useStateOrEmpty().outreach;
+  return useSlice((s) => s.outreach);
 }
 
 export function useCampaignOutreach(campaignId: string | null | undefined): OutreachMessage[] {
-  const s = useStateOrEmpty();
-  return campaignId ? s.outreach.filter((m) => m.campaignId === campaignId) : [];
+  const outreach = useOutreach();
+  return useMemo(
+    () => (campaignId ? outreach.filter((m) => m.campaignId === campaignId) : NO_ITEMS),
+    [outreach, campaignId],
+  );
 }
 
 export function usePendingApprovals(): OutreachMessage[] {
-  return useStateOrEmpty().outreach.filter((m) => m.status === "Needs Approval");
+  const outreach = useOutreach();
+  return useMemo(() => outreach.filter((m) => m.status === "Needs Approval"), [outreach]);
 }
 
 export function useReplies(): ClassifiedReply[] {
-  return useStateOrEmpty().replies;
+  return useSlice((s) => s.replies);
 }
 
 export function useBookings(): Booking[] {
-  return useStateOrEmpty().bookings;
+  return useSlice((s) => s.bookings);
 }
 
 export function useWins(): WinRecord[] {
-  return useStateOrEmpty().wins;
+  return useSlice((s) => s.wins);
 }
 
 export function useInterviewers(): Interviewer[] {
-  return useStateOrEmpty().interviewers;
+  return useSlice((s) => s.interviewers);
 }
 
 export function useReports(): WeeklyReport[] {
-  return useStateOrEmpty().reports;
+  return useSlice((s) => s.reports);
 }
 
 export function useReportForCampaign(campaignId: string | null | undefined): WeeklyReport | undefined {
-  const s = useStateOrEmpty();
-  return campaignId ? s.reports.find((r) => r.campaignId === campaignId) : undefined;
+  return useSlice((s) => (campaignId ? s.reports.find((r) => r.campaignId === campaignId) : undefined));
 }
 
 export function useIntegrations(): IntegrationStatus[] {
-  return useStateOrEmpty().integrations;
+  return useSlice((s) => s.integrations);
 }
 
 export function useActivities(): Activity[] {
-  return useStateOrEmpty().activities;
+  return useSlice((s) => s.activities);
 }
 
 /** One event in an entity's merged timeline — see useEntityTimeline. */
@@ -6021,19 +6116,22 @@ export function useEntityTimeline(
   linkedEntityType: Activity["linkedEntityType"],
   linkedEntityId: string | null | undefined,
 ): TimelineEvent[] {
-  const s = useStateOrEmpty();
+  const activities = useActivities();
+  const outreach = useOutreach();
+  const replies = useReplies();
+  const bookings = useBookings();
   return useMemo(() => {
     if (!linkedEntityType || !linkedEntityId) return [];
 
-    const directActivities = s.activities.filter(
+    const directActivities = activities.filter(
       (a) => a.linkedEntityType === linkedEntityType && a.linkedEntityId === linkedEntityId,
     );
     const bookingActivities =
       linkedEntityType === "candidate"
-        ? s.activities.filter(
+        ? activities.filter(
             (a) =>
               a.linkedEntityType === "booking" &&
-              s.bookings.some((b) => b.id === a.linkedEntityId && b.candidateId === linkedEntityId),
+              bookings.some((b) => b.id === a.linkedEntityId && b.candidateId === linkedEntityId),
           )
         : [];
     const activityEvents: TimelineEvent[] = [...directActivities, ...bookingActivities].map((activity) => ({
@@ -6045,14 +6143,14 @@ export function useEntityTimeline(
 
     const outreachEvents: TimelineEvent[] =
       linkedEntityType === "candidate"
-        ? s.outreach
+        ? outreach
             .filter((m) => m.candidateId === linkedEntityId)
             .map((message) => ({ kind: "outreach", id: message.id, at: message.createdAt, message }))
         : [];
 
     const replyEvents: TimelineEvent[] =
       linkedEntityType === "candidate"
-        ? s.replies
+        ? replies
             .filter((r) => r.candidateId === linkedEntityId)
             .map((reply) => ({ kind: "reply", id: reply.id, at: reply.receivedAt, reply }))
         : [];
@@ -6060,14 +6158,18 @@ export function useEntityTimeline(
     return [...activityEvents, ...outreachEvents, ...replyEvents].sort(
       (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
     );
-  }, [s.activities, s.outreach, s.replies, s.bookings, linkedEntityType, linkedEntityId]);
+  }, [activities, outreach, replies, bookings, linkedEntityType, linkedEntityId]);
 }
 
 export function useDashboardKpis(): GlobalKpis {
-  const { campaigns, candidates, outreach, replies, bookings, settings } = useStateOrEmpty();
+  const campaigns = useCampaigns();
+  const candidates = useCandidates();
+  const outreach = useOutreach();
+  const replies = useReplies();
+  const bookings = useBookings();
+  const settings = useSettings();
   // Keyed on the individual slices globalKpis() reads, not the whole state
-  // object, so a commit that only touches e.g. replies doesn't force a
-  // recompute when campaigns/candidates/outreach are unchanged.
+  // object, so a commit that only touches e.g. activities doesn't recompute.
   return useMemo(
     () => globalKpis({ campaigns, candidates, outreach, replies, bookings, settings }),
     [campaigns, candidates, outreach, replies, bookings, settings],
@@ -6078,90 +6180,91 @@ export function useDashboardKpis(): GlobalKpis {
  *  Computed once per state change in <HermesProvider> (not per caller) so the TopBar bell and
  *  the dashboard AttentionPanel share one derivation instead of running it twice. */
 export function useRecommendations(): Recommendation[] {
-  return useHermes().recommendations;
+  const store = useHermesStore();
+  return useSyncExternalStore(store.subscribe, store.getRecommendations, store.getRecommendations);
 }
 
 /** Candidates whose follow-up is due (Task 1) -- see deriveFollowUpsDue in recommendations.ts. */
 export function useFollowUpsDue(): FollowUpDueItem[] {
-  return deriveFollowUpsDue(useStateOrEmpty());
+  const state = useRawState() ?? EMPTY;
+  return useMemo(() => deriveFollowUpsDue(state), [state]);
 }
 
 export function useSeats(): AgentSeat[] {
-  return useStateOrEmpty().seats;
+  return useSlice((s) => s.seats);
 }
 
 export function useSuppression(): SuppressionEntry[] {
-  return useStateOrEmpty().suppression;
+  return useSlice((s) => s.suppression);
 }
 
 export function useLedger(): OutreachLedgerEntry[] {
-  return useStateOrEmpty().ledger;
+  return useSlice((s) => s.ledger);
 }
 
 export function useSkills(): AgentSkill[] {
-  return useStateOrEmpty().skills;
+  return useSlice((s) => s.skills);
 }
 
 export function useSkill(key: SkillKey): AgentSkill | undefined {
-  return useStateOrEmpty().skills.find((s) => s.key === key);
+  return useSlice((s) => s.skills.find((skill) => skill.key === key));
 }
 
 export function useFleetSummary(): FleetSummary {
-  const s = useStateOrEmpty();
-  return fleetSummary(s.seats, s.settings.fleet);
+  const seats = useSeats();
+  const fleet = useSlice((s) => s.settings.fleet);
+  return useMemo(() => fleetSummary(seats, fleet), [seats, fleet]);
 }
 
 export function useApiKeys(): ApiKey[] {
-  return useStateOrEmpty().apiKeys;
+  return useSlice((s) => s.apiKeys);
 }
 
 export function useRole(): Role {
-  return useStateOrEmpty().currentRole;
+  return useSlice((s) => s.currentRole);
 }
 
 export function useGuardrails() {
-  return useStateOrEmpty().settings.guardrails;
+  return useSlice((s) => s.settings.guardrails);
 }
 
 export function useLlmProviders() {
-  return useStateOrEmpty().settings.llmProviders ?? [];
+  return useSlice((s) => s.settings.llmProviders ?? NO_ITEMS);
 }
 
 export function useMcpServers() {
-  return useStateOrEmpty().settings.mcpServers ?? [];
+  return useSlice((s) => s.settings.mcpServers ?? NO_ITEMS);
 }
 
 export function useDustSettings() {
-  return useStateOrEmpty().settings.dust;
+  return useSlice((s) => s.settings.dust);
 }
 
 export function useSavedModels() {
-  return useStateOrEmpty().settings.savedModels ?? [];
+  return useSlice((s) => s.settings.savedModels ?? NO_ITEMS);
 }
 
 export function useTools() {
-  return useStateOrEmpty().settings.tools ?? [];
+  return useSlice((s) => s.settings.tools ?? NO_ITEMS);
 }
 
 export function useDefaultModels() {
-  return useStateOrEmpty().settings.defaultModels ?? {};
+  return useSlice((s) => s.settings.defaultModels ?? NO_DEFAULT_MODELS);
 }
 
 export function useChats() {
-  return useStateOrEmpty().chats;
+  return useSlice((s) => s.chats);
 }
 
 export function useChatThread(id: string | null | undefined) {
-  const s = useStateOrEmpty();
-  return id ? s.chats.find((t) => t.id === id) : undefined;
+  return useSlice((s) => (id ? s.chats.find((t) => t.id === id) : undefined));
 }
 
 export function useMemory(seatId?: string): MemoryEntry[] {
-  const s = useStateOrEmpty();
-  if (!seatId) return s.memory;
-  return s.memory.filter((m) => m.seatId === seatId);
+  const memory = useSlice((s) => s.memory);
+  return useMemo(() => (seatId ? memory.filter((m) => m.seatId === seatId) : memory), [memory, seatId]);
 }
 
 export function useSchedules(): CronJob[] {
-  return useStateOrEmpty().schedules;
+  return useSlice((s) => s.schedules);
 }
