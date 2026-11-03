@@ -1,6 +1,6 @@
 # Audit UI/UX complet — ARIA (avant intégration IA)
 
-Status: needs-triage
+Status: resolved (all 10 issues resolved)
 Date: 2026-10-29
 Branche: mbe-branch (base eb3751f9)
 

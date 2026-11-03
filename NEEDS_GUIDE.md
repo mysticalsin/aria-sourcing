@@ -39,12 +39,12 @@ Every path keeps the human-approval gate: **no candidate is ever contacted witho
 ### A. Local Docker stack (recommended)
 
 ```bash
-docker compose up --build          # app + its own Supabase (Postgres, GoTrue, PostgREST, Kong)
+docker compose up --build          # app + its own Supabase (Postgres, GoTrue, PostgREST, Caddy gateway)
 ```
 
 - App: **http://localhost:3000** (override with `APP_PORT`).
 - Sign in: `admin@aria.local` / `admindemo123` (local-only sample from `docker/bootstrap/run.sh`; `DEMO_ADMIN_PASSWORD` overrides it).
-- Supabase API on `:54321` (`KONG_PORT`), Postgres on `:54322` (`DB_HOST_PORT`). Stop any host `supabase start` first to avoid port clashes.
+- Supabase API on `:54321` (`API_PORT`), Postgres on `:54322` (`DB_HOST_PORT`). Stop any host `supabase start` first to avoid port clashes.
 - The app service runs a built production image, so code changes need `docker compose up --build`. See `DOCKER.md` for details.
 - `docker compose down` keeps your data; `down -v` wipes it and the next `up` re-seeds.
 

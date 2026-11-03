@@ -101,7 +101,7 @@ ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
    `cache_read_input_tokens` > 0 on /costs; set the issue resolved.
 3. On a Docker volume created before the rename, check the bootstrap log line
    "admin@hermes.local is now admin@aria.local" and a login with the new email.
-4. Chat as real multi-turn messages (needs a `/api/hermes/chat` contract change;
+4. Chat as real multi-turn messages (needs a `/api/ai/chat` contract change;
    keep S-3: persona never in `system`).
 5. Remaining perf ideas (not done): `getClaims()` instead of `getUser()` in
    `src/proxy.ts`; load `@supabase/ssr` only when Supabase is configured; split
