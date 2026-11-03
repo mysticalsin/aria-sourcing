@@ -27,8 +27,9 @@ status: gateway-contract-checked-ready-for-docker-on-mac
   `{http.error.*}`; `respond` in handle_errors defaults to the error status.
 - AI issues (`.scratch/ai-agents/issues/`): 01, 02, 03, 09 resolved; 04
   ready-for-human; 05 ready-for-agent; 06, 07, 08 needs-triage.
-- `_relay/codex-findings.md`: 8 open (owner credential rotations, re-audits,
-  Azure Postgres), unchanged this shift.
+- `_relay/codex-findings.md` now holds only the 8 open findings (owner
+  credential rotations, re-audits, Azure Postgres); the 146 closed ones are in
+  `_relay/archive/codex-findings-closed-2026-11-03.md`.
 
 ## Done this shift (owner: "Caddy du premier coup" + review points)
 
@@ -52,6 +53,21 @@ status: gateway-contract-checked-ready-for-docker-on-mac
 - 2c56f788 extractLead: "Name - X | LinkedIn" -> X is the title only if it
   reads like one (EN/FR vocabulary, word-bounded), else the company;
   "Title at/chez Company" split.
+
+Owner follow-up "ménage dans la doc" (docs commit after b962571a):
+- July 2026 `_relay/` plans, audits, research, artifacts, incidents, PLAN.md
+  and the agent prompt, plus the July markdown notes in `_agent_state/`, moved
+  to `_relay/archive/2026-07/` (moved, not deleted; issue demo-cleanup 07
+  updated). `_relay/README.md` rewritten (dead production-readiness link gone).
+- Active docs: Azure no longer presented as the planned target (README,
+  ARCHITECTURE, DOCKER "Beyond the local stack", ADR 0001 amendment); DOCKER
+  local-model/Ollama section removed (owner: no local LLM); TESTING drops the
+  deleted docs-truth test, the removed release pipeline and Kong;
+  SUPABASE_SETUP marked not re-validated, its local-supabase-up.sh claim fixed
+  and the migration-ledger gap of `supabase db push` noted; AGENTS.md no longer
+  asks to maintain the abandoned July goal JSONs.
+- Checked: no dead links, file paths, `npm run` scripts or test files cited in
+  active docs (`.scratch/` and `_relay/archive/` excluded).
 
 ## Blockers
 
@@ -111,6 +127,9 @@ status: gateway-contract-checked-ready-for-docker-on-mac
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- `_relay/codex-findings.md` keeps open findings only: when closing one, move
+  it to the archive file of closed findings.
 
 - The bootstrap job now depends on the gateway: a gateway regression shows up as a failed supabase-bootstrap, not as an unhealthy app.
 - `getClaims()` falls back to `getUser()` with the HS256 secret used here.

@@ -11,3 +11,12 @@ change if the rule changes.
 ## Resolution (2026-10-26)
 
 Owner has no preference: `_relay/` and `_agent_state/` stay as they are.
+
+## Update (2026-11-03)
+
+Owner asked for a documentation clean-up. Old plans and audits were pruned by
+moving them, not deleting them: the July 2026 `_relay/` plans, audits,
+research, artifacts and incident records, and the July markdown notes from
+`_agent_state/`, are now in `_relay/archive/2026-07/`; closed Codex findings
+are in `_relay/archive/codex-findings-closed-2026-11-03.md`. The
+"never delete archive/" rule is unchanged.

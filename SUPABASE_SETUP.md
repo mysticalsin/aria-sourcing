@@ -1,5 +1,10 @@
 # Backend setup — Supabase + Microsoft (Entra) login
 
+> **Not the default path.** The supported setup is the local Docker stack
+> ([`DOCKER.md`](DOCKER.md)), which runs its own Supabase services. This guide
+> covers a hosted Supabase project with Microsoft sign-in, has not been
+> re-validated since the 2026-10-26 scope reset, and no hosting target is chosen.
+
 Aria runs in two modes:
 
 - **Demo mode** (default) — no env vars. State lives in `localStorage`, no login.
@@ -28,11 +33,14 @@ Apply every file in `supabase/migrations/` in order:
 supabase db push
 ```
 
-For local development, `bash scripts/local-supabase-up.sh` starts Supabase and
-uses `supabase db reset`, which also applies every numbered migration. If you
-must use the SQL Editor, run every file in lexical order and do not stop at an
-older range. The local Docker stack does this automatically through
-`docker/bootstrap/migrate.sh`.
+> Known gap: `/api/ready` also checks the `public.aria_schema_migrations` ledger
+> (file names and SHA-256), which only `docker/bootstrap/migrate.sh` writes.
+> `supabase db push` does not, so readiness reports not ready until that ledger
+> exists.
+
+For local development use the Docker stack instead (`npm run demo:up`;
+`scripts/local-supabase-up.sh` is only an alias for it). If you must use the SQL
+Editor, run every file in lexical order and do not stop at an older range.
 
 **Email sending (optional, live):**
 - API-key providers: set `RESEND_API_KEY` or `SENDGRID_API_KEY` in `.env.local`.
@@ -40,7 +48,9 @@ older range. The local Docker stack does this automatically through
   connect each seat in **Settings → Fleet**. A real send only happens when a fleet
   seat is set **live** with a **verified domain** and the send is explicitly
   confirmed — otherwise everything is dry-run.
-- LinkedIn is assisted-manual only — no automation or scraping.
+- LinkedIn messaging is assisted-manual only — no automation or scraping.
+  LinkedIn profiles are found through the Apify source or web search
+  (see [`docs/SOURCING.md`](docs/SOURCING.md)).
 
 **Real candidate sourcing (optional, live):**
 - Set `GITHUB_TOKEN` in `.env.local` (a GitHub personal access token; read-only

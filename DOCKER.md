@@ -17,7 +17,7 @@ docker compose up --build --detach --wait --wait-timeout 300
 
 Open **http://localhost:3000/login** and sign in with **admin@aria.local** /
 **admindemo123**. These are intentionally local sample credentials. Published
-ports bind to loopback; this configuration is not a public Azure deployment.
+ports bind to loopback; this configuration is not a public deployment.
 A database created before the rename still has `admin@hermes.local`: the next
 start renames it to `admin@aria.local` in place (same account and data).
 
@@ -121,8 +121,10 @@ the runtime detects an image/configuration mismatch and refuses to start.
 The server reaches Supabase internally at `http://gateway:8000`.
 
 Optional provider/OAuth credentials belong in `.env.local` or Settings as
-appropriate; no setup command overwrites that file. A stored workspace Apify key
-is required for its LinkedIn adapter. Configure one GPT/Claude provider later.
+appropriate; no setup command overwrites that file. AI runs on one Anthropic key,
+linked on the Anthropic provider in **Settings -> AI & Models**; the "LinkedIn
+via web search" source uses that same workspace key. The Apify LinkedIn source
+needs a stored workspace Apify key.
 
 ## Development only
 
@@ -158,28 +160,13 @@ command. Use a new acceptance project name each time. The script refuses a
 normal project name or external/shared volumes and removes only its isolated
 acceptance stack at the end. Never point it at a working database.
 
-## Future Azure target
+## Beyond the local stack
 
-The app's standalone runtime image is reusable, but this local Compose file is
-not production configuration. The proposed first internal target keeps the same
-service boundaries on a private Linux VM, durable managed storage, Key Vault
-secrets and HTTPS ingress. No cloud resource is deployed by these commands.
-
-A direct swap to Azure PostgreSQL Flexible Server is currently blocked by the
-bootstrap's superuser requirement. The ADR records the compatible initial target,
-managed-service migration prerequisites, and deployment gates.
-
-## Local model option (deferred)
-
-Local / OpenAI-compatible remains available. Host Ollama outside the app container;
-use `http://host.docker.internal:11434/v1` from Docker or
-`http://127.0.0.1:11434/v1` from a host-run app. Enter the exact installed model tag,
-e.g. `qwen3:8b`, and set task-default Saved Models. A local Ollama key is optional;
-an authenticated compatible gateway can use a saved Custom key. On Linux add an
-appropriate Docker host-gateway mapping if that hostname is not provided.
-
-Only private/loopback hosts are accepted by default; server-side
-PROVIDER_ALLOWED_HOSTS can add deployment-owned exact DNS names. Metadata hosts,
-URL credentials/query/fragment and redirects remain blocked. Direct Azure
-api-key/api-version endpoints need a dedicated adapter. Local inference still
-uses external candidate search services.
+This Compose file is local-only: public sample JWTs, a seeded admin, loopback
+ports. There is no production deployment; the app will be self-hosted later and
+the target is not chosen. The standalone app image is reusable. Before any
+shared deployment, prepare a separate configuration with rotated secrets, no
+seeded login, HTTPS origins, image digests, and tested database and key backups.
+[ADR 0001](docs/adr/0001-local-runtime-and-azure-target.md) records what was
+studied for Azure, including why Azure PostgreSQL Flexible Server is not a
+drop-in database for the current bootstrap.

@@ -7,8 +7,7 @@ worktree. Read this file before touching anything.
 
 - **Claude Code = builder + integrator.** Implements features, runs the full
   test gate (`npm run typecheck` + `npm run typecheck:tests` + `npm test`), commits in small reviewable
-  chunks, pushes, verifies deploys, keeps the goal state
-  (`_agent_state/mantu-goal/*.json`) and this project's baton honest.
+  chunks, pushes, verifies deploys, keeps this project's baton honest.
 - **Codex = adversarial auditor.** Reviews the code Claude (or Codex itself)
   writes for correctness bugs, security gaps, spec-compliance mismatches, and
   missing edge cases. Write findings to `_relay/codex-findings.md` (create it

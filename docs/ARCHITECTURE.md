@@ -2,8 +2,8 @@
 
 This is the current developer-facing architecture map for MSourcing / ARIA.
 It describes the checked-in source on `mbe-branch`. The current target is a
-local Docker demo of the recruiting journey; an internal Azure deployment
-(Terraform) is planned later and not started.
+local Docker demo of the recruiting journey; the app will be self-hosted later
+(target not chosen yet).
 
 ## Product boundary
 
@@ -166,7 +166,8 @@ db-init, supabase-bootstrap
   -> owner reconciliation, ordered hash-checked migrations, admin seed; then exit
 ```
 
-An internal Azure Cloud deployment (Terraform) is planned and not started.
+There is no production deployment. Self-hosting is planned; the target is not
+chosen yet (ADR 0001 records Azure as one studied option).
 
 ## Verification layers
 

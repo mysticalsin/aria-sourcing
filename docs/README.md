@@ -21,7 +21,7 @@ Start with the root [`README.md`](../README.md), then this map.
 |---|---|
 | [`../DOCKER.md`](../DOCKER.md) | The local Docker stack: start, reset, ports, services |
 | [`../NEEDS_GUIDE.md`](../NEEDS_GUIDE.md) | Feeding a hiring need into ARIA and starting sourcing |
-| [`../SUPABASE_SETUP.md`](../SUPABASE_SETUP.md) | Using a hosted Supabase project and Microsoft (Entra) sign-in instead of the local stack |
+| [`../SUPABASE_SETUP.md`](../SUPABASE_SETUP.md) | Hosted Supabase project and Microsoft (Entra) sign-in instead of the local stack (not re-validated since the 2026-10-26 reset) |
 | [`runbooks/connect-gmail-outlook.md`](runbooks/connect-gmail-outlook.md) | Connecting a Gmail or Outlook sender mailbox |
 | [`runbooks/resend-live-send-quickstart.md`](runbooks/resend-live-send-quickstart.md) | Sending real email through Resend |
 | [`partnerships/linkedin-rsc-application.md`](partnerships/linkedin-rsc-application.md) | Draft application for an official LinkedIn integration |

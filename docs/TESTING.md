@@ -28,8 +28,8 @@ npm run build:isolated
 lifecycle phases to `tests/test-manifest.mjs`, and
 `scripts/run-test-manifest.mjs` validates and executes that literal process
 inventory without a shell. Do not create another copied command list.
-`build:isolated` is required in the OneDrive checkout because it copies build
-inputs to a temporary unsynced directory before running the Next.js build.
+`build:isolated` copies build inputs to a temporary directory before running
+the Next.js build; use it when the checkout lives in a synced folder (OneDrive).
 
 ## Security gate
 
@@ -65,38 +65,31 @@ conversation authority. This list mirrors the `database-security` job in
 Static SQL-text tests are useful regression guards but do not replace these
 database behavior tests.
 
-## Documentation and repository contracts
+## Repository contracts
 
 ```bash
-npx tsx tests/docs-truth.mts
 npx tsx tests/repository-hygiene.mts
 ```
 
-These tests derive current process counts from the manifest and migration tips
-from the migration directory. Avoid unchecked hand-entered totals in current
-documentation.
+Avoid unchecked hand-entered totals (suite counts, migration tips) in current
+documentation; derive them from the manifest and the migration directory.
 
-## CI and protected release
+## CI
 
-Local green is necessary but does not qualify a production release. The exact
-release SHA must have:
+`.github/workflows/ci.yml` runs Quality (typecheck, lint, tests, build),
+Dependency audit, Secret scan, Database security and Local Docker demo, then a
+Release gate that requires all five. `codeql.yml` runs CodeQL.
 
-- CI quality, dependency, secret, database, image, and aggregate release jobs;
-- CodeQL with no open high or critical alert;
-- protected-branch and independent-environment approval;
-- recovery receipt bound to the release and recovery target;
-- immutable image digests, scans, SBOM validation, and attestations;
-- accepted release evidence artifacts.
+There is no production deployment: Fly and Vercel were removed and the
+self-hosting target is not chosen yet. Release requirements (protected ref,
+image digests, environment approval) will be defined with that target.
 
-The production workflow must execute from the protected release ref and deploy
-the same reviewed SHA.
+## Acceptance on a deployed stack
 
-## Live acceptance
-
-After deployment, verify:
+Once a deployment exists, verify after each deployment:
 
 1. application, login, liveness, and `/api/ready`;
-2. authenticated Kong REST and Auth behavior;
+2. authenticated gateway REST and Auth behavior;
 3. running image and build identity;
 4. complete migration identity;
 5. database and Auth persistence across two controlled restarts;

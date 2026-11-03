@@ -1,7 +1,7 @@
 # ADR 0001 - A lean, reproducible local runtime and an Azure-compatible image
 
-Date: 2026-10-27 (gateway amended 2026-11-03)
-Status: accepted for the local demo; Azure topology proposed, not deployed
+Date: 2026-10-27 (gateway and hosting target amended 2026-11-03)
+Status: accepted for the local demo; the Azure section is a studied option, not a decision
 
 ## Context
 
@@ -44,7 +44,14 @@ Kong's key-auth did; a key without a session becomes the Authorization bearer,
 as Kong's request-transformer did; preflights are answered with permissive CORS,
 as Kong's cors plugin did. Other paths answer 404. Authorization itself is
 unchanged: GoTrue and PostgREST still verify every JWT, and RLS still applies.
-The host port variable is now API_PORT (was KONG_PORT).
+The host port variable is now API_PORT (was KONG_PORT). The bootstrap job ends
+by checking this contract through the gateway (`docker/bootstrap/gateway-check.sh`).
+
+### Amendment 2026-11-03: hosting target open
+
+Vercel is dropped and the app will be self-hosted later; the target is not
+chosen. The "Azure target" section below stays as the analysis done for one
+option (in particular the managed PostgreSQL limitation), not as a plan.
 
 The default app is a compiled standalone image, running as a non-root user.
 Hot reload and source/dependency mounts belong to docker-compose.dev.yml only.
