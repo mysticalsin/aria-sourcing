@@ -6,7 +6,6 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY run.sh /usr/local/bin/run.sh
 COPY migrate.sh /usr/local/bin/migrate.sh
-COPY supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
 RUN chmod +x /usr/local/bin/run.sh /usr/local/bin/migrate.sh
 USER postgres
 ENTRYPOINT ["/usr/local/bin/run.sh"]

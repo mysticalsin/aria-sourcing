@@ -20,7 +20,7 @@ export const supabaseEnabled = SUPABASE_URL.length > 0 && SUPABASE_ANON_KEY.leng
 
 // @supabase/ssr derives the auth cookie name from the URL's host when none is
 // given. The browser and the server intentionally resolve SUPABASE_URL to
-// different hosts (server: the docker-internal `kong`; browser: the
+// different hosts (server: the docker-internal `gateway`; browser: the
 // host-mapped `localhost:<port>`) so each side can actually reach it — but
 // that also means each side would silently pick a DIFFERENT cookie name and
 // never recognise the other's session. Force one fixed name everywhere so
@@ -42,8 +42,8 @@ export function isLoopbackHttpOrigin(value: string | undefined): boolean {
 
 /**
  * Shared cookie options for every @supabase/ssr client. `secure` is set in
- * production so the session cookie is only ever sent over HTTPS (the Fly proxy
- * and Kong both force_https); left off in dev so `localhost` over http still
+ * production so the session cookie is only ever sent over HTTPS; left off in
+ * dev so `localhost` over http still
  * works. Must be identical at every call site or the sides pick different
  * cookies (see SUPABASE_AUTH_COOKIE_NAME above).
  */

@@ -1,0 +1,60 @@
+# Aria API gateway: the single Supabase origin supabase-js expects.
+# /auth/v1/* goes to GoTrue and /rest/v1/* to PostgREST. Like the Kong config it
+# replaces, it requires the anon or service key on every API call, turns a bare
+# key into the Authorization bearer, and answers CORS. Nothing else is routed.
+# Upstreams default to the compose service names; tests can point them elsewhere.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8000 {
+	route {
+		respond /gateway-health 200
+
+		# A CORS preflight carries no key: answer it before the key check.
+		@preflight method OPTIONS
+		header @preflight {
+			Access-Control-Allow-Origin "*"
+			Access-Control-Allow-Methods "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS"
+			Access-Control-Allow-Headers "{http.request.header.Access-Control-Request-Headers}"
+			Access-Control-Max-Age "3600"
+		}
+		respond @preflight 204
+
+		# The browser opens GoTrue's email-link, OAuth and JWKS routes without a key.
+		@missingKey {
+			path /auth/v1/* /rest/v1/*
+			not path /auth/v1/verify* /auth/v1/callback* /auth/v1/authorize* /auth/v1/.well-known/jwks.json
+			not header apikey {$SUPABASE_ANON_KEY}
+			not header apikey {$SUPABASE_SERVICE_KEY}
+			not query apikey={$SUPABASE_ANON_KEY}
+			not query apikey={$SUPABASE_SERVICE_KEY}
+		}
+		header @missingKey {
+			Access-Control-Allow-Origin "*"
+			Content-Type "application/json"
+		}
+		respond @missingKey `{"message":"Invalid authentication credentials"}` 401
+
+		# Without a user session the key itself is the role's JWT (anon or service_role).
+		@keyWithoutSession {
+			header apikey *
+			not header Authorization *
+		}
+		request_header @keyWithoutSession Authorization "Bearer {http.request.header.apikey}"
+
+		handle_path /auth/v1/* {
+			reverse_proxy {$AUTH_UPSTREAM:auth:9999} {
+				header_down Access-Control-Allow-Origin "*"
+			}
+		}
+		handle_path /rest/v1/* {
+			reverse_proxy {$REST_UPSTREAM:rest:3000} {
+				header_down Access-Control-Allow-Origin "*"
+			}
+		}
+		respond 404
+	}
+}

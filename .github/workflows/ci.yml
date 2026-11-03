@@ -162,7 +162,7 @@ jobs:
           ARIA_ACCEPTANCE_PROJECT: aria-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
           ARIA_RELEASE_SHA: ${{ github.sha }}
           APP_PORT: "3101"
-          KONG_PORT: "54331"
+          API_PORT: "54331"
           DB_HOST_PORT: "54332"
           ARIA_BROWSER_CHANNEL: chrome
         run: npm run test:local-demo

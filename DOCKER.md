@@ -1,7 +1,8 @@
 # Local connected demo and development
 
 The default stack runs the compiled application with Supabase authentication and
-PostgreSQL persistence. It needs Docker Engine/Desktop and Compose 2.24 or newer.
+PostgreSQL persistence. It needs Docker Engine 25+ (Docker Desktop 4.27+) and
+Compose 2.24 or newer: health checks use `start_interval`.
 Windows Docker Desktop needs WSL 2 or its supported virtualization backend.
 No host Supabase CLI, Node installation, or LLM key is required for the core demo.
 
@@ -43,13 +44,15 @@ npm run demo:stop     # stop and retain durable volumes
 | db | permanent | PostgreSQL, RLS, campaigns, candidates and authority records |
 | auth | permanent | GoTrue authentication and session refresh |
 | rest | permanent | PostgREST CRUD and RPC under database authorization |
-| kong | permanent | Shared Supabase API origin and key/JWT routing |
+| gateway | permanent | Caddy: the shared Supabase API origin (`/auth/v1`, `/rest/v1`), API-key check, CORS |
 | db-init | exits after success | Reconcile database roles before Auth starts |
 | supabase-bootstrap | exits after success | Migrate after Auth created its schema, seed the local admin |
 
 There are **five running services**, not seven permanent services. The two jobs
 have different ordering requirements. No Studio, Realtime, Storage, Redis,
-local LLM server or agent framework is started. See
+local LLM server or agent framework is started. The gateway routes only Auth and
+REST; every other path answers 404. Each permanent service keeps at most 30 MB
+of logs (3 rotated files of 10 MB). See
 [the infrastructure decision](docs/adr/0001-local-runtime-and-azure-target.md).
 
 ## Persistence and restart
@@ -96,14 +99,15 @@ local `.env` file before building:
 
 ```dotenv
 APP_PORT=3101
-KONG_PORT=54331
+API_PORT=54331
 DB_HOST_PORT=54332
 ```
 
+`API_PORT` replaces the former `KONG_PORT`; rename it in an existing `.env`.
 Then rerun the start command. Auth callbacks, browser CSP and the compiled browser
 backend URL use these values. Changing public URLs requires rebuilding the image;
 the runtime detects an image/configuration mismatch and refuses to start.
-The server reaches Supabase internally at `http://kong:8000`.
+The server reaches Supabase internally at `http://gateway:8000`.
 
 Optional provider/OAuth credentials belong in `.env.local` or Settings as
 appropriate; no setup command overwrites that file. A stored workspace Apify key
@@ -135,7 +139,7 @@ On the Docker machine, use Node 22 and Playwright's installed Chromium, or set
 
 ```bash
 ARIA_LOCAL_ACCEPTANCE=1 ARIA_ACCEPTANCE_PROJECT=aria-acceptance-local-001 \
-APP_PORT=3101 KONG_PORT=54331 DB_HOST_PORT=54332 npm run test:local-demo
+APP_PORT=3101 API_PORT=54331 DB_HOST_PORT=54332 npm run test:local-demo
 ```
 
 PowerShell users set the same names with `$env:NAME='value'` before the npm

@@ -24,7 +24,7 @@ identifiers. Keep those in a password manager or the application's encrypted vau
 | Host Node / Supabase CLI | No for normal Docker use | Node 22 is only needed for optional host-side helpers/automated acceptance. |
 
 The standard stack has five permanent services (`app`, `db`, `auth`, `rest`,
-`kong`) and two initialization jobs. An exited initialization job with exit code
+`gateway`) and two initialization jobs. An exited initialization job with exit code
 zero is expected. No separate worker or model container is required.
 
 ## 2. Update and start without losing existing data
@@ -71,7 +71,7 @@ existing settings:
 
 ```dotenv
 APP_PORT=3101
-KONG_PORT=54331
+API_PORT=54331
 DB_HOST_PORT=54332
 ```
 

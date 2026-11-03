@@ -1,6 +1,6 @@
 # ADR 0001 - A lean, reproducible local runtime and an Azure-compatible image
 
-Date: 2026-10-27
+Date: 2026-10-27 (gateway amended 2026-11-03)
 Status: accepted for the local demo; Azure topology proposed, not deployed
 
 ## Context
@@ -20,7 +20,7 @@ Keep five long-running services:
 | db | PostgreSQL and durable state | Campaigns, candidates and authority |
 | auth | GoTrue identity, sessions and token refresh | Existing authentication contract |
 | rest | PostgREST, scoped CRUD and RPC | Existing RLS-backed persistence contract |
-| kong | Shared /auth/v1 and /rest/v1 API origin, key routing | Existing Supabase client protocol |
+| gateway | Caddy: shared /auth/v1 and /rest/v1 API origin, API-key check, CORS | Existing Supabase client protocol |
 
 Keep two short-lived jobs. db-init reconciles owner/role credentials before Auth
 starts; supabase-bootstrap waits for Auth's schema, applies app migrations and
@@ -29,6 +29,22 @@ protocol creates an ordering cycle. Exited jobs consume no steady-state CPU.
 
 Do not add Studio, Realtime, Storage, Edge Functions, Redis, a separate AI server,
 or worker orchestration for this slice. The hosted LLM is an external API.
+
+### Amendment 2026-11-03: Caddy instead of Kong
+
+The Kong declarative file was Supabase's stock gateway config: it routed GraphQL,
+Realtime, Storage, Functions, Meta, Studio and SAML to services this stack never
+runs, and Kong (nginx + LuaJIT, one worker per CPU by default) was the heaviest
+long-running service. The app only uses /auth/v1 and /rest/v1.
+
+`docker/Caddyfile` keeps the same contract with Caddy: GoTrue's open routes
+(verify, callback, authorize, JWKS) pass without a key; every other /auth/v1 and
+/rest/v1 call needs the anon or service key (header or query) or gets 401, as
+Kong's key-auth did; a key without a session becomes the Authorization bearer,
+as Kong's request-transformer did; preflights are answered with permissive CORS,
+as Kong's cors plugin did. Other paths answer 404. Authorization itself is
+unchanged: GoTrue and PostgREST still verify every JWT, and RLS still applies.
+The host port variable is now API_PORT (was KONG_PORT).
 
 The default app is a compiled standalone image, running as a non-root user.
 Hot reload and source/dependency mounts belong to docker-compose.dev.yml only.

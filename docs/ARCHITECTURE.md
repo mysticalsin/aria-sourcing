@@ -157,8 +157,8 @@ The demo runs locally with `docker compose up --build` (see
 
 ```text
 Browser
-  -> app (Next.js dev server, :3000)
-  -> kong (:54321)
+  -> app (compiled Next.js standalone server, :3000)
+  -> gateway (Caddy, :54321)
        -> auth (GoTrue)
        -> rest (PostgREST)
             -> db (supabase/postgres)

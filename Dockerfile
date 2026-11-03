@@ -3,7 +3,9 @@ FROM node:22-bookworm-slim AS dependencies
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# The npm and Next caches survive between builds (BuildKit cache mounts), so a
+# rebuild reuses downloads and compiler output instead of starting cold.
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 
 FROM dependencies AS development
 ENV NODE_ENV=development
@@ -23,7 +25,8 @@ ENV NODE_ENV=production \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
     NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 COPY . .
-RUN ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" node scripts/build-container-metadata.mjs \
+RUN --mount=type=cache,target=/app/.next/cache \
+    ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" node scripts/build-container-metadata.mjs \
     && npm run build
 
 FROM node:22-bookworm-slim AS runtime

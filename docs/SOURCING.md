@@ -525,7 +525,7 @@ candidate without one.
 ### Local stack
 
 The demo runs with `docker compose up --build` (Next.js app + self-hosted Supabase:
-Postgres, GoTrue, PostgREST, Kong). See [`DOCKER.md`](../DOCKER.md).
+Postgres, GoTrue, PostgREST, Caddy gateway). See [`DOCKER.md`](../DOCKER.md).
 
 ### Running one role end to end
 
