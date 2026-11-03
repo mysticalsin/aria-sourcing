@@ -29,7 +29,7 @@ ledger. `/api/health` is only process liveness.
 Optional Node 22 helpers:
 
 ```bash
-npm run demo:doctor   # check Docker and Compose configuration; changes no data
+npm run demo:doctor   # check Docker and Compose; on a running stack, the gateway and app too; changes no data
 npm run demo:up       # build, start and wait for readiness
 npm run demo:status   # include completed initialization jobs
 npm run demo:stop     # stop and retain durable volumes
@@ -48,7 +48,7 @@ npm run demo:stop     # stop and retain durable volumes
 | rest | permanent | PostgREST CRUD and RPC under database authorization |
 | gateway | permanent | Caddy: the shared Supabase API origin (`/auth/v1`, `/rest/v1`), API-key check, CORS |
 | db-init | exits after success | Reconcile database roles before Auth starts |
-| supabase-bootstrap | exits after success | Migrate after Auth created its schema, seed the local admin |
+| supabase-bootstrap | exits after success | Migrate after Auth created its schema, seed the local admin, prove the gateway contract |
 
 There are **five running services**, not seven permanent services. The two jobs
 have different ordering requirements. No Studio, Realtime, Storage, Redis,
@@ -56,6 +56,15 @@ local LLM server or agent framework is started. The gateway routes only Auth and
 REST; every other path answers 404. Each permanent service keeps at most 30 MB
 of logs (3 rotated files of 10 MB). See
 [the infrastructure decision](docs/adr/0001-local-runtime-and-azure-target.md).
+
+The bootstrap job ends with `docker/bootstrap/gateway-check.sh`: through the
+gateway, a missing or unknown key must get 401, the anon key must reach
+PostgREST and GoTrue, a bare service key must become the bearer, a session
+bearer must be kept, a CORS preflight must be answered and any other path must
+get 404. If one check fails the job stops, the app does not start, and the job
+log names the broken check (`docker compose logs supabase-bootstrap`).
+`npm run demo:doctor` reruns the same checks on a running stack, then probes the
+gateway and `/api/ready` on the host ports.
 
 ## Persistence and restart
 

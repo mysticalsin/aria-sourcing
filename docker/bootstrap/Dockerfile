@@ -1,11 +1,13 @@
 # One-shot bootstrap image: has psql (apply migrations + promote admin profile) and
-# curl (seed the GoTrue login user via the admin API). Runs once per `up`, then exits.
+# curl (seed the GoTrue login user via the admin API, check the gateway contract).
+# Runs once per `up`, then exits.
 FROM postgres:17-bookworm@sha256:5530681ea5d3e2ed4ce396f9b5cb443efbac6baf2a8a19c0c0635e40ae7eadce
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl ca-certificates jq \
   && rm -rf /var/lib/apt/lists/*
 COPY run.sh /usr/local/bin/run.sh
 COPY migrate.sh /usr/local/bin/migrate.sh
-RUN chmod +x /usr/local/bin/run.sh /usr/local/bin/migrate.sh
+COPY gateway-check.sh /usr/local/bin/gateway-check.sh
+RUN chmod +x /usr/local/bin/run.sh /usr/local/bin/migrate.sh /usr/local/bin/gateway-check.sh
 USER postgres
 ENTRYPOINT ["/usr/local/bin/run.sh"]

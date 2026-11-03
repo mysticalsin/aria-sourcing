@@ -196,12 +196,16 @@ services:
         condition: service_healthy
       db-init:
         condition: service_completed_successfully
+      # The job ends by proving the gateway contract (docker/bootstrap/gateway-check.sh).
+      gateway:
+        condition: service_healthy
     environment:
       DB_HOST: db
       DB_PORT: "5432"
       DB_NAME: postgres
       POSTGRES_TARGET_PASSWORD: *postgres_password
       SERVICE_ROLE_KEY: *service_key
+      SUPABASE_ANON_KEY: *anon_key
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
     volumes:
       - ./supabase/migrations:/migrations:ro

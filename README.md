@@ -90,7 +90,7 @@ The stack runs without any external key. Each integration turns on once its key 
 | Area | Technology |
 |---|---|
 | App | Next.js 16, React 19, TypeScript, Tailwind |
-| Data and auth | Self-hosted Supabase (Postgres with row-level security, GoTrue, PostgREST, Kong) |
+| Data and auth | Self-hosted Supabase (Postgres with row-level security, GoTrue, PostgREST, Caddy gateway) |
 | AI | Server-side calls to Anthropic or OpenAI-compatible APIs |
 | Runtime | Docker Compose locally. An internal Azure deployment (Terraform) is planned. |
 

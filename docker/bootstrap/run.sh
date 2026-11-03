@@ -104,4 +104,7 @@ SQL
 echo "[bootstrap] reloading the PostgREST schema cache..."
 psql_postgres -q -c "notify pgrst, 'reload schema';"
 
+echo "[bootstrap] checking the API gateway the browser and the app go through..."
+/usr/local/bin/gateway-check.sh
+
 echo "[bootstrap] done: Supabase backend is migrated and seeded."

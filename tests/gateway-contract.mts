@@ -56,6 +56,30 @@ ok("the Caddyfile is mounted read-only", gatewayBlock.includes("./docker/Caddyfi
 ok("the app server reaches Supabase through the gateway", compose.includes("SUPABASE_URL: http://gateway:8000"));
 ok("the browser and GoTrue use the same public API port", (compose.match(/http:\/\/localhost:\$\{API_PORT:-54321\}/g) ?? []).length === 3);
 ok("every long-running service has bounded logs", (compose.match(/logging: \*logging/g) ?? []).length === 5);
+ok(
+  "an upstream failure keeps the CORS header",
+  /handle_errors \{\s*header Access-Control-Allow-Origin "\*"/.test(caddyfile),
+);
+
+/* ---- The contract is proven on every `up` and by demo:doctor ------------- */
+
+const bootstrapBlock = compose.slice(compose.indexOf("  supabase-bootstrap:\n"), compose.indexOf("  app:\n"));
+const gatewayCheck = source("docker/bootstrap/gateway-check.sh");
+ok("bootstrap waits for a healthy gateway", /gateway:\s*condition: service_healthy/.test(bootstrapBlock));
+ok("bootstrap receives both keys", bootstrapBlock.includes("SUPABASE_ANON_KEY: *anon_key") && bootstrapBlock.includes("SERVICE_ROLE_KEY: *service_key"));
+ok("bootstrap ends with the gateway check", source("docker/bootstrap/run.sh").includes("/usr/local/bin/gateway-check.sh"));
+ok("the bootstrap image ships the gateway check", source("docker/bootstrap/Dockerfile").includes("COPY gateway-check.sh /usr/local/bin/gateway-check.sh"));
+ok("the gateway check covers the contract", [
+  "REST without a key is refused",
+  "REST with an unknown key is refused",
+  "REST with the anon key reaches PostgREST",
+  "a bare service key becomes the bearer",
+  "a session bearer is kept",
+  "CORS preflight is answered",
+  "unrouted paths answer 404",
+].every((check) => gatewayCheck.includes(`"${check}"`)));
+ok("the gateway check prints no key", !/echo[^\n]*\$(ANON|SERVICE)\b/.test(gatewayCheck));
+ok("demo:doctor reruns the gateway check", source("scripts/local-stack.mjs").includes('"--entrypoint", "/usr/local/bin/gateway-check.sh", "supabase-bootstrap"'));
 
 console.log(`RESULT gateway-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

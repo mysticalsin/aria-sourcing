@@ -57,4 +57,12 @@
 		}
 		respond 404
 	}
+
+	# An upstream that is down answers 502/504 with the CORS header, so the
+	# browser shows the real status instead of an opaque CORS failure.
+	handle_errors {
+		header Access-Control-Allow-Origin "*"
+		header Content-Type "application/json"
+		respond `{"message":"API gateway: {err.status_code} {err.status_text}"}`
+	}
 }
