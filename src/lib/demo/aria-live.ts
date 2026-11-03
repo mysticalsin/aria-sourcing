@@ -49,7 +49,7 @@ import { pickResponderIndex } from "@/lib/floor3d";
 import type { HermesActions } from "@/lib/store";
 import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { getAriaLiveRunPolicy } from "@/lib/demo/aria-live-policy";
+import { getAriaLiveRunPolicy, pickAriaLiveCampaign } from "@/lib/demo/aria-live-policy";
 
 /** Must match store.ts's STORAGE_KEY exactly — read/write only, never edited here. */
 const STORAGE_KEY = "hermes-sourcing:v1";
@@ -236,6 +236,9 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   };
 
   directorChannel.set({ establishing: true });
+  // The run may play on another campaign than the selected one (see
+  // pickAriaLiveCampaign); show that one. The restore puts the selection back.
+  actions.setActiveCampaign(campaign.id);
   setChapter("sourcing", "Scanning the Talent Pool for a match…");
   await sleep(900);
   if (restoring) return;
@@ -276,6 +279,22 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   setChapter("drafting", `Draft ready: "${msg.subject}"`, candidate.name);
   await sleep(1600);
   if (restoring) return;
+
+  // Approval requires an operator-recorded lawful basis (rules.ts). The demo
+  // plays the recruiter's step on this synthetic profile, through the same
+  // action as the drawer's Contact basis form.
+  setChapter("approving", `Recording the contact basis for ${candidate.name}…`, candidate.name);
+  const basis = await actions.recordCandidateEvidence(candidate.id, {
+    email: candidate.email,
+    linkedinUrl: candidate.linkedinUrl,
+    lawfulBasis: "legitimate_interest",
+    source: "Aria Live demo: the recruiter records legitimate interest for a synthetic profile.",
+  });
+  if (restoring) return;
+  if (!basis.ok) {
+    fail(`Couldn't record a contact basis for ${candidate.name}: ${basis.error ?? "unknown error"}.`);
+    return;
+  }
 
   setChapter("approving", `Approving the draft for ${candidate.name}…`, candidate.name);
   await sleep(500);
@@ -364,8 +383,13 @@ export function beginAriaLiveRun(opts: {
   if (!policy.ok) return policy;
   if (!opts.state) return { ok: false, reason: "Still loading the workspace…" };
   if (getAriaLiveSnapshot().active) return { ok: false, reason: "Aria Live is already running." };
-  const campaign = opts.campaigns.find((c) => c.id === opts.activeCampaignId) ?? opts.campaigns[0];
-  if (!campaign) return { ok: false, reason: "Create a campaign first. Aria Live needs one to run against." };
+  if (opts.campaigns.length === 0) {
+    return { ok: false, reason: "Create a campaign first. Aria Live needs one to run against." };
+  }
+  const campaign = pickAriaLiveCampaign(opts.campaigns, opts.activeCampaignId);
+  if (!campaign) {
+    return { ok: false, reason: "Aria Live needs a campaign in Sourcing or Outreach. Move one back to Sourcing first." };
+  }
   startAriaLive(opts.actions, opts.state, campaign, opts.seats);
   return { ok: true };
 }
