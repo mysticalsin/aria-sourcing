@@ -236,7 +236,7 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
 }
 
 function buildMimeMessage(req: OAuthSendRequest, rendered: RenderedUnsubscribeEmail): string {
-  const boundary = `__hermes_${Math.random().toString(36).slice(2)}__`;
+  const boundary = `__aria_${Math.random().toString(36).slice(2)}__`;
   const fromHeader = req.fromName ? `${req.fromName} <${req.from}>` : req.from;
   const headers = [
     `From: ${fromHeader}`,

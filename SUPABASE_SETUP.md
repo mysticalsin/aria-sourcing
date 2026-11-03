@@ -1,6 +1,6 @@
 # Backend setup — Supabase + Microsoft (Entra) login
 
-Hermes runs in two modes:
+Aria runs in two modes:
 
 - **Demo mode** (default) — no env vars. State lives in `localStorage`, no login.
 - **Live mode** — set the Supabase env vars below. State persists to Supabase in a
@@ -65,7 +65,7 @@ older range. The local Docker stack does this automatically through
 
 In the **Azure Portal → Microsoft Entra ID → App registrations → New registration**:
 
-1. **Name:** `Hermes Sourcing`.
+1. **Name:** `Aria Sourcing`.
 2. **Supported account types:** pick one:
    - *Single tenant* — only your organization (recommended for an internal tool).
    - *Multitenant* — any work/school account.

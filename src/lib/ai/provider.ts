@@ -10,7 +10,7 @@
    ========================================================================== */
 
 import type { LlmProviderKind, ModelTask, SystemSettings } from "@/lib/types";
-import type { HermesTask } from "./hermes";
+import type { AiTask } from "./generate";
 import { INTAKE_OUTPUT_SCHEMA } from "./intake-schema";
 
 export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi" | "local";
@@ -182,7 +182,7 @@ export interface AnthropicTaskProfile {
   outputSchema?: Record<string, unknown>;
 }
 
-export const ANTHROPIC_TASK_PROFILE: Record<HermesTask, AnthropicTaskProfile> = {
+export const ANTHROPIC_TASK_PROFILE: Record<AiTask, AnthropicTaskProfile> = {
   classify: { effort: "low", maxTokens: 2048 },
   extract: { effort: "low", maxTokens: 4096, outputSchema: INTAKE_OUTPUT_SCHEMA },
   chat: { effort: "low", maxTokens: 8192 },
@@ -247,7 +247,7 @@ export function buildCloudRequest(
   maxTokens = 2048,
   endpoint?: string,
   /** Anthropic only: selects the effort level and output ceiling. */
-  task?: HermesTask,
+  task?: AiTask,
 ): { url: string; headers: Record<string, string>; body: string } {
   if (provider === "anthropic") {
     const profile = task && anthropicSupportsEffort(model) ? ANTHROPIC_TASK_PROFILE[task] : undefined;

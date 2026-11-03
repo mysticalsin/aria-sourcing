@@ -3,11 +3,11 @@ import { mock, test } from "node:test";
 import { NextRequest } from "next/server";
 import { buildSeedState } from "../src/lib/seed.ts";
 import { scoreCandidate } from "../src/lib/scoring.ts";
-import type { Candidate, HermesState } from "../src/lib/types.ts";
+import type { Candidate, WorkspaceState } from "../src/lib/types.ts";
 import type { OrchestrateEnrichmentInput } from "../src/lib/enrichment/orchestrator.ts";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
-let state: HermesState;
+let state: WorkspaceState;
 let role = "member";
 let signedIn = true;
 let calls = 0;

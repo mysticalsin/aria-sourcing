@@ -10,7 +10,9 @@ DB_NAME="${DB_NAME:-postgres}"
 PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-3}"
 export PGCONNECT_TIMEOUT
 
-ADMIN_EMAIL="admin@hermes.local"
+ADMIN_EMAIL="admin@aria.local"
+# Seeded before the product rename; an existing volume still has this account.
+LEGACY_ADMIN_EMAIL="admin@hermes.local"
 ADMIN_PW="${DEMO_ADMIN_PASSWORD:-admindemo123}"
 
 
@@ -42,6 +44,24 @@ done
 echo "[bootstrap] applying app migrations..."
 /usr/local/bin/migrate.sh
 
+echo "[bootstrap] renaming the pre-rename admin account if this volume has one..."
+curl -fsS -o /tmp/users.json "http://auth:9999/admin/users?per_page=1000"   -H "Authorization: Bearer ${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY required}"
+LEGACY_ID="$(jq -r --arg email "$LEGACY_ADMIN_EMAIL" '[.users[] | select(.email == $email) | .id][0] // empty' /tmp/users.json)"
+CURRENT_ID="$(jq -r --arg email "$ADMIN_EMAIL" '[.users[] | select(.email == $email) | .id][0] // empty' /tmp/users.json)"
+if [ -n "$LEGACY_ID" ] && [ -z "$CURRENT_ID" ]; then
+  # Same user id: the profile, its workspace and every record keep pointing at it.
+  code="$(curl -s -o /dev/null -w "%{http_code}" -X PUT "http://auth:9999/admin/users/$LEGACY_ID"     -H "Authorization: Bearer ${SERVICE_ROLE_KEY}"     -H "Content-Type: application/json"     --data-binary "$(jq -cn --arg email "$ADMIN_EMAIL" '{email:$email,email_confirm:true}')")"
+  case "$code" in
+    200) echo "[bootstrap]   $LEGACY_ADMIN_EMAIL is now $ADMIN_EMAIL." ;;
+    *) echo "[bootstrap] ERROR renaming the admin account (HTTP $code)." >&2; exit 1 ;;
+  esac
+fi
+psql_postgres -q <<'SQL'
+update public.workspaces
+   set name = 'Aria Workspace', allowed_domain = 'aria.local'
+ where id = '00000000-0000-4000-8000-000000000001' and allowed_domain = 'hermes.local';
+SQL
+
 echo "[bootstrap] seeding login user $ADMIN_EMAIL via GoTrue admin API..."
 code="$(curl -s -o /tmp/seed.json -w "%{http_code}" -X POST "http://auth:9999/admin/users" \
   -H "Authorization: Bearer ${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY required}" \
@@ -68,13 +88,13 @@ echo "[bootstrap] promoting $ADMIN_EMAIL to an admin profile..."
 psql_postgres -q -v admin_id="$ADMIN_ID" -v admin_email="$ADMIN_EMAIL" <<'SQL'
 -- Fixed id so docker-compose can point CAREERS_WORKSPACE_ID at it.
 insert into public.workspaces (id, name, allowed_domain)
-  values ('00000000-0000-4000-8000-000000000001', 'Hermes Workspace', 'hermes.local')
+  values ('00000000-0000-4000-8000-000000000001', 'Aria Workspace', 'aria.local')
   on conflict (allowed_domain) do nothing;
 
 insert into public.profiles (id, email, full_name, workspace_id, role)
   select :'admin_id'::uuid, :'admin_email', 'Admin', w.id, 'admin'
     from public.workspaces w
-   where w.allowed_domain = 'hermes.local'
+   where w.allowed_domain = 'aria.local'
   on conflict (id) do update
     set role = 'admin',
         workspace_id = excluded.workspace_id,

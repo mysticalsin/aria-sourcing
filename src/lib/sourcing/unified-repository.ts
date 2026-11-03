@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { getServiceSupabase, type getServerSupabase } from "@/lib/supabase/server";
 import { can } from "@/lib/rbac";
-import type { HermesState, Role } from "@/lib/types";
+import type { WorkspaceState, Role } from "@/lib/types";
 import { projectSourcingAgentWorkspace } from "./sourcing-agent-contract";
 import { jobStatus, type CampaignSourcingJob, type SourceStep } from "./unified-contract";
 import type { UnifiedRunRepository } from "./unified-run";
@@ -23,7 +23,7 @@ export function unifiedRepository(session: Session, workspaceId: string, actorId
       if (error || !data?.updated_at || projectSourcingAgentWorkspace(data.state, campaignId).status !== "ok") {
         throw new Error("Campaign authority is unavailable.");
       }
-      return { state: data.state as HermesState, updatedAt: data.updated_at as string };
+      return { state: data.state as WorkspaceState, updatedAt: data.updated_at as string };
     },
     async claim(job, token, steps) {
       const { data, error } = await service.from("campaign_sourcing_jobs")

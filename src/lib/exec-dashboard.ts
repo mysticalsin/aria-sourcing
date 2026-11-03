@@ -8,11 +8,11 @@ import {
 } from "./metrics";
 import { can } from "./rbac";
 import { DEFAULT_ROI_ASSUMPTIONS, activitySpanDays, estimateRoi, type RoiAssumptions, type RoiEstimate } from "./roi";
-import type { Activity, Campaign, Candidate, HermesState, Role, SourcePlatform, WinRecord } from "./types";
+import type { Activity, Campaign, Candidate, WorkspaceState, Role, SourcePlatform, WinRecord } from "./types";
 import { round, SEED_NOW } from "./utils";
 
 export type ExecDashboardState = Pick<
-  HermesState,
+  WorkspaceState,
   "campaigns" | "candidates" | "outreach" | "replies" | "bookings" | "activities" | "settings" | "wins"
 >;
 

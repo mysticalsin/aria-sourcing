@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
  * Health / monitoring probe.
  *
  * Minimal, unauthenticated liveness response. Intentionally exposes no internal
- * configuration (Node version, env flags, supabase/hermes status) so it is safe
+ * configuration (Node version, env flags, Supabase or AI status) so it is safe
  * to poll publicly from an uptime monitor or a local `watch curl`. Use as the
  * liveness check in the OPERATIONS_RUNBOOK uptime canary.
  */

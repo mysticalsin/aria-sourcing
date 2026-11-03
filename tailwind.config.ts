@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Hermes Sourcing design system.
+ * Aria Sourcing design system.
  * Colors are wired to CSS variables declared in src/styles/globals.css so the
  * palette can be retuned in one place. Raw hex fallbacks live in globals.css.
  */

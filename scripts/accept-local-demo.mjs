@@ -34,7 +34,7 @@ let encrypted;
 async function loginApi() {
   const response = await fetch(backend + "/auth/v1/token?grant_type=password", {
     method: "POST", headers: { apikey: publicKey, "content-type": "application/json" },
-    body: JSON.stringify({ email: "admin@hermes.local", password: env.DEMO_ADMIN_PASSWORD }), signal: AbortSignal.timeout(10000),
+    body: JSON.stringify({ email: "admin@aria.local", password: env.DEMO_ADMIN_PASSWORD }), signal: AbortSignal.timeout(10000),
   });
   assert.equal(response.status, 200, "Seeded administrator must authenticate.");
   return (await response.json()).access_token;
@@ -74,9 +74,9 @@ async function openSession() {
     return [new URL(baseUrl).origin, new URL(backend).origin].includes(origin) ? route.continue() : route.abort();
   });
   await page.route("**/api/sourcing-agent", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "SOURCING_AGENT_NOT_CONFIGURED" }) }));
-  await page.route("**/api/hermes/chat", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: false, reason: "AI provider acceptance is a separate test." }) }));
+  await page.route("**/api/ai/chat", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: false, reason: "AI provider acceptance is a separate test." }) }));
   await page.goto(baseUrl + "/login", { waitUntil: "networkidle" });
-  await page.getByLabel("Username or email").fill("admin@hermes.local");
+  await page.getByLabel("Username or email").fill("admin@aria.local");
   await page.getByLabel("Password", { exact: true }).fill(env.DEMO_ADMIN_PASSWORD);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   try {

@@ -40,10 +40,10 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
   const p = report.performance;
 
   function handleExport() {
-    downloadText("hermes-report.md", exportMarkdownReport(report));
+    downloadText("aria-report.md", exportMarkdownReport(report));
     toast({
       title: "Report exported",
-      description: "hermes-report.md downloaded as Markdown.",
+      description: "aria-report.md downloaded as Markdown.",
       variant: "success",
     });
   }

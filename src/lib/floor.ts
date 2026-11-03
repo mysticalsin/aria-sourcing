@@ -1,4 +1,4 @@
-import type { AgentSeat, HermesState } from "./types";
+import type { AgentSeat, WorkspaceState } from "./types";
 import type { Tone } from "./utils";
 import { roleProfile } from "./roles";
 import { applyConfidentiality, hasOutreachPurpose } from "./confidential";
@@ -35,7 +35,7 @@ function hash(s: string): number {
   return s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
 }
 
-export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.now()): AgentActivity {
+export function agentActivity(seat: AgentSeat, state: WorkspaceState, now = Date.now()): AgentActivity {
   const contacted = state.ledger.filter(
     (l) => l.seatId === seat.id && (l.status === "sent" || l.status === "claimed"),
   ).length;
@@ -110,7 +110,7 @@ export interface FloorRollup {
   contactedToday: number;
 }
 
-export function floorRollup(seats: AgentSeat[], state: HermesState, now = Date.now()): FloorRollup {
+export function floorRollup(seats: AgentSeat[], state: WorkspaceState, now = Date.now()): FloorRollup {
   let working = 0,
     warming = 0,
     paused = 0;

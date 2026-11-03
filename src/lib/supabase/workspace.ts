@@ -1,6 +1,6 @@
 "use client";
 
-import type { HermesState, Role } from "@/lib/types";
+import type { WorkspaceState, Role } from "@/lib/types";
 import { getBrowserSupabase } from "./client";
 import { stripSharedRole } from "@/lib/live-role-authority";
 import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
@@ -16,7 +16,7 @@ function profileRole(value: unknown): Role {
 
 export interface RemoteStateVersion {
   workspaceId: string;
-  state: HermesState | null;
+  state: WorkspaceState | null;
   /** The row's `updated_at` when loaded — the optimistic-concurrency token. */
   updatedAt: string | null;
 }
@@ -123,7 +123,7 @@ export async function loadRemoteState(): Promise<RemoteLoad> {
     return {
       status: "ready",
       workspaceId: workspaceId as string,
-      state: (row?.state as HermesState) ?? null,
+      state: (row?.state as WorkspaceState) ?? null,
       updatedAt: (row?.updated_at as string) ?? null,
       role,
     };
@@ -167,7 +167,7 @@ export async function loadRemoteAgentSeats(): Promise<RemoteAgentSeatsLoad> {
  */
 export async function saveRemoteState(
   workspaceId: string,
-  state: HermesState,
+  state: WorkspaceState,
   expectedUpdatedAt: string | null,
 ): Promise<SaveResult> {
   const supabase = getBrowserSupabase();
@@ -232,7 +232,7 @@ export async function saveRemoteState(
         conflict: true,
         latest: {
           workspaceId,
-          state: latestRow.state as HermesState,
+          state: latestRow.state as WorkspaceState,
           updatedAt: latestRow.updated_at,
         },
       };

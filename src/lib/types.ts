@@ -698,7 +698,7 @@ export interface Booking {
 
 /* ---- Wins ----------------------------------------------------------------
    Structured conversion records captured when a booking is accepted. These
-   stay inside HermesState because they can contain candidate PII. */
+   stay inside WorkspaceState because they can contain candidate PII. */
 
 export interface WinRecord {
   id: string;
@@ -1392,7 +1392,7 @@ export interface CronJob {
 
 /* ---- Root persisted state ------------------------------------------------ */
 
-export interface HermesState {
+export interface WorkspaceState {
   version: number;
   campaigns: Campaign[];
   candidates: Candidate[];

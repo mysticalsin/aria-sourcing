@@ -15,9 +15,11 @@ follow [the real sourcing checklist](docs/LOCAL-SOURCING-TEST.md).
 docker compose up --build --detach --wait --wait-timeout 300
 ```
 
-Open **http://localhost:3000/login** and sign in with **admin@hermes.local** /
+Open **http://localhost:3000/login** and sign in with **admin@aria.local** /
 **admindemo123**. These are intentionally local sample credentials. Published
 ports bind to loopback; this configuration is not a public Azure deployment.
+A database created before the rename still has `admin@hermes.local`: the next
+start renames it to `admin@aria.local` in place (same account and data).
 
 The first build installs and compiles once. Later starts reuse the built image.
 The app starts only after migrations and local account setup complete. Its health

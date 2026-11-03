@@ -27,7 +27,7 @@ import type {
   DustRegion,
   DustTask,
   EnrichableField,
-  HermesState,
+  WorkspaceState,
   IntegrationStatus,
   Interviewer,
   InterviewKind,
@@ -124,7 +124,7 @@ export type SourcingFeedbackReceipt = SourcingFeedbackReceiptDto;
 
 export type SourcingFeedbackVerdict = "useful" | "dead_end" | "corrected";
 
-export interface HermesActions {
+export interface WorkspaceActions {
   // campaigns
   setActiveCampaign: (id: string | null) => void;
   createCampaignFromAnalysis: (
@@ -490,14 +490,14 @@ export interface HermesActions {
   updateInterviewer: (id: string, patch: Partial<Omit<Interviewer, "id">>) => void;
   removeInterviewer: (id: string) => void;
 }
-export interface HermesContextValue {
-  state: HermesState | null;
+export interface WorkspaceContextValue {
+  state: WorkspaceState | null;
   hydrated: boolean;
   workspaceStatus: WorkspaceStatus;
   retryWorkspace: () => Promise<void>;
   flushWorkspace: () => Promise<boolean>;
   retrySave: () => Promise<void>;
-  actions: HermesActions;
+  actions: WorkspaceActions;
   /** Computed once per state change (not per consumer) — the TopBar bell and
    *  the dashboard AttentionPanel both read this instead of independently
    *  re-running deriveRecommendations on every render. */

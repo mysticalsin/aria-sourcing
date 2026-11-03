@@ -233,18 +233,17 @@ globalThis.fetch = (async () => {
 }) as typeof fetch;
 
 try {
-  const hermesRoute = await import("../src/app/api/hermes/chat/route");
+  const aiChatRoute = await import("../src/app/api/ai/chat/route");
   const sourcingRoute = await import("../src/app/api/sourcing-agent/route");
-  const hermesRequest = (provider = "openai", overrides: Record<string, unknown> = {}) =>
-    new NextRequest("http://localhost/api/hermes/chat", {
+  const aiChatRequest = (provider = "openai", overrides: Record<string, unknown> = {}) =>
+    new NextRequest("http://localhost/api/ai/chat", {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
       body: JSON.stringify({
         task: "chat",
         prompt: "Confidential candidate context",
         provider,
-        model: provider === "hermes" ? "hermes" : "gpt-4o-mini",
-        ...(provider === "hermes" ? {} : { apiKeyId: "11111111-1111-4111-8111-111111111111" }),
+        ...(provider === "none" ? {} : { model: "gpt-4o-mini", apiKeyId: "11111111-1111-4111-8111-111111111111" }),
         ...overrides,
       }),
     });
@@ -276,14 +275,14 @@ try {
     agentSpecRemainsActive = true;
   };
 
-  const viewerResponse = await hermesRoute.POST(hermesRequest());
+  const viewerResponse = await aiChatRoute.POST(aiChatRequest());
   ok("viewer cannot spend a cloud provider key through chat", viewerResponse.status === 403);
   ok("viewer denial happens before vault resolution or egress", resolverCalls.length === 0 && upstreamCalls === 0);
 
   role = "member";
   vaultProvider = "OpenAI";
   resetCalls();
-  const memberResponse = await hermesRoute.POST(hermesRequest());
+  const memberResponse = await aiChatRoute.POST(aiChatRequest());
   ok("member cannot choose a live cloud provider through chat", memberResponse.status === 403);
   ok(
     "member cloud-chat denial happens before vault resolution or egress",
@@ -291,14 +290,14 @@ try {
   );
 
   resetCalls();
-  const internalHermes = await hermesRoute.POST(hermesRequest("hermes"));
-  ok("member retains the non-cloud internal Hermes path", internalHermes.status !== 403);
-  ok("internal Hermes request does not resolve a cloud key", resolverCalls.length === 0 && upstreamCalls === 0);
+  const noProviderResponse = await aiChatRoute.POST(aiChatRequest("none"));
+  ok("a member without a provider gets the mock answer, not a 403", noProviderResponse.status === 200);
+  ok("a request without a provider resolves no cloud key", resolverCalls.length === 0 && upstreamCalls === 0);
 
   role = "admin";
   vaultProvider = "OpenAI";
   resetCalls();
-  const adminResponse = await hermesRoute.POST(hermesRequest());
+  const adminResponse = await aiChatRoute.POST(aiChatRequest());
   const adminBody = (await adminResponse.json()) as { ok?: boolean };
   ok("admin can execute cloud chat with a matching valid key", adminResponse.status === 200 && adminBody.ok === true);
   ok(
@@ -307,20 +306,20 @@ try {
   );
 
   resetCalls();
-  const localChat = await hermesRoute.POST(hermesRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
+  const localChat = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
   ok("admin can draft with a keyless local model tag", localChat.status === 200 && (await localChat.json()).ok === true);
   ok("keyless local drafting does not consult the vault", resolverCalls.length === 0 && upstreamCalls === 1);
   resetCalls();
-  const unsafeLocal = await hermesRoute.POST(hermesRequest("local", { apiKeyId: undefined, baseUrl: "http://169.254.169.254/v1", model: "qwen3:8b" }));
+  const unsafeLocal = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://169.254.169.254/v1", model: "qwen3:8b" }));
   ok("local drafting blocks metadata URL before egress", unsafeLocal.status === 400 && upstreamCalls === 0 && resolverCalls.length === 0);
   role = "member";
-  const memberLocal = await hermesRoute.POST(hermesRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
+  const memberLocal = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
   ok("keyless local drafting retains admin authority", memberLocal.status === 403 && upstreamCalls === 0);
   role = "admin";
 
   vaultProvider = "Anthropic";
   resetCalls();
-  const mismatchResponse = await hermesRoute.POST(hermesRequest());
+  const mismatchResponse = await aiChatRoute.POST(aiChatRequest());
   ok("admin cross-provider key mismatch fails closed", mismatchResponse.status === 403);
   ok(
     "cross-provider cloud chat makes zero provider calls",
@@ -361,5 +360,5 @@ try {
   envScope.restore();
 }
 
-console.log(`RESULT hermes-cloud-authority: ${pass} passed, ${fail} failed`);
+console.log(`RESULT ai-chat-authority: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

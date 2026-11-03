@@ -1,4 +1,4 @@
-import type { Candidate, EnrichableField, EnrichmentAttempt, HermesState } from "../types";
+import type { Candidate, EnrichableField, EnrichmentAttempt, WorkspaceState } from "../types";
 import { candidateEnrichmentBlocker } from "../candidate-review";
 import { enrichmentBasis, enrichmentOutcome, type EnrichmentPatch } from "../enrichment/result";
 import { campaignSourcingBasis } from "../sourcing/unified-contract";
@@ -6,11 +6,11 @@ import { campaignSourcingBasis } from "../sourcing/unified-contract";
 interface Dependencies {
   allowed(): boolean;
   scope(): string;
-  current(): HermesState;
-  persist(update: (state: HermesState) => HermesState): Promise<boolean>;
+  current(): WorkspaceState;
+  persist(update: (state: WorkspaceState) => WorkspaceState): Promise<boolean>;
   fetch: typeof fetch;
   defaults: EnrichableField[];
-  decorate(state: HermesState, candidate: Candidate, attempts: EnrichmentAttempt[], spend: number): HermesState;
+  decorate(state: WorkspaceState, candidate: Candidate, attempts: EnrichmentAttempt[], spend: number): WorkspaceState;
 }
 
 export function createCandidateEnrichment(deps: Dependencies) {

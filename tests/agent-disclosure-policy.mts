@@ -187,7 +187,7 @@ ok("validate passes allowed skills/seniority and asks candidate target", validat
 const sourceFiles = [
   "src/app/api/sourcing-agent/route.ts",
   "src/lib/store.ts",
-  "src/lib/ai/hermes.ts",
+  "src/lib/ai/generate.ts",
 ];
 const sourceText = sourceFiles.map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8")).join("\n");
 ok("drift: no state.brief JSON serialization", !/JSON\.stringify\(state\.brief\)/.test(sourceText));

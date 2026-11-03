@@ -9,8 +9,7 @@ local Docker demo of the recruiting journey; an internal Azure deployment
 
 ARIA is a recruiting operations platform. It turns a hiring need into sourced
 candidates, guarded drafts, reply handling, scheduling, and auditable run
-history. The repository name is MSourcing. Some Hermes identifiers remain in
-package names and runtime adapters for compatibility.
+history. The repository name is MSourcing.
 
 There are two execution modes:
 

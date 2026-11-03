@@ -7,11 +7,11 @@ import { readFileSync } from "node:fs";
 import {
   appendWinRecord,
   deriveWinRecord,
-  normalizeHermesState,
+  normalizeWorkspaceState,
   WIN_RECORD_LIMIT,
 } from "../src/lib/store";
 import { buildSeedState } from "../src/lib/seed";
-import type { Booking, Campaign, Candidate, HermesState, OutreachMessage, WinRecord } from "../src/lib/types";
+import type { Booking, Campaign, Candidate, WorkspaceState, OutreachMessage, WinRecord } from "../src/lib/types";
 import { escapeMarkdownTableCell } from "../src/lib/utils";
 
 let pass = 0,
@@ -112,7 +112,7 @@ const booking: Booking = {
   createdAt: bookingCreatedAt,
 };
 
-const state: HermesState = {
+const state: WorkspaceState = {
   ...seed,
   campaigns: [campaign],
   candidates: [candidate],
@@ -180,7 +180,7 @@ function oldWin(i: number): WinRecord {
   return { ...win, id: `old-${i}`, bookingId: `old-booking-${i}`, at: `2026-07-09T${String(i % 24).padStart(2, "0")}:00:00.000Z` };
 }
 
-const stateWithFullWinlog: HermesState = {
+const stateWithFullWinlog: WorkspaceState = {
   ...state,
   wins: Array.from({ length: WIN_RECORD_LIMIT }, (_, i) => oldWin(i)),
 };
@@ -189,9 +189,9 @@ ok("append keeps the winlog bounded at 500", capped.wins.length === WIN_RECORD_L
 ok("new win is prepended", capped.wins[0].bookingId === booking.id);
 ok("oldest win is trimmed", !capped.wins.some((item) => item.id === `old-${WIN_RECORD_LIMIT - 1}`));
 
-const sameVersionWithoutWins = { ...state } as Partial<HermesState>;
+const sameVersionWithoutWins = { ...state } as Partial<WorkspaceState>;
 Reflect.deleteProperty(sameVersionWithoutWins, "wins");
-const normalized = normalizeHermesState(sameVersionWithoutWins as HermesState);
+const normalized = normalizeWorkspaceState(sameVersionWithoutWins as WorkspaceState);
 ok("same-version state without wins hydrates to []", Array.isArray(normalized.wins) && normalized.wins.length === 0);
 
 const winlogPage = readFileSync("src/app/winlog/page.tsx", "utf8");

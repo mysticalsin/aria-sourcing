@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CandidateLawfulBasis, HermesState } from "./types";
+import type { CandidateLawfulBasis, WorkspaceState } from "./types";
 import { candidateEnrichmentBlocker, candidateExclusionBlocker } from "./candidate-review";
 import { candidateProfileIdentity } from "./rules";
 import { computeCoverage } from "./enrichment/merge";
@@ -8,7 +8,7 @@ import { effectiveWeights } from "./skills";
 
 export interface VerifiedEvidenceInput { email: string; linkedinUrl: string; source: string; skills?: string[]; yearsExperience?: number | null; lawfulBasis?: CandidateLawfulBasis }
 
-export function recordVerifiedEvidence(state: HermesState, id: string, input: VerifiedEvidenceInput, at: string, noteId: string): { ok: true; state: HermesState } | { ok: false; error: string } {
+export function recordVerifiedEvidence(state: WorkspaceState, id: string, input: VerifiedEvidenceInput, at: string, noteId: string): { ok: true; state: WorkspaceState } | { ok: false; error: string } {
   const candidate = state.candidates.find((c) => c.id === id);
   const campaign = state.campaigns.find((c) => c.id === candidate?.campaignId);
   if (!candidate || !campaign) return { ok: false, error: "An active, non-excluded candidate is required." };

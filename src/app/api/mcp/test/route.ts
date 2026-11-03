@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     }
   } else if (demoLoginEnabled) {
     // Public demo (no Supabase): require the signed admin/admin session cookie so
-    // this route isn't reachable anonymously (mirrors the hermes/chat cost gate).
+    // this route isn't reachable anonymously (mirrors the /api/ai/chat cost gate).
     if (!demoAuthConfigured() || !verifyDemoToken(req.cookies.get(DEMO_COOKIE_NAME)?.value)) {
       return NextResponse.json({ ok: false, error: "Sign in to use this tool." }, { status: 401 });
     }

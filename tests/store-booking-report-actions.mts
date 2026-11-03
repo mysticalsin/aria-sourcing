@@ -7,7 +7,7 @@ import {
   createBookingReportActions,
   type BookingReportActionDependencies,
 } from "../src/lib/store/booking-report-actions";
-import type { Activity, HermesState } from "../src/lib/types";
+import type { Activity, WorkspaceState } from "../src/lib/types";
 
 const storeSource = readFileSync(
   new URL("../src/lib/store.ts", import.meta.url),
@@ -79,7 +79,7 @@ test("a learning decision is one validated commit and every caller handles rejec
 
 type ActivityDraft = Parameters<BookingReportActionDependencies["makeActivity"]>[0];
 
-function bookingFixture(): HermesState {
+function bookingFixture(): WorkspaceState {
   const state = structuredClone(buildSeedState());
   const campaign = state.campaigns[0];
   assert.ok(campaign, "seed campaign is required");
@@ -116,7 +116,7 @@ function bookingFixture(): HermesState {
 function liveCalendarState(
   provider: "Gmail API" | "Microsoft Graph" = "Gmail API",
   id = "11111111-1111-4111-8111-111111111111",
-): HermesState {
+): WorkspaceState {
   const state = bookingFixture();
   const seat = state.seats[0];
   assert.ok(seat, "seed calendar seat is required");
@@ -139,7 +139,7 @@ function futureBookingRange(daysFromNow = 30): {
 }
 
 function createHarness(options: {
-  state?: HermesState;
+  state?: WorkspaceState;
   commitAllowed?: boolean;
   workspaceAllowed?: boolean;
   bookingAllowed?: boolean;
@@ -149,7 +149,7 @@ function createHarness(options: {
   fetchBody?: unknown;
   fetchStatus?: number;
   fetchError?: Error;
-  afterFetch?: (state: HermesState) => HermesState;
+  afterFetch?: (state: WorkspaceState) => WorkspaceState;
 } = {}) {
   let state = structuredClone(options.state ?? bookingFixture());
   let bookingAllowed = options.bookingAllowed ?? true;
@@ -232,7 +232,7 @@ function createHarness(options: {
   };
 }
 
-function fixtureIds(state: HermesState) {
+function fixtureIds(state: WorkspaceState) {
   const campaign = state.campaigns.find((item) => item.id === state.activeCampaignId);
   assert.ok(campaign);
   const candidate = state.candidates.find((item) => item.campaignId === campaign.id && !item.booking);
@@ -681,7 +681,7 @@ test("runtime booking updates fail closed when a provider-linked invite would dr
   const result = await created.actions.createBookingFor(candidate.id);
   assert.equal(result.ok, true);
   if (!result.ok) return;
-  const providerState: HermesState = {
+  const providerState: WorkspaceState = {
     ...created.state,
     bookings: created.state.bookings.map((booking) =>
       booking.id === result.booking.id

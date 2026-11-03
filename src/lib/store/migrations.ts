@@ -1,7 +1,7 @@
 import { defaultIntegrations } from "../integrations";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
-import type { HermesState } from "../types";
+import type { WorkspaceState } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
 /** Browser key of the synthetic demo workspace. */
@@ -22,8 +22,8 @@ type RetiredRuntimeSettings = {
   hermesWebUrl?: unknown;
 };
 
-function withoutLegacyIntegrationAuthority(settings: HermesState["settings"]): HermesState["settings"] {
-  const cleaned = { ...settings } as HermesState["settings"] & { databricks?: unknown; dust?: unknown } & RetiredRuntimeSettings;
+function withoutLegacyIntegrationAuthority(settings: WorkspaceState["settings"]): WorkspaceState["settings"] {
+  const cleaned = { ...settings } as WorkspaceState["settings"] & { databricks?: unknown; dust?: unknown } & RetiredRuntimeSettings;
   delete cleaned.databricks;
   delete cleaned.dust;
   delete cleaned.hermesLiveMode;
@@ -34,7 +34,7 @@ function withoutLegacyIntegrationAuthority(settings: HermesState["settings"]): H
 }
 
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
-export function migrateToCurrentVersion(parsed: HermesState): HermesState {
+export function migrateToCurrentVersion(parsed: WorkspaceState): WorkspaceState {
   const defs = defaultSettings();
   // STATE_VERSION 12 — the demo moved to Kimi (Kimi Code) via the server env key.
   // Blobs older than 12 have their model layer reset below so returning visitors
@@ -135,7 +135,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   };
 }
 
-export function normalizeHermesState(parsed: HermesState): HermesState {
+export function normalizeWorkspaceState(parsed: WorkspaceState): WorkspaceState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
   return {
     ...parsed,
@@ -144,15 +144,15 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
   };
 }
 
-export function loadState(): HermesState {
+export function loadState(): WorkspaceState {
   if (typeof window === "undefined") return buildSeedState();
   try {
     const raw =
       window.localStorage.getItem(WORKSPACE_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as HermesState;
+      const parsed = JSON.parse(raw) as WorkspaceState;
       if (parsed && parsed.version === STATE_VERSION) {
-        const normalized = normalizeHermesState(parsed);
+        const normalized = normalizeWorkspaceState(parsed);
         if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
         forgetStoredWorkspace();
         return buildSeedState();
@@ -161,7 +161,7 @@ export function loadState(): HermesState {
       // defensively defaults every field, so it can handle arbitrarily old blobs. Only
       // missing/corrupt/unparseable JSON or a non-numeric version falls through to reseed.
       if (parsed && typeof parsed.version === "number") {
-        const normalized = normalizeHermesState(parsed);
+        const normalized = normalizeWorkspaceState(parsed);
         if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
         forgetStoredWorkspace();
         return buildSeedState();

@@ -1383,6 +1383,6 @@ export function exportMarkdownReport(report: WeeklyReport): string {
     lines.push("");
   });
   lines.push("---");
-  lines.push("_Hermes Sourcing · dry-run mode · synthetic data._");
+  lines.push("_Aria Sourcing · dry-run mode · synthetic data._");
   return lines.join("\n");
 }

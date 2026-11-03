@@ -24,12 +24,12 @@ import { candidateDraftBlocker } from "./candidate-review";
 import type { ApifyProfile, ApifyProfileSearchInput } from "./sourcing/apify";
 import {
   buildOutreachPrompt,
-  hermesGenerate,
-  parseHermesOutreach,
-} from "./ai/hermes";
+  aiGenerate,
+  parseOutreachDraft,
+} from "./ai/generate";
 import { resolveAiProvider } from "./ai/provider";
 import {
-  anonymizeHermesState,
+  anonymizeWorkspaceState,
   isCandidateErasureTombstone,
   preserveCandidateErasureTombstones,
 } from "./candidate-privacy";
@@ -75,7 +75,7 @@ import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import {
   LEGACY_WORKSPACE_STORAGE_KEY,
   loadState,
-  normalizeHermesState,
+  normalizeWorkspaceState,
   WORKSPACE_STORAGE_KEY,
 } from "./store/migrations";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
@@ -84,8 +84,8 @@ import { computeCoverage } from "./enrichment/merge";
 import type {
   CandidateErasureObligation,
   CandidateErasureStatus,
-  HermesActions,
-  HermesContextValue,
+  WorkspaceActions,
+  WorkspaceContextValue,
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
 } from "./store/contracts";
@@ -123,7 +123,7 @@ import type {
   DustRegion,
   DustTask,
   EnrichableField,
-  HermesState,
+  WorkspaceState,
   IntegrationStatus,
   Interviewer,
   JobAnalysis,
@@ -187,9 +187,9 @@ import {
 } from "./manual-suppression";
 
 export { defaultSlot, interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
-export { migrateToCurrentVersion, normalizeHermesState } from "./store/migrations";
+export { migrateToCurrentVersion, normalizeWorkspaceState } from "./store/migrations";
 export { appendWinRecord, deriveWinRecord, WIN_RECORD_LIMIT } from "./store/winlog-derive";
-export type { HermesActions } from "./store/contracts";
+export type { WorkspaceActions } from "./store/contracts";
 
 const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
 const ARIA_PERFECT_RATING: StarRating = "TopGun";
@@ -251,15 +251,15 @@ const CHAT_HISTORY_MESSAGES = 20;
 /** Stable handle on the provider. Hooks subscribe to the slice they read
  *  (useSyncExternalStore), so a commit only re-renders the components whose
  *  slice changed instead of every consumer of one big context value. */
-interface HermesStore {
+interface WorkspaceStore {
   subscribe: (listener: () => void) => () => void;
-  getState: () => HermesState | null;
+  getState: () => WorkspaceState | null;
   getRecommendations: () => Recommendation[];
-  actions: HermesActions;
+  actions: WorkspaceActions;
 }
-type WorkspaceStatusValue = Omit<HermesContextValue, "state" | "actions" | "recommendations">;
+type WorkspaceStatusValue = Omit<WorkspaceContextValue, "state" | "actions" | "recommendations">;
 
-const HermesStoreContext = createContext<HermesStore | null>(null);
+const WorkspaceStoreContext = createContext<WorkspaceStore | null>(null);
 /** Changes only when the workspace load/save status does, not on every commit. */
 const WorkspaceStatusContext = createContext<WorkspaceStatusValue | null>(null);
 const UNSAVED_WORKSPACE_MESSAGE =
@@ -282,7 +282,7 @@ async function classifyReplyWithModel(
   settings: SystemSettings,
   text: string,
   candidateName: string | undefined,
-  generate: (input: Parameters<typeof hermesGenerate>[0]) => Promise<Awaited<ReturnType<typeof hermesGenerate>>>,
+  generate: (input: Parameters<typeof aiGenerate>[0]) => Promise<Awaited<ReturnType<typeof aiGenerate>>>,
   /** Sorting an incoming reply, or preparing the answer to one that waits. */
   activity: "reply-triage" | "reply-answer" = "reply-triage",
 ): Promise<ReplyClassification> {
@@ -365,10 +365,10 @@ function makeActivity(
 }
 
 function withActivity(
-  state: HermesState,
+  state: WorkspaceState,
   activity: Activity,
   campaignId: string | null,
-): HermesState {
+): WorkspaceState {
   const campaigns = campaignId
     ? state.campaigns.map((campaign) =>
         campaign.id === campaignId
@@ -386,7 +386,7 @@ function withActivity(
   };
 }
 
-function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
+function recomputeMetrics(state: WorkspaceState, campaignId: string): WorkspaceState {
   const candidates = state.candidates.filter(
     (candidate) => candidate.campaignId === campaignId,
   );
@@ -425,7 +425,7 @@ function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
 /**
  * Shared live-generation attempt for follow-up / re-contact drafts — the same
  * three-layer fallback generateOutreachLive/regenerateOutreach already use (a
- * cloud provider or hermes live mode configured -> hermesGenerate -> parse ->
+ * cloud provider configured -> aiGenerate -> parse ->
  * humanize). Without this, draftFollowUpFor/draftRecontactFor always fell
  * straight to the mock template, so every follow-up touch for a candidate was
  * byte-identical copy. Returns the mock unchanged (live: false) on any
@@ -474,7 +474,7 @@ async function attemptLiveFollowUpGen(opts: {
   const guardrails = [ariaPrompt, touchNote].filter(Boolean).join("\n\n");
   const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
-  const genInput: Parameters<typeof hermesGenerate>[0] = {
+  const genInput: Parameters<typeof aiGenerate>[0] = {
     task: "outreach",
     activity,
     prompt,
@@ -484,11 +484,11 @@ async function attemptLiveFollowUpGen(opts: {
     apiKeyId: aiCfg.apiKeyId,
   };
 
-  const attempt = runEffect(() => hermesGenerate(genInput));
+  const attempt = runEffect(() => aiGenerate(genInput));
   if (!attempt.allowed) return { gen: mockGen, live: false };
   const result = await attempt.value;
   if (result.ok && result.text) {
-    const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
+    const parsed = parseOutreachDraft(result.text, channel, mockGen.subject);
     if (parsed) {
       return {
         gen: {
@@ -504,9 +504,9 @@ async function attemptLiveFollowUpGen(opts: {
   return { gen: mockGen, live: false };
 }
 
-export function HermesProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<HermesState | null>(null);
-  const stateRef = useRef<HermesState | null>(null);
+export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<WorkspaceState | null>(null);
+  const stateRef = useRef<WorkspaceState | null>(null);
   stateRef.current = state;
   const [workspaceStatus, setWorkspaceStatusState] = useState<WorkspaceStatus>({
     phase: "loading",
@@ -523,17 +523,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const liveRoleRef = useRef<Role>("viewer");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydrationGeneration = useRef(0);
-  const queuedRemoteSnapshot = useRef<HermesState | null>(null);
-  const pendingRemoteSave = useRef<PendingWorkspaceSave<HermesState> | null>(null);
+  const queuedRemoteSnapshot = useRef<WorkspaceState | null>(null);
+  const pendingRemoteSave = useRef<PendingWorkspaceSave<WorkspaceState> | null>(null);
   const remoteSaveInFlight = useRef(false);
   const authoritativeCommitInFlight = useRef(false);
   const remoteSaveOperation = useRef<symbol | null>(null);
   const drainRemoteSaveQueueRef = useRef<() => void>(() => undefined);
   // DEMO mode only: latest state snapshot awaiting a debounced localStorage write,
   // so flushLocalSave() can write it immediately on unmount / tab close.
-  const pendingLocalSave = useRef<HermesState | null>(null);
+  const pendingLocalSave = useRef<WorkspaceState | null>(null);
   const skipNextPersist = useRef(false);
-  const skipPersistSnapshot = useRef<HermesState | null>(null);
+  const skipPersistSnapshot = useRef<WorkspaceState | null>(null);
   // F-5: AbortControllers for in-flight sendChat requests, keyed by threadId.
   const chatAbortControllers = useRef<Map<string, AbortController>>(new Map());
   // Approval persistence is authoritative in live mode. Keep a per-draft lock
@@ -633,7 +633,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
+      const base = remote.state ? normalizeWorkspaceState(remote.state) : buildLiveEmptyState();
       const liveState = {
         ...base,
         seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
@@ -673,7 +673,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     const serverSeats = await loadRemoteAgentSeats();
     if (serverSeats.status === "unavailable") return null;
 
-    const base = normalizeHermesState(latest.state);
+    const base = normalizeWorkspaceState(latest.state);
     const liveState = {
       ...base,
       seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
@@ -699,7 +699,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const applyRemoteConflict = useCallback((prepared: {
     latest: RemoteStateVersion;
-    next: HermesState;
+    next: WorkspaceState;
   }) => {
     remoteUpdatedAtRef.current = prepared.latest.updatedAt;
     skipNextPersist.current = true;
@@ -710,7 +710,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, [setWorkspaceStatus]);
 
   const persistPendingSave = useCallback(async (
-    pending: PendingWorkspaceSave<HermesState>,
+    pending: PendingWorkspaceSave<WorkspaceState>,
   ) => settleWorkspaceSave({
     generation: pending.generation,
     currentGeneration: () => hydrationGeneration.current,
@@ -728,8 +728,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }), [applyRemoteConflict, prepareRemoteConflict, setWorkspaceStatus]);
 
   const markRemoteSaveFailed = useCallback((
-    pending: PendingWorkspaceSave<HermesState>,
-    snapshot: HermesState = pending.snapshot,
+    pending: PendingWorkspaceSave<WorkspaceState>,
+    snapshot: WorkspaceState = pending.snapshot,
   ) => {
     if (pending.generation !== hydrationGeneration.current) return;
     const retained = retainPendingWorkspaceSave(
@@ -757,7 +757,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }
 
     queuedRemoteSnapshot.current = null;
-    const pending: PendingWorkspaceSave<HermesState> = {
+    const pending: PendingWorkspaceSave<WorkspaceState> = {
       workspaceId,
       snapshot,
       expectedUpdatedAt: remoteUpdatedAtRef.current,
@@ -865,7 +865,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state, flushLocalSave]);
 
-  const commit = useCallback((fn: (s: HermesState) => HermesState) => {
+  const commit = useCallback((fn: (s: WorkspaceState) => WorkspaceState) => {
     if (
       authoritativeCommitInFlight.current ||
       !workspaceAllowsMutation(workspaceStatusRef.current)
@@ -880,7 +880,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const commitPersisted = useCallback(async (
-    fn: (current: HermesState) => HermesState,
+    fn: (current: WorkspaceState) => WorkspaceState,
   ): Promise<boolean> => {
     if (
       authoritativeCommitInFlight.current ||
@@ -902,7 +902,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     const workspaceId = workspaceIdRef.current;
     if (!workspaceId) return false;
     const generation = hydrationGeneration.current;
-    const pending: PendingWorkspaceSave<HermesState> = {
+    const pending: PendingWorkspaceSave<WorkspaceState> = {
       workspaceId,
       snapshot: next,
       expectedUpdatedAt: remoteUpdatedAtRef.current,
@@ -1158,7 +1158,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const { accepted, skipped } = mapApifyCandidates(out.profiles ?? [], campaign, query, s.candidates, weights);
 
       commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
+        let next: WorkspaceState = { ...prev, candidates: [...accepted, ...prev.candidates] };
         next = recomputeMetrics(next, campaignId);
         next = withActivity(
           next,
@@ -1393,7 +1393,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         });
         added = unique.length;
         drafted = messages.length;
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...prev,
           candidates: [...unique, ...prev.candidates],
           outreach: [...messages, ...prev.outreach],
@@ -1593,7 +1593,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const guardrails = ariaPrompt || "";
         const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
-        const outreachGenInput: Parameters<typeof hermesGenerate>[0] = {
+        const outreachGenInput: Parameters<typeof aiGenerate>[0] = {
           task: "outreach",
           activity: "first-contact",
           prompt,
@@ -1604,12 +1604,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         };
 
         // Layer 2: a non-ok result keeps the mock draft.
-        const attempt = runWorkspaceEffect(() => hermesGenerate(outreachGenInput));
+        const attempt = runWorkspaceEffect(() => aiGenerate(outreachGenInput));
         if (!attempt.allowed) return null;
         const result = await attempt.value;
         if (result.ok && result.text) {
           // Layer 3: an unparseable reply keeps the mock draft.
-          const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
+          const parsed = parseOutreachDraft(result.text, channel, mockGen.subject);
           if (parsed) {
             gen = {
               // ALWAYS humanize live copy too — the mock path already does this
@@ -1840,7 +1840,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
         const prompt = ariaPrompt ? `${ariaPrompt}\n\n${basePrompt}` : basePrompt;
 
-        const regenGenInput: Parameters<typeof hermesGenerate>[0] = {
+        const regenGenInput: Parameters<typeof aiGenerate>[0] = {
           task: "outreach",
           activity: "rewrite",
           prompt,
@@ -1850,11 +1850,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           apiKeyId: aiCfg.apiKeyId,
         };
 
-        const attempt = runWorkspaceEffect(() => hermesGenerate(regenGenInput));
+        const attempt = runWorkspaceEffect(() => aiGenerate(regenGenInput));
         if (!attempt.allowed) return;
         const result = await attempt.value;
         if (result.ok && result.text) {
-          const parsed = parseHermesOutreach(result.text, msg.channel, mockGen.subject);
+          const parsed = parseOutreachDraft(result.text, msg.channel, mockGen.subject);
           if (parsed) {
             gen = {
               // ALWAYS humanize live copy too — see generateOutreachLive.
@@ -2065,7 +2065,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               : null,
           at: now,
         };
-        let next: HermesState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
+        let next: WorkspaceState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
         // bump today counter then recompute (counter preserved by computeCampaignMetrics)
         next = {
           ...next,
@@ -2154,7 +2154,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           reason: "Operator confirmed manual send on LinkedIn.",
           at: now,
         };
-        let next: HermesState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
+        let next: WorkspaceState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
         next = {
           ...next,
           campaigns: next.campaigns.map((c) =>
@@ -2265,7 +2265,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               }
             : c,
         );
-        let next: HermesState = { ...prev, outreach, ledger, candidates };
+        let next: WorkspaceState = { ...prev, outreach, ledger, candidates };
         next = {
           ...next,
           campaigns: next.campaigns.map((c) =>
@@ -2430,7 +2430,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       let classification = guardReplyClassification(
         await classifyReplyWithModel(s.settings, input.text, candidate?.name, (genInput) => {
-          const attempt = runWorkspaceEffect(() => hermesGenerate(genInput));
+          const attempt = runWorkspaceEffect(() => aiGenerate(genInput));
           if (!attempt.allowed) throw new Error("Workspace unavailable. Retry before classifying replies.");
           return attempt.value;
         }),
@@ -2467,7 +2467,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ...(input.externalReceivedAt ? { externalReceivedAt: input.externalReceivedAt } : {}),
       };
       commit((prev) => {
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...prev,
           replies: [reply, ...prev.replies],
           // Bound the dedup ledger (most recent 5000) and never store a duplicate id, so it
@@ -2679,7 +2679,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           NEGATIVE: "Suppressed",
         };
         const target = stageFor[reply.intent];
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...s,
           replies: s.replies.map((r) => (r.id === replyId ? { ...r, handled: true } : r)),
         };
@@ -2817,7 +2817,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = s.campaigns.find((c) => c.id === (reply.campaignId || candidate?.campaignId));
       const fresh = guardReplyClassification(
         await classifyReplyWithModel(s.settings, reply.body, candidate?.name, (genInput) => {
-          const attempt = runWorkspaceEffect(() => hermesGenerate(genInput));
+          const attempt = runWorkspaceEffect(() => aiGenerate(genInput));
           if (!attempt.allowed) throw new Error("Workspace unavailable.");
           return attempt.value;
         }, "reply-answer"),
@@ -2874,7 +2874,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     (id: string, stage: CandidateStage) =>
       commit((s) => {
         const cand = s.candidates.find((c) => c.id === id);
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...s,
           candidates: s.candidates.map((c) =>
             c.id === id
@@ -2924,7 +2924,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const cand = s.candidates.find((c) => c.id === candidateId);
         if (!cand) return s;
         const note: CandidateNote = { id: genId("note"), text: clean, at: new Date().toISOString() };
-        const next: HermesState = {
+        const next: WorkspaceState = {
           ...s,
           candidates: s.candidates.map((c) =>
             c.id === candidateId ? { ...c, notes: [note, ...(c.notes ?? [])] } : c,
@@ -2954,7 +2954,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       commit((s) => {
         const cand = s.candidates.find((c) => c.id === candidateId);
         if (!cand) return s;
-        const next: HermesState = {
+        const next: WorkspaceState = {
           ...s,
           candidates: s.candidates.map((c) =>
             c.id === candidateId ? { ...c, rejectionReason: clean || undefined } : c,
@@ -3006,7 +3006,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const cand = s.candidates.find((c) => c.id === id);
         if (!cand) return s;
         const nowIn = !cand.vivier;
-        const next: HermesState = {
+        const next: WorkspaceState = {
           ...s,
           candidates: s.candidates.map((c) =>
             c.id === id
@@ -3073,7 +3073,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           questions: [],
           outcome: "pending",
         };
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...s,
           candidates: s.candidates.map((c) =>
             c.id === candidateId
@@ -3133,7 +3133,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         };
         // Booking the first interview moves an Interested lead into the interview flow.
         const nextStage: CandidateStage = cand.stage === "Interested" ? "Booked" : cand.stage;
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...s,
           candidates: s.candidates.map((c) =>
             c.id === candidateId
@@ -3225,7 +3225,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           starRating: sub.starRating,
           dna: sub.detected.skills ?? [],
         };
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...s,
           candidates: [cand, ...s.candidates],
           chatboxSubmissions: (s.chatboxSubmissions ?? []).map((x) =>
@@ -3287,7 +3287,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const cand = s.candidates.find((c) => c.id === id);
         if (!cand) return s;
         if (isCandidateErasureTombstone(cand)) return s;
-        let next: HermesState = {
+        let next: WorkspaceState = {
           ...s,
           // Any complianceMutate caller may change `stage` (e.g. suppressCandidate,
           // markDoNotContact both set stage: "Suppressed"); always fold the result
@@ -3435,7 +3435,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const changed = commit((state) => {
         const exact = state.candidates.find((item) => item.id === id);
         if (!exact) return state;
-        return recomputeMetrics(anonymizeHermesState(state, id), exact.campaignId);
+        return recomputeMetrics(anonymizeWorkspaceState(state, id), exact.campaignId);
       });
       if (!changed) {
         return {
@@ -3547,7 +3547,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
     const erasureStatus = status as Exclude<CandidateErasureStatus, "blocked_legal_hold">;
     const maskedState = recomputeMetrics(
-      anonymizeHermesState(current(), candidate.id),
+      anonymizeWorkspaceState(current(), candidate.id),
       candidate.campaignId,
     );
     stateRef.current = maskedState;
@@ -3769,7 +3769,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return {
           id: genId("seat"),
           name: `${opts?.namePrefix ?? "Aria Agent"} ${String(idx + 1).padStart(3, "0")}`,
-          operatorEmail: `agent${idx + 1}@hermes.example`,
+          operatorEmail: `agent${idx + 1}@aria.example`,
           provider: providers[idx % providers.length],
           status: "active",
           mode: "mock",
@@ -4165,7 +4165,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const seatIds = new Set(result.assignments.map((a) => a.seatId));
 
       commit((prev) => {
-        let next: HermesState = { ...prev, outreach: [...drafted, ...prev.outreach] };
+        let next: WorkspaceState = { ...prev, outreach: [...drafted, ...prev.outreach] };
         affectedCampaigns.forEach((cid) => {
           if (cid) next = recomputeMetrics(next, cid);
         });
@@ -4423,7 +4423,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   /* ---- Guardrails & Aria (the editable agent brain) --------------------- */
 
   const patchGuardrails = useCallback(
-    (patch: Partial<HermesState["settings"]["guardrails"]>, activity?: string) =>
+    (patch: Partial<WorkspaceState["settings"]["guardrails"]>, activity?: string) =>
       commit((prev) => {
         const next = { ...prev, settings: { ...prev.settings, guardrails: { ...prev.settings.guardrails, ...patch } } };
         return activity
@@ -5339,7 +5339,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const toolLoopController = new AbortController();
         chatAbortControllers.current.set(threadId, toolLoopController);
         try {
-          const res = await workspaceFetch("/api/hermes/chat", {
+          const res = await workspaceFetch("/api/ai/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -5548,7 +5548,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     setState(fresh);
   }, []);
 
-  const actions: HermesActions = useMemo(
+  const actions: WorkspaceActions = useMemo(
     () => ({
       setActiveCampaign,
       createCampaignFromAnalysis,
@@ -5708,7 +5708,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // Published to subscribers after each render that changed them. Children read
   // the refs during render, so a component rendering in the same pass already
   // sees the new state; the layout effect wakes the ones that did not render.
-  const publishedStateRef = useRef<HermesState | null>(state);
+  const publishedStateRef = useRef<WorkspaceState | null>(state);
   publishedStateRef.current = state;
   const publishedRecommendationsRef = useRef<Recommendation[]>(recommendations);
   publishedRecommendationsRef.current = recommendations;
@@ -5716,7 +5716,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
 
-  const store = useMemo<HermesStore>(
+  const store = useMemo<WorkspaceStore>(
     () => ({
       subscribe: (listener) => {
         listenersRef.current.add(listener);
@@ -5745,7 +5745,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   return React.createElement(
-    HermesStoreContext.Provider,
+    WorkspaceStoreContext.Provider,
     { value: store },
     React.createElement(WorkspaceStatusContext.Provider, { value: status }, children),
   );
@@ -5755,30 +5755,30 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    Hooks
    ========================================================================== */
 
-function useHermesStore(): HermesStore {
-  const store = useContext(HermesStoreContext);
-  // Same message as before the split: every store hook used to go through useHermes.
-  if (!store) throw new Error("useHermes must be used within <HermesProvider>.");
+function useWorkspaceStore(): WorkspaceStore {
+  const store = useContext(WorkspaceStoreContext);
+  // Same message as before the split: every store hook used to go through useWorkspace.
+  if (!store) throw new Error("useWorkspace must be used within <WorkspaceProvider>.");
   return store;
 }
 
 /** Workspace load/save status without subscribing to the workspace data. */
 export function useWorkspaceStatus(): WorkspaceStatusValue {
   const status = useContext(WorkspaceStatusContext);
-  if (!status) throw new Error("useWorkspaceStatus must be used within <HermesProvider>.");
+  if (!status) throw new Error("useWorkspaceStatus must be used within <WorkspaceProvider>.");
   return status;
 }
 
 /** Raw state (null until hydrated). Re-renders on every commit: prefer a slice hook. */
-function useRawState(): HermesState | null {
-  const store = useHermesStore();
+function useRawState(): WorkspaceState | null {
+  const store = useWorkspaceStore();
   return useSyncExternalStore(store.subscribe, store.getState, store.getState);
 }
 
 /** Everything at once. Re-renders on every commit: prefer the slice hooks
- *  below, or useHermesStateGetter() when the state is only read in a handler. */
-export function useHermes(): HermesContextValue {
-  const store = useHermesStore();
+ *  below, or useWorkspaceStateGetter() when the state is only read in a handler. */
+export function useWorkspace(): WorkspaceContextValue {
+  const store = useWorkspaceStore();
   const status = useWorkspaceStatus();
   const state = useRawState();
   const recommendations = useRecommendations();
@@ -5790,19 +5790,19 @@ export function useHermes(): HermesContextValue {
 
 /** Reads the current state on demand (event handlers, callbacks) without
  *  re-rendering the caller when the state changes. */
-export function useHermesStateGetter(): () => HermesState | null {
-  return useHermesStore().getState;
+export function useWorkspaceStateGetter(): () => WorkspaceState | null {
+  return useWorkspaceStore().getState;
 }
 
 export function useHydrated(): boolean {
   return useWorkspaceStatus().hydrated;
 }
 
-export function useActions(): HermesActions {
-  return useHermesStore().actions;
+export function useActions(): WorkspaceActions {
+  return useWorkspaceStore().actions;
 }
 
-function buildLiveEmptyState(): HermesState {
+function buildLiveEmptyState(): WorkspaceState {
   return {
     version: STATE_VERSION,
     campaigns: [],
@@ -5856,7 +5856,7 @@ function buildLiveEmptyState(): HermesState {
   };
 }
 
-const EMPTY: HermesState = buildLiveEmptyState();
+const EMPTY: WorkspaceState = buildLiveEmptyState();
 // Fallbacks for optional slices: a fresh `[]` per call would make
 // useSyncExternalStore see a new snapshot on every read.
 const NO_ITEMS: never[] = [];
@@ -5865,8 +5865,8 @@ const NO_DEFAULT_MODELS: NonNullable<SystemSettings["defaultModels"]> = {};
 /** Subscribes to one slice of the state. `select` must return a value that
  *  keeps its identity while the slice is unchanged (a field or a found item,
  *  never a freshly built array: derive those with useMemo on the slice). */
-function useSlice<T>(select: (state: HermesState) => T): T {
-  const store = useHermesStore();
+function useSlice<T>(select: (state: WorkspaceState) => T): T {
+  const store = useWorkspaceStore();
   const read = () => select(store.getState() ?? EMPTY);
   return useSyncExternalStore(store.subscribe, read, read);
 }
@@ -6053,10 +6053,10 @@ export function useDashboardKpis(): GlobalKpis {
 }
 
 /** Single prioritized recommendation queue -- see recommendations.ts for the ranking rationale.
- *  Computed once per state change in <HermesProvider> (not per caller) so the TopBar bell and
+ *  Computed once per state change in <WorkspaceProvider> (not per caller) so the TopBar bell and
  *  the dashboard AttentionPanel share one derivation instead of running it twice. */
 export function useRecommendations(): Recommendation[] {
-  const store = useHermesStore();
+  const store = useWorkspaceStore();
   return useSyncExternalStore(store.subscribe, store.getRecommendations, store.getRecommendations);
 }
 

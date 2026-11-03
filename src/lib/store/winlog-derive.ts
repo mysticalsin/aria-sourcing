@@ -1,12 +1,12 @@
 import { isRealSendFact } from "../metrics";
 import { deriveLeadSource } from "../tania";
-import type { Booking, Campaign, Candidate, HermesState, WinRecord } from "../types";
+import type { Booking, Campaign, Candidate, WorkspaceState, WinRecord } from "../types";
 import { genId } from "../utils";
 
 export const WIN_RECORD_LIMIT = 500;
 
 export function deriveWinRecord(
-  state: HermesState,
+  state: WorkspaceState,
   candidate: Candidate,
   campaign: Campaign,
   booking: Booking,
@@ -96,11 +96,11 @@ export function deriveWinRecord(
 }
 
 export function appendWinRecord(
-  state: HermesState,
+  state: WorkspaceState,
   candidate: Candidate,
   campaign: Campaign,
   booking: Booking,
-): HermesState {
+): WorkspaceState {
   const win = deriveWinRecord(state, candidate, campaign, booking);
   return { ...state, wins: [win, ...(state.wins ?? [])].slice(0, WIN_RECORD_LIMIT) };
 }

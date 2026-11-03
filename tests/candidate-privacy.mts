@@ -4,7 +4,7 @@ import test from "node:test";
 
 import {
   anonymizeCandidateRecord,
-  anonymizeHermesState,
+  anonymizeWorkspaceState,
   isCandidateErasureTombstone,
   preserveCandidateErasureTombstones,
   redactCandidateLinkedActivities,
@@ -282,7 +282,7 @@ test("state anonymization removes structured candidate PII across linked collect
     createdAt: "2026-07-13T00:00:00.000Z",
   }];
 
-  const redacted = anonymizeHermesState(state, candidateId);
+  const redacted = anonymizeWorkspaceState(state, candidateId);
   const serialized = JSON.stringify(redacted);
   assert.equal(serialized.includes(canary), false);
   assert.equal(serialized.includes(candidate.email), false);
@@ -316,7 +316,7 @@ test("legacy campaign-linked intake activities are redacted by exact identity to
   state.campaigns = state.campaigns.map((campaign) =>
     campaign.id === candidate.campaignId ? { ...campaign, activities: [legacy] } : campaign,
   );
-  const redacted = anonymizeHermesState(state, candidate.id);
+  const redacted = anonymizeWorkspaceState(state, candidate.id);
   assert.equal(redacted.activities[0].title, "Candidate activity redacted");
   assert.equal(redacted.campaigns[0].activities[0].notes.includes(candidate.githubUrl), false);
 });
@@ -345,7 +345,7 @@ test("identity matching preserves unrelated activity words that merely contain a
   };
   state.activities = [unrelated];
 
-  const redacted = anonymizeHermesState(state, candidate.id);
+  const redacted = anonymizeWorkspaceState(state, candidate.id);
 
   assert.deepEqual(redacted.activities[0], unrelated);
 });
@@ -380,7 +380,7 @@ test("short names redact only exact campaign-scoped legacy activity tokens", () 
   };
   state.activities = [exact, unrelated];
 
-  const redacted = anonymizeHermesState(state, candidate.id);
+  const redacted = anonymizeWorkspaceState(state, candidate.id);
 
   assert.equal(redacted.activities[0].title, "Candidate activity redacted");
   assert.deepEqual(redacted.activities[1], unrelated);
@@ -420,7 +420,7 @@ test("structured chats redact exact candidate identities without corrupting unre
   };
   state.chats = [thread];
 
-  const redacted = anonymizeHermesState(state, candidate.id);
+  const redacted = anonymizeWorkspaceState(state, candidate.id);
   const serialized = JSON.stringify(redacted.chats).toLowerCase();
 
   assert.equal(serialized.includes("ian@example.test"), false);
@@ -473,7 +473,7 @@ test("manual, GitHub, and chatbox intake canaries do not survive full-state anon
         createdAt: "2026-07-13T00:00:00.000Z",
       }];
     }
-    const redacted = anonymizeHermesState(state, candidate.id);
+    const redacted = anonymizeWorkspaceState(state, candidate.id);
     assert.equal(JSON.stringify(redacted).toLowerCase().includes(exposed.toLowerCase()), false, source);
   }
 });
@@ -492,7 +492,7 @@ test("candidate-rights UI waits for server erasure and shared persistence before
   assert.ok(liveResultStart >= 0);
   assert.match(liveResult, /await hydrateWorkspace\(\)/);
   const receiptValidated = liveResult.indexOf("invalid authority receipt");
-  const localMask = liveResult.indexOf("anonymizeHermesState");
+  const localMask = liveResult.indexOf("anonymizeWorkspaceState");
   const hydration = liveResult.indexOf("await hydrateWorkspace()");
   assert.ok(
     receiptValidated >= 0 && localMask > receiptValidated && hydration > localMask,

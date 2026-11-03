@@ -24,7 +24,7 @@ import {
   anthropicSupportsEffort,
   type AiProviderSlug,
 } from "@/lib/ai/provider";
-import type { HermesTask } from "@/lib/ai/hermes";
+import type { AiTask } from "@/lib/ai/generate";
 import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
 import type { AiActivity } from "@/lib/ai/activities";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
@@ -291,7 +291,7 @@ export async function runAnthropicWithTools(args: {
   timeoutMs?: number;
   beforeExternalCall?: () => Promise<boolean>;
   /** Selects effort and output ceiling on models that support effort. */
-  task?: HermesTask;
+  task?: AiTask;
   /** Business reason for the cost page; derived from the task when absent. */
   activity?: AiActivity;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {

@@ -218,7 +218,7 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
     mcpClient.includes("fetchPublicUrl") && !/(?<!PublicUrl)\bfetch\s*\(/.test(mcpClient),
   );
   for (const route of [
-    "src/app/api/hermes/chat/route.ts",
+    "src/app/api/ai/chat/route.ts",
     "src/app/api/mcp/test/route.ts",
   ]) {
     ok(
@@ -251,7 +251,7 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
     ),
   );
   for (const route of [
-    "src/app/api/hermes/chat/route.ts",
+    "src/app/api/ai/chat/route.ts",
     "src/app/api/mcp/test/route.ts",
     "src/app/api/source/route.ts",
     "src/app/api/sourcing-agent/route.ts",

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS, NAV_SECTIONS, NEW_CAMPAIGN_HREF, isNavActive, type NavItem } from "./nav";
-import { HermesLockup } from "./logo";
+import { AriaLockup } from "./logo";
 import { useIntegrations } from "@/lib/store";
 import { integrationCounts } from "@/lib/integrations";
 import { Activity, GraduationCap, Plus } from "lucide-react";
@@ -25,7 +25,7 @@ export function Sidebar() {
           href="/"
           className="block rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
         >
-          <HermesLockup />
+          <AriaLockup />
         </Link>
         <Link
           href={NEW_CAMPAIGN_HREF}

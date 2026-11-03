@@ -9,7 +9,7 @@ import { createCandidateEnrichment } from "../src/lib/store/enrichment-actions.t
 import { enrichmentOutcome } from "../src/lib/enrichment/result.ts";
 import { recordVerifiedEvidence } from "../src/lib/candidate-evidence.ts";
 import { recordedCandidateLawfulBasis } from "../src/lib/candidate-lawful-basis.ts";
-import type { EnrichmentAttempt, HermesState } from "../src/lib/types.ts";
+import type { EnrichmentAttempt, WorkspaceState } from "../src/lib/types.ts";
 
 function fixture() {
   const state = buildSeedState();
@@ -103,7 +103,7 @@ function harness() {
   return { enrich, get state() { return state; }, get calls() { return calls; }, get saves() { return saves; }, get sent() { return sent; },
     set failSave(value: number) { failSave = value; }, set onFetch(value: (() => void | Promise<void>) | undefined) { onFetch = value; },
     set onSave(value: (() => void) | undefined) { onSave = value; },
-    set scope(value: string) { scope = value; }, set status(value: EnrichmentAttempt["status"]) { status = value; }, replaceState(value: HermesState) { state = value; } };
+    set scope(value: string) { scope = value; }, set status(value: EnrichmentAttempt["status"]) { status = value; }, replaceState(value: WorkspaceState) { state = value; } };
 }
 
 test("save-before-egress and durable result save preserve richness and concurrent notes", async () => {

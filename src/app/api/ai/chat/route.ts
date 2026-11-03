@@ -73,7 +73,7 @@ const McpServerPayloadSchema = z
  *    falls back to the deterministic mock.
  */
 
-const HermesChatSchema = z.object({
+const AiChatSchema = z.object({
   task: z.enum(["outreach", "classify", "extract", "sourcing", "chat"]).default("chat"),
   /** Why the call is made (first-contact draft, reply sorting...), for the AI
    *  costs page. Absent: derived from the task. */
@@ -219,7 +219,7 @@ export async function POST(req: NextRequest) {
 
   // Campaign context can carry a full campaign + candidate list — same shape/size posture
   // as /api/sourcing-agent, so allow a matching request body.
-  const validated = await validateBody(req, HermesChatSchema, { maxBytes: 200_000 });
+  const validated = await validateBody(req, AiChatSchema, { maxBytes: 200_000 });
   if (!validated.ok) return validated.response;
   const { task, activity, prompt: rawPrompt, model, provider, baseUrl, apiKeyId, mcpServers, webResearch, campaign, existing } =
     validated.data;

@@ -1,4 +1,4 @@
-import type { Activity, Candidate, ChatThread, HermesState } from "@/lib/types";
+import type { Activity, Candidate, ChatThread, WorkspaceState } from "@/lib/types";
 
 const REDACTED_ACTIVITY = {
   title: "Candidate activity redacted",
@@ -81,9 +81,9 @@ export function isCandidateErasureTombstone(candidate: Candidate): boolean {
  * claiming that an incompatible candidate mutation succeeded.
  */
 export function preserveCandidateErasureTombstones(
-  current: HermesState,
-  next: HermesState,
-): HermesState {
+  current: WorkspaceState,
+  next: WorkspaceState,
+): WorkspaceState {
   for (const tombstone of current.candidates.filter(isCandidateErasureTombstone)) {
     if (next.candidates.find((candidate) => candidate.id === tombstone.id) !== tombstone) {
       return current;
@@ -179,7 +179,7 @@ function redactCandidateLinkedChats(
   }));
 }
 
-export function anonymizeHermesState(state: HermesState, candidateId: string): HermesState {
+export function anonymizeWorkspaceState(state: WorkspaceState, candidateId: string): WorkspaceState {
   const candidate = state.candidates.find((item) => item.id === candidateId);
   if (!candidate) return state;
 

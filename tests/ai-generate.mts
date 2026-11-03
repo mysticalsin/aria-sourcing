@@ -8,12 +8,12 @@
  *  - browser settings never bypass named human review for a generated message
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
-import { parseHermesOutreach, buildOutreachPrompt } from "../src/lib/ai/hermes.js";
-import { migrateToCurrentVersion, normalizeHermesState } from "../src/lib/store/migrations.js";
+import { parseOutreachDraft, buildOutreachPrompt } from "../src/lib/ai/generate.js";
+import { migrateToCurrentVersion, normalizeWorkspaceState } from "../src/lib/store/migrations.js";
 import { newOutreachMessage } from "../src/lib/mock-ai.js";
 import { API_KEY_PROVIDERS } from "../src/lib/types.js";
 import type { GeneratedOutreach } from "../src/lib/mock-ai.js";
-import type { HermesState } from "../src/lib/types.js";
+import type { WorkspaceState } from "../src/lib/types.js";
 
 let pass = 0,
   fail = 0;
@@ -46,8 +46,8 @@ const savedWithRuntime = {
     hermesApiKeyId: "key_runtime",
     hermesWebUrl: "http://127.0.0.1:8643",
   },
-} as HermesState;
-const normalized = normalizeHermesState(savedWithRuntime);
+} as WorkspaceState;
+const normalized = normalizeWorkspaceState(savedWithRuntime);
 ok("a saved workspace drops the retired runtime fields", !hasRetired(normalized.settings));
 ok("dropping them keeps the other settings", normalized.settings.operatorName === seed.settings.operatorName);
 ok(
@@ -61,9 +61,9 @@ const defs = defaultSettings();
 
 ok("API_KEY_PROVIDERS includes 'Aria Agent'", (API_KEY_PROVIDERS as readonly string[]).includes("Aria Agent"));
 
-/* ---- 3. parseHermesOutreach --------------------------------------------- */
+/* ---- 3. parseOutreachDraft --------------------------------------------- */
 
-const parsed = parseHermesOutreach(
+const parsed = parseOutreachDraft(
   "Subject: Loved your async runtime work\n\nHi Maya, your recent commits caught my eye. 15 minutes?",
   "Email",
   "fallback subject",
@@ -72,19 +72,19 @@ ok("parser extracts subject", parsed?.subject === "Loved your async runtime work
 ok("parser strips subject line from body", !!parsed && !parsed.body.toLowerCase().startsWith("subject:"));
 ok("parser keeps body", !!parsed && parsed.body.includes("Hi Maya"));
 
-const noSubject = parseHermesOutreach("Hi there, quick note about a role.", "Email", "fallback subject");
+const noSubject = parseOutreachDraft("Hi there, quick note about a role.", "Email", "fallback subject");
 ok("parser synthesizes subject from first line when none", !!noSubject && noSubject.subject.length > 0);
 
-ok("parser returns null on empty text (→ caller falls back to mock)", parseHermesOutreach("", "Email", "fb") === null);
-ok("parser returns null on whitespace-only text", parseHermesOutreach("   \n  ", "Email", "fb") === null);
+ok("parser returns null on empty text (→ caller falls back to mock)", parseOutreachDraft("", "Email", "fb") === null);
+ok("parser returns null on whitespace-only text", parseOutreachDraft("   \n  ", "Email", "fb") === null);
 ok(
   "parser rejects a draft with an unfilled slot (→ caller keeps the template)",
-  parseHermesOutreach("Subject: Hello\n\nHi Maya, I'm [Name] from [Company]. 15 minutes?", "Email", "fb") === null &&
-    parseHermesOutreach("Subject: Hello\n\nHi {{first_name}}, quick note.", "Email", "fb") === null,
+  parseOutreachDraft("Subject: Hello\n\nHi Maya, I'm [Name] from [Company]. 15 minutes?", "Email", "fb") === null &&
+    parseOutreachDraft("Subject: Hello\n\nHi {{first_name}}, quick note.", "Email", "fb") === null,
 );
 ok(
   "parser keeps ordinary punctuation and links",
-  parseHermesOutreach("Subject: Hello\n\nHi Maya (Go, Rust): see https://example.com/a?b=1. 15 minutes?", "Email", "fb") !== null,
+  parseOutreachDraft("Subject: Hello\n\nHi Maya (Go, Rust): see https://example.com/a?b=1. 15 minutes?", "Email", "fb") !== null,
 );
 
 /* ---- 6. buildOutreachPrompt is self-contained --------------------------- */
@@ -147,5 +147,5 @@ if (cand && camp) {
 
 /* ---- Report ------------------------------------------------------------- */
 
-console.log(`RESULT hermes-live: ${pass} passed, ${fail} failed`);
+console.log(`RESULT ai-generate: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -1,7 +1,7 @@
 /* ============================================================================
    JSON schema for brief extraction, sent as Anthropic structured output
    (output_config.format) on the extract task, so the model can only answer
-   with this exact shape. Built from the same enums parseHermesIntakeJson
+   with this exact shape. Built from the same enums parseIntakeJson
    validates against; that validation and groundLiveIntakeFields still run,
    because a well-formed answer can still contain unsupported facts.
 

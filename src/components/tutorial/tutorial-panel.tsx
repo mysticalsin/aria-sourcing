@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui";
-import { useHermes } from "@/lib/store";
+import { useWorkspace } from "@/lib/store";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
 import {
@@ -58,7 +58,7 @@ export function TutorialPanel({
 }) {
   const pathname = usePathname();
   const search = useSearchParams().toString();
-  const { state, hydrated } = useHermes();
+  const { state, hydrated } = useWorkspace();
   const completed = React.useMemo(() => new Set(memory.completed), [memory.completed]);
   const step = memory.view === "step" ? stepAt(memory.position) : undefined;
   const chapter = TUTORIAL_CHAPTERS[memory.position.chapter];

@@ -11,10 +11,10 @@
    ---------------------------------------------------------------------
    There is no store action that can delete a candidate / outreach draft /
    reply / booking / report once created (by design — see store.ts's
-   HermesActions), so the only way to guarantee the run leaves ZERO trace is
+   WorkspaceActions), so the only way to guarantee the run leaves ZERO trace is
    a full-state snapshot + full-state restore, not a per-entity undo.
 
-   The store (HermesProvider in store.ts) keeps its state in a plain
+   The store (WorkspaceProvider in store.ts) keeps its state in a plain
    `useState`, mounted once at the app root (see providers.tsx) and persisted
    to `localStorage["aria-sourcing:v1"]` on a 600ms debounce (flushed
    immediately on `beforeunload`). There is no exposed action to replace that
@@ -27,18 +27,18 @@
    pattern TopBar's own "Reset to defaults" flow already relies on
    (`resetDemo(); window.location.href = "/"`): write the desired bytes to
    localStorage, then force a real navigation. A real navigation remounts
-   HermesProvider, which re-hydrates from localStorage on mount (store.ts
+   WorkspaceProvider, which re-hydrates from localStorage on mount (store.ts
    ~511-529) — that mount-time read is the only "rehydrate" entry point that
    exists, so a hard reload is how this module "triggers" it.
 
-   The one subtlety that makes this safe rather than racy: HermesProvider's
+   The one subtlety that makes this safe rather than racy: WorkspaceProvider's
    own `beforeunload` listener (registered at app boot) flushes whatever the
    LATEST in-memory state is to localStorage the moment a real navigation
    starts — which, at the end of an Aria Live run, is the run's *mutated*
    state, not the pre-run snapshot. Left alone that flush would clobber our
    restore. Browsers fire `beforeunload` listeners in registration order, and
    this module's own listener is only ever registered once a run starts
-   (i.e. strictly after HermesProvider's, which is registered at boot) — so
+   (i.e. strictly after WorkspaceProvider's, which is registered at boot) — so
    ours always fires second and its write is always the one left standing
    right before the page actually unloads. That guarantee holds whether the
    reload is one we trigger ourselves (Skip / Dismiss / unmount) or a
@@ -46,8 +46,8 @@
    ========================================================================== */
 
 import { pickResponderIndex } from "@/lib/floor3d";
-import type { HermesActions } from "@/lib/store";
-import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
+import type { WorkspaceActions } from "@/lib/store";
+import type { AgentSeat, Campaign, WorkspaceState } from "@/lib/types";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { getAriaLiveRunPolicy, pickAriaLiveCampaign } from "@/lib/demo/aria-live-policy";
 import { WORKSPACE_STORAGE_KEY } from "@/lib/store/migrations";
@@ -172,7 +172,7 @@ function safeSetItem(key: string, value: string) {
 }
 
 /** Writes the pre-run snapshot back and forces a real reload — the only way
- *  to make HermesProvider re-hydrate (see the file banner above). Idempotent:
+ *  to make WorkspaceProvider re-hydrate (see the file banner above). Idempotent:
  *  safe to call from Skip, Dismiss, and an unmount cleanup without risking a
  *  double-reload. */
 function triggerRestore() {
@@ -185,7 +185,7 @@ function triggerRestore() {
 
 /** Best-effort safety net for an abrupt real navigation (tab close, address
  *  bar navigation) that happens mid-run without Skip/Dismiss ever firing.
- *  Registered once a run starts, so it is always added AFTER HermesProvider's
+ *  Registered once a run starts, so it is always added AFTER WorkspaceProvider's
  *  own beforeunload listener — browsers dispatch same-event listeners in
  *  registration order, so this one's write is always the last one standing. */
 function armBeforeUnloadGuard() {
@@ -213,7 +213,7 @@ function publish(patch: Partial<AriaLiveSnapshot>) {
   snapshotChannel.set({ ...snapshotChannel.get(), active: true, ...patch });
 }
 
-async function runSequence(actions: HermesActions, campaign: Campaign, seats: AgentSeat[]) {
+async function runSequence(actions: WorkspaceActions, campaign: Campaign, seats: AgentSeat[]) {
   const kpis: AriaLiveKpis = { ...ZERO_KPIS };
   const chapterAt = (chapter: AriaLiveChapter) => ARIA_LIVE_CHAPTERS.indexOf(chapter);
   // Index 0 is the CEO by convention (src/lib/floor3d.ts) — everyone else is
@@ -351,8 +351,8 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
 /** Starts a run. No-op (returns false) if one is already active — callers
  *  (TopBar, CommandSearch) should treat that as "already playing". */
 export function startAriaLive(
-  actions: HermesActions,
-  state: HermesState,
+  actions: WorkspaceActions,
+  state: WorkspaceState,
   campaign: Campaign,
   seats: AgentSeat[],
 ): boolean {
@@ -374,8 +374,8 @@ export function startAriaLive(
  *  campaign to run against and validates preconditions in one place so
  *  TopBar and CommandSearch can't drift out of sync. */
 export function beginAriaLiveRun(opts: {
-  actions: HermesActions;
-  state: HermesState | null;
+  actions: WorkspaceActions;
+  state: WorkspaceState | null;
   campaigns: Campaign[];
   activeCampaignId: string | null;
   seats: AgentSeat[];

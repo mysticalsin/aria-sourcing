@@ -55,7 +55,7 @@
 }
 
 /* ============================================================================
-   HERMES SOURCING — design tokens
+   ARIA SOURCING — design tokens
    Warm editorial canvas, high-contrast ink, confident accent system.
    All colors are HSL channels (no hsl() wrapper) so Tailwind can apply alpha.
    ========================================================================== */

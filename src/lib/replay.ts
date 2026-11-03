@@ -1,4 +1,4 @@
-import type { HermesState, OutreachLedgerEntry } from "./types";
+import type { WorkspaceState, OutreachLedgerEntry } from "./types";
 import { colorForAgent, type OfficeAgent } from "./floor3d";
 
 /* ============================================================================
@@ -9,13 +9,13 @@ import { colorForAgent, type OfficeAgent } from "./floor3d";
    The /replay page scrubs a cursor across this stream; it never mutates it.
    ========================================================================== */
 
-/** Only the slice of HermesState this module actually reads — same
+/** Only the slice of WorkspaceState this module actually reads — same
  *  "stateLike" convention /floor uses (src/app/floor/page.tsx) to assemble a
  *  narrow object from individual selector hooks instead of the raw store
- *  context, so /replay never needs `useHermes()` or the module-private
+ *  context, so /replay never needs `useWorkspace()` or the module-private
  *  `EMPTY` fallback. */
 export type ReplaySourceState = Pick<
-  HermesState,
+  WorkspaceState,
   "candidates" | "outreach" | "replies" | "bookings" | "reports" | "activities" | "seats" | "ledger"
 >;
 

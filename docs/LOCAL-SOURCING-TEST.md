@@ -83,7 +83,7 @@ these ports. Keep loopback bindings for this local test.
 ## 3. Verify the connected workspace
 
 1. Open `http://localhost:3000/login` (or the overridden app port) on the Docker
-   machine. Default local sample login: `admin@hermes.local` / `admindemo123`;
+   machine. Default local sample login: `admin@aria.local` / `admindemo123`;
    use the existing login if its password was changed.
 2. Check `http://localhost:3000/api/ready` returns HTTP 200. This checks backend
    dependencies and migration state; `/api/health` alone only proves liveness.

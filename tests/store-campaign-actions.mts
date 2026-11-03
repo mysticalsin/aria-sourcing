@@ -11,7 +11,7 @@ import { summarizeCampaignLaunch } from "../src/lib/store/campaign-launch";
 import type {
   Activity,
   Campaign,
-  HermesState,
+  WorkspaceState,
   JobAnalysis,
 } from "../src/lib/types";
 
@@ -51,7 +51,7 @@ test("campaign action boundary is React-free and memoized from stable dependenci
   );
   assert.equal(
     storeSource.indexOf("function makeActivity(") <
-      storeSource.indexOf("export function HermesProvider("),
+      storeSource.indexOf("export function WorkspaceProvider("),
     true,
     "pure activity helpers must stay outside the provider render cycle",
   );
@@ -125,7 +125,7 @@ test("campaign launch summary requires every requested role to complete", () => 
   assert.equal(totalFailure.creationFailed, 2);
 });
 
-function campaignFixture(state: HermesState, id = "camp_created"): Campaign {
+function campaignFixture(state: WorkspaceState, id = "camp_created"): Campaign {
   const source = state.campaigns[0];
   return {
     ...source,
@@ -156,7 +156,7 @@ function createHarness(
     meta: { hiringManager: string; hiringManagerEmail: string };
   }> = [];
   const effectiveWeightInputs: Array<{
-    skills: HermesState["skills"];
+    skills: WorkspaceState["skills"];
     weights: Campaign["scoringWeights"];
   }> = [];
   const scoredJobTitles: string[] = [];

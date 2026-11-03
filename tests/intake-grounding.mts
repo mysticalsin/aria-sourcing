@@ -3,7 +3,7 @@ import test from "node:test";
 
 import {
   groundLiveIntakeFields,
-  parseHermesIntakeJson,
+  parseIntakeJson,
   parseIntakeLive,
 } from "../src/lib/ai/intake";
 import { parseEmailAndJD } from "../src/lib/mock-ai";
@@ -56,7 +56,7 @@ test("missing cloud provider returns the same evidence-grounded incomplete need"
 });
 
 test("cloud extraction drops role facts that do not appear in the submitted need", () => {
-  const model = parseHermesIntakeJson(
+  const model = parseIntakeJson(
     JSON.stringify({
       title: "Data Engineer",
       seniority: "Senior",

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
-import type { Campaign, HermesState } from "@/lib/types";
+import type { Campaign, WorkspaceState } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { mapApifyCandidates } from "@/lib/store/sourcing-helpers";
 import { mapGithubCandidates, type SourceResult } from "./candidate-mappers";
@@ -15,14 +15,14 @@ import type { GithubUser } from "./github-identity";
 import { campaignSourcingBasis, jobStatus, type CampaignSourcingJob, type SourceStep } from "./unified-contract";
 import { APIFY_ACCOUNT_LIMIT_ERROR, type ApifyRunStatus } from "./apify-status";
 
-export interface SourcingWorkspace { state: HermesState; updatedAt: string }
+export interface SourcingWorkspace { state: WorkspaceState; updatedAt: string }
 export interface UnifiedRunRepository {
   readWorkspace(): Promise<SourcingWorkspace>;
   claim(job: CampaignSourcingJob, token: string, steps: SourceStep[]): Promise<boolean>;
   bind(job: CampaignSourcingJob, token: string, steps: SourceStep[]): Promise<void>;
   reserve(source: SourceStep["source"], key: string, campaignId: string): Promise<string>;
   settle(providerRunId: string, succeeded: boolean, externalRunId?: string, datasetId?: string): Promise<void>;
-  finish(job: CampaignSourcingJob, token: string, steps: SourceStep[], workspace: SourcingWorkspace, state?: HermesState): Promise<"saved" | "conflict" | { blockedIds: string[] }>;
+  finish(job: CampaignSourcingJob, token: string, steps: SourceStep[], workspace: SourcingWorkspace, state?: WorkspaceState): Promise<"saved" | "conflict" | { blockedIds: string[] }>;
 }
 export interface UnifiedProviders {
   apifyKey(): Promise<string | null>;
@@ -45,7 +45,7 @@ function currentCampaign(workspace: SourcingWorkspace, job: CampaignSourcingJob)
   }
   return campaign;
 }
-function addResults(state: HermesState, campaign: Campaign, result: SourceResult): HermesState {
+function addResults(state: WorkspaceState, campaign: Campaign, result: SourceResult): WorkspaceState {
   const candidates = [...result.accepted, ...state.candidates];
   const next = { ...state, candidates };
   return { ...next, campaigns: state.campaigns.map((c) => c.id !== campaign.id ? c : { ...c,
@@ -66,13 +66,13 @@ export async function advanceUnifiedRun(job: CampaignSourcingJob, repo: UnifiedR
   const token = randomUUID();
   if (!(await repo.claim(job, token, steps))) return;
 
-  const finish = async (map?: (state: HermesState, campaign: Campaign) => SourceResult) => {
+  const finish = async (map?: (state: WorkspaceState, campaign: Campaign) => SourceResult) => {
     const erased = new Set<string>();
-    const identity = (c: HermesState["candidates"][number]) => candidateProfileIdentity(c.linkedinUrl || c.githubUrl || c.sourceUrl || c.email);
+    const identity = (c: WorkspaceState["candidates"][number]) => candidateProfileIdentity(c.linkedinUrl || c.githubUrl || c.sourceUrl || c.email);
     for (let attempt = 0; attempt < 4; attempt++) {
       const ws = await repo.readWorkspace();
       const campaign = currentCampaign(ws, job);
-      let next: HermesState | undefined;
+      let next: WorkspaceState | undefined;
       if (map) {
         const mapped = map(ws.state, campaign);
         const blocked = mapped.accepted.filter((c) => erased.has(identity(c)));

@@ -8,10 +8,10 @@ import {
   type SourcingActionDependencies,
 } from "../src/lib/store/sourcing-actions";
 import { scoreCandidate } from "../src/lib/scoring";
-import { buildOutreachPrompt } from "../src/lib/ai/hermes";
+import { buildOutreachPrompt } from "../src/lib/ai/generate";
 import { generateOutreach } from "../src/lib/mock-ai";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
-import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
+import type { CampaignStatus, Candidate, WorkspaceState } from "../src/lib/types";
 
 type ActivityDraft = Parameters<SourcingActionDependencies["makeActivity"]>[0];
 
@@ -96,9 +96,9 @@ function createHarness(options: {
   responseText?: string;
   fetchError?: Error;
   afterFetch?: () => void;
-  beforeCommit?: (state: HermesState) => HermesState;
-  beforePersist?: (state: HermesState) => HermesState;
-  state?: HermesState;
+  beforeCommit?: (state: WorkspaceState) => WorkspaceState;
+  beforePersist?: (state: WorkspaceState) => WorkspaceState;
+  state?: WorkspaceState;
 } = {}) {
   let state = structuredClone(options.state ?? buildSeedState());
   if (state.campaigns[0]) {
@@ -194,7 +194,7 @@ function createHarness(options: {
     get state() {
       return state;
     },
-    set state(next: HermesState) {
+    set state(next: WorkspaceState) {
       state = next;
     },
     get commitCalls() {

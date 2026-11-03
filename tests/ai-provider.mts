@@ -437,7 +437,7 @@ try {
   }
 }
 
-const routeSource = readFileSync(new URL("../src/app/api/hermes/chat/route.ts", import.meta.url), "utf8");
+const routeSource = readFileSync(new URL("../src/app/api/ai/chat/route.ts", import.meta.url), "utf8");
 ok("the chat route accepts an activity and records it", /activity: z\.enum\(AI_ACTIVITY_IDS\)\.optional\(\)/.test(routeSource) && /recordAiUsage\(\{ task, activity,/.test(routeSource));
 
 console.log(`RESULT ai-provider: ${pass} passed, ${fail} failed`);

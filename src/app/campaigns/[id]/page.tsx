@@ -52,7 +52,7 @@ import {
   useCampaign,
   useCampaignCandidates,
   useCampaignOutreach,
-  useHermes,
+  useWorkspace,
   useHydrated,
   useReplies,
   useReportForCampaign,
@@ -352,7 +352,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const report = useReportForCampaign(id);
   const actions = useActions();
   const role = useRole();
-  const hermesState = useHermes().state;
+  const workspaceState = useWorkspace().state;
   const { toast } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -489,8 +489,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         );
   // Workspace-wide (not per-campaign): the server enforces one shared budget
   // across every candidate/campaign, so the meter reports that same total.
-  const enrichmentSpend = (hermesState?.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
-  const enrichmentBudget = hermesState?.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
+  const enrichmentSpend = (workspaceState?.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
+  const enrichmentBudget = workspaceState?.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
 
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },

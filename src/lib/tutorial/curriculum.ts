@@ -1,5 +1,5 @@
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
-import type { HermesState } from "@/lib/types";
+import type { WorkspaceState } from "@/lib/types";
 
 /* ============================================================================
    Tutorial curriculum — the step-by-step walkthrough opened from the menu.
@@ -20,7 +20,7 @@ export interface TutorialCounts {
 }
 
 export function tutorialCounts(
-  state: Pick<HermesState, "campaigns" | "outreach" | "candidates">,
+  state: Pick<WorkspaceState, "campaigns" | "outreach" | "candidates">,
 ): TutorialCounts {
   return {
     campaigns: state.campaigns.length,

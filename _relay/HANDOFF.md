@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 450
 agent: claude-code
 updated: 2026-11-03
-status: lighter-runtime-and-caddy-gateway
+status: hermes-removed-play-demo-fixed-pushed
 ---
 
 # Handoff - Shift 450
@@ -20,6 +20,9 @@ status: lighter-runtime-and-caddy-gateway
 - AI issues (`.scratch/ai-agents/issues/`): 01, 02, 03, 09 resolved; 04
   ready-for-human (code done, live check pending); 05 ready-for-agent; 06, 07,
   08 needs-triage.
+- No "hermes" left in the code except deliberate compatibility (old browser
+  keys, saved hermes* settings stripped on load, the bootstrap renaming an old
+  `admin@hermes.local`). Demo login is now `admin@aria.local` / `admindemo123`.
 - `_relay/codex-findings.md`: 8 open (owner credential rotations, re-audits,
   Azure Postgres); 12 obsolete July entries closed as wontfix (obsolete).
 
@@ -61,6 +64,22 @@ Docker:
   json-file logs capped at 3 x 10 MB per permanent service; BuildKit cache
   mounts for npm and `.next/cache` in `Dockerfile`.
 
+Owner follow-up (same day): "retirer hermes", "Play demo, solution la plus
+propre", then push.
+- 337232aa Play demo: `pickAriaLiveCampaign` (aria-live-policy.ts) uses the
+  sourcing lifecycle rule (`campaignAllowsLiveSourcing`): active campaign if it
+  qualifies, else the first that does, else a clear message; the run selects
+  it (restored on close) and records legitimate interest through
+  `recordCandidateEvidence` before approval. Browser: 7/7 steps, funnel 1/1/1/1/1.
+- 7cd10cff removed the retired Hermes runtime path (settings, chat SSE path,
+  HERMES_ALLOWED_HOSTS, `hermes`/`hermes-agent`/`gateway` allow-listed hosts,
+  route placeholder "hermes" -> "none").
+- Rename commit: WorkspaceState/WorkspaceActions/WorkspaceProvider/useWorkspace,
+  `src/lib/ai/generate.ts` + `aiGenerate`, `/api/ai/chat`, AriaMark/AriaWordmark/
+  AriaLockup, package `aria-sourcing`, tests `ai-generate` / `ai-chat-authority`,
+  storage keys `aria-sourcing:v1` / `aria:onboarded:v1` (old keys read),
+  bootstrap account rename. Issue demo-cleanup 05 resolved.
+
 Docs/tracking: NEEDS_GUIDE rewritten against the code; goals of July marked
 ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
 07, cleanup 01 (wontfix) and 06 (resolved) updated; July plans carry a
@@ -73,18 +92,15 @@ ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
 
 ## Next steps
 
-1. Push mbe-branch and check the CI job "Local Docker demo" (login, campaign,
+1. Pushed. Check the CI job "Local Docker demo" (login, campaign,
    restart through the new gateway). If it fails, read `docker compose logs
    gateway`. Quick manual probe on a running stack: `curl -i
    localhost:54321/rest/v1/` must be 401, the same with `-H "apikey: <anon>"`
    must reach PostgREST, `localhost:54321/storage/v1/` must be 404.
 2. AI issue 04: one chat question that triggers 2+ tool rounds, then check
    `cache_read_input_tokens` > 0 on /costs; set the issue resolved.
-3. Aria Live "Play demo" stops at step 1 on the default seed campaign: "Senior
-   Backend Engineer" is `Interviewing` (seed.ts:414) and sourcing only accepts
-   Sourcing/Outreach (`campaignAllowsLiveSourcing`). Pre-existing (not caused
-   by this shift). Owner to choose: pick a sourcing-eligible campaign in
-   `beginAriaLiveRun`, or change the seed status.
+3. On a Docker volume created before the rename, check the bootstrap log line
+   "admin@hermes.local is now admin@aria.local" and a login with the new email.
 4. Chat as real multi-turn messages (needs a `/api/hermes/chat` contract change;
    keep S-3: persona never in `system`).
 5. Remaining perf ideas (not done): `getClaims()` instead of `getUser()` in
@@ -98,6 +114,8 @@ ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
   (target not chosen). Merging into vercel-demo is no longer a goal.
 - Owner 2026-11-03: no local LLM / Ollama for now; AI stays on the Anthropic key.
 - Owner 2026-11-03: Kong replaced by Caddy as the API gateway.
+- Owner 2026-11-03: no "hermes" in the code (product is Aria). Keep only the
+  compatibility reads listed in Current state.
 - All AI runs on Claude via one Anthropic key, within 20-30 EUR/month; GDPR
   validated by the owner (2026-10-30).
 - Model per task: Haiku for classify/extract, Sonnet for chat, outreach and

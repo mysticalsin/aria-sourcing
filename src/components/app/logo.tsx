@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 /** Aria M-mark — the gradient mark on a transparent background (reads on any
  *  surface; never tiled, circled, or cropped). */
-export function HermesMark({ className }: { className?: string }) {
+export function AriaMark({ className }: { className?: string }) {
   return (
     <Image
       src="/aria-mark.png"
@@ -24,8 +24,8 @@ export function HermesMark({ className }: { className?: string }) {
  * marketing logo (white wordmark for dark surfaces), but with
  * an ink "ARIA" so it reads on the light sidebar.
  */
-export function HermesWordmark({ className, compact }: { className?: string; compact?: boolean }) {
-  if (compact) return <HermesMark className={className} />;
+export function AriaWordmark({ className, compact }: { className?: string; compact?: boolean }) {
+  if (compact) return <AriaMark className={className} />;
   return (
     <span className={cn("flex flex-col items-center gap-2 text-center", className)}>
       <Image
@@ -52,10 +52,10 @@ export function HermesWordmark({ className, compact }: { className?: string; com
 
 /** Compact horizontal lockup for navigation: mark, ARIA and the Mantu Group
  *  mention on two short lines, so the full nav fits a 900px-high screen. */
-export function HermesLockup({ className }: { className?: string }) {
+export function AriaLockup({ className }: { className?: string }) {
   return (
     <span className={cn("flex items-center gap-3", className)}>
-      <HermesMark className="h-8" />
+      <AriaMark className="h-8" />
       <span className="leading-none">
         <span className="block text-lg font-extrabold tracking-[0.3em] text-ink">ARIA</span>
         <span className="mt-1 block text-[0.65rem] font-medium tracking-wide text-muted">A Mantu Group product</span>

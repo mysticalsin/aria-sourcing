@@ -34,19 +34,19 @@ import {
   type CampaignStatus,
   type Candidate,
   type CandidateLawfulBasis,
-  type HermesState,
+  type WorkspaceState,
   type ScoringWeights,
   type SourcePlatform,
 } from "../types";
 import { genId, initialsFrom } from "../utils";
 import { baseWebQuery } from "./sourcing-helpers";
 import type {
-  HermesActions,
+  WorkspaceActions,
   SourceNextBatchResult,
 } from "./contracts";
 
 export type SourcingActions = Pick<
-  HermesActions,
+  WorkspaceActions,
   | "sourceNextBatch"
   | "addCandidateFromGithub"
   | "addCandidateManual"
@@ -57,9 +57,9 @@ export type SourcingActivityDraft = Omit<Activity, "id" | "createdAt"> & {
 };
 
 export interface SourcingActionDependencies {
-  commit: (update: (state: HermesState) => HermesState) => boolean;
-  commitPersisted: (update: (state: HermesState) => HermesState) => Promise<boolean>;
-  currentState: () => HermesState | null;
+  commit: (update: (state: WorkspaceState) => WorkspaceState) => boolean;
+  commitPersisted: (update: (state: WorkspaceState) => WorkspaceState) => Promise<boolean>;
+  currentState: () => WorkspaceState | null;
   sourcingMutationAllowed: () => boolean;
   workspaceEffectAllowed: () => boolean;
   syntheticSourcingAllowed: () => boolean;
@@ -69,11 +69,11 @@ export interface SourcingActionDependencies {
   workspaceFetch: typeof fetch;
   makeActivity: (activity: SourcingActivityDraft) => Activity;
   withActivity: (
-    state: HermesState,
+    state: WorkspaceState,
     activity: Activity,
     campaignId: string | null,
-  ) => HermesState;
-  recomputeMetrics: (state: HermesState, campaignId: string) => HermesState;
+  ) => WorkspaceState;
+  recomputeMetrics: (state: WorkspaceState, campaignId: string) => WorkspaceState;
   effectiveWeights: (
     weights: ScoringWeights,
     skills: AgentSkill[],
@@ -496,7 +496,7 @@ export function createSourcingActions({
       result = dedupeCandidates(scored, previous.candidates, {
         excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       });
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...previous,
         candidates: [...result.accepted, ...previous.candidates],
       };
@@ -799,7 +799,7 @@ export function createSourcingActions({
         return previous;
       }
       authorized = true;
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...previous,
         candidates: [...result.accepted, ...previous.candidates],
       };
@@ -949,7 +949,7 @@ export function createSourcingActions({
         return previous;
       }
       authorized = true;
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...previous,
         candidates: [...accepted, ...previous.candidates],
       };
@@ -1083,7 +1083,7 @@ export function createSourcingActions({
         return previous;
       }
       authorized = true;
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...previous,
         candidates: [...scored, ...previous.candidates],
       };

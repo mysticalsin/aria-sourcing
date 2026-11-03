@@ -15,7 +15,7 @@ import { ImpactBar } from "@/components/charts/impact-bar";
 import { diffWords, type DiffToken } from "@/lib/diff";
 import { analyzeOutcomes } from "@/lib/skills";
 import { useActions, useCampaign, useCandidates, useOutreach, useReplies } from "@/lib/store";
-import type { AgentSkill, HermesState, SkillUpdate } from "@/lib/types";
+import type { AgentSkill, WorkspaceState, SkillUpdate } from "@/lib/types";
 import { cn, round } from "@/lib/utils";
 import {
   Brain,
@@ -64,11 +64,11 @@ export function LearningSession({
   const [running, setRunning] = React.useState(false);
   const [streamDone, setStreamDone] = React.useState(false);
 
-  // analyzeOutcomes only reads candidates/outreach/replies off HermesState —
+  // analyzeOutcomes only reads candidates/outreach/replies off WorkspaceState —
   // build just enough of the shape to call the real, canonical analysis
   // function instead of re-deriving tone/score/reply-outcome numbers by hand.
   const analysis = React.useMemo(
-    () => analyzeOutcomes({ candidates, outreach, replies } as unknown as HermesState),
+    () => analyzeOutcomes({ candidates, outreach, replies } as unknown as WorkspaceState),
     [candidates, outreach, replies],
   );
 

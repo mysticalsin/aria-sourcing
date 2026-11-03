@@ -41,13 +41,13 @@ const matchers = ((proxyModule as any).config ?? (proxyModule as any).default?.c
 ok("route matcher explicitly includes every API suffix", Array.isArray(matchers) && matchers.includes("/api/:path*"));
 
 user = { id: "foreign-user", email: "person@outside.example" };
-const blockedApi = await routeGate(new NextRequest("http://localhost/api/hermes/chat", { method: "POST" }));
+const blockedApi = await routeGate(new NextRequest("http://localhost/api/ai/chat", { method: "POST" }));
 const blockedApiBody = await blockedApi.json().catch(() => null) as { ok?: boolean; reason?: string } | null;
 ok("off-domain API session receives JSON 403", blockedApi.status === 403 && blockedApiBody?.ok === false);
 ok("off-domain API denial does not redirect", !blockedApi.headers.has("location"));
 
 user = { id: "allowed-user", email: "person@mantu.com" };
-const allowedApi = await routeGate(new NextRequest("http://localhost/api/hermes/chat", { method: "POST" }));
+const allowedApi = await routeGate(new NextRequest("http://localhost/api/ai/chat", { method: "POST" }));
 ok("allowed-domain API session reaches its handler", allowedApi.status === 200);
 
 user = null;

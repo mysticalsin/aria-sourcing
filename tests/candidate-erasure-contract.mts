@@ -94,9 +94,9 @@ test("a validated erasure receipt masks stale PII and cannot be undone", () => {
   assert.match(store, /preserveCandidateErasureTombstones\(base, fn\(base\)\)/);
   assert.match(store, /if \(isCandidateErasureTombstone\(cand\)\) return s/);
   assert.match(restore, /if \(!cand \|\| isCandidateErasureTombstone\(cand\)\) return/);
-  assert.match(anonymize, /anonymizeHermesState/);
+  assert.match(anonymize, /anonymizeWorkspaceState/);
   assert.ok(
-    anonymize.indexOf("anonymizeHermesState") < anonymize.indexOf("await hydrateWorkspace()"),
+    anonymize.indexOf("anonymizeWorkspaceState") < anonymize.indexOf("await hydrateWorkspace()"),
     "the local candidate must be masked before a fallible workspace refresh",
   );
   assert.match(handler, /onClose\(\)/);

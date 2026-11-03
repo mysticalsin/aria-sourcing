@@ -83,7 +83,7 @@ export async function POST(req: Request) {
   });
 
   const { error } = await supabase.auth.signInWithPassword({
-    email: "admin@hermes.local",
+    email: "admin@aria.local",
     password: demoPassword,
   });
   if (error) {

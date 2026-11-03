@@ -5,17 +5,17 @@ import type { AiActivity } from "@/lib/ai/activities";
 /* ============================================================================
    AI text generation — client helper.
 
-   Thin wrapper around the server route at /api/hermes/chat, which resolves the
+   Thin wrapper around the server route at /api/ai/chat, which resolves the
    provider key server-side (the secret never reaches the browser) and calls
    Claude (or another configured provider). This is TEXT GENERATION ONLY — it
    never triggers any send. Callers fall back to the deterministic mock when
    this returns { ok: false }.
    ========================================================================== */
 
-export type HermesTask = "outreach" | "classify" | "extract" | "sourcing" | "chat";
+export type AiTask = "outreach" | "classify" | "extract" | "sourcing" | "chat";
 
-export interface HermesGenerateInput {
-  task: HermesTask;
+export interface AiGenerateInput {
+  task: AiTask;
   /** What the call is for, so its cost lands on the right line of the AI costs page. */
   activity?: AiActivity;
   system?: string;
@@ -29,7 +29,7 @@ export interface HermesGenerateInput {
   baseUrl?: string;
 }
 
-export interface HermesResult {
+export interface AiGenerateResult {
   ok: boolean;
   text?: string;
   reason?: string;
@@ -38,16 +38,16 @@ export interface HermesResult {
 /**
  * POST to the server route. The input carries the provider and vault key id so
  * the server can resolve the secret without the client ever holding it. Always
- * resolves to a HermesResult — network errors become { ok: false, reason }.
+ * resolves to a AiGenerateResult — network errors become { ok: false, reason }.
  */
-export async function hermesGenerate(input: HermesGenerateInput): Promise<HermesResult> {
+export async function aiGenerate(input: AiGenerateInput): Promise<AiGenerateResult> {
   try {
-    const res = await fetch("/api/hermes/chat", {
+    const res = await fetch("/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...input, stream: false }),
     });
-    const json = (await res.json().catch(() => ({ ok: false, reason: "Bad JSON from the AI route." }))) as HermesResult;
+    const json = (await res.json().catch(() => ({ ok: false, reason: "Bad JSON from the AI route." }))) as AiGenerateResult;
     return json;
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : "Network error." };
@@ -120,7 +120,7 @@ export function buildOutreachPrompt(opts: {
  * has an unfilled slot like "[Name]" (not sendable); the caller then falls back
  * to the mock.
  */
-export function parseHermesOutreach(
+export function parseOutreachDraft(
   text: string,
   channel: OutreachChannel,
   fallbackSubject: string,

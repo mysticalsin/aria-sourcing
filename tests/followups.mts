@@ -10,7 +10,7 @@
         + the stage-not-advance branch in classifyAndStoreReply (store.ts:2058-2061).
         deriveFollowUpsDue is real/exported/pure and imported directly. The
         stage-not-advance branch lives inside a React useCallback in the
-        useHermesStore hook (store.ts:1902) and is not unit-reachable without
+        useWorkspaceStore hook (store.ts:1902) and is not unit-reachable without
         rendering the hook — that half is a CONTRACT test that mirrors the exact
         ternary at store.ts:2061. Keep the two in sync.
 

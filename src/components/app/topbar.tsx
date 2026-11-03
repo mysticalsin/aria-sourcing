@@ -7,13 +7,13 @@ import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Plus, S
 import { useTutorial } from "@/components/tutorial/tutorial";
 import { cn } from "@/lib/utils";
 import { CommandSearch } from "./command-search";
-import { HermesLockup, HermesWordmark } from "./logo";
+import { AriaLockup, AriaWordmark } from "./logo";
 import { NAV_ITEMS, NAV_SECTIONS, NEW_CAMPAIGN_HREF, isNavActive } from "./nav";
 import {
   useActions,
   useActiveCampaign,
   useCampaigns,
-  useHermesStateGetter,
+  useWorkspaceStateGetter,
   useHydrated,
   useRecommendations,
   useSeats,
@@ -62,7 +62,7 @@ export function TopBar() {
   const tutorial = useTutorial();
   const actions = useActions();
   const { setActiveCampaign, resetDemo } = actions;
-  const getHermesState = useHermesStateGetter();
+  const getWorkspaceState = useWorkspaceStateGetter();
   const hydrated = useHydrated();
   const seats = useSeats();
   const { toast } = useToast();
@@ -71,7 +71,7 @@ export function TopBar() {
   const playAriaLive = React.useCallback(() => {
     const result = beginAriaLiveRun({
       actions,
-      state: getHermesState(),
+      state: getWorkspaceState(),
       campaigns,
       activeCampaignId: active?.id ?? null,
       seats,
@@ -79,7 +79,7 @@ export function TopBar() {
     if (!result.ok) {
       toast({ title: "Can't start Aria Live", description: result.reason, variant: "warning" });
     }
-  }, [actions, getHermesState, campaigns, active, seats, toast]);
+  }, [actions, getWorkspaceState, campaigns, active, seats, toast]);
 
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [userOpen, setUserOpen] = React.useState(false);
@@ -189,7 +189,7 @@ export function TopBar() {
         </button>
 
         <Link href="/" className="lg:hidden">
-          <HermesWordmark compact />
+          <AriaWordmark compact />
         </Link>
 
         <div className="hidden flex-1 sm:block">
@@ -416,7 +416,7 @@ export function TopBar() {
             className="sidebar-glass absolute left-0 top-0 flex h-full w-[17rem] max-w-[82%] flex-col overflow-y-auto pb-[calc(5rem+env(safe-area-inset-bottom))] animate-fade-in shadow-lift"
           >
             <div className="flex items-center justify-between px-5 py-4">
-              <HermesLockup />
+              <AriaLockup />
               <button
                 type="button"
                 onClick={() => setMobileNavOpen(false)}

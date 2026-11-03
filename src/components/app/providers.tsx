@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { HermesProvider } from "@/lib/store";
+import { WorkspaceProvider } from "@/lib/store";
 import { ToastProvider } from "@/components/ui";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -14,5 +14,5 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // No global MotionConfig: it would put the animation library in every page's bundle.
   // The few animated components read usePrefersReducedMotion themselves.
   const content = <ToastProvider>{children}</ToastProvider>;
-  return barePath ? content : <HermesProvider>{content}</HermesProvider>;
+  return barePath ? content : <WorkspaceProvider>{content}</WorkspaceProvider>;
 }

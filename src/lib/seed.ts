@@ -23,7 +23,7 @@ import type {
   ChatboxSubmission,
   ClassifiedReply,
   GuardrailConfig,
-  HermesState,
+  WorkspaceState,
   InterviewRecord,
   Interviewer,
   JobAnalysis,
@@ -236,7 +236,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_maya",
       name: "Aria · Maya R.",
-      operatorEmail: "maya.rivera@hermes.example",
+      operatorEmail: "maya.rivera@aria.example",
       provider: "Microsoft Graph",
       warmupStartedAt: isoDaysBefore(24),
       sentToday: 6,
@@ -246,7 +246,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_diego",
       name: "Aria · Diego K.",
-      operatorEmail: "diego.khan@hermes.example",
+      operatorEmail: "diego.khan@aria.example",
       provider: "Gmail API",
       warmupStartedAt: isoDaysBefore(30),
       sentToday: 3,
@@ -256,7 +256,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_aisha",
       name: "Aria · Aisha N.",
-      operatorEmail: "aisha.nwosu@hermes.example",
+      operatorEmail: "aisha.nwosu@aria.example",
       provider: "Microsoft Graph",
       warmupStartedAt: isoDaysBefore(5), // still warming up
       sentToday: 2,
@@ -266,7 +266,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_lucas",
       name: "Aria · Lucas P.",
-      operatorEmail: "lucas.park@hermes.example",
+      operatorEmail: "lucas.park@aria.example",
       provider: "SendGrid",
       warmupStartedAt: isoDaysBefore(18),
       sentToday: 0,
@@ -290,10 +290,10 @@ function seedSuppression(): SuppressionEntry[] {
  *  slice — real staff, once editable, replace these in Settings. */
 export function seedInterviewers(): Interviewer[] {
   return [
-    { id: "intv_dana", name: "Dana Whitfield", email: "dana.whitfield@hermes.example", role: "Engineering Manager", active: true },
-    { id: "intv_marcus", name: "Marcus Lindqvist", email: "marcus.lindqvist@hermes.example", role: "Staff Engineer", active: true },
-    { id: "intv_priya", name: "Priya Nair", email: "priya.nair@hermes.example", role: "Director of Engineering", active: true },
-    { id: "intv_sofia", name: "Sofia Romano", email: "sofia.romano@hermes.example", role: "Principal Engineer", active: true },
+    { id: "intv_dana", name: "Dana Whitfield", email: "dana.whitfield@aria.example", role: "Engineering Manager", active: true },
+    { id: "intv_marcus", name: "Marcus Lindqvist", email: "marcus.lindqvist@aria.example", role: "Staff Engineer", active: true },
+    { id: "intv_priya", name: "Priya Nair", email: "priya.nair@aria.example", role: "Director of Engineering", active: true },
+    { id: "intv_sofia", name: "Sofia Romano", email: "sofia.romano@aria.example", role: "Principal Engineer", active: true },
   ];
 }
 
@@ -722,7 +722,7 @@ function buildChatboxSubmissions(campaigns: Campaign[]): ChatboxSubmission[] {
   });
 }
 
-export function buildSeedState(): HermesState {
+export function buildSeedState(): WorkspaceState {
   const settings = defaultSettings();
   const now = Date.now();
 

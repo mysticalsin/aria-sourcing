@@ -5,7 +5,7 @@ import type {
   CandidateStage,
   ClassifiedReply,
   FunnelPoint,
-  HermesState,
+  WorkspaceState,
   OutreachMessage,
 } from "./types";
 import { FUNNEL_STAGES } from "./types";
@@ -114,7 +114,7 @@ export interface RealFunnelOptions {
 }
 
 export type RealFunnelState = Pick<
-  HermesState,
+  WorkspaceState,
   "candidates" | "outreach" | "replies" | "bookings"
 >;
 
@@ -302,7 +302,7 @@ export interface GlobalKpis {
 
 export function globalKpis(
   state: Pick<
-    HermesState,
+    WorkspaceState,
     "campaigns" | "candidates" | "outreach" | "replies" | "bookings" | "settings"
   >,
 ): GlobalKpis {
@@ -349,6 +349,6 @@ export function globalKpis(
   };
 }
 
-export function candidatesForCampaign(state: HermesState, campaignId: string): Candidate[] {
+export function candidatesForCampaign(state: WorkspaceState, campaignId: string): Candidate[] {
   return state.candidates.filter((c) => c.campaignId === campaignId);
 }

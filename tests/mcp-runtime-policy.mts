@@ -417,9 +417,9 @@ try {
     ok("the loop returns at its overall deadline", elapsed < 70);
   }
 
-  const routeSource = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");
+  const routeSource = readFileSync("src/app/api/ai/chat/route.ts", "utf8");
   ok(
-    "Hermes only gathers remote MCP servers when the runtime policy allows execution",
+    "The AI route only gathers remote MCP servers when the runtime policy allows execution",
     /remoteMcpExecutionEnabled\(\)[\s\S]{0,300}mcpServers/.test(routeSource),
   );
 } finally {

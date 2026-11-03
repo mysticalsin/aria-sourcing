@@ -7,7 +7,7 @@ import { readFileSync } from "fs";
 import { deriveExecDashboard, execCanExport, execConversionSteps, execWinCandidateLabel, scopeExecStateToPeriod } from "../src/lib/exec-dashboard";
 import { DEFAULT_ROI_ASSUMPTIONS, estimateRoi } from "../src/lib/roi";
 import { globalKpis, isRealSendFact, realFunnelFacts } from "../src/lib/metrics";
-import type { Activity, Booking, Campaign, Candidate, HermesState, OutreachMessage, WinRecord } from "../src/lib/types";
+import type { Activity, Booking, Campaign, Candidate, WorkspaceState, OutreachMessage, WinRecord } from "../src/lib/types";
 
 let pass = 0,
   fail = 0;
@@ -224,10 +224,10 @@ const state = {
       createdAt: sentAt,
     } satisfies Activity,
   ],
-  settings: { dryRunMode: false } as HermesState["settings"],
+  settings: { dryRunMode: false } as WorkspaceState["settings"],
   wins,
 } satisfies Pick<
-  HermesState,
+  WorkspaceState,
   "campaigns" | "candidates" | "outreach" | "replies" | "bookings" | "activities" | "settings" | "wins"
 >;
 

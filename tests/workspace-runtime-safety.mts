@@ -270,7 +270,7 @@ ok(
 );
 ok(
   "authoritative save failure retains the combined attempted snapshot for retry",
-  /const pending: PendingWorkspaceSave<HermesState> = \{[\s\S]{0,220}snapshot: next,[\s\S]{0,220}generation,[\s\S]{0,80}\};/.test(authoritativeWiring) &&
+  /const pending: PendingWorkspaceSave<WorkspaceState> = \{[\s\S]{0,220}snapshot: next,[\s\S]{0,220}generation,[\s\S]{0,80}\};/.test(authoritativeWiring) &&
     /if \(outcome === "failed"\) \{[\s\S]{0,120}markRemoteSaveFailed\(pending, next\);[\s\S]{0,80}\}/.test(authoritativeWiring),
 );
 ok(

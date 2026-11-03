@@ -7,7 +7,7 @@
 #   Reset:  docker compose down -v           (wipes the database; next up re-seeds)
 #
 # Log in at http://localhost:3000 with the one-click "admin / admin" shortcut, or the
-# email form: admin@hermes.local / admindemo123.
+# email form: admin@aria.local / admindemo123.
 #
 # The keys below are the PUBLIC supabase sample keys — fine for a local stack only.
 # For any non-local use, regenerate JWT_SECRET + the anon/service JWTs and override them.

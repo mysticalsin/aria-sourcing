@@ -10,7 +10,7 @@ import { orchestrateEnrichment } from "@/lib/enrichment/orchestrator";
 import { enrichmentBasis, enrichmentPatch, enrichmentOutcome } from "@/lib/enrichment/result";
 import { candidateEnrichmentBlocker } from "@/lib/candidate-review";
 import { effectiveWeights } from "@/lib/skills";
-import { ENRICHABLE_FIELDS, type EnrichableField, type HermesState, type Role } from "@/lib/types";
+import { ENRICHABLE_FIELDS, type EnrichableField, type WorkspaceState, type Role } from "@/lib/types";
 
 export const runtime = "nodejs";
 const MAX_ENRICH_UNITS_PER_REQUEST = 10;
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     if (auth.user?.id !== user.id || currentRole.error || currentWorkspace.error || currentWorkspace.data !== workspace.data || !can(currentRole.data as Role, "source")) return null;
     const { data, error } = await session.from("workspace_state").select("state").eq("workspace_id", workspace.data).single();
     if (error || !Array.isArray(data?.state?.candidates) || !Array.isArray(data?.state?.campaigns)) return null;
-    const state = data.state as HermesState;
+    const state = data.state as WorkspaceState;
     const candidate = state.candidates.find((c) => c.id === candidateId);
     const campaign = state.campaigns.find((c) => c.id === candidate?.campaignId);
     return { state, candidate, campaign };

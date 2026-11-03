@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { useActions, useActiveCampaignId, useCampaigns, useHermesStateGetter, useHydrated, useSeats } from "@/lib/store";
+import { useActions, useActiveCampaignId, useCampaigns, useWorkspaceStateGetter, useHydrated, useSeats } from "@/lib/store";
 import {
   abandonAriaLiveIfActive,
   beginAriaLiveRun,
@@ -33,7 +33,7 @@ const AriaLiveOverlay = dynamic(
 export function AriaLiveHost() {
   const [snapshot, setSnapshot] = React.useState<AriaLiveSnapshot>(() => getAriaLiveSnapshot());
   const actions = useActions();
-  const getState = useHermesStateGetter();
+  const getState = useWorkspaceStateGetter();
   const hydrated = useHydrated();
   const campaigns = useCampaigns();
   const activeCampaignId = useActiveCampaignId();

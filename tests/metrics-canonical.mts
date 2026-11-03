@@ -14,7 +14,7 @@ import type {
   Booking,
   Campaign,
   Candidate,
-  HermesState,
+  WorkspaceState,
   OutreachLedgerEntry,
   OutreachMessage,
 } from "../src/lib/types";
@@ -193,7 +193,7 @@ const state = {
       handled: false,
       receivedAt: sentAt,
     },
-  ] as HermesState["replies"],
+  ] as WorkspaceState["replies"],
   bookings: [
     booking("booking-real", "real-completed"),
     booking("booking-demo", "demo-dryrun"),
@@ -205,9 +205,9 @@ const state = {
     ledger("led-approved", "approved-unsent", "claimed"),
     ledger("led-synthetic", "synthetic-real", "sent"),
   ],
-  settings: { dryRunMode: false } as HermesState["settings"],
+  settings: { dryRunMode: false } as WorkspaceState["settings"],
 } satisfies Pick<
-  HermesState,
+  WorkspaceState,
   "campaigns" | "candidates" | "outreach" | "replies" | "bookings" | "ledger" | "settings"
 >;
 

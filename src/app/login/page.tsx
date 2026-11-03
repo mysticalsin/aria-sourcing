@@ -11,7 +11,7 @@ import {
   azureLoginEnabled,
   demoLoginEnabled,
 } from "@/lib/supabase/config";
-import { HermesMark } from "@/components/app/logo";
+import { AriaMark } from "@/components/app/logo";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -91,7 +91,7 @@ function LoginInner() {
       setLoading(false);
       return;
     }
-    const loginEmail = email.includes("@") ? email : `${email}@hermes.local`;
+    const loginEmail = email.includes("@") ? email : `${email}@aria.local`;
     const { error: err } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     if (err) {
       setAuthError(err.message);
@@ -111,7 +111,7 @@ function LoginInner() {
     <div className="grid min-h-screen grid-cols-1 bg-paper text-ink lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <main className="flex flex-col px-6 py-8 sm:px-12 lg:px-16">
         <div className="flex items-center gap-3">
-          <HermesMark className="h-8" />
+          <AriaMark className="h-8" />
           <span className="text-lg font-extrabold tracking-[0.3em] text-ink">ARIA</span>
         </div>
 

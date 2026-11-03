@@ -18,7 +18,7 @@ import {
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
 import { resolveAiProvider } from "./provider";
-import { hermesGenerate } from "./hermes";
+import { aiGenerate } from "./generate";
 
 /* ============================================================================
    Live intake / JD parsing — client helper.
@@ -28,7 +28,7 @@ import { hermesGenerate } from "./hermes";
    is configured, the live call fails, or the reply isn't usable JSON. This
    mirrors the same three-layer fallback generateOutreachLive uses for outreach
    drafting and classifyAndStoreReply uses for reply classification (store.ts) —
-   this is TEXT EXTRACTION ONLY, routed over the existing /api/hermes/chat proxy's
+   this is TEXT EXTRACTION ONLY, routed over the existing /api/ai/chat proxy's
    "chat" task (no dedicated "parse" task/route — the prompt below is fully
    self-contained, so the generic chat system prompt is enough). Never creates,
    sends, or contacts anything; the intake page still requires an explicit
@@ -59,7 +59,7 @@ function pickEmail(value: unknown): string | undefined {
 
 /** Every field optional — an absent/invalid field falls back to the heuristic's
  *  value in parseIntakeLive. Only fields that pass strict type/enum validation
- *  survive parseHermesIntakeJson, so a hallucinated shape can't corrupt state. */
+ *  survive parseIntakeJson, so a hallucinated shape can't corrupt state. */
 interface LiveIntakeFields {
   senderName?: string;
   senderEmail?: string;
@@ -135,8 +135,8 @@ export function buildIntakeParsePrompt(text: string): string {
 
 /** Tolerant JSON parse + per-field validation. Returns null only when the reply
  *  has no usable JSON object at all — caller then falls back entirely to the
- *  heuristic. Mirrors parseHermesOutreach's tolerant-parse contract. */
-export function parseHermesIntakeJson(text: string): LiveIntakeFields | null {
+ *  heuristic. Mirrors parseOutreachDraft's tolerant-parse contract. */
+export function parseIntakeJson(text: string): LiveIntakeFields | null {
   const trimmed = (text ?? "")
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -319,7 +319,7 @@ export async function parseIntakeLive(
 
   const prompt = buildIntakeParsePrompt(`${input.email}\n${input.jd ?? ""}`);
 
-  const genInput: Parameters<typeof hermesGenerate>[0] = {
+  const genInput: Parameters<typeof aiGenerate>[0] = {
     task: "extract",
     activity: "brief-extraction",
     prompt,
@@ -329,9 +329,9 @@ export async function parseIntakeLive(
     apiKeyId: aiCfg.apiKeyId,
   };
 
-  let result: Awaited<ReturnType<typeof hermesGenerate>>;
+  let result: Awaited<ReturnType<typeof aiGenerate>>;
   try {
-    result = await hermesGenerate(genInput);
+    result = await aiGenerate(genInput);
   } catch {
     return {
       ...mock,
@@ -345,7 +345,7 @@ export async function parseIntakeLive(
     };
   }
 
-  const parsedFields = parseHermesIntakeJson(result.text);
+  const parsedFields = parseIntakeJson(result.text);
   if (!parsedFields) {
     return {
       ...mock,

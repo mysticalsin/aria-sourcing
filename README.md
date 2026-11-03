@@ -60,7 +60,7 @@ echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
 docker compose up --build
 ```
 
-Open <http://localhost:3000> and sign in as `admin@hermes.local` / `admindemo123`. The
+Open <http://localhost:3000> and sign in as `admin@aria.local` / `admindemo123`. The
 first build takes a few minutes. [`DOCKER.md`](DOCKER.md) covers ports, resets and
 troubleshooting.
 
@@ -111,5 +111,4 @@ More documentation:
 - [`docs/TESTING.md`](docs/TESTING.md): test suites
 - [`SECURITY.md`](SECURITY.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
-The product is called ARIA; the repository is MSourcing. Some code identifiers still say
-`hermes` for compatibility.
+The product is called ARIA; the repository is MSourcing.

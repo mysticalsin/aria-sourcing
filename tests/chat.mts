@@ -3,12 +3,12 @@
  *
  * Verifies:
  *  - ChatMessage and ChatThread types are exported from types.ts
- *  - HermesState.chats defaults to [] in buildSeedState (STATE_VERSION 10)
+ *  - WorkspaceState.chats defaults to [] in buildSeedState (STATE_VERSION 10)
  *  - migration fills chats: [] on old-shaped state
  *  - createChatThread / appendChatMessage / updateChatMessage logic (pure functions)
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
-import type { ChatMessage, ChatThread, HermesState, SystemSettings } from "../src/lib/types.js";
+import type { ChatMessage, ChatThread, WorkspaceState, SystemSettings } from "../src/lib/types.js";
 import { genId } from "../src/lib/utils.js";
 import { readFileSync } from "node:fs";
 
@@ -43,7 +43,7 @@ const oldState = {
   chats: undefined as unknown as ChatThread[],
 };
 const defs = defaultSettings();
-const migrated: HermesState = {
+const migrated: WorkspaceState = {
   ...oldState,
   version: STATE_VERSION,
   chats: oldState.chats ?? [],
