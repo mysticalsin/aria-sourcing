@@ -105,14 +105,15 @@ Mission suivante possible, sur le même moteur : préparation d'entretien.
 | WP | Sujet | Statut |
 |---|---|---|
 | 00 | Socle : clé locale, routage Claude par tâche, effort, lecture des blocs `thinking` | fait |
-| 01 | ID du workspace Anthropic et test réel de bout en bout | bloqué, en attente du propriétaire |
+| 01 | ID du workspace Anthropic et test réel de bout en bout | resolved (live calls verified 2026-11-02, see issue 01) |
 | 02 | Journal d'usage et budgets | fait (plafond, persistance fichier, panneau Réglages) |
 | 03 | Tâche `extraction` sur Haiku pour l'analyse de brief, avec sortie structurée | fait |
-| 04 | Cache des prompts système et des outils | ready-for-agent |
-| 05 | Orchestrateur de missions et agents (§5) | moteur et mission « Run Aria » faits ; autres missions à faire |
+| 04 | Cache des prompts système et des outils | ready-for-human (code fait 2026-11-03, vérif réelle à faire) |
+| 05 | Orchestrateur de missions et agents (§5) | ready-for-agent; engine and the « Run Aria », « Triage inbox » and follow-up missions done, other missions to do |
 | 06 | Batch API pour le rapport hebdo et la requalification en masse | needs-triage |
-| 07 | Escalade vers Opus et gestion des refus (`stop_reason: refusal`) | needs-triage |
+| 07 | Escalade vers Opus et gestion des refus (`stop_reason: refusal`) | needs-triage; refusal/`max_tokens` handling done (18919c81), Opus escalation remains |
 | 08 | Passer le chemin Anthropic sur le SDK officiel `@anthropic-ai/sdk` | needs-triage |
+| 09 | Page « AI costs » : coût par activité | resolved |
 
 ## 7. Réponses du propriétaire (2026-10-30)
 
@@ -141,5 +142,5 @@ Avec 30 $ par mois, on peut faire par exemple 60 lancements de sourcing, 400 mes
 
 ## 8. Questions encore ouvertes
 
-1. **ID du workspace Anthropic.** La clé fournie n'est rattachée à aucun workspace. L'API exige l'en-tête `anthropic-workspace-id`, et la clé n'a pas le droit de lister les workspaces. Il faut l'ID `wrkspc_…`, visible dans la Console, ou une clé rattachée à un workspace.
-2. **Limite de dépense dans la Console** sur ce workspace, recommandée à 30 $ par mois.
+1. **ID du workspace Anthropic.** (Resolved 2026-11-02: `ANTHROPIC_WORKSPACE_ID` set in `.secret`, see issue 01.) La clé fournie n'est rattachée à aucun workspace. L'API exige l'en-tête `anthropic-workspace-id`, et la clé n'a pas le droit de lister les workspaces. Il faut l'ID `wrkspc_…`, visible dans la Console, ou une clé rattachée à un workspace.
+2. **Limite de dépense dans la Console** (Resolved 2026-11-02: the owner set a workspace spend limit, see issue 01.) sur ce workspace, recommandée à 30 $ par mois.

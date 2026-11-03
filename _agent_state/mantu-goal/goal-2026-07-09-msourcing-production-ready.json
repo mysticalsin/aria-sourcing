@@ -36,7 +36,8 @@
       "note": "compliance milestones (consent, suppression, retention) tracked as obligations"
     }
   ],
-  "status": "IN_PROGRESS",
+  "status": "ABANDONED",
+  "status_note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md): Fly/Vercel deploy, the autonomous sourcing loop and WhatsApp were removed; LinkedIn via API is not pursued. Owner dropped Vercel on 2026-11-03 (self-host later). Open milestones m6/m8/m11/m12 set to ABANDONED.",
   "status_history": [
     {
       "status": "CAPTURED",
@@ -53,6 +54,11 @@
     {
       "status": "IN_PROGRESS",
       "at": "2026-07-10T02:34:38+00:00"
+    },
+    {
+      "status": "ABANDONED",
+      "at": "2026-11-03T00:00:00Z",
+      "note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md)."
     }
   ],
   "milestones": [
@@ -130,7 +136,7 @@
       "depends_on": [
         "m2"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m7",
@@ -155,7 +161,7 @@
         "m3",
         "m5"
       ],
-      "status": "BLOCKED",
+      "status": "ABANDONED",
       "blocked_on": "Owner Fly.io login (flyctl auth login) \u2014 authentication only Tony can provide; all prep done (flyctl installed, prod JWT/anon/service/encryption/cron secrets generated + gitignored, code pushed to main ed002dc)."
     },
     {
@@ -195,7 +201,7 @@
         "m8",
         "m10"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m12",
@@ -206,7 +212,7 @@
       "depends_on": [
         "m11"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m13",

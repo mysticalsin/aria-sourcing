@@ -20,11 +20,13 @@
     {"name": "MSourcing recruiters (end users)", "role": "beneficiary", "notify_on": ["complete"]},
     {"name": "LinkedIn-policy / GDPR honesty gate", "role": "compliance check", "notify_on": ["m5_complete"]}
   ],
-  "status": "READY",
+  "status": "ABANDONED",
+  "status_note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md): the 'proven live and deployed' target relied on the Fly deployment, which was removed; owner dropped Vercel on 2026-11-03 (self-host later). Campaign sourcing continues locally under .scratch/unified-sourcing/spec.md. Milestone m8 left PARTIAL as a historical record.",
   "status_history": [
     {"status": "CAPTURED", "at": "2026-07-15T00:00:00+02:00"},
     {"status": "DECOMPOSED", "at": "2026-07-15T00:05:00+02:00"},
-    {"status": "READY", "at": "2026-07-15T00:10:00+02:00"}
+    {"status": "READY", "at": "2026-07-15T00:10:00+02:00"},
+    {"status": "ABANDONED", "at": "2026-11-03T00:00:00Z", "note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md)."}
   ],
   "milestones": [
     {

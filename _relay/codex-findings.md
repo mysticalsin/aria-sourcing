@@ -186,6 +186,7 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The incident was observed in the current session. No part of the key is reproduced in this finding.
 **Suggested fix:** Revoke it, issue a least-privilege replacement, update local and deployment secrets, and record only rotation metadata.
 **Status:** open
+**Triage 2026-11-03:** Voice/TTS code was removed by the 2026-10-26 demo cleanup (no ElevenLabs reference left in src/), but an exposed key stays live until revoked. Owner action: revoke the key in the ElevenLabs account; no replacement is needed.
 
 ## 2026-10-27 - Provider candidates cannot record the basis required by approval
 **Severity:** correctness
@@ -255,7 +256,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The audited Fly release serves the app shell, but the sole database machine and both authentication machines are stopped. Auth, REST, and careers requests return 503. The local replacement now fails closed, but it has not recovered or revalidated production.
 **Repro/evidence:** Fly machine inventory for exact SHA `05cda612` shows database stopped and GoTrue stopped. In deploy run `29139277754`, the database machine reached `stopped`, Fly classified that state as good because no service health check existed, and the script printed `OK deploy db`. It then logged REST 503 and six Auth 503 probes, continued to migrations, and succeeded because app `/api/health` returned 200.
 **Suggested fix:** Diagnose the machine exit-code-1 root cause, require running-state plus dependency readiness, and make every failed retry or probe fail the deploy.
-**Status:** open (local false-green release path is repaired and public `/api/ready` now reports database/auth/queue true on build `d2040b...`; exact Machine restart, restore, and sustained-stability evidence remain unproven)
+**Status:** wontfix (obsolete: Fly deploy (`deploy-fly.sh`, `fly.*.toml`) and the Fly production data plane removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md)
 
 ## 2026-07-11 - Deploy can publish a red exact SHA
 **Severity:** security
@@ -263,7 +264,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The deployed workflow triggered directly from a branch push and was independent of CI, CodeQL, dependency audit, and secret scan. The local replacement is manual, serialized, exact-SHA gated, action-pinned, and protected-environment scoped, but it is not dispatchable until its definition exists on the default branch.
 **Repro/evidence:** Exact-SHA CI runs `29139277737` and `29139278802` failed the dependency audit, while deploy run `29139277754` succeeded for the same SHA. The workflow is now `disabled_manually`; Production has a reviewer plus a custom deploy-branch policy. GitHub reports default branch `vercel-demo`, where `.github/workflows/deploy-aria-mantu.yml` is absent. The deploy branch remains unprotected, administrators can bypass, and the replacement source has not run in GitHub.
 **Suggested fix:** Use one protected, serialized release workflow gated by all checks for the same SHA.
-**Status:** open (local workflow and release contracts pass; merge to the default branch, branch protection, replacement secrets, and exact-SHA GitHub proof are pending)
+**Status:** wontfix (obsolete: `.github/workflows/deploy-aria-mantu.yml` and the Fly release path removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; only ci.yml and codeql.yml remain, and no deploy workflow exists)
 
 ## 2026-07-11 - Member-controlled Databricks origin can receive a stored secret
 **Severity:** security
@@ -368,6 +369,7 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Incident record `_relay/incidents/2026-07-11-fly-deploy-token-exposure.md`; the credential is intentionally not reproduced.
 **Suggested fix:** Replace with a short-lived least-privilege token, update GitHub deployment secrets, revoke the exposed token, review Fly activity, and ban content-derived secret-file diagnostics.
 **Status:** open
+**Triage 2026-11-03:** Fly deploy tooling and `production-readiness/` were removed by the 2026-10-26 demo cleanup, so no replacement token is needed, but the exposed token stays valid until revoked. Owner action: revoke it (and the Fly apps if they still run) in the Fly account.
 
 ## 2026-07-11 - Fly volume is mounted directly at PostgreSQL data_directory
 **Severity:** correctness
@@ -551,7 +553,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Source merge `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` and pushed Relay descendant `352de32cc444aec38450e4cfe2f65fe06bdb511b` are fully green locally but are not proven remotely green. Earlier main SHAs were red before runner steps executed.
 **Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` showed CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b`; earlier runs also failed for `52423e8`. Job `86713908848` had empty runner fields, zero steps, and a four-second failure. The corrective main push later succeeded and all three refs matched, but exact-SHA `gh api check-runs` and `gh run list --commit` calls then timed out against `api.github.com`, so no final check conclusion is claimed.
 **Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
-**Status:** open
+**Status:** wontfix (obsolete: the July `main` release line and its Fly deploy path removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; current CI runs fully on runners and passed: 40498433529 at 0be6b3ca, 40499885119 at 43b9db34, 40540178013 at 29967509, cited in .scratch/unified-sourcing/spec.md and .scratch/candidate-qualification/issues/01-qualification-enrichment.md)
 
 ## 2026-07-12 - Release candidate exact-SHA CI and CodeQL fail before meaningful execution
 **Severity:** test-gap
@@ -559,7 +561,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Candidate `c3e94b2b5694825c613e127a69c811f7935a1dd8` passes the complete local gate but is not eligible for production because its GitHub CI and CodeQL runs are red.
 **Repro/evidence:** CI run `29221158898` failed eight seconds after creation and CodeQL run `29221158901` failed four seconds after creation. The exact job annotation is unknown because the job and check-run endpoints timed out. The older Actions-budget diagnosis is obsolete and must not be reused without current evidence.
 **Suggested fix:** Capture the exact top-level and job annotations, repair that specific workflow-start or account-policy failure, then rerun both workflows for exact `c3e94b2`.
-**Status:** open
+**Status:** wontfix (obsolete: the `c3e94b2` production release candidate and its Fly release path removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; later CI runs 40498433529, 40499885119 and 40540178013 passed with real runner execution)
 
 ## 2026-07-12 - GitHub CLI credential exposed through process arguments
 **Severity:** security
@@ -568,6 +570,7 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The process command line was observed during the release audit. Matching curl processes were terminated, authenticated GitHub access was stopped, and the credential is not reproduced in this finding.
 **Suggested fix:** Revoke and rotate the credential, review GitHub account and repository access history, use least privilege, and keep credentials out of argv and diagnostic output.
 **Status:** open
+**Triage 2026-11-03:** Not a tree defect, so the demo cleanup does not close it: the GitHub CLI token stays valid until revoked. Owner action: run `gh auth refresh`/re-login (or revoke the token under GitHub settings) and review account access history.
 
 ## 2026-07-12 - Live production is healthy only on an older migration ledger
 **Severity:** spec-mismatch
@@ -575,7 +578,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Public readiness is green, but the running build is not the reviewed release candidate and does not include the latest authority migrations.
 **Repro/evidence:** The final 2026-07-14 `/api/ready` call returned HTTP 200 with build `d2040b534177f5bd2abb28f22de19af57b58dc3a`, migration `0023_conversation_identity.sql`, and all reported components true. Reviewed local source now contains migrations 0024 through 0033.
 **Suggested fix:** Complete the protected exact-SHA release path, verify the running digest and build identity, and require the live migration ledger through `0033` before acceptance.
-**Status:** open
+**Status:** wontfix (obsolete: the Fly production deployment removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; the 0001-0054 migration ledger was squashed into `supabase/migrations/0001_baseline.sql`)
 
 ## 2026-07-13 - Store contract drift had no executable boundary
 **Severity:** test-gap
@@ -790,7 +793,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** No accepted image, SBOM, signature, tenant-isolation proof, private network policy, restart/restore proof, or operational owner exists for either framework. Flowise OSS uses a shared default workspace while users/workspaces/RBAC/SSO are commercial features; DeerFlow warns its default trusted-localhost tool surface is unsafe for public deployment.
 **Repro/evidence:** Upstream audits found Flowise `@flowiseai/agentflow` 0.0.0-dev.14 explicitly not recommended for production, plus Custom JS/HTTP/MCP/tool capabilities. DeerFlow exposes broad Gateway thread/run, file, web, MCP, Bash, memory, and agent-mutation surfaces; its active run registry is process-local and orphaned runs become errors rather than auto-resume.
 **Suggested fix:** Obtain Flowise tenancy/license/vendor evidence; build exact commits with frozen locks and digest-pinned bases; scan/sign/attest; deploy only ARIA-owned narrow adapters with default-deny egress, per-workspace isolation, real readiness, leases, idempotency, and kill switches.
-**Status:** open (source now has private narrow adapters, separate state planes, immutable-identity gates, signed/SBOM/provenance/scan requirements, readiness, leases, idempotency, and kill switches; vendor entitlement, promoted artifacts, egress proof, HA/restore, deployment, and live E2E remain unproven)
+**Status:** wontfix (obsolete: Flowise and DeerFlow (`infra/agent-frameworks`, framework run/capability/ack path) removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md)
 
 ## 2026-07-14 - Legacy WhatsApp template name constraint crashes valid inserts
 **Severity:** correctness
@@ -902,7 +905,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The upstream DeerFlow and Flowise Dockerfiles still consume mutable base tags, Fly egress is not proven gateway-only, the stateful topology is one Machine and one volume per store, and neither restore nor live framework/campaign behavior has been tested on these apps.
 **Repro/evidence:** The operator requires final signed digests, an SPDX SBOM, SLSA provenance containing the exact source commit, and a zero-high/critical Trivy result, but `cosign`, `trivy`, and `syft` are unavailable in this workspace and no promoted manifests were supplied. No Fly deploy was authorized. A private Flowise bootstrap, provider readiness, PostgreSQL HA decision, timed snapshot restore, failure injection, and real approved-campaign canary remain absent.
 **Suggested fix:** Pin or independently attest every upstream base input, install the verification tools in a protected runner, enforce and test egress, complete the Flowise bootstrap, accept an HA/RTO/RPO design, execute restore/failure drills, then deploy and canary through the approved operator.
-**Status:** open; framework activation remains NO-GO
+**Status:** wontfix (obsolete: the private Fly source pack `infra/agent-frameworks/fly` and both frameworks removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md)
 
 ## 2026-07-14 - Restored backups can reintroduce erased candidate data
 **Severity:** security
@@ -910,7 +913,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The restore drill verifies the restored archive's internal schema and rows, but it has no external erasure journal to replay deletions that happened after the backup was created.
 **Repro/evidence:** A backup taken before a candidate erasure can restore the deleted candidate and still pass the current drill because both the archive and restored database predate the erasure receipt.
 **Suggested fix:** Keep an independently retained erasure journal outside the restored database and make post-restore replay plus verification a mandatory recovery gate.
-**Status:** open; production restore and candidate erasure remain NO-GO
+**Status:** wontfix (obsolete: `scripts/restore-drill.sh` and the backup/restore tooling removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; re-raise when a backup/restore path is added for the Azure target, since restores must replay erasures)
 
 ## 2026-07-14 - Candidate reimport and memory erasure authority is incomplete
 **Severity:** security
@@ -918,7 +921,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Candidate data embedded in agent-run/event JSON, framework-result payloads, and encrypted AgentSpec memory has no explicit candidate provenance that an administrator can target for erasure.
 **Repro/evidence:** Migration 0033 guards and transaction-serializes workspace state, normalized messages, outreach, suppression, WhatsApp contact/window, conversations, and Apollo writes; both writer-first and erasure-first PostgreSQL sessions now pass. Migration 0025 still permits bounded encrypted memory content without a candidate identifier or administrator erasure receipt, and run/framework payloads remain unstructured for erasure authority.
 **Suggested fix:** Add explicit candidate provenance and administrator erasure receipts for run, framework, and memory payloads before production activation.
-**Status:** open; production candidate erasure remains NO-GO
+**Status:** wontfix (obsolete: agent memory, agent runs/events and framework-result stores removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; `0001_baseline.sql` header lists them as retired, and `agent_specs` has no memory column)
 
 ## 2026-07-14 - Provider erasure evidence is manual and not independently verified
 **Severity:** security
@@ -927,6 +930,7 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The completion request validates the hash format and expected attempt count. The database records that assertion; no approved evidence store or provider adapter is queried.
 **Suggested fix:** Bind completion to an approved evidence-store object and provider account, or add provider-specific deletion and receipt adapters with replay-safe reconciliation.
 **Status:** open; provider-held candidate data remains a production NO-GO
+**Triage 2026-11-03:** Still applies: `src/app/api/admin/candidates/erasure/route.ts` still accepts `evidenceSha256` + `caseReference` with no evidence-store check.
 
 ## 2026-07-14 - Large provider-obligation sets have no safe completion path
 **Severity:** correctness
@@ -935,6 +939,7 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The before-insert trigger raises SQLSTATE 54000 at the 101st obligation, and the route returns a typed 409 before destructive data changes. There is no paginated bulk workflow that can complete the request.
 **Suggested fix:** Replace the fixed durable-obligation cap with paginated response authority while preserving atomic request creation and bounded API pages.
 **Status:** open; documented Security and DPO escalation is required
+**Triage 2026-11-03:** Still applies: `enforce_candidate_erasure_obligation_limit()` with SQLSTATE 54000 is carried into `supabase/migrations/0001_baseline.sql:2181`.
 
 ## 2026-07-14 - Candidate scrub implementations lack parity proof
 **Severity:** test-gap
@@ -1038,7 +1043,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The fallback SQL was described as operational, but no protected apply job existed and the migration ledger would prevent a normal 0032 forward reapply.
 **Repro/evidence:** The database test manually applies rollback SQL and reapplies migration 0032. The production bootstrap records 0032 as applied and has no receipt-bound reverse/forward action for this file.
 **Suggested fix:** Keep production use prohibited until a protected job and new append-only forward migration are reviewed; use restore or a forward migration meanwhile.
-**Status:** open (documentation now fails closed; production machinery remains absent)
+**Status:** wontfix (obsolete: `supabase/rollbacks/` and `production-readiness/DEPLOYMENT_RUNBOOK.md` removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; migrations 0001-0054 were squashed into `0001_baseline.sql`)
 
 ## 2026-07-14 - Test manifest could pass without validating itself
 **Severity:** test-gap
@@ -1063,6 +1068,7 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Static route tracing found no call from either direct adapter to the canonical policy/requisition authority. The Apify UI exposes the same name filters. A user can therefore reach provider side effects through a path with weaker policy controls than the canonical agent.
 **Suggested fix:** Enforce one server-side prohibited-criteria and approved-requisition check before every provider call, with an immutable policy receipt.
 **Status:** open; real sourcing remains NO-GO
+**Triage 2026-11-03:** Partly addressed, needs re-audit before closing: the Apollo route was removed by the demo cleanup (c79dcaa8), and `src/app/api/source/apify/start/route.ts` now loads the campaign and calls `clearDiscoveryCriteria` (`src/lib/sourcing/provider-egress.ts`, f5f1e47f) before `begin_provider_run`. Confirm that clearance applies the prohibited-criteria policy to `schools`/`firstNames`/`lastNames`.
 
 ## 2026-07-19 - Enrichment spend authority is defined but not used by application calls
 **Severity:** correctness
@@ -1071,6 +1077,7 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `rg` found no `claim_enrichment_budget`, `settle_enrichment_spend`, or `release_enrichment_claim` call under `src`. Repeated or parallel requests across app instances can exceed a tenant budget while each individual request remains within ten units.
 **Suggested fix:** Wrap every paid enrichment/provider call in durable database claim, settle, and release operations and test concurrent multi-instance replays against a hard ceiling.
 **Status:** open; paid enrichment remains NO-GO
+**Triage 2026-11-03:** Possibly fixed, needs re-audit before closing: `src/app/api/source/enrich/route.ts` now goes through `orchestrateEnrichment`, and `src/lib/enrichment/orchestrator.ts` calls `claim_enrichment_budget`, `settle_enrichment_spend` and `release_enrichment_claim` (8bda0689, 29967509). The concurrent multi-instance ceiling test has not been confirmed.
 
 ## 2026-07-19 - Autonomous sourcing workers have no executable job handlers
 **Severity:** spec-mismatch
@@ -1078,7 +1085,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The production loop worker declares an empty handler set and cannot claim any durable sourcing job, so a need cannot progress headlessly from intake through sourcing when the browser is closed.
 **Repro/evidence:** `HANDLER_KINDS` is empty and the worker's claim path therefore has no eligible job kinds. Live aggregate inspection showed zero job/heartbeat activity, one loop control with sourcing disabled, and no deployed framework executor plane.
 **Suggested fix:** Implement bounded idempotent handlers for the approved workflow, deploy supervised executors, and prove lease recovery and zero duplicate sends during worker failure.
-**Status:** open; autonomous campaign execution remains NO-GO
+**Status:** wontfix (obsolete: the autonomous loop worker `scripts/sourcing-loop-worker.mjs` removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md)
 
 ## 2026-07-19 - Live browser-agent image is missing a declared Playwright runtime asset
 **Severity:** correctness
@@ -1086,7 +1093,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The live web process logs an external-module load failure because `/app/node_modules/playwright-core/browsers.json` is absent.
 **Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
 **Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
-**Status:** open; browser-agent capability remains NO-GO
+**Status:** wontfix (obsolete: the browser agent tools (`src/lib/ai/browser-tools.ts`, Obscura adapter, 000e813f) and the Fly web image removed by the 2026-10-26 demo cleanup, .scratch/demo-cleanup/spec.md; `playwright` remains only for `scripts/accept-local-demo.mjs`)
 
 ## 2026-10-27 - Demo interview dates used a different clock from campaign dates
 **Severity:** correctness
@@ -1150,6 +1157,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The bootstrap explicitly requires supabase_admin with rolsuper=true. Azure PostgreSQL Flexible Server administrators are not true PostgreSQL superusers. Copying this bootstrap into a managed-database Terraform target would not work.
 **Repro/evidence:** Compared the direct-superuser SQL guard with Microsoft's access-control documentation. ADR records a compatible initial VM/Compose pilot, an image reusable on Azure, and the authorization work required before a managed-service migration.
 **Status:** open; managed-database migration intentionally deferred, no Azure resources deployed
+**Triage 2026-11-03:** Deliberately deferred. The owner dropped Vercel on 2026-11-03 and will self-host later; the hosting target is not chosen yet.
 ## 2026-10-27 - Existing CI blockers reproduced and corrected
 **Severity:** test-gap
 **File:** tests/candidate-erasure-db.sh:321; .gitleaksignore; package.json

@@ -4,7 +4,9 @@
   "created_at": "2026-07-08T00:00:00+02:00",
   "rescoped_at": "2026-07-09T00:00:00+02:00",
   "rescope_reason": "Tony merged new /goal (2026-07-09): deer-flow-pattern on-demand sourcing agents, Flowise visual agent-builder section, gated autopilot with candidate reply handling. Explicit re-scoping decision via 5 Socratic questions + 4 clarifiers — NOT outcome drift.",
-  "status": "IN_PROGRESS",
+  "status": "ABANDONED",
+  "status_updated_at": "2026-11-03T00:00:00Z",
+  "status_note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md): DeerFlow/Flowise Agent Studio, autopilot loop, WhatsApp and agent memory were removed. All PENDING milestones set to ABANDONED.",
   "unsafe": false,
   "outcome": "ARIA runs on-demand, single-task sourcing agents (deer-flow-pattern planner→sourcer→screener→outreach→reporter, fully parameterizable per role/candidate profile, hard guardrails), editable via an embedded Flowise Agent Studio section, with queue-only reply drafting for candidate replies across email + WhatsApp (LinkedIn draft-gated), every outbound message passing a human-likeness gate and named-human approval before dispatch, multi-tenant with admin dashboard, deployed to production.",
   "outcome_criterion": "On the deployed production build: two test users (one admin, one regular) each create an on-demand sourcing agent for a different role via the embedded Agent Studio (Flowise) section; each runs a full sourcing cycle with zero code intervention; at least one real outreach email is sent to a Tony-controlled test inbox, the candidate answers back, and the reply-drafting agent queues the generated reply for Tony approval; out-of-guardrail replies are also queued with explicit review reasons. At least one WhatsApp message is sent to a Tony-controlled number via official API and passes the human-likeness gate (zero AI-tell/status/meta messages on the wire); admin dashboard shows both users activity plus efficiency metrics. Verifier: Tony runs acceptance script + manual pass, records PASS/FAIL.",
@@ -148,7 +150,7 @@
       "depends_on": [
         "m3"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m5",
@@ -172,7 +174,7 @@
       "depends_on": [
         "m5"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m7",
@@ -184,7 +186,7 @@
         "m4",
         "m5"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m8",
@@ -196,7 +198,7 @@
         "m4",
         "m5"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m9",
@@ -207,7 +209,7 @@
       "depends_on": [
         "m4"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m10",
@@ -220,7 +222,7 @@
         "m7",
         "m9"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m11",
@@ -231,7 +233,7 @@
       "depends_on": [
         "m10"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m12",
@@ -242,7 +244,7 @@
       "depends_on": [
         "m11"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     }
   ],
   "premortem": {

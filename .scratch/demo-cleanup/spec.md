@@ -11,6 +11,11 @@ Turn the POC into a working, demo-able product that runs locally with
 journey. A later phase targets internal Azure Cloud with Terraform; nothing
 here should build towards Fly.io or Vercel.
 
+> Owner note 2026-11-03: Vercel is not kept and merging into the `vercel-demo`
+> branch is no longer a goal; the app will be self-hosted later (target not yet
+> chosen). No local LLM / Ollama for now: AI stays on the single Anthropic key
+> (issue 01 closed wontfix).
+
 ## Target journey (keep)
 
 ```

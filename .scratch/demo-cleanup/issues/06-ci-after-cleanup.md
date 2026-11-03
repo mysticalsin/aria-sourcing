@@ -1,6 +1,23 @@
 # Verify GitHub Actions after the cleanup
 
-Status: ready-for-agent
+Status: resolved
+
+## Resolution (2026-11-03)
+
+Later runs on mbe-branch passed every required job (Quality, dependency audit,
+secret scan, Database security, Local Docker demo, Release gate):
+
+- CI 40498433529 at 0be6b3ca (`.scratch/local-demo-runtime/spec.md`,
+  `.scratch/unified-sourcing/spec.md`).
+- CI 40499885119 + CodeQL 40499885130 at 43b9db34
+  (`_relay/archive/2026-10-27-1524-codex.md`).
+- CI 40540178013 + CodeQL 40540177843 at 29967509
+  (`_relay/archive/2026-10-29-1300-claude-code.md`,
+  `.scratch/candidate-qualification/issues/01-qualification-enrichment.md`).
+
+The fixes are recorded in `_relay/codex-findings.md`, entry "2026-10-27 -
+Existing CI blockers reproduced and corrected". The steps below are kept for
+history.
 
 ## Live verification (2026-10-27)
 

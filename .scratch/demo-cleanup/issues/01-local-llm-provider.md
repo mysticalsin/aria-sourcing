@@ -1,6 +1,10 @@
 # Add a local / OpenAI-compatible LLM provider (Ollama, Azure OpenAI)
 
-Status: ready-for-agent
+Status: wontfix
+
+Reason: owner 2026-11-03: no local LLM/Ollama for now; AI stays on the
+Anthropic key. Code path kept (implementation 52136c69, see below); reopen if
+needed.
 
 ## Why
 The sourcing agent's `cloud` mode and AI drafting only reach hosted APIs

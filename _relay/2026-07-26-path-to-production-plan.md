@@ -1,3 +1,5 @@
+> Superseded: scope reset by .scratch/demo-cleanup/spec.md (2026-10-26). Kept for history.
+
 # Path to Production — the complete remaining plan
 
 Written 2026-07-26 at `5a6e09e`, while the Integrator is on usage limit until **2026-08-01 15:19**.

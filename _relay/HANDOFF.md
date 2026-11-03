@@ -1,104 +1,103 @@
 ---
 project: MSourcing / ARIA
-shift: 449
+shift: 450
 agent: claude-code
-updated: 2026-11-02
-status: ai-cost-page-shipped
+updated: 2026-11-03
+status: lighter-runtime-and-caddy-gateway
 ---
 
-# Handoff - Shift 449
+# Handoff - Shift 450
 
 ## Current state
 
 - Branch mbe-branch. Gate green at the last commit (typecheck, typecheck:tests,
-  npm test exit 0).
-- AI layer runs on one Anthropic key + `ANTHROPIC_WORKSPACE_ID` from `.secret`
-  (gitignored and dockerignored). Live calls verified 2026-11-02 (issue 01:
-  4 tasks, $0.0047). The owner set a spend limit on the workspace.
-- UI/UX audit (`.scratch/ui-ux-audit/`): issues 01-10 all `Status: resolved`.
-- AI issues (`.scratch/ai-agents/issues/`): 01, 02, 03 resolved; 04 ready-for-agent; 05 ready-for-agent (launch, inbox and
-  follow-up missions done); 06, 07, 08 needs-triage.
+  npm test exit 0); `npm run lint` 0 errors (2 old warnings).
+- Local Docker stack: app, db, auth, rest, **gateway (Caddy 2.11.7)** + the two
+  init jobs. Kong is gone. The compose file and `docker/Caddyfile` were NOT run
+  on Docker here (no Docker on this machine; running a downloaded Caddy binary
+  was refused by the auto-mode guard). First real proof = the CI job
+  "Local Docker demo" (`npm run test:local-demo`) on the next push.
+- AI issues (`.scratch/ai-agents/issues/`): 01, 02, 03, 09 resolved; 04
+  ready-for-human (code done, live check pending); 05 ready-for-agent; 06, 07,
+  08 needs-triage.
+- `_relay/codex-findings.md`: 8 open (owner credential rotations, re-audits,
+  Azure Postgres); 12 obsolete July entries closed as wontfix (obsolete).
 
-## Done this shift
+## Done this shift (owner: tasks 1-3 of the review + "piste A")
 
-AI (owner: "Fais les 5 étapes"):
-1. 18919c81 stop reasons: `max_tokens`/`refusal` (and OpenAI `length`/
-   `content_filter`) are failures (`cloudStopProblem`), so callers fall back.
-2. 7a12ae4a brief extraction on Haiku: task `extract`, `INTAKE_OUTPUT_SCHEMA`
-   via `output_config.format`, model default `extraction` (STATE_VERSION 19).
-3. 3555b90d spend persisted to `AI_USAGE_FILE` (else /app/config or
-   var/ai-usage.json), admin `GET /api/ai/usage`, "Claude usage" card in
-   Settings (month/day meters, per-task table).
-4. c6998192 follow-up mission: `src/lib/agents/follow-up-mission.ts`, used by
-   "Draft all due" on /outreach (3 at a time, best matches first, max 20).
+Resource use:
+- Store (`src/lib/store.ts`): hooks subscribe to their slice with
+  `useSyncExternalStore` (`useSlice`), actions come from a stable context,
+  workspace status from its own context (`useWorkspaceStatus`). A commit now
+  re-renders only components whose slice changed. `useHermes()` still exists
+  (re-renders on every commit); `useHermesStateGetter()` for handlers.
+- Lazy chunks: Recharts (drawer gauge, campaign score distribution, exec spark,
+  weekly report funnel, trust ROI), the tutorial panel
+  (`tutorial-panel.tsx`), the Aria Live overlay + framer-motion
+  (`aria-live-host.tsx` loads `aria-live-overlay.tsx` only during a run). No
+  global `MotionConfig`: each animated component uses `usePrefersReducedMotion`
+  (test-enforced in `tests/motion-foundation.mts`).
+- Claude: tool loop sends the system prompt with a cache breakpoint
+  (`anthropicCachedSystem`) + top-level `cache_control` (history cached between
+  rounds). Single calls unchanged: TASK_SYSTEM prompts are 40-210 tokens, under
+  the 512-token minimum. Chat sends only the last 20 messages
+  (`CHAT_HISTORY_MESSAGES`).
+- Removed: `playwright-core` runtime dependency (still a dev dependency via
+  `playwright`), `public/aria-logo.png`, `public/brand/mantu-agents-reference.png`.
+- Browser smoke on the synthetic demo (dev :3123, 1440 px): 9 pages, campaign
+  detail chart, candidate drawer gauge, a settings toggle, tutorial panel and
+  Aria Live overlay all load; no console errors, no React update loops.
 
-UX audit packages:
-- 6f7e0b51 (07) tour on `/` only. 7bd03fba (02) KPIs name their basis, one
-  integration count.
-- ef1aba2d (05) home: one primary action; replies: stream first; outreach:
-  collapsed draft rows + composer drawer (page 14,300 px -> 2,700 px).
-- 734c2e40 (06) candidates: one toolbar row, 10 rows at 1440x900, cards and a
-  Filters toggle under 640 px, flags beside the name.
-- b1665c7a (04) nav regrouped (Home; Recruit; Engage; Analyze; System, 12
-  entries, fits 900 px). One "New campaign" at `/campaigns/new` (One role /
-  Several roles); `/intake` and `/launch` redirect (next.config.mjs). Intake
-  and Launch bodies moved to `src/components/campaigns/`. Candidates and
-  Reports have tabs drawn by the shell (`SectionTabs`, `nav.ts` tab lists).
-- 4f857323 (08) one /100 score (`ScoreBadge`, star picker removed), jargon
-  removed (TAnIA, Path A/B, TOFU/MOFU, #Vivier, silver medalist), titles = nav
-  labels, no fake numbering.
-- d8e65492 (09) Carlito self-hosted in `public/fonts/carlito` (OFL), first in
-  `--font-sans`; `.woff2` excluded from the auth proxy; one mode chip in the
-  top bar; quieter active nav; eyebrows = nav group.
-- (10) careers: in the synthetic demo (no Supabase, no `CAREERS_WORKSPACE_ID`)
-  `/api/careers` serves the seed's 3 published roles and validates
-  applications without storing them (`demo: true` in the response; chat says
-  so). Offline copy written for candidates; header and chat share one column;
-  no stars shown to candidates.
+Docker:
+- Kong replaced by Caddy (`docker/Caddyfile`, ADR 0001 amendment 2026-11-03):
+  only /auth/v1 and /rest/v1, key check (anon/service, header or query) with
+  GoTrue's verify/callback/authorize/JWKS open, bare key -> Bearer, CORS
+  preflight answered, everything else 404. Static contract test:
+  `tests/gateway-contract.mts`. Host port variable `API_PORT` (was KONG_PORT;
+  CI updated).
+- Deleted orphans: `docker/db/*` (Fly era), `docker/kong.yml`,
+  `docker/kong-entrypoint.sh`, the unused COPY in `docker/bootstrap/Dockerfile`.
+- Health checks: 30 s interval + `start_interval: 2s` (needs Docker Engine 25+);
+  json-file logs capped at 3 x 10 MB per permanent service; BuildKit cache
+  mounts for npm and `.next/cache` in `Dockerfile`.
 
-Live Claude (2026-11-02, after the owner added the workspace id + spend limit):
-- Issue 01: count_tokens 200 on Haiku/Sonnet/Opus 5.5; one call per task $0.0047.
-- In-app replay (synthetic demo): Run Aria 6/6 drafts by Claude (43 s);
-  Triage inbox 6 reply drafts (10 s); Draft all due 13/13 by Claude (19 s).
-  App ledger: 31 calls, $0.083 (Sonnet outreach ~$0.004 per draft).
-- Fix: reply drafts had "[Day 1] at [Time]" or invented slots. Classify prompt
-  now forbids placeholders and invented times (asks the candidate instead);
-  `hasTemplatePlaceholder` (agent-disclosure-policy.ts) makes
-  `parseHermesOutreach` and `classifyReplyWithModel` keep the template draft
-  when a slot is left.
-
-Tutorial mode (owner request, 2026-11-02; spec `.scratch/tutorial-mode/spec.md`):
-- Opened only from the menu: sidebar "Tutorial", mobile drawer, command search.
-  Docked panel, 5 chapters / 22 steps, ring highlight via `data-tour` attributes,
-  exercises detected from store counts (`src/lib/tutorial/curriculum.ts`),
-  progress in localStorage `aria:tutorial:v1`. Verified end to end at 1440 and 390.
-- Owner decision: the "Contact basis" form now works in the synthetic demo
-  (before, no demo draft could be approved). Basis-only recording uses
-  `candidateExclusionBlocker`; new facts on synthetic profiles stay refused.
-
-AI costs page (owner request, 2026-11-02; `.scratch/ai-agents/issues/09-cost-monitoring.md`):
-- Every Claude call carries a business `activity` (`src/lib/ai/activities.ts`);
-  the ledger keeps month totals per activity, 92 days of daily history and 12
-  months. `/costs` (Analyze → AI costs, admin only) ranks activities, names the
-  most expensive with its justification, shows cost per result and what the
-  budget buys. Estimates from token counts; the Console stays the bill.
+Docs/tracking: NEEDS_GUIDE rewritten against the code; goals of July marked
+ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
+07, cleanup 01 (wontfix) and 06 (resolved) updated; July plans carry a
+"Superseded" banner.
 
 ## Blockers
 
-- None.
+- None in code. Unverified: the Caddy gateway on a real Docker stack (see
+  Current state).
 
 ## Next steps
 
-1. AI issue 04 (prompt caching on the long system prompts), then triage 06-08.
-   Reply drafts carry no `draftedBy` yet (badge shows nothing for them).
-2. Public demo: merge mbe-branch into vercel-demo and set ANTHROPIC_API_KEY +
-   ANTHROPIC_WORKSPACE_ID on the host. Waits for the owner's go-ahead.
-3. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
-4. Screen checks: Playwright scripts in `%TEMP%/aria-e2e/ux0*.mjs`
-   (`PROJ=<repo> node <script> <outdir>`, dev server on port 3123).
+1. Push mbe-branch and check the CI job "Local Docker demo" (login, campaign,
+   restart through the new gateway). If it fails, read `docker compose logs
+   gateway`. Quick manual probe on a running stack: `curl -i
+   localhost:54321/rest/v1/` must be 401, the same with `-H "apikey: <anon>"`
+   must reach PostgREST, `localhost:54321/storage/v1/` must be 404.
+2. AI issue 04: one chat question that triggers 2+ tool rounds, then check
+   `cache_read_input_tokens` > 0 on /costs; set the issue resolved.
+3. Aria Live "Play demo" stops at step 1 on the default seed campaign: "Senior
+   Backend Engineer" is `Interviewing` (seed.ts:414) and sourcing only accepts
+   Sourcing/Outreach (`campaignAllowsLiveSourcing`). Pre-existing (not caused
+   by this shift). Owner to choose: pick a sourcing-eligible campaign in
+   `beginAriaLiveRun`, or change the seed status.
+4. Chat as real multi-turn messages (needs a `/api/hermes/chat` contract change;
+   keep S-3: persona never in `system`).
+5. Remaining perf ideas (not done): `getClaims()` instead of `getUser()` in
+   `src/proxy.ts`; load `@supabase/ssr` only when Supabase is configured; split
+   seed/mock-ai out of the store chunk.
+6. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
 
 ## Decisions made (don't relitigate)
 
+- Owner 2026-11-03: Vercel is dropped; the app will be self-hosted later
+  (target not chosen). Merging into vercel-demo is no longer a goal.
+- Owner 2026-11-03: no local LLM / Ollama for now; AI stays on the Anthropic key.
+- Owner 2026-11-03: Kong replaced by Caddy as the API gateway.
 - All AI runs on Claude via one Anthropic key, within 20-30 EUR/month; GDPR
   validated by the owner (2026-10-30).
 - Model per task: Haiku for classify/extract, Sonnet for chat, outreach and
@@ -115,15 +114,18 @@ AI costs page (owner request, 2026-11-02; `.scratch/ai-agents/issues/09-cost-mon
 
 ## Watch out
 
-- Public demo (vercel-demo) needs ANTHROPIC_API_KEY (+ workspace id) after the merge.
-- `next dev` can get stuck in a Fast Refresh full-reload loop on every route
-  (seen 2026-11-02, not caused by code: same with the committed version).
-  Restarting the dev server fixes it.
+- Store hooks: a `useSlice` selector must return a stable reference (a field or
+  a found item). Build arrays with `useMemo` on the slice, and use the
+  module-level `NO_ITEMS` for `?? []` fallbacks, or React loops on getSnapshot.
+- `tests/module-boundaries.mts` rejects import cycles, type-only ones included
+  (TutorialMemory lives in `tutorial-panel.tsx` for that reason).
+- `tests/motion-foundation.mts` greps `providers.tsx` for "framer-motion",
+  comments included.
+- `next dev` can get stuck in a Fast Refresh full-reload loop; restart it.
 - Several files use CRLF line endings: multi-line `perl`/`sed` edits silently
   miss on them; use the Edit tool.
-- `git add` with a path that no longer exists aborts the add; a following
-  `git commit` then commits only what was already staged. Check `git show --stat`.
-- `.next/types` and `.next/dev/types` keep stale routes after a page moves:
-  run `npx next typegen` and restart the dev server before `npm run typecheck`.
+- `git add` with a path that no longer exists aborts the add; check
+  `git show --stat` after committing.
+- `.next/types` keeps stale routes after a page moves: `npx next typegen`.
 - Missions run in the browser: closing the tab stops queued agents.
 - Under tsx a module can load twice; use `isAgentTimeout`, not `instanceof`.

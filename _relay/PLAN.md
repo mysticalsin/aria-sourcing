@@ -1,3 +1,5 @@
+> Superseded: scope reset by .scratch/demo-cleanup/spec.md (2026-10-26). Kept for history.
+
 # m3 Architecture Plan — ARIA sourcing agents + Flowise Studio (2026-07-09)
 
 Fable-authored. Builds ON existing code — send pipeline, humanizer, guardrails, RLS stay as-is; we extend, never rewrite.
