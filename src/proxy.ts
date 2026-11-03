@@ -94,6 +94,11 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Without a domain allow-list the gate has nothing to enforce on an API call:
+  // the handler authenticates (and refreshes the session) itself, so skip the
+  // extra GoTrue round trip here.
+  if (apiRequest && !ALLOWED_EMAIL_DOMAIN) return NextResponse.next();
+
   let res = NextResponse.next({ request: req });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {

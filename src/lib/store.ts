@@ -5947,6 +5947,15 @@ export function useWins(): WinRecord[] {
   return useSlice((s) => s.wins);
 }
 
+/** Workspace-wide enrichment units spent (the server enforces one shared budget). */
+export function useEnrichmentSpend(): number {
+  return useSlice((s) => (s.enrichmentLedger ?? NO_ITEMS).reduce((sum, e) => sum + e.units, 0));
+}
+
+export function useEnrichmentBudgetUnits(): number {
+  return useSlice((s) => s.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS);
+}
+
 export function useInterviewers(): Interviewer[] {
   return useSlice((s) => s.interviewers);
 }
