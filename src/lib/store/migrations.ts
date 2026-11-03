@@ -4,12 +4,32 @@ import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../
 import type { HermesState } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
-const STORAGE_KEY = "hermes-sourcing:v1";
+/** Browser key of the synthetic demo workspace. */
+export const WORKSPACE_STORAGE_KEY = "aria-sourcing:v1";
+/** Key used before the product was renamed; still read, removed on the next save. */
+export const LEGACY_WORKSPACE_STORAGE_KEY = "hermes-sourcing:v1";
+
+function forgetStoredWorkspace() {
+  window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+  window.localStorage.removeItem(LEGACY_WORKSPACE_STORAGE_KEY);
+}
+
+/** Settings of the retired external agent runtime, still present in saved workspaces. */
+type RetiredRuntimeSettings = {
+  hermesLiveMode?: unknown;
+  hermesApiUrl?: unknown;
+  hermesApiKeyId?: unknown;
+  hermesWebUrl?: unknown;
+};
 
 function withoutLegacyIntegrationAuthority(settings: HermesState["settings"]): HermesState["settings"] {
-  const cleaned = { ...settings } as HermesState["settings"] & { databricks?: unknown; dust?: unknown };
+  const cleaned = { ...settings } as HermesState["settings"] & { databricks?: unknown; dust?: unknown } & RetiredRuntimeSettings;
   delete cleaned.databricks;
   delete cleaned.dust;
+  delete cleaned.hermesLiveMode;
+  delete cleaned.hermesApiUrl;
+  delete cleaned.hermesApiKeyId;
+  delete cleaned.hermesWebUrl;
   return cleaned;
 }
 
@@ -100,17 +120,11 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
       webResearch: parsed.settings.webResearch ?? defs.webResearch,
       defaultModels,
-      // STATE_VERSION 8 — live Aria runtime config.
-      hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
-      hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,
-      hermesApiKeyId: parsed.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
       // D-2: guardrails and notifications fills.
       guardrails: parsed.settings.guardrails ?? defs.guardrails,
       notifications: parsed.settings.notifications ?? defs.notifications,
       // STATE_VERSION 13 — Mantu Star Rating thresholds.
       starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
-      // STATE_VERSION 11 — Aria management API URL.
-      hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
     },
     seats: (parsed.seats ?? []).map((seat) => ({
       ...seat,
@@ -133,13 +147,14 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
 export function loadState(): HermesState {
   if (typeof window === "undefined") return buildSeedState();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw =
+      window.localStorage.getItem(WORKSPACE_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as HermesState;
       if (parsed && parsed.version === STATE_VERSION) {
         const normalized = normalizeHermesState(parsed);
         if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
-        window.localStorage.removeItem(STORAGE_KEY);
+        forgetStoredWorkspace();
         return buildSeedState();
       }
       // Migrate ANY prior version rather than wiping all data — migrateToCurrentVersion
@@ -148,7 +163,7 @@ export function loadState(): HermesState {
       if (parsed && typeof parsed.version === "number") {
         const normalized = normalizeHermesState(parsed);
         if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
-        window.localStorage.removeItem(STORAGE_KEY);
+        forgetStoredWorkspace();
         return buildSeedState();
       }
     }

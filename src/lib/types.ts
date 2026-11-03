@@ -993,18 +993,8 @@ export interface SystemSettings {
   webResearch?: boolean;
   /** Default model per task type (SavedModel.id). */
   defaultModels?: Partial<Record<ModelTask, string>>;
-  /** When on, outreach drafting routes through the live Aria agent runtime
-   *  (with a mock fallback). Off by default — the safe default for this build. */
-  hermesLiveMode: boolean;
-  /** Base URL of the hermes-agent aiohttp server (e.g. http://127.0.0.1:8642). */
-  hermesApiUrl?: string;
-  /** References an ApiKey.id (provider "Aria Agent") holding the bearer token. */
-  hermesApiKeyId?: string;
   /** Maximum number of memory entries stored across all agents. */
   memoryCapacity?: number;
-  /** Base URL of the hermes-agent web_server / management API (e.g. http://127.0.0.1:8643).
-   *  Distinct from hermesApiUrl which is the OpenAI-compat generation endpoint. */
-  hermesWebUrl?: string;
   /** Dust (dust.tt) agent-platform connection: workspace id, vault key reference,
    *  and which agent is locked to each DustTask. Optional — absent means Dust is
    *  not configured for this workspace. */

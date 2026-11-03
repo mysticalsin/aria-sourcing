@@ -186,11 +186,7 @@ export function defaultSettings(): SystemSettings {
       extraction: "model_claude_haiku",
       chat: "model_claude_sonnet",
     },
-    hermesLiveMode: false,
-    hermesApiUrl: "",
-    hermesApiKeyId: "",
     memoryCapacity: 200,
-    hermesWebUrl: "",
   };
 }
 

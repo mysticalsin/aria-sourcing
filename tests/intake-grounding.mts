@@ -44,7 +44,6 @@ test("missing cloud provider returns the same evidence-grounded incomplete need"
       llmProviders: [],
       savedModels: [],
       defaultModels: {},
-      hermesLiveMode: false,
     },
     { email: minimalNeed },
   );

@@ -1,20 +1,19 @@
 /**
- * Aria live LLM path tests.
+ * AI generation client tests.
  *
  * Verifies:
- *  - the new SystemSettings shape + defaults (hermesLiveMode/hermesApiUrl/hermesApiKeyId)
- *  - migration fills the new fields on old-shaped state
- *  - the hermesAvailable guard gates on BOTH live mode AND a configured URL
+ *  - no setting of the retired external agent runtime survives (seed, migration)
  *  - the "Aria Agent" key provider is registered
  *  - the parser tolerates Aria replies and falls back when unusable
  *  - browser settings never bypass named human review for a generated message
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
-import { hermesAvailable, parseHermesOutreach, buildOutreachPrompt } from "../src/lib/ai/hermes.js";
+import { parseHermesOutreach, buildOutreachPrompt } from "../src/lib/ai/hermes.js";
+import { migrateToCurrentVersion, normalizeHermesState } from "../src/lib/store/migrations.js";
 import { newOutreachMessage } from "../src/lib/mock-ai.js";
 import { API_KEY_PROVIDERS } from "../src/lib/types.js";
 import type { GeneratedOutreach } from "../src/lib/mock-ai.js";
-import type { SystemSettings } from "../src/lib/types.js";
+import type { HermesState } from "../src/lib/types.js";
 
 let pass = 0,
   fail = 0;
@@ -28,56 +27,41 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-/* ---- 1. Settings shape + defaults --------------------------------------- */
+/* ---- 1. The retired agent runtime left no setting behind ---------------- */
+
+const RETIRED_RUNTIME_SETTINGS = ["hermesLiveMode", "hermesApiUrl", "hermesApiKeyId", "hermesWebUrl"];
+const hasRetired = (settings: object) => RETIRED_RUNTIME_SETTINGS.some((key) => key in settings);
 
 const seed = buildSeedState();
 ok("seed version is current", seed.version === STATE_VERSION);
-ok("hermesLiveMode defaults false", seed.settings.hermesLiveMode === false);
-ok("hermesApiUrl defaults empty string", seed.settings.hermesApiUrl === "");
-ok("hermesApiKeyId defaults empty string", seed.settings.hermesApiKeyId === "");
+ok("seed settings carry no retired runtime field", !hasRetired(seed.settings));
+ok("default settings carry no retired runtime field", !hasRetired(defaultSettings()));
+
+const savedWithRuntime = {
+  ...seed,
+  settings: {
+    ...seed.settings,
+    hermesLiveMode: true,
+    hermesApiUrl: "http://127.0.0.1:8642",
+    hermesApiKeyId: "key_runtime",
+    hermesWebUrl: "http://127.0.0.1:8643",
+  },
+} as HermesState;
+const normalized = normalizeHermesState(savedWithRuntime);
+ok("a saved workspace drops the retired runtime fields", !hasRetired(normalized.settings));
+ok("dropping them keeps the other settings", normalized.settings.operatorName === seed.settings.operatorName);
+ok(
+  "an older saved workspace drops them during migration too",
+  !hasRetired(migrateToCurrentVersion({ ...savedWithRuntime, version: 7 }).settings),
+);
 
 const defs = defaultSettings();
-ok("defaultSettings has hermesLiveMode false", defs.hermesLiveMode === false);
-ok("defaultSettings has hermesApiUrl empty", defs.hermesApiUrl === "");
-ok("defaultSettings has hermesApiKeyId empty", defs.hermesApiKeyId === "");
 
 /* ---- 2. "Aria Agent" key provider registered -------------------------- */
 
 ok("API_KEY_PROVIDERS includes 'Aria Agent'", (API_KEY_PROVIDERS as readonly string[]).includes("Aria Agent"));
 
-/* ---- 3. Migration fills new fields when missing ------------------------- */
-
-// Simulate an old (v7) state blob missing the new fields.
-const oldSettings = {
-  ...seed.settings,
-  hermesLiveMode: undefined as unknown as boolean,
-  hermesApiUrl: undefined as unknown as string,
-  hermesApiKeyId: undefined as unknown as string,
-};
-const migratedSettings = {
-  ...oldSettings,
-  hermesLiveMode: oldSettings.hermesLiveMode ?? defs.hermesLiveMode,
-  hermesApiUrl: oldSettings.hermesApiUrl ?? defs.hermesApiUrl,
-  hermesApiKeyId: oldSettings.hermesApiKeyId ?? defs.hermesApiKeyId,
-};
-ok("migration fills hermesLiveMode", migratedSettings.hermesLiveMode === false);
-ok("migration fills hermesApiUrl", migratedSettings.hermesApiUrl === "");
-ok("migration fills hermesApiKeyId", migratedSettings.hermesApiKeyId === "");
-ok("migration preserves operatorName", migratedSettings.operatorName === seed.settings.operatorName);
-
-/* ---- 4. hermesAvailable guard ------------------------------------------- */
-
-ok("not available when live mode off (default)", !hermesAvailable(defs));
-ok(
-  "not available when live mode on but URL empty",
-  !hermesAvailable({ ...defs, hermesLiveMode: true, hermesApiUrl: "" } as SystemSettings),
-);
-ok(
-  "available when live mode on AND URL set",
-  hermesAvailable({ ...defs, hermesLiveMode: true, hermesApiUrl: "http://127.0.0.1:8642" } as SystemSettings),
-);
-
-/* ---- 5. parseHermesOutreach --------------------------------------------- */
+/* ---- 3. parseHermesOutreach --------------------------------------------- */
 
 const parsed = parseHermesOutreach(
   "Subject: Loved your async runtime work\n\nHi Maya, your recent commits caught my eye. 15 minutes?",

@@ -18,7 +18,7 @@ import {
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
 import { resolveAiProvider } from "./provider";
-import { hermesAvailable, hermesGenerate } from "./hermes";
+import { hermesGenerate } from "./hermes";
 
 /* ============================================================================
    Live intake / JD parsing — client helper.
@@ -310,7 +310,7 @@ export async function parseIntakeLive(
 
   // Extraction tier (Haiku by default) with a schema-constrained answer.
   const aiCfg = resolveAiProvider(settings, "extraction");
-  if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
+  if (!aiCfg) {
     return {
       ...mock,
       providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
@@ -319,17 +319,15 @@ export async function parseIntakeLive(
 
   const prompt = buildIntakeParsePrompt(`${input.email}\n${input.jd ?? ""}`);
 
-  let genInput: Parameters<typeof hermesGenerate>[0];
-  if (aiCfg) {
-    genInput = { task: "extract", activity: "brief-extraction", prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
-  } else {
-    const chatModelId = settings.defaultModels?.extraction ?? settings.defaultModels?.chat;
-    genInput = { task: "extract", activity: "brief-extraction", prompt, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId };
-    if (chatModelId) {
-      const modelName = (settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName;
-      if (modelName) genInput.model = modelName;
-    }
-  }
+  const genInput: Parameters<typeof hermesGenerate>[0] = {
+    task: "extract",
+    activity: "brief-extraction",
+    prompt,
+    provider: aiCfg.provider,
+    model: aiCfg.model,
+    baseUrl: aiCfg.baseUrl,
+    apiKeyId: aiCfg.apiKeyId,
+  };
 
   let result: Awaited<ReturnType<typeof hermesGenerate>>;
   try {

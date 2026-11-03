@@ -24,7 +24,6 @@ import { candidateDraftBlocker } from "./candidate-review";
 import type { ApifyProfile, ApifyProfileSearchInput } from "./sourcing/apify";
 import {
   buildOutreachPrompt,
-  hermesAvailable,
   hermesGenerate,
   parseHermesOutreach,
 } from "./ai/hermes";
@@ -73,7 +72,12 @@ import { createBookingReportActions } from "./store/booking-report-actions";
 import { createCampaignActions } from "./store/campaign-actions";
 import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
-import { loadState, normalizeHermesState } from "./store/migrations";
+import {
+  LEGACY_WORKSPACE_STORAGE_KEY,
+  loadState,
+  normalizeHermesState,
+  WORKSPACE_STORAGE_KEY,
+} from "./store/migrations";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapApifyCandidates } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
@@ -187,7 +191,6 @@ export { migrateToCurrentVersion, normalizeHermesState } from "./store/migration
 export { appendWinRecord, deriveWinRecord, WIN_RECORD_LIMIT } from "./store/winlog-derive";
 export type { HermesActions } from "./store/contracts";
 
-const STORAGE_KEY = "hermes-sourcing:v1";
 const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
 const ARIA_PERFECT_RATING: StarRating = "TopGun";
 const ARIA_STEP_CANDIDATE_CAP = 10;
@@ -285,13 +288,17 @@ async function classifyReplyWithModel(
 ): Promise<ReplyClassification> {
   const fallback = classifyReply(text, candidateName);
   const aiCfg = resolveAiProvider(settings, "classification", { providerId: undefined });
-  if (!aiCfg && !hermesAvailable(settings)) return fallback;
+  if (!aiCfg) return fallback;
   try {
-    const result = await generate(
-      aiCfg
-        ? { task: "classify", activity, prompt: text, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId }
-        : { task: "classify", activity, prompt: text, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId },
-    );
+    const result = await generate({
+      task: "classify",
+      activity,
+      prompt: text,
+      provider: aiCfg.provider,
+      model: aiCfg.model,
+      baseUrl: aiCfg.baseUrl,
+      apiKeyId: aiCfg.apiKeyId,
+    });
     if (!result.ok || !result.text) return fallback;
     // Models sometimes wrap the JSON in a code fence despite the instruction.
     const json = result.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
@@ -443,9 +450,7 @@ async function attemptLiveFollowUpGen(opts: {
     providerId: seat?.providerId,
     modelId: seat?.modelId,
   });
-  if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
-    return { gen: mockGen, live: false };
-  }
+  if (!aiCfg) return { gen: mockGen, live: false };
 
   const basePrompt = buildOutreachPrompt({
     candidateName: candidate.name,
@@ -469,23 +474,15 @@ async function attemptLiveFollowUpGen(opts: {
   const guardrails = [ariaPrompt, touchNote].filter(Boolean).join("\n\n");
   const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
-  let genInput: Parameters<typeof hermesGenerate>[0];
-  if (aiCfg) {
-    genInput = { task: "outreach", activity, prompt, provider: aiCfg.provider, model: aiCfg.model, baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId };
-  } else {
-    const outreachModelId = seat?.modelId ?? settings.defaultModels?.outreach;
-    genInput = {
-      task: "outreach",
-      activity,
-      prompt,
-      hermesApiUrl: settings.hermesApiUrl,
-      hermesApiKeyId: settings.hermesApiKeyId,
-    };
-    if (outreachModelId) {
-      const modelName = (settings.savedModels ?? []).find((m) => m.id === outreachModelId)?.modelName;
-      if (modelName) genInput.model = modelName;
-    }
-  }
+  const genInput: Parameters<typeof hermesGenerate>[0] = {
+    task: "outreach",
+    activity,
+    prompt,
+    provider: aiCfg.provider,
+    model: aiCfg.model,
+    baseUrl: aiCfg.baseUrl,
+    apiKeyId: aiCfg.apiKeyId,
+  };
 
   const attempt = runEffect(() => hermesGenerate(genInput));
   if (!attempt.allowed) return { gen: mockGen, live: false };
@@ -557,7 +554,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     if (pending) {
       try {
         if (demoStateAllowsCandidatePersistence(pending)) {
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+          window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(pending));
+          window.localStorage.removeItem(LEGACY_WORKSPACE_STORAGE_KEY);
         }
       } catch {
         /* quota / private mode — ignore for demo */
@@ -1568,10 +1566,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         modelId: seat?.modelId,
       });
 
-      // Layer 1: attempt live when a cloud provider is configured OR hermes live mode is on.
+      // Layer 1: attempt live when a cloud provider is configured.
       let gen: GeneratedOutreach = mockGen;
       let live = false;
-      if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
+      if (aiCfg) {
         const basePrompt = buildOutreachPrompt({
           candidateName: candidate.name,
           candidateTitle: candidate.currentTitle,
@@ -1595,32 +1593,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const guardrails = ariaPrompt || "";
         const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
-        // Build input: cloud path when aiCfg resolved, hermes path otherwise.
-        let outreachGenInput: Parameters<typeof hermesGenerate>[0];
-        if (aiCfg) {
-          outreachGenInput = {
-            task: "outreach",
-            activity: "first-contact",
-            prompt,
-            provider: aiCfg.provider,
-            model: aiCfg.model,
-            baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId,
-          };
-        } else {
-          // F-7: resolve the configured model for outreach (seat override → task default).
-          const outreachModelId = seat?.modelId ?? s.settings.defaultModels?.outreach;
-          outreachGenInput = {
-            task: "outreach",
-            activity: "first-contact",
-            prompt,
-            hermesApiUrl: s.settings.hermesApiUrl,
-            hermesApiKeyId: s.settings.hermesApiKeyId,
-          };
-          if (outreachModelId) {
-            const modelName = (s.settings.savedModels ?? []).find((m) => m.id === outreachModelId)?.modelName;
-            if (modelName) outreachGenInput.model = modelName;
-          }
-        }
+        const outreachGenInput: Parameters<typeof hermesGenerate>[0] = {
+          task: "outreach",
+          activity: "first-contact",
+          prompt,
+          provider: aiCfg.provider,
+          model: aiCfg.model,
+          baseUrl: aiCfg.baseUrl,
+          apiKeyId: aiCfg.apiKeyId,
+        };
 
         // Layer 2: a non-ok result keeps the mock draft.
         const attempt = runWorkspaceEffect(() => hermesGenerate(outreachGenInput));
@@ -1833,12 +1814,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const mockGen = generateOutreach(candidate, campaign, nextTone, msg.channel, msg.sequenceStep);
 
       // Live attempt — the exact same three-layer fallback as generateOutreachLive:
-      // Layer 1 only fires when a cloud provider or hermes live mode is configured;
+      // Layer 1 only fires when a cloud provider is configured;
       // Layer 2 keeps the mock on a non-ok result; Layer 3 keeps the mock on an
       // unparseable reply. A failed/unconfigured live call always keeps the mock draft.
       let gen: GeneratedOutreach = mockGen;
       const aiCfg = resolveAiProvider(s.settings, "outreach");
-      if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
+      if (aiCfg) {
         const lang = campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
         const basePrompt = buildOutreachPrompt({
           candidateName: candidate.name,
@@ -1859,30 +1840,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
         const prompt = ariaPrompt ? `${ariaPrompt}\n\n${basePrompt}` : basePrompt;
 
-        let regenGenInput: Parameters<typeof hermesGenerate>[0];
-        if (aiCfg) {
-          regenGenInput = {
-            task: "outreach",
-            activity: "rewrite",
-            prompt,
-            provider: aiCfg.provider,
-            model: aiCfg.model,
-            baseUrl: aiCfg.baseUrl, apiKeyId: aiCfg.apiKeyId,
-          };
-        } else {
-          const outreachModelId = s.settings.defaultModels?.outreach;
-          regenGenInput = {
-            task: "outreach",
-            activity: "rewrite",
-            prompt,
-            hermesApiUrl: s.settings.hermesApiUrl,
-            hermesApiKeyId: s.settings.hermesApiKeyId,
-          };
-          if (outreachModelId) {
-            const modelName = (s.settings.savedModels ?? []).find((m) => m.id === outreachModelId)?.modelName;
-            if (modelName) regenGenInput.model = modelName;
-          }
-        }
+        const regenGenInput: Parameters<typeof hermesGenerate>[0] = {
+          task: "outreach",
+          activity: "rewrite",
+          prompt,
+          provider: aiCfg.provider,
+          model: aiCfg.model,
+          baseUrl: aiCfg.baseUrl,
+          apiKeyId: aiCfg.apiKeyId,
+        };
 
         const attempt = runWorkspaceEffect(() => hermesGenerate(regenGenInput));
         if (!attempt.allowed) return;
@@ -5337,12 +5303,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Full prompt has persona as a prefix (persona in prompt, never in the system field per S-3).
       const fullPrompt = `${effectivePersona}\n\n${conversationPrompt}`;
 
-      // F-7: resolve the configured model for the chat task.
-      const chatModelId = seat?.modelId ?? s.settings.defaultModels?.chat;
-      const chatModelName = chatModelId
-        ? (s.settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName
-        : undefined;
-
       // Track whether ANY live path was actually attempted below. The mock/"[Demo]"
       // reply is only legitimate when nothing was attempted (pure demo, no live
       // runtime configured at all). A live attempt that fails must surface as a
@@ -5418,87 +5378,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 4. Live mode: try the Aria proxy with streaming.
-      if (hermesAvailable(s.settings)) {
-        attemptedLive = true;
-        // F-5: create an AbortController so the caller can cancel mid-stream.
-        const controller = new AbortController();
-        chatAbortControllers.current.set(threadId, controller);
-        try {
-          const res = await workspaceFetch("/api/hermes/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              task: "chat",
-              activity: "assistant-chat",
-              // S-3: persona goes in the prompt, NOT as a separate system field.
-              prompt: fullPrompt,
-              stream: true,
-              ...(chatModelName && { model: chatModelName }),
-              hermesApiUrl: s.settings.hermesApiUrl,
-              hermesApiKeyId: s.settings.hermesApiKeyId,
-            }),
-            signal: controller.signal,
-          });
-          if (res.ok && res.body) {
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let accumulated = "";
-            let leftover = ""; // F-6: carry partial SSE lines across chunk boundaries
-            // Throttle intermediate store commits to ~every 75ms: `accumulated` still
-            // gathers every delta unconditionally, so the final flush after the loop
-            // (and the abort/error paths below) always sees the complete text — only the
-            // frequency of mid-stream repaints changes, never what the user ends up seeing.
-            let lastFlushAt = 0;
-            const STREAM_FLUSH_INTERVAL_MS = 75;
-            outer: while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              const rawChunk = leftover + decoder.decode(value, { stream: true });
-              const lines = rawChunk.split("\n");
-              leftover = lines.pop() ?? ""; // last element may be an incomplete line
-              for (const line of lines) {
-                if (!line.startsWith("data:")) continue;
-                const raw = line.slice(5).trim();
-                if (raw === "[DONE]") break outer;
-                try {
-                  const parsed = JSON.parse(raw) as {
-                    choices?: { delta?: { content?: string } }[];
-                  };
-                  const delta = parsed.choices?.[0]?.delta?.content ?? "";
-                  if (delta) {
-                    accumulated += delta;
-                    const nowMs = Date.now();
-                    if (nowMs - lastFlushAt >= STREAM_FLUSH_INTERVAL_MS) {
-                      lastFlushAt = nowMs;
-                      updateChatMessage(threadId, assistantId, { content: accumulated, pending: true });
-                    }
-                  }
-                } catch {
-                  /* malformed SSE chunk — continue */
-                }
-              }
-            }
-            chatAbortControllers.current.delete(threadId);
-            updateChatMessage(threadId, assistantId, {
-              content: accumulated || "(no response)",
-              pending: false,
-            });
-            return;
-          }
-          liveError = `Aria runtime returned ${res.status}.`;
-        } catch (err) {
-          chatAbortControllers.current.delete(threadId);
-          // F-5: if aborted, mark the bubble cancelled and do NOT fall through to mock.
-          if (err instanceof Error && err.name === "AbortError") {
-            updateChatMessage(threadId, assistantId, { content: "(cancelled)", pending: false });
-            return;
-          }
-          liveError = err instanceof Error ? err.message : "Streaming error contacting the Aria runtime.";
-        }
-      }
-
-      // 5. A live runtime was configured and attempted, but every path failed —
+      // 4. A live model was configured and attempted, but every path failed —
       // surface a genuine error bubble. Never fabricate a normal-looking reply here.
       if (attemptedLive) {
         updateChatMessage(threadId, assistantId, {
@@ -5509,11 +5389,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 6. Mock reply — only reached when no live runtime is configured at all.
+      // 5. Mock reply — only reached when no live model is configured at all.
       const seatName = seat?.name ?? "Aria";
       await new Promise<void>((r) => setTimeout(r, 350));
       updateChatMessage(threadId, assistantId, {
-        content: `[Demo] Hi from ${seatName}! I'm your Aria agent. Ask me about campaigns, candidates, or outreach strategy. To enable live AI replies, connect the Aria runtime in Settings → Aria Agent.`,
+        content: `[Demo] Hi from ${seatName}! I'm your Aria agent. Ask me about campaigns, candidates, or outreach strategy. To enable live AI replies, add an Anthropic key in Settings → AI & Models.`,
         pending: false,
       });
     },
@@ -5962,10 +5842,6 @@ function buildLiveEmptyState(): HermesState {
       tools: defaultTools(),
       mcpServers: [],
       defaultModels: {},
-      hermesLiveMode: false,
-      hermesApiUrl: "",
-      hermesApiKeyId: "",
-      hermesWebUrl: "",
     },
     seats: [],
     suppression: [],

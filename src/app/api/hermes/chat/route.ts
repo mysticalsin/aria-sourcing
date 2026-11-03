@@ -80,15 +80,14 @@ const HermesChatSchema = z.object({
   activity: z.enum(AI_ACTIVITY_IDS).optional(),
   prompt: z.string().min(1).max(20_000),
   stream: z.boolean().default(false),
-  hermesApiKeyId: z.string().uuid().optional(),
-  /** Cloud provider to route through. "hermes" = none selected (deterministic mock). */
+  /** Cloud provider to route through. "none" = none selected (deterministic mock). */
   provider: z
-    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "local"])
-    .default("hermes"),
+    .enum(["none", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "local"])
+    .default("none"),
   /** ApiKey.id for the cloud provider — raw secret resolved server-side only. */
   apiKeyId: z.string().uuid().optional(),
   // Reject path-traversal / injection in the model id; allow valid model slugs.
-  model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/).default("hermes"),
+  model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/).optional(),
   baseUrl: z.string().max(2048).optional(),
   /** Enabled MCP servers to expose to the model as tools (chat task only). The raw
    *  secret is resolved server-side from the vault, so the browser never holds it. */
@@ -146,7 +145,7 @@ function logUpstream(level: "info" | "error", message: string, meta?: Record<str
   // Redact before emitting: mask sensitive-keyed values, then scrub any emails /
   // credentials that leaked into free-text fields (e.g. upstream error bodies,
   // network error messages) so nothing sensitive reaches a log sink.
-  const entry = { time: new Date().toISOString(), source: "hermes-proxy", level, message, ...redactObject(meta ?? {}) };
+  const entry = { time: new Date().toISOString(), source: "ai-chat", level, message, ...redactObject(meta ?? {}) };
   const line = redactSecrets(redactEmail(JSON.stringify(entry)));
   if (level === "error") {
     console.error(line);
@@ -215,7 +214,7 @@ export async function POST(req: NextRequest) {
 
   // S-2: Rate limit — 60 req/min, keyed to the authenticated principal (and IP),
   // applied right after identifying the caller and before buffering the body.
-  const rl = checkRateLimit(rateLimitKey(req, "hermes-chat", userId), { windowMs: 60_000, max: 60 });
+  const rl = checkRateLimit(rateLimitKey(req, "ai-chat", userId), { windowMs: 60_000, max: 60 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
   // Campaign context can carry a full campaign + candidate list — same shape/size posture
@@ -227,8 +226,8 @@ export async function POST(req: NextRequest) {
   // The classify task feeds candidate-authored reply text straight to the model.
   // Sanitize it and wrap it in the same untrusted-data envelope the autopilot
   // reply path uses (autopilot.ts:188) so an injected instruction in a reply
-  // cannot steer the classifier. Every downstream model call (cloud, hermes,
-  // tool loops) reads `prompt`, so wrapping here covers all of them. Other
+  // cannot steer the classifier. Every downstream model call (single call or
+  // tool loop) reads `prompt`, so wrapping here covers all of them. Other
   // tasks keep the caller's prompt verbatim.
   const prompt =
     task === "classify"
@@ -265,10 +264,10 @@ export async function POST(req: NextRequest) {
   const system = TASK_SYSTEM[task as keyof typeof TASK_SYSTEM] ?? TASK_SYSTEM.chat;
 
   /* ---- Cloud provider branch (Anthropic / OpenAI-compatible) -------------- */
-  if (provider !== "hermes") {
+  if (provider !== "none") {
     // The request controls provider, model, and key id. Until those choices are
     // normalized into an admin-owned authority table, only an administrator may
-    // spend a live cloud credential. Internal Hermes remains separately gated.
+    // spend a live cloud credential.
     if (supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
       return NextResponse.json({ ok: false, reason: "Live cloud providers require admin authority." }, { status: 403 });
     }
@@ -287,7 +286,7 @@ export async function POST(req: NextRequest) {
     let endpoint: string;
     try { endpoint = resolveProviderEndpoint(slug, baseUrl); }
     catch { return NextResponse.json({ ok: false, reason: "Invalid local provider URL." }, { status: 400 }); }
-    if (slug === "local" && model === "hermes") {
+    if (slug === "local" && !model) {
       return NextResponse.json({ ok: false, reason: "Configure the exact local model name." }, { status: 400 });
     }
     const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
@@ -347,7 +346,7 @@ export async function POST(req: NextRequest) {
       }
       if (usableMcpServers) resolvedServers.push(...(await gatherMcpServers(usableMcpServers)));
       if (resolvedServers.length) {
-        const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
+        const toolModel = model ?? DEFAULT_MODEL[slug];
         const result =
           slug === "anthropic"
             ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers, task, activity })
@@ -359,8 +358,8 @@ export async function POST(req: NextRequest) {
         if (!result.ok) logUpstream("info", "Tool loop unavailable; using plain completion", { provider, reason: result.reason });
       }
     }
-    // A cloud provider never receives the "hermes" placeholder: it has no such model.
-    const cloudModel = slug !== "local" && (!model || model === "hermes") ? DEFAULT_MODEL[slug] : model ?? "hermes";
+    // Without an explicit model each provider uses its default (local requires one, above).
+    const cloudModel = model ?? DEFAULT_MODEL[slug];
     const { url, headers, body } = buildCloudRequest(slug, cloudModel, system, prompt, key, 2048, endpoint, task);
     try {
       const upstream = await fetch(url, {

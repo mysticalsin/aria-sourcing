@@ -16,7 +16,7 @@
 
    The store (HermesProvider in store.ts) keeps its state in a plain
    `useState`, mounted once at the app root (see providers.tsx) and persisted
-   to `localStorage["hermes-sourcing:v1"]` on a 600ms debounce (flushed
+   to `localStorage["aria-sourcing:v1"]` on a 600ms debounce (flushed
    immediately on `beforeunload`). There is no exposed action to replace that
    state wholesale with an arbitrary snapshot (`resetDemo` exists but always
    reseeds to `buildSeedState()`, not to "whatever the user had a moment
@@ -50,11 +50,12 @@ import type { HermesActions } from "@/lib/store";
 import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { getAriaLiveRunPolicy, pickAriaLiveCampaign } from "@/lib/demo/aria-live-policy";
+import { WORKSPACE_STORAGE_KEY } from "@/lib/store/migrations";
 
-/** Must match store.ts's STORAGE_KEY exactly — read/write only, never edited here. */
-const STORAGE_KEY = "hermes-sourcing:v1";
+/** The store's own key — read/write only, never edited here. */
+const STORAGE_KEY = WORKSPACE_STORAGE_KEY;
 /** Session-only flag: "the user clicked Restart, relaunch after the reload." */
-const RESTART_FLAG_KEY = "hermes-sourcing:aria-live-restart";
+const RESTART_FLAG_KEY = "aria-sourcing:aria-live-restart";
 
 export const ARIA_LIVE_CHAPTERS = [
   "sourcing",

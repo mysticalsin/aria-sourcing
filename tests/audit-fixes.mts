@@ -6,10 +6,10 @@
  *  D-3      removeProvider cascade: savedModels pruned, seat.providerId cleared, default promoted
  *  D-4      removeModel cascade: defaultModels pruned, seat.modelId cleared
  *  D-6      removeApiKey only commits when the server delete succeeds (res.ok guard)
- *  F-1      classify falls back to mock classifyReply when hermesAvailable returns false
+ *  F-1      classify falls back to mock classifyReply when no AI provider is configured
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
-import { hermesAvailable } from "../src/lib/ai/hermes.js";
+import { resolveAiProvider } from "../src/lib/ai/provider.js";
 import { classifyReply } from "../src/lib/mock-ai.js";
 import type { HermesState, LlmProvider, SavedModel, AgentSeat } from "../src/lib/types.js";
 
@@ -100,9 +100,6 @@ const migrated: HermesState = {
     savedModels: v6Blob.settings.savedModels ?? defs.savedModels,
     tools: v6Blob.settings.tools ?? defs.tools,
     defaultModels: v6Blob.settings.defaultModels ?? defs.defaultModels,
-    hermesLiveMode: v6Blob.settings.hermesLiveMode ?? defs.hermesLiveMode,
-    hermesApiUrl: v6Blob.settings.hermesApiUrl ?? defs.hermesApiUrl,
-    hermesApiKeyId: v6Blob.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
     notifications: v6Blob.settings.notifications ?? defs.notifications,
     guardrails: v6Blob.settings.guardrails ?? defs.guardrails,
   },
@@ -134,8 +131,6 @@ ok("D-2 migration: llmProviders filled", Array.isArray(migrated.settings.llmProv
 ok("D-2 migration: savedModels filled", Array.isArray(migrated.settings.savedModels));
 ok("D-2 migration: tools filled", Array.isArray(migrated.settings.tools));
 ok("D-2 migration: defaultModels filled", migrated.settings.defaultModels !== undefined);
-ok("D-2 migration: hermesLiveMode filled (false)", migrated.settings.hermesLiveMode === false);
-ok("D-2 migration: hermesApiUrl filled (empty)", migrated.settings.hermesApiUrl === "");
 ok("D-2 migration: notifications filled", migrated.settings.notifications !== undefined);
 ok("D-2 migration: guardrails filled", migrated.settings.guardrails !== undefined);
 // D-1: existing settings are preserved (not wiped by defaults).
@@ -259,14 +254,13 @@ ok("D-6 removeApiKey: no commit when server returns error", !(await simulateRemo
 ok("D-6 removeApiKey: commits when server returns ok", await simulateRemoveApiKey(true));
 
 /* ============================================================================
-   F-1  Classify falls back to mock when hermesAvailable returns false
+   F-1  Classify falls back to mock when no AI provider is configured
    ========================================================================== */
 
-// When live mode is off, hermesAvailable is false and mock classifyReply is used.
-ok("F-1 classify: hermesAvailable false when liveMode off", !hermesAvailable(defs));
+// With no provider for the classification task, the mock classifyReply is used.
 ok(
-  "F-1 classify: hermesAvailable false when URL missing",
-  !hermesAvailable({ ...defs, hermesLiveMode: true, hermesApiUrl: "" }),
+  "F-1 classify: no live classifier without a configured provider",
+  resolveAiProvider({ ...defs, llmProviders: [], savedModels: [], defaultModels: {} }, "classification") === null,
 );
 
 // Verify the mock returns the correct ReplyClassification shape.

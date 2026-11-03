@@ -5,7 +5,7 @@
 
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
-import { isAllowedHermesUrl } from "../src/lib/api/url";
+import { isAllowedProviderUrl } from "../src/lib/api/url";
 
 let pass = 0,
   fail = 0;
@@ -51,9 +51,9 @@ ok("no hardcoded OpenAI keys", !/sk-[a-zA-Z0-9_-]{20,}/.test(combined));
 ok("api_keys route does not return secret", !/from\("api_keys"\).*select.*secret/.test(combined.replace(/\s+/g, " ")) || /from\("api_keys"\).*select\("provider, secret/.test(combined.replace(/\s+/g, " ")));
 
 // 4) SSRF allow-list blocks public internet hosts.
-ok("SSRF blocks public host", isAllowedHermesUrl("https://example.com/v1/chat/completions").ok === false);
-ok("SSRF allows localhost Aria", isAllowedHermesUrl("http://127.0.0.1:8642/v1/chat/completions").ok === true);
-ok("SSRF blocks metadata", isAllowedHermesUrl("http://169.254.169.254/latest/meta-data").ok === false);
+ok("SSRF blocks public host", isAllowedProviderUrl("https://example.com/v1/chat/completions").ok === false);
+ok("SSRF allows a localhost model server", isAllowedProviderUrl("http://127.0.0.1:8642/v1/chat/completions").ok === true);
+ok("SSRF blocks metadata", isAllowedProviderUrl("http://169.254.169.254/latest/meta-data").ok === false);
 
 // 5) Aria proxy path allow-list blocks arbitrary paths.
 

@@ -8,7 +8,9 @@ import { ONBOARDING_TOUR_STEPS } from "@/lib/command-center-firstrun";
 import { useTutorial } from "@/components/tutorial/tutorial";
 import { Sparkles, ShieldCheck, FilePlus2, ArrowLeft } from "lucide-react";
 
-const KEY = "hermes:onboarded:v1";
+const KEY = "aria:onboarded:v1";
+/** Set before the product was renamed: a visitor who saw the tour then has seen it. */
+const LEGACY_KEY = "hermes:onboarded:v1";
 
 const STEP_ICONS = [
   <Sparkles key="welcome" className="h-6 w-6" />,
@@ -37,7 +39,7 @@ export function Onboarding() {
     // Never stack on top of the tutorial someone just opened.
     if (pathname !== "/" || tutorial.open) return;
     try {
-      if (!localStorage.getItem(KEY)) setOpen(true);
+      if (!localStorage.getItem(KEY) && !localStorage.getItem(LEGACY_KEY)) setOpen(true);
     } catch {
       /* private mode — skip the tour silently */
     }

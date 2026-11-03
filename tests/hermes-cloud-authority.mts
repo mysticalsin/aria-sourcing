@@ -15,14 +15,10 @@ function ok(name: string, condition: boolean) {
 
 const envScope = createProcessEnvScope([
   "OPENAI_API_KEY",
-  "HERMES_API_URL",
-  "HERMES_API_KEY",
   "NODE_ENV",
 ]);
 envScope.set({
   OPENAI_API_KEY: undefined,
-  HERMES_API_URL: undefined,
-  HERMES_API_KEY: undefined,
   NODE_ENV: "test",
 });
 

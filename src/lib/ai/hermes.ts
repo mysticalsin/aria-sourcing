@@ -1,15 +1,15 @@
-import type { OutreachChannel, SystemSettings } from "@/lib/types";
+import type { OutreachChannel } from "@/lib/types";
 import { hasTemplatePlaceholder } from "@/lib/agent-disclosure-policy";
 import type { AiActivity } from "@/lib/ai/activities";
 
 /* ============================================================================
-   Aria live runtime — client helper.
+   AI text generation — client helper.
 
-   Thin wrapper around the server proxy at /api/hermes/chat. The proxy resolves
-   the runtime URL + bearer token server-side (the secret never reaches the
-   browser) and calls the hermes-agent OpenAI-compatible endpoint. This is
-   TEXT GENERATION ONLY — it never triggers any send. Callers fall back to the
-   deterministic mock when this returns { ok: false }.
+   Thin wrapper around the server route at /api/hermes/chat, which resolves the
+   provider key server-side (the secret never reaches the browser) and calls
+   Claude (or another configured provider). This is TEXT GENERATION ONLY — it
+   never triggers any send. Callers fall back to the deterministic mock when
+   this returns { ok: false }.
    ========================================================================== */
 
 export type HermesTask = "outreach" | "classify" | "extract" | "sourcing" | "chat";
@@ -20,7 +20,7 @@ export interface HermesGenerateInput {
   activity?: AiActivity;
   system?: string;
   prompt: string;
-  /** Cloud provider slug (e.g. "anthropic"). Absent → route uses hermes path. */
+  /** Cloud provider slug (e.g. "anthropic"). Absent → no provider, the caller keeps its mock. */
   provider?: string;
   /** ApiKey.id for the cloud provider. Raw secret resolved server-side only. */
   apiKeyId?: string;
@@ -36,30 +36,18 @@ export interface HermesResult {
 }
 
 /**
- * Guard: live generation is only attempted when live mode is ON and a runtime
- * URL is configured. (The server route additionally accepts a HERMES_API_URL
- * env fallback, but that can't be read in the browser, so the client guard is
- * conservative — a misconfigured client simply falls back to the mock.)
- */
-export function hermesAvailable(settings: SystemSettings): boolean {
-  return !!(settings.hermesLiveMode && settings.hermesApiUrl);
-}
-
-/**
- * POST to the server proxy (non-stream). The settings carry the URL + key id so
+ * POST to the server route. The input carries the provider and vault key id so
  * the server can resolve the secret without the client ever holding it. Always
  * resolves to a HermesResult — network errors become { ok: false, reason }.
  */
-export async function hermesGenerate(
-  input: HermesGenerateInput & { hermesApiUrl?: string; hermesApiKeyId?: string },
-): Promise<HermesResult> {
+export async function hermesGenerate(input: HermesGenerateInput): Promise<HermesResult> {
   try {
     const res = await fetch("/api/hermes/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...input, stream: false }),
     });
-    const json = (await res.json().catch(() => ({ ok: false, reason: "Bad JSON from Aria proxy." }))) as HermesResult;
+    const json = (await res.json().catch(() => ({ ok: false, reason: "Bad JSON from the AI route." }))) as HermesResult;
     return json;
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : "Network error." };

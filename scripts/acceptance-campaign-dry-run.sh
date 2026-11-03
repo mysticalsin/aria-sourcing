@@ -532,7 +532,7 @@ jq -n \
         guardrails:{ariaPrompt:"Synthetic acceptance only.",rules:[]},
         notifications:{slack:false,telegram:false,email:false},
         llmProviders:[],savedModels:[],tools:[],mcpServers:[],defaultModels:{},
-        hermesLiveMode:false,hermesApiUrl:"",hermesApiKeyId:"",memoryCapacity:0,hermesWebUrl:""
+        memoryCapacity:0
       },
       seats:[],suppression:[],ledger:[],skills:[],apiKeys:[],chats:[],memory:[],schedules:[],
       ingestedMessageIds:[],chatboxSubmissions:[],activeCampaignId:$campaign

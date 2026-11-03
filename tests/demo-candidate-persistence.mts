@@ -42,7 +42,7 @@ test("demo hydration purges a legacy localStorage snapshot containing real candi
     candidates: [candidateWithProvenance("live"), ...seed.candidates],
   };
   const values = new Map<string, string>([
-    ["hermes-sourcing:v1", JSON.stringify(polluted)],
+    ["hermes-sourcing:v1", JSON.stringify(polluted)], // saved before the rename
   ]);
   const removed: string[] = [];
   const previousWindow = globalThis.window;
@@ -62,7 +62,7 @@ test("demo hydration purges a legacy localStorage snapshot containing real candi
     const loaded = loadState();
     assert.equal(demoStateAllowsCandidatePersistence(loaded), true);
     assert.equal(loaded.candidates.some((candidate) => candidate.provenance === "live"), false);
-    assert.deepEqual(removed, ["hermes-sourcing:v1"]);
+    assert.deepEqual(removed, ["aria-sourcing:v1", "hermes-sourcing:v1"]);
   } finally {
     if (previousWindow === undefined) {
       Reflect.deleteProperty(globalThis, "window");

@@ -3,23 +3,24 @@ import { lookup } from "dns/promises";
 import { BlockList, isIP } from "node:net";
 
 /**
- * Deployment-owned exact-hostname allow-list for the Hermes runtime.
+ * Deployment-owned exact-hostname allow-list (PROVIDER_ALLOWED_HOSTS) for
+ * self-hosted model endpoints.
  *
  * The built-in patterns below only cover a developer's loopback and RFC1918
- * ranges. A real deployment reaches Hermes over its own private DNS — Fly, for
- * example, uses `<app>.internal` names on 6PN IPv6 — and none of those forms can
- * be expressed as a static pattern without weakening the guard for everyone.
+ * ranges. A deployment that reaches a model server over its own private DNS
+ * (`<app>.internal` names, IPv6 literals) cannot express that as a static
+ * pattern without weakening the guard for everyone.
  *
  * So the deployment names its own hosts, exactly. Read at call time rather than
  * at module load so a test (and a redeploy) can change it. Wildcards, paths and
  * embedded whitespace are rejected: every entry must be a bare hostname or IP
  * literal, which keeps this an allow-list rather than a pattern language.
  *
- * Note the ordering in isAllowedHermesUrl: the SSRF block-list is evaluated
+ * Note the ordering in isAllowedProviderUrl: the SSRF block-list is evaluated
  * BEFORE this, so naming a cloud metadata endpoint here cannot unblock it.
  */
-function deploymentAllowedHermesHosts(): Set<string> {
-  const raw = [process.env.HERMES_ALLOWED_HOSTS, process.env.PROVIDER_ALLOWED_HOSTS].filter(Boolean).join(",");
+function deploymentAllowedProviderHosts(): Set<string> {
+  const raw = process.env.PROVIDER_ALLOWED_HOSTS ?? "";
   const hosts = new Set<string>();
   for (const entry of raw.split(",")) {
     const host = entry.trim().toLowerCase().replace(/^\[|\]$/g, "");
@@ -36,8 +37,8 @@ function deploymentAllowedHermesHosts(): Set<string> {
  * SSRF-safe URL validator for upstream HTTP proxies.
  *
  * Allows only http/https schemes, the private/internal IPs commonly used for
- * local Aria deployments, and any exact hostname the deployment names in
- * HERMES_ALLOWED_HOSTS. Blocks file/ftp/gopher, metadata endpoints, and
+ * self-hosted model servers, and any exact hostname the deployment names in
+ * PROVIDER_ALLOWED_HOSTS. Blocks file/ftp/gopher, metadata endpoints, and
  * ambiguous hostnames that could resolve to internal services.
  */
 export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?: string } {
@@ -86,13 +87,12 @@ export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?:
     }
   }
 
-  // Allow common local hostnames and private IP prefixes used for Aria.
+  // Allow loopback, the Docker host and private IP prefixes used by self-hosted
+  // model servers. No compose service name is listed: none of this stack's
+  // services (gateway, auth, rest, db) is a model server.
   const allowedHostPatterns = [
     /^localhost$/,
     /^127\.0\.0\.1$/,
-    /^hermes$/,
-    /^hermes-agent$/,
-    /^gateway$/,
     /^host\.docker\.internal$/,
     /^10\.\d+\.\d+\.\d+$/,
     /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
@@ -100,7 +100,7 @@ export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?:
   ];
   const isAllowed =
     allowedHostPatterns.some((pattern) => pattern.test(hostname)) ||
-    deploymentAllowedHermesHosts().has(hostname);
+    deploymentAllowedProviderHosts().has(hostname);
   if (!isAllowed) {
     return { ok: false, reason: "Host not in allow-list." };
   }
@@ -108,28 +108,11 @@ export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?:
   return { ok: true };
 }
 
-/** Compatibility alias for the internal runtime. */
-export const isAllowedHermesUrl = isAllowedProviderUrl;
-
-/**
- * True when a Hermes runtime URL is configured but would be refused by the
- * validator above — i.e. the deployment believes it has a live runtime and every
- * request will in fact be rejected before it is sent.
- *
- * This is the silent-misconfiguration case: the client degrades to the
- * deterministic mock, the UI looks healthy, and nothing surfaces it. Readiness
- * consumes this so the deployment fails its own probe instead.
- */
-export function hermesRuntimeMisconfigured(hermesApiUrl: string | undefined): boolean {
-  const configured = (hermesApiUrl ?? "").trim();
-  if (!configured) return false; // Hermes is simply not enabled — not a fault.
-  return !isAllowedHermesUrl(configured).ok;
-}
 
 /* ------------------------------------------------------------------------- *
  * PUBLIC-web fetch guard (web-research tools).
  *
- * The OPPOSITE of isAllowedHermesUrl: this allows arbitrary PUBLIC http(s)
+ * The OPPOSITE of isAllowedProviderUrl: this allows arbitrary PUBLIC http(s)
  * hosts but BLOCKS anything internal — private RFC1918/CGNAT ranges, loopback,
  * link-local (incl. 169.254.169.254 cloud metadata), IPv6 ULA/link-local,
  * multicast, embedded credentials, and non-http(s) schemes. It also resolves
