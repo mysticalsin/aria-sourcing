@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 450
 agent: claude-code
 updated: 2026-11-03
-status: hermes-removed-play-demo-fixed-pushed
+status: claude-web-search-source-added
 ---
 
 # Handoff - Shift 450
@@ -85,6 +85,25 @@ ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
 07, cleanup 01 (wontfix) and 06 (resolved) updated; July plans carry a
 "Superseded" banner.
 
+Owner request (same day): "sourcing sans Apify payant, avec la clé Anthropic".
+Stealth headless-browser scraping that evades bot detection was declined
+(LinkedIn terms, CNIL Kaspr 2024 precedent, account bans); the owner accepted
+the alternative below.
+- New source "LinkedIn via web search" (`WebSearch`) in the reviewed campaign
+  plan, between Apify and GitHub. `src/lib/sourcing/claude-web-search.ts`:
+  Claude `web_search_20250305`, `allowed_domains: ["linkedin.com/in"]`, 2-5
+  searches per run; leads only from `web_search_result` blocks, canonical
+  profile URLs, cited text as snippet; queries failing the LinkedIn sourcing
+  policy have their results dropped. Workspace vault Anthropic key only (linked
+  on the Anthropic provider), AI budget checked, spend recorded as activity
+  `web-sourcing` ($0.01 per search added to `estimateCostUsd`). Migration
+  `0005_web_search_source.sql` allows 3 steps per run. Issue:
+  `.scratch/unified-sourcing/issues/03-claude-web-search-source.md`.
+- Real bounded check with the dev key (scratch script, not the app): seed
+  campaign "Senior Backend Engineer Go Kubernetes", limit 5 -> 1 search, 5
+  linkedin.com/in profiles, 8 s, 17.7k input tokens, $0.054. Headline parsing is
+  best effort: some page titles carry the company where the title should be.
+
 ## Blockers
 
 - None in code. Unverified: the Caddy gateway on a real Docker stack (see
@@ -92,6 +111,10 @@ ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
 
 ## Next steps
 
+0. Web search source: on the Docker stack (migration 0005 applies on
+   `docker compose up --build`), link the Anthropic key on the Anthropic
+   provider (Settings -> AI & Models), run "LinkedIn via web search" once on a
+   Sourcing campaign, check AI costs shows "Web search sourcing".
 1. Pushed. Check the CI job "Local Docker demo" (login, campaign,
    restart through the new gateway). If it fails, read `docker compose logs
    gateway`. Quick manual probe on a running stack: `curl -i
@@ -114,6 +137,9 @@ ABANDONED (superseded by the 2026-10-26 scope reset); AI spec table and issues
   (target not chosen). Merging into vercel-demo is no longer a goal.
 - Owner 2026-11-03: no local LLM / Ollama for now; AI stays on the Anthropic key.
 - Owner 2026-11-03: Kong replaced by Caddy as the API gateway.
+- Owner 2026-11-03: no stealth scraping or bot-detection evasion; LinkedIn
+  discovery without Apify goes through Claude's web search on public indexed
+  pages (`WebSearch` source).
 - Owner 2026-11-03: no "hermes" in the code (product is Aria). Keep only the
   compatibility reads listed in Current state.
 - All AI runs on Claude via one Anthropic key, within 20-30 EUR/month; GDPR

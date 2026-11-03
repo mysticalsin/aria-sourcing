@@ -19,7 +19,8 @@ identifiers. Keep those in a password manager or the application's encrypted vau
 | Apify token | Yes for LinkedIn | Save through **Settings -> API keys**, provider **Apify**. The user/account ID is not an application setting. |
 | Apify actor access and allowance | Yes for LinkedIn | Check access/allowance for `harvestapi/linkedin-profile-search` before launching. Valid authentication alone is insufficient. |
 | GitHub token | Optional | Start with public anonymous access for a small test. If needed, set server-only `GITHUB_TOKEN` in the machine's ignored `.env.local`. |
-| GPT/Claude, Tavily, local LLM | No | Deferred; the reviewed LinkedIn/GitHub campaign search requires no model. |
+| Anthropic key | Only for "LinkedIn via web search" | Save it under **Settings -> API keys** (provider Anthropic) and select it on the Anthropic provider in **Settings -> AI & Models**. Apify and GitHub searches need no model. |
+| Tavily, local LLM | No | Not used by the reviewed campaign search. |
 | Mailbox, SMTP, calendar, Azure | No | Leave these out of the sourcing test. No candidate message is sent. |
 | Host Node / Supabase CLI | No for normal Docker use | Node 22 is only needed for optional host-side helpers/automated acceptance. |
 

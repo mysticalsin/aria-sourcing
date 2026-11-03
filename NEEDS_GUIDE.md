@@ -71,7 +71,7 @@ npm install && npm run dev         # http://localhost:3000
 
 **Creating a campaign does not start paid sourcing.** From the campaign page:
 
-- **Live mode (Supabase / Docker stack): Run sourcing** opens the source review. Pick LinkedIn (Apify) and/or GitHub, review the queries and set an explicit profile limit per source, then start one durable run. LinkedIn runs first when selected; GitHub is a separate complementary step. Progress shows persisted found/added/duplicate/excluded counts; refreshing resumes the same run and never launches a second paid actor. Missing provider configuration is reported, never silently replaced by another source.
+- **Live mode (Supabase / Docker stack): Run sourcing** opens the source review. Pick LinkedIn (Apify), LinkedIn via web search (Claude) and/or GitHub, review the queries and set an explicit profile limit per source, then start one durable run. The sources run in that order; each is a separate step. Progress shows persisted found/added/duplicate/excluded counts; refreshing resumes the same run and never launches a second paid actor. Missing provider configuration is reported, never silently replaced by another source.
 - **Demo mode (no Supabase): Run Aria**, **Source next batch** and **Run sourcing agent** are shown instead. The first two produce synthetic candidates; the sourcing agent runs the Claude tool loop over real search tools, or only the reviewed GitHub queries when no model key is available (§5).
 - **Review outreach** — approve/edit every message before anything could send. Nothing sends until the live-sending conditions in §6 are all met.
 
@@ -130,6 +130,7 @@ Returns `{ ok, format: "mantu-need"|"generic", parsed: <JobAnalysis…>, suggest
 | Engine | Trigger | Backend | Key needed |
 |---|---|---|---|
 | **LinkedIn (Apify)** | **Run sourcing** source review (live mode) | Apify LinkedIn profile search actor, durable run with per-workspace quotas | Apify key connected in **Settings**. |
+| **LinkedIn via web search** | **Run sourcing** source review (live mode) | Claude's server-side web search, restricted to public `linkedin.com/in` pages: the reviewed query plus a few close variants, 2 to 5 searches per run. No LinkedIn login or browser. Profiles come from the search results (name, headline, link, the cited text), never from the model's prose; searches whose query fails the sourcing policy are discarded. Contact details and experience stay unknown until verified. | The workspace Anthropic key: **Settings → API Keys** (provider Anthropic), then select it on the Anthropic provider in **Settings → AI & Models**. $0.01 per search plus tokens, counted under "Web search sourcing" on **AI costs** and within the AI budget. |
 | **GitHub** | **Run sourcing** source review (live mode) | GitHub Users Search API (read-only, public profiles) | None (60 req/hr per IP). `GITHUB_TOKEN` raises it to 5,000/hr. |
 | **Web search** (LinkedIn, Stack Overflow, Dribbble, Behance via `site:`) | Sourcing agent web tool | Tavily web search | `TAVILY_API_KEY`. |
 | **Sourcing agent** | **Run sourcing agent** (shown in demo mode) | Claude tool-calling loop over the search + scoring tools; rule-based fallback without a key | Anthropic key (below). |
@@ -161,7 +162,7 @@ The interviewer roster is editable on `/calendar` (admin): add real names/emails
 
 ## 8. Troubleshooting
 
-- **Run sourcing reports a missing provider** → connect the Apify key in Settings (LinkedIn) or deselect that source. On GitHub, 0 results may mean the anonymous 60/hr rate limit; set `GITHUB_TOKEN`.
+- **Run sourcing reports a missing provider** → connect the Apify key in Settings (LinkedIn), link the Anthropic key on the Anthropic provider in AI & Models (web search), or deselect that source. "Anthropic refused the web search" means a wrong key, no credits, or web search disabled for the Anthropic organization (Claude Console → Settings → Capabilities). On GitHub, 0 results may mean the anonymous 60/hr rate limit; set `GITHUB_TOKEN`.
 - **Parse falls back to heuristic / "Brief extracted for review"** → no usable Anthropic key; add it in Settings or set `ANTHROPIC_API_KEY` / `.secret` (§5).
 - **Sourcing buttons disabled** → move the campaign to Sourcing or Outreach.
 - **Stuck at login locally** → the app is in live mode but its Supabase isn't running (see §1B).
