@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { ChevronDown } from "lucide-react";
 import { SkeletonCard } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
-import { FunnelBoard } from "@/components/tania/funnel-board";
+import { PipelineBoard } from "@/components/tania/pipeline-board";
 import { FlowMatrix } from "@/components/tania/flow-matrix";
 import {
   useCampaigns,
@@ -23,7 +24,7 @@ export default function FunnelPage() {
       <PageHeader
         eyebrow="Recruit"
         title="Pipeline"
-        description="The hiring pipeline: from the chatbox and open needs through Leads, Candidates, Offered and Employees, with the stage × source flow that keeps a human in the loop at every gate."
+        description="Everyone in progress, sorted by what you have to do next. Pick a campaign to focus on one role; late cards come first in each column."
       />
 
       <HydrationGate
@@ -36,12 +37,16 @@ export default function FunnelPage() {
         }
       >
         <div className="space-y-8">
-          <FunnelBoard
-            candidates={candidates}
-            submissions={submissions}
-            campaigns={campaigns}
-          />
-          <FlowMatrix />
+          <PipelineBoard candidates={candidates} campaigns={campaigns} submissions={submissions} />
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-ink-soft hover:text-ink [&::-webkit-details-marker]:hidden">
+              <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden />
+              How each stage works, and where a human decides
+            </summary>
+            <div className="mt-4">
+              <FlowMatrix />
+            </div>
+          </details>
         </div>
       </HydrationGate>
     </div>
