@@ -70,6 +70,11 @@ test("shortlist identities obey confidentiality and the existing outreach-purpos
   assert.equal(masked.profileUrl, "");
   assert.equal(shortlistIdentity(candidate, false).profileUrl, candidate.linkedinUrl);
   assert.equal(shortlistIdentity({ ...candidate, stage: "Contacted" }, true).name, candidate.name);
+  const photo = { ...candidate, avatarUrl: "https://media.licdn.com/dms/image/v2/x/photo.jpg" };
+  assert.equal(shortlistIdentity(photo, true).display.avatarUrl, undefined, "a masked candidate shows no photo");
+  assert.equal(shortlistIdentity(photo, false).display.avatarUrl, photo.avatarUrl);
+  assert.equal(shortlistIdentity(candidate, false).profileLabel, "LinkedIn");
+  assert.equal(shortlistIdentity({ ...candidate, linkedinUrl: "", githubUrl: "https://github.com/x" }, false).profileLabel, "GitHub");
 });
 test("LinkedIn first, refresh recovery, authoritative dedupe and saved GitHub complement", async () => {
   const f = fixture();

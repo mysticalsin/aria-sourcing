@@ -54,6 +54,7 @@ export function applyConfidentiality(
     githubUrl: candidate.githubUrl ? "•••" : "",
     sourceUrl: candidate.sourceUrl ? "•••" : undefined,
     avatarInitials: candidate.avatarInitials ? candidate.avatarInitials[0] + "•" : "•",
+    avatarUrl: undefined,
   };
 }
 

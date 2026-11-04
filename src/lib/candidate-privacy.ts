@@ -18,6 +18,7 @@ export function anonymizeCandidateRecord(candidate: Candidate): Candidate {
     email: "",
     phone: "",
     avatarInitials: "AN",
+    avatarUrl: undefined,
     currentTitle: "",
     currentCompany: "",
     location: "",

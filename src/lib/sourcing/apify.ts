@@ -19,6 +19,7 @@
 
 import type { getServerSupabase } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
+import { candidatePhotoUrl } from "@/lib/candidate-photo";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 import { normalizeApifyRunStatus, type ApifyRunStatus } from "@/lib/sourcing/apify-status";
@@ -83,6 +84,8 @@ export interface ApifyProfile {
   id: string;
   publicIdentifier: string;
   linkedinUrl: string;
+  /** https media.licdn.com photo, or "" when the actor returned none. */
+  photoUrl?: string;
   firstName: string;
   lastName: string;
   headline: string;
@@ -180,6 +183,12 @@ interface RawApifyProfile {
   id?: string;
   publicIdentifier?: string;
   linkedinUrl?: string;
+  // harvestapi Full mode: photo + profilePicture.url; dev_fusion: profilePic(HighQuality).
+  photo?: string | null;
+  profilePicture?: { url?: string | null } | null;
+  pictureUrl?: string | null;
+  profilePic?: string | null;
+  profilePicHighQuality?: string | null;
   firstName?: string;
   lastName?: string;
   headline?: string;
@@ -268,6 +277,15 @@ function mapEducationItem(item: RawApifyEducationItem): ApifyEducation {
   return { schoolName: item.schoolName ?? "", degree: item.degree ?? "", dateRange: item.period ?? "" };
 }
 
+/** The first photo field the actor filled that passes the LinkedIn CDN check. */
+function profilePhoto(p: RawApifyProfile): string {
+  for (const raw of [p.photo, p.profilePicture?.url, p.pictureUrl, p.profilePicHighQuality, p.profilePic]) {
+    const url = candidatePhotoUrl(raw);
+    if (url) return url;
+  }
+  return "";
+}
+
 function mapProfile(p: RawApifyProfile): ApifyProfile {
   // Full mode carries currentPosition (singular key, array value); Short mode
   // carries currentPositions (plural) with a different item shape instead.
@@ -279,6 +297,7 @@ function mapProfile(p: RawApifyProfile): ApifyProfile {
     id: String(p.id ?? ""),
     publicIdentifier: p.publicIdentifier ?? "",
     linkedinUrl: p.linkedinUrl ?? "",
+    photoUrl: profilePhoto(p),
     firstName: p.firstName ?? "",
     lastName: p.lastName ?? "",
     headline: p.headline ?? "",

@@ -5,10 +5,11 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 export function shortlistIdentity(candidate: Candidate, confidentialityMode: boolean) {
   const reveal = hasOutreachPurpose(candidate.stage);
   const display = applyConfidentiality(candidate, { confidentialityMode, reveal });
-  return {
-    name: display.name,
-    profileUrl: !confidentialityMode || reveal
-      ? candidate.linkedinUrl || candidate.githubUrl || candidate.sourceUrl || ""
-      : "",
-  };
+  const visible = !confidentialityMode || reveal;
+  const [profileUrl, profileLabel] = !visible ? ["", ""]
+    : candidate.linkedinUrl ? [candidate.linkedinUrl, "LinkedIn"]
+    : candidate.githubUrl ? [candidate.githubUrl, "GitHub"]
+    : candidate.sourceUrl ? [candidate.sourceUrl, "Source profile"]
+    : ["", ""];
+  return { name: display.name, display, profileUrl, profileLabel };
 }

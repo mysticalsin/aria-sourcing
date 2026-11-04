@@ -346,6 +346,11 @@ export interface Candidate {
    *  until enriched; sourced profiles rarely expose one. */
   phone?: string;
   avatarInitials: string;
+  /** Provider profile photo (LinkedIn CDN only, see candidatePhotoUrl). Masked
+   *  with the name under confidentiality mode and cleared on anonymization.
+   *  LinkedIn photo URLs are signed and expire, so callers fall back to the
+   *  initials when the image fails to load. */
+  avatarUrl?: string;
   currentTitle: string;
   currentCompany: string;
   location: string;

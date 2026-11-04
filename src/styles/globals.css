@@ -377,6 +377,28 @@ body::before {
 }
 .status-live { animation: status-pulse 2s infinite; }
 
+/* Running sourcing search (components/run/sourcing-scan.tsx): the sweep
+   crosses the field every 2.8 s and each match lights as it passes. */
+@keyframes sourcing-scan-sweep {
+  from { transform: translateX(-20%); }
+  to { transform: translateX(100%); }
+}
+@keyframes sourcing-scan-match {
+  0%, 100% { fill: hsl(var(--paper) / 0.2); }
+  6% { fill: hsl(var(--violet)); }
+  45% { fill: hsl(var(--violet) / 0.75); }
+}
+@keyframes sourcing-scan-beacon {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.sourcing-scan-sweep { animation: sourcing-scan-sweep 2.8s linear infinite; }
+.sourcing-scan-match {
+  fill: hsl(var(--paper) / 0.2);
+  animation: sourcing-scan-match 2.8s var(--ease-motion-out) infinite backwards;
+}
+.sourcing-scan-beacon { animation: sourcing-scan-beacon 1.4s ease-in-out infinite; }
+
 /* Hide scrollbar utility (for chip rows / tabs) */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -413,6 +435,7 @@ body::before {
   .animate-bounce,
   .spin-slow,
   .status-live,
+  .sourcing-scan-beacon,
   .bot-glow,
   .dot-typing span {
     animation: none !important;
@@ -420,6 +443,15 @@ body::before {
 
   .motion-progress-fill {
     transition-duration: 0ms !important;
+  }
+
+  /* Still frame: no sweep, the matches stay lit. */
+  .sourcing-scan-sweep {
+    display: none;
+  }
+  .sourcing-scan-match {
+    animation: none !important;
+    fill: hsl(var(--violet));
   }
 }
 

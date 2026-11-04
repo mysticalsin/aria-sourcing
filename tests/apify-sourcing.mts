@@ -270,6 +270,22 @@ try {
     }
   }
 
+  // --- fetchDatasetItems: profile photo, LinkedIn CDN only ------------------
+  {
+    const photo = "https://media.licdn.com/dms/image/v2/C5603AQE/profile-displayphoto-shrink_400_400/0?e=1&v=beta&t=x";
+    globalThis.fetch = (async () => jsonResponse(200, [
+      { ...sampleFullRawItem, id: "photo1", photo },
+      { ...sampleFullRawItem, id: "photo2", profilePicture: { url: photo } },
+      { ...sampleFullRawItem, id: "photo3", photo: "https://evil.example/pixel.gif", profilePic: "http://media.licdn.com/x.jpg" },
+    ])) as typeof fetch;
+    const res = await fetchDatasetItems(apifyClearance, "tok", "dataset_photo", 10);
+    if (res.ok) {
+      ok("photo: top-level photo carried through", res.data[0]?.photoUrl === photo);
+      ok("photo: profilePicture.url used when photo is absent", res.data[1]?.photoUrl === photo);
+      ok("photo: foreign host and plain http are dropped", res.data[2]?.photoUrl === "");
+    } else ok("fetchDatasetItems (photo) result is ok", false);
+  }
+
   // --- fetchDatasetItems: normalizes a Short-mode item ------------------------
   {
     globalThis.fetch = (async () => jsonResponse(200, [sampleShortRawItem])) as typeof fetch;
@@ -288,6 +304,7 @@ try {
           p?.currentPosition[0]?.dateRange === "Apr 2024 - Present",
       );
       ok("Short: no email (field doesn't exist in Short mode)", p?.email === null);
+      ok("Short: no photo field means no photo, never a placeholder URL", p?.photoUrl === "");
       ok("Short: no skills/topSkills/languages (fields don't exist in Short mode)", p?.skills.length === 0 && p?.topSkills.length === 0 && p?.languages.length === 0);
       ok("Short: location.text carried through, no countryCode available", p?.location?.text === "Berlin, Germany" && p?.location?.countryCode === null);
       ok("Short: premium/openToWork/hiring honestly reflect the raw item", p?.premium === false && p?.openToWork === false && p?.hiring === false);
@@ -326,6 +343,7 @@ try {
     id: "abc123",
     publicIdentifier: "test-candidate-dev",
     linkedinUrl: "https://www.linkedin.com/in/test-candidate-dev",
+    photoUrl: "https://media.licdn.com/dms/image/v2/test/photo.jpg",
     firstName: "Test",
     lastName: "Candidate",
     headline: "Senior Go Engineer at Acme Corp",
@@ -350,6 +368,7 @@ try {
   ok("mapApifyCandidates accepts the profile", result.accepted.length === 1);
   ok("name built from first+last", c?.name === "Test Candidate");
   ok("linkedinUrl carried through", c?.linkedinUrl === "https://www.linkedin.com/in/test-candidate-dev");
+  ok("profile photo carried onto the candidate", c?.avatarUrl === "https://media.licdn.com/dms/image/v2/test/photo.jpg");
   ok("sourcePlatform is Apify", c?.sourcePlatform === "Apify");
   ok("sourceQuery is the search criteria", c?.sourceQuery === "Senior Go Engineer");
   ok("currentCompany from currentPosition[0]", c?.currentCompany === "Acme Corp");

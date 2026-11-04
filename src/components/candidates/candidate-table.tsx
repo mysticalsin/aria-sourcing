@@ -16,12 +16,12 @@ import { useCampaigns, useSettings } from "@/lib/store";
 import {
   cn,
   formatTimeAgo,
-  initialsFrom,
   scoreTone,
   toneForStage,
   type Tone,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
+import { CandidateAvatar } from "@/components/candidates/candidate-avatar";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
 import { candidateReview } from "@/lib/candidate-review";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
@@ -181,7 +181,6 @@ export function CandidateTable({
             confidentialityMode,
             reveal: hasOutreachPurpose(c.stage),
           });
-          const initials = display.avatarInitials || initialsFrom(display.name);
           return (
             <TR
               key={c.id}
@@ -202,12 +201,7 @@ export function CandidateTable({
               )}
               <TD>
                 <div className="flex items-center gap-3">
-                  <span
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/[0.06] text-[11px] font-bold text-ink-soft"
-                    aria-hidden
-                  >
-                    {initials}
-                  </span>
+                  <CandidateAvatar candidate={display} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <button

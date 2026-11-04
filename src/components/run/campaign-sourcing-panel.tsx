@@ -9,12 +9,16 @@ import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import { shortlistIdentity } from "@/lib/sourcing/shortlist-preview";
 import { SOURCE_LABELS, webSearchBudget, type PublicSourcingJob, type SourceChoice } from "@/lib/sourcing/unified-contract";
+import type { Candidate } from "@/lib/types";
+import { Linkedin } from "lucide-react";
+import { CandidateAvatar } from "@/components/candidates/candidate-avatar";
+import { SourcingScan } from "@/components/run/sourcing-scan";
 
 const activeStep = (job: PublicSourcingJob) => job.steps.find((s) => ["queued", "starting", "running"].includes(s.status));
 const labels = { queued: "Waiting", starting: "Searching", running: "Searching at Apify", completed: "Complete", failed: "Failed", uncertain: "Needs review" };
 
-export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates }: {
-  campaignId: string; open: boolean; onClose: () => void; onCandidates: () => void;
+export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates, onCandidate }: {
+  campaignId: string; open: boolean; onClose: () => void; onCandidates: () => void; onCandidate: (candidate: Candidate) => void;
 }) {
   const campaign = useCampaign(campaignId);
   const candidates = useCampaignCandidates(campaignId);
@@ -156,6 +160,7 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates 
         <Button onClick={() => void start()} loading={busy} disabled={busy || !campaignReady || !loaded || (!linkedin && !web && !github) || (linkedin && (!hasApify || !linkedinQuery.trim())) || (web && (!hasAnthropic || !webQuery.trim())) || (github && !githubQuery.trim()) || !Number.isInteger(limit) || limit < 1 || limit > 20}>Start reviewed search</Button>
       </div>}
       {current && <div aria-live="polite" className="space-y-3">
+        {active && <SourcingScan job={current} />}
         {current.steps.map((step) => <div key={step.source} className="rounded-xl border border-ink/10 p-3">
           <p className="font-semibold">{SOURCE_LABELS[step.source]} · {step.status === "running" && step.source !== "LinkedIn" ? "Searching" : labels[step.status]} · limit {step.limit}</p>
           <p className="break-words text-xs text-muted">{step.query}</p>
@@ -171,10 +176,14 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates 
         {!active && <Button variant="secondary" onClick={onCandidates}>Review saved candidates</Button>}
       </div>}
       {newCandidates.length > 0 && <div className="space-y-2"><h3 className="text-sm font-semibold">Shortlist preview</h3>
-        {newCandidates.map((c) => { const identity = shortlistIdentity(c, settings.confidentialityMode); return <div key={c.id} className="flex flex-wrap justify-between gap-2 border-t border-ink/10 pt-2 text-sm">
-          <div><button className="font-semibold underline" onClick={onCandidates}>{identity.name}</button> · {Math.round(c.matchScore)}/100 · {c.sourcePlatform}
+        {newCandidates.map((c, i) => { const identity = shortlistIdentity(c, settings.confidentialityMode); return <div key={c.id} className="flex items-start gap-3 border-t border-ink/10 pt-2 text-sm animate-fade-in" style={{ animationDelay: `${i * 70}ms` }}>
+          <CandidateAvatar candidate={identity.display} size="md" />
+          <div className="min-w-0 flex-1"><button type="button" className="font-semibold underline" onClick={() => onCandidate(c)}>{identity.name}</button> · {Math.round(c.matchScore)}/100 · {c.sourcePlatform}
             <p className="text-xs text-muted">{c.techStack.length ? `Observed skills: ${c.techStack.join(", ")}` : "Skills need verification"} · {c.email ? "Review fit and contact permission" : "Find contact details before email outreach"}{c.yearsExperience === null ? " · Experience unknown" : ""}</p></div>
-          {identity.profileUrl ? <a className="underline" href={identity.profileUrl} target="_blank" rel="noreferrer">Source profile</a> : <button className="underline" onClick={onCandidates}>Review candidate details</button>}
+          <div className="flex shrink-0 items-center gap-3">
+            {identity.profileUrl && <a className="inline-flex items-center gap-1 underline" href={identity.profileUrl} target="_blank" rel="noreferrer">{identity.profileLabel === "LinkedIn" && <Linkedin className="h-3.5 w-3.5" aria-hidden />}{identity.profileLabel}<span className="sr-only"> profile of {identity.name} (opens in a new tab)</span></a>}
+            <button type="button" className="font-semibold text-electric underline" onClick={() => onCandidate(c)}>View details</button>
+          </div>
         </div>; })}
       </div>}
       {runs.length > 1 && <details><summary className="cursor-pointer text-sm">Previous searches ({runs.length - 1})</summary>{runs.slice(1).map((r) => <p key={r.id} className="mt-2 text-xs text-muted">{new Date(r.createdAt).toLocaleString()} · {r.status} · {r.steps.map((s) => `${SOURCE_LABELS[s.source]}: ${s.added} added`).join(" / ")}</p>)}</details>}
