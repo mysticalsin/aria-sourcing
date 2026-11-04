@@ -1,16 +1,16 @@
 ---
 project: MSourcing / ARIA
-shift: 451
+shift: 452
 agent: claude-code
-updated: 2026-11-03
-status: gateway-contract-checked-ready-for-docker-on-mac
+updated: 2026-11-04
+status: pipeline-redesigned-docker-run-still-pending
 ---
 
-# Handoff - Shift 451
+# Handoff - Shift 452
 
 ## Current state
 
-- Branch mbe-branch, pushed. Gate green at 2c56f788 (typecheck,
+- Branch mbe-test (pushed). Gate green at 19ef9d34 (typecheck,
   typecheck:tests, npm test exit 0; eslint clean on touched files).
 - Local Docker stack: app, db, auth, rest, gateway (Caddy 2.11.7) + the two
   init jobs. Still NOT run on a real Docker engine (none on this Windows
@@ -31,43 +31,22 @@ status: gateway-contract-checked-ready-for-docker-on-mac
   credential rotations, re-audits, Azure Postgres); the 146 closed ones are in
   `_relay/archive/codex-findings-closed-2026-11-03.md`.
 
-## Done this shift (owner: "Caddy du premier coup" + review points)
+## Done this shift (owner: "Pipeline: tout est mélangé, peu clair")
 
-- 8fe81b5e `docker/bootstrap/gateway-check.sh`: through the gateway, 401
-  without/with an unknown key (gateway body), anon key reaches PostgREST
-  (header and query) and GoTrue, bare service key becomes the bearer, a session
-  bearer is kept, JWKS open, CORS preflight answered, other paths 404.
-  supabase-bootstrap now depends on a healthy gateway, gets SUPABASE_ANON_KEY
-  and ends with the check: a broken gateway stops `up` and names the check.
-  `npm run demo:doctor` reruns it on a running stack
-  (`docker compose run --rm --no-deps --entrypoint .../gateway-check.sh
-  supabase-bootstrap`), then probes localhost:API_PORT/gateway-health and
-  localhost:APP_PORT/api/ready; warns on Docker Engine < 25. Caddyfile:
-  handle_errors keeps ACAO on 502/504. Script exercised against a Node mock
-  gateway (conforming: all ok; bearer-overwriting: fails on the right check).
-  README no longer says Kong.
-- ff213b9d Campaign detail page no longer subscribes to the whole store
-  (`useEnrichmentSpend` / `useEnrichmentBudgetUnits`, primitives). Proxy skips
-  getUser() on /api/* when ALLOWED_EMAIL_DOMAIN is empty (it enforced nothing;
-  handlers authenticate). Test `tests/api-domain-unset.mts` (manifest).
-- 2c56f788 extractLead: "Name - X | LinkedIn" -> X is the title only if it
-  reads like one (EN/FR vocabulary, word-bounded), else the company;
-  "Title at/chez Company" split.
-
-Owner follow-up "ménage dans la doc" (docs commit after b962571a):
-- July 2026 `_relay/` plans, audits, research, artifacts, incidents, PLAN.md
-  and the agent prompt, plus the July markdown notes in `_agent_state/`, moved
-  to `_relay/archive/2026-07/` (moved, not deleted; issue demo-cleanup 07
-  updated). `_relay/README.md` rewritten (dead production-readiness link gone).
-- Active docs: Azure no longer presented as the planned target (README,
-  ARCHITECTURE, DOCKER "Beyond the local stack", ADR 0001 amendment); DOCKER
-  local-model/Ollama section removed (owner: no local LLM); TESTING drops the
-  deleted docs-truth test, the removed release pipeline and Kong;
-  SUPABASE_SETUP marked not re-validated, its local-supabase-up.sh claim fixed
-  and the migration-ledger gap of `supabase db push` noted; AGENTS.md no longer
-  asks to maintain the abandoned July goal JSONs.
-- Checked: no dead links, file paths, `npm run` scripts or test files cited in
-  active docs (`.scratch/` and `_relay/archive/` excluded).
+- 19ef9d34 Pipeline page (/funnel) redesigned for the recruiter who uses it:
+  one board of candidates only, columns = next action (To contact, Awaiting
+  reply, Replied, To book, Interviewing, Offer out, Hired) grouped under the
+  TAnIA stages; campaign scope selector (all open campaigns or one), search,
+  source chips, "overdue only" toggle; late cards first (limits per column,
+  awaiting reply = settings follow-up gap); "To contact" cards show the
+  candidateReview blocker or "Message awaiting approval"; cards open the
+  CandidateDrawer in place; drops only on Interviewing/Offer/Hired (same
+  manual stages as the drawer). Chatbox and Need columns removed (link to
+  /applicants, scope selector). FlowMatrix folded into a <details>.
+  Model: `src/lib/pipeline.ts`, test `tests/pipeline.mts` (manifest).
+  Checked in Chrome via Playwright on `next dev -p 3100` (desktop, mobile,
+  drawer, overdue filter, no console errors).
+- Working on a Mac now: Node is `~/.nvm/versions/node/v24.14.1/bin`.
 
 ## Blockers
 
@@ -97,7 +76,10 @@ Owner follow-up "ménage dans la doc" (docs commit after b962571a):
 7. Perf ideas left: page-level getClaims only pays off with asymmetric GoTrue
    keys (GOTRUE_JWT_KEYS); load `@supabase/ssr` only when Supabase is
    configured; split seed/mock-ai out of the store chunk.
-8. Node: `export PATH="/c/Users/michael.bernard_amar/AppData/Local/Temp/aria-node-runtime/node-v22.23.4-win-x64:$PATH"`.
+8. Node (Mac): `export PATH="$HOME/.nvm/versions/node/v24.14.1/bin:$PATH"`.
+9. Pipeline: in demo mode 44 of 46 cards show late because the seed
+   timestamps sit 7-16 days before SEED_NOW; if the owner wants a calmer demo,
+   move seed activity closer to SEED_NOW (check exec-dashboard/scoring tests).
 
 ## Decisions made (don't relitigate)
 
@@ -127,6 +109,9 @@ Owner follow-up "ménage dans la doc" (docs commit after b962571a):
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- Pipeline day counts use SEED_NOW when Supabase is not configured (same as
+  the calendar), Date.now() otherwise.
 
 - `_relay/codex-findings.md` keeps open findings only: when closing one, move
   it to the archive file of closed findings.
