@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -117,8 +118,7 @@ export async function POST(req: NextRequest) {
     if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
       return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
     }
-    const origin = req.headers.get("origin");
-    if (!origin || origin !== req.nextUrl.origin) {
+    if (!isSameOriginRequest(req)) {
       return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin feedback is not allowed.");
     }
     const idempotencyKey = req.headers.get("idempotency-key")?.trim() ?? "";

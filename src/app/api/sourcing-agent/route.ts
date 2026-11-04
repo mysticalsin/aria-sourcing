@@ -15,6 +15,7 @@ import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -215,8 +216,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
     return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
   }
-  const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isSameOriginRequest(req)) {
     return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin sourcing is not allowed.");
   }
 

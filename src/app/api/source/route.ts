@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
@@ -67,8 +68,7 @@ function publicDemoSourceDenied(req: NextRequest): Response | null {
 
 function liveOriginDenied(req: NextRequest): Response | null {
   if (!supabaseEnabled) return null;
-  const origin = req.headers.get("origin");
-  if (origin === req.nextUrl.origin) return null;
+  if (isSameOriginRequest(req)) return null;
   return NextResponse.json(
     { ok: false, code: "CROSS_ORIGIN_REQUEST", error: "Cross-origin sourcing is not allowed." },
     { status: 403 },

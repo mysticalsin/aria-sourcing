@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await authority();
   if (!auth) return json({ ok: false, error: "Sign in with sourcing permission." }, 403);
-  if (req.headers.get("origin") !== req.nextUrl.origin) return json({ ok: false, error: "Cross-origin sourcing is not allowed." }, 403);
+  if (!isSameOriginRequest(req)) return json({ ok: false, error: "Cross-origin sourcing is not allowed." }, 403);
   const rl = checkRateLimit(rateLimitKey(req, `campaign-source:${auth.workspaceId}:${auth.actorId}`), { max: 40, windowMs: 60_000 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
   const parsed = await validateBody(req, Body, { maxBytes: 3_000 });

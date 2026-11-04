@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (role.error || workspace.error || typeof workspace.data !== "string" || !can(role.data as Role, "source")) {
     return json({ ok: false, error: "Insufficient sourcing authority." }, 403);
   }
-  if (req.headers.get("origin") !== req.nextUrl.origin) return json({ ok: false, error: "Cross-origin enrichment is not allowed." }, 403);
+  if (!isSameOriginRequest(req)) return json({ ok: false, error: "Cross-origin enrichment is not allowed." }, 403);
   const rl = checkRateLimit(rateLimitKey(req, `source-enrich:${workspace.data}:${user.id}`), { windowMs: 60_000, max: 15 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
   const validated = await validateBody(req, EnrichBodySchema, { maxBytes: 2_000 });

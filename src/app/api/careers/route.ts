@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/server";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { parseCareersWorkspaceId } from "@/lib/careers-server";
@@ -169,8 +170,7 @@ export async function POST(req: NextRequest) {
 
   const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/json")) return json({ ok: false }, 415);
-  const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) return json({ ok: false }, 403);
+  if (!isSameOriginRequest(req)) return json({ ok: false }, 403);
 
   const limit = checkRateLimit(rateLimitKey(req, "careers-public-submit"), { windowMs: 15 * 60_000, max: 5 });
   if (!limit.ok) return limitedResponse(limit.retryAfterSec);
