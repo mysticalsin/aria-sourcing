@@ -167,6 +167,15 @@ export type SourcingAgentWorkspace = {
   fingerprint: string;
 };
 
+// Keys are sorted so the browser's object (key order follows edit history) and
+// the server's schema-parsed copy (key order follows the schema) agree.
+function sortedKeys(_key: string, value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+}
+
 export function sourcingAgentCampaignFingerprint(
   campaign: SourcingAgentCampaign,
 ): string {
@@ -179,7 +188,7 @@ export function sourcingAgentCampaignFingerprint(
       excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       githubQueries: campaign.sourcingStrategy.githubQueries,
     },
-  });
+  }, sortedKeys);
 }
 
 type ProjectionResult =

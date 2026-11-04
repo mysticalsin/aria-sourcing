@@ -106,6 +106,19 @@ test("campaign fingerprint changes when the persisted need or search strategy ch
   assert.notEqual(initial, changedQuery);
 });
 
+test("browser and server fingerprints agree when a brief edit appended an optional field", () => {
+  // `{ ...jobAnalysis, ...patch }` appends a newly filled optional field after
+  // validationWarnings; the server re-parses keys in schema order.
+  const { location: _location, ...withoutLocation } = campaign.jobAnalysis;
+  const edited = { ...campaign, jobAnalysis: { ...withoutLocation, location: "Paris" } };
+  const state = JSON.parse(JSON.stringify({ ...seed, campaigns: [edited] }));
+  const projected = projectSourcingAgentWorkspace(state, campaign.id);
+  assert.equal(projected.status, "ok");
+  if (projected.status === "ok") {
+    assert.equal(projected.value.fingerprint, sourcingAgentCampaignFingerprint(edited));
+  }
+});
+
 test("strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads", () => {
   assert.equal(parseSourcingAgentCandidates([dto()], campaignId, 2)?.length, 1);
   assert.equal(parseSourcingAgentCandidates([dto({ campaignId: "foreign" })], campaignId, 2), null);
