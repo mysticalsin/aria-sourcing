@@ -1,4 +1,6 @@
 import { defaultIntegrations, integrationCounts, integrationStateLabel, testConnection } from "../src/lib/integrations";
+import { buildSeedState } from "../src/lib/seed";
+import { migrateToCurrentVersion } from "../src/lib/store/migrations";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -11,37 +13,15 @@ function ok(name: string, cond: boolean) {
 }
 
 const integrations = defaultIntegrations();
-const placeholders = integrations.filter((integration) => integration.real === false);
-const realCards = integrations.filter((integration) => integration.real === true);
 const github = integrations.find((integration) => integration.id === "int_github");
 const apify = integrations.find((integration) => integration.id === "int_apify");
-const linkedinRsc = integrations.find((integration) => integration.id === "int_linkedin_rsc");
 
-ok("has roadmap placeholder integrations to audit", placeholders.length > 0);
 ok(
-  "no real:false integration claims connected",
-  placeholders.every((integration) => integration.status !== "connected"),
+  "the catalogue holds only wired integrations, no roadmap placeholders",
+  ["int_linkedin_rsc", "int_twenty", "int_n8n", "int_calcom", "int_notify"].every((id) => !integrations.some((i) => i.id === id)),
 );
-ok(
-  "every real:false integration has null lastSync",
-  placeholders.every((integration) => integration.lastSync === null),
-);
-ok(
-  "real:true cards still exist",
-  realCards.length > 0,
-);
-ok(
-  "GitHub real card remains connected",
-  github?.real === true && github.status === "connected" && typeof github.lastSync === "string",
-);
-ok(
-  "real:false connection tests fail closed",
-  placeholders.every((integration) => testConnection(integration).ok === false),
-);
-ok(
-  "Apify LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
-  apify?.real === true && apify.status === "connected" && typeof apify.lastSync === "string",
-);
+ok("GitHub card remains connected", github?.status === "connected" && typeof github.lastSync === "string");
+ok("Apify LinkedIn profile search card remains connected", apify?.status === "connected" && typeof apify.lastSync === "string");
 ok(
   "Apify card's description names the third-party vendor and disclaims first-party LinkedIn automation",
   /apify/i.test(apify?.description ?? "") &&
@@ -49,20 +29,23 @@ ok(
     /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? ""),
 );
 ok(
-  "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",
-  linkedinRsc?.real === false && linkedinRsc.status !== "connected",
+  "unconfigured connection tests fail closed",
+  integrations.filter((i) => i.status === "not_configured").every((i) => testConnection(i).ok === false),
 );
 
+// A stored workspace from before the cleanup loses the removed placeholder cards.
+const legacy = { ...buildSeedState(), integrations: [...integrations, { ...integrations[0], id: "int_n8n", name: "n8n" }] };
+const migrated = migrateToCurrentVersion(legacy).integrations;
+ok("migration drops cards no longer in the catalogue", !migrated.some((i) => i.id === "int_n8n"));
+ok("migration keeps the catalogue cards", migrated.length === integrations.length);
+
 // One count for every screen: a mock-mode integration is "Simulated", never "Connected".
-const seeded = defaultIntegrations();
-const counts = integrationCounts(seeded);
-ok("mock-mode connections count as simulated, not live", counts.live === 0 && counts.simulated === seeded.filter((i) => i.real && i.status === "connected").length);
-ok("counts cover built integrations only", counts.total === seeded.filter((i) => i.real).length && counts.concepts === seeded.length - counts.total);
-ok("every built integration lands in exactly one state", counts.live + counts.simulated + counts.degraded + counts.error + counts.notConfigured === counts.total);
-const firstMock = seeded.find((i) => i.real && i.status === "connected");
+const counts = integrationCounts(integrations);
+ok("mock-mode connections count as simulated, not live", counts.live === 0 && counts.simulated === integrations.filter((i) => i.status === "connected").length);
+ok("every integration lands in exactly one state", counts.live + counts.simulated + counts.degraded + counts.error + counts.notConfigured === counts.total);
+const firstMock = integrations.find((i) => i.status === "connected");
 ok("a mock-mode card reads Simulated", Boolean(firstMock) && integrationStateLabel(firstMock!) === "Simulated");
 ok("the same card in live mode reads Live", Boolean(firstMock) && integrationStateLabel({ ...firstMock!, mode: "live" }) === "Live");
-ok("a roadmap card reads Concept", seeded.filter((i) => !i.real).every((i) => integrationStateLabel(i) === "Concept"));
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

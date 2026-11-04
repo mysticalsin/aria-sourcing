@@ -80,16 +80,11 @@ export function migrateToCurrentVersion(parsed: WorkspaceState): WorkspaceState 
     bookings: parsed.bookings ?? [],
     wins: parsed.wins ?? [],
     reports: parsed.reports ?? [],
-    // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
-    // the current seed. Roadmap placeholders (`real: false`) also lose any older
-    // fabricated connected/lastSync state; real cards keep their usage history.
+    // Stored cards keep their usage history; cards no longer in the catalogue
+    // (the removed roadmap placeholders) are dropped.
     integrations:
       parsed.integrations && parsed.integrations.length > 0
-        ? parsed.integrations.map((i) => {
-            const seed = defaultIntegrations().find((d) => d.id === i.id);
-            if (!seed) return i;
-            return seed.real ? { ...i, real: true } : { ...i, real: false, status: "not_configured", lastSync: null };
-          })
+        ? parsed.integrations.filter((i) => defaultIntegrations().some((d) => d.id === i.id))
         : defaultIntegrations(),
     activities: parsed.activities ?? [],
     activeCampaignId: parsed.activeCampaignId ?? null,

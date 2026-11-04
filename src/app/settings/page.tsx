@@ -320,7 +320,6 @@ export default function SettingsPage() {
               ...i,
               status: supabaseEnabled ? ("connected" as const) : ("not_configured" as const),
               mode: supabaseEnabled ? ("live" as const) : ("mock" as const),
-              real: true,
               errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
             }
           : i,
@@ -839,7 +838,7 @@ export default function SettingsPage() {
                 </Badge>
               )}
               <span className="text-xs text-muted">
-                of {summary.total} built integrations · {summary.concepts} more on the roadmap · simulated (mock) is the safe default
+                of {summary.total} integrations · simulated (mock) is the safe default
               </span>
             </div>
 
