@@ -849,7 +849,7 @@ export default function SettingsPage() {
                 description="Integrations appear here once Aria is provisioned with its tool connections."
               />
             ) : (
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
                 {integrations.map((i) => (
                   <IntegrationCard key={i.id} integration={i} />
                 ))}

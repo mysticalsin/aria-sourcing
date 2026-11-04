@@ -9,11 +9,11 @@ type Size = "sm" | "md" | "lg" | "icon";
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    "bg-ink text-paper hover:bg-ink/90 shadow-soft",
+    "bg-ink text-paper shadow-soft hover:bg-ink/90",
   secondary:
-    "bg-tangerine text-white hover:bg-tangerine/90 shadow-soft",
+    "bg-tangerine text-white shadow-soft hover:bg-tangerine/90",
   outline:
-    "border border-ink/15 bg-surface text-ink hover:bg-canvas",
+    "border border-ink/15 bg-surface text-ink hover:border-ink/30 hover:bg-canvas",
   ghost: "text-ink hover:bg-ink/5",
   subtle: "bg-ink/5 text-ink hover:bg-ink/10",
   danger: "bg-danger text-white hover:bg-danger/90 shadow-soft",
@@ -46,7 +46,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          "inline-flex items-center justify-center font-semibold transition-[transform,background-color,color,opacity] duration-150 ease-motion-out select-none",
+          // A label never wraps: a two-line button reads as broken.
+          "inline-flex shrink-0 items-center justify-center whitespace-nowrap font-semibold transition-[transform,background-color,color,opacity] duration-150 ease-motion-out select-none",
           "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric",
           "disabled:opacity-50 disabled:pointer-events-none active:scale-[0.97]",
           VARIANTS[variant],

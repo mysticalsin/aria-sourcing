@@ -198,7 +198,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             </div>
             <div className="min-w-0 flex-1">
               <Eyebrow>{integration.category}</Eyebrow>
-              <h3 className="truncate text-base font-bold text-ink">{integration.name}</h3>
+              <h3 className="text-balance text-base font-bold leading-snug text-ink">{integration.name}</h3>
             </div>
             <Badge tone={isLive ? "tangerine" : "aqua"} size="sm">
               {isLive ? "Live" : "Mock"}
@@ -259,7 +259,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               />
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"

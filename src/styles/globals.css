@@ -139,11 +139,11 @@ body::before {
     radial-gradient(ellipse 80% 65% at 90% 108%, hsl(var(--electric) / 0.06) 0%, transparent 52%);
 }
 
-/* Accessible focus ring everywhere */
+/* Accessible focus ring everywhere. The outline follows each element's own
+   radius; forcing one here squared off every rounded field and button. */
 :focus-visible {
   outline: 2px solid hsl(var(--electric));
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* Skip-to-content link */
