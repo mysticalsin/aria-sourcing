@@ -80,8 +80,8 @@ export function migrateToCurrentVersion(parsed: WorkspaceState): WorkspaceState 
     bookings: parsed.bookings ?? [],
     wins: parsed.wins ?? [],
     reports: parsed.reports ?? [],
-    // Stored cards keep their usage history; cards no longer in the catalogue
-    // (the removed roadmap placeholders) are dropped.
+    // STATE_VERSION 20 — stored cards keep their usage history; cards no longer
+    // in the catalogue (the removed roadmap placeholders) are dropped.
     integrations:
       parsed.integrations && parsed.integrations.length > 0
         ? parsed.integrations.filter((i) => defaultIntegrations().some((d) => d.id === i.id))

@@ -1,6 +1,6 @@
 import { defaultIntegrations, integrationCounts, integrationStateLabel, testConnection } from "../src/lib/integrations";
 import { buildSeedState } from "../src/lib/seed";
-import { migrateToCurrentVersion } from "../src/lib/store/migrations";
+import { normalizeWorkspaceState } from "../src/lib/store/migrations";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -34,8 +34,9 @@ ok(
 );
 
 // A stored workspace from before the cleanup loses the removed placeholder cards.
-const legacy = { ...buildSeedState(), integrations: [...integrations, { ...integrations[0], id: "int_n8n", name: "n8n" }] };
-const migrated = migrateToCurrentVersion(legacy).integrations;
+// It goes through normalizeWorkspaceState, the path a workspace loaded from the database takes.
+const legacy = { ...buildSeedState(), version: 19, integrations: [...integrations, { ...integrations[0], id: "int_n8n", name: "n8n" }] };
+const migrated = normalizeWorkspaceState(legacy).integrations;
 ok("migration drops cards no longer in the catalogue", !migrated.some((i) => i.id === "int_n8n"));
 ok("migration keeps the catalogue cards", migrated.length === integrations.length);
 
