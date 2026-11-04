@@ -1,188 +1,94 @@
 /* ============================================================================
-   Pipeline board model — pure, dependency-free.
-   Orders active candidates by what the recruiter has to do next, one column
-   per next action, and flags the cards that have waited too long. Columns
-   group under the TAnIA funnel stages (Leads / Candidates / Offered /
-   Employees) so the board reads the same as the rest of the app.
+   Pipeline overview model — pure, dependency-free.
+   One row per campaign, one column per stage: how many candidates sit where
+   right now (the live stage, not the funnel high-water mark).
    ========================================================================== */
 
-import type { Candidate, CandidateStage, TaniaStage } from "./types";
+import type { Campaign, CandidateStage, Candidate } from "./types";
 
-export type PipelineColumnKey =
-  | "toContact"
-  | "awaitingReply"
+export type PipelineStageKey =
+  | "sourced"
+  | "contacted"
   | "replied"
-  | "toBook"
-  | "interviewing"
+  | "interested"
+  | "interview"
   | "offer"
-  | "hired";
+  | "hired"
+  | "out";
 
-export interface PipelineColumn {
-  key: PipelineColumnKey;
+export interface PipelineStage {
+  key: PipelineStageKey;
   label: string;
-  /** Underlying candidate stages shown in this column. */
+  /** Underlying candidate stages counted in this column. */
   stages: CandidateStage[];
-  /** TAnIA funnel stage the column belongs to. */
-  group: TaniaStage;
-  /** The recruiter's next action for a card here. */
-  nextAction: string;
-  /** Days of inactivity before a card is flagged overdue; "followUpGap" reads
-   *  the workspace follow-up gap; null never flags. */
-  overdueAfterDays: number | "followUpGap" | null;
-  /** Stage a dropped card is set to. Absent = not a drop target: those stages
-   *  move through outreach and replies, not by hand (same set as the drawer). */
-  dropStage?: CandidateStage;
+  /** Representative stage for the colour (see toneForStage). */
+  tone: CandidateStage;
 }
 
-export const PIPELINE_COLUMNS: readonly PipelineColumn[] = [
-  {
-    key: "toContact",
-    label: "To contact",
-    stages: ["Sourced"],
-    group: "Leads",
-    nextAction: "Check the fit, find a contact, approve the first message",
-    overdueAfterDays: 3,
-  },
-  {
-    key: "awaitingReply",
-    label: "Awaiting reply",
-    stages: ["Contacted"],
-    group: "Leads",
-    nextAction: "Follow up after the silence gap",
-    overdueAfterDays: "followUpGap",
-  },
-  {
-    key: "replied",
-    label: "Replied",
-    stages: ["Replied"],
-    group: "Leads",
-    nextAction: "Read the reply and answer",
-    overdueAfterDays: 1,
-  },
-  {
-    key: "toBook",
-    label: "To book",
-    stages: ["Interested"],
-    group: "Candidates",
-    nextAction: "Book the prequal call",
-    overdueAfterDays: 2,
-  },
-  {
-    key: "interviewing",
-    label: "Interviewing",
-    stages: ["Booked", "Interviewed"],
-    group: "Candidates",
-    nextAction: "Collect the feedback and decide",
-    overdueAfterDays: 7,
-    dropStage: "Interviewed",
-  },
-  {
-    key: "offer",
-    label: "Offer out",
-    stages: ["Offer"],
-    group: "Offered",
-    nextAction: "Chase the answer and the signature",
-    overdueAfterDays: 7,
-    dropStage: "Offer",
-  },
-  {
-    key: "hired",
-    label: "Hired",
-    stages: ["Hired"],
-    group: "Employees",
-    nextAction: "Hand over to onboarding",
-    overdueAfterDays: null,
-    dropStage: "Hired",
-  },
+export const PIPELINE_STAGES: readonly PipelineStage[] = [
+  { key: "sourced", label: "Sourced", stages: ["Sourced"], tone: "Sourced" },
+  { key: "contacted", label: "Contacted", stages: ["Contacted"], tone: "Contacted" },
+  { key: "replied", label: "Replied", stages: ["Replied"], tone: "Replied" },
+  { key: "interested", label: "Interested", stages: ["Interested"], tone: "Interested" },
+  { key: "interview", label: "Interview", stages: ["Booked", "Interviewed"], tone: "Interviewed" },
+  { key: "offer", label: "Offer", stages: ["Offer"], tone: "Offer" },
+  { key: "hired", label: "Hired", stages: ["Hired"], tone: "Hired" },
+  { key: "out", label: "Out", stages: ["Not Interested", "Rejected", "Suppressed"], tone: "Rejected" },
 ];
 
-export function pipelineColumnFor(stage: CandidateStage): PipelineColumn | null {
-  return PIPELINE_COLUMNS.find((col) => col.stages.includes(stage)) ?? null;
+export function pipelineStageFor(stage: CandidateStage): PipelineStageKey {
+  return PIPELINE_STAGES.find((s) => s.stages.includes(stage))?.key ?? "out";
 }
 
-const DAY_MS = 86_400_000;
-
-/** Latest dated thing that happened to a candidate, never in the future. */
-export function lastActivityAt(c: Candidate, now: number): number {
-  const stamps = [
-    c.createdAt,
-    c.lastContactedAt,
-    c.lastRepliedAt,
-    c.booking?.startTime,
-    ...(c.notes ?? []).map((n) => n.at),
-    ...(c.interviews ?? []).map((i) => i.scheduledFor),
-  ];
-  let latest = 0;
-  for (const iso of stamps) {
-    if (!iso) continue;
-    const t = new Date(iso).getTime();
-    if (Number.isFinite(t) && t <= now && t > latest) latest = t;
-  }
-  return latest || now;
+/** Campaigns no longer hiring; listed after the open ones. */
+export function campaignIsClosed(c: Pick<Campaign, "status">): boolean {
+  return c.status === "Filled" || c.status === "Paused";
 }
 
-function contactBlocked(c: Candidate): boolean {
-  const f = c.complianceFlags;
-  return f.doNotContact || f.suppressed || f.unsubscribed;
+export type StageBuckets = Record<PipelineStageKey, Candidate[]>;
+
+export interface PipelineRow {
+  campaign: Campaign;
+  /** Candidates per column, best match first. */
+  buckets: StageBuckets;
+  /** Everyone not in "out". */
+  inProgress: number;
+  total: number;
 }
 
-export interface PipelineEntry {
-  candidate: Candidate;
-  column: PipelineColumnKey;
-  /** Whole days since the last activity (since first contact while awaiting a reply). */
-  waitingDays: number;
-  overdue: boolean;
+function emptyBuckets(): StageBuckets {
+  return Object.fromEntries(PIPELINE_STAGES.map((s) => [s.key, [] as Candidate[]])) as StageBuckets;
 }
 
-export interface PipelineBoard {
-  columns: Record<PipelineColumnKey, PipelineEntry[]>;
-  overdue: number;
-  /** Rejected, not interested or suppressed, outside the talent pool. */
-  closed: number;
-  /** Closed but kept warm in the talent pool. */
-  pooled: number;
+export function bucketCandidates(candidates: readonly Candidate[]): StageBuckets {
+  const buckets = emptyBuckets();
+  for (const c of candidates) buckets[pipelineStageFor(c.stage)].push(c);
+  for (const list of Object.values(buckets)) list.sort((a, b) => b.matchScore - a.matchScore);
+  return buckets;
 }
 
-export function buildPipeline(
-  candidates: readonly Candidate[],
-  opts: { now: number; followUpGapDays: number },
-): PipelineBoard {
-  const columns = Object.fromEntries(PIPELINE_COLUMNS.map((col) => [col.key, [] as PipelineEntry[]])) as Record<
-    PipelineColumnKey,
-    PipelineEntry[]
-  >;
-  let overdue = 0;
-  let closed = 0;
-  let pooled = 0;
-
+/** Open campaigns first (most candidates in progress on top), closed ones last. */
+export function buildPipelineRows(campaigns: readonly Campaign[], candidates: readonly Candidate[]): PipelineRow[] {
+  const byCampaign = new Map<string, Candidate[]>();
   for (const c of candidates) {
-    const col = pipelineColumnFor(c.stage);
-    if (!col) {
-      if (c.vivier) pooled += 1;
-      else closed += 1;
-      continue;
-    }
-    // Awaiting a reply counts from the last message, like the follow-up queue.
-    const since =
-      col.key === "awaitingReply" && c.lastContactedAt
-        ? new Date(c.lastContactedAt).getTime()
-        : lastActivityAt(c, opts.now);
-    const waitingDays = Math.max(0, Math.floor((opts.now - since) / DAY_MS));
-    const limit = col.overdueAfterDays === "followUpGap" ? opts.followUpGapDays : col.overdueAfterDays;
-    const isOverdue = limit !== null && waitingDays >= limit && !contactBlocked(c);
-    if (isOverdue) overdue += 1;
-    columns[col.key].push({ candidate: c, column: col.key, waitingDays, overdue: isOverdue });
+    const list = byCampaign.get(c.campaignId);
+    if (list) list.push(c);
+    else byCampaign.set(c.campaignId, [c]);
   }
-
-  // Overdue first (longest wait on top), then the best match.
-  for (const list of Object.values(columns)) {
-    list.sort(
+  return campaigns
+    .map((campaign) => {
+      const own = byCampaign.get(campaign.id) ?? [];
+      const buckets = bucketCandidates(own);
+      return { campaign, buckets, inProgress: own.length - buckets.out.length, total: own.length };
+    })
+    .sort(
       (a, b) =>
-        Number(b.overdue) - Number(a.overdue) ||
-        (a.overdue ? b.waitingDays - a.waitingDays : 0) ||
-        b.candidate.matchScore - a.candidate.matchScore,
+        Number(campaignIsClosed(a.campaign)) - Number(campaignIsClosed(b.campaign)) || b.inProgress - a.inProgress,
     );
-  }
+}
 
-  return { columns, overdue, closed, pooled };
+export function stageTotals(rows: readonly PipelineRow[]): Record<PipelineStageKey, number> {
+  const totals = Object.fromEntries(PIPELINE_STAGES.map((s) => [s.key, 0])) as Record<PipelineStageKey, number>;
+  for (const row of rows) for (const s of PIPELINE_STAGES) totals[s.key] += row.buckets[s.key].length;
+  return totals;
 }

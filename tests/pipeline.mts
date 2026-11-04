@@ -1,11 +1,17 @@
 /* tests/pipeline.mts — area: pipeline
- * Tests src/lib/pipeline.ts (columns by next action, overdue flags, sorting,
- * closed/pooled counts) against the seed.
+ * Tests src/lib/pipeline.ts (stage columns, per-campaign rows, ordering,
+ * totals) against the seed.
  * Run: tsx tests/pipeline.mts
  */
-import { buildPipeline, lastActivityAt, pipelineColumnFor, PIPELINE_COLUMNS } from "../src/lib/pipeline";
+import {
+  buildPipelineRows,
+  campaignIsClosed,
+  pipelineStageFor,
+  PIPELINE_STAGES,
+  stageTotals,
+} from "../src/lib/pipeline";
 import { buildSeedState } from "../src/lib/seed";
-import { CANDIDATE_STAGES, type Candidate } from "../src/lib/types";
+import { CANDIDATE_STAGES, type Campaign, type Candidate } from "../src/lib/types";
 
 let pass = 0,
   fail = 0;
@@ -17,64 +23,46 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const NOW = new Date("2026-07-01T09:00:00.000Z").getTime();
-const daysAgo = (d: number) => new Date(NOW - d * 86_400_000).toISOString();
-const base = buildSeedState().candidates[0];
-function cand(over: Partial<Candidate>): Candidate {
-  return {
-    ...base,
-    notes: [],
-    interviews: [],
-    booking: null,
-    lastContactedAt: null,
-    lastRepliedAt: null,
-    vivier: false,
-    complianceFlags: { ...base.complianceFlags, doNotContact: false, suppressed: false, unsubscribed: false },
-    ...over,
-  };
-}
-const opts = { now: NOW, followUpGapDays: 3 };
+/* ---- columns ------------------------------------------------------------- */
+ok("every candidate stage is in exactly one column", CANDIDATE_STAGES.every((s) => PIPELINE_STAGES.filter((p) => p.stages.includes(s)).length === 1));
+ok("Booked and Interviewed share Interview", pipelineStageFor("Booked") === "interview" && pipelineStageFor("Interviewed") === "interview");
+ok("rejections land in Out", pipelineStageFor("Rejected") === "out" && pipelineStageFor("Not Interested") === "out" && pipelineStageFor("Suppressed") === "out");
 
-/* ---- column mapping ------------------------------------------------------ */
-const mapped = CANDIDATE_STAGES.filter((s) => pipelineColumnFor(s));
-ok("every active stage has exactly one column", mapped.every((s) => PIPELINE_COLUMNS.filter((c) => c.stages.includes(s)).length === 1));
-ok("closed stages have no column", ["Rejected", "Not Interested", "Suppressed"].every((s) => pipelineColumnFor(s as Candidate["stage"]) === null));
-ok("Booked and Interviewed share Interviewing", pipelineColumnFor("Booked")?.key === "interviewing" && pipelineColumnFor("Interviewed")?.key === "interviewing");
-ok("only human-decision columns accept drops", PIPELINE_COLUMNS.filter((c) => c.dropStage).map((c) => c.dropStage).join() === "Interviewed,Offer,Hired");
-
-/* ---- last activity ------------------------------------------------------- */
-ok("future booking is not activity", lastActivityAt(cand({ createdAt: daysAgo(5), booking: { ...({} as NonNullable<Candidate["booking"]>), startTime: daysAgo(-2) } }), NOW) === NOW - 5 * 86_400_000);
-ok("a note counts as activity", lastActivityAt(cand({ createdAt: daysAgo(5), notes: [{ id: "n", text: "x", at: daysAgo(1) }] }), NOW) === NOW - 86_400_000);
-
-/* ---- overdue ------------------------------------------------------------- */
-const board = buildPipeline(
+/* ---- rows ---------------------------------------------------------------- */
+const seed = buildSeedState();
+const camp = (id: string, status: Campaign["status"]): Campaign => ({ ...seed.campaigns[0], id, status });
+const cand = (id: string, campaignId: string, stage: Candidate["stage"], matchScore = 70): Candidate => ({
+  ...seed.candidates[0],
+  id,
+  campaignId,
+  stage,
+  matchScore,
+});
+const rows = buildPipelineRows(
+  [camp("filled", "Filled"), camp("small", "Sourcing"), camp("big", "Outreach")],
   [
-    cand({ id: "fresh", stage: "Sourced", createdAt: daysAgo(1), matchScore: 90 }),
-    cand({ id: "old", stage: "Sourced", createdAt: daysAgo(4), matchScore: 60 }),
-    cand({ id: "older", stage: "Sourced", createdAt: daysAgo(9), matchScore: 50 }),
-    cand({ id: "silent", stage: "Contacted", createdAt: daysAgo(10), lastContactedAt: daysAgo(3) }),
-    cand({ id: "quiet", stage: "Contacted", createdAt: daysAgo(10), lastContactedAt: daysAgo(2), notes: [{ id: "n", text: "x", at: daysAgo(0) }] }),
-    cand({ id: "optout", stage: "Contacted", createdAt: daysAgo(10), lastContactedAt: daysAgo(8), complianceFlags: { ...base.complianceFlags, unsubscribed: true } }),
-    cand({ id: "hired", stage: "Hired", createdAt: daysAgo(90) }),
-    cand({ id: "rej", stage: "Rejected" }),
-    cand({ id: "pool", stage: "Not Interested", vivier: true }),
+    cand("a", "big", "Sourced", 60),
+    cand("b", "big", "Sourced", 90),
+    cand("c", "big", "Booked"),
+    cand("d", "big", "Rejected"),
+    cand("e", "small", "Contacted"),
+    cand("f", "filled", "Hired"),
+    cand("g", "filled", "Interviewed"),
+    cand("h", "filled", "Offer"),
   ],
-  opts,
 );
-const ids = (k: keyof typeof board.columns) => board.columns[k].map((e) => e.candidate.id).join();
-ok("overdue first, longest wait on top, then score", ids("toContact") === "older,old,fresh");
-ok("awaiting reply uses the follow-up gap", board.columns.awaitingReply.find((e) => e.candidate.id === "silent")?.overdue === true);
-ok("awaiting reply counts from the last message, not the last note", board.columns.awaitingReply.find((e) => e.candidate.id === "quiet")?.waitingDays === 2);
-ok("opted-out candidates are never overdue", board.columns.awaitingReply.find((e) => e.candidate.id === "optout")?.overdue === false);
-ok("hired never overdue", board.columns.hired[0]?.overdue === false);
-ok("overdue total", board.overdue === 3);
-ok("closed and pooled counted apart", board.closed === 1 && board.pooled === 1);
+ok("open campaigns first, most in progress on top", rows.map((r) => r.campaign.id).join() === "big,small,filled");
+ok("in progress excludes Out", rows[0].inProgress === 3 && rows[0].total === 4);
+ok("bucket sorted by match", rows[0].buckets.sourced.map((c) => c.id).join() === "b,a");
+ok("Filled and Paused count as closed", campaignIsClosed({ status: "Filled" }) && campaignIsClosed({ status: "Paused" }) && !campaignIsClosed({ status: "Intake" }));
+const totals = stageTotals(rows);
+ok("totals add up per column", totals.sourced === 2 && totals.interview === 2 && totals.out === 1 && totals.hired === 1);
 
 /* ---- seed ---------------------------------------------------------------- */
-const seed = buildSeedState();
-const seeded = buildPipeline(seed.candidates, opts);
-const placed = Object.values(seeded.columns).reduce((n, l) => n + l.length, 0);
-ok("every seed candidate is placed or counted", placed + seeded.closed + seeded.pooled === seed.candidates.length);
+const seeded = buildPipelineRows(seed.campaigns, seed.candidates);
+const seededTotal = Object.values(stageTotals(seeded)).reduce((n, v) => n + v, 0);
+const known = new Set(seed.campaigns.map((c) => c.id));
+ok("every seed candidate of a known campaign is counted once", seededTotal === seed.candidates.filter((c) => known.has(c.campaignId)).length);
 
 console.log(`\npipeline.mts: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
