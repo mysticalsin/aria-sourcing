@@ -10,7 +10,7 @@ status: pipeline-redesigned-docker-run-still-pending
 
 ## Current state
 
-- Branch mbe-test (pushed). Gate green at 19ef9d34 (typecheck,
+- Branch mbe-test (pushed). Gate green at 182b7014 (typecheck,
   typecheck:tests, npm test exit 0; eslint clean on touched files).
 - Local Docker stack: app, db, auth, rest, gateway (Caddy 2.11.7) + the two
   init jobs. Still NOT run on a real Docker engine (none on this Windows
@@ -33,19 +33,20 @@ status: pipeline-redesigned-docker-run-still-pending
 
 ## Done this shift (owner: "Pipeline: tout est mélangé, peu clair")
 
-- 19ef9d34 Pipeline page (/funnel) redesigned for the recruiter who uses it:
-  one board of candidates only, columns = next action (To contact, Awaiting
-  reply, Replied, To book, Interviewing, Offer out, Hired) grouped under the
-  TAnIA stages; campaign scope selector (all open campaigns or one), search,
-  source chips, "overdue only" toggle; late cards first (limits per column,
-  awaiting reply = settings follow-up gap); "To contact" cards show the
-  candidateReview blocker or "Message awaiting approval"; cards open the
-  CandidateDrawer in place; drops only on Interviewing/Offer/Hired (same
-  manual stages as the drawer). Chatbox and Need columns removed (link to
-  /applicants, scope selector). FlowMatrix folded into a <details>.
-  Model: `src/lib/pipeline.ts`, test `tests/pipeline.mts` (manifest).
+- 19ef9d34 first Pipeline redesign (next-action kanban): rejected by the
+  owner ("pas encore ça"); superseded by 182b7014.
+- 182b7014 Pipeline page (/funnel) = campaign x stage overview. Owner goal:
+  "d'un coup d'oeil, où en sont les campagnes et les candidats sourcés". One
+  row per campaign, columns Sourced, Contacted, Replied, Interested,
+  Interview (Booked+Interviewed), Offer, Hired, Out; header row = totals of
+  open campaigns; each row shows status, campaignHealth and a distribution
+  bar; clicking a row unfolds its candidates under the same columns (5 per
+  cell, "show everyone"), a name opens CandidateDrawer in place. Filled and
+  Paused campaigns behind "show closed". No filters, no overdue flags, no
+  drag and drop. FlowMatrix stays folded in a <details>.
+  Model `src/lib/pipeline.ts`, test `tests/pipeline.mts` (manifest).
   Checked in Chrome via Playwright on `next dev -p 3100` (desktop, mobile,
-  drawer, overdue filter, no console errors).
+  unfold, drawer, no console errors).
 - Working on a Mac now: Node is `~/.nvm/versions/node/v24.14.1/bin`.
 
 ## Blockers
@@ -77,9 +78,8 @@ status: pipeline-redesigned-docker-run-still-pending
    keys (GOTRUE_JWT_KEYS); load `@supabase/ssr` only when Supabase is
    configured; split seed/mock-ai out of the store chunk.
 8. Node (Mac): `export PATH="$HOME/.nvm/versions/node/v24.14.1/bin:$PATH"`.
-9. Pipeline: in demo mode 44 of 46 cards show late because the seed
-   timestamps sit 7-16 days before SEED_NOW; if the owner wants a calmer demo,
-   move seed activity closer to SEED_NOW (check exec-dashboard/scoring tests).
+9. Pipeline: show the overview to a sourcer; candidate stage columns and
+   the "Out" grouping are the likely things to adjust.
 
 ## Decisions made (don't relitigate)
 
@@ -110,8 +110,8 @@ status: pipeline-redesigned-docker-run-still-pending
 
 ## Watch out
 
-- Pipeline day counts use SEED_NOW when Supabase is not configured (same as
-  the calendar), Date.now() otherwise.
+- Pipeline counts read the live candidate stage, not campaign.metrics (which
+  are high-water marks and never go down).
 
 - `_relay/codex-findings.md` keeps open findings only: when closing one, move
   it to the archive file of closed findings.
