@@ -16,6 +16,7 @@ import {
   requireBridgeExtension,
   serverError,
   transitionOutbox,
+  unreadCount,
   updateAccount,
   type OutboxRow,
 } from "@/lib/linkedin-bridge/server";
@@ -26,6 +27,10 @@ export const dynamic = "force-dynamic";
 const PollSchema = z.object({
   extensionVersion: z.string().max(40),
   sessionPresent: z.boolean(),
+  /** The ARIA LinkedIn page is open and visible in this browser. */
+  live: z.boolean().optional(),
+  /** LinkedIn's own tab showed new activity since the last poll. */
+  activity: z.boolean().optional(),
   queries: z.record(z.string().max(60), z.array(z.unknown()).max(20)).optional(),
 });
 
@@ -37,13 +42,13 @@ function ms(value: string | null): number | null {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireBridgeExtension(req, "poll", 30);
+  const auth = await requireBridgeExtension(req, "poll", 60);
   if (!auth.ok) return auth.response;
   const { svc, account } = auth;
 
   const validated = await validateBody(req, PollSchema, { maxBytes: 16_000 });
   if (!validated.ok) return validated.response;
-  const { extensionVersion, sessionPresent, queries } = validated.data;
+  const { extensionVersion, sessionPresent, live = false, activity = false, queries } = validated.data;
 
   const policy = readBridgePolicy();
   const now = new Date();
@@ -107,6 +112,8 @@ export async function POST(req: NextRequest) {
         queries: mergedQueries,
       },
       sessionPresent,
+      live,
+      linkedInActivity: activity,
       threadsToRefresh: ((threads.data as { conversation_urn: string }[] | null) ?? []).map((t) => t.conversation_urn),
       nextSend: pending,
       sendSlot: slot,
@@ -137,6 +144,11 @@ export async function POST(req: NextRequest) {
         lastError: account.last_error,
       },
       nextSendAt: !slot.allowed && next ? new Date(slot.retryAt).toISOString() : null,
+      stats: {
+        unread: await unreadCount(svc, account.id),
+        sentLast24h: recent.filter((t) => t > now.getTime() - 24 * 60 * 60 * 1000).length,
+        dailySendCap: policy.dailySendCap,
+      },
     });
   } catch {
     return serverError("Bridge poll failed.");

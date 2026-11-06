@@ -386,6 +386,16 @@ body::before {
   scrollbar-width: none;
 }
 
+/* LinkedIn inbox: a sheen across a message on its way */
+@keyframes li-sending-sheen {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+.li-sending-sheen {
+  background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.3) 50%, transparent 80%);
+  animation: li-sending-sheen 1.3s var(--ease-motion-out) infinite;
+}
+
 /* Respect reduced motion globally */
 @keyframes reduced-fade-in {
   from { opacity: 0.01; }
@@ -414,7 +424,8 @@ body::before {
   .spin-slow,
   .status-live,
   .bot-glow,
-  .dot-typing span {
+  .dot-typing span,
+  .li-sending-sheen {
     animation: none !important;
   }
 

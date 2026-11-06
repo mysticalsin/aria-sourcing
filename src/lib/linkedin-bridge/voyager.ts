@@ -76,6 +76,13 @@ export function isConversationUrn(value: unknown): value is string {
   return typeof value === "string" && CONVERSATION_URN.test(value);
 }
 
+/** The LinkedIn web URL of a conversation (opens it in LinkedIn's messaging). */
+export function linkedInThreadUrl(conversationUrn: string): string | null {
+  if (!isConversationUrn(conversationUrn)) return null;
+  const threadId = conversationUrn.slice(conversationUrn.lastIndexOf(",") + 1, -1);
+  return `https://www.linkedin.com/messaging/thread/${encodeURIComponent(threadId)}/`;
+}
+
 /**
  * The public id of a LinkedIn profile URL ("jane-doe" in
  * https://www.linkedin.com/in/jane-doe/), or null when the input is not one.

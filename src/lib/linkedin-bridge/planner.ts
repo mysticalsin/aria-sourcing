@@ -38,7 +38,7 @@ export interface PendingSend {
 
 export interface PlanInput {
   now: number;
-  policy: Pick<BridgePolicy, "inboxSyncIntervalMs">;
+  policy: Pick<BridgePolicy, "inboxSyncIntervalMs" | "liveInboxSyncIntervalMs" | "activitySyncMinGapMs">;
   account: {
     memberId: string | null;
     identityCheckedAt: number | null;
@@ -48,6 +48,10 @@ export interface PlanInput {
   };
   /** The extension saw a LinkedIn session cookie in the browser. */
   sessionPresent: boolean;
+  /** The ARIA LinkedIn page is open and visible: refresh the inbox faster. */
+  live: boolean;
+  /** LinkedIn's own tab showed new activity (its unread count went up). */
+  linkedInActivity: boolean;
   /** Conversation URNs whose messages need a refresh, most recent first. */
   threadsToRefresh: string[];
   nextSend: PendingSend | null;
@@ -98,7 +102,10 @@ export function planTasks(input: PlanInput): BridgeTask[] {
     }
   }
 
-  if (account.lastInboxSyncAt === null || now - account.lastInboxSyncAt >= input.policy.inboxSyncIntervalMs) {
+  const sinceInboxSync = account.lastInboxSyncAt === null ? Number.POSITIVE_INFINITY : now - account.lastInboxSyncAt;
+  const inboxInterval = input.live ? input.policy.liveInboxSyncIntervalMs : input.policy.inboxSyncIntervalMs;
+  const activityDue = input.linkedInActivity && sinceInboxSync >= input.policy.activitySyncMinGapMs;
+  if (sinceInboxSync >= inboxInterval || activityDue) {
     tasks.push({
       id: `conversations:${now}`,
       op: "conversations",

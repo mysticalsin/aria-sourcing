@@ -208,52 +208,152 @@ function iso(ms: number | null): string | null {
 interface StoredConversation {
   id: string;
   conversation_urn: string;
+  title: string | null;
   last_activity_at: string | null;
+  unread: boolean;
   messages_synced_at: string | null;
   needs_message_sync: boolean;
   last_message_preview: string | null;
+  last_message_direction: "inbound" | "outbound" | null;
+  last_message_sender: string | null;
+  participants: unknown[];
 }
 
-/** Upsert one inbox page and the messages LinkedIn embedded in it. */
+/** Order-stable fingerprint: Postgres jsonb does not keep object key order. */
+function participantsKey(list: unknown[]): string {
+  return (Array.isArray(list) ? list : [])
+    .map((p) => {
+      const o = (p ?? {}) as Record<string, unknown>;
+      return [o.memberId, o.name, o.profileUrl, o.headline].map((v) => (v == null ? "" : String(v))).join("|");
+    })
+    .join(";");
+}
+
+/**
+ * Upsert one inbox page and the messages LinkedIn embedded in it. A
+ * conversation row is written only when something about it changed, so its
+ * updated_at (which drives the live view) moves only on real news.
+ */
 export async function storeConversations(svc: Svc, accountId: string, parsed: ParsedConversation[]): Promise<number> {
   if (!parsed.length) return 0;
   const urns = parsed.map((c) => c.urn);
   const { data: existingRows, error: readError } = await svc
     .from("linkedin_bridge_conversations")
-    .select("id, conversation_urn, last_activity_at, messages_synced_at, needs_message_sync, last_message_preview")
+    .select(
+      "id, conversation_urn, title, last_activity_at, unread, messages_synced_at, needs_message_sync, last_message_preview, last_message_direction, last_message_sender, participants",
+    )
     .eq("account_id", accountId)
     .in("conversation_urn", urns);
   if (readError) throw new Error("linkedin_bridge_conversations read failed");
   const existing = new Map((existingRows as StoredConversation[] | null ?? []).map((row) => [row.conversation_urn, row]));
 
   const now = new Date().toISOString();
-  const rows = parsed.map((c) => {
+  const rows = parsed.flatMap((c) => {
     const known = existing.get(c.urn);
     const knownActivity = known?.last_activity_at ? Date.parse(known.last_activity_at) : null;
     const newer = c.lastActivityAt !== null && (knownActivity === null || c.lastActivityAt > knownActivity);
     const latest = c.messages[c.messages.length - 1];
-    return {
+    const row = {
       account_id: accountId,
       conversation_urn: c.urn,
       title: c.title ? c.title.slice(0, 300) : null,
       participants: c.participants.slice(0, 50),
       group_chat: c.groupChat,
-      last_activity_at: iso(c.lastActivityAt) ?? known?.last_activity_at ?? null,
+      last_activity_at: newer ? iso(c.lastActivityAt) : (known?.last_activity_at ?? iso(c.lastActivityAt)),
       unread: c.unread,
       last_message_preview: latest ? preview(latest.body) : (known?.last_message_preview ?? null),
+      last_message_direction: latest ? latest.direction : (known?.last_message_direction ?? null),
+      last_message_sender: latest ? latest.senderName.slice(0, 200) : (known?.last_message_sender ?? null),
       needs_message_sync: !known || !known.messages_synced_at || known.needs_message_sync || newer,
       updated_at: now,
     };
+    const unchanged =
+      known &&
+      !newer &&
+      known.unread === row.unread &&
+      known.title === row.title &&
+      known.last_message_preview === row.last_message_preview &&
+      known.last_message_direction === row.last_message_direction &&
+      known.needs_message_sync === row.needs_message_sync &&
+      participantsKey(known.participants) === participantsKey(row.participants);
+    return unchanged ? [] : [row];
   });
-  const { data: saved, error } = await svc
-    .from("linkedin_bridge_conversations")
-    .upsert(rows, { onConflict: "account_id,conversation_urn" })
-    .select("id, conversation_urn");
-  if (error) throw new Error("linkedin_bridge_conversations upsert failed");
-  const idByUrn = new Map((saved as { id: string; conversation_urn: string }[] | null ?? []).map((r) => [r.conversation_urn, r.id]));
+  const idByUrn = new Map([...existing.values()].map((row) => [row.conversation_urn, row.id]));
+  if (rows.length) {
+    const { data: saved, error } = await svc
+      .from("linkedin_bridge_conversations")
+      .upsert(rows, { onConflict: "account_id,conversation_urn" })
+      .select("id, conversation_urn");
+    if (error) throw new Error("linkedin_bridge_conversations upsert failed");
+    for (const r of (saved as { id: string; conversation_urn: string }[] | null) ?? []) idByUrn.set(r.conversation_urn, r.id);
+  }
   const embedded = parsed.flatMap((c) => c.messages);
   await storeMessages(svc, accountId, idByUrn, embedded);
   return rows.length;
+}
+
+/** LinkedIn says unread, and nothing newer arrived since the user opened it in ARIA. */
+export function unreadInAria(row: { unread: boolean; seen_at: string | null; last_activity_at: string | null }): boolean {
+  if (!row.unread) return false;
+  if (!row.seen_at) return true;
+  return row.last_activity_at !== null && Date.parse(row.last_activity_at) > Date.parse(row.seen_at);
+}
+
+export async function unreadCount(svc: Svc, accountId: string): Promise<number> {
+  const { data, error } = await svc
+    .from("linkedin_bridge_conversations")
+    .select("unread, seen_at, last_activity_at")
+    .eq("account_id", accountId)
+    .eq("unread", true)
+    .limit(500);
+  if (error) throw new Error("linkedin_bridge_conversations read failed");
+  return ((data as { unread: boolean; seen_at: string | null; last_activity_at: string | null }[] | null) ?? []).filter(unreadInAria)
+    .length;
+}
+
+export interface BridgeVersion {
+  /** Pairing, extension heartbeat and sync health. */
+  status: string;
+  /** Conversations (and through them, messages). */
+  inbox: string;
+  outbox: string;
+}
+
+/** Cheap fingerprint of everything the inbox page shows; the live stream diffs it. */
+export async function bridgeVersion(ctx: BridgeUserContext): Promise<BridgeVersion> {
+  const account = await accountForUser(ctx);
+  if (!account) return { status: "unpaired", inbox: "", outbox: "" };
+  const [conversation, outbox] = await Promise.all([
+    ctx.svc
+      .from("linkedin_bridge_conversations")
+      .select("updated_at")
+      .eq("account_id", account.id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    ctx.svc
+      .from("linkedin_bridge_outbox")
+      .select("updated_at")
+      .eq("account_id", account.id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (conversation.error || outbox.error) throw new Error("linkedin bridge version read failed");
+  return {
+    status: [
+      account.id,
+      account.paired_at,
+      account.member_id,
+      account.session_present,
+      account.last_seen_at,
+      account.last_inbox_sync_at,
+      account.last_error_at,
+      account.backoff_until,
+    ].join("|"),
+    inbox: (conversation.data as { updated_at?: string } | null)?.updated_at ?? "",
+    outbox: (outbox.data as { updated_at?: string } | null)?.updated_at ?? "",
+  };
 }
 
 export async function storeMessages(

@@ -1,8 +1,9 @@
 // ARIA LinkedIn Bridge — service worker.
 //
-// Every minute: ask ARIA what to do (poll), run each task as a plain fetch
-// inside a www.linkedin.com tab of this browser (the user's own session, IP
-// and browser), and post LinkedIn's raw answer back to ARIA. ARIA parses it.
+// Every minute (and right away when ARIA asks): ask ARIA what to do (poll),
+// run each task as a plain fetch inside a www.linkedin.com tab of this
+// browser (the user's own session, IP and browser), and post LinkedIn's raw
+// answer back to ARIA. ARIA parses it.
 //
 // What never leaves this browser: the li_at session cookie and the
 // JSESSIONID value. ARIA only learns whether a LinkedIn session exists.
@@ -14,13 +15,20 @@ import { parseCapturedQuery } from "./queries.js";
 const VERSION = chrome.runtime.getManifest().version;
 const ALARM = "aria-linkedin-poll";
 const DEFAULT_ARIA_URL = "http://localhost:3000";
-// At most 4 polls x 2 thread refreshes a minute: a first sync of the inbox
+// At most 4 polls x 2 thread refreshes per cycle: a first sync of the inbox
 // spreads over a few minutes instead of a burst.
 const MAX_POLLS_PER_CYCLE = 4;
 const MAX_RESPONSE_CHARS = 3000000;
 const TAB_LOAD_TIMEOUT_MS = 30000;
 const QUERY_NAMES = ["messengerConversations", "messengerMessages"];
 const MAX_QUERIES_PER_NAME = 6;
+const PAIRING_TOKEN = /^aria_lnb_[A-Za-z0-9_-]{43}$/;
+/** The ARIA page pings every 15 s while visible; it counts as open for 45 s. */
+const LIVE_WINDOW_MS = 45000;
+const LIVE_POLL_GAP_MS = 12000;
+const ACTIVITY_MIN_GAP_MS = 15000;
+const MIN_CYCLE_GAP_MS = 1500;
+const REMOTE_SCRIPT_ID = "aria-page-remote";
 
 // ── Settings and status ─────────────────────────────────────────────────────
 
@@ -33,9 +41,68 @@ async function settings() {
   };
 }
 
+function originOf(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+async function ariaOrigin() {
+  return originOf((await settings()).ariaUrl);
+}
+
+/** What the ARIA page and the popup may know: never the pairing code. */
+async function publicStatus() {
+  const [{ status = {} }, cfg] = await Promise.all([chrome.storage.local.get("status"), settings()]);
+  return {
+    version: VERSION,
+    paired: Boolean(cfg.token),
+    state: status.state || "idle",
+    running: Boolean(status.running),
+    message: status.message || "",
+    sessionPresent: Boolean(status.sessionPresent),
+    accountName: (status.account && status.account.displayName) || null,
+    lastPollAt: status.lastPollAt || null,
+    lastRunAt: status.lastRunAt || null,
+    stats: status.stats || null,
+  };
+}
+
+async function broadcastStatus() {
+  const origin = await ariaOrigin();
+  if (!origin) return;
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: `${origin}/*` });
+  } catch {
+    return; // no host permission for that origin
+  }
+  if (!tabs.length) return;
+  const status = await publicStatus();
+  for (const tab of tabs) chrome.tabs.sendMessage(tab.id, { type: "status", status }).catch(() => undefined);
+}
+
 async function setStatus(patch) {
   const { status = {} } = await chrome.storage.local.get("status");
   await chrome.storage.local.set({ status: { ...status, ...patch, updatedAt: Date.now() } });
+  await broadcastStatus();
+}
+
+async function setBadge(state, unread) {
+  try {
+    if (state === "error") {
+      await chrome.action.setBadgeBackgroundColor({ color: "#dc2626" });
+      await chrome.action.setBadgeText({ text: "!" });
+      return;
+    }
+    await chrome.action.setBadgeBackgroundColor({ color: "#6600AE" });
+    if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: "#ffffff" });
+    await chrome.action.setBadgeText({ text: unread > 0 ? (unread > 99 ? "99+" : String(unread)) : "" });
+  } catch {
+    // badge is cosmetic
+  }
 }
 
 // ── GraphQL query ids used by LinkedIn's own web app ───────────────────────
@@ -168,7 +235,7 @@ async function aria(cfg, path, body) {
     throw new AriaError(`ARIA is not reachable at ${cfg.ariaUrl}.`);
   }
   const json = await response.json().catch(() => ({}));
-  if (response.status === 401) throw new AriaError("ARIA does not know this pairing code any more. Pair again from the ARIA LinkedIn page.");
+  if (response.status === 401) throw new AriaError("ARIA does not know this pairing code any more. Connect again from the ARIA LinkedIn page.");
   if (response.status === 404 && json.error === "linkedin_bridge_disabled") {
     throw new AriaError("The LinkedIn bridge is turned off on this ARIA server (LINKEDIN_BRIDGE_ENABLED).");
   }
@@ -179,30 +246,60 @@ async function aria(cfg, path, body) {
 // ── Cycle ───────────────────────────────────────────────────────────────────
 
 let running = false;
+let rerun = false;
+let scheduled = false;
+let lastCycleAt = 0;
+let liveUntil = 0;
+let activityPending = false;
+let lastActivityAt = 0;
+
+/** Run a cycle as soon as possible, without overlapping or bursting. */
+function requestCycle() {
+  if (running) {
+    rerun = true;
+    return;
+  }
+  if (scheduled) return;
+  scheduled = true;
+  const wait = Math.max(0, lastCycleAt + MIN_CYCLE_GAP_MS - Date.now());
+  setTimeout(() => {
+    scheduled = false;
+    void cycle();
+  }, wait);
+}
 
 async function cycle() {
   if (running) return;
   running = true;
+  lastCycleAt = Date.now();
   try {
     const cfg = await settings();
     if (!cfg.token) {
-      await setStatus({ state: "unpaired", message: "Paste the pairing code from ARIA (LinkedIn page)." });
+      await setStatus({ state: "unpaired", message: "Open the LinkedIn page in ARIA and click Connect." });
+      await setBadge("unpaired", 0);
       return;
     }
     const session = await linkedInSession();
+    await setStatus({ running: true, sessionPresent: session.present });
     let ran = 0;
     for (let i = 0; i < MAX_POLLS_PER_CYCLE; i += 1) {
       const poll = await aria(cfg, "/api/linkedin/bridge/poll", {
         extensionVersion: VERSION,
         sessionPresent: session.present,
+        live: Date.now() < liveUntil,
+        activity: activityPending,
         queries: await capturedQueries(),
       });
+      activityPending = false;
+      const state = session.present ? "connected" : "no-session";
       await setStatus({
-        state: session.present ? "connected" : "no-session",
+        state,
         message: poll.account && poll.account.lastError ? poll.account.lastError : "",
         account: poll.account || null,
+        stats: poll.stats || null,
         lastPollAt: Date.now(),
       });
+      await setBadge(poll.account && poll.account.lastError ? "error" : state, (poll.stats && poll.stats.unread) || 0);
       const tasks = Array.isArray(poll.tasks) ? poll.tasks : [];
       if (!tasks.length) break;
       let stop = false;
@@ -221,26 +318,96 @@ async function cycle() {
     if (ran) await setStatus({ lastRunAt: Date.now(), lastRunTasks: ran });
   } catch (err) {
     await setStatus({ state: "error", message: err instanceof AriaError ? err.message : String((err && err.message) || err) });
+    await setBadge("error", 0);
   } finally {
     running = false;
+    await setStatus({ running: false }).catch(() => undefined);
+    if (rerun) {
+      rerun = false;
+      requestCycle();
+    }
   }
 }
+
+// ── Messages from the popup, the ARIA page and the LinkedIn tab ─────────────
+
+async function handleMessage(message, sender) {
+  const fromTab = Boolean(sender.tab);
+  const senderOrigin = originOf(sender.url || "");
+  const fromAria = fromTab && senderOrigin !== null && senderOrigin === (await ariaOrigin());
+  switch (message.type) {
+    case "sync-now":
+      // The popup (an extension page) or the configured ARIA page.
+      if (fromTab && !fromAria) return { ok: false };
+      requestCycle();
+      return { ok: true };
+    case "page-status":
+      if (!fromAria) return { ok: false };
+      return { ok: true, status: await publicStatus() };
+    case "live":
+      if (!fromAria) return { ok: false };
+      liveUntil = Date.now() + LIVE_WINDOW_MS;
+      if (!running && Date.now() - lastCycleAt > LIVE_POLL_GAP_MS) requestCycle();
+      return { ok: true };
+    case "pair":
+      // One-click pairing: only from the ARIA address set in the extension.
+      if (!fromAria) return { ok: false, error: "This page is not the ARIA address set in the extension." };
+      if (typeof message.token !== "string" || !PAIRING_TOKEN.test(message.token)) return { ok: false, error: "Invalid pairing code." };
+      await chrome.storage.local.set({ token: message.token });
+      await setStatus({ state: "pairing", message: "", account: null, stats: null });
+      requestCycle();
+      return { ok: true };
+    case "linkedin-activity":
+      if (!fromTab || senderOrigin !== LINKEDIN_ORIGIN) return { ok: false };
+      activityPending = true;
+      if (Date.now() - lastActivityAt > ACTIVITY_MIN_GAP_MS) {
+        lastActivityAt = Date.now();
+        requestCycle();
+      }
+      return { ok: true };
+    default:
+      return { ok: false };
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || typeof message.type !== "string" || sender.id !== chrome.runtime.id) return false;
+  handleMessage(message, sender).then(sendResponse, (err) => sendResponse({ ok: false, error: String((err && err.message) || err) }));
+  return true;
+});
+
+// ── A remote (https) ARIA needs the page script registered at runtime ───────
+
+async function syncAriaContentScript() {
+  try {
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [REMOTE_SCRIPT_ID] });
+    if (registered.length) await chrome.scripting.unregisterContentScripts({ ids: [REMOTE_SCRIPT_ID] });
+    const origin = await ariaOrigin();
+    if (!origin || !origin.startsWith("https://")) return;
+    if (!(await chrome.permissions.contains({ origins: [`${origin}/*`] }))) return;
+    await chrome.scripting.registerContentScripts([
+      { id: REMOTE_SCRIPT_ID, matches: [`${origin}/*`], js: ["aria-page.js"], runAt: "document_idle" },
+    ]);
+  } catch {
+    // one-click pairing then needs the pairing code pasted by hand
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.ariaUrl) void syncAriaContentScript();
+});
 
 async function ensureAlarm() {
   const existing = await chrome.alarms.get(ALARM);
   if (!existing) await chrome.alarms.create(ALARM, { periodInMinutes: 1 });
 }
 
-chrome.runtime.onInstalled.addListener(() => void ensureAlarm());
+chrome.runtime.onInstalled.addListener(() => {
+  void ensureAlarm();
+  void syncAriaContentScript();
+});
 chrome.runtime.onStartup.addListener(() => void ensureAlarm());
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) void cycle();
-});
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message && message.type === "sync-now") {
-    cycle().then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  return false;
+  if (alarm.name === ALARM) requestCycle();
 });
 void ensureAlarm();

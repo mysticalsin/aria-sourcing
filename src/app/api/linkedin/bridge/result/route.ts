@@ -143,6 +143,8 @@ async function handleMessages(svc: Svc, account: BridgeAccount, ref: string | nu
   if (latest) {
     patch.last_message_preview = latest.body.replace(/\s+/g, " ").trim().slice(0, 200);
     patch.last_activity_at = new Date(latest.sentAt).toISOString();
+    patch.last_message_direction = latest.direction;
+    patch.last_message_sender = latest.senderName.slice(0, 200);
   }
   await svc.from("linkedin_bridge_conversations").update(patch).eq("id", conversation.id);
 }
@@ -200,6 +202,18 @@ async function handleSend(svc: Svc, account: BridgeAccount, ref: string | null, 
       ? [{ memberId: item.recipient_member_id, name: item.recipient_name ?? item.recipient_public_id ?? "LinkedIn member", profileUrl: item.recipient_public_id ? `https://www.linkedin.com/in/${item.recipient_public_id}/` : null, headline: null }]
       : [];
     conversationId = await ensureConversation(svc, account.id, conversationUrn, participants);
+    // The list shows the reply at once, as read: the user just wrote it.
+    await svc
+      .from("linkedin_bridge_conversations")
+      .update({
+        last_message_preview: item.body.replace(/\s+/g, " ").trim().slice(0, 200),
+        last_message_direction: "outbound",
+        last_message_sender: (account.display_name ?? "You").slice(0, 200),
+        last_activity_at: sentAt,
+        seen_at: sentAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId);
     if (result.messageUrn) {
       await storeMessages(svc, account.id, new Map([[conversationUrn, conversationId]]), [
         {

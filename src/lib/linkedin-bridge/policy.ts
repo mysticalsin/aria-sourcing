@@ -15,6 +15,10 @@ export interface BridgePolicy {
   minSendIntervalMs: number;
   /** How often the inbox list is refreshed while the extension is online. */
   inboxSyncIntervalMs: number;
+  /** Faster refresh while the ARIA LinkedIn page is open and visible. */
+  liveInboxSyncIntervalMs: number;
+  /** Minimum gap between two refreshes triggered by LinkedIn activity. */
+  activitySyncMinGapMs: number;
   /** Conversations whose messages are refreshed per poll. */
   threadRefreshPerPoll: number;
   /** Pause after LinkedIn answers 429 or asks for a security check. */
@@ -39,6 +43,8 @@ export function readBridgePolicy(env: NodeJS.ProcessEnv = process.env): BridgePo
     dailySendCap: intFromEnv(env.LINKEDIN_BRIDGE_DAILY_SEND_CAP, 40, 1, 150),
     minSendIntervalMs: intFromEnv(env.LINKEDIN_BRIDGE_MIN_SEND_INTERVAL_SECONDS, 90, 20, 3600) * 1000,
     inboxSyncIntervalMs: intFromEnv(env.LINKEDIN_BRIDGE_SYNC_SECONDS, 180, 60, 3600) * 1000,
+    liveInboxSyncIntervalMs: intFromEnv(env.LINKEDIN_BRIDGE_LIVE_SYNC_SECONDS, 30, 15, 600) * 1000,
+    activitySyncMinGapMs: 15_000,
     threadRefreshPerPoll: 2,
     backoffMs: 30 * 60 * 1000,
     sendClaimMs: 5 * 60 * 1000,

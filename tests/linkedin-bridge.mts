@@ -363,9 +363,11 @@ function plan(overrides: Omit<Partial<PlanInput>, "account"> & { account?: Parti
   const { account, ...rest } = overrides;
   return planTasks({
     now,
-    policy: { inboxSyncIntervalMs: 180_000 },
+    policy: { inboxSyncIntervalMs: 180_000, liveInboxSyncIntervalMs: 30_000, activitySyncMinGapMs: 15_000 },
     account: { memberId: SELF, identityCheckedAt: now - 1000, lastInboxSyncAt: now - 10_000, backoffUntil: null, queries: null, ...account },
     sessionPresent: true,
+    live: false,
+    linkedInActivity: false,
     threadsToRefresh: [],
     nextSend: null,
     sendSlot: { allowed: true },
@@ -400,6 +402,15 @@ test("planner: a new chat resolves the profile first; pacing holds the send", ()
   const resolved = plan({ nextSend: { ...pending, recipientMemberId: OTHER } });
   assert.deepEqual(JSON.parse(resolved[0].request.body!).hostRecipientUrns, [`urn:li:fsd_profile:${OTHER}`]);
   assert.deepEqual(plan({ nextSend: pending, sendSlot: { allowed: false, reason: "min_interval", retryAt: 0 } }), []);
+});
+
+test("planner: faster inbox refresh while the ARIA page is open, and on LinkedIn activity", () => {
+  const now = 1_730_000_000_000;
+  assert.deepEqual(plan({ account: { lastInboxSyncAt: now - 40_000 } }).map((t) => t.op), [], "3 min interval by default");
+  assert.deepEqual(plan({ live: true, account: { lastInboxSyncAt: now - 40_000 } }).map((t) => t.op), ["conversations"]);
+  assert.deepEqual(plan({ live: true, account: { lastInboxSyncAt: now - 10_000 } }).map((t) => t.op), []);
+  assert.deepEqual(plan({ linkedInActivity: true, account: { lastInboxSyncAt: now - 20_000 } }).map((t) => t.op), ["conversations"]);
+  assert.deepEqual(plan({ linkedInActivity: true, account: { lastInboxSyncAt: now - 5_000 } }).map((t) => t.op), [], "activity is debounced");
 });
 
 // ── Tokens and answers ──────────────────────────────────────────────────────
@@ -461,7 +472,18 @@ test("only a signed-in person can queue a message; the extension cannot", () => 
   const callers = sourceFiles("src")
     .filter((path) => readFileSync(path, "utf8").includes("/api/linkedin/outbox"))
     .map((path) => path.replaceAll("\\", "/"));
-  assert.deepEqual(callers, ["src/app/linkedin/page.tsx"]);
+  assert.ok(callers.length > 0);
+  assert.deepEqual(
+    callers.filter((path) => !path.startsWith("src/app/linkedin/") && !path.startsWith("src/components/linkedin/")),
+    [],
+    "only the LinkedIn inbox UI queues messages",
+  );
+  // The UI never sends on its own: every POST to the outbox sits in a user action.
+  for (const file of callers.filter((path) => path.startsWith("src/components/linkedin/"))) {
+    const source = readFileSync(file, "utf8");
+    if (!/"\/api\/linkedin\/outbox",\s*postJson/.test(source)) continue;
+    assert.match(source, /async function send\(text: string\)/, `${file} posts to the outbox only from send()`);
+  }
 });
 
 test("no LinkedIn credential is stored or relayed", () => {
@@ -479,7 +501,32 @@ test("no LinkedIn credential is stored or relayed", () => {
   assert.match(background, /present: Boolean\(liAt && liAt\.value\)/);
   assert.doesNotMatch(background, /csrf[^\n]*JSON\.stringify|aria\([^)]*csrf/);
 
+  // One-click pairing and page signals only from the configured ARIA origin.
+  const pairCase = background.slice(background.indexOf('case "pair":'), background.indexOf('case "linkedin-activity":'));
+  assert.match(pairCase, /if \(!fromAria\) return/);
+  assert.match(background, /const fromAria = fromTab && senderOrigin !== null && senderOrigin === \(await ariaOrigin\(\)\)/);
+  assert.match(background, /case "linkedin-activity":\s*\n\s*if \(!fromTab \|\| senderOrigin !== LINKEDIN_ORIGIN\) return/);
+  assert.match(background, /sender\.id !== chrome\.runtime\.id/);
+  const publicStatus = background.slice(background.indexOf("async function publicStatus"), background.indexOf("async function broadcastStatus"));
+  assert.doesNotMatch(publicStatus, /token:|csrf|li_at/, "the status shared with pages carries no secret");
+
+  const pageRelay = readFileSync("extensions/linkedin-bridge/aria-page.js", "utf8");
+  assert.match(pageRelay, /event\.source !== window \|\| event\.origin !== window\.location\.origin/);
+  assert.match(pageRelay, /window\.postMessage\(\{ source: FROM_EXTENSION, \.\.\.message \}, window\.location\.origin\)/);
+  assert.doesNotMatch(pageRelay.slice(pageRelay.indexOf("toPage({")), /toPage\(\{[^}]*token/, "the pairing code is never posted back to the page");
+
+  const linkedInWatcher = readFileSync("extensions/linkedin-bridge/linkedin-page.js", "utf8");
+  assert.doesNotMatch(linkedInWatcher, /fetch\(|XMLHttpRequest|document\.cookie|innerText|textContent/, "the LinkedIn content script stays passive");
+
   const manifest = JSON.parse(readFileSync("extensions/linkedin-bridge/manifest.json", "utf8")) as Record<string, string[]>;
   assert.deepEqual(manifest.host_permissions, ["https://www.linkedin.com/*", "http://localhost/*", "http://127.0.0.1/*"]);
   assert.ok(!JSON.stringify(manifest).includes("<all_urls>"));
+  const scripts = (manifest as unknown as { content_scripts: { matches: string[]; js: string[] }[] }).content_scripts;
+  assert.deepEqual(
+    scripts.map((c) => [c.js.join(), c.matches.join()]),
+    [
+      ["aria-page.js", "http://localhost/*,http://127.0.0.1/*"],
+      ["linkedin-page.js", "https://www.linkedin.com/*"],
+    ],
+  );
 });

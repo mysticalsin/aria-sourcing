@@ -3,6 +3,7 @@
 
 import type { NextRequest } from "next/server";
 import { OUTBOX_COLUMNS, accountForUser, notFound, okJson, requireBridgeUser, serverError } from "@/lib/linkedin-bridge/server";
+import { linkedInThreadUrl } from "@/lib/linkedin-bridge/voyager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const svc = auth.ctx.svc;
     const { data: conversation, error } = await svc
       .from("linkedin_bridge_conversations")
-      .select("id, conversation_urn, title, participants, group_chat, last_activity_at, unread, messages_synced_at, needs_message_sync")
+      .select("id, conversation_urn, title, participants, group_chat, last_activity_at, unread, seen_at, messages_synced_at, needs_message_sync")
       .eq("account_id", account.id)
       .eq("id", id)
       .maybeSingle();
@@ -39,13 +40,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         .select(OUTBOX_COLUMNS)
         .eq("account_id", account.id)
         .eq("conversation_id", id)
-        .in("status", ["queued", "resolving", "sending", "failed", "unknown"])
+        // Recently sent items too: the page morphs them into the real message.
+        .or(`status.in.(queued,resolving,sending,failed,unknown),and(status.eq.sent,updated_at.gte."${new Date(Date.now() - 10 * 60 * 1000).toISOString()}")`)
         .order("created_at", { ascending: true })
         .limit(50),
     ]);
     if (messages.error || outbox.error) return serverError("Conversation unavailable.");
+    const row = conversation as { conversation_urn: string };
     return okJson({
-      conversation,
+      conversation: { ...conversation, thread_url: linkedInThreadUrl(row.conversation_urn) },
       // Newest 200, shown oldest first.
       messages: [...(messages.data ?? [])].reverse(),
       outbox: outbox.data ?? [],

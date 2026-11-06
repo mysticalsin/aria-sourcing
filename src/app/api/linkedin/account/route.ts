@@ -13,6 +13,7 @@ import {
   recentSendTimes,
   requireBridgeUser,
   serverError,
+  unreadCount,
 } from "@/lib/linkedin-bridge/server";
 
 export const runtime = "nodejs";
@@ -54,6 +55,7 @@ export async function GET(req: NextRequest) {
         minSendIntervalSeconds: Math.round(policy.minSendIntervalMs / 1000),
         sentLast24h: sent.filter((t) => t > now.getTime() - 24 * 60 * 60 * 1000).length,
       },
+      unread: await unreadCount(auth.ctx.svc, account.id),
     });
   } catch {
     return serverError("LinkedIn bridge status unavailable.");

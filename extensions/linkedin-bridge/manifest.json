@@ -1,12 +1,22 @@
 {
   "manifest_version": 3,
   "name": "ARIA LinkedIn Bridge (experimental)",
-  "version": "0.1.0",
+  "short_name": "ARIA LinkedIn",
+  "version": "0.2.0",
   "description": "Lets ARIA show your LinkedIn inbox and send the messages you write in ARIA, from your own LinkedIn session in this browser.",
   "minimum_chrome_version": "120",
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
   "permissions": ["storage", "alarms", "scripting", "cookies", "webRequest"],
   "host_permissions": ["https://www.linkedin.com/*", "http://localhost/*", "http://127.0.0.1/*"],
   "optional_host_permissions": ["https://*/*"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html", "default_title": "ARIA LinkedIn Bridge" }
+  "content_scripts": [
+    { "matches": ["http://localhost/*", "http://127.0.0.1/*"], "js": ["aria-page.js"], "run_at": "document_idle" },
+    { "matches": ["https://www.linkedin.com/*"], "js": ["linkedin-page.js"], "run_at": "document_idle" }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ARIA LinkedIn Bridge",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png" }
+  }
 }

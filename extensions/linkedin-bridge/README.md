@@ -10,19 +10,28 @@ account, knowing LinkedIn may restrict it.
 ## Install
 
 1. ARIA side: `LINKEDIN_BRIDGE_ENABLED=true` in `.env.local`, restart the app.
-2. ARIA -> **LinkedIn** -> **Connect the extension** -> copy the code.
-3. Chrome -> `chrome://extensions` -> Developer mode -> **Load unpacked** ->
-   this folder.
-4. Extension popup: ARIA address (default `http://localhost:3000`), paste the
-   code, **Save**. Stay signed in to linkedin.com in this Chrome profile.
+2. Chrome -> `chrome://extensions` -> Developer mode -> **Load unpacked** ->
+   this folder. After an update: click the extension's reload arrow there,
+   then reload the ARIA tab.
+3. ARIA -> **LinkedIn** -> **Connect in one click**. The page hands the
+   pairing code to the extension. (ARIA elsewhere than
+   `http://localhost:3000`: set its address in the popup's Settings first,
+   or use **Use a pairing code instead** and paste it there.)
+4. Stay signed in to linkedin.com in this Chrome profile.
 
 ## Files
 
-- `background.js`: polls ARIA every minute, runs the tasks in a LinkedIn tab.
+- `background.js`: polls ARIA every minute (immediately when nudged), runs
+  the tasks in a LinkedIn tab, keeps the toolbar badge (unread count).
 - `allowlist.js`: the only LinkedIn requests it will run.
 - `queries.js`: reads LinkedIn's current GraphQL query ids from its own
   messaging requests.
-- `popup.html`, `popup.js`: settings and status.
+- `aria-page.js`: relay with the ARIA page (one-click pairing, send nudges,
+  live mode, status). Acts only for the ARIA address set in the extension.
+- `linkedin-page.js`: watches the LinkedIn tab title; when LinkedIn's unread
+  count goes up, asks ARIA for an inbox refresh. Passive.
+- `popup.html`, `popup.css`, `popup.js`: status, counters and settings.
+- `icons/`: the ARIA mark.
 - `package.json`: lets the Node tests import these modules; Chrome ignores it.
 
 Permissions: `cookies` (to see that a LinkedIn session exists and to set

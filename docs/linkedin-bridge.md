@@ -64,6 +64,35 @@ Every minute the extension polls. ARIA answers with tasks, in this order:
 4. `messages` for up to 2 conversations with new activity per poll, and at
    most 4 polls a minute, so a first sync spreads over a few minutes.
 
+### Real time (v0.2)
+
+Polling every minute is only the floor. Three signals make it immediate:
+
+- **Send nudge.** The ARIA page and the extension talk through a small
+  content script (`extensions/linkedin-bridge/aria-page.js`, injected on
+  localhost and on the configured ARIA origin). After a click on Send the
+  page nudges the extension, which polls at once: the message leaves about
+  1.5 s later instead of up to a minute.
+- **Live mode.** While `/linkedin` is open and visible, the page pings the
+  extension every 15 s; the extension then polls every ~12 s and ARIA
+  refreshes the inbox every 30 s (`LINKEDIN_BRIDGE_LIVE_SYNC_SECONDS`)
+  instead of every 3 minutes.
+- **LinkedIn activity.** A passive content script on linkedin.com
+  (`linkedin-page.js`) watches the tab title, where LinkedIn shows its unread
+  count. When it goes up, the extension asks for an inbox refresh right away
+  (at most every 15 s). It makes no request and reads nothing else.
+
+On the ARIA side, `/api/linkedin/stream` (Server-Sent Events) tells the page
+which part changed (status, inbox, outbox) within ~1.5 s; the page refetches
+only that part, and falls back to polling every 10 s if the stream fails.
+Measured end to end with a fake LinkedIn: bubble shown 40 ms after the click,
+on LinkedIn 1.5 s later, an incoming reply on screen 0.3 s after LinkedIn's
+tab title changed.
+
+One-click pairing uses the same relay: **Connect in one click** creates a
+pairing code and hands it to the extension, which only accepts it from the
+ARIA address it is set up for (default `http://localhost:3000`).
+
 LinkedIn rotates the GraphQL query ids of its messaging API. The extension
 watches the requests LinkedIn's own messaging page makes and reports the ids
 it sees; ARIA uses them and falls back to built-in ones.
@@ -93,21 +122,25 @@ browser comes back.
 
 1. Turn it on: add `LINKEDIN_BRIDGE_ENABLED=true` to `.env.local` (the app
    container reads it), then `docker compose up --build` (or
-   `docker compose up -d app` on a running stack). Migration
-   `0006_linkedin_bridge.sql` is applied by `supabase-bootstrap`.
-2. Sign in to ARIA at http://localhost:3000 (admin@aria.local /
-   admindemo123), open **LinkedIn** in the sidebar, click **Connect the
-   extension** and copy the pairing code (shown once).
-3. In Chrome: `chrome://extensions` -> Developer mode -> **Load unpacked** ->
-   pick `extensions/linkedin-bridge`. Open the extension, keep
-   `http://localhost:3000`, paste the code, **Save**.
-4. Stay signed in to linkedin.com in the same Chrome profile. Opening
+   `docker compose up -d --build app` on a running stack). Migrations
+   `0006`/`0007` are applied by `supabase-bootstrap`.
+2. In Chrome: `chrome://extensions` -> Developer mode -> **Load unpacked** ->
+   pick `extensions/linkedin-bridge`. After pulling a new version, click the
+   extension's reload arrow there (and reload the ARIA tab).
+3. Stay signed in to linkedin.com in the same Chrome profile. Opening
    https://www.linkedin.com/messaging/ once lets the extension learn the
    current query ids. If no LinkedIn tab is open, the extension opens a
    pinned one when it has work (turn that off in its popup).
-5. Within a minute `/linkedin` shows "Connected as ...", then your
-   conversations. Reply in a thread, or **New message** with a profile URL.
+4. Sign in to ARIA at http://localhost:3000, open **LinkedIn** in the
+   sidebar: the page detects the extension. Click **Connect in one click**.
+   (Another ARIA address, or no detection: **Use a pairing code instead**,
+   then paste it in the extension popup under Settings.)
+5. Within seconds `/linkedin` shows "Live", then your conversations. Reply in
+   a thread, or **New message** with a profile URL.
    `/linkedin?to=<profile url>&candidate=<id>` opens a prefilled message.
+
+The toolbar icon shows the number of unread conversations (red `!` on a
+problem); its popup shows the LinkedIn session, the pairing and the last sync.
 
 ## Limits
 
