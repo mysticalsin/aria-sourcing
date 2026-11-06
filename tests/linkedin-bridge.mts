@@ -575,6 +575,28 @@ test("only a signed-in person can queue a message or an invitation; the extensio
   assert.deepEqual(usesOf("messageCandidate").sort(), ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts"]);
 });
 
+test("every LinkedIn write from the browser must come from this app (same origin, Docker-safe)", () => {
+  const server = readFileSync("src/lib/linkedin-bridge/server.ts", "utf8");
+  assert.match(server, /if \(options\.mutation && !isSameOriginRequest\(req\)\)/);
+  const userRoutes = ["account", "conversations", "conversations/[id]", "outbox", "candidates", "stream"];
+  for (const name of userRoutes) {
+    const source = readFileSync(`src/app/api/linkedin/${name}/route.ts`, "utf8");
+    for (const match of source.matchAll(/export async function (GET|POST|DELETE|PATCH|PUT)\(req[^)]*\)[^{]*\{\n  const auth = await requireBridgeUser\(req(, \{ mutation: true \})?\);/g)) {
+      const write = match[1] !== "GET";
+      assert.equal(Boolean(match[2]), write, `${name} ${match[1]}: mutation guard ${write ? "required" : "not expected"}`);
+    }
+    assert.equal(
+      (source.match(/export async function (POST|DELETE|PATCH|PUT)\(/g) ?? []).length,
+      (source.match(/requireBridgeUser\(req, \{ mutation: true \}\)/g) ?? []).length,
+      `${name}: every write handler is guarded`,
+    );
+  }
+  // The extension authenticates with its pairing token, from chrome-extension://.
+  for (const route of ["bridge/poll", "bridge/result"]) {
+    assert.doesNotMatch(readFileSync(`src/app/api/linkedin/${route}/route.ts`, "utf8"), /isSameOriginRequest|mutation: true/);
+  }
+});
+
 test("candidate data: only candidates' conversations are kept, one LinkedIn account per user", () => {
   const migration = readFileSync("supabase/migrations/0008_linkedin_bridge_candidates.sql", "utf8");
   assert.match(migration, /create unique index linkedin_bridge_accounts_member\s+on public\.linkedin_bridge_accounts\(member_id\) where member_id is not null/);

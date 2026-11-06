@@ -6,6 +6,7 @@ import { ArrowUpRight, ChevronDown, Target } from "lucide-react";
 import { Badge, Card, EmptyState } from "@/components/ui";
 import { CandidateAvatar } from "@/components/candidates/candidate-avatar";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
+import { LinkedInBadge } from "@/components/linkedin/linkedin-badge";
 import { useActions, useSettings } from "@/lib/store";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { campaignHealth } from "@/lib/rules";
@@ -351,6 +352,7 @@ function CandidatesRow({
                     >
                       <CandidateAvatar candidate={display} className="h-6 w-6 text-[9px]" />
                       <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink">{display.name}</span>
+                      <LinkedInBadge candidateId={c.id} compact />
                       <span className="shrink-0 text-[0.625rem] font-bold tabular-nums text-muted">{c.matchScore}</span>
                     </button>
                   </li>

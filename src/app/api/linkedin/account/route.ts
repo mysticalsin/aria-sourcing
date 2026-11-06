@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireBridgeUser(req);
+  const auth = await requireBridgeUser(req, { mutation: true });
   if (!auth.ok) return auth.response;
   try {
     const token = await pairAccount(auth.ctx);
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = await requireBridgeUser(req);
+  const auth = await requireBridgeUser(req, { mutation: true });
   if (!auth.ok) return auth.response;
   try {
     await deleteAccount(auth.ctx);

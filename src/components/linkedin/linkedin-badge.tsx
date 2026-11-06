@@ -10,7 +10,16 @@ import { useCandidateLinkedIn } from "./linkedin-store";
  * Says nothing when there is nothing to say (bridge off, not connected, never
  * looked up), so the list stays quiet.
  */
-export function LinkedInBadge({ candidateId, className }: { candidateId: string; className?: string }) {
+export function LinkedInBadge({
+  candidateId,
+  compact,
+  className,
+}: {
+  candidateId: string;
+  /** Icon only (narrow cells such as the Pipeline): the label moves to the tooltip. */
+  compact?: boolean;
+  className?: string;
+}) {
   const { state, contact } = useCandidateLinkedIn(candidateId);
   if (state.status !== "ready" || !state.account?.paired || !contact) return null;
 
@@ -45,9 +54,22 @@ export function LinkedInBadge({ candidateId, className }: { candidateId: string;
   } else {
     return null;
   }
+  if (compact) {
+    return (
+      <span
+        title={`${label} · ${title}`}
+        aria-label={`LinkedIn: ${label}`}
+        data-linkedin-badge="compact"
+        className={cn("inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full", tone, className)}
+      >
+        {icon}
+      </span>
+    );
+  }
   return (
     <span
       title={title}
+      data-linkedin-badge="full"
       className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold", tone, className)}
     >
       {icon}

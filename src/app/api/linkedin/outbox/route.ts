@@ -61,7 +61,7 @@ const QueueSchema = z
   .refine((v) => Boolean(v.conversationId) || Boolean(v.candidateId), { message: "Give conversationId or candidateId." });
 
 export async function POST(req: NextRequest) {
-  const auth = await requireBridgeUser(req);
+  const auth = await requireBridgeUser(req, { mutation: true });
   if (!auth.ok) return auth.response;
   const validated = await validateBody(req, QueueSchema, { maxBytes: 40_000 });
   if (!validated.ok) return validated.response;
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function DELETE(req: NextRequest) {
-  const auth = await requireBridgeUser(req);
+  const auth = await requireBridgeUser(req, { mutation: true });
   if (!auth.ok) return auth.response;
   const id = req.nextUrl.searchParams.get("id") ?? "";
   if (!UUID.test(id)) return badRequest("Missing message id.");

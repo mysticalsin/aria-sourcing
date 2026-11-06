@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { linkedInBridgeEnabled } from "./policy";
@@ -63,13 +64,23 @@ export interface BridgeUserContext {
   workspaceId: string;
 }
 
-/** A signed-in ARIA user allowed to do outreach, with the service client. */
+/**
+ * A signed-in ARIA user allowed to do outreach, with the service client.
+ * `mutation`: the request changes something (pairing, a message, an
+ * invitation): it must come from a page of this app (Origin = the host the
+ * browser addressed, Docker-safe), so another site or local page cannot make
+ * the user write on LinkedIn with their session cookie.
+ */
 export async function requireBridgeUser(
   req: NextRequest,
+  options: { mutation?: boolean } = {},
 ): Promise<{ ok: true; ctx: BridgeUserContext } | { ok: false; response: Response }> {
   if (!linkedInBridgeEnabled()) return { ok: false, response: bridgeDisabledResponse() };
   const prodBlock = prodFailClosed();
   if (prodBlock) return { ok: false, response: prodBlock };
+  if (options.mutation && !isSameOriginRequest(req)) {
+    return { ok: false, response: json(403, { ok: false, error: "Cross-origin request refused." }) };
+  }
   if (!supabaseEnabled) {
     return {
       ok: false,

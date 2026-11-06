@@ -53,7 +53,7 @@ const RefreshSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const auth = await requireBridgeUser(req);
+  const auth = await requireBridgeUser(req, { mutation: true });
   if (!auth.ok) return auth.response;
   const validated = await validateBody(req, RefreshSchema, { maxBytes: 1_000 });
   if (!validated.ok) return validated.response;

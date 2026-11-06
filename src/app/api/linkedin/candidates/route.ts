@@ -145,7 +145,7 @@ const ActionSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function POST(req: NextRequest) {
-  const auth = await requireBridgeUser(req);
+  const auth = await requireBridgeUser(req, { mutation: true });
   if (!auth.ok) return auth.response;
   const validated = await validateBody(req, ActionSchema, { maxBytes: 4_000 });
   if (!validated.ok) return validated.response;
