@@ -17,6 +17,7 @@
     "demo:stop": "node scripts/local-stack.mjs stop",
     "demo:status": "node scripts/local-stack.mjs status",
     "demo:doctor": "node scripts/local-stack.mjs doctor",
+    "demo:user": "node scripts/create-local-user.mjs",
     "test:local-demo": "node scripts/accept-local-demo.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
