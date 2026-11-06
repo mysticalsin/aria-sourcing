@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "ARIA LinkedIn Bridge (experimental)",
+  "version": "0.1.0",
+  "description": "Lets ARIA show your LinkedIn inbox and send the messages you write in ARIA, from your own LinkedIn session in this browser.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "alarms", "scripting", "cookies", "webRequest"],
+  "host_permissions": ["https://www.linkedin.com/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "ARIA LinkedIn Bridge" }
+}

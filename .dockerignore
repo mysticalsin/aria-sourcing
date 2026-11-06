@@ -65,3 +65,5 @@ tmp
 .localbin
 var
 docs
+# Browser extension sources (loaded unpacked in Chrome, not part of the app image).
+extensions
