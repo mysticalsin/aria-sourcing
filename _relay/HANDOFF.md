@@ -1,120 +1,117 @@
 ---
 project: MSourcing / ARIA
-shift: 453
+shift: 454
 agent: claude-code
 updated: 2026-11-06
-status: linkedin-bridge-live-ui-v0.2-awaiting-owner-reload
+status: linkedin-bridge-candidate-centred-v0.3-awaiting-owner-and-tony-test
 ---
 
-# Handoff - Shift 453
+# Handoff - Shift 454
 
 ## Current state
 
-- Branch mbe-branch. New experimental feature: LinkedIn bridge (owner
-  request 2026-11-06): read the owner's LinkedIn inbox in ARIA (`/linkedin`)
-  and send LinkedIn messages as the owner, through an unpacked Chrome
-  extension that runs LinkedIn's private "Voyager" API calls inside the
-  owner's own logged-in linkedin.com tab. Off unless
-  `LINKEDIN_BRIDGE_ENABLED=true` (server env; `.env.local` for Docker).
-  Design, risks, setup: `docs/linkedin-bridge.md`.
-- Owner tested it live in Chrome on his real account (2026-11-06): works.
-  Shift 453 = UI v0.2 (real time, one-click pairing, ARIA-branded extension).
-- Code: `src/lib/linkedin-bridge/` (voyager request builders, parsers,
-  planner, policy/pacing, tokens, outcome, server data layer),
-  `src/app/api/linkedin/` (account, conversations, conversations/[id],
-  outbox, stream (SSE); bridge/poll and bridge/result for the extension),
-  `src/app/linkedin/page.tsx` + `src/components/linkedin/` (nav entry
-  "LinkedIn" under Engage), `extensions/linkedin-bridge/` (MV3 0.2.0:
-  background.js, allowlist.js, queries.js, aria-page.js, linkedin-page.js,
-  popup, icons), migrations `0006_linkedin_bridge.sql` (4 service-only
-  tables, RLS forced) and `0007_linkedin_bridge_seen.sql`,
-  `tests/linkedin-bridge.mts` (23 tests, application group).
-- Gate: see "Done this shift" for the exact runs. This Mac has no Node in
-  PATH: the gate ran in a container (`aria-gate:local` = node:22-bookworm-slim
-  + openssl, git, curl, jq, python3; node_modules in the docker volume
-  `aria_gate_node_modules`).
-- Docker: OrbStack 29.8.2 is the engine on this Mac; it was stopped and was
-  started this shift (`orbctl start`). The docker CLI here needs
-  `PATH=/Applications/OrbStack.app/Contents/MacOS/xbin:$PATH` and, for
-  BuildKit, `DOCKER_CONFIG=<dir with cli-plugins/docker-buildx symlink>` +
-  `DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock` (reading
-  ~/.docker/config.json was refused by the auto-mode guard). In the owner's
-  own terminal plain `docker compose up --build` should work.
-- `.env.local` was created (gitignored) with only `LINKEDIN_BRIDGE_ENABLED=true`.
+- Branch mbe-branch. LinkedIn bridge (experimental, off unless
+  `LINKEDIN_BRIDGE_ENABLED=true`) is now centred on sourced candidates
+  (owner request 2026-11-06, shift 454). Design/setup: `docs/linkedin-bridge.md`.
+  - Settings › Integrations › LinkedIn (section "20", hash `#linkedin`):
+    the user's own connection (one-click pairing, status, disconnect).
+  - Candidate drawer › LinkedIn (`src/components/linkedin/candidate-linkedin.tsx`):
+    relationship (Connected · 1st / Invitation pending / Not connected /
+    Profile not found), invitation with note (300 chars), the conversation
+    with that candidate only, first message, pacing countdown. Hidden when
+    masked/erased/no LinkedIn URL/no outreach permission; blocked by
+    compliance flags (also enforced server-side).
+  - Candidate lists: `LinkedInBadge` in `CandidateTable` (Candidates page and
+    campaign detail).
+  - `/linkedin` inbox removed (redirects to Settings, or to
+    `/candidates?focus=` with `?candidate=`); nav entry removed.
+  - Only conversations with a looked-up candidate are kept in full; others
+    are stubs (participant member ids + last activity). Migration 0008
+    converted the owner's 21 cached conversations to stubs and deleted the
+    108 cached messages (a cache of LinkedIn; candidates' threads come back
+    once looked up).
+  - One LinkedIn account per ARIA user (unique index + identity check).
+- Extension 0.3.0 (`extensions/linkedin-bridge/`): allowlist adds the
+  decorated profile read and the invitation; ARIA warns when the extension
+  is older than 0.3.0. The owner must reload it in chrome://extensions.
+- Users on the local stack: admin@aria.local (owner, has his real LinkedIn
+  paired), tony@aria.local (created this shift, role member, demo workspace;
+  password given to the owner in chat, not stored here),
+  linkedin-e2e@bridge-e2e.test (test user, own workspace "bridge-e2e.test",
+  seeded with 2 fictional candidates; bridge data deleted after each run).
+- `npm run demo:user -- --email x@aria.local --name "X" [--role admin]`
+  (`scripts/create-local-user.mjs`) creates/updates a local user; localhost
+  only.
+- Gate and Docker on this Mac: see the previous baton's notes (container gate
+  `aria-gate:local`, OrbStack CLI via xbin + DOCKER_HOST/DOCKER_CONFIG).
 
 ## Done this shift
 
-Owner (2026-11-06, after a successful live test in Chrome on his real
-account): "improve the LinkedIn UI, make it dynamic when sending and
-receiving, add the ARIA logo to the extension, improve the UI".
+Owner (2026-11-06): "connect it to the sourcing features; the LinkedIn
+connection is per user, create a user Tony; show LinkedIn on sourced
+candidates only (not every conversation); add invitations since messages need
+1st-degree connections; move the extension connection to Settings."
 
-- Real time:
-  - `GET /api/linkedin/stream` (SSE): a fingerprint of status / inbox /
-    outbox every 1.5 s, sends `change {parts}`; the page refetches only
-    those parts, falls back to 10 s polling.
-  - Extension 0.2.0: `aria-page.js` relay (one-click pairing, send nudge,
-    live pings, status push; the service worker accepts them only from the
-    configured ARIA origin), `linkedin-page.js` (passive: LinkedIn tab title
-    unread count up -> immediate inbox refresh, debounced 15 s).
-  - Poll accepts `live` / `activity`; planner: live inbox interval 30 s
-    (`LINKEDIN_BRIDGE_LIVE_SYNC_SECONDS`), activity refresh if the last one
-    is >= 15 s old. Poll limit 60/min; poll returns `stats` for the badge.
-  - `storeConversations` writes a row only when it changed, so `updated_at`
-    (the stream's inbox fingerprint) moves only on real news.
-- Migration `0007_linkedin_bridge_seen.sql`: `seen_at`,
-  `last_message_direction`, `last_message_sender` on conversations. Unread
-  in ARIA = LinkedIn unread and nothing newer since the user opened it.
-- UI split into `src/components/linkedin/` (types, api, use-linkedin-inbox,
-  use-bridge-extension, connection, conversation-list, thread-view,
-  composer, new-message, avatar, format) + `src/app/linkedin/page.tsx`:
-  optimistic bubble (Queued -> Sending with sheen -> morphs into the
-  delivered message, same React key), animated arrivals and list reorder
-  (framer-motion, reduced-motion honoured), day separators, "new messages"
-  pill, toasts + optional sound on replies, tab title unread count,
-  onboarding in 3 steps with one-click connect, live status bar with ticking
-  sync time and send meter, auto-open of a new chat once LinkedIn creates it,
-  LinkedIn thread link. Page fits the viewport (no page scroll).
-- Extension: ARIA mark icons (16/32/48/128 from `public/aria-mark.png`),
-  toolbar badge (unread count, red `!` on error), redesigned popup
-  (checks, counters, gradient CTA, settings folded, dark mode).
-- Bug found by the e2e and fixed: the first sync after pairing toasted every
-  existing conversation as a new reply.
-- Verified on the running stack (OrbStack), with a separate test user
-  `linkedin-e2e@bridge-e2e.test` in its own workspace (the owner's real
-  account - 1 pairing, 21 conversations, 108 messages, 2 outbox rows - was
-  counted before and after and never touched): real Chromium + real
-  extension 0.2.0 + real ARIA + fake LinkedIn (DNS-mapped to 127.0.0.1):
-  16/16 checks. Pair in one click -> inbox in 1.8 s; bubble 40 ms after
-  Send; on LinkedIn 1.5 s after the click (was up to 60 s); delivered 2.9 s
-  end to end; incoming reply on screen 0.3 s after LinkedIn's title changed;
-  read reply clears unread; no page errors. Screenshots reviewed.
-- Gate: typecheck, typecheck:tests, npm test exit 0 (aria-gate:local);
-  eslint clean on the touched paths. `tests/linkedin-bridge.mts`: 23 tests
-  (live/activity planner, relay origin checks, passive LinkedIn script,
-  manifest content scripts).
+- Research (third-party captures of the web client, 2026; none verified
+  live from here): invitation = `POST voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=...InvitationCreationResultWithInvitee-2`
+  with `{invitee:{inviteeUnion:{memberProfile}}, customMessage?}`; duplicate
+  = 400 `CANT_RESEND_YET`; message to a non-connection = 422
+  `RECIPIENT_NOT_FIRST_DEGREE_CONNECTION`; relationship from the profile read
+  with `decorationId=...WebTopCardCore-19` (`fsd_memberRelationship` entity:
+  connection / noConnection.invitationUnion.invitation|noInvitation /
+  memberDistance). LinkedIn meters that read as a profile view. Messaging
+  participant URLs are member-id style (`/in/ACoAA...`), so candidates are
+  matched by looking their public id up once. tomquirk/linkedin-api is gone
+  (404).
+- Migration `0008_linkedin_bridge_candidates.sql`: contacts table, outbox
+  `kind` (message|invitation) + `contact_id` + body check by kind,
+  conversations `candidate_id`, stubs, unique member per account, service-only
+  `linkedin_bridge_candidate(workspace, candidate)` reading workspace_state.
+- Server: planner ops `invite`, `lookupContact`; `writeSlot` pacing (shared
+  90 s gap; 40 messages/day, 15 invitations/day, 80/week; 80 profile reads/day;
+  pending invitations re-checked daily); result handlers for lookups,
+  invitations (sent / already pending / already connected / quota), 422
+  refusal -> invitation offer; candidate routes `/api/linkedin/candidates`
+  (GET summary incl. `nextWriteAt`, POST check|invite); outbox POST now only
+  to candidates (conversationId or candidateId), compliance-checked.
+- UI: `linkedin-store.ts` (one shared live store/EventSource per tab),
+  `candidate-linkedin.tsx`, `linkedin-badge.tsx`, `settings-panel.tsx`;
+  `ThreadView` gained `title`/`compact`; inbox components deleted.
+- Verified on the stack (OrbStack), test user only, fake LinkedIn: 19/19
+  e2e checks (redirect, one-click pairing in Settings, Grace matched from a
+  stub, Ada not connected -> invitation with note (payload checked) ->
+  acceptance via "check now" -> pacing countdown -> first message delivered,
+  list badges, only candidates' conversations exposed, a non-candidate's
+  private message never in the page, popup 0.3.0, no page errors).
+- Gate: typecheck, typecheck:tests, npm test exit 0; eslint clean on touched
+  paths; `tests/linkedin-bridge.mts` 29 tests; `tests/settings-accordion.mts`
+  updated for section 20.
 
 ## Blockers
 
-- None in code. Unverified until the owner's live run: the real LinkedIn
-  answers (Voyager formats, query ids, createMessage payload) and the
-  extension in Chrome.
+- None in code. Not yet seen live on LinkedIn: the invitation endpoint, the
+  relationship shape of the profile read, and the stub matching on a real
+  inbox (messaging and sending were confirmed live by the owner earlier).
 
 ## Next steps
 
-1. Owner: `git pull`, then in Chrome `chrome://extensions` -> reload the
-   ARIA LinkedIn Bridge (0.1.0 -> 0.2.0: new content scripts and icons need
-   the reload), then reload the ARIA tab. The pairing survives. The stack on
-   this Mac already runs the new app build with migration 0007.
-2. If the page shows the extension as "not connected" in this browser:
-   **Connect this browser** (rotates the code and hands it over).
-3. Next ideas, if wanted: "Message on LinkedIn" chip in the candidate drawer
-   (`src/components/candidates/candidate-drawer.tsx`) ->
-   `/linkedin?to=<linkedinUrl>&candidate=<id>`; link conversations to ARIA
-   candidates by profile URL; mark-as-read on LinkedIn itself (new allowlist
-   entry); older-history backfill.
-4. Carried over from shift 451 (still open): web search sourcing check on the
-   stack; AI issue 04 cache check; pre-rename volume login; store.ts split;
-   chat multi-turn; perf ideas. See `_relay/archive/2026-11-06-1236-claude-code.md`.
+1. Owner: `git pull`; chrome://extensions -> reload the ARIA extension
+   (0.3.0); reload ARIA tabs. The stack on this Mac already runs migration
+   0008 and the new app. Open a real sourced candidate with a LinkedIn URL:
+   first look (relationship), then invite or message. Report anything odd
+   shown in the LinkedIn section.
+2. Tony: sign in as tony@aria.local from his own Chrome profile with his own
+   LinkedIn session and his own copy of the extension; Settings ›
+   Integrations › LinkedIn › Connect in one click. On his own machine:
+   `docker compose up --build` then `npm run demo:user -- --email tony@aria.local --name "Tony"`.
+3. If LinkedIn's live answers differ (relationship shape, invitation
+   answer), fix `parseProfileCard` / `parseInvitationResult` in
+   `src/lib/linkedin-bridge/parse.ts` with a fixture in `tests/linkedin-bridge.mts`.
+4. Ideas: withdraw a pending invitation; older-history backfill per
+   candidate; link the existing "Draft LinkedIn message" (assisted-manual
+   outreach) to the bridge composer; team view of who is connected.
+5. Carried over from shift 451: web search sourcing check; AI issue 04;
+   pre-rename volume login; store.ts split; chat multi-turn; perf ideas.
 
 ## Decisions made (don't relitigate)
 
@@ -130,6 +127,11 @@ receiving, add the ARIA logo to the extension, improve the UI".
   prompt unchanged). The bridge is a separate, flag-gated path.
 - A LinkedIn inbox is personal: bridge rows are scoped to (workspace, user);
   no workspace-wide view. Disconnect deletes everything synced.
+- Owner 2026-11-06 (shift 454): the bridge is candidate-centred. Only
+  conversations with sourced candidates are shown and kept in full; no
+  general inbox page. One LinkedIn account per ARIA user. Invitations are a
+  click on the candidate (note optional), never automatic. Profile reads are
+  on first look, on click, and daily for pending invitations only.
 - Owner 2026-11-03: the Docker stack targets a Mac; do not spend effort on Windows-specific Docker issues.
 - Owner 2026-11-03: Vercel is dropped; the app will be self-hosted later
   (target not chosen). Merging into vercel-demo is no longer a goal.
@@ -155,6 +157,8 @@ receiving, add the ARIA logo to the extension, improve the UI".
 
 ## Watch out
 
+- The candidate drawer also shows the older "Draft LinkedIn message" button
+  (assisted-manual outreach queue): it is not the bridge.
 - The stack on this Mac holds the owner's REAL LinkedIn data (admin@aria.local).
   Never run a test that calls `DELETE /api/linkedin/account` as that user;
   e2e runs use `linkedin-e2e@bridge-e2e.test` (own workspace, left in the
