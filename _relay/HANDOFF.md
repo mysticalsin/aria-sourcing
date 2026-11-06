@@ -1,136 +1,99 @@
 ---
 project: MSourcing / ARIA
-shift: 455
+shift: 456
 agent: claude-code
 updated: 2026-11-06
-status: mbe-test-merged-into-mbe-branch
+status: apify-retired-linkedin-guarded
 ---
 
-# Handoff - Shift 455
+# Handoff - Shift 456
 
 ## Current state
 
-- Branch mbe-branch. LinkedIn bridge (experimental, off unless
-  `LINKEDIN_BRIDGE_ENABLED=true`) is now centred on sourced candidates
-  (owner request 2026-11-06, shift 454). Design/setup: `docs/linkedin-bridge.md`.
-  - Settings › Integrations › LinkedIn (section "20", hash `#linkedin`):
-    the user's own connection (one-click pairing, status, disconnect).
-  - Candidate drawer › LinkedIn (`src/components/linkedin/candidate-linkedin.tsx`):
-    relationship (Connected · 1st / Invitation pending / Not connected /
-    Profile not found), invitation with note (300 chars), the conversation
-    with that candidate only, first message, pacing countdown. Hidden when
-    masked/erased/no LinkedIn URL/no outreach permission; blocked by
-    compliance flags (also enforced server-side).
-  - Candidate lists: `LinkedInBadge` in `CandidateTable` (Candidates page and
-    campaign detail).
-  - `/linkedin` inbox removed (redirects to Settings, or to
-    `/candidates?focus=` with `?candidate=`); nav entry removed.
-  - Only conversations with a looked-up candidate are kept in full; others
-    are stubs (participant member ids + last activity). Migration 0008
-    converted the owner's 21 cached conversations to stubs and deleted the
-    108 cached messages (a cache of LinkedIn; candidates' threads come back
-    once looked up).
-  - One LinkedIn account per ARIA user (unique index + identity check).
-- Extension 0.3.0 (`extensions/linkedin-bridge/`): allowlist adds the
-  decorated profile read and the invitation; ARIA warns when the extension
-  is older than 0.3.0. The owner must reload it in chrome://extensions.
-- Users on the local stack: admin@aria.local (owner, has his real LinkedIn
-  paired), tony@aria.local (created this shift, role member, demo workspace;
-  password given to the owner in chat, not stored here),
-  linkedin-e2e@bridge-e2e.test (test user, own workspace "bridge-e2e.test",
-  seeded with 2 fictional candidates; bridge data deleted after each run).
-- `npm run demo:user -- --email x@aria.local --name "X" [--role admin]`
-  (`scripts/create-local-user.mjs`) creates/updates a local user; localhost
-  only.
-- Gate and Docker on this Mac: see the previous baton's notes (container gate
-  `aria-gate:local`, OrbStack CLI via xbin + DOCKER_HOST/DOCKER_CONFIG).
+- Branch mbe-branch, local only (not pushed): 28c59514 merge of mbe-test,
+  b647a65c LinkedIn follow-ups, 3c2d74a3 Apify retired, then this baton.
+- Gate on 3c2d74a3's tree: typecheck, typecheck:tests, npm test exit 0;
+  eslint clean on every touched file. Commit b647a65c was gated alone in a
+  worktree: typecheck, typecheck:tests, npm test exit 0 (repository-hygiene
+  needs the repo's `.git` mounted in the container for a worktree).
+- Stack on this Mac (OrbStack) rebuilt from that tree; `/api/ready` 200.
+  Candidate e2e (test user only, fake LinkedIn): 26/26, including the
+  Pipeline mark, cross-origin refusals, and no "Apify" on Settings
+  (integrations, keys) or the campaign page.
+- Apify is gone (owner, 2026-11-06: "we will never use it"):
+  - LinkedIn discovery = "LinkedIn via web search" (`WebSearch` source,
+    `src/lib/sourcing/claude-web-search.ts`), then GitHub. Plan max 2
+    sources, 1-20 profiles each. A stored `LinkedIn` step from an old run ends
+    failed without a provider call (`unified-run.ts`).
+  - No enrichment provider: `ENRICHMENT_PROVIDERS = []`,
+    `ENRICHMENT_RUNNERS = {}`; the drawer says so. Providers now declare
+    `keyProvider` (the stored key that unlocks them).
+  - Workspace STATE_VERSION 21 drops the `int_apify` / `int_enrichment`
+    cards. DB migrations untouched; old `provider_runs` rows keep `Apify`.
+  - Candidate photos (`avatarUrl`, from mbe-test) were filled by Apify only:
+    new candidates show initials.
+- LinkedIn bridge: every cookie-authenticated write (account, candidates,
+  conversations, outbox POST/DELETE) requires same-origin
+  (`requireBridgeUser(req, { mutation: true })`); `LinkedInBadge compact`
+  in the Pipeline overview. Everything else as in shift 454/455 (see
+  `_relay/archive/2026-11-06-2233-claude-code.md`).
 
-## Merged from mbe-test (its shift 452, 2026-11-04, archived as
-`_relay/archive/2026-11-04-1447-claude-code.md`)
+## Done this shift
 
-- 8388d6f9 same-origin check uses the host the browser addressed: under
-  Docker (`HOSTNAME=0.0.0.0`) every browser POST to the sourcing routes
-  failed with "Cross-origin sourcing is not allowed." (`isSameOriginRequest`
-  in `src/lib/api/same-origin-json.ts`).
-- 182b7014 Pipeline page (/funnel) = campaign x stage overview
-  (`src/lib/pipeline.ts`, `src/components/tania/pipeline-overview.tsx`,
-  `tests/pipeline.mts`); funnel-board removed.
-- d761bf8a candidate photos (LinkedIn CDN, `avatarUrl`,
-  `src/lib/candidate-photo.ts`, CSP img-src media.licdn.com), LinkedIn link,
-  details button, live sourcing scan; 95dc2ef4 login talent-field, buttons
-  that never wrap; b5191c57/697601c7 roadmap placeholder integration cards
-  removed (STATE_VERSION 20); a951652b campaign fingerprint ignores
-  jobAnalysis key order.
+Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
+"remove Apify sourcing and even its Settings configuration".
 
-## Done in shift 454 (before the merge)
-
-Owner (2026-11-06): "connect it to the sourcing features; the LinkedIn
-connection is per user, create a user Tony; show LinkedIn on sourced
-candidates only (not every conversation); add invitations since messages need
-1st-degree connections; move the extension connection to Settings."
-
-- Research (third-party captures of the web client, 2026; none verified
-  live from here): invitation = `POST voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=...InvitationCreationResultWithInvitee-2`
-  with `{invitee:{inviteeUnion:{memberProfile}}, customMessage?}`; duplicate
-  = 400 `CANT_RESEND_YET`; message to a non-connection = 422
-  `RECIPIENT_NOT_FIRST_DEGREE_CONNECTION`; relationship from the profile read
-  with `decorationId=...WebTopCardCore-19` (`fsd_memberRelationship` entity:
-  connection / noConnection.invitationUnion.invitation|noInvitation /
-  memberDistance). LinkedIn meters that read as a profile view. Messaging
-  participant URLs are member-id style (`/in/ACoAA...`), so candidates are
-  matched by looking their public id up once. tomquirk/linkedin-api is gone
-  (404).
-- Migration `0008_linkedin_bridge_candidates.sql`: contacts table, outbox
-  `kind` (message|invitation) + `contact_id` + body check by kind,
-  conversations `candidate_id`, stubs, unique member per account, service-only
-  `linkedin_bridge_candidate(workspace, candidate)` reading workspace_state.
-- Server: planner ops `invite`, `lookupContact`; `writeSlot` pacing (shared
-  90 s gap; 40 messages/day, 15 invitations/day, 80/week; 80 profile reads/day;
-  pending invitations re-checked daily); result handlers for lookups,
-  invitations (sent / already pending / already connected / quota), 422
-  refusal -> invitation offer; candidate routes `/api/linkedin/candidates`
-  (GET summary incl. `nextWriteAt`, POST check|invite); outbox POST now only
-  to candidates (conversationId or candidateId), compliance-checked.
-- UI: `linkedin-store.ts` (one shared live store/EventSource per tab),
-  `candidate-linkedin.tsx`, `linkedin-badge.tsx`, `settings-panel.tsx`;
-  `ThreadView` gained `title`/`compact`; inbox components deleted.
-- Verified on the stack (OrbStack), test user only, fake LinkedIn: 19/19
-  e2e checks (redirect, one-click pairing in Settings, Grace matched from a
-  stub, Ada not connected -> invitation with note (payload checked) ->
-  acceptance via "check now" -> pacing countdown -> first message delivered,
-  list badges, only candidates' conversations exposed, a non-candidate's
-  private message never in the page, popup 0.3.0, no page errors).
-- Gate: typecheck, typecheck:tests, npm test exit 0; eslint clean on touched
-  paths; `tests/linkedin-bridge.mts` 29 tests; `tests/settings-accordion.mts`
-  updated for section 20.
+- Merge (28c59514) verified: a browser POST to `/api/source/campaign` under
+  Docker reaches validation (400) instead of "Cross-origin sourcing is not
+  allowed."
+- b647a65c: same-origin guard on bridge writes + test; compact badge.
+- 3c2d74a3: Apify removal (55 files). Engine hardening: web-search hits are
+  re-checked with `canonicalLinkedInProfileUrl`; non-profile URLs count as
+  excluded. Tests rewritten: `tests/unified-sourcing.mts` (12),
+  `tests/enrichment-orchestrator.mts` (139 checks, fake providers via mocked
+  registry/runners), route/fixture updates, `store-contracts` 118 actions.
+  Docs updated (SOURCING, LOCAL-SOURCING-TEST, README, NEEDS_GUIDE, DOCKER,
+  SUPABASE_SETUP, ARCHITECTURE, CANDIDATE-REVIEW, .env.local.example).
+- Codex findings: triage notes added (2026-07-19 direct adapters: both gone,
+  ready for re-audit; enrichment spend: gaps listed below). Issue
+  `.scratch/unified-sourcing/issues/02-apify-account-acceptance.md` wontfix.
 
 ## Blockers
 
-- None in code. Not yet seen live on LinkedIn: the invitation endpoint, the
-  relationship shape of the profile read, and the stub matching on a real
-  inbox (messaging and sending were confirmed live by the owner earlier).
+- None in code. Still unverified live on LinkedIn: the invitation endpoint,
+  the relationship shape of the profile read, stub matching on a real inbox.
 
 ## Next steps
 
-1. Owner: `git pull`; chrome://extensions -> reload the ARIA extension
-   (0.3.0); reload ARIA tabs. The stack on this Mac already runs migration
-   0008 and the new app. Open a real sourced candidate with a LinkedIn URL:
-   first look (relationship), then invite or message. Report anything odd
-   shown in the LinkedIn section.
-2. Tony: sign in as tony@aria.local from his own Chrome profile with his own
-   LinkedIn session and his own copy of the extension; Settings ›
-   Integrations › LinkedIn › Connect in one click. On his own machine:
-   `docker compose up --build` then `npm run demo:user -- --email tony@aria.local --name "Tony"`.
-3. If LinkedIn's live answers differ (relationship shape, invitation
-   answer), fix `parseProfileCard` / `parseInvitationResult` in
-   `src/lib/linkedin-bridge/parse.ts` with a fixture in `tests/linkedin-bridge.mts`.
-4. Ideas: withdraw a pending invitation; older-history backfill per
-   candidate; link the existing "Draft LinkedIn message" (assisted-manual
-   outreach) to the bridge composer; team view of who is connected.
-5. Carried over from shift 451: web search sourcing check; AI issue 04;
-   pre-rename volume login; store.ts split; chat multi-turn; perf ideas.
+1. Owner: review the 3 local commits, push when satisfied (`git push origin
+   mbe-branch`). Reload ARIA tabs (the stack here already runs the new app).
+2. Owner: in Chrome, reload the ARIA extension (0.3.0) if not done; open a
+   real sourced candidate with a LinkedIn URL; first look, then invite or
+   message. Report anything odd in the LinkedIn section.
+3. Tony: sign in as tony@aria.local on his machine (`docker compose up
+   --build`, then `npm run demo:user -- --email tony@aria.local --name "Tony"`),
+   own Chrome profile + extension, Settings › Integrations › LinkedIn.
+4. Live check of "LinkedIn via web search" with a real Anthropic key
+   (`docs/LOCAL-SOURCING-TEST.md`, now written for web search + GitHub).
+5. Codex: re-audit and close the 2026-07-19 "direct sourcing adapters"
+   finding if satisfied (move it to the closed-findings archive).
+6. Before any new enrichment provider: fix the orchestrator gaps listed in
+   the enrichment-spend finding (throwing runner leaks its claim; budget gate
+   ignores the provider's cost; zero-cost registry entry never settles a real
+   cost; failed results counted in spend), and re-apply identity-lookup
+   hygiene in the runner (`clearIdentityResolution`).
+7. Carried over: withdraw a pending invitation; per-candidate history
+   backfill; link "Draft LinkedIn message" to the bridge composer; web
+   search sourcing check; AI issue 04; store.ts split; chat multi-turn.
 
 ## Decisions made (don't relitigate)
+
+- Owner 2026-11-06 (shift 456): Apify is retired for good: no sourcing, no
+  enrichment, no key or card in Settings. LinkedIn discovery is Claude web
+  search over public pages only. Do not reintroduce a vendor scraper without
+  the owner asking.
+- Owner 2026-11-06 (shift 455): mbe-test merged into mbe-branch (design,
+  Pipeline overview, Docker-safe same-origin check).
 
 - Owner 2026-11-06: build and test an internal LinkedIn messaging bridge on
   mbe-branch, knowingly against LinkedIn's terms, on the owner's own account,
@@ -173,6 +136,16 @@ candidates only (not every conversation); add invitations since messages need
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- `tests/store-contracts.mts` pins the store action count (118): removing or
+  adding an action updates it.
+- `tests/sourcing-provider-egress-structure.mts` pins the probe allowlist:
+  only `provider-egress.ts` and `src/app/api/source/route.ts` may use
+  `clearProviderProbe`.
+- `git rm` stages deletions immediately: a later "small" commit picks them
+  up. Check `git diff --cached --stat` before every commit.
+- eslint treats any function named `use...` as a React hook, test helpers
+  included.
 
 - Pipeline counts read the live candidate stage, not campaign.metrics (which
   are high-water marks and never go down). (from mbe-test)
