@@ -1,6 +1,6 @@
 // Experimental LinkedIn bridge: live updates for the signed-in user's inbox
 // page, as Server-Sent Events. The stream checks a cheap fingerprint of the
-// account (heartbeat, conversations, outbox) every TICK_MS and sends a
+// account (heartbeat, conversations, outbox, candidate contacts) every TICK_MS and sends a
 // "change" event naming the parts that moved; the page then refetches only
 // those. It ends after STREAM_MS and EventSource reconnects on its own.
 
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
           const version = await bridgeVersion(ctx);
           const changed = last
             ? (Object.keys(version) as (keyof BridgeVersion)[]).filter((key) => version[key] !== last![key])
-            : (["status", "inbox", "outbox"] as const);
+            : (["status", "inbox", "outbox", "contacts"] as const);
           if (changed.length) {
             write(`event: change\ndata: ${JSON.stringify({ parts: changed })}\n\n`);
             lastWrite = Date.now();

@@ -311,16 +311,113 @@ export function parseSendResult(json: unknown, rawText: string): ParsedSendResul
   };
 }
 
-/** The profile URN behind a public id (identity/dash/profiles?q=memberIdentity). */
-export function parseProfileLookup(json: unknown, publicId: string): { memberId: string; name: string } | null {
+export type Relationship = "connected" | "pending" | "none" | "unknown";
+
+export interface ProfileCard {
+  memberId: string;
+  publicIdentifier: string | null;
+  name: string;
+  headline: string | null;
+  /** "unknown" when LinkedIn sent no MemberRelationship (undecorated answer). */
+  relationship: Relationship;
+}
+
+function relationshipOf(index: EntityIndex, memberId: string): Relationship {
+  const entity = index.get(`urn:li:fsd_memberRelationship:${memberId}`);
+  if (!entity) return "unknown";
+  const union = index.field(entity, "memberRelationshipUnion");
+  if (isObj(union) && index.field(union, "connection")) return "connected";
+  const none = isObj(union) ? index.field(union, "noConnection") : undefined;
+  if (isObj(none) && none.memberDistance === "DISTANCE_1") return "connected";
+  const invitationUnion = isObj(none) ? index.field(none, "invitationUnion") : undefined;
+  const data = index.field(entity, "memberRelationshipData");
+  if ((isObj(invitationUnion) && index.field(invitationUnion, "invitation")) || (isObj(data) && index.field(data, "invitation"))) {
+    return "pending";
+  }
+  if (isObj(invitationUnion) && "noInvitation" in invitationUnion) return "none";
+  return isObj(union) ? "none" : "unknown";
+}
+
+/**
+ * A profile read (identity/dash/profiles?q=memberIdentity, top-card
+ * decoration). The answer also holds the signed-in member's own profile, so
+ * the subject is taken from data["*elements"], else by public id.
+ */
+export function parseProfileCard(json: unknown, identity: string): ProfileCard | null {
   const index = new EntityIndex(json);
+  const root = isObj(json) && isObj(json.data) ? json.data : json;
+  const listed = isObj(root) ? [...asList(index.field(root, "elements")), ...asList(root["*elements"])] : [];
+  const subjectUrn = listed
+    .map((item) => (typeof item === "string" ? item : isObj(item) ? item.entityUrn : null))
+    .find((urn): urn is string => typeof urn === "string" && urn.startsWith("urn:li:fsd_profile:"));
   const profiles = index.entitiesOfType("urn:li:fsd_profile:");
-  const wanted = publicId.toLowerCase();
-  const match =
+  const wanted = identity.toLowerCase();
+  const subject =
+    (subjectUrn ? index.get(subjectUrn) ?? { entityUrn: subjectUrn } : undefined) ??
     profiles.find((p) => typeof p.publicIdentifier === "string" && p.publicIdentifier.toLowerCase() === wanted) ??
+    profiles.find((p) => memberIdFromUrn(p.entityUrn) === identity) ??
     (profiles.length === 1 ? profiles[0] : undefined);
-  const memberId = match ? memberIdFromUrn(match.entityUrn) : null;
-  if (!match || !memberId) return null;
-  const name = [nonEmpty(match.firstName), nonEmpty(match.lastName)].filter(Boolean).join(" ");
-  return { memberId, name: name || publicId };
+  const memberId = subject ? memberIdFromUrn(subject.entityUrn) : null;
+  if (!subject || !memberId) return null;
+  const name = [nonEmpty(subject.firstName), nonEmpty(subject.lastName)].filter(Boolean).join(" ");
+  return {
+    memberId,
+    publicIdentifier: nonEmpty(subject.publicIdentifier),
+    name: name || identity,
+    headline: nonEmpty(textOf(subject.headline)),
+    relationship: relationshipOf(index, memberId),
+  };
+}
+
+/** The profile URN behind a public id. */
+export function parseProfileLookup(json: unknown, publicId: string): { memberId: string; name: string } | null {
+  const card = parseProfileCard(json, publicId);
+  return card ? { memberId: card.memberId, name: card.name } : null;
+}
+
+export type InvitationOutcome =
+  | { kind: "sent"; invitationUrn: string | null }
+  /** LinkedIn says an invitation is already pending (CANT_RESEND_YET...). */
+  | { kind: "already_pending"; detail: string }
+  | { kind: "already_connected"; detail: string }
+  | { kind: "quota"; detail: string }
+  | { kind: "refused"; detail: string };
+
+function classifyInvitationRefusal(code: string, message: string): InvitationOutcome {
+  const text = `${code} ${message}`.trim();
+  const detail = text ? `LinkedIn: ${text}`.slice(0, 300) : "LinkedIn refused the invitation.";
+  if (/CANT_RESEND|ALREADY_INVITED|already (?:been )?invited|pending/i.test(text)) return { kind: "already_pending", detail };
+  if (/ALREADY_CONNECTED|already connected|FIRST_DEGREE/i.test(text)) return { kind: "already_connected", detail };
+  if (/QUOTA|LIMIT|too many|weekly/i.test(text)) return { kind: "quota", detail };
+  return { kind: "refused", detail };
+}
+
+/**
+ * The verifyQuotaAndCreateV2 answer. Success carries data.value["*invitation"];
+ * LinkedIn may also refuse with HTTP 200 and data.code/message, or with an
+ * HTTP error whose body names the reason.
+ */
+export function parseInvitationResult(status: number, body: string): InvitationOutcome {
+  let json: unknown = null;
+  try {
+    json = JSON.parse(body);
+  } catch {
+    json = null;
+  }
+  const root = isObj(json) && isObj(json.data) ? json.data : isObj(json) ? json : {};
+  const code = String((root as Obj).code ?? (root as Obj).serviceErrorCode ?? "");
+  const message = String((root as Obj).message ?? "");
+  if (status >= 200 && status < 300) {
+    const value = (root as Obj).value;
+    const urn = isObj(value) ? (value["*invitation"] ?? value.invitationUrn ?? value.entityUrn) : undefined;
+    if (typeof urn === "string") return { kind: "sent", invitationUrn: urn };
+    if (code || message) return classifyInvitationRefusal(code, message);
+    return { kind: "sent", invitationUrn: null };
+  }
+  return classifyInvitationRefusal(code || (/[A-Z_]{8,}/.exec(body)?.[0] ?? ""), message || `HTTP ${status}`);
+}
+
+/** A message LinkedIn refused because the recipient is not a 1st-degree connection. */
+export function isNotConnectedRefusal(status: number, body: string): boolean {
+  return status === 422 && /NOT_FIRST_DEGREE|FIRST_DEGREE_CONNECTION/i.test(body);
 }

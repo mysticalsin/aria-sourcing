@@ -6,9 +6,10 @@
    tasks. The extension runs them one by one and posts each raw answer back.
    ========================================================================== */
 
-import type { BridgePolicy, SendSlot } from "./policy";
+import type { BridgePolicy, SendSlot, WriteKind } from "./policy";
 import {
   buildConversationsRequest,
+  buildInvitationRequest,
   buildMeRequest,
   buildMessagesRequest,
   buildProfileLookupRequest,
@@ -17,19 +18,21 @@ import {
   type LinkedInRequestSpec,
 } from "./voyager";
 
-export const BRIDGE_OPS = ["identity", "conversations", "messages", "resolveProfile", "send"] as const;
+export const BRIDGE_OPS = ["identity", "conversations", "messages", "resolveProfile", "send", "invite", "lookupContact"] as const;
 export type BridgeOp = (typeof BRIDGE_OPS)[number];
 
 export interface BridgeTask {
   id: string;
   op: BridgeOp;
-  /** Conversation URN (messages) or outbox item id (resolveProfile, send). */
+  /** Conversation URN (messages), outbox item id (resolveProfile, send, invite) or contact id (lookupContact). */
   ref: string | null;
   request: LinkedInRequestSpec;
 }
 
 export interface PendingSend {
   id: string;
+  /** A message, or a connection invitation whose body is the optional note. */
+  kind: WriteKind;
   body: string;
   conversationUrn: string | null;
   recipientMemberId: string | null;
@@ -54,6 +57,8 @@ export interface PlanInput {
   linkedInActivity: boolean;
   /** Conversation URNs whose messages need a refresh, most recent first. */
   threadsToRefresh: string[];
+  /** Candidate contacts to look up (member id + relationship), already capped. */
+  contactsToCheck: { id: string; identity: string }[];
   nextSend: PendingSend | null;
   sendSlot: SendSlot;
   trackingId: () => string;
@@ -78,7 +83,14 @@ export function planTasks(input: PlanInput): BridgeTask[] {
   // A person is waiting on a send: it goes first.
   const send = input.nextSend;
   if (send && input.sendSlot.allowed) {
-    if (send.conversationUrn || send.recipientMemberId) {
+    if (send.kind === "invitation" && send.recipientMemberId) {
+      tasks.push({
+        id: `invite:${send.id}`,
+        op: "invite",
+        ref: send.id,
+        request: buildInvitationRequest({ recipientMemberId: send.recipientMemberId, note: send.body }),
+      });
+    } else if (send.kind === "message" && (send.conversationUrn || send.recipientMemberId)) {
       tasks.push({
         id: `send:${send.id}`,
         op: "send",
@@ -100,6 +112,10 @@ export function planTasks(input: PlanInput): BridgeTask[] {
         request: buildProfileLookupRequest(send.recipientPublicId),
       });
     }
+  }
+
+  for (const contact of input.contactsToCheck) {
+    tasks.push({ id: `lookupContact:${contact.id}`, op: "lookupContact", ref: contact.id, request: buildProfileLookupRequest(contact.identity) });
   }
 
   const sinceInboxSync = account.lastInboxSyncAt === null ? Number.POSITIVE_INFINITY : now - account.lastInboxSyncAt;

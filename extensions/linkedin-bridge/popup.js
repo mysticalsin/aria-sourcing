@@ -29,7 +29,7 @@ function render(data) {
 
   setCheck("check-linkedin", signedIn ? "ok" : "warn", signedIn ? "Signed in" : "Not signed in: open linkedin.com");
 
-  if (!token) setCheck("check-aria", "warn", "Not connected: ARIA › LinkedIn › Connect");
+  if (!token) setCheck("check-aria", "warn", "Not connected: ARIA › Settings › LinkedIn");
   else if (status.state === "error") setCheck("check-aria", "err", "Connection problem");
   else if (status.state === "pairing" || (!name && status.running)) setCheck("check-aria", "busy", "Connecting…");
   else setCheck("check-aria", "ok", name ? `Connected as ${name}` : "Paired");
@@ -120,17 +120,14 @@ $("sync").addEventListener("click", async () => {
   await refresh();
 });
 
-$("open").addEventListener("click", async () => {
+async function openAria(path) {
   const { ariaUrl } = await chrome.storage.local.get("ariaUrl");
   const base = (ariaUrl || DEFAULT_ARIA_URL).replace(/\/+$/, "");
-  const [existing] = await chrome.tabs.query({ url: `${base}/linkedin*` }).catch(() => []);
-  if (existing) {
-    await chrome.tabs.update(existing.id, { active: true });
-    await chrome.windows.update(existing.windowId, { focused: true });
-  } else {
-    await chrome.tabs.create({ url: `${base}/linkedin` });
-  }
+  await chrome.tabs.create({ url: `${base}${path}` });
   window.close();
-});
+}
+
+$("open").addEventListener("click", () => void openAria("/candidates"));
+$("settings-link").addEventListener("click", () => void openAria("/settings?tab=integrations#linkedin"));
 
 void init();

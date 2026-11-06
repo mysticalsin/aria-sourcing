@@ -12,7 +12,6 @@ import {
   History,
   Brain,
   Coins,
-  Linkedin,
   type LucideIcon,
 } from "lucide-react";
 
@@ -65,7 +64,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/funnel", label: "Pipeline", icon: Workflow, section: "Recruit", description: "Hiring pipeline by stage" },
   { href: "/outreach", label: "Outreach", icon: Send, section: "Engage", description: "Messages awaiting approval" },
   { href: "/replies", label: "Replies", icon: MessageSquareReply, section: "Engage", description: "Candidate replies" },
-  { href: "/linkedin", label: "LinkedIn", icon: Linkedin, section: "Engage", description: "LinkedIn inbox (experimental bridge)" },
   { href: "/calendar", label: "Calendar", icon: CalendarDays, section: "Engage", description: "Interview bookings" },
   {
     href: "/exec",

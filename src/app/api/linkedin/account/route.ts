@@ -21,6 +21,16 @@ export const dynamic = "force-dynamic";
 
 /** The extension polls every minute; three missed polls means it is offline. */
 const ONLINE_WINDOW_MS = 3 * 60 * 1000;
+/** Invitations and relationship checks need the 0.3 allowlist. */
+const MIN_EXTENSION_VERSION = "0.3.0";
+
+function olderThan(version: string | null, minimum: string): boolean {
+  if (!version) return false;
+  const a = version.split(".").map((n) => Number(n) || 0);
+  const b = minimum.split(".").map((n) => Number(n) || 0);
+  for (let i = 0; i < 3; i += 1) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  return false;
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireBridgeUser(req);
@@ -42,6 +52,8 @@ export async function GET(req: NextRequest) {
         displayName: account.display_name,
         publicIdentifier: account.public_identifier,
         extensionVersion: account.extension_version,
+        extensionOutdated: olderThan(account.extension_version, MIN_EXTENSION_VERSION),
+        minExtensionVersion: MIN_EXTENSION_VERSION,
         sessionPresent: account.session_present,
         online: lastSeen !== null && now.getTime() - lastSeen < ONLINE_WINDOW_MS,
         lastSeenAt: account.last_seen_at,
@@ -54,6 +66,8 @@ export async function GET(req: NextRequest) {
         dailySendCap: policy.dailySendCap,
         minSendIntervalSeconds: Math.round(policy.minSendIntervalMs / 1000),
         sentLast24h: sent.filter((t) => t > now.getTime() - 24 * 60 * 60 * 1000).length,
+        dailyInviteCap: policy.dailyInviteCap,
+        weeklyInviteCap: policy.weeklyInviteCap,
       },
       unread: await unreadCount(auth.ctx.svc, account.id),
     });

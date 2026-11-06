@@ -6,7 +6,9 @@ import { Button, Card, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ago, useNow } from "./format";
 import type { AccountInfo, ExtensionStatus, Policy } from "./types";
-import type { Transport } from "./use-linkedin-inbox";
+import type { LinkedInState } from "./linkedin-store";
+
+type Transport = LinkedInState["transport"];
 
 type Live = "syncing" | "live" | "no-session" | "offline" | "waiting";
 
@@ -121,8 +123,11 @@ export function Onboarding({
             <Linkedin className="h-5 w-5" aria-hidden />
           </span>
           <div>
-            <h2 className="text-lg font-bold text-ink">Bring your LinkedIn inbox into ARIA</h2>
-            <p className="text-sm text-muted">Read replies next to your candidates and answer them from here, as yourself.</p>
+            <h2 className="text-lg font-bold text-ink">Connect your LinkedIn</h2>
+            <p className="text-sm text-muted">
+              Invite sourced candidates and talk to them from their ARIA profile, as yourself. Personal: each ARIA user connects their
+              own LinkedIn, and only conversations with candidates are kept.
+            </p>
           </div>
         </div>
       </div>
@@ -263,6 +268,13 @@ export function ConnectionBar({
           </div>
         </div>
       </div>
+      {account && (account as AccountInfo & { extensionOutdated?: boolean }).extensionOutdated && (
+        <p className="mt-3 flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-ink animate-fade-in">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          The ARIA extension in this browser ({account.extensionVersion}) is out of date: open chrome://extensions and click its reload
+          arrow. Invitations and relationship checks need the new version.
+        </p>
+      )}
       {(account?.lastError || state === "offline" || state === "no-session") && (
         <p
           className={cn(

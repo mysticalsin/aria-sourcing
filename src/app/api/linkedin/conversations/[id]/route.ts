@@ -21,9 +21,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const svc = auth.ctx.svc;
     const { data: conversation, error } = await svc
       .from("linkedin_bridge_conversations")
-      .select("id, conversation_urn, title, participants, group_chat, last_activity_at, unread, seen_at, messages_synced_at, needs_message_sync")
+      .select("id, conversation_urn, candidate_id, title, participants, group_chat, last_activity_at, unread, seen_at, messages_synced_at, needs_message_sync")
       .eq("account_id", account.id)
       .eq("id", id)
+      .not("candidate_id", "is", null)
       .maybeSingle();
     if (error) return serverError("Conversation unavailable.");
     if (!conversation) return notFound("Conversation not found.");

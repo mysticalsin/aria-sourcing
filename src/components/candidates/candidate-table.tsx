@@ -23,6 +23,7 @@ import {
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
+import { LinkedInBadge } from "@/components/linkedin/linkedin-badge";
 import { candidateReview } from "@/lib/candidate-review";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
 import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
@@ -133,6 +134,7 @@ export function CandidateTable({
                   {c.stage}
                 </Badge>
                 <ProvenanceChip candidate={c} />
+                <LinkedInBadge candidateId={c.id} />
                 {activeFlags(c.complianceFlags).map((f) => (
                   <Badge key={f.key} tone={f.tone} size="sm">
                     {f.label}
@@ -272,6 +274,7 @@ export function CandidateTable({
                     the top bar, not on every row. */}
                 <div className="flex items-center gap-1.5">
                   <ProvenanceChip candidate={c} />
+                  <LinkedInBadge candidateId={c.id} />
                   {c.vivier && (
                     <span title="In the talent pool" className="shrink-0 text-violet">
                       <Bookmark className="h-3.5 w-3.5" aria-hidden />

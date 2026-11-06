@@ -16,6 +16,7 @@ import {
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
+import { CandidateLinkedIn, linkedInContactBlock } from "@/components/linkedin/candidate-linkedin";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import { candidateEnrichmentBlocker, candidateExclusionBlocker, candidateReview } from "@/lib/candidate-review";
@@ -1746,6 +1747,15 @@ export function CandidateDrawer({
             </ul>
           )}
         </Section>
+
+        {!masked && !erasureTombstone && c.linkedinUrl && can(role, "outreach") && (
+          <CandidateLinkedIn
+            candidateId={c.id}
+            name={c.name}
+            linkedinUrl={c.linkedinUrl}
+            contactBlocked={linkedInContactBlock(c.complianceFlags)}
+          />
+        )}
 
         <Section title="Compliance & data governance" icon={<ShieldAlert className="h-4 w-4" />}>
           <p className="text-sm text-muted">

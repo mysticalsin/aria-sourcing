@@ -11,8 +11,17 @@
 export interface BridgePolicy {
   /** Messages per rolling 24 hours, per LinkedIn account. */
   dailySendCap: number;
-  /** Minimum gap between two sends. */
+  /** Minimum gap between two writes (messages and invitations alike). */
   minSendIntervalMs: number;
+  /** Connection invitations per rolling 24 hours and per rolling 7 days. */
+  dailyInviteCap: number;
+  weeklyInviteCap: number;
+  /** Profile reads per rolling 24 hours (LinkedIn counts them as profile views). */
+  dailyLookupCap: number;
+  /** Profile reads per poll. */
+  lookupsPerPoll: number;
+  /** How often a pending invitation is checked for acceptance. */
+  pendingRecheckMs: number;
   /** How often the inbox list is refreshed while the extension is online. */
   inboxSyncIntervalMs: number;
   /** Faster refresh while the ARIA LinkedIn page is open and visible. */
@@ -42,6 +51,11 @@ export function readBridgePolicy(env: NodeJS.ProcessEnv = process.env): BridgePo
   return {
     dailySendCap: intFromEnv(env.LINKEDIN_BRIDGE_DAILY_SEND_CAP, 40, 1, 150),
     minSendIntervalMs: intFromEnv(env.LINKEDIN_BRIDGE_MIN_SEND_INTERVAL_SECONDS, 90, 20, 3600) * 1000,
+    dailyInviteCap: intFromEnv(env.LINKEDIN_BRIDGE_DAILY_INVITE_CAP, 15, 1, 100),
+    weeklyInviteCap: intFromEnv(env.LINKEDIN_BRIDGE_WEEKLY_INVITE_CAP, 80, 1, 200),
+    dailyLookupCap: intFromEnv(env.LINKEDIN_BRIDGE_DAILY_LOOKUP_CAP, 80, 1, 300),
+    lookupsPerPoll: 1,
+    pendingRecheckMs: 24 * 60 * 60 * 1000,
     inboxSyncIntervalMs: intFromEnv(env.LINKEDIN_BRIDGE_SYNC_SECONDS, 180, 60, 3600) * 1000,
     liveInboxSyncIntervalMs: intFromEnv(env.LINKEDIN_BRIDGE_LIVE_SYNC_SECONDS, 30, 15, 600) * 1000,
     activitySyncMinGapMs: 15_000,
@@ -72,6 +86,36 @@ export function sendSlot(input: {
   }
   const last = recent[recent.length - 1];
   if (last !== undefined && now - last < policy.minSendIntervalMs) {
+    return { allowed: false, reason: "min_interval", retryAt: last + policy.minSendIntervalMs };
+  }
+  return { allowed: true };
+}
+
+export type WriteKind = "message" | "invitation";
+
+/**
+ * Whether a write of this kind may go out now. `recent` lists the account's
+ * writes of the last 7 days. The gap applies across kinds; caps per kind.
+ */
+export function writeSlot(input: {
+  now: number;
+  kind: WriteKind;
+  recent: { kind: WriteKind; at: number }[];
+  policy: Pick<BridgePolicy, "dailySendCap" | "minSendIntervalMs" | "dailyInviteCap" | "weeklyInviteCap">;
+}): SendSlot {
+  const { now, kind, policy } = input;
+  const day = 24 * 60 * 60 * 1000;
+  const sameKind = input.recent.filter((w) => w.kind === kind).map((w) => w.at);
+  const caps: [number, number][] =
+    kind === "message" ? [[day, policy.dailySendCap]] : [[day, policy.dailyInviteCap], [7 * day, policy.weeklyInviteCap]];
+  let retryAt = 0;
+  for (const [window, cap] of caps) {
+    const inWindow = sameKind.filter((t) => t > now - window).sort((a, b) => a - b);
+    if (inWindow.length >= cap) retryAt = Math.max(retryAt, inWindow[inWindow.length - cap] + window);
+  }
+  if (retryAt) return { allowed: false, reason: "daily_cap", retryAt };
+  const last = Math.max(0, ...input.recent.map((w) => w.at).filter((t) => t > now - day));
+  if (last && now - last < policy.minSendIntervalMs) {
     return { allowed: false, reason: "min_interval", retryAt: last + policy.minSendIntervalMs };
   }
   return { allowed: true };

@@ -9,7 +9,6 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { linkedInApi, postJson } from "./api";
 import { Avatar } from "./avatar";
 import { Composer } from "./composer";
-import { conversationName } from "./conversation-list";
 import { clock, dayKey, dayLabel } from "./format";
 import type { Message, OutboxItem, OutboxStatus, ThreadData } from "./types";
 
@@ -36,8 +35,17 @@ const STAGE: Record<Stage, { label: string; icon: React.ReactNode; tone: "pendin
   cancelled: { label: "Withdrawn", icon: <X className="h-3 w-3" />, tone: "pending" },
 };
 
+function conversationName(c: ThreadData["conversation"]): string {
+  if (c.title) return c.title;
+  const names = c.participants.map((p) => p.name).filter(Boolean);
+  return names.length ? names.join(", ") : (c.last_message_sender ?? "LinkedIn conversation");
+}
+
 export function ThreadView({
   conversationId,
+  title,
+  subtitle,
+  compact,
   tick,
   extensionOnline,
   syncing,
@@ -45,6 +53,11 @@ export function ThreadView({
   onChanged,
 }: {
   conversationId: string;
+  /** Who the thread is with, when ARIA knows better than LinkedIn's copy (the candidate's name). */
+  title?: string;
+  subtitle?: string | null;
+  /** Inside the candidate drawer: no header, the drawer already says who it is. */
+  compact?: boolean;
   /** Bumped by the live stream: refetch. */
   tick: number;
   extensionOnline: boolean;
@@ -203,19 +216,21 @@ export function ThreadView({
   }
 
   const conversation = data.conversation;
-  const name = conversationName(conversation);
+  const name = title ?? conversationName(conversation);
   const person = conversation.participants.length === 1 ? conversation.participants[0] : null;
   const lastOutboundKey = [...entries].reverse().find((e) => e.kind === "message" && e.message.direction === "outbound")?.key;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-        <Avatar name={name} size="lg" />
+      <div className={cn("flex items-center gap-3 border-b border-line px-4 py-3", compact && "py-2")}>
+        {!compact && <Avatar name={name} size="lg" />}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold text-ink">{name}</p>
-          <p className="truncate text-xs text-muted">
-            {person?.headline ?? (conversation.group_chat ? `${conversation.participants.length} people` : "LinkedIn")}
-          </p>
+          <p className={cn("truncate font-semibold text-ink", compact && "text-sm")}>{compact ? "Conversation" : name}</p>
+          {!compact && (
+            <p className="truncate text-xs text-muted">
+              {subtitle ?? person?.headline ?? (conversation.group_chat ? `${conversation.participants.length} people` : "LinkedIn")}
+            </p>
+          )}
         </div>
         <span
           className={cn(
@@ -227,7 +242,7 @@ export function ThreadView({
           <RefreshCw className={cn("h-3.5 w-3.5", !reduced && syncing && "animate-spin")} aria-hidden />
           {syncing ? "Syncing" : ""}
         </span>
-        {person?.profileUrl && (
+        {!compact && person?.profileUrl && (
           <a href={person.profileUrl} target="_blank" rel="noreferrer" className="rounded-full px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/5">
             Profile
           </a>
@@ -317,7 +332,7 @@ export function ThreadView({
       </AnimatePresence>
 
       <Composer
-        placeholder={`Message ${person?.name.split(" ")[0] ?? name}…`}
+        placeholder={`Message ${(person?.name || name).split(" ")[0]}…`}
         onSend={send}
         hint={
           extensionOnline

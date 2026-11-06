@@ -275,7 +275,7 @@ async function cycle() {
   try {
     const cfg = await settings();
     if (!cfg.token) {
-      await setStatus({ state: "unpaired", message: "Open the LinkedIn page in ARIA and click Connect." });
+      await setStatus({ state: "unpaired", message: "In ARIA, open Settings › LinkedIn and click Connect in one click." });
       await setBadge("unpaired", 0);
       return;
     }

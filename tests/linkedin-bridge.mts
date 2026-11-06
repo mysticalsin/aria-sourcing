@@ -15,18 +15,23 @@ import { checkLinkedInRequest } from "../extensions/linkedin-bridge/allowlist.js
 import { parseCapturedQuery, topLevelKeys } from "../extensions/linkedin-bridge/queries.js";
 import { classifyAnswer, graphqlErrors } from "../src/lib/linkedin-bridge/outcome.ts";
 import {
+  isNotConnectedRefusal,
   parseConversations,
   parseIdentity,
+  parseInvitationResult,
   parseMessages,
+  parseProfileCard,
   parseProfileLookup,
   parseSendResult,
 } from "../src/lib/linkedin-bridge/parse.ts";
 import { planTasks, type PlanInput } from "../src/lib/linkedin-bridge/planner.ts";
-import { linkedInBridgeEnabled, readBridgePolicy, sendSlot } from "../src/lib/linkedin-bridge/policy.ts";
+import { linkedInBridgeEnabled, readBridgePolicy, sendSlot, writeSlot } from "../src/lib/linkedin-bridge/policy.ts";
 import { bridgeTokenFromHeader, generateBridgeToken, hashBridgeToken, randomTrackingId } from "../src/lib/linkedin-bridge/token.ts";
 import {
   FALLBACK_QUERIES,
+  INVITATION_NOTE_LIMIT,
   buildConversationsRequest,
+  buildInvitationRequest,
   buildMeRequest,
   buildMessagesRequest,
   buildProfileLookupRequest,
@@ -88,6 +93,9 @@ test("every request ARIA builds passes the extension allowlist", () => {
     buildProfileLookupRequest("josé-garcía"),
     buildSendMessageRequest({ selfMemberId: SELF, text: "Hi", conversationUrn: CONV1, originToken: "t", trackingId: "x" }),
     buildSendMessageRequest({ selfMemberId: SELF, text: "Hi", recipientMemberId: OTHER, originToken: "t", trackingId: "x" }),
+    buildProfileLookupRequest(OTHER),
+    buildInvitationRequest({ recipientMemberId: OTHER }),
+    buildInvitationRequest({ recipientMemberId: OTHER, note: "Hi Jane, happy to connect." }),
   ];
   for (const request of requests) assert.equal(checkLinkedInRequest(request), null, request.path);
 });
@@ -146,6 +154,9 @@ test("the allowlist refuses everything else", () => {
     { method: "GET", path: "//evil.example/voyager/api/me", headers: {} },
     { method: "GET", path: "https://evil.example/voyager/api/me", headers: {} },
     { method: "GET", path: "/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=a&decorationId=x", headers: {} },
+    { method: "GET", path: "/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=a", headers: {} },
+    { method: "POST", path: "/voyager/api/voyagerRelationshipsDashMemberRelationships?action=withdraw", headers: {}, body: "{}" },
+    { method: "GET", path: "/voyager/api/voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2", headers: {} },
     null,
   ];
   for (const request of refused) assert.notEqual(checkLinkedInRequest(request), null, JSON.stringify(request));
@@ -333,7 +344,11 @@ test("send result and profile lookup", () => {
     ],
   };
   assert.deepEqual(parseProfileLookup(lookup, "jane-doe"), { memberId: OTHER, name: "Jane Doe" });
-  assert.equal(parseProfileLookup(lookup, "someone-else"), null, "two candidates and no exact match: refuse to guess");
+  // data["*elements"] names the subject; the answer also carries our own profile.
+  assert.equal(parseProfileLookup(lookup, "anything")?.memberId, OTHER);
+  const unnamed = { included: lookup.included };
+  assert.equal(parseProfileLookup(unnamed, "someone-else"), null, "no subject and no exact match: refuse to guess");
+  assert.equal(parseProfileLookup(unnamed, "jane-doe")?.memberId, OTHER);
 });
 
 // ── Policy and planner ──────────────────────────────────────────────────────
@@ -369,6 +384,7 @@ function plan(overrides: Omit<Partial<PlanInput>, "account"> & { account?: Parti
     live: false,
     linkedInActivity: false,
     threadsToRefresh: [],
+    contactsToCheck: [],
     nextSend: null,
     sendSlot: { allowed: true },
     trackingId: () => "TRACKINGID000000",
@@ -377,7 +393,7 @@ function plan(overrides: Omit<Partial<PlanInput>, "account"> & { account?: Parti
 }
 
 test("planner: nothing without a session or during a backoff", () => {
-  assert.deepEqual(plan({ sessionPresent: false, nextSend: { id: "a", body: "x", conversationUrn: CONV1, recipientMemberId: null, recipientPublicId: null } }), []);
+  assert.deepEqual(plan({ sessionPresent: false, nextSend: { id: "a", kind: "message", body: "x", conversationUrn: CONV1, recipientMemberId: null, recipientPublicId: null } }), []);
   assert.deepEqual(plan({ account: { backoffUntil: 1_730_000_000_000 + 1 } }), []);
   assert.deepEqual(plan(), [], "fresh state: nothing to do");
 });
@@ -387,7 +403,7 @@ test("planner: identity first, then the inbox, threads and the waiting send", ()
   const tasks = plan({
     account: { lastInboxSyncAt: null, identityCheckedAt: null },
     threadsToRefresh: [CONV1, CONV2],
-    nextSend: { id: "11111111-1111-4111-8111-111111111111", body: "Hello", conversationUrn: CONV1, recipientMemberId: null, recipientPublicId: null },
+    nextSend: { id: "11111111-1111-4111-8111-111111111111", kind: "message", body: "Hello", conversationUrn: CONV1, recipientMemberId: null, recipientPublicId: null },
   });
   assert.deepEqual(tasks.map((t) => t.op), ["identity", "send", "conversations", "messages", "messages"]);
   const send = tasks[1];
@@ -397,7 +413,7 @@ test("planner: identity first, then the inbox, threads and the waiting send", ()
 });
 
 test("planner: a new chat resolves the profile first; pacing holds the send", () => {
-  const pending = { id: "s", body: "Hi", conversationUrn: null, recipientMemberId: null, recipientPublicId: "jane-doe" };
+  const pending = { id: "s", kind: "message" as const, body: "Hi", conversationUrn: null, recipientMemberId: null, recipientPublicId: "jane-doe" };
   assert.deepEqual(plan({ nextSend: pending }).map((t) => t.op), ["resolveProfile"]);
   const resolved = plan({ nextSend: { ...pending, recipientMemberId: OTHER } });
   assert.deepEqual(JSON.parse(resolved[0].request.body!).hostRecipientUrns, [`urn:li:fsd_profile:${OTHER}`]);
@@ -411,6 +427,74 @@ test("planner: faster inbox refresh while the ARIA page is open, and on LinkedIn
   assert.deepEqual(plan({ live: true, account: { lastInboxSyncAt: now - 10_000 } }).map((t) => t.op), []);
   assert.deepEqual(plan({ linkedInActivity: true, account: { lastInboxSyncAt: now - 20_000 } }).map((t) => t.op), ["conversations"]);
   assert.deepEqual(plan({ linkedInActivity: true, account: { lastInboxSyncAt: now - 5_000 } }).map((t) => t.op), [], "activity is debounced");
+});
+
+// ── Candidates: relationship, invitations ───────────────────────────────────
+
+const card = (relationship: Record<string, unknown> | null) => ({
+  data: { "*elements": [`urn:li:fsd_profile:${OTHER}`] },
+  included: [
+    { entityUrn: `urn:li:fsd_profile:${SELF}`, publicIdentifier: "me", firstName: "Michael", lastName: "Bernard" },
+    { entityUrn: `urn:li:fsd_profile:${OTHER}`, publicIdentifier: "jane-doe", firstName: "Jane", lastName: "Doe", headline: "Data engineer" },
+    ...(relationship ? [{ entityUrn: `urn:li:fsd_memberRelationship:${OTHER}`, ...relationship }] : []),
+  ],
+});
+
+test("profile card: subject, and where they stand with the user", () => {
+  const connected = parseProfileCard(card({ memberRelationshipUnion: { connection: { createdAt: 1 } } }), "jane-doe");
+  assert.deepEqual(connected, { memberId: OTHER, publicIdentifier: "jane-doe", name: "Jane Doe", headline: "Data engineer", relationship: "connected" });
+  assert.equal(parseProfileCard(card({ memberRelationshipUnion: { noConnection: { invitationUnion: { noInvitation: {} }, memberDistance: "DISTANCE_2" } } }), "jane-doe")?.relationship, "none");
+  assert.equal(parseProfileCard(card({ memberRelationshipUnion: { noConnection: { invitationUnion: { invitation: { "*invitation": "urn:li:fsd_invitation:1" } } } } }), "jane-doe")?.relationship, "pending");
+  assert.equal(parseProfileCard(card({ memberRelationshipUnion: { noConnection: { memberDistance: "DISTANCE_1" } } }), "jane-doe")?.relationship, "connected");
+  assert.equal(parseProfileCard(card(null), "jane-doe")?.relationship, "unknown", "no MemberRelationship: unknown, not 'none'");
+  assert.equal(parseProfileCard({ data: {} }, "jane-doe"), null);
+});
+
+test("invitation request: LinkedIn's Connect dialog payload, note optional", () => {
+  const bare = buildInvitationRequest({ recipientMemberId: OTHER });
+  assert.equal(bare.method, "POST");
+  assert.deepEqual(JSON.parse(bare.body!), { invitee: { inviteeUnion: { memberProfile: `urn:li:fsd_profile:${OTHER}` } } });
+  assert.equal(bare.headers["content-type"], "application/json");
+  const noted = JSON.parse(buildInvitationRequest({ recipientMemberId: OTHER, note: "  Hi Jane  " }).body!);
+  assert.equal(noted.customMessage, "Hi Jane");
+  assert.throws(() => buildInvitationRequest({ recipientMemberId: OTHER, note: "x".repeat(INVITATION_NOTE_LIMIT + 1) }));
+  assert.match(buildProfileLookupRequest("jane-doe").path, /decorationId=com\.linkedin\.voyager\.dash\.deco\.identity\.profile\.WebTopCardCore-19$/);
+});
+
+test("invitation answers are classified", () => {
+  assert.deepEqual(parseInvitationResult(201, JSON.stringify({ data: { value: { "*invitation": "urn:li:fsd_invitation:9" } } })), {
+    kind: "sent",
+    invitationUrn: "urn:li:fsd_invitation:9",
+  });
+  assert.equal(parseInvitationResult(400, '{"data":{"code":"CANT_RESEND_YET","status":400}}').kind, "already_pending");
+  assert.equal(parseInvitationResult(400, "CANT_RESEND_YET").kind, "already_pending");
+  assert.equal(parseInvitationResult(200, '{"data":{"code":"WEEKLY_INVITATION_LIMIT_REACHED"}}').kind, "quota");
+  assert.equal(parseInvitationResult(422, '{"message":"Something else"}').kind, "refused");
+  assert.equal(isNotConnectedRefusal(422, '{"code":"RECIPIENT_NOT_FIRST_DEGREE_CONNECTION"}'), true);
+  assert.equal(isNotConnectedRefusal(500, "RECIPIENT_NOT_FIRST_DEGREE_CONNECTION"), false);
+});
+
+test("write pacing: one gap across kinds, caps per kind", () => {
+  const day = 24 * 3600_000;
+  const now = 30 * day;
+  const policy = { dailySendCap: 40, minSendIntervalMs: 90_000, dailyInviteCap: 2, weeklyInviteCap: 3 };
+  assert.deepEqual(writeSlot({ now, kind: "invitation", recent: [], policy }), { allowed: true });
+  assert.equal(writeSlot({ now, kind: "invitation", recent: [{ kind: "message", at: now - 10_000 }], policy }).allowed, false, "gap shared with messages");
+  const daily = writeSlot({ now, kind: "invitation", recent: [{ kind: "invitation", at: now - 5 * 3600_000 }, { kind: "invitation", at: now - 3600_000 }], policy });
+  assert.deepEqual(daily, { allowed: false, reason: "daily_cap", retryAt: now - 5 * 3600_000 + day });
+  const weekly = writeSlot({ now, kind: "invitation", recent: [1, 2, 3].map((d) => ({ kind: "invitation" as const, at: now - d * day - 1000 })), policy });
+  assert.equal(weekly.allowed, false, "weekly invitation cap");
+  assert.deepEqual(writeSlot({ now, kind: "message", recent: [1, 2, 3].map((d) => ({ kind: "invitation" as const, at: now - d * day - 1000 })), policy }), { allowed: true });
+});
+
+test("planner: invitations, and candidate look-ups", () => {
+  const invite = { id: "i", kind: "invitation" as const, body: "", conversationUrn: null, recipientMemberId: OTHER, recipientPublicId: null };
+  const tasks = plan({ nextSend: invite, contactsToCheck: [{ id: "c1", identity: "jane-doe" }] });
+  assert.deepEqual(tasks.map((t) => [t.op, t.ref]), [["invite", "i"], ["lookupContact", "c1"]]);
+  assert.equal(checkLinkedInRequest(tasks[0].request), null);
+  assert.equal(checkLinkedInRequest(tasks[1].request), null);
+  assert.deepEqual(plan({ nextSend: { ...invite, recipientMemberId: null, recipientPublicId: "jane-doe" } }).map((t) => t.op), ["resolveProfile"]);
+  assert.deepEqual(plan({ nextSend: invite, sendSlot: { allowed: false, reason: "daily_cap", retryAt: 0 } }).map((t) => t.op), []);
 });
 
 // ── Tokens and answers ──────────────────────────────────────────────────────
@@ -460,30 +544,52 @@ test("the bridge is isolated: only its own routes import it", () => {
   assert.deepEqual(offenders, []);
 });
 
-test("only a signed-in person can queue a message; the extension cannot", () => {
-  const outbox = readFileSync("src/app/api/linkedin/outbox/route.ts", "utf8");
-  assert.match(outbox, /requireBridgeUser/);
-  assert.doesNotMatch(outbox, /requireBridgeExtension/);
+test("only a signed-in person can queue a message or an invitation; the extension cannot", () => {
+  for (const route of ["src/app/api/linkedin/outbox/route.ts", "src/app/api/linkedin/candidates/route.ts"]) {
+    const source = readFileSync(route, "utf8");
+    assert.match(source, /requireBridgeUser/);
+    assert.doesNotMatch(source, /requireBridgeExtension/);
+    // The candidate comes from the workspace state, and its compliance flags are checked.
+    assert.match(source, /candidateRecord\(svc, workspaceId,/);
+    assert.match(source, /contactBlock\(candidate\)/);
+  }
   for (const route of ["src/app/api/linkedin/bridge/poll/route.ts", "src/app/api/linkedin/bridge/result/route.ts"]) {
     const source = readFileSync(route, "utf8");
     assert.match(source, /requireBridgeExtension/);
     assert.doesNotMatch(source, /requireBridgeUser|from\("linkedin_bridge_outbox"\)\s*\.insert/);
   }
-  const callers = sourceFiles("src")
-    .filter((path) => readFileSync(path, "utf8").includes("/api/linkedin/outbox"))
-    .map((path) => path.replaceAll("\\", "/"));
-  assert.ok(callers.length > 0);
-  assert.deepEqual(
-    callers.filter((path) => !path.startsWith("src/app/linkedin/") && !path.startsWith("src/components/linkedin/")),
-    [],
-    "only the LinkedIn inbox UI queues messages",
-  );
-  // The UI never sends on its own: every POST to the outbox sits in a user action.
-  for (const file of callers.filter((path) => path.startsWith("src/components/linkedin/"))) {
-    const source = readFileSync(file, "utf8");
-    if (!/"\/api\/linkedin\/outbox",\s*postJson/.test(source)) continue;
-    assert.match(source, /async function send\(text: string\)/, `${file} posts to the outbox only from send()`);
+  const all = sourceFiles("src").map((path) => path.replaceAll("\\", "/"));
+  const outside = (needle: string) =>
+    all.filter((path) => readFileSync(path, "utf8").includes(needle)).filter((path) => !path.startsWith("src/components/linkedin/"));
+  assert.deepEqual(outside("/api/linkedin/outbox"), [], "only the LinkedIn components queue messages");
+  assert.deepEqual(outside('"/api/linkedin/candidates"'), [], "only the LinkedIn components queue invitations");
+  assert.deepEqual(outside("linkedin-store"), [], "no agent, mission or store action reaches the LinkedIn actions");
+  // Each write sits in a click handler.
+  const thread = readFileSync("src/components/linkedin/thread-view.tsx", "utf8");
+  assert.match(thread, /async function send\(text: string\)/);
+  const panel = readFileSync("src/components/linkedin/candidate-linkedin.tsx", "utf8");
+  assert.match(panel, /onInvite=\{\(note\) => act\(\(\) => inviteCandidate\(candidateId, note\)/);
+  assert.match(panel, /onSend=\{\(text\) => act\(\(\) => messageCandidate\(candidateId, text\)/);
+  const usesOf = (name: string) => all.filter((path) => new RegExp(`\\b${name}\\(`).test(readFileSync(path, "utf8")));
+  assert.deepEqual(usesOf("inviteCandidate").sort(), ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts"]);
+  assert.deepEqual(usesOf("messageCandidate").sort(), ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts"]);
+});
+
+test("candidate data: only candidates' conversations are kept, one LinkedIn account per user", () => {
+  const migration = readFileSync("supabase/migrations/0008_linkedin_bridge_candidates.sql", "utf8");
+  assert.match(migration, /create unique index linkedin_bridge_accounts_member\s+on public\.linkedin_bridge_accounts\(member_id\) where member_id is not null/);
+  assert.match(migration, /alter table public\.linkedin_bridge_contacts force row level security/);
+  assert.match(migration, /revoke all on public\.linkedin_bridge_contacts from public, anon, authenticated, authenticator/);
+  assert.match(migration, /revoke all on function public\.linkedin_bridge_candidate\(uuid, text\) from public, anon, authenticated;\s*grant execute on function public\.linkedin_bridge_candidate\(uuid, text\) to service_role;/);
+  assert.match(migration, /delete from public\.linkedin_bridge_messages;/);
+  const server = readFileSync("src/lib/linkedin-bridge/server.ts", "utf8");
+  // A conversation without a candidate keeps member ids only.
+  assert.match(server, /participants: c\.participants\.filter\(\(p\) => p\.memberId\)\.slice\(0, 50\)\.map\(\(p\) => \(\{ memberId: p\.memberId \}\)\)/);
+  for (const route of ["src/app/api/linkedin/conversations/route.ts", "src/app/api/linkedin/conversations/[id]/route.ts"]) {
+    assert.match(readFileSync(route, "utf8"), /\.not\("candidate_id", "is", null\)/, `${route} shows candidates' conversations only`);
   }
+  const result = readFileSync("src/app/api/linkedin/bridge/result/route.ts", "utf8");
+  assert.match(result, /already connected to another ARIA user/);
 });
 
 test("no LinkedIn credential is stored or relayed", () => {

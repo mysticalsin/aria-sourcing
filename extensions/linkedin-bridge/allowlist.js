@@ -3,8 +3,8 @@
 // ARIA builds each request; the extension checks it against this list before
 // running it in the user's LinkedIn tab. A leaked pairing token therefore
 // cannot turn the extension into a general-purpose LinkedIn proxy: it can read
-// the inbox, look up a profile by its public id and send a message, nothing
-// else. tests/linkedin-bridge.mts checks that every request ARIA builds passes.
+// the inbox, look up a profile (and whether it is a connection), send a
+// connection invitation and send a message, nothing else. tests/linkedin-bridge.mts checks that every request ARIA builds passes.
 
 export const LINKEDIN_ORIGIN = "https://www.linkedin.com";
 
@@ -23,7 +23,12 @@ const RULES = [
   {
     method: "GET",
     path: "/voyager/api/identity/dash/profiles",
-    query: /^q=memberIdentity&memberIdentity=[A-Za-z0-9%_.-]{1,200}$/,
+    query: /^q=memberIdentity&memberIdentity=[A-Za-z0-9%_.-]{1,200}&decorationId=com\.linkedin\.voyager\.dash\.deco\.identity\.profile\.WebTopCardCore-\d{1,3}$/,
+  },
+  {
+    method: "POST",
+    path: "/voyager/api/voyagerRelationshipsDashMemberRelationships",
+    query: /^action=verifyQuotaAndCreateV2&decorationId=com\.linkedin\.voyager\.dash\.deco\.relationships\.InvitationCreationResultWithInvitee-\d{1,3}$/,
   },
 ];
 

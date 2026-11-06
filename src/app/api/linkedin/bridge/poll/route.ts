@@ -5,19 +5,22 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
 import { planTasks, type BridgeTask, type PendingSend } from "@/lib/linkedin-bridge/planner";
-import { readBridgePolicy, sendSlot } from "@/lib/linkedin-bridge/policy";
+import { readBridgePolicy, writeSlot } from "@/lib/linkedin-bridge/policy";
 import { randomTrackingId } from "@/lib/linkedin-bridge/token";
 import { mergeCapturedQueries } from "@/lib/linkedin-bridge/voyager";
 import {
+  CONTACT_COLUMNS,
   OUTBOX_COLUMNS,
   expireStaleClaims,
+  lookupsToday,
   okJson,
-  recentSendTimes,
+  recentWrites,
   requireBridgeExtension,
   serverError,
   transitionOutbox,
   unreadCount,
   updateAccount,
+  type ContactRow,
   type OutboxRow,
 } from "@/lib/linkedin-bridge/server";
 
@@ -62,7 +65,8 @@ export async function POST(req: NextRequest) {
     });
     await expireStaleClaims(svc, account.id, now);
 
-    const [threads, queued, recent] = await Promise.all([
+    const recheckBefore = new Date(now.getTime() - policy.pendingRecheckMs).toISOString();
+    const [threads, queued, recent, lookedUp, dueContacts] = await Promise.all([
       svc
         .from("linkedin_bridge_conversations")
         .select("conversation_urn")
@@ -77,9 +81,18 @@ export async function POST(req: NextRequest) {
         .eq("status", "queued")
         .order("created_at", { ascending: true })
         .limit(1),
-      recentSendTimes(svc, account.id, now),
+      recentWrites(svc, account.id, now),
+      lookupsToday(svc, account.id, now),
+      // Asked for by a person, or a pending invitation due for its daily check.
+      svc
+        .from("linkedin_bridge_contacts")
+        .select(CONTACT_COLUMNS)
+        .eq("account_id", account.id)
+        .or(`lookup_requested.eq.true,and(relationship.eq.pending,checked_at.lt."${recheckBefore}")`)
+        .order("updated_at", { ascending: true })
+        .limit(policy.lookupsPerPoll),
     ]);
-    if (threads.error || queued.error) return serverError("Bridge state read failed.");
+    if (threads.error || queued.error || dueContacts.error) return serverError("Bridge state read failed.");
 
     let next: OutboxRow | null = ((queued.data as OutboxRow[] | null) ?? [])[0] ?? null;
     if (next && next.attempts >= MAX_ATTEMPTS) {
@@ -93,13 +106,18 @@ export async function POST(req: NextRequest) {
     const pending: PendingSend | null = next
       ? {
           id: next.id,
+          kind: next.kind,
           body: next.body,
           conversationUrn: next.conversation_urn,
           recipientMemberId: next.recipient_member_id,
           recipientPublicId: next.recipient_public_id,
         }
       : null;
-    const slot = sendSlot({ now: now.getTime(), recentSends: recent, policy });
+    const slot = next ? writeSlot({ now: now.getTime(), kind: next.kind, recent, policy }) : ({ allowed: true } as const);
+    const contactsToCheck =
+      lookedUp < policy.dailyLookupCap
+        ? ((dueContacts.data as ContactRow[] | null) ?? []).map((c) => ({ id: c.id, identity: c.member_id ?? c.identity }))
+        : [];
 
     const planned = planTasks({
       now: now.getTime(),
@@ -115,6 +133,7 @@ export async function POST(req: NextRequest) {
       live,
       linkedInActivity: activity,
       threadsToRefresh: ((threads.data as { conversation_urn: string }[] | null) ?? []).map((t) => t.conversation_urn),
+      contactsToCheck,
       nextSend: pending,
       sendSlot: slot,
       trackingId: randomTrackingId,
@@ -123,9 +142,9 @@ export async function POST(req: NextRequest) {
     // Claim the outbox row before handing it out, so a send is issued once.
     const tasks: BridgeTask[] = [];
     for (const task of planned) {
-      if ((task.op === "send" || task.op === "resolveProfile") && next) {
+      if ((task.op === "send" || task.op === "invite" || task.op === "resolveProfile") && next) {
         const claimed = await transitionOutbox(svc, next, {
-          status: task.op === "send" ? "sending" : "resolving",
+          status: task.op === "resolveProfile" ? "resolving" : "sending",
           claim_until: new Date(now.getTime() + policy.sendClaimMs).toISOString(),
           attempts: Math.min(10, next.attempts + 1),
         });
@@ -146,7 +165,7 @@ export async function POST(req: NextRequest) {
       nextSendAt: !slot.allowed && next ? new Date(slot.retryAt).toISOString() : null,
       stats: {
         unread: await unreadCount(svc, account.id),
-        sentLast24h: recent.filter((t) => t > now.getTime() - 24 * 60 * 60 * 1000).length,
+        sentLast24h: recent.filter((w) => w.kind === "message" && w.at > now.getTime() - 24 * 60 * 60 * 1000).length,
         dailySendCap: policy.dailySendCap,
       },
     });

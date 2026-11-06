@@ -1,4 +1,5 @@
-// Experimental LinkedIn bridge: the signed-in user's synced inbox.
+// Experimental LinkedIn bridge: the signed-in user's conversations with
+// sourced candidates.
 //   GET  conversations, most recent first
 //   POST ask the extension to refresh the inbox (or one thread) on its next
 //        poll, and/or mark a thread as seen in ARIA
@@ -28,9 +29,11 @@ export async function GET(req: NextRequest) {
     const { data, error } = await auth.ctx.svc
       .from("linkedin_bridge_conversations")
       .select(
-        "id, title, participants, group_chat, last_activity_at, unread, seen_at, last_message_preview, last_message_direction, last_message_sender, messages_synced_at",
+        "id, candidate_id, title, participants, group_chat, last_activity_at, unread, seen_at, last_message_preview, last_message_direction, last_message_sender, messages_synced_at",
       )
       .eq("account_id", account.id)
+      // Only conversations with sourced candidates; the rest is never shown.
+      .not("candidate_id", "is", null)
       .order("last_activity_at", { ascending: false, nullsFirst: false })
       .limit(200);
     if (error) return serverError("Conversations unavailable.");

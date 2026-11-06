@@ -164,12 +164,47 @@ export function buildMessagesRequest(
   );
 }
 
-/** Resolve a public profile id (jane-doe) to the profile URN messaging needs. */
-export function buildProfileLookupRequest(publicId: string): LinkedInRequestSpec {
+/**
+ * The decoration LinkedIn's own profile page asks for: besides the profile it
+ * carries the MemberRelationship (connected, invitation pending, or neither).
+ * LinkedIn counts this read as a profile view (commercial-use limits), so the
+ * planner paces it. Captured from the web client in 2026 by third parties.
+ */
+export const PROFILE_CARD_DECORATION = "com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-19";
+export const INVITATION_DECORATION = "com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2";
+/** LinkedIn's limit on an invitation note. */
+export const INVITATION_NOTE_LIMIT = 300;
+
+/**
+ * Look a profile up by its public id (jane-doe) or member id (ACoAA...): its
+ * profile URN, which messaging and invitations need, and where it stands with
+ * the signed-in member.
+ */
+export function buildProfileLookupRequest(identity: string): LinkedInRequestSpec {
   return {
     method: "GET",
-    path: `/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${restliEncode(publicId)}`,
+    path: `/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${restliEncode(identity)}&decorationId=${PROFILE_CARD_DECORATION}`,
     headers: { accept: "application/vnd.linkedin.normalized+json+2.1" },
+  };
+}
+
+/** A connection invitation, as LinkedIn's Connect dialog sends it. No note: no customMessage at all. */
+export function buildInvitationRequest(input: { recipientMemberId: string; note?: string | null }): LinkedInRequestSpec {
+  const note = (input.note ?? "").trim();
+  if (note.length > INVITATION_NOTE_LIMIT) throw new Error(`an invitation note is at most ${INVITATION_NOTE_LIMIT} characters`);
+  const payload: Record<string, unknown> = {
+    invitee: { inviteeUnion: { memberProfile: fsdProfileUrn(input.recipientMemberId) } },
+  };
+  if (note) payload.customMessage = note;
+  return {
+    method: "POST",
+    path: `/voyager/api/voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=${INVITATION_DECORATION}`,
+    headers: {
+      accept: "application/vnd.linkedin.normalized+json+2.1",
+      "content-type": "application/json",
+      "x-restli-protocol-version": "2.0.0",
+    },
+    body: JSON.stringify(payload),
   };
 }
 

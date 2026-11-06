@@ -208,6 +208,7 @@ function iso(ms: number | null): string | null {
 interface StoredConversation {
   id: string;
   conversation_urn: string;
+  candidate_id: string | null;
   title: string | null;
   last_activity_at: string | null;
   unread: boolean;
@@ -230,17 +231,25 @@ function participantsKey(list: unknown[]): string {
 }
 
 /**
- * Upsert one inbox page and the messages LinkedIn embedded in it. A
- * conversation row is written only when something about it changed, so its
- * updated_at (which drives the live view) moves only on real news.
+ * Upsert one inbox page. Only conversations with a sourced candidate (a
+ * participant whose member id is one of `candidates`) are kept in full, with
+ * their messages. Any other conversation is kept as a stub: who is in it (member
+ * ids only) and when it last moved, so a candidate looked up later can still
+ * be matched; no name, no text. A row is written only when something changed,
+ * so updated_at (which drives the live view) moves only on real news.
  */
-export async function storeConversations(svc: Svc, accountId: string, parsed: ParsedConversation[]): Promise<number> {
+export async function storeConversations(
+  svc: Svc,
+  accountId: string,
+  parsed: ParsedConversation[],
+  candidates: ReadonlyMap<string, string>,
+): Promise<number> {
   if (!parsed.length) return 0;
   const urns = parsed.map((c) => c.urn);
   const { data: existingRows, error: readError } = await svc
     .from("linkedin_bridge_conversations")
     .select(
-      "id, conversation_urn, title, last_activity_at, unread, messages_synced_at, needs_message_sync, last_message_preview, last_message_direction, last_message_sender, participants",
+      "id, conversation_urn, candidate_id, title, last_activity_at, unread, messages_synced_at, needs_message_sync, last_message_preview, last_message_direction, last_message_sender, participants",
     )
     .eq("account_id", accountId)
     .in("conversation_urn", urns);
@@ -248,28 +257,50 @@ export async function storeConversations(svc: Svc, accountId: string, parsed: Pa
   const existing = new Map((existingRows as StoredConversation[] | null ?? []).map((row) => [row.conversation_urn, row]));
 
   const now = new Date().toISOString();
+  const linkedUrns = new Set<string>();
   const rows = parsed.flatMap((c) => {
     const known = existing.get(c.urn);
     const knownActivity = known?.last_activity_at ? Date.parse(known.last_activity_at) : null;
     const newer = c.lastActivityAt !== null && (knownActivity === null || c.lastActivityAt > knownActivity);
+    const candidateId = c.participants.map((p) => (p.memberId ? candidates.get(p.memberId) : undefined)).find(Boolean) ?? null;
     const latest = c.messages[c.messages.length - 1];
-    const row = {
-      account_id: accountId,
-      conversation_urn: c.urn,
-      title: c.title ? c.title.slice(0, 300) : null,
-      participants: c.participants.slice(0, 50),
-      group_chat: c.groupChat,
-      last_activity_at: newer ? iso(c.lastActivityAt) : (known?.last_activity_at ?? iso(c.lastActivityAt)),
-      unread: c.unread,
-      last_message_preview: latest ? preview(latest.body) : (known?.last_message_preview ?? null),
-      last_message_direction: latest ? latest.direction : (known?.last_message_direction ?? null),
-      last_message_sender: latest ? latest.senderName.slice(0, 200) : (known?.last_message_sender ?? null),
-      needs_message_sync: !known || !known.messages_synced_at || known.needs_message_sync || newer,
-      updated_at: now,
-    };
+    const lastActivity = newer ? iso(c.lastActivityAt) : (known?.last_activity_at ?? iso(c.lastActivityAt));
+    const row = candidateId
+      ? {
+          account_id: accountId,
+          conversation_urn: c.urn,
+          candidate_id: candidateId,
+          title: c.title ? c.title.slice(0, 300) : null,
+          participants: c.participants.slice(0, 50),
+          group_chat: c.groupChat,
+          last_activity_at: lastActivity,
+          unread: c.unread,
+          last_message_preview: latest ? preview(latest.body) : (known?.last_message_preview ?? null),
+          last_message_direction: latest ? latest.direction : (known?.last_message_direction ?? null),
+          last_message_sender: latest ? latest.senderName.slice(0, 200) : (known?.last_message_sender ?? null),
+          needs_message_sync: !known || !known.candidate_id || !known.messages_synced_at || known.needs_message_sync || newer,
+          updated_at: now,
+        }
+      : {
+          account_id: accountId,
+          conversation_urn: c.urn,
+          candidate_id: null,
+          title: null,
+          participants: c.participants.filter((p) => p.memberId).slice(0, 50).map((p) => ({ memberId: p.memberId })),
+          group_chat: c.groupChat,
+          last_activity_at: lastActivity,
+          unread: false,
+          last_message_preview: null,
+          last_message_direction: null,
+          last_message_sender: null,
+          needs_message_sync: false,
+          updated_at: now,
+        };
+    if (candidateId) linkedUrns.add(c.urn);
     const unchanged =
       known &&
       !newer &&
+      known.candidate_id === row.candidate_id &&
       known.unread === row.unread &&
       known.title === row.title &&
       known.last_message_preview === row.last_message_preview &&
@@ -287,7 +318,7 @@ export async function storeConversations(svc: Svc, accountId: string, parsed: Pa
     if (error) throw new Error("linkedin_bridge_conversations upsert failed");
     for (const r of (saved as { id: string; conversation_urn: string }[] | null) ?? []) idByUrn.set(r.conversation_urn, r.id);
   }
-  const embedded = parsed.flatMap((c) => c.messages);
+  const embedded = parsed.filter((c) => linkedUrns.has(c.urn)).flatMap((c) => c.messages);
   await storeMessages(svc, accountId, idByUrn, embedded);
   return rows.length;
 }
@@ -304,6 +335,7 @@ export async function unreadCount(svc: Svc, accountId: string): Promise<number> 
     .from("linkedin_bridge_conversations")
     .select("unread, seen_at, last_activity_at")
     .eq("account_id", accountId)
+    .not("candidate_id", "is", null)
     .eq("unread", true)
     .limit(500);
   if (error) throw new Error("linkedin_bridge_conversations read failed");
@@ -317,13 +349,15 @@ export interface BridgeVersion {
   /** Conversations (and through them, messages). */
   inbox: string;
   outbox: string;
+  /** Candidates' LinkedIn standing (lookups, invitations). */
+  contacts: string;
 }
 
 /** Cheap fingerprint of everything the inbox page shows; the live stream diffs it. */
 export async function bridgeVersion(ctx: BridgeUserContext): Promise<BridgeVersion> {
   const account = await accountForUser(ctx);
-  if (!account) return { status: "unpaired", inbox: "", outbox: "" };
-  const [conversation, outbox] = await Promise.all([
+  if (!account) return { status: "unpaired", inbox: "", outbox: "", contacts: "" };
+  const [conversation, outbox, contact] = await Promise.all([
     ctx.svc
       .from("linkedin_bridge_conversations")
       .select("updated_at")
@@ -338,8 +372,15 @@ export async function bridgeVersion(ctx: BridgeUserContext): Promise<BridgeVersi
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    ctx.svc
+      .from("linkedin_bridge_contacts")
+      .select("updated_at")
+      .eq("account_id", account.id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
-  if (conversation.error || outbox.error) throw new Error("linkedin bridge version read failed");
+  if (conversation.error || outbox.error || contact.error) throw new Error("linkedin bridge version read failed");
   return {
     status: [
       account.id,
@@ -353,6 +394,7 @@ export async function bridgeVersion(ctx: BridgeUserContext): Promise<BridgeVersi
     ].join("|"),
     inbox: (conversation.data as { updated_at?: string } | null)?.updated_at ?? "",
     outbox: (outbox.data as { updated_at?: string } | null)?.updated_at ?? "",
+    contacts: (contact.data as { updated_at?: string } | null)?.updated_at ?? "",
   };
 }
 
@@ -396,13 +438,18 @@ export async function conversationByUrn(
 }
 
 /** Make sure a conversation row exists (a new chat opened by a send). */
-export async function ensureConversation(svc: Svc, accountId: string, urn: string, participants: unknown[]): Promise<string> {
+export async function ensureConversation(
+  svc: Svc,
+  accountId: string,
+  urn: string,
+  participants: unknown[],
+  candidateId: string | null = null,
+): Promise<string> {
   const known = await conversationByUrn(svc, accountId, urn);
   if (known) {
-    await svc
-      .from("linkedin_bridge_conversations")
-      .update({ needs_message_sync: true, updated_at: new Date().toISOString() })
-      .eq("id", known.id);
+    const patch: Record<string, unknown> = { needs_message_sync: true, updated_at: new Date().toISOString() };
+    if (candidateId) patch.candidate_id = candidateId;
+    await svc.from("linkedin_bridge_conversations").update(patch).eq("id", known.id);
     return known.id;
   }
   const { data, error } = await svc
@@ -411,6 +458,7 @@ export async function ensureConversation(svc: Svc, accountId: string, urn: strin
       {
         account_id: accountId,
         conversation_urn: urn,
+        candidate_id: candidateId,
         participants,
         last_activity_at: new Date().toISOString(),
         needs_message_sync: true,
@@ -428,6 +476,8 @@ export async function ensureConversation(svc: Svc, accountId: string, urn: strin
 export interface OutboxRow {
   id: string;
   account_id: string;
+  kind: "message" | "invitation";
+  contact_id: string | null;
   conversation_id: string | null;
   conversation_urn: string | null;
   recipient_public_id: string | null;
@@ -445,7 +495,7 @@ export interface OutboxRow {
 }
 
 export const OUTBOX_COLUMNS =
-  "id, account_id, conversation_id, conversation_urn, recipient_public_id, recipient_member_id, recipient_name, candidate_id, body, status, claim_until, attempts, error, sent_message_urn, sent_at, created_at";
+  "id, account_id, kind, contact_id, conversation_id, conversation_urn, recipient_public_id, recipient_member_id, recipient_name, candidate_id, body, status, claim_until, attempts, error, sent_message_urn, sent_at, created_at";
 
 export async function outboxItem(svc: Svc, accountId: string, id: string): Promise<OutboxRow | null> {
   const { data, error } = await svc
@@ -501,18 +551,168 @@ export async function expireStaleClaims(svc: Svc, accountId: string, now: Date):
   if (sending.error || resolving.error) throw new Error("linkedin_bridge_outbox expiry failed");
 }
 
-export async function recentSendTimes(svc: Svc, accountId: string, now: Date): Promise<number[]> {
-  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+/** Writes (messages and invitations) that left or may have left in the last 7 days. */
+export async function recentWrites(svc: Svc, accountId: string, now: Date): Promise<{ kind: "message" | "invitation"; at: number }[]> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await svc
     .from("linkedin_bridge_outbox")
-    .select("sent_at, updated_at")
+    .select("kind, sent_at, updated_at")
     .eq("account_id", accountId)
     .in("status", ["sent", "sending", "unknown"])
     .gte("updated_at", since)
-    .limit(500);
+    .limit(2000);
   if (error) throw new Error("linkedin_bridge_outbox read failed");
-  // An unconfirmed send counts against the cap as of its last state change.
-  return (data as { sent_at: string | null; updated_at: string }[] | null ?? []).map((r) =>
-    Date.parse(r.sent_at ?? r.updated_at),
-  );
+  // An unconfirmed write counts as of its last state change.
+  return ((data as { kind: "message" | "invitation"; sent_at: string | null; updated_at: string }[] | null) ?? []).map((r) => ({
+    kind: r.kind,
+    at: Date.parse(r.sent_at ?? r.updated_at),
+  }));
+}
+
+/** sent_at of the messages of the last 24 hours (send counter). */
+export async function recentSendTimes(svc: Svc, accountId: string, now: Date): Promise<number[]> {
+  const day = now.getTime() - 24 * 60 * 60 * 1000;
+  return (await recentWrites(svc, accountId, now)).filter((w) => w.kind === "message" && w.at > day).map((w) => w.at);
+}
+
+// ── Candidates ───────────────────────────────────────────────────────────────
+
+export interface CandidateRecord {
+  id: string;
+  name: string;
+  linkedinUrl: string;
+  complianceFlags: Record<string, unknown>;
+}
+
+/** The candidate as the workspace state holds it (never trust the browser's copy). */
+export async function candidateRecord(svc: Svc, workspaceId: string, candidateId: string): Promise<CandidateRecord | null> {
+  const { data, error } = await svc.rpc("linkedin_bridge_candidate", { p_workspace_id: workspaceId, p_candidate_id: candidateId });
+  if (error) throw new Error("candidate read failed");
+  return (data as CandidateRecord | null) ?? null;
+}
+
+/** Why ARIA must not contact this candidate, if it must not. */
+export function contactBlock(candidate: CandidateRecord): string | null {
+  const flags = candidate.complianceFlags ?? {};
+  if (flags.anonymized) return "This candidate's data was anonymized.";
+  if (flags.doNotContact) return "This candidate is marked do-not-contact.";
+  if (flags.unsubscribed) return "This candidate unsubscribed.";
+  if (flags.suppressed) return "This candidate is on the suppression list.";
+  return null;
+}
+
+export interface ContactRow {
+  id: string;
+  account_id: string;
+  candidate_id: string;
+  identity: string;
+  member_id: string | null;
+  display_name: string | null;
+  headline: string | null;
+  relationship: "unknown" | "connected" | "pending" | "none" | "not_found";
+  lookup_requested: boolean;
+  checked_at: string | null;
+  lookup_error: string | null;
+  invited_at: string | null;
+  accepted_at: string | null;
+  updated_at: string;
+}
+
+export const CONTACT_COLUMNS =
+  "id, account_id, candidate_id, identity, member_id, display_name, headline, relationship, lookup_requested, checked_at, lookup_error, invited_at, accepted_at, updated_at";
+
+export async function contactById(svc: Svc, accountId: string, id: string): Promise<ContactRow | null> {
+  const { data, error } = await svc.from("linkedin_bridge_contacts").select(CONTACT_COLUMNS).eq("account_id", accountId).eq("id", id).maybeSingle();
+  if (error) throw new Error("linkedin_bridge_contacts read failed");
+  return (data as ContactRow | null) ?? null;
+}
+
+export async function contactForCandidate(svc: Svc, accountId: string, candidateId: string): Promise<ContactRow | null> {
+  const { data, error } = await svc
+    .from("linkedin_bridge_contacts")
+    .select(CONTACT_COLUMNS)
+    .eq("account_id", accountId)
+    .eq("candidate_id", candidateId)
+    .maybeSingle();
+  if (error) throw new Error("linkedin_bridge_contacts read failed");
+  return (data as ContactRow | null) ?? null;
+}
+
+/**
+ * The contact for a candidate, created on first use. A changed LinkedIn URL
+ * starts over (new identity, new lookup).
+ */
+export async function ensureContact(svc: Svc, accountId: string, candidateId: string, identity: string): Promise<ContactRow> {
+  const known = await contactForCandidate(svc, accountId, candidateId);
+  if (known && known.identity === identity) return known;
+  const fresh = {
+    account_id: accountId,
+    candidate_id: candidateId,
+    identity,
+    member_id: null,
+    display_name: null,
+    headline: null,
+    relationship: "unknown",
+    lookup_requested: true,
+    checked_at: null,
+    lookup_error: null,
+    invited_at: null,
+    accepted_at: null,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await svc
+    .from("linkedin_bridge_contacts")
+    .upsert(fresh, { onConflict: "account_id,candidate_id" })
+    .select(CONTACT_COLUMNS)
+    .single();
+  if (error || !data) throw new Error("linkedin_bridge_contacts upsert failed");
+  return data as ContactRow;
+}
+
+export async function updateContact(svc: Svc, contactId: string, patch: Record<string, unknown>): Promise<void> {
+  const { error } = await svc
+    .from("linkedin_bridge_contacts")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", contactId);
+  if (error) throw new Error("linkedin_bridge_contacts update failed");
+}
+
+/** member id -> candidate id, for the account's looked-up candidates. */
+export async function candidateMembers(svc: Svc, accountId: string): Promise<Map<string, string>> {
+  const { data, error } = await svc
+    .from("linkedin_bridge_contacts")
+    .select("member_id, candidate_id")
+    .eq("account_id", accountId)
+    .not("member_id", "is", null)
+    .limit(5000);
+  if (error) throw new Error("linkedin_bridge_contacts read failed");
+  return new Map(((data as { member_id: string; candidate_id: string }[] | null) ?? []).map((r) => [r.member_id, r.candidate_id]));
+}
+
+/**
+ * A candidate now has a member id: any conversation already seen with them
+ * (stub or not) becomes theirs and its messages are fetched.
+ */
+export async function linkCandidateConversations(svc: Svc, accountId: string, memberId: string, candidateId: string): Promise<number> {
+  const { data, error } = await svc
+    .from("linkedin_bridge_conversations")
+    .update({ candidate_id: candidateId, needs_message_sync: true, updated_at: new Date().toISOString() })
+    .eq("account_id", accountId)
+    .is("candidate_id", null)
+    .contains("participants", JSON.stringify([{ memberId }]))
+    .select("id");
+  if (error) throw new Error("linkedin_bridge_conversations link failed");
+  return data?.length ?? 0;
+}
+
+/** Profile reads in the last 24 hours (LinkedIn meters them as profile views). */
+export async function lookupsToday(svc: Svc, accountId: string, now: Date): Promise<number> {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await svc
+    .from("linkedin_bridge_contacts")
+    .select("id", { count: "exact", head: true })
+    .eq("account_id", accountId)
+    .gte("checked_at", since);
+  if (error) throw new Error("linkedin_bridge_contacts count failed");
+  return count ?? 0;
 }

@@ -32,6 +32,7 @@ import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
+import { LinkedInSettingsPanel } from "@/components/linkedin/settings-panel";
 import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationCounts } from "@/lib/integrations";
@@ -856,6 +857,18 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+          </Section>
+
+          {/* 20 — LinkedIn (personal, experimental bridge) */}
+          <Section
+            n="20"
+            eyebrow="Your LinkedIn"
+            title="LinkedIn"
+            description="Your own LinkedIn, through the ARIA extension in your browser: invite sourced candidates and talk to them from their profile."
+          >
+            <div id="linkedin">
+              <LinkedInSettingsPanel />
+            </div>
           </Section>
 
           {/* 05 — Compliance */}
