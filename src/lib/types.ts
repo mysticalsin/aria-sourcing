@@ -346,6 +346,11 @@ export interface Candidate {
    *  until enriched; sourced profiles rarely expose one. */
   phone?: string;
   avatarInitials: string;
+  /** Provider profile photo (LinkedIn CDN only, see candidatePhotoUrl). Masked
+   *  with the name under confidentiality mode and cleared on anonymization.
+   *  LinkedIn photo URLs are signed and expire, so callers fall back to the
+   *  initials when the image fails to load. */
+  avatarUrl?: string;
   currentTitle: string;
   currentCompany: string;
   location: string;
@@ -903,11 +908,6 @@ export interface IntegrationStatus {
   errors: string[];
   /** Email or identifier of the linked mailbox account (OAuth or SMTP). Empty = not set. */
   connectedAccount?: string;
-  /** True when this card has actual backend wiring in this codebase (a real API
-   *  route, OAuth flow, or send path) rather than being a roadmap placeholder.
-   *  Concept cards render an honest "Concept" badge and hide the Test-connection /
-   *  Live-mode controls, which would otherwise be theater with nothing behind them. */
-  real: boolean;
   /** For a real integration with no live connection check (see testIntegration in
    *  store.ts, which only probes GitHub): where to send the operator to actually
    *  configure it (e.g. the Agent Fleet mailbox connect flow). Absent = no in-app

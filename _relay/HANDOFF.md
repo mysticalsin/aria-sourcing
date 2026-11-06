@@ -1,12 +1,12 @@
 ---
 project: MSourcing / ARIA
-shift: 454
+shift: 455
 agent: claude-code
 updated: 2026-11-06
-status: linkedin-bridge-candidate-centred-v0.3-awaiting-owner-and-tony-test
+status: mbe-test-merged-into-mbe-branch
 ---
 
-# Handoff - Shift 454
+# Handoff - Shift 455
 
 ## Current state
 
@@ -45,7 +45,24 @@ status: linkedin-bridge-candidate-centred-v0.3-awaiting-owner-and-tony-test
 - Gate and Docker on this Mac: see the previous baton's notes (container gate
   `aria-gate:local`, OrbStack CLI via xbin + DOCKER_HOST/DOCKER_CONFIG).
 
-## Done this shift
+## Merged from mbe-test (its shift 452, 2026-11-04, archived as
+`_relay/archive/2026-11-04-1447-claude-code.md`)
+
+- 8388d6f9 same-origin check uses the host the browser addressed: under
+  Docker (`HOSTNAME=0.0.0.0`) every browser POST to the sourcing routes
+  failed with "Cross-origin sourcing is not allowed." (`isSameOriginRequest`
+  in `src/lib/api/same-origin-json.ts`).
+- 182b7014 Pipeline page (/funnel) = campaign x stage overview
+  (`src/lib/pipeline.ts`, `src/components/tania/pipeline-overview.tsx`,
+  `tests/pipeline.mts`); funnel-board removed.
+- d761bf8a candidate photos (LinkedIn CDN, `avatarUrl`,
+  `src/lib/candidate-photo.ts`, CSP img-src media.licdn.com), LinkedIn link,
+  details button, live sourcing scan; 95dc2ef4 login talent-field, buttons
+  that never wrap; b5191c57/697601c7 roadmap placeholder integration cards
+  removed (STATE_VERSION 20); a951652b campaign fingerprint ignores
+  jobAnalysis key order.
+
+## Done in shift 454 (before the merge)
 
 Owner (2026-11-06): "connect it to the sourcing features; the LinkedIn
 connection is per user, create a user Tony; show LinkedIn on sourced
@@ -157,6 +174,8 @@ candidates only (not every conversation); add invitations since messages need
 
 ## Watch out
 
+- Pipeline counts read the live candidate stage, not campaign.metrics (which
+  are high-water marks and never go down). (from mbe-test)
 - The candidate drawer also shows the older "Draft LinkedIn message" button
   (assisted-manual outreach queue): it is not the bridge.
 - The stack on this Mac holds the owner's REAL LinkedIn data (admin@aria.local).

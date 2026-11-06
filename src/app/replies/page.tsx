@@ -224,7 +224,7 @@ export default function RepliesPage() {
                 {filtered.length}
               </Badge>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <label
                 htmlFor="reply-intent-filter"
                 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"

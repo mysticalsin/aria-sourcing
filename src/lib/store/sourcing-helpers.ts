@@ -105,6 +105,7 @@ export function mapApifyCandidates(
       name,
       email: p.email ?? "",
       avatarInitials: initialsFrom(name),
+      avatarUrl: p.photoUrl || undefined,
       currentTitle: headline,
       currentCompany,
       location: p.location?.text ?? "",

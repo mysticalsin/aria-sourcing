@@ -213,8 +213,8 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         id: "find-pipeline",
         title: "The hiring pipeline",
         body:
-          "Each column is a hiring stage, from applications to people who started. Cards show the score and the source, so you see where the pipeline is thin.",
-        tryIt: "Drag a card to the next column. Moving someone forward is always your decision.",
+          "One row per campaign, one column per stage: you see at a glance where each role stands, from sourced to hired.",
+        tryIt: "Click a campaign to see its candidates under each stage, then click a name to open the profile.",
         route: "/funnel",
         page: "Pipeline",
         target: ['[data-tour="pipeline-board"]'],

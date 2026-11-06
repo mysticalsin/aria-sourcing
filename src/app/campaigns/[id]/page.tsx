@@ -1033,7 +1033,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         />
       )}
 
-      {supabaseEnabled && <CampaignSourcingPanel key={c.id} campaignId={c.id} open={runOpen} onClose={() => setRunOpen(false)} onCandidates={() => setTab("candidates")} />}
+      {supabaseEnabled && <CampaignSourcingPanel key={c.id} campaignId={c.id} open={runOpen} onClose={() => setRunOpen(false)} onCandidate={openCandidate} onCandidates={() => {
+        setTab("candidates");
+        requestAnimationFrame(() => document.getElementById(`${idBase}-candidates`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      }} />}
 
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 

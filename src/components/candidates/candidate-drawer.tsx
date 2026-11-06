@@ -35,6 +35,7 @@ import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
+import { CandidateAvatar } from "@/components/candidates/candidate-avatar";
 import { ScoreBadge, SourceBadge } from "@/components/tania/badges";
 import {
   deriveLeadSource,
@@ -1270,6 +1271,7 @@ export function CandidateDrawer({
           <p className="text-xs text-muted">Drafting does not send a message. The exact text still requires human approval.</p>
         </section>
         <div className="space-y-3">
+          {dc.avatarUrl && <CandidateAvatar candidate={dc} size="lg" />}
           {campaign && (
             <Badge tone="electric" size="sm">
               {campaign.title}

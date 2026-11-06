@@ -9,6 +9,7 @@ import {
   type MatchBreakdownItem,
   type SourcePlatform,
 } from "@/lib/types";
+import { candidatePhotoUrl } from "@/lib/candidate-photo";
 import { initialsFrom } from "@/lib/utils";
 
 const EPOCH_ISO = "1970-01-01T00:00:00.000Z";
@@ -130,6 +131,7 @@ export function candidateFromPayload(raw: unknown): Candidate | null {
     email: stringValue(raw.email),
     phone: stringValue(raw.phone),
     avatarInitials: stringValue(raw.avatarInitials) || initialsFrom(name),
+    avatarUrl: candidatePhotoUrl(raw.avatarUrl) || undefined,
     currentTitle: stringValue(raw.currentTitle),
     currentCompany: stringValue(raw.currentCompany),
     location: stringValue(raw.location),

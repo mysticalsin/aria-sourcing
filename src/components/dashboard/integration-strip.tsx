@@ -20,7 +20,7 @@ const DOT: Record<Tone, string> = {
 
 export function IntegrationStrip() {
   const integrations = useIntegrations();
-  // Same count as the sidebar and Settings: built integrations, live apart from simulated.
+  // Same count as the sidebar and Settings: live apart from simulated.
   const summary = integrationCounts(integrations);
   const detail = [
     summary.simulated > 0 ? `${summary.simulated} simulated` : "",
@@ -57,7 +57,7 @@ export function IntegrationStrip() {
         >
           {integrations.map((integration) => {
             const state = integrationStateLabel(integration);
-            const tone: Tone = state === "Simulated" || state === "Concept" ? "neutral" : toneForHealth(integration.status);
+            const tone: Tone = state === "Simulated" ? "neutral" : toneForHealth(integration.status);
             return (
               <span
                 key={integration.id}

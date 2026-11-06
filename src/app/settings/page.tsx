@@ -321,7 +321,6 @@ export default function SettingsPage() {
               ...i,
               status: supabaseEnabled ? ("connected" as const) : ("not_configured" as const),
               mode: supabaseEnabled ? ("live" as const) : ("mock" as const),
-              real: true,
               errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
             }
           : i,
@@ -840,7 +839,7 @@ export default function SettingsPage() {
                 </Badge>
               )}
               <span className="text-xs text-muted">
-                of {summary.total} built integrations · {summary.concepts} more on the roadmap · simulated (mock) is the safe default
+                of {summary.total} integrations · simulated (mock) is the safe default
               </span>
             </div>
 
@@ -851,7 +850,7 @@ export default function SettingsPage() {
                 description="Integrations appear here once Aria is provisioned with its tool connections."
               />
             ) : (
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
                 {integrations.map((i) => (
                   <IntegrationCard key={i.id} integration={i} />
                 ))}
