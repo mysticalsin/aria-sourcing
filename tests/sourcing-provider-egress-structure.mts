@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
 
@@ -20,10 +20,6 @@ const providerProbeAllowlist = [
   {
     path: "src/app/api/source/route.ts",
     justification: "Uses probe clearances only for fixed GitHub rate-limit and authenticated-user credential checks.",
-  },
-  {
-    path: "src/app/api/keys/test/route.ts",
-    justification: "Uses probe clearances only for fixed provider API-key authentication checks.",
   },
 ] as const;
 const prohibitedTransportModules = [
@@ -72,12 +68,15 @@ test("provider egress chokepoint owns provider sockets", () => {
 
   for (const [provider, host] of [
     ["GitHub", "api.github.com"],
-    ["Apify", "api.apify.com"],
     ["Tavily", "api.tavily.com"],
     ["DuckDuckGo", "api.duckduckgo.com"],
   ]) {
     assert.match(providerTransport, new RegExp(`${provider}: "${host.replaceAll(".", "\\.")}"`));
   }
+
+  // Apify was retired (owner, 2026-11-06): no egress host, no adapter.
+  assert.doesNotMatch(providerTransport, /apify/i);
+  assert.equal(existsSync("src/lib/sourcing/apify.ts"), false);
 
   const scannedFiles = [
     ...walk("src/lib/sourcing"),
@@ -132,12 +131,12 @@ test("provider probe clearance is confined to fixed-endpoint credential checks",
     [
       providerEgressPath,
       "src/app/api/source/route.ts",
-      "src/app/api/keys/test/route.ts",
     ],
   );
   assert.match(providerProbeAllowlist[0].justification, /Defines the probe clearance helper/);
   assert.match(providerProbeAllowlist[1].justification, /fixed GitHub rate-limit and authenticated-user credential checks/);
-  assert.match(providerProbeAllowlist[2].justification, /fixed provider API-key authentication checks/);
+  // The key test route lost its only live probe (Apify) on 2026-11-06; it now
+  // checks key formats only and must not regain provider egress silently.
 
   const allowed = new Set<string>(providerProbeAllowlist.map((entry) => entry.path));
   const probeReferences = walk("src")

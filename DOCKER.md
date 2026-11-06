@@ -123,8 +123,7 @@ The server reaches Supabase internally at `http://gateway:8000`.
 Optional provider/OAuth credentials belong in `.env.local` or Settings as
 appropriate; no setup command overwrites that file. AI runs on one Anthropic key,
 linked on the Anthropic provider in **Settings -> AI & Models**; the "LinkedIn
-via web search" source uses that same workspace key. The Apify LinkedIn source
-needs a stored workspace Apify key.
+via web search" source uses that same workspace key.
 
 ## Development only
 

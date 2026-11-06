@@ -2,7 +2,6 @@ import "server-only";
 
 export const SOURCING_PROVIDER_HOSTS = Object.freeze({
   GitHub: "api.github.com",
-  Apify: "api.apify.com",
   Tavily: "api.tavily.com",
   DuckDuckGo: "api.duckduckgo.com",
   // Claude's server-side web search: the search runs at Anthropic, not here.

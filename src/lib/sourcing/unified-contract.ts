@@ -3,14 +3,19 @@ import type { Campaign } from "@/lib/types";
 
 export const SourceChoiceSchema = z.object({
   // WebSearch: public LinkedIn profiles found through Claude's web search.
-  source: z.enum(["LinkedIn", "WebSearch", "GitHub"]),
+  source: z.enum(["WebSearch", "GitHub"]),
   query: z.string().trim().min(1).max(256),
   limit: z.number().int().min(1).max(20),
 }).strict();
-export const SourcePlanSchema = z.array(SourceChoiceSchema).min(1).max(3)
+export const SourcePlanSchema = z.array(SourceChoiceSchema).min(1).max(2)
   .refine((sources) => new Set(sources.map((s) => s.source)).size === sources.length);
 export type SourceChoice = z.infer<typeof SourceChoiceSchema>;
-export type SourceStep = SourceChoice & {
+/** A saved step can still name "LinkedIn": the Apify source, retired by the
+ *  owner on 2026-11-06. It can no longer be planned; an old run's step ends
+ *  without any provider call. */
+export type StoredSource = SourceChoice["source"] | "LinkedIn";
+export type SourceStep = Omit<SourceChoice, "source"> & {
+  source: StoredSource;
   status: "queued" | "starting" | "running" | "completed" | "failed" | "uncertain";
   found: number; added: number; duplicates: number; excluded: number;
   error?: string;
@@ -30,16 +35,16 @@ export function campaignSourcingBasis(campaign: Campaign): Record<string, unknow
     sourcingStrategy: campaign.sourcingStrategy, status: campaign.status };
 }
 /** Labels for the operator. The enum values are stored in saved runs. */
-export const SOURCE_LABELS: Record<SourceChoice["source"], string> = {
-  LinkedIn: "LinkedIn via Apify",
+export const SOURCE_LABELS: Record<StoredSource, string> = {
   WebSearch: "LinkedIn via web search",
   GitHub: "GitHub",
+  LinkedIn: "LinkedIn via Apify (retired)",
 };
 /** Claude web searches allowed for one run: the reviewed query plus variants. */
 export function webSearchBudget(limit: number): number {
   return Math.min(5, Math.max(2, Math.ceil(limit / 5) + 1));
 }
-const SOURCE_ORDER: SourceChoice["source"][] = ["LinkedIn", "WebSearch", "GitHub"];
+const SOURCE_ORDER: SourceChoice["source"][] = ["WebSearch", "GitHub"];
 export function orderedSteps(plan: SourceChoice[]): SourceStep[] {
   return [...plan].sort((a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source))
     .map((s) => ({ ...s, status: "queued", found: 0, added: 0, duplicates: 0, excluded: 0 }));

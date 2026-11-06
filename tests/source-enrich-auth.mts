@@ -47,7 +47,7 @@ mock.module(moduleUrl("src/lib/enrichment/orchestrator.ts"), { namedExports: {
     const scored = scoreCandidate(candidate, input.jd!, input.weights);
     candidate.matchScore = scored.score; candidate.matchBreakdown = scored.breakdown;
     changeDuringCall?.();
-    return { candidate, attempts: [{ provider: "Apify", at: new Date().toISOString(), status: failProvider ? "error" : "ok", fieldsFilled: failProvider ? [] : ["skills", "experience", "education", "languages"], costUnits: 1, detail: failProvider ? "Provider refused the request." : undefined }], spend: 1 };
+    return { candidate, attempts: [{ provider: "LinkedIn", at: new Date().toISOString(), status: failProvider ? "error" : "ok", fieldsFilled: failProvider ? [] : ["skills", "experience", "education", "languages"], costUnits: 1, detail: failProvider ? "Provider refused the request." : undefined }], spend: 1 };
   },
 } });
 const { POST } = await import("../src/app/api/source/enrich/route.ts");

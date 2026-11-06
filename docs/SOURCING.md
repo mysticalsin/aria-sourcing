@@ -46,83 +46,77 @@ behavior (no login gate, implicit admin) in production. The one sanctioned excep
 
 ### Reviewed campaign launch
 
-In a connected workspace, **Run sourcing** opens one source review: LinkedIn
-(Apify) first, GitHub optionally alongside it, editable role-bound queries and
-a maximum of 1–20 profiles per selected source. Creating a campaign makes no
-provider call. No LLM is required for this flow.
+In a connected workspace, **Run sourcing** opens one source review: LinkedIn via
+web search first, GitHub optionally alongside it, editable role-bound queries
+and a maximum of 1–20 profiles per selected source. Creating a campaign makes no
+provider call.
+
+"LinkedIn via web search" (`src/lib/sourcing/claude-web-search.ts`) runs
+Claude's server-side web search, restricted to public `linkedin.com/in` pages:
+the reviewed query plus a few close variants, 2 to 5 searches per run
+(`webSearchBudget` in `src/lib/sourcing/unified-contract.ts`). It needs the
+workspace Anthropic key, linked on the Anthropic provider in **Settings → AI &
+Models**, and costs $0.01 per search plus tokens. Candidates come from the
+search results (name, headline, link, cited text), never from the model's
+prose. Every query Claude actually ran is checked against the sourcing policy;
+results of a refused query are discarded. GitHub needs no key.
 
 `/api/source/campaign` records a `campaign_sourcing_jobs` row before executing
 any source. The campaign page advances persisted steps every four seconds;
-closing the page pauses subsequent operations. An already started actor can
-continue at Apify. Returning resumes the stored run/dataset, including after a
-server restart. No additional container or background worker is required.
+closing the page pauses subsequent operations. Returning resumes the stored
+run, including after a server restart. No additional container or background
+worker is required.
 
-Each source displays actual found, added, duplicate and excluded counts. LinkedIn
-uses Short mode, `maxItems` and one search page. Profile limits are not a quoted
-price; the [actor's pricing](https://apify.com/harvestapi/linkedin-profile-search/pricing)
-applies to the connected Apify account. Email discovery is separate. The
-[actor input schema](https://apify.com/harvestapi/linkedin-profile-search/input-schema)
-documents these options. Missing configuration is reported explicitly.
+Each source displays actual found, added, duplicate and excluded counts.
+Profile limits are not a quoted price. Missing configuration (no Anthropic key,
+AI budget reached) is reported before a run is created.
 
 Paid starts are marked before egress and protected by a compare-and-swap lease.
-A lost/ambiguous start is marked **Needs review** and is never started again
-automatically. Check the Apify console before launching a new run in that state.
-Transient polling failures retain the same provider binding. A source failure
-does not discard the other source's successful results. The legacy status route
-also verifies its workspace-owned run/dataset binding before provider access.
-
-Provider-only acceptance observed an actor returning `SUCCEEDED` with status
-message `free user run limit reached` and an empty dataset. The adapter classifies
-this explicit refusal as `account_limit`: the affected source fails with account
-allowance guidance, rather than reporting an ordinary empty successful search.
-Other selected sources can continue. Unrecognized provider messages stay private;
-genuine successful searches with no matching profiles remain successful.
+A web search interrupted before its results were saved is marked **Needs
+review** (`uncertain`) and never searched again automatically. A source failure
+does not discard the other source's successful results. The engine re-checks
+every web-search hit with `canonicalLinkedInProfileUrl` and counts any other
+URL as excluded.
 
 Candidates and source completion commit in one database transaction, with a
 workspace version check and dedupe against the latest state. Reruns normalize
 LinkedIn/GitHub URL variants and nonblank email; names alone are not identity
 proof. Each candidate retains its source run, profile link and observed signals.
 Unknown titles, email, and tenure remain unknown. The preview proposes the next
-review/enrichment action; outreach still requires human approval.
+review action; outreach still requires human approval.
 
 Provider reservations share an independent 100-runs/day workspace ceiling. This
 replaces a stale reference to retired loop controls in the baseline function;
 apply migrations `0003_unified_campaign_sourcing.sql` and
 `0004_provider_run_binding.sql`, never edit the baseline. Provider tables retain
-their private ACL; the legacy status route uses a scoped service-only read RPC.
-Only the initiating operator can advance a run; an administrator can also close
-it if that operator loses access. Closing a run does not
-abort an actor already running at Apify, and the UI states that explicitly.
+their private ACL. Only the initiating operator can advance a run; an
+administrator can also close it if that operator loses access.
 
-Fixture tests cover source ordering, refresh, concurrency, ambiguous starts,
+Fixture tests cover source ordering, refresh, concurrency, interrupted starts,
 partial failures, role/workspace authority, URL validation and concurrent state
 edits. `tests/db/unified-sourcing.sql` exercises the actual SQL transaction in
 the Docker database security gate. A real provider smoke test still requires
-an operator-selected low cap and a configured account.
+an operator-selected low cap and a configured Anthropic key.
+
+**Apify (retired 2026-11-06).** The LinkedIn profile-search source
+(`harvestapi/linkedin-profile-search`), its name/school filter dialog, its
+routes and its Settings key were removed: the owner will not use Apify. A step
+saved by an older run with source `LinkedIn` now ends `failed` ("LinkedIn
+search through Apify was removed…") without any provider call. Historical
+`provider_runs` rows keep the `Apify` label.
 
 ### Providers
 
 | Provider | Platform id | Discovery mechanism | Key requirement | Notes |
 |---|---|---|---|---|
 | GitHub | `GitHub` | GitHub Users Search API, read-only | None — keyless by default (60 req/hr/IP anonymous, 5,000/hr with optional `GITHUB_TOKEN`) | `src/lib/sourcing/github.ts:1-17` |
-| Web search (LinkedIn / Stack Overflow / Dribbble / Behance) | `LinkedIn`, `Stack Overflow`, `Dribbble`, `Behance` | `site:`-scoped Tavily web search, honest User-Agent, SSRF-guarded | Workspace-stored Tavily key, or `TAVILY_API_KEY` env fallback | `src/lib/sourcing/web-leads.ts:1-9`, `src/lib/ai/web-tools.ts:191-256` |
-| Apify — profile search | `Apify` | `harvestapi~linkedin-profile-search` actor, async run + poll + dataset fetch | Workspace-stored Apify key | `src/lib/sourcing/apify.ts:1-25`; supports `firstNames`/`lastNames` as explicit search filters (§below) |
+| LinkedIn via web search | `LinkedIn` | Claude server-side web search restricted to `linkedin.com/in` | Workspace Anthropic key, linked in **Settings → AI & Models** | `src/lib/sourcing/claude-web-search.ts`; campaign sourcing only |
+| Web search (LinkedIn / Stack Overflow / Dribbble / Behance) | `LinkedIn`, `Stack Overflow`, `Dribbble`, `Behance` | `site:`-scoped Tavily web search, honest User-Agent, SSRF-guarded | Workspace-stored Tavily key, or `TAVILY_API_KEY` env fallback | `src/lib/sourcing/web-leads.ts:1-9`, `src/lib/ai/web-tools.ts:191-256`; sourcing agent tool |
 
 All provider keys except `GITHUB_TOKEN` and the Tavily env fallback are entered via
 **Settings → API Keys**, encrypted at rest, and never sent to the browser
-(`validateApiKeyFormat` in `src/lib/providers.ts:18-37` does client-safe format checks
+(`validateApiKeyFormat` in `src/lib/providers.ts` does client-safe format checks
 before the key is even submitted).
-
-**The Apify profile-search filter (commit `3c29b23`, extended `25b65de`).** The
-`harvestapi/linkedin-profile-search` actor input accepts structured filters —
-`locations`, `currentJobTitles`, `pastJobTitles`, `currentCompanies`, `pastCompanies`,
-`schools`, and (since `25b65de`) `firstNames`/`lastNames`
-(`src/lib/sourcing/apify.ts:38-52`). The `firstNames`/`lastNames` pair was backend-ready
-since the initial Apify integration but UI-hidden until `25b65de` wired it into the
-source dialog (`src/components/candidates/source-apify-dialog.tsx:47-134`, validated
-server-side at `src/app/api/source/apify/start/route.ts:34-48`). This is what lets a
-recruiter resolve one *specific* named person (e.g. "find exactly this candidate's
-current profile") instead of only running a broad boolean search.
 
 ### The sourcing agent
 
@@ -145,8 +139,7 @@ returns feedback receipts. An explicit demo deployment (no Supabase) uses the sy
 
 The canonical path (the sourcing-agent flow in `src/lib/store/sourcing-actions.ts`) runs:
 
-1. **Discover** — a provider adapter returns raw results (GitHub users, web-search hits,
-   Apify profiles).
+1. **Discover** — a provider adapter returns raw results (GitHub users, web-search hits).
 2. **Map** — `candidateFromSourcingAgentDto` / the platform-specific mapper
    (`src/lib/sourcing/candidate-mappers.ts`) normalizes raw provider data into the
    `Candidate` shape.
@@ -297,14 +290,16 @@ after discovery.
 1. Filters `ENRICHMENT_PROVIDERS` (`src/lib/enrichment/registry.ts:59-116`) to those that
    (a) can fill at least one wanted field, and (b) can resolve an identity key for this
    specific candidate (`provider.keyField(candidate) != null`).
-2. Sorts the eligible providers **cheapest-first**:
+2. Sorts the eligible providers **cheapest-first**.
 
-   | Provider | `costUnits` | Fills |
-   |---|---|---|
-   | Apify (dev_fusion, LinkedIn full profile) | 1 | email, headline, skills, experience, education, languages, location |
-
-   Apify is currently the only enrichment provider; the waterfall is kept so another
-   licensed provider can be added as one registry entry plus one runner.
+   No provider is registered today: `ENRICHMENT_PROVIDERS` is `[]` and
+   `ENRICHMENT_RUNNERS` is `{}`. Apify, the only one, was retired on 2026-11-06.
+   The candidate drawer says "No enrichment provider is set up. Add verified
+   contact details by hand." A new licensed provider is one registry entry
+   (with the `keyProvider` whose stored key unlocks it) plus one runner. The
+   runner must apply identity-lookup hygiene itself (the retired Apify runner
+   used `clearIdentityResolution`), and the open spend-authority gaps listed in
+   `_relay/codex-findings.md` must be closed first.
 
 3. Runs each provider in turn until the wanted fields are covered, the caller's
    `budgetRemaining` (cost-unit budget) hits zero, or a **45-second wall-clock deadline**
@@ -312,8 +307,8 @@ after discovery.
    the platform's 60s route cap so a request never 504s and strands an already-spent
    cheap-provider result.
 4. Each provider resolves its *own* identity from the candidate's universal fields
-   (Apify keys on `linkedinUrl`), so a candidate discovered on GitHub or the web can
-   still be enriched when a LinkedIn URL is known.
+   (`keyField`), so a candidate discovered by one source can still be enriched by
+   another provider.
 5. On completion, if a `JobAnalysis` was supplied, the candidate is re-scored
    (`scoreCandidate`, `orchestrator.ts:185-188`) — enrichment can move a candidate's
    composite once real skills/experience/location data replaces an `unknown` anchor.
@@ -342,7 +337,7 @@ into the candidate field-by-field:
 
 ### Experience/education/languages are now homed, not discarded
 
-Before `acd69a9`, Apify's rich `experience`/`education`/`languages` payload had nowhere
+Before `acd69a9`, a provider's rich `experience`/`education`/`languages` payload had nowhere
 to live on `Candidate` — only the fact that a provider *supplied* them was tracked via
 provenance, and the actual string arrays were dropped. That's fixed: `Candidate` now
 carries dedicated optional slots —
@@ -355,18 +350,13 @@ languages?: string[];  // spoken/written languages
 ```
 
 — and `merge.ts`'s `HOMED_FIELDS` set (`merge.ts:41`) plus `applyFieldValue`
-(`merge.ts:160-169`) read/write them like any other homed field. The Apify runner
-(`enrichment/runners.ts:125-133`) formats each experience/education entry as
-`"Title @ Company (dates)"` / `"Degree @ School (dates)"` from the raw actor payload.
-Deliberately **not** parsed into `yearsExperience` — that field carries its own
+(`merge.ts:160-169`) read/write them like any other homed field. A runner formats
+each experience/education entry as `"Title @ Company (dates)"` /
+`"Degree @ School (dates)"`. Deliberately **not** parsed into `yearsExperience` — that field carries its own
 fabrication contract (`types.ts:387-389`: "Null means not provided and must never be
 rendered or scored as zero years") and free-text date ranges from a scraped profile
 aren't reliable enough to compute a number from.
 
-(One stale artifact: `merge.ts`'s module-header comment, lines 8-22, still describes
-these three fields as having "NO dedicated slot on Candidate today" — that comment
-predates `acd69a9` and should be treated as outdated; the code below it (`HOMED_FIELDS`,
-`readHomedValue`, `applyFieldValue`) is the current, correct behavior.)
 
 ---
 
@@ -489,7 +479,7 @@ endpoint off by default.
 | Lawful basis capture | Operator-recorded `consent` / `legitimate_interest` basis with source + timestamp, required before outreach approval on any manually-entered candidate | `src/lib/candidate-lawful-basis.ts`, enforced in `rules.ts:84-97` |
 | Field provenance | Per-field `{ provider, at, confidence }` on every enriched value | `src/lib/enrichment/merge.ts:225` |
 | Discrimination-proxy filter | Provider-backed sourcing egress requires a `ProviderClearance`; discovery clearances are minted only after every submitted discovery field is checked for protected-class terms (age/gender/race/religion/disability/marital/nationality/university-graduation wording) and the search is bound to the approved role's own JD terms; name fields are still screened for control characters, injection and length | `src/lib/sourcing/query-policy.ts`, `src/lib/sourcing/provider-egress.ts` |
-| LinkedIn policy | This app never logs into, scrapes, or automates LinkedIn itself; LinkedIn data comes from a licensed vendor API (Apify); LinkedIn *outreach* is assisted-manual only (draft → human copy/paste/send) | `src/lib/linkedin-policy.ts:1-89` |
+| LinkedIn policy | The server never logs into or scrapes LinkedIn; LinkedIn profiles come from public search results through Claude's web search; LinkedIn *outreach* is assisted-manual (draft → human copy/paste/send), or, when the opt-in experimental LinkedIn bridge is on, sent from the user's own browser session by the ARIA extension, one human click per message or invitation ([`docs/linkedin-bridge.md`](linkedin-bridge.md)) | `src/lib/linkedin-policy.ts:1-89` |
 
 **Erasure request lifecycle** (`request_candidate_erasure()`): a request binds
 an exact workspace + campaign + candidate + administrator + idempotency key, blocks on
@@ -520,7 +510,7 @@ candidate without one.
 | `NEXT_PUBLIC_ENABLE_CORPUS_SERVER_READ` | Preview flag for the `/api/candidates` server-corpus read path; default off |
 | `GITHUB_TOKEN` | Optional; raises GitHub Users Search API from 60 to 5,000 req/hr — never required |
 | `TAVILY_API_KEY` | Server-side fallback for web-search sourcing when no workspace Tavily key is stored |
-| Apify key, LLM provider keys | Entered via Settings → API Keys, encrypted at rest (requires `DATA_ENCRYPTION_KEY`) |
+| LLM provider keys, Tavily key | Entered via Settings → API Keys, encrypted at rest (requires `DATA_ENCRYPTION_KEY`) |
 
 ### Local stack
 
@@ -533,14 +523,15 @@ Postgres, GoTrue, PostgREST, Caddy gateway). See [`DOCKER.md`](../DOCKER.md).
    (required/nice-to-have skills, experience band, company-stage target, industry,
    regions) and a campaign is created.
 2. **Source** — the recruiter triggers one or more providers from the campaign page
-   (the sourcing agent, GitHub / web-search, or Apify, gated by
+   (the sourcing agent, or LinkedIn via web search and GitHub, gated by
    `campaignAllowsLiveSourcing(status)`). Each run discovers → maps →
    scores → dedupes → commits into the campaign's candidate list.
 3. **Review** — candidates land sorted by match score, each with a rationale-annotated
    breakdown (§3) so a low score is explainable, not just a number.
-4. **Enrich** — for a shortlisted candidate missing contact info, the recruiter (or an
-   automated post-source step) runs the enrichment waterfall (§4); email/phone/skills/
-   experience get filled in cheapest-provider-first, and the candidate is re-scored.
+4. **Enrich** — for a shortlisted candidate missing contact info, the recruiter adds
+   verified details by hand. Once an enrichment provider is registered, the enrichment
+   waterfall (§4) fills email/phone/skills/experience cheapest-provider-first and
+   re-scores the candidate.
 5. **Draft** — an outreach draft is generated with personalization evidence attached.
 6. **Approve** — a human reviews and approves the exact draft; the approval is recorded
    against the exact message body hash.
@@ -555,11 +546,8 @@ Postgres, GoTrue, PostgREST, Caddy gateway). See [`DOCKER.md`](../DOCKER.md).
 
 | Item | What it unlocks | Action |
 |---|---|---|
-| **dev_fusion Apify actor approval** | The Apify enrichment runner (otherwise surfaced as `not_configured`) | Approve the actor's permissions in the Apify console |
-| **LLM provider key** | `cloud` mode of the sourcing agent and AI drafting | Settings → API Keys, then select the provider in Settings |
-
-harvestapi (the Apify discovery actor) already covers discover + email on its own without
-the dev_fusion approval.
+| **LLM provider key** | `cloud` mode of the sourcing agent, AI drafting, and LinkedIn via web search (Anthropic) | Settings → API Keys, then select the provider in Settings |
+| **An enrichment provider** | The enrichment waterfall (§4); none is registered since Apify was retired | Choose a licensed provider, then add its registry entry and runner |
 
 ---
 

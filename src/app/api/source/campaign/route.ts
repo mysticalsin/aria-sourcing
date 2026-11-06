@@ -15,7 +15,6 @@ import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import { searchLinkedInWithClaude, webSearchAnthropicConfig } from "@/lib/sourcing/claude-web-search";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { aiBudgetStatus, recordAiUsage } from "@/lib/ai/usage";
-import { resolveStoredApifyKey, startProfileSearchRun, getRunStatus, fetchDatasetItems } from "@/lib/sourcing/apify";
 import { searchGithubUsers } from "@/lib/sourcing/github";
 
 export const runtime = "nodejs";
@@ -67,13 +66,10 @@ export async function POST(req: NextRequest) {
       for (const source of input.sources) {
         const cleared = source.source === "WebSearch"
           ? clearWebSearchDiscovery({ query: source.query }, campaign)
-          : clearDiscoveryCriteria(source.source === "LinkedIn" ? "Apify" : "GitHub", { query: source.query }, campaign);
+          : clearDiscoveryCriteria("GitHub", { query: source.query }, campaign);
         if (!cleared.ok) return json({ ok: false, error: cleared.error }, 422);
       }
       // Missing configuration is explicit before launch, with no silent fallback.
-      if (input.sources.some((s) => s.source === "LinkedIn") && !(await resolveStoredApifyKey(auth.session))) {
-        return json({ ok: false, error: "Connect an Apify key in Settings or deselect LinkedIn." }, 409);
-      }
       if (input.sources.some((s) => s.source === "WebSearch")) {
         if (!webSearchAnthropicConfig(ws.state.settings)) {
           return json({ ok: false, error: "Add an Anthropic key in Settings → AI & Models or deselect web search." }, 409);
@@ -93,15 +89,13 @@ export async function POST(req: NextRequest) {
       if (job.claim_until && Date.parse(job.claim_until) > Date.now()) return json({ ok: false, error: "A source operation is still finishing. Try closing again shortly." }, 409);
       const steps = job.steps.map((step) => ["queued", "starting", "running"].includes(step.status)
         ? { ...step, status: step.status === "queued" ? "failed" as const : "uncertain" as const,
-          error: step.status === "queued" ? "Closed before this source started." : "Closed by operator. An already launched Apify actor may continue; check Apify before launching again." } : step);
+          error: step.status === "queued" ? "Closed before this source started." : "Closed by operator before this source finished." } : step);
       const { error } = await getServiceSupabase()!.from("campaign_sourcing_jobs").update({ status: jobStatus(steps), steps, revision: job.revision + 1 })
         .eq("workspace_id", auth.workspaceId).eq("id", job.id).eq("revision", job.revision);
       if (error) throw new Error("Run could not be closed.");
     } else {
       const repo = unifiedRepository(auth.session, auth.workspaceId, auth.actorId, job.campaign_id);
       try { await advanceUnifiedRun(job, repo, {
-        apifyKey: async () => { await repo.readWorkspace(); return resolveStoredApifyKey(auth.session); },
-        start: startProfileSearchRun, poll: getRunStatus, items: fetchDatasetItems,
         github: (clearance, query, count, signal) => searchGithubUsers(clearance, query, count, process.env.GITHUB_TOKEN ?? "", signal),
         webSearch: async (clearance, query, count, campaign, signal) => {
           const config = webSearchAnthropicConfig((await repo.readWorkspace()).state.settings);

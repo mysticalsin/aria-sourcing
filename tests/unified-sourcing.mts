@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import { buildSeedState } from "../src/lib/seed";
 import type { Candidate } from "../src/lib/types";
-import type { ApifyProfile } from "../src/lib/sourcing/apify";
+import type { SearchHit } from "../src/lib/sourcing/web-leads";
 import { shortlistIdentity } from "../src/lib/sourcing/shortlist-preview";
-import { campaignSourcingBasis, orderedSteps, jobStatus, publicSourcingJob, SourcePlanSchema, type CampaignSourcingJob } from "../src/lib/sourcing/unified-contract";
+import { campaignSourcingBasis, orderedSteps, jobStatus, publicSourcingJob, SourcePlanSchema, SOURCE_LABELS, type CampaignSourcingJob, type SourceStep } from "../src/lib/sourcing/unified-contract";
 import type { UnifiedRunRepository, UnifiedProviders } from "../src/lib/sourcing/unified-run";
 mock.module("server-only", { namedExports: {} });
 const { advanceUnifiedRun } = await import("../src/lib/sourcing/unified-run");
 
-function fixture() {
+// LinkedIn profiles come from Claude's web search (Apify was retired by the
+// owner on 2026-11-06); GitHub complements them.
+function fixture(steps?: SourceStep[]) {
   const state = buildSeedState();
   const campaign = state.campaigns[0];
   campaign.status = "Sourcing";
@@ -17,50 +19,46 @@ function fixture() {
   const query = campaign.jobAnalysis.requiredSkills[0];
   const job: CampaignSourcingJob = { id: crypto.randomUUID(), workspace_id: crypto.randomUUID(), actor_id: crypto.randomUUID(),
     campaign_id: campaign.id, campaign_snapshot: campaignSourcingBasis(campaign), status: "active",
-    steps: orderedSteps([{ source: "GitHub", query, limit: 3 }, { source: "LinkedIn", query, limit: 3 }]),
+    steps: steps ?? orderedSteps([{ source: "GitHub", query, limit: 3 }, { source: "WebSearch", query, limit: 3 }]),
     revision: 0, claim_token: null, claim_until: null, created_at: new Date().toISOString() };
   let ws = { state, updatedAt: "v1" };
   let stored = structuredClone(job);
-  let starts = 0, polls = 0, githubCalls = 0, reservations = 0, conflicts = 0;
-  const profile: ApifyProfile = { id: "fixture", publicIdentifier: "aria-fixture", linkedinUrl: "https://www.linkedin.com/in/aria-fixture/", firstName: "Aria", lastName: "Fixture",
-    headline: "", about: query, email: null, location: null, currentPosition: [], experience: [], education: [], topSkills: [query], skills: [], languages: [],
-    connectionsCount: 0, followerCount: 0, openToWork: false, hiring: false, premium: false };
+  let searches = 0, githubCalls = 0, reservations = 0, conflicts = 0;
+  const hit: SearchHit = { title: "Aria Fixture - Backend Engineer - Fixture Co | LinkedIn", url: "https://www.linkedin.com/in/aria-fixture/", snippet: query };
   const repo: UnifiedRunRepository = {
     readWorkspace: async () => structuredClone(ws),
-    claim: async (claim, token, steps) => {
+    claim: async (claim, token, claimed) => {
       if (claim.revision !== stored.revision) return false;
-      stored.steps = structuredClone(steps); stored.revision++; stored.claim_token = token; stored.claim_until = new Date(Date.now() + 180_000).toISOString(); return true;
+      stored.steps = structuredClone(claimed); stored.revision++; stored.claim_token = token; stored.claim_until = new Date(Date.now() + 180_000).toISOString(); return true;
     },
-    bind: async (_j, token, steps) => { assert.equal(stored.claim_token, token); stored.steps = structuredClone(steps); },
+    bind: async (_j, token, bound) => { assert.equal(stored.claim_token, token); stored.steps = structuredClone(bound); },
     reserve: async () => { reservations++; return "receipt-id"; },
     settle: async () => {},
-    finish: async (_j, token, steps, expected, next) => {
+    finish: async (_j, token, finished, expected, next) => {
       assert.equal(stored.claim_token, token);
       if (conflicts > 0) { conflicts--; return "conflict"; }
       if (expected.updatedAt !== ws.updatedAt) return "conflict";
       if (next) ws = { state: structuredClone(next), updatedAt: `v${stored.revision}` };
-      stored.steps = structuredClone(steps); stored.status = jobStatus(steps); stored.claim_token = null; stored.claim_until = null; stored.revision++;
+      stored.steps = structuredClone(finished); stored.status = jobStatus(finished); stored.claim_token = null; stored.claim_until = null; stored.revision++;
       return "saved";
     },
   };
   const providers: UnifiedProviders = {
-    apifyKey: async () => "fixture-key",
-    start: async (_c, _k, input) => { starts++; assert.equal(input.profileScraperMode, "Short"); assert.equal(input.maxItems, 3); return { ok: true, status: 201, data: { runId: "provider-run", datasetId: "provider-dataset", status: "READY" } }; },
-    poll: async () => { polls++; return { ok: true, status: 200, data: { status: "SUCCEEDED" } }; },
-    items: async () => ({ ok: true, status: 200, data: [profile, { ...profile, linkedinUrl: "https://linkedin.com/in/aria-fixture?trk=search" }] }),
     github: async () => { githubCalls++; return [{ login: "aria-other-fixture", name: "Other Fixture", email: null, company: null, location: null, bio: query, blog: null, htmlUrl: "https://github.com/aria-other-fixture", publicRepos: 2, followers: 1, createdAt: null, topLanguage: null }]; },
-    webSearch: async () => { throw new Error("This fixture plans no web search."); },
+    webSearch: async () => { searches++; return { ok: true, hits: [hit, { ...hit, url: "https://linkedin.com/in/aria-fixture?trk=search" }] }; },
   };
-  return { job: () => structuredClone(stored), ws: () => ws, repo, providers, profile,
-    counts: () => ({ starts, polls, githubCalls, reservations }), conflict: () => { conflicts++; },
+  return { job: () => structuredClone(stored), ws: () => ws, repo, providers, hit, query,
+    counts: () => ({ searches, githubCalls, reservations }), conflict: () => { conflicts++; },
     expire: () => { stored.claim_until = new Date(0).toISOString(); },
     mutateState: (candidate: Candidate) => { ws.state.candidates.push(candidate); ws.updatedAt += "x"; } };
 }
 
-test("source plan rejects duplicates, unbounded limits and caller-owned authority", () => {
-  assert.equal(SourcePlanSchema.safeParse([{ source: "LinkedIn", query: "Go", limit: 51 }]).success, false);
-  assert.equal(SourcePlanSchema.safeParse([{ source: "LinkedIn", query: "Go", limit: 2, datasetId: "injected" }]).success, false);
+test("source plan rejects duplicates, unbounded limits, caller-owned authority and the retired Apify source", () => {
+  assert.equal(SourcePlanSchema.safeParse([{ source: "WebSearch", query: "Go", limit: 51 }]).success, false);
+  assert.equal(SourcePlanSchema.safeParse([{ source: "WebSearch", query: "Go", limit: 2, datasetId: "injected" }]).success, false);
   assert.equal(SourcePlanSchema.safeParse([{ source: "GitHub", query: "Go", limit: 2 }, { source: "GitHub", query: "Go", limit: 2 }]).success, false);
+  assert.equal(SourcePlanSchema.safeParse([{ source: "LinkedIn", query: "Go", limit: 2 }]).success, false, "LinkedIn via Apify can no longer be planned");
+  assert.equal(SourcePlanSchema.safeParse([{ source: "WebSearch", query: "Go", limit: 2 }, { source: "GitHub", query: "Go", limit: 2 }]).success, true);
 });
 test("shortlist identities obey confidentiality and the existing outreach-purpose policy", () => {
   const candidate = { ...buildSeedState().candidates[0], stage: "Sourced" as const,
@@ -76,119 +74,87 @@ test("shortlist identities obey confidentiality and the existing outreach-purpos
   assert.equal(shortlistIdentity(candidate, false).profileLabel, "LinkedIn");
   assert.equal(shortlistIdentity({ ...candidate, linkedinUrl: "", githubUrl: "https://github.com/x" }, false).profileLabel, "GitHub");
 });
-test("LinkedIn first, refresh recovery, authoritative dedupe and saved GitHub complement", async () => {
+test("web search first, refresh recovery, authoritative dedupe and saved GitHub complement", async () => {
   const f = fixture();
+  assert.equal(f.job().steps[0].source, "WebSearch");
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.job().steps[0].status, "running");
-  assert.equal(f.counts().starts, 1); assert.equal(f.counts().githubCalls, 0);
-  // Reconstructing from the repository is the refresh path; no browser IDs.
-  await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.deepEqual([f.job().steps[0].found, f.job().steps[0].added, f.job().steps[0].duplicates], [2, 1, 1]);
-  assert.equal(f.ws().state.candidates[0].currentTitle, "");
-  assert.equal(f.ws().state.candidates[0].yearsExperience, null);
+  assert.deepEqual([f.job().steps[0].status, f.job().steps[0].found, f.job().steps[0].added, f.job().steps[0].duplicates], ["completed", 2, 1, 1]);
+  assert.equal(f.counts().searches, 1); assert.equal(f.counts().githubCalls, 0);
+  assert.equal(f.ws().state.candidates[0].linkedinUrl, "https://www.linkedin.com/in/aria-fixture");
   assert.equal(f.ws().state.candidates[0].email, "");
+  // Reconstructing from the repository is the refresh path; no browser IDs.
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
   assert.equal(f.job().status, "completed"); assert.equal(f.ws().state.candidates.length, 2);
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.counts().starts, 1); assert.equal(f.counts().githubCalls, 1);
+  assert.equal(f.counts().searches, 1); assert.equal(f.counts().githubCalls, 1);
   const dto = publicSourcingJob(f.job(), f.job().actor_id);
-  assert.doesNotMatch(JSON.stringify(dto), /provider-dataset|provider-run|fixture-key|campaign_snapshot|workspace_id/);
+  assert.doesNotMatch(JSON.stringify(dto), /receipt-id|campaign_snapshot|workspace_id/);
 });
-test("simultaneous polling claims at most one paid start", async () => {
+test("simultaneous polling claims at most one paid web search", async () => {
   const f = fixture(); const same = f.job();
   await Promise.all([advanceUnifiedRun(same, f.repo, f.providers), advanceUnifiedRun(same, f.repo, f.providers)]);
-  assert.equal(f.counts().starts, 1); assert.equal(f.counts().reservations, 1);
+  assert.equal(f.counts().searches, 1); assert.equal(f.counts().reservations, 1);
 });
-test("a start timeout is uncertain and never retried; the next source still runs", async () => {
+test("a crash during a paid web search does not search again after the lease expires; the next source still runs", async () => {
   const f = fixture();
-  f.providers.start = async () => ({ ok: false, status: 0, title: "timeout", detail: "sensitive error" });
+  const bind = f.repo.bind;
+  f.repo.bind = async () => { throw new Error("process stopped after the search was reserved"); };
+  await assert.rejects(advanceUnifiedRun(f.job(), f.repo, f.providers));
+  f.repo.bind = bind;
+  f.expire();
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.job().steps[0].status, "uncertain");
+  assert.equal(f.counts().searches, 0); assert.equal(f.job().steps[0].status, "uncertain");
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
   assert.equal(f.job().status, "partial"); assert.equal(f.counts().githubCalls, 1);
-  assert.doesNotMatch(JSON.stringify(f.job().steps), /sensitive error/);
-});
-test("crash during a paid start does not launch again after the lease expires", async () => {
-  const f = fixture();
-  f.providers.start = async () => { throw new Error("process stopped after provider accepted"); };
-  await assert.rejects(advanceUnifiedRun(f.job(), f.repo, f.providers));
-  f.expire();
-  let retried = false; f.providers.start = async () => { retried = true; throw new Error(); };
-  await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(retried, false); assert.equal(f.job().steps[0].status, "uncertain");
 });
 test("state conflict remaps and dedupes against the latest persisted candidates", async () => {
   const f = fixture();
-  await advanceUnifiedRun(f.job(), f.repo, f.providers);
   const finish = f.repo.finish; let first = true;
   f.repo.finish = async (...args) => {
-    if (first) { first = false; const candidate = args[4]!.candidates[0]; f.mutateState(candidate); return "conflict"; }
+    if (first && args[4]) { first = false; const candidate = args[4].candidates[0]; f.mutateState(candidate); return "conflict"; }
     return finish(...args);
   };
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
   assert.equal(f.ws().state.candidates.length, 1);
   assert.equal(f.job().steps[0].added, 0); assert.equal(f.job().steps[0].duplicates, 2);
 });
-test("missing LinkedIn key remains explicit and does not swallow GitHub results", async () => {
-  const f = fixture(); f.providers.apifyKey = async () => null;
+test("a failed web search stays explicit and does not swallow GitHub results", async () => {
+  const f = fixture(); f.providers.webSearch = async () => ({ ok: false, error: "Add an Anthropic key in Settings before searching the web." });
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.counts().starts, 0); assert.equal(f.job().steps[0].status, "failed");
+  assert.equal(f.job().steps[0].status, "failed"); assert.match(f.job().steps[0].error!, /Anthropic key/);
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
   assert.equal(f.job().status, "partial"); assert.equal(f.ws().state.candidates.length, 1);
 });
-test("a provider success blocked by account allowance fails LinkedIn and preserves the other source", async () => {
-  const f = fixture(); await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  f.providers.poll = async () => ({ ok: true, status: 200, data: { status: "SUCCEEDED", blockedReason: "account_limit" } });
-  let itemsFetched = false;
-  f.providers.items = async () => { itemsFetched = true; throw new Error("No dataset should be imported for a refusal."); };
+test("a step saved before Apify was retired ends without any provider call", async () => {
+  const base = fixture();
+  const legacy: SourceStep = { source: "LinkedIn", query: base.query, limit: 3, status: "running", found: 0, added: 0, duplicates: 0, excluded: 0, externalRunId: "old-run", datasetId: "old-dataset" };
+  const f = fixture([legacy, ...orderedSteps([{ source: "GitHub", query: base.query, limit: 3 }])]);
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
   assert.equal(f.job().steps[0].status, "failed");
-  assert.match(f.job().steps[0].error!, /account allowance/);
-  assert.equal(itemsFetched, false); assert.equal(f.ws().state.candidates.length, 0);
+  assert.match(f.job().steps[0].error!, /Apify was removed/);
+  assert.deepEqual(f.counts(), { searches: 0, githubCalls: 0, reservations: 0 });
+  assert.match(SOURCE_LABELS.LinkedIn, /retired/);
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.job().status, "partial"); assert.equal(f.counts().starts, 1);
-});
-test("the real provider adapter recognizes the explicit free-run refusal without rejecting normal empty searches", async () => {
-  const { getRunStatus } = await import("../src/lib/sourcing/apify");
-  const { clearProviderProbe } = await import("../src/lib/sourcing/provider-egress");
-  const realFetch = globalThis.fetch;
-  let statusMessage = "free user run limit reached";
-  try {
-    globalThis.fetch = async () => new Response(JSON.stringify({ data: { status: "SUCCEEDED", statusMessage } }), { status: 200 });
-    const blocked = await getRunStatus(clearProviderProbe("Apify"), "fixture-key", "fixture-run");
-    assert.ok(blocked.ok); assert.equal(blocked.data.blockedReason, "account_limit");
-    assert.doesNotMatch(JSON.stringify(blocked), /statusMessage/);
-    statusMessage = "Finished with no matching profiles";
-    const empty = await getRunStatus(clearProviderProbe("Apify"), "fixture-key", "fixture-run");
-    assert.ok(empty.ok); assert.deepEqual(empty.data, { status: "SUCCEEDED" });
-  } finally { globalThis.fetch = realFetch; }
-});
-test("transient status failure keeps the exact binding and resumes without paid restart", async () => {
-  const f = fixture(); await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  const poll = f.providers.poll;
-  f.providers.poll = async () => ({ ok: false, status: 503, title: "down", detail: "" });
-  await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.job().steps[0].externalRunId, "provider-run"); assert.equal(f.job().steps[0].status, "running");
-  f.providers.poll = poll; await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.counts().starts, 1); assert.equal(f.job().steps[0].status, "completed");
+  assert.equal(f.job().status, "partial"); assert.equal(f.counts().githubCalls, 1);
 });
 test("brief changes during provider work prevent candidate persistence", async () => {
-  const f = fixture(); await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  f.providers.items = async () => { f.ws().state.campaigns[0].jobAnalysis.title = "Different role"; return { ok: true, status: 200, data: [f.profile] }; };
+  const f = fixture();
+  f.providers.webSearch = async () => { f.ws().state.campaigns[0].jobAnalysis.title = "Different role"; return { ok: true, hits: [f.hit] }; };
   await assert.rejects(advanceUnifiedRun(f.job(), f.repo, f.providers), /brief changed/);
   assert.equal(f.ws().state.candidates.length, 0);
 });
 test("invalid source URLs are excluded instead of creating unsafe profile links", async () => {
-  const f = fixture(); await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  f.providers.items = async () => ({ ok: true, status: 200, data: [{ ...f.profile, linkedinUrl: "javascript:alert(1)" }] });
+  const f = fixture();
+  f.providers.webSearch = async () => ({ ok: true, hits: [{ ...f.hit, url: "javascript:alert(1)" }, { ...f.hit, url: "https://evil.example/in/aria-fixture" }] });
   await advanceUnifiedRun(f.job(), f.repo, f.providers);
-  assert.equal(f.ws().state.candidates.length, 0); assert.equal(f.job().steps[0].excluded, 1);
+  assert.equal(f.ws().state.candidates.length, 0);
+  assert.deepEqual([f.job().steps[0].found, f.job().steps[0].excluded], [2, 2]);
 });
 test("an erased identity is excluded without blocking the rest of a batch", async () => {
-  const f = fixture(); await advanceUnifiedRun(f.job(), f.repo, f.providers);
+  const f = fixture();
   const finish = f.repo.finish; let first = true;
   f.repo.finish = async (...args) => {
-    if (first) { first = false; return { blockedIds: [args[4]!.candidates[0].id] }; }
+    if (first && args[4]) { first = false; return { blockedIds: [args[4].candidates[0].id] }; }
     return finish(...args);
   };
   await advanceUnifiedRun(f.job(), f.repo, f.providers);

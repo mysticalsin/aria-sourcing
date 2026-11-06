@@ -144,7 +144,7 @@ test("action contract, implementation object, and memo dependencies stay in pari
     .filter((name): name is string => name !== null);
   const dependencyNames = dependencyList.elements.map((element) => element.getText());
 
-  assert.equal(contractNames.length, 120);
+  assert.equal(contractNames.length, 118); // startApifyRun and checkApifyRun retired 2026-11-06
   assert.deepEqual([...implementationNames].sort(), [...contractNames].sort());
   assert.deepEqual([...dependencyNames].sort(), [...contractNames].sort());
 });
@@ -192,7 +192,7 @@ test("public hooks preserve their provider-bound initial behavior", () => {
   const markup = renderToStaticMarkup(
     createElement(WorkspaceProvider, null, createElement(StoreHookProbe)),
   );
-  assert.equal(markup, "<output>loading:false:120</output>");
+  assert.equal(markup, "<output>loading:false:118</output>");
 });
 
 test("useWorkspace still rejects consumers outside WorkspaceProvider", () => {

@@ -1099,7 +1099,7 @@ export function CandidateDrawer({
     const scope = captureErasureScope();
     try {
       if (!(await confirm({ title: "Review paid enrichment", confirmLabel: "Enrich reviewed profile",
-        description: `Look for ${plannedFields.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")} via Apify. Provider pricing and account limits apply; data is not guaranteed. Keep this page open until the result is saved. No message will be sent.`,
+        description: `Look for ${plannedFields.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")} through the configured enrichment provider. Provider pricing and account limits apply; data is not guaranteed. Keep this page open until the result is saved. No message will be sent.`,
       }))) return;
       if (!isErasureScopeCurrent(scope)) return;
       setAttemptsBaseline((c.enrichment?.attempts ?? []).length);
@@ -1198,12 +1198,13 @@ export function CandidateDrawer({
   const enrichmentCoverage = computeCoverage(c);
   const fieldProvenance: Partial<Record<EnrichableField, FieldProvenance>> = c.enrichment?.fieldProvenance ?? {};
   const eligibleProviders = ENRICHMENT_PROVIDERS.filter((p) => p.keyField(c) != null);
-  const configuredProviders = eligibleProviders.filter((p) => apiKeys.some((key) => key.provider === p.id));
+  const configuredProviders = eligibleProviders.filter((p) => apiKeys.some((key) => key.provider === p.keyProvider));
   const plannedFields = DRAWER_ENRICHMENT_FIELDS.filter((field) => !enrichmentCoverage.includes(field) && configuredProviders.some((p) => p.enriches.includes(field)));
   const enrichBlocker = candidateEnrichmentBlocker(c, campaign)
     ?? (!supabaseEnabled ? "Connect the persisted workspace to enrich real profiles." : null)
+    ?? (!ENRICHMENT_PROVIDERS.length ? "No enrichment provider is set up. Add verified contact details by hand." : null)
     ?? (!eligibleProviders.length ? "The current provider needs a LinkedIn profile URL. Review the source profile before adding contact details." : null)
-    ?? (!configuredProviders.length ? "Connect an Apify key in Settings to enrich this profile." : null);
+    ?? (!configuredProviders.length ? "Connect the enrichment provider's key in Settings to enrich this profile." : null);
   const enrichmentSpend = (c.enrichment?.attempts ?? []).reduce((sum, a) => sum + a.costUnits, 0);
   const recentEnrichmentAttempts: EnrichmentAttempt[] =
     attemptsBaseline !== null ? (c.enrichment?.attempts ?? []).slice(attemptsBaseline) : [];

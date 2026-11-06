@@ -12,15 +12,11 @@ const STATUS_TONE: Record<string, Tone> = { valid: "success", invalid: "danger",
 
 const SELECTABLE_API_KEY_PROVIDERS = API_KEY_PROVIDERS;
 
-// Provider-specific format hints for the API key value field. Most providers
-// rely on the generic placeholder below; Apify's token shape is distinctive
-// enough (and easy to confuse with a project/actor id) to call out explicitly.
-const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
-  Apify: "Personal API token from the Apify console (Settings → Integrations), format apify_api_…",
-};
-const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
-  Apify: "apify_api_…  (stored server-side, never shown again)",
-};
+// Provider-specific format hints for the API key value field. Every provider
+// uses the generic placeholder for now; add an entry when a token shape is
+// easy to get wrong.
+const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {};
+const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {};
 
 export function ApiKeysPanel() {
   const keys = useApiKeys();

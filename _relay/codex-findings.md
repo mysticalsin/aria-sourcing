@@ -72,6 +72,7 @@ November 2026) are in `_relay/archive/codex-findings-closed-2026-11-03.md`.
 **Suggested fix:** Enforce one server-side prohibited-criteria and approved-requisition check before every provider call, with an immutable policy receipt.
 **Status:** open; real sourcing remains NO-GO
 **Triage 2026-11-03:** Partly addressed, needs re-audit before closing: the Apollo route was removed by the demo cleanup (c79dcaa8), and `src/app/api/source/apify/start/route.ts` now loads the campaign and calls `clearDiscoveryCriteria` (`src/lib/sourcing/provider-egress.ts`, f5f1e47f) before `begin_provider_run`. Confirm that clearance applies the prohibited-criteria policy to `schools`/`firstNames`/`lastNames`.
+**Triage 2026-11-06:** Both direct adapters named here are gone: the owner retired Apify, and `src/app/api/source/apify/*`, `src/lib/sourcing/apify.ts` and the name/school filter dialog were deleted (Apollo went on 2026-11-03). Discovery now runs only through `src/app/api/source/campaign/route.ts` (`clearWebSearchDiscovery` / `clearDiscoveryCriteria("GitHub")`) and the GitHub probe in `src/app/api/source/route.ts`. Ready for a Codex re-audit to close.
 
 ## 2026-07-19 - Enrichment spend authority is defined but not used by application calls
 **Severity:** correctness
@@ -81,6 +82,7 @@ November 2026) are in `_relay/archive/codex-findings-closed-2026-11-03.md`.
 **Suggested fix:** Wrap every paid enrichment/provider call in durable database claim, settle, and release operations and test concurrent multi-instance replays against a hard ceiling.
 **Status:** open; paid enrichment remains NO-GO
 **Triage 2026-11-03:** Possibly fixed, needs re-audit before closing: `src/app/api/source/enrich/route.ts` now goes through `orchestrateEnrichment`, and `src/lib/enrichment/orchestrator.ts` calls `claim_enrichment_budget`, `settle_enrichment_spend` and `release_enrichment_claim` (8bda0689, 29967509). The concurrent multi-instance ceiling test has not been confirmed.
+**Triage 2026-11-06:** No paid enrichment provider exists now (`ENRICHMENT_PROVIDERS = []`, `ENRICHMENT_RUNNERS = {}` after the Apify retirement), so nothing spends today. A test rewrite of the orchestrator found gaps to fix before the next provider is registered: a runner that throws escapes `orchestrateEnrichment` without releasing its claim (`orchestrator.ts`, no try/catch around the runner call); the gate is `budgetRemaining <= 0`, not "below this provider's cost", so one provider can overshoot; a provider with registry cost 0 never claims or settles even when its runner reports a real cost; failed or not-configured results release the claim but still count in `spend`.
 
 ## 2026-10-27 - Azure managed PostgreSQL is not a drop-in target for the current bootstrap
 **Severity:** spec-mismatch

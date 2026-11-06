@@ -110,10 +110,11 @@ test("each web search is priced on top of the tokens", () => {
   assert.ok(Math.abs(estimateCostUsd("claude-sonnet-5-5", { input_tokens: 1000, server_tool_use: { web_search_requests: 3 } }) - tokens - 0.03) < 1e-9);
 });
 
-test("the plan accepts the three sources and runs them LinkedIn, web search, GitHub", () => {
-  const plan = [{ source: "GitHub", query: skill, limit: 2 }, { source: "WebSearch", query: skill, limit: 2 }, { source: "LinkedIn", query: skill, limit: 2 }] as const;
+test("the plan accepts web search and GitHub and runs web search first", () => {
+  const plan = [{ source: "GitHub", query: skill, limit: 2 }, { source: "WebSearch", query: skill, limit: 2 }] as const;
   assert.ok(SourcePlanSchema.safeParse(plan).success);
-  assert.deepEqual(orderedSteps([...plan]).map((s) => s.source), ["LinkedIn", "WebSearch", "GitHub"]);
+  assert.deepEqual(orderedSteps([...plan]).map((s) => s.source), ["WebSearch", "GitHub"]);
+  assert.equal(SourcePlanSchema.safeParse([...plan, { source: "LinkedIn", query: skill, limit: 2 }]).success, false, "the Apify source is retired");
 });
 
 function runFixture() {
@@ -142,8 +143,7 @@ function runFixture() {
     },
   };
   const providers: UnifiedProviders = {
-    apifyKey: async () => null, start: async () => { throw new Error("no Apify"); }, poll: async () => { throw new Error("no Apify"); },
-    items: async () => { throw new Error("no Apify"); }, github: async () => [],
+    github: async () => [],
     webSearch: async (_c, query) => {
       searches++; assert.equal(query, skill);
       return { ok: true, hits: [{ url: "https://www.linkedin.com/in/jane-fixture", title: "Jane Fixture - Data Engineer - Acme | LinkedIn", snippet: `Builds ${skill} services` }] };

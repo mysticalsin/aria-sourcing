@@ -41,7 +41,7 @@ test("next actions follow evidence, contact, permission and human draft review",
 });
 
 test("no eligible provider and provider refusal do not pretend to be successful empty discovery", () => {
-  const attempt = { provider: "Apify", at: new Date().toISOString(), fieldsFilled: [], costUnits: 0 } as const;
+  const attempt = { provider: "LinkedIn", at: new Date().toISOString(), fieldsFilled: [], costUnits: 0 } as const;
   assert.equal(enrichmentOutcome([]).ok, false);
   for (const status of ["not_configured", "budget_exceeded", "error", "deferred", "no_key_field"] as const) {
     assert.equal(enrichmentOutcome([{ ...attempt, fieldsFilled: [], status }]).ok, false);
@@ -97,7 +97,7 @@ function harness() {
     fetch: async (_url, init) => {
       calls++; sent = JSON.parse(String(init?.body)); await onFetch?.();
       return Response.json({ ok: true, patch: { techStack: ["Go", "Kubernetes", "PostgreSQL"], experience: ["Engineer @ Fixture"], education: ["University"], languages: ["French"], matchScore: 95 },
-        attempts: [{ provider: "Apify", at: "2026-10-27T10:00:00.000Z", status, fieldsFilled: status === "ok" ? ["experience", "education", "languages"] : [], costUnits: 1 }], spend: 1 });
+        attempts: [{ provider: "LinkedIn", at: "2026-10-27T10:00:00.000Z", status, fieldsFilled: status === "ok" ? ["experience", "education", "languages"] : [], costUnits: 1 }], spend: 1 });
     },
   });
   return { enrich, get state() { return state; }, get calls() { return calls; }, get saves() { return saves; }, get sent() { return sent; },
@@ -165,7 +165,7 @@ test("batch candidates serialize workspace saves without silently dropping a wor
       if (saving) return false;
       saving = true; await Promise.resolve(); state = fn(state); saving = false; return true;
     },
-    fetch: async () => { calls++; return Response.json({ ok: true, patch: {}, attempts: [{ provider: "Apify", at: new Date().toISOString(), status: "no_data", fieldsFilled: [], costUnits: 1 }], spend: 1 }); },
+    fetch: async () => { calls++; return Response.json({ ok: true, patch: {}, attempts: [{ provider: "LinkedIn", at: new Date().toISOString(), status: "no_data", fieldsFilled: [], costUnits: 1 }], spend: 1 }); },
   });
   const results = await Promise.all(state.candidates.map((c) => enrich(c.id)));
   assert.equal(calls, 2); assert.ok(results.every((r) => r.ok)); assert.equal(state.enrichmentLedger?.length, 2);

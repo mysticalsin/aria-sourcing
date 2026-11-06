@@ -5,8 +5,7 @@ import { supabaseEnabled } from "./supabase/config";
 /* ============================================================================
    Integration adapters — MOCK MODE by default.
    Every card has backend wiring in this repo: GitHub Sourcing (/api/source),
-   Apify LinkedIn profile search (/api/source/apify) and enrichment
-   (/api/source/enrich), the Outlook/Graph mailbox + calendar (Agent Fleet's
+   the Outlook/Graph mailbox + calendar (Agent Fleet's
    OAuth connect flow), and SendGrid/Resend (sendViaProvider). This card's own
    "Configure"/"Live mode" controls still don't drive them; see setupHref and
    testIntegration (store.ts) for the real config surface.
@@ -36,17 +35,6 @@ export function defaultIntegrations(): IntegrationStatus[] {
       errors: [],
     },
     {
-      id: "int_apify",
-      name: "Apify (LinkedIn profile search)",
-      category: "Sourcing",
-      description:
-        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation.",
-      status: "connected",
-      mode: "mock",
-      lastSync: isoHoursBefore(0.6),
-      errors: [],
-    },
-    {
       id: "int_supabase",
       name: "Supabase",
       category: "Infra",
@@ -69,16 +57,6 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: isoHoursBefore(0.5),
       errors: [],
       setupHref: "/fleet",
-    },
-    {
-      id: "int_enrichment",
-      name: "Apify LinkedIn enrichment",
-      category: "Enrichment",
-      description: "Profile and contact enrichment through the Apify dev_fusion actor (Settings → API keys).",
-      status: "not_configured",
-      mode: "mock",
-      lastSync: null,
-      errors: [],
     },
     {
       id: "int_sendgrid",

@@ -21,7 +21,6 @@ import {
 import { createCandidateEnrichment } from "./store/enrichment-actions";
 import { recordVerifiedEvidence, type VerifiedEvidenceInput } from "./candidate-evidence";
 import { candidateDraftBlocker } from "./candidate-review";
-import type { ApifyProfile, ApifyProfileSearchInput } from "./sourcing/apify";
 import {
   buildOutreachPrompt,
   aiGenerate,
@@ -79,7 +78,6 @@ import {
   WORKSPACE_STORAGE_KEY,
 } from "./store/migrations";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
-import { mapApifyCandidates } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
 import type {
   CandidateErasureObligation,
@@ -1084,104 +1082,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) =>
       commit((s) => withActivity(s, makeActivity(a), a.campaignId ?? null)),
     [commit],
-  );
-
-  const startApifyRun = useCallback(
-    async (
-      campaignId: string,
-      criteria: ApifyProfileSearchInput,
-    ): Promise<{ ok: true; runId: string; datasetId: string } | { ok: false; error: string }> => {
-      if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Apify candidate sourcing requires a live workspace." };
-      }
-      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-
-      let res: Response;
-      try {
-        res = await workspaceFetch("/api/source/apify/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ campaignId, ...criteria }),
-        });
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Apify." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | { ok?: boolean; runId?: string; datasetId?: string; error?: string }
-        | null;
-      if (!out?.ok || !out.runId || !out.datasetId) {
-        return { ok: false, error: out?.error ?? "Apify search failed to start." };
-      }
-      return { ok: true, runId: out.runId, datasetId: out.datasetId };
-    },
-    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const checkApifyRun = useCallback(
-    async (
-      campaignId: string,
-      runId: string,
-      datasetId: string,
-      query: string,
-    ): Promise<
-      | { ok: true; status: "processing" }
-      | { ok: true; status: "completed"; added: number }
-      | { ok: false; error: string }
-    > => {
-      if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Apify candidate sourcing requires a live workspace." };
-      }
-      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-
-      let res: Response;
-      try {
-        res = await workspaceFetch(
-          `/api/source/apify/status?runId=${encodeURIComponent(runId)}&datasetId=${encodeURIComponent(datasetId)}`,
-        );
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Apify." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | { ok?: boolean; status?: string; error?: string; profiles?: ApifyProfile[] }
-        | null;
-      if (!out?.ok) return { ok: false, error: out?.error ?? "Apify status check failed." };
-      if (out.status === "processing") return { ok: true, status: "processing" };
-      if (out.status !== "completed") return { ok: false, error: out.error ?? "Apify run did not complete." };
-
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const { accepted, skipped } = mapApifyCandidates(out.profiles ?? [], campaign, query, s.candidates, weights);
-
-      commit((prev) => {
-        let next: WorkspaceState = { ...prev, candidates: [...accepted, ...prev.candidates] };
-        next = recomputeMetrics(next, campaignId);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Sourced ${accepted.length} candidates via Apify (LinkedIn profile search): ${query}`,
-            notes: `Live Apify batch. ${skipped.length} skipped by dedupe (${skipped
-              .slice(0, 3)
-              .map((x) => x.reason)
-              .join(", ")}${skipped.length > 3 ? "…" : ""}).`,
-            outcome: `${accepted.length} accepted, ${skipped.length} skipped (live)`,
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
-      return { ok: true, status: "completed", added: accepted.length };
-    },
-    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const enrichCandidate = useMemo(() => createCandidateEnrichment({
@@ -5557,8 +5457,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch,
       addCandidateFromGithub,
       addCandidateManual,
-      startApifyRun,
-      checkApifyRun,
       enrichCandidate,
       enrichCampaign,
       runSourcingAgent,
@@ -5673,7 +5571,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, prepareReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, recordCandidateEvidence, addCandidateNote, setRejectionReason,

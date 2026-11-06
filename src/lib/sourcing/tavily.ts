@@ -4,8 +4,8 @@ import { decryptSecret } from "@/lib/crypto-secrets";
 
 /**
  * Resolve this workspace's stored, decrypted Tavily key (service-role read -
- * `secret` is withheld from `authenticated` by column grant, same pattern as
- * Apify). Returns null when nothing is stored. Never accepts a raw key
+ * `secret` is withheld from `authenticated` by column grant, like every
+ * stored provider key). Returns null when nothing is stored. Never accepts a raw key
  * from the caller.
  */
 export async function resolveStoredTavilyKey(

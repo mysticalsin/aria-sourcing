@@ -11,8 +11,8 @@ const actorId = crypto.randomUUID(); const workspaceId = crypto.randomUUID();
 const job: CampaignSourcingJob = { id: crypto.randomUUID(), actor_id: actorId, workspace_id: workspaceId,
   campaign_id: campaign.id, campaign_snapshot: campaignSourcingBasis(campaign), status: "active", revision: 0,
   claim_token: null, claim_until: null, created_at: new Date().toISOString(),
-  steps: orderedSteps([{ source: "LinkedIn", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }]) };
-let signedIn = true, role = "member", apifyKey: string | null = "fixture", visible = true, advanceCalls = 0, startCalls = 0, readCalls = 0;
+  steps: orderedSteps([{ source: "GitHub", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }]) };
+let signedIn = true, role = "member", visible = true, advanceCalls = 0, startCalls = 0, readCalls = 0;
 const session = { auth: { getUser: async () => ({ data: { user: signedIn ? { id: actorId } : null } }) },
   rpc: async (name: string) => ({ data: name === "current_profile_role" ? role : workspaceId, error: null }) };
 mock.module("server-only", { namedExports: {} });
@@ -26,15 +26,12 @@ mock.module(url("src/lib/sourcing/unified-repository.ts"), { namedExports: {
 mock.module(url("src/lib/sourcing/unified-run.ts"), { namedExports: {
   reviewedCampaign: () => campaign, advanceUnifiedRun: async () => { advanceCalls++; },
 } });
-mock.module(url("src/lib/sourcing/apify.ts"), { namedExports: {
-  resolveStoredApifyKey: async () => apifyKey, startProfileSearchRun: () => {}, getRunStatus: () => {}, fetchDatasetItems: () => {},
-} });
 mock.module(url("src/lib/sourcing/github.ts"), { namedExports: { searchGithubUsers: () => {} } });
 const { POST } = await import("../src/app/api/source/campaign/route");
 const request = (body: object, origin = "http://localhost") => new NextRequest("http://localhost/api/source/campaign", {
   method: "POST", headers: { "content-type": "application/json", origin, "x-real-ip": crypto.randomUUID() }, body: JSON.stringify(body),
 });
-const start = () => ({ action: "start", campaignId: campaign.id, requestKey: crypto.randomUUID(), sources: [{ source: "LinkedIn", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }] });
+const start = () => ({ action: "start", campaignId: campaign.id, requestKey: crypto.randomUUID(), sources: [{ source: "GitHub", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }] });
 
 test("anonymous and viewers cannot read campaign authority or launch providers", async () => {
   for (const denied of ["anonymous", "viewer"]) {
@@ -48,10 +45,9 @@ test("mutations require exact same origin and reject client-owned run bindings",
   const response = await POST(request({ action: "advance", runId: job.id, datasetId: "other-dataset", workspaceId: "other" }));
   assert.equal(response.status, 400); assert.equal(advanceCalls, 0);
 });
-test("missing LinkedIn config cannot silently fall back or create a paid run", async () => {
-  apifyKey = null;
-  assert.equal((await POST(request(start()))).status, 409); assert.equal(startCalls, 0);
-  apifyKey = "fixture";
+test("the retired Apify LinkedIn source is refused before any run is created", async () => {
+  const body = { ...start(), sources: [{ source: "LinkedIn", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }] };
+  assert.equal((await POST(request(body))).status, 400); assert.equal(startCalls, 0);
 });
 test("web search without the workspace's Anthropic key is refused before any run is created", async () => {
   const saved = state.settings.llmProviders;

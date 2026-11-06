@@ -137,7 +137,7 @@ available. Do not add login automation, scraping, or rate-limit bypass.
 ## Integration boundaries
 
 - AI providers are called only from server routes after credential resolution.
-- Live GitHub, Apify, and web-search records are normalized by
+- Live GitHub and web-search records are normalized by
   `src/lib/sourcing/candidate-mappers.ts`. `src/lib/mock-ai.ts` contains
   deterministic synthetic behavior and compatibility re-exports only.
 - Provider keys and OAuth tokens are encrypted at rest and never returned to

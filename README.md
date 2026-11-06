@@ -11,8 +11,8 @@ reports the results to leadership.
 1. **Brief.** Paste a job description (or several) on **Launch** or **Intake**. ARIA turns
    each role into a campaign.
 2. **Source.** The sourcing agent searches GitHub, the web (LinkedIn, Stack Overflow,
-   Dribbble, Behance via Tavily) and Apify LinkedIn search. It scores and dedupes the
-   candidates it finds.
+   Dribbble, Behance via Tavily) and public LinkedIn profiles through Claude's web search.
+   It scores and dedupes the candidates it finds.
 3. **Review candidates.** Every candidate has an explainable match score. The talent pool
    (**Vivier**) keeps them across campaigns.
 4. **Reach out.** ARIA drafts a personal message per candidate. Nothing is sent until a
@@ -72,7 +72,7 @@ The stack runs without any external key. Each integration turns on once its key 
 |---|---|
 | GitHub sourcing | Works without a key (60 requests/hour). `GITHUB_TOKEN` in `.env.local` raises it to 5,000/hour. |
 | Web sourcing | Tavily key in **Settings → API keys**. |
-| Apify LinkedIn search and enrichment | Apify token in **Settings → API keys**. |
+| LinkedIn via web search | The workspace Anthropic key, linked on the Anthropic provider in **Settings → AI & Models**. |
 | AI sourcing agent and drafting | Anthropic or OpenAI-compatible key in **Settings → API keys**, enabled under **Settings → LLM providers**. Without one, the agent runs in rule-based mode. |
 | Sending email and syncing replies | Connect a Gmail or Outlook mailbox under **Mailboxes** ([guide](docs/runbooks/connect-gmail-outlook.md)). |
 | Dust agents, MCP tools | **Settings → Dust agents** and **Settings → Tools**. |

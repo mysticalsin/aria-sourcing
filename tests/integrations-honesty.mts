@@ -14,19 +14,15 @@ function ok(name: string, cond: boolean) {
 
 const integrations = defaultIntegrations();
 const github = integrations.find((integration) => integration.id === "int_github");
-const apify = integrations.find((integration) => integration.id === "int_apify");
 
 ok(
   "the catalogue holds only wired integrations, no roadmap placeholders",
   ["int_linkedin_rsc", "int_twenty", "int_n8n", "int_calcom", "int_notify"].every((id) => !integrations.some((i) => i.id === id)),
 );
 ok("GitHub card remains connected", github?.status === "connected" && typeof github.lastSync === "string");
-ok("Apify LinkedIn profile search card remains connected", apify?.status === "connected" && typeof apify.lastSync === "string");
 ok(
-  "Apify card's description names the third-party vendor and disclaims first-party LinkedIn automation",
-  /apify/i.test(apify?.description ?? "") &&
-    /third-party/i.test(apify?.description ?? "") &&
-    /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? ""),
+  "Apify is retired: no card for its profile search or its enrichment",
+  !integrations.some((i) => i.id === "int_apify" || i.id === "int_enrichment" || /apify/i.test(`${i.name} ${i.description}`)),
 );
 ok(
   "unconfigured connection tests fail closed",
@@ -39,6 +35,9 @@ const legacy = { ...buildSeedState(), version: 19, integrations: [...integration
 const migrated = normalizeWorkspaceState(legacy).integrations;
 ok("migration drops cards no longer in the catalogue", !migrated.some((i) => i.id === "int_n8n"));
 ok("migration keeps the catalogue cards", migrated.length === integrations.length);
+// A version-20 workspace still holds the Apify cards: version 21 drops them.
+const withApify = { ...buildSeedState(), version: 20, integrations: [...integrations, { ...integrations[0], id: "int_apify", name: "Apify (LinkedIn profile search)" }] };
+ok("migration drops the retired Apify cards", !normalizeWorkspaceState(withApify).integrations.some((i) => i.id === "int_apify"));
 
 // One count for every screen: a mock-mode integration is "Simulated", never "Connected".
 const counts = integrationCounts(integrations);

@@ -2,34 +2,28 @@ import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import type { Campaign, WorkspaceState } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
-import { mapApifyCandidates } from "@/lib/store/sourcing-helpers";
 import { mapGithubCandidates, mapWebSearchCandidates, type SourceResult } from "./candidate-mappers";
 import { extractLead, type SearchHit } from "./web-leads";
+import { canonicalLinkedInProfileUrl } from "./claude-web-search";
 import { effectiveWeights } from "@/lib/skills";
 import { candidateProfileIdentity } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "./campaign-lifecycle";
 import { computeCampaignMetrics, firstInterviewElapsedHours, realFunnelFacts } from "@/lib/metrics";
-import { clearDiscoveryCriteria, clearIdentityResolution, clearWebSearchDiscovery } from "./provider-egress";
+import { clearDiscoveryCriteria, clearWebSearchDiscovery } from "./provider-egress";
 import type { ProviderClearance } from "./provider-transport";
-import type { ApifyProfile, ApifyProfileSearchInput, ApifyResult } from "./apify";
 import type { GithubUser } from "./github-identity";
-import { campaignSourcingBasis, jobStatus, type CampaignSourcingJob, type SourceStep } from "./unified-contract";
-import { APIFY_ACCOUNT_LIMIT_ERROR, type ApifyRunStatus } from "./apify-status";
+import { campaignSourcingBasis, jobStatus, type CampaignSourcingJob, type SourceChoice, type SourceStep } from "./unified-contract";
 
 export interface SourcingWorkspace { state: WorkspaceState; updatedAt: string }
 export interface UnifiedRunRepository {
   readWorkspace(): Promise<SourcingWorkspace>;
   claim(job: CampaignSourcingJob, token: string, steps: SourceStep[]): Promise<boolean>;
   bind(job: CampaignSourcingJob, token: string, steps: SourceStep[]): Promise<void>;
-  reserve(source: SourceStep["source"], key: string, campaignId: string): Promise<string>;
+  reserve(source: SourceChoice["source"], key: string, campaignId: string): Promise<string>;
   settle(providerRunId: string, succeeded: boolean, externalRunId?: string, datasetId?: string): Promise<void>;
   finish(job: CampaignSourcingJob, token: string, steps: SourceStep[], workspace: SourcingWorkspace, state?: WorkspaceState): Promise<"saved" | "conflict" | { blockedIds: string[] }>;
 }
 export interface UnifiedProviders {
-  apifyKey(): Promise<string | null>;
-  start(clearance: ProviderClearance, key: string, input: ApifyProfileSearchInput): Promise<ApifyResult<{runId: string; datasetId: string; status: string}>>;
-  poll(clearance: ProviderClearance, key: string, runId: string): Promise<ApifyResult<ApifyRunStatus>>;
-  items(clearance: ProviderClearance, key: string, datasetId: string, limit: number): Promise<ApifyResult<ApifyProfile[]>>;
   github(clearance: ProviderClearance, query: string, count: number, signal: AbortSignal): Promise<GithubUser[]>;
   /** Claude web search over public LinkedIn profiles; resolves the key and records spend. */
   webSearch(clearance: ProviderClearance, query: string, count: number, campaign: Campaign, signal: AbortSignal): Promise<{ ok: true; hits: SearchHit[] } | { ok: false; error: string }>;
@@ -64,8 +58,8 @@ export async function advanceUnifiedRun(job: CampaignSourcingJob, repo: UnifiedR
   if (index < 0) return;
   const steps = structuredClone(job.steps);
   const step = steps[index];
-  // Paid starts are never repeated: Apify may still run, a web search was billed.
-  const interruptedStart = step.source !== "GitHub" && step.status === "starting";
+  // Paid starts are never repeated: an interrupted web search was billed.
+  const interruptedStart = step.source === "WebSearch" && step.status === "starting";
   if (step.status === "queued") step.status = "starting";
   const token = randomUUID();
   if (!(await repo.claim(job, token, steps))) return;
@@ -97,17 +91,21 @@ export async function advanceUnifiedRun(job: CampaignSourcingJob, repo: UnifiedR
     // The lease expires and a later poll can safely refetch read-only results.
     throw new Error("Workspace changed repeatedly. Resume this run to save its results.");
   };
+  if (step.source === "LinkedIn") {
+    // A step saved before Apify was retired: it ends here, nothing is called.
+    step.status = "failed";
+    step.error = "LinkedIn search through Apify was removed. Start a new run with LinkedIn via web search.";
+    await finish(); return;
+  }
   const ws = await repo.readWorkspace();
   const campaign = currentCampaign(ws, job);
   const clearance = step.source === "WebSearch"
     ? clearWebSearchDiscovery({ query: step.query }, campaign)
-    : clearDiscoveryCriteria(step.source === "LinkedIn" ? "Apify" : "GitHub", { query: step.query }, campaign);
+    : clearDiscoveryCriteria("GitHub", { query: step.query }, campaign);
   if (!clearance.ok) { step.status = "failed"; step.error = clearance.error; await finish(); return; }
   if (interruptedStart) {
     step.status = "uncertain";
-    step.error = step.source === "WebSearch"
-      ? "The web search was interrupted before its results were saved. Start a new run to search again; no paid retry was made."
-      : "The LinkedIn start was interrupted. Check Apify runs before launching again; no paid retry was made.";
+    step.error = "The web search was interrupted before its results were saved. Start a new run to search again; no paid retry was made.";
     await finish(); return;
   }
 
@@ -147,64 +145,22 @@ export async function advanceUnifiedRun(job: CampaignSourcingJob, repo: UnifiedR
       step.status = "failed"; step.error = outcome.error;
       await finish(); await repo.settle(step.providerRunId, false); return;
     }
-    const leads = outcome.hits.map((hit) => extractLead(hit, "LinkedIn"));
-    step.found = leads.length; step.status = "completed";
-    await finish((state, c) => mapWebSearchCandidates(leads, c, step.query, "LinkedIn", state.candidates, effectiveWeights(c.scoringWeights, state.skills)));
+    // The adapter keeps only LinkedIn profile URLs; recheck here so no other
+    // scheme or host can ever become a candidate's profile link.
+    const leads = outcome.hits.flatMap((hit) => {
+      const url = canonicalLinkedInProfileUrl(hit.url);
+      return url ? [extractLead({ ...hit, url }, "LinkedIn")] : [];
+    });
+    const unsafe = outcome.hits.length - leads.length;
+    step.found = outcome.hits.length; step.status = "completed";
+    await finish((state, c) => {
+      const mapped = mapWebSearchCandidates(leads, c, step.query, "LinkedIn", state.candidates, effectiveWeights(c.scoringWeights, state.skills));
+      for (let i = 0; i < unsafe; i++) mapped.skipped.push({ name: "", reason: "Not a LinkedIn profile URL" });
+      return mapped;
+    });
     await repo.settle(step.providerRunId, true);
     return;
   }
-
-  const key = await providers.apifyKey();
-  if (!key) { step.status = "failed"; step.error = "Connect an Apify key in Settings before searching LinkedIn."; await finish(); return; }
-  if (step.status === "starting") {
-    try {
-      step.providerRunId = await repo.reserve(step.source, `campaign:${job.id}:linkedin`, job.campaign_id);
-    } catch {
-      step.status = "failed"; step.error = "The workspace daily sourcing quota is reached or unavailable."; await finish(); return;
-    }
-    await repo.bind(job, token, steps);
-    currentCampaign(await repo.readWorkspace(), job);
-    const started = await providers.start(clearance.clearance, key, { searchQuery: step.query, maxItems: step.limit, takePages: 1, profileScraperMode: "Short" });
-    if (!started.ok || !started.data.runId || !started.data.datasetId) {
-      // A timeout/5xx can happen after acceptance by Apify. Never retry a start.
-      step.status = !started.ok && started.status >= 400 && started.status < 500 ? "failed" : "uncertain";
-      step.error = step.status === "uncertain"
-        ? "LinkedIn start could not be confirmed. Check Apify runs before launching again; no paid retry was made."
-        : "Apify refused the search. Check its key, account credits and actor access in Settings.";
-      await finish(); await repo.settle(step.providerRunId, false); return;
-    }
-    step.externalRunId = started.data.runId; step.datasetId = started.data.datasetId; step.status = "running";
-    // Persist the external identity first, even if quota-ledger attachment fails.
-    await repo.bind(job, token, steps);
-    await repo.settle(step.providerRunId, true, step.externalRunId, step.datasetId);
-    await finish(); return;
-  }
-  if (!step.externalRunId || !step.datasetId) throw new Error("LinkedIn run binding is unavailable.");
-  const identity = clearIdentityResolution("Apify", { runId: step.externalRunId, datasetId: step.datasetId });
-  if (!identity.ok) throw new Error("LinkedIn run binding is invalid.");
-  const polled = await providers.poll(identity.clearance, key, step.externalRunId);
-  if (!polled.ok) {
-    // Transient polling errors retain the provider binding for a safe resume.
-    step.error = "Apify status is temporarily unavailable. Resume this run; no new actor will be started.";
-    await finish(); return;
-  }
-  delete step.error;
-  if (polled.data.blockedReason === "account_limit") {
-    step.status = "failed"; step.error = APIFY_ACCOUNT_LIMIT_ERROR;
-    await finish(); if (step.providerRunId) await repo.settle(step.providerRunId, false); return;
-  }
-  if (["FAILED", "TIMED-OUT", "ABORTED"].includes(polled.data.status)) {
-    step.status = "failed"; step.error = `Apify run ${polled.data.status.toLowerCase()}. Check its run log.`;
-    await finish(); if (step.providerRunId) await repo.settle(step.providerRunId, false); return;
-  }
-  if (polled.data.status !== "SUCCEEDED") { await finish(); return; }
-  currentCampaign(await repo.readWorkspace(), job);
-  const items = await providers.items(identity.clearance, key, step.datasetId, step.limit);
-  if (!items.ok) { step.error = "LinkedIn results are temporarily unavailable. Resume to retrieve the same dataset."; await finish(); return; }
-  const profiles = items.data.slice(0, step.limit);
-  step.found = profiles.length; step.status = "completed";
-  await finish((state, c) => mapApifyCandidates(profiles, c, step.query, state.candidates, effectiveWeights(c.scoringWeights, state.skills)));
-  if (step.providerRunId) await repo.settle(step.providerRunId, true);
 }
 
 export { jobStatus };

@@ -145,7 +145,6 @@ export const SOURCE_PLATFORMS = [
   "Dribbble",
   "Behance",
   "Manual",
-  "Apify",
   "Referral",
   "Talent Pool",
 ] as const;
@@ -380,7 +379,7 @@ export interface Candidate {
   matchBreakdown: MatchBreakdownItem[];
   techStack: string[];
   /** Enriched work-history lines, formatted "Title @ Company (dates)", newest
-   *  first. Provider free-text (Apify/dev_fusion) — displayed to recruiters but
+   *  first. Provider free-text from an enrichment provider — displayed to recruiters but
    *  deliberately NOT parsed into `yearsExperience` (dates are unstructured; see
    *  the fabrication contract on that field). Absent until enriched. */
   experience?: string[];
@@ -1164,7 +1163,6 @@ export const API_KEY_PROVIDERS = [
   "SendGrid",
   "Aria Agent",
   "Dust",
-  "Apify",
   "Tavily",
   "Custom",
 ] as const;

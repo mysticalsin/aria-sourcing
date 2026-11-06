@@ -6,12 +6,13 @@
    bypass those rules — the app doing its own login, session automation, or
    scraping against linkedin.com.
 
-   This is distinct from sourcing/apify.ts, which buys LinkedIn public-profile
-   data from an approved third-party vendor API (Apify's harvestapi actor): no
-   recruiter cookies, no headless browser, no session reuse, no login of any
-   kind by this app. That data purchase is not automation this module blocks;
-   it is a vendor integration in the same trust category as other
-   licensed data vendors. The guardrails below stay fully intact regardless.
+   LinkedIn sourcing reads public profiles through Claude's web search
+   (sourcing/claude-web-search.ts): no recruiter cookies, no headless browser,
+   no session reuse, no login of any kind by this app. The experimental
+   LinkedIn bridge (src/lib/linkedin-bridge, owner opt-in, off by default)
+   runs in the user's own browser session, one human click per message or
+   invitation, and is outside the outreach pipeline this module guards. The
+   guardrails below stay fully intact regardless.
    ========================================================================== */
 
 export interface LinkedInPolicyResult {

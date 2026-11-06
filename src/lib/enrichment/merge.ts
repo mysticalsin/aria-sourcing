@@ -24,7 +24,7 @@ import type { Candidate, CandidateEnrichment, EnrichableField, EnrichmentAttempt
 /** One field's proposed new value from a provider, prior to the merge gate. */
 export interface EnrichedFieldResult {
   value: string | string[];
-  /** 0..1 confidence signal (e.g. Apify's email qualityScore). Absent = unknown/low. */
+  /** 0..1 confidence signal (e.g. a provider's email quality score). Absent = unknown/low. */
   confidence?: number;
 }
 
@@ -41,7 +41,7 @@ const HOMED_FIELDS: ReadonlySet<EnrichableField> = new Set(["email", "phone", "h
  *  directly depends on (email/phone drive every send channel). Deliberately
  *  narrower than the full `ENRICHABLE_FIELDS` set: `company` is never
  *  produced by any registered provider today and `experience`/`education`/
- *  `languages` are Apify-only bonus richness — requiring them would make
+ *  `languages` are bonus richness only some providers return — requiring them would make
  *  "enriched" unreachable via contact-only paths. */
 const COMMON_ENRICHMENT_FIELDS: readonly EnrichableField[] = ["email", "phone"];
 

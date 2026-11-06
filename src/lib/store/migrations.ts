@@ -82,6 +82,8 @@ export function migrateToCurrentVersion(parsed: WorkspaceState): WorkspaceState 
     reports: parsed.reports ?? [],
     // STATE_VERSION 20 — stored cards keep their usage history; cards no longer
     // in the catalogue (the removed roadmap placeholders) are dropped.
+    // STATE_VERSION 21 — the same rule drops the retired Apify cards
+    // (int_apify, int_enrichment; owner, 2026-11-06).
     integrations:
       parsed.integrations && parsed.integrations.length > 0
         ? parsed.integrations.filter((i) => defaultIntegrations().some((d) => d.id === i.id))

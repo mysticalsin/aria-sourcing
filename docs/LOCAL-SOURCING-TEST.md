@@ -10,16 +10,14 @@ identifiers. Keep those in a password manager or the application's encrypted vau
 
 | Item | Required for this test? | Configuration |
 |---|---|---|
-| Repository | Yes | Latest `mbe-branch`, including the Apify account-limit correction (`dfc9839f` or later). |
+| Repository | Yes | Latest `mbe-branch` (Apify removed on 2026-11-06). |
 | Docker and Compose | Yes | Docker Engine/Desktop running; Compose 2.24 or newer. On Windows, use Docker Desktop's supported virtualization backend. |
 | Browser | Yes | Open the application **on the Docker machine**. The default ports bind to loopback. |
 | Local ports | Yes | App `3000`, Supabase API `54321`, database `54322` free, or the overrides below. |
-| Network | Yes | Image/dependency downloads during build; outbound HTTPS to `api.apify.com` and `api.github.com` for the selected sources. |
-| Workspace administrator | Yes for setup | A connected admin session to save the workspace's provider key and check connections. |
-| Apify token | Yes for LinkedIn | Save through **Settings -> API keys**, provider **Apify**. The user/account ID is not an application setting. |
-| Apify actor access and allowance | Yes for LinkedIn | Check access/allowance for `harvestapi/linkedin-profile-search` before launching. Valid authentication alone is insufficient. |
+| Network | Yes | Image/dependency downloads during build; outbound HTTPS to `api.anthropic.com` and `api.github.com` for the selected sources. |
+| Workspace administrator | Yes for setup | A connected admin session to save the workspace's Anthropic key and check connections. |
 | GitHub token | Optional | Start with public anonymous access for a small test. If needed, set server-only `GITHUB_TOKEN` in the machine's ignored `.env.local`. |
-| Anthropic key | Only for "LinkedIn via web search" | Save it under **Settings -> API keys** (provider Anthropic) and select it on the Anthropic provider in **Settings -> AI & Models**. Apify and GitHub searches need no model. |
+| Anthropic key | Yes for "LinkedIn via web search" | Save it under **Settings -> API keys** (provider Anthropic) and select it on the Anthropic provider in **Settings -> AI & Models**. Web search must be enabled for the Anthropic organization (Claude Console -> Settings -> Capabilities). GitHub needs no model. |
 | Tavily, local LLM | No | Not used by the reviewed campaign search. |
 | Mailbox, SMTP, calendar, Azure | No | Leave these out of the sourcing test. No candidate message is sent. |
 | Host Node / Supabase CLI | No for normal Docker use | Node 22 is only needed for optional host-side helpers/automated acceptance. |
@@ -98,45 +96,26 @@ these ports. Keep loopback bindings for this local test.
 `localhost` refers to the machine running the browser. This stack cannot be
 configured remotely from another computer through its loopback URL.
 
-## 4. Configure Apify safely, then check its allowance
+## 4. Configure the Anthropic key safely
 
 In **Settings -> API keys**, as an admin:
 
-1. Set a descriptive label, select provider **Apify**, and paste the owner's
-   personal API token into the password field.
+1. Set a descriptive label, select provider **Anthropic**, and paste the key
+   into the password field.
 2. Click **Save key**. The backend encrypts it; only masked metadata should return
    to the browser. Confirm it remains listed after a refresh.
-3. **Format check** checks syntax only. Neither a `valid` format badge nor the
-   workspace connection summary proves live actor access or available allowance.
+3. In **Settings -> AI & Models**, select that key on the Anthropic provider.
+   "LinkedIn via web search" uses this workspace key, not an environment variable.
+4. **Format check** checks syntax only. A `valid` badge does not prove the key
+   has credits or that web search is enabled for its organization.
 
-There is no `APIFY_TOKEN` environment fallback for campaign sourcing. Save the
-key in the intended workspace rather than adding it to Compose, code, a script,
-Git, terminal arguments or a `NEXT_PUBLIC_*` variable. The protected Windows
-DPAPI credential file from the current development session is tied to that user
-and machine; it is not a portable credential file. Obtain the token through the
-owner's secure account/password manager when configuring the other machine.
+Save the key in the intended workspace rather than adding it to Compose, code, a
+script, Git, terminal arguments or a `NEXT_PUBLIC_*` variable.
 
-### Known external blocker
-
-The 2026-10-27 provider-only check authenticated successfully, but the one actor
-run returned `SUCCEEDED` with `statusMessage` **`free user run limit reached`**
-and **zero dataset items**. ARIA now reports this as an account-limit failure,
-not as a successful empty search. No real profile was imported by that check.
-
-Before any new LinkedIn search, inspect the actor/account allowance and access
-in Apify. Resolve the provider refusal first. The message does not establish
-how many runs the owner used, that the token is invalid, or that upgrading is
-the only remedy. Do not retry repeatedly or change billing automatically.
-
-The previous standalone check supplied an API charge cap of USD 0.10. That was
-specific to that check, **not a monetary cap configured by the campaign UI**.
-The UI profile limit bounds requested profiles, not the actor's final invoice.
-Review the actor's displayed pricing and the account's spend controls before a
-new paid start. Actual charges for the previous check were not audited.
-
-If LinkedIn remains blocked, explicitly select **GitHub only** to test the
-connected journey. Record LinkedIn acceptance as still blocked; this does not
-validate LinkedIn sourcing.
+Each web search costs $0.01 plus tokens; one run makes 2 to 5 searches. The
+spend counts under "Web search sourcing" on **AI costs** and within the AI
+budget. When the budget is reached, the source review refuses web search before
+any run is created.
 
 ## 5. Run one small reviewed search
 
@@ -147,22 +126,23 @@ validate LinkedIn sourcing.
 3. Example brief: Backend Go engineer, Go and Kubernetes, France; explicitly
    choose the applicable seniority, work mode and full-time employment type.
 4. In **Find candidates**, inspect the proposed source queries. For a small
-   example, LinkedIn text can be `Go Kubernetes`; GitHub can use
+   example, the web search text can be `Go Kubernetes`; GitHub can use
    `language:go location:France`. Review each against the intended brief; matching
    a search filter is not proof that an individual has a skill.
-5. Select **LinkedIn via Apify** once its allowance is resolved. Optionally select
-   **GitHub public profiles** as well. Set **Maximum profiles per selected source**
+5. Select **LinkedIn via web search**. Optionally select **GitHub public
+   profiles** as well. Set **Maximum profiles per selected source**
    to **3**: one source requests at most 3 profiles; two request at most 6 in total.
-6. Click **Start reviewed search** once. LinkedIn uses Short profiles and one
-   page; discovering email addresses is a separate enrichment action.
+6. Click **Start reviewed search** once. Web search returns public profile
+   results (name, headline, link); it never returns email addresses.
 7. Observe the persisted source states and `found / added / duplicates / excluded`
    counters. A source may return fewer than the requested cap. Missing email or
    experience is expected when the source does not provide it.
 8. Refresh while processing and return to the same campaign with the initiating
-   user. The same run should resume. An already started Apify actor can continue
-   while the page is closed; later steps wait until the page is open again.
-9. If a start is marked uncertain or fails after a network interruption, inspect
-   the saved run and provider state before any replacement. Do not start another
+   user. The same run should resume; later steps wait until the page is open
+   again.
+9. If a web search is marked uncertain (interrupted before its results were
+   saved), it was billed and is never retried automatically. Inspect the saved
+   run before any replacement. Do not start another
    paid search merely because progress is slow or the result is empty.
 
 Keep this test at discovery/review. Do not connect a mailbox or approve/send
@@ -170,8 +150,8 @@ outreach as part of it.
 
 ## 6. Validate results, persistence and deduplication
 
-- **Result honesty:** distinguish a genuine completed empty search from an
-  account-limit refusal or source error. If LinkedIn fails and GitHub succeeds,
+- **Result honesty:** distinguish a genuine completed empty search from a
+  provider refusal or source error. If web search fails and GitHub succeeds,
   the run should report partial success and retain GitHub results.
 - **Real profiles:** open **Review saved candidates**. Confirm actual new records
   belong to the intended campaign/workspace. Follow their source links through
@@ -191,12 +171,12 @@ docker compose down
 docker compose up --detach --wait --wait-timeout 300
 ```
 
-Sign in again. Check the campaign, candidates, run history and masked Apify key
-remain present. Key presence alone does not prove decryption: check the workspace
+Sign in again. Check the campaign, candidates, run history and masked Anthropic
+key remain present. Key presence alone does not prove decryption: check the workspace
 diagnostics for encryption errors. The next deliberately authorized provider use
 must also succeed; do not launch a paid run just to check that the key is listed.
 
-Only after reviewing the first result and the allowance, optionally authorize a
+Only after reviewing the first result and its cost, optionally authorize a
 second small search to test deduplication. Repeated source identities should
 count as duplicates rather than produce duplicate records. A live provider may
 return different people on a later request; new people are not a dedupe failure.
@@ -209,12 +189,13 @@ Do not merge people solely because they share a name.
 | Startup/readiness fails | Inspect `docker compose ps --all` and locally inspect `docker compose logs --tail=100 app supabase-bootstrap db`. Resolve the reported dependency/migration error; retain volumes. Redact logs before sharing. |
 | Login or browser backend calls fail after changing ports | Verify the browser is on the Docker machine, ports in `.env`, then rebuild with the normal start command. Do not mix hosted Supabase URLs into the default Compose setup. |
 | Key appears saved but vanishes or the UI mentions session/demo storage | Check that you are using connected Docker/Supabase, the intended workspace and an admin session. The synthetic quick look is insufficient. |
-| Apify key has a valid badge but discovery fails | `Format check` is not authentication. Check the surfaced error, account access and actor allowance; do not infer validity from the badge. |
-| `free user run limit reached` / account-limit error | Resolve allowance with Apify before another paid start. Preserve the existing run for diagnostics. |
+| "Add an Anthropic key in Settings" on the source review | Save the Anthropic key, then select it on the Anthropic provider in **Settings -> AI & Models**. |
+| "Anthropic refused the web search" | Wrong key, no credits, or web search disabled for the Anthropic organization (Claude Console -> Settings -> Capabilities). `Format check` is not authentication. |
+| Web search refused for the AI budget | Raise the budget in Settings or wait for the next period; deselect web search to run GitHub only. |
 | GitHub throttles (403/429) | Wait for the provider limit to reset. If needed, add server-only `GITHUB_TOKEN` to ignored `.env.local`, then recreate the app with `docker compose up --detach --wait --wait-timeout 300`. Never expose it as `NEXT_PUBLIC_*`. |
 | Records appear missing after restart | Check Compose project, original volumes, signed-in account and workspace before creating anything. Do not reset or reseed a different project as a repair. |
 | Credential decryption fails | Restore the matching original key/volume with its database. Generating a new key does not recover old ciphertext. |
-| Profile has no email, sparse skills or unknown experience | This is expected for public/Short discovery. Review fit and use explicit enrichment later; never invent missing fields. |
+| Profile has no email, sparse skills or unknown experience | This is expected for public-profile discovery. Review fit and add verified contact details by hand; no enrichment provider is set up. Never invent missing fields. |
 | Search stays active after closing the page | Return as the initiating operator to resume the saved run. Inspect errors before starting anything new. |
 
 For full infrastructure details, see [DOCKER.md](../DOCKER.md). The optional
@@ -232,10 +213,9 @@ Date / OS / browser:
 Branch / commit:
 Compose version / app port:
 Core readiness and connected login: PASS / FAIL
-Apify key saved and persistent (no secret copied): PASS / FAIL / NOT TESTED
-Actor allowance resolved: YES / NO / NOT TESTED
+Anthropic key saved, linked and persistent (no secret copied): PASS / FAIL / NOT TESTED
 Sources selected / limit per source:
-LinkedIn: state / found / added / duplicates / excluded
+LinkedIn via web search: state / found / added / duplicates / excluded / searches billed
 GitHub: state / found / added / duplicates / excluded
 Real profile mapping and source links checked: PASS / FAIL / NOT TESTED
 Unknown fields remain honest: PASS / FAIL / NOT TESTED
@@ -248,9 +228,10 @@ Remaining blocker (redacted, no private IDs or personal data):
 ```
 
 A fixture receipt, successful authentication, or zero profiles caused by a
-provider refusal is **not** successful live LinkedIn acceptance. The outstanding
-account acceptance is tracked in
-[unified-sourcing issue 02](../.scratch/unified-sourcing/issues/02-apify-account-acceptance.md).
+provider refusal is **not** successful live LinkedIn acceptance. The former Apify
+account acceptance
+([unified-sourcing issue 02](../.scratch/unified-sourcing/issues/02-apify-account-acceptance.md))
+was closed when Apify was retired.
 
 ## 9. Following product step
 

@@ -1,5 +1,5 @@
 # Real Apify account acceptance
-Status: ready-for-human
+Status: wontfix (the owner retired Apify on 2026-11-06; LinkedIn profiles now come from Claude web search, see 03-claude-web-search-source.md)
 Type: task
 
 Other-machine setup and acceptance procedure:

@@ -49,8 +49,8 @@ Editor, run every file in lexical order and do not stop at an older range.
   seat is set **live** with a **verified domain** and the send is explicitly
   confirmed — otherwise everything is dry-run.
 - LinkedIn messaging is assisted-manual only — no automation or scraping.
-  LinkedIn profiles are found through the Apify source or web search
-  (see [`docs/SOURCING.md`](docs/SOURCING.md)).
+  LinkedIn profiles are found through Claude's web search over public
+  profile pages (see [`docs/SOURCING.md`](docs/SOURCING.md)).
 
 **Real candidate sourcing (optional, live):**
 - Set `GITHUB_TOKEN` in `.env.local` (a GitHub personal access token; read-only

@@ -12,7 +12,7 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, EnrichableField, EnrichmentAttempt, JobAnalysis, ScoringWeights, SourcePlatform } from "@/lib/types";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
 import { computeCoverage, mergeEnrichment, recordEnrichmentAttempt } from "@/lib/enrichment/merge";
-import { devFusionRunner, type EnrichmentRunner } from "@/lib/enrichment/runners";
+import { ENRICHMENT_RUNNERS, type EnrichmentRunner } from "@/lib/enrichment/runners";
 import { scoreCandidate } from "@/lib/scoring";
 
 /** Wall-clock budget for the whole waterfall, well under the platform's 60s
@@ -73,9 +73,7 @@ async function releaseProviderBudget(ledgerId: string): Promise<void> {
 /** One server-only runner per registry provider id. A registry entry with no
  *  matching runner here is simply never invoked (defensive — every provider
  *  the design calls for is wired below). */
-const RUNNERS: Partial<Record<SourcePlatform, EnrichmentRunner>> = {
-  Apify: devFusionRunner,
-};
+const RUNNERS: Partial<Record<SourcePlatform, EnrichmentRunner>> = ENRICHMENT_RUNNERS;
 
 export interface OrchestrateEnrichmentInput {
   session: Session;

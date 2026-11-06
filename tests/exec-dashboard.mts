@@ -141,7 +141,7 @@ const campaign = {
 const candidates = [
   candidate("real-completed", "GitHub"),
   candidate("dry-run-contact", "LinkedIn"),
-  candidate("approved-unsent", "Apify"),
+  candidate("approved-unsent", "LinkedIn"),
   candidate("synthetic-real", "Behance", "synthetic"),
 ];
 

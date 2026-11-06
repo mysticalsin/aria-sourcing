@@ -42,16 +42,13 @@ public-profile provenance alone never supplies it.
 
 ## Review enrichment before starting
 
-- Configure the workspace Apify key under **Settings -> API keys**. Enrichment
-  uses `dev_fusion/linkedin-profile-scraper`, a different actor from initial
-  LinkedIn discovery. Its access/owner approval and allowance must also be
-  available; an actor approval refusal is surfaced explicitly.
-- The current provider requires a LinkedIn profile URL. GitHub-only profiles
-  without one need verified identity/contact research first. No identity is
-  guessed from a name, and no LinkedIn login is automated.
+- No enrichment provider is set up: Apify, the only one, was retired on
+  2026-11-06. The drawer says so; add verified contact details by hand. The
+  rules below apply as soon as a new provider is registered.
+- No identity is guessed from a name, and no LinkedIn login is automated.
 - **Review enrichment** lists missing fields supported by the configured
-  provider. Phone is not promised by the current provider. Confirm the reviewed
-  request before a paid call; profile/count/unit limits are not currency prices.
+  provider. Confirm the reviewed request before a paid call; profile/count/unit
+  limits are not currency prices.
 - The server loads the saved candidate and campaign, rejects excluded profiles
   or inactive/incomplete briefs, and recomputes the score from actual returned
   evidence. Experience, education and languages are preserved.
