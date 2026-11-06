@@ -1,12 +1,12 @@
 ---
 project: MSourcing / ARIA
-shift: 452
+shift: 453
 agent: claude-code
 updated: 2026-11-06
-status: linkedin-bridge-built-awaiting-owner-live-test
+status: linkedin-bridge-live-ui-v0.2-awaiting-owner-reload
 ---
 
-# Handoff - Shift 452
+# Handoff - Shift 453
 
 ## Current state
 
@@ -17,15 +17,18 @@ status: linkedin-bridge-built-awaiting-owner-live-test
   owner's own logged-in linkedin.com tab. Off unless
   `LINKEDIN_BRIDGE_ENABLED=true` (server env; `.env.local` for Docker).
   Design, risks, setup: `docs/linkedin-bridge.md`.
+- Owner tested it live in Chrome on his real account (2026-11-06): works.
+  Shift 453 = UI v0.2 (real time, one-click pairing, ARIA-branded extension).
 - Code: `src/lib/linkedin-bridge/` (voyager request builders, parsers,
   planner, policy/pacing, tokens, outcome, server data layer),
   `src/app/api/linkedin/` (account, conversations, conversations/[id],
-  outbox; bridge/poll and bridge/result for the extension),
-  `src/app/linkedin/page.tsx` (+ nav entry "LinkedIn" under Engage),
-  `extensions/linkedin-bridge/` (MV3: background.js, allowlist.js,
-  queries.js, popup), migration `supabase/migrations/0006_linkedin_bridge.sql`
-  (4 service-only tables, RLS forced), `tests/linkedin-bridge.mts` (22 tests,
-  in the application group).
+  outbox, stream (SSE); bridge/poll and bridge/result for the extension),
+  `src/app/linkedin/page.tsx` + `src/components/linkedin/` (nav entry
+  "LinkedIn" under Engage), `extensions/linkedin-bridge/` (MV3 0.2.0:
+  background.js, allowlist.js, queries.js, aria-page.js, linkedin-page.js,
+  popup, icons), migrations `0006_linkedin_bridge.sql` (4 service-only
+  tables, RLS forced) and `0007_linkedin_bridge_seen.sql`,
+  `tests/linkedin-bridge.mts` (23 tests, application group).
 - Gate: see "Done this shift" for the exact runs. This Mac has no Node in
   PATH: the gate ran in a container (`aria-gate:local` = node:22-bookworm-slim
   + openssl, git, curl, jq, python3; node_modules in the docker volume
@@ -41,43 +44,54 @@ status: linkedin-bridge-built-awaiting-owner-live-test
 
 ## Done this shift
 
-- Research: HeyReach connects accounts by credentials or by an extension that
-  captures the li_at cookie, then runs everything from its cloud through a
-  dedicated proxy per account; LinkedIn reportedly removed HeyReach's company
-  page and founders' profiles in March 2026. Chosen design keeps the session
-  in the owner's browser instead (see docs). Voyager endpoints/payloads
-  cross-checked against mautrix/linkedin (AGPL, reference only, no code copied).
-- Feature implemented as listed in Current state. Guarantees enforced by
-  tests: every request ARIA builds passes the extension allowlist; the
-  allowlist refuses other paths/headers/methods; only `src/app/linkedin/page.tsx`
-  calls `/api/linkedin/outbox` and only a signed-in user can queue (the
-  extension token cannot); no module outside the bridge imports it; the
-  migration stores no cookie/credential; background.js only tests li_at for
-  presence.
-- Gate green on the committed tree, run in `aria-gate:local`: `npm run
-  typecheck`, `npm run typecheck:tests`, `npm test` all exit 0; eslint clean
-  on the touched paths. (node:22-bookworm-slim alone fails the pretests for
-  lack of `openssl` and `curl`: environment, not code.)
-- First real Docker run of the whole stack on this Mac (OrbStack): `up
-  --build` green first time, bootstrap applied 0001-0006, every `[gateway] ok`,
-  app healthy, `/api/ready` 200. This also covers shift 451's next step 1.
-- Verified on that stack (scripts kept out of the repo):
-  - API smoke, extension played by a script with canned Voyager answers:
-    30/30 checks (pairing, 401 without/unknown token, identity, inbox, threads,
-    GraphQL error surfaced, send claimed once, payload, sent message in the
-    thread, non-profile URL refused, 90 s pacing holds the next send, withdraw,
-    extension token cannot queue, disconnect deletes all and kills the token).
-  - UI in Chromium (Playwright image v1.61.1): list -> thread -> reply ->
-    "Waiting for the extension", no page errors.
-  - Real unpacked extension in Chromium against real ARIA, linkedin.com
-    served by Playwright and DNS-mapped to 127.0.0.1 (nothing reached
-    LinkedIn): pairing via popup, identity, inbox, thread, send with
-    csrf-token = JSESSIONID value and text/plain content type, outbox "sent",
-    only allowlisted endpoints called. A tab the extension opens itself is not
-    intercepted by Playwright (it hit the 127.0.0.1 map and the error surfaced
-    on the account): harness limit, the test pre-opens the LinkedIn tab.
-- The stack is left running (OrbStack) with the bridge enabled and no
-  pairing (test data deleted).
+Owner (2026-11-06, after a successful live test in Chrome on his real
+account): "improve the LinkedIn UI, make it dynamic when sending and
+receiving, add the ARIA logo to the extension, improve the UI".
+
+- Real time:
+  - `GET /api/linkedin/stream` (SSE): a fingerprint of status / inbox /
+    outbox every 1.5 s, sends `change {parts}`; the page refetches only
+    those parts, falls back to 10 s polling.
+  - Extension 0.2.0: `aria-page.js` relay (one-click pairing, send nudge,
+    live pings, status push; the service worker accepts them only from the
+    configured ARIA origin), `linkedin-page.js` (passive: LinkedIn tab title
+    unread count up -> immediate inbox refresh, debounced 15 s).
+  - Poll accepts `live` / `activity`; planner: live inbox interval 30 s
+    (`LINKEDIN_BRIDGE_LIVE_SYNC_SECONDS`), activity refresh if the last one
+    is >= 15 s old. Poll limit 60/min; poll returns `stats` for the badge.
+  - `storeConversations` writes a row only when it changed, so `updated_at`
+    (the stream's inbox fingerprint) moves only on real news.
+- Migration `0007_linkedin_bridge_seen.sql`: `seen_at`,
+  `last_message_direction`, `last_message_sender` on conversations. Unread
+  in ARIA = LinkedIn unread and nothing newer since the user opened it.
+- UI split into `src/components/linkedin/` (types, api, use-linkedin-inbox,
+  use-bridge-extension, connection, conversation-list, thread-view,
+  composer, new-message, avatar, format) + `src/app/linkedin/page.tsx`:
+  optimistic bubble (Queued -> Sending with sheen -> morphs into the
+  delivered message, same React key), animated arrivals and list reorder
+  (framer-motion, reduced-motion honoured), day separators, "new messages"
+  pill, toasts + optional sound on replies, tab title unread count,
+  onboarding in 3 steps with one-click connect, live status bar with ticking
+  sync time and send meter, auto-open of a new chat once LinkedIn creates it,
+  LinkedIn thread link. Page fits the viewport (no page scroll).
+- Extension: ARIA mark icons (16/32/48/128 from `public/aria-mark.png`),
+  toolbar badge (unread count, red `!` on error), redesigned popup
+  (checks, counters, gradient CTA, settings folded, dark mode).
+- Bug found by the e2e and fixed: the first sync after pairing toasted every
+  existing conversation as a new reply.
+- Verified on the running stack (OrbStack), with a separate test user
+  `linkedin-e2e@bridge-e2e.test` in its own workspace (the owner's real
+  account - 1 pairing, 21 conversations, 108 messages, 2 outbox rows - was
+  counted before and after and never touched): real Chromium + real
+  extension 0.2.0 + real ARIA + fake LinkedIn (DNS-mapped to 127.0.0.1):
+  16/16 checks. Pair in one click -> inbox in 1.8 s; bubble 40 ms after
+  Send; on LinkedIn 1.5 s after the click (was up to 60 s); delivered 2.9 s
+  end to end; incoming reply on screen 0.3 s after LinkedIn's title changed;
+  read reply clears unread; no page errors. Screenshots reviewed.
+- Gate: typecheck, typecheck:tests, npm test exit 0 (aria-gate:local);
+  eslint clean on the touched paths. `tests/linkedin-bridge.mts`: 23 tests
+  (live/activity planner, relay origin checks, passive LinkedIn script,
+  manifest content scripts).
 
 ## Blockers
 
@@ -87,24 +101,20 @@ status: linkedin-bridge-built-awaiting-owner-live-test
 
 ## Next steps
 
-1. Owner live test (docs/linkedin-bridge.md "Try it locally"): stack up with
-   `LINKEDIN_BRIDGE_ENABLED=true` in `.env.local`, `/linkedin` -> Connect the
-   extension, load `extensions/linkedin-bridge` unpacked in Chrome, paste the
-   code, open https://www.linkedin.com/messaging/ once. Expect "Connected as
-   <name>" within a minute, then conversations.
-2. If something fails, the reason is on `/linkedin` (account lastError) and
-   in the extension popup. Parser fixes go in `src/lib/linkedin-bridge/parse.ts`
-   with a fixture in `tests/linkedin-bridge.mts` (capture the real answer
-   shape, strip personal data).
-3. Then, if the owner wants it: "Message on LinkedIn" chip in the candidate
-   drawer (`src/components/candidates/candidate-drawer.tsx`, near the
-   LinkedIn link) -> `/linkedin?to=<linkedinUrl>&candidate=<id>` (page already
-   supports it); older-history backfill (messengerConversations with
-   lastUpdatedBefore cursor); mark-as-read.
+1. Owner: `git pull`, then in Chrome `chrome://extensions` -> reload the
+   ARIA LinkedIn Bridge (0.1.0 -> 0.2.0: new content scripts and icons need
+   the reload), then reload the ARIA tab. The pairing survives. The stack on
+   this Mac already runs the new app build with migration 0007.
+2. If the page shows the extension as "not connected" in this browser:
+   **Connect this browser** (rotates the code and hands it over).
+3. Next ideas, if wanted: "Message on LinkedIn" chip in the candidate drawer
+   (`src/components/candidates/candidate-drawer.tsx`) ->
+   `/linkedin?to=<linkedinUrl>&candidate=<id>`; link conversations to ARIA
+   candidates by profile URL; mark-as-read on LinkedIn itself (new allowlist
+   entry); older-history backfill.
 4. Carried over from shift 451 (still open): web search sourcing check on the
    stack; AI issue 04 cache check; pre-rename volume login; store.ts split;
-   chat multi-turn; perf ideas. See the archived baton
-   `_relay/archive/2026-11-06-1236-claude-code.md`.
+   chat multi-turn; perf ideas. See `_relay/archive/2026-11-06-1236-claude-code.md`.
 
 ## Decisions made (don't relitigate)
 
@@ -145,7 +155,15 @@ status: linkedin-bridge-built-awaiting-owner-live-test
 
 ## Watch out
 
-- Codex audit focus for this shift: `src/app/api/linkedin/bridge/result/route.ts`
+- The stack on this Mac holds the owner's REAL LinkedIn data (admin@aria.local).
+  Never run a test that calls `DELETE /api/linkedin/account` as that user;
+  e2e runs use `linkedin-e2e@bridge-e2e.test` (own workspace, left in the
+  local DB, bridge data deleted after each run).
+- `/api/linkedin/stream` holds the connection open: Playwright `networkidle`
+  never fires on `/linkedin`; wait for `load` instead.
+- Codex audit focus for this shift: `src/app/api/linkedin/stream/route.ts`,
+  `extensions/linkedin-bridge/background.js` handleMessage (origin checks for
+  pair/live/nudge), and the earlier ones: `src/app/api/linkedin/bridge/result/route.ts`
   (every echoed ref re-checked against the account), outbox state machine
   (queued -> resolving -> queued -> sending -> sent|failed|unknown; an
   unconfirmed send becomes `unknown` and is never retried), the extension
