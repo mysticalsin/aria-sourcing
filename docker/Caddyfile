@@ -9,7 +9,28 @@
 	persist_config off
 }
 
+# Upstream connections: one fresh connection per request. Reusing a pooled
+# keep-alive connection that the upstream had just closed answered an
+# intermittent 502 in ~2 ms (seen on POST /rest/v1/rpc, 2026-11-09), and a POST
+# is rightly never replayed on a used connection (it could write twice). A new
+# connection inside the Docker network costs well under a millisecond, and a
+# connection that cannot be opened is retried safely.
+(upstream_resilience) {
+	transport http {
+		keepalive off
+	}
+	lb_retries 2
+	lb_try_interval 100ms
+}
+
 :8000 {
+	# 5xx answers only (access entries at ERROR level), so a gateway failure
+	# shows in `docker logs aria-sourcing-gateway-1`.
+	log {
+		output stderr
+		level ERROR
+	}
+
 	route {
 		respond /gateway-health 200
 
@@ -48,11 +69,13 @@
 		handle_path /auth/v1/* {
 			reverse_proxy {$AUTH_UPSTREAM:auth:9999} {
 				header_down Access-Control-Allow-Origin "*"
+				import upstream_resilience
 			}
 		}
 		handle_path /rest/v1/* {
 			reverse_proxy {$REST_UPSTREAM:rest:3000} {
 				header_down Access-Control-Allow-Origin "*"
+				import upstream_resilience
 			}
 		}
 		respond 404

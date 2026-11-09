@@ -23,6 +23,12 @@ ok("REST is routed with the prefix stripped", /handle_path \/rest\/v1\/\* \{\s*r
 ok("only Auth and REST are routed", (caddyfile.match(/reverse_proxy /g) ?? []).length === 2);
 ok("anything else answers 404", /\n\t\trespond 404\n\t\}/.test(caddyfile));
 ok("no admin API is exposed", caddyfile.includes("admin off"));
+ok(
+  "both upstreams use a fresh connection per request and retry an unreachable upstream",
+  (caddyfile.match(/import upstream_resilience/g) ?? []).length === 2 &&
+    /\(upstream_resilience\) \{\s*transport http \{\s*keepalive off\s*\}\s*lb_retries 2/.test(caddyfile),
+);
+ok("gateway 5xx answers are logged", /log \{\s*output stderr\s*level ERROR\s*\}/.test(caddyfile));
 
 const keyCheck = caddyfile.slice(caddyfile.indexOf("@missingKey {"), caddyfile.indexOf("respond @missingKey"));
 ok("both API trees require a key", keyCheck.includes("path /auth/v1/* /rest/v1/*"));
