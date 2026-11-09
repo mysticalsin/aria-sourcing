@@ -25,6 +25,7 @@ import {
   parseSendResult,
 } from "../src/lib/linkedin-bridge/parse.ts";
 import { planTasks, type PlanInput } from "../src/lib/linkedin-bridge/planner.ts";
+import { linkedInProfileUrl } from "../src/lib/linkedin-profile-url.ts";
 import { linkedInBridgeEnabled, readBridgePolicy, sendSlot, writeSlot } from "../src/lib/linkedin-bridge/policy.ts";
 import { bridgeTokenFromHeader, generateBridgeToken, hashBridgeToken, randomTrackingId } from "../src/lib/linkedin-bridge/token.ts";
 import {
@@ -657,4 +658,24 @@ test("no LinkedIn credential is stored or relayed", () => {
       ["linkedin-page.js", "https://www.linkedin.com/*"],
     ],
   );
+});
+
+test("a profile looked up before it is a candidate (prospect) owns nothing until adopted", () => {
+  assert.equal(linkedInProfileUrl("jane-doe"), "https://www.linkedin.com/in/jane-doe");
+  assert.equal(publicIdFromProfileUrl(linkedInProfileUrl("josé-garcía")), "josé-garcía");
+  const server = readFileSync("src/lib/linkedin-bridge/server.ts", "utf8");
+  assert.match(server, /export const PROSPECT_PREFIX = "prospect:"/);
+  // Inbox sync and the profile answer never give a prospect a conversation.
+  assert.match(server, /\.filter\(\(r\) => !isProspectId\(r\.candidate_id\)\)/);
+  const result = readFileSync("src/app/api/linkedin/bridge/result/route.ts", "utf8");
+  assert.match(result, /card\.memberId !== contact\.member_id && !isProspectId\(contact\.candidate_id\)/);
+  const route = readFileSync("src/app/api/linkedin/candidates/route.ts", "utf8");
+  // Preview: a LinkedIn profile URL only, a recent answer is reused (each look is a profile view).
+  assert.match(route, /action: z\.literal\("preview"\), linkedinUrl/);
+  assert.match(route, /Date\.now\(\) - Date\.parse\(known\.checked_at\) < 24 \* 60 \* 60 \* 1000/);
+  // Adopt: the candidate is read from the workspace and must carry the same profile.
+  assert.match(route, /const target = await candidateRecord\(svc, workspaceId, body\.candidateId\)/);
+  assert.match(route, /publicIdFromProfileUrl\(target\.linkedinUrl\)\?\.toLowerCase\(\) !== prospect\.identity\.toLowerCase\(\)/);
+  // Every action of the route, prospects included, is a same-origin write by a signed-in person.
+  assert.match(route, /export async function POST\(req: NextRequest\) \{\n  const auth = await requireBridgeUser\(req, \{ mutation: true \}\);/);
 });

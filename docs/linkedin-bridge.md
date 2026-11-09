@@ -55,6 +55,18 @@ unless `LINKEDIN_BRIDGE_ENABLED=true`. Owner requests, 2026-11-06, on
 - **Messages.** Only to a candidate; LinkedIn delivers them to 1st-degree
   connections only (a refusal, `422 RECIPIENT_NOT_FIRST_DEGREE_CONNECTION`,
   turns the panel into an invitation form).
+- **Adding someone you know (prospects).** Candidates › **Add candidate** ›
+  **LinkedIn profile**: a **Search** link opens LinkedIn's own people search
+  in a new tab (the person is picked by the user there; ARIA does not search
+  LinkedIn). Pasting the profile URL and clicking **Look up** reads that one
+  profile through the user's LinkedIn (one profile view; a look-up less than
+  24 h old is reused) under a `prospect:<public id>` contact, and prefills
+  name, title and company. A prospect owns no conversation: nothing is linked
+  or synced in full until it is added. On **Add candidate** the contact moves
+  to the new candidate (`adopt`, no second view) and their conversations are
+  linked; **Cancel** forgets it (`discard`). The new candidate's panel opens
+  on its LinkedIn tab, unmasked (logged as a reveal) since the user just
+  entered the identity.
 - Endpoints, payloads and the relationship shape come from third-party
   captures of the web client (2026); verify on the first live run.
 

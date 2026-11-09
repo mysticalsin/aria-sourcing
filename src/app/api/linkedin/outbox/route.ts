@@ -138,9 +138,14 @@ export async function POST(req: NextRequest) {
     }
 
     const { data, error } = await svc.from("linkedin_bridge_outbox").insert(row).select(OUTBOX_COLUMNS).single();
-    if (error || !data) return serverError("Could not queue the message.");
+    if (error || !data) {
+      // Code and message only: never the row (it holds the message body).
+      console.error("[linkedin] outbox insert failed", error?.code, error?.message);
+      return serverError("Could not queue the message.");
+    }
     return okJson({ item: data });
-  } catch {
+  } catch (cause) {
+    console.error("[linkedin] message not queued", cause instanceof Error ? cause.message : "unknown error");
     return serverError("Could not queue the message.");
   }
 }

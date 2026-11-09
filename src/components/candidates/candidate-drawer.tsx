@@ -236,7 +236,11 @@ function Section({
  *  the human-decided outcomes need a control here. */
 const STAGE_ACTIONS: CandidateStage[] = ["Interviewed", "Offer", "Hired", "Rejected"];
 
-type CandidateTab = "overview" | "linkedin" | "evidence" | "history" | "compliance";
+export type CandidateTab = "overview" | "linkedin" | "evidence" | "history" | "compliance";
+const CANDIDATE_TABS: readonly CandidateTab[] = ["overview", "linkedin", "evidence", "history", "compliance"];
+export function isCandidateTab(value: string | null): value is CandidateTab {
+  return value !== null && (CANDIDATE_TABS as readonly string[]).includes(value);
+}
 
 function Chips({ items, label }: { items: string[]; label: string }) {
   if (items.length === 0) return <p className="text-sm text-muted">None recorded.</p>;
@@ -463,10 +467,17 @@ export function CandidateDrawer({
   candidate,
   open,
   onClose,
+  initialTab = "overview",
+  revealOnOpen = false,
 }: {
   candidate: Candidate | null;
   open: boolean;
   onClose: () => void;
+  /** The tab shown when the panel opens (e.g. "linkedin" after adding from LinkedIn). */
+  initialTab?: CandidateTab;
+  /** The operator just added this person themselves: show them unmasked,
+   *  and log it as a reveal, as a click on "Reveal" would. */
+  revealOnOpen?: boolean;
 }) {
   const actions = useActions();
   const role = useRole();
@@ -563,7 +574,7 @@ export function CandidateDrawer({
   useEffect(() => {
     invalidateErasureRequests();
     setRevealed(false);
-    setTab("overview");
+    setTab(initialTab);
     setNoteText("");
     setErasing(false);
     setErasureNotice(null);
@@ -577,7 +588,16 @@ export function CandidateDrawer({
     setEnriching(false);
     setSavingContact(false);
     return invalidateErasureRequests;
-  }, [candidateId, invalidateErasureRequests, open]);
+  }, [candidateId, invalidateErasureRequests, open, initialTab]);
+
+  const autoRevealed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !revealOnOpen || !candidateId || autoRevealed.current === candidateId) return;
+    if (!confidentialityMode) return;
+    autoRevealed.current = candidateId;
+    setRevealed(true);
+    actions.recordPiiReveal(candidateId);
+  }, [open, revealOnOpen, candidateId, confidentialityMode, actions]);
 
   const refreshErasureQueue = useCallback(async () => {
     if (!open || role !== "admin" || !supabaseEnabled || !candidateId || !candidateCampaignId) {

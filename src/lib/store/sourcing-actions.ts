@@ -40,6 +40,7 @@ import {
 } from "../types";
 import { genId, initialsFrom } from "../utils";
 import { baseWebQuery } from "./sourcing-helpers";
+import { linkedInProfileUrl, publicIdFromProfileUrl } from "../linkedin-profile-url";
 import type {
   WorkspaceActions,
   SourceNextBatchResult,
@@ -282,6 +283,9 @@ function safeManualProfileUrl(value: string): string | null {
 interface ManualCandidateInput {
   name: string;
   title: string;
+  company: string;
+  /** Canonical https://www.linkedin.com/in/<id>, or "". */
+  linkedinUrl: string;
   skills: string[];
   profileUrl: string;
   email: string;
@@ -294,6 +298,8 @@ function sanitizeManualCandidateInput(value: unknown): ManualCandidateInput | nu
   if (!isRecord(value)) return null;
   const name = optionalManualText(value.name, 200);
   const title = optionalManualText(value.title, 200);
+  const company = optionalManualText(value.company, 200);
+  const linkedin = optionalManualText(value.linkedinUrl, 500);
   const location = optionalManualText(value.location, 200);
   const email = optionalManualText(value.email, 254);
   const profileUrl = optionalManualText(value.profileUrl, 2_048);
@@ -303,6 +309,8 @@ function sanitizeManualCandidateInput(value: unknown): ManualCandidateInput | nu
     !name.ok ||
     !name.value ||
     !title.ok ||
+    !company.ok ||
+    !linkedin.ok ||
     !location.ok ||
     !email.ok ||
     !profileUrl.ok ||
@@ -316,6 +324,13 @@ function sanitizeManualCandidateInput(value: unknown): ManualCandidateInput | nu
   if (email.value && !isValidEmail(email.value)) return null;
   const canonicalProfileUrl = safeManualProfileUrl(profileUrl.value);
   if (canonicalProfileUrl === null) return null;
+  // A LinkedIn profile is the candidate's LinkedIn, not a generic source link,
+  // so LinkedIn features (invite, message) work on it.
+  const linkedinId = linkedin.value ? publicIdFromProfileUrl(linkedin.value) : null;
+  if (linkedin.value && !linkedinId) return null;
+  const profileLinkedinId = !linkedinId && canonicalProfileUrl ? publicIdFromProfileUrl(canonicalProfileUrl) : null;
+  const linkedinPublicId = linkedinId ?? profileLinkedinId;
+  const linkedinUrl = linkedinPublicId ? linkedInProfileUrl(linkedinPublicId) : "";
   if (value.skills !== undefined && !Array.isArray(value.skills)) return null;
   const rawSkills = value.skills ?? [];
   if (rawSkills.length > 30) return null;
@@ -333,8 +348,10 @@ function sanitizeManualCandidateInput(value: unknown): ManualCandidateInput | nu
   return {
     name: name.value,
     title: title.value,
+    company: company.value,
+    linkedinUrl,
     skills,
-    profileUrl: canonicalProfileUrl,
+    profileUrl: profileLinkedinId ? "" : canonicalProfileUrl,
     email: email.value.toLowerCase(),
     location: location.value,
     notes: notes.value,
@@ -1025,14 +1042,14 @@ export function createSourcingActions({
       email: fields.email,
       avatarInitials: initialsFrom(fields.name),
       currentTitle: fields.title,
-      currentCompany: "",
+      currentCompany: fields.company,
       location: fields.location,
       timezone: "",
-      linkedinUrl: "",
+      linkedinUrl: fields.linkedinUrl,
       githubUrl: "",
       sourceUrl: fields.profileUrl || undefined,
-      sourcePlatform: "Manual",
-      sourceQuery: "Operator-entered candidate",
+      sourcePlatform: fields.linkedinUrl ? "LinkedIn" : "Manual",
+      sourceQuery: fields.linkedinUrl ? "Operator-added LinkedIn profile" : "Operator-entered candidate",
       matchScore: 0,
       matchBreakdown: [],
       techStack: fields.skills,
@@ -1119,6 +1136,7 @@ export function createSourcingActions({
       ok: true,
       added: scored.length,
       skipped: skipped.length,
+      candidateIds: scored.map((candidate) => candidate.id),
       ...(skipped[0]?.reason ? { skipReason: skipped[0].reason } : {}),
     };
   };

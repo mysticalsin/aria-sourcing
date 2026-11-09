@@ -16,7 +16,8 @@ import {
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CandidateTable } from "@/components/candidates/candidate-table";
-import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
+import { CandidateDrawer, isCandidateTab } from "@/components/candidates/candidate-drawer";
+import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
 import { corpusServerReadEnabled, supabaseEnabled } from "@/lib/supabase/config";
@@ -144,6 +145,8 @@ function CandidatesView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const focus = searchParams.get("focus");
+  const focusTabParam = searchParams.get("tab");
+  const focusTab = isCandidateTab(focusTabParam) ? focusTabParam : "overview";
   const serverPreview = corpusServerReadEnabled;
 
   const [query, setQuery] = React.useState("");
@@ -639,7 +642,13 @@ function CandidatesView() {
         </div>
       )}
 
-      <CandidateDrawer candidate={selected} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <CandidateDrawer
+        candidate={selected}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        initialTab={selected?.id === focus ? focusTab : "overview"}
+        revealOnOpen={selected?.id === focus && searchParams.get("added") === "1"}
+      />
     </HydrationGate>
   );
 }
@@ -651,6 +660,7 @@ export default function CandidatesPage() {
         eyebrow="Recruit"
         title="Candidates"
         description="Every sourced candidate, ranked by fit. Open a profile to score, message or book."
+        actions={<AddCandidateButton />}
       />
       <React.Suspense
         fallback={

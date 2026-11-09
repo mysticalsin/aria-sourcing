@@ -204,6 +204,29 @@ export async function checkCandidate(candidateId: string) {
   return res;
 }
 
+/** Look a LinkedIn profile up before adding it as a candidate. Its standing
+ *  then shows under `useCandidateLinkedIn(prospectId)`. */
+export async function previewProspect(linkedinUrl: string) {
+  const res = await linkedInApi<{ prospectId: string; identity: string }>("/api/linkedin/candidates", postJson({ action: "preview", linkedinUrl }));
+  if (res.ok) void loadContacts();
+  return res;
+}
+
+/** The looked-up profile became this candidate: its LinkedIn standing carries over. */
+export async function adoptProspect(prospectId: string, candidateId: string) {
+  const res = await linkedInApi("/api/linkedin/candidates", postJson({ action: "adopt", prospectId, candidateId }));
+  // Known before the candidate's panel opens, so it does not look them up again.
+  if (res.ok) firstLooks.add(candidateId);
+  await loadContacts();
+  return res;
+}
+
+export async function discardProspect(prospectId: string) {
+  const res = await linkedInApi("/api/linkedin/candidates", postJson({ action: "discard", prospectId }));
+  void loadContacts();
+  return res;
+}
+
 const firstLooks = new Set<string>();
 
 /**

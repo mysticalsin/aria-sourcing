@@ -5,6 +5,11 @@
 //   POST  { candidateId, action: "check" }          look the candidate up again
 //         { candidateId, action: "invite", note? }  queue a connection invitation
 //         (this click is the human approval; nothing automated calls it)
+//         { action: "preview", linkedinUrl }         look a profile up before
+//         adding it as a candidate (prospect, see PROSPECT_PREFIX)
+//         { action: "adopt", prospectId, candidateId } the prospect became this
+//         candidate: its LinkedIn standing carries over (no second profile view)
+//         { action: "discard", prospectId }          forget a prospect
 // The candidate and its LinkedIn URL are read from the workspace state on the
 // server, never taken from the browser.
 
@@ -20,7 +25,12 @@ import {
   badRequest,
   candidateRecord,
   contactBlock,
+  contactForCandidate,
   ensureContact,
+  isProspectId,
+  linkCandidateConversations,
+  prospectIdFor,
+  updateAccount,
   notFound,
   okJson,
   recentWrites,
@@ -135,7 +145,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const ProspectId = z.string().min(10).max(100).refine(isProspectId);
 const ActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("preview"), linkedinUrl: z.string().min(1).max(500) }),
+  z.object({ action: z.literal("adopt"), prospectId: ProspectId, candidateId: z.string().min(1).max(100) }),
+  z.object({ action: z.literal("discard"), prospectId: ProspectId }),
   z.object({ action: z.literal("check"), candidateId: z.string().min(1).max(100) }),
   z.object({
     action: z.literal("invite"),
@@ -154,6 +168,44 @@ export async function POST(req: NextRequest) {
     const { svc, workspaceId, userId } = auth.ctx;
     const account = await accountForUser(auth.ctx);
     if (!account) return notFound("Connect your LinkedIn in Settings first.");
+
+    if (body.action === "preview") {
+      const identity = publicIdFromProfileUrl(body.linkedinUrl);
+      if (!identity) return badRequest("Paste a LinkedIn profile URL, like https://www.linkedin.com/in/jane-doe.");
+      const prospectId = prospectIdFor(identity);
+      const known = await contactForCandidate(svc, account.id, prospectId);
+      // A recent answer is reused: each look is a profile view on LinkedIn.
+      const fresh = known && known.identity === identity && known.checked_at && Date.now() - Date.parse(known.checked_at) < 24 * 60 * 60 * 1000;
+      if (!fresh) {
+        const contact = await ensureContact(svc, account.id, prospectId, identity);
+        await updateContact(svc, contact.id, { lookup_requested: true, lookup_error: null });
+      }
+      return okJson({ prospectId, identity });
+    }
+    if (body.action === "discard") {
+      const { error } = await svc.from("linkedin_bridge_contacts").delete().eq("account_id", account.id).eq("candidate_id", body.prospectId);
+      if (error) return serverError("Could not forget this profile.");
+      return okJson({ discarded: true });
+    }
+    if (body.action === "adopt") {
+      const prospect = await contactForCandidate(svc, account.id, body.prospectId);
+      if (!prospect) return okJson({ adopted: false });
+      const target = await candidateRecord(svc, workspaceId, body.candidateId);
+      if (!target) return notFound("Candidate not found.");
+      if (publicIdFromProfileUrl(target.linkedinUrl)?.toLowerCase() !== prospect.identity.toLowerCase()) {
+        return badRequest("This candidate's LinkedIn URL is not the profile that was looked up.");
+      }
+      if (await contactForCandidate(svc, account.id, target.id)) {
+        await svc.from("linkedin_bridge_contacts").delete().eq("id", prospect.id);
+        return okJson({ adopted: false });
+      }
+      await updateContact(svc, prospect.id, { candidate_id: target.id });
+      if (prospect.member_id && (await linkCandidateConversations(svc, account.id, prospect.member_id, target.id)) > 0) {
+        await updateAccount(svc, account.id, { last_inbox_sync_at: null });
+      }
+      return okJson({ adopted: true });
+    }
+
     const candidate = await candidateRecord(svc, workspaceId, body.candidateId);
     if (!candidate) return notFound("Candidate not found.");
     const identity = publicIdFromProfileUrl(candidate.linkedinUrl);
@@ -195,10 +247,14 @@ export async function POST(req: NextRequest) {
       })
       .select(OUTBOX_COLUMNS)
       .single();
-    if (error || !data) return serverError("Could not queue the invitation.");
+    if (error || !data) {
+      console.error("[linkedin] invitation insert failed", error?.code, error?.message);
+      return serverError("Could not queue the invitation.");
+    }
     const policy = readBridgePolicy();
     return okJson({ item: data, dailyInviteCap: policy.dailyInviteCap });
-  } catch {
+  } catch (cause) {
+    console.error("[linkedin] candidate action failed", body.action, cause instanceof Error ? cause.message : "unknown error");
     return serverError("LinkedIn action failed.");
   }
 }

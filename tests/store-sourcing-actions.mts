@@ -786,8 +786,8 @@ test("manual intake preserves unknown facts and canonicalizes supplied evidence"
     lawfulBasis: "legitimate_interest",
   });
 
-  assert.deepEqual(result, { ok: true, added: 1, skipped: 0 });
   const candidate = harness.state.candidates[0];
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0, candidateIds: [candidate.id] });
   assert.equal(candidate.name, "Manual Person");
   assert.equal(candidate.email, "person@example.test");
   assert.equal(candidate.currentTitle, "");
@@ -820,6 +820,49 @@ test("manual intake preserves unknown facts and canonicalizes supplied evidence"
   assert.deepEqual(harness.events, [{ kind: "source", campaignId: campaign.id, count: 1 }]);
 });
 
+test("manual intake from a LinkedIn profile: the URL is the candidate's LinkedIn, canonical, and deduplicated", async () => {
+  const harness = createHarness();
+  const campaign = harness.state.campaigns[0];
+  const result = await harness.actions.addCandidateManual(campaign.id, {
+    name: "Jane Doe",
+    title: "Staff Engineer",
+    company: " Acme ",
+    linkedinUrl: "https://fr.linkedin.com/in/jane-doe-e2e/?trk=search",
+    lawfulBasis: "legitimate_interest",
+  });
+  const candidate = harness.state.candidates[0];
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0, candidateIds: [candidate.id] });
+  assert.equal(candidate.linkedinUrl, "https://www.linkedin.com/in/jane-doe-e2e");
+  assert.equal(candidate.sourceUrl, undefined);
+  assert.equal(candidate.sourcePlatform, "LinkedIn");
+  assert.equal(candidate.provenance, "manual");
+  assert.equal(candidate.currentCompany, "Acme");
+
+  // A LinkedIn profile typed as a generic profile URL lands in the same place.
+  const viaProfileUrl = createHarness();
+  await viaProfileUrl.actions.addCandidateManual(campaign.id, {
+    name: "Jane Doe",
+    profileUrl: "https://www.linkedin.com/in/jane-doe-e2e",
+    lawfulBasis: "consent",
+  });
+  assert.equal(viaProfileUrl.state.candidates[0].linkedinUrl, "https://www.linkedin.com/in/jane-doe-e2e");
+  assert.equal(viaProfileUrl.state.candidates[0].sourceUrl, undefined);
+
+  // The same person again is a duplicate, whatever the URL variant.
+  const again = await harness.actions.addCandidateManual(campaign.id, {
+    name: "Jane D.",
+    linkedinUrl: "linkedin.com/in/jane-doe-e2e",
+    lawfulBasis: "consent",
+  });
+  assert.equal(again.ok && again.added, 0);
+
+  // Anything that is not a LinkedIn profile is refused as a LinkedIn URL.
+  for (const linkedinUrl of ["https://evil.example/in/jane-doe", "https://www.linkedin.com/company/acme", "javascript:alert(1)"]) {
+    const refused = await createHarness().actions.addCandidateManual(campaign.id, { name: "Jane", linkedinUrl, lawfulBasis: "consent" });
+    assert.equal(refused.ok, false, linkedinUrl);
+  }
+});
+
 test("manual intake projects only the documented fields and cannot override authority-owned state", async () => {
   const harness = createHarness();
   const campaignId = harness.state.campaigns[0].id;
@@ -840,8 +883,8 @@ test("manual intake projects only the documented fields and cannot override auth
     } as never,
   );
 
-  assert.deepEqual(result, { ok: true, added: 1, skipped: 0 });
   const candidate = harness.state.candidates[0];
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0, candidateIds: [candidate.id] });
   assert.notEqual(candidate.id, "attacker-id");
   assert.equal(candidate.campaignId, campaignId);
   assert.equal(candidate.sourcePlatform, "Manual");
@@ -979,6 +1022,7 @@ test("manual duplicate and persisted commit rejection never emit candidate succe
     ok: true,
     added: 0,
     skipped: 1,
+    candidateIds: [],
     skipReason: "Duplicate source profile",
   });
   assert.equal(duplicate.persistedCalls, 1);

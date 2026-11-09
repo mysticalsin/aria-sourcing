@@ -26,6 +26,7 @@ import {
   contactById,
   conversationByUrn,
   ensureConversation,
+  isProspectId,
   linkCandidateConversations,
   okJson,
   outboxItem,
@@ -202,9 +203,10 @@ async function applyProfileCard(svc: Svc, account: BridgeAccount, contact: Conta
   };
   if (contact.relationship === "pending" && relationship === "connected") patch.accepted_at = nowIso;
   await updateContact(svc, contact.id, patch);
-  if (card.memberId !== contact.member_id) {
+  if (card.memberId !== contact.member_id && !isProspectId(contact.candidate_id)) {
     // Conversations already seen with them become theirs; recent ones come
-    // back in full on the next inbox sync.
+    // back in full on the next inbox sync. A prospect's wait until it is
+    // added as a candidate.
     await linkCandidateConversations(svc, account.id, card.memberId, contact.candidate_id);
     await updateAccount(svc, account.id, { last_inbox_sync_at: null });
   }

@@ -84,7 +84,7 @@ export type SourceNextBatchResult =
     };
 
 export type CandidateIntakeResult =
-  | { ok: true; added: number; skipped: number; skipReason?: string }
+  | { ok: true; added: number; skipped: number; skipReason?: string; candidateIds?: string[] }
   | { ok: false; error: string };
 
 export type CandidateErasureStatus =
@@ -177,6 +177,9 @@ export interface WorkspaceActions {
     input: {
       name: string;
       title?: string;
+      company?: string;
+      /** A LinkedIn profile URL: stored as the candidate's LinkedIn. */
+      linkedinUrl?: string;
       skills?: string[];
       profileUrl?: string;
       email?: string;

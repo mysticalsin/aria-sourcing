@@ -598,7 +598,7 @@ export interface CandidateRecord {
 /** The candidate as the workspace state holds it (never trust the browser's copy). */
 export async function candidateRecord(svc: Svc, workspaceId: string, candidateId: string): Promise<CandidateRecord | null> {
   const { data, error } = await svc.rpc("linkedin_bridge_candidate", { p_workspace_id: workspaceId, p_candidate_id: candidateId });
-  if (error) throw new Error("candidate read failed");
+  if (error) throw new Error(`candidate read failed (${error.code ?? "?"}: ${error.message ?? ""})`.slice(0, 300));
   return (data as CandidateRecord | null) ?? null;
 }
 
@@ -697,13 +697,32 @@ export async function candidateMembers(svc: Svc, accountId: string): Promise<Map
     .not("member_id", "is", null)
     .limit(5000);
   if (error) throw new Error("linkedin_bridge_contacts read failed");
-  return new Map(((data as { member_id: string; candidate_id: string }[] | null) ?? []).map((r) => [r.member_id, r.candidate_id]));
+  // A prospect (looked up, not yet a candidate) owns no conversation.
+  return new Map(
+    ((data as { member_id: string; candidate_id: string }[] | null) ?? [])
+      .filter((r) => !isProspectId(r.candidate_id))
+      .map((r) => [r.member_id, r.candidate_id]),
+  );
 }
 
 /**
  * A candidate now has a member id: any conversation already seen with them
  * (stub or not) becomes theirs and its messages are fetched.
  */
+/**
+ * A LinkedIn profile looked at before it becomes a candidate ("Add candidate"
+ * from a profile URL): its contact row is keyed by this id until the
+ * candidate exists, then re-keyed to it. Its conversations are never linked
+ * (nor synced in full) while it is only a prospect.
+ */
+export const PROSPECT_PREFIX = "prospect:";
+export function prospectIdFor(identity: string): string {
+  return `${PROSPECT_PREFIX}${identity.toLowerCase()}`;
+}
+export function isProspectId(candidateId: string): boolean {
+  return candidateId.startsWith(PROSPECT_PREFIX);
+}
+
 export async function linkCandidateConversations(svc: Svc, accountId: string, memberId: string, candidateId: string): Promise<number> {
   const { data, error } = await svc
     .from("linkedin_bridge_conversations")
