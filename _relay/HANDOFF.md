@@ -1,15 +1,23 @@
 ---
 project: MSourcing / ARIA
-shift: 456
+shift: 457
 agent: claude-code
-updated: 2026-11-06
-status: apify-retired-linkedin-guarded
+updated: 2026-11-09
+status: candidate-panel-redesigned
 ---
 
-# Handoff - Shift 456
+# Handoff - Shift 457
 
 ## Current state
 
+- Shift 457 (2026-11-09): commit 56e9c83b, candidate panel redesign (see
+  "Done this shift"). Gate exit 0 (typecheck, typecheck:tests, npm test,
+  eslint on touched files); candidate e2e 32/32 on the rebuilt stack.
+- Owner's real setup on this Mac (checked 2026-11-09): workspace
+  `confidentialityMode` is ON, his 7 real candidates are "Sourced", so they
+  are masked until "Reveal" (logged). His paired extension reports version
+  0.1.0: invitations and relationship checks need 0.3.0 (reload it in
+  chrome://extensions from `extensions/linkedin-bridge`).
 - Branch mbe-branch, local only (not pushed): 28c59514 merge of mbe-test,
   b647a65c LinkedIn follow-ups, 3c2d74a3 Apify retired, then this baton.
 - Gate on 3c2d74a3's tree: typecheck, typecheck:tests, npm test exit 0;
@@ -40,6 +48,29 @@ status: apify-retired-linkedin-guarded
 
 ## Done this shift
 
+Shift 457. Owner (2026-11-09): "make the candidate panel clearer and wider;
+from it, connect with the candidate on LinkedIn and write to them if already
+connected; I can't find the LinkedIn chat anymore; essential for the POC."
+
+- Cause found: the LinkedIn section existed but sat at the bottom of the
+  panel and was hidden for masked profiles (confidentiality mode), i.e. all
+  of the owner's just-sourced candidates.
+- `src/components/candidates/candidate-drawer.tsx`: 1024 px panel; header
+  card (identity, contact, links, score, `LinkedInQuickAction`); one-line
+  next-action strip; tabs Overview / LinkedIn / Evidence & contact /
+  Pipeline & history / Compliance (`CandidateTab`, reset to Overview per
+  candidate). Logic unchanged, JSX regrouped.
+- LinkedIn tab: masked -> "Reveal profile (logged)" (`handleReveal`), no URL
+  -> link to Evidence & contact, else `CandidateLinkedIn` (taller thread).
+- `firstLookCandidate` (linkedin-store): the first relationship check runs
+  once per candidate per tab, triggered by the header button; never for
+  masked/blocked/erased profiles (`autoCheck`).
+- E2E (scratchpad `smoke/candidate-e2e.mjs`): 3rd fictional candidate Linus
+  (Sourced, masked): no LinkedIn lookup before the reveal, invitation offered
+  after; header states for Grace (Reply) and Ada (Connect); tab screenshots.
+
+Shift 456 (2026-11-06):
+
 Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
 "remove Apify sourcing and even its Settings configuration".
 
@@ -65,6 +96,10 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
 
 ## Next steps
 
+0. Owner: reload the ARIA extension (0.3.0) in chrome://extensions, reload
+   ARIA, open a candidate -> header "LinkedIn" button / LinkedIn tab ->
+   "Reveal profile (logged)" -> invite or message. Push the local commits
+   when satisfied.
 1. Owner: review the 3 local commits, push when satisfied (`git push origin
    mbe-branch`). Reload ARIA tabs (the stack here already runs the new app).
 2. Owner: in Chrome, reload the ARIA extension (0.3.0) if not done; open a
