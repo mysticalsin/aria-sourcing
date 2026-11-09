@@ -577,8 +577,20 @@ test("only a signed-in person can queue a message or an invitation; the extensio
   assert.match(composer, /<form onSubmit=\{submit\}/);
   assert.equal((composer.match(/onSend\(/g) ?? []).length, 1, "one send path");
   const usesOf = (name: string) => all.filter((path) => new RegExp(`\\b${name}\\(`).test(readFileSync(path, "utf8")));
-  assert.deepEqual(usesOf("inviteCandidate").sort(), ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts"]);
-  assert.deepEqual(usesOf("messageCandidate").sort(), ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts"]);
+  // The candidate's LinkedIn tab, and the approval of an exact outreach
+  // message (owner, 2026-11-09: approving a LinkedIn message sends it).
+  const senders = ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts", "src/components/linkedin/outreach-send.ts"];
+  assert.deepEqual(usesOf("inviteCandidate").sort(), senders);
+  assert.deepEqual(usesOf("messageCandidate").sort(), senders);
+  assert.deepEqual(
+    all.filter((path) => readFileSync(path, "utf8").includes("useDeliverApprovedLinkedIn(")).sort(),
+    ["src/app/outreach/page.tsx", "src/components/linkedin/outreach-send.ts", "src/components/outreach/glass-box-panel.tsx", "src/components/outreach/outreach-message-card.tsx"],
+    "only the approval of an outreach message sends it on LinkedIn",
+  );
+  for (const path of ["src/components/outreach/glass-box-panel.tsx", "src/components/outreach/outreach-message-card.tsx"]) {
+    // Sent right after the approval succeeded, never before or without it.
+    assert.match(readFileSync(path, "utf8"), /const res = await (?:a|actions)\.approveOutreach\(message\.id\);[\s\S]*if \(!res\.allowed\)[\s\S]*if \(message\.channel === "LinkedIn"\) \{[\s\S]*await deliverOnLinkedIn\(message\)/, path);
+  }
 });
 
 test("every LinkedIn write from the browser must come from this app (same origin, Docker-safe)", () => {

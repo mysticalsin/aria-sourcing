@@ -7,8 +7,7 @@ import { cn } from "@/lib/utils";
 const MAX = 8000;
 
 /**
- * Message box. Enter adds a line (a LinkedIn message is often several
- * paragraphs); Cmd/Ctrl+Enter sends. The text clears as soon as the message
+ * Message box. Enter sends; Shift+Enter adds a line (owner, 2026-11-09). The text clears as soon as the message
  * is handed over: the thread shows it right away.
  */
 export function Composer({
@@ -66,7 +65,8 @@ export function Composer({
           placeholder={placeholder}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(e);
+            // Enter sends; Shift+Enter starts a new line (never while an IME is composing).
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) submit(e);
           }}
           className="max-h-[220px] min-h-[40px] flex-1 resize-none bg-transparent py-2 text-sm leading-relaxed text-ink outline-none placeholder:text-muted focus:outline-none focus-visible:outline-none disabled:opacity-60"
           aria-label={placeholder}
@@ -87,7 +87,7 @@ export function Composer({
       <div className="mt-1.5 flex items-center justify-between gap-3 px-1 text-[0.7rem] text-muted">
         <span className="min-w-0 truncate">{hint}</span>
         <span className="shrink-0 tabular-nums">
-          {text.length > MAX - 1000 ? `${text.length}/${MAX} · ` : ""}⌘/Ctrl + Enter
+          {text.length > MAX - 1000 ? `${text.length}/${MAX} · ` : ""}Enter to send · Shift+Enter for a new line
         </span>
       </div>
     </form>

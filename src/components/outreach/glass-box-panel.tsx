@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import { motion } from "framer-motion";
 import {
   Card,
@@ -212,6 +213,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
   const reducedMotion = usePrefersReducedMotion();
   const [approving, setApproving] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
+  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
 
   if (!candidate || !campaign) {
     return (
@@ -249,6 +251,11 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
     }
     if (res.dryRun) {
       toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      return;
+    }
+    if (message.channel === "LinkedIn") {
+      // Approving the exact LinkedIn message is the decision to send it.
+      await deliverOnLinkedIn(message);
       return;
     }
     toast({
@@ -315,7 +322,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
               disabled={hasBlock || approving || rejecting}
               title={hasBlock ? "Blocked by a failing guardrail check above" : undefined}
             >
-              {approving ? "Recording approval…" : "Approve"}
+              {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
             </Button>
             <Button size="sm" variant="ghost" leftIcon={<X className="h-4 w-4" />} onClick={handleReject} disabled={approving || rejecting}>
               {rejecting ? "Revoking…" : "Reject"}

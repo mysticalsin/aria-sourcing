@@ -67,15 +67,18 @@ unless `LINKEDIN_BRIDGE_ENABLED=true`. Owner requests, 2026-11-06, on
   linked; **Cancel** forgets it (`discard`). The new candidate's panel opens
   on its LinkedIn tab, unmasked (logged as a reveal) since the user just
   entered the identity.
-- **Approved outreach drafts.** A LinkedIn draft approved in Outreach waits in
-  "Pending manual send". **Send with my LinkedIn** opens the candidate's
-  LinkedIn tab with the approved text prefilled in the message box (or the
-  invitation note when they are not connected and it fits in 300 characters).
-  Nothing leaves until the user clicks Send. When the exact approved text is
-  queued, the outreach is confirmed as sent (`confirmManualSend`: candidate
-  Contacted, history and ledger). An edited text is sent as a normal message
-  and the outreach stays pending (confirm it by hand). Copy-paste remains
-  available.
+- **Outreach drafts: approving sends (owner, 2026-11-09).** A LinkedIn draft
+  in Outreach shows **Approve & send on LinkedIn**. That click is the decision
+  to send the exact text: ARIA queues it as a message to a connection, or, when
+  they are not connected and it fits (300), as an invitation note; the
+  outreach is then recorded as sent (`confirmManualSend`). Bulk approval does
+  the same for each selected LinkedIn draft. If it cannot go (bridge off or not
+  connected, invitation pending, longer than a note), it stays in "Pending
+  manual send" with the reason, where **Send with my LinkedIn** (prefilled
+  LinkedIn tab) and copy-paste remain. Server pacing and caps still apply.
+  Code: `src/components/linkedin/outreach-send.ts`.
+- **Keyboard.** In the LinkedIn tab, Enter sends (message or invitation);
+  Shift+Enter adds a line.
 - Endpoints, payloads and the relationship shape come from third-party
   captures of the web client (2026); verify on the first live run.
 

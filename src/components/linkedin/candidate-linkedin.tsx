@@ -104,6 +104,13 @@ function InviteForm({
         placeholder={`Add a note (optional), e.g. "Hi ${firstName}, I'm hiring for a role that fits your background. Happy to connect."`}
         className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted focus:border-electric/40 focus-visible:outline-none"
         aria-label="Invitation note"
+        onKeyDown={(e) => {
+          // Enter sends the invitation; Shift+Enter starts a new line.
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            e.currentTarget.form?.requestSubmit();
+          }
+        }}
       />
       <div className="flex items-center justify-between gap-2">
         <span className={cn("text-[0.7rem] tabular-nums", note.length > limit - 30 ? "text-[hsl(32_90%_34%)]" : "text-muted")}>

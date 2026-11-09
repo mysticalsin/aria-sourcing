@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -315,6 +316,8 @@ function OutreachView() {
    *  checkOutreachApproval internally) — never flips status directly, never
    *  bypasses a blocker, and never sends. Blocked drafts simply stay in the
    *  queue and get counted, matching the single-approve failure path. */
+  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
+
   async function handleBulkApprove() {
     if (approvingAll) return;
     const ids = selectedInView.map((m) => m.id);
@@ -323,11 +326,19 @@ function OutreachView() {
     let approved = 0;
     let blocked = 0;
     let simulated = 0;
+    let linkedInHeld = 0;
     const blockers = new Set<string>();
     const blockedIds = new Set<string>();
     try {
       for (const id of ids) {
         const res = await actions.approveOutreach(id);
+        const approvedMessage = res.allowed && !res.dryRun ? selectedInView.find((m) => m.id === id) : undefined;
+        if (approvedMessage?.channel === "LinkedIn") {
+          // Approving a LinkedIn message sends it (paced by the server); a
+          // failure leaves it in Pending manual send.
+          const sent = await deliverOnLinkedIn(approvedMessage, { quiet: true });
+          if (!sent.ok) linkedInHeld += 1;
+        }
         if (res.dryRun) {
           simulated += 1;
           blockedIds.add(id);
@@ -349,9 +360,10 @@ function OutreachView() {
             ? `Approved ${approved}, ${blocked} blocked`
             : `Approved ${approved}`,
         description:
-          blocked > 0 || simulated > 0
+          (blocked > 0 || simulated > 0
             ? `Unchanged drafts stayed selected in the queue. ${Array.from(blockers).join(" ")}`
-            : "Queued for send per the usual approval flow.",
+            : "Queued for send per the usual approval flow.") +
+          (linkedInHeld > 0 ? ` ${linkedInHeld} LinkedIn message(s) could not be sent and wait in Pending manual send.` : ""),
         variant: blocked > 0 || simulated > 0 ? "warning" : "success",
       });
     } finally {

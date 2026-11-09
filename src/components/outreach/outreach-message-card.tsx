@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import Link from "next/link";
 import {
   Card,
@@ -112,6 +113,7 @@ export function OutreachMessageCard({
 
   const [regenerating, setRegenerating] = React.useState(false);
   const [approving, setApproving] = React.useState(false);
+  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
   const [rejecting, setRejecting] = React.useState(false);
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -150,6 +152,11 @@ export function OutreachMessageCard({
     }
     if (res.dryRun) {
       toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      return;
+    }
+    if (message.channel === "LinkedIn") {
+      // Approving the exact LinkedIn message is the decision to send it.
+      await deliverOnLinkedIn(message);
       return;
     }
     toast({
@@ -464,7 +471,7 @@ export function OutreachMessageCard({
                 loading={approving}
                 disabled={approving || rejecting}
               >
-                {approving ? "Recording approval…" : "Approve"}
+                {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
               </Button>
               <Button
                 size="sm"
