@@ -265,6 +265,9 @@ registre de traitements. À valider avec le DPO d'Amaris avant B2.
     `linkedin.com/messaging` épinglé (`background.js:179`) et interroge ARIA
     toutes les minutes (`chrome.alarms`). Il reste à la pointer vers l'origine
     HTTPS du serveur.
+- **Confirmé (2026-11-09) :** pas de copie de cookie de session, et pas de
+  maquillage pour LinkedIn (proxy, empreinte, délais aléatoires). Le POC
+  mesure ce qui se passe quand on ne cache rien.
 - **Toujours ouvert :** la base légale RGPD des contacts décidés par
   l'algorithme. À valider avec le DPO avant un usage sur de vrais candidats
   hors POC. Cela ne bloque pas le POC.

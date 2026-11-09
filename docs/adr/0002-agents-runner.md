@@ -43,7 +43,8 @@ Agreement forbids automated messaging.
    visible Chrome with the ARIA extension, one Chrome profile per user. Each
    user signs in to LinkedIn there themselves (remote desktop). No cookie is
    copied from a laptop. The owner's 2026-11-03 decision still holds: no
-   proxies, no fingerprint changes, no randomised "human" delays.
+   proxies, no fingerprint changes, no randomised "human" delays. Both rules re-confirmed by the owner on
+   2026-11-09 for the POC.
 5. **Budget.** The owner accepts a higher AI budget for agents. Agents get
    their own daily and monthly caps, separate from the interactive ones.
 
