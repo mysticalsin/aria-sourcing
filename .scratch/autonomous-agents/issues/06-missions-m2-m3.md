@@ -1,6 +1,6 @@
 # 06 — Missions sourcing nocturne et top 3 vers LinkedIn
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 04, 05
 Spec: ../spec.md
 
@@ -18,3 +18,5 @@ Spec: ../spec.md
 - Le journal de mission donne le coût et les étapes.
 
 ## Comments
+
+2026-11-09 (claude-code): implemented and verified on the local stack, in the e2e test workspace. GitHub sourcing added 3 profiles, the agent picked the top candidate (85) and failed cleanly without a LinkedIn account. With a simulated account it queued an invitation, and the extension's `sent` moved the candidate to Contacted. Remaining: the owner's live run with their own paired LinkedIn (a real send).

@@ -1,6 +1,6 @@
 # 02 — Identité agent et délégation
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: —
 Spec: ../spec.md
 
@@ -16,3 +16,5 @@ Spec: ../spec.md
 - Un `onBehalfOf` qui a perdu son rôle donne 403.
 
 ## Comments
+
+2026-11-09 (claude-code): simplified. The runner authenticates with one shared `AGENT_RUNNER_SECRET` (app and agents services only), not one token per user. Consent is per user in `agent_delegations` (recorded when the user turns on a campaign autopilot, revoked by "Stop all agents acting for me"). `ownerAuthority` (`src/lib/agents/server/authority.ts`) checks the delegation, its scope, the workspace and the role on every step.

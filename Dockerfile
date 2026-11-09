@@ -37,6 +37,7 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/build-metadata.json ./build-metadata.json
 COPY --chown=node:node scripts/container-runtime.mjs ./scripts/container-runtime.mjs
+COPY --chown=node:node scripts/agents-runner.mjs ./scripts/agents-runner.mjs
 RUN mkdir -p /app/config && chown node:node /app/config
 USER node
 EXPOSE 3000

@@ -1,6 +1,6 @@
 # 04 — Service agents dans le compose
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 03
 Spec: ../spec.md
 
@@ -18,3 +18,5 @@ Spec: ../spec.md
 - Les missions sont visibles dans l'app.
 
 ## Comments
+
+2026-11-09 (claude-code): `agents` service in `docker-compose.yml` (image `aria-sourcing-app:local`, `scripts/agents-runner.mjs`), plus migration 0009 (`agent_missions` among others). Separate AI caps are NOT done: the agents share `AI_*_BUDGET_USD` (ADR 0002, point 5).

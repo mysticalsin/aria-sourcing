@@ -82,6 +82,40 @@ unless `LINKEDIN_BRIDGE_ENABLED=true`. Owner requests, 2026-11-06, on
 - Endpoints, payloads and the relationship shape come from third-party
   captures of the web client (2026); verify on the first live run.
 
+## Campaign autopilot (ADR 0002, proof of concept)
+
+Owner decision 2026-11-09: test whether an agent can contact candidates on
+LinkedIn without a click per message.
+
+- **Turn it on:** the campaign page has an **Autopilot** card. The person who
+  turns it on becomes the campaign's owner for the agents and signs a standing
+  approval: cadence, profiles per source, contacts per run (1-5), minimum
+  score, and a consent text. Enabling also records a delegation
+  (`agent_delegations`); **Stop all agents acting for me** revokes it.
+- **What runs:** the `agents` Compose service calls `POST /api/agent/tick`
+  every minute (`AGENT_RUNNER_SECRET`). Each tick does one bounded step:
+  1. start the campaign's durable sourcing run when it is due;
+  2. advance it;
+  3. when it ends, pick the best eligible candidates by match score:
+     Sourced, never contacted, contactable, with a LinkedIn URL;
+  4. for each pick: look the profile up through the owner's extension, write
+     the copy (Claude, template fallback), and queue it in the **owner's**
+     outbox. A 1st-degree connection gets a message, anyone else an
+     invitation with a note of 300 characters at most.
+- **Who sends:** the owner's extension, from the owner's browser, under the
+  same pacing and caps as a click. The outreach shows "Pending Manual Send",
+  approved by "ARIA agent for <owner>". When the extension reports the send,
+  the candidate becomes Contacted. Refusals and `unknown` sends are reported
+  on the card and never retried.
+- **Guards:** `src/lib/linkedin-bridge/agent.ts` is the agent's only way into
+  the outbox. Before each insert it re-reads the standing approval and the
+  delegation, the candidate's compliance flags, and the relationship.
+  `tests/linkedin-bridge.mts` checks that order and that no other code
+  inserts.
+- **Off unless:** `AGENTS_ENABLED=true` and `AGENT_RUNNER_SECRET`
+  (32+ characters) on the app, and `LINKEDIN_BRIDGE_ENABLED=true` for
+  contacts.
+
 ## How it works
 
 ```
@@ -115,8 +149,9 @@ ARIA (candidate drawer, API, Postgres)        Chrome on your machine
   a `www.linkedin.com` tab. No proxy, no headless browser, no fingerprint
   tricks, no randomised "human" delays (owner decision 2026-11-03: no
   bot-detection evasion).
-- **A message or an invitation leaves only when you click.** Nothing else can
-  write to the outbox: no agent, no sequence, no API key
+- **A message or an invitation leaves only when you click**, with one
+  exception: the campaign autopilot (ADR 0002, proof of concept, below).
+  Nothing else can write to the outbox: no sequence, no API key
   (`tests/linkedin-bridge.mts` checks it). Sends are paced: 40 per rolling 24 h and 90 s between two sends
   by default (`LINKEDIN_BRIDGE_DAILY_SEND_CAP`,
   `LINKEDIN_BRIDGE_MIN_SEND_INTERVAL_SECONDS`).

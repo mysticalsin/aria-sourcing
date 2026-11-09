@@ -47,10 +47,11 @@ npm run demo:stop     # stop and retain durable volumes
 | auth | permanent | GoTrue authentication and session refresh |
 | rest | permanent | PostgREST CRUD and RPC under database authorization |
 | gateway | permanent | Caddy: the shared Supabase API origin (`/auth/v1`, `/rest/v1`), API-key check, CORS |
+| agents | permanent | Agents runner (ADR 0002): a clock that calls the app's `/api/agent/tick` every minute. Same image, no database credential, no model key. Idle until the app has `AGENTS_ENABLED=true` |
 | db-init | exits after success | Reconcile database roles before Auth starts |
 | supabase-bootstrap | exits after success | Migrate after Auth created its schema, seed the local admin, prove the gateway contract |
 
-There are **five running services**, not seven permanent services. The two jobs
+There are **six running services** (the five of ADR 0001 plus the agents runner of ADR 0002), not eight permanent services. The two jobs
 have different ordering requirements. No Studio, Realtime, Storage, Redis,
 local LLM server or agent framework is started. The gateway routes only Auth and
 REST; every other path answers 404. Each permanent service keeps at most 30 MB

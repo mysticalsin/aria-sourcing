@@ -1,6 +1,6 @@
 # 03 — Routes /api/agent/*
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 02
 Spec: ../spec.md
 
@@ -22,3 +22,5 @@ Spec: ../spec.md
 - Une révélation en mode confidentialité est journalisée avec l'acteur agent.
 
 ## Comments
+
+2026-11-09 (claude-code): one route for the runner, `POST /api/agent/tick`, which runs one bounded step of `src/lib/agents/tick.ts`, instead of one route per action. All logic stays typed and testable in the app. User route: `GET/POST /api/agent/autopilot`.

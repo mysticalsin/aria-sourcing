@@ -1,6 +1,6 @@
 # Agents autonomes : un conteneur qui fait tourner des tâches planifiées
 
-Date : 2026-11-09 · Branche : mbe-branch · Statut : décisions prises (2026-11-09, §4bis), ADR 0002 acceptée, rien n'est construit
+Date : 2026-11-09 · Branche : mbe-branch · Statut : POC B2 construit (2026-11-09), lots 01 à 05 faits, 06 à tester en réel par le propriétaire ; 07 (VM) à faire
 
 Demande du propriétaire (2026-11-09) : ajouter à l'infra un conteneur qui fait
 tourner des agents sur la clé API Claude, pour des tâches autonomes :

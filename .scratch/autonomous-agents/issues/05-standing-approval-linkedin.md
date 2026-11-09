@@ -1,6 +1,6 @@
 # 05 — Approbation permanente et file LinkedIn par l'agent (B2)
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02
 Spec: ../spec.md
 
@@ -21,3 +21,5 @@ ADR 0002, point 3.
 - Pas d'envoi si le propriétaire n'a pas de compte LinkedIn appairé : on le notifie dans l'app.
 
 ## Comments
+
+2026-11-09 (claude-code): `agent_campaign_autopilots` is the standing approval. `src/lib/linkedin-bridge/agent.ts` (`agentMayQueue`, `agentQueue`) is the only agent path into the outbox. The `tests/linkedin-bridge.mts` invariant was rewritten accordingly. Verified on the local stack with a simulated paired account: an invitation was queued (299 characters); after a simulated `sent`, the candidate moved to Contacted.

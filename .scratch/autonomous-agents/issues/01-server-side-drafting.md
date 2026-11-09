@@ -1,6 +1,6 @@
 # 01 — Rédaction d'un message d'approche côté serveur
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: —
 Spec: ../spec.md
 
@@ -18,3 +18,5 @@ Spec: ../spec.md
 - `draftedBy` et l'idempotence par candidat et campagne sont conservés.
 
 ## Comments
+
+2026-11-09 (claude-code): `src/lib/agents/server/draft.ts` writes LinkedIn copy on the server (same prompt, system prompt, parsing, humanizer; workspace vault key only; template fallback). `src/lib/agents/server/workspace.ts` writes `workspace_state` with the optimistic-concurrency token and retries. Shared pure transitions moved to `src/lib/store/workspace-transitions.ts` (`recordLinkedInSent` now also backs `confirmManualSend`). The browser's own drafting path is unchanged (not migrated: out of scope for the POC).
