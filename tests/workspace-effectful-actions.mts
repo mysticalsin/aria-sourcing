@@ -86,6 +86,13 @@ ok(
 );
 
 const approveOutreach = actionBody("approveOutreach", "confirmManualSend");
+// A LinkedIn message is never "sent" by approval, dry-run included: it waits
+// for the person's click (copy-paste or "Send with my LinkedIn").
+ok(
+  "LinkedIn approval always waits for a manual send, even in dry-run",
+  /const isLinkedInManual = msg\.channel === "LinkedIn";/.test(approveOutreach) &&
+    /const finalStatus: OutreachStatus = isLinkedInManual\s*\? "Pending Manual Send"/.test(approveOutreach),
+);
 const compensationStart = approveOutreach.indexOf("const revokeStaleApproval");
 const revalidationStart = approveOutreach.indexOf("s = current()", compensationStart);
 const staleApprovalCompensation = compensationStart >= 0 && revalidationStart > compensationStart

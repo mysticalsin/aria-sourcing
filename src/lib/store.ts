@@ -1898,7 +1898,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       // copy/paste it on the candidate's profile. Keep it out of the sent counter
       // and ledger until the operator confirms the manual send.
       const isLive = !s.settings.dryRunMode;
-      const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
+      // Never simulated, even in dry-run: a LinkedIn message only leaves by a
+      // person's click (copy-paste, or "Send with my LinkedIn"), so it waits
+      // for that click instead of pretending it was sent.
+      const isLinkedInManual = msg.channel === "LinkedIn";
       // Email has a real live provider wired up in sendApprovedOutreach()
       // (domain-verified mailbox). It may never be delivered on approval alone.
       const isLiveSendChannel = msg.channel === "Email" && isLive;
