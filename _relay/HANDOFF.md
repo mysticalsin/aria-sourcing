@@ -1,15 +1,22 @@
 ---
 project: MSourcing / ARIA
-shift: 460
+shift: 461
 agent: claude-code
 updated: 2026-11-09
-status: outreach-channel-choice
+status: linkedin-approval-pending-manual
 ---
 
-# Handoff - Shift 460
+# Handoff - Shift 461
 
 ## Current state
 
+- Shift 461 (2026-11-09): approving a LinkedIn outreach draft always gives
+  "Pending Manual Send" (dry-run no longer simulates LinkedIn delivery;
+  `approveOutreach` in src/lib/store.ts). Gate exit 0. Owner data: Tony's
+  LinkedIn draft msg_mw94296pb (simulated Scheduled at 10:21) set back to
+  Pending Manual Send, its ledger row led_mw942h4yd to pending_manual
+  (backup: scratchpad tony/backup2.json). His email simulation
+  (msg_mw93p4he9, Contacted) is untouched: owner not asked yet.
 - Shift 460 (2026-11-09): commit 1ae0ff7d, the candidate panel shows one
   draft button per channel on file ("Draft email" / "Draft LinkedIn
   message"); it used to force Email whenever an email existed. Gate exit 0;
