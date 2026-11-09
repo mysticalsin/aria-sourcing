@@ -651,6 +651,8 @@ test("no LinkedIn credential is stored or relayed", () => {
 
   const linkedInWatcher = readFileSync("extensions/linkedin-bridge/linkedin-page.js", "utf8");
   assert.doesNotMatch(linkedInWatcher, /fetch\(|XMLHttpRequest|document\.cookie|innerText|textContent/, "the LinkedIn content script stays passive");
+  // An orphaned copy (extension reloaded) must not throw "Extension context invalidated".
+  assert.match(linkedInWatcher, /if \(!chrome\.runtime \|\| !chrome\.runtime\.id\) return stop\(\);\s*\n\s*try \{\s*\n\s*chrome\.runtime\.sendMessage/);
 
   const manifest = JSON.parse(readFileSync("extensions/linkedin-bridge/manifest.json", "utf8")) as Record<string, string[]>;
   assert.deepEqual(manifest.host_permissions, ["https://www.linkedin.com/*", "http://localhost/*", "http://127.0.0.1/*"]);

@@ -56,6 +56,7 @@ import type {
   InterviewKind,
   InterviewOutcome,
   LeadSource,
+  OutreachChannel,
   OutreachMessage,
   PrequalOutcome,
 } from "@/lib/types";
@@ -496,7 +497,7 @@ export function CandidateDrawer({
   const [revealed, setRevealed] = useState(false);
   const [tab, setTab] = useState<CandidateTab>("overview");
   const [noteText, setNoteText] = useState("");
-  const [generating, setGenerating] = useState(false);
+  const [generating, setGenerating] = useState<OutreachChannel | null>(null);
   const [erasing, setErasing] = useState(false);
   const [erasureNotice, setErasureNotice] = useState<{
     status: CandidateErasureStatus;
@@ -761,9 +762,14 @@ export function CandidateDrawer({
 
   const campaignPaused = campaign?.status === "Paused";
   const review = candidateReview(c, campaign, settings);
-  const draftChannel = !c.email.trim() && c.linkedinUrl.trim() ? "LinkedIn" : "Email";
+  // The recruiter picks the channel: one draft button per channel this
+  // candidate can be reached on (email on file, LinkedIn profile on file).
+  const draftChannels: OutreachChannel[] = [
+    ...(c.email.trim() ? (["Email"] as const) : []),
+    ...(c.linkedinUrl.trim() ? (["LinkedIn"] as const) : []),
+  ];
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (draftChannel: OutreachChannel) => {
     if (campaignPaused) {
       toast({
         title: "Campaign is paused",
@@ -772,7 +778,7 @@ export function CandidateDrawer({
       });
       return;
     }
-    setGenerating(true);
+    setGenerating(draftChannel);
     let msg: ReturnType<typeof actions.generateOutreachFor> = null;
     try {
       msg = await actions.generateOutreachLive(c.id, undefined, draftChannel);
@@ -782,11 +788,14 @@ export function CandidateDrawer({
       msg = actions.generateOutreachFor(c.id, undefined, draftChannel);
       toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
     }
-    setGenerating(false);
+    setGenerating(null);
     if (msg) {
       toast({
-        title: "Outreach drafted",
-        description: `${c.name}: review in the outreach queue.`,
+        title: draftChannel === "LinkedIn" ? "LinkedIn message drafted" : "Email drafted",
+        description:
+          draftChannel === "LinkedIn"
+            ? `${c.name}: approve it in Outreach, then "Send with my LinkedIn".`
+            : `${c.name}: review in the outreach queue.`,
         variant: "success",
       });
     } else {
@@ -1265,23 +1274,28 @@ export function CandidateDrawer({
 
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
-      <Button
-        variant="secondary"
-        size="md"
-        leftIcon={<Send className="h-4 w-4" />}
-        onClick={handleGenerate}
-        loading={generating}
-        disabled={contactBlocked || review.key === "blocked" || review.key === "brief" || campaignPaused || generating || !can(role, "outreach") || (!c.email.trim() && !c.linkedinUrl.trim())}
-        title={
-          contactBlocked
-            ? "Candidate is suppressed / do-not-contact"
-            : campaignPaused
-              ? "Campaign is paused. Resume it to draft outreach"
-              : undefined
-        }
-      >
-        {generating ? "Drafting…" : draftChannel === "LinkedIn" ? "Draft LinkedIn message" : "Generate outreach"}
-      </Button>
+      {(draftChannels.length ? draftChannels : (["Email"] as OutreachChannel[])).map((channel) => (
+        <Button
+          key={channel}
+          variant="secondary"
+          size="md"
+          leftIcon={channel === "LinkedIn" ? <Linkedin className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+          onClick={() => handleGenerate(channel)}
+          loading={generating === channel}
+          disabled={contactBlocked || review.key === "blocked" || review.key === "brief" || campaignPaused || generating !== null || !can(role, "outreach") || !draftChannels.length}
+          title={
+            contactBlocked
+              ? "Candidate is suppressed / do-not-contact"
+              : campaignPaused
+                ? "Campaign is paused. Resume it to draft outreach"
+                : channel === "LinkedIn"
+                  ? "Drafts a LinkedIn message for approval; you send it from your LinkedIn."
+                  : "Drafts an email for approval."
+          }
+        >
+          {generating === channel ? "Drafting…" : channel === "LinkedIn" ? "Draft LinkedIn message" : "Draft email"}
+        </Button>
+      ))}
       <Button
         variant="primary"
         size="md"

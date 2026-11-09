@@ -10,14 +10,34 @@
   };
   let last = unreadIn(document.title);
 
+  let watched = null;
+  const titleObserver = new MutationObserver(check);
+  const headObserver = new MutationObserver(watchTitle);
+
+  // After the extension is reloaded or updated, this copy keeps running in
+  // tabs opened before, cut off from the extension: chrome.runtime.id is then
+  // undefined and sendMessage throws synchronously ("Extension context
+  // invalidated"), which a .catch() on its promise never sees. Stop watching.
+  function stop() {
+    titleObserver.disconnect();
+    headObserver.disconnect();
+  }
+
+  function notify() {
+    if (!chrome.runtime || !chrome.runtime.id) return stop();
+    try {
+      chrome.runtime.sendMessage({ type: "linkedin-activity" }).catch(() => undefined);
+    } catch {
+      stop();
+    }
+  }
+
   function check() {
     const current = unreadIn(document.title);
-    if (current > last) chrome.runtime.sendMessage({ type: "linkedin-activity" }).catch(() => undefined);
+    if (current > last) notify();
     last = current;
   }
 
-  let watched = null;
-  const titleObserver = new MutationObserver(check);
   function watchTitle() {
     const title = document.querySelector("head > title");
     if (!title || title === watched) return;
@@ -27,6 +47,6 @@
     check();
   }
   // LinkedIn may replace the <title> element itself.
-  if (document.head) new MutationObserver(watchTitle).observe(document.head, { childList: true });
+  if (document.head) headObserver.observe(document.head, { childList: true });
   watchTitle();
 })();
