@@ -1,15 +1,21 @@
 ---
 project: MSourcing / ARIA
-shift: 462
+shift: 463
 agent: claude-code
 updated: 2026-11-09
-status: approve-sends-linkedin
+status: pending-card-sends
 ---
 
-# Handoff - Shift 462
+# Handoff - Shift 463
 
 ## Current state
 
+- Shift 463 (2026-11-09): Pending manual send card leads with "Send on
+  LinkedIn"; "Confirm manual send" became "I sent it myself" (records only).
+  Owner data: Tony's msg_mw94gui1b (recorded as sent 12:30 without leaving)
+  set back to Pending Manual Send, its ledger row to pending_manual, its
+  Scheduled history entry removed (backup: scratchpad tony/backup3.json).
+  Gate exit 0; e2e 44/44.
 - Shift 462 (2026-11-09): "Approve & send on LinkedIn" sends an approved
   LinkedIn outreach draft at once (src/components/linkedin/outreach-send.ts);
   Enter sends in the LinkedIn tab. Gateway: Caddy keepalive off to upstreams
