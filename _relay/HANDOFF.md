@@ -1,15 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 459
+shift: 460
 agent: claude-code
 updated: 2026-11-09
-status: outreach-linkedin-drafts-via-bridge
+status: outreach-channel-choice
 ---
 
-# Handoff - Shift 459
+# Handoff - Shift 460
 
 ## Current state
 
+- Shift 460 (2026-11-09): commit 1ae0ff7d, the candidate panel shows one
+  draft button per channel on file ("Draft email" / "Draft LinkedIn
+  message"); it used to force Email whenever an email existed. Gate exit 0;
+  e2e 43/43.
+- Owner data changed by hand this shift (owner request): test campaign
+  `camp_test_tony_ai_transformation` "Enterprise AI Transformation Leader
+  (test)", built from Tony Walteur's LinkedIn headline; candidate
+  `cand_mw9206af9` (Tony, 1st-degree connection of the owner) moved into it,
+  skills from that headline, score 98. Backup of the previous state:
+  scratchpad `tony/backup.json` (session-local, not in the repo).
+- The owner then approved an EMAIL outreach to Tony (msg_mw93p4he9): dry-run,
+  no mailbox (email_connections 0, delivery events 0), nothing left, but the
+  app marked him Contacted with an Email "Scheduled" history entry.
 - Shift 459 (2026-11-09): approved LinkedIn outreach drafts are sent through
   the bridge from the candidate's LinkedIn tab ("Send with my LinkedIn" on
   the Pending manual send card). Gate exit 0; e2e 42/42 twice. Owner's
