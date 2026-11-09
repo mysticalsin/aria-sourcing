@@ -1,215 +1,119 @@
 ---
 project: MSourcing / ARIA
-shift: 463
+shift: 464
 agent: claude-code
 updated: 2026-11-09
-status: pending-card-sends
+status: agents-autopilot-poc-built
 ---
 
-# Handoff - Shift 463
+# Handoff - Shift 464
 
 ## Current state
 
-- Shift 463 (2026-11-09), autonomous agents: owner decisions recorded
-  (`.scratch/autonomous-agents/spec.md` §4bis): ADR 0002 accepted
-  (`docs/adr/0002-agents-runner.md`): `agents` service, agents act on behalf
-  of the campaign owner, agent-queued LinkedIn sends allowed as a POC (B2),
-  then a "bridge host" VM with real Chrome + one profile per user (B3, no
-  cookie copy, no proxies/fingerprint changes). Issues 01-10 in
-  `.scratch/autonomous-agents/issues/`; start with 01 (server-side drafting)
-  and 02 (agent identity). GDPR lawful basis still open (DPO), not blocking POC.
-- Shift 463 (2026-11-09): Pending manual send card leads with "Send on
-  LinkedIn"; "Confirm manual send" became "I sent it myself" (records only).
-  Owner data: Tony's msg_mw94gui1b (recorded as sent 12:30 without leaving)
-  set back to Pending Manual Send, its ledger row to pending_manual, its
-  Scheduled history entry removed (backup: scratchpad tony/backup3.json).
-  Gate exit 0; e2e 44/44.
-- Shift 462 (2026-11-09): "Approve & send on LinkedIn" sends an approved
-  LinkedIn outreach draft at once (src/components/linkedin/outreach-send.ts);
-  Enter sends in the LinkedIn tab. Gateway: Caddy keepalive off to upstreams
-  (fixed the intermittent 502 behind "Could not queue..." and "candidate
-  read failed"), 5xx logged. Gate exit 0; e2e 42/42 three runs, 0 gateway 5xx.
-- Shift 461 (2026-11-09): approving a LinkedIn outreach draft always gives
-  "Pending Manual Send" (dry-run no longer simulates LinkedIn delivery;
-  `approveOutreach` in src/lib/store.ts). Gate exit 0. Owner data: Tony's
-  LinkedIn draft msg_mw94296pb (simulated Scheduled at 10:21) set back to
-  Pending Manual Send, its ledger row led_mw942h4yd to pending_manual
-  (backup: scratchpad tony/backup2.json). His email simulation
-  (msg_mw93p4he9, Contacted) is untouched: owner not asked yet.
-- Shift 460 (2026-11-09): commit 1ae0ff7d, the candidate panel shows one
-  draft button per channel on file ("Draft email" / "Draft LinkedIn
-  message"); it used to force Email whenever an email existed. Gate exit 0;
-  e2e 43/43.
-- Owner data changed by hand this shift (owner request): test campaign
-  `camp_test_tony_ai_transformation` "Enterprise AI Transformation Leader
-  (test)", built from Tony Walteur's LinkedIn headline; candidate
-  `cand_mw9206af9` (Tony, 1st-degree connection of the owner) moved into it,
-  skills from that headline, score 98. Backup of the previous state:
-  scratchpad `tony/backup.json` (session-local, not in the repo).
-- The owner then approved an EMAIL outreach to Tony (msg_mw93p4he9): dry-run,
-  no mailbox (email_connections 0, delivery events 0), nothing left, but the
-  app marked him Contacted with an Email "Scheduled" history entry.
-- Shift 459 (2026-11-09): approved LinkedIn outreach drafts are sent through
-  the bridge from the candidate's LinkedIn tab ("Send with my LinkedIn" on
-  the Pending manual send card). Gate exit 0; e2e 42/42 twice. Owner's
-  workspace is still dry-run with no mailbox: emails do not leave.
-- Shift 458 (2026-11-09): commit da301b17, "Add candidate" from a LinkedIn
-  profile (see "Done this shift"). Gate exit 0; candidate e2e 39/39, three
-  runs in a row (space runs >= 60 s apart: the bridge user rate limit is
-  120 requests/min and back-to-back runs hit 429).
-- Shift 457 (2026-11-09): commit 56e9c83b, candidate panel redesign (see
-  "Done this shift"). Gate exit 0 (typecheck, typecheck:tests, npm test,
-  eslint on touched files); candidate e2e 32/32 on the rebuilt stack.
-- Owner's real setup on this Mac (checked 2026-11-09): workspace
-  `confidentialityMode` is ON, his 7 real candidates are "Sourced", so they
-  are masked until "Reveal" (logged). His paired extension reports version
-  0.1.0: invitations and relationship checks need 0.3.0 (reload it in
-  chrome://extensions from `extensions/linkedin-bridge`).
-- Branch mbe-branch, local only (not pushed): 28c59514 merge of mbe-test,
-  b647a65c LinkedIn follow-ups, 3c2d74a3 Apify retired, then this baton.
-- Gate on 3c2d74a3's tree: typecheck, typecheck:tests, npm test exit 0;
-  eslint clean on every touched file. Commit b647a65c was gated alone in a
-  worktree: typecheck, typecheck:tests, npm test exit 0 (repository-hygiene
-  needs the repo's `.git` mounted in the container for a worktree).
-- Stack on this Mac (OrbStack) rebuilt from that tree; `/api/ready` 200.
-  Candidate e2e (test user only, fake LinkedIn): 26/26, including the
-  Pipeline mark, cross-origin refusals, and no "Apify" on Settings
-  (integrations, keys) or the campaign page.
-- Apify is gone (owner, 2026-11-06: "we will never use it"):
-  - LinkedIn discovery = "LinkedIn via web search" (`WebSearch` source,
-    `src/lib/sourcing/claude-web-search.ts`), then GitHub. Plan max 2
-    sources, 1-20 profiles each. A stored `LinkedIn` step from an old run ends
-    failed without a provider call (`unified-run.ts`).
-  - No enrichment provider: `ENRICHMENT_PROVIDERS = []`,
-    `ENRICHMENT_RUNNERS = {}`; the drawer says so. Providers now declare
-    `keyProvider` (the stored key that unlocks them).
-  - Workspace STATE_VERSION 21 drops the `int_apify` / `int_enrichment`
-    cards. DB migrations untouched; old `provider_runs` rows keep `Apify`.
-  - Candidate photos (`avatarUrl`, from mbe-test) were filled by Apify only:
-    new candidates show initials.
-- LinkedIn bridge: every cookie-authenticated write (account, candidates,
-  conversations, outbox POST/DELETE) requires same-origin
-  (`requireBridgeUser(req, { mutation: true })`); `LinkedInBadge compact`
-  in the Pipeline overview. Everything else as in shift 454/455 (see
-  `_relay/archive/2026-11-06-2233-claude-code.md`).
+- Branch mbe-branch, local only (not pushed). HEAD = this baton on top of:
+  1006fdc1 agents runner service + Autopilot card, 5f0a2166 campaign
+  autopilot (tick, routes, bridge agent entry, migration 0009), 8479dbab
+  refactor (shared transitions/prompts/vault/sourcing providers).
+- Gate on 1006fdc1's tree: typecheck, typecheck:tests, npm test exit 0;
+  eslint clean on every touched file. New suite `agents-autopilot` (13
+  tests, fakes); `linkedin-bridge` 32/32 with the rewritten invariant.
+- Stack on this Mac rebuilt from 1006fdc1: 6 running services (agents is
+  new), migration 0009 applied, `/api/ready` 200, `POST /api/agent/tick`
+  401 with a wrong secret, `idle` with the right one. No autopilot exists
+  in any workspace.
+- Verified on the real local DB, e2e workspace only: run-now -> source-start
+  -> source-advance (GitHub, 3 added) -> source-finished (picked Linus, 85)
+  -> contact failed "no LinkedIn connected". With a simulated paired account
+  (no extension) and relationship `none`: invitation queued in the outbox
+  (template copy, 299 chars), outreach "Pending Manual Send" approved by
+  "ARIA agent for linkedin-e2e"; outbox set to `sent` by hand -> next tick:
+  candidate Contacted, message Scheduled, two campaign activities. UI card
+  screenshotted at 1440 and 390 px, no horizontal overflow.
+- NOT verified: a real LinkedIn send by the agent (needs the owner's paired
+  extension running and an autopilot on one of his campaigns); a Claude-
+  written note (the e2e workspace has no Anthropic key, template used).
+- Study, decisions and issues: `.scratch/autonomous-agents/` (issues 01-05
+  resolved, 06 ready-for-human (live run), 07 VM POC ready-for-human,
+  08-10 needs-triage).
+- Earlier shifts' state (LinkedIn bridge, candidate panel, Apify retired):
+  `_relay/archive/2026-11-09-1430-claude-code.md`.
 
 ## Done this shift
 
-Shift 459. Owner asked what outreach is for and how a draft is sent; then
-"yes, go" to linking LinkedIn drafts to the bridge.
+Owner (2026-11-09): "add a container to the infra to create agents on my
+Claude key: auto-source running campaigns, contact the 3 best on LinkedIn
+automatically, later email managers and read managers' mailboxes; later VMs
+with the app and the extension connected." Then decisions A-E, then "start
+coding, stop when done".
 
-- `outreach-message-card.tsx`: link to `/candidates?focus=&tab=linkedin&outreach=`.
-- `candidate-drawer.tsx`: `linkedInOutreachId` -> `linkedInDraft` (LinkedIn,
-  Pending Manual Send, same candidate) -> `CandidateLinkedIn draft`;
-  `confirmLinkedInDraft` calls `confirmManualSend` when the exact text was
-  queued.
-- `candidate-linkedin.tsx`, `composer.tsx` (`initialText`), `thread-view.tsx`
-  (`initialText`, `onSent`). No automatic send: submit only.
-
-Shift 458. Owner (2026-11-09): "add a feature to look for a candidate to
-source: I know someone on LinkedIn and want to add them manually to a
-campaign's candidates."
-
-- Candidates page header: `AddCandidateButton` (campaign picker). Tabs:
-  LinkedIn profile (default) / GitHub username / Manual
-  (`src/components/candidates/add-candidate-dialog.tsx`).
-- LinkedIn tab = `src/components/linkedin/profile-lookup.tsx`: Search link to
-  LinkedIn's people search (new tab, user picks), profile URL, "Look up"
-  through the bridge, prefill (name, `splitHeadline` -> title/company),
-  connection status.
-- Server (`/api/linkedin/candidates` POST): `preview` (contact keyed
-  `prospect:<public id>`, `PROSPECT_PREFIX` in server.ts, answer reused for
-  24 h), `adopt` (prospect -> candidate, same profile required, conversations
-  linked), `discard`. Prospects never own conversations
-  (`candidateMembers` filter, `applyProfileCard` skip).
-- Manual intake stores a LinkedIn URL as canonical `linkedinUrl`
-  (`src/lib/linkedin-profile-url.ts`), platform LinkedIn, company; returns
-  `candidateIds`. After add: `/candidates?focus=<id>&added=1&tab=linkedin`,
-  drawer `initialTab` + `revealOnOpen` (logged reveal).
-- Logging: `[linkedin] ...` lines (code + message only) when a message or
-  invitation cannot be queued. One e2e run hit "candidate read failed" from
-  the `linkedin_bridge_candidate` RPC (before the code was logged); not
-  reproduced in 6 later runs. Watch `docker logs aria-sourcing-app-1 | grep
-  "\[linkedin\]"`.
-
-Shift 457. Owner (2026-11-09): "make the candidate panel clearer and wider;
-from it, connect with the candidate on LinkedIn and write to them if already
-connected; I can't find the LinkedIn chat anymore; essential for the POC."
-
-- Cause found: the LinkedIn section existed but sat at the bottom of the
-  panel and was hidden for masked profiles (confidentiality mode), i.e. all
-  of the owner's just-sourced candidates.
-- `src/components/candidates/candidate-drawer.tsx`: 1024 px panel; header
-  card (identity, contact, links, score, `LinkedInQuickAction`); one-line
-  next-action strip; tabs Overview / LinkedIn / Evidence & contact /
-  Pipeline & history / Compliance (`CandidateTab`, reset to Overview per
-  candidate). Logic unchanged, JSX regrouped.
-- LinkedIn tab: masked -> "Reveal profile (logged)" (`handleReveal`), no URL
-  -> link to Evidence & contact, else `CandidateLinkedIn` (taller thread).
-- `firstLookCandidate` (linkedin-store): the first relationship check runs
-  once per candidate per tab, triggered by the header button; never for
-  masked/blocked/erased profiles (`autoCheck`).
-- E2E (scratchpad `smoke/candidate-e2e.mjs`): 3rd fictional candidate Linus
-  (Sourced, masked): no LinkedIn lookup before the reveal, invitation offered
-  after; header states for Grace (Reply) and Ada (Connect); tab screenshots.
-
-Shift 456 (2026-11-06):
-
-Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
-"remove Apify sourcing and even its Settings configuration".
-
-- Merge (28c59514) verified: a browser POST to `/api/source/campaign` under
-  Docker reaches validation (400) instead of "Cross-origin sourcing is not
-  allowed."
-- b647a65c: same-origin guard on bridge writes + test; compact badge.
-- 3c2d74a3: Apify removal (55 files). Engine hardening: web-search hits are
-  re-checked with `canonicalLinkedInProfileUrl`; non-profile URLs count as
-  excluded. Tests rewritten: `tests/unified-sourcing.mts` (12),
-  `tests/enrichment-orchestrator.mts` (139 checks, fake providers via mocked
-  registry/runners), route/fixture updates, `store-contracts` 118 actions.
-  Docs updated (SOURCING, LOCAL-SOURCING-TEST, README, NEEDS_GUIDE, DOCKER,
-  SUPABASE_SETUP, ARCHITECTURE, CANDIDATE-REVIEW, .env.local.example).
-- Codex findings: triage notes added (2026-07-19 direct adapters: both gone,
-  ready for re-audit; enrichment spend: gaps listed below). Issue
-  `.scratch/unified-sourcing/issues/02-apify-account-acceptance.md` wontfix.
+- Study + ADR 0002 + issues (commits 7c8bcd0c, ff9eca16, 886b997b).
+- `agents` service: `scripts/agents-runner.mjs` (clock only, no DB creds,
+  no model key) -> `POST /api/agent/tick` (`AGENT_RUNNER_SECRET`, off unless
+  `AGENTS_ENABLED=true`).
+- `src/lib/agents/tick.ts`: one bounded step per tick (follow-ups; one
+  contact; or one sourcing step). Deps in `src/lib/agents/server/deps.ts`;
+  authority (`ownerAuthority`: delegation + scope + workspace + role) in
+  `authority.ts`; `workspace_state` writes with the concurrency token in
+  `workspace.ts`; server copy in `draft.ts`; pure rules in
+  `src/lib/agents/autopilot.ts` (eligibility, top N, plan, note <= 300).
+- `src/lib/linkedin-bridge/agent.ts`: the agents' only way into the outbox
+  (`agentMayQueue` re-reads autopilot + delegation before each insert).
+- Migration `0009_agents_runner.sql`: `agent_delegations`,
+  `agent_campaign_autopilots`, `agent_missions`, `agent_outreach`
+  (service role only).
+- `/api/agent/autopilot` + `src/components/agents/campaign-autopilot-card.tsx`
+  on the campaign page (settings, consent, run now, turn off, stop all agents,
+  contacts and missions).
+- Docs: DOCKER.md (six services), docs/linkedin-bridge.md ("Campaign
+  autopilot"), ADR 0002 implementation notes, linkedin-policy header.
 
 ## Blockers
 
-- None in code. Still unverified live on LinkedIn: the invitation endpoint,
-  the relationship shape of the profile read, stub matching on a real inbox.
+- None in code. The live POC needs the owner: his extension running, an
+  autopilot on a campaign of his.
 
 ## Next steps
 
-00. (Likely fixed in shift 462 by Caddy keepalive off.) If "[linkedin] ... candidate read failed (CODE: ...)" shows in the app
-    logs, investigate the RPC failure with that code (suspect: PostgREST
-    pool of 10 under SSE load).
-0. Owner: reload the ARIA extension (0.3.0) in chrome://extensions, reload
-   ARIA, open a candidate -> header "LinkedIn" button / LinkedIn tab ->
-   "Reveal profile (logged)" -> invite or message. Push the local commits
-   when satisfied.
-1. Owner: review the 3 local commits, push when satisfied (`git push origin
-   mbe-branch`). Reload ARIA tabs (the stack here already runs the new app).
-2. Owner: in Chrome, reload the ARIA extension (0.3.0) if not done; open a
-   real sourced candidate with a LinkedIn URL; first look, then invite or
-   message. Report anything odd in the LinkedIn section.
-3. Tony: sign in as tony@aria.local on his machine (`docker compose up
-   --build`, then `npm run demo:user -- --email tony@aria.local --name "Tony"`),
-   own Chrome profile + extension, Settings › Integrations › LinkedIn.
-4. Live check of "LinkedIn via web search" with a real Anthropic key
-   (`docs/LOCAL-SOURCING-TEST.md`, now written for web search + GitHub).
-5. Codex: re-audit and close the 2026-07-19 "direct sourcing adapters"
-   finding if satisfied (move it to the closed-findings archive).
-6. Before any new enrichment provider: fix the orchestrator gaps listed in
-   the enrichment-spend finding (throwing runner leaks its claim; budget gate
-   ignores the provider's cost; zero-cost registry entry never settles a real
-   cost; failed results counted in spend), and re-apply identity-lookup
-   hygiene in the runner (`clearIdentityResolution`).
-7. Carried over: withdraw a pending invitation; per-candidate history
-   backfill; link "Draft LinkedIn message" to the bridge composer; web
-   search sourcing check; AI issue 04; store.ts split; chat multi-turn.
+1. Owner, live B2 test: Chrome open with the ARIA extension (0.3.0) paired;
+   pick ONE campaign in Sourcing/Outreach with a reviewed brief; campaign
+   page -> Autopilot card -> settings (e.g. contacts per run 1, min score
+   80) -> tick the consent -> Turn on autopilot -> Run now. Watch the card
+   (Picked -> Checking LinkedIn -> Waiting for your browser -> Sent) and
+   `docker compose logs -f agents`. Raise `AI_*_BUDGET_USD` if needed.
+2. Record the result in `.scratch/autonomous-agents/issues/06-missions-m2-m3.md`
+   (resolve it if a real invitation/message went out).
+3. Issue 07 (VM bridge host): Linux VM with a visible Chrome (Xvfb + noVNC
+   or a desktop), one Chrome profile per user, extension pointed at the
+   server's HTTPS origin; keep the daily log listed in the issue for 7 days.
+4. Issue 10 (server config) before any non-local deployment: the compose
+   file holds public sample secrets, including `AGENT_RUNNER_SECRET`.
+5. Follow-ups: separate AI caps for agents; issue 08 (manager email after a
+   confirmed send; `campaign.hiringManagerEmail` already exists); issue 09
+   (mailbox intake).
+6. Carried over from shift 463: owner reloads the extension (0.3.0); Tony's
+   setup; Codex re-audits (direct sourcing adapters finding, enrichment
+   orchestrator gaps); withdraw invitation; store.ts split.
+7. Codex audit focus: `src/lib/linkedin-bridge/agent.ts`,
+   `src/lib/agents/tick.ts` (crash/idempotency: message_id recorded before
+   the workspace write; outbox dedupe on candidate+kind),
+   `src/app/api/agent/autopilot/route.ts` (ownership takeover rules),
+   `src/lib/agents/server/workspace.ts` (conflict retry vs the browser store).
 
 ## Decisions made (don't relitigate)
 
+- Owner 2026-11-09 (shift 463/464), ADR 0002 (`docs/adr/0002-agents-runner.md`):
+  an `agents` Compose service is allowed (amends ADR 0001). The campaign
+  autopilot may queue LinkedIn invitations/messages WITHOUT a click per
+  message, from the campaign owner's own paired account, under a standing
+  approval the owner signs per campaign. POC goal: "is it possible", owner
+  accepts the account risk. Sender = the autopilot owner (the user who
+  turned it on); each user pairs their own LinkedIn.
+- Owner 2026-11-09: VM POC (B3) = real visible Chrome, one profile per user,
+  each user signs in to LinkedIn there themselves. NO session-cookie copy, NO
+  proxies / fingerprint changes / random delays (re-confirmed). App and
+  agents run on a server; the VM is only for the browsers.
+- Owner 2026-11-09: higher AI budget is fine. GDPR for algorithm-decided
+  contacts: "later, the project is not ready" (do not block on it).
 - Owner 2026-11-09 (shift 462): approving a LinkedIn outreach message is the
   human decision to send it: approval queues it on LinkedIn (no separate
   "manual send" or send click). Still never automatic: nothing queues a
@@ -227,7 +131,8 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
   evasion": runs in the owner's real browser, no proxy, no headless browser,
   no fingerprint spoofing, no random "human" delays; fixed pacing only
   (40/24 h, 90 s gap, env-tunable). Every send is one human click; nothing
-  automated (agents, sequences) can queue a LinkedIn message.
+  automated can queue a LinkedIn message, EXCEPT the campaign autopilot of
+  ADR 0002 (2026-11-09).
 - The existing outreach pipeline stays assisted-manual for LinkedIn
   (`src/lib/linkedin-policy.ts`, `getOutboundChannelPolicy`, guardrail
   prompt unchanged). The bridge is a separate, flag-gated path.
@@ -251,7 +156,8 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
   validated by the owner (2026-10-30).
 - Model per task: Haiku for classify/extract, Sonnet for chat, outreach and
   sourcing, Opus only by explicit choice.
-- Agents run in-process, client-side on top of store actions (ADR 0001).
+- Browser missions (Run Aria, Triage inbox, follow-ups) still run client-side
+  on store actions; the campaign autopilot runs server-side (ADR 0002).
 - Sourcing spends only an admin vault key; the env/.secret key serves chat and
   local dev. Deterministic fallbacks everywhere; human approval before any send.
 - UX: English UI ("Talent pool"), one /100 score, no personal credit (Mantu
@@ -263,6 +169,22 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
 
 ## Watch out
 
+- `.env.local` on this Mac now has `AGENTS_ENABLED=true` (added shift 464).
+  The runner ticks every minute but nothing runs until someone turns on an
+  autopilot. Turning one on in the owner's workspace WILL contact real
+  people from the owner's LinkedIn when his extension is running.
+- `linkedin-e2e@bridge-e2e.test`: its password was reset in shift 464 (GoTrue
+  admin API, local sample service key) for the agents e2e; set a new one the
+  same way when needed. Its workspace was restored after the test
+  (campaign back to Interviewing, Linus Sourced, GitHub additions removed,
+  agent rows and the simulated bridge account deleted). Its sourcing job and
+  provider receipt rows remain.
+- Do not pass a short `ARIA_RELEASE_SHA` to `docker compose build`: the
+  metadata script rejects it; leave it unset.
+- The app image is now tagged `aria-sourcing-app:local` and shared by the
+  `agents` service (`pull_policy: never`).
+- Agents spend the shared AI caps (`AI_MONTHLY_BUDGET_USD`, default 30;
+  `AI_DAILY_BUDGET_USD`, default 6). Raise them in `.env.local` for longer runs.
 - `tests/store-contracts.mts` pins the store action count (118): removing or
   adding an action updates it.
 - `tests/sourcing-provider-egress-structure.mts` pins the probe allowlist:
@@ -307,5 +229,5 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
 - Several files use CRLF line endings: multi-line `perl`/`sed` edits silently
   miss on them; use the Edit tool.
 - `.next/types` keeps stale routes after a page moves: `npx next typegen`.
-- Missions run in the browser: closing the tab stops queued agents.
+- Browser missions stop when the tab closes; the autopilot does not (server).
 - Under tsx a module can load twice; use `isAgentTimeout`, not `instanceof`.
