@@ -1,15 +1,19 @@
 ---
 project: MSourcing / ARIA
-shift: 457
+shift: 458
 agent: claude-code
 updated: 2026-11-09
-status: candidate-panel-redesigned
+status: add-candidate-from-linkedin
 ---
 
-# Handoff - Shift 457
+# Handoff - Shift 458
 
 ## Current state
 
+- Shift 458 (2026-11-09): commit da301b17, "Add candidate" from a LinkedIn
+  profile (see "Done this shift"). Gate exit 0; candidate e2e 39/39, three
+  runs in a row (space runs >= 60 s apart: the bridge user rate limit is
+  120 requests/min and back-to-back runs hit 429).
 - Shift 457 (2026-11-09): commit 56e9c83b, candidate panel redesign (see
   "Done this shift"). Gate exit 0 (typecheck, typecheck:tests, npm test,
   eslint on touched files); candidate e2e 32/32 on the rebuilt stack.
@@ -47,6 +51,32 @@ status: candidate-panel-redesigned
   `_relay/archive/2026-11-06-2233-claude-code.md`).
 
 ## Done this shift
+
+Shift 458. Owner (2026-11-09): "add a feature to look for a candidate to
+source: I know someone on LinkedIn and want to add them manually to a
+campaign's candidates."
+
+- Candidates page header: `AddCandidateButton` (campaign picker). Tabs:
+  LinkedIn profile (default) / GitHub username / Manual
+  (`src/components/candidates/add-candidate-dialog.tsx`).
+- LinkedIn tab = `src/components/linkedin/profile-lookup.tsx`: Search link to
+  LinkedIn's people search (new tab, user picks), profile URL, "Look up"
+  through the bridge, prefill (name, `splitHeadline` -> title/company),
+  connection status.
+- Server (`/api/linkedin/candidates` POST): `preview` (contact keyed
+  `prospect:<public id>`, `PROSPECT_PREFIX` in server.ts, answer reused for
+  24 h), `adopt` (prospect -> candidate, same profile required, conversations
+  linked), `discard`. Prospects never own conversations
+  (`candidateMembers` filter, `applyProfileCard` skip).
+- Manual intake stores a LinkedIn URL as canonical `linkedinUrl`
+  (`src/lib/linkedin-profile-url.ts`), platform LinkedIn, company; returns
+  `candidateIds`. After add: `/candidates?focus=<id>&added=1&tab=linkedin`,
+  drawer `initialTab` + `revealOnOpen` (logged reveal).
+- Logging: `[linkedin] ...` lines (code + message only) when a message or
+  invitation cannot be queued. One e2e run hit "candidate read failed" from
+  the `linkedin_bridge_candidate` RPC (before the code was logged); not
+  reproduced in 6 later runs. Watch `docker logs aria-sourcing-app-1 | grep
+  "\[linkedin\]"`.
 
 Shift 457. Owner (2026-11-09): "make the candidate panel clearer and wider;
 from it, connect with the candidate on LinkedIn and write to them if already
@@ -96,6 +126,9 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
 
 ## Next steps
 
+00. If "[linkedin] ... candidate read failed (CODE: ...)" shows in the app
+    logs, investigate the RPC failure with that code (suspect: PostgREST
+    pool of 10 under SSE load).
 0. Owner: reload the ARIA extension (0.3.0) in chrome://extensions, reload
    ARIA, open a candidate -> header "LinkedIn" button / LinkedIn tab ->
    "Reveal profile (logged)" -> invite or message. Push the local commits
