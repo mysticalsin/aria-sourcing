@@ -17,14 +17,17 @@ export function Composer({
   hint,
   onSend,
   autoFocus,
+  initialText = "",
 }: {
   placeholder: string;
   disabled?: boolean;
   hint?: React.ReactNode;
   onSend: (text: string) => void | Promise<unknown>;
   autoFocus?: boolean;
+  /** Prefilled text (an approved outreach draft); still sent by a click. */
+  initialText?: string;
 }) {
-  const [text, setText] = React.useState("");
+  const [text, setText] = React.useState(initialText);
   const area = React.useRef<HTMLTextAreaElement>(null);
 
   React.useLayoutEffect(() => {

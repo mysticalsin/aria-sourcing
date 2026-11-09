@@ -70,8 +70,18 @@ function RelationshipChip({ contact, checking }: { contact: Contact | null; chec
   );
 }
 
-function InviteForm({ firstName, limit, onInvite }: { firstName: string; limit: number; onInvite: (note: string) => Promise<boolean> }) {
-  const [note, setNote] = React.useState("");
+function InviteForm({
+  firstName,
+  limit,
+  onInvite,
+  initialNote = "",
+}: {
+  firstName: string;
+  limit: number;
+  onInvite: (note: string) => Promise<boolean>;
+  initialNote?: string;
+}) {
+  const [note, setNote] = React.useState(initialNote);
   const [busy, setBusy] = React.useState(false);
   return (
     <form
@@ -118,6 +128,7 @@ export function CandidateLinkedIn({
   linkedinUrl,
   contactBlocked,
   threadClassName = "h-[440px]",
+  draft,
 }: {
   candidateId: string;
   name: string;
@@ -126,6 +137,9 @@ export function CandidateLinkedIn({
   contactBlocked: string | null;
   /** Height of the conversation box. */
   threadClassName?: string;
+  /** An approved outreach draft to send from here: prefilled, still sent by a
+   *  click. `onSent` runs when the exact approved text was queued. */
+  draft?: { text: string; onSent: () => void } | null;
 }) {
   const { toast } = useToast();
   const { state, contact } = useCandidateLinkedIn(candidateId);
@@ -158,6 +172,12 @@ export function CandidateLinkedIn({
     toast({ title: success, variant: "success" });
     return true;
   }
+
+  const draftText = draft?.text.trim() ?? "";
+  const sentDraft = (text: string) => {
+    if (draft && draftText && text.trim() === draftText) draft.onSent();
+  };
+  const draftFitsNote = draftText.length > 0 && draftText.length <= state.inviteNoteLimit;
 
   const checking = !contact || contact.checking;
   const waitMs = state.nextWriteAt ? Date.parse(state.nextWriteAt) - now : 0;
@@ -201,6 +221,8 @@ export function CandidateLinkedIn({
             syncing={Boolean(extension.status?.running)}
             nudge={nudge}
             onChanged={refreshLinkedIn}
+            initialText={draftText || undefined}
+            onSent={sentDraft}
           />
         </div>
       );
@@ -216,18 +238,33 @@ export function CandidateLinkedIn({
             <Composer
               placeholder={`Message ${firstName}…`}
               disabled={Boolean(pendingBusy)}
-              onSend={(text) => act(() => messageCandidate(candidateId, text), "Message queued: it leaves within seconds.")}
+              initialText={draftText || undefined}
+              onSend={async (text) => {
+                if (await act(() => messageCandidate(candidateId, text), "Message queued: it leaves within seconds.")) sentDraft(text);
+              }}
               hint={account?.online ? "Leaves from your LinkedIn account within seconds." : "The extension is offline: it leaves when Chrome is back."}
             />
           </div>
         );
       } else if (contact.relationship === "none") {
         main = pendingBusy ? null : (
-          <InviteForm
-            firstName={firstName}
-            limit={state.inviteNoteLimit}
-            onInvite={(note) => act(() => inviteCandidate(candidateId, note), "Invitation queued: it leaves within seconds.")}
-          />
+          <div className="space-y-2">
+            {draftText && !draftFitsNote && (
+              <p className="rounded-lg bg-[#0a66c2]/[0.07] px-3 py-2 text-xs text-[#0a66c2]">
+                The approved message ({draftText.length} characters) is longer than an invitation note ({state.inviteNoteLimit}). Invite {firstName} first; send the message once they accept.
+              </p>
+            )}
+            <InviteForm
+              firstName={firstName}
+              limit={state.inviteNoteLimit}
+              initialNote={draftFitsNote ? draftText : ""}
+              onInvite={async (note) => {
+                const ok = await act(() => inviteCandidate(candidateId, note), "Invitation queued: it leaves within seconds.");
+                if (ok) sentDraft(note);
+                return ok;
+              }}
+            />
+          </div>
         );
       } else if (contact.relationship === "pending") {
         main = (

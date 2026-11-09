@@ -569,8 +569,13 @@ test("only a signed-in person can queue a message or an invitation; the extensio
   const thread = readFileSync("src/components/linkedin/thread-view.tsx", "utf8");
   assert.match(thread, /async function send\(text: string\)/);
   const panel = readFileSync("src/components/linkedin/candidate-linkedin.tsx", "utf8");
-  assert.match(panel, /onInvite=\{\(note\) => act\(\(\) => inviteCandidate\(candidateId, note\)/);
-  assert.match(panel, /onSend=\{\(text\) => act\(\(\) => messageCandidate\(candidateId, text\)/);
+  assert.match(panel, /onInvite=\{async \(note\) => \{\s*const ok = await act\(\(\) => inviteCandidate\(candidateId, note\)/);
+  assert.match(panel, /onSend=\{async \(text\) => \{\s*if \(await act\(\(\) => messageCandidate\(candidateId, text\)/);
+  // An approved outreach draft is only prefilled: the composer sends on submit (a click or Ctrl+Enter).
+  const composer = readFileSync("src/components/linkedin/composer.tsx", "utf8");
+  assert.match(composer, /const \[text, setText\] = React\.useState\(initialText\)/);
+  assert.match(composer, /<form onSubmit=\{submit\}/);
+  assert.equal((composer.match(/onSend\(/g) ?? []).length, 1, "one send path");
   const usesOf = (name: string) => all.filter((path) => new RegExp(`\\b${name}\\(`).test(readFileSync(path, "utf8")));
   assert.deepEqual(usesOf("inviteCandidate").sort(), ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts"]);
   assert.deepEqual(usesOf("messageCandidate").sort(), ["src/components/linkedin/candidate-linkedin.tsx", "src/components/linkedin/linkedin-store.ts"]);

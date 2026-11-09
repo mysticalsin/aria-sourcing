@@ -67,6 +67,15 @@ unless `LINKEDIN_BRIDGE_ENABLED=true`. Owner requests, 2026-11-06, on
   linked; **Cancel** forgets it (`discard`). The new candidate's panel opens
   on its LinkedIn tab, unmasked (logged as a reveal) since the user just
   entered the identity.
+- **Approved outreach drafts.** A LinkedIn draft approved in Outreach waits in
+  "Pending manual send". **Send with my LinkedIn** opens the candidate's
+  LinkedIn tab with the approved text prefilled in the message box (or the
+  invitation note when they are not connected and it fits in 300 characters).
+  Nothing leaves until the user clicks Send. When the exact approved text is
+  queued, the outreach is confirmed as sent (`confirmManualSend`: candidate
+  Contacted, history and ledger). An edited text is sent as a normal message
+  and the outreach stays pending (confirm it by hand). Copy-paste remains
+  available.
 - Endpoints, payloads and the relationship shape come from third-party
   captures of the web client (2026); verify on the first live run.
 

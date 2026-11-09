@@ -648,6 +648,7 @@ function CandidatesView() {
         onClose={() => setDrawerOpen(false)}
         initialTab={selected?.id === focus ? focusTab : "overview"}
         revealOnOpen={selected?.id === focus && searchParams.get("added") === "1"}
+        linkedInOutreachId={selected?.id === focus ? searchParams.get("outreach") : null}
       />
     </HydrationGate>
   );

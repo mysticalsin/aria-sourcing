@@ -51,6 +51,8 @@ export function ThreadView({
   syncing,
   nudge,
   onChanged,
+  initialText,
+  onSent,
 }: {
   conversationId: string;
   /** Who the thread is with, when ARIA knows better than LinkedIn's copy (the candidate's name). */
@@ -64,6 +66,10 @@ export function ThreadView({
   syncing: boolean;
   nudge: () => void;
   onChanged: () => void;
+  /** Prefilled message (an approved outreach draft). */
+  initialText?: string;
+  /** Called with the text once LinkedIn's outbox accepted it. */
+  onSent?: (text: string) => void;
 }) {
   const reduced = usePrefersReducedMotion();
   const { toast } = useToast();
@@ -126,6 +132,7 @@ export function ThreadView({
       return;
     }
     aliases.current.set(res.data.item.id, key);
+    onSent?.(text);
     setLocals((items) => items.map((i) => (i.key === key ? { ...i, serverId: res.data.item.id } : i)));
     nudge();
     onChanged();
@@ -334,6 +341,7 @@ export function ThreadView({
       <Composer
         placeholder={`Message ${(person?.name || name).split(" ")[0]}…`}
         onSend={send}
+        initialText={initialText}
         hint={
           extensionOnline
             ? "Leaves from your LinkedIn account within seconds."

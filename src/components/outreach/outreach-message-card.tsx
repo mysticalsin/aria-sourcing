@@ -356,10 +356,24 @@ export function OutreachMessageCard({
               <div>
                 <p className="font-semibold">LinkedIn message ready: manual send required</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  Aria cannot send LinkedIn messages automatically. Copy the draft, open the candidate&apos;s profile, paste it, then confirm here.
+                  Aria never sends LinkedIn messages on its own. Send it from your LinkedIn in one click below, or copy it, paste it on LinkedIn and confirm here.
                 </p>
               </div>
             </div>
+            {candidate?.linkedinUrl && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface/70 px-3 py-2.5 text-ink">
+                <span className="min-w-0 flex-1 text-sm">
+                  LinkedIn connected in ARIA? Send it from your own LinkedIn without copy-paste: the message opens ready in {name.split(" ")[0]}&apos;s LinkedIn tab.
+                </span>
+                <Link
+                  href={`/candidates?focus=${encodeURIComponent(message.candidateId)}&tab=linkedin&outreach=${encodeURIComponent(message.id)}`}
+                  data-send-with-linkedin
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#0a66c2] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#004182]"
+                >
+                  <Linkedin className="h-4 w-4" aria-hidden /> Send with my LinkedIn
+                </Link>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"

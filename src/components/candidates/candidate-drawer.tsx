@@ -469,6 +469,7 @@ export function CandidateDrawer({
   onClose,
   initialTab = "overview",
   revealOnOpen = false,
+  linkedInOutreachId = null,
 }: {
   candidate: Candidate | null;
   open: boolean;
@@ -478,6 +479,8 @@ export function CandidateDrawer({
   /** The operator just added this person themselves: show them unmasked,
    *  and log it as a reveal, as a click on "Reveal" would. */
   revealOnOpen?: boolean;
+  /** An approved LinkedIn outreach draft to send from the LinkedIn tab. */
+  linkedInOutreachId?: string | null;
 }) {
   const actions = useActions();
   const role = useRole();
@@ -699,6 +702,12 @@ export function CandidateDrawer({
   // always reflect the most recent personalization. View-only lookup via the
   // existing useOutreach() selector — no new store state.
   const outreach = useOutreach();
+  const linkedInDraft = useMemo(() => {
+    const message = linkedInOutreachId ? outreach.find((m) => m.id === linkedInOutreachId) : undefined;
+    return message && message.channel === "LinkedIn" && message.status === "Pending Manual Send" && message.candidateId === candidate?.id
+      ? message
+      : null;
+  }, [linkedInOutreachId, outreach, candidate?.id]);
   const latestOutreachMessage = useMemo(() => {
     if (!candidateId) return undefined;
     return outreach
@@ -1203,6 +1212,15 @@ export function CandidateDrawer({
     toast({ title: "Contact restored", description: `${c.name} is eligible for outreach again.`, variant: "success" });
   };
 
+  const confirmLinkedInDraft = (messageId: string) => {
+    const res = actions.confirmManualSend(messageId);
+    if (res.ok) {
+      toast({ title: "Outreach marked as sent", description: "Sent from your LinkedIn. The candidate is marked as contacted.", variant: "success" });
+    } else {
+      toast({ title: "Outreach not updated", description: res.error, variant: "warning" });
+    }
+  };
+
   const handleReveal = () => {
     if (revealed) return;
     setRevealed(true);
@@ -1685,13 +1703,25 @@ export function CandidateDrawer({
               </Button>
             </div>
           ) : (
-            <CandidateLinkedIn
-              candidateId={c.id}
-              name={c.name}
-              linkedinUrl={c.linkedinUrl}
-              contactBlocked={linkedInContactBlock(c.complianceFlags)}
-              threadClassName="h-[min(560px,60vh)]"
-            />
+            <div className="space-y-4">
+              {linkedInDraft && (
+                <p className="flex items-start gap-2 rounded-xl border border-[#0a66c2]/20 bg-[#0a66c2]/[0.06] px-3 py-2.5 text-sm text-ink" data-outreach-draft>
+                  <Send className="mt-0.5 h-4 w-4 shrink-0 text-[#0a66c2]" aria-hidden />
+                  <span>
+                    Your approved outreach message is ready below. Review it and click Send: it leaves from your LinkedIn,
+                    and the outreach is marked as sent.
+                  </span>
+                </p>
+              )}
+              <CandidateLinkedIn
+                candidateId={c.id}
+                name={c.name}
+                linkedinUrl={c.linkedinUrl}
+                contactBlocked={linkedInContactBlock(c.complianceFlags)}
+                threadClassName="h-[min(560px,60vh)]"
+                draft={linkedInDraft ? { text: linkedInDraft.body, onSent: () => confirmLinkedInDraft(linkedInDraft.id) } : null}
+              />
+            </div>
           )}
         </TabPanel>
 
