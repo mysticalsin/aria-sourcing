@@ -40,7 +40,6 @@ import {
   Repeat,
   ArrowUpRight,
   Copy,
-  ExternalLink,
   Clock,
 } from "lucide-react";
 
@@ -208,13 +207,12 @@ export function OutreachMessageCard({
     }
   }
 
-  function handleOpenLinkedIn() {
-    const url = candidate?.linkedinUrl;
-    if (!url) {
-      toast({ title: "No LinkedIn URL", description: "This candidate has no LinkedIn profile on file.", variant: "error" });
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
+  const [sendingLinkedIn, setSendingLinkedIn] = React.useState(false);
+  async function handleSendPendingOnLinkedIn() {
+    if (sendingLinkedIn) return;
+    setSendingLinkedIn(true);
+    await deliverOnLinkedIn(message);
+    setSendingLinkedIn(false);
   }
 
   function handleConfirmManualSend() {
@@ -355,58 +353,53 @@ export function OutreachMessageCard({
           />
         </Field>
 
-        {/* LinkedIn assisted-manual send panel */}
+        {/* LinkedIn: approved, not sent yet */}
         {pendingManual && (
           <div className="space-y-3 rounded-2xl bg-tangerine-soft px-3.5 py-3 text-sm text-tangerine ring-1 ring-inset ring-tangerine/20">
             <div className="flex items-start gap-2.5">
               <Linkedin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <div>
-                <p className="font-semibold">LinkedIn message ready: manual send required</p>
+                <p className="font-semibold">Approved LinkedIn message, not sent yet</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  Aria never sends LinkedIn messages on its own. Send it from your LinkedIn in one click below, or copy it, paste it on LinkedIn and confirm here.
+                  Send it from your LinkedIn now. If you already sent it yourself (copy-paste), record it instead.
                 </p>
               </div>
             </div>
-            {candidate?.linkedinUrl && (
-              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface/70 px-3 py-2.5 text-ink">
-                <span className="min-w-0 flex-1 text-sm">
-                  LinkedIn connected in ARIA? Send it from your own LinkedIn without copy-paste: the message opens ready in {name.split(" ")[0]}&apos;s LinkedIn tab.
-                </span>
-                <Link
-                  href={`/candidates?focus=${encodeURIComponent(message.candidateId)}&tab=linkedin&outreach=${encodeURIComponent(message.id)}`}
-                  data-send-with-linkedin
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#0a66c2] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#004182]"
-                >
-                  <Linkedin className="h-4 w-4" aria-hidden /> Send with my LinkedIn
-                </Link>
-              </div>
-            )}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
-                variant="outline"
-                leftIcon={<Copy className="h-4 w-4" />}
-                onClick={handleCopyMessage}
-              >
-                {copied ? "Copied" : "Copy message"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                leftIcon={<ExternalLink className="h-4 w-4" />}
-                onClick={handleOpenLinkedIn}
-                disabled={!candidate?.linkedinUrl}
-              >
-                Open LinkedIn
-              </Button>
-              <Button
-                size="sm"
                 variant="primary"
-                leftIcon={<Check className="h-4 w-4" />}
-                onClick={handleConfirmManualSend}
+                leftIcon={<Linkedin className="h-4 w-4" />}
+                onClick={handleSendPendingOnLinkedIn}
+                loading={sendingLinkedIn}
+                disabled={sendingLinkedIn || !candidate?.linkedinUrl}
+                data-send-on-linkedin
               >
-                Confirm manual send
+                {sendingLinkedIn ? "Sending…" : "Send on LinkedIn"}
               </Button>
+              {candidate?.linkedinUrl && (
+                <Link
+                  href={`/candidates?focus=${encodeURIComponent(message.candidateId)}&tab=linkedin&outreach=${encodeURIComponent(message.id)}`}
+                  data-send-with-linkedin
+                  className="text-sm font-semibold text-[#0a66c2] underline-offset-2 hover:underline"
+                >
+                  Edit in {name.split(" ")[0]}&apos;s LinkedIn tab
+                </Link>
+              )}
+              <span className="ml-auto flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="ghost" leftIcon={<Copy className="h-4 w-4" />} onClick={handleCopyMessage}>
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  leftIcon={<Check className="h-4 w-4" />}
+                  onClick={handleConfirmManualSend}
+                  title="Records that you sent this message yourself on LinkedIn. It sends nothing."
+                >
+                  I sent it myself
+                </Button>
+              </span>
             </div>
           </div>
         )}
