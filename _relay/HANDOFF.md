@@ -1,103 +1,66 @@
 ---
 project: MSourcing / ARIA
-shift: 464
+shift: 465
 agent: claude-code
 updated: 2026-11-09
-status: agents-autopilot-poc-built
+status: demo-video-recorded
 ---
 
-# Handoff - Shift 464
+# Handoff - Shift 465
 
 ## Current state
 
-- Branch mbe-branch, local only (not pushed). HEAD = this baton on top of:
-  1006fdc1 agents runner service + Autopilot card, 5f0a2166 campaign
-  autopilot (tick, routes, bridge agent entry, migration 0009), 8479dbab
-  refactor (shared transitions/prompts/vault/sourcing providers).
-- Gate on 1006fdc1's tree: typecheck, typecheck:tests, npm test exit 0;
-  eslint clean on every touched file. New suite `agents-autopilot` (13
-  tests, fakes); `linkedin-bridge` 32/32 with the rewritten invariant.
-- Stack on this Mac rebuilt from 1006fdc1: 6 running services (agents is
-  new), migration 0009 applied, `/api/ready` 200, `POST /api/agent/tick`
-  401 with a wrong secret, `idle` with the right one. No autopilot exists
-  in any workspace.
-- Verified on the real local DB, e2e workspace only: run-now -> source-start
-  -> source-advance (GitHub, 3 added) -> source-finished (picked Linus, 85)
-  -> contact failed "no LinkedIn connected". With a simulated paired account
-  (no extension) and relationship `none`: invitation queued in the outbox
-  (template copy, 299 chars), outreach "Pending Manual Send" approved by
-  "ARIA agent for linkedin-e2e"; outbox set to `sent` by hand -> next tick:
-  candidate Contacted, message Scheduled, two campaign activities. UI card
-  screenshotted at 1440 and 390 px, no horizontal overflow.
-- NOT verified: a real LinkedIn send by the agent (needs the owner's paired
-  extension running and an autopilot on one of his campaigns); a Claude-
-  written note (the e2e workspace has no Anthropic key, template used).
-- Study, decisions and issues: `.scratch/autonomous-agents/` (issues 01-05
-  resolved, 06 ready-for-human (live run), 07 VM POC ready-for-human,
-  08-10 needs-triage).
-- Earlier shifts' state (LinkedIn bridge, candidate panel, Apify retired):
-  `_relay/archive/2026-11-09-1430-claude-code.md`.
+- Branch mbe-branch, local only. Code unchanged since 1006fdc1 / d8c916d7
+  (this shift touched only local data, `_relay/` and `.scratch/`).
+- Owner request (2026-11-09, FR): an English 1080p demo video of the POC
+  with intro/outro (Mantu M + ARIA type) and English subtitles. Delivered:
+  `ARIA-demo-1080p.mp4` (1920x1080, H.264, 3:16) in the session scratchpad
+  `/private/tmp/claude-501/-Users-michaelbernard-amaris-aria-sourcing/c4e81ddc-3329-4d3c-8e02-0e01ec9765e7/scratchpad/demo/`
+  (temporary dir: copy it out). The recording kit is next to it
+  (`record.mjs`, `record2.mjs`, `edit.py`, `build.sh`, image `aria-demo:local`
+  = Playwright 1.61.1 noble + ffmpeg + Inter).
+- Local DB, owner workspace `00000000-...0001` (data, not code):
+  - all previous campaigns, candidates, outreach, activities, replies,
+    schedules, bookings, reports deleted (owner asked); AI cost ledger kept.
+    Backup before deletion: `scratchpad/demo/backup/pre-demo-2026-11-09.sql`
+    (temporary dir).
+  - now holds the demo data: campaign "Head of AI Transformation" (8 sourced
+    LinkedIn profiles + Tony Walteur added by hand, legitimate interest).
+  - a REAL LinkedIn message was sent to Tony (test account) at 14:11:28 UTC
+    via the bridge (outbox `sent`, visible in his conversation).
+  - `settings.minScoreToContact` was 25 during the recording (Tony scores
+    30), restored to 70.
+  - 6 orphan `linkedin_bridge_contacts` rows deleted, conversation 991d1a79
+    relinked to Tony's new candidate id (see issue below).
 
 ## Done this shift
 
-Owner (2026-11-09): "add a container to the infra to create agents on my
-Claude key: auto-source running campaigns, contact the 3 best on LinkedIn
-automatically, later email managers and read managers' mailboxes; later VMs
-with the app and the extension connected." Then decisions A-E, then "start
-coding, stop when done".
-
-- Study + ADR 0002 + issues (commits 7c8bcd0c, ff9eca16, 886b997b).
-- `agents` service: `scripts/agents-runner.mjs` (clock only, no DB creds,
-  no model key) -> `POST /api/agent/tick` (`AGENT_RUNNER_SECRET`, off unless
-  `AGENTS_ENABLED=true`).
-- `src/lib/agents/tick.ts`: one bounded step per tick (follow-ups; one
-  contact; or one sourcing step). Deps in `src/lib/agents/server/deps.ts`;
-  authority (`ownerAuthority`: delegation + scope + workspace + role) in
-  `authority.ts`; `workspace_state` writes with the concurrency token in
-  `workspace.ts`; server copy in `draft.ts`; pure rules in
-  `src/lib/agents/autopilot.ts` (eligibility, top N, plan, note <= 300).
-- `src/lib/linkedin-bridge/agent.ts`: the agents' only way into the outbox
-  (`agentMayQueue` re-reads autopilot + delegation before each insert).
-- Migration `0009_agents_runner.sql`: `agent_delegations`,
-  `agent_campaign_autopilots`, `agent_missions`, `agent_outreach`
-  (service role only).
-- `/api/agent/autopilot` + `src/components/agents/campaign-autopilot-card.tsx`
-  on the campaign page (settings, consent, run now, turn off, stop all agents,
-  contacts and missions).
-- Docs: DOCKER.md (six services), docs/linkedin-bridge.md ("Campaign
-  autopilot"), ADR 0002 implementation notes, linkedin-policy header.
+- Demo video: wipe, campaign from a pasted brief (parse, edit params, add a
+  skill), reviewed web-search sourcing (8 profiles), two profiles opened,
+  Tony added from his LinkedIn URL (look up through the extension), Claude
+  draft, approval in Outreach = send, sent message shown in the LinkedIn tab,
+  Reports overview, AI costs.
+- Found and filed `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`.
 
 ## Blockers
 
-- None in code. The live POC needs the owner: his extension running, an
-  autopilot on a campaign of his.
+- None.
 
 ## Next steps
 
-1. Owner, live B2 test: Chrome open with the ARIA extension (0.3.0) paired;
-   pick ONE campaign in Sourcing/Outreach with a reviewed brief; campaign
-   page -> Autopilot card -> settings (e.g. contacts per run 1, min score
-   80) -> tick the consent -> Turn on autopilot -> Run now. Watch the card
-   (Picked -> Checking LinkedIn -> Waiting for your browser -> Sent) and
-   `docker compose logs -f agents`. Raise `AI_*_BUDGET_USD` if needed.
-2. Record the result in `.scratch/autonomous-agents/issues/06-missions-m2-m3.md`
-   (resolve it if a real invitation/message went out).
-3. Issue 07 (VM bridge host): Linux VM with a visible Chrome (Xvfb + noVNC
-   or a desktop), one Chrome profile per user, extension pointed at the
-   server's HTTPS origin; keep the daily log listed in the issue for 7 days.
-4. Issue 10 (server config) before any non-local deployment: the compose
-   file holds public sample secrets, including `AGENT_RUNNER_SECRET`.
-5. Follow-ups: separate AI caps for agents; issue 08 (manager email after a
-   confirmed send; `campaign.hiringManagerEmail` already exists); issue 09
-   (mailbox intake).
-6. Carried over from shift 463: owner reloads the extension (0.3.0); Tony's
-   setup; Codex re-audits (direct sourcing adapters finding, enrichment
-   orchestrator gaps); withdraw invitation; store.ts split.
-7. Codex audit focus: `src/lib/linkedin-bridge/agent.ts`,
-   `src/lib/agents/tick.ts` (crash/idempotency: message_id recorded before
-   the workspace write; outbox dedupe on candidate+kind),
-   `src/app/api/agent/autopilot/route.ts` (ownership takeover rules),
-   `src/lib/agents/server/workspace.ts` (conflict retry vs the browser store).
+1. Owner: copy the video out of the scratchpad and review it.
+2. Fix issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`
+   (conversation stuck on a stale candidate id when the same member has
+   several contacts).
+3. UI wording seen on camera: the Outreach card for a LinkedIn message sent
+   through the bridge says "Approved / Queued for send ... Nothing sent live"
+   and Reports says "No real send yet, 1 simulated" while the message really
+   left via LinkedIn (dry-run applies to email only). Make both bridge-aware.
+4. A manually added candidate with a LinkedIn URL gets only name + headline
+   from the look-up; the score is low (30) and the default contact floor (70)
+   blocks approval. Consider pre-filling skills from the profile.
+5. Carried over from shift 464: live autopilot test (issue 06), VM POC
+   (issue 07), server config (issue 10), Codex audit of the agents code.
 
 ## Decisions made (don't relitigate)
 
