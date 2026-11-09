@@ -20,12 +20,14 @@ export function Tabs({
   onValueChange,
   className,
   idBase = "tab",
+  label = "Workspace sections",
 }: {
   items: TabItem[];
   value: string;
   onValueChange: (v: string) => void;
   className?: string;
   idBase?: string;
+  label?: string;
 }) {
   const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -44,7 +46,7 @@ export function Tabs({
   return (
     <div
       role="tablist"
-      aria-label="Workspace sections"
+      aria-label={label}
       className={cn(
         "flex gap-1 overflow-x-auto no-scrollbar rounded-full bg-violet/[0.05] p-1 ring-1 ring-inset ring-violet/[0.08]",
         className,

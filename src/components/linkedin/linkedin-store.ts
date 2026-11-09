@@ -204,6 +204,22 @@ export async function checkCandidate(candidateId: string) {
   return res;
 }
 
+const firstLooks = new Set<string>();
+
+/**
+ * The first look at a candidate on LinkedIn (relationship, conversation),
+ * once per candidate and tab: LinkedIn counts each look as a profile view.
+ * Null when it already ran; a failed look can be retried.
+ */
+export function firstLookCandidate(candidateId: string): Promise<Awaited<ReturnType<typeof checkCandidate>>> | null {
+  if (firstLooks.has(candidateId)) return null;
+  firstLooks.add(candidateId);
+  return checkCandidate(candidateId).then((res) => {
+    if (!res.ok) firstLooks.delete(candidateId);
+    return res;
+  });
+}
+
 export async function inviteCandidate(candidateId: string, note: string) {
   const res = await linkedInApi("/api/linkedin/candidates", postJson({ action: "invite", candidateId, note }));
   if (res.ok) void loadContacts();

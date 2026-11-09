@@ -10,13 +10,16 @@ import {
   Eyebrow,
   Input,
   Label,
+  TabPanel,
+  Tabs,
   useToast,
   useConfirm,
+  type TabItem,
 } from "@/components/ui";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
-import { CandidateLinkedIn, linkedInContactBlock } from "@/components/linkedin/candidate-linkedin";
+import { CandidateLinkedIn, LinkedInQuickAction, linkedInContactBlock } from "@/components/linkedin/candidate-linkedin";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import { candidateEnrichmentBlocker, candidateExclusionBlocker, candidateReview } from "@/lib/candidate-review";
@@ -232,6 +235,8 @@ function Section({
  *  before "Booked" advance automatically from outreach/reply activity, so only
  *  the human-decided outcomes need a control here. */
 const STAGE_ACTIONS: CandidateStage[] = ["Interviewed", "Offer", "Hired", "Rejected"];
+
+type CandidateTab = "overview" | "linkedin" | "evidence" | "history" | "compliance";
 
 function Chips({ items, label }: { items: string[]; label: string }) {
   if (items.length === 0) return <p className="text-sm text-muted">None recorded.</p>;
@@ -475,6 +480,7 @@ export function CandidateDrawer({
   const confidentialityMode = Boolean(settings.confidentialityMode);
   const apiKeys = useApiKeys();
   const [revealed, setRevealed] = useState(false);
+  const [tab, setTab] = useState<CandidateTab>("overview");
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
   const [erasing, setErasing] = useState(false);
@@ -557,6 +563,7 @@ export function CandidateDrawer({
   useEffect(() => {
     invalidateErasureRequests();
     setRevealed(false);
+    setTab("overview");
     setNoteText("");
     setErasing(false);
     setErasureNotice(null);
@@ -1209,6 +1216,15 @@ export function CandidateDrawer({
   const recentEnrichmentAttempts: EnrichmentAttempt[] =
     attemptsBaseline !== null ? (c.enrichment?.attempts ?? []).slice(attemptsBaseline) : [];
 
+  const historyCount = c.outreachHistory.length + c.replyHistory.length;
+  const drawerTabs: TabItem[] = [
+    { value: "overview", label: "Overview", icon: <Sparkles className="h-4 w-4" /> },
+    { value: "linkedin", label: "LinkedIn", icon: <Linkedin className="h-4 w-4" /> },
+    { value: "evidence", label: "Evidence & contact", icon: <Mail className="h-4 w-4" /> },
+    { value: "history", label: "Pipeline & history", icon: <Send className="h-4 w-4" />, count: historyCount || undefined },
+    { value: "compliance", label: "Compliance", icon: <ShieldCheck className="h-4 w-4" /> },
+  ];
+
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
       <Button
@@ -1244,6 +1260,7 @@ export function CandidateDrawer({
       >
         Review outreach queue
       </Link>
+      <p className="w-full text-xs text-muted">Drafting does not send a message. The exact text still requires human approval.</p>
     </div>
   );
 
@@ -1258,696 +1275,775 @@ export function CandidateDrawer({
           : [c.currentTitle, c.currentCompany].filter(Boolean).join(" @ ") || "Role not provided"
       }
       footer={footer}
-      width="max-w-2xl"
+      width="max-w-5xl"
     >
-      <div className="space-y-8 animate-fade-in">
-        <section aria-label="Candidate next action" className="space-y-3 rounded-2xl border border-electric/20 bg-electric-soft/30 p-4">
-          <Eyebrow>Next action</Eyebrow>
-          <h3 className="font-semibold text-ink">{review.label}</h3>
-          <p className="text-sm text-muted">{review.detail}</p>
-          <p className="text-xs text-muted">Observed requirements: {review.observedSkills.join(", ") || "None confirmed"}. Still to verify: {review.missingSkills.join(", ") || "No missing required skill recorded"}.</p>
-          {review.key === "permission" && <a href="#candidate-consent" className="text-sm font-semibold text-electric underline">Review consent passport</a>}
-          {review.key === "brief" && campaign && <Link href={`/campaigns/${campaign.id}`} className="text-sm font-semibold text-electric underline">Review campaign brief</Link>}
-          {(review.key === "fit" || review.key === "contact") && <a href="#candidate-enrichment" className="text-sm font-semibold text-electric underline">Review evidence and enrichment</a>}
-          <p className="text-xs text-muted">Drafting does not send a message. The exact text still requires human approval.</p>
-        </section>
-        <div className="space-y-3">
-          {dc.avatarUrl && <CandidateAvatar candidate={dc} size="lg" />}
-          {campaign && (
-            <Badge tone="electric" size="sm">
-              {campaign.title}
-            </Badge>
-          )}
-          {c.provenance === "synthetic" && (
-            <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
-              Synthetic
-            </Badge>
-          )}
-          {c.provenance === "manual" && (
-            <Badge tone="warning" size="sm" title="Operator-entered profile">
-              Manual
-            </Badge>
-          )}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <MapPin className="h-4 w-4" aria-hidden />
-              {c.location}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="h-4 w-4" aria-hidden />
-              {c.timezone}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4" aria-hidden />
-              {c.sourcePlatform}
-            </span>
-          </div>
-          <p className="rounded-2xl bg-ink/[0.03] px-3 py-2 font-mono text-xs text-ink-soft break-words">
-            {c.sourceQuery}
-          </p>
-          <div className="space-y-2.5">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
-              <span className="inline-flex items-center gap-1.5 text-ink-soft">
-                <Mail className="h-4 w-4" aria-hidden />
-                <span className={masked ? "font-mono text-muted" : "break-all"}>
-                  {dc.email}
+      <div className="space-y-6 animate-fade-in">
+        <div className="rounded-2xl border border-line bg-surface/80 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <CandidateAvatar candidate={dc} size="lg" />
+            <div className="min-w-0 flex-1 space-y-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge tone={toneForStage(c.stage)} size="sm" dot>
+                  {c.stage}
+                </Badge>
+                {campaign && (
+                  <Badge tone="electric" size="sm">
+                    {campaign.title}
+                  </Badge>
+                )}
+                {c.provenance === "synthetic" && (
+                  <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
+                    Synthetic
+                  </Badge>
+                )}
+                {c.provenance === "manual" && (
+                  <Badge tone="warning" size="sm" title="Operator-entered profile">
+                    Manual
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted">
+                {c.location && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4" aria-hidden />
+                    {c.location}
+                  </span>
+                )}
+                {c.timezone && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Clock className="h-4 w-4" aria-hidden />
+                    {c.timezone}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4" aria-hidden />
+                  Found via {c.sourcePlatform}
                 </span>
-              </span>
-              {masked && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-violet">
-                  <Lock className="h-3.5 w-3.5" aria-hidden />
-                  PII minimized (confidential)
-                </span>
-              )}
-            </div>
-            {!masked && !erasureTombstone && (
+              </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
                 <span className="inline-flex items-center gap-1.5 text-ink-soft">
-                  <Phone className="h-4 w-4" aria-hidden />
-                  <input
-                    key={c.id}
-                    type="tel"
-                    defaultValue={c.phone ?? ""}
-                    onChange={handlePhoneChange}
-                    placeholder="Add phone number"
-                    aria-label="Candidate phone number"
-                    className="w-56 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink placeholder:text-muted"
-                  />
+                  <Mail className="h-4 w-4" aria-hidden />
+                  <span className={masked ? "font-mono text-muted" : dc.email ? "break-all" : "text-muted"}>
+                    {dc.email || "No email recorded"}
+                  </span>
                 </span>
+                {masked && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-violet">
+                    <Lock className="h-3.5 w-3.5" aria-hidden />
+                    PII minimized (confidential)
+                  </span>
+                )}
+              </div>
+              {!masked && !erasureTombstone && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+                  <span className="inline-flex items-center gap-1.5 text-ink-soft">
+                    <Phone className="h-4 w-4" aria-hidden />
+                    <input
+                      key={c.id}
+                      type="tel"
+                      defaultValue={c.phone ?? ""}
+                      onChange={handlePhoneChange}
+                      placeholder="Add phone number"
+                      aria-label="Candidate phone number"
+                      className="w-48 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm text-ink placeholder:text-muted hover:border-line focus:border-line focus:bg-surface"
+                    />
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {c.githubUrl &&
+                  (masked ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 font-mono text-xs font-semibold text-muted">
+                      <Github className="h-3.5 w-3.5" aria-hidden />
+                      {dc.githubUrl}
+                    </span>
+                  ) : (
+                    <a
+                      href={dc.githubUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/10"
+                    >
+                      <Github className="h-3.5 w-3.5" aria-hidden />
+                      GitHub
+                    </a>
+                  ))}
+                {c.linkedinUrl &&
+                  (masked ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 font-mono text-xs font-semibold text-muted">
+                      <Linkedin className="h-3.5 w-3.5" aria-hidden />
+                      {dc.linkedinUrl}
+                    </span>
+                  ) : (
+                    <a
+                      href={dc.linkedinUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/10"
+                    >
+                      <Linkedin className="h-3.5 w-3.5" aria-hidden />
+                      LinkedIn
+                    </a>
+                  ))}
+                {c.sourceUrl &&
+                  (masked ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 font-mono text-xs font-semibold text-muted">
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                      {dc.sourceUrl}
+                    </span>
+                  ) : (
+                    <a
+                      href={dc.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/10"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                      {c.sourcePlatform}
+                    </a>
+                  ))}
+                {masked && !erasureTombstone && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Eye className="h-4 w-4" />}
+                    onClick={handleReveal}
+                  >
+                    Reveal contact (logged)
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-row flex-wrap items-center gap-3 sm:flex-col sm:items-end">
+              <div className="sm:text-right">
+                <p className="text-3xl font-bold leading-none tabular-nums text-ink">{Math.round(c.matchScore)}</p>
+                <p className="mt-1 text-xs text-muted">match / 100</p>
+              </div>
+              {c.linkedinUrl && (
+                <LinkedInQuickAction
+                  candidateId={c.id}
+                  onOpen={() => setTab("linkedin")}
+                  autoCheck={!masked && !erasureTombstone && can(role, "outreach") && !linkedInContactBlock(c.complianceFlags)}
+                />
+              )}
+            </div>
+          </div>
+            {hasFlags && (
+              <div className="flex flex-wrap gap-1.5">
+                {flags.doNotContact && (
+                  <Badge tone="danger" size="sm" dot>
+                    Do not contact
+                  </Badge>
+                )}
+                {flags.suppressed && (
+                  <Badge tone="danger" size="sm" dot>
+                    Suppressed
+                  </Badge>
+                )}
+                {flags.unsubscribed && (
+                  <Badge tone="warning" size="sm" dot>
+                    Unsubscribed
+                  </Badge>
+                )}
+                {flags.anonymized && (
+                  <Badge tone="violet" size="sm" dot>
+                    Anonymized
+                  </Badge>
+                )}
+                {flags.gdprExportRequested && (
+                  <Badge tone="aqua" size="sm" dot>
+                    GDPR export requested
+                  </Badge>
+                )}
               </div>
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              {c.githubUrl &&
-                (masked ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 font-mono text-xs font-semibold text-muted">
-                    <Github className="h-3.5 w-3.5" aria-hidden />
-                    {dc.githubUrl}
-                  </span>
-                ) : (
-                  <a
-                    href={dc.githubUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/10"
-                  >
-                    <Github className="h-3.5 w-3.5" aria-hidden />
-                    GitHub
-                  </a>
-                ))}
-              {c.linkedinUrl &&
-                (masked ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 font-mono text-xs font-semibold text-muted">
-                    <Linkedin className="h-3.5 w-3.5" aria-hidden />
-                    {dc.linkedinUrl}
-                  </span>
-                ) : (
-                  <a
-                    href={dc.linkedinUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/10"
-                  >
-                    <Linkedin className="h-3.5 w-3.5" aria-hidden />
-                    LinkedIn
-                  </a>
-                ))}
-              {c.sourceUrl &&
-                (masked ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 font-mono text-xs font-semibold text-muted">
-                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                    {dc.sourceUrl}
-                  </span>
-                ) : (
-                  <a
-                    href={dc.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/10"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                    {c.sourcePlatform}
-                  </a>
-                ))}
-              {masked && !erasureTombstone && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Eye className="h-4 w-4" />}
-                  onClick={handleReveal}
-                >
-                  Reveal contact (logged)
-                </Button>
-              )}
-            </div>
-          </div>
-          {hasFlags && (
-            <div className="flex flex-wrap gap-1.5">
-              {flags.doNotContact && (
-                <Badge tone="danger" size="sm" dot>
-                  Do not contact
-                </Badge>
-              )}
-              {flags.suppressed && (
-                <Badge tone="danger" size="sm" dot>
-                  Suppressed
-                </Badge>
-              )}
-              {flags.unsubscribed && (
-                <Badge tone="warning" size="sm" dot>
-                  Unsubscribed
-                </Badge>
-              )}
-              {flags.anonymized && (
-                <Badge tone="violet" size="sm" dot>
-                  Anonymized
-                </Badge>
-              )}
-              {flags.gdprExportRequested && (
-                <Badge tone="aqua" size="sm" dot>
-                  GDPR export requested
-                </Badge>
-              )}
-            </div>
-          )}
+        </div>
+        <section
+          aria-label="Candidate next action"
+          className="flex flex-col gap-2 rounded-2xl border border-electric/20 bg-electric-soft/30 px-4 py-3 sm:flex-row sm:items-center sm:gap-4"
+        >
+          <p className="min-w-0 flex-1 text-sm">
+            <span className="font-semibold text-ink">Next: {review.label}.</span>{" "}
+            <span className="text-muted">{review.detail}</span>
+          </p>
+          <span className="shrink-0">
+            {review.key === "permission" && <button type="button" onClick={() => setTab("compliance")} className="text-sm font-semibold text-electric underline">Review consent passport</button>}
+            {review.key === "brief" && campaign && <Link href={`/campaigns/${campaign.id}`} className="text-sm font-semibold text-electric underline">Review campaign brief</Link>}
+            {(review.key === "fit" || review.key === "contact") && <button type="button" onClick={() => setTab("evidence")} className="text-sm font-semibold text-electric underline">Review evidence and contact</button>}
+          </span>
+        </section>
+
+        <div className="sticky -top-6 z-10 -mx-6 bg-surface/90 px-6 py-2 backdrop-blur">
+          <Tabs items={drawerTabs} value={tab} onValueChange={(v) => setTab(v as CandidateTab)} idBase="candidate-tab" label="Candidate sections" />
         </div>
 
-        <div id="candidate-enrichment" className="scroll-mt-4" />
-        {!masked && supabaseEnabled && canEnrich && !candidateEnrichmentBlocker(c, campaign) && (
-          <Section title="Verified profile and contact" icon={<Mail className="h-4 w-4" />}>
-            <p className="mb-3 text-sm text-muted">Record facts you verified on the source profile. Leave unknown experience blank. This updates the score; it does not record consent or send a message.</p>
-            <form key={`${c.id}:${c.email}:${c.linkedinUrl}:${c.techStack.join(",")}:${c.yearsExperience}`} onSubmit={handleSaveContact} className="space-y-3">
-              <fieldset disabled={savingContact || enriching} className="space-y-3">
-                <Label htmlFor="verified-contact-email">Email</Label>
-                <Input id="verified-contact-email" name="email" type="email" maxLength={320} defaultValue={c.email} placeholder="Public professional email, if available" />
-                <Label htmlFor="verified-contact-linkedin">LinkedIn profile URL</Label>
-                <Input id="verified-contact-linkedin" name="linkedinUrl" type="url" maxLength={500} defaultValue={c.linkedinUrl} placeholder="https://www.linkedin.com/in/..." />
-                <Label htmlFor="verified-profile-skills">Observed skills (comma-separated)</Label>
-                <Input id="verified-profile-skills" name="skills" maxLength={5000} defaultValue={c.techStack.join(", ")} placeholder="Only skills supported by the profile evidence" />
-                <Label htmlFor="verified-profile-years">Verified years of experience (optional)</Label>
-                <Input id="verified-profile-years" name="years" type="number" min={0} max={80} step="0.5" defaultValue={c.yearsExperience ?? ""} placeholder="Unknown" />
-                <Label htmlFor="verified-contact-source">Where you verified it</Label>
-                <Input id="verified-contact-source" name="source" required minLength={8} maxLength={500} placeholder="Source URL or recruiter verification note" />
-                <Button type="submit" variant="outline" size="sm" loading={savingContact}>Save verified evidence</Button>
-              </fieldset>
-            </form>
-          </Section>
-        )}
-        <Section title="Enrichment" icon={<Zap className="h-4 w-4" />}>
-          {!canEnrich ? (
-            <p className="text-sm text-muted">You don&apos;t have permission to enrich candidates.</p>
-          ) : (
-            <div className="space-y-3">
-              <ul className="flex flex-wrap gap-1.5" aria-label="Field coverage">
-                {DRAWER_ENRICHMENT_FIELDS.map((field) => {
-                  const filled = enrichmentCoverage.includes(field);
-                  const prov = fieldProvenance[field];
-                  return (
-                    <li key={field}>
-                      {filled ? (
-                        <span
-                          className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-xs font-semibold text-success ring-1 ring-inset ring-success/20"
-                          title={
-                            prov
-                              ? `Supplied by ${prov.provider}${prov.confidence !== undefined ? ` · confidence ${Math.round(prov.confidence * 100)}%` : ""}`
-                              : "Present (source not tracked)"
-                          }
-                        >
-                          <span className={`h-2 w-2 rounded-full ${confidenceDotTone(prov?.confidence)}`} aria-hidden />
-                          {ENRICHMENT_FIELD_LABELS[field]}
-                          {prov && <span className="text-[0.625rem] font-medium text-success/70">· {prov.provider}</span>}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.04] px-2.5 py-1 text-xs font-medium text-muted ring-1 ring-inset ring-ink/10">
-                          <Circle className="h-2.5 w-2.5" aria-hidden />
-                          {ENRICHMENT_FIELD_LABELS[field]} · missing
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Zap className="h-4 w-4" />}
-                  onClick={handleEnrich}
-                  loading={enriching}
-                disabled={enriching || savingContact || Boolean(enrichBlocker) || !plannedFields.length}
-                >
-                  {enriching ? "Enriching…" : "Review enrichment"}
-                </Button>
-                <span className="text-xs text-muted">
-                  {enrichmentSpend > 0 ? `${enrichmentSpend} unit(s) spent on this candidate` : "No spend yet"}
-                </span>
+        <TabPanel value="overview" active={tab === "overview"} idBase="candidate-tab">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="min-w-0 space-y-8">
+            <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-center gap-6 sm:justify-start">
+                  <ScoreGauge score={c.matchScore} label="Overall fit" />
+                  <FitRadar matchBreakdown={c.matchBreakdown} size={180} label={c.name} />
+                </div>
+                <ScoreBreakdown breakdown={c.matchBreakdown} />
+                <p className="text-xs text-muted">Observed requirements: {review.observedSkills.join(", ") || "None confirmed"}. Still to verify: {review.missingSkills.join(", ") || "No missing required skill recorded"}.</p>
               </div>
-              <p className="text-xs text-muted">{enrichBlocker || (plannedFields.length ? `Will look for: ${plannedFields.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")}. Paid provider call; review before starting.` : "All supported fields are already present. Review their evidence before drafting.")}</p>
-              {enrichBlocker && !configuredProviders.length && eligibleProviders.length > 0 && <Link href="/settings" className="text-sm text-electric underline">Configure provider key</Link>}
+            </Section>
 
-              {(enriching || recentEnrichmentAttempts.length > 0) && (
-                <ul
-                  className="space-y-1.5"
-                  role="status"
-                  aria-live="polite"
-                  aria-label="Enrichment progress by provider"
-                >
-                  {enriching && eligibleProviders.length === 0 && (
-                    <li className="text-sm text-muted">
-                      No configured provider can identify this candidate (missing name, company, or LinkedIn URL).
+            {/* Why this person — personalization evidence behind the latest
+                drafted/queued outreach, if any (view-only; never blank). */}
+            {latestOutreachMessage && <WhyThisPerson message={latestOutreachMessage} />}
+
+            <Section title="Tech stack">
+              <Chips items={c.techStack} label="Tech stack" />
+            </Section>
+
+            {/* Experience */}
+            <Section title="Experience & background" icon={<Briefcase className="h-4 w-4" />}>
+              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Experience</dt>
+                  <dd className="mt-0.5 text-sm font-semibold text-ink tabular-nums">
+                    {c.yearsExperience == null ? "Not provided" : `${c.yearsExperience} yrs`}
+                  </dd>
+                </div>
+                <div className="col-span-2 sm:col-span-2">
+                  <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                    <Building2 className="h-3.5 w-3.5" aria-hidden />
+                    Company stages
+                  </dt>
+                  <dd className="mt-1">
+                    <Chips items={c.companyStageExperience} label="Company stage experience" />
+                  </dd>
+                </div>
+              </dl>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Industry</p>
+                <Chips items={c.industryExperience} label="Industry experience" />
+              </div>
+              {c.experience?.length ? (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Work history</p>
+                  <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
+                    {c.experience.map((line, i) => (
+                      <li key={`exp-${i}-${line}`}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {c.education?.length ? (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Education</p>
+                  <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
+                    {c.education.map((line, i) => (
+                      <li key={`edu-${i}-${line}`}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {c.languages?.length ? (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Languages</p>
+                  <Chips items={c.languages} label="Languages" />
+                </div>
+              ) : null}
+            </Section>
+
+            <Section title="Recent activity" icon={<Clock className="h-4 w-4" />}>
+              <p className="text-sm leading-relaxed text-ink-soft">{c.recentActivity}</p>
+            </Section>
+
+            </div>
+            <aside className="space-y-8 lg:border-l lg:border-line lg:pl-6">
+            <Section title="How we found them" icon={<Sparkles className="h-4 w-4" />}>
+              <p className="text-sm text-ink-soft">Found via {c.sourcePlatform}</p>
+              {c.sourceQuery && (
+                <p className="rounded-2xl bg-ink/[0.03] px-3 py-2 font-mono text-xs text-ink-soft break-words">{c.sourceQuery}</p>
+              )}
+            </Section>
+            <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted">Current:</span>
+                <Badge tone={toneForStage(c.stage)} size="sm" dot>
+                  {c.stage}
+                </Badge>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {STAGE_ACTIONS.map((stage) => (
+                  <Button
+                    key={stage}
+                    variant={c.stage === stage ? "primary" : "outline"}
+                    size="sm"
+                    disabled={erasureTombstone || c.stage === stage}
+                    title={erasureTombstone ? "Permanent erasure tombstones cannot change stage" : undefined}
+                    onClick={() => handleSetStage(stage)}
+                  >
+                    {stage}
+                  </Button>
+                ))}
+              </div>
+              {c.stage === "Rejected" && (
+                <div>
+                  <label
+                    htmlFor={`rejection-reason-${c.id}`}
+                    className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted"
+                  >
+                    Rejection reason
+                  </label>
+                  <textarea
+                    id={`rejection-reason-${c.id}`}
+                    key={c.id}
+                    defaultValue={c.rejectionReason ?? ""}
+                    onChange={handleRejectionReasonChange}
+                    disabled={erasureTombstone}
+                    placeholder="Why was this candidate rejected? Logged to the activity trail."
+                    rows={2}
+                    className="w-full rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
+                  />
+                </div>
+              )}
+            </Section>
+
+            <Section title="Recruiter notes" icon={<NotebookPen className="h-4 w-4" />}>
+              <div className="flex items-start gap-2">
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  disabled={erasureTombstone}
+                  placeholder="Add a note for the team…"
+                  rows={2}
+                  aria-label="Add a recruiter note"
+                  className="min-h-[44px] flex-1 rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
+                />
+                <Button variant="outline" size="sm" onClick={handleAddNote} disabled={erasureTombstone || !noteText.trim()}>
+                  Add
+                </Button>
+              </div>
+              {(c.notes?.length ?? 0) === 0 ? (
+                <p className="text-sm text-muted">No notes yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {(c.notes ?? []).map((n) => (
+                    <li key={n.id} className="rounded-2xl bg-ink/[0.03] px-3 py-2">
+                      <p className="text-sm text-ink-soft">{n.text}</p>
+                      <p className="mt-1 text-xs text-muted">{formatTimeAgo(n.at)}</p>
                     </li>
-                  )}
-                  {enriching
-                    ? eligibleProviders.map((p) => (
-                        <li
-                          key={p.id}
-                          className="flex items-center gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm text-muted"
-                        >
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                          {p.label} — running…
-                        </li>
-                      ))
-                    : recentEnrichmentAttempts.map((a, i) => (
-                        <li
-                          key={`${a.provider}-${a.at}-${i}`}
-                          className="flex items-center justify-between gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm"
-                        >
-                          <span className="font-medium text-ink-soft">{a.provider}</span>
-                          <span className="flex items-center gap-2">
-                            {a.fieldsFilled.length > 0 && (
-                              <span className="text-xs text-muted">
-                                {a.fieldsFilled.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")}
-                              </span>
-                            )}
-                            <Badge tone={ATTEMPT_STATUS_TONE[a.status]} size="sm" title={a.detail}>
-                              {ATTEMPT_STATUS_LABEL[a.status]}
-                            </Badge>
-                          </span>
-                        </li>
-                      ))}
+                  ))}
                 </ul>
               )}
-            </div>
-          )}
-        </Section>
+            </Section>
 
-        <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">
-            <div className="flex justify-center sm:justify-start">
-              <ScoreGauge score={c.matchScore} label="Overall fit" />
-            </div>
-            <div className="flex justify-center sm:justify-start">
-              <FitRadar matchBreakdown={c.matchBreakdown} size={180} label={c.name} />
-            </div>
-            <ScoreBreakdown breakdown={c.matchBreakdown} />
+            </aside>
           </div>
-        </Section>
+        </TabPanel>
 
-        {/* Why this person — personalization evidence behind the latest
-            drafted/queued outreach, if any (view-only; never blank). */}
-        {latestOutreachMessage && <WhyThisPerson message={latestOutreachMessage} />}
-
-        {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
-        {!erasureTombstone && <TaniaPanel c={c} />}
-
-        {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
-        {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
-
-        <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted">Current:</span>
-            <Badge tone={toneForStage(c.stage)} size="sm" dot>
-              {c.stage}
-            </Badge>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {STAGE_ACTIONS.map((stage) => (
-              <Button
-                key={stage}
-                variant={c.stage === stage ? "primary" : "outline"}
-                size="sm"
-                disabled={erasureTombstone || c.stage === stage}
-                title={erasureTombstone ? "Permanent erasure tombstones cannot change stage" : undefined}
-                onClick={() => handleSetStage(stage)}
-              >
-                {stage}
+        <TabPanel value="linkedin" active={tab === "linkedin"} idBase="candidate-tab">
+          {!c.linkedinUrl ? (
+            <div className="space-y-3 rounded-2xl border border-dashed border-line p-5">
+              <p className="text-sm text-ink">No LinkedIn profile URL is recorded for {dc.name}.</p>
+              <p className="text-sm text-muted">Add it under Evidence &amp; contact, then invite or message them from here.</p>
+              <Button variant="outline" size="sm" onClick={() => setTab("evidence")}>
+                Add the LinkedIn URL
               </Button>
-            ))}
-          </div>
-          {c.stage === "Rejected" && (
-            <div>
-              <label
-                htmlFor={`rejection-reason-${c.id}`}
-                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted"
-              >
-                Rejection reason
-              </label>
-              <textarea
-                id={`rejection-reason-${c.id}`}
-                key={c.id}
-                defaultValue={c.rejectionReason ?? ""}
-                onChange={handleRejectionReasonChange}
-                disabled={erasureTombstone}
-                placeholder="Why was this candidate rejected? Logged to the activity trail."
-                rows={2}
-                className="w-full rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
-              />
             </div>
-          )}
-        </Section>
-
-        <Section title="Tech stack">
-          <Chips items={c.techStack} label="Tech stack" />
-        </Section>
-
-        {/* Experience */}
-        <Section title="Experience & background" icon={<Briefcase className="h-4 w-4" />}>
-          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Experience</dt>
-              <dd className="mt-0.5 text-sm font-semibold text-ink tabular-nums">
-                {c.yearsExperience == null ? "Not provided" : `${c.yearsExperience} yrs`}
-              </dd>
-            </div>
-            <div className="col-span-2 sm:col-span-2">
-              <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-                <Building2 className="h-3.5 w-3.5" aria-hidden />
-                Company stages
-              </dt>
-              <dd className="mt-1">
-                <Chips items={c.companyStageExperience} label="Company stage experience" />
-              </dd>
-            </div>
-          </dl>
-          <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Industry</p>
-            <Chips items={c.industryExperience} label="Industry experience" />
-          </div>
-          {c.experience?.length ? (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Work history</p>
-              <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
-                {c.experience.map((line, i) => (
-                  <li key={`exp-${i}-${line}`}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {c.education?.length ? (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Education</p>
-              <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
-                {c.education.map((line, i) => (
-                  <li key={`edu-${i}-${line}`}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {c.languages?.length ? (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Languages</p>
-              <Chips items={c.languages} label="Languages" />
-            </div>
-          ) : null}
-        </Section>
-
-        <Section title="Recent activity" icon={<Clock className="h-4 w-4" />}>
-          <p className="text-sm leading-relaxed text-ink-soft">{c.recentActivity}</p>
-        </Section>
-
-        <Section title="Recruiter notes" icon={<NotebookPen className="h-4 w-4" />}>
-          <div className="flex items-start gap-2">
-            <textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              disabled={erasureTombstone}
-              placeholder="Add a note for the team…"
-              rows={2}
-              aria-label="Add a recruiter note"
-              className="min-h-[44px] flex-1 rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
-            />
-            <Button variant="outline" size="sm" onClick={handleAddNote} disabled={erasureTombstone || !noteText.trim()}>
-              Add
-            </Button>
-          </div>
-          {(c.notes?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted">No notes yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {(c.notes ?? []).map((n) => (
-                <li key={n.id} className="rounded-2xl bg-ink/[0.03] px-3 py-2">
-                  <p className="text-sm text-ink-soft">{n.text}</p>
-                  <p className="mt-1 text-xs text-muted">{formatTimeAgo(n.at)}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section title="Outreach history" icon={<Send className="h-4 w-4" />}>
-          {c.outreachHistory.length === 0 ? (
-            <p className="text-sm text-muted">No outreach sent yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {c.outreachHistory.map((o) => (
-                <li
-                  key={o.messageId}
-                  className="flex items-center justify-between gap-3 rounded-2xl bg-ink/[0.03] px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{o.subject}</p>
-                    <p className="text-xs text-muted">
-                      {o.channel} · {formatTimeAgo(o.at)}
-                    </p>
-                  </div>
-                  <Badge tone={toneForOutreachStatus(o.status)} size="sm">
-                    {o.status}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section title="Reply history" icon={<MessageSquare className="h-4 w-4" />}>
-          {c.replyHistory.length === 0 ? (
-            <p className="text-sm text-muted">No replies received yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {c.replyHistory.map((r) => (
-                <li key={r.id} className="rounded-2xl bg-ink/[0.03] px-3 py-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <Badge tone={toneForIntent(r.intent)} size="sm">
-                      {r.intent.replace(/_/g, " ")}
-                    </Badge>
-                    <span className="text-xs text-muted tabular-nums">
-                      {Math.round(r.confidence * 100)}% · {formatTimeAgo(r.at)}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-sm text-ink-soft">{r.excerpt}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        {!masked && !erasureTombstone && c.linkedinUrl && can(role, "outreach") && (
-          <CandidateLinkedIn
-            candidateId={c.id}
-            name={c.name}
-            linkedinUrl={c.linkedinUrl}
-            contactBlocked={linkedInContactBlock(c.complianceFlags)}
-          />
-        )}
-
-        <Section title="Compliance & data governance" icon={<ShieldAlert className="h-4 w-4" />}>
-          <p className="text-sm text-muted">
-            Honor candidate rights immediately. Export and anonymize support GDPR; suppression and
-            do-not-contact enforce exclusion across all outreach.
-          </p>
-          {erasureNotice && (
-            <div
-              className={`rounded-xl border px-3 py-2 text-sm ${
-                erasureNotice.status === "completed"
-                  ? "border-success/30 bg-success/5 text-success"
-                  : erasureNotice.status === "blocked_legal_hold"
-                    ? "border-danger/30 bg-danger/5 text-danger"
-                    : "border-warning/30 bg-warning/5 text-warning"
-              }`}
-              role="status"
-            >
-              <p className="font-semibold">
-                {erasureNotice.status === "completed"
-                  ? "Candidate erasure completed"
-                  : erasureNotice.status === "blocked_legal_hold"
-                    ? "Erasure blocked by legal hold"
-                    : erasureNotice.status === "manual_required"
-                      ? "Provider action required"
-                      : erasureNotice.status === "retryable_failure"
-                        ? "Provider erasure retry required"
-                        : "Provider erasure pending"}
+          ) : erasureTombstone ? (
+            <p className="text-sm text-muted">This candidate was erased. LinkedIn is not available.</p>
+          ) : !can(role, "outreach") ? (
+            <p className="text-sm text-muted">Your role cannot contact candidates on LinkedIn.</p>
+          ) : masked ? (
+            <div className="space-y-3 rounded-2xl border border-dashed border-line p-5">
+              <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <Lock className="h-4 w-4 text-violet" aria-hidden />
+                Confidentiality mode hides this profile.
               </p>
-              {erasureNotice.requestId && (
-                <p className="mt-1 font-mono text-xs opacity-80">
-                  Request {erasureNotice.requestId}
-                </p>
-              )}
+              <p className="text-sm text-muted">
+                Reveal it to see where you stand on LinkedIn, invite {dc.name} or write to them. The reveal is written to the audit trail.
+              </p>
+              <Button variant="primary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={handleReveal}>
+                Reveal profile (logged)
+              </Button>
             </div>
+          ) : (
+            <CandidateLinkedIn
+              candidateId={c.id}
+              name={c.name}
+              linkedinUrl={c.linkedinUrl}
+              contactBlocked={linkedInContactBlock(c.complianceFlags)}
+              threadClassName="h-[min(560px,60vh)]"
+            />
           )}
-          {erasureQueueError && (
-            <p className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert">
-              {erasureQueueError}
-            </p>
+        </TabPanel>
+
+        <TabPanel value="evidence" active={tab === "evidence"} idBase="candidate-tab" className="space-y-8">
+          <div id="candidate-enrichment" className="scroll-mt-4" />
+          {!masked && supabaseEnabled && canEnrich && !candidateEnrichmentBlocker(c, campaign) && (
+            <Section title="Verified profile and contact" icon={<Mail className="h-4 w-4" />}>
+              <p className="mb-3 text-sm text-muted">Record facts you verified on the source profile. Leave unknown experience blank. This updates the score; it does not record consent or send a message.</p>
+              <form key={`${c.id}:${c.email}:${c.linkedinUrl}:${c.techStack.join(",")}:${c.yearsExperience}`} onSubmit={handleSaveContact} className="space-y-3">
+                <fieldset disabled={savingContact || enriching} className="space-y-3">
+                  <Label htmlFor="verified-contact-email">Email</Label>
+                  <Input id="verified-contact-email" name="email" type="email" maxLength={320} defaultValue={c.email} placeholder="Public professional email, if available" />
+                  <Label htmlFor="verified-contact-linkedin">LinkedIn profile URL</Label>
+                  <Input id="verified-contact-linkedin" name="linkedinUrl" type="url" maxLength={500} defaultValue={c.linkedinUrl} placeholder="https://www.linkedin.com/in/..." />
+                  <Label htmlFor="verified-profile-skills">Observed skills (comma-separated)</Label>
+                  <Input id="verified-profile-skills" name="skills" maxLength={5000} defaultValue={c.techStack.join(", ")} placeholder="Only skills supported by the profile evidence" />
+                  <Label htmlFor="verified-profile-years">Verified years of experience (optional)</Label>
+                  <Input id="verified-profile-years" name="years" type="number" min={0} max={80} step="0.5" defaultValue={c.yearsExperience ?? ""} placeholder="Unknown" />
+                  <Label htmlFor="verified-contact-source">Where you verified it</Label>
+                  <Input id="verified-contact-source" name="source" required minLength={8} maxLength={500} placeholder="Source URL or recruiter verification note" />
+                  <Button type="submit" variant="outline" size="sm" loading={savingContact}>Save verified evidence</Button>
+                </fieldset>
+              </form>
+            </Section>
           )}
-          {erasureObligations.some((item) => item.status !== "completed") && (
-            <div className="space-y-2 rounded-xl border border-warning/30 bg-warning/5 p-3">
-              <div>
-                <p className="text-sm font-semibold text-ink">Durable provider-erasure queue</p>
-                <p className="mt-1 text-xs text-muted">
-                  Provider deletion is not complete until an administrator confirms the provider outcome in the approved case system and records its evidence reference.
-                </p>
+          <Section title="Enrichment" icon={<Zap className="h-4 w-4" />}>
+            {!canEnrich ? (
+              <p className="text-sm text-muted">You don&apos;t have permission to enrich candidates.</p>
+            ) : (
+              <div className="space-y-3">
+                <ul className="flex flex-wrap gap-1.5" aria-label="Field coverage">
+                  {DRAWER_ENRICHMENT_FIELDS.map((field) => {
+                    const filled = enrichmentCoverage.includes(field);
+                    const prov = fieldProvenance[field];
+                    return (
+                      <li key={field}>
+                        {filled ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-xs font-semibold text-success ring-1 ring-inset ring-success/20"
+                            title={
+                              prov
+                                ? `Supplied by ${prov.provider}${prov.confidence !== undefined ? ` · confidence ${Math.round(prov.confidence * 100)}%` : ""}`
+                                : "Present (source not tracked)"
+                            }
+                          >
+                            <span className={`h-2 w-2 rounded-full ${confidenceDotTone(prov?.confidence)}`} aria-hidden />
+                            {ENRICHMENT_FIELD_LABELS[field]}
+                            {prov && <span className="text-[0.625rem] font-medium text-success/70">· {prov.provider}</span>}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.04] px-2.5 py-1 text-xs font-medium text-muted ring-1 ring-inset ring-ink/10">
+                            <Circle className="h-2.5 w-2.5" aria-hidden />
+                            {ENRICHMENT_FIELD_LABELS[field]} · missing
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Zap className="h-4 w-4" />}
+                    onClick={handleEnrich}
+                    loading={enriching}
+                  disabled={enriching || savingContact || Boolean(enrichBlocker) || !plannedFields.length}
+                  >
+                    {enriching ? "Enriching…" : "Review enrichment"}
+                  </Button>
+                  <span className="text-xs text-muted">
+                    {enrichmentSpend > 0 ? `${enrichmentSpend} unit(s) spent on this candidate` : "No spend yet"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted">{enrichBlocker || (plannedFields.length ? `Will look for: ${plannedFields.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")}. Paid provider call; review before starting.` : "All supported fields are already present. Review their evidence before drafting.")}</p>
+                {enrichBlocker && !configuredProviders.length && eligibleProviders.length > 0 && <Link href="/settings" className="text-sm text-electric underline">Configure provider key</Link>}
+
+                {(enriching || recentEnrichmentAttempts.length > 0) && (
+                  <ul
+                    className="space-y-1.5"
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Enrichment progress by provider"
+                  >
+                    {enriching && eligibleProviders.length === 0 && (
+                      <li className="text-sm text-muted">
+                        No configured provider can identify this candidate (missing name, company, or LinkedIn URL).
+                      </li>
+                    )}
+                    {enriching
+                      ? eligibleProviders.map((p) => (
+                          <li
+                            key={p.id}
+                            className="flex items-center gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm text-muted"
+                          >
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            {p.label} — running…
+                          </li>
+                        ))
+                      : recentEnrichmentAttempts.map((a, i) => (
+                          <li
+                            key={`${a.provider}-${a.at}-${i}`}
+                            className="flex items-center justify-between gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm"
+                          >
+                            <span className="font-medium text-ink-soft">{a.provider}</span>
+                            <span className="flex items-center gap-2">
+                              {a.fieldsFilled.length > 0 && (
+                                <span className="text-xs text-muted">
+                                  {a.fieldsFilled.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")}
+                                </span>
+                              )}
+                              <Badge tone={ATTEMPT_STATUS_TONE[a.status]} size="sm" title={a.detail}>
+                                {ATTEMPT_STATUS_LABEL[a.status]}
+                              </Badge>
+                            </span>
+                          </li>
+                        ))}
+                  </ul>
+                )}
               </div>
+            )}
+          </Section>
+
+        </TabPanel>
+
+        <TabPanel value="history" active={tab === "history"} idBase="candidate-tab" className="space-y-8">
+          {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
+          {!erasureTombstone && <TaniaPanel c={c} />}
+
+          {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
+          {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
+
+          <Section title="Outreach history" icon={<Send className="h-4 w-4" />}>
+            {c.outreachHistory.length === 0 ? (
+              <p className="text-sm text-muted">No outreach sent yet.</p>
+            ) : (
               <ul className="space-y-2">
-                {erasureObligations.filter((item) => item.status !== "completed").map((obligation) => (
-                  <li key={obligation.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+                {c.outreachHistory.map((o) => (
+                  <li
+                    key={o.messageId}
+                    className="flex items-center justify-between gap-3 rounded-2xl bg-ink/[0.03] px-3 py-2"
+                  >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">{obligation.provider}</p>
+                      <p className="truncate text-sm font-medium text-ink">{o.subject}</p>
                       <p className="text-xs text-muted">
-                        {obligation.status.replaceAll("_", " ")} · attempt {obligation.attemptCount}
+                        {o.channel} · {formatTimeAgo(o.at)}
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={erasureActionId !== null}
-                      onClick={() => void handleInspectErasureAuthority(obligation)}
-                    >
-                      {erasureActionId === obligation.id ? "Opening…" : "Open authority"}
-                    </Button>
+                    <Badge tone={toneForOutreachStatus(o.status)} size="sm">
+                      {o.status}
+                    </Badge>
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
-          {erasureAuthority && (
-            <div className="space-y-3 rounded-xl border border-ink/10 bg-ink/[0.03] p-3">
-              <div>
-                <p className="text-sm font-semibold text-ink">
-                  Record {erasureAuthority.provider} deletion evidence
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  Sensitive provider authority is decrypted only for this explicit admin action. ARIA records the reference and SHA-256 but does not inspect the evidence artifact or contact the provider.
-                </p>
-              </div>
-              <pre className="max-h-40 overflow-auto rounded-lg bg-ink p-3 text-xs text-white">
-                {JSON.stringify(erasureAuthority.reference, null, 2)}
-              </pre>
-              <div className="space-y-1.5">
-                <Label htmlFor={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}>
-                  Provider evidence SHA-256
-                </Label>
-                <Input
-                  id={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}
-                  value={erasureEvidenceSha256}
-                  onChange={(event) => setErasureEvidenceSha256(event.target.value)}
-                  placeholder="64 lowercase hexadecimal characters"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor={`candidate-erasure-case-${erasureAuthority.obligationId}`}>
-                  Provider case reference
-                </Label>
-                <Input
-                  id={`candidate-erasure-case-${erasureAuthority.obligationId}`}
-                  value={erasureCaseReference}
-                  onChange={(event) => setErasureCaseReference(event.target.value)}
-                  placeholder="case:provider-123"
-                  maxLength={120}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="danger"
-                  size="sm"
-                  disabled={erasureActionId !== null}
-                  onClick={() => void handleCompleteErasureObligation()}
-                >
-                  {erasureActionId === erasureAuthority.obligationId
-                    ? "Recording…"
-                    : "Record evidence reference"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={erasureActionId !== null}
-                  onClick={() => setErasureAuthority(null)}
-                >
-                  Close authority
-                </Button>
-              </div>
-            </div>
-          )}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Button variant="outline" size="sm" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
-              Export data
-            </Button>
-            {!erasureTombstone && (
-              <>
-                <Button variant="outline" size="sm" leftIcon={<UserX className="h-4 w-4" />} onClick={handleAnonymize} disabled={erasing}>
-                  {erasing ? "Erasing…" : "Anonymize"}
-                </Button>
-                <Button variant="outline" size="sm" leftIcon={<EyeOff className="h-4 w-4" />} onClick={handleSuppress}>
-                  Suppress contact
-                </Button>
-                <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
-                  Mark do-not-contact
-                </Button>
-                <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
-                  Unsubscribe
-                </Button>
-              </>
             )}
-          </div>
-          {!erasureTombstone && (flags.suppressed || flags.doNotContact) && (
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={<RotateCcw className="h-4 w-4" />}
-              onClick={handleRestoreContact}
-            >
-              Undo: restore contact
-            </Button>
-          )}
-        </Section>
+          </Section>
 
-        {/* Consent passport — GDPR data lineage: source/lawful-basis chips,
-            retention countdown, and the reveal ledger for this candidate.
-            Display-only; does not itself reveal masked PII. */}
-        <Section title="Consent passport" icon={<ShieldCheck className="h-4 w-4" />}>
-          <div id="candidate-consent" className="scroll-mt-4 space-y-3">
-            <ConsentPassport candidate={c} />
-            {can(role, "compliance") && !candidateExclusionBlocker(c) && (
-              <form onSubmit={handleRecordBasis} className="space-y-3 rounded-2xl border border-line p-4">
-                <p className="text-sm text-muted">Record your explicit processing decision and its evidence. ARIA does not determine whether that basis is legally applicable.</p>
-                <fieldset disabled={savingContact || enriching} className="space-y-3">
-                  <Label htmlFor="candidate-contact-basis">Contact basis</Label>
-                  <select id="candidate-contact-basis" name="basis" required defaultValue="" className="w-full rounded-lg border border-line bg-surface p-2 text-sm">
-                    <option value="" disabled>Select your decision</option>
-                    <option value="consent">Consent</option>
-                    <option value="legitimate_interest">Legitimate interest</option>
-                  </select>
-                  <Label htmlFor="candidate-contact-reason">Basis evidence or reference</Label>
-                  <Input id="candidate-contact-reason" name="reason" required minLength={8} maxLength={500} placeholder="Record the evidence supporting your decision" />
-                  <Button type="submit" variant="outline" size="sm" loading={savingContact}>Record contact basis</Button>
-                </fieldset>
-              </form>
+          <Section title="Reply history" icon={<MessageSquare className="h-4 w-4" />}>
+            {c.replyHistory.length === 0 ? (
+              <p className="text-sm text-muted">No replies received yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {c.replyHistory.map((r) => (
+                  <li key={r.id} className="rounded-2xl bg-ink/[0.03] px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Badge tone={toneForIntent(r.intent)} size="sm">
+                        {r.intent.replace(/_/g, " ")}
+                      </Badge>
+                      <span className="text-xs text-muted tabular-nums">
+                        {Math.round(r.confidence * 100)}% · {formatTimeAgo(r.at)}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-sm text-ink-soft">{r.excerpt}</p>
+                  </li>
+                ))}
+              </ul>
             )}
-          </div>
-        </Section>
+          </Section>
+
+        </TabPanel>
+
+        <TabPanel value="compliance" active={tab === "compliance"} idBase="candidate-tab" className="space-y-8">
+          <Section title="Compliance & data governance" icon={<ShieldAlert className="h-4 w-4" />}>
+            <p className="text-sm text-muted">
+              Honor candidate rights immediately. Export and anonymize support GDPR; suppression and
+              do-not-contact enforce exclusion across all outreach.
+            </p>
+            {erasureNotice && (
+              <div
+                className={`rounded-xl border px-3 py-2 text-sm ${
+                  erasureNotice.status === "completed"
+                    ? "border-success/30 bg-success/5 text-success"
+                    : erasureNotice.status === "blocked_legal_hold"
+                      ? "border-danger/30 bg-danger/5 text-danger"
+                      : "border-warning/30 bg-warning/5 text-warning"
+                }`}
+                role="status"
+              >
+                <p className="font-semibold">
+                  {erasureNotice.status === "completed"
+                    ? "Candidate erasure completed"
+                    : erasureNotice.status === "blocked_legal_hold"
+                      ? "Erasure blocked by legal hold"
+                      : erasureNotice.status === "manual_required"
+                        ? "Provider action required"
+                        : erasureNotice.status === "retryable_failure"
+                          ? "Provider erasure retry required"
+                          : "Provider erasure pending"}
+                </p>
+                {erasureNotice.requestId && (
+                  <p className="mt-1 font-mono text-xs opacity-80">
+                    Request {erasureNotice.requestId}
+                  </p>
+                )}
+              </div>
+            )}
+            {erasureQueueError && (
+              <p className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert">
+                {erasureQueueError}
+              </p>
+            )}
+            {erasureObligations.some((item) => item.status !== "completed") && (
+              <div className="space-y-2 rounded-xl border border-warning/30 bg-warning/5 p-3">
+                <div>
+                  <p className="text-sm font-semibold text-ink">Durable provider-erasure queue</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Provider deletion is not complete until an administrator confirms the provider outcome in the approved case system and records its evidence reference.
+                  </p>
+                </div>
+                <ul className="space-y-2">
+                  {erasureObligations.filter((item) => item.status !== "completed").map((obligation) => (
+                    <li key={obligation.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{obligation.provider}</p>
+                        <p className="text-xs text-muted">
+                          {obligation.status.replaceAll("_", " ")} · attempt {obligation.attemptCount}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={erasureActionId !== null}
+                        onClick={() => void handleInspectErasureAuthority(obligation)}
+                      >
+                        {erasureActionId === obligation.id ? "Opening…" : "Open authority"}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {erasureAuthority && (
+              <div className="space-y-3 rounded-xl border border-ink/10 bg-ink/[0.03] p-3">
+                <div>
+                  <p className="text-sm font-semibold text-ink">
+                    Record {erasureAuthority.provider} deletion evidence
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    Sensitive provider authority is decrypted only for this explicit admin action. ARIA records the reference and SHA-256 but does not inspect the evidence artifact or contact the provider.
+                  </p>
+                </div>
+                <pre className="max-h-40 overflow-auto rounded-lg bg-ink p-3 text-xs text-white">
+                  {JSON.stringify(erasureAuthority.reference, null, 2)}
+                </pre>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}>
+                    Provider evidence SHA-256
+                  </Label>
+                  <Input
+                    id={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}
+                    value={erasureEvidenceSha256}
+                    onChange={(event) => setErasureEvidenceSha256(event.target.value)}
+                    placeholder="64 lowercase hexadecimal characters"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`candidate-erasure-case-${erasureAuthority.obligationId}`}>
+                    Provider case reference
+                  </Label>
+                  <Input
+                    id={`candidate-erasure-case-${erasureAuthority.obligationId}`}
+                    value={erasureCaseReference}
+                    onChange={(event) => setErasureCaseReference(event.target.value)}
+                    placeholder="case:provider-123"
+                    maxLength={120}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={erasureActionId !== null}
+                    onClick={() => void handleCompleteErasureObligation()}
+                  >
+                    {erasureActionId === erasureAuthority.obligationId
+                      ? "Recording…"
+                      : "Record evidence reference"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={erasureActionId !== null}
+                    onClick={() => setErasureAuthority(null)}
+                  >
+                    Close authority
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button variant="outline" size="sm" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
+                Export data
+              </Button>
+              {!erasureTombstone && (
+                <>
+                  <Button variant="outline" size="sm" leftIcon={<UserX className="h-4 w-4" />} onClick={handleAnonymize} disabled={erasing}>
+                    {erasing ? "Erasing…" : "Anonymize"}
+                  </Button>
+                  <Button variant="outline" size="sm" leftIcon={<EyeOff className="h-4 w-4" />} onClick={handleSuppress}>
+                    Suppress contact
+                  </Button>
+                  <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
+                    Mark do-not-contact
+                  </Button>
+                  <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
+                    Unsubscribe
+                  </Button>
+                </>
+              )}
+            </div>
+            {!erasureTombstone && (flags.suppressed || flags.doNotContact) && (
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<RotateCcw className="h-4 w-4" />}
+                onClick={handleRestoreContact}
+              >
+                Undo: restore contact
+              </Button>
+            )}
+          </Section>
+
+          {/* Consent passport — GDPR data lineage: source/lawful-basis chips,
+              retention countdown, and the reveal ledger for this candidate.
+              Display-only; does not itself reveal masked PII. */}
+          <Section title="Consent passport" icon={<ShieldCheck className="h-4 w-4" />}>
+            <div id="candidate-consent" className="scroll-mt-4 space-y-3">
+              <ConsentPassport candidate={c} />
+              {can(role, "compliance") && !candidateExclusionBlocker(c) && (
+                <form onSubmit={handleRecordBasis} className="space-y-3 rounded-2xl border border-line p-4">
+                  <p className="text-sm text-muted">Record your explicit processing decision and its evidence. ARIA does not determine whether that basis is legally applicable.</p>
+                  <fieldset disabled={savingContact || enriching} className="space-y-3">
+                    <Label htmlFor="candidate-contact-basis">Contact basis</Label>
+                    <select id="candidate-contact-basis" name="basis" required defaultValue="" className="w-full rounded-lg border border-line bg-surface p-2 text-sm">
+                      <option value="" disabled>Select your decision</option>
+                      <option value="consent">Consent</option>
+                      <option value="legitimate_interest">Legitimate interest</option>
+                    </select>
+                    <Label htmlFor="candidate-contact-reason">Basis evidence or reference</Label>
+                    <Input id="candidate-contact-reason" name="reason" required minLength={8} maxLength={500} placeholder="Record the evidence supporting your decision" />
+                    <Button type="submit" variant="outline" size="sm" loading={savingContact}>Record contact basis</Button>
+                  </fieldset>
+                </form>
+              )}
+            </div>
+          </Section>
+        </TabPanel>
       </div>
     </Drawer>
   );

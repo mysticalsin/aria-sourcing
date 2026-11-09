@@ -10,6 +10,7 @@ import { Composer } from "./composer";
 import { useNow } from "./format";
 import {
   checkCandidate,
+  firstLookCandidate,
   inviteCandidate,
   messageCandidate,
   refreshLinkedIn,
@@ -116,12 +117,15 @@ export function CandidateLinkedIn({
   name,
   linkedinUrl,
   contactBlocked,
+  threadClassName = "h-[440px]",
 }: {
   candidateId: string;
   name: string;
   linkedinUrl: string;
   /** Why ARIA must not contact this candidate (compliance flags), if so. */
   contactBlocked: string | null;
+  /** Height of the conversation box. */
+  threadClassName?: string;
 }) {
   const { toast } = useToast();
   const { state, contact } = useCandidateLinkedIn(candidateId);
@@ -129,7 +133,6 @@ export function CandidateLinkedIn({
   const extension = useBridgeExtension(paired);
   const { nudge } = extension;
   const now = useNow(1000);
-  const asked = React.useRef<string | null>(null);
   const firstName = name.split(" ")[0] || name;
   const account = state.account?.account ?? null;
 
@@ -137,9 +140,8 @@ export function CandidateLinkedIn({
   // checks are explicit or daily for pending invitations (each one counts as a
   // profile view on LinkedIn).
   React.useEffect(() => {
-    if (!paired || contact || contactBlocked || asked.current === candidateId) return;
-    asked.current = candidateId;
-    void checkCandidate(candidateId).then((res) => {
+    if (!paired || contact || contactBlocked) return;
+    void firstLookCandidate(candidateId)?.then((res) => {
       if (res.ok) nudge();
     });
   }, [paired, contact, contactBlocked, candidateId, nudge]);
@@ -188,7 +190,7 @@ export function CandidateLinkedIn({
       );
     } else if (contact?.conversation) {
       main = (
-        <div className="h-[440px] overflow-hidden rounded-xl border border-line bg-surface">
+        <div className={cn("overflow-hidden rounded-xl border border-line bg-surface", threadClassName)}>
           <ThreadView
             key={contact.conversation.id}
             conversationId={contact.conversation.id}
@@ -331,5 +333,59 @@ export function CandidateLinkedIn({
       </div>
       {body}
     </section>
+  );
+}
+
+/**
+ * The one LinkedIn button of a candidate header: says what can be done next
+ * (invite, message, reply) and opens the LinkedIn panel. Neutral when the
+ * bridge is off or not connected.
+ */
+export function LinkedInQuickAction({
+  candidateId,
+  onOpen,
+  autoCheck,
+}: {
+  candidateId: string;
+  onOpen: () => void;
+  /** Look the candidate up on first sight (visible, contactable profile). */
+  autoCheck: boolean;
+}) {
+  const { state, contact } = useCandidateLinkedIn(candidateId);
+  const paired = state.status === "ready" && Boolean(state.account?.paired);
+  const { nudge } = useBridgeExtension(paired);
+  React.useEffect(() => {
+    if (!autoCheck || !paired || contact) return;
+    void firstLookCandidate(candidateId)?.then((res) => {
+      if (res.ok) nudge();
+    });
+  }, [autoCheck, paired, contact, candidateId, nudge]);
+  let label = "LinkedIn";
+  let icon: React.ReactNode = <Linkedin className="h-4 w-4" aria-hidden />;
+  if (paired && contact) {
+    if (contact.conversation?.unread) {
+      label = "Reply on LinkedIn";
+      icon = <Send className="h-4 w-4" aria-hidden />;
+    } else if (contact.relationship === "connected") {
+      label = contact.conversation ? "LinkedIn conversation" : "Message on LinkedIn";
+      icon = <Send className="h-4 w-4" aria-hidden />;
+    } else if (contact.relationship === "pending") {
+      label = "Invitation pending";
+      icon = <Clock className="h-4 w-4" aria-hidden />;
+    } else if (contact.relationship === "none") {
+      label = "Connect on LinkedIn";
+      icon = <UserPlus className="h-4 w-4" aria-hidden />;
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-linkedin-action
+      className="inline-flex items-center gap-1.5 rounded-full bg-[#0a66c2] px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#004182] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a66c2]"
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
