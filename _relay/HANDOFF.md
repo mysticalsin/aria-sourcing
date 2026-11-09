@@ -1,15 +1,19 @@
 ---
 project: MSourcing / ARIA
-shift: 458
+shift: 459
 agent: claude-code
 updated: 2026-11-09
-status: add-candidate-from-linkedin
+status: outreach-linkedin-drafts-via-bridge
 ---
 
-# Handoff - Shift 458
+# Handoff - Shift 459
 
 ## Current state
 
+- Shift 459 (2026-11-09): approved LinkedIn outreach drafts are sent through
+  the bridge from the candidate's LinkedIn tab ("Send with my LinkedIn" on
+  the Pending manual send card). Gate exit 0; e2e 42/42 twice. Owner's
+  workspace is still dry-run with no mailbox: emails do not leave.
 - Shift 458 (2026-11-09): commit da301b17, "Add candidate" from a LinkedIn
   profile (see "Done this shift"). Gate exit 0; candidate e2e 39/39, three
   runs in a row (space runs >= 60 s apart: the bridge user rate limit is
@@ -51,6 +55,17 @@ status: add-candidate-from-linkedin
   `_relay/archive/2026-11-06-2233-claude-code.md`).
 
 ## Done this shift
+
+Shift 459. Owner asked what outreach is for and how a draft is sent; then
+"yes, go" to linking LinkedIn drafts to the bridge.
+
+- `outreach-message-card.tsx`: link to `/candidates?focus=&tab=linkedin&outreach=`.
+- `candidate-drawer.tsx`: `linkedInOutreachId` -> `linkedInDraft` (LinkedIn,
+  Pending Manual Send, same candidate) -> `CandidateLinkedIn draft`;
+  `confirmLinkedInDraft` calls `confirmManualSend` when the exact text was
+  queued.
+- `candidate-linkedin.tsx`, `composer.tsx` (`initialText`), `thread-view.tsx`
+  (`initialText`, `onSent`). No automatic send: submit only.
 
 Shift 458. Owner (2026-11-09): "add a feature to look for a candidate to
 source: I know someone on LinkedIn and want to add them manually to a
