@@ -11,7 +11,9 @@
    no session reuse, no login of any kind by this app. The experimental
    LinkedIn bridge (src/lib/linkedin-bridge, owner opt-in, off by default)
    runs in the user's own browser session, one human click per message or
-   invitation, and is outside the outreach pipeline this module guards. The
+   invitation (or, for the campaign autopilot POC of ADR 0002, under the
+   campaign owner's standing approval), and is outside the outreach pipeline
+   this module guards. The
    guardrails below stay fully intact regardless.
    ========================================================================== */
 

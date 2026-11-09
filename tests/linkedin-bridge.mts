@@ -537,12 +537,42 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-test("the bridge is isolated: only its own routes import it", () => {
+test("the bridge is isolated: only its own routes import it, and the agents only its agent entry point", () => {
   const offenders = sourceFiles("src")
     .map((path) => path.replaceAll("\\", "/"))
     .filter((path) => !path.startsWith("src/lib/linkedin-bridge/") && !path.startsWith("src/app/api/linkedin/"))
-    .filter((path) => /(?:from|import)\s*\(?\s*["'][^"']*linkedin-bridge/.test(readFileSync(path, "utf8")));
+    .filter((path) => {
+      const imports = [...readFileSync(path, "utf8").matchAll(/(?:from|import)\s*\(?\s*["']([^"']*linkedin-bridge[^"']*)["']/g)].map((m) => m[1]);
+      if (!imports.length) return false;
+      // ADR 0002: the agents runner reaches the bridge through agent.ts (and reads the on/off flag).
+      const agentSide = path.startsWith("src/lib/agents/server/") || path.startsWith("src/app/api/agent/");
+      return !agentSide || imports.some((spec) => !/linkedin-bridge\/(?:agent|policy)$/.test(spec));
+    });
   assert.deepEqual(offenders, []);
+});
+
+test("the agents queue only through agent.ts, under the owner's standing approval and delegation (ADR 0002)", () => {
+  const all = sourceFiles("src").map((path) => path.replaceAll("\\", "/"));
+  const inserters = all.filter((path) => /from\("linkedin_bridge_outbox"\)\s*\.insert/.test(readFileSync(path, "utf8"))).sort();
+  assert.deepEqual(inserters, ["src/app/api/linkedin/candidates/route.ts", "src/app/api/linkedin/outbox/route.ts", "src/lib/linkedin-bridge/agent.ts"]);
+  const agent = readFileSync("src/lib/linkedin-bridge/agent.ts", "utf8");
+  const queue = agent.slice(agent.indexOf("export async function agentQueue"));
+  // Authority first, then the candidate as the workspace holds it, then the relationship rules.
+  const order = ["agentMayQueue(svc, approval)", "candidateRecord(svc, approval.workspaceId", "contactBlock(candidate)", "INVITATION_NOTE_MAX", '.from("linkedin_bridge_outbox").insert('];
+  let at = -1;
+  for (const needle of order) {
+    const next = queue.indexOf(needle);
+    assert.ok(next > at, `agentQueue checks ${needle} in order`);
+    at = next;
+  }
+  for (const needle of ['"agent_campaign_autopilots"', "contact_enabled === true", "owner_id === approval.ownerId", "revoked_at === null", 'includes("queue_linkedin")', "linkedInBridgeEnabled()"]) {
+    assert.ok(agent.includes(needle), `agentMayQueue checks ${needle}`);
+  }
+  const callers = all.filter((path) => /\bagentQueue\(/.test(readFileSync(path, "utf8")) && path !== "src/lib/linkedin-bridge/agent.ts");
+  assert.deepEqual(callers, ["src/lib/agents/server/deps.ts"]);
+  // The runner route is the only way in, by its shared secret.
+  const tick = readFileSync("src/app/api/agent/tick/route.ts", "utf8");
+  assert.match(tick, /if \(!runnerAuthorized\(req\)\) return json\(\{ ok: false \}, 401\)/);
 });
 
 test("only a signed-in person can queue a message or an invitation; the extension cannot", () => {
