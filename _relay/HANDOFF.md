@@ -10,12 +10,14 @@ status: pending-card-sends
 
 ## Current state
 
-- Shift 463 (2026-11-09), study only: owner asked for an `agents` container
-  (Claude key) running autonomous tasks (auto-sourcing, top-3 LinkedIn
-  outreach, manager email, later mailbox->campaign; VMs later). Written to
-  `.scratch/autonomous-agents/spec.md`, no code. Waiting on owner decisions
-  A-E there (ADR 0001 vs worker; LinkedIn send without a click contradicts
-  the bridge invariant tested in tests/linkedin-bridge.mts:549-567).
+- Shift 463 (2026-11-09), autonomous agents: owner decisions recorded
+  (`.scratch/autonomous-agents/spec.md` §4bis): ADR 0002 accepted
+  (`docs/adr/0002-agents-runner.md`): `agents` service, agents act on behalf
+  of the campaign owner, agent-queued LinkedIn sends allowed as a POC (B2),
+  then a "bridge host" VM with real Chrome + one profile per user (B3, no
+  cookie copy, no proxies/fingerprint changes). Issues 01-10 in
+  `.scratch/autonomous-agents/issues/`; start with 01 (server-side drafting)
+  and 02 (agent identity). GDPR lawful basis still open (DPO), not blocking POC.
 - Shift 463 (2026-11-09): Pending manual send card leads with "Send on
   LinkedIn"; "Confirm manual send" became "I sent it myself" (records only).
   Owner data: Tony's msg_mw94gui1b (recorded as sent 12:30 without leaving)

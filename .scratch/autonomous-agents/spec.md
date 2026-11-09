@@ -1,6 +1,6 @@
 # Agents autonomes : un conteneur qui fait tourner des tâches planifiées
 
-Date : 2026-11-09 · Branche : mbe-branch · Statut : étude, rien n'est construit
+Date : 2026-11-09 · Branche : mbe-branch · Statut : décisions prises (2026-11-09, §4bis), ADR 0002 acceptée, rien n'est construit
 
 Demande du propriétaire (2026-11-09) : ajouter à l'infra un conteneur qui fait
 tourner des agents sur la clé API Claude, pour des tâches autonomes :
@@ -245,42 +245,76 @@ documenté pour un contact décidé par un humain. Un contact décidé par un
 algorithme relève de l'information due aux candidats (article 14) et du
 registre de traitements. À valider avec le DPO d'Amaris avant B2.
 
-## 5. La cible « VM »
+## 4bis. Réponses du propriétaire (2026-11-09)
 
-Recommandé : une VM Linux privée qui fait tourner le compose actuel plus le
-service `agents` (même image), avec des secrets tirés d'un coffre (Key Vault si
-Azure), HTTPS au gateway et les sauvegardes de `db_data` et `app_config`.
-C'est la cible déjà étudiée dans l'ADR 0001 (section Azure). Les recruteurs
-gardent l'extension dans leur Chrome et la pointent vers l'URL de la VM
-(`aria-page.js` accepte « the configured ARIA origin »). Les envois partent
-quand leur Chrome est ouvert. C'est le compromis assumé dans
-`docs/linkedin-bridge.md`.
+- **A :** accordé, ADR 0002 (`docs/adr/0002-agents-runner.md`).
+- **B :** on teste l'envoi automatique (B2, puis B3). C'est un POC : on veut
+  savoir si c'est possible. Le propriétaire connaît les risques.
+- **C :** l'expéditeur est le propriétaire de la campagne, avec son compte
+  LinkedIn synchronisé. Chaque utilisateur de la plateforme synchronise son
+  propre compte. C'est déjà le cas : un appairage par couple (workspace,
+  utilisateur).
+- **D :** le budget peut augmenter. Les agents auront leurs propres plafonds.
+- **E (cible) :** l'app et les agents tournent sur un serveur. La VM sert
+  à l'envoi automatique, avec les sessions LinkedIn synchronisées des
+  utilisateurs (B3).
+  - Contrainte retenue : chaque utilisateur se connecte lui-même dans le
+    Chrome de la VM, par bureau à distance. On ne copie aucun cookie. Pas de
+    proxy ni de maquillage d'empreinte (décision du 2026-11-03).
+  - L'extension s'y prête déjà : elle ouvre elle-même un onglet
+    `linkedin.com/messaging` épinglé (`background.js:179`) et interroge ARIA
+    toutes les minutes (`chrome.alarms`). Il reste à la pointer vers l'origine
+    HTTPS du serveur.
+- **Toujours ouvert :** la base légale RGPD des contacts décidés par
+  l'algorithme. À valider avec le DPO avant un usage sur de vrais candidats
+  hors POC. Cela ne bloque pas le POC.
 
-Avant cela, il y a un prérequis de sécurité : le compose actuel contient les
-JWT publics de démo et un admin seedé. L'ADR 0001 l'exclut de tout usage non
-local. Il faut une configuration séparée.
+## 5. La cible : un serveur et une VM d'envoi
 
-## 6. Lots de travail proposés
+- **Serveur :** le compose actuel, plus le service `agents` (même image).
+  - Les secrets viennent d'un coffre.
+  - HTTPS au gateway.
+  - Sauvegardes de `db_data` et `app_config`.
+  - Prérequis : une configuration séparée. Le compose actuel contient les JWT
+    publics de démo et un admin seedé, que l'ADR 0001 exclut de tout usage
+    non local.
+- **VM « bridge host » (POC B3) :**
+  - Un Chrome visible (bureau Linux, ou Xvfb + noVNC).
+  - Un profil Chrome par utilisateur ARIA, chacun avec l'extension appairée
+    à son compte ARIA et pointée vers l'origine HTTPS du serveur.
+  - L'utilisateur se connecte lui-même à LinkedIn par bureau à distance et
+    gère lui-même un éventuel checkpoint de sécurité.
+  - La VM ne reçoit aucun secret ARIA en dehors des jetons d'appairage. Le
+    serveur reste le cerveau, l'extension la main.
+- **Ce que le POC mesure :**
+  - si la session tient dans la durée (jours avant déconnexion ou checkpoint) ;
+  - le taux de livraison (`sent`, `unknown`, refus) ;
+  - les codes 429/999 ;
+  - le délai entre la mise en file et l'envoi.
+  - L'issue 07 tient ce registre.
+
+## 6. Lots de travail (un fichier par lot dans `issues/`)
 
 | # | Lot | Dépend de | Taille |
 |---|---|---|---|
-| 01 | ADR 0002 « agents runner » (décision A) et réponses du propriétaire aux décisions B à E | aucun | S |
-| 02 | Côté serveur : rédaction d'un message d'approche hors du store (`generateOutreachLive` → module serveur qui écrit dans `workspace_state` avec le jeton de concurrence, comme `unified-repository`) | aucun | L, le vrai chantier |
-| 03 | Identité agent : table de délégations, jeton hashé, `requireAgent(on_behalf_of, scope)`, attribution dans l'historique et le journal | 01 | M |
-| 04 | Routes `/api/agent/*` : lister les campagnes dues, sourcing start/advance, top 3 éligibles, rédiger, notifier | 02, 03 | M |
-| 05 | Service `agents` dans `docker-compose.yml` : même image, entrypoint runner, planificateur, healthcheck, logs bornés ; journal `agent_missions` | 04 | M |
-| 06 | Mission M2 (sourcing nocturne) et M3 en mode B1 (top 3, brouillons, notification au recruteur dans l'app) | 05 | M |
-| 07 | M4 : email récapitulatif au manager après envoi confirmé ; champ « managers » de la campagne | 06 | S |
-| 08 | (si B2 décidé) approbation permanente par campagne, mise en file par l'agent, refonte du test d'invariant du pont | 06, décision B | M |
-| 09 | (plus tard) M1 : boîtes mail des managers, puis campagnes en brouillon | 03 | L |
-| 10 | Configuration VM : secrets, HTTPS, sauvegarde et restauration, origine de l'extension | 05 | M |
+| 01 | Rédaction d'un message d'approche côté serveur, hors du store | aucun | L |
+| 02 | Identité agent : délégation, jeton hashé, `requireAgent`, attribution | aucun | M |
+| 03 | Routes `/api/agent/*` | 01, 02 | M |
+| 04 | Service `agents` dans le compose, planificateur, journal `agent_missions`, plafonds IA propres | 03 | M |
+| 05 | Approbation permanente par campagne, file LinkedIn par l'agent, test d'invariant du pont revu (B2) | 02 | M |
+| 06 | Missions M2 (sourcing nocturne) et M3 (top 3, puis mise en file) | 04, 05 | M |
+| 07 | POC B3 : VM « bridge host » (Chrome visible, un profil par utilisateur, bureau à distance) et mesures | 05 | M |
+| 08 | M4 : email récapitulatif aux managers après envoi confirmé | 06 | S |
+| 09 | M1 : boîtes mail des managers, puis campagnes en brouillon (plus tard) | 02 | L |
+| 10 | Configuration serveur : secrets, HTTPS, sauvegardes, origine de l'extension | 04 | M |
 
-Ordre conseillé : 01, 02 et 03 en parallèle, puis 04, 05 et 06. À ce stade,
-une démo complète en B1 tourne la nuit sans intervention.
+Ordre : 01 et 02 en parallèle, puis 03, 05, 04, puis 06. On obtient un
+envoi automatique depuis le Chrome du propriétaire (B2). Puis 07 : le même
+envoi depuis la VM (B3).
 
 ## 7. Questions ouvertes
 
-1. Décisions A à E (§4).
+1. RGPD : base légale des contacts automatiques (DPO).
 2. Cadence : sourcing nocturne, ou à chaque changement de brief ?
 3. Seuil de score minimal pour qu'un candidat entre dans le top 3, par
    campagne ou global.

@@ -2,6 +2,7 @@
 
 Date: 2026-10-27 (gateway and hosting target amended 2026-11-03)
 Status: accepted for the local demo; the Azure section is a studied option, not a decision
+Amended by: ADR 0002 (agents runner service, 2026-11-09)
 
 ## Context
 
