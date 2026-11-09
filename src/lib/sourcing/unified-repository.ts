@@ -9,22 +9,30 @@ import type { UnifiedRunRepository } from "./unified-run";
 
 type Session = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
 export function unifiedRepository(session: Session, workspaceId: string, actorId: string, campaignId: string): UnifiedRunRepository {
+  return serviceUnifiedRepository(workspaceId, actorId, async () => {
+    const [{ data: userData }, role, workspace] = await Promise.all([
+      session.auth.getUser(), session.rpc("current_profile_role"), session.rpc("current_workspace_id"),
+    ]);
+    if (userData.user?.id !== actorId || role.error || workspace.error || workspace.data !== workspaceId || !can(role.data as Role, "source")) {
+      throw new Error("Sourcing authority changed. Reload your workspace.");
+    }
+    const { data, error } = await session.from("workspace_state").select("state,updated_at").eq("workspace_id", workspaceId).single();
+    if (error || !data?.updated_at || projectSourcingAgentWorkspace(data.state, campaignId).status !== "ok") {
+      throw new Error("Campaign authority is unavailable.");
+    }
+    return { state: data.state as WorkspaceState, updatedAt: data.updated_at as string };
+  });
+}
+
+/**
+ * The same repository for a caller that proves its authority itself before
+ * every workspace read (the agents runner acting for a delegating user).
+ */
+export function serviceUnifiedRepository(workspaceId: string, actorId: string, readWorkspace: UnifiedRunRepository["readWorkspace"]): UnifiedRunRepository {
   const service = getServiceSupabase();
   if (!service) throw new Error("Sourcing authority unavailable.");
   return {
-    async readWorkspace() {
-      const [{ data: userData }, role, workspace] = await Promise.all([
-        session.auth.getUser(), session.rpc("current_profile_role"), session.rpc("current_workspace_id"),
-      ]);
-      if (userData.user?.id !== actorId || role.error || workspace.error || workspace.data !== workspaceId || !can(role.data as Role, "source")) {
-        throw new Error("Sourcing authority changed. Reload your workspace.");
-      }
-      const { data, error } = await session.from("workspace_state").select("state,updated_at").eq("workspace_id", workspaceId).single();
-      if (error || !data?.updated_at || projectSourcingAgentWorkspace(data.state, campaignId).status !== "ok") {
-        throw new Error("Campaign authority is unavailable.");
-      }
-      return { state: data.state as WorkspaceState, updatedAt: data.updated_at as string };
-    },
+    readWorkspace,
     async claim(job, token, steps) {
       const { data, error } = await service.from("campaign_sourcing_jobs")
         .update({ claim_token: token, claim_until: new Date(Date.now() + 180_000).toISOString(), steps, revision: job.revision + 1 })

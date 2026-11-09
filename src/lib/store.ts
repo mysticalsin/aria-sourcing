@@ -142,6 +142,7 @@ import type {
   WeeklyReport,
 } from "./types";
 import { genId, isoDaysBefore } from "./utils";
+import { makeActivity, recomputeMetrics, recordLinkedInSent, withActivity } from "./store/workspace-transitions";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
 import {
@@ -350,70 +351,6 @@ function guardReplyClassification(
     return { ...classification, suggestedAction: "Queue for human review: injection-suspected." };
   }
   return classification;
-}
-
-function makeActivity(
-  activity: Omit<Activity, "id" | "createdAt"> & { createdAt?: string },
-): Activity {
-  return {
-    id: genId("act"),
-    createdAt: activity.createdAt ?? new Date().toISOString(),
-    ...activity,
-  };
-}
-
-function withActivity(
-  state: WorkspaceState,
-  activity: Activity,
-  campaignId: string | null,
-): WorkspaceState {
-  const campaigns = campaignId
-    ? state.campaigns.map((campaign) =>
-        campaign.id === campaignId
-          ? {
-              ...campaign,
-              activities: [activity, ...campaign.activities].slice(0, 80),
-            }
-          : campaign,
-      )
-    : state.campaigns;
-  return {
-    ...state,
-    campaigns,
-    activities: [activity, ...state.activities].slice(0, 300),
-  };
-}
-
-function recomputeMetrics(state: WorkspaceState, campaignId: string): WorkspaceState {
-  const candidates = state.candidates.filter(
-    (candidate) => candidate.campaignId === campaignId,
-  );
-  const campaign = state.campaigns.find((item) => item.id === campaignId);
-  const firstInterviewHours = campaign
-    ? firstInterviewElapsedHours(
-        state.bookings.filter((booking) => booking.campaignId === campaignId),
-        campaign.createdAt,
-      )
-    : null;
-  return {
-    ...state,
-    campaigns: state.campaigns.map((item) =>
-      item.id === campaignId
-        ? {
-            ...item,
-            metrics: computeCampaignMetrics(
-              candidates,
-              item.metrics,
-              firstInterviewHours,
-              realFunnelFacts(state, {
-                live: !state.settings.dryRunMode,
-                campaignId,
-              }),
-            ),
-          }
-        : item,
-    ),
-  };
 }
 
 /* ============================================================================
@@ -2027,67 +1964,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (!candidate || !campaign) return { ok: false, error: "Linked candidate/campaign missing." };
 
       const now = new Date().toISOString();
-      commit((prev) => {
-        const outreach = prev.outreach.map((m) =>
-          m.id === messageId
-            ? { ...m, status: "Scheduled" as const, scheduledFor: now, sentAt: now }
-            : m,
-        );
-        const candidates = prev.candidates.map((c) =>
-          c.id === candidate.id
-            ? {
-                ...c,
-                stage: (["Sourced"].includes(c.stage) ? "Contacted" : c.stage) as CandidateStage,
-                lastContactedAt: now,
-                outreachHistory: [
-                  { messageId, channel: msg.channel, subject: msg.subject, status: "Scheduled" as const, at: now },
-                  ...c.outreachHistory,
-                ],
-              }
-            : c,
-        );
-        const ledgerEntry: OutreachLedgerEntry = {
-          id: genId("led"),
-          candidateId: candidate.id,
-          candidateEmail: candidate.email,
-          seatId: "",
-          campaignId: campaign.id,
-          channel: msg.channel,
-          status: "sent",
-          reason: "Operator confirmed manual send on LinkedIn.",
-          at: now,
-        };
-        let next: WorkspaceState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
-        next = {
-          ...next,
-          campaigns: next.campaigns.map((c) =>
-            c.id === campaign.id
-              ? {
-                  ...c,
-                  metrics: {
-                    ...c.metrics,
-                    linkedinSentToday: c.metrics.linkedinSentToday + 1,
-                  },
-                }
-              : c,
-          ),
-        };
-        next = recomputeMetrics(next, campaign.id);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "outreach",
-            title: `LinkedIn message sent: ${candidate.name}`,
-            notes: "Operator confirmed the message was manually copied and sent on LinkedIn.",
-            outcome: "Scheduled",
-            campaignId: campaign.id,
-            linkedEntityType: "candidate",
-            linkedEntityId: candidate.id,
-          }),
-          campaign.id,
-        );
-        return next;
-      });
+      commit((prev) => recordLinkedInSent(prev, messageId, now, {
+        reason: "Operator confirmed manual send on LinkedIn.",
+        notes: "Operator confirmed the message was manually copied and sent on LinkedIn.",
+      }));
       return { ok: true };
     },
     [commit, current],

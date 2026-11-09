@@ -11,11 +11,10 @@ import { SourcePlanSchema, campaignSourcingBasis, orderedSteps, publicSourcingJo
 import { advanceUnifiedRun, reviewedCampaign } from "@/lib/sourcing/unified-run";
 import { loadUnifiedJob, startUnifiedJob, unifiedRepository } from "@/lib/sourcing/unified-repository";
 import { clearDiscoveryCriteria, clearWebSearchDiscovery } from "@/lib/sourcing/provider-egress";
-import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
-import { searchLinkedInWithClaude, webSearchAnthropicConfig } from "@/lib/sourcing/claude-web-search";
+import { webSearchAnthropicConfig } from "@/lib/sourcing/claude-web-search";
+import { unifiedProviders } from "@/lib/sourcing/unified-providers";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
-import { aiBudgetStatus, recordAiUsage } from "@/lib/ai/usage";
-import { searchGithubUsers } from "@/lib/sourcing/github";
+import { aiBudgetStatus } from "@/lib/ai/usage";
 
 export const runtime = "nodejs";
 const campaignId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
@@ -95,24 +94,7 @@ export async function POST(req: NextRequest) {
       if (error) throw new Error("Run could not be closed.");
     } else {
       const repo = unifiedRepository(auth.session, auth.workspaceId, auth.actorId, job.campaign_id);
-      try { await advanceUnifiedRun(job, repo, {
-        github: (clearance, query, count, signal) => searchGithubUsers(clearance, query, count, process.env.GITHUB_TOKEN ?? "", signal),
-        webSearch: async (clearance, query, count, campaign, signal) => {
-          const config = webSearchAnthropicConfig((await repo.readWorkspace()).state.settings);
-          const key = config ? await resolveVaultSecret(config.apiKeyId, "Anthropic") : "";
-          if (!config || !key) return { ok: false, error: "Add an Anthropic key in Settings → AI & Models before searching the web." };
-          const budget = aiBudgetStatus();
-          if (!budget.ok) return { ok: false, error: `${budget.reason} No search was made.` };
-          const outcome = await searchLinkedInWithClaude(clearance, key, { query, limit: count, model: config.model, signal,
-            role: campaign.jobAnalysis.title, location: campaign.jobAnalysis.location ?? "",
-            queryAllowed: (q) => validateSourcingQuery("LinkedIn", q, campaign).ok });
-          recordAiUsage({ task: "sourcing", activity: "web-sourcing", model: config.model, usage: outcome.usage });
-          if (outcome.ok) return { ok: true, hits: outcome.hits };
-          return { ok: false, error: outcome.reason === "refused"
-            ? "Anthropic refused the web search. Check the key, its credits and that web search is enabled for your Anthropic organization."
-            : "Web search is temporarily unavailable. Start a new run later; no automatic retry was made." };
-        },
-      }); } catch {
+      try { await advanceUnifiedRun(job, repo, unifiedProviders(() => repo.readWorkspace(), (id) => resolveVaultSecret(id, "Anthropic"))); } catch {
         // Completion may have committed before a secondary quota receipt failed.
         const latest = await loadUnifiedJob(auth.workspaceId, input.runId);
         if (!latest || latest.status === "active") throw new Error("Sourcing paused.");
