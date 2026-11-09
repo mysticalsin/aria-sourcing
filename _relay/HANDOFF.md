@@ -1,15 +1,20 @@
 ---
 project: MSourcing / ARIA
-shift: 461
+shift: 462
 agent: claude-code
 updated: 2026-11-09
-status: linkedin-approval-pending-manual
+status: approve-sends-linkedin
 ---
 
-# Handoff - Shift 461
+# Handoff - Shift 462
 
 ## Current state
 
+- Shift 462 (2026-11-09): "Approve & send on LinkedIn" sends an approved
+  LinkedIn outreach draft at once (src/components/linkedin/outreach-send.ts);
+  Enter sends in the LinkedIn tab. Gateway: Caddy keepalive off to upstreams
+  (fixed the intermittent 502 behind "Could not queue..." and "candidate
+  read failed"), 5xx logged. Gate exit 0; e2e 42/42 three runs, 0 gateway 5xx.
 - Shift 461 (2026-11-09): approving a LinkedIn outreach draft always gives
   "Pending Manual Send" (dry-run no longer simulates LinkedIn delivery;
   `approveOutreach` in src/lib/store.ts). Gate exit 0. Owner data: Tony's
@@ -161,7 +166,7 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
 
 ## Next steps
 
-00. If "[linkedin] ... candidate read failed (CODE: ...)" shows in the app
+00. (Likely fixed in shift 462 by Caddy keepalive off.) If "[linkedin] ... candidate read failed (CODE: ...)" shows in the app
     logs, investigate the RPC failure with that code (suspect: PostgREST
     pool of 10 under SSE load).
 0. Owner: reload the ARIA extension (0.3.0) in chrome://extensions, reload
@@ -191,6 +196,10 @@ Owner (2026-11-06): "integrate mbe-test without breaking LinkedIn", then
 
 ## Decisions made (don't relitigate)
 
+- Owner 2026-11-09 (shift 462): approving a LinkedIn outreach message is the
+  human decision to send it: approval queues it on LinkedIn (no separate
+  "manual send" or send click). Still never automatic: nothing queues a
+  LinkedIn write without a person's click (approval, Send, Enter).
 - Owner 2026-11-06 (shift 456): Apify is retired for good: no sourcing, no
   enrichment, no key or card in Settings. LinkedIn discovery is Claude web
   search over public pages only. Do not reintroduce a vendor scraper without
