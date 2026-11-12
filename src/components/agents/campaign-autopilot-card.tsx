@@ -27,6 +27,8 @@ interface AutopilotPayload {
   error?: string;
   agentsEnabled: boolean;
   bridgeEnabled: boolean;
+  /** AGENTS_LINKEDIN_ALLOWLIST size, or null when the agent is not restricted. */
+  allowlistSize?: number | null;
   autopilot: AutopilotView | null;
   delegation: { active: boolean; scopes: string[] } | null;
   linkedin: { connected: boolean; lastSeenAt: string | null };
@@ -96,7 +98,7 @@ export function CampaignAutopilotCard({ campaignId, candidateName }: { campaignI
     setForm((f) => ({ ...f, [key]: Number(e.target.value) }));
 
   return (
-    <Card className="mb-6" id="campaign-autopilot">
+    <Card className="mb-6" id="campaign-autopilot" data-tour="autopilot">
       <CardBody className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -108,6 +110,11 @@ export function CampaignAutopilotCard({ campaignId, candidateName }: { campaignI
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         {data && !data.agentsEnabled && <p className="text-sm text-muted">The agents runner is off on this server (AGENTS_ENABLED and AGENT_RUNNER_SECRET). Settings are kept; nothing runs.</p>}
         {data && !data.bridgeEnabled && <p className="text-sm text-muted">The LinkedIn bridge is off on this server: the agent can source, not contact.</p>}
+        {data && typeof data.allowlistSize === "number" && (
+          <p className="rounded-2xl bg-success-soft px-3 py-2 text-sm font-medium text-success ring-1 ring-inset ring-success/20">
+            Safety net on: this server lets the agent contact only {data.allowlistSize === 0 ? "nobody" : `${data.allowlistSize} allowed LinkedIn profile${data.allowlistSize === 1 ? "" : "s"}`}, whatever the scores (AGENTS_LINKEDIN_ALLOWLIST).
+          </p>
+        )}
         {data && !data.linkedin.connected && <p className="text-sm text-muted">Your LinkedIn is not connected: <Link className="underline" href="/settings?tab=integrations#linkedin">connect it</Link> before the agent can contact anyone for you.</p>}
 
         {!lockedByOther && (

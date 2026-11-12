@@ -23,6 +23,7 @@ import { recordLinkedInSent, makeActivity, withActivity } from "@/lib/store/work
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { genId } from "@/lib/utils";
+import { publicIdFromProfileUrl } from "@/lib/linkedin-profile-url";
 
 export interface AutopilotRow {
   id: string;
@@ -108,6 +109,8 @@ export interface TickDeps {
   };
   linkedin: {
     enabled(): boolean;
+    /** AGENTS_LINKEDIN_ALLOWLIST: when set, the only profiles the agent may contact. */
+    allowlist?: ReadonlySet<string> | null;
     hasAccount(workspaceId: string, ownerId: string): Promise<boolean>;
     contact(workspaceId: string, ownerId: string, candidateId: string): Promise<ContactLookup>;
     queue(row: AgentOutreachRow, kind: "message" | "invitation", body: string): Promise<QueueOutcome>;
@@ -223,8 +226,9 @@ async function contactOne(deps: TickDeps, row: AgentOutreachRow, pilots: Autopil
     await deps.outreach.update(row, { state: "skipped", reason: "Candidate or campaign no longer exists." });
     return "skipped: gone";
   }
+  const allow = deps.linkedin.allowlist ?? null;
   if (!drafted) {
-    const blocker = agentContactBlocker(candidate, campaign, state);
+    const blocker = agentContactBlocker(candidate, campaign, state, allow);
     if (blocker) {
       await deps.outreach.update(row, { state: "skipped", reason: blocker });
       return `skipped: ${blocker}`;
@@ -261,7 +265,7 @@ async function contactOne(deps: TickDeps, row: AgentOutreachRow, pilots: Autopil
     const saved = await deps.mutateState(row.workspace_id, (latest) => {
       const c = latest.candidates.find((x) => x.id === candidate.id);
       const camp = latest.campaigns.find((x) => x.id === campaign.id);
-      if (!c || !camp || agentContactBlocker(c, camp, latest)) return null;
+      if (!c || !camp || agentContactBlocker(c, camp, latest, allow)) return null;
       const message = agentOutreachMessage({ candidate: c, campaign: camp, settings: latest.settings, gen: draft.gen, draftedBy: draft.draftedBy, ownerName: owner.name, id: messageId });
       return withActivity(
         { ...latest, outreach: [message, ...latest.outreach] },
@@ -284,6 +288,13 @@ async function contactOne(deps: TickDeps, row: AgentOutreachRow, pilots: Autopil
     body = draft.gen.body;
   }
 
+  // Last check before anything reaches the owner's outbox, also for a draft
+  // saved by an earlier tick.
+  const publicId = publicIdFromProfileUrl(candidate.linkedinUrl ?? "")?.toLowerCase() ?? "";
+  if (allow && !allow.has(publicId)) {
+    await deps.outreach.update(row, { state: "skipped", reason: "Outside the agent allowlist (AGENTS_LINKEDIN_ALLOWLIST)." });
+    return "skipped: outside the allowlist";
+  }
   const queued = await deps.linkedin.queue({ ...row, kind }, kind, body ?? "");
   if (!queued.ok) {
     await deps.outreach.update(row, { state: "failed", reason: queued.reason.slice(0, 300) });
@@ -298,7 +309,7 @@ async function contactOne(deps: TickDeps, row: AgentOutreachRow, pilots: Autopil
 async function selectContacts(deps: TickDeps, pilot: AutopilotRow): Promise<string> {
   const state = await deps.readState(pilot.workspace_id);
   const picked = await deps.outreach.pickedCandidates(pilot);
-  const top = pickTopCandidates(state, pilot.campaign_id, { count: pilot.contacts_per_run, minScore: pilot.min_score, exclude: picked });
+  const top = pickTopCandidates(state, pilot.campaign_id, { count: pilot.contacts_per_run, minScore: pilot.min_score, exclude: picked, allow: deps.linkedin.allowlist ?? null });
   const mission = await deps.missions.create(pilot, { kind: "contact", status: "running" });
   if (top.length) {
     await deps.outreach.insert(top.map((c) => ({

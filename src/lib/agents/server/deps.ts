@@ -20,6 +20,7 @@ import { projectSourcingAgentWorkspace } from "@/lib/sourcing/sourcing-agent-con
 import { resolveWorkspaceVaultSecret } from "@/lib/ai/vault-secret";
 import { aiBudgetStatus } from "@/lib/ai/usage";
 import { linkedInBridgeEnabled } from "@/lib/linkedin-bridge/policy";
+import { parseAgentAllowlist } from "../autopilot";
 import { agentContact, agentOutboxItem, agentQueue, ownerAccount } from "@/lib/linkedin-bridge/agent";
 
 const AUTOPILOT_COLUMNS = "id, workspace_id, campaign_id, owner_id, enabled, source_every_hours, source_limit, contact_enabled, contacts_per_run, min_score, last_source_at, last_contact_at";
@@ -130,6 +131,7 @@ export function tickDeps(svc: Svc): TickDeps {
     },
     linkedin: {
       enabled: () => linkedInBridgeEnabled(),
+      allowlist: parseAgentAllowlist(process.env.AGENTS_LINKEDIN_ALLOWLIST),
       async hasAccount(workspaceId, ownerId) {
         return Boolean(await ownerAccount(svc, workspaceId, ownerId));
       },

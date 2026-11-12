@@ -10,6 +10,7 @@ import type { Role } from "@/lib/types";
 import { agentsEnabled, serviceClient, type Svc } from "@/lib/agents/server/authority";
 import { readWorkspace } from "@/lib/agents/server/workspace";
 import { linkedInBridgeEnabled } from "@/lib/linkedin-bridge/policy";
+import { parseAgentAllowlist } from "@/lib/agents/autopilot";
 
 /* ============================================================================
    Campaign autopilot, for the signed-in user (ADR 0002).
@@ -95,6 +96,8 @@ export async function GET(req: NextRequest) {
     ok: true,
     agentsEnabled: agentsEnabled(),
     bridgeEnabled: linkedInBridgeEnabled(),
+    // Only the count: the allowed profiles stay on the server.
+    allowlistSize: parseAgentAllowlist(process.env.AGENTS_LINKEDIN_ALLOWLIST)?.size ?? null,
     autopilot: row && {
       enabled: row.enabled, mine: row.owner_id === userId, ownerName: row.owner_id === userId ? "you" : await profileName(svc, String(row.owner_id)),
       sourceEveryHours: row.source_every_hours, sourceLimit: row.source_limit, contactEnabled: row.contact_enabled,

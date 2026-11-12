@@ -115,6 +115,12 @@ LinkedIn without a click per message.
 - **Off unless:** `AGENTS_ENABLED=true` and `AGENT_RUNNER_SECRET`
   (32+ characters) on the app, and `LINKEDIN_BRIDGE_ENABLED=true` for
   contacts.
+- **Allowlist (demos and tests):** `AGENTS_LINKEDIN_ALLOWLIST` on the app,
+  LinkedIn profile URLs or public ids separated by commas or spaces. When
+  set, the agent picks, drafts and queues only those profiles, whatever their
+  score; a value with no valid profile in it means nobody. It is checked when
+  candidates are picked and again right before the outbox insert. Unset
+  means no restriction.
 
 ## How it works
 

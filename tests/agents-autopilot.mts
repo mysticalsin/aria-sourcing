@@ -14,6 +14,7 @@ import {
   agentContactBlocker,
   autopilotSourcePlan,
   fitInvitationNote,
+  parseAgentAllowlist,
   pickTopCandidates,
 } from "../src/lib/agents/autopilot";
 import { recordLinkedInSent } from "../src/lib/store/workspace-transitions";
@@ -80,6 +81,20 @@ test("the best N at or above the threshold, skipping already picked ones", () =>
   assert.ok(!pickTopCandidates(state, campaignId, { count: 5, minScore: 0 }).some((c) => c.id === "cand_t1"), "a drafted candidate is not picked");
 });
 
+test("AGENTS_LINKEDIN_ALLOWLIST: unset means no limit, set means only those profiles, a typo means nobody", () => {
+  assert.equal(parseAgentAllowlist(undefined), null);
+  assert.equal(parseAgentAllowlist("  "), null);
+  const allow = parseAgentAllowlist("https://www.linkedin.com/in/Test-Person-2/, test-person-3\nnot/a/profile")!;
+  assert.deepEqual([...allow].sort(), ["test-person-2", "test-person-3"]);
+  assert.equal(parseAgentAllowlist("!!!")!.size, 0);
+  const { state, campaignId } = fixture();
+  const top = pickTopCandidates(state, campaignId, { count: 5, minScore: 70, allow });
+  assert.deepEqual(top.map((c) => c.id), ["cand_t2", "cand_t3"]);
+  assert.equal(pickTopCandidates(state, campaignId, { count: 5, minScore: 0, allow: new Set() }).length, 0);
+  const campaign = state.campaigns.find((c) => c.id === campaignId);
+  assert.match(agentContactBlocker(state.candidates[0], campaign, state, allow) ?? "", /allowlist/);
+});
+
 test("an invitation note never exceeds LinkedIn's 300 characters", () => {
   const long = "Hello Ada, I read your work on distributed systems and it is impressive. ".repeat(10);
   const note = fitInvitationNote(long);
@@ -132,6 +147,7 @@ interface World {
   bridge: boolean;
   drafts: number;
   now: Date;
+  allowlist?: ReadonlySet<string> | null;
 }
 
 function world(): World {
@@ -197,6 +213,7 @@ function deps(w: World): TickDeps {
     },
     linkedin: {
       enabled: () => w.bridge,
+      allowlist: w.allowlist ?? null,
       hasAccount: async () => true,
       contact: async () => w.relationship,
       queue: async (row, kind, body) => {
@@ -311,6 +328,31 @@ test("a draft saved before a crash is queued as is, never drafted twice", async 
   assert.equal(w.drafts, 0);
   assert.equal(w.queued[0].body, "Saved note.");
   assert.equal(w.outreach[0].state, "queued");
+});
+
+test("the allowlist is checked again right before queueing, also for a draft saved earlier", async () => {
+  const w = world();
+  w.pilots[0].last_source_at = w.now.toISOString();
+  w.allowlist = new Set(["test-person-2"]);
+  const d = deps(w);
+  await d.outreach.insert([{ workspace_id: WS, campaign_id: w.pilots[0].campaign_id, candidate_id: "cand_t1", owner_id: OWNER, mission_id: null, state: "selected", score: 91 }]);
+  const message = { ...structuredClone(buildSeedState().outreach[0]), id: "msg_saved", candidateId: "cand_t1", campaignId: w.pilots[0].campaign_id, channel: "LinkedIn" as const, status: "Pending Manual Send" as const, body: "Saved note." };
+  w.state.outreach = [message];
+  w.outreach[0].message_id = "msg_saved";
+  await runTick(d);
+  assert.equal(w.queued.length, 0, "nothing reaches the owner's outbox");
+  assert.equal(w.outreach[0].state, "skipped");
+  assert.match(w.outreach[0].reason ?? "", /allowlist/);
+});
+
+test("with an allowlist, a finished run picks only allowed profiles", async () => {
+  const w = world();
+  w.allowlist = new Set(["test-person-4"]);
+  const d = deps(w);
+  await runTick(d);
+  await runTick(d);
+  await runTick(d);
+  assert.deepEqual(w.outreach.map((r) => r.candidate_id), ["cand_t4"]);
 });
 
 test("nothing due: the tick is idle", async () => {

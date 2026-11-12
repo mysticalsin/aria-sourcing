@@ -27,8 +27,30 @@ export interface AutopilotSettings {
   sourceLimit: number;
 }
 
-/** Why the agent must not contact this candidate, or null when it may. */
-export function agentContactBlocker(candidate: Candidate, campaign: Campaign | undefined, state: WorkspaceState): string | null {
+/** LinkedIn public ids the agent may contact, lower-cased. */
+export type AgentAllowlist = ReadonlySet<string>;
+
+/**
+ * Parse AGENTS_LINKEDIN_ALLOWLIST: profile URLs or public ids, separated by
+ * commas, spaces or new lines. Unset or blank means no restriction (null).
+ * Set but with nothing valid in it means "nobody" (an empty set), so a typo
+ * never opens the agent to every candidate.
+ */
+export function parseAgentAllowlist(raw: string | undefined): AgentAllowlist | null {
+  if (raw === undefined || !raw.trim()) return null;
+  const ids = raw
+    .split(/[\s,;]+/)
+    .filter(Boolean)
+    .map((item) => publicIdFromProfileUrl(item.includes("linkedin.com") ? item : `https://www.linkedin.com/in/${item}`))
+    .filter((id): id is string => Boolean(id))
+    .map((id) => id.toLowerCase());
+  return new Set(ids);
+}
+
+/** Why the agent must not contact this candidate, or null when it may.
+ *  `allow`, when set, is the only profiles the agent may contact (a safety
+ *  net for demos and tests: AGENTS_LINKEDIN_ALLOWLIST). */
+export function agentContactBlocker(candidate: Candidate, campaign: Campaign | undefined, state: WorkspaceState, allow: AgentAllowlist | null = null): string | null {
   if (!campaign || candidate.campaignId !== campaign.id) return "Not in this campaign.";
   if (isCandidateErasureTombstone(candidate)) return "Erased.";
   const flags = candidate.complianceFlags;
@@ -36,7 +58,9 @@ export function agentContactBlocker(candidate: Candidate, campaign: Campaign | u
   if (candidate.stage !== "Sourced") return "Already past Sourced.";
   if (candidate.outreachHistory.length > 0 || candidate.lastContactedAt) return "Already contacted.";
   if (state.outreach.some((m) => m.candidateId === candidate.id && m.status !== "Rejected")) return "Already has an outreach message.";
-  if (!publicIdFromProfileUrl(candidate.linkedinUrl ?? "")) return "No LinkedIn profile URL.";
+  const publicId = publicIdFromProfileUrl(candidate.linkedinUrl ?? "");
+  if (!publicId) return "No LinkedIn profile URL.";
+  if (allow && !allow.has(publicId.toLowerCase())) return "Outside the agent allowlist (AGENTS_LINKEDIN_ALLOWLIST).";
   return candidateDraftBlocker(candidate, campaign, "LinkedIn");
 }
 
@@ -47,14 +71,14 @@ export function agentContactBlocker(candidate: Candidate, campaign: Campaign | u
 export function pickTopCandidates(
   state: WorkspaceState,
   campaignId: string,
-  options: { count: number; minScore: number; exclude?: ReadonlySet<string> },
+  options: { count: number; minScore: number; exclude?: ReadonlySet<string>; allow?: AgentAllowlist | null },
 ): Candidate[] {
   const campaign = state.campaigns.find((c) => c.id === campaignId);
   if (!campaign) return [];
   return state.candidates
     .filter((c) => c.campaignId === campaignId && !options.exclude?.has(c.id))
     .filter((c) => c.matchScore >= options.minScore)
-    .filter((c) => agentContactBlocker(c, campaign, state) === null)
+    .filter((c) => agentContactBlocker(c, campaign, state, options.allow ?? null) === null)
     .sort((a, b) => b.matchScore - a.matchScore || a.createdAt.localeCompare(b.createdAt))
     .slice(0, Math.max(0, options.count));
 }
