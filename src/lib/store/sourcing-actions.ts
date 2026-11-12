@@ -384,7 +384,8 @@ function sanitizeWebLeads(
     ) {
       return null;
     }
-    leads.push({ name, title, company, url, snippet });
+    const location = optionalString(item.location, 120);
+    leads.push({ name, title, company, url, snippet, ...(location ? { location } : {}) });
   }
   return leads;
 }

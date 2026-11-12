@@ -1,6 +1,7 @@
 import { dedupeCandidates } from "@/lib/rules";
 import { scoreCandidate } from "@/lib/scoring";
 import type { GithubUser } from "@/lib/sourcing/github-identity";
+import { skillsObservedIn } from "@/lib/sourcing/skill-evidence";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
@@ -86,8 +87,8 @@ export function mapWebSearchCandidates(
   const jd = campaign.jobAnalysis;
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
   const raw: Candidate[] = leads.map((lead) => {
-    const haystack = `${lead.title} ${lead.snippet}`.toLowerCase();
-    const techStack = allSkills.filter((skill) => haystack.includes(skill.toLowerCase()));
+    // Only the brief's skills the public result text names (whole words).
+    const techStack = skillsObservedIn(`${lead.title} ${lead.company} ${lead.snippet}`, allSkills);
     return {
       id: genId("cand"),
       campaignId: campaign.id,
@@ -96,7 +97,8 @@ export function mapWebSearchCandidates(
       avatarInitials: initialsFrom(lead.name),
       currentTitle: lead.title,
       currentCompany: lead.company,
-      location: "",
+      // Only a place the result text states; blank otherwise.
+      location: lead.location ?? "",
       timezone: "",
       linkedinUrl: platform === "LinkedIn" ? lead.url : "",
       githubUrl: "",

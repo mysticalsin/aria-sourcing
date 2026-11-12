@@ -22,6 +22,9 @@ export interface WebLead {
   company: string;
   url: string;
   snippet: string;
+  /** Only when the result text itself names a place ("Greater Paris
+   *  Metropolitan Region", "Location: Lyon"); never guessed. */
+  location?: string;
 }
 
 /** Platforms real-sourced via a site:-scoped web search rather than a dedicated API. */
@@ -122,7 +125,71 @@ export function extractLead(hit: SearchHit, platform: WebSearchPlatform): WebLea
     title = atCompany[1]!.trim();
     company = atCompany[2]!.trim();
   }
-  return { name, title: title || hit.snippet.slice(0, 120), company, url: hit.url, snippet: hit.snippet.slice(0, 300) };
+  // LinkedIn puts the member's location where a company would be when the
+  // profile shows no employer: keep it as a location, not a company.
+  let location = "";
+  if (company && looksLikeLocation(company)) {
+    location = company;
+    company = "";
+  }
+  if (title && looksLikeLocation(title)) {
+    location ||= title;
+    title = "";
+  }
+  // A bio sentence in the headline slot ("As an expert in ... · Location:
+  // Paris.") is not a job title; its stated location still counts.
+  if (title && (/^(?:i|i'm|i am|my|we|as an?)\b/i.test(title) || title.length > 100 || /\blocation\s*:/i.test(title))) {
+    location ||= locationFromText(title);
+    title = "";
+  }
+  const snippet = cleanSnippet(hit.snippet);
+  location ||= locationFromText(snippet);
+  // No headline in the title: use the snippet's first sentence only when it
+  // reads like a job title; a bio sentence or a list of "similar profiles" is
+  // not a headline.
+  if (!title) title = headlineFromSnippet(snippet);
+  const lead: WebLead = { name, title, company, url: hit.url, snippet: snippet.slice(0, 300) };
+  if (location) lead.location = location.slice(0, 120);
+  return lead;
+}
+
+/** Search-result text without markdown headings, bullets, emoji and the
+ *  "Other similar profiles" block LinkedIn appends to a public page. */
+export function cleanSnippet(text: string): string {
+  return text
+    .split(/#{1,6}\s*(?:other similar profiles|people also viewed|explore more posts)/i)[0]!
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function headlineFromSnippet(snippet: string): string {
+  const first = snippet.split(/(?<=[.!?])\s|\s[·|]\s/)[0]?.trim() ?? "";
+  if (!first || first.length > 90 || /^(?:i|i'm|i am|my|we|as an?)\b/i.test(first)) return "";
+  return looksLikeJobTitle(first) ? first.replace(/[.!?]$/, "") : "";
+}
+
+const COUNTRIES =
+  /\b(?:france|united kingdom|uk|germany|deutschland|spain|espa[ñn]a|italy|italia|belgium|belgique|netherlands|switzerland|suisse|portugal|ireland|luxembourg|austria|poland|sweden|denmark|norway|finland|united states|usa|canada|singapore|india|morocco|maroc|tunisia|tunisie|united arab emirates|uae)\b/i;
+
+/** "Greater Paris Metropolitan Region", "Paris, Île-de-France, France", "Lyon Area". */
+export function looksLikeLocation(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 80 || looksLikeJobTitle(t)) return false;
+  if (/\bgreater\s+\S.*\b(?:area|region)\b|\bmetropolitan\b|[îi]le-de-france|\br[ée]gion(?!\p{L})/iu.test(t)) return true;
+  if (/^[\p{L} .'-]+\s+area$/iu.test(t)) return true;
+  // "City, Region, Country" or "City, Country" ending with a known country.
+  return /^[\p{L} .'-]+(?:,\s*[\p{L} .'-]+){1,2}$/u.test(t) && COUNTRIES.test(t.split(",").pop()!);
+}
+
+/** A place the result text states outright: "Location: Paris". */
+function locationFromText(text: string): string {
+  const stated = /\b(?:location|localisation|lieu)\s*:\s*([\p{L} '-]+(?:,\s*[\p{L} '-]+){0,2})/iu.exec(text);
+  if (stated) return stated[1]!.trim().replace(/[.\s]+$/, "");
+  const segment = text.split(/\s[·|]\s/).map((s) => s.trim()).find((s) => looksLikeLocation(s));
+  return segment ?? "";
 }
 
 /** Job-title vocabulary (English and French) that a company name rarely contains. */
