@@ -1,46 +1,42 @@
 ---
 project: MSourcing / ARIA
-shift: 465
+shift: 466
 agent: claude-code
-updated: 2026-11-09
-status: demo-video-recorded
+updated: 2026-11-12
+status: poc-polished-for-presentation
 ---
 
-# Handoff - Shift 465
+# Handoff - Shift 466
 
 ## Current state
 
-- Branch mbe-branch, local only. Code unchanged since 1006fdc1 / d8c916d7
-  (this shift touched only local data, `_relay/` and `.scratch/`).
-- Owner request (2026-11-09, FR): an English 1080p demo video of the POC
-  with intro/outro (Mantu M + ARIA type) and English subtitles. Delivered:
-  `ARIA-demo-1080p.mp4` (1920x1080, H.264, 3:16) in the session scratchpad
-  `/private/tmp/claude-501/-Users-michaelbernard-amaris-aria-sourcing/c4e81ddc-3329-4d3c-8e02-0e01ec9765e7/scratchpad/demo/`
-  (temporary dir: copy it out). The recording kit is next to it
-  (`record.mjs`, `record2.mjs`, `edit.py`, `build.sh`, image `aria-demo:local`
-  = Playwright 1.61.1 noble + ffmpeg + Inter).
-- Local DB, owner workspace `00000000-...0001` (data, not code):
-  - all previous campaigns, candidates, outreach, activities, replies,
-    schedules, bookings, reports deleted (owner asked); AI cost ledger kept.
-    Backup before deletion: `scratchpad/demo/backup/pre-demo-2026-11-09.sql`
-    (temporary dir).
-  - now holds the demo data: campaign "Head of AI Transformation" (8 sourced
-    LinkedIn profiles + Tony Walteur added by hand, legitimate interest).
-  - a REAL LinkedIn message was sent to Tony (test account) at 14:11:28 UTC
-    via the bridge (outbox `sent`, visible in his conversation).
-  - `settings.minScoreToContact` was 25 during the recording (Tony scores
-    30), restored to 70.
-  - 6 orphan `linkedin_bridge_contacts` rows deleted, conversation 991d1a79
-    relinked to Tony's new candidate id (see issue below).
+- Branch mbe-branch, local only (not pushed). Commits this shift:
+  22c081df (sourcing extraction), dc0740b8 (POC scope, real LinkedIn sends,
+  verify form). Gate green: `npm run typecheck && npm run typecheck:tests && npm test`
+  (run in `aria-gate:local`), eslint clean on touched files.
+- Docker app image rebuilt from dc0740b8 and restarted (`docker compose build app`,
+  `up -d --no-build app agents`).
+- Local DB, owner workspace `00000000-0000-4000-8000-000000000001` (data):
+  Tony's sent LinkedIn message set `dryRun: false`, its two activities
+  reworded (bridge send, "Approved for LinkedIn"), campaign metrics.contacted 1,
+  Supabase integration description fixed. Backup before the edit:
+  `/private/tmp/claude-501/-Users-michaelbernard-amaris-aria-sourcing/c5be0767-8d5f-473e-ba0e-418d01433443/scratchpad/workspace-state-backup-2026-11-12.json` (temporary dir).
+  A "Candidate PII revealed" activity for Brice Challamel was added by the
+  visual check of the verify form (truthful, harmless).
+- The 9 existing demo candidates keep their old noisy headlines and 30-35
+  scores: the new extraction applies to new sourcing runs only.
 
 ## Done this shift
 
-- Demo video: wipe, campaign from a pasted brief (parse, edit params, add a
-  skill), reviewed web-search sourcing (8 profiles), two profiles opened,
-  Tony added from his LinkedIn URL (look up through the extension), Claude
-  draft, approval in Outreach = send, sent message shown in the LinkedIn tab,
-  Reports overview, AI costs.
-- Found and filed `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`.
+- Owner request (FR): analyse the POC, polish weak points, exclude what does
+  not work, before a presentation in a few days; demo storyline to be built
+  together afterwards.
+- Screenshot tour of all 20 pages (Playwright, `aria-demo:local`), findings:
+  bridge send counted as simulated / "manually copied"; "Review 9 drafts"
+  with no drafts; garbage headlines from search snippets; every web-sourced
+  profile at 30/100 (cannot reach the 70 floor); contradictory integration
+  badges; empty pages needing Outlook/Graph/careers site.
+- Fixes: see commit messages of 22c081df and dc0740b8.
 
 ## Blockers
 
@@ -48,21 +44,32 @@ status: demo-video-recorded
 
 ## Next steps
 
-1. Owner: copy the video out of the scratchpad and review it.
-2. Fix issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`
-   (conversation stuck on a stale candidate id when the same member has
-   several contacts).
-3. UI wording seen on camera: the Outreach card for a LinkedIn message sent
-   through the bridge says "Approved / Queued for send ... Nothing sent live"
-   and Reports says "No real send yet, 1 simulated" while the message really
-   left via LinkedIn (dry-run applies to email only). Make both bridge-aware.
-4. A manually added candidate with a LinkedIn URL gets only name + headline
-   from the look-up; the score is low (30) and the default contact floor (70)
-   blocks approval. Consider pre-filling skills from the profile.
-5. Carried over from shift 464: live autopilot test (issue 06), VM POC
-   (issue 07), server config (issue 10), Codex audit of the agents code.
+1. With the owner: build the demo storyline (fil conducteur). Suggested
+   flow: New campaign from a pasted brief -> Run sourcing (LinkedIn via web
+   search) -> open a profile, Reveal contact, Evidence tab "Verify the
+   profile" -> score rises over 70 -> Draft LinkedIn message -> approve in
+   Outreach = sent from own LinkedIn -> Reports / AI costs -> Autopilot card.
+2. Decide whether to wipe and re-source the demo campaign so headlines and
+   locations use the new extraction.
+3. Rehearse untested-live items before showing them: "Run Aria" (home),
+   "Several roles" (new campaign), Autopilot turn-on (contacts real people).
+4. Reports Overview shows an annualized ROI (3x, $53,655) extrapolated from
+   one day of activity: consider hiding it or explaining it in the demo.
+5. Carried over: issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`,
+   live autopilot test (issue 06), VM POC (issue 07), server config (issue 10).
 
 ## Decisions made (don't relitigate)
+
+- Owner 2026-11-12 (shift 466): the presentation shows the "POC live". Pages
+  that need an integration this install does not run are left out of the
+  navigation, not deleted: `OUT_OF_POC_SCOPE` in `src/components/app/nav.ts`
+  (Applicants, Talent pool, Replies, Calendar, Learning loop, Wins,
+  Trust & ROI, Mailboxes, Skills). Empty the set to bring them back.
+- Shift 466: a LinkedIn message recorded as sent (bridge or confirmed manual
+  copy) is a real send (`dryRun: false`); the dry-run switch is email only.
+- Shift 466: the scoring rule stays (unknown requested dimension = 30), so a
+  public search result alone cannot reach the 70 floor. The way up is the
+  recruiter's "Verify the profile" form (drawer, Evidence tab).
 
 - Owner 2026-11-09 (shift 463/464), ADR 0002 (`docs/adr/0002-agents-runner.md`):
   an `agents` Compose service is allowed (amends ADR 0001). The campaign
@@ -131,6 +138,12 @@ status: demo-video-recorded
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- The verify-profile form shows only after "Reveal contact (logged)" on a
+  confidential candidate (`!masked` gate in the drawer): rehearse it.
+- The locked guardrail text in settings ("never automate LinkedIn DMs ...
+  assisted-manual copy/paste") predates the bridge; the decision says the
+  guardrail prompt stays unchanged, so it was left as is.
 
 - `.env.local` on this Mac now has `AGENTS_ENABLED=true` (added shift 464).
   The runner ticks every minute but nothing runs until someone turns on an
