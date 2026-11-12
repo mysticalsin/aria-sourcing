@@ -35,7 +35,7 @@ import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { LinkedInSettingsPanel } from "@/components/linkedin/settings-panel";
 import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { integrationCounts } from "@/lib/integrations";
+import { integrationCounts, integrationStateLabel } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -807,6 +807,18 @@ export default function SettingsPage() {
             </Card>
           </Section>
 
+          {/* 20 — LinkedIn (personal bridge): the integration the live POC runs on, so it comes first */}
+          <Section
+            n="20"
+            eyebrow="Your LinkedIn"
+            title="LinkedIn"
+            description="Your own LinkedIn, through the ARIA extension in your browser: invite sourced candidates and talk to them from their profile."
+          >
+            <div id="linkedin">
+              <LinkedInSettingsPanel />
+            </div>
+          </Section>
+
           {/* 04 — Integrations */}
           <Section
             n="04"
@@ -850,24 +862,23 @@ export default function SettingsPage() {
                 description="Integrations appear here once Aria is provisioned with its tool connections."
               />
             ) : (
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
-                {integrations.map((i) => (
-                  <IntegrationCard key={i.id} integration={i} />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                  {integrations
+                    .filter((i) => integrationStateLabel(i) !== "Not configured")
+                    .map((i) => (
+                      <IntegrationCard key={i.id} integration={i} />
+                    ))}
+                </div>
+                {/* Live POC: tools without credentials are listed, not shown as cards with live switches. */}
+                {summary.notConfigured > 0 && (
+                  <p className="mt-4 text-sm text-muted">
+                    Not used in this proof of concept:{" "}
+                    {integrations.filter((i) => integrationStateLabel(i) === "Not configured").map((i) => i.name).join(", ")}.
+                  </p>
+                )}
+              </>
             )}
-          </Section>
-
-          {/* 20 — LinkedIn (personal, experimental bridge) */}
-          <Section
-            n="20"
-            eyebrow="Your LinkedIn"
-            title="LinkedIn"
-            description="Your own LinkedIn, through the ARIA extension in your browser: invite sourced candidates and talk to them from their profile."
-          >
-            <div id="linkedin">
-              <LinkedInSettingsPanel />
-            </div>
           </Section>
 
           {/* 05 — Compliance */}

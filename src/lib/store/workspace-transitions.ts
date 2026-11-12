@@ -76,6 +76,8 @@ export function recomputeMetrics(state: WorkspaceState, campaignId: string): Wor
  * the bridge extension reported it sent): the message becomes Scheduled with
  * its send time, a Sourced candidate becomes Contacted, a ledger row and a
  * campaign activity are written, the campaign's LinkedIn counter goes up.
+ * The message is a real send (dryRun false): the dry-run switch governs email
+ * only, and a LinkedIn message leaves through a person's own account.
  * Returns the state unchanged when the message, its candidate or its
  * campaign is missing, or the message is not a LinkedIn message.
  */
@@ -92,7 +94,7 @@ export function recordLinkedInSent(
   if (!candidate || !campaign) return prev;
   const outreach = prev.outreach.map((m) =>
     m.id === messageId
-      ? { ...m, status: "Scheduled" as const, scheduledFor: now, sentAt: now }
+      ? { ...m, status: "Scheduled" as const, scheduledFor: now, sentAt: now, dryRun: false }
       : m,
   );
   const candidates = prev.candidates.map((c) =>
@@ -135,7 +137,7 @@ export function recordLinkedInSent(
       type: "outreach",
       title: note.title ?? `LinkedIn message sent: ${candidate.name}`,
       notes: note.notes,
-      outcome: "Scheduled",
+      outcome: "Sent on LinkedIn",
       campaignId: campaign.id,
       linkedEntityType: "candidate",
       linkedEntityId: candidate.id,

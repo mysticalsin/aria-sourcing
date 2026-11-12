@@ -321,7 +321,8 @@ export function campaignHealth(c: Campaign): CampaignHealth {
   if (c.status === "Filled") return { tone: "success", label: "Filled", detail: "Role closed." };
   if (m.sourced === 0)
     return { tone: "neutral", label: "Awaiting sourcing", detail: "No candidates sourced yet." };
-  if (m.contacted > 0 && m.replied / Math.max(1, m.contacted) < 0.08)
+  // A reply rate means something only after a few contacts.
+  if (m.contacted >= 5 && m.replied / m.contacted < 0.08)
     return { tone: "warning", label: "Low reply rate", detail: "Reply rate under 8%. Refresh the messaging." };
   if (m.interested > 0 && m.booked === 0)
     return { tone: "tangerine", label: "Bookings pending", detail: "Interested candidates awaiting booking." };
@@ -333,7 +334,10 @@ export function nextActionForCampaign(c: Campaign): string {
   const m = c.metrics;
   if (c.status === "Paused") return "Resume campaign to continue";
   if (m.sourced === 0) return "Source first batch";
-  if (m.sourced > m.contacted) return `Review ${m.sourced - m.contacted} drafts`;
+  if (m.sourced > m.contacted) {
+    const waiting = m.sourced - m.contacted;
+    return `Review ${waiting} new candidate${waiting === 1 ? "" : "s"}`;
+  }
   if (m.replied > m.interested + m.notInterested) return "Classify new replies";
   if (m.interested > m.booked) return `Book ${m.interested - m.booked} interested`;
   if (m.booked > 0 && m.interviewed < m.booked) return "Collect interview feedback";

@@ -126,11 +126,11 @@ export type OnboardingTourStep = {
 export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = [
   {
     title: "Welcome to Aria",
-    body: "Paste a job brief. Aria finds people, drafts outreach, and books interviews — you approve every send.",
+    body: "Paste a job brief. Aria finds matching people on LinkedIn, scores them and writes the first message. You approve every send.",
   },
   {
     title: "You stay in control",
-    body: "Every message starts as a draft. Flip to live sending only when you’re ready. Dry-run is the default.",
+    body: "Every message starts as a draft. A LinkedIn message leaves from your own account only when you approve it; email stays a dry-run.",
   },
   {
     title: "Start with one job",

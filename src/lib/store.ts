@@ -1929,12 +1929,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             type: "outreach",
             title: `Outreach approved: ${candidate.name}`,
             notes: isLinkedInManual
-              ? "LinkedIn message approved, pending manual copy/paste by operator."
+              ? "LinkedIn message approved, to be sent from the operator's own LinkedIn."
               : isLiveSendChannel
                 ? `${msg.channel} approved, awaiting an explicit send.`
                 : `${msg.channel} message approved. ${prev.settings.dryRunMode ? "Dry-run, nothing sent." : "Live send."}`,
             outcome: isLinkedInManual
-              ? "Pending Manual Send"
+              ? "Approved for LinkedIn"
               : isLiveSendChannel
                 ? "Approved, pending send"
                 : "Approved / Dry-run scheduled",
@@ -1953,7 +1953,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   );
 
   const confirmManualSend = useCallback(
-    (messageId: string): { ok: boolean; error?: string } => {
+    (messageId: string, via: "manual" | "bridge" = "manual"): { ok: boolean; error?: string } => {
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       if (!msg) return { ok: false, error: "Message not found." };
@@ -1964,10 +1964,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (!candidate || !campaign) return { ok: false, error: "Linked candidate/campaign missing." };
 
       const now = new Date().toISOString();
-      commit((prev) => recordLinkedInSent(prev, messageId, now, {
-        reason: "Operator confirmed manual send on LinkedIn.",
-        notes: "Operator confirmed the message was manually copied and sent on LinkedIn.",
-      }));
+      commit((prev) => recordLinkedInSent(prev, messageId, now, via === "bridge"
+        ? {
+            reason: `Sent from ${prev.settings.operatorName || "the operator"}'s LinkedIn through the ARIA extension.`,
+            notes: `Sent from ${prev.settings.operatorName || "the operator"}'s own LinkedIn account through the ARIA extension, after approval.`,
+          }
+        : {
+            reason: "Operator confirmed manual send on LinkedIn.",
+            notes: "Operator confirmed the message was manually copied and sent on LinkedIn.",
+          }));
       return { ok: true };
     },
     [commit, current],

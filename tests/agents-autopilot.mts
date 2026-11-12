@@ -105,6 +105,9 @@ test("recordLinkedInSent schedules the message and moves the candidate to Contac
   state.outreach = [message];
   const next = recordLinkedInSent(state, "msg_s", "2026-11-09T10:00:00.000Z", { reason: "r", notes: "n" });
   assert.equal(next.outreach[0].status, "Scheduled");
+  // A LinkedIn message really left: it counts as a real send even in email dry-run.
+  assert.equal(next.outreach[0].dryRun, false);
+  assert.equal(next.outreach[0].sentAt, "2026-11-09T10:00:00.000Z");
   const candidate = next.candidates.find((c) => c.id === "cand_t1")!;
   assert.equal(candidate.stage, "Contacted");
   assert.equal(candidate.lastContactedAt, "2026-11-09T10:00:00.000Z");

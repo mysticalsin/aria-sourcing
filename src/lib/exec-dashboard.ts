@@ -250,6 +250,9 @@ function decisionReport(
   assumptions: RoiAssumptions,
 ): ExecDecisionReport {
   const facts = realFunnelFacts(state, { live, includeSimulatedSends: demoMode });
+  // Simulated only when a dry-run send is actually counted: a real LinkedIn
+  // send in an email dry-run workspace is not a simulation.
+  const simulated = demoMode && facts.contacted > realFunnelFacts(state, { live }).contacted;
   const acceptedMeetings = (state.wins ?? []).length;
   const counted = new Set(facts.candidateIds);
   const drafted = state.outreach.filter((message) => counted.has(message.candidateId)).length;
@@ -261,7 +264,7 @@ function decisionReport(
   const roi = estimateRoi({ sourced: facts.sourced, drafted, booked: facts.booked, spanDays }, assumptions);
   return {
     period,
-    simulated: demoMode,
+    simulated,
     facts,
     acceptedMeetings,
     conversion: execConversionSteps(facts, acceptedMeetings),

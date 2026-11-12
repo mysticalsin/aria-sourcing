@@ -273,8 +273,8 @@ ok(
     combinedSource,
   ),
 );
-ok("open-rate tile renders Not tracked yet", pageSource.includes("Not tracked yet"));
-ok("open-rate tile explains no email-open events exist", pageSource.includes("No email-open events exist"));
+// No email-open events exist in the event model, so the page shows no open rate at all.
+ok("the page shows no open-rate tile", !/Open rate/.test(pageSource));
 ok("open-rate tile does not format an open-rate number", !/formatPercent\([^)]*openRate|openRate\s*[:=]\s*\d/.test(pageSource));
 ok("page gates export through RBAC helper", pageSource.includes("execCanExport(role)"));
 
@@ -306,6 +306,8 @@ const demoReport = deriveExecDashboard(state, true).report;
 ok("demo report is labelled simulated", demoReport.simulated === true);
 ok("demo report counts approved dry-run sends as contacts", demoReport.facts.contacted === 2);
 ok("demo report still excludes synthetic candidates", !demoReport.facts.contactedCandidateIds.includes("synthetic-real"));
+const realOnly = { ...state, outreach: state.outreach.filter((message) => message.dryRun === false) };
+ok("a demo report with only real sends is not labelled simulated", deriveExecDashboard(realOnly, true).report.simulated === false);
 ok("demo mode never changes the canonical KPI tiles", deriveExecDashboard(state, true).kpis.contacted === model.kpis.contacted);
 
 const expectedValue = estimateRoi(

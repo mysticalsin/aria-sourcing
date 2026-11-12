@@ -21,7 +21,6 @@ import { HydrationGate } from "@/components/app/page-header";
 import { HeroPanel } from "@/components/dashboard/hero-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AttentionPanel } from "@/components/dashboard/attention-panel";
-import { IntegrationStrip } from "@/components/dashboard/integration-strip";
 import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
@@ -46,7 +45,6 @@ import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/
 import {
   CalendarCheck,
   FilePlus2,
-  FileText,
   Megaphone,
   PlayCircle,
   Radar,
@@ -203,25 +201,6 @@ export default function DashboardPage() {
     });
   }
 
-  function handleGenerateReport() {
-    if (!activeCampaign) {
-      toast({
-        title: "No active campaign",
-        description: "Create a campaign before generating a weekly report.",
-        variant: "warning",
-      });
-      return;
-    }
-    const report = actions.generateReport(activeCampaign.id);
-    toast({
-      title: report ? "Weekly report generated" : "Could not generate report",
-      description: report
-        ? `${activeCampaign.title} · ${pluralize(report.skillUpdates.length, "skill update")} proposed.`
-        : "The campaign could not be found.",
-      variant: report ? "success" : "error",
-    });
-  }
-
   return (
     <div className="space-y-8">
       <HeroPanel mode={ccMode} nextStep={nextStep} />
@@ -259,9 +238,6 @@ export default function DashboardPage() {
               <Button variant="outline" size="sm" leftIcon={<PlayCircle aria-hidden />} onClick={handleOpenRun}>
                 Run Aria
               </Button>
-              <Button variant="subtle" size="sm" leftIcon={<FileText aria-hidden />} onClick={handleGenerateReport}>
-                Generate weekly report
-              </Button>
             </div>
 
             {runOpen && activeCampaign && (
@@ -287,8 +263,6 @@ export default function DashboardPage() {
                 />
               ))}
             </section>
-
-            <IntegrationStrip />
 
             {/* Main two-column layout */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

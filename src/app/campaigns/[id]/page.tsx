@@ -27,6 +27,9 @@ import {
   type TabItem,
 } from "@/components/ui";
 import { HydrationGate } from "@/components/app/page-header";
+import { inPocScope } from "@/components/app/nav";
+import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
+
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
@@ -91,6 +94,9 @@ import {
   type ScoringWeights,
   type ValidationWarning,
 } from "@/lib/types";
+
+/** Campaign tabs that belong to a page outside the live POC scope. */
+const TAB_SCOPE: Record<string, string> = { replies: "/replies", booking: "/calendar", learning: "/reports" };
 
 function mergeSourcingFeedbackReceipts(
   ...groups: SourcingFeedbackReceipt[][]
@@ -500,7 +506,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     { value: "replies", label: "Replies", icon: <MessageSquare className="h-4 w-4" />, count: campaignReplies.length },
     { value: "booking", label: "Booking", icon: <CalendarCheck className="h-4 w-4" />, count: campaignBookings.length },
     { value: "learning", label: "Learning", icon: <GraduationCap className="h-4 w-4" /> },
-  ];
+  ].filter((t) => inPocScope(TAB_SCOPE[t.value] ?? ""));
 
   const idBase = `campaign-${c.id}`;
 
@@ -1402,6 +1408,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
+          {/* No enrichment provider is registered since Apify was retired. */}
+          {ENRICHMENT_PROVIDERS.length > 0 && (
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1438,6 +1446,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <Meter label="Workspace enrichment spend" used={enrichmentSpend} limit={enrichmentBudget} tone="electric" />
             </CardBody>
           </Card>
+          )}
 
           <Card className="overflow-x-auto">
             <CardBody>

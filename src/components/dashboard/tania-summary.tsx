@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { inPocScope } from "@/components/app/nav";
 import { ArrowUpRight, Inbox } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle, Eyebrow, Button, Badge } from "@/components/ui";
 import { SCORE_BANDS, SourceBadge, scoreBand } from "@/components/tania/badges";
@@ -53,8 +54,8 @@ export function TaniaSummary() {
         </Link>
       </CardHeader>
       <CardBody className="space-y-5 pt-0">
-        {/* Applicant inbox */}
-        <Link
+        {/* Applicant inbox (careers site, outside the live POC scope) */}
+        {inPocScope("/applicants") && <Link
           href="/applicants"
           className="flex items-center justify-between rounded-2xl border border-line bg-canvas/60 p-3 transition hover:border-electric/30 hover:bg-electric-soft/40"
         >
@@ -71,7 +72,7 @@ export function TaniaSummary() {
             {newApplicants > 0 && <Badge tone="tangerine" size="sm">{newApplicants} new</Badge>}
             <ArrowUpRight className="h-4 w-4 text-muted" aria-hidden />
           </span>
-        </Link>
+        </Link>}
 
         {/* Source mix */}
         <div>

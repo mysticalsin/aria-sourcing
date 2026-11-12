@@ -16,6 +16,7 @@ import type {
   Campaign,
   CandidateStage,
   CandidateLawfulBasis,
+  CompanyStage,
   ChatboxSubmission,
   ChatboxSubmissionStatus,
   ChatMessage,
@@ -239,7 +240,9 @@ export interface WorkspaceActions {
    *  mock. Status is still set by the human approval gate — never auto-sent. */
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
   approveOutreach: (messageId: string) => Promise<ApprovalResult>;
-  confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
+  /** Record that an approved LinkedIn message left: copied by hand ("manual")
+   *  or sent from the user's own LinkedIn by the ARIA extension ("bridge"). */
+  confirmManualSend: (messageId: string, via?: "manual" | "bridge") => { ok: boolean; error?: string };
   /** The deliberate gated send for a live-approved email — calls the server send route. */
   sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -300,7 +303,7 @@ export interface WorkspaceActions {
   // candidates / compliance
   setCandidateStage: (id: string, stage: CandidateStage) => void;
   setCandidatePhone: (id: string, phone: string) => void;
-  recordCandidateEvidence: (id: string, input: { email: string; linkedinUrl: string; source: string; skills?: string[]; yearsExperience?: number | null; lawfulBasis?: CandidateLawfulBasis }) => Promise<{ ok: boolean; error?: string }>;
+  recordCandidateEvidence: (id: string, input: { email: string; linkedinUrl: string; source: string; skills?: string[]; yearsExperience?: number | null; location?: string; industryExperience?: string[]; companyStageExperience?: CompanyStage[]; lawfulBasis?: CandidateLawfulBasis }) => Promise<{ ok: boolean; error?: string }>;
   /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
    *  an Activity, not just a UI notification. No-ops on blank text. */
   addCandidateNote: (candidateId: string, text: string) => void;

@@ -11,17 +11,16 @@ import {
   EyeOff,
   FileText,
   Mail,
-  MousePointerClick,
   PiggyBank,
   Printer,
   Reply,
   Target,
-  Timer,
   TrendingUp,
   Trophy,
   Users,
 } from "lucide-react";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
+import { inPocScope } from "@/components/app/nav";
 import { Badge, Button, Card, CardContent, CardTitle, EmptyState, Eyebrow, SkeletonCard, useToast } from "@/components/ui";
 import {
   useActivities,
@@ -98,7 +97,6 @@ function execMarkdown(model: ExecDashboardModel): string {
     `Meetings booked: ${model.kpis.interviewsBooked}`,
     `Time to first interview: ${formatHours(model.kpis.timeToFirstInterviewHours)}`,
     `Average match score: ${model.kpis.avgMatchScore}`,
-    "Open rate: Not tracked yet",
     "",
     "## Recent wins",
   ];
@@ -274,28 +272,6 @@ function KpiTile({
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">{label}</p>
         </div>
         <p className="text-sm text-muted">{hint}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function OpenRateTile() {
-  return (
-    <Card className="h-full">
-      <CardContent className="flex h-full flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/[0.04] text-ink-soft">
-            <MousePointerClick className="h-5 w-5" aria-hidden />
-          </div>
-          <Badge tone="neutral" size="sm">
-            Gap
-          </Badge>
-        </div>
-        <div>
-          <p className="text-2xl font-extrabold text-ink">Not tracked yet</p>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Open rate</p>
-        </div>
-        <p className="text-sm text-muted">No email-open events exist in the current event model.</p>
       </CardContent>
     </Card>
   );
@@ -515,7 +491,7 @@ export default function ExecPage() {
             ARIA exec report · {EXEC_PERIOD_LABEL[model.report.period]} · generated {formatDateTime(new Date().toISOString())}
           </p>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <KpiTile
               icon={<Users className="h-5 w-5" aria-hidden />}
               label="Candidates sourced"
@@ -565,18 +541,6 @@ export default function ExecPage() {
               basis="Real sends"
             />
             <KpiTile
-              icon={<Timer className="h-5 w-5" aria-hidden />}
-              label="Time to first interview"
-              value={model.kpis.interviewsBooked > 0 ? formatHours(model.kpis.timeToFirstInterviewHours) : "—"}
-              hint={
-                model.kpis.interviewsBooked > 0
-                  ? "Hours from campaign start to first interview, mean across active campaigns."
-                  : "Shown once a real interview is booked."
-              }
-              tone="neutral"
-              basis="Campaign timing"
-            />
-            <KpiTile
               icon={<BarChart3 className="h-5 w-5" aria-hidden />}
               label="Avg match score"
               value={formatNumber(model.kpis.avgMatchScore)}
@@ -584,7 +548,6 @@ export default function ExecPage() {
               tone="electric"
               basis="Sourced pool"
             />
-            <OpenRateTile />
           </div>
 
           <TrendPanel model={model} />
@@ -601,7 +564,7 @@ export default function ExecPage() {
             </div>
           ) : null}
 
-          <WinsFeed model={model} role={role} />
+          {inPocScope("/winlog") && <WinsFeed model={model} role={role} />}
         </div>
       </HydrationGate>
     </div>

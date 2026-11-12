@@ -38,7 +38,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_supabase",
       name: "Supabase",
       category: "Infra",
-      description: "Postgres + auth backend for production persistence (demo uses localStorage).",
+      description: "Postgres + auth backend: workspace data, sign-in and the audit trail.",
       // The one card in this list that IS the app's actual data layer — seed it
       // from the real runtime flag so a freshly
       // provisioned live workspace doesn't start out lying about its own backend.

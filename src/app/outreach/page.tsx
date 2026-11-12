@@ -650,9 +650,9 @@ function OutreachView() {
                     <Send className="h-4 w-4" />
                   </span>
                   <span>
-                    <span className="block text-sm font-bold text-ink">Scheduled</span>
+                    <span className="block text-sm font-bold text-ink">Sent &amp; scheduled</span>
                     <span className="block text-xs text-muted">
-                      Approved &amp; queued for send
+                      Approved: sent on LinkedIn, or queued (email stays a dry-run)
                     </span>
                   </span>
                 </span>

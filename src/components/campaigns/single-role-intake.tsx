@@ -24,10 +24,8 @@ import {
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
   SAMPLE_MANTU_EMAIL,
-  isNeedEmail,
   type ParsedIntake,
 } from "@/lib/mock-ai";
-import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -56,7 +54,6 @@ import {
   Copy,
   FileText,
   Info,
-  Inbox,
   Plus,
   Rocket,
   ScanText,
@@ -159,79 +156,6 @@ export function SingleRoleIntake() {
       title: "Mantu need loaded",
       description: "A real Mantu/Amaris “need is now ACTIVE” email is ready to parse.",
       variant: "info",
-    });
-  }
-
-  /** Scans the connected mailbox for hiring-need emails and loads the newest
-   * one into the form. A bundled sample is available only in explicit demo
-   * mode; a live tenant never substitutes sample data for an empty inbox. */
-  async function scanInbox() {
-    const seq = ++liveParseSeqRef.current;
-    setParsing(true);
-
-    let incoming = "";
-    let fromInbox = false;
-    let needCount = 0;
-    try {
-      const res = await fetch("/api/email/sync", {
-        method: "POST",
-        signal: AbortSignal.timeout(60_000),
-      });
-      const json = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        messages?: (InboundMessage & { seatId: string })[];
-      } | null;
-      if (res.ok && json?.ok) {
-        const needs = (json.messages ?? [])
-          .filter((m) => isNeedEmail(m.subject ?? "", m.body ?? ""))
-          .sort((a, b) => (b.receivedAt ?? "").localeCompare(a.receivedAt ?? ""));
-        needCount = needs.length;
-        const newest = needs[0];
-        if (newest) {
-          incoming = `From: ${newest.from}\nSubject: ${newest.subject}\n\n${newest.body}`;
-          fromInbox = true;
-        }
-      }
-    } catch {
-      // The live path reports the unavailable mailbox below. Demo mode may load
-      // the clearly labelled bundled sample.
-    }
-    if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
-    if (!incoming && supabaseEnabled) {
-      setParsing(false);
-      toast({
-        title: "No hiring need found",
-        description: "The connected mailbox returned no hiring-need email. Nothing was created or substituted.",
-        variant: "warning",
-      });
-      return;
-    }
-    if (!incoming) incoming = SAMPLE_MANTU_EMAIL;
-
-    setEmail(incoming);
-    setJd("");
-    const result = await parseIntakeLive(settings, { email: incoming });
-    if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
-    setParsing(false);
-    setParsed(result);
-    setJob(result.jobAnalysis);
-    setSenderName(result.sender.name);
-    setSenderEmail(result.sender.email);
-    maybeRunDustJdAnalysis("", incoming);
-    toast({
-      title: result.providerWarning
-        ? "Need loaded for review"
-        : fromInbox
-          ? "Need email found in your inbox"
-          : "Sample need loaded",
-      description: result.providerWarning
-        ? result.providerWarning
-        : fromInbox
-        ? `${result.jobAnalysis.title} parsed from the newest need email${
-            needCount > 1 ? ` (${needCount - 1} older need email${needCount > 2 ? "s" : ""} also in the inbox)` : ""
-          }.`
-        : `No need email found in a connected mailbox. Parsed the sample Mantu need instead. (${result.jobAnalysis.title})`,
-      variant: result.providerWarning ? "warning" : fromInbox ? "success" : "info",
     });
   }
 
@@ -429,17 +353,6 @@ export function SingleRoleIntake() {
                   </Button>
                   <Button
                     type="button"
-                    variant="subtle"
-                    size="sm"
-                    leftIcon={<Inbox aria-hidden />}
-                    onClick={scanInbox}
-                    loading={parsing}
-                    disabled={parsing}
-                  >
-                    Scan inbox
-                  </Button>
-                  <Button
-                    type="button"
                     leftIcon={<ScanText aria-hidden />}
                     onClick={handleParse}
                     loading={parsing}
@@ -449,13 +362,6 @@ export function SingleRoleIntake() {
                     {parsing ? "Parsing…" : "Parse JD"}
                   </Button>
                 </div>
-                <p className="text-xs text-muted">
-                  Inbound emails can also POST to{" "}
-                  <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
-                    /api/intake
-                  </code>
-                  {". "}A Microsoft Graph / n8n webhook scans the JD email and returns a structured brief.
-                </p>
               </div>
             </CardBody>
           </Card>

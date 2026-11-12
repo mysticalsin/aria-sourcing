@@ -74,6 +74,17 @@ test("verified manual contact records evidence without implying consent or mergi
   const unknown = recordVerifiedEvidence(state, id, { ...input, yearsExperience: null }, "now", "note");
   assert.equal(unknown.ok && unknown.state.candidates[0].yearsExperience, null);
   assert.match(result.state.candidates[0].notes![0].text, /Verified on public fixture profile/);
+  // Location, industry and company stage are recorded facts too, and they move the score.
+  const facts = recordVerifiedEvidence(state, id, { ...input, location: " Paris, France ", industryExperience: ["Fintech", "fintech"], companyStageExperience: ["Enterprise"] }, "now", "note");
+  assert.equal(facts.ok, true);
+  if (facts.ok) {
+    assert.equal(facts.state.candidates[0].location, "Paris, France");
+    assert.deepEqual(facts.state.candidates[0].industryExperience, ["Fintech"]);
+    assert.deepEqual(facts.state.candidates[0].companyStageExperience, ["Enterprise"]);
+  }
+  const untouched = recordVerifiedEvidence(state, id, input, "now", "note");
+  assert.equal(untouched.ok && untouched.state.candidates[0].location, state.candidates[0].location);
+  assert.equal(recordVerifiedEvidence(state, id, { ...input, companyStageExperience: ["Unicorn" as never] }, "now", "note").ok, false);
   for (const patch of [{ email: "invalid-address" }, { source: "" }, { yearsExperience: Number.NaN }, { yearsExperience: 99 }, { linkedinUrl: "https://linkedin.com.evil.example/in/fixture" }, { linkedinUrl: "https://linkedin.com/company/fixture" }]) {
     assert.equal(recordVerifiedEvidence(state, id, { ...input, ...patch }, "now", "note").ok, false);
   }

@@ -57,7 +57,7 @@ export function useDeliverApprovedLinkedIn() {
         }
         return res;
       }
-      actions.confirmManualSend(message.id);
+      actions.confirmManualSend(message.id, "bridge");
       if (!options.quiet) {
         toast({
           title: res.kind === "invitation" ? "Invitation sent with your message" : "Sent from your LinkedIn",

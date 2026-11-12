@@ -33,6 +33,27 @@ export const NEW_CAMPAIGN_HREF = "/campaigns/new";
 /** Sections with a heading, in order. Home sits above them on its own. */
 export const NAV_SECTIONS = ["Recruit", "Engage", "Analyze", "System"] as const;
 
+/**
+ * Live POC scope (owner, 2026-11-12). These pages need something this install
+ * does not run (sender mailboxes, a calendar, an email inbox, the careers
+ * site) or data that only those produce, so the navigation, the tabs and the
+ * search leave them out. The routes still work by URL. Empty the set to bring
+ * them all back.
+ */
+export const OUT_OF_POC_SCOPE: ReadonlySet<string> = new Set([
+  "/applicants", // careers-site chatbox applications
+  "/vivier", // talent pool: fed by closed roles and applicants
+  "/replies", // email replies; LinkedIn replies live in the candidate's conversation
+  "/calendar", // needs Microsoft Graph / Teams
+  "/reports", // learning loop: needs reply and booking outcomes
+  "/winlog", // booked wins: needs bookings
+  "/trust", // ROI calculator and compliance posture
+  "/fleet", // sender mailboxes (email seats)
+  "/skills", // playbooks and their learning loop
+]);
+
+export const inPocScope = (href: string) => !OUT_OF_POC_SCOPE.has(href);
+
 /** Pages reached through one nav entry and switched with tabs (see SectionTabs). */
 export const CANDIDATE_TABS = [
   { href: "/candidates", label: "All candidates" },
@@ -47,10 +68,13 @@ export const REPORT_TABS = [
   { href: "/trust", label: "Trust & ROI" },
 ];
 
-export const SECTION_TABS = [CANDIDATE_TABS, REPORT_TABS];
+/** Tab groups as shown: in-scope tabs only, and no tab bar for a lone page. */
+export const SECTION_TABS = [CANDIDATE_TABS, REPORT_TABS]
+  .map((tabs) => tabs.filter((t) => inPocScope(t.href)))
+  .filter((tabs) => tabs.length > 1);
 
 // Grouped around the recruiter's day: find people, talk to them, then measure.
-export const NAV_ITEMS: NavItem[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard, section: "Home", description: "Today's action queue" },
   { href: "/campaigns", label: "Campaigns", icon: Target, section: "Recruit", description: "Sourcing campaigns" },
   {
@@ -79,6 +103,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/sessions", label: "History", icon: History, section: "System", description: "Candidate journeys & audit pack" },
   { href: "/settings", label: "Settings", icon: Settings, section: "System", description: "Integrations & compliance" },
 ];
+
+export const NAV_ITEMS: NavItem[] = ALL_NAV_ITEMS
+  .filter((item) => inPocScope(item.href))
+  .map((item) => (item.match ? { ...item, match: item.match.filter(inPocScope) } : item));
 
 function underRoute(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);

@@ -1,12 +1,33 @@
 import { z } from "zod";
-import type { CandidateLawfulBasis, WorkspaceState } from "./types";
+import { COMPANY_STAGES, type CandidateLawfulBasis, type CompanyStage, type WorkspaceState } from "./types";
 import { candidateEnrichmentBlocker, candidateExclusionBlocker } from "./candidate-review";
 import { candidateProfileIdentity } from "./rules";
 import { computeCoverage } from "./enrichment/merge";
 import { scoreCandidate } from "./scoring";
 import { effectiveWeights } from "./skills";
 
-export interface VerifiedEvidenceInput { email: string; linkedinUrl: string; source: string; skills?: string[]; yearsExperience?: number | null; lawfulBasis?: CandidateLawfulBasis }
+export interface VerifiedEvidenceInput {
+  email: string;
+  linkedinUrl: string;
+  source: string;
+  skills?: string[];
+  yearsExperience?: number | null;
+  /** Where the profile says the person is. Undefined keeps the current value. */
+  location?: string;
+  industryExperience?: string[];
+  companyStageExperience?: CompanyStage[];
+  lawfulBasis?: CandidateLawfulBasis;
+}
+
+/** Trimmed, case-insensitively unique, first spelling kept. */
+function dedupeLabels(items: string[]): string[] {
+  const seen = new Map<string, string>();
+  for (const item of items) {
+    const label = item.trim();
+    if (label && !seen.has(label.toLowerCase())) seen.set(label.toLowerCase(), label);
+  }
+  return [...seen.values()];
+}
 
 export function recordVerifiedEvidence(state: WorkspaceState, id: string, input: VerifiedEvidenceInput, at: string, noteId: string): { ok: true; state: WorkspaceState } | { ok: false; error: string } {
   const candidate = state.candidates.find((c) => c.id === id);
@@ -16,7 +37,8 @@ export function recordVerifiedEvidence(state: WorkspaceState, id: string, input:
   // are) is an operator decision, not paid enrichment, so it also works on
   // synthetic demo profiles. Excluded candidates stay closed either way.
   const basisOnly = input.lawfulBasis !== undefined && input.email.trim() === candidate.email.trim()
-    && input.linkedinUrl.trim() === candidate.linkedinUrl.trim() && input.skills === undefined && input.yearsExperience === undefined;
+    && input.linkedinUrl.trim() === candidate.linkedinUrl.trim() && input.skills === undefined && input.yearsExperience === undefined
+    && input.location === undefined && input.industryExperience === undefined && input.companyStageExperience === undefined;
   if (basisOnly ? candidateExclusionBlocker(candidate) : candidateEnrichmentBlocker(candidate, campaign)) {
     return { ok: false, error: "An active, non-excluded candidate is required." };
   }
@@ -33,7 +55,13 @@ export function recordVerifiedEvidence(state: WorkspaceState, id: string, input:
   const source = input.source.trim();
   if (input.lawfulBasis !== undefined && input.lawfulBasis !== "consent" && input.lawfulBasis !== "legitimate_interest") return { ok: false, error: "Select an explicit contact basis." };
   if (source.length < 8 || source.length > 500) return { ok: false, error: "Record where you verified these facts (8-500 characters)." };
-  const skills = input.skills ? [...new Map(input.skills.map((s) => [s.trim().toLowerCase(), s.trim()])).values()].filter(Boolean) : candidate.techStack;
+  const skills = input.skills ? dedupeLabels(input.skills) : candidate.techStack;
+  const location = input.location === undefined ? candidate.location : input.location.trim();
+  const industryExperience = input.industryExperience ? dedupeLabels(input.industryExperience) : candidate.industryExperience;
+  const companyStageExperience = input.companyStageExperience ? [...new Set(input.companyStageExperience)] : candidate.companyStageExperience;
+  if (location.length > 120) return { ok: false, error: "Keep the location under 120 characters." };
+  if (industryExperience.length > 30 || industryExperience.some((s) => s.length > 100)) return { ok: false, error: "Use at most 30 industries, each at most 100 characters." };
+  if (companyStageExperience.some((stage) => !(COMPANY_STAGES as readonly string[]).includes(stage))) return { ok: false, error: "Pick company stages from the list." };
   const yearsExperience = input.yearsExperience === undefined ? candidate.yearsExperience : input.yearsExperience;
   if (skills.length > 100 || skills.some((s) => s.length > 100)) return { ok: false, error: "Use at most 100 observed skills, each at most 100 characters." };
   if (yearsExperience !== null && (!Number.isFinite(yearsExperience) || yearsExperience < 0 || yearsExperience > 80)) return { ok: false, error: "Verified experience must be 0-80 years, or left unknown." };
@@ -41,7 +69,7 @@ export function recordVerifiedEvidence(state: WorkspaceState, id: string, input:
   if (state.candidates.some((other) => other.id !== id && ((email && other.email.trim().toLowerCase() === email.toLowerCase()) || (linkedinUrl && candidateProfileIdentity(other.linkedinUrl) === candidateProfileIdentity(linkedinUrl))))) {
     return { ok: false, error: "These details match another candidate. Review the existing record before merging identities." };
   }
-  let updated = { ...candidate, email, linkedinUrl, techStack: skills, yearsExperience,
+  let updated = { ...candidate, email, linkedinUrl, techStack: skills, yearsExperience, location, industryExperience, companyStageExperience,
     ...(input.lawfulBasis ? { lawfulBasis: input.lawfulBasis, lawfulBasisSource: "operator_selection" as const, lawfulBasisRecordedAt: at } : {}),
     notes: [{ id: noteId, text: `${input.lawfulBasis ? `Contact basis ${input.lawfulBasis}` : "Profile/contact facts"} recorded by operator. Evidence: ${source}`, at }, ...(candidate.notes ?? [])] };
   if (updated.enrichment) {

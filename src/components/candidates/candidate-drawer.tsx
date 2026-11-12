@@ -19,6 +19,8 @@ import {
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
+import { VerifyProfileFields, readVerifiedProfile } from "@/components/candidates/verify-profile-fields";
+import { inPocScope } from "@/components/app/nav";
 import { CandidateLinkedIn, LinkedInQuickAction, linkedInContactBlock } from "@/components/linkedin/candidate-linkedin";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
@@ -1169,7 +1171,7 @@ export function CandidateDrawer({
     try {
       const result = await actions.recordCandidateEvidence(c.id, {
         email: String(values.get("email") ?? ""), linkedinUrl: String(values.get("linkedinUrl") ?? ""), source: String(values.get("source") ?? ""),
-        skills: String(values.get("skills") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+        ...readVerifiedProfile(values, c, campaign),
         yearsExperience: String(values.get("years") ?? "").trim() ? Number(values.get("years")) : null,
       });
       if (!isErasureScopeCurrent(scope)) return;
@@ -1222,7 +1224,7 @@ export function CandidateDrawer({
   };
 
   const confirmLinkedInDraft = (messageId: string) => {
-    const res = actions.confirmManualSend(messageId);
+    const res = actions.confirmManualSend(messageId, "bridge");
     if (res.ok) {
       toast({ title: "Outreach marked as sent", description: "Sent from your LinkedIn. The candidate is marked as contacted.", variant: "success" });
     } else {
@@ -1296,16 +1298,19 @@ export function CandidateDrawer({
           {generating === channel ? "Drafting…" : channel === "LinkedIn" ? "Draft LinkedIn message" : "Draft email"}
         </Button>
       ))}
-      <Button
-        variant="primary"
-        size="md"
-        leftIcon={<CalendarPlus className="h-4 w-4" />}
-        onClick={handleBook}
-        disabled={contactBlocked}
-        title={contactBlocked ? "Candidate is suppressed / do-not-contact" : undefined}
-      >
-        Book interview
-      </Button>
+      {/* Booking needs a calendar integration, outside the live POC scope. */}
+      {inPocScope("/calendar") && (
+        <Button
+          variant="primary"
+          size="md"
+          leftIcon={<CalendarPlus className="h-4 w-4" />}
+          onClick={handleBook}
+          disabled={contactBlocked}
+          title={contactBlocked ? "Candidate is suppressed / do-not-contact" : undefined}
+        >
+          Book interview
+        </Button>
+      )}
       <Link
         href="/outreach"
         className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold text-electric hover:bg-electric-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
@@ -1742,25 +1747,23 @@ export function CandidateDrawer({
         <TabPanel value="evidence" active={tab === "evidence"} idBase="candidate-tab" className="space-y-8">
           <div id="candidate-enrichment" className="scroll-mt-4" />
           {!masked && supabaseEnabled && canEnrich && !candidateEnrichmentBlocker(c, campaign) && (
-            <Section title="Verified profile and contact" icon={<Mail className="h-4 w-4" />}>
-              <p className="mb-3 text-sm text-muted">Record facts you verified on the source profile. Leave unknown experience blank. This updates the score; it does not record consent or send a message.</p>
-              <form key={`${c.id}:${c.email}:${c.linkedinUrl}:${c.techStack.join(",")}:${c.yearsExperience}`} onSubmit={handleSaveContact} className="space-y-3">
+            <Section title="Verify the profile" icon={<Mail className="h-4 w-4" />}>
+              <p className="mb-3 text-sm text-muted">A search result shows little, so unknown facts keep the score low. Open the profile, tick what it shows against the brief, and the score is recomputed. Leave unknown facts blank. This does not record consent or send a message.</p>
+              <form key={`${c.id}:${c.email}:${c.linkedinUrl}:${c.techStack.join(",")}:${c.yearsExperience}:${c.location}:${c.industryExperience.join(",")}:${c.companyStageExperience.join(",")}`} onSubmit={handleSaveContact} className="space-y-3">
                 <fieldset disabled={savingContact || enriching} className="space-y-3">
+                  <VerifyProfileFields candidate={c} campaign={campaign} />
                   <Label htmlFor="verified-contact-email">Email</Label>
                   <Input id="verified-contact-email" name="email" type="email" maxLength={320} defaultValue={c.email} placeholder="Public professional email, if available" />
                   <Label htmlFor="verified-contact-linkedin">LinkedIn profile URL</Label>
                   <Input id="verified-contact-linkedin" name="linkedinUrl" type="url" maxLength={500} defaultValue={c.linkedinUrl} placeholder="https://www.linkedin.com/in/..." />
-                  <Label htmlFor="verified-profile-skills">Observed skills (comma-separated)</Label>
-                  <Input id="verified-profile-skills" name="skills" maxLength={5000} defaultValue={c.techStack.join(", ")} placeholder="Only skills supported by the profile evidence" />
-                  <Label htmlFor="verified-profile-years">Verified years of experience (optional)</Label>
-                  <Input id="verified-profile-years" name="years" type="number" min={0} max={80} step="0.5" defaultValue={c.yearsExperience ?? ""} placeholder="Unknown" />
                   <Label htmlFor="verified-contact-source">Where you verified it</Label>
-                  <Input id="verified-contact-source" name="source" required minLength={8} maxLength={500} placeholder="Source URL or recruiter verification note" />
-                  <Button type="submit" variant="outline" size="sm" loading={savingContact}>Save verified evidence</Button>
+                  <Input id="verified-contact-source" name="source" required minLength={8} maxLength={500} defaultValue={c.linkedinUrl ? `Public LinkedIn profile ${c.linkedinUrl}` : ""} placeholder="Source URL or recruiter verification note" />
+                  <Button type="submit" size="sm" loading={savingContact}>Save and rescore</Button>
                 </fieldset>
               </form>
             </Section>
           )}
+          {ENRICHMENT_PROVIDERS.length > 0 && (
           <Section title="Enrichment" icon={<Zap className="h-4 w-4" />}>
             {!canEnrich ? (
               <p className="text-sm text-muted">You don&apos;t have permission to enrich candidates.</p>
@@ -1859,6 +1862,7 @@ export function CandidateDrawer({
               </div>
             )}
           </Section>
+          )}
 
         </TabPanel>
 

@@ -6,15 +6,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS, NAV_SECTIONS, NEW_CAMPAIGN_HREF, isNavActive, type NavItem } from "./nav";
 import { AriaLockup } from "./logo";
-import { useIntegrations } from "@/lib/store";
-import { integrationCounts } from "@/lib/integrations";
-import { Activity, GraduationCap, Plus } from "lucide-react";
+import { GraduationCap, Plus } from "lucide-react";
 import { useTutorial } from "@/components/tutorial/tutorial";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const integrations = useIntegrations();
-  const health = integrationCounts(integrations);
   const tutorial = useTutorial();
 
   return (
@@ -67,20 +63,6 @@ export function Sidebar() {
           <span className="flex-1 text-left">Tutorial</span>
           <span className="rounded-full bg-electric-soft px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-electric">Learn</span>
         </button>
-        <Link
-          href="/settings#integrations"
-          title={`${health.live} live, ${health.simulated} simulated, ${health.notConfigured} not configured, of ${health.total} built integrations`}
-          className="flex items-center justify-between rounded-2xl bg-violet/[0.06] border border-violet/[0.08] px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
-        >
-          <span className="flex items-center gap-2 text-xs font-semibold text-ink-soft">
-            <Activity className={cn("h-4 w-4", health.live > 0 ? "text-success" : "text-muted")} aria-hidden />
-            Integrations
-          </span>
-          <span className="text-xs font-bold text-ink">
-            {health.live}/{health.total} live
-            <span className="sr-only">, {health.simulated} simulated</span>
-          </span>
-        </Link>
       </div>
     </aside>
   );

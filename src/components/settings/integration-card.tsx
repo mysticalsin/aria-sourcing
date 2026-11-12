@@ -200,9 +200,12 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               <Eyebrow>{integration.category}</Eyebrow>
               <h3 className="text-balance text-base font-bold leading-snug text-ink">{integration.name}</h3>
             </div>
-            <Badge tone={isLive ? "tangerine" : "aqua"} size="sm">
-              {isLive ? "Live" : "Mock"}
-            </Badge>
+            {/* The mode only means something once credentials exist. */}
+            {stateLabel !== "Not configured" && (
+              <Badge tone={isLive ? "tangerine" : "aqua"} size="sm">
+                {isLive ? "Live" : "Mock"}
+              </Badge>
+            )}
           </div>
 
           <p className="text-sm leading-relaxed text-ink-soft">{integration.description}</p>

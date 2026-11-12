@@ -420,6 +420,7 @@ export function OutreachMessageCard({
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
                 {message.scheduledFor ? ` · ${formatTimeAgo(message.scheduledFor)}` : ""}
                 {message.dryRun ? " · Nothing sent live." : ""}
+                {!message.dryRun && message.channel === "LinkedIn" && message.sentAt ? " · Sent on LinkedIn." : ""}
                 {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
               </p>
             </div>
