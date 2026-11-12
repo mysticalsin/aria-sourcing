@@ -1749,7 +1749,7 @@ export function CandidateDrawer({
           {!masked && supabaseEnabled && canEnrich && !candidateEnrichmentBlocker(c, campaign) && (
             <Section title="Verify the profile" icon={<Mail className="h-4 w-4" />}>
               <p className="mb-3 text-sm text-muted">A search result shows little, so unknown facts keep the score low. Open the profile, tick what it shows against the brief, and the score is recomputed. Leave unknown facts blank. This does not record consent or send a message.</p>
-              <form key={`${c.id}:${c.email}:${c.linkedinUrl}:${c.techStack.join(",")}:${c.yearsExperience}:${c.location}:${c.industryExperience.join(",")}:${c.companyStageExperience.join(",")}`} onSubmit={handleSaveContact} className="space-y-3">
+              <form key={`${c.id}:${c.email}:${c.linkedinUrl}:${c.techStack.join(",")}:${c.yearsExperience}:${c.location}:${c.industryExperience.join(",")}:${c.companyStageExperience.join(",")}`} onSubmit={handleSaveContact} className="space-y-3" data-tour="verify-profile">
                 <fieldset disabled={savingContact || enriching} className="space-y-3">
                   <VerifyProfileFields candidate={c} campaign={campaign} />
                   <Label htmlFor="verified-contact-email">Email</Label>

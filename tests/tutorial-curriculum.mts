@@ -14,6 +14,7 @@ import {
   type TutorialCounts,
 } from "../src/lib/tutorial/curriculum.js";
 import { buildSeedState } from "../src/lib/seed.js";
+import { inPocScope } from "../src/components/app/nav.js";
 
 let pass = 0,
   fail = 0;
@@ -129,7 +130,18 @@ ok("one campaign is not a multi-role launch", !step("campaign-several").done!(bu
 ok("approving a draft completes that step", step("engage-approve").done!(bump({ approved: base.approved + 1 }), base));
 ok("recording a contact basis completes that step", step("engage-basis").done!(bump({ contactBasis: base.contactBasis + 1 }), base));
 ok("the basis step comes right before approval", steps.findIndex((s) => s.id === "engage-basis") + 1 === steps.findIndex((s) => s.id === "engage-approve"));
-ok("a reply draft completes the triage step", step("engage-replies").done!(bump({ replyDrafts: base.replyDrafts + 1 }), base));
+ok("a sourcing run that adds candidates completes the search step", step("find-run").done!(bump({ candidates: base.candidates + 1 }), base));
+ok("recording profile facts completes the verify step", step("find-verify").done!(bump({ verified: base.verified + 1 }), base));
+const verifiedState = structuredClone(seed);
+verifiedState.candidates[0].notes = [{ id: "n1", text: "Profile/contact facts recorded by operator. Evidence: x", at: "2026-11-12T10:00:00.000Z" }, ...(verifiedState.candidates[0].notes ?? [])];
+ok("a recorded profile counts as verified", tutorialCounts(verifiedState).verified === base.verified + 1);
+
+/* ---- Live POC scope ------------------------------------------------------- */
+
+ok("no step sends the learner to a page outside the POC scope", steps.every((s) => inPocScope(routeLocation(s.route).pathname)));
+const autopilot = step("engage-autopilot");
+ok("a '/*' page list covers a single campaign page", isOnStepRoute(autopilot, "/campaigns/camp_123", ""));
+ok("a '/*' page list does not cover other pages", !isOnStepRoute(autopilot, "/candidates", ""));
 
 /* ---- Opened from the menu only ------------------------------------------ */
 

@@ -258,7 +258,7 @@ export function MultiRoleLaunch() {
               </div>
               <p className="text-xs text-muted">
                 {supabaseEnabled
-                  ? "Each block becomes its own campaign and sources from its primary live channel. Nothing is sent."
+                  ? "Each block becomes its own campaign. No search runs yet: open each campaign to review its search plan, then launch it. Nothing is sent."
                   : "Each block is parsed offline into a campaign with deterministic demo sourcing. Zero network required; nothing is sent."}
               </p>
             </CardBody>

@@ -11,12 +11,15 @@ import type { WorkspaceState } from "@/lib/types";
 /** What the tutorial watches to notice that the learner did the exercise. */
 export interface TutorialCounts {
   campaigns: number;
+  candidates: number;
   outreach: number;
   approved: number;
   followUps: number;
   replyDrafts: number;
   talentPool: number;
   contactBasis: number;
+  /** Candidates whose profile facts the recruiter recorded ("Verify the profile"). */
+  verified: number;
 }
 
 export function tutorialCounts(
@@ -24,6 +27,7 @@ export function tutorialCounts(
 ): TutorialCounts {
   return {
     campaigns: state.campaigns.length,
+    candidates: state.candidates.length,
     outreach: state.outreach.length,
     approved: state.outreach.filter((m) => m.status === "Approved" || m.status === "Scheduled" || m.status === "Pending Manual Send")
       .length,
@@ -31,6 +35,7 @@ export function tutorialCounts(
     replyDrafts: state.outreach.filter((m) => Boolean(m.inReplyTo)).length,
     talentPool: state.candidates.filter((c) => c.vivier).length,
     contactBasis: state.candidates.filter((c) => recordedCandidateLawfulBasis(c) !== null).length,
+    verified: state.candidates.filter((c) => (c.notes ?? []).some((n) => n.text.startsWith("Profile/contact facts recorded"))).length,
   };
 }
 
@@ -46,7 +51,8 @@ export interface TutorialStep {
   /** Short page name for "This step is on …". */
   page: string;
   /** Other pages the exercise naturally leads to (e.g. a profile opened from
-   *  the step page); being there does not count as having left the step. */
+   *  the step page); being there does not count as having left the step.
+   *  A trailing "/*" covers every page under that path (e.g. one campaign). */
   alsoOn?: string[];
   /** CSS selectors of the area to highlight; the first visible one wins. */
   target?: string[];
@@ -78,7 +84,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         id: "basics-welcome",
         title: "Welcome to Aria",
         body:
-          "Aria takes a recruiter from a job brief to booked interviews. It finds people, drafts messages and books calls, and you approve every step. This tutorial shows each part and gives you something small to try.",
+          "Aria takes a recruiter from a job brief to a first conversation on LinkedIn. It reads the brief, finds people through a public web search, scores them and drafts the first message. You check each profile and approve each message.",
         tryIt:
           "Look at the menu. Pages are grouped by what you do: Recruit, Engage, Analyze and System. On a phone, open it with the ☰ button.",
         route: "/",
@@ -89,7 +95,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         id: "basics-mode",
         title: "Nothing leaves without you",
         body:
-          "This chip shows the mode you are in. In the demo the people are fictional and dry-run is on: messages are drafted and approved, but never really sent. With a real workspace it reads Live.",
+          "This chip shows the mode you are in. Live means real people from real searches. Dry-run covers email only: no email leaves. A LinkedIn message leaves from your own account, and only once you approve it.",
         tryIt: "Hover the chip (or tap it) to read the details.",
         route: "/",
         page: "Home",
@@ -99,7 +105,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         id: "basics-home",
         title: "Home shows your next move",
         body:
-          "The large card always holds the single most useful thing to do now, such as drafts waiting for your approval. The figures below say exactly what they count, for example real sends versus simulated ones.",
+          "The large card always holds the single most useful thing to do now, such as new candidates to review. The figures below say exactly what they count: real sends only, never simulated ones.",
         tryIt: "Read the next action on the card. You will do it later in this tutorial.",
         route: "/",
         page: "Home",
@@ -128,7 +134,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         title: "Turn an email into a brief",
         body:
           "Aria reads the request and fills in a brief: title, seniority, skills, location and salary. Each field shows how sure it is, and anything missing is flagged so you can ask the manager.",
-        tryIt: "Click “Sample backend role”, then “Parse JD”. The brief appears on the right.",
+        tryIt: "Paste a hiring email (or click “Sample backend role”), then “Parse JD”. The brief appears on the right.",
         route: "/campaigns/new",
         page: "New campaign",
         target: ['[data-tour="intake-brief"]'],
@@ -137,7 +143,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         id: "campaign-create",
         title: "Check it, then create",
         body:
-          "Everything in the brief can be edited. Validation warnings point at gaps, and a suggested reply asks the hiring manager for what is missing.",
+          "Everything in the brief can be edited. Validation warnings point at gaps, and a suggested reply asks the hiring manager for what is missing. The skills you keep here are what candidates are scored against.",
         tryIt: "Change anything you disagree with, then click “Create campaign” at the bottom of the brief.",
         route: "/campaigns/new",
         page: "New campaign",
@@ -149,33 +155,34 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         id: "campaign-several",
         title: "Several roles at once",
         body:
-          "When a client sends one brief for several roles, paste it whole. Aria splits it, creates one campaign per role and starts sourcing them side by side.",
-        tryIt: "Click “Load sample brief (6 roles)”, then “Launch”. One lane per role fills up below.",
+          "When a client sends one brief for several roles, paste it whole, with --- between roles. Aria reads each role and creates one campaign per role. Each one then waits for you to review its search before anything runs.",
+        tryIt: "Click “Load sample brief (6 roles)”, then “Launch”. One lane per role appears below.",
         route: "/campaigns/new?roles=several",
         page: "New campaign · Several roles",
         target: ['[data-tour="launch-brief"]'],
         done: (now, start) => now.campaigns >= start.campaigns + 2,
-        doneText: "Campaigns launched, one per role.",
+        doneText: "Campaigns created, one per role. Open each one to review its search.",
       },
     ],
   },
   {
     id: "find",
     title: "Find candidates",
-    summary: "Let Aria source and score people, then explore them by list, profile and stage.",
+    summary: "Search LinkedIn through public results, read the scores, and verify the profiles worth it.",
     minutes: 5,
     steps: [
       {
         id: "find-run",
-        title: "Let Aria source and draft",
+        title: "Run a search",
         body:
-          "On a campaign, Run Aria starts a small team of agents. One searches and scores candidates; others write a first message for the best matches. Nothing is sent: every draft waits for your approval.",
-        tryIt: "Click “Run Aria” and watch the stream. Each draft says whether Claude wrote it or a template did.",
-        route: "/campaigns/camp_seed_design",
-        page: "Campaign: Senior Product Designer",
+          "On a campaign, Run sourcing opens the search plan: LinkedIn through Claude's web search on public profiles, with GitHub as an option. You check the query and the limit, then launch. Results are saved as the run goes.",
+        tryIt: "Open your campaign, click “Run sourcing”, check the query, then launch it.",
+        route: "/campaigns",
+        page: "Campaigns",
+        alsoOn: ["/campaigns/*"],
         target: ['[data-tour="run-aria"]'],
-        done: (now, start) => now.outreach > start.outreach,
-        doneText: "Drafts are ready. You will approve them in the Engage chapter.",
+        done: (now, start) => now.candidates > start.candidates,
+        doneText: "Candidates found and scored. They are in the campaign and under Candidates.",
       },
       {
         id: "find-list",
@@ -189,25 +196,26 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
       },
       {
         id: "find-profile",
-        title: "Open a profile",
+        title: "Read the score",
         body:
-          "A profile explains the score: each criterion with its weight, why this person was picked, the source, and every message exchanged. Strong people you do not hire now can join the talent pool.",
-        tryIt: "Click a candidate. In the panel, read “Why this person”, then click “Add to talent pool”.",
+          "A profile explains its score: each criterion with its weight and what is still unknown. A public search result shows little, so unknown facts keep a score low on purpose. Aria never guesses a skill.",
+        tryIt: "Click a candidate and read the score breakdown on the Overview tab.",
         route: "/candidates",
         page: "Candidates",
         target: ['[data-tour="candidate-list"]'],
-        done: (now, start) => now.talentPool > start.talentPool,
-        doneText: "Added. You will find this person in the Talent pool tab.",
       },
       {
-        id: "find-views",
-        title: "Applicants and the talent pool",
+        id: "find-verify",
+        title: "Verify the profile",
         body:
-          "Two more views of people. Applicants applied themselves through the careers page chat, each with a score. The talent pool keeps strong people you did not hire this time, with a date to get back in touch.",
-        tryIt: "Open the Applicants tab, then the Talent pool tab.",
+          "Open the person's LinkedIn and tick what it shows against the brief: skills, industry, company stage, location, years. The score is recomputed from what you saw. Your source note is kept with the facts.",
+        tryIt:
+          "In a candidate's panel, click “Reveal contact”, open “Evidence & contact”, tick what the profile shows, then click “Save and rescore”.",
         route: "/candidates",
         page: "Candidates",
-        target: ['nav[aria-label="Views"]'],
+        target: ['[data-tour="verify-profile"]', '[data-tour="candidate-list"]'],
+        done: (now, start) => now.verified > start.verified,
+        doneText: "Facts recorded and the score recomputed.",
       },
       {
         id: "find-pipeline",
@@ -224,34 +232,55 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
   {
     id: "engage",
     title: "Talk to candidates",
-    summary: "Approve drafts, send follow-ups, sort replies and book interviews.",
+    summary: "Connect your LinkedIn, record why you may contact someone, approve the message, follow the conversation.",
     minutes: 5,
     steps: [
+      {
+        id: "engage-linkedin",
+        title: "Connect your LinkedIn",
+        body:
+          "Aria talks to LinkedIn through a small extension in your own Chrome, with your own session: no password stored, no robot browser. Sends are paced and capped per day. Each user connects their own account.",
+        tryIt: "Open Your LinkedIn and check that the extension shows as connected.",
+        route: "/settings#settings-section-20",
+        page: "Settings · Your LinkedIn",
+        target: ["#settings-section-20"],
+      },
       {
         id: "engage-basis",
         title: "Record why you may contact someone",
         body:
           "Before a first message, you record the lawful basis for contacting this person (consent or legitimate interest) and your evidence. Aria never decides it for you: until it is recorded, approval stays blocked.",
         tryIt:
-          "Open a draft below and click “View candidate”. Under Consent passport, pick a Contact basis, write your evidence (for example “Public GitHub profile, relevant work”), then click “Record contact basis”.",
+          "Open a candidate and go to the Compliance tab. Under Consent passport, pick a Contact basis, write your evidence (for example “Public LinkedIn profile, relevant work”), then click “Record contact basis”.",
+        route: "/candidates",
+        page: "Candidates",
+        alsoOn: ["/outreach"],
+        target: ['[data-tour="candidate-list"]'],
+        done: (now, start) => now.contactBasis > start.contactBasis,
+        doneText: "Basis recorded. Next, draft and approve this person's message.",
+      },
+      {
+        id: "engage-approve",
+        title: "Draft, then approve",
+        body:
+          "“Draft LinkedIn message” on a profile writes a first message from the person's own record. It waits in Outreach. Approving it is your decision to send: it leaves from your own LinkedIn within a minute or two.",
+        tryIt: "Draft a message from the candidate's panel, then in Outreach read it and click “Approve”.",
         route: "/outreach",
         page: "Outreach",
         alsoOn: ["/candidates"],
         target: ['[data-tour="approval-queue"]'],
-        done: (now, start) => now.contactBasis > start.contactBasis,
-        doneText: "Basis recorded. Next, approve this person's draft.",
+        done: (now, start) => now.approved > start.approved,
+        doneText: "Approved. Your extension sends it from your LinkedIn; the candidate moves to Contacted.",
       },
       {
-        id: "engage-approve",
-        title: "Approve before anything sends",
+        id: "engage-conversation",
+        title: "The conversation stays on the profile",
         body:
-          "Every draft lands here. Open one to read it, see why this person was chosen and what the guardrails checked. You can edit, approve or reject it.",
-        tryIt: "Back in Outreach, open the draft for the person whose basis you recorded and click “Approve”.",
-        route: "/outreach",
-        page: "Outreach",
-        target: ['[data-tour="approval-queue"]'],
-        done: (now, start) => now.approved > start.approved,
-        doneText: "Approved. In the demo it is queued, never actually sent.",
+          "Replies and the whole LinkedIn thread appear in the candidate's LinkedIn tab, synced by your extension. Only conversations with sourced candidates are kept, never your whole inbox.",
+        tryIt: "Open a contacted candidate and click the LinkedIn tab.",
+        route: "/candidates",
+        page: "Candidates",
+        target: ['[data-tour="candidate-list"]'],
       },
       {
         id: "engage-follow-ups",
@@ -266,50 +295,39 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         doneText: "Follow-ups drafted and waiting in the queue.",
       },
       {
-        id: "engage-replies",
-        title: "Sort the replies",
+        id: "engage-autopilot",
+        title: "Autopilot (proof of concept)",
         body:
-          "Aria reads each reply, labels its intent (interested, not now, referral…) and drafts an answer for the ones worth answering. You check each answer before it goes.",
-        tryIt: "Click “Triage inbox”.",
-        route: "/replies",
-        page: "Replies",
-        target: ['[data-tour="triage-inbox"]'],
-        done: (now, start) => now.replyDrafts > start.replyDrafts,
-        doneText: "Answers drafted for the replies that need one.",
-      },
-      {
-        id: "engage-calendar",
-        title: "Book the interview",
-        body:
-          "Interviews appear here with the interviewer and the time. You book them from a candidate's profile with “Book interview”, and the candidate moves forward in the pipeline.",
-        tryIt: "Look through this week's interviews.",
-        route: "/calendar",
-        page: "Calendar",
-        target: ['[data-tour="calendar"]'],
+          "On a campaign, the autopilot can search on a schedule and contact the best candidates from your LinkedIn, under an approval you sign for that campaign alone. The server can restrict it to a list of allowed profiles.",
+        tryIt: "Open a campaign and read the Autopilot card. You do not need to turn it on for this tutorial.",
+        route: "/campaigns",
+        page: "Campaigns",
+        alsoOn: ["/campaigns/*"],
+        target: ['[data-tour="autopilot"]'],
       },
     ],
   },
   {
     id: "control",
     title: "Measure and stay in control",
-    summary: "Read the reports, set the rules, see the AI cost and the candidate's side.",
+    summary: "Read the report, set the rules, see what the AI costs and what was done.",
     minutes: 4,
     steps: [
       {
         id: "control-reports",
         title: "Reports",
         body:
-          "Overview sums up the funnel and the recruiter time saved. Learning loop, Wins and Trust & ROI show what worked, and what it is worth.",
-        tryIt: "Open each of the four tabs.",
+          "Overview sums up the funnel, counting real sends only, and estimates the recruiter time saved. The value is an extrapolation from editable assumptions, not a measured saving.",
+        tryIt: "Switch the period from 30d to All and watch the figures change.",
         route: "/exec",
         page: "Reports",
-        target: ['nav[aria-label="Views"]'],
+        target: ['[data-tour="exec-report"]'],
       },
       {
         id: "control-rules",
         title: "You set the rules",
         body:
-          "Settings decide how much Aria may do alone: dry-run, approval before every send, daily limits and quiet hours. The defaults keep a person in charge.",
+          "Settings decide how much Aria may do alone: email dry-run, approval before every send, the minimum score to contact, daily limits and quiet hours. The defaults keep a person in charge.",
         tryIt: "Read the approval settings. There is no need to change them.",
         route: "/settings#settings-section-02",
         page: "Settings · Approval",
@@ -319,7 +337,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         id: "control-ai",
         title: "Which AI does what",
         body:
-          "Each task uses a suitable Claude model: Haiku to classify replies and read briefs, Sonnet to write. The usage card shows this month's cost against the budget.",
+          "Each task uses a suitable Claude model: Haiku to read briefs and classify, Sonnet to search and to write. The usage card shows this month's cost against the budget.",
         tryIt: "Find the “Claude usage” card under the saved models.",
         route: "/settings#settings-section-15",
         page: "Settings · AI & Models",
@@ -336,20 +354,20 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
         target: ['[data-tour="cost-activities"]', '[data-tour="cost-kpis"]'],
       },
       {
-        id: "control-careers",
-        title: "What candidates see",
+        id: "control-history",
+        title: "Every step leaves a trace",
         body:
-          "The public careers page lets people apply through a short chat. Their application lands in Applicants with a score. In the demo the roles are examples and nothing is stored.",
-        tryIt: "Open the careers page in a new tab and apply to a role.",
-        route: "/",
-        page: "Home",
-        action: { label: "Open the careers page", href: "/careers" },
+          "History keeps each candidate's journey, from the search that found them to the message sent, with every reveal of contact details. It is the record to show when someone asks who did what.",
+        tryIt: "Click a candidate under Decision Replay to read their journey.",
+        route: "/sessions",
+        page: "History",
+        target: ['[data-tour="decision-replay"]'],
       },
       {
         id: "control-done",
         title: "You have seen all of Aria",
         body:
-          "Reopen the tutorial from the menu whenever you like; your progress is kept. To start again with fresh demo data, use “Reset synthetic demo” in your profile menu.",
+          "Reopen the tutorial from the menu whenever you like; your progress is kept. Start a new campaign from any brief: every step you practised here works the same on a real role.",
         route: "/",
         page: "Home",
       },
@@ -407,7 +425,8 @@ export function routeLocation(route: string): { pathname: string; search: string
 }
 
 export function isOnStepRoute(step: TutorialStep, pathname: string, search: string): boolean {
-  if (step.alsoOn?.includes(pathname)) return true;
+  const also = (step.alsoOn ?? []).some((path) => (path.endsWith("/*") ? pathname.startsWith(path.slice(0, -1)) : path === pathname));
+  if (also) return true;
   const target = routeLocation(step.route);
   if (target.pathname !== pathname) return false;
   if (!target.search) return true;

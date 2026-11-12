@@ -235,9 +235,14 @@ export default function DashboardPage() {
               <Button variant="outline" size="sm" leftIcon={<Radar aria-hidden />} onClick={handleSourceBatch}>
                 Source next batch
               </Button>
-              <Button variant="outline" size="sm" leftIcon={<PlayCircle aria-hidden />} onClick={handleOpenRun}>
-                Run Aria
-              </Button>
+              {/* Live workspaces source from the campaign's own panel (Claude web
+                  search, durable runs), reached by "Source next batch" above. The
+                  browser mission's LinkedIn search has no live engine there. */}
+              {!supabaseEnabled && (
+                <Button variant="outline" size="sm" leftIcon={<PlayCircle aria-hidden />} onClick={handleOpenRun}>
+                  Run Aria
+                </Button>
+              )}
             </div>
 
             {runOpen && activeCampaign && (

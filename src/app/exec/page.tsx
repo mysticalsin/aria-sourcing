@@ -171,7 +171,7 @@ function ValueStat({ icon, label, value, hint }: { icon: React.ReactNode; label:
 function DecisionReport({ report }: { report: ExecDecisionReport }) {
   const { value } = report;
   return (
-    <Card>
+    <Card data-tour="exec-report">
       <CardContent className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
