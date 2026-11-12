@@ -1,42 +1,53 @@
 ---
 project: MSourcing / ARIA
-shift: 466
+shift: 467
 agent: claude-code
 updated: 2026-11-12
-status: poc-polished-for-presentation
+status: workspace-wiped-ready-for-demo-campaign
 ---
 
-# Handoff - Shift 466
+# Handoff - Shift 467
 
 ## Current state
 
 - Branch mbe-branch, local only (not pushed). Commits this shift:
-  22c081df (sourcing extraction), dc0740b8 (POC scope, real LinkedIn sends,
-  verify form). Gate green: `npm run typecheck && npm run typecheck:tests && npm test`
-  (run in `aria-gate:local`), eslint clean on touched files.
-- Docker app image rebuilt from dc0740b8 and restarted (`docker compose build app`,
-  `up -d --no-build app agents`).
-- Local DB, owner workspace `00000000-0000-4000-8000-000000000001` (data):
-  Tony's sent LinkedIn message set `dryRun: false`, its two activities
-  reworded (bridge send, "Approved for LinkedIn"), campaign metrics.contacted 1,
-  Supabase integration description fixed. Backup before the edit:
-  `/private/tmp/claude-501/-Users-michaelbernard-amaris-aria-sourcing/c5be0767-8d5f-473e-ba0e-418d01433443/scratchpad/workspace-state-backup-2026-11-12.json` (temporary dir).
-  A "Candidate PII revealed" activity for Brice Challamel was added by the
-  visual check of the verify form (truthful, harmless).
-- The 9 existing demo candidates keep their old noisy headlines and 30-35
-  scores: the new extraction applies to new sourcing runs only.
+  35772d6a (autopilot allowlist), 32083b12 (tutorial for the live POC, home
+  Run Aria hidden in live mode, multi-role copy). Earlier today: 22c081df,
+  dc0740b8, f30a6eb8. Gate green, eslint clean on touched files. App image
+  rebuilt from 32083b12 and restarted.
+- `.env.local` (gitignored) now also has
+  `AGENTS_LINKEDIN_ALLOWLIST=https://www.linkedin.com/in/tonywalteur`:
+  the autopilot can contact Tony only. The Autopilot card shows
+  "Safety net on ... only 1 allowed LinkedIn profile".
+- Owner workspace `00000000-0000-4000-8000-000000000001` WIPED (owner asked):
+  workspace_state campaigns, candidates, outreach, activities, replies, wins,
+  schedules, bookings, chatboxSubmissions, reports, ledger emptied,
+  activeCampaignId removed; rows deleted from candidates, persons (and
+  identities by cascade), campaign_sourcing_jobs, agent_campaign_autopilots;
+  the 2 linkedin_bridge_contacts deleted and conversation 991d1a79 unlinked
+  (candidate_id null). Kept: settings, skills, api keys, integrations, the
+  owner's 21 LinkedIn conversations, outbox history, AI cost ledger.
+  Backup: `/private/tmp/claude-501/-Users-michaelbernard-amaris-aria-sourcing/c5be0767-8d5f-473e-ba0e-418d01433443/scratchpad/backup/` (temporary dir).
 
 ## Done this shift
 
-- Owner request (FR): analyse the POC, polish weak points, exclude what does
-  not work, before a presentation in a few days; demo storyline to be built
-  together afterwards.
-- Screenshot tour of all 20 pages (Playwright, `aria-demo:local`), findings:
-  bridge send counted as simulated / "manually copied"; "Review 9 drafts"
-  with no drafts; garbage headlines from search snippets; every web-sourced
-  profile at 30/100 (cannot reach the 70 floor); contradictory integration
-  badges; empty pages needing Outlook/Graph/careers site.
-- Fixes: see commit messages of 22c081df and dc0740b8.
+- Tutorial rewritten for the live POC (`src/lib/tutorial/curriculum.ts`):
+  no step on a hidden page (test-enforced), new steps Verify the profile,
+  Connect your LinkedIn, Draft then approve, Conversation on the profile,
+  Autopilot, History.
+- Validation of the three untested features:
+  - Run Aria (home): safe (drafts only, never sends), but in a live
+    workspace its LinkedIn search is the DuckDuckGo instant-answer API, which
+    returns no profiles. Hidden in live mode; the campaign page's live button
+    is "Run sourcing" (Claude web search panel), unchanged.
+  - Several roles: tested live: 6 roles parsed (Claude) and 6 campaigns
+    created in 7 s, nothing sourced or sent; "Campaigns ready for source
+    review". The test campaigns were removed by the wipe.
+  - Autopilot: end-to-end path already verified in shift 464 (e2e workspace,
+    simulated LinkedIn account, up to the outbox). New allowlist safety net,
+    unit-tested (pick, re-check before queue, saved draft, typo = nobody).
+    Not run live this shift: a live run with the owner's extension would
+    message Tony; it needs the owner present.
 
 ## Blockers
 
@@ -44,19 +55,15 @@ status: poc-polished-for-presentation
 
 ## Next steps
 
-1. With the owner: build the demo storyline (fil conducteur). Suggested
-   flow: New campaign from a pasted brief -> Run sourcing (LinkedIn via web
-   search) -> open a profile, Reveal contact, Evidence tab "Verify the
-   profile" -> score rises over 70 -> Draft LinkedIn message -> approve in
-   Outreach = sent from own LinkedIn -> Reports / AI costs -> Autopilot card.
-2. Decide whether to wipe and re-source the demo campaign so headlines and
-   locations use the new extraction.
-3. Rehearse untested-live items before showing them: "Run Aria" (home),
-   "Several roles" (new campaign), Autopilot turn-on (contacts real people).
-4. Reports Overview shows an annualized ROI (3x, $53,655) extrapolated from
-   one day of activity: consider hiding it or explaining it in the demo.
-5. Carried over: issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`,
-   live autopilot test (issue 06), VM POC (issue 07), server config (issue 10).
+1. With the owner: write the demo storyline and prepare the new demo
+   campaign (brief to paste, which candidates to verify). Say in the script
+   that the Reports ROI is an extrapolation.
+2. Rehearse the Autopilot with the owner: campaign with Tony added by hand
+   (LinkedIn URL), his profile verified to score >= min score, extension
+   running, contacts per run 1, Turn on autopilot, Run now. Only Tony can be
+   picked (allowlist). Watch `docker compose logs -f agents`.
+3. Carried over: issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`,
+   VM POC (issue 07), server config (issue 10).
 
 ## Decisions made (don't relitigate)
 
@@ -67,6 +74,12 @@ status: poc-polished-for-presentation
   Trust & ROI, Mailboxes, Skills). Empty the set to bring them back.
 - Shift 466: a LinkedIn message recorded as sent (bridge or confirmed manual
   copy) is a real send (`dryRun: false`); the dry-run switch is email only.
+- Owner 2026-11-12: the demo campaign is wiped; a new one will be prepared
+  for the presentation. The Reports ROI stays and the demo script explains it
+  is an extrapolation for the demo.
+- Owner 2026-11-12: the untested features are to be validated without
+  messaging real people. Autopilot demos and tests run with
+  `AGENTS_LINKEDIN_ALLOWLIST` set (on this Mac: Tony's profile only).
 - Shift 466: the scoring rule stays (unknown requested dimension = 30), so a
   public search result alone cannot reach the 70 floor. The way up is the
   recruiter's "Verify the profile" form (drawer, Evidence tab).
@@ -138,6 +151,12 @@ status: poc-polished-for-presentation
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- Remove or empty `AGENTS_LINKEDIN_ALLOWLIST` in `.env.local` (and restart
+  the app) before any real autopilot use beyond the demo; set but invalid
+  means the agent contacts nobody.
+- Manual approvals in Outreach are not restricted by the allowlist: in the
+  demo, approve only Tony's message.
 
 - The verify-profile form shows only after "Reveal contact (logged)" on a
   confidential candidate (`!masked` gate in the drawer): rehearse it.
