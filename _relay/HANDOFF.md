@@ -1,53 +1,37 @@
 ---
 project: MSourcing / ARIA
-shift: 467
+shift: 468
 agent: claude-code
-updated: 2026-11-12
-status: workspace-wiped-ready-for-demo-campaign
+updated: 2026-11-17
+status: demo-day-checked
 ---
 
-# Handoff - Shift 467
+# Handoff - Shift 468
 
 ## Current state
 
-- Branch mbe-branch, local only (not pushed). Commits this shift:
-  35772d6a (autopilot allowlist), 32083b12 (tutorial for the live POC, home
-  Run Aria hidden in live mode, multi-role copy). Earlier today: 22c081df,
-  dc0740b8, f30a6eb8. Gate green, eslint clean on touched files. App image
-  rebuilt from 32083b12 and restarted.
-- `.env.local` (gitignored) now also has
-  `AGENTS_LINKEDIN_ALLOWLIST=https://www.linkedin.com/in/tonywalteur`:
-  the autopilot can contact Tony only. The Autopilot card shows
-  "Safety net on ... only 1 allowed LinkedIn profile".
-- Owner workspace `00000000-0000-4000-8000-000000000001` WIPED (owner asked):
-  workspace_state campaigns, candidates, outreach, activities, replies, wins,
-  schedules, bookings, chatboxSubmissions, reports, ledger emptied,
-  activeCampaignId removed; rows deleted from candidates, persons (and
-  identities by cascade), campaign_sourcing_jobs, agent_campaign_autopilots;
-  the 2 linkedin_bridge_contacts deleted and conversation 991d1a79 unlinked
-  (candidate_id null). Kept: settings, skills, api keys, integrations, the
-  owner's 21 LinkedIn conversations, outbox history, AI cost ledger.
-  Backup: `/private/tmp/claude-501/-Users-michaelbernard-amaris-aria-sourcing/c5be0767-8d5f-473e-ba0e-418d01433443/scratchpad/backup/` (temporary dir).
+- Branch mbe-branch, local only (not pushed). HEAD = 75f8b8bb
+  (fix(intake): keep skills Claude reworded from the brief's own words).
+  Gate green (typecheck, typecheck:tests, npm test exit 0). App + agents
+  restarted on the image rebuilt from 75f8b8bb; /api/health healthy.
+- Owner workspace still empty (wiped shift 467): no campaign yet for the demo.
+- LinkedIn bridge: owner account paired (extension 0.3.0), last seen
+  2026-11-10; 6 outbox rows, all sent. A conversation with Tony exists.
+- The owner's demo cheat sheet is a private Claude Doc, not in the repo
+  (owner asked: never commit it).
 
 ## Done this shift
 
-- Tutorial rewritten for the live POC (`src/lib/tutorial/curriculum.ts`):
-  no step on a hidden page (test-enforced), new steps Verify the profile,
-  Connect your LinkedIn, Draft then approve, Conversation on the profile,
-  Autopilot, History.
-- Validation of the three untested features:
-  - Run Aria (home): safe (drafts only, never sends), but in a live
-    workspace its LinkedIn search is the DuckDuckGo instant-answer API, which
-    returns no profiles. Hidden in live mode; the campaign page's live button
-    is "Run sourcing" (Claude web search panel), unchanged.
-  - Several roles: tested live: 6 roles parsed (Claude) and 6 campaigns
-    created in 7 s, nothing sourced or sent; "Campaigns ready for source
-    review". The test campaigns were removed by the wipe.
-  - Autopilot: end-to-end path already verified in shift 464 (e2e workspace,
-    simulated LinkedIn account, up to the outbox). New allowlist safety net,
-    unit-tested (pick, re-check before queue, saved draft, typo = nobody).
-    Not run live this shift: a live run with the owner's extension would
-    message Tony; it needs the owner present.
+- Demo-day check: OrbStack was stopped; started it, stack came back healthy
+  (the db answered slowly for the first minutes after boot).
+- Playwright smoke of every in-scope page (/, /campaigns, /campaigns/new,
+  /candidates, /funnel, /outreach, /exec, /costs, /sessions, /settings,
+  /linkedin -> settings): no console error, no 5xx.
+- Live parse of "Load Mantu need" (no campaign created): Claude returned 7
+  Murex skills, `groundLiveIntakeFields` dropped them all (exact-substring
+  check vs reworded skills). Fixed: a skill is also grounded when every word
+  (or its plural) is in the brief; invented words still drop it. Test added
+  in tests/intake-grounding.mts. Re-tested live: Murex skills kept.
 
 ## Blockers
 
@@ -55,14 +39,12 @@ status: workspace-wiped-ready-for-demo-campaign
 
 ## Next steps
 
-1. With the owner: write the demo storyline and prepare the new demo
-   campaign (brief to paste, which candidates to verify). Say in the script
-   that the Reports ROI is an extrapolation.
-2. Rehearse the Autopilot with the owner: campaign with Tony added by hand
-   (LinkedIn URL), his profile verified to score >= min score, extension
-   running, contacts per run 1, Turn on autopilot, Run now. Only Tony can be
-   picked (allowlist). Watch `docker compose logs -f agents`.
-3. Carried over: issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`,
+1. Owner, before the demo: create the demo campaign and run sourcing ahead
+   of time; verify one profile (Reveal contact -> Evidence & contact ->
+   Save and rescore), record the contact basis, draft for Tony only.
+2. Owner: Chrome open with the ARIA extension and LinkedIn signed in.
+3. After the demo: empty AGENTS_LINKEDIN_ALLOWLIST before real autopilot use.
+4. Carried over: issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`,
    VM POC (issue 07), server config (issue 10).
 
 ## Decisions made (don't relitigate)
