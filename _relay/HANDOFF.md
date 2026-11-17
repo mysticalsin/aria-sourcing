@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 468
 agent: claude-code
 updated: 2026-11-17
-status: demo-day-tunnel-open
+status: demo-done-tunnel-stopped
 ---
 
 # Handoff - Shift 468
@@ -56,6 +56,8 @@ status: demo-day-tunnel-open
   mounted ro in the gateway). Zip built from extensions/linkedin-bridge;
   downloaded through ngrok byte-identical. Tester steps in docs/ngrok-demo.md.
   Rebuild the zip after any extension change (command in that doc).
+- 2026-11-17, after the demo: tunnel stopped (`docker compose stop tunnel`);
+  the public URL answers ERR_NGROK_3200 (offline). Rest of the stack still up.
 
 ## Blockers
 
