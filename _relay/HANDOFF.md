@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 468
 agent: claude-code
 updated: 2026-11-17
-status: demo-day-ngrok-ready
+status: demo-day-tunnel-open
 ---
 
 # Handoff - Shift 468
@@ -27,8 +27,9 @@ status: demo-day-ngrok-ready
   closed. 5 demo accounts `demo<i>@aria-demo<i>.test`, one workspace each,
   owner's Anthropic key copied; list in `.demo-accounts.local.md`
   (gitignored). `.env.local`: AI_DAILY_BUDGET_USD=20 (owner, demo day).
-  Tunnel NOT started: NGROK_AUTHTOKEN / NGROK_DOMAIN in `.env` are empty
-  (owner fills them), then `docker compose --profile tunnel up -d`.
+  Tunnel STARTED 2026-11-17 09:52 (owner's ngrok static domain, in `.env`);
+  verified end to end from outside the Mac as demo3 (sign-in + Claude parse).
+  Stop it after the demo: `docker compose stop tunnel`.
 
 ## Done this shift
 
