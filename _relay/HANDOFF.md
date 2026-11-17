@@ -51,6 +51,11 @@ status: demo-day-tunnel-open
   (aria-edge.test -> :8080) signs in as demo2, parses a brief with Claude,
   only ever contacts the edge origin; https X-Forwarded-Proto passes the
   same-origin check, http/foreign origins are refused.
+- Testers' LinkedIn extension (e718b909): the edge serves only
+  /downloads/aria-linkedin-bridge.zip from .demo-downloads/ (gitignored,
+  mounted ro in the gateway). Zip built from extensions/linkedin-bridge;
+  downloaded through ngrok byte-identical. Tester steps in docs/ngrok-demo.md.
+  Rebuild the zip after any extension change (command in that doc).
 
 ## Blockers
 
