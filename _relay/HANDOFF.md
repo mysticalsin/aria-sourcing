@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 468
 agent: claude-code
 updated: 2026-11-17
-status: demo-day-checked
+status: demo-day-ngrok-ready
 ---
 
 # Handoff - Shift 468
@@ -20,6 +20,16 @@ status: demo-day-checked
 - The owner's demo cheat sheet is a private Claude Doc, not in the repo
   (owner asked: never commit it).
 
+- Branch `mbe-ngrok` (from mbe-branch e3fa3f59): public demo URL through
+  ngrok, see `docs/ngrok-demo.md`. DEPLOYED on this Mac: `.env` (gitignored)
+  holds rotated Supabase JWT secret + anon/service keys, the new owner
+  password (DEMO_ADMIN_PASSWORD; `admindemo123` no longer works), sign-up
+  closed. 5 demo accounts `demo<i>@aria-demo<i>.test`, one workspace each,
+  owner's Anthropic key copied; list in `.demo-accounts.local.md`
+  (gitignored). `.env.local`: AI_DAILY_BUDGET_USD=20 (owner, demo day).
+  Tunnel NOT started: NGROK_AUTHTOKEN / NGROK_DOMAIN in `.env` are empty
+  (owner fills them), then `docker compose --profile tunnel up -d`.
+
 ## Done this shift
 
 - Demo-day check: OrbStack was stopped; started it, stack came back healthy
@@ -32,6 +42,14 @@ status: demo-day-checked
   check vs reworded skills). Fixed: a skill is also grounded when every word
   (or its plural) is in the brief; invented words still drop it. Test added
   in tests/intake-grounding.mts. Re-tested live: Murex skills kept.
+
+- ngrok: edge site :8080 in docker/Caddyfile, `browserSupabaseUrl`, compose
+  overrides + tunnel service, scripts tunnel-keys.mjs / demo-accounts.mjs.
+  Verified: old sample service key -> 401; service key, sign-up, demo-login,
+  agent tick, careers -> 403/404 on the edge; a "remote" browser
+  (aria-edge.test -> :8080) signs in as demo2, parses a brief with Claude,
+  only ever contacts the edge origin; https X-Forwarded-Proto passes the
+  same-origin check, http/foreign origins are refused.
 
 ## Blockers
 
@@ -133,6 +151,13 @@ status: demo-day-checked
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- `tony@aria.local` is a MEMBER of the owner workspace: with the tunnel open,
+  his password opens the owner's data (incl. LinkedIn conversations). Reset
+  or remove him before exposing if his password is weak or unknown.
+- Testers share the AI caps with the owner (daily 20 USD now).
+- `.env` drives compose interpolation: deleting it returns to the PUBLIC
+  sample keys (never with the tunnel; the tunnel refuses to start then).
 
 - Remove or empty `AGENTS_LINKEDIN_ALLOWLIST` in `.env.local` (and restart
   the app) before any real autopilot use beyond the demo; set but invalid

@@ -95,7 +95,8 @@ async function rest(method, path, body, prefer) {
   return res.json;
 }
 
-async function firstLogin(browser, email, pw) {
+/** Sign in once and keep the page open until the app has saved the workspace state. */
+async function firstLogin(browser, email, pw, userId) {
   const page = await (await browser.newContext()).newPage();
   try {
     await page.goto(`${APP}/login`, { waitUntil: "load" });
@@ -103,13 +104,14 @@ async function firstLogin(browser, email, pw) {
     await page.fill("#login-password", pw);
     await page.click('button[type="submit"]');
     await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 30000 });
+    return await waitForWorkspaceState(userId);
   } finally {
     await page.context().close();
   }
 }
 
 async function waitForWorkspaceState(userId) {
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) {
     const [profile] = await rest("GET", `profiles?id=eq.${userId}&select=workspace_id`);
     if (profile?.workspace_id) {
       const [row] = await rest("GET", `workspace_state?workspace_id=eq.${profile.workspace_id}&select=workspace_id,state`);
@@ -183,8 +185,7 @@ async function main() {
       const email = `demo${i}@aria-demo${i}.test`;
       const pw = password(14);
       const userId = await upsertUser(users, email, pw);
-      await firstLogin(browser, email, pw);
-      const row = await waitForWorkspaceState(userId);
+      const row = await firstLogin(browser, email, pw, userId);
       await giveAnthropicKey(row, sourceKey, `Demo ${i}`);
       accounts.push({ email, pw });
       console.log(`  ${email} ready (own workspace, Claude key set).`);
