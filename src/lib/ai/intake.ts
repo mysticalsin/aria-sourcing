@@ -191,6 +191,27 @@ function claimAppearsInSource(value: string | undefined, source: string): boolea
   return normalize(source).includes(normalize(value));
 }
 
+/**
+ * A skill the model reworded from the text ("Murex Pricing" for "Murex Front
+ * Office tools on MX.III (Pricing, ...)") is still grounded when every one of
+ * its words is in the text. A word the text never uses ("Kubernetes") still
+ * drops it, so nothing is invented.
+ */
+function skillAppearsInSource(value: string | undefined, source: string): boolean {
+  if (claimAppearsInSource(value, source)) return true;
+  const words = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9+#.]+/g, " ")
+      .split(" ")
+      .map((word) => word.replace(/^\.+|\.+$/g, ""))
+      .filter(Boolean);
+  const claimWords = words(value ?? "");
+  if (claimWords.length === 0) return false;
+  const sourceWords = new Set(words(source));
+  return claimWords.every((word) => sourceWords.has(word) || sourceWords.has(`${word}s`));
+}
+
 function numberAppearsInSource(value: number | null | undefined, source: string): boolean {
   if (value == null) return false;
   if (source.includes(String(value))) return true;
@@ -205,6 +226,8 @@ export function groundLiveIntakeFields(
     value && claimAppearsInSource(value, source) ? value : undefined;
   const supportedList = (values: string[] | undefined) =>
     values?.filter((value) => claimAppearsInSource(value, source));
+  const supportedSkills = (values: string[] | undefined) =>
+    values?.filter((value) => skillAppearsInSource(value, source));
   const sourceLower = source.toLowerCase();
   const seniority = fields.seniority &&
     (claimAppearsInSource(fields.seniority, source) ||
@@ -248,8 +271,8 @@ export function groundLiveIntakeFields(
       (fields.currency === "GBP" && source.includes("£") ? "GBP" : undefined) ??
       (fields.currency === "USD" && source.includes("$") ? "USD" : undefined),
     equity: fields.equity && /equity|options|esop|stock/i.test(sourceLower) ? true : undefined,
-    requiredSkills: supportedList(fields.requiredSkills),
-    niceToHaveSkills: supportedList(fields.niceToHaveSkills),
+    requiredSkills: supportedSkills(fields.requiredSkills),
+    niceToHaveSkills: supportedSkills(fields.niceToHaveSkills),
     minYearsExperience: numberAppearsInSource(fields.minYearsExperience, source)
       ? fields.minYearsExperience
       : undefined,

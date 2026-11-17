@@ -138,3 +138,36 @@ test("brief extraction asks the extract task on Haiku and uses its grounded answ
     globalThis.fetch = originalFetch;
   }
 });
+
+test("grounding keeps a skill reworded from the brief's own words and drops an invented one", () => {
+  const brief =
+    "Crédit Agricole - Murex Support. MANDATORY: Prior experience working directly with Front Office traders. " +
+    "MANDATORY: Good knowledge of Murex Front Office tools on MX.III (Pricing, Simulation, Market Data, standard reports). " +
+    "Strong knowledge of financial products (vanilla), including valuation principles and risk sensitivities.";
+  const grounded = groundLiveIntakeFields(
+    {
+      requiredSkills: [
+        "Murex MX.III Front Office tools",
+        "Murex Pricing",
+        "Murex Market Data",
+        "Front Office trader experience",
+        "Vanilla financial products valuation",
+        "Risk sensitivities",
+        "Kubernetes",
+        "Murex Kondor",
+      ],
+      niceToHaveSkills: ["Murex Simulation", "Python"],
+    },
+    brief,
+  );
+
+  assert.deepEqual(grounded.requiredSkills, [
+    "Murex MX.III Front Office tools",
+    "Murex Pricing",
+    "Murex Market Data",
+    "Front Office trader experience",
+    "Vanilla financial products valuation",
+    "Risk sensitivities",
+  ]);
+  assert.deepEqual(grounded.niceToHaveSkills, ["Murex Simulation"]);
+});
