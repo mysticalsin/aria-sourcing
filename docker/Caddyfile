@@ -7,6 +7,12 @@
 	admin off
 	auto_https off
 	persist_config off
+	# The public edge (:8080) sits behind ngrok, on the compose network: keep
+	# the X-Forwarded-Proto/Host it sends, so the app sees the https origin the
+	# visitor's browser addressed (src/lib/api/same-origin-json.ts).
+	servers :8080 {
+		trusted_proxies static private_ranges
+	}
 }
 
 # Upstream connections: one fresh connection per request. Reusing a pooled
@@ -87,5 +93,45 @@
 		header Access-Control-Allow-Origin "*"
 		header Content-Type "application/json"
 		respond `{"message":"API gateway: {err.status_code} {err.status_text}"}`
+	}
+}
+
+# Public edge for a demo URL (ngrok, `docker compose --profile tunnel`): ONE
+# origin for the app and its Supabase API, so a browser on another machine
+# never needs localhost (src/lib/supabase/config.ts browserSupabaseUrl).
+# /auth/v1 and /rest/v1 go through the gateway above, with its key check; the
+# rest goes to the app. What a visitor never needs is closed here: account
+# creation and GoTrue admin, the one-click owner login, the agents runner and
+# cron clocks, webhooks, the careers board (owner workspace), and any request
+# carrying the service key.
+:8080 {
+	log {
+		output stderr
+		level ERROR
+	}
+
+	route {
+		respond /edge-health 200
+
+		@closed path /auth/v1/signup* /auth/v1/admin/* /auth/v1/invite* /auth/v1/otp* /auth/v1/magiclink* /api/auth/demo-login* /api/agent/tick* /api/cron/* /api/webhooks/* /api/careers* /careers*
+		respond @closed 404
+
+		@serviceKeyHeader header apikey {$SUPABASE_SERVICE_KEY}
+		respond @serviceKeyHeader 403
+		@serviceKeyBearer header Authorization "Bearer {$SUPABASE_SERVICE_KEY}"
+		respond @serviceKeyBearer 403
+		@serviceKeyQuery query apikey={$SUPABASE_SERVICE_KEY}
+		respond @serviceKeyQuery 403
+
+		@supabaseApi path /auth/v1/* /rest/v1/*
+		reverse_proxy @supabaseApi 127.0.0.1:8000 {
+			import upstream_resilience
+		}
+
+		reverse_proxy {$APP_UPSTREAM:app:3000} {
+			# Server-sent events (/api/linkedin/stream) are passed on as they come.
+			flush_interval -1
+			import upstream_resilience
+		}
 	}
 }

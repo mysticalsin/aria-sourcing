@@ -12,6 +12,8 @@ function ok(name: string, condition: boolean) {
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const caddyfile = source("docker/Caddyfile");
+// The API gateway site (:8000) alone; the public edge (:8080) is checked below.
+const apiSite = caddyfile.slice(0, caddyfile.indexOf("\n:8080 {"));
 const compose = source("docker-compose.yml");
 const gatewayBlock = compose.slice(compose.indexOf("  gateway:\n"), compose.indexOf("  supabase-bootstrap:\n"));
 
@@ -20,12 +22,12 @@ const gatewayBlock = compose.slice(compose.indexOf("  gateway:\n"), compose.inde
 ok("the Kong gateway is gone", !existsSync(new URL("../docker/kong.yml", import.meta.url)) && !/\bkong\b/i.test(compose));
 ok("Auth is routed with the prefix stripped", /handle_path \/auth\/v1\/\* \{\s*reverse_proxy \{\$AUTH_UPSTREAM:auth:9999\}/.test(caddyfile));
 ok("REST is routed with the prefix stripped", /handle_path \/rest\/v1\/\* \{\s*reverse_proxy \{\$REST_UPSTREAM:rest:3000\}/.test(caddyfile));
-ok("only Auth and REST are routed", (caddyfile.match(/reverse_proxy /g) ?? []).length === 2);
+ok("only Auth and REST are routed", (apiSite.match(/reverse_proxy /g) ?? []).length === 2);
 ok("anything else answers 404", /\n\t\trespond 404\n\t\}/.test(caddyfile));
 ok("no admin API is exposed", caddyfile.includes("admin off"));
 ok(
   "both upstreams use a fresh connection per request and retry an unreachable upstream",
-  (caddyfile.match(/import upstream_resilience/g) ?? []).length === 2 &&
+  (apiSite.match(/import upstream_resilience/g) ?? []).length === 2 &&
     /\(upstream_resilience\) \{\s*transport http \{\s*keepalive off\s*\}\s*lb_retries 2/.test(caddyfile),
 );
 ok("gateway 5xx answers are logged", /log \{\s*output stderr\s*level ERROR\s*\}/.test(caddyfile));
@@ -62,7 +64,7 @@ ok("the Caddyfile is mounted read-only", gatewayBlock.includes("./docker/Caddyfi
 ok("the app server reaches Supabase through the gateway", compose.includes("SUPABASE_URL: http://gateway:8000"));
 ok("the browser and GoTrue use the same public API port", (compose.match(/http:\/\/localhost:\$\{API_PORT:-54321\}/g) ?? []).length === 3);
 // db, auth, rest, gateway, app, and the agents runner (ADR 0002).
-ok("every long-running service has bounded logs", (compose.match(/logging: \*logging/g) ?? []).length === 6);
+ok("every long-running service has bounded logs", (compose.match(/logging: \*logging/g) ?? []).length === 7);
 ok(
   "an upstream failure keeps the CORS header",
   /handle_errors \{\s*header Access-Control-Allow-Origin "\*"/.test(caddyfile),
@@ -87,6 +89,47 @@ ok("the gateway check covers the contract", [
 ].every((check) => gatewayCheck.includes(`"${check}"`)));
 ok("the gateway check prints no key", !/echo[^\n]*\$(ANON|SERVICE)\b/.test(gatewayCheck));
 ok("demo:doctor reruns the gateway check", source("scripts/local-stack.mjs").includes('"--entrypoint", "/usr/local/bin/gateway-check.sh", "supabase-bootstrap"'));
+
+/* ---- Public edge (:8080) for the ngrok demo URL --------------------------- */
+
+const edge = caddyfile.slice(caddyfile.indexOf("\n:8080 {"));
+const tunnelBlock = compose.slice(compose.indexOf("  tunnel:\n"), compose.indexOf("\nvolumes:\n"));
+ok("the edge is its own site", edge.startsWith("\n:8080 {"));
+ok("the edge keeps the forwarded proto from ngrok", /servers :8080 \{\s*trusted_proxies static private_ranges\s*\}/.test(caddyfile));
+ok("the edge sends the Supabase API through the keyed gateway",
+  /@supabaseApi path \/auth\/v1\/\* \/rest\/v1\/\*\s*reverse_proxy @supabaseApi 127\.0\.0\.1:8000/.test(edge));
+const closed = /@closed path ([^\n]+)\n\t\trespond @closed 404/.exec(edge)?.[1].split(" ") ?? [];
+ok("the edge closes account creation, owner login, internal clocks and the owner's careers board", [
+  "/auth/v1/signup*", "/auth/v1/admin/*", "/auth/v1/invite*", "/auth/v1/otp*", "/auth/v1/magiclink*",
+  "/api/auth/demo-login*", "/api/agent/tick*", "/api/cron/*", "/api/webhooks/*", "/api/careers*", "/careers*",
+].every((path) => closed.includes(path)));
+ok("the edge refuses the service key in every form", [
+  "@serviceKeyHeader header apikey {$SUPABASE_SERVICE_KEY}",
+  '@serviceKeyBearer header Authorization "Bearer {$SUPABASE_SERVICE_KEY}"',
+  "@serviceKeyQuery query apikey={$SUPABASE_SERVICE_KEY}",
+].every((line) => edge.includes(line)));
+ok("closed routes and the service key are checked before any proxy",
+  edge.indexOf("respond @closed 404") < edge.indexOf("reverse_proxy") &&
+  edge.indexOf("respond @serviceKeyQuery 403") < edge.indexOf("reverse_proxy"));
+ok("the edge port is published on loopback only", gatewayBlock.includes('"127.0.0.1:${EDGE_PORT:-8080}:8080"'));
+ok("the tunnel is opt-in and pinned", /profiles: \["tunnel"\]/.test(tunnelBlock) && /image: ngrok\/ngrok:\d+\.\d+\.\d+-alpine/.test(tunnelBlock));
+ok("the tunnel refuses sample keys and open sign-up",
+  tunnelBlock.includes('"$$KEYS_ROTATED" != "true"') && tunnelBlock.includes('"$$SIGNUP_DISABLED" != "true"'));
+ok("the tunnel gets no stack secret", !/env_file|SERVICE_KEY|ANON_KEY|JWT_SECRET/.test(tunnelBlock));
+ok("sample keys and sign-up are overridable from .env", [
+  "${SUPABASE_JWT_SECRET:-", "${SUPABASE_ANON_KEY:-", "${SUPABASE_SERVICE_KEY:-", "${DEMO_ADMIN_PASSWORD:-",
+  'GOTRUE_DISABLE_SIGNUP: "${AUTH_DISABLE_SIGNUP:-false}"',
+].every((part) => compose.includes(part)));
+
+const { browserSupabaseUrl } = await import("../src/lib/supabase/config");
+const local = "http://localhost:54321";
+ok("a page on localhost keeps the configured API URL",
+  browserSupabaseUrl(local, { origin: "http://localhost:3000", hostname: "localhost" }) === local);
+ok("a page on the public edge calls its own origin",
+  browserSupabaseUrl(local, { origin: "https://aria.ngrok-free.app", hostname: "aria.ngrok-free.app" }) === "https://aria.ngrok-free.app");
+ok("a non-loopback configured URL is kept everywhere",
+  browserSupabaseUrl("https://api.example.com", { origin: "https://aria.ngrok-free.app", hostname: "aria.ngrok-free.app" }) === "https://api.example.com");
+ok("server rendering keeps the configured URL", browserSupabaseUrl(local) === local);
 
 console.log(`RESULT gateway-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -83,3 +83,6 @@ production-readiness/e2e-*/
 # Local API secrets (Anthropic key for the AI layer). Never commit.
 .secret
 .secret.*
+
+# Demo accounts list written by scripts/demo-accounts.mjs (passwords)
+.demo-accounts.local.md

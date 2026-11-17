@@ -1,7 +1,13 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import { SUPABASE_ANON_KEY, SUPABASE_AUTH_COOKIE_NAME, SUPABASE_URL, supabaseEnabled } from "./config";
+import {
+  SUPABASE_ANON_KEY,
+  SUPABASE_AUTH_COOKIE_NAME,
+  SUPABASE_URL,
+  browserSupabaseUrl,
+  supabaseEnabled,
+} from "./config";
 
 let cached: ReturnType<typeof createBrowserClient> | null = null;
 
@@ -66,7 +72,8 @@ const edgeResilientFetch: typeof fetch = async (input, init) => {
 export function getBrowserSupabase() {
   if (!supabaseEnabled) return null;
   if (cached) return cached;
-  cached = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const url = browserSupabaseUrl(SUPABASE_URL, typeof window === "undefined" ? undefined : window.location);
+  cached = createBrowserClient(url, SUPABASE_ANON_KEY, {
     cookieOptions: { name: SUPABASE_AUTH_COOKIE_NAME },
     global: { fetch: edgeResilientFetch },
   });

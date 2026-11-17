@@ -10,12 +10,14 @@
 # email form: admin@aria.local / admindemo123.
 #
 # The keys below are the PUBLIC supabase sample keys — fine for a local stack only.
-# For any non-local use, regenerate JWT_SECRET + the anon/service JWTs and override them.
+# For any non-local use, regenerate JWT_SECRET + the anon/service JWTs and override them:
+# `scripts/tunnel-keys.mjs` writes them to `.env` (gitignored), which compose reads.
+# Public demo URL (ngrok): docs/ngrok-demo.md.
 # =============================================================================
 name: aria-sourcing
 
 x-keys:
-  jwt_secret: &jwt_secret "your-super-secret-jwt-token-with-at-least-32-characters-long"
+  jwt_secret: &jwt_secret "${SUPABASE_JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}"
   jwt_exp: &jwt_exp "3600"
   owner_current_password: &owner_current_password "local_owner_current_password_00000000000000000"
   owner_password: &owner_password "local_owner_database_password_000000000000000000"
@@ -24,11 +26,11 @@ x-keys:
   rest_password: &rest_password "local_rest_database_password_0000000000000000000"
   auth_db_url: &auth_db_url "postgres://supabase_auth_admin:local_auth_database_password_0000000000000000000@db:5432/postgres"
   rest_db_url: &rest_db_url "postgres://authenticator:local_rest_database_password_0000000000000000000@db:5432/postgres"
-  demo_admin_pw: &demo_admin_pw "admindemo123"
+  demo_admin_pw: &demo_admin_pw "${DEMO_ADMIN_PASSWORD:-admindemo123}"
   # Shared by app and agents only (ADR 0002). Local sample; override for any non-local use.
   agent_runner_secret: &agent_runner_secret "local_agent_runner_secret_00000000000000000000"
-  anon_key: &anon_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE" # gitleaks:allow -- public Supabase local-demo JWT
-  service_key: &service_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q" # gitleaks:allow -- public Supabase local-demo JWT
+  anon_key: &anon_key "${SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE}" # gitleaks:allow -- public Supabase local-demo JWT
+  service_key: &service_key "${SUPABASE_SERVICE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q}" # gitleaks:allow -- public Supabase local-demo JWT
 
 # Bounded logs for the long-running services (json-file grows forever otherwise).
 x-logging: &logging
@@ -114,7 +116,7 @@ services:
       GOTRUE_DB_DATABASE_URL: *auth_db_url
       GOTRUE_SITE_URL: "http://localhost:${APP_PORT:-3000}"
       GOTRUE_URI_ALLOW_LIST: "http://localhost:${APP_PORT:-3000}/**,http://127.0.0.1:${APP_PORT:-3000}/**"
-      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_DISABLE_SIGNUP: "${AUTH_DISABLE_SIGNUP:-false}"
       GOTRUE_JWT_ADMIN_ROLES: service_role
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
@@ -173,6 +175,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${API_PORT:-54321}:8000"
+      # Public edge (app + API on one origin) for the ngrok tunnel; loopback only here.
+      - "127.0.0.1:${EDGE_PORT:-8080}:8080"
     environment:
       SUPABASE_ANON_KEY: *anon_key
       SUPABASE_SERVICE_KEY: *service_key
@@ -284,6 +288,30 @@ services:
     # The image's HEALTHCHECK probes the web server; this service has none.
     healthcheck:
       disable: true
+    restart: unless-stopped
+    logging: *logging
+
+  # ---- Public demo URL (opt-in): docker compose --profile tunnel up -d -------------
+  # ngrok forwards its static domain to the gateway's public edge (:8080 in
+  # docker/Caddyfile). NGROK_AUTHTOKEN and NGROK_DOMAIN come from `.env`
+  # (gitignored). See docs/ngrok-demo.md: rotate the sample keys and close
+  # sign-up before turning this on.
+  tunnel:
+    image: ngrok/ngrok:3.39.13-alpine
+    profiles: ["tunnel"]
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      NGROK_AUTHTOKEN: "${NGROK_AUTHTOKEN:-}"
+      NGROK_DOMAIN: "${NGROK_DOMAIN:-}"
+      KEYS_ROTATED: "${ARIA_KEYS_ROTATED:-false}"
+      SIGNUP_DISABLED: "${AUTH_DISABLE_SIGNUP:-false}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'if [ -z "$$NGROK_AUTHTOKEN" ] || [ -z "$$NGROK_DOMAIN" ]; then echo "[tunnel] set NGROK_AUTHTOKEN and NGROK_DOMAIN in .env" >&2; exit 1; fi;
+         if [ "$$KEYS_ROTATED" != "true" ] || [ "$$SIGNUP_DISABLED" != "true" ]; then echo "[tunnel] refusing to expose the stack: run scripts/tunnel-keys.mjs (rotated keys, sign-up closed) and recreate the stack first" >&2; exit 1; fi;
+         exec ngrok http gateway:8080 --url "$$NGROK_DOMAIN" --log stdout'
     restart: unless-stopped
     logging: *logging
 

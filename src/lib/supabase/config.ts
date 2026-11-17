@@ -27,6 +27,29 @@ export const supabaseEnabled = SUPABASE_URL.length > 0 && SUPABASE_ANON_KEY.leng
 // server (proxy.ts, getServerSupabase) and browser (client.ts) agree.
 export const SUPABASE_AUTH_COOKIE_NAME = "sb-auth-token";
 
+const isLoopbackHost = (hostname: string) =>
+  hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+
+/**
+ * The Supabase URL the browser calls. The local image bakes a loopback URL
+ * (http://localhost:54321), which a visitor on another machine cannot reach.
+ * A page opened through the public edge (docker/Caddyfile, :8080, e.g. behind
+ * ngrok) finds /auth/v1 and /rest/v1 on its own origin, so it calls that.
+ * Opened on localhost, nothing changes.
+ */
+export function browserSupabaseUrl(
+  configured: string,
+  page?: { origin: string; hostname: string },
+): string {
+  if (!page) return configured;
+  try {
+    const url = new URL(configured);
+    return isLoopbackHost(url.hostname) && !isLoopbackHost(page.hostname) ? page.origin : configured;
+  } catch {
+    return configured;
+  }
+}
+
 /** True for production builds (`next build` / `next start`). */
 export const isProduction = process.env.NODE_ENV === "production";
 
