@@ -182,6 +182,8 @@ services:
       SUPABASE_SERVICE_KEY: *service_key
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Extension zip served on the public edge (.gitignored; docs/ngrok-demo.md).
+      - ./.demo-downloads:/srv/downloads:ro
     logging: *logging
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8000/gateway-health"]

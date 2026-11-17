@@ -123,6 +123,12 @@
 		@serviceKeyQuery query apikey={$SUPABASE_SERVICE_KEY}
 		respond @serviceKeyQuery 403
 
+		# The LinkedIn extension, zipped for testers (docs/ngrok-demo.md). This one file only.
+		@extensionZip path /downloads/aria-linkedin-bridge.zip
+		file_server @extensionZip {
+			root /srv
+		}
+
 		@supabaseApi path /auth/v1/* /rest/v1/*
 		reverse_proxy @supabaseApi 127.0.0.1:8000 {
 			import upstream_resilience

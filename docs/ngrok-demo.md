@@ -31,8 +31,11 @@ public URL baked in. On `localhost:3000` nothing changes.
 - **Closed on the edge:** the one-click owner login (`/api/auth/demo-login`),
   the agents and cron clocks, webhooks, the careers board, and any request that
   carries the service key.
-- **LinkedIn:** a tester has no paired extension, so nothing can be sent from
-  their workspace. The owner's extension only talks to `localhost`.
+- **LinkedIn:** nothing is sent from a tester's workspace until that tester
+  installs the extension and pairs it with their own LinkedIn session (see
+  below). The owner's extension only talks to `localhost`. Autopilot, in any
+  workspace, contacts only the profiles in `AGENTS_LINKEDIN_ALLOWLIST`
+  (`.env.local`) while it is set.
 
 ## Run it
 
@@ -60,6 +63,30 @@ docker compose logs tunnel        # "started tunnel" with your URL
 ```
 
 Stop the public URL: `docker compose stop tunnel`. The rest keeps running.
+
+### LinkedIn extension for testers
+
+The edge serves one file, `/downloads/aria-linkedin-bridge.zip`, from
+`.demo-downloads/` (gitignored, mounted read-only in the gateway). Rebuild it
+after any change to the extension:
+
+```sh
+rm -rf .demo-downloads && mkdir .demo-downloads
+(cd extensions && zip -qrX ../.demo-downloads/aria-linkedin-bridge.zip linkedin-bridge -x '*.DS_Store')
+```
+
+Tester side, in Chrome:
+
+1. Download `https://<NGROK_DOMAIN>/downloads/aria-linkedin-bridge.zip` and unzip it.
+2. `chrome://extensions` -> Developer mode -> **Load unpacked** -> the
+   `linkedin-bridge` folder.
+3. Extension popup -> Settings -> ARIA address `https://<NGROK_DOMAIN>` -> Save,
+   and allow the permission Chrome asks for.
+4. Reload the ARIA tab -> **LinkedIn** -> **Connect in one click**. Stay signed
+   in to linkedin.com in the same Chrome profile.
+
+Invitations and messages then leave from the tester's own LinkedIn account,
+which LinkedIn's User Agreement does not allow for automated tools.
 
 Rerunning step 4 resets every demo password; workspaces and their data stay.
 

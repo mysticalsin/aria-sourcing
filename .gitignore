@@ -86,3 +86,5 @@ production-readiness/e2e-*/
 
 # Demo accounts list written by scripts/demo-accounts.mjs (passwords)
 .demo-accounts.local.md
+# LinkedIn extension zip served on the ngrok edge (rebuilt from extensions/linkedin-bridge)
+.demo-downloads/

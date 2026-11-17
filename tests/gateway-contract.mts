@@ -111,6 +111,12 @@ ok("the edge refuses the service key in every form", [
 ok("closed routes and the service key are checked before any proxy",
   edge.indexOf("respond @closed 404") < edge.indexOf("reverse_proxy") &&
   edge.indexOf("respond @serviceKeyQuery 403") < edge.indexOf("reverse_proxy"));
+ok("the edge serves the extension zip, and only that file",
+  /@extensionZip path \/downloads\/aria-linkedin-bridge\.zip\n\t\tfile_server @extensionZip \{\n\t\t\troot \/srv\n\t\t\}/.test(edge) &&
+  (edge.match(/file_server/g) ?? []).length === 1 &&
+  edge.indexOf("file_server @extensionZip") > edge.indexOf("respond @serviceKeyQuery 403"));
+ok("the zip folder is mounted read-only and kept out of git",
+  gatewayBlock.includes("- ./.demo-downloads:/srv/downloads:ro") && source(".gitignore").includes(".demo-downloads/"));
 ok("the edge port is published on loopback only", gatewayBlock.includes('"127.0.0.1:${EDGE_PORT:-8080}:8080"'));
 ok("the tunnel is opt-in and pinned", /profiles: \["tunnel"\]/.test(tunnelBlock) && /image: ngrok\/ngrok:\d+\.\d+\.\d+-alpine/.test(tunnelBlock));
 ok("the tunnel refuses sample keys and open sign-up",
