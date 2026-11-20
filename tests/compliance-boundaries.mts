@@ -15,6 +15,25 @@ import test from "node:test";
 
 const root = process.cwd();
 
+/**
+ * Tony WALTEUR, 20:30 BRT, 20 Nov 2026: "Yes, build the Aria LinkedIn token
+ * option as an off-by-default switch with those safeguards."
+ *
+ * Exactly one path prefix may hold that later port. This PR does not contain
+ * it. Set the single entry to the final directory when the port lands
+ * (`src/lib/channels/linkedin-token/` or `services/channels/linkedintoken/`).
+ * Session cookies, the professional-network host, its CDN, protocol-relative
+ * URLs, and split host strings stay banned in every other file. The old
+ * unflagged vendor route stays banned in every directory, including this one.
+ */
+const LINKEDIN_TOKEN_CHANNEL_ALLOWLIST = [
+  "__linkedin_token_channel_prefix_unset__/",
+] as const;
+
+function isLinkedInTokenChannelFile(file: string): boolean {
+  return LINKEDIN_TOKEN_CHANNEL_ALLOWLIST.some((prefix) => file === prefix.slice(0, -1) || file.startsWith(prefix));
+}
+
 const BANNED_SURFACES = [
   "extensions/linkedin-bridge",
   "src/lib/linkedin-bridge",
@@ -53,7 +72,22 @@ const TOKEN_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
   { label: "extension directory", pattern: /extensions\/linkedin-bridge/ },
   { label: "bridge library", pattern: /src\/lib\/linkedin-bridge/ },
   { label: "bridge API route", pattern: /src\/app\/api\/linkedin\// },
+  { label: "vendor delivery adapter", pattern: /vendorApiAdapter/ },
 ];
+
+/** Banned everywhere, including the future token-channel directory. */
+const GLOBALLY_BANNED_TOKEN_LABELS = new Set([
+  "aria_lnb_ pairing prefix",
+  "LINKEDIN_VENDOR_API_ env",
+  "LINKEDIN_BRIDGE_ env",
+  "AGENTS_LINKEDIN_ALLOWLIST",
+  "Voyager API",
+  "bridge token mint",
+  "extension directory",
+  "bridge library",
+  "bridge API route",
+  "vendor delivery adapter",
+]);
 
 /** A request, extension permission, or search scope aimed at a linkedin.com host. Profile /in/ URLs are not calls. */
 const EGRESS_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
@@ -153,10 +187,12 @@ test("test_no_linkedin_extension_token_path", () => {
   for (const file of files) {
     const raw = read(file);
     const source = `${raw}\n${stripComments(raw)}`;
+    const tokenChannel = isLinkedInTokenChannelFile(file);
     for (const { label, pattern } of TOKEN_PATTERNS) {
+      if (tokenChannel && !GLOBALLY_BANNED_TOKEN_LABELS.has(label)) continue;
       if (pattern.test(source)) hits.push(`${file}: ${label}`);
     }
-    if (/csrf-token/i.test(raw) && /voyager/i.test(raw)) hits.push(`${file}: csrf-token with voyager`);
+    if (!tokenChannel && /csrf-token/i.test(raw) && /voyager/i.test(raw)) hits.push(`${file}: csrf-token with voyager`);
   }
   assert.deepEqual(hits, [], `token or bridge path reappeared:\n${hits.join("\n")}`);
 
@@ -174,6 +210,7 @@ test("test_no_linkedin_dot_com_egress", () => {
   assert.equal(existsSync(join(root, "src/lib/sourcing/claude-web-search.ts")), false);
   const hits: string[] = [];
   for (const file of executableFiles()) {
+    if (isLinkedInTokenChannelFile(file)) continue;
     const raw = read(file);
     const source = `${raw}\n${stripComments(raw)}`;
     for (const { label, pattern } of EGRESS_PATTERNS) {
@@ -277,6 +314,7 @@ const HOST_CHECK_FILES = new Set([
 test("test_no_linkedin_com_or_licdn_outside_stored_profiles", () => {
   const hits: string[] = [];
   for (const file of executableFiles()) {
+    if (isLinkedInTokenChannelFile(file)) continue;
     const lines = read(file).split(/\n/);
     lines.forEach((line, index) => {
       const where = `${file}:${index + 1}`;
@@ -288,6 +326,33 @@ test("test_no_linkedin_com_or_licdn_outside_stored_profiles", () => {
     });
   }
   assert.deepEqual(hits, [], hits.join("\n"));
+});
+
+test("test_linkedin_token_channel_allowlist_has_exactly_one_entry", () => {
+  assert.equal(LINKEDIN_TOKEN_CHANNEL_ALLOWLIST.length, 1);
+  const source = read("tests/compliance-boundaries.mts");
+  const block = source.match(/const LINKEDIN_TOKEN_CHANNEL_ALLOWLIST = \[([\s\S]*?)\] as const;/);
+  assert.ok(block, "LINKEDIN_TOKEN_CHANNEL_ALLOWLIST must stay a single constant");
+  const entries = [...block[1].matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
+  assert.deepEqual(entries, [...LINKEDIN_TOKEN_CHANNEL_ALLOWLIST]);
+  assert.equal(entries.length, 1);
+  const prefix = entries[0];
+  assert.match(prefix, /\/$/);
+  assert.equal(prefix.includes(".."), false);
+  assert.equal(isLinkedInTokenChannelFile(`${prefix}client.ts`), true);
+  for (const banned of [
+    "extensions/linkedin-bridge",
+    "src/lib/linkedin-bridge",
+    "src/app/api/linkedin",
+    "src/lib/linkedin-channel.ts",
+    "next.config.mjs",
+  ]) {
+    assert.equal(isLinkedInTokenChannelFile(banned), false, banned);
+    assert.equal(banned.startsWith(prefix), false, banned);
+  }
+  assert.equal(GLOBALLY_BANNED_TOKEN_LABELS.has("LINKEDIN_VENDOR_API_ env"), true);
+  assert.equal(GLOBALLY_BANNED_TOKEN_LABELS.has("vendor delivery adapter"), true);
+  assert.equal(GLOBALLY_BANNED_TOKEN_LABELS.has("li_at session cookie"), false);
 });
 
 test("test_no_linkedin_integration_surface", () => {
@@ -346,6 +411,7 @@ test("test_spec_derived_boundary_tests_present", () => {
     "test_no_linkedin_vendor_delivery_adapter",
     "test_no_licdn_photo_host",
     "test_no_linkedin_com_or_licdn_outside_stored_profiles",
+    "test_linkedin_token_channel_allowlist_has_exactly_one_entry",
     "test_no_linkedin_integration_surface",
     "test_forward_only_drop_is_safe_on_existing_dbs",
     "test_no_agent_autopilot_tables",
