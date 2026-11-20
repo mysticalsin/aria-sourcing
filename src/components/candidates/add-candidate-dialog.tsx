@@ -270,23 +270,20 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
           />
 
           <TabPanel value="linkedin" active={mode === "linkedin"} idBase={idBase}>
-            <div className="space-y-4">
-              <Field
-                label="LinkedIn profile URL"
-                htmlFor={`${idBase}-li-url`}
-                hint="A URL you already have. Aria stores it and does not open LinkedIn."
-              >
-                <Input
-                  id={`${idBase}-li-url`}
-                  value={linkedinUrl}
-                  onChange={(e) => setLinkedinUrl(e.target.value)}
-                  placeholder="https://www.linkedin.com/in/jane-doe"
-                  autoComplete="off"
-                  maxLength={500}
-                />
-              </Field>
-              {personFields("linkedin")}
-            </div>
+            <Field
+              label="LinkedIn profile URL"
+              htmlFor={`${idBase}-li-url`}
+              hint="A URL you already have. Aria stores it and does not open LinkedIn."
+            >
+              <Input
+                id={`${idBase}-li-url`}
+                value={linkedinUrl}
+                onChange={(e) => setLinkedinUrl(e.target.value)}
+                placeholder="https://www.linkedin.com/in/jane-doe"
+                autoComplete="off"
+                maxLength={500}
+              />
+            </Field>
           </TabPanel>
 
           <TabPanel value="github" active={mode === "github"} idBase={idBase}>
@@ -307,8 +304,9 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
           </TabPanel>
 
           <TabPanel value="manual" active={mode === "manual"} idBase={idBase}>
-            {personFields("manual")}
+            <p className="text-sm text-muted">Type the person yourself. Nothing is fetched from LinkedIn.</p>
           </TabPanel>
+          {mode !== "github" && personFields(mode === "linkedin" ? "linkedin" : "manual")}
         </div>
       </Modal>
     </>
