@@ -43,11 +43,15 @@ const BRIDGE_TABLES = [
 const TOKEN_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
   { label: "aria_lnb_ pairing prefix", pattern: /aria_lnb_/ },
   { label: "li_at session cookie", pattern: /\bli_at\b/ },
+  { label: "JSESSIONID", pattern: /\bJSESSIONID\b/ },
+  { label: "LINKEDIN_VENDOR_API_ env", pattern: /LINKEDIN_VENDOR_API_/ },
   { label: "LINKEDIN_BRIDGE_ env", pattern: /LINKEDIN_BRIDGE_/ },
   { label: "AGENTS_LINKEDIN_ALLOWLIST", pattern: /AGENTS_LINKEDIN_ALLOWLIST/ },
-  { label: "Voyager API", pattern: /voyager\/api|linkedin-bridge\/voyager|from ["'][^"']*\/voyager["']/ },
+  { label: "Voyager API", pattern: /voyager\/api|linkedin\.com\/voyager|from ["'][^"']*\/voyager["']/ },
   { label: "bridge token mint", pattern: /generateBridgeToken|hashBridgeToken|bridgeTokenFromHeader/ },
-  { label: "linkedin-bridge import", pattern: /linkedin-bridge/ },
+  { label: "extension directory", pattern: /extensions\/linkedin-bridge/ },
+  { label: "bridge library", pattern: /src\/lib\/linkedin-bridge/ },
+  { label: "bridge API route", pattern: /src\/app\/api\/linkedin\// },
 ];
 
 /** A request, extension permission, or search scope aimed at a linkedin.com host. Profile /in/ URLs are not calls. */
@@ -55,10 +59,15 @@ const EGRESS_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
   { label: "search tool allowed_domains", pattern: /allowed_domains\s*:\s*\[[^\]]*linkedin\.com/i },
   { label: "site:linkedin.com query", pattern: /site:\s*linkedin\.com/i },
   { label: "extension host permission", pattern: /(?:host_permissions|matches)\s*:\s*\[[^\]]*linkedin\.com/i },
-  { label: "Voyager or non-profile LinkedIn URL", pattern: /https?:\/\/(?:[\w.-]+\.)?linkedin\.com\/(?!in(?:\/|["'`\s]|$))/i },
-  { label: "linkedin.com path other than /in/", pattern: /linkedin\.com\/(?:voyager|messaging|search|sales-api|talent|recruiter|checkpoint|uas|sales)\b/i },
+  { label: "Voyager or messaging URL", pattern: /https?:\/\/(?:[\w.-]+\.)?linkedin\.com\/(?:voyager|messaging|search\/results|sales-api|checkpoint|uas)\b/i },
+  { label: "linkedin.com internal path", pattern: /linkedin\.com\/(?:voyager|messaging|search\/results|sales-api|checkpoint|uas)\b/i },
   { label: "fetch() aimed at linkedin.com", pattern: /\bfetch\s*\([\s\S]{0,240}linkedin\.com/i },
   { label: "search-scope domain literal", pattern: /["']linkedin\.com\/in["']/ },
+  { label: "protocol-relative linkedin host", pattern: /(?:^|["'`\s])\/\/(?:[\w.-]+\.)?linkedin\.com/im },
+  { label: "linkedin.com/voyager", pattern: /linkedin\.com\/voyager/i },
+  { label: "LinkedIn CDN host", pattern: /licdn\.com/i },
+  { label: "split linkedin host", pattern: /['"]linked['"]\s*\+\s*['"]in\.com['"]/i },
+  { label: "split licdn host", pattern: /['"]li['"]\s*\+\s*['"]cdn(?:\.com)?['"]/i },
 ];
 
 const VENDOR_HOSTS = [
@@ -106,16 +115,32 @@ function walk(dir: string, extensions: RegExp): string[] {
   });
 }
 
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:\\])\/\/.*$/gm, "$1");
+/** Drop real comments. A protocol-relative URL (`"//www.linkedin.com"`) is not a comment. */
+export function stripComments(source: string): string {
+  const withoutBlock = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  return withoutBlock.replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+}
+
+const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "coverage", "dist", "_relay", "_agent_state", ".scratch"]);
+
+const IMMUTABLE_MIGRATIONS = new Set([
+  "supabase/migrations/0006_linkedin_bridge.sql",
+  "supabase/migrations/0007_linkedin_bridge_seen.sql",
+  "supabase/migrations/0008_linkedin_bridge_candidates.sql",
+  "supabase/migrations/0009_agents_runner.sql",
+]);
+
+function repoFiles(): string[] {
+  const roots = ["src", "extensions", "scripts", "tests", "supabase", ".github", "docs"];
+  const files = roots.flatMap((dir) => walk(dir, /.*/));
+  for (const entry of existsSync(root) ? readdirSync(root) : []) {
+    if (/^(?:next\.config\.mjs|Dockerfile.*|docker-compose.*\.ya?ml|\.env.*\.example)$/.test(entry)) files.push(entry);
+  }
+  return files.filter((file) => file !== "tests/compliance-boundaries.mts" && !IMMUTABLE_MIGRATIONS.has(file));
 }
 
 function executableFiles(): string[] {
-  return [
-    ...walk("src", /\.(?:ts|tsx|js|mjs|cjs|json)$/),
-    ...walk("extensions", /\.(?:ts|tsx|js|mjs|cjs|json)$/),
-    ...walk("scripts", /\.(?:ts|tsx|js|mjs|cjs|mts)$/),
-  ];
+  return repoFiles();
 }
 
 test("test_no_linkedin_extension_token_path", () => {
@@ -125,10 +150,12 @@ test("test_no_linkedin_extension_token_path", () => {
   const files = [...executableFiles(), ".env.local.example"].filter((path) => existsSync(join(root, path)));
   const hits: string[] = [];
   for (const file of files) {
-    const source = stripComments(read(file));
+    const raw = read(file);
+    const source = `${raw}\n${stripComments(raw)}`;
     for (const { label, pattern } of TOKEN_PATTERNS) {
       if (pattern.test(source)) hits.push(`${file}: ${label}`);
     }
+    if (/csrf-token/i.test(raw) && /voyager/i.test(raw)) hits.push(`${file}: csrf-token with voyager`);
   }
   assert.deepEqual(hits, [], `token or bridge path reappeared:\n${hits.join("\n")}`);
 
@@ -146,7 +173,8 @@ test("test_no_linkedin_dot_com_egress", () => {
   assert.equal(existsSync(join(root, "src/lib/sourcing/claude-web-search.ts")), false);
   const hits: string[] = [];
   for (const file of executableFiles()) {
-    const source = stripComments(read(file));
+    const raw = read(file);
+    const source = `${raw}\n${stripComments(raw)}`;
     for (const { label, pattern } of EGRESS_PATTERNS) {
       if (pattern.test(source)) hits.push(`${file}: ${label}`);
     }
@@ -175,7 +203,7 @@ test("test_no_scraper_or_enrichment_vendor", () => {
 });
 
 test("test_no_heyreach_call_unless_flag_on_and_approval_present", () => {
-  const files = executableFiles().filter((file) => /heyreach/i.test(read(file)));
+  const files = executableFiles().filter((file) => /^(?:src|scripts|extensions)\//.test(file) && /heyreach/i.test(read(file)));
   const example = existsSync(join(root, ".env.local.example")) ? read(".env.local.example") : "";
   assert.doesNotMatch(example, /ARIA_HEYREACH_ENABLED\s*=\s*true/);
   for (const file of files) {
@@ -191,12 +219,60 @@ test("test_no_heyreach_call_unless_flag_on_and_approval_present", () => {
   }
 });
 
+test("stripComments keeps a protocol-relative LinkedIn URL", () => {
+  const sample = 'const host = "//www.linkedin.com/voyager/api";';
+  assert.match(stripComments(sample), /\/\/www\.linkedin\.com\/voyager\/api/);
+});
+
+test("test_no_linkedin_vendor_delivery_adapter", () => {
+  const channel = read("src/lib/linkedin-channel.ts");
+  const dispatch = read("src/lib/dispatch-outbound.ts");
+  assert.doesNotMatch(channel, /LINKEDIN_VENDOR_API_/);
+  assert.doesNotMatch(channel, /vendorApiAdapter/);
+  assert.doesNotMatch(channel, /async deliver\s*\(/);
+  assert.doesNotMatch(dispatch, /adapter\.deliver/);
+  assert.match(dispatch, /linkedin-channel-refused/);
+  assert.equal(
+    /export function linkedInAdapterForProvider/.test(channel),
+    true,
+  );
+});
+
+test("test_no_licdn_photo_host", async () => {
+  const config = read("next.config.mjs");
+  const photo = read("src/lib/candidate-photo.ts");
+  assert.doesNotMatch(config, /licdn/i);
+  assert.doesNotMatch(photo, /licdn/i);
+  const { candidatePhotoUrl } = await import("../src/lib/candidate-photo.ts");
+  const host = ["media", "licdn", "com"].join(".");
+  assert.equal(candidatePhotoUrl(`https://${host}/dms/image/photo.jpg`), "");
+});
+
+test("test_no_agent_autopilot_tables", () => {
+  const drops = readdirSync(join(root, "supabase/migrations"))
+    .filter((name) => /^\d+_.*\.sql$/.test(name) && name > "0009_")
+    .map((name) => read(`supabase/migrations/${name}`))
+    .join("\n");
+  for (const table of ["agent_outreach", "agent_missions", "agent_campaign_autopilots", "agent_delegations"]) {
+    assert.match(drops, new RegExp(`drop table if exists public\\.${table}\\b`, "i"), `missing drop for ${table}`);
+  }
+});
+
+test("test_no_agents_compose_service", () => {
+  const compose = read("docker-compose.yml");
+  assert.doesNotMatch(compose, /^ {2}agents:/m);
+  assert.doesNotMatch(compose, /AGENT_RUNNER_SECRET/);
+  assert.doesNotMatch(compose, /\/api\/agent\/tick/);
+});
+
 test("test_no_smartx_ui_scraping", () => {
   const hits: string[] = [];
   for (const file of executableFiles()) {
     const source = stripComments(read(file));
-    if (/arp\.mantu\.com/i.test(source)) hits.push(`${file}: arp.mantu.com`);
-    if (/\bsmartx\b/i.test(source) && /(?:playwright|puppeteer|selenium|cheerio|scrape|page\.goto)/i.test(source)) {
+    if (/https?:\/\/arp\.mantu\.com/i.test(source) || (/arp\.mantu\.com/i.test(source) && /(?:\bfetch|\bpage\.goto|\bpuppeteer|\bplaywright|\bselenium)\s*\(/i.test(source))) {
+      hits.push(`${file}: arp.mantu.com automation`);
+    }
+    if (/\bsmartx\b/i.test(source) && /(?:\bpuppeteer|\bplaywright|\bselenium|\bpage\.goto)\s*\(/i.test(source)) {
       hits.push(`${file}: SmartX browser automation`);
     }
   }

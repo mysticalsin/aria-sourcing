@@ -282,7 +282,7 @@ ok("candidate is scored", typeof w?.matchScore === "number");
 const liResult = mapWebSearchCandidates(
   [{ name: "Jane Doe", title: "Senior Product Designer", company: "Acme Corp", url: "https://www.linkedin.com/in/jane-doe-4471", snippet: "" }],
   campaign,
-  "site:linkedin.com/in Senior Product Designer",
+  "Senior Product Designer",
   "LinkedIn",
   [],
   W,

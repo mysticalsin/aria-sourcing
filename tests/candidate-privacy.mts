@@ -47,7 +47,7 @@ function sensitiveCandidate(): Candidate {
 }
 
 test("candidate anonymization removes direct identifiers, authority, content, and contactability", () => {
-  const redacted = anonymizeCandidateRecord({ ...sensitiveCandidate(), avatarUrl: "https://media.licdn.com/dms/image/v2/x/photo.jpg" });
+  const redacted = anonymizeCandidateRecord({ ...sensitiveCandidate(), avatarUrl: "https://cdn.example.test/photo.jpg" });
   assert.equal(redacted.avatarUrl, undefined);
   assert.equal(redacted.name, "Anonymized Candidate");
   assert.equal(redacted.email, "");

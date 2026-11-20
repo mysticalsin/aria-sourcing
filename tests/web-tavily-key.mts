@@ -119,7 +119,7 @@ try {
   envScope.set({ TAVILY_API_KEY: undefined });
   const sourceRouteSearch = await runWebTool(
     "web_search",
-    { query: `site:linkedin.com/in ari ${secret}` },
+    { query: `site:example.test/in ari ${secret}` },
     { tavilyKey: resolved ?? undefined, fetchImpl: fakeFetch },
   );
   ok("source-route web_search path uses stored Tavily key when env is unset", sourceRouteSearch.ok && seenKeys.at(-1) === secret);
@@ -245,7 +245,7 @@ try {
 
   const envKey = "tvly-env-fallback-123456";
   envScope.set({ TAVILY_API_KEY: envKey });
-  const envSearch = await runWebTool("web_search", { query: "site:linkedin.com/in env fallback" }, { fetchImpl: fakeFetch });
+  const envSearch = await runWebTool("web_search", { query: "site:example.test/in env fallback" }, { fetchImpl: fakeFetch });
   ok("env fallback works when no stored key is passed", envSearch.ok && seenKeys.at(-1) === envKey);
 
   envScope.set({ DATA_ENCRYPTION_KEY: undefined });
@@ -253,7 +253,7 @@ try {
   ok("resolveStoredTavilyKey returns null when stored Tavily decrypt fails", decryptFailResolved === null);
   const decryptFailSearch = await runWebTool(
     "web_search",
-    { query: "site:linkedin.com/in decrypt fallback" },
+    { query: "site:example.test/in decrypt fallback" },
     { tavilyKey: decryptFailResolved ?? undefined, fetchImpl: fakeFetch },
   );
   ok("env fallback works when stored Tavily decrypt fails", decryptFailSearch.ok && seenKeys.at(-1) === envKey);

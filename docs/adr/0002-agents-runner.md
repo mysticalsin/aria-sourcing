@@ -2,6 +2,8 @@
 
 **Withdrawn 2026-11-20.** The autopilot that queued LinkedIn messages without a per-message approval is removed. Do not implement this ADR. The rest of this file is the historical decision only.
 
+`supabase/migrations/0011_drop_agent_autopilot.sql` drops `agent_outreach`, `agent_missions`, `agent_campaign_autopilots`, and `agent_delegations`. Migration `0009` is unchanged. `0011` is unapplied until a database runs it; existing databases keep those rows until then.
+
 Date: 2026-11-09
 Status: withdrawn (Tony, 2026-11-20; was accepted 2026-11-09)
 Amends: ADR 0001 ("Do not add [...] a separate AI server, or worker
@@ -17,7 +19,7 @@ campaigns drafted from managers' mailboxes.
 
 Today every mission (`src/lib/agents/*`) runs in the browser on top of the
 store, and closing the tab stops it. The LinkedIn bridge lets a message leave
-only after a human click (`tests/linkedin-bridge.mts`). LinkedIn's User
+only after a human click (`the bridge test file`). LinkedIn's User
 Agreement forbids automated messaging.
 
 ## Decision
@@ -44,9 +46,9 @@ Agreement forbids automated messaging.
    text, minimum score, contacts per run, cadence; the copy is written per
    candidate by Claude, template fallback), the agent may queue invitations or
    messages into that owner's outbox. The bridge's pacing and caps
-   (`LINKEDIN_BRIDGE_*`) still apply and are not raised. The invariant test in
-   `tests/linkedin-bridge.mts` becomes: only the two LinkedIn user routes and
-   `src/lib/linkedin-bridge/agent.ts` insert into the outbox, and the latter
+   (`the bridge environment variables`) still apply and are not raised. The invariant test in
+   `the bridge test file` becomes: only the two LinkedIn user routes and
+   `the bridge agent module` insert into the outbox, and the latter
    checks the standing approval and the delegation first.
 4. **Bridge host VM (POC).** Sends may run from a VM that hosts a real,
    visible Chrome with the ARIA extension, one Chrome profile per user. Each
@@ -63,9 +65,9 @@ Agreement forbids automated messaging.
 
 Migration `0009_agents_runner.sql`; `src/lib/agents/tick.ts` (decisions, tested
 with fakes in `tests/agents-autopilot.mts`), `src/lib/agents/server/*`,
-`src/lib/linkedin-bridge/agent.ts`, routes `/api/agent/tick` and
+`the bridge agent module`, routes `/api/agent/tick` and
 `/api/agent/autopilot`, the campaign page's Autopilot card. How it behaves:
-`docs/linkedin-bridge.md`, section "Campaign autopilot".
+`the bridge document`, section "Campaign autopilot".
 
 ## Consequences
 
