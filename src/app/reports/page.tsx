@@ -18,14 +18,10 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { WeeklyReportCard } from "@/components/reports/weekly-report-card";
 import { SkillUpdateCard } from "@/components/reports/skill-update-card";
-import {
-  useHydrated,
-  useCampaigns,
-  useActiveCampaignId,
-  useCampaign,
-  useReportForCampaign,
-  useActions,
-} from "@/lib/store";
+import { useReportCommands, useReportsDesk } from "@/features/reports/hooks";
+import { initialReportsConsole, reduceReportsConsole } from "@/features/reports/machine";
+import { effectiveReportCampaignId, sortSkillUpdates } from "@/features/reports/selectors";
+import { useHydrated, useCampaign } from "@/lib/store";
 import { formatTimeAgo } from "@/lib/utils";
 import {
   FileBarChart2,
@@ -38,37 +34,33 @@ import {
 
 export default function ReportsPage() {
   const hydrated = useHydrated();
-  const campaigns = useCampaigns();
-  const activeId = useActiveCampaignId();
-  const actions = useActions();
+  const desk = useReportsDesk();
+  const campaigns = desk.campaigns;
+  const activeId = desk.activeId;
+  const reportCommands = useReportCommands();
   const { toast } = useToast();
 
-  const [selectedId, setSelectedId] = React.useState<string>("");
-  const [generating, setGenerating] = React.useState(false);
+  const [reportsConsole, dispatchReports] = React.useReducer(reduceReportsConsole, undefined, initialReportsConsole);
+  const { selectedId, generating } = reportsConsole;
 
-  const effectiveId = selectedId || activeId || campaigns[0]?.id || "";
+  const effectiveId = effectiveReportCampaignId(selectedId, activeId, campaigns);
   const campaign = useCampaign(effectiveId);
-  const report = useReportForCampaign(effectiveId);
+  const report = desk.forCampaign(effectiveId);
 
   // Proposal cards awaiting review surface first — the same real proposals
   // (real metrics, real before/after) reviewable in depth via the "Watch it
   // learn" streamed session on the Skills page.
   const skillUpdates = React.useMemo(
-    () =>
-      [...(campaign?.skillUpdates ?? [])].sort((a, b) => {
-        if (a.status === "proposed" && b.status !== "proposed") return -1;
-        if (a.status !== "proposed" && b.status === "proposed") return 1;
-        return b.createdAt.localeCompare(a.createdAt);
-      }),
+    () => sortSkillUpdates(campaign?.skillUpdates ?? []),
     [campaign?.skillUpdates],
   );
   const proposedCount = skillUpdates.filter((s) => s.status === "proposed").length;
 
   function handleGenerate() {
     if (!effectiveId) return;
-    setGenerating(true);
-    const result = actions.generateReport(effectiveId);
-    setGenerating(false);
+    dispatchReports({ type: "begin-generate" });
+    const result = reportCommands.generateReport(effectiveId);
+    dispatchReports({ type: "finish-generate" });
     toast({
       title: result ? "Weekly report generated" : "Could not generate report",
       description: result
@@ -137,7 +129,7 @@ export default function ReportsPage() {
                   <Select
                     id="report-campaign"
                     value={effectiveId}
-                    onChange={(e) => setSelectedId(e.target.value)}
+                    onChange={(e) => dispatchReports({ type: "select", id: e.target.value })}
                     options={campaigns.map((c) => ({
                       value: c.id,
                       label: `${c.title} · ${c.department}`,
