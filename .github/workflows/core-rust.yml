@@ -1,0 +1,144 @@
+name: Core
+
+on:
+  push:
+    paths:
+      - "core/**"
+      - ".github/workflows/core-rust.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - ".github/workflows/core-rust.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Rust and Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Cache cargo registry
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: core-cargo-${{ runner.os }}-${{ hashFiles('core/Cargo.lock') }}
+          restore-keys: core-cargo-${{ runner.os }}-
+
+      - name: Test the Rust workspace
+        run: cargo test --manifest-path core/Cargo.toml --workspace
+
+      - name: Compile criterion benches
+        run: cargo bench --manifest-path core/Cargo.toml -p aria-scoring --no-run
+
+      - name: Build the C ABI
+        run: cargo build --release --manifest-path core/Cargo.toml -p aria-ffi
+
+      - name: Test the Go cgo binding
+        working-directory: core/go/aria
+        run: go test -count=1 .
+
+  bench:
+    name: p95 regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+
+      - name: Restore previous p95
+        id: p95-cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: core/bench/ci-history
+          key: aria-core-p95-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: aria-core-p95-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build release bench and C ABI
+        run: cargo build --release --manifest-path core/Cargo.toml -p aria-bench -p aria-ffi
+
+      - name: Measure Rust, FFI, and TypeScript p95
+        run: |
+          mkdir -p core/bench
+          cargo run --release --manifest-path core/Cargo.toml -p aria-bench --bin aria-p95 > core/bench/rust-p95.json
+          (cd core/go/aria && ARIA_MEASURE_P95=1 go test -count=1 -run TestMeasureFFIBatchP95 -v) | tee /tmp/ffi-p95.txt
+          node core/scripts/bench-ts.mjs > core/bench/ts-p95.json
+          python3 - << 'PY'
+          import json, pathlib, re
+          rust = json.loads(pathlib.Path("core/bench/rust-p95.json").read_text().strip().splitlines()[-1])
+          ts = json.loads(pathlib.Path("core/bench/ts-p95.json").read_text().strip().splitlines()[-1])
+          text = pathlib.Path("/tmp/ffi-p95.txt").read_text()
+          match = re.search(r'\{"name":"ffi_score_batch_500_p95".*\}', text)
+          if not match:
+              raise SystemExit("ffi p95 line missing:\n" + text)
+          ffi = json.loads(match.group(0))
+          gated = [
+              {"name": rust["name"], "unit": "ns", "value": rust["value"]},
+              {"name": ffi["name"], "unit": "ns", "value": ffi["value"]},
+          ]
+          recorded = gated + [{"name": ts["name"], "unit": "ns", "value": ts["value"]}]
+          pathlib.Path("core/bench/current-gate.json").write_text(json.dumps(gated, indent=2) + "\n")
+          pathlib.Path("core/bench/ci-measurement.json").write_text(json.dumps({
+              "measured_in": "CI",
+              "rust_batch_500_p95_ns": rust["value"],
+              "ffi_batch_500_p95_ns": ffi["value"],
+              "typescript_batch_500_p95_ns": ts["value"],
+              "rust_p50_ns": rust.get("p50_ns"),
+              "typescript_p50_ns": ts.get("p50_ns"),
+          }, indent=2) + "\n")
+          print(json.dumps(recorded, indent=2))
+          PY
+
+      - name: Fail when p95 regresses by more than 10%
+        run: node core/scripts/check-p95.mjs --history core/bench/ci-history/previous.json --current core/bench/current-gate.json
+
+      - name: github-action-benchmark
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Aria core p95
+          tool: customSmallerIsBetter
+          output-file-path: core/bench/current-gate.json
+          external-data-json-path: core/bench/ci-history/benchmark-action.json
+          fail-on-alert: true
+          alert-threshold: "110%"
+          fail-threshold: "110%"
+          comment-on-alert: false
+          auto-push: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary-always: true
+
+      - name: Save p95 history
+        if: success()
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: core/bench/ci-history
+          key: aria-core-p95-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}

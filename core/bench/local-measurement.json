@@ -1,0 +1,22 @@
+{
+  "measured_in": "agent VM, not CI",
+  "note": "Same commands the core-rust workflow runs. The CI job remeasures on ubuntu-latest and fails if that runner's p95 regresses by more than 10%. Do not treat these nanoseconds as the CI result.",
+  "fixture": "core/fixtures/scoring-vectors.json batch500 (500 synthetic candidates)",
+  "rust_batch_500": {
+    "p95_ns": 4892522,
+    "p50_ns": 4276326,
+    "iterations": 200,
+    "per_candidate_p95_ns": 9785
+  },
+  "typescript_batch_500": {
+    "p95_ns": 2878570,
+    "p50_ns": 2294083,
+    "iterations": 30,
+    "per_candidate_p95_ns": 5757
+  },
+  "go_ffi_batch_500": {
+    "p95_ns": 5251597,
+    "iterations": 200,
+    "per_candidate_p95_ns": 10503
+  }
+}
