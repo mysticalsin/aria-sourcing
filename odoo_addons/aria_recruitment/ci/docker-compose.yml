@@ -1,0 +1,44 @@
+# Disposable database password for the local CI containers only.
+# It is the public default from the Odoo image, not a credential.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  odoo:
+    image: odoo:19
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOST: postgres
+      PORT: "5432"
+      USER: odoo
+      PASSWORD: odoo
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ../..:/mnt/extra-addons:ro
+    command:
+      - odoo
+      - --workers=0
+      - --max-cron-threads=0
+      - --limit-time-real=1800
+      - --limit-time-cpu=1800
+      - -d
+      - aria_recruitment_ci
+      - -i
+      - aria_recruitment
+      - --without-demo=all
+      - --test-enable
+      - --stop-after-init
+      - --test-tags=/aria_recruitment
+      - --log-level=info

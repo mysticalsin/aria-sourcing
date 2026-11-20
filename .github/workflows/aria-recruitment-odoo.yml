@@ -1,0 +1,26 @@
+name: Aria recruitment (Odoo 19)
+
+on:
+  pull_request:
+    paths:
+      - 'odoo_addons/aria_recruitment/**'
+      - '.github/workflows/aria-recruitment-odoo.yml'
+  push:
+    paths:
+      - 'odoo_addons/aria_recruitment/**'
+      - '.github/workflows/aria-recruitment-odoo.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  odoo-hire-gate:
+    name: Odoo 19 Community hire gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Test aria_recruitment against odoo:19 and postgres:16
+        run: bash odoo_addons/aria_recruitment/ci/run.sh

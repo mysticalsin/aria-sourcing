@@ -1,0 +1,21 @@
+{
+    'name': 'Aria Recruitment',
+    'version': '19.0.1.0.0',
+    'category': 'Human Resources/Recruitment',
+    'summary': 'Smart pipeline, legal hire gate, and weekly interview list on Odoo 19 Community',
+    'license': 'LGPL-3',
+    'author': 'Aria',
+    'depends': ['hr_recruitment', 'mail', 'utm'],
+    'data': [
+        'security/ir.model.access.csv',
+        'data/sync_stages.xml',
+        'data/activity_types.xml',
+        'data/dna_parameter.xml',
+        'views/job_views.xml',
+        'views/applicant_views.xml',
+        'views/weekly_list_views.xml',
+        'views/audit_views.xml',
+    ],
+    'installable': True,
+    'application': False,
+}

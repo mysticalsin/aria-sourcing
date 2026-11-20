@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="hr_applicant_view_form_aria" model="ir.ui.view">
+        <field name="name">hr.applicant.form.aria</field>
+        <field name="model">hr.applicant</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_applicant_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Aria" name="aria_applicant">
+                    <group>
+                        <group string="Cross-keys">
+                            <field name="aria_smart_need_id"/>
+                            <field name="aria_smart_candidate_id"/>
+                            <field name="aria_utm_link" widget="url"/>
+                            <field name="aria_dna_integration_status"/>
+                        </group>
+                        <group string="Interview">
+                            <field name="aria_itw_grade"/>
+                            <field name="aria_itw_stars"/>
+                            <field name="aria_proposal_status"/>
+                            <field name="aria_last_itw_on"/>
+                            <field name="aria_itw_stale"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

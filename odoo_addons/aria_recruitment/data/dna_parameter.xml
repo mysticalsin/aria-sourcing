@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="param_dna_adapter" model="ir.config_parameter">
+        <field name="key">aria_recruitment.dna_adapter</field>
+        <field name="value">fake</field>
+    </record>
+</odoo>
