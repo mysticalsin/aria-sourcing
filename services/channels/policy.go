@@ -83,8 +83,8 @@ func CanonicalSubject(raw string) (string, error) {
 	return subject, nil
 }
 
-func killSwitchEngaged(env Environ, key string) bool {
-	value, ok := env.Lookup(key)
+func killSwitchEngaged(env LiveEnv, key string) bool {
+	value, ok := lookup(env, key)
 	if !ok {
 		return false
 	}
@@ -96,8 +96,8 @@ func killSwitchEngaged(env Environ, key string) bool {
 	}
 }
 
-func allowlisted(env Environ, recipient string) bool {
-	raw, ok := env.Lookup("ARIA_RECIPIENT_ALLOWLIST")
+func allowlisted(env LiveEnv, recipient string) bool {
+	raw, ok := lookup(env, "ARIA_RECIPIENT_ALLOWLIST")
 	if !ok {
 		return false
 	}
@@ -141,8 +141,8 @@ func enforceMode(mode CampaignMode) error {
 	}
 }
 
-func heyreachEnabled(env Environ) error {
-	value, ok := env.Lookup("ARIA_HEYREACH_ENABLED")
+func heyreachEnabled(env LiveEnv) error {
+	value, ok := lookup(env, "ARIA_HEYREACH_ENABLED")
 	if !ok {
 		return ErrDisabled
 	}
@@ -154,8 +154,8 @@ func heyreachEnabled(env Environ) error {
 	}
 }
 
-func parseCap(env Environ, key string) (int, error) {
-	raw, ok := env.Lookup(key)
+func parseCap(env LiveEnv, key string) (int, error) {
+	raw, ok := lookup(env, key)
 	if !ok || strings.TrimSpace(raw) == "" {
 		return 0, nil
 	}
@@ -166,8 +166,8 @@ func parseCap(env Environ, key string) (int, error) {
 	return n, nil
 }
 
-func parseGap(env Environ) (time.Duration, error) {
-	raw, ok := env.Lookup("ARIA_HEYREACH_MIN_GAP_SECONDS")
+func parseGap(env LiveEnv) (time.Duration, error) {
+	raw, ok := lookup(env, "ARIA_HEYREACH_MIN_GAP_SECONDS")
 	if !ok || strings.TrimSpace(raw) == "" {
 		return 0, ErrConfig
 	}
@@ -208,7 +208,39 @@ func validateHTTPURL(raw string, allowCleartextLoopback bool) (*url.URL, error) 
 	return parsed, nil
 }
 
-func authorize(env Environ, key []byte, now time.Time, msg ApprovedMessage, channel string, extraKill []string, notice bool) (ExactText, error) {
+func senderAllowed(env LiveEnv, identity string) bool {
+	raw, ok := lookup(env, "ARIA_SENDER_ALLOWLIST")
+	if !ok {
+		return false
+	}
+	want, err := canonicalSender(identity)
+	if err != nil {
+		return false
+	}
+	for _, part := range splitList(raw) {
+		got, err := canonicalSender(part)
+		if err != nil {
+			continue
+		}
+		if got == want {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalSender(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.ContainsAny(raw, "\r\n") {
+		return "", ErrSender
+	}
+	if strings.Contains(raw, "@") {
+		return CanonicalRecipient(raw)
+	}
+	return raw, nil
+}
+
+func authorize(env LiveEnv, msg ApprovedMessage, channel string, extraKill []string, notice bool) (ExactText, error) {
 	if killSwitchEngaged(env, "ARIA_SEND_KILL_SWITCH") {
 		return msg.Exact, ErrKillSwitch
 	}
@@ -233,9 +265,6 @@ func authorize(env Environ, key []byte, now time.Time, msg ApprovedMessage, chan
 	if err != nil {
 		return msg.Exact, err
 	}
-	if err := VerifyToken(key, msg.Token, exact, now); err != nil {
-		return exact, err
-	}
 	if deliver != exact.Recipient {
 		return exact, ErrBinding
 	}
@@ -246,9 +275,22 @@ func authorize(env Environ, key []byte, now time.Time, msg ApprovedMessage, chan
 		if err := requireEmailNotice(exact); err != nil {
 			return exact, err
 		}
+		host, _ := lookup(env, "ARIA_UNSUBSCRIBE_HOST")
+		link, err := validateUnsubscribe(exact.UnsubscribeURL, host)
+		if err != nil {
+			return exact, err
+		}
+		exact.UnsubscribeURL = link
 	}
 	if strings.TrimSpace(msg.SenderID) == "" {
 		return exact, ErrSender
+	}
+	identity := strings.TrimSpace(msg.From)
+	if channel == "heyreach" {
+		identity = strconv.FormatInt(msg.SenderAccountID, 10)
+	}
+	if !senderAllowed(env, identity) {
+		return exact, ErrSenderAllowlist
 	}
 	return exact, nil
 }

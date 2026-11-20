@@ -2,11 +2,11 @@
 //
 // Prepare freezes the exact text a recipient would see. Send delivers that
 // text only after the approval token, kill switch, recipient allowlist, and
-// send mode all agree. The approval token is verified here and will be issued
-// by the Rust ledger once that ledger lands; this package does not decide
-// that a human approved anything.
+// send mode all agree. Tokens are minted by the Rust ledger. This package
+// verifies them and does not export a mint function.
 //
-// Nothing in this package dials a mailbox provider or the HeyReach public API
-// on its own behalf during tests. Email delivery is an injected Mailer.
-// HeyReach delivery uses HEYREACH_BASE_URL and refuses to follow redirects.
+// Email delivery is an injected SMTP port. HeyReach reaches LinkedIn only
+// through HeyReach's official public API, and that adapter stays off unless
+// ARIA_HEYREACH_ENABLED is set. Tests use an in-memory SMTP fake and a local
+// server. They do not dial a provider.
 package channels

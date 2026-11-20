@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -24,7 +25,8 @@ func (e *Email) Prepare(ctx context.Context, draft Draft) (ExactText, error) {
 	if basis == "" {
 		return ExactText{}, ErrLawfulBasis
 	}
-	link, err := validateUnsubscribe(draft.UnsubscribeURL)
+	host, _ := lookup(e.cfg.Env, "ARIA_UNSUBSCRIBE_HOST")
+	link, err := validateUnsubscribe(draft.UnsubscribeURL, host)
 	if err != nil {
 		return ExactText{}, err
 	}
@@ -56,7 +58,7 @@ func (e *Email) Prepare(ctx context.Context, draft Draft) (ExactText, error) {
 func (e *Email) Send(ctx context.Context, msg ApprovedMessage) (SendResult, error) {
 	ctx = orBackground(ctx)
 	now := e.now()
-	exact, err := authorize(e.cfg.Env, e.cfg.TokenKey, now, msg, "email", nil, true)
+	exact, err := authorize(e.cfg.Env, msg, "email", nil, true)
 	if err != nil {
 		return e.refuse(ctx, now, msg, exact, err)
 	}
@@ -70,13 +72,22 @@ func (e *Email) Send(ctx context.Context, msg ApprovedMessage) (SendResult, erro
 	if daily <= 0 {
 		return e.refuse(ctx, now, msg, exact, ErrDailyCap)
 	}
-	release, err := e.limits.reserve(msg.SenderID, now, daily, 0, 0, nil)
+	release, err := e.limits.reserve(msg.SenderID, now, daily, 0, 0)
 	if err != nil {
 		return e.refuse(ctx, now, msg, exact, err)
 	}
 	if err := postChatter(ctx, e.cfg.Auditor, now, "authorized", "", msg, exact); err != nil {
 		release(false)
 		return SendResult{}, ErrAudit
+	}
+	nonce, err := verifyToken(e.cfg.TokenKey, msg.Token, emailBound(msg, exact), now)
+	if err != nil {
+		release(false)
+		return e.refuse(ctx, now, msg, exact, err)
+	}
+	if err := e.cfg.Consumed.Consume(ctx, nonce); err != nil {
+		release(false)
+		return e.refuse(ctx, now, msg, exact, err)
 	}
 	if err := ctx.Err(); err != nil {
 		release(false)
@@ -103,7 +114,7 @@ func (e *Email) Send(ctx context.Context, msg ApprovedMessage) (SendResult, erro
 	}
 	release(true)
 	if err := postChatter(ctx, e.cfg.Auditor, now, "delivered", "", msg, exact); err != nil {
-		return SendResult{}, ErrAudit
+		return SendResult{}, ErrSentAuditFailed
 	}
 	return SendResult{
 		Channel:   exact.Channel,
@@ -149,12 +160,32 @@ func requireEmailNotice(exact ExactText) error {
 	return nil
 }
 
-func validateUnsubscribe(raw string) (string, error) {
-	parsed, err := validateHTTPURL(raw, true)
-	if err != nil || parsed.Scheme == "" {
+func validateUnsubscribe(raw, configuredHost string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	host := strings.ToLower(strings.TrimSpace(configuredHost))
+	if raw == "" || host == "" || strings.ContainsAny(raw, "\r\n<>") || strings.Contains(host, "/") {
 		return "", ErrUnsubscribe
 	}
-	return strings.TrimSpace(raw), nil
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User != nil || parsed.Hostname() == "" || parsed.Port() != "" {
+		return "", ErrUnsubscribe
+	}
+	if parsed.Scheme != "https" || strings.ToLower(parsed.Hostname()) != host {
+		return "", ErrUnsubscribe
+	}
+	return raw, nil
+}
+
+func emailBound(msg ApprovedMessage, exact ExactText) boundFields {
+	return boundFields{
+		exact:          exact,
+		unsubscribeURL: exact.UnsubscribeURL,
+		mode:           msg.Campaign.Mode,
+		qcPass:         msg.Campaign.QCPass,
+		autoOptIn:      msg.Campaign.AutoOptIn,
+		from:           msg.From,
+		accountID:      msg.SenderAccountID,
+	}
 }
 
 func validateFrom(from string) error {

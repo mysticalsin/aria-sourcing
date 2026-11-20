@@ -3,7 +3,9 @@ package channels
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,7 +19,7 @@ const (
 	noticeSentence   = "Notice: GDPR Article 14 and LGPD. You were not the source of this contact data. You may request access, correction, or deletion, and you may object to this use."
 	wantDraftHash    = "eeab36fb17ca9bbe49f469155c9122a742d609dd69ea08394308eafd601bbc99"
 	wantBindingHash  = "b9976d404aa3454dca5e8adb160efa8a0db27a6ae628af30c7af89b65bd4ebaf"
-	wantTokenMAC     = "f973ddfa914caff15dd21bb1b8d96a6ce5fd58ad94ee477a961e3f2224d05400"
+	wantTokenMAC     = "4224c57889f0b3d6cc5d6efc67943d435b11e70429e6061cc51cbfddcfb8255e"
 	wantPreparedHash = "037213146aa485e915acacee5fe9e1ed5a4b568ea38706228187421d8d1ab785"
 	heyRecipient     = "conversation-synthetic-1"
 	heySender        = "sender-synthetic-1"
@@ -52,16 +54,19 @@ func (c *manualClock) Advance(d time.Duration) {
 }
 
 type memAudit struct {
-	mu   sync.Mutex
-	msgs []MailMessage
-	err  error
+	mu       sync.Mutex
+	msgs     []MailMessage
+	err      error
+	calls    int
+	failFrom int
 }
 
 func (m *memAudit) PostChatter(ctx context.Context, msg MailMessage) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.err != nil {
-		return m.err
+	m.calls++
+	if m.err != nil || (m.failFrom > 0 && m.calls >= m.failFrom) {
+		return errors.New("synthetic audit down")
 	}
 	m.msgs = append(m.msgs, msg)
 	return nil
@@ -115,6 +120,8 @@ func emailDraft() Draft {
 func emailEnv(extra map[string]string) Environ {
 	set := map[string]string{
 		"ARIA_RECIPIENT_ALLOWLIST":    "ada@example.com",
+		"ARIA_SENDER_ALLOWLIST":       "recruiting@example.com",
+		"ARIA_UNSUBSCRIBE_HOST":       "example.com",
 		"ARIA_EMAIL_SENDER_DAILY_CAP": "10",
 	}
 	for key, value := range extra {
@@ -130,7 +137,7 @@ type emailRig struct {
 	clock  *manualClock
 }
 
-func newEmailRig(tEnv Environ) emailRig {
+func newEmailRig(tEnv LiveEnv) emailRig {
 	mailer := &fakeMailer{}
 	audit := &memAudit{}
 	clock := &manualClock{now: refExpiry().Add(-time.Hour)}
@@ -157,13 +164,9 @@ func (r emailRig) approved(t interface {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, err := IssueToken(tokenKey(), exact, r.clock.Now().Add(48*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
 	return ApprovedMessage{
 		Exact:     exact,
-		Token:     tok,
+		Token:     mint(t, exact, mode, "recruiting@example.com", 0, r.clock.Now()),
 		DeliverTo: "Ada@Example.com",
 		From:      "recruiting@example.com",
 		SenderID:  "sender-synthetic-1",
@@ -176,6 +179,7 @@ func heyEnv(base string, extra map[string]string) Environ {
 	set := map[string]string{
 		"ARIA_HEYREACH_ENABLED":           "true",
 		"ARIA_RECIPIENT_ALLOWLIST":        heyRecipient,
+		"ARIA_SENDER_ALLOWLIST":           "42",
 		"ARIA_HEYREACH_SENDER_DAILY_CAP":  "10",
 		"ARIA_HEYREACH_SENDER_WEEKLY_CAP": "10",
 		"ARIA_HEYREACH_MIN_GAP_SECONDS":   "0",
@@ -196,6 +200,32 @@ func heyDraft() Draft {
 		Body:      "Synthetic note for a fictional recipient.",
 		SenderID:  heySender,
 	}
+}
+
+var tokenNonce atomic.Uint64
+
+func mint(t interface {
+	Helper()
+	Fatal(...any)
+}, exact ExactText, mode CampaignMode, from string, account int64, now time.Time) string {
+	t.Helper()
+	nonce := fmt.Sprintf("nonce-%d", tokenNonce.Add(1))
+	tok, err := issueToken(tokenKey(), tokenClaims{
+		Exact:           exact,
+		UnsubscribeURL:  exact.UnsubscribeURL,
+		Mode:            mode.Mode,
+		QCPass:          mode.QCPass,
+		AutoOptIn:       mode.AutoOptIn,
+		From:            from,
+		SenderAccountID: account,
+		IssuedAt:        now,
+		ExpiresAt:       now.Add(time.Hour),
+		Nonce:           nonce,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
 }
 
 func mustOK(t interface {

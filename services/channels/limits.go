@@ -11,7 +11,6 @@ type senderLimits struct {
 	daily  map[string]int
 	weekly map[string]int
 	last   map[string]time.Time
-	paused map[string]struct{}
 }
 
 func newSenderLimits() *senderLimits {
@@ -19,16 +18,14 @@ func newSenderLimits() *senderLimits {
 		daily:  map[string]int{},
 		weekly: map[string]int{},
 		last:   map[string]time.Time{},
-		paused: map[string]struct{}{},
 	}
 }
 
-func (s *senderLimits) reserve(sender string, now time.Time, dailyCap, weeklyCap int, gap time.Duration, pauseKeys []string) (func(bool), error) {
+// reserve claims the cap and the pacing slot before the transport runs.
+// The returned function rolls both back when commit is false.
+func (s *senderLimits) reserve(sender string, now time.Time, dailyCap, weeklyCap int, gap time.Duration) (func(bool), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.isPaused(append(pauseKeys, senderKey(sender))...) {
-		return nil, ErrPaused
-	}
 	if gap > 0 {
 		if last, ok := s.last[sender]; ok && now.Sub(last) < gap {
 			return nil, ErrPacing
@@ -43,15 +40,16 @@ func (s *senderLimits) reserve(sender string, now time.Time, dailyCap, weeklyCap
 	if weeklyCap > 0 && s.weekly[weekKey] >= weeklyCap {
 		return nil, ErrWeeklyCap
 	}
+	previous, hadPrevious := s.last[sender]
 	s.daily[dayKey]++
 	if weeklyCap > 0 {
 		s.weekly[weekKey]++
 	}
+	s.last[sender] = now
 	return func(commit bool) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if commit {
-			s.last[sender] = now
 			return
 		}
 		if s.daily[dayKey] > 0 {
@@ -60,26 +58,12 @@ func (s *senderLimits) reserve(sender string, now time.Time, dailyCap, weeklyCap
 		if weeklyCap > 0 && s.weekly[weekKey] > 0 {
 			s.weekly[weekKey]--
 		}
+		if hadPrevious {
+			s.last[sender] = previous
+		} else {
+			delete(s.last, sender)
+		}
 	}, nil
-}
-
-func (s *senderLimits) pause(keys ...string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, key := range keys {
-		if key != "" {
-			s.paused[key] = struct{}{}
-		}
-	}
-}
-
-func (s *senderLimits) isPaused(keys ...string) bool {
-	for _, key := range keys {
-		if _, ok := s.paused[key]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func senderKey(sender string) string { return "sender:" + sender }

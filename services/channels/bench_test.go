@@ -28,6 +28,7 @@ func BenchmarkSendEmail(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		msg.Token = mint(b, msg.Exact, msg.Campaign, msg.From, 0, rig.clock.Now())
 		if _, err := rig.email.Send(ctx, msg); err != nil {
 			b.Fatal(err)
 		}
@@ -55,7 +56,7 @@ func BenchmarkSendHeyReach(b *testing.B) {
 	}))
 	defer srv.Close()
 	clock := &manualClock{now: time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)}
-	ch := NewHeyReach(HeyReachConfig{
+	ch, err := newHeyReachForTest(HeyReachConfig{
 		Env: heyEnv(srv.URL, map[string]string{
 			"ARIA_HEYREACH_SENDER_DAILY_CAP":  "1000000000",
 			"ARIA_HEYREACH_SENDER_WEEKLY_CAP": "1000000000",
@@ -66,22 +67,22 @@ func BenchmarkSendHeyReach(b *testing.B) {
 		Clock:    clock,
 		HTTP:     srv.Client(),
 	})
+	if err != nil {
+		b.Fatal(err)
+	}
 	exact, err := ch.Prepare(context.Background(), heyDraft())
 	if err != nil {
 		b.Fatal(err)
 	}
-	tok, err := IssueToken(tokenKey(), exact, clock.Now().Add(24*time.Hour))
-	if err != nil {
-		b.Fatal(err)
-	}
 	msg := ApprovedMessage{
-		Exact: exact, Token: tok, DeliverTo: heyRecipient, SenderID: heySender, SenderAccountID: 42,
+		Exact: exact, DeliverTo: heyRecipient, SenderID: heySender, SenderAccountID: 42,
 		Campaign: CampaignMode{Mode: "manual"},
 	}
 	ctx := context.Background()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		msg.Token = mint(b, exact, msg.Campaign, "", 42, clock.Now())
 		if _, err := ch.Send(ctx, msg); err != nil {
 			b.Fatal(err)
 		}

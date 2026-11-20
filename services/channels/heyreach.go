@@ -7,11 +7,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const heyReachSendPath = "api/public/inbox/SendMessage"
+const (
+	heyReachSendPath     = "api/public/inbox/SendMessage"
+	heyReachOfficialHost = "api.heyreach.io"
+)
 
 // Prepare freezes the HeyReach message. The body is not rewritten.
 func (h *HeyReach) Prepare(ctx context.Context, draft Draft) (ExactText, error) {
@@ -48,12 +52,15 @@ func (h *HeyReach) Prepare(ctx context.Context, draft Draft) (ExactText, error) 
 func (h *HeyReach) Send(ctx context.Context, msg ApprovedMessage) (SendResult, error) {
 	ctx = orBackground(ctx)
 	now := h.now()
-	exact, err := authorize(h.cfg.Env, h.cfg.TokenKey, now, msg, "heyreach", []string{"ARIA_HEYREACH_KILL_SWITCH"}, false)
+	exact, err := authorize(h.cfg.Env, msg, "heyreach", []string{"ARIA_HEYREACH_KILL_SWITCH"}, false)
 	if err != nil {
 		return h.refuse(ctx, now, msg, exact, err)
 	}
 	if msg.SenderAccountID <= 0 {
 		return h.refuse(ctx, now, msg, exact, ErrConfig)
+	}
+	if err := h.paused(ctx, msg, now); err != nil {
+		return h.refuse(ctx, now, msg, exact, err)
 	}
 	endpoint, apiKey, err := h.destination()
 	if err != nil {
@@ -77,14 +84,26 @@ func (h *HeyReach) Send(ctx context.Context, msg ApprovedMessage) (SendResult, e
 	if err != nil {
 		return h.refuse(ctx, now, msg, exact, err)
 	}
-	pauseKeys := []string{senderKey(msg.SenderID), accountKey(msg.SenderAccountID)}
-	release, err := h.limits.reserve(msg.SenderID, now, daily, weekly, gap, pauseKeys)
+	threshold, window, pauseFor, err := errorPolicy(h.cfg.Env)
+	if err != nil {
+		return h.refuse(ctx, now, msg, exact, err)
+	}
+	release, err := h.limits.reserve(msg.SenderID, now, daily, weekly, gap)
 	if err != nil {
 		return h.refuse(ctx, now, msg, exact, err)
 	}
 	if err := postChatter(ctx, h.cfg.Auditor, now, "authorized", "", msg, exact); err != nil {
 		release(false)
 		return SendResult{}, ErrAudit
+	}
+	nonce, err := verifyToken(h.cfg.TokenKey, msg.Token, heyReachBound(msg, exact), now)
+	if err != nil {
+		release(false)
+		return h.refuse(ctx, now, msg, exact, err)
+	}
+	if err := h.cfg.Consumed.Consume(ctx, nonce); err != nil {
+		release(false)
+		return h.refuse(ctx, now, msg, exact, err)
 	}
 	if err := ctx.Err(); err != nil {
 		release(false)
@@ -93,18 +112,21 @@ func (h *HeyReach) Send(ctx context.Context, msg ApprovedMessage) (SendResult, e
 	warning, err := h.postMessage(ctx, endpoint, apiKey, exact, msg.SenderAccountID)
 	if warning {
 		release(false)
-		h.limits.pause(pauseKeys...)
+		h.noteFailure(ctx, msg, now, threshold, window, pauseFor)
+		_ = h.cfg.Pauses.Pause(ctx, senderKey(msg.SenderID), time.Time{}, "account-warning")
+		_ = h.cfg.Pauses.Pause(ctx, accountKey(msg.SenderAccountID), time.Time{}, "account-warning")
 		_ = postChatter(ctx, h.cfg.Auditor, now, "refused", ErrAccountWarning.Reason, msg, exact)
 		return SendResult{}, ErrAccountWarning
 	}
 	if err != nil {
 		release(false)
+		h.noteFailure(ctx, msg, now, threshold, window, pauseFor)
 		_ = postChatter(ctx, h.cfg.Auditor, now, "refused", ErrDelivery.Reason, msg, exact)
 		return SendResult{}, ErrDelivery
 	}
 	release(true)
 	if err := postChatter(ctx, h.cfg.Auditor, now, "delivered", "", msg, exact); err != nil {
-		return SendResult{}, ErrAudit
+		return SendResult{}, ErrSentAuditFailed
 	}
 	return SendResult{
 		Channel:   exact.Channel,
@@ -132,11 +154,20 @@ func (h *HeyReach) now() time.Time {
 }
 
 func (h *HeyReach) destination() (*url.URL, string, error) {
-	raw, ok := h.cfg.Env.Lookup("HEYREACH_BASE_URL")
+	raw, ok := lookup(h.cfg.Env, "HEYREACH_BASE_URL")
 	if !ok {
 		return nil, "", ErrConfig
 	}
-	base, err := validateHTTPURL(raw, true)
+	var err error
+	if h.testOverride {
+		err = validateTestHeyReachBase(raw)
+	} else {
+		err = validateOfficialHeyReachBase(raw)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	base, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil, "", ErrConfig
 	}
@@ -148,11 +179,113 @@ func (h *HeyReach) destination() (*url.URL, string, error) {
 	if err != nil || endpoint.Host != base.Host || !strings.HasSuffix(endpoint.Path, "/"+heyReachSendPath) {
 		return nil, "", ErrConfig
 	}
-	apiKey, ok := h.cfg.Env.Lookup("HEYREACH_API_KEY")
+	apiKey, ok := lookup(h.cfg.Env, "HEYREACH_API_KEY")
 	if !ok || strings.TrimSpace(apiKey) == "" {
 		return nil, "", ErrConfig
 	}
 	return endpoint, apiKey, nil
+}
+
+func (h *HeyReach) paused(ctx context.Context, msg ApprovedMessage, now time.Time) error {
+	for _, key := range []string{senderKey(msg.SenderID), accountKey(msg.SenderAccountID)} {
+		paused, err := h.cfg.Pauses.Paused(ctx, key, now)
+		if err != nil {
+			return err
+		}
+		if paused {
+			return ErrPaused
+		}
+	}
+	return nil
+}
+
+func (h *HeyReach) noteFailure(ctx context.Context, msg ApprovedMessage, now time.Time, threshold int, window, pauseFor time.Duration) {
+	count, err := h.cfg.Pauses.NoteFailure(ctx, senderKey(msg.SenderID), now, window)
+	if err != nil || count < threshold {
+		return
+	}
+	until := now.Add(pauseFor)
+	_ = h.cfg.Pauses.Pause(ctx, senderKey(msg.SenderID), until, "error-rate")
+	_ = h.cfg.Pauses.Pause(ctx, accountKey(msg.SenderAccountID), until, "error-rate")
+}
+
+func heyReachBound(msg ApprovedMessage, exact ExactText) boundFields {
+	return boundFields{
+		exact:     exact,
+		mode:      msg.Campaign.Mode,
+		qcPass:    msg.Campaign.QCPass,
+		autoOptIn: msg.Campaign.AutoOptIn,
+		from:      msg.From,
+		accountID: msg.SenderAccountID,
+	}
+}
+
+func validateOfficialHeyReachBase(raw string) error {
+	parsed, err := parseBase(raw)
+	if err != nil {
+		return ErrConfig
+	}
+	if parsed.Scheme != "https" || !strings.EqualFold(parsed.Hostname(), heyReachOfficialHost) || parsed.Port() != "" {
+		return ErrConfig
+	}
+	if parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return ErrConfig
+	}
+	return nil
+}
+
+func validateTestHeyReachBase(raw string) error {
+	parsed, err := parseBase(raw)
+	if err != nil {
+		return ErrConfig
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ErrConfig
+	}
+	if !loopbackHost(parsed.Host) {
+		return ErrConfig
+	}
+	return nil
+}
+
+func parseBase(raw string) (*url.URL, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.ContainsAny(raw, "\r\n") {
+		return nil, ErrConfig
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Hostname() == "" {
+		return nil, ErrConfig
+	}
+	return parsed, nil
+}
+
+func errorPolicy(env LiveEnv) (int, time.Duration, time.Duration, error) {
+	threshold := 3
+	window := time.Hour
+	pauseFor := time.Hour
+	if raw, ok := lookup(env, "ARIA_HEYREACH_ERROR_THRESHOLD"); ok && strings.TrimSpace(raw) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || n < 1 {
+			return 0, 0, 0, ErrConfig
+		}
+		threshold = n
+	}
+	if raw, ok := lookup(env, "ARIA_HEYREACH_ERROR_WINDOW_SECONDS"); ok && strings.TrimSpace(raw) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || n < 1 {
+			return 0, 0, 0, ErrConfig
+		}
+		window = time.Duration(n) * time.Second
+	}
+	if raw, ok := lookup(env, "ARIA_HEYREACH_ERROR_PAUSE_SECONDS"); ok && strings.TrimSpace(raw) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || n < 1 {
+			return 0, 0, 0, ErrConfig
+		}
+		pauseFor = time.Duration(n) * time.Second
+	}
+	return threshold, window, pauseFor, nil
 }
 
 func (h *HeyReach) postMessage(ctx context.Context, endpoint *url.URL, apiKey string, exact ExactText, accountID int64) (bool, error) {

@@ -126,10 +126,7 @@ func TestEmailSendRefusesTokenOverDraftInsteadOfExactText(t *testing.T) {
 	draftOnly := exact
 	draftOnly.Body = draftBody
 	draftOnly.BodyHash = BodyHash(draftBody)
-	tok, err := IssueToken(tokenKey(), draftOnly, refExpiry())
-	if err != nil {
-		t.Fatal(err)
-	}
+	tok := mint(t, draftOnly, CampaignMode{}, "recruiting@example.com", 0, rig.clock.Now())
 	msg := ApprovedMessage{
 		Exact: exact, Token: tok, DeliverTo: adaRecipient, From: "recruiting@example.com", SenderID: "sender-synthetic-1",
 	}
@@ -257,6 +254,7 @@ func TestEmailSendHonorsPerSenderDailyCap(t *testing.T) {
 	}
 	other := msg
 	other.SenderID = "sender-synthetic-2"
+	other.Token = mint(t, other.Exact, other.Campaign, other.From, 0, rig.clock.Now())
 	if _, err := rig.email.Send(context.Background(), other); err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +267,11 @@ func TestEmailSendHonorsPerSenderDailyCap(t *testing.T) {
 }
 
 func TestEmailSendRefusesWhenDailyCapUnset(t *testing.T) {
-	set := map[string]string{"ARIA_RECIPIENT_ALLOWLIST": adaRecipient}
+	set := map[string]string{
+		"ARIA_RECIPIENT_ALLOWLIST": adaRecipient,
+		"ARIA_SENDER_ALLOWLIST":    "recruiting@example.com",
+		"ARIA_UNSUBSCRIBE_HOST":    "example.com",
+	}
 	rig := newEmailRig(NewEnviron(set))
 	_, err := rig.email.Send(context.Background(), rig.approved(t, CampaignMode{}))
 	if !errors.Is(err, ErrDailyCap) {
@@ -317,6 +319,7 @@ func TestEmailSendDoesNotConsumeCapWhenMailerFails(t *testing.T) {
 		t.Fatalf("first: %v", err)
 	}
 	rig.mailer.err = nil
+	msg.Token = mint(t, msg.Exact, msg.Campaign, msg.From, 0, rig.clock.Now())
 	if _, err := rig.email.Send(context.Background(), msg); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
@@ -343,11 +346,8 @@ func TestEmailSendRefusesStrippedNoticeEvenWithMatchingToken(t *testing.T) {
 		Body:      draftBody,
 		BodyHash:  wantDraftHash,
 	}
-	tok, err := IssueToken(tokenKey(), exact, refExpiry())
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = rig.email.Send(context.Background(), ApprovedMessage{
+	tok := mint(t, exact, CampaignMode{}, "recruiting@example.com", 0, rig.clock.Now())
+	_, err := rig.email.Send(context.Background(), ApprovedMessage{
 		Exact: exact, Token: tok, DeliverTo: adaRecipient, From: "recruiting@example.com", SenderID: "sender-synthetic-1",
 	})
 	if !errors.Is(err, ErrLawfulBasis) && !errors.Is(err, ErrUnsubscribe) {
@@ -358,15 +358,18 @@ func TestEmailSendRefusesStrippedNoticeEvenWithMatchingToken(t *testing.T) {
 	}
 }
 
-func TestEmailLocalhostUnsubscribeIsAccepted(t *testing.T) {
+func TestEmailUnsubscribeRequiresHttpsOnConfiguredHost(t *testing.T) {
 	rig := newEmailRig(emailEnv(nil))
-	draft := emailDraft()
-	draft.UnsubscribeURL = "http://127.0.0.1:8080/unsubscribe/synthetic"
-	exact, err := rig.email.Prepare(context.Background(), draft)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(exact.Body, draft.UnsubscribeURL) {
-		t.Fatal("local unsubscribe link was dropped")
+	for _, link := range []string{
+		"http://127.0.0.1:8080/unsubscribe/synthetic",
+		"http://example.com/unsubscribe/synthetic",
+		"https://evil.example/unsubscribe/synthetic",
+		"https://user:pass@example.com/unsubscribe/synthetic",
+	} {
+		draft := emailDraft()
+		draft.UnsubscribeURL = link
+		if _, err := rig.email.Prepare(context.Background(), draft); !errors.Is(err, ErrUnsubscribe) {
+			t.Fatalf("%s: %v", link, err)
+		}
 	}
 }

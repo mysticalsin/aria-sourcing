@@ -140,21 +140,26 @@ type Clock interface {
 }
 
 // EmailConfig wires the email adapter. TokenKey verifies ledger tokens.
+// Env is read on every Send. Consumed records single-use nonces.
 type EmailConfig struct {
-	Env      Environ
+	Env      LiveEnv
 	TokenKey []byte
 	SMTP     SMTP
 	Auditor  Auditor
 	Clock    Clock
+	Consumed ConsumedStore
 }
 
 // HeyReachConfig wires the HeyReach public-API adapter.
+// Pauses is the persistent pause ledger. A nil store becomes the in-memory one.
 type HeyReachConfig struct {
-	Env      Environ
+	Env      LiveEnv
 	TokenKey []byte
 	Auditor  Auditor
 	Clock    Clock
 	HTTP     *http.Client
+	Consumed ConsumedStore
+	Pauses   PauseStore
 }
 
 // Email sends through an injected Mailer.
@@ -163,20 +168,57 @@ type Email struct {
 	limits *senderLimits
 }
 
-// HeyReach sends through the official public inbox API at HEYREACH_BASE_URL.
+// HeyReach delivers through the official public API for a connected account.
+// It is off unless ARIA_HEYREACH_ENABLED is explicitly on.
 type HeyReach struct {
-	cfg    HeyReachConfig
-	limits *senderLimits
+	cfg          HeyReachConfig
+	limits       *senderLimits
+	testOverride bool
 }
 
 // NewEmail returns an email adapter. Caps live in this process.
 func NewEmail(cfg EmailConfig) *Email {
+	if cfg.Consumed == nil {
+		cfg.Consumed = NewMemoryConsumedStore()
+	}
 	return &Email{cfg: cfg, limits: newSenderLimits()}
 }
 
-// NewHeyReach returns a HeyReach adapter. Caps and pauses live in this process.
-func NewHeyReach(cfg HeyReachConfig) *HeyReach {
-	return &HeyReach{cfg: cfg, limits: newSenderLimits()}
+// NewHeyReach returns an adapter only when HEYREACH_BASE_URL is the official
+// public API host. Any other host is refused here.
+func NewHeyReach(cfg HeyReachConfig) (*HeyReach, error) {
+	raw, ok := lookup(cfg.Env, "HEYREACH_BASE_URL")
+	if !ok {
+		return nil, ErrConfig
+	}
+	if err := validateOfficialHeyReachBase(raw); err != nil {
+		return nil, err
+	}
+	return newHeyReach(cfg, false), nil
+}
+
+// newHeyReachForTest is the only constructor that accepts a non-official base
+// URL, and only when that URL is loopback. Production code in another module
+// cannot name it.
+func newHeyReachForTest(cfg HeyReachConfig) (*HeyReach, error) {
+	raw, ok := lookup(cfg.Env, "HEYREACH_BASE_URL")
+	if !ok {
+		return nil, ErrConfig
+	}
+	if err := validateTestHeyReachBase(raw); err != nil {
+		return nil, err
+	}
+	return newHeyReach(cfg, true), nil
+}
+
+func newHeyReach(cfg HeyReachConfig, testOverride bool) *HeyReach {
+	if cfg.Consumed == nil {
+		cfg.Consumed = NewMemoryConsumedStore()
+	}
+	if cfg.Pauses == nil {
+		cfg.Pauses = NewMemoryPauseStore()
+	}
+	return &HeyReach{cfg: cfg, limits: newSenderLimits(), testOverride: testOverride}
 }
 
 var (

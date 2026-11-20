@@ -8,10 +8,12 @@ import (
 	"testing"
 )
 
-// TestSourceHasNoDirectSessionAccessMarkers fails when this module grows a
-// direct session client. The needles are built by concatenation so this file
-// can name the denylist without containing the contiguous literals.
-func TestSourceHasNoDirectSessionAccessMarkers(t *testing.T) {
+// TestSourceHasNoDirectLinkedInClient fails when this module grows a direct
+// client, a private messaging endpoint, captured session material, or a
+// scraper. HeyReach's official public API is a separate path and is not this
+// claim. The needles are built by concatenation so this file can name the
+// denylist without containing the contiguous literals.
+func TestSourceHasNoDirectLinkedInClient(t *testing.T) {
 	needles := []string{
 		strings.Join([]string{"linked", "in.com"}, ""),
 		strings.Join([]string{"voy", "ager"}, ""),

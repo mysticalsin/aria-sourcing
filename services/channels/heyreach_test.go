@@ -75,13 +75,16 @@ func newHeyRig(extra map[string]string, status int, payload string) heyRig {
 	srv := newHeyServer(status, payload)
 	audit := &memAudit{}
 	clock := &manualClock{now: time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)}
-	ch := NewHeyReach(HeyReachConfig{
+	ch, err := newHeyReachForTest(HeyReachConfig{
 		Env:      heyEnv(srv.srv.URL, extra),
 		TokenKey: tokenKey(),
 		Auditor:  audit,
 		Clock:    clock,
 		HTTP:     srv.srv.Client(),
 	})
+	if err != nil {
+		panic(err)
+	}
 	return heyRig{ch: ch, audit: audit, clock: clock, http: srv}
 }
 
@@ -91,13 +94,9 @@ func (r heyRig) approved(t *testing.T, mode CampaignMode) ApprovedMessage {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, err := IssueToken(tokenKey(), exact, r.clock.Now().Add(30*24*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
 	return ApprovedMessage{
 		Exact:           exact,
-		Token:           tok,
+		Token:           mint(t, exact, mode, "", 42, r.clock.Now()),
 		DeliverTo:       heyRecipient,
 		SenderID:        heySender,
 		SenderAccountID: 42,
@@ -173,17 +172,18 @@ func TestHeyReachDisabledByDefault(t *testing.T) {
 		"ARIA_HEYREACH_MIN_GAP_SECONDS":   "0",
 		"HEYREACH_BASE_URL":               srv.srv.URL,
 		"HEYREACH_API_KEY":                syntheticAPIKey,
+		"ARIA_SENDER_ALLOWLIST":           "42",
 	}
 	clock := &manualClock{now: time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)}
-	ch := NewHeyReach(HeyReachConfig{Env: NewEnviron(base), TokenKey: tokenKey(), Auditor: &memAudit{}, Clock: clock, HTTP: srv.srv.Client()})
+	ch, err := newHeyReachForTest(HeyReachConfig{Env: NewEnviron(base), TokenKey: tokenKey(), Auditor: &memAudit{}, Clock: clock, HTTP: srv.srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
 	exact, err := ch.Prepare(context.Background(), heyDraft())
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, err := IssueToken(tokenKey(), exact, clock.Now().Add(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	tok := mint(t, exact, CampaignMode{}, "", 42, clock.Now())
 	_, err = ch.Send(context.Background(), ApprovedMessage{
 		Exact: exact, Token: tok, DeliverTo: heyRecipient, SenderID: heySender, SenderAccountID: 42,
 	})
@@ -195,7 +195,10 @@ func TestHeyReachDisabledByDefault(t *testing.T) {
 	}
 	for _, value := range []string{"", "0", "false", "off", "yes"} {
 		base["ARIA_HEYREACH_ENABLED"] = value
-		ch = NewHeyReach(HeyReachConfig{Env: NewEnviron(base), TokenKey: tokenKey(), Auditor: &memAudit{}, Clock: clock, HTTP: srv.srv.Client()})
+		ch, err = newHeyReachForTest(HeyReachConfig{Env: NewEnviron(base), TokenKey: tokenKey(), Auditor: &memAudit{}, Clock: clock, HTTP: srv.srv.Client()})
+		if err != nil {
+			t.Fatal(err)
+		}
 		_, err = ch.Send(context.Background(), ApprovedMessage{
 			Exact: exact, Token: tok, DeliverTo: heyRecipient, SenderID: heySender, SenderAccountID: 42,
 		})
@@ -285,6 +288,7 @@ func TestHeyReachCapsAndPacing(t *testing.T) {
 		t.Fatalf("gap: %v", err)
 	}
 	rig.clock.Advance(2 * time.Minute)
+	msg.Token = mint(t, msg.Exact, msg.Campaign, "", 42, rig.clock.Now())
 	if _, err := rig.ch.Send(context.Background(), msg); err != nil {
 		t.Fatal(err)
 	}
@@ -299,6 +303,7 @@ func TestHeyReachCapsAndPacing(t *testing.T) {
 
 	other := msg
 	other.SenderID = "sender-synthetic-2"
+	other.Token = mint(t, other.Exact, other.Campaign, "", 42, rig.clock.Now())
 	if _, err := rig.ch.Send(context.Background(), other); err != nil {
 		t.Fatalf("other sender: %v", err)
 	}
@@ -349,18 +354,19 @@ func TestHeyReachRefusesWhenCapsOrPacingUnset(t *testing.T) {
 				"ARIA_HEYREACH_MIN_GAP_SECONDS":   "0",
 				"HEYREACH_BASE_URL":               srv.srv.URL,
 				"HEYREACH_API_KEY":                syntheticAPIKey,
+				"ARIA_SENDER_ALLOWLIST":           "42",
 			}
 			delete(set, tc.drop)
 			clock := &manualClock{now: time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)}
-			ch := NewHeyReach(HeyReachConfig{Env: NewEnviron(set), TokenKey: tokenKey(), Auditor: &memAudit{}, Clock: clock, HTTP: srv.srv.Client()})
+			ch, err := newHeyReachForTest(HeyReachConfig{Env: NewEnviron(set), TokenKey: tokenKey(), Auditor: &memAudit{}, Clock: clock, HTTP: srv.srv.Client()})
+			if err != nil {
+				t.Fatal(err)
+			}
 			exact, err := ch.Prepare(context.Background(), heyDraft())
 			if err != nil {
 				t.Fatal(err)
 			}
-			tok, err := IssueToken(tokenKey(), exact, clock.Now().Add(time.Hour))
-			if err != nil {
-				t.Fatal(err)
-			}
+			tok := mint(t, exact, CampaignMode{}, "", 42, clock.Now())
 			_, err = ch.Send(context.Background(), ApprovedMessage{
 				Exact: exact, Token: tok, DeliverTo: heyRecipient, SenderID: heySender, SenderAccountID: 42,
 			})
@@ -375,7 +381,7 @@ func TestHeyReachRefusesWhenCapsOrPacingUnset(t *testing.T) {
 }
 
 func TestHeyReachAutoPausesOnAccountWarning(t *testing.T) {
-	rig := newHeyRig(nil, http.StatusForbidden, `{"errorMessage":"Account warning: sender restricted"}`)
+	rig := newHeyRig(map[string]string{"ARIA_SENDER_ALLOWLIST": "42,99"}, http.StatusForbidden, `{"errorMessage":"Account warning: sender restricted"}`)
 	defer rig.http.srv.Close()
 	msg := rig.approved(t, CampaignMode{})
 	_, err := rig.ch.Send(context.Background(), msg)
@@ -409,6 +415,7 @@ func TestHeyReachAutoPausesOnAccountWarning(t *testing.T) {
 	other := msg
 	other.SenderID = "sender-synthetic-9"
 	other.SenderAccountID = 99
+	other.Token = mint(t, other.Exact, other.Campaign, "", 99, rig.clock.Now())
 	_, err = rig.ch.Send(context.Background(), other)
 	if !errors.Is(err, ErrAccountWarning) {
 		t.Fatalf("other account: %v", err)
@@ -429,6 +436,7 @@ func TestHeyReachOrdinaryFailureDoesNotPause(t *testing.T) {
 	rig.http.status = http.StatusOK
 	rig.http.payload = `{"ok":true}`
 	rig.http.mu.Unlock()
+	msg.Token = mint(t, msg.Exact, msg.Campaign, "", 42, rig.clock.Now())
 	if _, err := rig.ch.Send(context.Background(), msg); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
@@ -446,36 +454,28 @@ func TestHeyReachDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
-func TestHeyReachRefusesNonLoopbackCleartextBeforeDial(t *testing.T) {
-	called := false
-	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		called = true
-		return nil, errors.New("dialed")
-	})}
-	clock := &manualClock{now: time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)}
-	ch := NewHeyReach(HeyReachConfig{
-		Env:      heyEnv("http://example.com", nil),
-		TokenKey: tokenKey(),
-		Auditor:  &memAudit{},
-		Clock:    clock,
-		HTTP:     client,
-	})
-	exact, err := ch.Prepare(context.Background(), heyDraft())
-	if err != nil {
-		t.Fatal(err)
+func TestHeyReachRejectsNonOfficialHostAtConstruction(t *testing.T) {
+	for _, base := range []string{
+		"https://example.com",
+		"http://api.heyreach.io",
+		"https://user:pass@api.heyreach.io",
+		"https://api.heyreach.io.evil.com",
+		"https://evilheyreach.io",
+	} {
+		_, err := NewHeyReach(HeyReachConfig{Env: NewEnviron(map[string]string{
+			"HEYREACH_BASE_URL": base,
+			"HEYREACH_API_KEY":  syntheticAPIKey,
+		}), TokenKey: tokenKey()})
+		if !errors.Is(err, ErrConfig) {
+			t.Fatalf("%s: %v", base, err)
+		}
 	}
-	tok, err := IssueToken(tokenKey(), exact, clock.Now().Add(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = ch.Send(context.Background(), ApprovedMessage{
-		Exact: exact, Token: tok, DeliverTo: heyRecipient, SenderID: heySender, SenderAccountID: 42,
-	})
-	if !errors.Is(err, ErrConfig) {
-		t.Fatalf("error = %v", err)
-	}
-	if called {
-		t.Fatal("cleartext public base URL was dialed")
+	ch, err := NewHeyReach(HeyReachConfig{Env: NewEnviron(map[string]string{
+		"HEYREACH_BASE_URL": "https://api.heyreach.io",
+		"HEYREACH_API_KEY":  syntheticAPIKey,
+	}), TokenKey: tokenKey()})
+	if err != nil || ch == nil || ch.testOverride {
+		t.Fatalf("official host: ch=%v err=%v", ch, err)
 	}
 }
 
