@@ -17,7 +17,7 @@ any non-terminal state ──► error_queue ──retry──► uploaded
 
 `ready_for_to_rate` is terminal. It is Smart's **To Rate** column; the Odoo adapter maps that key onto `hr.recruitment.stage`.
 
-`error_queue` is Toast's sourcing-error queue. A row stores the opaque upload id, a reason code, the attempt count, and the sanitized source slugs. It does not store the file or the parsed text.
+`error_queue` is Toast's sourcing-error queue. A row stores the upload id, a reason code, the attempt count, and the source slugs. It does not store the file or the parsed text. A slug is not a PII filter: `casey-example` is a legal folder value and stays on the queue row so a recruiter can see which folder failed. Those slugs are not written to logs.
 
 | Reason | When |
 |---|---|
@@ -76,7 +76,7 @@ Folders (Toast's folder mapping):
 | `cv-source` | `cv-source:<slug>` |
 | `need` | `need:<slug>` |
 
-Every field is lowercased and must be a slug (`[a-z0-9][a-z0-9._-]{0,63}`). A person's name or an email in any of those fields is dropped before the error queue sees it, and the upload is rejected. `utm.content` is the document type (`cv` when omitted).
+Every field is lowercased and must be a slug (`[a-z0-9][a-z0-9._-]{0,63}`). A space or an `@` is dropped, so an email or a two-word name does not become a utm value, and the upload is rejected. A single slug with no space, such as `casey-example`, is still accepted. That is a character check, not a detector of personal names. `utm.content` is the document type (`cv` when omitted).
 
 The hand-off is `source.Sink.UpsertSource`. The idempotency key is `cv:<upload id>`. `source.Memory` is the in-module fake. `source.Erasable` is optional: profile retention calls it when the adapter implements it.
 
@@ -86,8 +86,8 @@ After `parsed`, `dedupe.Hook.Observe` runs. The key is the normalized email, els
 
 ## PII and retention
 
-- Logs are `ingest.LogEvent` only: upload id, states, reason code, byte size, attempt, operation. The type has no text or contact fields, and the worker never formats the CV into a log line.
-- Upload ids must match `^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$`. An email-shaped id is refused and not logged.
+- Logs are `ingest.LogEvent` only: upload id, states, reason code, byte size, attempt, operation. The type has no text, contact, or origin-slug fields. The worker does not format the CV or the folder value into a log line.
+- Upload ids must match `^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$` and contain a digit. An email-shaped id or a name-shaped id such as `Casey-Example` is refused and not logged.
 - Raw bytes and the parsed profile are scheduled on `privacy.Hook`. Defaults are 30 days for the file and 365 days for the profile. Those are engineering defaults until a DPO sets the real periods, not a legal determination.
 - `PurgeDue` deletes the bytes and blanks the parsed fields. The state and the UTM mapping stay, so the audit of where a file came from is not the CV body.
 - `ARIA_CV_RAW_RETENTION_DAYS` and `ARIA_CV_PROFILE_RETENTION_DAYS` override the CLI defaults. `ARIA_OCR_LANGS` overrides Tesseract languages.
@@ -112,11 +112,23 @@ Field accuracy on the text-layer fixtures is a micro-F1 over name, email, phone,
 
 The text-layer benchmark reports `CVs/s`. OCR is intentionally not on that path; Tesseract is seconds per page and is covered by `TestScannedImageOCRPath`.
 
+## Follow-ups
+
+These are not implemented in this module:
+
+- **Purge scheduling.** `PurgeDue` runs only when a caller invokes it. Nothing here starts a timer or a cron loop. A future worker process has to call it on a schedule.
+- **Tenant scope and auth.** The library and the single-file CLI trust their caller. A future HTTP or queue service must authenticate that caller and scope stored uploads by tenant before it exposes ingest. This package has no listener and no tenant key.
+
 ## Container
 
-`Dockerfile` builds a static `ingest` binary and runs it on Debian with Tesseract (eng, fra, por) and Poppler. No network calls at runtime.
+`Dockerfile` builds a static `ingest` binary. The base images are pinned by digest and the apt packages are pinned to bookworm versions (Tesseract, Poppler, ca-certificates). The image does not call a paid OCR API.
+
+The image does not turn networking off and does not set a memory cap. Enforce both when you run it:
 
 ```
 docker build -t aria-ingest services/ingest
-docker run --rm -v "$PWD:/in:ro" aria-ingest -file /in/cv.pdf -cv-source toast-upload -folder holding
+docker run --rm --network=none --memory=512m --pids-limit=64 \
+  -v "$PWD:/in:ro" aria-ingest -file /in/cv.pdf -cv-source toast-upload -folder holding
 ```
+
+`compose.yaml` sets `mem_limit: 512m`. It does not set `network_mode: none`; add that flag when the process only reads a mounted file.
