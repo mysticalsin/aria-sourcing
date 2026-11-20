@@ -18,9 +18,16 @@ import { workspaceBlocksProduct } from "@/lib/workspace-status";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  // Auth screens and the public career-site chatbox render full-bleed, without
-  // the recruiter console chrome.
-  if (pathname.startsWith("/login") || pathname.startsWith("/careers") || pathname.startsWith("/unsubscribe")) return <>{children}</>;
+  // Auth screens, the public career-site chatbox, and the standalone design
+  // gallery render full-bleed, without the recruiter console chrome.
+  if (
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/careers") ||
+    pathname.startsWith("/unsubscribe") ||
+    pathname.startsWith("/design-system")
+  ) {
+    return <>{children}</>;
+  }
 
   return <ProtectedAppShell pathname={pathname}>{children}</ProtectedAppShell>;
 }
