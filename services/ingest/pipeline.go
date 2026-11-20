@@ -296,6 +296,9 @@ func (w *Worker) pullText(ctx context.Context, doc *document, data []byte) (stri
 			if ocrCtx.Err() != nil {
 				return "", state.ReasonOCRFailed, nil
 			}
+			if errors.Is(err, extract.ErrPageTooLarge) {
+				return "", state.ReasonUnreadable, nil
+			}
 			return "", state.ReasonOCRUnavailable, nil
 		}
 		return w.recognize(ctx, ocrCtx, doc, pages)

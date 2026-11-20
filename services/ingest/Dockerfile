@@ -20,3 +20,6 @@ RUN apt-get update \
 COPY --from=build /out/ingest /usr/local/bin/ingest
 USER nobody
 ENTRYPOINT ["ingest"]
+
+# This image does not apply a memory cap. Compose sets 512m.
+# A direct run must pass it: docker run --memory=512m --pids-limit=64 ...

@@ -56,6 +56,9 @@ func (t Tesseract) Recognize(ctx context.Context, image []byte, langs string) (s
 	if len(image) == 0 {
 		return "", errors.New("tesseract: empty image")
 	}
+	if err := imageWithinCaps(image); err != nil {
+		return "", err
+	}
 	if langs == "" {
 		langs = t.Langs
 	}
