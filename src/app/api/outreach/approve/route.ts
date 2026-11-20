@@ -6,6 +6,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { approvalPolicyFromEnv } from "@/lib/approval/allowlist";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
@@ -18,6 +19,8 @@ import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateB
  * the "human approval required / never auto-send" guarantee is enforced
  * server-side — not just in browser state. Re-approving the same message_id with
  * different content updates the recorded hash (re-review required after an edit).
+ * A configured recipient allowlist, and test mode even with an empty list,
+ * refuses the approval before that row is written.
  */
 const ApproveSchema = z.object({
   messageId: z.string().min(1).max(120),
@@ -90,6 +93,10 @@ export async function POST(req: NextRequest) {
   const bodyHash = approvalHash(subject, body);
   const scopeHash = approvalScopeHash({ candidateId, channel, recipient });
   if (!scopeHash) return NextResponse.json({ ok: false, error: "Invalid approval recipient." }, { status: 400 });
+  const approvalPolicy = approvalPolicyFromEnv(process.env, recipient);
+  if (!approvalPolicy.ok) {
+    return NextResponse.json({ ok: false, error: approvalPolicy.error }, { status: approvalPolicy.status });
+  }
   const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
   const injection = detectInjection(body);
   if (!disclosure.safe || injection.flagged) {

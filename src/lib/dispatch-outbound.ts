@@ -2,9 +2,10 @@
    OUTBOUND DISPATCHER — the ONLY path from messages_outbound to the wire.
 
    Every queued message that is due must clear, in order:
-     1. a named human approval row for exactly this message id + body hash,
-     2. the human-likeness gate — again, defence in depth,
-     3. a live seat of the right provider and the channel's atomic claim
+     1. the send policy (kill switch and recipient allowlist),
+     2. a named human approval row for exactly this message id + body hash,
+     3. the human-likeness gate — again, defence in depth,
+     4. a live seat of the right provider and the channel's atomic claim
         (Email or assisted LinkedIn). Any other channel is blocked.
    Anything that fails flips to 'blocked' (human queue) or 'failed'; an
    unconfigured provider is counted separately. A message never silently retries
@@ -16,6 +17,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
+import { sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { approvalHash } from "@/lib/outreach-content";
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
@@ -103,6 +105,12 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       // other channel (e.g. legacy WhatsApp / SMS rows) never reaches a provider.
       if (msg.channel !== "Email" && msg.channel !== "LinkedIn") {
         await finish("blocked", { pass: false, reasons: ["channel-not-dispatchable"] });
+        continue;
+      }
+
+      const sendPolicy = sendPolicyFromEnv(process.env, typeof msg.to_address === "string" ? msg.to_address : "");
+      if (!sendPolicy.ok) {
+        await finish("blocked", { pass: false, reasons: [sendPolicy.reason] });
         continue;
       }
 

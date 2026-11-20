@@ -13,6 +13,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
+import { sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
@@ -163,6 +164,10 @@ export async function POST(req: NextRequest) {
       { status: "error", detail: "Message lacks a current human approval (or changed since approval)." },
       { status: 403 },
     );
+  }
+  const sendPolicy = sendPolicyFromEnv(process.env, candidateEmail);
+  if (!sendPolicy.ok) {
+    return NextResponse.json({ status: "error", detail: sendPolicy.error }, { status: sendPolicy.status });
   }
 
   // Human-likeness gate (all channels): text that reads as machine output —
