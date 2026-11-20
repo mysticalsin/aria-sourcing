@@ -16,6 +16,11 @@ import (
 	"github.com/mysticalsin/aria-sourcing/services/ingest/state"
 )
 
+// MaxUploadBytes is the most the CLI will read and the worker's default
+// file cap. The CLI stats the file and also wraps the reader so a larger
+// file is never loaded.
+const MaxUploadBytes = 8 << 20
+
 // Default retention until a DPO sets the real periods. Raw bytes are the
 // file; the profile is the parsed fields. These are hooks, not a legal
 // determination.
@@ -23,7 +28,7 @@ const (
 	defaultRawRetention     = 30 * 24 * time.Hour
 	defaultProfileRetention = 365 * 24 * time.Hour
 	defaultMaxAttempts      = 3
-	defaultMaxBytes         = 8 << 20
+	defaultMaxBytes         = MaxUploadBytes
 	defaultOCRLangs         = "eng+fra+por"
 	// defaultOCRTimeout caps each rasterize and each Tesseract call. The
 	// CLI does not pass a deadline, so the worker has to impose one.

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -59,15 +60,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: ingest -file cv.pdf -cv-source toast-upload -folder holding")
 		return 1
 	}
-	body, err := os.ReadFile(*file)
+	body, err := readLimited(*file, ingest.MaxUploadBytes)
+	if err == errTooLarge {
+		if writeStatus(stdout, status{
+			UploadID: uploadIDOr(*id),
+			State:    string(state.ErrorQueue),
+			Reason:   string(state.ReasonFileTooLarge),
+			Attempts: 1,
+		}) != nil {
+			fmt.Fprintln(stderr, "cannot write status")
+			return 1
+		}
+		return 2
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "cannot read file")
 		return 1
 	}
-	uploadID := *id
-	if uploadID == "" {
-		uploadID = newID()
-	}
+	uploadID := uploadIDOr(*id)
 	ocrLangs := *langs
 	if ocrLangs == "" {
 		ocrLangs = os.Getenv("ARIA_OCR_LANGS")
@@ -109,9 +119,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if res.State == state.ReadyForToRate {
 		st.Stage = res.Mapping.Stage
 	}
-	enc := json.NewEncoder(stdout)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(st); err != nil {
+	if err := writeStatus(stdout, st); err != nil {
 		fmt.Fprintln(stderr, "cannot write status")
 		return 1
 	}
@@ -119,6 +127,46 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+var errTooLarge = errors.New("file_too_large")
+
+func uploadIDOr(id string) string {
+	if id == "" {
+		return newID()
+	}
+	return id
+}
+
+// readLimited stats the file and then reads at most max bytes. A file
+// larger than max is refused without loading it.
+func readLimited(path string, max int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > int64(max) {
+		return nil, errTooLarge
+	}
+	body, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > max {
+		return nil, errTooLarge
+	}
+	return body, nil
+}
+
+func writeStatus(w io.Writer, st status) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(st)
 }
 
 func newID() string {

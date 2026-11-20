@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/mysticalsin/aria-sourcing/services/ingest"
 	"github.com/mysticalsin/aria-sourcing/services/ingest/extract"
 )
 
@@ -47,6 +49,49 @@ func TestCLIPrintsStatusWithoutCVBody(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stdout missing %s: %s", want, out)
 		}
+	}
+}
+
+func TestCLIDoesNotReadPastUploadCap(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/big.pdf"
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("SECRETTOKEN"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(int64(ingest.MaxUploadBytes) + 1); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-file", path, "-cv-source", "toast-upload", "-folder", "holding", "-id", "cli-2"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit %d stdout %s stderr %s", code, stdout.String(), stderr.String())
+	}
+	out := stdout.String() + stderr.String()
+	if strings.Contains(out, "SECRETTOKEN") {
+		t.Fatal("oversized file body was printed")
+	}
+	if !strings.Contains(stdout.String(), `"reason":"file_too_large"`) {
+		t.Fatalf("stdout %s", stdout.String())
+	}
+}
+
+func TestReadLimitedHonorsCap(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/n.bin"
+	if err := os.WriteFile(path, bytes.Repeat([]byte("Z"), 64), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readLimited(path, 8)
+	if err != errTooLarge {
+		t.Fatalf("err %v len %d", err, len(got))
+	}
+	if len(got) > 8 {
+		t.Fatalf("read %d bytes past the cap", len(got))
 	}
 }
 
