@@ -2,10 +2,11 @@
  * Compliance boundaries (twa-odoo PR 1).
  *
  * These tests fail while a banned path is present and fail again if it
- * reappears. They scan executable source only (src, extensions, scripts,
- * env examples). Historical migrations 0006–0008 stay immutable; a later
- * migration must drop what they created. Docs, relay notes and tests are
- * not scanned: a profile URL string is not a call to linkedin.com.
+ * reappears. They scan product code, tests, docs, Docker, GitHub workflows,
+ * and SQL, and they skip node_modules, .git, and historical note folders.
+ * Historical migrations 0006–0009 stay immutable; 0010 and 0011 drop what
+ * they created. A stored or rejected profile path is not a call. A bare
+ * host, a CDN host, or a request is.
  */
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -328,7 +329,8 @@ test("test_no_skip_or_xfail_without_reason", () => {
   for (const file of walk("tests", /\.(?:mts|mjs|ts|js|sh)$/)) {
     const lines = read(file).split(/\n/);
     lines.forEach((line, index) => {
-      if (!/\b(?:test|it|describe)\.skip\b|\bxfail\b|\bxtest\b|\bxit\b/.test(line)) return;
+      const bareSkip = /\b(?:test|it|describe)\.skip\b|\bxfail\b|\bxtest\b|\bxit\b|\bskip\s*:\s*true\b/.test(line);
+      if (!bareSkip) return;
       const reason = `${lines[index - 1] ?? ""}\n${line}`;
       if (!/reason:/i.test(reason)) hits.push(`${file}:${index + 1}`);
     });

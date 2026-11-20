@@ -52,7 +52,7 @@ const TITLE_SUFFIX_PATTERNS: Record<WebSearchPlatform, RegExp> = {
   Behance: /\s*(?:[|\-]\s*)?(on\s+)?Behance('s)?(\s+profile)?\s*$/i,
 };
 
-/** Scope a base boolean/keyword query to one platform. LinkedIn is refused: Aria does not search linkedin.com. */
+/** Scope a base boolean/keyword query to one platform. LinkedIn is refused. */
 export function buildWebQuery(platform: WebSearchPlatform, baseQuery: string): string {
   if (platform === "LinkedIn") throw new Error("LinkedIn web search is disabled.");
   return `site:${PLATFORM_DOMAINS[platform]} ${baseQuery}`.trim();

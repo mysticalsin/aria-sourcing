@@ -47,7 +47,7 @@ behavior (no login gate, implicit admin) in production. The one sanctioned excep
 ### Reviewed campaign launch
 
 In a connected workspace, **Run sourcing** opens one source review. LinkedIn
-web search is disabled: Aria does not call linkedin.com. GitHub remains,
+web search is disabled: Aria does not call that network. GitHub remains,
 with editable role-bound queries and a maximum of 1–20 profiles per selected
 source. Creating a campaign makes no provider call. A `WebSearch` step is
 refused before a run is created. GitHub needs no key.
@@ -101,7 +101,7 @@ search through Apify was removed…") without any provider call. Historical
 | Provider | Platform id | Discovery mechanism | Key requirement | Notes |
 |---|---|---|---|---|
 | GitHub | `GitHub` | GitHub Users Search API, read-only | None — keyless by default (60 req/hr/IP anonymous, 5,000/hr with optional `GITHUB_TOKEN`) | `src/lib/sourcing/github.ts:1-17` |
-| LinkedIn via web search | — | Removed. Aria does not search linkedin.com. | — | Refused by `/api/source/campaign` and `/api/source` |
+| LinkedIn via web search | — | Removed. Aria does not search that network. | — | Refused by `/api/source/campaign` and `/api/source` |
 | Web search (Stack Overflow / Dribbble / Behance) | `Stack Overflow`, `Dribbble`, `Behance` | `site:`-scoped Tavily web search, honest User-Agent, SSRF-guarded. LinkedIn is not a web-search platform. | Workspace-stored Tavily key, or `TAVILY_API_KEY` env fallback | `src/lib/sourcing/web-leads.ts`, `src/lib/ai/web-tools.ts`; sourcing agent tool |
 
 All provider keys except `GITHUB_TOKEN` and the Tavily env fallback are entered via
@@ -470,7 +470,7 @@ endpoint off by default.
 | Lawful basis capture | Operator-recorded `consent` / `legitimate_interest` basis with source + timestamp, required before outreach approval on any manually-entered candidate | `src/lib/candidate-lawful-basis.ts`, enforced in `rules.ts:84-97` |
 | Field provenance | Per-field `{ provider, at, confidence }` on every enriched value | `src/lib/enrichment/merge.ts:225` |
 | Discrimination-proxy filter | Provider-backed sourcing egress requires a `ProviderClearance`; discovery clearances are minted only after every submitted discovery field is checked for protected-class terms (age/gender/race/religion/disability/marital/nationality/university-graduation wording) and the search is bound to the approved role's own JD terms; name fields are still screened for control characters, injection and length | `src/lib/sourcing/query-policy.ts`, `src/lib/sourcing/provider-egress.ts` |
-| LinkedIn policy | The server never logs into, scrapes, or searches LinkedIn. The extension, Voyager client, and Claude web-search sourcing of linkedin.com are removed ([`docs/linkedin-bridge.md`](linkedin-bridge.md)). A recruiter sends InMail in Recruiter. | `src/lib/linkedin-policy.ts` |
+| LinkedIn policy | The server never logs into, scrapes, or searches LinkedIn. The extension, Voyager client, and Claude web-search sourcing are removed ([`docs/linkedin-bridge.md`](linkedin-bridge.md)). A recruiter sends InMail in Recruiter. | `src/lib/linkedin-policy.ts` |
 
 **Erasure request lifecycle** (`request_candidate_erasure()`): a request binds
 an exact workspace + campaign + candidate + administrator + idempotency key, blocks on

@@ -1,53 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 469
+shift: 470
 agent: cursor
 updated: 2026-11-20
 status: compliance-boundaries-pr-open
 ---
 
-# Handoff - Shift 469
+# Handoff - Shift 470
 
 ## Current state
 
-- Branch `twa-odoo` exists on origin at `e3fa3f594a6d86aec31d42a65414a96be4c8400e` (cut from `mbe-branch`, no other commits).
-- Compliance work is on `cursor/compliance-boundaries-8b20`, PR targeting `twa-odoo`. Not merged.
-- LinkedIn extension, Voyager bridge, pairing token, campaign autopilot (`autopilot.ts`, `campaign-mission.ts`, `tick.ts`), and Claude LinkedIn web search are removed from the tree.
-- Migrations `0006`–`0008` are unchanged. `supabase/migrations/0010_drop_linkedin_bridge.sql` drops the bridge tables and `linkedin_bridge_candidate`. It has not been applied to a database in this shift.
-- `npm run typecheck`, `npm run typecheck:tests`, and `npm test` exited 0 on this head, including `tests/compliance-boundaries.mts` (5 passed).
+- Branch `twa-odoo` is `e3fa3f594a6d86aec31d42a65414a96be4c8400e`. Michael's branches were not rewritten.
+- PR 168 targets `twa-odoo` from `cursor/compliance-boundaries-8b20`. Not merged.
+- Red-first commit `17afd643c12acbd0178a843504816a67e7b44d7a` adds tests that failed before the host and migration fixes.
+- `0010_drop_linkedin_bridge.sql` and `0011_drop_agent_autopilot.sql` are forward-only, unapplied, and have no down migration. Existing databases keep `token_hash` and the autopilot rows until those files run.
+- `vendorApiAdapter` and `LINKEDIN_VENDOR_API_*` are gone. Dispatch refuses the LinkedIn channel. There is no agents service and no sample `AGENT_RUNNER_SECRET` in Compose.
+- The secret scan follows `HEAD`. `.gitleaksignore` adds one fingerprint for the historical intake variable name.
 
 ## Done this shift
 
-- Created and pushed `twa-odoo` from `e3fa3f59` with no other changes.
-- Removed the banned LinkedIn surfaces and disconnected their callers so the suite stays green.
-- Added red-first negative tests. On the pre-change tree, `test_no_linkedin_extension_token_path` and `test_no_linkedin_dot_com_egress` failed; vendor, HeyReach, and SmartX checks already passed because those call paths were absent.
-- Replaced the AGENTS.md full-autopilot mandate with the factory rules (red-first tests, exact-head review, synthetic data, no merge without a green gate).
+- Removed the bare `linkedin.com` host from comments, docs, and the web-search host map. Stored or rejected profile paths remain.
+- Documented the forward-only drops. Removed `linkedin_oidc` from the auth provider comment.
+- A command timeout is retried once. A second timeout exits 2 as an infrastructure error. A product failure is not retried.
 
 ## Blockers
 
-- None for this PR. Do not merge until the exact head is reviewed.
+- Do not merge until the exact head is green, including the Release gate.
 
 ## Next steps
 
-1. Review the compliance PR on its exact head. Do not retarget it onto `mbe-branch`.
-2. Apply `0010_drop_linkedin_bridge.sql` only in a disposable database. Do not run it against a database that still holds bridge rows you need to export first.
-3. PR 2 (approval ledger) is not started. Do not send LinkedIn or email from this tree.
-4. HeyReach stays absent until a later PR builds it flag-off, official API only, with a recorded approval.
+1. Review PR 168 on its exact head. Do not retarget it onto `mbe-branch`.
+2. Re-freeze PR 167 on top of this head after 168 lands. Do not merge 167 first.
+3. Apply `0010` and `0011` only on a disposable database. Export bridge rows first if they are still needed. `token_hash` stays until `0010` runs.
 
 ## Decisions made (don't relitigate)
 
-- Tony, 2026-11-20: `twa-odoo` is cut from `mbe-branch`. Odoo is the system of record. PRs target `twa-odoo`.
-- Tony, 2026-11-20: Aria never calls linkedin.com. The extension, cookies, tokens, Voyager, and LinkedIn web-search sourcing are permanently out. Scrapers and enrichment vendors stay out.
-- Tony, 2026-11-20: HeyReach may be built later, flag-off, official API only. It is not in this tree. The compliance study still rates it Reject.
+- Tony, 2026-11-20: `twa-odoo` is cut from `mbe-branch`. PRs target `twa-odoo`.
+- Tony, 2026-11-20: Aria never calls the professional-network host. The extension, cookies, tokens, Voyager, and web-search sourcing are permanently out.
+- Tony, 2026-11-20: HeyReach may be built later, flag-off, official API only, in the separate Go channel module. It is not in this tree.
 - Tony, 2026-11-20: no automation or scraping of `arp.mantu.com`.
-- The 2026-11-09 autopilot decision (ADR 0002) and the 2026-11-06 bridge decision are withdrawn on `twa-odoo`. ADR 0002 is marked withdrawn. Do not reimplement them.
-- Synthetic data only. No live sends, deploys, or paid calls without Tony's say-so.
-- Michael's branches (`mbe-branch`, `mbe-ngrok`, `mbe-test`) were not rewritten.
+- ADR 0002 is withdrawn. Do not reimplement the runner.
+- Synthetic data only. No live sends, deploys, or paid calls.
+- `0006`–`0009` stay byte-for-byte. Drops are forward-only. There is no down migration.
 
 ## Watch out
 
-- `tests/store-contracts.mts` still pins the store action count. This shift did not change that count.
-- `0010` drops bridge tables. Old migrations must stay byte-for-byte.
-- Profile URL strings (`https://www.linkedin.com/in/...`) may still be stored. That is not a fetch. `tests/compliance-boundaries.mts` fails if a request, extension permission, `allowed_domains`, or `site:linkedin.com` scope returns.
-- `_relay/HANDOFF.md` from shift 468 (archived) describes a local password-reset procedure and a real LinkedIn conversation. Do not copy those details into new notes.
+- Profile path strings may still be stored. That is not a fetch. `tests/compliance-boundaries.mts` fails on a bare host, `licdn`, or a request.
+- `_relay/archive/2026-11-20-2200-cursor.md` describes a local password-reset procedure. Do not copy it forward.
 - Do not force-push or delete `mbe-branch`, `mbe-ngrok`, `mbe-test`, or `twa-odoo`.
+- `.gitleaksignore` should stay minimal so PR 167 can re-freeze on this branch.

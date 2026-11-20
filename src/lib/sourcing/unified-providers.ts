@@ -4,8 +4,7 @@ import { searchGithubUsers } from "./github";
 
 /**
  * Providers for a durable campaign run. GitHub stays. LinkedIn web search
- * (Claude's web_search tool scoped to linkedin.com) is disabled: Aria does
- * not call linkedin.com. The unused arguments keep the call-site signature.
+ * is disabled. The unused arguments keep the call-site signature.
  */
 export function unifiedProviders(
   _readWorkspace: () => Promise<SourcingWorkspace>,

@@ -122,6 +122,16 @@ function invocationFor(command) {
   return { executable: "bash", argv: command.argv };
 }
 
+/** A spawn that hit its timeout. A product assertion failure is not a timeout. */
+export function isCommandTimeout(result) {
+  const code = result.error && typeof result.error === "object" && "code" in result.error
+    ? result.error.code
+    : undefined;
+  if (code === "ETIMEDOUT") return true;
+  const message = result.error instanceof Error ? result.error.message : "";
+  return result.signal === "SIGTERM" && /timed out/i.test(message);
+}
+
 export function executeResolvedCommands(
   commands,
   {
@@ -130,24 +140,33 @@ export function executeResolvedCommands(
     env = process.env,
     keepGoing = false,
     stdio = "inherit",
+    timeoutMs = undefined,
   } = {},
 ) {
   const failures = [];
   for (const command of commands) {
     const invocation = invocationFor(command);
-    const result = spawn(invocation.executable, invocation.argv, {
+    const options = {
       cwd,
       env,
       shell: false,
       stdio,
-    });
-    const failed = Boolean(result.error) || result.status !== 0;
+    };
+    if (typeof timeoutMs === "number" && timeoutMs > 0) options.timeout = timeoutMs;
+    let result = spawn(invocation.executable, invocation.argv, options);
+    let infrastructure = false;
+    if (isCommandTimeout(result)) {
+      result = spawn(invocation.executable, invocation.argv, options);
+      infrastructure = isCommandTimeout(result);
+    }
+    const failed = infrastructure || Boolean(result.error) || result.status !== 0;
     if (!failed) continue;
     failures.push({
       id: command.id,
       status: result.status,
       signal: result.signal ?? null,
       error: result.error instanceof Error ? result.error.message : null,
+      infrastructure,
     });
     if (!keepGoing) break;
   }
@@ -210,7 +229,17 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     appendTrace(tracePath, commands);
     return 0;
   }
-  return executeResolvedCommands(commands, { env }).ok ? 0 : 1;
+  const timeoutMs = Number(env.ARIA_TEST_COMMAND_TIMEOUT_MS);
+  const executed = executeResolvedCommands(commands, {
+    env,
+    ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
+  });
+  if (executed.ok) return 0;
+  if (executed.failures.some((failure) => failure.infrastructure)) {
+    console.error("infrastructure error: timeout after one retry");
+    return 2;
+  }
+  return 1;
 }
 
 const isMain = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;

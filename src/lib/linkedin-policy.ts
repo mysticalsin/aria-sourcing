@@ -4,9 +4,9 @@
    scraping, and unsolicited automated messaging. This module gives the app a
    single place to detect and block content or instructions that attempt to
    bypass those rules — the app doing its own login, session automation, or
-   scraping against linkedin.com.
+   scraping against that network.
 
-   Aria does not call linkedin.com. The Chrome extension, Voyager client,
+   Aria does not call that network. The Chrome extension, Voyager client,
    and Claude web-search sourcing of LinkedIn profiles are removed. The
    guardrails below stay fully intact.
    ========================================================================== */

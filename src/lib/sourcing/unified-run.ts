@@ -6,7 +6,7 @@ import { mapGithubCandidates, mapWebSearchCandidates, type SourceResult } from "
 import { extractLead, type SearchHit } from "./web-leads";
 import { linkedInProfileUrl, publicIdFromProfileUrl } from "@/lib/linkedin-profile-url";
 
-/** Stored profile URL only. This does not fetch linkedin.com. */
+/** Stored profile URL only. This does not fetch the profile host. */
 function canonicalLinkedInProfileUrl(raw: string): string | null {
   const id = publicIdFromProfileUrl(raw);
   return id ? linkedInProfileUrl(id) : null;
