@@ -238,6 +238,38 @@ class TestSentinelFindings(AriaRecruitmentCommon):
         self.assertEqual(len(audits), 1)
         self.assertGreaterEqual(audits.attempt_count, 2)
 
+    def test_contract_upload_field_uses_the_kind_gate(self):
+        applicant = self.applicant('to_hire')
+        recruiter = new_test_user(
+            self.env,
+            login='recruiter.upload.synthetic@example.test',
+            groups='hr_recruitment.group_hr_recruitment_user',
+        )
+        payload = 'JVBERi0xLjQKJSVFT0Y='
+        with self.assertRaises(AccessError):
+            applicant.with_user(recruiter).write({
+                'aria_contract_filename': 'synthetic-contract.pdf',
+                'aria_contract_pdf': payload,
+            })
+        self.assertFalse(applicant._aria_contract_attached())
+        manager = new_test_user(
+            self.env,
+            login='manager.upload.synthetic@example.test',
+            groups='hr_recruitment.group_hr_recruitment_manager',
+        )
+        applicant.with_user(manager).write({
+            'aria_contract_filename': 'synthetic-contract.pdf',
+            'aria_contract_pdf': payload,
+        })
+        self.assertTrue(applicant._aria_contract_attached())
+        contract = self.env['ir.attachment'].sudo().search([
+            ('res_model', '=', 'hr.applicant'),
+            ('res_id', '=', applicant.id),
+            ('aria_document_kind', '=', 'contract'),
+        ], limit=1)
+        self.assertEqual(contract.aria_contract_set_by, manager)
+        self.assertEqual(applicant.aria_dna_adapter_name, 'fake')
+
     def test_ci_image_digests_are_pinned(self):
         compose = Path(__file__).resolve().parents[1].joinpath('ci', 'docker-compose.yml').read_text(encoding='utf-8')
         self.assertIn(
@@ -249,3 +281,13 @@ class TestSentinelFindings(AriaRecruitmentCommon):
             compose,
         )
         self.assertIn('aria_recruitment', compose)
+        e2e = Path(__file__).resolve().parents[1].joinpath('e2e', 'docker-compose.yml').read_text(encoding='utf-8')
+        self.assertIn(
+            'postgres:16@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f',
+            e2e,
+        )
+        self.assertIn(
+            'odoo:19@sha256:03a47921f9eef2c225ded1167fe7828465d2b3177883f30d173bb1c3c792949b',
+            e2e,
+        )
+        self.assertNotIn('platform:', e2e)

@@ -24,6 +24,18 @@ class HrApplicant(models.Model):
     aria_smart_need_id = fields.Char(string='Smart need id', index=True, copy=False)
     aria_smart_candidate_id = fields.Char(string='Smart candidate id', index=True, copy=False)
     aria_utm_link = fields.Char(string='Aria source / UTM link')
+    aria_dna_adapter_name = fields.Char(
+        string='DNA adapter',
+        compute='_compute_aria_dna_adapter_name',
+        groups='aria_recruitment.group_dna_integration,base.group_system',
+        help='The configured DNA adapter. Production stays unconfigured until an operator sets aria_recruitment.dna_adapter. The fake adapter is test and demo only.',
+    )
+    aria_contract_filename = fields.Char(string='Contract filename')
+    aria_contract_pdf = fields.Binary(
+        string='Contract PDF',
+        attachment=False,
+        help='Uploading a PDF here registers it as the contract document. Only a recruitment manager or HR user can do that.',
+    )
     aria_dna_integration_status = fields.Selection(
         [
             ('pending', 'Pending'),
@@ -109,6 +121,35 @@ class HrApplicant(models.Model):
             ('date_deadline', '>=', horizon),
         ])
         return set(dated.ids) | set(activities.mapped('res_id'))
+
+    @api.depends_context('uid')
+    def _compute_aria_dna_adapter_name(self):
+        configured = (self.env['ir.config_parameter'].sudo().get_param(
+            'aria_recruitment.dna_adapter',
+            '',
+        ) or '').strip() or 'unconfigured'
+        for applicant in self:
+            applicant.aria_dna_adapter_name = configured
+
+    def _aria_register_contract_upload(self, vals):
+        """Turn a form upload into a contract attachment under the caller's rights."""
+        datas = vals.get('aria_contract_pdf')
+        if not datas:
+            return
+        filename = vals.get('aria_contract_filename') or 'contract.pdf'
+        if not isinstance(filename, str) or not filename.strip():
+            filename = 'contract.pdf'
+        mimetype = 'application/pdf' if filename.lower().endswith('.pdf') else 'application/octet-stream'
+        for applicant in self:
+            self.env['ir.attachment'].create({
+                'name': filename,
+                'datas': datas,
+                'mimetype': mimetype,
+                'res_model': 'hr.applicant',
+                'res_id': applicant.id,
+                'type': 'binary',
+                'aria_document_kind': 'contract',
+            })
 
     def _aria_contract_attached(self):
         self.ensure_one()
@@ -373,6 +414,8 @@ class HrApplicant(models.Model):
                 raise ValidationError(decision.reason)
         records = super().create(vals_list)
         for record, vals in zip(records, vals_list):
+            if vals.get('aria_contract_pdf'):
+                record._aria_register_contract_upload(vals)
             if vals.get('stage_id'):
                 target = self._aria_stage_target(vals['stage_id'])
                 if target and record.stage_id != target and not self._aria_is_hired_stage(target):
@@ -423,6 +466,8 @@ class HrApplicant(models.Model):
         return super().create_employee_from_applicant()
 
     def write(self, vals):
+        if vals.get('aria_contract_pdf'):
+            self._aria_register_contract_upload(vals)
         self._aria_check_dna_write(vals)
         if not any(key in vals for key in ('stage_id', 'date_closed', 'application_status')):
             return super().write(vals)

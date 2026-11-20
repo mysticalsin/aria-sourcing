@@ -12,7 +12,12 @@
                             <field name="aria_smart_need_id"/>
                             <field name="aria_smart_candidate_id"/>
                             <field name="aria_utm_link" widget="url"/>
+                            <field name="aria_dna_adapter_name" readonly="1"/>
                             <field name="aria_dna_integration_status"/>
+                        </group>
+                        <group string="Contract">
+                            <field name="aria_contract_filename" invisible="1"/>
+                            <field name="aria_contract_pdf" filename="aria_contract_filename"/>
                         </group>
                         <group string="Interview">
                             <field name="aria_itw_grade"/>

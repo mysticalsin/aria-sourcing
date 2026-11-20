@@ -1,0 +1,70 @@
+# Disposable Odoo 19 Community + Postgres 16 for the Playwright hire journey.
+# Image digests are multi-arch indexes (linux/amd64 and linux/arm64), so Docker
+# Desktop on Apple Silicon pulls the arm64 manifest. The database password is
+# the public default from the Postgres image, for this throwaway database only.
+
+services:
+  postgres:
+    image: postgres:16@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  odoo:
+    image: odoo:19@sha256:03a47921f9eef2c225ded1167fe7828465d2b3177883f30d173bb1c3c792949b
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOST: postgres
+      PORT: "5432"
+      USER: odoo
+      PASSWORD: odoo
+      PYTHONDONTWRITEBYTECODE: "1"
+      ARIA_E2E_DB: aria_e2e
+    volumes:
+      - ../..:/mnt/extra-addons:ro
+      - .:/opt/e2e:ro
+      - e2e-state:/opt/e2e-state
+    ports:
+      - "127.0.0.1:${ODOO_PORT:-8069}:8069"
+    command: ["sh", "/opt/e2e/serve.sh"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8069/web/login', timeout=5)",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
+
+  playwright:
+    image: mcr.microsoft.com/playwright/python:v1.59.0@sha256:d8d9811a0e7cfac967f0c2f55d12b739087ae4b0808577b794c2a29ed5124938
+    depends_on:
+      odoo:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://odoo:8069
+      STATE_PATH: /opt/e2e-state/state.json
+      CONTRACT_PDF: /opt/e2e/synthetic-contract.pdf
+      ARTIFACT_DIR: /artifacts
+    volumes:
+      - .:/opt/e2e:ro
+      - e2e-state:/opt/e2e-state:ro
+      - ${ARTIFACT_DIR:-/tmp/aria-e2e-artifacts}:/artifacts
+    ipc: host
+    shm_size: "1gb"
+    entrypoint: ["python", "/opt/e2e/hire_flow.py"]
+
+volumes:
+  e2e-state:
