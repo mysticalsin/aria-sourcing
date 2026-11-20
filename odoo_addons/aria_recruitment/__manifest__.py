@@ -8,6 +8,7 @@
     'depends': ['hr_recruitment', 'mail', 'utm'],
     'data': [
         'security/ir.model.access.csv',
+        'security/aria_security.xml',
         'data/sync_stages.xml',
         'data/activity_types.xml',
         'data/dna_parameter.xml',

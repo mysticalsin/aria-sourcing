@@ -175,7 +175,7 @@ class TestHireGate(AriaRecruitmentCommon):
         self.assertIn('not allowed', str(error))
         other.write({'stage_id': self.stage['withdrawn'].id})
 
-        audits = self.audits(applicant)
+        audits = self.audits(applicant, event_kind='stage')
         self.assertEqual(
             [(audit.from_stage_key, audit.to_stage_key, audit.result) for audit in audits],
             [
@@ -203,7 +203,7 @@ class TestHireGate(AriaRecruitmentCommon):
             )
             self.assertTrue(matched, audit.reason)
 
-        other_audits = self.audits(other)
+        other_audits = self.audits(other, event_kind='stage')
         self.assertEqual(
             [(audit.from_stage_key, audit.to_stage_key, audit.result) for audit in other_audits],
             [

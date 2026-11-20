@@ -22,8 +22,12 @@ class AriaRecruitmentCommon(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         manager = cls.env.ref('hr_recruitment.group_hr_recruitment_manager')
+        dna = cls.env.ref('aria_recruitment.group_dna_integration')
+        root = cls.env.ref('base.user_root')
         admin = cls.env.ref('base.user_admin')
-        admin.sudo().write({'group_ids': [(4, manager.id)]})
+        root.sudo().write({'group_ids': [(4, manager.id), (4, dna.id)]})
+        admin.sudo().write({'group_ids': [(4, manager.id), (4, dna.id)]})
+        cls.env['ir.config_parameter'].sudo().set_param('aria_recruitment.dna_adapter', 'fake')
         cls.stage = {
             key: cls.env.ref(f'aria_recruitment.stage_{key}')
             for key in STAGE_KEYS

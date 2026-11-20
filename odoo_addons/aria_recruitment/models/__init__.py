@@ -4,6 +4,7 @@ from . import dna_adapter
 from . import catalog
 from . import transition_audit
 from . import attachment
+from . import config_parameter
 from . import recruitment_stage
 from . import job
 from . import applicant

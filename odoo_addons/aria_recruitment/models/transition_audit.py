@@ -48,8 +48,20 @@ class AriaRecruitmentTransitionAudit(models.Model):
     )
     reason = fields.Text(required=True, readonly=True)
     sudo_used = fields.Boolean(string='Sudo', readonly=True)
+    attempt_count = fields.Integer(default=1, readonly=True)
+    event_kind = fields.Selection(
+        [('stage', 'Stage'), ('contract', 'Contract')],
+        default='stage',
+        required=True,
+        readonly=True,
+    )
+    company_id = fields.Many2one('res.company', string='Company', index=True, readonly=True)
 
     def write(self, vals):
+        token = self.env.context.get('aria_audit_coalesce')
+        expected = getattr(self.env.registry, '_aria_audit_coalesce_token', None)
+        if token and expected and token == expected and set(vals) <= {'attempt_count', 'transitioned_at'}:
+            return super().write(vals)
         raise UserError('Transition audit records are append-only.')
 
     def unlink(self):

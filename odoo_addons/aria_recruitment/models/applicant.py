@@ -1,15 +1,21 @@
+import logging
+import secrets
 from datetime import timedelta
 
 from markupsafe import Markup
 
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from .dna_adapter import resolve_adapter
-from .state_machine import TransitionDecision, decide_stage
+from .state_machine import DNA_PASSING_STATUSES, TransitionDecision, decide_stage
+
+_logger = logging.getLogger(__name__)
 
 INTERVIEW_STAGE_KEYS = ('to_interview', 'shoot', 'qm')
 ITW_KINDS = ('itw1', 'itw2', 'itw3_signature')
+REFUSAL_COALESCE_SECONDS = 120
+PDF_MIMETYPE = 'application/pdf'
 
 
 class HrApplicant(models.Model):
@@ -29,9 +35,11 @@ class HrApplicant(models.Model):
         string='DNA status (fake adapter)',
         default='pending',
         required=True,
+        groups='aria_recruitment.group_dna_integration,base.group_system',
         help=(
-            'Value read by the built-in fake DNA adapter. A registered adapter '
-            'replaces that reading. This module never calls DNA over the network.'
+            'Read by the fake DNA adapter only when aria_recruitment.dna_adapter '
+            'is set to fake. Recruiters cannot write this. With no adapter '
+            'configured, the hire gate fails closed.'
         ),
     )
     aria_itw_grade = fields.Float(string='ITW grade')
@@ -110,14 +118,64 @@ class HrApplicant(models.Model):
             ('aria_document_kind', '=', 'contract'),
         ]))
 
+    def _aria_can_set_dna(self):
+        return bool(
+            self.env.su
+            or self.env.user.has_group('base.group_system')
+            or self.env.user.has_group('aria_recruitment.group_dna_integration')
+        )
+
     def _aria_dna_status(self):
         self.ensure_one()
-        configured = self.env['ir.config_parameter'].sudo().get_param(
+        configured = (self.env['ir.config_parameter'].sudo().get_param(
             'aria_recruitment.dna_adapter',
-            'fake',
-        ) or 'fake'
-        status = resolve_adapter(configured).integration_status(self)
+            '',
+        ) or '').strip()
+        if configured == 'fake':
+            return (self.sudo().aria_dna_integration_status or 'pending').strip()
+        if not configured or configured in ('unconfigured', 'none'):
+            return 'unconfigured'
+        status = resolve_adapter(configured).integration_status(self.sudo())
         return (status or '').strip()
+
+    def _aria_is_hired_outcome(self):
+        self.ensure_one()
+        return bool(self.date_closed) or self._aria_is_hired_stage(self.stage_id)
+
+    def _aria_hire_authorized(self):
+        token = self.env.context.get('aria_hire_authorized')
+        expected = getattr(self.env.registry, '_aria_hire_token', None)
+        return bool(token) and token == expected
+
+    def _aria_outcome_decision(self, vals):
+        """Return ``(decision, target_stage)`` when this write touches a hire.
+
+        ``None`` means the vals do not change stage and do not assert a hire.
+        A hire date or ``application_status='hired'`` without the Hired stage
+        is refused even when the contract and DNA checks would otherwise pass.
+        """
+        self.ensure_one()
+        stage_in = 'stage_id' in vals
+        date_in = 'date_closed' in vals and bool(vals.get('date_closed'))
+        status_in = vals.get('application_status') == 'hired'
+        if not stage_in and not date_in and not status_in:
+            return None
+        from_key = self.stage_id.aria_stage_key or ''
+        if not stage_in and not self._aria_is_hired_stage(self.stage_id):
+            return TransitionDecision(
+                False,
+                'hire refused: the hire date cannot be set without an authorised move to Hired',
+                from_key,
+                'hired',
+            ), self.env['hr.recruitment.stage']
+        if not stage_in:
+            return None
+        target = self._aria_stage_target(vals.get('stage_id'))
+        return self._aria_decide(target), target
+
+    def _aria_check_dna_write(self, vals):
+        if 'aria_dna_integration_status' in vals and not self._aria_can_set_dna():
+            raise AccessError('Only the DNA integration group can set the DNA status.')
 
     def _aria_stage_target(self, value):
         stage = self.env['hr.recruitment.stage']
@@ -165,6 +223,7 @@ class HrApplicant(models.Model):
         }
         vals = {
             'applicant_res_id': self.id if isinstance(self.id, int) else 0,
+            'company_id': (self.company_id.id or self.env.company.id),
             'user_id': self.env.uid,
             'transitioned_at': fields.Datetime.now(),
             'from_stage_id': from_stage.id if from_stage else False,
@@ -174,7 +233,10 @@ class HrApplicant(models.Model):
             'result': decision.result,
             'reason': decision.reason,
             'sudo_used': bool(self.env.su),
+            'event_kind': 'stage',
         }
+        if not decision.allowed and self._aria_coalesce_refusal(decision):
+            return
         if not decision.allowed:
             vals['applicant_id'] = self.id if isinstance(self.id, int) else False
             self.env['aria.recruitment.transition.audit'].sudo().create(vals)
@@ -182,48 +244,56 @@ class HrApplicant(models.Model):
             try:
                 self._aria_commit_refusal(vals, body)
             except Exception:
-                # The business transaction still has the audit. A second
-                # connection is only there so a later full rollback keeps a copy.
-                pass
+                _logger.exception('Aria hire-gate refusal audit failed to commit')
             return
         vals['applicant_id'] = self.id
         self.env['aria.recruitment.transition.audit'].sudo().create(vals)
         self.message_post(body=body, message_type='comment', subtype_xmlid='mail.mt_note')
 
-    def _aria_commit_refusal(self, vals, body):
-        """Persist a refused attempt outside the caller's transaction.
+    def _aria_coalesce_refusal(self, decision):
+        """Collapse an identical recent refusal into the existing audit row."""
+        if not isinstance(self.id, int):
+            return False
+        horizon = fields.Datetime.now() - timedelta(seconds=REFUSAL_COALESCE_SECONDS)
+        existing = self.env['aria.recruitment.transition.audit'].sudo().search([
+            ('applicant_res_id', '=', self.id),
+            ('from_stage_key', '=', decision.from_key or ''),
+            ('to_stage_key', '=', decision.to_key or ''),
+            ('result', '=', 'refused'),
+            ('reason', '=', decision.reason),
+            ('transitioned_at', '>=', horizon),
+        ], order='id desc', limit=1)
+        if not existing:
+            return False
+        token = secrets.token_hex(16)
+        self.env.registry._aria_audit_coalesce_token = token
+        try:
+            existing.with_context(aria_audit_coalesce=token).write({
+                'attempt_count': (existing.attempt_count or 1) + 1,
+                'transitioned_at': fields.Datetime.now(),
+            })
+        finally:
+            self.env.registry._aria_audit_coalesce_token = None
+        return True
 
-        A separate cursor is required because Odoo rolls the business
-        transaction back when the refusal is raised (RPC, import savepoint,
-        and the test runner's assertRaises). The audit stores the applicant
-        id as an integer so it does not wait on the caller's row lock.
-        """
+    def _aria_commit_refusal(self, vals, body):
+        """Persist a refused attempt outside the caller's transaction."""
         registry = self.env.registry
-        applicant_res_id = vals.get('applicant_res_id') or 0
         with registry.cursor() as cr:
             env = api.Environment(cr, self.env.uid, {})
             audit_vals = dict(vals)
             audit_vals['applicant_id'] = False
             env['aria.recruitment.transition.audit'].sudo().create(audit_vals)
-            env['mail.message'].sudo().with_context(
-                mail_create_nosubscribe=True,
-                mail_notify_force_send=False,
-                tracking_disable=True,
-            ).create({
-                'model': 'hr.applicant',
-                'res_id': applicant_res_id,
-                'body': str(body),
-                'message_type': 'comment',
-                'subtype_id': env.ref('mail.mt_note').id,
-                'author_id': env.user.partner_id.id,
-                'email_from': 'aria-audit@example.test',
-                'reply_to': 'aria-audit@example.test',
-            })
+            env.flush_all()
             cr.commit()
+        return body
 
     @api.model
     def _aria_record_orphan(self, decision, to_stage):
-        self.env['aria.recruitment.transition.audit'].sudo().create({
+        vals = {
+            'applicant_id': False,
+            'applicant_res_id': 0,
+            'company_id': self.env.company.id,
             'user_id': self.env.uid,
             'transitioned_at': fields.Datetime.now(),
             'to_stage_id': to_stage.id if to_stage else False,
@@ -232,7 +302,18 @@ class HrApplicant(models.Model):
             'result': decision.result,
             'reason': decision.reason,
             'sudo_used': bool(self.env.su),
-        })
+            'event_kind': 'stage',
+        }
+        body = Markup('<p>ARIA_TRANSITION result=%(result)s from=%(frm)s to=%(to)s reason=%(reason)s</p>') % {
+            'result': decision.result,
+            'frm': decision.from_key or '-',
+            'to': decision.to_key or '-',
+            'reason': decision.reason,
+        }
+        try:
+            self._aria_commit_refusal(vals, body)
+        except Exception:
+            _logger.exception('Aria hire-gate refusal audit failed to commit')
 
     def _aria_first_open_stage(self):
         self.ensure_one()
@@ -300,34 +381,104 @@ class HrApplicant(models.Model):
                 record._aria_note_sequence_hijack()
         return records
 
-    def write(self, vals):
-        if 'stage_id' not in vals:
-            return super().write(vals)
-        target = self._aria_stage_target(vals.get('stage_id'))
-        moves = []
-        noops = self.env['hr.applicant']
+    @api.depends('stage_id.hired_stage')
+    def _compute_date_closed(self):
+        before = {applicant.id: applicant.date_closed for applicant in self}
+        super()._compute_date_closed()
+        if self._aria_hire_authorized():
+            return
         for applicant in self:
-            if target and applicant.stage_id == target:
-                noops |= applicant
-                continue
-            decision = applicant._aria_decide(target)
-            moves.append((applicant, decision))
-        for applicant, decision in moves:
-            applicant._aria_record_transition(applicant.stage_id, target, decision)
-        allowed = self.env['hr.applicant']
-        refused = []
-        for applicant, decision in moves:
-            if decision.allowed:
-                allowed |= applicant
+            if applicant.date_closed and not before.get(applicant.id):
+                applicant.date_closed = False
+
+    def onchange(self, values, field_names, fields_spec, *args):
+        result = super().onchange(values, field_names, fields_spec, *args)
+        if self._aria_hire_authorized():
+            return result
+        value = (result or {}).get('value') or {}
+        if not value:
+            return result
+        if value.get('date_closed') or value.get('application_status') == 'hired':
+            value.pop('date_closed', None)
+            if value.get('application_status') == 'hired':
+                value['application_status'] = 'ongoing'
+            result['value'] = value
+        return result
+
+    def create_employee_from_applicant(self):
+        self.ensure_one()
+        hired_stage = self._aria_is_hired_stage(self.stage_id)
+        dna_ok = self._aria_dna_status() in DNA_PASSING_STATUSES
+        if not (hired_stage and self._aria_contract_attached() and dna_ok):
+            decision = TransitionDecision(
+                False,
+                'hire refused: creating an employee requires the hire gate',
+                self.stage_id.aria_stage_key or '',
+                'hired',
+            )
+            self._aria_record_transition(self.stage_id, self.env['hr.recruitment.stage'].search([
+                ('aria_stage_key', '=', 'hired'),
+            ], limit=1), decision)
+            raise ValidationError(decision.reason)
+        return super().create_employee_from_applicant()
+
+    def write(self, vals):
+        self._aria_check_dna_write(vals)
+        if not any(key in vals for key in ('stage_id', 'date_closed', 'application_status')):
+            return super().write(vals)
+        if 'application_status' in vals and not any(key in vals for key in ('stage_id', 'date_closed')):
+            # Non-stored. Treat an attempted hired status as a hire and stop.
+            if vals.get('application_status') == 'hired':
+                decisions = []
+                for applicant in self:
+                    decision, target = applicant._aria_outcome_decision(vals)
+                    decisions.append((applicant, decision, target))
+                self._aria_finish_refusals(decisions)
+            vals = {key: value for key, value in vals.items() if key != 'application_status'}
+            if not vals:
+                return True
+        decisions = []
+        for applicant in self:
+            outcome = applicant._aria_outcome_decision(vals)
+            if outcome is None:
+                decisions.append((applicant, None, None))
             else:
-                refused.append(decision.reason)
-        for applicant in noops:
-            super(HrApplicant, applicant).write(dict(vals))
-        for applicant in allowed:
-            super(HrApplicant, applicant).write(dict(vals))
-        if refused:
-            raise ValidationError(refused[0])
+                decisions.append((applicant, outcome[0], outcome[1]))
+        blocked = [item for item in decisions if item[1] is not None and not item[1].allowed and not item[1].noop]
+        if blocked:
+            audited = []
+            for applicant, decision, target in decisions:
+                if decision is None or decision.noop:
+                    decision = TransitionDecision(
+                        False,
+                        'hire refused: the write was refused because another applicant in the batch failed the hire gate',
+                        applicant.stage_id.aria_stage_key or '',
+                        'hired',
+                    )
+                elif decision.allowed:
+                    decision = TransitionDecision(
+                        False,
+                        'hire refused: the write was refused because another applicant in the batch failed the hire gate',
+                        decision.from_key,
+                        decision.to_key,
+                    )
+                audited.append((applicant, decision, target or applicant.stage_id))
+            self._aria_finish_refusals(audited)
+        token = secrets.token_hex(16)
+        self.env.registry._aria_hire_token = token
+        try:
+            for applicant, decision, target in decisions:
+                if decision is not None and not decision.noop:
+                    applicant._aria_record_transition(applicant.stage_id, target, decision)
+                super(HrApplicant, applicant.with_context(aria_hire_authorized=token)).write(dict(vals))
+        finally:
+            self.env.registry._aria_hire_token = None
         return True
+
+    def _aria_finish_refusals(self, decisions):
+        for applicant, decision, target in decisions:
+            applicant._aria_record_transition(applicant.stage_id, target, decision)
+        raise ValidationError(decisions[0][1].reason)
 
     @api.model
     def _aria_preview_imports(self, fields, data):

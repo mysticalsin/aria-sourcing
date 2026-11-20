@@ -3,7 +3,7 @@
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f
     environment:
       POSTGRES_USER: odoo
       POSTGRES_PASSWORD: odoo
@@ -15,7 +15,7 @@ services:
       retries: 20
 
   odoo:
-    image: odoo:19
+    image: odoo:19@sha256:03a47921f9eef2c225ded1167fe7828465d2b3177883f30d173bb1c3c792949b
     depends_on:
       postgres:
         condition: service_healthy

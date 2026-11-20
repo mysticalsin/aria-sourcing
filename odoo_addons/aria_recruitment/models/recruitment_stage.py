@@ -1,3 +1,5 @@
+import secrets
+
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
@@ -14,43 +16,58 @@ class HrRecruitmentStage(models.Model):
         'Each pipeline stage key can be used only once.',
     )
 
+    def _aria_spec_sync_allowed(self):
+        token = self.env.context.get('aria_spec_sync')
+        expected = getattr(self.env.registry, '_aria_spec_sync_token', None)
+        return bool(token) and token is not True and token == expected
+
     @api.model
     def _aria_sync_stages_from_spec(self):
-        """Create or update hr.recruitment.stage rows from the shared spec."""
-        spec = load_pipeline_spec()
-        synced = self.env['hr.recruitment.stage']
-        for row in spec['stages']:
-            xml_name = f"stage_{row['key']}"
-            vals = {
-                'name': row['name'],
-                'sequence': row['sequence'],
-                'aria_stage_key': row['key'],
-                'aria_terminal': row['terminal'],
-                'hired_stage': row['hired'],
-                'fold': row['terminal'],
-            }
-            stage = self.env.ref(f'aria_recruitment.{xml_name}', raise_if_not_found=False)
-            if not stage:
-                stage = self.sudo().search([('aria_stage_key', '=', row['key'])], limit=1)
-            if stage:
-                stage.with_context(aria_spec_sync=True).write(vals)
-            else:
-                stage = self.with_context(aria_spec_sync=True).create(vals)
-            self.env['ir.model.data']._update_xmlids([{
-                'xml_id': f'aria_recruitment.{xml_name}',
-                'record': stage,
-                'noupdate': False,
-            }])
-            synced |= stage
-        self.env['ir.config_parameter'].sudo().set_param(
-            'aria_recruitment.pipeline_spec_version',
-            str(spec['spec_version']),
-        )
-        return synced
+        """Create or update hr.recruitment.stage rows from the shared spec.
+
+        The sync token lives on the registry for this call only. A context
+        flag passed over RPC, even with ``install_mode``, does not match it.
+        """
+        token = secrets.token_hex(16)
+        self.env.registry._aria_spec_sync_token = token
+        try:
+            spec = load_pipeline_spec()
+            synced = self.env['hr.recruitment.stage']
+            stage_model = self.sudo().with_context(aria_spec_sync=token)
+            for row in spec['stages']:
+                xml_name = f"stage_{row['key']}"
+                vals = {
+                    'name': row['name'],
+                    'sequence': row['sequence'],
+                    'aria_stage_key': row['key'],
+                    'aria_terminal': row['terminal'],
+                    'hired_stage': row['hired'],
+                    'fold': row['terminal'],
+                }
+                stage = self.env.ref(f'aria_recruitment.{xml_name}', raise_if_not_found=False)
+                if not stage:
+                    stage = self.sudo().search([('aria_stage_key', '=', row['key'])], limit=1)
+                if stage:
+                    stage.with_context(aria_spec_sync=token).sudo().write(vals)
+                else:
+                    stage = stage_model.create(vals)
+                self.env['ir.model.data']._update_xmlids([{
+                    'xml_id': f'aria_recruitment.{xml_name}',
+                    'record': stage,
+                    'noupdate': False,
+                }])
+                synced |= stage
+            self.env['ir.config_parameter'].sudo().set_param(
+                'aria_recruitment.pipeline_spec_version',
+                str(spec['spec_version']),
+            )
+            return synced
+        finally:
+            self.env.registry._aria_spec_sync_token = None
 
     @api.model_create_multi
     def create(self, vals_list):
-        if not self.env.context.get('aria_spec_sync'):
+        if not self._aria_spec_sync_allowed():
             for vals in vals_list:
                 if vals.get('aria_stage_key'):
                     raise UserError('Stage keys are owned by the pipeline spec.')
@@ -61,7 +78,7 @@ class HrRecruitmentStage(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        if not self.env.context.get('aria_spec_sync'):
+        if not self._aria_spec_sync_allowed():
             protected = {'aria_stage_key', 'aria_terminal', 'name', 'hired_stage'} & set(vals)
             if protected:
                 for stage in self:
