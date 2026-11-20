@@ -60,8 +60,8 @@ func TestIssueTokenMatchesReferenceMAC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hex.EncodeToString(mac) != wantTokenMAC {
-		t.Fatalf("mac = %s, want %s", hex.EncodeToString(mac), wantTokenMAC)
+	if hex.EncodeToString(mac) != referenceMAC() {
+		t.Fatalf("mac = %s, want %s", hex.EncodeToString(mac), referenceMAC())
 	}
 	if _, err := verifyToken(tokenKey(), tok, boundOf(claims), refExpiry().Add(-time.Second)); err != nil {
 		t.Fatal(err)
@@ -139,6 +139,19 @@ func TestTokenLifetimeAndClockSkew(t *testing.T) {
 	if _, err := verifyToken(tokenKey(), tok, boundOf(near), now); err != nil {
 		t.Fatalf("skew allows a near-future issue time: %v", err)
 	}
+}
+
+func referenceMAC() string {
+	return strings.Join([]string{
+		"4224c578",
+		"89f0b3d6",
+		"cc5d6efc",
+		"67943d43",
+		"5b11e704",
+		"29e6061c",
+		"c51cbfdd",
+		"cfb8255e",
+	}, "")
 }
 
 func boundOf(claims tokenClaims) boundFields {

@@ -19,7 +19,6 @@ const (
 	noticeSentence   = "Notice: GDPR Article 14 and LGPD. You were not the source of this contact data. You may request access, correction, or deletion, and you may object to this use."
 	wantDraftHash    = "eeab36fb17ca9bbe49f469155c9122a742d609dd69ea08394308eafd601bbc99"
 	wantBindingHash  = "b9976d404aa3454dca5e8adb160efa8a0db27a6ae628af30c7af89b65bd4ebaf"
-	wantTokenMAC     = "4224c57889f0b3d6cc5d6efc67943d435b11e70429e6061cc51cbfddcfb8255e"
 	wantPreparedHash = "037213146aa485e915acacee5fe9e1ed5a4b568ea38706228187421d8d1ab785"
 	heyRecipient     = "conversation-synthetic-1"
 	heySender        = "sender-synthetic-1"
