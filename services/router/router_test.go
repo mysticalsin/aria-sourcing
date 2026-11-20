@@ -675,10 +675,10 @@ func Test_test_synthetic_workload_hit_rates(t *testing.T) {
 }
 
 func TestEnvValuesNeverLogged(t *testing.T) {
-	const secret = "sk-ant-UNIQUE-9f3c1b"
+	const secret = "zz9f3c1b"
 	const dailyRaw = "4.125"
 	const monthlyRaw = "19.875"
-	const bad = "12nope-UNIQUE-VALUE"
+	const bad = "zzbadval"
 	names := []string{}
 	cfg, err := LoadConfig(func(name string) (string, bool) {
 		names = append(names, name)
@@ -755,7 +755,7 @@ func TestEnvValuesNeverLogged(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
-	if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), bad) {
+	if strings.Contains(err.Error(), "zzbad") || strings.Contains(err.Error(), bad) {
 		t.Fatalf("error echoes value: %v", err)
 	}
 	if !strings.Contains(err.Error(), EnvDailyBudgetUSD) {

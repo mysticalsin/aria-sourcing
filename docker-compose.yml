@@ -281,9 +281,15 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image's HEALTHCHECK probes the web server; this service has none.
+    # Temporary process-alive check so compose --wait does not abort.
+    # The image HEALTHCHECK probes the web server; this process is only the
+    # runner. PR #168 deletes this service, and that deletion wins.
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", "process.kill(1,0)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     restart: unless-stopped
     logging: *logging
 
