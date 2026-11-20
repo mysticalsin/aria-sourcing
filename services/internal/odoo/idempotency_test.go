@@ -42,7 +42,7 @@ func mustJob(t testing.TB, f *odoo.Fake) odoo.Job {
 
 func applicantInput() odoo.Applicant {
 	return odoo.Applicant{
-		AriaID: "cand-1", IdempotencyKey: "upsert-cand-1",
+		AriaID: "cand-1", IdempotencyKey: "idem-a",
 		PartnerName: "Mina Ortega", EmailFrom: "Mina.Ortega@People.example.test",
 		JobAriaID: "job-1", Source: "Candidate-supplied",
 		SmartNeedID: "need-1001", SmartCandidateID: "cand-2002", Priority: 2,
@@ -92,7 +92,7 @@ func TestSearchBeforeCreateDoesNotDuplicateOrResetStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := applicantInput()
-	next.IdempotencyKey = "upsert-cand-1-b"
+	next.IdempotencyKey = "idem-b"
 	next.PartnerName = "Mina O."
 	got, err := f.UpsertApplicant(ctx, next)
 	if err != nil {

@@ -322,7 +322,7 @@ func TestJSON2UpsertApplicantReplayDoesNotCreate(t *testing.T) {
 	}
 	other := in
 	other.AriaID = "cand-2"
-	other.IdempotencyKey = "upsert-cand-2"
+	other.IdempotencyKey = "idem-c"
 	if _, err := restarted.UpsertApplicant(ctx, other); err != nil {
 		t.Fatal(err)
 	}
