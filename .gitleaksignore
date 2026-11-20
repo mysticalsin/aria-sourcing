@@ -20,6 +20,8 @@ c79dcaa83c7af4240d37dde583b68229a531e3c5:tests/source-enrich-auth.mts:generic-ap
 # TypeScript SourcingProvider type annotations, not client secrets.
 2ec563ebd74b084945042f5467b0ca82ffa8fa40:src/lib/sourcing/providers/linkedin-agent-tool.ts:linkedin-client-secret:21
 b5d723a3914a029d9efbf3eaed1e34b10c16bca4:src/lib/sourcing/providers/linkedin-profiles.ts:linkedin-client-secret:44
+# Variable name on the right of linkedinUrl, 16 letters, not a client secret.
+da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linkedin-client-secret:333
 # Cron authorization fixtures used only by mocked route tests.
 d4ca9af6dc65bbd488625e4edd25bcaa705e378f:tests/source-apify-auth.mts:generic-api-key:169
 886df40f0e21c4fd8c2cf32865f2901a1caab5ae:tests/sourcing-loop-ignition-route.mts:generic-api-key:9
