@@ -10,7 +10,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // Public/auth pages must not fetch or hydrate a tenant workspace. Besides
   // avoiding a needless authenticated request, this keeps recipient-facing
   // unsubscribe links independent from console state.
-  const barePath = pathname.startsWith("/login") || pathname.startsWith("/careers") || pathname.startsWith("/unsubscribe");
+  const barePath =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/careers") ||
+    pathname.startsWith("/unsubscribe") ||
+    pathname.startsWith("/design-system");
   // No global MotionConfig: it would put the animation library in every page's bundle.
   // The few animated components read usePrefersReducedMotion themselves.
   const content = <ToastProvider>{children}</ToastProvider>;

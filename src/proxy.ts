@@ -5,14 +5,16 @@ import { verifyDemoTokenAtEdge } from "@/lib/demo-auth-edge";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
-/** Routes that must stay reachable without a session: the auth screens and the
- *  public career-site chatbox (external candidates never log in). */
+/** Routes that must stay reachable without a session: the auth screens, the
+ *  public career-site chatbox (external candidates never log in), and the
+ *  synthetic design gallery. */
 function isPublicPath(path: string): boolean {
   return (
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
     path.startsWith("/careers") ||
-    path.startsWith("/unsubscribe")
+    path.startsWith("/unsubscribe") ||
+    path.startsWith("/design-system")
   );
 }
 

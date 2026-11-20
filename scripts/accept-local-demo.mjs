@@ -93,7 +93,9 @@ async function openSession() {
 }
 try {
   started = true;
-  compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300"]);
+  // agents disables its healthcheck (the image probe expects the web server).
+// Compose --wait then fails the whole stack, so this acceptance does not start it.
+compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300", "--scale", "agents=0"]);
   assert.equal((await fetch(baseUrl + "/api/ready")).status, 200);
   assert.equal((await fetch(baseUrl + "/api/setup/status")).status, 401, "Setup details must require authentication.");
   let token = await loginApi(); // Separate seeded-account auth from browser/CSP/cookie failures.
