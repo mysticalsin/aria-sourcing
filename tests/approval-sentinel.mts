@@ -71,7 +71,13 @@ test("test_calendar_invite_requires_send_policy", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.includes("graph.microsoft.com")) graphBody = String(init?.body ?? "");
+    let host = "";
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      host = "";
+    }
+    if (host === "graph.microsoft.com") graphBody = String(init?.body ?? "");
     else googleUrl = url;
     return new Response(JSON.stringify({ id: "evt-1", htmlLink: "https://calendar.example.test/evt-1", webLink: "https://calendar.example.test/evt-1" }), { status: 200 });
   }) as typeof fetch;
