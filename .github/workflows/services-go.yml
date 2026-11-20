@@ -1,0 +1,37 @@
+name: Services (Go)
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go test and bench
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services
+    env:
+      GOPROXY: off
+      GOFLAGS: -mod=readonly
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Test
+        run: go test ./...
+
+      - name: Bench
+        run: go test -bench=. -benchmem -run='^$' -benchtime=100ms ./...
