@@ -138,7 +138,8 @@ jobs:
           PY
             node core/scripts/check-p95.mjs --history /tmp/parent-gate.json --current core/bench/current-gate.json
           else
-            echo "No parent bench on HEAD^; this run records the baseline."
+            echo "::error::parent commit has no scoring bench; the 10% gate cannot run"
+            exit 1
           fi
 
       - name: github-action-benchmark

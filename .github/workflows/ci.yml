@@ -99,9 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # HEAD is this checkout's history. --all also scans other unmerged
-          # branches that actions/checkout fetches, which are not part of this PR.
-          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='HEAD'
+          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'
 
   database-security:
     name: Database security
