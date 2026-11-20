@@ -113,8 +113,11 @@ try {
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
   await dialog.getByRole("tab", { name: "Manual", exact: true }).click();
-  await dialog.getByLabel("Name", { exact: true }).fill(marker + " Person");
-  await dialog.getByLabel("Lawful basis", { exact: true }).selectOption("consent");
+  // Inactive tab panels stay mounted and hidden. Scope to the visible panel
+  // so the LinkedIn "Name" field is not the one that gets filled.
+  const manual = dialog.locator('[role="tabpanel"]:not([hidden])');
+  await manual.getByLabel("Name", { exact: true }).fill(marker + " Person");
+  await manual.getByLabel("Lawful basis", { exact: true }).selectOption("consent");
   await dialog.getByRole("button", { name: "Add candidate", exact: true }).click();
   const candidate = await until(async () => (await persisted(token))?.candidates?.find((item) => item.name === marker + " Person"), "Candidate did not persist.");
   candidateId = candidate.id;
