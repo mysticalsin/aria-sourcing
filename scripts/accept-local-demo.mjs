@@ -93,7 +93,10 @@ async function openSession() {
 }
 try {
   started = true;
-  compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300"]);
+  compose(["up", "--build", "--detach"]);
+  // agents disables its healthcheck on purpose (it is not the web server).
+  // `up --wait` fails that service on current Compose. Wait only for the services that publish one.
+  compose(["wait", "--timeout", "300", "db", "auth", "rest", "gateway", "app"]);
   assert.equal((await fetch(baseUrl + "/api/ready")).status, 200);
   assert.equal((await fetch(baseUrl + "/api/setup/status")).status, 401, "Setup details must require authentication.");
   let token = await loginApi(); // Separate seeded-account auth from browser/CSP/cookie failures.
