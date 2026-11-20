@@ -95,11 +95,13 @@ jobs:
           test "$("$install_dir/gitleaks" version)" = "$GITLEAKS_VERSION"
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
-      - name: Scan full history including the current release commit
+      - name: Scan the checked-out history
         shell: bash
         run: |
           set -euo pipefail
-          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'
+          # HEAD is this branch, or the PR merge commit. --all would also scan
+          # every other fetched branch, which is not this change.
+          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='HEAD'
 
   database-security:
     name: Database security
