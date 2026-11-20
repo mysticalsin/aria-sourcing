@@ -265,6 +265,118 @@ test("test_no_agents_compose_service", () => {
   assert.doesNotMatch(compose, /\/api\/agent\/tick/);
 });
 
+const STORED_OR_REJECTED_PROFILE = /linkedin\.com\/(?:in|pub|company|school)\b/i;
+const HOST_CHECK_FILES = new Set([
+  "src/lib/linkedin-profile-url.ts",
+  "src/lib/candidate-evidence.ts",
+  "src/lib/rules.ts",
+  "src/lib/sourcing/sourcing-agent-contract.ts",
+]);
+
+test("test_no_linkedin_com_or_licdn_outside_stored_profiles", () => {
+  const hits: string[] = [];
+  for (const file of executableFiles()) {
+    const lines = read(file).split(/\n/);
+    lines.forEach((line, index) => {
+      const where = `${file}:${index + 1}`;
+      if (/licdn/i.test(line)) hits.push(`${where}: licdn`);
+      if (!/linkedin\.com/i.test(line) || STORED_OR_REJECTED_PROFILE.test(line)) return;
+      const request = /fetch\s*\(|\bsite:|voyager|axios|img-src|host_permissions|allowed_domains/i.test(line);
+      if (HOST_CHECK_FILES.has(file) && !request) return;
+      hits.push(`${where}: linkedin.com outside a stored or rejected profile path`);
+    });
+  }
+  assert.deepEqual(hits, [], hits.join("\n"));
+});
+
+test("test_no_linkedin_integration_surface", () => {
+  assert.equal(existsSync(join(root, "src/app/api/linkedin")), false);
+  assert.equal(existsSync(join(root, "src/app/linkedin")), false);
+  assert.equal(existsSync(join(root, "src/components/linkedin")), false);
+  const pkg = JSON.parse(read("package.json")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+  const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+  assert.deepEqual(names.filter((name) => /linkedin|licdn|voyager/i.test(name)), []);
+  assert.doesNotMatch(read("next.config.mjs"), /linkedin\.com|licdn/i);
+  for (const file of walk(".github", /.*/)) {
+    assert.doesNotMatch(read(file), /linkedin|licdn/i, file);
+  }
+  for (const file of [".env.local.example", ".env.production.example", "docker-compose.yml"]) {
+    if (!existsSync(join(root, file))) continue;
+    assert.doesNotMatch(read(file), /LINKEDIN_|linkedin\.com|licdn/i, file);
+  }
+});
+
+test("test_forward_only_drop_is_safe_on_existing_dbs", () => {
+  for (const file of [
+    "supabase/migrations/0010_drop_linkedin_bridge.sql",
+    "supabase/migrations/0011_drop_agent_autopilot.sql",
+  ]) {
+    const sql = read(file);
+    assert.match(sql, /forward-only/i, file);
+    assert.match(sql, /no down migration/i, file);
+    assert.match(sql, /unapplied/i, file);
+    assert.match(sql, /existing database/i, file);
+    assert.match(sql, /drop table if exists/i, file);
+    assert.doesNotMatch(sql, /\bcreate table\b/i, file);
+    assert.doesNotMatch(sql, /\bcascade\b/i, file);
+  }
+  assert.match(read("supabase/migrations/0010_drop_linkedin_bridge.sql"), /token_hash/);
+});
+
+test("test_no_skip_or_xfail_without_reason", () => {
+  const hits: string[] = [];
+  for (const file of walk("tests", /\.(?:mts|mjs|ts|js|sh)$/)) {
+    const lines = read(file).split(/\n/);
+    lines.forEach((line, index) => {
+      if (!/\b(?:test|it|describe)\.skip\b|\bxfail\b|\bxtest\b|\bxit\b/.test(line)) return;
+      const reason = `${lines[index - 1] ?? ""}\n${line}`;
+      if (!/reason:/i.test(reason)) hits.push(`${file}:${index + 1}`);
+    });
+  }
+  assert.deepEqual(hits, [], `skip or xfail without a reason:\n${hits.join("\n")}`);
+});
+
+test("test_spec_derived_boundary_tests_present", () => {
+  const source = read("tests/compliance-boundaries.mts");
+  for (const name of [
+    "test_no_linkedin_extension_token_path",
+    "test_no_linkedin_dot_com_egress",
+    "test_no_linkedin_vendor_delivery_adapter",
+    "test_no_licdn_photo_host",
+    "test_no_linkedin_com_or_licdn_outside_stored_profiles",
+    "test_no_linkedin_integration_surface",
+    "test_forward_only_drop_is_safe_on_existing_dbs",
+    "test_no_agent_autopilot_tables",
+    "test_no_agents_compose_service",
+    "test_no_scraper_or_enrichment_vendor",
+    "test_no_heyreach_call_unless_flag_on_and_approval_present",
+    "test_no_smartx_ui_scraping",
+  ]) {
+    assert.match(source, new RegExp(`test\\("${name}"`));
+  }
+});
+
+test("property_stored_profile_url_is_not_a_fetch", async () => {
+  const { publicIdFromProfileUrl, linkedInProfileUrl } = await import("../src/lib/linkedin-profile-url.ts");
+  const { candidatePhotoUrl } = await import("../src/lib/candidate-photo.ts");
+  let state = 0xc0ffee;
+  const next = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state;
+  };
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 64; i += 1) {
+    const length = 3 + (next() % 20);
+    let id = "";
+    for (let n = 0; n < length; n += 1) id += alphabet[next() % alphabet.length];
+    const url = linkedInProfileUrl(id);
+    assert.equal(publicIdFromProfileUrl(url), id);
+    assert.match(url, /^https:\/\/www\.linkedin\.com\/in\//);
+    assert.equal(candidatePhotoUrl(url), "");
+    assert.equal(publicIdFromProfileUrl(`https://evil.example/in/${id}`), null);
+  }
+});
+
 test("test_no_smartx_ui_scraping", () => {
   const hits: string[] = [];
   for (const file of executableFiles()) {
