@@ -110,7 +110,10 @@ func buildTextPDF(lines []string, compress bool) []byte {
 		stream = zlibWrap(content)
 		dict = fmt.Sprintf("<< /Length %d /Filter /FlateDecode >>", len(stream))
 	}
+	return assemblePDF(dict, stream)
+}
 
+func assemblePDF(dict string, stream []byte) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n")
 	offsets := make([]int, 6)

@@ -1,6 +1,9 @@
 package extract
 
 import (
+	"bytes"
+	"compress/zlib"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -66,6 +69,23 @@ func TestCorruptAndEmpty(t *testing.T) {
 	}
 	if !EnoughText("Name: Casey Example") {
 		t.Fatal("a labeled name line should count as a text layer")
+	}
+}
+
+func TestFlateBombIsRefused(t *testing.T) {
+	// A small Flate stream that inflates past the 2 MiB cap. The whole
+	// upload is otherwise tiny, which is the zip-bomb shape.
+	var raw bytes.Buffer
+	zw := zlib.NewWriter(&raw)
+	if _, err := zw.Write(bytes.Repeat([]byte("A"), maxStream+64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dict := fmt.Sprintf("<< /Length %d /Filter /FlateDecode >>", raw.Len())
+	if _, err := ExtractText(assemblePDF(dict, raw.Bytes())); !errorsIsUnreadable(err) {
+		t.Fatalf("bomb accepted: %v", err)
 	}
 }
 

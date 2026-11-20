@@ -41,9 +41,9 @@ any non-terminal state ──► error_queue ──retry──► uploaded
 
 ## Text, then OCR
 
-1. PDF text layer, pure Go (`extract`). Literal strings, hex strings, `Tj`/`TJ`, FlateDecode. Encrypted PDFs are refused.
+1. PDF text layer, pure Go (`extract`). Literal strings, hex strings, `Tj`/`TJ`, FlateDecode. Encrypted PDFs are refused. Uploads over 8 MiB are rejected before they are stored. A stream longer than 2 MiB, or one that inflates past 2 MiB, is refused (Flate bomb). At most 50 content streams are read. Accepted types are PDF, PNG, and JPEG; anything else is `unreadable_document`.
 2. If the text layer has fewer than 12 letters, or the upload is a PNG/JPEG, the file goes to `ocr_needed`.
-3. A text-less PDF is rasterized with Poppler `pdftoppm` (up to 5 pages) and each page is read by Tesseract (`eng+fra+por` by default).
+3. A text-less PDF is rasterized with Poppler `pdftoppm` (at most 5 pages) and each page is read by Tesseract (`eng+fra+por` by default). `pdftoppm` and each Tesseract call are capped at 30 seconds. The binaries are invoked with `exec` on private temp names (`in.pdf`, `ingest-ocr-*`), never with the upload's file name, and the language argument must be `eng` or `eng+fra+por` style codes.
 4. The same rules parser runs on whichever text came back.
 
 Tesseract is Apache-2.0, invoked as a local binary. Image bytes go to a `0600` temp file that is removed before return. Stderr from Tesseract and Poppler is discarded.

@@ -569,6 +569,36 @@ func TestRetentionHookPurgesRawCV(t *testing.T) {
 	}
 }
 
+func TestOCRTimeoutLandsInErrorQueue(t *testing.T) {
+	w, _, _ := testWorker(t, ingest.Options{
+		OCRTimeout: 30 * time.Millisecond,
+		OCR:        blockOCR{},
+	})
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00}
+	start := time.Now()
+	res, err := w.Ingest(context.Background(), ingest.Upload{
+		ID: "slow-1", Bytes: png, Origin: holding(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("OCR was not bounded by the worker timeout")
+	}
+	if res.State != state.ErrorQueue || res.Reason != state.ReasonOCRFailed {
+		t.Fatalf("%+v", res)
+	}
+}
+
+type blockOCR struct{}
+
+func (blockOCR) Available() bool { return true }
+
+func (blockOCR) Recognize(ctx context.Context, _ []byte, _ string) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
 func TestFileTooLargeDoesNotKeepBytes(t *testing.T) {
 	w, _, sink := testWorker(t, ingest.Options{MaxBytes: 32})
 	body := bytes.Repeat([]byte("x"), 64)

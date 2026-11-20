@@ -25,6 +25,9 @@ const (
 	defaultMaxAttempts      = 3
 	defaultMaxBytes         = 8 << 20
 	defaultOCRLangs         = "eng+fra+por"
+	// defaultOCRTimeout caps each rasterize and each Tesseract call. The
+	// CLI does not pass a deadline, so the worker has to impose one.
+	defaultOCRTimeout = 30 * time.Second
 )
 
 // ErrNotFound means Retry was asked for an id this worker has never accepted.
@@ -82,14 +85,17 @@ type Options struct {
 	MaxAttempts      int
 	MaxBytes         int
 	OCRLangs         string
-	OCR              ocr.Engine
-	Extractor        TextExtractor
-	Parser           Parser
-	Deduper          dedupe.Hook
-	Sink             source.Sink
-	Logger           Logger
-	Retention        privacy.Hook
-	Queue            *errqueue.Queue
+	// OCRTimeout bounds pdftoppm and each Tesseract invocation. Zero
+	// selects defaultOCRTimeout. A caller deadline that is sooner still wins.
+	OCRTimeout time.Duration
+	OCR        ocr.Engine
+	Extractor  TextExtractor
+	Parser     Parser
+	Deduper    dedupe.Hook
+	Sink       source.Sink
+	Logger     Logger
+	Retention  privacy.Hook
+	Queue      *errqueue.Queue
 }
 
 // Worker runs the state machine. Concurrent calls are safe. They share one
@@ -101,6 +107,7 @@ type Worker struct {
 	profileTTL  time.Duration
 	maxAttempts int
 	maxBytes    int
+	ocrTimeout  time.Duration
 	ocrLangs    string
 	ocr         ocr.Engine
 	extractor   TextExtractor
@@ -123,6 +130,7 @@ func New(opt Options) *Worker {
 		profileTTL:  opt.ProfileRetention,
 		maxAttempts: opt.MaxAttempts,
 		maxBytes:    opt.MaxBytes,
+		ocrTimeout:  opt.OCRTimeout,
 		ocrLangs:    opt.OCRLangs,
 		ocr:         opt.OCR,
 		extractor:   opt.Extractor,
@@ -149,6 +157,9 @@ func New(opt Options) *Worker {
 	}
 	if w.maxBytes <= 0 {
 		w.maxBytes = defaultMaxBytes
+	}
+	if w.ocrTimeout <= 0 {
+		w.ocrTimeout = defaultOCRTimeout
 	}
 	if w.ocrLangs == "" {
 		w.ocrLangs = defaultOCRLangs

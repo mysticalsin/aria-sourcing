@@ -286,25 +286,38 @@ func (w *Worker) pullText(ctx context.Context, doc *document, data []byte) (stri
 		if err := w.enter(doc, state.OCRNeeded); err != nil {
 			return "", "", err
 		}
-		pages, err := extract.RasterPDF(ctx, data)
+		ocrCtx, cancel := w.ocrContext(ctx)
+		defer cancel()
+		pages, err := extract.RasterPDF(ocrCtx, data)
 		if err != nil {
 			if ctx.Err() != nil {
 				return "", "", ctx.Err()
 			}
+			if ocrCtx.Err() != nil {
+				return "", state.ReasonOCRFailed, nil
+			}
 			return "", state.ReasonOCRUnavailable, nil
 		}
-		return w.recognize(ctx, doc, pages)
+		return w.recognize(ctx, ocrCtx, doc, pages)
 	case extract.KindPNG, extract.KindJPEG:
 		if err := w.enter(doc, state.OCRNeeded); err != nil {
 			return "", "", err
 		}
-		return w.recognize(ctx, doc, [][]byte{data})
+		ocrCtx, cancel := w.ocrContext(ctx)
+		defer cancel()
+		return w.recognize(ctx, ocrCtx, doc, [][]byte{data})
 	default:
 		return "", state.ReasonUnreadable, nil
 	}
 }
 
-func (w *Worker) recognize(ctx context.Context, doc *document, pages [][]byte) (string, state.Reason, error) {
+// ocrContext bounds rasterizing and Tesseract even when the caller
+// passed a context with no deadline. The caller's deadline still applies.
+func (w *Worker) ocrContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, w.ocrTimeout)
+}
+
+func (w *Worker) recognize(parent, ctx context.Context, doc *document, pages [][]byte) (string, state.Reason, error) {
 	if len(pages) == 0 {
 		return "", state.ReasonOCRFailed, nil
 	}
@@ -313,13 +326,16 @@ func (w *Worker) recognize(ctx context.Context, doc *document, pages [][]byte) (
 	}
 	var b strings.Builder
 	for _, page := range pages {
-		if err := ctx.Err(); err != nil {
-			return "", "", err
+		if parent.Err() != nil {
+			return "", "", parent.Err()
+		}
+		if ctx.Err() != nil {
+			return "", state.ReasonOCRFailed, nil
 		}
 		text, err := w.ocr.Recognize(ctx, page, w.ocrLangs)
 		if err != nil {
-			if ctx.Err() != nil {
-				return "", "", ctx.Err()
+			if parent.Err() != nil {
+				return "", "", parent.Err()
 			}
 			return "", state.ReasonOCRFailed, nil
 		}

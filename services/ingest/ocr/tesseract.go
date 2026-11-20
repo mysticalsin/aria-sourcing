@@ -9,8 +9,17 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
+
+// maxOCRText is how much recognized text we will hold. Past this the
+// process output is treated as a failure rather than buffered without limit.
+const maxOCRText = 1 << 20
+
+// langRe is the only -l value we pass through. Tesseract is exec'd, not
+// shelled, and this still refuses a value that could be read as a flag.
+var langRe = regexp.MustCompile(`^[a-zA-Z]{3}(\+[a-zA-Z]{3})*$`)
 
 // Engine recognizes text in a raster image (PNG, JPEG, or TIFF).
 // Implementations must not include image bytes or recognized text in errors.
@@ -53,6 +62,9 @@ func (t Tesseract) Recognize(ctx context.Context, image []byte, langs string) (s
 	if langs == "" {
 		langs = "eng"
 	}
+	if !langRe.MatchString(langs) {
+		return "", errors.New("tesseract: langs")
+	}
 	ext := ".png"
 	switch {
 	case bytes.HasPrefix(image, []byte{0xFF, 0xD8, 0xFF}):
@@ -80,13 +92,35 @@ func (t Tesseract) Recognize(ctx context.Context, image []byte, langs string) (s
 
 	cmd := exec.CommandContext(ctx, t.bin(), name, "stdout", "-l", langs, "--psm", "6", "--dpi", "150")
 	cmd.Env = append(os.Environ(), "OMP_THREAD_LIMIT=1")
-	var stdout bytes.Buffer
+	var stdout limitedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = io.Discard
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Run(); err != nil || stdout.overflow {
 		// The exit status is enough. Stderr is not attached: Tesseract can
 		// echo path details, and the text itself must not ride along in an error.
 		return "", errors.New("tesseract: failed")
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
+
+// limitedBuffer stores at most maxOCRText bytes and then sets overflow.
+type limitedBuffer struct {
+	buf      bytes.Buffer
+	overflow bool
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	remain := maxOCRText - b.buf.Len()
+	if remain <= 0 {
+		b.overflow = true
+		return len(p), nil
+	}
+	if len(p) > remain {
+		_, _ = b.buf.Write(p[:remain])
+		b.overflow = true
+		return len(p), nil
+	}
+	return b.buf.Write(p)
+}
+
+func (b *limitedBuffer) String() string { return b.buf.String() }
