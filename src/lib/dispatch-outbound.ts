@@ -115,7 +115,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         await finish("blocked", { pass: false, reasons: [sendPolicy.reason] });
         continue;
       }
-      if (msg.channel === "LinkedIn") {
+      if (msg.channel === "LinkedIn" || msg.channel === "linkedin_token") {
         await finish("blocked", { pass: false, reasons: ["linkedin-delivery-refused"] });
         continue;
       }

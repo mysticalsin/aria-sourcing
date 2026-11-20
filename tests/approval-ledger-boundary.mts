@@ -88,7 +88,7 @@ test("test_send_refused_without_matching_body_hash", () => {
     ["body", { ...original, body: `${original.body} Edited.` }],
     ["subject", { ...original, subject: "Different subject" }],
     ["recipient", { ...original, recipient: "ada.other@example.test" }],
-    ["channel", { ...original, channel: "LinkedIn" }],
+    ["channel", { ...original, channel: "SMS" }],
     ["notice", { ...original, noticeVersion: "art14-lgpd-2026-11-21" }],
   ];
   for (const [label, edited] of edits) {
@@ -266,19 +266,19 @@ test("test_kill_switch_blocks_all_sends", () => {
 test("test_per_channel_cap_enforced", () => {
   const ledger = createLedger({
     allowlist: RECIPIENT,
-    channelCaps: { Email: 1, LinkedIn: 1 },
+    channelCaps: { Email: 1, SMS: 1 },
   });
   const emailOne = message({ messageId: "email-1" });
   const emailTwo = message({
     messageId: "email-2",
     body: `${emailOne.body} Second note, still about the example ledger.`,
   });
-  const linkedin = message({
-    messageId: "li-1",
-    channel: "LinkedIn",
+  const sms = message({
+    messageId: "sms-1",
+    channel: "SMS",
     subject: "Example note",
   });
-  for (const item of [emailOne, emailTwo, linkedin]) {
+  for (const item of [emailOne, emailTwo, sms]) {
     assert.equal(ledger.approveManual(item, ACTOR).allowed, true, item.messageId);
   }
 
@@ -292,7 +292,7 @@ test("test_per_channel_cap_enforced", () => {
   );
   const cappedAgain = ledger.decideSend(emailTwo, ACTOR);
   assert.equal(cappedAgain.reason, "channel-cap");
-  assert.equal(ledger.decideSend(linkedin, ACTOR).allowed, true);
+  assert.equal(ledger.decideSend(sms, ACTOR).allowed, true);
 });
 
 test("test_allowlist_mode_blocks_non_allowlisted_in_test", () => {

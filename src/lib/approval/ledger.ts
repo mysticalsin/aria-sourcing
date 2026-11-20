@@ -12,6 +12,8 @@ export interface LedgerOptions {
   now?: () => string;
   /** How long a recorded approval or QC pass can authorize a send. Default 7 days. */
   approvalTtlMs?: number;
+  /** Per-workspace LinkedIn token switch. Off unless explicitly true. */
+  linkedinTokenEnabled?: boolean;
 }
 
 /**
@@ -31,6 +33,7 @@ export class ApprovalLedger {
   private readonly sent = new Map<string, number>();
   private readonly authorized = new Map<string, string>();
   private killSwitch: boolean;
+  private readonly linkedinTokenEnabled: boolean;
 
   constructor(options: LedgerOptions) {
     if (options.runMode !== "demo" && options.runMode !== "test") {
@@ -40,6 +43,7 @@ export class ApprovalLedger {
     this.caps = options.channelCaps;
     this.now = options.now ?? (() => new Date().toISOString());
     this.killSwitch = options.killSwitch === true;
+    this.linkedinTokenEnabled = options.linkedinTokenEnabled === true;
     this.approvalTtlMs = options.approvalTtlMs ?? DEFAULT_APPROVAL_TTL_MS;
   }
 
@@ -135,6 +139,7 @@ export class ApprovalLedger {
       sentOnChannel: this.sent.get(message.channel) ?? 0,
       channelCap: capFor(this.caps, message.channel),
       authorizedHash: this.authorized.get(message.messageId) ?? null,
+      linkedinTokenEnabled: this.linkedinTokenEnabled,
     });
     if (decision.allowed && decision.bodyHash) {
       this.authorized.set(message.messageId, decision.bodyHash);

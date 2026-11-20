@@ -260,4 +260,43 @@ test("test_linkedin_vendor_adapter_makes_no_network_call", async () => {
   }
 });
 
+test("test_linkedin_token_channel_requires_workspace_flag", () => {
+  const message = {
+    messageId: "msg-li-token",
+    campaignId: "campaign-synthetic-1",
+    candidateId: "candidate-synthetic-1",
+    channel: "linkedin_token",
+    recipient: "https://www.linkedin.com/in/ada-example",
+    subject: "Example note",
+    body: "Ada, the example ledger is why I wrote, including the hash bound to this exact note.",
+    noticeVersion: "art14-lgpd-2026-11-20",
+  };
+  const off = new ApprovalLedger({
+    runMode: "demo",
+    allowlist: message.recipient,
+    channelCaps: { linkedin_token: 2 },
+    now: () => "2026-11-20T18:53:00.000Z",
+  });
+  assert.equal(off.approveManual(message, "operator.synthetic").allowed, true);
+  const blocked = off.decideSend(message, "operator.synthetic");
+  assert.equal(blocked.allowed, false);
+  assert.equal(blocked.reason, "linkedin-token-disabled");
+
+  const on = new ApprovalLedger({
+    runMode: "demo",
+    allowlist: message.recipient,
+    channelCaps: { linkedin_token: 2 },
+    linkedinTokenEnabled: true,
+    now: () => "2026-11-20T18:53:00.000Z",
+  });
+  assert.equal(on.approveManual(message, "operator.synthetic").allowed, true);
+  const allowed = on.decideSend(message, "operator.synthetic");
+  assert.equal(allowed.allowed, true);
+  assert.equal(allowed.reason, "authorized");
+  assert.equal(allowed.bodyHash, exactBodyHash(message));
+  const edited = { ...message, body: `${message.body} Edited.` };
+  assert.notEqual(exactBodyHash(edited), exactBodyHash(message));
+  assert.equal(on.decideSend(edited, "operator.synthetic").reason, "body-hash-mismatch");
+});
+
 void DAY_MS;

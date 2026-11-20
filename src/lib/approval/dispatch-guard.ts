@@ -16,6 +16,8 @@ export interface SendGuardInput {
   authorizedHash: string | null;
   humanApprovalExpired?: boolean;
   qcPassExpired?: boolean;
+  /** Per-workspace switch for the linkedin_token channel. Off unless explicitly true. */
+  linkedinTokenEnabled?: boolean;
 }
 
 function refuse(messageId: string | null, reason: string, bodyHash: string | null = null): LedgerDecision {
@@ -60,9 +62,12 @@ export function evaluateQcRecord(
   return { allowed: true, reason: "qc-passed", bodyHash, messageId: message.messageId };
 }
 
+/** Named channel for the off-by-default LinkedIn token option. A later PR performs the send. */
+export const LINKEDIN_TOKEN_CHANNEL = "linkedin_token";
+
 /**
  * Send decision for both modes. This does not deliver anything.
- * Order is fail-closed: kill switch, allowlist, hash-bound authorization, then cap.
+ * Order is fail-closed: kill switch, LinkedIn refusal, allowlist, hash-bound authorization, then cap.
  */
 export function evaluateSend(input: SendGuardInput): LedgerDecision {
   const { message } = input;
@@ -76,6 +81,10 @@ export function evaluateSend(input: SendGuardInput): LedgerDecision {
   });
 
   if (input.killSwitch) return decision(false, "kill-switch");
+  if (message.channel === "LinkedIn") return decision(false, "linkedin-delivery-refused");
+  if (message.channel === LINKEDIN_TOKEN_CHANNEL && input.linkedinTokenEnabled !== true) {
+    return decision(false, "linkedin-token-disabled");
+  }
   if (!recipientAllowed(input.allowlist, message.recipient)) return decision(false, "allowlist");
 
   if (input.mode === "automatic") {
@@ -103,7 +112,7 @@ export interface DeliveryTarget {
 
 /** Email delivers to toAddress. LinkedIn delivers to profileUrl when that is the claim target. */
 export function deliveryTargetForChannel(channel: string, row: DeliveryTarget): string {
-  if (channel === "LinkedIn") {
+  if (channel === "LinkedIn" || channel === LINKEDIN_TOKEN_CHANNEL) {
     const profile = (row.profileUrl ?? "").trim();
     return profile || (row.toAddress ?? "").trim();
   }
@@ -134,7 +143,7 @@ export function dispatchChannelDecision(env: PolicyEnv, channel: string, row: De
       reason: "kill-switch",
     };
   }
-  if (channel === "LinkedIn") {
+  if (channel === "LinkedIn" || channel === LINKEDIN_TOKEN_CHANNEL) {
     const listed = sendPolicyFromEnv(env, target);
     if (!listed.ok && listed.reason === "allowlist") return listed;
     return linkedInDeliveryRefusal();
