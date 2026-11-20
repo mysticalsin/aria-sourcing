@@ -10,7 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/mysticalsin/aria-sourcing/services/ingest/extract"
 )
 
 // maxOCRText is how much recognized text we will hold. Past this the
@@ -79,21 +82,21 @@ func (t Tesseract) Recognize(ctx context.Context, image []byte, langs string) (s
 	if err != nil {
 		return "", errors.New("tesseract: temp file")
 	}
-	name := f.Name()
-	defer os.Remove(name)
+	// Remove and close on every return, including the error paths below.
+	defer os.Remove(f.Name())
+	defer f.Close()
 	if err := f.Chmod(0o600); err != nil {
-		f.Close()
 		return "", errors.New("tesseract: temp file")
 	}
 	if _, err := f.Write(image); err != nil {
-		f.Close()
 		return "", errors.New("tesseract: temp file")
 	}
 	if err := f.Close(); err != nil {
 		return "", errors.New("tesseract: temp file")
 	}
+	name := f.Name()
 
-	cmd := exec.CommandContext(ctx, t.bin(), name, "stdout", "-l", langs, "--psm", "6", "--dpi", "150")
+	cmd := exec.CommandContext(ctx, t.bin(), name, "stdout", "-l", langs, "--psm", "6", "--dpi", strconv.Itoa(extract.RasterDPI))
 	cmd.Env = append(os.Environ(), "OMP_THREAD_LIMIT=1")
 	var stdout limitedBuffer
 	cmd.Stdout = &stdout

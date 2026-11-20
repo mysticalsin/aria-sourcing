@@ -134,8 +134,10 @@ type Worker struct {
 }
 
 // New builds a worker. Nil options select in-memory defaults and local
-// Tesseract. The worker does not dial out.
+// Tesseract. The worker does not dial out. The first New in a process
+// sweeps leftover ingest temp files from a previous crash.
 func New(opt Options) *Worker {
+	sweepTempsOnce()
 	w := &Worker{
 		clock:          opt.Now,
 		rawTTL:         opt.RawRetention,
