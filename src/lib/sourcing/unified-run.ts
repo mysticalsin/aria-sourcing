@@ -100,7 +100,7 @@ export async function advanceUnifiedRun(job: CampaignSourcingJob, repo: UnifiedR
   if (step.source === "LinkedIn") {
     // A step saved before Apify was retired: it ends here, nothing is called.
     step.status = "failed";
-    step.error = "LinkedIn search through Apify was removed. Start a new run with LinkedIn via web search.";
+    step.error = "LinkedIn search through Apify was removed.";
     await finish(); return;
   }
   const ws = await repo.readWorkspace();

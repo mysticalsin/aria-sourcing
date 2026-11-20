@@ -1,14 +1,13 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { Button, Card, CardBody, Field, Input } from "@/components/ui";
 import { useCampaign, useCampaignCandidates, useRole, useWorkspaceStatus, useSettings } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import { shortlistIdentity } from "@/lib/sourcing/shortlist-preview";
-import { SOURCE_LABELS, webSearchBudget, type PublicSourcingJob, type SourceChoice } from "@/lib/sourcing/unified-contract";
+import { SOURCE_LABELS, type PublicSourcingJob, type SourceChoice } from "@/lib/sourcing/unified-contract";
 import type { Candidate } from "@/lib/types";
 import { Linkedin } from "lucide-react";
 import { CandidateAvatar } from "@/components/candidates/candidate-avatar";
@@ -34,15 +33,7 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates,
   const inFlight = React.useRef(false);
   const launchKey = React.useRef<string | null>(null);
   const restoredPlan = React.useRef(false);
-  // Web search spends the workspace's Anthropic key, the one linked in AI & Models.
-  const hasAnthropic = settings.llmProviders.some((p) => p.enabled && p.kind === "Anthropic" && Boolean(p.apiKeyId));
-  const [web, setWeb] = React.useState(hasAnthropic);
   const [github, setGithub] = React.useState(false);
-  const defaultLinkedinQuery = () => {
-    const query = campaign?.sourcingStrategy.linkedinBoolean ?? "";
-    return query.length <= 256 ? query : (campaign?.jobAnalysis.title ?? "");
-  };
-  const [webQuery, setWebQuery] = React.useState(defaultLinkedinQuery);
   const [githubQuery, setGithubQuery] = React.useState(campaign?.sourcingStrategy.githubQueries[0]?.query ?? "");
   const [limit, setLimit] = React.useState(6);
   const current = runs.find((r) => r.status === "active") ?? runs[0];
@@ -59,10 +50,8 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates,
         setRuns(body.runs); setLoaded(true); setError("");
         if (!restoredPlan.current && body.runs[0]) {
           const previous = body.runs[0] as PublicSourcingJob;
-          const ws = previous.steps.find((s) => s.source === "WebSearch");
           const gh = previous.steps.find((s) => s.source === "GitHub");
-          setWeb(Boolean(ws)); setGithub(Boolean(gh));
-          if (ws) setWebQuery(ws.query);
+          setGithub(Boolean(gh));
           if (gh) setGithubQuery(gh.query);
           setLimit(previous.steps[0].limit);
         }
@@ -107,7 +96,6 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates,
       // reloads the shared version and requires a fresh operator review.
       if (!(await flushWorkspace())) throw new Error("The workspace is saving or changed. Review the current brief and try again.");
       const sources: SourceChoice[] = [];
-      if (web) sources.push({ source: "WebSearch", query: webQuery.trim(), limit });
       if (github) sources.push({ source: "GitHub", query: githubQuery.trim(), limit });
       launchKey.current ??= crypto.randomUUID();
       await mutate({ action: "start", campaignId, sources, requestKey: launchKey.current });
@@ -130,7 +118,7 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates,
   return <Card className="mb-6" id="campaign-sourcing">
     <CardBody className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="font-bold text-ink">Find candidates</h2><p className="text-sm text-muted">LinkedIn profiles through web search, GitHub in addition. Review sources and limits before launching.</p></div>
+        <div><h2 className="font-bold text-ink">Find candidates</h2><p className="text-sm text-muted">GitHub public profiles. LinkedIn web search is disabled. Review the query and limit before launching.</p></div>
         {current && <span className="text-sm font-semibold">Run {current.status}</span>}
       </div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
@@ -138,15 +126,12 @@ export function CampaignSourcingPanel({ campaignId, open, onClose, onCandidates,
       {!loaded && <Button variant="secondary" onClick={() => void load()}>Load sourcing history</Button>}
       {showForm && !active && <div className="space-y-4">
         {!campaignReady && <p className="text-sm text-muted">Review the campaign brief and move it to Sourcing or Outreach before launching.</p>}
-        <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={web} onChange={(e) => setWeb(e.target.checked)} />LinkedIn via web search (Claude)</label>
-        {web && <><Field label="Web search" htmlFor={`${idBase}-web`}><Input id={`${idBase}-web`} value={webQuery} maxLength={256} onChange={(e) => setWebQuery(e.target.value)} /></Field>
-          {!hasAnthropic && <p className="text-sm text-muted">Add an Anthropic key in <Link className="underline" href="/settings">Settings → AI &amp; Models</Link>, or deselect web search.</p>}
-          <p className="text-xs text-muted">Claude searches public LinkedIn profiles indexed by a search engine, with this query and a few close variants. No LinkedIn login. You get name, headline and profile link; contact details and experience stay to verify. Uses your Anthropic key: up to {webSearchBudget(limit)} searches at $0.01 each, plus the tokens to read them.</p></>}
+        <p className="text-sm text-muted">LinkedIn web search is disabled.</p>
         <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={github} onChange={(e) => setGithub(e.target.checked)} />GitHub public profiles</label>
         {github && <Field label="GitHub search" htmlFor={`${idBase}-github`}><Input id={`${idBase}-github`} value={githubQuery} maxLength={256} onChange={(e) => setGithubQuery(e.target.value)} /></Field>}
         <Field label="Maximum profiles per selected source (1–20)" htmlFor={`${idBase}-limit`}><Input id={`${idBase}-limit`} type="number" min={1} max={20} value={limit} onChange={(e) => setLimit(Number(e.target.value))} /></Field>
-        <p className="text-sm text-muted">Up to {limit * (Number(web) + Number(github)) || 0} profiles. Duplicates and exclusions can reduce your shortlist.{web ? "" : " No model is required."}</p>
-        <Button onClick={() => void start()} loading={busy} disabled={busy || !campaignReady || !loaded || (!web && !github) || (web && (!hasAnthropic || !webQuery.trim())) || (github && !githubQuery.trim()) || !Number.isInteger(limit) || limit < 1 || limit > 20}>Start reviewed search</Button>
+        <p className="text-sm text-muted">Up to {limit * Number(github) || 0} profiles. Duplicates and exclusions can reduce your shortlist. No model is required.</p>
+        <Button onClick={() => void start()} loading={busy} disabled={busy || !campaignReady || !loaded || !github || !githubQuery.trim() || !Number.isInteger(limit) || limit < 1 || limit > 20}>Start reviewed search</Button>
       </div>}
       {current && <div aria-live="polite" className="space-y-3">
         {active && <SourcingScan job={current} />}
