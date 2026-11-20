@@ -102,7 +102,7 @@ func TestCLICorruptFileExits2(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-file", path, "-cv-source", "folder", "-folder", "holding", "-id", "cli-bad"}, &stdout, &stderr)
+	code := run([]string{"-file", path, "-cv-source", "folder", "-folder", "holding", "-id", "cli-bad1"}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit %d stdout %s", code, stdout.String())
 	}
