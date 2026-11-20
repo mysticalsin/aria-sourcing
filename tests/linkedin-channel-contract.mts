@@ -69,17 +69,11 @@ ok(
     /public\.record_linkedin_delivery_outcome\(uuid,uuid,text,text,text\)'\s*,\s*'service_role'/i.test(priv),
 );
 ok(
-  "dispatcher routes LinkedIn through the adapter claim before backend delivery",
+  "dispatcher hard-refuses LinkedIn delivery before any claim or provider call",
   dispatch.indexOf('msg.channel === "LinkedIn"') >= 0 &&
-    dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') > dispatch.indexOf('msg.channel === "LinkedIn"') &&
-    dispatch.indexOf("await adapter.deliver") > dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
-    dispatch.indexOf('rpc("record_linkedin_delivery_outcome"') > dispatch.indexOf("await adapter.deliver"),
-);
-ok(
-  "dispatcher fails dark vendor credentials before claim or delivery",
-  dispatch.indexOf("!adapter.configured()") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
-    dispatch.indexOf("!adapter.configured()") < dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
-    /linkedin-provider-unconfigured/.test(dispatch),
+    dispatch.indexOf("linkedin-delivery-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    !dispatch.includes("adapter.deliver") &&
+    !dispatch.includes('rpc("claim_linkedin_outbound_queued"'),
 );
 ok("adapter maps assisted-manual by provider", linkedInBackendForProvider("LinkedIn Assisted Manual") === "assisted-manual");
 ok("adapter maps vendor-api by provider", linkedInBackendForProvider("LinkedIn Vendor API") === "vendor-api");
@@ -96,16 +90,16 @@ try {
     workspaceId: "ws-1",
     messageId: "m-1",
     candidateId: "cand-1",
-    profileUrl: "https://www.linkedin.com/in/marco-rossi",
+    profileUrl: "https://www.linkedin.com/in/ada-example",
     subject: "Quick note",
     body: "Hello",
     attemptId: "11111111-1111-4111-8111-111111111111",
   });
   ok(
-    "vendor adapter fails closed without credentials",
+    "vendor adapter refuses delivery even when credentials are absent",
     result.status === "error" &&
       result.deliveryState === "not-sent" &&
-      /not set/i.test(result.detail),
+      result.detail === "Aria does not deliver to LinkedIn.",
   );
 } finally {
   if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;

@@ -5,11 +5,11 @@ import test from "node:test";
 
 import { approvalPolicyFromEnv } from "../src/lib/approval/allowlist.ts";
 import { sendPolicyFromEnv } from "../src/lib/approval/dispatch-guard.ts";
-import { exactBodyHash } from "../src/lib/approval/hash.ts";
+import { exactBodyHash, lengthPrefixed } from "../src/lib/approval/hash.ts";
 import { ApprovalLedger, type LedgerOptions } from "../src/lib/approval/ledger.ts";
 import { MIN_QC_RUBRIC_SCORE, stubQualityCheckAgent, type QcEvaluation } from "../src/lib/approval/qc.ts";
 import type { ExactMessage } from "../src/lib/approval/types.ts";
-import { approvalHash } from "../src/lib/outreach-content.ts";
+import { sanitizeOutreachSubject } from "../src/lib/outreach-content.ts";
 
 const ACTOR = "operator.synthetic";
 const CAMPAIGN = "campaign-synthetic-1";
@@ -58,11 +58,17 @@ test("test_send_refused_without_matching_body_hash", () => {
   assert.equal(approval.reason, "approved");
   assert.equal(approval.bodyHash, exactBodyHash(original));
 
-  const content = approvalHash(original.subject, original.body);
   const expected = createHash("sha256")
-    .update(`${original.channel}\n${original.recipient.trim().toLocaleLowerCase()}\n${content}\n${original.noticeVersion}`, "utf8")
+    .update(
+      lengthPrefixed(original.channel) +
+        lengthPrefixed(original.recipient.trim().toLocaleLowerCase()) +
+        lengthPrefixed(sanitizeOutreachSubject(original.subject)) +
+        lengthPrefixed(original.body) +
+        lengthPrefixed(original.noticeVersion),
+      "utf8",
+    )
     .digest("hex");
-  assert.equal(exactBodyHash(original), expected, "the ledger hash must reuse the existing subject/body approval hash");
+  assert.equal(exactBodyHash(original), expected, "the ledger hash length-prefixes channel, recipient, subject, body, and notice");
   assert.notEqual(
     exactBodyHash(original),
     exactBodyHash({ ...original, body: `${original.body} Edited.` }),

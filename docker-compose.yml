@@ -281,9 +281,15 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image's HEALTHCHECK probes the web server; this service has none.
+    # The image HEALTHCHECK probes the web server, which this process does not
+    # serve. A process check keeps `compose up --wait` from treating the
+    # runner as a service with no healthcheck.
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
     logging: *logging
 

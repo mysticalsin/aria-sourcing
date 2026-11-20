@@ -13,6 +13,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
+import { approvalIsCurrent, approvalTtlMs } from "@/lib/approval/allowlist";
 import { sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest) {
   }
   const { data: approval } = await supabase
     .from("outreach_approvals")
-    .select("body_hash, approval_scope_hash, approval_source")
+    .select("body_hash, approval_scope_hash, approval_source, approved_at")
     .eq("workspace_id", approvalWid)
     .eq("message_id", payload.messageId)
     .is("revoked_at", null)
@@ -158,7 +159,8 @@ export async function POST(req: NextRequest) {
     !approval ||
     approval.body_hash !== approvedContentHash ||
     approval.approval_scope_hash !== approvedScopeHash ||
-    approval.approval_source !== "human"
+    approval.approval_source !== "human" ||
+    !approvalIsCurrent(approval.approved_at, Date.now(), approvalTtlMs(process.env))
   ) {
     return NextResponse.json(
       { status: "error", detail: "Message lacks a current human approval (or changed since approval)." },

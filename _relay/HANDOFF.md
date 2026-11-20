@@ -16,6 +16,7 @@ status: approval-ledger-ready-for-review
 - Tests: `tests/approval-ledger-boundary.mts`, registered in `tests/test-manifest.mjs` (application and security groups).
 - Gate on this branch: `npm run typecheck`, `npm run typecheck:tests`, and `npm test` exited 0. The new file reported 8 passed, 0 failed.
 - No live send, deploy, or provider call was added. Synthetic addresses only (`*.example.test`).
+- Sentinel follow-up on the same branch: LinkedIn delivery, including `vendorApiAdapter`, is refused before any network call. Calendar guest notices stay off until the send policy and an exact invite hash pass. The kill switch fails closed. The ledger hash is length-prefixed and approvals expire after 7 days by default. `ledger.ts`, `audit-log.ts`, and `qc.ts` are the interim TypeScript boundary. The database approval row remains the gate until the Rust ledger lands. PR 168 still owns deleting the LinkedIn routes.
 
 ## Done this shift
 

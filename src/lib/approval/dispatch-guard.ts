@@ -14,6 +14,8 @@ export interface SendGuardInput {
   sentOnChannel: number;
   channelCap: number;
   authorizedHash: string | null;
+  humanApprovalExpired?: boolean;
+  qcPassExpired?: boolean;
 }
 
 function refuse(messageId: string | null, reason: string, bodyHash: string | null = null): LedgerDecision {
@@ -79,16 +81,65 @@ export function evaluateSend(input: SendGuardInput): LedgerDecision {
   if (input.mode === "automatic") {
     if (!input.qcPassHash) return decision(false, "qc-required");
     if (input.qcPassHash !== bodyHash) return decision(false, "body-hash-mismatch");
+    if (input.qcPassExpired) return decision(false, "approval-expired");
   } else if (!input.humanApprovalHash) {
     return decision(false, "approval-required");
   } else if (input.humanApprovalHash !== bodyHash) {
     return decision(false, "body-hash-mismatch");
+  } else if (input.humanApprovalExpired) {
+    return decision(false, "approval-expired");
   }
 
   if (input.authorizedHash === bodyHash) return decision(false, "already-authorized");
   const cap = Number.isFinite(input.channelCap) ? Math.max(0, Math.floor(input.channelCap)) : 0;
   if (input.sentOnChannel >= cap) return decision(false, "channel-cap");
   return decision(true, "authorized");
+}
+
+export interface DeliveryTarget {
+  toAddress?: string | null;
+  profileUrl?: string | null;
+}
+
+/** Email delivers to toAddress. LinkedIn delivers to profileUrl when that is the claim target. */
+export function deliveryTargetForChannel(channel: string, row: DeliveryTarget): string {
+  if (channel === "LinkedIn") {
+    const profile = (row.profileUrl ?? "").trim();
+    return profile || (row.toAddress ?? "").trim();
+  }
+  return (row.toAddress ?? "").trim();
+}
+
+/** Aria never delivers a LinkedIn message. Callers still resolve the real target first. */
+export function linkedInDeliveryRefusal(): Extract<PolicyResult, { ok: false }> {
+  return {
+    ok: false,
+    status: 410,
+    error: "Aria does not deliver to LinkedIn.",
+    reason: "linkedin-delivery-refused",
+  };
+}
+
+/**
+ * Kill switch, then the allowlist on the channel's real delivery target.
+ * LinkedIn is refused after that, even when the profile is allowlisted.
+ */
+export function dispatchChannelDecision(env: PolicyEnv, channel: string, row: DeliveryTarget): PolicyResult {
+  const target = deliveryTargetForChannel(channel, row);
+  if (killSwitchEngaged(env)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "Kill switch is on. Nothing sent.",
+      reason: "kill-switch",
+    };
+  }
+  if (channel === "LinkedIn") {
+    const listed = sendPolicyFromEnv(env, target);
+    if (!listed.ok && listed.reason === "allowlist") return listed;
+    return linkedInDeliveryRefusal();
+  }
+  return sendPolicyFromEnv(env, target);
 }
 
 /** Extra stop on the existing send and dispatch paths. Does not replace the human body-hash check. */

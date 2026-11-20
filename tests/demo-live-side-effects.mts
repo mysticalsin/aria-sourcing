@@ -146,6 +146,8 @@ mock.module(moduleUrl("src/lib/dispatch-outbound.ts"), {
 });
 mock.module(moduleUrl("src/lib/calendar.ts"), {
   namedExports: {
+    calendarSendUpdates: () => "none",
+    calendarInviteHash: () => "synthetic-calendar-hash",
     createGoogleCalendarEvent: async () => { providerCalls += 1; return { ok: true, eventId: "evt-1", link: "https://calendar.example.test/evt-1" }; },
     createGraphCalendarEvent: async () => { providerCalls += 1; return { ok: true, eventId: "evt-1", link: "https://calendar.example.test/evt-1" }; },
   },
@@ -201,6 +203,7 @@ currentSupabase = {
         body_hash: approvedBodyHash,
         approval_scope_hash: approvedScopeHash,
         approval_source: "human",
+        approved_at: new Date().toISOString(),
       });
     }
     if (table === "agent_seats") {

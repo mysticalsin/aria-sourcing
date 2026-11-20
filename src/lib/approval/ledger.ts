@@ -1,4 +1,4 @@
-import { recipientAllowlist } from "./allowlist";
+import { approvalIsCurrent, DEFAULT_APPROVAL_TTL_MS, recipientAllowlist } from "./allowlist";
 import { AuditLog, type AuditEntry, type AuditKind } from "./audit-log";
 import { evaluateManualApproval, evaluateQcRecord, evaluateSend } from "./dispatch-guard";
 import type { QcEvaluation, QualityCheckAgent } from "./qc";
@@ -10,6 +10,8 @@ export interface LedgerOptions {
   killSwitch?: boolean;
   channelCaps: Readonly<Record<string, number>>;
   now?: () => string;
+  /** How long a recorded approval or QC pass can authorize a send. Default 7 days. */
+  approvalTtlMs?: number;
 }
 
 /**
@@ -22,8 +24,9 @@ export class ApprovalLedger {
   private readonly caps: Readonly<Record<string, number>>;
   private readonly now: () => string;
   private readonly audit = new AuditLog();
-  private readonly approvals = new Map<string, string>();
-  private readonly qcPasses = new Map<string, string>();
+  private readonly approvalTtlMs: number;
+  private readonly approvals = new Map<string, { hash: string; at: string }>();
+  private readonly qcPasses = new Map<string, { hash: string; at: string }>();
   private readonly automatic = new Set<string>();
   private readonly sent = new Map<string, number>();
   private readonly authorized = new Map<string, string>();
@@ -37,6 +40,7 @@ export class ApprovalLedger {
     this.caps = options.channelCaps;
     this.now = options.now ?? (() => new Date().toISOString());
     this.killSwitch = options.killSwitch === true;
+    this.approvalTtlMs = options.approvalTtlMs ?? DEFAULT_APPROVAL_TTL_MS;
   }
 
   auditLog(): AuditEntry[] {
@@ -79,7 +83,9 @@ export class ApprovalLedger {
 
   approveManual(message: ExactMessage, actor: string): LedgerDecision {
     const decision = evaluateManualApproval(message, this.allowlist);
-    if (decision.allowed && decision.bodyHash) this.approvals.set(message.messageId, decision.bodyHash);
+    if (decision.allowed && decision.bodyHash) {
+      this.approvals.set(message.messageId, { hash: decision.bodyHash, at: this.now() });
+    }
     return this.record("manual-approval", decision, message, actor);
   }
 
@@ -89,7 +95,9 @@ export class ApprovalLedger {
 
   recordQualityCheck(message: ExactMessage, evaluation: QcEvaluation, actor: string): LedgerDecision {
     const decision = evaluateQcRecord(message, evaluation, this.allowlist);
-    if (decision.allowed && decision.bodyHash) this.qcPasses.set(message.messageId, decision.bodyHash);
+    if (decision.allowed && decision.bodyHash) {
+      this.qcPasses.set(message.messageId, { hash: decision.bodyHash, at: this.now() });
+    }
     return this.record("qc-pass", decision, message, actor);
   }
 
@@ -112,13 +120,18 @@ export class ApprovalLedger {
   }
 
   decideSend(message: ExactMessage, actor: string): LedgerDecision {
+    const nowMs = Date.parse(this.now());
+    const human = this.approvals.get(message.messageId);
+    const qc = this.qcPasses.get(message.messageId);
     const decision = evaluateSend({
       message,
       allowlist: this.allowlist,
       killSwitch: this.killSwitch,
       mode: this.sendMode(message.campaignId, message.channel),
-      humanApprovalHash: this.approvals.get(message.messageId) ?? null,
-      qcPassHash: this.qcPasses.get(message.messageId) ?? null,
+      humanApprovalHash: human?.hash ?? null,
+      qcPassHash: qc?.hash ?? null,
+      humanApprovalExpired: Boolean(human && !approvalIsCurrent(human.at, nowMs, this.approvalTtlMs)),
+      qcPassExpired: Boolean(qc && !approvalIsCurrent(qc.at, nowMs, this.approvalTtlMs)),
       sentOnChannel: this.sent.get(message.channel) ?? 0,
       channelCap: capFor(this.caps, message.channel),
       authorizedHash: this.authorized.get(message.messageId) ?? null,

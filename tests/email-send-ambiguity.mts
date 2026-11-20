@@ -322,7 +322,7 @@ try {
     from: (table: string) => {
       if (table === "workspace_state") return chainQuery({ result: { state: {} } });
       if (table === "outreach_approvals") {
-        return chainQuery({ result: { body_hash: approvedBodyHash, approval_scope_hash: approvedScopeHash, approval_source: "human" } });
+        return chainQuery({ result: { body_hash: approvedBodyHash, approval_scope_hash: approvedScopeHash, approval_source: "human", approved_at: new Date().toISOString() } });
       }
       if (table === "agent_seats") {
         return chainQuery({
