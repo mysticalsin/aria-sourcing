@@ -34,14 +34,30 @@ function page(theme: ThemeName): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Aria design system</title><style>${fontCss}${css}</style></head><body>${body}</body></html>`;
 }
 
+/** Request paths never become filesystem paths. Each match returns a constant. */
+function galleryFontFile(pathname: string): string | null {
+  const fonts = join(process.cwd(), "public", "fonts", "carlito");
+  if (pathname === "/fonts/carlito/carlito-latin-400-normal.woff2") {
+    return join(fonts, "carlito-latin-400-normal.woff2");
+  }
+  if (pathname === "/fonts/carlito/carlito-latin-700-normal.woff2") {
+    return join(fonts, "carlito-latin-700-normal.woff2");
+  }
+  return null;
+}
+
 function listen(html: Record<string, string>): Promise<{ server: Server; port: number }> {
-  const root = join(process.cwd(), "public");
   const server = createServer((req, res) => {
-    const url = req.url ?? "/";
-    if (url.startsWith("/fonts/")) {
-      const file = join(root, url.split("?")[0] ?? "");
+    let pathname = "/";
+    try {
+      pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+    } catch {
+      pathname = "/";
+    }
+    const fontFile = galleryFontFile(pathname);
+    if (fontFile) {
       try {
-        const bytes = readFileSync(file);
+        const bytes = readFileSync(fontFile);
         res.writeHead(200, { "content-type": "font/woff2" });
         res.end(bytes);
       } catch {
@@ -50,7 +66,7 @@ function listen(html: Record<string, string>): Promise<{ server: Server; port: n
       }
       return;
     }
-    const body = html[url] ?? html["/"];
+    const body = html[pathname];
     if (!body) {
       res.writeHead(404);
       res.end();
