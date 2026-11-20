@@ -22,8 +22,10 @@ pub struct ApprovalText<'a> {
 }
 
 /// Canonical byte layout:
-/// `aria-approval-v1` NUL, then each field as big-endian u64 length + raw bytes.
-/// Field order: channel, recipient ref, subject, body, notice version.
+/// `aria-approval-v1` NUL, then each field as a big-endian u64 length plus its raw bytes.
+/// Field order matches the values PR #167 binds: channel, recipient, subject, body,
+/// then notice version. Length prefixes stop a newline inside one field from
+/// sliding into the next field.
 pub fn canonical_bytes(text: &ApprovalText<'_>) -> Vec<u8> {
     let fields = [
         text.channel,

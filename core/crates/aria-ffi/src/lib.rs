@@ -258,12 +258,18 @@ fn write_cstr(text: &str, buf: *mut c_char, cap: usize) -> Result<(), i32> {
 
 #[no_mangle]
 pub extern "C" fn aria_core_abi_version() -> u32 {
-    1
+    match catch_unwind(|| 1u32) {
+        Ok(version) => version,
+        Err(_) => 0,
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn aria_stage_count() -> u32 {
-    STAGE_KEYS.len() as u32
+    match catch_unwind(|| STAGE_KEYS.len() as u32) {
+        Ok(count) => count,
+        Err(_) => 0,
+    }
 }
 
 #[no_mangle]
@@ -613,4 +619,15 @@ pub unsafe extern "C" fn aria_pipeline_transition(
             Err(TransitionError::UnknownAction) => ARIA_ERR_ILLEGAL,
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ffi_panic_is_caught_and_does_not_unwind_across_the_boundary() {
+        let code = guard(|| panic!("synthetic ffi panic"));
+        assert_eq!(code, ARIA_ERR_PANIC);
+    }
 }

@@ -22,12 +22,28 @@ fn sha256_empty_vector_locks_the_algorithm() {
     );
 }
 
+fn read_field(bytes: &[u8], cursor: &mut usize) -> Vec<u8> {
+    let len = u64::from_be_bytes(bytes[*cursor..*cursor + 8].try_into().unwrap()) as usize;
+    *cursor += 8;
+    let field = bytes[*cursor..*cursor + len].to_vec();
+    *cursor += len;
+    field
+}
+
 #[test]
-fn canonical_layout_is_length_prefixed_and_stable() {
+fn canonical_layout_is_length_prefixed_channel_recipient_subject_body() {
     let text = sample(b"Exact body");
     let bytes = canonical_bytes(&text);
     assert!(bytes.starts_with(CANONICAL_VERSION));
     assert_eq!(bytes[CANONICAL_VERSION.len()], 0);
+    let mut cursor = CANONICAL_VERSION.len() + 1;
+    // Same fields PR #167 binds, in this order, each with a u64 big-endian length.
+    assert_eq!(read_field(&bytes, &mut cursor), b"email");
+    assert_eq!(read_field(&bytes, &mut cursor), b"ada@example.test");
+    assert_eq!(read_field(&bytes, &mut cursor), b"Hello Ada");
+    assert_eq!(read_field(&bytes, &mut cursor), b"Exact body");
+    assert_eq!(read_field(&bytes, &mut cursor), b"art14-lgpd-2026-11");
+    assert_eq!(cursor, bytes.len());
     assert_eq!(approval_hash_hex(&text), approval_hash_hex(&text));
     assert_eq!(approval_hash_hex(&text).len(), 64);
 
