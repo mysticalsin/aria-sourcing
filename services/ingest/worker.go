@@ -210,5 +210,15 @@ func New(opt Options) *Worker {
 }
 
 func idOK(id string) bool {
-	return idRe.MatchString(id)
+	if !idRe.MatchString(id) {
+		return false
+	}
+	// A digit is required so a name-shaped token (Casey-Example) cannot
+	// be used as the one string that is written to logs.
+	for _, r := range id {
+		if r >= '0' && r <= '9' {
+			return true
+		}
+	}
+	return false
 }

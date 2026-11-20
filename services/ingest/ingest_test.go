@@ -320,22 +320,22 @@ func TestDuplicateDetectionHook(t *testing.T) {
 	first := cvWithEmail("Casey Example", "shared.person@example.test")
 	second := cvWithEmail("Other Person", "shared.person@example.test")
 	third := cvWithEmail("Casey Example", "other.person@example.test")
-	a, err := w.Ingest(context.Background(), ingest.Upload{ID: "dup-a", Bytes: extract.BuildTextPDF(first), Origin: holding()})
+	a, err := w.Ingest(context.Background(), ingest.Upload{ID: "dup-1", Bytes: extract.BuildTextPDF(first), Origin: holding()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := w.Ingest(context.Background(), ingest.Upload{ID: "dup-b", Bytes: extract.BuildTextPDF(second), Origin: holding()})
+	b, err := w.Ingest(context.Background(), ingest.Upload{ID: "dup-2", Bytes: extract.BuildTextPDF(second), Origin: holding()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := w.Ingest(context.Background(), ingest.Upload{ID: "dup-c", Bytes: extract.BuildTextPDF(third), Origin: holding()})
+	c, err := w.Ingest(context.Background(), ingest.Upload{ID: "dup-3", Bytes: extract.BuildTextPDF(third), Origin: holding()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a.State != state.ReadyForToRate || b.State != state.ReadyForToRate || c.State != state.ReadyForToRate {
 		t.Fatalf("states %s %s %s", a.State, b.State, c.State)
 	}
-	if a.DuplicateOf != "" || b.DuplicateOf != "dup-a" || c.DuplicateOf != "" {
+	if a.DuplicateOf != "" || b.DuplicateOf != "dup-1" || c.DuplicateOf != "" {
 		t.Fatalf("dups a=%q b=%q c=%q", a.DuplicateOf, b.DuplicateOf, c.DuplicateOf)
 	}
 	if !containsState(b.History, state.Deduped) {
@@ -344,8 +344,8 @@ func TestDuplicateDetectionHook(t *testing.T) {
 	if hook.Calls() != 3 {
 		t.Fatalf("hook calls %d", hook.Calls())
 	}
-	row, ok := sink.ByUpload("dup-b")
-	if !ok || row.DuplicateOf != "dup-a" {
+	row, ok := sink.ByUpload("dup-2")
+	if !ok || row.DuplicateOf != "dup-1" {
 		t.Fatalf("sink duplicate %+v", row)
 	}
 }
@@ -643,6 +643,42 @@ func TestFileTooLargeDoesNotKeepBytes(t *testing.T) {
 	}
 	if w.RawStored("big-1") || sink.Calls() != 0 {
 		t.Fatal("oversized file was stored or handed off")
+	}
+}
+
+func TestNameShapedIDAndSlugAreNotLogged(t *testing.T) {
+	w, log, _ := testWorker(t, ingest.Options{})
+	_, err := w.Ingest(context.Background(), ingest.Upload{
+		ID:     "Casey-Example",
+		Bytes:  extract.BuildTextPDF(syntheticCVs[0].lines),
+		Origin: holding(),
+	})
+	if err == nil {
+		t.Fatal("name-shaped id was accepted")
+	}
+	if strings.Contains(err.Error(), "Casey") {
+		t.Fatal("id error echoed the name")
+	}
+	res, err := w.Ingest(context.Background(), ingest.Upload{
+		ID:    "slug-1",
+		Bytes: extract.BuildTextPDF(syntheticCVs[0].lines),
+		Origin: source.Origin{
+			CVSource:    "toast-upload",
+			Folder:      "need",
+			FolderValue: "casey-example",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.State != state.ReadyForToRate {
+		t.Fatalf("state %s reason %s", res.State, res.Reason)
+	}
+	blob := fmt.Sprintf("%#v", log.Snapshot())
+	for _, needle := range []string{"Casey-Example", "casey-example", "Casey"} {
+		if strings.Contains(blob, needle) {
+			t.Fatalf("log contains %q", needle)
+		}
 	}
 }
 
