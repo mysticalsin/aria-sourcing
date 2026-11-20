@@ -11,10 +11,8 @@ import { SourcePlanSchema, campaignSourcingBasis, orderedSteps, publicSourcingJo
 import { advanceUnifiedRun, reviewedCampaign } from "@/lib/sourcing/unified-run";
 import { loadUnifiedJob, startUnifiedJob, unifiedRepository } from "@/lib/sourcing/unified-repository";
 import { clearDiscoveryCriteria, clearWebSearchDiscovery } from "@/lib/sourcing/provider-egress";
-import { webSearchAnthropicConfig } from "@/lib/sourcing/claude-web-search";
 import { unifiedProviders } from "@/lib/sourcing/unified-providers";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
-import { aiBudgetStatus } from "@/lib/ai/usage";
 
 export const runtime = "nodejs";
 const campaignId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
@@ -57,6 +55,9 @@ export async function POST(req: NextRequest) {
   const input = parsed.data;
   try {
     if (input.action === "start") {
+      if (input.sources.some((source) => source.source === "WebSearch")) {
+        return json({ ok: false, error: "LinkedIn web search is disabled." }, 409);
+      }
       const repo = unifiedRepository(auth.session, auth.workspaceId, auth.actorId, input.campaignId);
       const ws = await repo.readWorkspace();
       let campaign;
@@ -67,14 +68,6 @@ export async function POST(req: NextRequest) {
           ? clearWebSearchDiscovery({ query: source.query }, campaign)
           : clearDiscoveryCriteria("GitHub", { query: source.query }, campaign);
         if (!cleared.ok) return json({ ok: false, error: cleared.error }, 422);
-      }
-      // Missing configuration is explicit before launch, with no silent fallback.
-      if (input.sources.some((s) => s.source === "WebSearch")) {
-        if (!webSearchAnthropicConfig(ws.state.settings)) {
-          return json({ ok: false, error: "Add an Anthropic key in Settings → AI & Models or deselect web search." }, 409);
-        }
-        const budget = aiBudgetStatus();
-        if (!budget.ok) return json({ ok: false, error: `${budget.reason} Deselect web search or wait for the next period.` }, 409);
       }
       const job = await startUnifiedJob({ ...auth, campaignId: input.campaignId, requestKey: input.requestKey,
         snapshot: campaignSourcingBasis(campaign), steps: orderedSteps(input.sources) });

@@ -613,6 +613,9 @@ export function createSourcingActions({
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
     }
+    if (requestedPlatform === "LinkedIn") {
+      return invalidRequest("LinkedIn web search is disabled.");
+    }
     const count = opts?.count ?? 6;
     const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;
     if (!Number.isInteger(count) || count < 1 || count > maxCount) {

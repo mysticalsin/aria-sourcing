@@ -6,15 +6,9 @@
    bypass those rules — the app doing its own login, session automation, or
    scraping against linkedin.com.
 
-   LinkedIn sourcing reads public profiles through Claude's web search
-   (sourcing/claude-web-search.ts): no recruiter cookies, no headless browser,
-   no session reuse, no login of any kind by this app. The experimental
-   LinkedIn bridge (src/lib/linkedin-bridge, owner opt-in, off by default)
-   runs in the user's own browser session, one human click per message or
-   invitation (or, for the campaign autopilot POC of ADR 0002, under the
-   campaign owner's standing approval), and is outside the outreach pipeline
-   this module guards. The
-   guardrails below stay fully intact regardless.
+   Aria does not call linkedin.com. The Chrome extension, Voyager client,
+   and Claude web-search sourcing of LinkedIn profiles are removed. The
+   guardrails below stay fully intact.
    ========================================================================== */
 
 export interface LinkedInPolicyResult {

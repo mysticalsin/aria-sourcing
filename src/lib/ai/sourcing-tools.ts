@@ -122,6 +122,10 @@ export function makeSourcingToolRunner(
     let accepted: Candidate[] = [];
     let skippedCount = 0;
 
+    if (platform === "LinkedIn") {
+      executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+      return { ok: false, error: "LinkedIn web search is disabled." };
+    }
     if (platform === "GitHub") {
       try {
         const clearance = clearDiscoveryCriteria(platform, { query }, campaign);

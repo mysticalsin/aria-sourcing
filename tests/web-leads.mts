@@ -24,10 +24,9 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const linkedInQuery = buildWebQuery("LinkedIn", "Senior React Engineer Paris");
-ok("buildWebQuery scopes LinkedIn to public profile search", linkedInQuery.startsWith("site:linkedin.com/in "));
-ok("buildWebQuery keeps the base query text", linkedInQuery === "site:linkedin.com/in Senior React Engineer Paris");
-ok("ensureWebQueryScope does not double-prefix an already scoped query", ensureWebQueryScope("LinkedIn", linkedInQuery) === linkedInQuery);
+ok("buildWebQuery refuses LinkedIn", (() => { try { buildWebQuery("LinkedIn", "Senior React Engineer Paris"); return false; } catch { return true; } })());
+ok("ensureWebQueryScope refuses LinkedIn", (() => { try { ensureWebQueryScope("LinkedIn", "Senior React Engineer Paris"); return false; } catch { return true; } })());
+const linkedInQuery = "Senior React Engineer Paris";
 
 const hit: SearchHit = {
   title: "Ari Candidate - Senior React Engineer - Example Labs | LinkedIn",

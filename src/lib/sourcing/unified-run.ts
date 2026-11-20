@@ -4,7 +4,13 @@ import type { Campaign, WorkspaceState } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { mapGithubCandidates, mapWebSearchCandidates, type SourceResult } from "./candidate-mappers";
 import { extractLead, type SearchHit } from "./web-leads";
-import { canonicalLinkedInProfileUrl } from "./claude-web-search";
+import { linkedInProfileUrl, publicIdFromProfileUrl } from "@/lib/linkedin-profile-url";
+
+/** Stored profile URL only. This does not fetch linkedin.com. */
+function canonicalLinkedInProfileUrl(raw: string): string | null {
+  const id = publicIdFromProfileUrl(raw);
+  return id ? linkedInProfileUrl(id) : null;
+}
 import { effectiveWeights } from "@/lib/skills";
 import { candidateProfileIdentity } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "./campaign-lifecycle";

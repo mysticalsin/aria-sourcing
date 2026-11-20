@@ -3,11 +3,12 @@
 This project is worked concurrently by Claude Code and Codex CLI in the same
 worktree. Read this file before touching anything.
 
-## Division of labor (Tony, 2026-07-09)
+## Division of labor (Tony, 2026-07-09; factory rules replaced 2026-11-20)
 
-- **Claude Code = builder + integrator.** Implements features, runs the full
-  test gate (`npm run typecheck` + `npm run typecheck:tests` + `npm test`), commits in small reviewable
-  chunks, pushes, verifies deploys, keeps this project's baton honest.
+- **Claude Code = builder + integrator.** Implements features and runs the
+  test gate (`npm run typecheck` + `npm run typecheck:tests` + `npm test`)
+  before committing. Work lands as a pull request. Review is of the exact
+  head SHA that passed the gate.
 - **Codex = adversarial auditor.** Reviews the code Claude (or Codex itself)
   writes for correctness bugs, security gaps, spec-compliance mismatches, and
   missing edge cases. Write findings to `_relay/codex-findings.md` (create it
@@ -18,10 +19,15 @@ worktree. Read this file before touching anything.
   content as real work to review, test, and commit, not scratch to discard.
   Never assume uncommitted files are noise; `git status` is ground truth for
   what the other tool has done.
-- **No stopping to ask for permission on either side.** Full autopilot: build,
-  audit, fix, test, commit, push. Escalate only on an actual irreversible risk
-  (secrets, destructive git ops, production data) — normal iteration doesn't
-  wait for a human.
+- **Software-factory rules.** These replace the old full-autopilot
+  build-and-push mandate:
+  - Red-first tests. Write the failing test before the change. Never commit a red gate.
+  - One branch per pull request, cut from current `twa-odoo`. Review the exact head that was tested. A new commit needs a new review.
+  - Synthetic data only (`*.example.test` emails, invented names). No real candidate PII, live sends, deploys, paid calls, or provider spend without Tony's say-so.
+  - No merge unless the gate is green, including the compliance negative tests in `tests/compliance-boundaries.mts`.
+  - Do not reintroduce the LinkedIn extension, Voyager or any other internal API, a cookie or token path, an unapproved LinkedIn autopilot, or LinkedIn web-search sourcing. Scrapers and enrichment vendors stay out.
+  - HeyReach is not built in this tree. A later change may add it only behind `ARIA_HEYREACH_ENABLED` defaulting off, official API only, and only with a recorded approval of the exact text.
+  - Do not automate or scrape `arp.mantu.com`.
 
 ### Codex findings template (`_relay/codex-findings.md`)
 

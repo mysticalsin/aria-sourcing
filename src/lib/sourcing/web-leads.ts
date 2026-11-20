@@ -30,15 +30,14 @@ export interface WebLead {
 /** Platforms real-sourced via a site:-scoped web search rather than a dedicated API. */
 export type WebSearchPlatform = "LinkedIn" | "Stack Overflow" | "Dribbble" | "Behance";
 
-const WEB_SEARCH_PLATFORMS = new Set<SourcePlatform>(["LinkedIn", "Stack Overflow", "Dribbble", "Behance"]);
+const WEB_SEARCH_PLATFORMS = new Set<SourcePlatform>(["Stack Overflow", "Dribbble", "Behance"]);
 
 /** True for platforms sourced through the web-search discovery path in this module. */
 export function isWebSearchPlatform(platform: SourcePlatform): platform is WebSearchPlatform {
   return WEB_SEARCH_PLATFORMS.has(platform);
 }
 
-const PLATFORM_DOMAINS: Record<WebSearchPlatform, string> = {
-  LinkedIn: "linkedin.com/in",
+const PLATFORM_DOMAINS: Record<Exclude<WebSearchPlatform, "LinkedIn">, string> = {
   "Stack Overflow": "stackoverflow.com/users",
   Dribbble: "dribbble.com",
   Behance: "behance.net",
@@ -53,13 +52,15 @@ const TITLE_SUFFIX_PATTERNS: Record<WebSearchPlatform, RegExp> = {
   Behance: /\s*(?:[|\-]\s*)?(on\s+)?Behance('s)?(\s+profile)?\s*$/i,
 };
 
-/** Scope a base boolean/keyword query (e.g. campaign.sourcingStrategy.linkedinBoolean) to one platform. */
+/** Scope a base boolean/keyword query to one platform. LinkedIn is refused: Aria does not search linkedin.com. */
 export function buildWebQuery(platform: WebSearchPlatform, baseQuery: string): string {
+  if (platform === "LinkedIn") throw new Error("LinkedIn web search is disabled.");
   return `site:${PLATFORM_DOMAINS[platform]} ${baseQuery}`.trim();
 }
 
 /** Add the platform site: scope once, preserving callers that already sent it. */
 export function ensureWebQueryScope(platform: WebSearchPlatform, query: string): string {
+  if (platform === "LinkedIn") throw new Error("LinkedIn web search is disabled.");
   const trimmed = query.trim();
   const siteScope = `site:${PLATFORM_DOMAINS[platform]}`;
   return trimmed.toLowerCase().includes(siteScope.toLowerCase()) ? trimmed : buildWebQuery(platform, trimmed);

@@ -1,7 +1,9 @@
 # ADR 0002 - An agents runner service, and agent-queued LinkedIn sends (POC)
 
+**Withdrawn 2026-11-20.** The autopilot that queued LinkedIn messages without a per-message approval is removed. Do not implement this ADR. The rest of this file is the historical decision only.
+
 Date: 2026-11-09
-Status: accepted (owner, 2026-11-09)
+Status: withdrawn (Tony, 2026-11-20; was accepted 2026-11-09)
 Amends: ADR 0001 ("Do not add [...] a separate AI server, or worker
 orchestration for this slice")
 Study: `.scratch/autonomous-agents/spec.md`

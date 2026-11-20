@@ -19,7 +19,35 @@ import { resolveWorkspaceVaultSecret } from "@/lib/ai/vault-secret";
 import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
 import { humanizeText } from "@/lib/humanizer";
 import { effectiveTone } from "@/lib/skills";
-import { fitInvitationNote, linkedInCopyRule } from "../autopilot";
+const INVITATION_NOTE_MAX = 300;
+
+/** Instruction added to the outreach prompt for each LinkedIn kind. Draft only; nothing is sent. */
+function linkedInCopyRule(kind: "message" | "invitation"): string {
+  return kind === "invitation"
+    ? `This is a LinkedIn connection-invitation note: at most 280 characters in total, no subject needed (write 'Subject: LinkedIn' anyway), no links, one short sentence on why you reach out and a soft ask to connect.`
+    : "This is a LinkedIn direct message to a 1st-degree connection: no links, under 90 words.";
+}
+
+/** Fit text into an invitation note: whole sentences first, then whole words. */
+function fitInvitationNote(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= INVITATION_NOTE_MAX) return clean;
+  const sentences = clean.match(/[^.!?]+[.!?]+/g) ?? [];
+  let out = "";
+  for (const sentence of sentences) {
+    const next = `${out} ${sentence.trim()}`.trim();
+    if (next.length > INVITATION_NOTE_MAX) break;
+    out = next;
+  }
+  if (out.length >= 80) return out;
+  const words = clean.split(" ");
+  out = "";
+  for (const word of words) {
+    if (`${out} ${word}`.trim().length > INVITATION_NOTE_MAX - 1) break;
+    out = `${out} ${word}`.trim();
+  }
+  return `${out}…`;
+}
 
 export interface AgentDraft {
   gen: GeneratedOutreach;

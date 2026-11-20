@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import Link from "next/link";
 import {
   Card,
@@ -112,7 +111,6 @@ export function OutreachMessageCard({
 
   const [regenerating, setRegenerating] = React.useState(false);
   const [approving, setApproving] = React.useState(false);
-  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
   const [rejecting, setRejecting] = React.useState(false);
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -154,8 +152,11 @@ export function OutreachMessageCard({
       return;
     }
     if (message.channel === "LinkedIn") {
-      // Approving the exact LinkedIn message is the decision to send it.
-      await deliverOnLinkedIn(message);
+      toast({
+        title: "Approved, not sent",
+        description: "Copy the message and send the InMail yourself in Recruiter. Aria does not contact LinkedIn.",
+        variant: "success",
+      });
       return;
     }
     toast({
@@ -205,14 +206,6 @@ export function OutreachMessageCard({
     } catch {
       toast({ title: "Copy failed", description: "Select the text and copy it manually.", variant: "warning" });
     }
-  }
-
-  const [sendingLinkedIn, setSendingLinkedIn] = React.useState(false);
-  async function handleSendPendingOnLinkedIn() {
-    if (sendingLinkedIn) return;
-    setSendingLinkedIn(true);
-    await deliverOnLinkedIn(message);
-    setSendingLinkedIn(false);
   }
 
   function handleConfirmManualSend() {
@@ -361,22 +354,11 @@ export function OutreachMessageCard({
               <div>
                 <p className="font-semibold">Approved LinkedIn message, not sent yet</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  Send it from your LinkedIn now. If you already sent it yourself (copy-paste), record it instead.
+                  Send it yourself in Recruiter. If you already sent it, record that here. Aria does not contact LinkedIn.
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="primary"
-                leftIcon={<Linkedin className="h-4 w-4" />}
-                onClick={handleSendPendingOnLinkedIn}
-                loading={sendingLinkedIn}
-                disabled={sendingLinkedIn || !candidate?.linkedinUrl}
-                data-send-on-linkedin
-              >
-                {sendingLinkedIn ? "Sending…" : "Send on LinkedIn"}
-              </Button>
               {candidate?.linkedinUrl && (
                 <Link
                   href={`/candidates?focus=${encodeURIComponent(message.candidateId)}&tab=linkedin&outreach=${encodeURIComponent(message.id)}`}
@@ -424,7 +406,7 @@ export function OutreachMessageCard({
                 {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
               </p>
             </div>
-            {approvedPendingSend && (
+            {approvedPendingSend && message.channel !== "LinkedIn" && (
               <Button size="sm" disabled={sending} onClick={handleSend}>
                 <Send className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                 {sending ? "Sending…" : "Send now"}

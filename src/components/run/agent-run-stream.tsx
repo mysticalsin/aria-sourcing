@@ -6,12 +6,10 @@ import { RevealStream } from "@/components/reveal/reveal-stream";
 import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
-import { runCampaignSourcing } from "@/lib/sourcing/campaign-run";
-import { runMission } from "@/lib/agents/mission";
-import { campaignLaunchPlan, MAX_MISSION_DRAFTS, type DraftedPair } from "@/lib/agents/campaign-mission";
-import { useActions, useCampaign, useCampaignOutreach, useSettings } from "@/lib/store";
-import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
-import type { Candidate } from "@/lib/types";
+import { useCampaignOutreach, useSettings } from "@/lib/store";
+import type { Candidate, OutreachMessage } from "@/lib/types";
+
+type DraftedPair = { candidate: Candidate; message: OutreachMessage };
 import { initialsFrom, scoreTone, toneForOutreachStatus } from "@/lib/utils";
 import { AlertTriangle, Bot, PlayCircle, ShieldCheck, Sparkles, X } from "lucide-react";
 
@@ -123,7 +121,7 @@ export interface AgentRunStreamProps {
 }
 
 /**
- * "Watch Aria Work" — runs the campaign launch mission (campaignLaunchPlan):
+ * "Watch Aria Work" — the unattended launch mission is disabled. It used to source and draft without a per-message send approval:
  * a sourcing agent, then one drafting agent per top candidate, two at a
  * time, streaming each draft as a revealed card (fit radar + a typing body)
  * while a live "queued — awaiting approval" counter climbs next to the
@@ -138,9 +136,7 @@ export interface AgentRunStreamProps {
  * human approval queue.
  */
 export function AgentRunStream({ campaignId, autoStart = false, onClose, className }: AgentRunStreamProps) {
-  const actions = useActions();
   const settings = useSettings();
-  const campaign = useCampaign(campaignId);
   const campaignOutreach = useCampaignOutreach(campaignId);
 
   const [phase, setPhase] = React.useState<RunPhase>("idle");
@@ -175,68 +171,12 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     // Re-entrancy guard: a run already in flight ignores a second trigger.
     if (phase === "sourcing" || phase === "drafting") return;
 
-    baselineQueuedRef.current = campaignOutreach.filter((m) => m.status === "Needs Approval").length;
-    setErrorMessage(null);
-    setPhase("sourcing");
     setQueue([]);
     setRevealedCount(0);
     setSourcedCount(0);
-
-    if (!campaign) {
-      setErrorMessage("Campaign state is unavailable. No sourcing was started.");
-      setPhase("error");
-      return;
-    }
-
-    missionAbortRef.current?.abort();
-    const controller = new AbortController();
-    missionAbortRef.current = controller;
-    const plan = campaignLaunchPlan(campaignId, {
-      sourceBatch: () =>
-        runCampaignSourcing({
-          campaignId,
-          count: MAX_MISSION_DRAFTS,
-          demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
-          sourceNextBatch: actions.sourceNextBatch,
-        }),
-      draftLive: (candidateId) => actions.generateOutreachLive(candidateId),
-      draftTemplate: (candidateId) => actions.generateOutreachFor(candidateId),
-    });
-    const report = await runMission(plan, {
-      // Two drafts in flight keeps the run quick without bursting the API.
-      concurrency: 2,
-      agentTimeoutMs: 90_000,
-      signal: controller.signal,
-      onEvent: (event) => {
-        if (event.type === "step_started" && event.stepId === "drafts") setPhase("drafting");
-      },
-    });
-    // Unmounted or restarted meanwhile: this run's results are no longer shown.
-    if (controller.signal.aborted) return;
-
-    const sourceStep = report.steps.source;
-    if (sourceStep?.status === "failed") {
-      setErrorMessage(sourceStep.error ?? "Sourcing failed.");
-      setPhase("error");
-      return;
-    }
-    const sourced = (report.results.source as Candidate[] | undefined) ?? [];
-    setSourcedCount(sourced.length);
-    if (sourced.length === 0) {
-      setPhase("empty");
-      return;
-    }
-
-    const pairs = (report.results.drafts as DraftedPair[] | undefined) ?? [];
-    if (pairs.length === 0) {
-      setPhase("empty");
-      return;
-    }
-    setQueue(pairs);
-    setRunKey((k) => k + 1);
-    // phase flips to "done" from the RevealStream's onDone once every card
-    // has materialized (or instantly, on Skip / prefers-reduced-motion).
-  }, [phase, campaignId, campaign, campaignOutreach, actions]);
+    setErrorMessage("Unattended campaign runs are disabled. Source and draft from the campaign, then send each message yourself.");
+    setPhase("error");
+  }, [phase]);
 
   const autoStartedRef = React.useRef(false);
   React.useEffect(() => {

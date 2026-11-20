@@ -237,8 +237,8 @@ try {
   const campaign = seed.campaigns[0];
   const runner = makeSourcingToolRunner(campaign, [], campaign.scoringWeights, "", resolved ?? undefined, fakeFetch);
   const runnerResult = await runner.run("search_candidates", {
-    platform: "LinkedIn",
-    query: "site:linkedin.com/in senior react",
+    platform: "Stack Overflow",
+    query: "senior go",
     count: 1,
   });
   ok("makeSourcingToolRunner web_search path uses stored Tavily key when env is unset", runnerResult.ok && seenKeys.at(-1) === secret);

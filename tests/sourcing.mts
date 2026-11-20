@@ -192,7 +192,7 @@ ok("same github URL is deduped", rdup.accepted.length === 1);
 }
 
 // --- web-leads: platform classification --------------------------------
-ok("LinkedIn is a web-search platform", isWebSearchPlatform("LinkedIn"));
+ok("LinkedIn is not a web-search platform", !isWebSearchPlatform("LinkedIn"));
 ok("Stack Overflow is a web-search platform", isWebSearchPlatform("Stack Overflow"));
 ok("Dribbble is a web-search platform", isWebSearchPlatform("Dribbble"));
 ok("Behance is a web-search platform", isWebSearchPlatform("Behance"));
@@ -200,10 +200,7 @@ ok("GitHub is not routed through web-search", !isWebSearchPlatform("GitHub"));
 ok("Talent Pool is not routed through web-search", !isWebSearchPlatform("Talent Pool"));
 ok("Referral is not routed through web-search", !isWebSearchPlatform("Referral"));
 
-ok(
-  "buildWebQuery scopes to the platform domain",
-  buildWebQuery("LinkedIn", "Senior Engineer") === "site:linkedin.com/in Senior Engineer",
-);
+ok("buildWebQuery refuses LinkedIn", (() => { try { buildWebQuery("LinkedIn", "Senior Engineer"); return false; } catch { return true; } })());
 ok(
   "buildWebQuery scopes Dribbble to its domain",
   buildWebQuery("Dribbble", "Product Designer") === "site:dribbble.com Product Designer",

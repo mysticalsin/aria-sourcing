@@ -156,6 +156,10 @@ export async function POST(req: NextRequest) {
 
   const demoCampaign = buildSeedState().campaigns[0];
 
+  if (platform === "LinkedIn") {
+    return NextResponse.json({ ok: false, error: "LinkedIn web search is disabled." }, { status: 422 });
+  }
+
   if (platform === "GitHub") {
     const policy = clearDiscoveryCriteria(platform, { query }, demoCampaign);
     if (!policy.ok) return NextResponse.json({ ok: false, error: policy.error }, { status: 422 });
