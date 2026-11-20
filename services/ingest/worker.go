@@ -33,6 +33,9 @@ const (
 	// defaultOCRTimeout caps each rasterize and each Tesseract call. The
 	// CLI does not pass a deadline, so the worker has to impose one.
 	defaultOCRTimeout = 30 * time.Second
+	// defaultExtractTimeout bounds the pure-Go text layer. A pathological
+	// content stream still has to finish or the worker moves on.
+	defaultExtractTimeout = 5 * time.Second
 )
 
 // ErrNotFound means Retry was asked for an id this worker has never accepted.
@@ -93,60 +96,65 @@ type Options struct {
 	// OCRTimeout bounds pdftoppm and each Tesseract invocation. Zero
 	// selects defaultOCRTimeout. A caller deadline that is sooner still wins.
 	OCRTimeout time.Duration
-	OCR        ocr.Engine
-	Extractor  TextExtractor
-	Parser     Parser
-	Deduper    dedupe.Hook
-	Sink       source.Sink
-	Logger     Logger
-	Retention  privacy.Hook
-	Queue      *errqueue.Queue
+	// ExtractTimeout bounds PDF text extraction. Zero selects
+	// defaultExtractTimeout.
+	ExtractTimeout time.Duration
+	OCR            ocr.Engine
+	Extractor      TextExtractor
+	Parser         Parser
+	Deduper        dedupe.Hook
+	Sink           source.Sink
+	Logger         Logger
+	Retention      privacy.Hook
+	Queue          *errqueue.Queue
 }
 
 // Worker runs the state machine. Concurrent calls are safe. They share one
 // lock, including while OCR runs, so two uploads cannot interleave transitions.
 type Worker struct {
-	mu          sync.Mutex
-	clock       func() time.Time
-	rawTTL      time.Duration
-	profileTTL  time.Duration
-	maxAttempts int
-	maxBytes    int
-	ocrTimeout  time.Duration
-	ocrLangs    string
-	ocr         ocr.Engine
-	extractor   TextExtractor
-	parser      Parser
-	deduper     dedupe.Hook
-	sink        source.Sink
-	logger      Logger
-	retention   privacy.Hook
-	queue       *errqueue.Queue
-	docs        map[string]*document
-	raw         map[string][]byte
+	mu             sync.Mutex
+	clock          func() time.Time
+	rawTTL         time.Duration
+	profileTTL     time.Duration
+	maxAttempts    int
+	maxBytes       int
+	ocrTimeout     time.Duration
+	extractTimeout time.Duration
+	ocrLangs       string
+	ocr            ocr.Engine
+	extractor      TextExtractor
+	parser         Parser
+	deduper        dedupe.Hook
+	sink           source.Sink
+	logger         Logger
+	retention      privacy.Hook
+	queue          *errqueue.Queue
+	docs           map[string]*document
+	raw            map[string][]byte
 }
 
 // New builds a worker. Nil options select in-memory defaults and local
 // Tesseract. The worker does not dial out.
 func New(opt Options) *Worker {
 	w := &Worker{
-		clock:       opt.Now,
-		rawTTL:      opt.RawRetention,
-		profileTTL:  opt.ProfileRetention,
-		maxAttempts: opt.MaxAttempts,
-		maxBytes:    opt.MaxBytes,
-		ocrTimeout:  opt.OCRTimeout,
-		ocrLangs:    opt.OCRLangs,
-		ocr:         opt.OCR,
-		extractor:   opt.Extractor,
-		parser:      opt.Parser,
-		deduper:     opt.Deduper,
-		sink:        opt.Sink,
-		logger:      opt.Logger,
-		retention:   opt.Retention,
-		queue:       opt.Queue,
-		docs:        map[string]*document{},
-		raw:         map[string][]byte{},
+		clock:          opt.Now,
+		rawTTL:         opt.RawRetention,
+		profileTTL:     opt.ProfileRetention,
+		maxAttempts:    opt.MaxAttempts,
+		maxBytes:       opt.MaxBytes,
+		ocrTimeout:     opt.OCRTimeout,
+		extractTimeout: opt.ExtractTimeout,
+		ocrLangs:       opt.OCRLangs,
+		ocr:            opt.OCR,
+		extractor:      opt.Extractor,
+		parser:         opt.Parser,
+		deduper:        opt.Deduper,
+		sink:           opt.Sink,
+		logger:         opt.Logger,
+		retention:      opt.Retention,
+		queue:          opt.Queue,
+		docs:           map[string]*document{},
+		raw:            map[string][]byte{},
 	}
 	if w.clock == nil {
 		w.clock = time.Now
@@ -165,6 +173,9 @@ func New(opt Options) *Worker {
 	}
 	if w.ocrTimeout <= 0 {
 		w.ocrTimeout = defaultOCRTimeout
+	}
+	if w.extractTimeout <= 0 {
+		w.extractTimeout = defaultExtractTimeout
 	}
 	if w.ocrLangs == "" {
 		w.ocrLangs = defaultOCRLangs

@@ -270,12 +270,12 @@ func (w *Worker) pullText(ctx context.Context, doc *document, data []byte) (stri
 	}
 	switch extract.Sniff(data) {
 	case extract.KindPDF:
-		text, err := w.extractor.ExtractText(data)
+		text, reason, err := w.extractText(ctx, data)
 		if err != nil {
-			if errors.Is(err, extract.ErrUnreadable) {
-				return "", state.ReasonUnreadable, nil
-			}
-			return "", state.ReasonExtractFailed, nil
+			return "", "", err
+		}
+		if reason != "" {
+			return "", reason, nil
 		}
 		if extract.EnoughText(text) {
 			if err := w.enter(doc, state.TextExtracted); err != nil {
@@ -311,6 +311,37 @@ func (w *Worker) pullText(ctx context.Context, doc *document, data []byte) (stri
 		return w.recognize(ctx, ocrCtx, doc, [][]byte{data})
 	default:
 		return "", state.ReasonUnreadable, nil
+	}
+}
+
+// extractText runs the text layer under extractTimeout. The caller's
+// deadline still cancels the wait. The extractor goroutine is bounded by
+// the stream and inflate caps; this deadline is the wall-clock stop.
+func (w *Worker) extractText(parent context.Context, data []byte) (string, state.Reason, error) {
+	type result struct {
+		text string
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		text, err := w.extractor.ExtractText(data)
+		ch <- result{text, err}
+	}()
+	timer := time.NewTimer(w.extractTimeout)
+	defer timer.Stop()
+	select {
+	case <-parent.Done():
+		return "", "", parent.Err()
+	case <-timer.C:
+		return "", state.ReasonExtractFailed, nil
+	case res := <-ch:
+		if res.err != nil {
+			if errors.Is(res.err, extract.ErrUnreadable) {
+				return "", state.ReasonUnreadable, nil
+			}
+			return "", state.ReasonExtractFailed, nil
+		}
+		return res.text, "", nil
 	}
 }
 

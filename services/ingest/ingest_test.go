@@ -569,6 +569,36 @@ func TestRetentionHookPurgesRawCV(t *testing.T) {
 	}
 }
 
+func TestExtractTimeoutLandsInErrorQueue(t *testing.T) {
+	w, _, _ := testWorker(t, ingest.Options{
+		ExtractTimeout: 30 * time.Millisecond,
+		Extractor:      blockExtract{},
+	})
+	start := time.Now()
+	res, err := w.Ingest(context.Background(), ingest.Upload{
+		ID: "slow-extract-1", Bytes: extract.BuildTextPDF(syntheticCVs[0].lines), Origin: holding(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("text extraction was not bounded")
+	}
+	if res.State != state.ErrorQueue || res.Reason != state.ReasonExtractFailed {
+		t.Fatalf("%+v", res)
+	}
+	if containsState(res.History, state.TextExtracted) {
+		t.Fatalf("timed-out extract was treated as text: %v", res.History)
+	}
+}
+
+type blockExtract struct{}
+
+func (blockExtract) ExtractText([]byte) (string, error) {
+	time.Sleep(time.Hour)
+	return "", nil
+}
+
 func TestOCRTimeoutLandsInErrorQueue(t *testing.T) {
 	w, _, _ := testWorker(t, ingest.Options{
 		OCRTimeout: 30 * time.Millisecond,
