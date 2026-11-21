@@ -3,7 +3,7 @@
  */
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -275,18 +275,56 @@ test("refuses a remote base that is not the allowlisted host", async () => {
   }
 });
 
-test("test session route requires the test build flag", () => {
-  const source = readFileSync("src/app/api/channels/linkedin-token/session/route.ts", "utf8");
-  assert.match(source, /NODE_ENV\s*===\s*["']test["']/);
-  assert.match(source, /ARIA_LINKEDIN_TOKEN_TEST_SESSION/);
-  assert.match(source, /404/);
+test("test session opens only for a test build", async () => {
+  const env = process.env as Record<string, string | undefined>;
+  const previousNode = env.NODE_ENV;
+  const previousFlag = env.ARIA_LINKEDIN_TOKEN_TEST_SESSION;
+  const { linkedInTokenTestSessionOpen } = await import("../src/app/api/channels/linkedin-token/route.ts");
+  try {
+    env.NODE_ENV = "production";
+    env.ARIA_LINKEDIN_TOKEN_TEST_SESSION = "1";
+    assert.equal(linkedInTokenTestSessionOpen(), false);
+    env.NODE_ENV = "test";
+    delete env.ARIA_LINKEDIN_TOKEN_TEST_SESSION;
+    assert.equal(linkedInTokenTestSessionOpen(), false);
+    env.ARIA_LINKEDIN_TOKEN_TEST_SESSION = "1";
+    assert.equal(linkedInTokenTestSessionOpen(), true);
+  } finally {
+    if (previousNode === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = previousNode;
+    if (previousFlag === undefined) delete process.env.ARIA_LINKEDIN_TOKEN_TEST_SESSION;
+    else process.env.ARIA_LINKEDIN_TOKEN_TEST_SESSION = previousFlag;
+  }
 });
 
-test("kill switch requires an administrator", () => {
-  const source = readFileSync("src/app/api/channels/linkedin-token/route.ts", "utf8");
-  const post = source.slice(source.indexOf("export async function POST"));
-  assert.match(post, /401/);
-  const kill = post.indexOf("ARIA_SEND_KILL_SWITCH");
-  const unauthenticated = post.indexOf("401");
-  if (kill !== -1) assert.ok(unauthenticated !== -1 && unauthenticated < kill);
+test("kill switch requires an administrator", async () => {
+  const { channel, close } = harness("http://127.0.0.1:9");
+  try {
+    await arm(channel, HOME);
+    const missing = await handleLinkedInTokenRequest({
+      method: "POST",
+      role: "admin",
+      workspaceId: HOME,
+      sessionWorkspaceId: HOME,
+      channel,
+      action: "kill",
+      body: {},
+    } as unknown as HandlerInput);
+    assert.equal(missing.status, 401);
+    assert.equal(channel.view(HOME).killSwitch, false);
+    const member = await handleLinkedInTokenRequest({
+      method: "POST",
+      role: "member",
+      userId: "ada-member",
+      workspaceId: HOME,
+      sessionWorkspaceId: HOME,
+      channel,
+      action: "kill",
+      body: {},
+    } as unknown as HandlerInput);
+    assert.equal(member.status, 403);
+    assert.equal(channel.view(HOME).killSwitch, false);
+  } finally {
+    close();
+  }
 });
