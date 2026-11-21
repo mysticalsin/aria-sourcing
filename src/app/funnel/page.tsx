@@ -6,12 +6,12 @@ import { SkeletonCard } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { PipelineOverview } from "@/components/tania/pipeline-overview";
 import { FlowMatrix } from "@/components/tania/flow-matrix";
-import { useCampaigns, useCandidates, useHydrated } from "@/lib/store";
+import { usePipelineBoard } from "@/features/pipeline/hooks";
+import { useHydrated } from "@/lib/store";
 
 export default function FunnelPage() {
   const hydrated = useHydrated();
-  const candidates = useCandidates();
-  const campaigns = useCampaigns();
+  const { campaigns, candidates } = usePipelineBoard();
 
   return (
     <div className="animate-fade-in">

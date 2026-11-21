@@ -19,6 +19,7 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
+import { reduceReportPeriod } from "@/features/reports/period";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
 import { inPocScope } from "@/components/app/nav";
 import { Badge, Button, Card, CardContent, CardTitle, EmptyState, Eyebrow, SkeletonCard, useToast } from "@/components/ui";
@@ -424,7 +425,7 @@ export default function ExecPage() {
   const wins = useWins();
   const { toast } = useToast();
   const demoMode = !supabaseEnabled || settings.dryRunMode;
-  const [period, setPeriod] = React.useState<ExecPeriod>("30d");
+  const [period, setPeriod] = React.useReducer(reduceReportPeriod, "30d" satisfies ExecPeriod);
 
   const model = React.useMemo(
     () =>
