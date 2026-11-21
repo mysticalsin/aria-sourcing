@@ -35,3 +35,5 @@ da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linke
 db67293906e5f29e9d8a5401ea386484a827ee87:services/channels/harness_test.go:generic-api-key:20
 # Same synthetic MAC constant after the harness gained two lines. Not a live credential.
 fc1d82a8e16b0ec2e0dc3cc8b5c9db749f1bd32e:services/channels/harness_test.go:generic-api-key:22
+# SHA-256 of a retired sample HMAC. The sample itself is not stored. Not a live credential.
+0f2b86e1238067f7525245a7f492d90ee25737b9:scripts/jwt-secret-policy.mjs:generic-api-key:4
