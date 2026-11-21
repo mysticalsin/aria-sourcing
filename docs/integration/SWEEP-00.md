@@ -36,7 +36,7 @@ Counts: 3 pass, 10 fail, 13 steps.
 | A5 hired gate | FAIL | 200 concurrent `hired` writes from `to_rate` hired nobody. With a contract and DNA the applicant does reach `hired`. After that commit, `LogTouch` still accepts an email message. The race recorded 1000 such touches. |
 | A6 channel burst | PASS | 1000 events plus 100 duplicates plus 25 malformed bodies on a loopback handler in front of `Email.Send`. 1000 accepted, 100 duplicates added no rows, 25 returned 400. Finished inside 10s. |
 | A7 LinkedIn token | PASS | Loopback transport. 20 approvals and 20 deliveries, one delivery each. An expired approval is refused. Revoke leaves the next send refused and does not add a delivery. The fixture token is not in the logger file. There is no refresh RPC, so there is no refresh stampede to count. |
-| A8 soak | see the run log | 30 minutes, `STRESS_SOAK_SECONDS=1800`. Result is appended when that process exits. |
+| A8 soak | PASS | `STRESS_SOAK_SECONDS=1800`. `go test` reported `ok` at 1800.023s. RSS after warm-up stayed inside the 10% gate (the test fails otherwise). The mailer and auditor discard bodies so the measurement is the channel process, not the harness log. |
 
 ## Findings
 
@@ -55,13 +55,15 @@ Counts: 3 pass, 10 fail, 13 steps.
 
 ## Commands
 
+`docker compose -p aria-int-sweep -f docker-compose.yml -f e2e/integration/compose.overlay.yml up -d --build` built the app image and started containers under the memory caps (about 4.6 GiB reserved, under 6 GiB). `aria-go` became healthy on `127.0.0.1:8080` inside its container. Postgres for Supabase and for Odoo reported healthy. Odoo then exited: `connection to server at "odoo-db" port 5432 failed: Connection timed out`. `db-init` stayed up and unhealthy because the Postgres image healthcheck probes `localhost:5432` inside a client container. Auth, REST, the gateway, and the app container were created and not started. That cross-container timeout is what this VM's Docker network did; it is recorded here and was not patched in product code.
+
 Linux box:
 
 ```bash
 bash scripts/integration-e2e.sh
 ```
 
-That writes `e2e-artifacts/<timestamp>/summary.json` and `SHA256SUMS`. Playwright is headed under `xvfb-run`. The compose overlay caps the stack at 4.6 GiB, under 6 GiB.
+That writes `e2e-artifacts/<timestamp>/summary.json` and `SHA256SUMS`. Playwright is headed under `xvfb-run`. The compose overlay caps the stack at about 4.6 GiB, under 6 GiB.
 
 Mac:
 

@@ -18,7 +18,7 @@ status: integration-sweep-0-draft
 
 - Merged the eleven heads. The LinkedIn bridge and the Compose agents service stay deleted. Approval migrations are `0012` and `0013`.
 - Added `scripts/integration-e2e.sh`, `scripts/integration-e2e-mac.sh`, `e2e/integration/**`, and `stress/**`.
-- Ran the click sweep under xvfb and stress cases A1-A7. A5 fails: touches are stored after Hired. A8 is the 30 minute soak.
+- Ran the click sweep under xvfb and stress cases A1-A8. A5 fails: touches are stored after Hired. A8 passed at 1800s. Compose started; Odoo could not open a TCP connection to its database in this VM.
 
 ## Blockers
 
