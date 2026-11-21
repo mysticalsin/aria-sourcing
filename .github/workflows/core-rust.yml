@@ -41,13 +41,13 @@ jobs:
           restore-keys: core-cargo-${{ runner.os }}-
 
       - name: Test the Rust workspace
-        run: cargo test --manifest-path core/Cargo.toml --workspace
+        run: cargo test --locked --manifest-path core/Cargo.toml --workspace
 
       - name: Compile criterion benches
-        run: cargo bench --manifest-path core/Cargo.toml -p aria-scoring --no-run
+        run: cargo bench --locked --manifest-path core/Cargo.toml -p aria-scoring --no-run
 
       - name: Build the C ABI
-        run: cargo build --release --manifest-path core/Cargo.toml -p aria-ffi
+        run: cargo build --locked --release --manifest-path core/Cargo.toml -p aria-ffi
 
       - name: Test the Go cgo binding
         working-directory: core/go/aria
@@ -90,8 +90,8 @@ jobs:
           measure() {
             local manifest="$1"
             local out="$2"
-            cargo build --release --manifest-path "$manifest" -p aria-bench -p aria-ffi
-            cargo run --release --manifest-path "$manifest" -p aria-bench --bin aria-p95 > "$out/rust-p95.json"
+            cargo build --locked --release --manifest-path "$manifest" -p aria-bench -p aria-ffi
+            cargo run --locked --release --manifest-path "$manifest" -p aria-bench --bin aria-p95 > "$out/rust-p95.json"
             (
               cd "$(dirname "$manifest")/go/aria"
               ARIA_MEASURE_P95=1 go test -count=1 -run TestMeasureFFIBatchP95 -v
