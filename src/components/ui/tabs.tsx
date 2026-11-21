@@ -60,6 +60,7 @@ export function Tabs({
             ref={(el) => {
               refs.current[i] = el;
             }}
+            type="button"
             role="tab"
             id={`${idBase}-${item.value}`}
             aria-selected={active}
@@ -112,9 +113,10 @@ export function TabPanel({
   // Panels never visited never render their (often heavy) subtree at all —
   // this is what keeps first paint cheap on tab-heavy pages.
   const [hasBeenActive, setHasBeenActive] = React.useState(active);
-  React.useEffect(() => {
-    if (active) setHasBeenActive(true);
-  }, [active]);
+  // Mount in the same render the panel becomes active. Waiting for an effect
+  // left the panel hidden while its fields were still unmounted, so a click
+  // then an immediate query only saw the previous panel's hidden inputs.
+  if (active && !hasBeenActive) setHasBeenActive(true);
 
   return (
     <div
