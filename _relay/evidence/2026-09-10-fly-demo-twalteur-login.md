@@ -1,4 +1,4 @@
-# Fly demo login identity — Twauteur@amaris.com — 2026-09-10
+# Fly demo login identity — owner@example.com — 2026-09-10
 
 **App:** https://aria-mantu-app.fly.dev  
 **Branch:** `cursor/fly-demo-twalteur-login-b91d`
@@ -15,8 +15,8 @@
 ## Verification
 
 ```
-POST /api/auth/demo-login {"username":"Twalteur@amaris.com","password":"<configured>"} → 200 {"ok":true}
+POST /api/auth/demo-login {"username":"owner@example.com","password":"<configured>"} → 200 {"ok":true}
 POST /api/auth/demo-login {"username":"admin","password":"<configured>"} → 401
-POST /api/auth/demo-login {"username":"Twalteur@amaris.com","password":"wrong"} → 401
+POST /api/auth/demo-login {"username":"owner@example.com","password":"wrong"} → 401
 GET /api/health → 200
 ```
