@@ -172,7 +172,7 @@ We offer €90k–€120k, meaningful equity, and a fully remote EU setup (CET).
 
 /** A real Mantu/Amaris "need is now ACTIVE" recruitment email (structured format). */
 export const SAMPLE_MANTU_EMAIL = `From: Noreply (Mantu) <noreply@mantu.example>
-To: Amaris_RCM_PRO@amaris.com
+To: owner@example.com
 Cc: AMACAN_Managers; AMACAN_Recruitment
 Importance: High
 
