@@ -19,6 +19,15 @@
                             <field name="aria_contract_filename" invisible="1"/>
                             <field name="aria_contract_pdf" filename="aria_contract_filename"/>
                         </group>
+                        <group string="GDPR">
+                            <field name="aria_opt_out"/>
+                            <field name="aria_retention_deadline"/>
+                            <field name="aria_erased"/>
+                            <field name="aria_erased_at"/>
+                            <button name="action_aria_outreach" type="object" string="Record outreach"/>
+                            <button name="action_aria_erase" type="object" string="Erase personal data"/>
+                            <button name="action_aria_apply_retention" type="object" string="Apply retention"/>
+                        </group>
                         <group string="Interview">
                             <field name="aria_itw_grade"/>
                             <field name="aria_itw_stars"/>

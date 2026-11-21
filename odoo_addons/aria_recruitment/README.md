@@ -57,3 +57,15 @@ bash odoo_addons/aria_recruitment/ci/run.sh
 ```
 
 That starts `odoo:19` (Community) and `postgres:16` and runs this addon's Odoo tests. The database password in `ci/docker-compose.yml` is the image default for that disposable database.
+
+## Playwright on a Mac
+
+From a detached clone, with Docker Desktop running, Node.js 22, and Playwright 1.65.1 Chromium (`chromium-1255`) already installed:
+
+```bash
+bash scripts/e2e-odoo-mac.sh
+```
+
+The script uses `PLAYWRIGHT_BROWSERS_PATH`, or `~/qa-tools/playwright/browsers` when that variable is unset. It does not download a browser. CI is the only place that runs `playwright install`. Odoo and Postgres together stay within 4 GiB (`768m` + `3328m`). The run writes `e2e-artifacts/<timestamp>/` and prints that path. It contains the JSON summary, the Playwright HTML report, a trace when a test fails, and a screenshot of each step.
+
+GDPR coverage in this addon is minimal: an opt-out flag blocks outreach and is audited, erasure anonymises the applicant and leaves an audit row, and the retention action erases applicants whose deadline has passed. There is no separate consent ledger and no outbound mailer in this module. The opt-out is what stops outreach.

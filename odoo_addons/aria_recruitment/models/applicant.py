@@ -30,6 +30,10 @@ class HrApplicant(models.Model):
         groups='aria_recruitment.group_dna_integration,base.group_system',
         help='The configured DNA adapter. Production stays unconfigured until an operator sets aria_recruitment.dna_adapter. The fake adapter is test and demo only.',
     )
+    aria_opt_out = fields.Boolean(string='Opt out', copy=False, help='When set, outreach is refused and the refusal is audited.')
+    aria_erased = fields.Boolean(string='Erased', copy=False, readonly=True)
+    aria_erased_at = fields.Datetime(string='Erased at', copy=False, readonly=True)
+    aria_retention_deadline = fields.Date(string='Retention deadline', copy=False)
     aria_contract_filename = fields.Char(string='Contract filename')
     aria_contract_pdf = fields.Binary(
         string='Contract PDF',
@@ -130,6 +134,85 @@ class HrApplicant(models.Model):
         ) or '').strip() or 'unconfigured'
         for applicant in self:
             applicant.aria_dna_adapter_name = configured
+
+    def _aria_audit_gdpr(self, reason, result='allowed'):
+        """Audit a GDPR action without copying personal data into the reason."""
+        self.ensure_one()
+        vals = {
+            'applicant_id': self.id,
+            'applicant_res_id': self.id,
+            'company_id': self.company_id.id or self.env.company.id,
+            'user_id': self.env.uid,
+            'transitioned_at': fields.Datetime.now(),
+            'from_stage_id': self.stage_id.id,
+            'to_stage_id': self.stage_id.id,
+            'from_stage_key': self.stage_id.aria_stage_key or '',
+            'to_stage_key': self.stage_id.aria_stage_key or '',
+            'result': result,
+            'reason': reason,
+            'sudo_used': bool(self.env.su),
+            'event_kind': 'gdpr',
+        }
+        self.env['aria.recruitment.transition.audit'].sudo().create(vals)
+        if result == 'refused':
+            try:
+                self._aria_commit_refusal(vals, '')
+            except Exception:
+                _logger.exception('Aria GDPR refusal audit failed to commit')
+
+    def _aria_record_opt_outs(self, applicants):
+        for applicant in applicants:
+            applicant._aria_audit_gdpr('opt-out recorded')
+
+    def _aria_erase_personal_data(self):
+        self.ensure_one()
+        if self.aria_erased:
+            return
+        super(HrApplicant, self).write({
+            'partner_name': 'Erased',
+            'email_from': False,
+            'partner_phone': False,
+            'linkedin_profile': False,
+            'applicant_notes': False,
+            'aria_smart_candidate_id': False,
+            'aria_utm_link': False,
+            'aria_contract_filename': False,
+            'aria_erased': True,
+            'aria_erased_at': fields.Datetime.now(),
+        })
+        partner = self.partner_id
+        if partner and not partner.user_ids:
+            partner.sudo().write({
+                'name': 'Erased',
+                'email': False,
+                'phone': False,
+            })
+
+    def action_aria_outreach(self):
+        for applicant in self:
+            if applicant.aria_opt_out or applicant.aria_erased:
+                applicant._aria_audit_gdpr('outreach blocked by opt-out', result='refused')
+                raise UserError('Outreach is blocked because this applicant opted out.')
+            applicant._aria_audit_gdpr('outreach permitted')
+        return True
+
+    def action_aria_erase(self):
+        for applicant in self:
+            if applicant.aria_erased:
+                continue
+            applicant._aria_erase_personal_data()
+            applicant._aria_audit_gdpr('personal data erased')
+        return True
+
+    def action_aria_apply_retention(self):
+        today = fields.Date.context_today(self)
+        for applicant in self:
+            deadline = applicant.aria_retention_deadline
+            if applicant.aria_erased or not deadline or deadline > today:
+                continue
+            applicant._aria_erase_personal_data()
+            applicant._aria_audit_gdpr('retention applied')
+        return True
 
     def _aria_register_contract_upload(self, vals):
         """Turn a form upload into a contract attachment under the caller's rights."""
@@ -466,11 +549,14 @@ class HrApplicant(models.Model):
         return super().create_employee_from_applicant()
 
     def write(self, vals):
+        opting_out = self.filtered(lambda applicant: not applicant.aria_opt_out) if vals.get('aria_opt_out') else self.browse()
         if vals.get('aria_contract_pdf'):
             self._aria_register_contract_upload(vals)
         self._aria_check_dna_write(vals)
         if not any(key in vals for key in ('stage_id', 'date_closed', 'application_status')):
-            return super().write(vals)
+            result = super().write(vals)
+            self._aria_record_opt_outs(opting_out)
+            return result
         if 'application_status' in vals and not any(key in vals for key in ('stage_id', 'date_closed')):
             # Non-stored. Treat an attempted hired status as a hire and stop.
             if vals.get('application_status') == 'hired':
@@ -518,6 +604,7 @@ class HrApplicant(models.Model):
                 super(HrApplicant, applicant.with_context(aria_hire_authorized=token)).write(dict(vals))
         finally:
             self.env.registry._aria_hire_token = None
+        self._aria_record_opt_outs(opting_out)
         return True
 
     def _aria_finish_refusals(self, decisions):

@@ -5,10 +5,12 @@ on:
     paths:
       - 'odoo_addons/aria_recruitment/**'
       - '.github/workflows/aria-recruitment-odoo.yml'
+      - 'scripts/e2e-odoo-mac.sh'
   push:
     paths:
       - 'odoo_addons/aria_recruitment/**'
       - '.github/workflows/aria-recruitment-odoo.yml'
+      - 'scripts/e2e-odoo-mac.sh'
 
 permissions:
   contents: read
@@ -24,3 +26,27 @@ jobs:
 
       - name: Test aria_recruitment against odoo:19 and postgres:16
         run: bash odoo_addons/aria_recruitment/ci/run.sh
+
+  odoo-e2e:
+    name: Odoo 19 Playwright hire flow
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Node.js 22
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+
+      - name: Playwright hire journey
+        run: bash scripts/e2e-odoo-mac.sh
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-artifacts
+          path: e2e-artifacts/
+          if-no-files-found: ignore

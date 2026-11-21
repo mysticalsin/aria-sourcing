@@ -50,7 +50,7 @@ class AriaRecruitmentTransitionAudit(models.Model):
     sudo_used = fields.Boolean(string='Sudo', readonly=True)
     attempt_count = fields.Integer(default=1, readonly=True)
     event_kind = fields.Selection(
-        [('stage', 'Stage'), ('contract', 'Contract')],
+        [('stage', 'Stage'), ('contract', 'Contract'), ('gdpr', 'GDPR')],
         default='stage',
         required=True,
         readonly=True,

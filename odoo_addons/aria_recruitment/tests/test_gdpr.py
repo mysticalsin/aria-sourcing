@@ -16,8 +16,12 @@ class TestAriaGdpr(AriaRecruitmentCommon):
         recorded = self.audits(applicant, event_kind='gdpr', result='allowed')
         self.assertTrue(recorded)
         self.assertNotIn('optout.example', (recorded[0].reason or '').lower())
-        with self.assertRaises(UserError):
+        error = None
+        try:
             applicant.action_aria_outreach()
+        except UserError as exc:
+            error = exc
+        self.assertTrue(error)
         blocked = self.audits(applicant, event_kind='gdpr', result='refused')
         self.assertTrue(blocked)
         self.assertIn('opt-out', (blocked[0].reason or '').lower())

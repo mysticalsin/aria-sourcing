@@ -10,6 +10,10 @@ services:
       POSTGRES_USER: odoo
       POSTGRES_PASSWORD: odoo
       POSTGRES_DB: postgres
+    # 768 MiB + the Odoo limit below stays within 4 GiB for the stack.
+    mem_limit: 768m
+    memswap_limit: 768m
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=20"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
       interval: 5s
@@ -28,10 +32,12 @@ services:
       PASSWORD: odoo
       PYTHONDONTWRITEBYTECODE: "1"
       ARIA_E2E_DB: aria_e2e
+      ARIA_E2E_PASSWORD: ${ARIA_E2E_PASSWORD:?set ARIA_E2E_PASSWORD}
+    mem_limit: 3328m
+    memswap_limit: 3328m
     volumes:
       - ../..:/mnt/extra-addons:ro
       - .:/opt/e2e:ro
-      - e2e-state:/opt/e2e-state
     ports:
       - "127.0.0.1:${ODOO_PORT:-8069}:8069"
     command: ["sh", "/opt/e2e/serve.sh"]
@@ -47,24 +53,3 @@ services:
       timeout: 10s
       retries: 40
       start_period: 120s
-
-  playwright:
-    image: mcr.microsoft.com/playwright/python:v1.59.0@sha256:d8d9811a0e7cfac967f0c2f55d12b739087ae4b0808577b794c2a29ed5124938
-    depends_on:
-      odoo:
-        condition: service_healthy
-    environment:
-      BASE_URL: http://odoo:8069
-      STATE_PATH: /opt/e2e-state/state.json
-      CONTRACT_PDF: /opt/e2e/synthetic-contract.pdf
-      ARTIFACT_DIR: /artifacts
-    volumes:
-      - .:/opt/e2e:ro
-      - e2e-state:/opt/e2e-state:ro
-      - ${ARTIFACT_DIR:-/tmp/aria-e2e-artifacts}:/artifacts
-    ipc: host
-    shm_size: "1gb"
-    entrypoint: ["python", "/opt/e2e/hire_flow.py"]
-
-volumes:
-  e2e-state:
