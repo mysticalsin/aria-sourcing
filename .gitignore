@@ -57,3 +57,6 @@ aria-mark.png
 
 # operational one-off admin setup helper (reads gitignored secrets)
 set-admin-password.sh
+
+# Local tool binaries are installed at runtime, not committed.
+/.localbin/
