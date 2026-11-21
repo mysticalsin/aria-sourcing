@@ -12,6 +12,10 @@ import (
 // The provider is not called. Rules and cache hits do not spend budget.
 var ErrBudgetExceeded = errors.New("budget exceeded")
 
+// ErrInfra is a timeout or provider failure after the allowed retry.
+// The text never includes a key or a provider payload.
+var ErrInfra = errors.New("infra error")
+
 // Usage is committed model spend. Cache hits and rule hits add nothing.
 type Usage struct {
 	RunTokens     int64

@@ -3,6 +3,8 @@ package router
 import (
 	"context"
 	"errors"
+	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"math"
@@ -11,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -674,6 +677,251 @@ func Test_test_synthetic_workload_hit_rates(t *testing.T) {
 	}
 }
 
+func TestProbeReserve0048Billed1600FailsClosed(t *testing.T) {
+	// Exact probe: the reservation is $0.048 and the provider bills $16.00.
+	// The route must not come back as a completed decision.
+	var calls atomic.Int64
+	small := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+		calls.Add(1)
+		return Completion{Text: "billed", Confidence: 0.99, InputTokens: 0, OutputTokens: 1000}, nil
+	})
+	cfg := DefaultConfig()
+	cfg.CacheEnabled = false
+	cfg.SmallInputUSDPer1K = 0
+	cfg.SmallOutputUSDPer1K = 16
+	cfg.BigInputUSDPer1K = 0
+	cfg.BigOutputUSDPer1K = 0
+	cfg.RunTokenBudget = math.MaxInt64 / 4
+	cfg.DailyTokenBudget = math.MaxInt64 / 4
+	cfg.MonthlyTokenBudget = math.MaxInt64 / 4
+	cfg.DailyBudgetUSD = 0.048
+	cfg.MonthlyBudgetUSD = 0.048
+	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1})})
+	req := Request{ID: "probe", Task: TaskClassify, Input: "please classify this note", MaxTokens: 3}
+	_, estUSD := r.Estimate(req, TierSmall)
+	if math.Abs(estUSD-0.048) > 1e-9 {
+		t.Fatalf("reservation usd %.6f, want 0.048", estUSD)
+	}
+	res, err := r.Route(context.Background(), req)
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("err %v result terminal %s text %q", err, res.Terminal, res.Text)
+	}
+	if res.Terminal == StateDone || res.Text != "" {
+		t.Fatalf("completed route after overage: %+v", res)
+	}
+	if math.Abs(r.Usage().DailyUSD-16) > 1e-6 || math.Abs(r.Usage().MonthlyUSD-16) > 1e-6 {
+		t.Fatalf("usage %+v, want billed 16.00 recorded", r.Usage())
+	}
+	before := calls.Load()
+	_, err = r.Route(context.Background(), Request{ID: "next", Task: TaskClassify, Input: "another note to classify", MaxTokens: 3})
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("later call err %v", err)
+	}
+	if calls.Load() != before {
+		t.Fatalf("later call reached the provider")
+	}
+}
+
+func TestZeroUSDCeilingStopsZeroEstimate(t *testing.T) {
+	small := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+		t.Errorf("provider called through a zero USD ceiling")
+		return Completion{Text: "no", Confidence: 0.99, InputTokens: 1, OutputTokens: 1}, nil
+	})
+	cfg := DefaultConfig()
+	cfg.CacheEnabled = false
+	cfg.SmallInputUSDPer1K = 0
+	cfg.SmallOutputUSDPer1K = 0
+	cfg.BigInputUSDPer1K = 0
+	cfg.BigOutputUSDPer1K = 0
+	cfg.RunTokenBudget = math.MaxInt64 / 4
+	cfg.DailyTokenBudget = math.MaxInt64 / 4
+	cfg.MonthlyTokenBudget = math.MaxInt64 / 4
+	cfg.DailyBudgetUSD = 0
+	cfg.MonthlyBudgetUSD = 0
+	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1})})
+	_, estUSD := r.Estimate(Request{Task: TaskClassify, Input: "hello there", MaxTokens: 8}, TierSmall)
+	if estUSD != 0 {
+		t.Fatalf("estimate usd %v, want 0", estUSD)
+	}
+	res, err := r.Route(context.Background(), Request{ID: "z", Task: TaskClassify, Input: "hello there", MaxTokens: 8})
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("err %v terminal %s", err, res.Terminal)
+	}
+	if small.Calls() != 0 {
+		t.Fatalf("calls %d", small.Calls())
+	}
+}
+
+func TestBudgetBoundariesAndPeriodResets(t *testing.T) {
+	if !tokenFits(5, 2, 3, 10) {
+		t.Fatal("exact room must fit")
+	}
+	if tokenFits(5, 2, 4, 10) {
+		t.Fatal("room+1 must not fit")
+	}
+	if tokenFits(0, 0, 0, 0) {
+		t.Fatal("zero token ceiling must stop a zero add")
+	}
+	if !usdFits(0.25, 0.25, 0.50, 1) {
+		t.Fatal("usd equal to the ceiling must fit")
+	}
+	if usdFits(0, 0, 1.01, 1) {
+		t.Fatal("limit+0.01 must not fit")
+	}
+	if usdFits(0, 0, 0, 0) {
+		t.Fatal("zero usd ceiling must stop a zero estimate")
+	}
+
+	t.Run("daily_token_reset", func(t *testing.T) {
+		clk := &manualClock{t: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)}
+		small := exactSmall()
+		r := budgetRouterAt(t, small, clk)
+		req := Request{ID: "d", Task: TaskClassify, Input: "please classify", MaxTokens: 64}
+		est, _ := r.Estimate(req, TierSmall)
+		r.SetTokenBudgets(math.MaxInt64/4, est, math.MaxInt64/4)
+		if _, err := r.Route(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Route(context.Background(), Request{ID: "d2", Task: TaskClassify, Input: "please classify two", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
+			t.Fatalf("same day %v", err)
+		}
+		clk.Advance(24 * time.Hour)
+		if _, err := r.Route(context.Background(), Request{ID: "d3", Task: TaskClassify, Input: "please classify three", MaxTokens: 64}); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.Usage().DailyTokens; got != est {
+			t.Fatalf("daily tokens after reset %d, want %d", got, est)
+		}
+	})
+
+	t.Run("daily_usd_reset", func(t *testing.T) {
+		clk := &manualClock{t: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)}
+		small := exactSmall()
+		cfg := DefaultConfig()
+		cfg.CacheEnabled = true
+		cfg.SmallInputUSDPer1K = 1
+		cfg.SmallOutputUSDPer1K = 1
+		cfg.BigInputUSDPer1K = 0
+		cfg.BigOutputUSDPer1K = 0
+		r := mustRouter(t, cfg, Deps{
+			Small: small,
+			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
+			Now:   clk.Now,
+		})
+		req := Request{ID: "u", Task: TaskClassify, Input: "please classify", MaxTokens: 64}
+		_, estUSD := r.Estimate(req, TierSmall)
+		r.SetTokenBudgets(math.MaxInt64/4, math.MaxInt64/4, math.MaxInt64/4)
+		r.SetUSDBudgets(estUSD, 1e9)
+		if _, err := r.Route(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Route(context.Background(), Request{ID: "u2", Task: TaskExtract, Input: "please extract two", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
+			t.Fatalf("same day usd %v", err)
+		}
+		clk.Advance(24 * time.Hour)
+		if _, err := r.Route(context.Background(), Request{ID: "u3", Task: TaskExtract, Input: "please extract three", MaxTokens: 64}); err != nil {
+			t.Fatal(err)
+		}
+		if math.Abs(r.Usage().DailyUSD-estUSD) > 1e-9 {
+			t.Fatalf("daily usd after reset %v, want %v", r.Usage().DailyUSD, estUSD)
+		}
+	})
+
+	t.Run("monthly_usd_reset", func(t *testing.T) {
+		clk := &manualClock{t: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)}
+		small := exactSmall()
+		cfg := DefaultConfig()
+		cfg.SmallInputUSDPer1K = 1
+		cfg.SmallOutputUSDPer1K = 1
+		r := mustRouter(t, cfg, Deps{
+			Small: small,
+			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
+			Now:   clk.Now,
+		})
+		req := Request{ID: "m", Task: TaskClassify, Input: "please classify", MaxTokens: 64}
+		_, estUSD := r.Estimate(req, TierSmall)
+		r.SetTokenBudgets(math.MaxInt64/4, math.MaxInt64/4, math.MaxInt64/4)
+		r.SetUSDBudgets(1e9, estUSD)
+		if _, err := r.Route(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+		clk.Advance(24 * time.Hour)
+		if _, err := r.Route(context.Background(), Request{ID: "m2", Task: TaskIntake, Input: "please intake two", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
+			t.Fatalf("same month usd %v", err)
+		}
+		clk.Advance(24 * time.Hour * 20)
+		if _, err := r.Route(context.Background(), Request{ID: "m3", Task: TaskIntake, Input: "please intake dec", MaxTokens: 64}); err != nil {
+			t.Fatal(err)
+		}
+		if math.Abs(r.Usage().MonthlyUSD-estUSD) > 1e-9 {
+			t.Fatalf("monthly usd after reset %v, want %v", r.Usage().MonthlyUSD, estUSD)
+		}
+	})
+}
+
+func TestTimeoutRetriesOnceThenInfra(t *testing.T) {
+	var n atomic.Int64
+	small := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+		n.Add(1)
+		return Completion{}, context.DeadlineExceeded
+	})
+	cfg := DefaultConfig()
+	cfg.CacheEnabled = false
+	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1})})
+	_, err := r.Route(context.Background(), Request{ID: "t", Task: TaskClassify, Input: "deadline please", MaxTokens: 32})
+	if n.Load() != 2 {
+		t.Fatalf("attempts %d, want 2", n.Load())
+	}
+	if !errors.Is(err, ErrInfra) {
+		t.Fatalf("err %v, want infra", err)
+	}
+	if r.InfraErrors() != 1 {
+		t.Fatalf("infra count %d", r.InfraErrors())
+	}
+}
+
+func TestTimeoutRetryThenSuccess(t *testing.T) {
+	var n atomic.Int64
+	small := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+		if n.Add(1) == 1 {
+			return Completion{}, context.DeadlineExceeded
+		}
+		return Completion{Text: "ok", Confidence: 0.95, InputTokens: 4, OutputTokens: 2}, nil
+	})
+	cfg := DefaultConfig()
+	cfg.CacheEnabled = false
+	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1})})
+	res, err := r.Route(context.Background(), Request{ID: "t", Task: TaskClassify, Input: "retry please", MaxTokens: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Load() != 2 || res.Tier != TierSmall || res.Text != "ok" {
+		t.Fatalf("attempts %d tier %s text %q", n.Load(), res.Tier, res.Text)
+	}
+	if r.InfraErrors() != 0 {
+		t.Fatalf("infra %d", r.InfraErrors())
+	}
+}
+
+func TestNonTimeoutProviderErrorDoesNotRetry(t *testing.T) {
+	const key = "notarealkey"
+	var n atomic.Int64
+	small := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+		n.Add(1)
+		return Completion{}, errors.New("provider failed " + key)
+	})
+	cfg := DefaultConfig()
+	cfg.CacheEnabled = false
+	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1})})
+	_, err := r.Route(context.Background(), Request{ID: "e", Task: TaskClassify, Input: "plain error", MaxTokens: 32})
+	if n.Load() != 1 {
+		t.Fatalf("attempts %d", n.Load())
+	}
+	if err == nil || strings.Contains(err.Error(), key) {
+		t.Fatalf("err %v", err)
+	}
+}
+
 func TestEnvValuesNeverLogged(t *testing.T) {
 	const secret = "zz9f3c1b"
 	const dailyRaw = "4.125"
@@ -760,6 +1008,79 @@ func TestEnvValuesNeverLogged(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), EnvDailyBudgetUSD) {
 		t.Fatalf("error %v", err)
+	}
+
+	t.Run("provider_error_and_repanic", func(t *testing.T) {
+		const key = "notarealkey"
+		panicProvider := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+			panic(key)
+		})
+		cfg := DefaultConfig()
+		cfg.CacheEnabled = false
+		r := mustRouter(t, cfg, Deps{
+			Small: panicProvider,
+			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
+		})
+		var repanic any
+		func() {
+			defer func() { repanic = recover() }()
+			_, err := r.Route(context.Background(), Request{ID: "p", Task: TaskClassify, Input: "panic path", MaxTokens: 16})
+			if err != nil && strings.Contains(err.Error(), key) {
+				t.Fatalf("error carries key")
+			}
+		}()
+		if repanic != nil && strings.Contains(fmt.Sprint(repanic), key) {
+			t.Fatal("re-panic carries the value")
+		}
+		assertPackageLevelOmitsKey(t, key)
+	})
+}
+
+func assertPackageLevelOmitsKey(t *testing.T, key string) {
+	t.Helper()
+	matches, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, name := range matches {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, value := range vs.Values {
+					lit, ok := value.(*ast.BasicLit)
+					if ok && strings.Contains(lit.Value, key) {
+						t.Fatalf("%s package var holds the key", name)
+					}
+				}
+			}
+		}
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), key) {
+			t.Fatalf("%s holds the key", name)
+		}
+	}
+	for _, s := range []string{systemSmall, systemBig} {
+		if strings.Contains(s, key) {
+			t.Fatal("package string holds the key")
+		}
 	}
 }
 

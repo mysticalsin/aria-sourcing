@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -104,6 +105,7 @@ type Router struct {
 	mu      sync.Mutex
 	metrics []CallMetric
 	logs    []string
+	infra   atomic.Int64
 }
 
 // New builds a router. Providers that are nil are fakes. A non-nil provider
@@ -573,3 +575,7 @@ func (a *accumulator) add(c ProviderCall) {
 }
 
 var errNilProvider = errors.New("nil provider")
+
+// InfraErrors counts timeouts that stayed failed after one retry, and
+// provider panics that were contained instead of re-panicked.
+func (r *Router) InfraErrors() int64 { return r.infra.Load() }
