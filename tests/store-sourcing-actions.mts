@@ -1404,6 +1404,27 @@ test("demo candidate authority is synthetic-only and blocks real or manual intak
   assert.equal(demo.persistedCalls, 1);
 });
 
+test("a synthetic demo address can be typed in when live intake is closed", async () => {
+  const demo = createHarness({
+    syntheticSourcingAllowed: true,
+    candidatePersistenceAllowed: (provenance) => provenance === "synthetic",
+  });
+  const campaignId = demo.state.campaigns[0].id;
+  const added = await demo.actions.addCandidateManual(campaignId, {
+    name: "Ada Example",
+    email: "ada.example@example.test",
+    lawfulBasis: "consent",
+  });
+  assert.equal(added.ok, true);
+  if (!added.ok) return;
+  assert.equal(added.added, 1);
+  const stored = demo.state.candidates.find((candidate) => candidate.name === "Ada Example");
+  assert.ok(stored);
+  assert.equal(stored.provenance, "synthetic");
+  assert.equal(stored.email, "ada.example@example.test");
+  assert.equal(demo.fetchCalls, 0);
+});
+
 test("sourcing revalidates authority and current dedupe state after live I/O", async () => {
   let authorityHarness: ReturnType<typeof createHarness>;
   authorityHarness = createHarness({

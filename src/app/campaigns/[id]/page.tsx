@@ -1597,6 +1597,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <div>
               <Eyebrow>Self-improvement</Eyebrow>
               <h2 className="text-xl font-bold tracking-tight text-ink">Learning &amp; refinement</h2>
+              {!supabaseEnabled && (
+                <p className="mt-1 text-sm text-muted" data-testid="learning-unavailable">
+                  Sourcing learning is off in this demo.
+                </p>
+              )}
             </div>
             <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={handleReport}>
               {report ? "Regenerate report" : "Generate report"}
