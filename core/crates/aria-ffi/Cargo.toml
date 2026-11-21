@@ -1,0 +1,19 @@
+[package]
+name = "aria-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Stable C ABI over the Aria core (cdylib + staticlib)"
+
+[lib]
+name = "aria_core"
+path = "src/lib.rs"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+aria-scoring.workspace = true
+aria-dedupe.workspace = true
+aria-ledger.workspace = true
+aria-pipeline.workspace = true
+serde_json.workspace = true
