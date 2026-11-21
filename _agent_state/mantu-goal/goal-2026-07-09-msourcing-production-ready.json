@@ -2,7 +2,7 @@
   "goal_id": "goal-2026-07-09-msourcing-production-ready",
   "title": "MSourcing production-ready + enterprise-ready with real multi-platform sourcing including LinkedIn API",
   "created_at": "2026-07-09T21:34:46+00:00",
-  "created_by": "tony.walteur@gmail.com",
+  "created_by": "owner@example.com",
   "deadline": "2026-07-16T18:00:00-04:00",
   "deadline_note": "Self-imposed tracking date. Tony verbatim: 'What ever times you need to have a real full built that any senior full stack dev can read and fully understand I need it to be the best and most entreprise ready code. No spagetti code. Use Codex to chanllenge yourself' \u2014 quality over calendar.",
   "outcome_criterion": "All three gates YES: (1) tsc + lint + tests + build all green; (2) live E2E proof \u2014 real candidates returned from >=2 platforms including LinkedIn via API, real compliant approved outreach sent, zero mock/demo data in the core sourcing path; (3) Codex adversarial architecture/readability review of the full repo ends 'VERDICT: SHIP'. Final sign-off: Tony. AND (4) Owner acceptance path: Tony pastes a real need (copy-pasted email) into intake, the sourcing loop starts, agents run, and real candidates fitting the request are returned to him \u2014 no manual developer intervention.",

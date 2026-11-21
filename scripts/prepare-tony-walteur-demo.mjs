@@ -45,7 +45,7 @@ async function ensureLinkedInPointedAtTony() {
       "x-openbot-computer-token": computer,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ url: "https://www.linkedin.com/in/tonywalteur" }),
+    body: JSON.stringify({ url: "https://www.linkedin.com/in/example-a" }),
   });
 }
 
@@ -114,7 +114,7 @@ async function main() {
       location: "Montreal, Canada",
       email: null,
       phone: null,
-      linkedinUrl: "https://www.linkedin.com/in/tonywalteur",
+      linkedinUrl: "https://www.linkedin.com/in/example-a",
       stage: "Sourced",
       matchScore: 92,
       score: 92,
@@ -175,7 +175,7 @@ async function main() {
         campaignUrl: `${BASE}/campaigns/camp_seed_backend?tab=agents`,
         outreachUrl: `${BASE}/campaigns/camp_seed_backend?tab=outreach`,
         viewUrl: VIEW,
-        linkedin: "https://www.linkedin.com/in/tonywalteur",
+        linkedin: "https://www.linkedin.com/in/example-a",
         at: new Date().toISOString(),
       },
       null,

@@ -70,7 +70,7 @@ function seat(i: number): AgentSeat {
   return {
     id: `seat-${i}`,
     name: `Agent ${i}`,
-    operatorEmail: `agent${i}@amaris.com`,
+    operatorEmail: `agent${i}@example.com`,
     provider: "LinkedIn Browser Computer",
     status: "active",
     mode: "live",

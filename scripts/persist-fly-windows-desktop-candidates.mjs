@@ -17,7 +17,7 @@ const SERVICE =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.FLY_SUPABASE_SERVICE_KEY ||
   "";
-const EMAIL = process.env.ARIA_OPERATOR_EMAIL || "twalteur@amaris.com";
+const EMAIL = process.env.ARIA_OPERATOR_EMAIL || "owner@example.com";
 const PASSWORD = process.env.ARIA_OPERATOR_PASSWORD || "";
 const CAMP_ID = "camp_mor1jp00097605_enterprise-windows-desktop-engineer";
 const WS = "0d179005-e8e2-4b99-8b9a-b67453348005";
