@@ -310,7 +310,7 @@ function LoginInner() {
           <AriaBuildStamp className="mr-3 font-mono tracking-normal text-white/40" />
           Designed &amp; built by{" "}
           <a
-            href="https://www.linkedin.com/in/tonywalteur/"
+            href="https://www.linkedin.com/in/example-a/"
             target="_blank"
             rel="noreferrer"
             className="font-normal text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline"

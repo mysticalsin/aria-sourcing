@@ -66,7 +66,7 @@ Boolean: ("Calypso") AND ("Business Analyst" OR "BA") AND (MySQL OR SQL) AND (Mo
 `;
 
 /** Connected-email shape wrapping the Application Support need. */
-export const AMACAN_APP_SUPPORT_EMAIL = `From: MUNERA ALZATE Jacobo <jacobo.munera@amaris.com>
+export const AMACAN_APP_SUPPORT_EMAIL = `From: MUNERA ALZATE Jacobo <owner@example.com>
 Subject: Need is now ACTIVE — Calypso Application Support (AMACAN / Montreal)
 
 Please source against the attached VSS. Recruiter: MUNERA ALZATE Jacobo
