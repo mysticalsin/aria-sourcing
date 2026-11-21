@@ -225,6 +225,11 @@ test("test_approved_email_passes_claim_trigger_and_dispatcher", async () => {
   insertOutbound(OK_ROW, OK_APPROVAL, BODY, RECIPIENT);
   insertOutbound(EDIT_ROW, EDIT_APPROVAL, EDITED, RECIPIENT);
   insertOutbound(SWAP_ROW, SWAP_APPROVAL, BODY, OTHER);
+  const GATE_BODY = "As an AI assistant, processing your request now. The example ledger is still why this note exists.";
+  const GATE_APPROVAL = "msg-dispatch-gate";
+  const GATE_ROW = "6c000000-0000-4000-8000-0000000000c4";
+  insertApproval(GATE_APPROVAL, GATE_BODY, RECIPIENT);
+  insertOutbound(GATE_ROW, GATE_APPROVAL, GATE_BODY, RECIPIENT);
 
   const editedClaim = serviceJson(`public.claim_email_outbound_queued('${EDIT_ROW}'::uuid)`);
   assert.equal(editedClaim.allowed, false);
@@ -249,6 +254,20 @@ test("test_approved_email_passes_claim_trigger_and_dispatcher", async () => {
   delete process.env.ARIA_SEND_KILL_SWITCH;
 
   const db = client();
+  const beforeGate = psql(`
+    select coalesce(sum(sent_count), 0)::text
+      from public.outreach_channel_daily_sends
+     where workspace_id = '${WS}' and channel = 'Email';
+  `);
+  const gateStats = await dispatchDue(db as never, 10, GATE_ROW);
+  assert.equal(gateStats.blocked, 1);
+  assert.equal(gateStats.sent, 0);
+  const afterGate = psql(`
+    select coalesce(sum(sent_count), 0)::text
+      from public.outreach_channel_daily_sends
+     where workspace_id = '${WS}' and channel = 'Email';
+  `);
+  assert.equal(afterGate, beforeGate, "a blocked send must not burn the daily cap");
   const editedStats = await dispatchDue(db as never, 10, EDIT_ROW);
   assert.equal(editedStats.blocked, 1);
   assert.equal(editedStats.sent, 0);
@@ -273,4 +292,87 @@ test("test_approved_email_passes_claim_trigger_and_dispatcher", async () => {
   const second = serviceJson(`public.consume_outreach_channel_daily_cap('${WS}'::uuid, 'Email', 1)`);
   assert.equal(second.allowed, false);
   assert.equal(second.reason, "channel-cap");
+});
+
+test("test_cap_is_denied_to_members_and_hashes_match_sql", () => {
+  assert.ok(NETWORK && PASSWORD && IMAGE, "the database shell must export the disposable Postgres");
+  const memberGrant = psql(`
+    select has_function_privilege(
+      'authenticated',
+      'public.consume_outreach_channel_daily_cap(uuid, text)',
+      'EXECUTE'
+    )::text;
+  `);
+  assert.equal(memberGrant, "false");
+  const oldGrant = psql(`
+    select case
+      when to_regprocedure('public.consume_outreach_channel_daily_cap(uuid, text, integer)') is null then 'false'
+      else has_function_privilege(
+        'authenticated',
+        'public.consume_outreach_channel_daily_cap(uuid, text, integer)',
+        'EXECUTE'
+      )::text
+    end;
+  `);
+  assert.equal(oldGrant, "false");
+  assert.throws(
+    () => psql(`
+      set role authenticated;
+      select public.consume_outreach_channel_daily_cap('${WS}'::uuid, 'Email');
+    `),
+    /permission denied|42501/i,
+  );
+  const security = psql(`
+    select (c.relrowsecurity and c.relforcerowsecurity)::text
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relname = 'outreach_channel_daily_sends';
+  `);
+  assert.equal(security, "true");
+  assert.throws(
+    () => psql(`set role authenticated; select count(*) from public.outreach_channel_daily_sends;`),
+    /permission denied|42501/i,
+  );
+  assert.throws(
+    () => psql(`
+      set role authenticated;
+      insert into public.outreach_channel_daily_sends(workspace_id, channel, send_day, sent_count)
+      values ('${WS}', 'Email', current_date, 1);
+    `),
+    /permission denied|42501/i,
+  );
+  const role = psql(`
+    select (rolsuper = false and rolbypassrls = false)::text
+      from pg_roles where rolname = 'aria_app';
+  `);
+  assert.equal(role, "true");
+
+  const fixtures = [
+    { subject: "caf\u00e9 note", body: "Jos\u00e9, the example ledger kept this exact sentence." },
+    { subject: "Hello\r\nWorld", body: "Line one.\r\nLine two." },
+    { subject: "Trailing   space  ", body: "Body keeps the end.  " },
+    { subject: "cafe\u0301", body: "NFC body \u0065\u0301" },
+  ];
+  for (const fixture of fixtures) {
+    const wire = psql(`
+      select public.outreach_wire_body_hash(${sqlLiteral(fixture.subject)}, ${sqlLiteral(fixture.body)});
+    `);
+    assert.equal(wire, approvalHash(fixture.subject, fixture.body));
+    const exact = psql(`
+      select public.exact_outreach_body_hash(
+        'Email', 'ada.dispatch@example.test',
+        ${sqlLiteral(fixture.subject)}, ${sqlLiteral(fixture.body)},
+        '${OUTREACH_NOTICE_VERSION}', '${USER}', '${APPROVED_AT}'::timestamptz
+      );
+    `);
+    assert.equal(exact, exactBodyHash({
+      channel: "Email",
+      recipient: "ada.dispatch@example.test",
+      subject: fixture.subject,
+      body: fixture.body,
+      noticeVersion: OUTREACH_NOTICE_VERSION,
+      approverId: USER,
+      approvedAt: APPROVED_AT,
+    }));
+  }
 });
