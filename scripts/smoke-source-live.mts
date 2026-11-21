@@ -19,7 +19,7 @@ try {
 
 function fail(msg: string): never { console.error(`SMOKE FAIL: ${msg}`); process.exit(1); }
 
-const REAL_JD = `From: Priya Nair <priya@brightloop.io>
+const REAL_JD = `From: Priya Nair <owner@example.com>
 Subject: Urgent — Senior Backend Engineer (Python) in London
 
 Hi, we're hiring a Senior Backend Engineer to join our platform team in London.
