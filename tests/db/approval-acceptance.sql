@@ -255,17 +255,20 @@ begin
     'public.consume_outreach_channel_daily_cap(uuid,text)',
     'execute'
   );
-  claim_exec := has_function_privilege(
-    'authenticated',
-    'public.claim_email_outbound(text,text,text,text,text,text,uuid)',
-    'execute'
-  );
   if to_regprocedure('public.claim_email_outbound(text,text,text,text,text,text,uuid,text,text)') is not null then
     claim_exec := has_function_privilege(
       'authenticated',
       'public.claim_email_outbound(text,text,text,text,text,text,uuid,text,text)',
       'execute'
     );
+  elsif to_regprocedure('public.claim_email_outbound(text,text,text,text,text,text,uuid)') is not null then
+    claim_exec := has_function_privilege(
+      'authenticated',
+      'public.claim_email_outbound(text,text,text,text,text,text,uuid)',
+      'execute'
+    );
+  else
+    claim_exec := false;
   end if;
   perform aria_accept.expect(
     '4-authenticated-cannot-execute-cap',

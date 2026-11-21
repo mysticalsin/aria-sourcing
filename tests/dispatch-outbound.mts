@@ -106,7 +106,10 @@ function makeFakeDb(seed: {
     from: (name: string) => query(name),
     rpc: (fn: string, args: Row) => {
       rpcCalls.push({ fn, args });
-      if (fn === "consume_outreach_channel_daily_cap" || fn === "outreach_channel_sent_today") {
+      if (fn === "outreach_channel_sent_today") {
+        return Promise.resolve({ data: { sent_count: 0, daily_cap: 50 }, error: null });
+      }
+      if (fn === "consume_outreach_channel_daily_cap") {
         return Promise.resolve({ data: { allowed: true, reason: "authorized", sent_count: 0 }, error: null });
       }
       if (fn === "record_whatsapp_provider_acceptance") {

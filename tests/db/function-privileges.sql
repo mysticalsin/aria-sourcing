@@ -43,7 +43,7 @@ begin
       ('public.claim_and_record(text,text,text,uuid,text,integer)',                                                'service_role',  true),
       ('public.claim_calendar_booking(uuid,text,timestamptz,text,text)',                                           'service_role',  true),
       ('public.claim_email_outbound_queued(uuid)',                                                                 'service_role',  true),
-      ('public.claim_email_outbound(text,text,text,text,text,text,uuid)',                                          'authenticated', true),
+      ('public.claim_email_outbound(text,text,text,text,text,text,uuid,text,text)',                                 'authenticated', true),
       ('public.claim_enrichment_budget(uuid,text,text,integer,text)',                                              'service_role',  true),
       ('public.claim_linkedin_outbound_queued(uuid)',                                                              'service_role',  true),
       ('public.cleanup_email_ledger_delivery_receipts(integer)',                                                   'service_role',  true),

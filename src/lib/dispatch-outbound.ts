@@ -17,7 +17,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
-import { approvalIsCurrent, approvalTtlMs, channelDailyCapFromEnv } from "@/lib/approval/allowlist";
+import { approvalIsCurrent, approvalTtlMs } from "@/lib/approval/allowlist";
 import { deliveryTargetForChannel, sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
 import { consultApprovalLedger } from "@/lib/approval/ledger";
@@ -176,14 +176,21 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         await finish("blocked", { pass: false, reasons: [reason] });
         continue;
       }
-      const dailyCap = channelDailyCapFromEnv(process.env);
       const { data: capRow, error: capReadError } = await supabase.rpc("outreach_channel_sent_today", {
         p_workspace_id: msg.workspace_id,
         p_channel: msg.channel,
       });
-      const capRecord = capRow as { sent_count?: number; reason?: string } | null;
+      const capRecord = capRow as { sent_count?: number; daily_cap?: number; reason?: string } | null;
       const sentToday = capRecord?.sent_count;
-      if (capReadError || capRecord?.reason || typeof sentToday !== "number" || !Number.isFinite(sentToday)) {
+      const serverDailyCap = capRecord?.daily_cap;
+      if (
+        capReadError ||
+        capRecord?.reason ||
+        typeof sentToday !== "number" ||
+        !Number.isFinite(sentToday) ||
+        typeof serverDailyCap !== "number" ||
+        !Number.isFinite(serverDailyCap)
+      ) {
         safeLog("dispatch-outbound: daily count unavailable", { message: capReadError?.message ?? capRecord?.reason ?? "missing count" });
         await finish("blocked", { pass: false, reasons: ["daily-count-unavailable"] });
         continue;
@@ -200,7 +207,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         storedWireHash: approval.body_hash,
         env: process.env,
         profileUrl,
-        dailyCap: dailyCap,
+        dailyCap: serverDailyCap,
         sentToday,
       });
       if (!ledgerDecision.allowed) {
@@ -271,20 +278,6 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         }
         deliveryAttemptId = emailClaim.delivery_attempt_id ?? null;
         const rfcMessageId = emailClaim.rfc_message_id ?? "";
-        const { data: consumed, error: capError } = await supabase.rpc("consume_outreach_channel_daily_cap", {
-          p_workspace_id: msg.workspace_id,
-          p_channel: msg.channel,
-        });
-        const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
-        if (capError || capDecision?.allowed !== true) {
-          await supabase.rpc("finalize_email_provider_failure", {
-            p_message_id: msg.id,
-            p_delivery_attempt_id: deliveryAttemptId,
-            p_reason: "Channel daily cap reached.",
-          });
-          stats.blocked++;
-          continue;
-        }
         if (
           !deliveryAttemptId ||
           !UUID_PATTERN.test(deliveryAttemptId) ||
