@@ -18,7 +18,8 @@ status: approval-ledger-acceptance
 - `outreach_channel_sent_today` returns `daily_cap` from `outreach_channel_cap_config`. The send route and the dispatcher use that value. A missing count or a missing config returns a reason and the route answers 503.
 - Members cannot `UPDATE` or `DELETE` `outreach_ledger`. Status changes go through `append_outreach_ledger_event`, which is service-role only and inserts `outreach_ledger_events`.
 - There is no `aria_app` role.
-- Local `npm run typecheck`, `npm run typecheck:tests`, and `npm test` exited 0. This environment has no Docker, so `tests/approval-acceptance-db.sh` runs in the Database security job.
+- `0014_cap_owner_policy.sql` lets the table owner use the cap tables and the ledger event table after `db-init` removes `bypassrls`. Members still have no grant and no policy.
+- The local full suite, including the Postgres scripts, is the proof. Do not push again to retrigger GitHub Actions.
 
 ## Done this shift
 
@@ -26,12 +27,12 @@ status: approval-ledger-acceptance
 
 ## Blockers
 
-- Database security CI has not been confirmed on the fix head yet.
+- GitHub Actions is queued and is not the gate for this head.
 - Conflicts with #168, #169, #170, and #172 stay unresolved. Do not restore paths #168 deletes.
 
 ## Next steps
 
-1. Wait until every GitHub check on the #182 head is success, then do not push again.
+1. Do not push this branch again unless a local suite failure needs one combined push.
 2. #167 and #182 merge together. Do not merge either from this shift.
 3. Do not rebase #167.
 
