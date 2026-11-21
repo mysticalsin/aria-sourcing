@@ -168,6 +168,7 @@ export const testManifest = {
     {"id":"email-inbound-db","executable":"bash","argv":["tests/email-inbound-db.sh"]},
     {"id":"email-outcomes-contract","executable":"tsx","argv":["tests/email-outcomes-contract.mts"]},
     {"id":"email-outcomes-db","executable":"bash","argv":["tests/email-outcomes-db.sh"]},
+    {"id":"stack-shared-config","executable":"tsx","argv":["tests/stack-shared-config.mts"]},
   ],
   groups: {
     "pretest": [
@@ -280,6 +281,7 @@ export const testManifest = {
       "dispatch-concurrency",
       "motion-foundation",
       "gateway-contract",
+      "stack-shared-config",
       "login-page",
       "aria-live",
       "aria-command-console-state",
