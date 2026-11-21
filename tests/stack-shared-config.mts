@@ -26,6 +26,15 @@ function serviceBlock(compose: string, name: string): string {
   return rest.slice(0, next);
 }
 
+function jobBlock(ci: string, id: string): string {
+  const marker = `\n  ${id}:\n`;
+  const start = ci.indexOf(marker);
+  assert.ok(start >= 0, `CI job ${id} is present`);
+  const rest = ci.slice(start + 1);
+  const next = rest.slice(1).search(/\n  [a-z0-9-]+:\n/);
+  return next < 0 ? rest : rest.slice(0, next + 1);
+}
+
 test("gitleaks ignores are fingerprint lines only", () => {
   const text = read(".gitleaksignore");
   assert.ok(text.endsWith("\n"), ".gitleaksignore ends with a newline");
@@ -62,6 +71,7 @@ test("local demo fills the manual intake fields by id", () => {
   assert.match(demo, /Manual intake tab did not become selected/);
   assert.match(demo, /dialog\.locator\("\[id\$='-manual-name'\]"\)/);
   assert.match(demo, /dialog\.locator\("\[id\$='-manual-lawful-basis'\]"\)/);
+  assert.match(demo, /scrollIntoViewIfNeeded\(\)/);
   assert.equal(
     demo.includes('await dialog.getByLabel("Name", { exact: true }).fill(marker + " Person")'),
     false,
@@ -92,6 +102,46 @@ test("CI jobs cover the stack and pin ubuntu-24.04", () => {
   assert.match(ci, /go test -race \.\/\.\.\./);
   assert.match(ci, /needs: \[quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters\]/);
   assert.match(ci, /CHANNEL_ADAPTERS_RESULT/);
+});
+
+test("each pull request block is present in its job", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const secret = jobBlock(ci, "secret-scan");
+  const database = jobBlock(ci, "database-security");
+  const channels = jobBlock(ci, "channel-adapters");
+  const release = jobBlock(ci, "release-gate");
+
+  // #168 keeps a HEAD scan. #167 keeps the --all scan and the ignore audit.
+  assert.match(secret, /name: Scan the checked-out history/);
+  assert.match(secret, /--log-opts='HEAD'/);
+  assert.match(secret, /name: Scan the history of this checkout/);
+  assert.match(secret, /--log-opts='--all'/);
+  assert.match(secret, /git rev-list --all/);
+  assert.match(secret, /git cat-file -e "\$\{sha\}\^\{commit\}"/);
+  assert.match(secret, /gitleaks ignore commit is not reachable with --all/);
+
+  // #167. The npm script is absent on twa-odoo, so the steps skip.
+  assert.match(database, /name: Setup Node 22/);
+  assert.match(database, /name: Install dependencies/);
+  assert.match(database, /name: Verify approval dispatch hashes on Postgres/);
+  assert.match(database, /test:db-approval-dispatch/);
+  assert.match(database, /steps\.approval-dispatch\.outputs\.present == 'true'/);
+  assert.match(database, /not in package\.json on this branch/);
+
+  // #175. services/channels is absent on twa-odoo, so vet and test skip.
+  assert.match(channels, /name: Setup Go/);
+  assert.match(channels, /name: Vet channel adapters/);
+  assert.match(channels, /name: Test channel adapters with the race detector/);
+  assert.equal((channels.match(/services\/channels\/go\.mod/g) ?? []).length, 2);
+  assert.match(channels, /go vet \.\/\.\.\./);
+  assert.match(channels, /go test -race \.\/\.\.\./);
+  assert.match(channels, /is not on this branch yet/);
+
+  // #180 pins the release gate, and every other job, to ubuntu-24.04.
+  assert.match(release, /runs-on: ubuntu-24\.04/);
+  for (const id of ["quality", "dependency-audit", "secret-scan", "database-security", "local-demo", "channel-adapters", "release-gate"]) {
+    assert.match(jobBlock(ci, id), /runs-on: ubuntu-24\.04/, id);
+  }
 });
 
 test("handoff records the shared config and the public-repo hygiene watch", () => {
