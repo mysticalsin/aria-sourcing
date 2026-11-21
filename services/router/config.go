@@ -58,6 +58,10 @@ type Config struct {
 	// non-empty value. The value itself is discarded inside LoadConfig.
 	AnthropicKeyPresent bool
 
+	// RouteDeadline is the router's own timeout, applied even when the
+	// caller passes a context with no deadline. Zero is not applied.
+	RouteDeadline time.Duration
+
 	consulted []ConsultedEnv
 }
 
