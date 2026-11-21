@@ -15,6 +15,7 @@ const compose = source("docker-compose.yml");
 const ignore = source(".gitleaksignore");
 const gitleaks = source(".gitleaks.toml");
 const workflow = source(".github/workflows/ci.yml");
+const demo = source("scripts/accept-local-demo.mjs");
 
 function agentsBlock(text: string): string {
   const start = text.indexOf("\n  agents:\n");
@@ -41,6 +42,17 @@ ok("the agents healthcheck is enabled", !/^\s*disable:\s*true\s*$/m.test(health)
 ok(
   "the agents healthcheck confirms the runner is PID 1",
   health.includes("/proc/1/cmdline") && health.includes("agents-runner.mjs"),
+);
+/* The add-candidate dialog keeps a Name field on the LinkedIn tab. That
+   panel stays mounted and hidden, so getByLabel("Name") fills the hidden
+   input and times out. The acceptance script has to target the manual ids. */
+ok(
+  "the local demo fills the manual candidate fields",
+  demo.includes("[id$='-manual-name']") && demo.includes("[id$='-manual-lawful-basis']"),
+);
+ok(
+  "the local demo does not fill the dialog Name label",
+  !demo.includes('getByLabel("Name"') && !demo.includes('getByLabel("Lawful basis"'),
 );
 
 /* Secret scan: full-history gitleaks findings that are false positives.
