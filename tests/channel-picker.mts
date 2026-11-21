@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -140,4 +141,9 @@ test("the composer shows the exact text, its hash, and voids a dirty edit", () =
   );
   assert.match(unavailable, /Exact text unavailable/);
   assert.match(unavailable, /—/);
+});
+
+test("the command center states that HeyReach is off", () => {
+  const page = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /HeyReach Off\./);
 });
