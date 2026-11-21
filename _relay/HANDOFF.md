@@ -1,52 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 470
+shift: 472
 agent: cursor
-updated: 2026-11-20
-status: compliance-boundaries-pr-open
+updated: 2026-11-21
+status: integration-merge-in-progress
 ---
 
-# Handoff - Shift 470
+# Handoff - Shift 472
 
 ## Current state
 
-- Branch `twa-odoo` is `e3fa3f594a6d86aec31d42a65414a96be4c8400e`. Michael's branches were not rewritten.
-- PR 168 targets `twa-odoo` from `cursor/compliance-boundaries-8b20`. Not merged.
-- Red-first commit `17afd643c12acbd0178a843504816a67e7b44d7a` adds tests that failed before the host and migration fixes.
-- `0010_drop_linkedin_bridge.sql` and `0011_drop_agent_autopilot.sql` are forward-only, unapplied, and have no down migration. Existing databases keep `token_hash` and the autopilot rows until those files run.
-- `vendorApiAdapter` and `LINKEDIN_VENDOR_API_*` are gone. Dispatch refuses the LinkedIn channel. The campaign form and setup status no longer offer LinkedIn web search. There is no agents service and no sample `AGENT_RUNNER_SECRET` in Compose.
-- The secret scan follows `HEAD`. `.gitleaksignore` adds one fingerprint for the historical intake variable name.
+- Branch `integration/aria-all` is being built from `twa-odoo` at `e3fa3f594a6d86aec31d42a65414a96be4c8400e`.
+- PR #168 (`91c287c9817b459f351d0fabc9faa5604c4250f6`) is merged. The LinkedIn bridge, extension, autopilot, and Compose agents service stay deleted.
+- PR #167 (`9e231dfcffc623df0fffce21b6d143df98c9fa5f`) is being merged on top. The approval ledger, `exact_body_hash`, and the Postgres daily cap stay. Its temporary 410 bridge routes do not.
+- Michael's branches, `main`, `vercel-demo`, and `twa-odoo` are not rewritten.
 
 ## Done this shift
 
-- Removed the bare `linkedin.com` host from comments, docs, and the web-search host map. Stored or rejected profile paths remain.
-- Documented the forward-only drops. Removed `linkedin_oidc` from the auth provider comment.
-- A command timeout is retried once. A second timeout exits 2 as an infrastructure error. A product failure is not retried.
+- Started the integration merge. Conflict notes go to `docs/integration/CONFLICTS.md`.
 
 ## Blockers
 
-- Do not merge until the exact head is green, including the Release gate.
+- Remaining PR heads are not merged yet.
 
 ## Next steps
 
-1. Review PR 168 on its exact head. Do not retarget it onto `mbe-branch`.
-2. Re-freeze PR 167 on top of this head after 168 lands. Do not merge 167 first.
-3. Apply `0010` and `0011` only on a disposable database. Export bridge rows first if they are still needed. `token_hash` stays until `0010` runs.
+1. Finish merges in the requested order.
+2. Package the stack with a 6 GiB ceiling and run the sweep harness.
 
 ## Decisions made (don't relitigate)
 
 - Tony, 2026-11-20: `twa-odoo` is cut from `mbe-branch`. PRs target `twa-odoo`.
-- Tony, 2026-11-20: Aria never calls the professional-network host. The extension, cookies, tokens, Voyager, and web-search sourcing are permanently out.
-- Tony, 2026-11-20, 20:30 BRT: the LinkedIn token option may be built as an off-by-default switch with the stated safeguards. PR #178 (card t1876s7747) owns that port. `LINKEDIN_TOKEN_CHANNEL_ALLOWLIST` has exactly one entry, `src/channels/linkedin-token/`, for server-side session-cookie sends. This tree does not add the channel. The old unflagged vendor route stays banned everywhere.
-- Tony, 2026-11-20: HeyReach may be built later, flag-off, official API only, in the separate Go channel module. It is not in this tree.
-- Tony, 2026-11-20: no automation or scraping of `arp.mantu.com`.
-- ADR 0002 is withdrawn. Do not reimplement the runner.
+- Tony, 2026-11-20: Aria never calls the professional-network host. The extension, cookies, Voyager, and web-search sourcing stay out. The token option is a later off-by-default port under `src/channels/linkedin-token/`.
+- Tony, 2026-11-20: MANUAL is the default. FULL AUTOMATIC is opt-in and requires a QC pass bound to the exact body hash.
+- `body_hash` stays the wire hash. `exact_body_hash` is the exact approval binding.
+- ADR 0002 is withdrawn. Do not reimplement the agents runner.
 - Synthetic data only. No live sends, deploys, or paid calls.
-- `0006`–`0009` stay byte-for-byte. Drops are forward-only. There is no down migration.
 
 ## Watch out
 
-- Profile path strings may still be stored. That is not a fetch. `tests/compliance-boundaries.mts` fails on a bare host, `licdn`, or a request.
-- `_relay/archive/2026-11-20-2200-cursor.md` describes a local password-reset procedure. Do not copy it forward.
+- `0010` and `0011` remain the forward-only drops. #167's approval SQL is `0012` and `0013` so the version numbers do not collide.
 - Do not force-push or delete `mbe-branch`, `mbe-ngrok`, `mbe-test`, or `twa-odoo`.
-- `.gitleaksignore` should stay minimal so PR 167 can re-freeze on this branch.

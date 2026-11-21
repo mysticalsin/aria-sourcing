@@ -71,6 +71,7 @@ ok(
   "dispatcher refuses the LinkedIn channel before any claim or delivery",
   dispatch.indexOf('msg.channel === "LinkedIn"') >= 0 &&
     dispatch.indexOf("linkedin-channel-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    dispatch.indexOf("linkedin-delivery-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
     !dispatch.includes("adapter.deliver") &&
     !dispatch.includes("claim_linkedin_outbound_queued"),
 );

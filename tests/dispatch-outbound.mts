@@ -1,7 +1,15 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as dispatchModule from "../src/lib/dispatch-outbound";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "../src/lib/approval/hash.ts";
 import type { AgentSeat } from "../src/lib/types";
+
+process.env.ARIA_RECIPIENT_ALLOWLIST = [
+  "marco.rossi@example.test",
+  "33612345678",
+  "https://www.linkedin.com/in/ada-example",
+  "https://www.linkedin.com/in/marco-rossi",
+].join(",");
 
 const { dispatchDue } = dispatchModule;
 
@@ -98,6 +106,9 @@ function makeFakeDb(seed: {
     from: (name: string) => query(name),
     rpc: (fn: string, args: Row) => {
       rpcCalls.push({ fn, args });
+      if (fn === "consume_outreach_channel_daily_cap" || fn === "outreach_channel_sent_today") {
+        return Promise.resolve({ data: { allowed: true, reason: "authorized", sent_count: 0 }, error: null });
+      }
       if (fn === "record_whatsapp_provider_acceptance") {
         const acceptance = seed.acceptance ?? { allowed: true, reason: "recorded" };
         if (acceptance.allowed === true && !seed.acceptanceError) {
@@ -172,6 +183,15 @@ function makeFakeDb(seed: {
 }
 
 const bodyHash = (body: string, subject = "") => createHash("sha256").update(`${subject}\n${body}`).digest("hex");
+const exactApproval = (body: string, subject = "") => exactBodyHash({
+  channel: "Email",
+  recipient: "marco.rossi@example.test",
+  subject,
+  body,
+  noticeVersion: OUTREACH_NOTICE_VERSION,
+  approverId: "",
+  approvedAt: "",
+});
 const GOOD_BODY = "Hi Marco, thanks for the reply! The team works in Go and Postgres. Want a quick call Thursday?";
 const ATTEMPT_ONE = "11111111-1111-4111-8111-111111111111";
 
@@ -184,7 +204,7 @@ function baseMsg(over: Row = {}): Row {
     candidate_id: "cand-1",
     seat_id: "seat-1",
     channel: "Email",
-    to_address: "marco@example.test",
+    to_address: "marco.rossi@example.test",
     body: GOOD_BODY,
     status: "queued",
     scheduled_at: "2000-01-01T00:00:00Z",
@@ -195,7 +215,7 @@ function baseMsg(over: Row = {}): Row {
 function baseLinkedInMsg(over: Row = {}): Row {
   return baseMsg({
     channel: "LinkedIn",
-    to_address: "https://www.linkedin.com/in/marco-rossi",
+    to_address: "https://www.linkedin.com/in/ada-example",
     subject: "Quick note",
     approval_message_id: "m-1",
     ...over,
@@ -288,7 +308,13 @@ for (const channel of ["WhatsApp", "SMS"]) {
 {
   const db = makeFakeDb({
     outbound: [baseMsg()],
-    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "legacy_unverified" }],
+    approvals: [{
+      workspace_id: "ws-1",
+      message_id: "m-1",
+      body_hash: bodyHash(GOOD_BODY),
+      exact_body_hash: exactApproval(GOOD_BODY),
+      approval_source: "legacy_unverified",
+    }],
     seats: [LIVE_SEAT],
     claim: { allowed: true },
   });
@@ -333,8 +359,7 @@ for (const channel of ["WhatsApp", "SMS"]) {
 }
 
 // ---------------------------------------------------------------------------
-// 11. LinkedIn assisted-manual works through the adapter and records the
-// outcome in the same durable ledger.
+// 11. LinkedIn is hard-refused. An approval does not reach a provider.
 // ---------------------------------------------------------------------------
 {
   const db = makeFakeDb({

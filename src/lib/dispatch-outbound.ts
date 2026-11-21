@@ -2,9 +2,10 @@
    OUTBOUND DISPATCHER — the ONLY path from messages_outbound to the wire.
 
    Every queued message that is due must clear, in order:
-     1. a named human approval row for exactly this message id + body hash,
-     2. the human-likeness gate — again, defence in depth,
-     3. a live seat of the right provider and the channel's atomic claim
+     1. the send policy (kill switch and recipient allowlist),
+     2. a named human approval row for exactly this message id + body hash,
+     3. the human-likeness gate — again, defence in depth,
+     4. a live seat of the right provider and the channel's atomic claim
         (Email or assisted LinkedIn). Any other channel is blocked.
    Anything that fails flips to 'blocked' (human queue) or 'failed'; an
    unconfigured provider is counted separately. A message never silently retries
@@ -16,7 +17,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
-import { approvalHash } from "@/lib/outreach-content";
+import { approvalIsCurrent, approvalTtlMs, channelDailyCapFromEnv } from "@/lib/approval/allowlist";
+import { deliveryTargetForChannel, sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
+import { consultApprovalLedger } from "@/lib/approval/ledger";
+import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { performEmailSend } from "@/lib/email-send";
@@ -105,29 +110,115 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         await finish("blocked", { pass: false, reasons: ["linkedin-channel-refused"] });
         continue;
       }
+      if (msg.channel === "linkedin_token") {
+        await finish("blocked", { pass: false, reasons: ["linkedin-delivery-refused"] });
+        continue;
+      }
       if (msg.channel !== "Email") {
         await finish("blocked", { pass: false, reasons: ["channel-not-dispatchable"] });
         continue;
       }
 
+      const profileUrl = typeof (msg as unknown as { profile_url?: unknown }).profile_url === "string"
+        ? (msg as unknown as { profile_url: string }).profile_url
+        : null;
+      const deliveryTarget = deliveryTargetForChannel(msg.channel, {
+        toAddress: typeof msg.to_address === "string" ? msg.to_address : "",
+        profileUrl: profileUrl,
+      });
+      const sendPolicy = sendPolicyFromEnv(process.env, deliveryTarget);
+      if (!sendPolicy.ok) {
+        await finish("blocked", { pass: false, reasons: [sendPolicy.reason] });
+        continue;
+      }
+
       // 1. Approval must exist for exactly this message.
-      const bodyHash = approvalHash(msg.subject ?? "", msg.body);
       const approvalMessageId = msg.approval_message_id ?? msg.id;
       const { data: approval } = await supabase
         .from("outreach_approvals")
-        .select("body_hash, approval_source, revoked_at")
+        .select("body_hash, exact_body_hash, approval_scope_hash, approval_source, revoked_at, approved_at, approved_by")
         .eq("workspace_id", msg.workspace_id)
         .eq("message_id", approvalMessageId)
         .maybeSingle();
-      if (!approval || approval.revoked_at || approval.body_hash !== bodyHash || approval.approval_source !== "human") {
+      const approvedAt = typeof approval?.approved_at === "string" ? approval.approved_at : "";
+      const approverId = typeof approval?.approved_by === "string" ? approval.approved_by : "";
+      const wireHash = approvalHash(msg.subject ?? "", msg.body);
+      const bodyHash = exactBodyHash({
+        channel: msg.channel,
+        recipient: deliveryTarget,
+        subject: msg.subject ?? "",
+        body: msg.body,
+        noticeVersion: OUTREACH_NOTICE_VERSION,
+        approverId,
+        approvedAt,
+      });
+      const storedExact = typeof approval?.exact_body_hash === "string" ? approval.exact_body_hash : "";
+      const scopeHash = approvalScopeHash({
+        candidateId: msg.candidate_id,
+        channel: msg.channel,
+        recipient: deliveryTarget,
+      });
+      if (
+        !approval ||
+        approval.revoked_at ||
+        approval.body_hash !== wireHash ||
+        storedExact !== bodyHash ||
+        approval.approval_source !== "human" ||
+        !scopeHash ||
+        approval.approval_scope_hash !== scopeHash ||
+        !approvalIsCurrent(approval.approved_at, Date.now(), approvalTtlMs(process.env))
+      ) {
         const reason = !approval
           ? "no-approval"
           : approval.revoked_at
             ? "approval-revoked"
-            : approval.body_hash !== bodyHash
+            : approval.body_hash !== wireHash || storedExact !== bodyHash
             ? "approval-hash-mismatch"
-            : "approval-not-human";
+            : approval.approval_source !== "human"
+            ? "approval-not-human"
+            : !scopeHash || approval.approval_scope_hash !== scopeHash
+            ? "approval-scope-mismatch"
+            : "approval-expired";
         await finish("blocked", { pass: false, reasons: [reason] });
+        continue;
+      }
+      const dailyCap = channelDailyCapFromEnv(process.env);
+      const utcDay = new Date().toISOString().slice(0, 10);
+      const { data: capRow } = await supabase
+        .from("outreach_channel_daily_sends")
+        .select("sent_count")
+        .eq("workspace_id", msg.workspace_id)
+        .eq("channel", msg.channel)
+        .eq("send_day", utcDay)
+        .maybeSingle();
+      const sentToday = typeof capRow?.sent_count === "number" ? capRow.sent_count : Number(capRow?.sent_count ?? 0);
+      const ledgerDecision = consultApprovalLedger({
+        channel: msg.channel,
+        recipient: deliveryTarget,
+        subject: msg.subject ?? "",
+        body: msg.body,
+        noticeVersion: OUTREACH_NOTICE_VERSION,
+        approverId,
+        approvedAt,
+        storedBodyHash: storedExact,
+        storedWireHash: approval.body_hash,
+        env: process.env,
+        profileUrl,
+        dailyCap: dailyCap,
+        sentToday: Number.isFinite(sentToday) ? sentToday : 0,
+      });
+      if (!ledgerDecision.allowed) {
+        await finish("blocked", { pass: false, reasons: [ledgerDecision.reason] });
+        continue;
+      }
+      const { data: consumed, error: capError } = await supabase.rpc("consume_outreach_channel_daily_cap", {
+        p_workspace_id: msg.workspace_id,
+        p_channel: msg.channel,
+        p_cap: dailyCap,
+      });
+      const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
+      if (capError || capDecision?.allowed !== true) {
+        await finish("blocked", { pass: false, reasons: [capDecision?.reason ?? "channel-cap"] });
         continue;
       }
 

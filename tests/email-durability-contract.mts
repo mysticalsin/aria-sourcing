@@ -212,6 +212,7 @@ ok(
   "the dispatcher refuses LinkedIn and every non-email channel before any claim",
   dispatch.indexOf('msg.channel === "LinkedIn"') >= 0 &&
     dispatch.indexOf("linkedin-channel-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    dispatch.indexOf("linkedin-delivery-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
     dispatch.indexOf('msg.channel !== "Email"') < dispatch.indexOf('rpc("claim_email_outbound_queued"') &&
     !dispatch.includes("claim_linkedin_outbound_queued"),
 );

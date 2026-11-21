@@ -217,6 +217,15 @@ insert into public.outreach_approvals (
     encode(digest('candidate-email-race' || E'\n' || 'LinkedIn' || E'\n' || 'https://www.linkedin.com/in/recontact-candidate', 'sha256'), 'hex'),
     'ca000000-0000-4000-8000-000000000002', 'human'
   );
+update public.outreach_approvals
+  set exact_body_hash = public.exact_outreach_body_hash(
+    'Email', 'queued-race@example.test', 'Cap race', 'Queued email cap race body',
+    'outreach-v1', approved_by::text, approved_at)
+  where message_id = 'ca000000-0000-4000-8000-000000000005';
+update public.outreach_approvals
+  set exact_body_hash = repeat('c', 64)
+  where workspace_id = 'ca000000-0000-4000-8000-000000000001'
+    and exact_body_hash is null;
 
 insert into public.messages_outbound (
   id, workspace_id, candidate_id, seat_id, channel, to_address,
