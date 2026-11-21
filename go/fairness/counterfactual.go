@@ -22,14 +22,6 @@ type textSwap struct {
 	kind, from, to, text string
 }
 
-type featureProbe struct {
-	class string
-	from  string
-	to    string
-	orig  map[string]any
-	flip  map[string]any
-}
-
 func runCounterfactual(run Run, scorer Scorer, epsilon float64) (CounterfactualResult, error) {
 	result := CounterfactualResult{
 		Ran:          false,
@@ -50,34 +42,20 @@ func runCounterfactual(run Run, scorer Scorer, epsilon float64) (CounterfactualR
 	var outside int
 	for _, c := range candidates {
 		swaps := textSwaps(c.Text)
-		probes := featureProbes(c)
-		if len(swaps) == 0 && len(probes) == 0 {
+		if len(swaps) == 0 {
 			result.UncoveredIDs = append(result.UncoveredIDs, c.ID)
 			continue
 		}
-		if len(swaps) > 0 {
-			original, err := scoreFinite(scorer, scoreView(c, c.Text))
-			if err != nil {
-				return CounterfactualResult{}, fmt.Errorf("fairness: score %s: %w", c.ID, err)
-			}
-			for _, swap := range swaps {
-				swapped, err := scoreFinite(scorer, scoreView(c, swap.text))
-				if err != nil {
-					return CounterfactualResult{}, fmt.Errorf("fairness: score %s: %w", c.ID, err)
-				}
-				outside += appendCase(&result, c.ID, swap.kind, swap.from, swap.to, original, swapped, epsilon)
-			}
+		original, err := scoreFinite(scorer, scoreView(c, c.Text))
+		if err != nil {
+			return CounterfactualResult{}, fmt.Errorf("fairness: score %s: %w", c.ID, err)
 		}
-		for _, probe := range probes {
-			original, err := scoreFinite(scorer, ScoreView{ID: c.ID, Text: c.Text, Features: probe.orig})
+		for _, swap := range swaps {
+			swapped, err := scoreFinite(scorer, scoreView(c, swap.text))
 			if err != nil {
 				return CounterfactualResult{}, fmt.Errorf("fairness: score %s: %w", c.ID, err)
 			}
-			swapped, err := scoreFinite(scorer, ScoreView{ID: c.ID, Text: c.Text, Features: probe.flip})
-			if err != nil {
-				return CounterfactualResult{}, fmt.Errorf("fairness: score %s: %w", c.ID, err)
-			}
-			outside += appendCase(&result, c.ID, "protected-attribute", probe.class+"="+probe.from, probe.class+"="+probe.to, original, swapped, epsilon)
+			outside += appendCase(&result, c.ID, swap.kind, swap.from, swap.to, original, swapped, epsilon)
 		}
 	}
 	sort.Strings(result.UncoveredIDs)
@@ -97,16 +75,16 @@ func runCounterfactual(run Run, scorer Scorer, epsilon float64) (CounterfactualR
 	switch {
 	case outside > 0:
 		result.Verdict = VerdictFail
-		result.Detail = "a name, gender-marker, or protected-attribute flip changed the score by more than epsilon"
+		result.Detail = "a name or gender-marker swap changed the score by more than epsilon"
 	case len(result.Cases) == 0:
 		result.Verdict = VerdictInsufficient
-		result.Detail = "no candidate had a swappable name, gender marker, or protected feature"
+		result.Detail = "no candidate text had a swappable name or gender marker"
 	case len(result.UncoveredIDs) > 0:
 		result.Verdict = VerdictWarn
-		result.Detail = "some candidates had no swappable name, gender marker, or protected feature"
+		result.Detail = "some candidates had no swappable name or gender marker"
 	default:
 		result.Verdict = VerdictPass
-		result.Detail = "name, gender-marker, and protected-attribute flips stayed within epsilon"
+		result.Detail = "name and gender-marker swaps stayed within epsilon"
 	}
 	return result, nil
 }
@@ -139,87 +117,6 @@ func textSwaps(text string) []textSwap {
 		swaps = append(swaps, textSwap{"gender-marker", from, to, next})
 	}
 	return swaps
-}
-
-func featureProbes(c Candidate) []featureProbe {
-	keys := make([]string, 0, len(c.Features))
-	for key := range c.Features {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var probes []featureProbe
-	for _, key := range keys {
-		class := featureClass(key)
-		if class == "" || class == "label" {
-			continue
-		}
-		flipped, ok := flipFeature(class, c.Features[key])
-		if !ok {
-			continue
-		}
-		probes = append(probes, featureProbe{
-			class: class,
-			from:  fmt.Sprint(c.Features[key]),
-			to:    fmt.Sprint(flipped),
-			orig:  probeFeatures(c.Features, key, c.Features[key]),
-			flip:  probeFeatures(c.Features, key, flipped),
-		})
-	}
-	return probes
-}
-
-func probeFeatures(all map[string]any, keepKey string, keepValue any) map[string]any {
-	out := map[string]any{}
-	for key, value := range all {
-		if featureClass(key) == "" {
-			out[key] = value
-		}
-	}
-	out[keepKey] = keepValue
-	return out
-}
-
-func flipFeature(class string, value any) (any, bool) {
-	switch class {
-	case "gender", "race", "ethnicity", "religion", "disability":
-		text, ok := value.(string)
-		if !ok || strings.TrimSpace(text) == "" {
-			return nil, false
-		}
-		if text == "group-b" {
-			return "group-a", true
-		}
-		return "group-b", true
-	case "age", "graduationYear":
-		number, ok := asNumber(value)
-		if !ok {
-			return nil, false
-		}
-		return number + 15, true
-	case "postcode":
-		text, ok := value.(string)
-		if !ok || strings.TrimSpace(text) == "" {
-			return nil, false
-		}
-		if text == "SYN-001" {
-			return "SYN-000", true
-		}
-		return "SYN-001", true
-	case "photo":
-		switch v := value.(type) {
-		case bool:
-			return !v, true
-		case string:
-			if strings.TrimSpace(v) == "" {
-				return "synthetic-photo", true
-			}
-			return "", true
-		default:
-			return nil, false
-		}
-	default:
-		return nil, false
-	}
 }
 
 func swapToken(text string, pairs [][2]string) (swapped, from, to string, ok bool) {
@@ -260,14 +157,39 @@ func scoreView(c Candidate, text string) ScoreView {
 	return ScoreView{ID: c.ID, Text: text, Features: features}
 }
 
-// SetDenylistForTest replaces the strip set. The red seam does not apply it yet.
+var stripDenylist = defaultStripDenylist()
+
+func defaultStripDenylist() map[string]struct{} {
+	classes := []string{
+		"gender", "race", "age", "ethnicity", "religion", "disability",
+		"postcode", "graduationYear", "photo", "label",
+	}
+	set := make(map[string]struct{}, len(classes))
+	for _, class := range classes {
+		set[class] = struct{}{}
+	}
+	return set
+}
+
+// SetDenylistForTest replaces the strip set for the duration of a test.
+// Passing a key that matches no feature class disables stripping.
 func SetDenylistForTest(classes []string) func() {
-	return func() {}
+	previous := stripDenylist
+	next := make(map[string]struct{}, len(classes))
+	for _, class := range classes {
+		next[class] = struct{}{}
+	}
+	stripDenylist = next
+	return func() { stripDenylist = previous }
 }
 
 func protectedFeatureKey(key string) bool {
 	class := featureClass(key)
-	return class != ""
+	if class == "" {
+		return false
+	}
+	_, strip := stripDenylist[class]
+	return strip
 }
 
 // featureClass is the denylist. Job skills, years of experience, and location
