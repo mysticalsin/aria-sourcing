@@ -1,6 +1,6 @@
 # Aria Recruiting End-to-End Executive Walkthrough
 **Date:** September 11, 2026
-**Demo Account:** twalteur@amaris.com
+**Demo Account:** owner@example.com
 **Environment:** https://aria-mantu-app.fly.dev (LIVE Production)
 
 ## Executive Summary
@@ -116,7 +116,7 @@ This walkthrough demonstrates Aria's autonomous recruiting platform operating on
 - **VM ID:** 3bf53ff5
 - **Working on:** Senior Calypso Business Analyst
 - **Capacity:** Sends 0/20 (Fully warmed)
-- **Mailbox:** twalteur@amaris.com
+- **Mailbox:** owner@example.com
 - **Provider:** LinkedIn Browser Computer
 - **Language:** English
 - **Send Window:** 8:00-18:00 CET
@@ -223,7 +223,7 @@ The system clearly indicates:
      - LinkedIn login challenge (CAPTCHA, security verification)
      - Session expired/invalidated
      - LinkedIn detected automated browser behavior
-     - Credentials issue for twalteur@amaris.com LinkedIn account
+     - Credentials issue for owner@example.com LinkedIn account
 
 2. **No Live Agents:**
    - Agent Fleet shows "0 live agents" 
@@ -237,7 +237,7 @@ The system clearly indicates:
 ### Recommended Next Steps
 
 1. **Fix LinkedIn Session:**
-   - Manually log into LinkedIn using twalteur@amaris.com credentials
+   - Manually log into LinkedIn using owner@example.com credentials
    - Complete any security challenges (CAPTCHA, phone verification, email confirmation)
    - Reset Browser Computer session
    - Verify session shows "Healthy" status
