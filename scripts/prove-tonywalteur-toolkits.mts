@@ -14,7 +14,7 @@ const { linkedinAgentToolProvider } = await import(
   "../src/lib/sourcing/providers/linkedin-agent-tool"
 );
 
-const profile = "https://www.linkedin.com/in/tonywalteur/";
+const profile = "https://www.linkedin.com/in/example-a/";
 const insight = await analyzeLinkedInProfile(profile);
 const icp = await qualifyLeadAgainstIcp({
   profileUrl: profile,

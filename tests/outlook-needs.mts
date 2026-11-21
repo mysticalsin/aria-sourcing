@@ -68,7 +68,7 @@ ok(
 );
 ok(
   "Gmail seat is not Outlook mailbox",
-  !seatHasOutlookMailbox({ provider: "Gmail API", connectedAccount: "ops@gmail.com" }),
+  !seatHasOutlookMailbox({ provider: "Gmail API", connectedAccount: "owner@example.com" }),
 );
 
 ok("demoOutlookNeeds returns two labelled samples", demoOutlookNeeds().length === 2);
