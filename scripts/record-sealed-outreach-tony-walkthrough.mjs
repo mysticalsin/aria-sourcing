@@ -40,7 +40,7 @@ async function main() {
 
   // Prefer demo-login API for reliability, then reload app session cookies if any.
   const loginRes = await page.request.post(`${BASE}/api/auth/demo-login`, {
-    data: { username: "Twalteur@amaris.com", password },
+    data: { username: "owner@example.com", password },
   });
   const loginJson = await loginRes.json().catch(() => ({}));
   steps.push({ step: "demo-login", status: loginRes.status(), ok: loginJson?.ok === true || loginRes.ok() });
@@ -49,7 +49,7 @@ async function main() {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   const user = page.locator('input[name="username"], input[name="email"], input[type="email"]').first();
   if (await user.count()) {
-    await user.fill("Twalteur@amaris.com");
+    await user.fill("owner@example.com");
     const pass = page.locator('input[type="password"]').first();
     if (await pass.count()) await pass.fill(password);
     const btn = page.getByRole("button", { name: /sign in|log in|enter|continue|demo/i }).first();
