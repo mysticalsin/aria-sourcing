@@ -1,17 +1,35 @@
 const { test, expect } = require('@playwright/test');
-const { state } = require('../lib/odoo');
-const { shot, login, openApplicant, clickStage, currentStage, expectDialog, moveTo, chooseSelection, openAriaTab } = require('../lib/ui');
+const { state, json2 } = require('../lib/odoo');
+const { shot, startSession, openApplicant, clickStage, currentStage, expectDialog, moveTo, chooseSelection, openAriaTab } = require('../lib/ui');
 
 test.describe.configure({ mode: 'serial' });
 
 let context;
 let page;
+let browserRef;
+let applicantId = state.applicant_id;
 
-test.beforeAll(async ({ browser }) => {
-  context = await browser.newContext();
-  page = await context.newPage();
-  await login(context, page, 'recruiter');
-  await openApplicant(page);
+async function useUser(userKey) {
+  if (context) await context.close();
+  ({ context, page } = await startSession(browserRef, userKey));
+  await openApplicant(page, applicantId);
+}
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  browserRef = browser;
+  const created = await json2('manager', 'hr.applicant', 'create', {
+    vals_list: [{
+      partner_name: `Ada ${testInfo.project.name}`,
+      email_from: `ada.${testInfo.project.name}@example.test`,
+      job_id: state.job_id,
+      stage_id: state.stage_ids.to_rate,
+      aria_smart_need_id: 'NEED-SYN-1001',
+      aria_smart_candidate_id: `CAND-SYN-${testInfo.project.name}`,
+    }],
+  });
+  if (!created.ok) throw new Error('could not create the journey applicant');
+  applicantId = Array.isArray(created.result) ? created.result[0] : created.result;
+  await useUser('recruiter');
 });
 
 test.afterAll(async () => {
@@ -37,8 +55,7 @@ test('refuses Hired when no contract is attached', async () => {
 });
 
 test('HR manager attaches a synthetic contract PDF', async () => {
-  await login(context, page, 'manager');
-  await openApplicant(page);
+  await useUser('manager');
   await openAriaTab(page);
   await page.locator('div[name="aria_contract_pdf"] input[type="file"]').setInputFiles(process.env.CONTRACT_PDF);
   await page.getByRole('button', { name: 'Save manually' }).click();
@@ -55,8 +72,7 @@ test('refuses Hired when the fake adapter is still pending', async () => {
 });
 
 test('DNA integration uses the fake adapter and refuses a failed status', async () => {
-  await login(context, page, 'dna');
-  await openApplicant(page);
+  await useUser('dna');
   await openAriaTab(page);
   const adapter = page.locator('div[name="aria_dna_adapter_name"]');
   await expect(adapter).toContainText('fake');
@@ -72,15 +88,14 @@ test('DNA integration uses the fake adapter and refuses a failed status', async 
 });
 
 test('Hired succeeds after the contract and the fake DNA status', async () => {
-  await login(context, page, 'manager');
-  await openApplicant(page);
+  await useUser('manager');
   await clickStage(page, 'Hired');
   await expect(page.locator('div[name="stage_id"]')).toContainText('Hired', { timeout: 30000 });
   await shot(page, 'hired-success');
 });
 
 test('audit and chatter record the transitions', async () => {
-  await openApplicant(page);
+  await openApplicant(page, applicantId);
   await page.locator('.o-mail-Chatter, .o_Chatter, .oe_chatter').first().waitFor({ timeout: 30000 });
   await expect(page.locator('body')).toContainText('ARIA_TRANSITION');
   await shot(page, 'chatter');
@@ -92,8 +107,7 @@ test('audit and chatter record the transitions', async () => {
 });
 
 test('a recruiter cannot set the contract kind from the form', async () => {
-  await login(context, page, 'recruiter');
-  await openApplicant(page);
+  await useUser('recruiter');
   await openAriaTab(page);
   await expect(page.locator('div[name="aria_dna_integration_status"]')).toHaveCount(0);
   await page.locator('div[name="aria_contract_pdf"] input[type="file"]').setInputFiles(process.env.CONTRACT_PDF);

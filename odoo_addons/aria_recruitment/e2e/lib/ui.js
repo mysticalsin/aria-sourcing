@@ -10,12 +10,63 @@ async function shot(page, name) {
   await page.screenshot({ path: path.join(shots, `${name}.png`), fullPage: true });
 }
 
-async function login(context, page, userKey) {
+function withSessionCookie(header, session) {
+  const kept = String(header || '')
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part && !part.startsWith('session_id='));
+  kept.push(`session_id=${session}`);
+  return kept.join('; ');
+}
+
+async function openLoggedIn(context, page, userKey) {
+  const base = process.env.BASE_URL;
   const session = await authenticate(state.users[userKey].login);
-  await context.clearCookies();
-  await context.addCookies([sessionCookie(session, process.env.BASE_URL)]);
-  await page.goto('/odoo', { waitUntil: 'domcontentloaded' });
+  const browserName = context.browser() && context.browser().browserType().name();
+  // WebKit refuses a cookie whose domain is an IP address. Visit the origin
+  // first, then store the authenticated session with SameSite=Lax.
+  if (browserName === 'webkit') {
+    await page.goto(`${base}/web/health`, { waitUntil: 'domcontentloaded' });
+    await context.clearCookies();
+  }
+  await context.addCookies([sessionCookie(session, base)]);
+  const stored = await context.cookies(base);
+  const cookie = stored.find((item) => item.name === 'session_id' && item.value === session);
+  if (!cookie || cookie.sameSite !== 'Lax') {
+    throw new Error(`session cookie was not stored for ${browserName || 'browser'}`);
+  }
+  if (browserName === 'webkit') {
+    // The Lax cookie is kept for the document and omitted on the JSON-RPC
+    // calls that follow, which Odoo answers with "Session Expired".
+    const sid = { value: session };
+    await context.route('**/*', async (route) => {
+      const headers = { ...route.request().headers() };
+      headers.cookie = withSessionCookie(headers.cookie, sid.value);
+      const response = await route.fetch({ headers });
+      for (const header of response.headersArray()) {
+        if (header.name.toLowerCase() !== 'set-cookie') continue;
+        const match = header.value.match(/session_id=([^;]+)/);
+        if (match) sid.value = match[1];
+      }
+      await route.fulfill({ response });
+    });
+  }
+  await page.goto(`${base}/odoo`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.o_main_navbar, .o_home_menu, .o_web_client', { timeout: 120000 });
+  if (page.url().includes('/web/login')) {
+    throw new Error(`session cookie was not accepted for ${userKey}`);
+  }
+}
+
+async function startSession(browser, userKey) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await openLoggedIn(context, page, userKey);
+  return { context, page };
+}
+
+async function login(context, page, userKey) {
+  await openLoggedIn(context, page, userKey);
 }
 
 async function openApplicant(page, id = state.applicant_id) {
@@ -73,6 +124,6 @@ async function moveTo(page, label) {
 }
 
 module.exports = {
-  shot, login, openApplicant, clickStage, currentStage, expectDialog, moveTo, chooseSelection, openAriaTab,
+  shot, login, startSession, openApplicant, clickStage, currentStage, expectDialog, moveTo, chooseSelection, openAriaTab,
   sessionCookie,
 };

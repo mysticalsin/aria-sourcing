@@ -82,7 +82,7 @@ const summary = {
     property_tests: tests.some((test) => test.name.includes('verifier property')),
     spec_boundary_tests: tests.some((test) => test.name.startsWith('boundary:')),
     skip_xfail_gate: counts.skipped === 0 ? 'pass' : 'fail',
-    timeout_policy: 'playwright retries 0; one rerun only when the failure is a timeout, then infra_error',
+    timeout_policy: 'playwright retries 0; one rerun only for a timeout; a failed assertion on that rerun stays failed, and only a second timeout is an infrastructure error',
     infra_retried: infraRetried,
   },
   known_gaps: [],

@@ -91,8 +91,12 @@ if [ -n "${CI:-}" ]; then
   (
     cd "${E2E}"
     unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
-    npx playwright install --with-deps chromium
+    npx playwright install --with-deps chromium webkit
   )
+fi
+export ARIA_E2E_WEBKIT="${ARIA_E2E_WEBKIT:-}"
+if [ -n "${CI:-}" ]; then
+  export ARIA_E2E_WEBKIT=1
 fi
 
 free_port() {
@@ -118,7 +122,9 @@ PROJECT="aria-e2e-${STAMP}-$$"
 export HEAD_SHA="$(git -C "${ROOT}" rev-parse HEAD)"
 export TREE_SHA="$(git -C "${ROOT}" rev-parse 'HEAD^{tree}')"
 export ARTIFACT_DIR="${ART}"
-export BASE_URL="http://127.0.0.1:${ODOO_PORT}"
+# localhost, not the numeric address: WebKit will not store a session cookie
+# whose domain is an IP, so SameSite=Lax never reaches the next navigation.
+export BASE_URL="http://localhost:${ODOO_PORT}"
 export STATE_PATH=""
 export SECRET_DIR=""
 export SPEC_PATH="${ROOT}/odoo_addons/aria_recruitment/spec/pipeline_stages.json"

@@ -25,4 +25,10 @@ module.exports = {
     screenshot: 'only-on-failure',
     viewport: { width: 1600, height: 1000 },
   },
+  projects: [
+    { name: 'chromium', use: { browserName: 'chromium' } },
+    ...(process.env.ARIA_E2E_WEBKIT === '1'
+      ? [{ name: 'webkit', use: { browserName: 'webkit' } }]
+      : []),
+  ],
 };

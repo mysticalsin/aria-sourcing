@@ -27,6 +27,11 @@ test('opt-out blocks outreach and is audited', async ({ browser }) => {
   await openApplicant(page, id);
   await openAriaTab(page);
   await page.locator('div[name="aria_opt_out"] input').check();
+  const save = page.locator('.o_form_button_save');
+  if (await save.count() && await save.first().isVisible()) {
+    await save.first().click();
+    await save.first().waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+  }
   await page.locator('button[name="action_aria_outreach"]').click();
   await expectDialog(page, 'opt');
   await shot(page, 'gdpr-opt-out');

@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from markupsafe import Markup
 
-from odoo import api, fields, models
+from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from .dna_adapter import resolve_adapter
@@ -444,7 +444,7 @@ class HrApplicant(models.Model):
         if not stage_in and not date_in and not status_in:
             return None
         from_key = self.stage_id.aria_stage_key or ''
-        if not stage_in and not self._aria_is_hired_stage(self.stage_id):
+        if not stage_in and not self._aria_is_hired_outcome():
             return TransitionDecision(
                 False,
                 'hire refused: the hire date cannot be set without an authorised move to Hired',
@@ -452,7 +452,13 @@ class HrApplicant(models.Model):
                 'hired',
             ), self.env['hr.recruitment.stage']
         if not stage_in:
-            return None
+            return TransitionDecision(
+                True,
+                'already hired',
+                from_key,
+                from_key or 'hired',
+                noop=True,
+            ), self.stage_id
         target = self._aria_stage_target(vals.get('stage_id'))
         return self._aria_decide(target), target
 
@@ -560,15 +566,41 @@ class HrApplicant(models.Model):
         return True
 
     def _aria_commit_refusal(self, vals, body):
-        """Persist a refused attempt outside the caller's transaction."""
+        """Persist a refused attempt outside the caller's transaction.
+
+        Rows created in the caller's transaction (a user, a company) are not
+        visible here. Keep the audit with only foreign keys that already
+        exist, and log anything that still cannot be stored.
+        """
         registry = self.env.registry
-        with registry.cursor() as cr:
-            env = api.Environment(cr, self.env.uid, {})
-            audit_vals = dict(vals)
-            audit_vals['applicant_id'] = False
-            env['aria.recruitment.transition.audit'].sudo().create(audit_vals)
-            env.flush_all()
-            cr.commit()
+        try:
+            with registry.cursor() as cr:
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                audit_vals = dict(vals)
+                audit_vals['applicant_id'] = False
+
+                def visible(table, record_id):
+                    if not record_id:
+                        return False
+                    cr.execute(f'SELECT 1 FROM {table} WHERE id = %s', (record_id,))
+                    return bool(cr.fetchone())
+
+                if not visible('res_users', audit_vals.get('user_id')):
+                    _logger.error(
+                        'Aria refusal audit user %s is not committed; the row keeps no personal foreign key',
+                        audit_vals.get('user_id'),
+                    )
+                    audit_vals['user_id'] = SUPERUSER_ID
+                if not visible('res_company', audit_vals.get('company_id')):
+                    audit_vals['company_id'] = env.ref('base.main_company').id
+                for field_name in ('from_stage_id', 'to_stage_id'):
+                    if audit_vals.get(field_name) and not visible('hr_recruitment_stage', audit_vals[field_name]):
+                        audit_vals[field_name] = False
+                env['aria.recruitment.transition.audit'].sudo().create(audit_vals)
+                env.flush_all()
+                cr.commit()
+        except Exception:
+            _logger.exception('Aria hire-gate refusal audit failed to commit')
         return body
 
     @api.model
@@ -717,13 +749,21 @@ class HrApplicant(models.Model):
             self._aria_record_opt_outs(opting_out)
             return result
         if 'application_status' in vals and not any(key in vals for key in ('stage_id', 'date_closed')):
-            # Non-stored. Treat an attempted hired status as a hire and stop.
+            # Non-stored. An attempted hired status is a hire unless the person is already hired.
             if vals.get('application_status') == 'hired':
                 decisions = []
                 for applicant in self:
-                    decision, target = applicant._aria_outcome_decision(vals)
-                    decisions.append((applicant, decision, target))
-                self._aria_finish_refusals(decisions)
+                    outcome = applicant._aria_outcome_decision(vals)
+                    if outcome is None:
+                        decisions.append((applicant, None, applicant.stage_id))
+                    else:
+                        decisions.append((applicant, outcome[0], outcome[1]))
+                blocked = [
+                    item for item in decisions
+                    if item[1] is not None and not item[1].allowed and not item[1].noop
+                ]
+                if blocked:
+                    self._aria_finish_refusals(blocked)
             vals = {key: value for key, value in vals.items() if key != 'application_status'}
             if not vals:
                 return True
