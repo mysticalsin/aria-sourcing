@@ -18,6 +18,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer, isCandidateTab } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
+import { CvUploadButton } from "@/components/candidates/cv-upload";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { usePipelineCommands } from "@/features/pipeline/hooks";
 import {
@@ -626,7 +627,12 @@ export default function CandidatesPage() {
         eyebrow="Recruit"
         title="Candidates"
         description="Every sourced candidate, ranked by fit. Open a profile to score, message or book."
-        actions={<AddCandidateButton />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <CvUploadButton />
+            <AddCandidateButton />
+          </div>
+        }
       />
       <React.Suspense
         fallback={
