@@ -281,9 +281,16 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image's HEALTHCHECK probes the web server; this service has none.
+    # The image HEALTHCHECK probes the web server, which this process does not
+    # serve. Compose `up --wait` rejects a disabled check, so probe the runner
+    # itself: pid 1 must be agents-runner.
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", "const c=require('fs').readFileSync('/proc/1/cmdline','utf8'); process.exit(c.includes('agents-runner')?0:1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+      start_interval: 5s
     restart: unless-stopped
     logging: *logging
 

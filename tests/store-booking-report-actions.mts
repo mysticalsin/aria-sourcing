@@ -34,7 +34,7 @@ const campaignPageSource = readFileSync(
   "utf8",
 );
 const calendarPageSource = readFileSync(
-  new URL("../src/app/calendar/page.tsx", import.meta.url),
+  new URL("../src/app/calendar/screen.tsx", import.meta.url),
   "utf8",
 );
 const ariaLiveSource = readFileSync(
