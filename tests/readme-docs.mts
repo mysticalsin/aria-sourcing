@@ -36,7 +36,6 @@ function githubSlug(heading: string): string {
   return heading
     .trim()
     .toLowerCase()
-    .replace(/<[^>]+>/g, "")
     .replace(/[^\p{L}\p{N}\s-]/gu, "")
     .replace(/\s+/g, "-");
 }
@@ -55,15 +54,15 @@ function markdownLinks(markdown: string): MarkdownLink[] {
   const source = stripCodeFences(markdown);
   const links: MarkdownLink[] = [];
   source.split("\n").forEach((line, index) => {
-    for (const match of line.matchAll(/(!?)\[(?:\\.|[^\]])*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g)) {
+    for (const match of line.matchAll(/(!?)\[([^\[\]]*)\]\(([^)\s]+)/g)) {
       links.push({
         kind: match[1] === "!" ? "image" : "link",
-        target: match[2],
+        target: match[3],
         line: index + 1,
       });
     }
-    const ref = /^\[(?:\\.|[^\]]+)\]:\s+(\S+)/.exec(line);
-    if (ref) links.push({ kind: "link", target: ref[1], line: index + 1 });
+    const ref = /^\[([^\[\]]+)\]:\s+(\S+)/.exec(line);
+    if (ref) links.push({ kind: "link", target: ref[2], line: index + 1 });
   });
   return links;
 }
