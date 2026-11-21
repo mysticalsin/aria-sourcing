@@ -167,7 +167,7 @@ fi
 # ===========================================================================
 step "2) Intake — POST /api/intake (raw JD email → JobAnalysis)"
 # ===========================================================================
-JD_EMAIL="From: Priya Nair <priya.nair@acme.io>
+JD_EMAIL="From: Candidate A <${E2E_WORKFLOW_EMAIL:-owner@example.com}>
 Subject: Urgent - hiring a Senior TypeScript Engineer (London)
 
 Hi team,
@@ -182,7 +182,7 @@ Experience: 5+ years
 Salary: 90000-120000 GBP
 
 Thanks,
-Priya"
+Candidate A"
 jq -n --arg email "$JD_EMAIL" '{email:$email}' > "$WORK/intake_req.json"
 api POST "$APP_URL/api/intake" "$WORK/intake_req.json"
 INTAKE_TITLE=$(jq -r '.parsed.title // empty' "$RESP")
@@ -259,9 +259,9 @@ fi
 CAND_ID=$(jq -r 'if type=="object" and .id then .id else empty end' "$WORK/cand0.json")
 [ -n "$CAND_ID" ] || CAND_ID="cand-e2e-$$"
 CAND_LI=$(jq -r '(.linkedinUrl // .githubUrl // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
-[ -n "$CAND_LI" ] || CAND_LI="https://www.linkedin.com/in/e2e-candidate"
+[ -n "$CAND_LI" ] || CAND_LI="https://www.linkedin.com/in/example-a"
 CAND_EMAIL=$(jq -r '(.email // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
-[ -n "$CAND_EMAIL" ] || CAND_EMAIL="e2e.candidate@example.com"
+[ -n "$CAND_EMAIL" ] || CAND_EMAIL="${E2E_WORKFLOW_EMAIL:-owner@example.com}"
 
 # ---- draft generator: /api/hermes/chat task=outreach; falls back to a canned draft ----
 DRAFT_SUBJECT=""; DRAFT_BODY=""
