@@ -5,7 +5,7 @@
 # Upstreams default to the compose service names; tests can point them elsewhere.
 #
 # ARIA_CORS_ORIGINS is a comma- or space-separated origin allowlist. Empty denies.
-# docker/gateway-entrypoint.sh substitutes __CORS_ORIGIN_MATCHER__ before Caddy starts.
+# The gateway entrypoint fills the origin matcher before Caddy starts.
 {
 	admin off
 	auto_https off

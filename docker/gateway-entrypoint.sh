@@ -35,7 +35,7 @@ else
 fi
 
 awk -v matcher="$matcher" '
-  index($0, "__CORS_ORIGIN_MATCHER__") { printf "%s\n", matcher; next }
+  $1 == "__CORS_ORIGIN_MATCHER__" { printf "%s\n", matcher; next }
   { print }
 ' "$template" > "$output"
 
