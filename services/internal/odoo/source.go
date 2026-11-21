@@ -11,6 +11,8 @@ var (
 	ErrConflict = errors.New("odoo identity conflict")
 	// ErrValidation means the request is incomplete or not synthetic.
 	ErrValidation = errors.New("validation failed")
+	// ErrOutreachClosed means a hired applicant no longer accepts an outreach touch.
+	ErrOutreachClosed = errors.New("outreach is closed after hire")
 )
 
 // CanonicalSource returns the closed allowlist value or ErrUnsanctionedSource.
