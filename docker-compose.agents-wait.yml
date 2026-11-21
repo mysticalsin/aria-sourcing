@@ -1,0 +1,15 @@
+# Overlay so `compose up --wait` can see the agents runner.
+# The base service disables its healthcheck because the image probe hits the
+# web server, which this process does not serve. This check asks the app's
+# /api/ready endpoint, the same probe the app service uses. PR #171 exits
+# zero without checking anything. PR #168 deletes the agents service, and
+# that deletion wins over this overlay.
+services:
+  agents:
+    healthcheck:
+      disable: false
+      test: ["CMD", "node", "-e", "fetch('http://app:3000/api/ready').then(r=>process.exit(r.statusCode===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s

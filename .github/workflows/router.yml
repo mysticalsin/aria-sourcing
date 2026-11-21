@@ -1,0 +1,40 @@
+name: Model router
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "services/router/**"
+      - ".github/workflows/router.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "services/router/**"
+      - ".github/workflows/router.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: go test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/router
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Bench
+        run: go test -bench . -benchmem -benchtime 100ms -count=1 -run '^$'

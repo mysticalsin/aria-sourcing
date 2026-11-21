@@ -9,7 +9,7 @@ const project = process.env.ARIA_ACCEPTANCE_PROJECT ?? "";
 if (process.env.ARIA_LOCAL_ACCEPTANCE !== "1" || !/^aria-acceptance-[a-z0-9-]{4,80}$/.test(project)) {
   throw new Error("Acceptance requires ARIA_LOCAL_ACCEPTANCE=1 and a unique ARIA_ACCEPTANCE_PROJECT=aria-acceptance-...; never use your normal workspace.");
 }
-const compose = (args, capture = false) => execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.yml", ...args], { stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit", encoding: "utf8" });
+const compose = (args, capture = false) => execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.yml", "-f", "docker-compose.agents-wait.yml", ...args], { stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit", encoding: "utf8" });
 const config = JSON.parse(compose(["config", "--format", "json"], true));
 assert.equal(config.name, project);
 for (const volume of Object.values(config.volumes)) {

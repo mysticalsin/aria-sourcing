@@ -283,17 +283,19 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
           />
 
           <TabPanel value="linkedin" active={mode === "linkedin"} idBase={idBase}>
-            <div className="space-y-4">
-              <LinkedInProfileLookup
-                idBase={`${idBase}-li`}
-                url={linkedinUrl}
-                onUrlChange={setLinkedinUrl}
-                prospectId={prospectId}
-                onProspectChange={setProspectId}
-                onProfile={prefill}
-              />
-              {personFields("linkedin")}
-            </div>
+            {mode === "linkedin" && (
+              <div className="space-y-4">
+                <LinkedInProfileLookup
+                  idBase={`${idBase}-li`}
+                  url={linkedinUrl}
+                  onUrlChange={setLinkedinUrl}
+                  prospectId={prospectId}
+                  onProspectChange={setProspectId}
+                  onProfile={prefill}
+                />
+                {personFields("linkedin")}
+              </div>
+            )}
           </TabPanel>
 
           <TabPanel value="github" active={mode === "github"} idBase={idBase}>
@@ -314,7 +316,7 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
           </TabPanel>
 
           <TabPanel value="manual" active={mode === "manual"} idBase={idBase}>
-            {personFields("manual")}
+            {mode === "manual" && personFields("manual")}
           </TabPanel>
         </div>
       </Modal>

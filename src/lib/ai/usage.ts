@@ -21,6 +21,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { defaultActivityForTask, isAiActivity, type AiActivity } from "./activities";
+import modelPrices from "./model-prices.json";
 
 export interface AnthropicUsage {
   input_tokens?: number;
@@ -37,14 +38,11 @@ interface Price {
   cacheRead: number;
 }
 
-/** USD per million tokens. Cache writes cost 1.25x input. Unknown ids are
- *  priced as Opus so an unlisted model can only overestimate. */
-const PRICE_PER_MTOK: Record<string, Price> = {
-  "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01 },
-  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2 },
-  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2 },
-};
-const FALLBACK_PRICE: Price = { input: 5, output: 25, cacheRead: 0.5 };
+/** USD per million tokens, from ./model-prices.json (shared with the Go router).
+ *  Cache writes cost 1.25x input. Unknown ids use the fallback, which is above
+ *  Opus, so an unlisted model can only overestimate. */
+const PRICE_PER_MTOK: Record<string, Price> = modelPrices.usdPerMillion;
+const FALLBACK_PRICE: Price = modelPrices.fallback;
 /** USD per web search, on top of the tokens that read its results. */
 export const WEB_SEARCH_PRICE_USD = 0.01;
 
