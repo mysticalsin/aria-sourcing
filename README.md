@@ -1,114 +1,171 @@
-# ARIA (MSourcing)
+# Aria
 
-ARIA is a recruiting console. Give it a hiring need and it sources candidates,
-drafts outreach that a recruiter approves, tracks replies and interviews, and
-reports the results to leadership.
+Aria is an AI sourcing and outreach agent. A hiring need goes in. Ranked candidates come out, each with a reason, plus a draft that a person approves before anything is sent.
 
-![Command Center](docs/screenshots/command-center.jpg)
+The console on this branch is the recruiting product built by Michael Bernard. Tony Walteur's Command Center quick-stat design is the interface direction for the same flow. It is linked under [Project status](#project-status) because it is not merged yet.
 
-## What it does
+`twa-odoo` today runs the Next.js console and a local Docker demo. Odoo 19 Community is the system of record in review, not in this branch. The same is true of the Rust scoring core, the Go services, the model router, and the outreach channel adapters.
 
-1. **Brief.** Paste a job description (or several) on **Launch** or **Intake**. ARIA turns
-   each role into a campaign.
-2. **Source.** The sourcing agent searches GitHub, the web (LinkedIn, Stack Overflow,
-   Dribbble, Behance via Tavily) and public LinkedIn profiles through Claude's web search.
-   It scores and dedupes the candidates it finds.
-3. **Review candidates.** Every candidate has an explainable match score. The talent pool
-   (**Vivier**) keeps them across campaigns.
-4. **Reach out.** ARIA drafts a personal message per candidate. Nothing is sent until a
-   human approves the exact text.
-5. **Follow up.** Replies are classified, and interviews are booked on the **Calendar**.
-6. **Report.** **Exec** shows the conversion funnel, recruiter time saved and the return on
-   cost for a chosen period. You can export it as PDF or Markdown.
+## See it
 
-A public **Careers** page feeds applications into the **Applicants** inbox.
+The loops use synthetic people only. Names such as Ada Example are fixtures. Nothing in them is a real profile, and nothing was sent.
 
-| Launch a batch of roles | Ranked candidates |
-|---|---|
-| ![Launch](docs/screenshots/launch.jpg) | ![Candidates](docs/screenshots/candidates.jpg) |
-| **Human approval before any send** | **Funnel board** |
-| ![Outreach](docs/screenshots/outreach.jpg) | ![Funnel](docs/screenshots/funnel.jpg) |
+### Command Center
 
-### Decision-maker report
+Today's home page. The quick stats sit under the next action: campaigns, people sourced, reply rate, interviews, average match, and time to a first interview. Sends in this demo are dry-run.
 
-![Exec decision report](docs/screenshots/exec.jpg)
+![Command Center with quick stats for a synthetic demo](docs/media/command-center.gif)
 
-The time-saved figures come from editable assumptions (hourly cost, minutes per profile,
-draft and booking, monthly tool cost) set in **Trust & ROI**. In demo mode, sends are
-simulated (dry-run) and the report says so.
+Tony's original quick-stat layout is in review in [pull request 177](https://github.com/mysticalsin/aria-sourcing/pull/177). The loop above is the Command Center that `twa-odoo` serves now.
 
-## Try it
+### Ranked candidates, with reasons
 
-### Quick look: synthetic demo, no Docker
+Open a person and the score is a breakdown, not a single unexplained number. The next step still says that approval of the exact message is required.
+
+![Ada Example ranked at 91 with a match breakdown](docs/media/candidate-ranking.gif)
+
+### Approve the exact text
+
+The queue holds the draft. Approving records that text. In the synthetic demo the send mode is dry-run, so the approval queues nothing to a real mailbox.
+
+![Approving Ada Example's exact draft in dry-run](docs/media/exact-text-approval.gif)
+
+### The Hired gate refuses a missing contract
+
+Odoo 19 keeps the pipeline. Moving Ada Example from To Hire to Hired, with no contract and no completed DNA check, is refused on the server. The applicant stays in To Hire.
+
+This loop is the addon in [pull request 176](https://github.com/mysticalsin/aria-sourcing/pull/176). It is not part of the `twa-odoo` image.
+
+![Odoo refuses Hired for Ada Example without a contract](docs/media/hired-gate.gif)
+
+## Quick start
+
+Docker Engine 25 or newer, with Compose. The first build compiles the app and migrates the local database.
+
+```bash
+docker compose up --build --detach --wait --wait-timeout 300
+```
+
+Open <http://localhost:3000/login>. The local sample sign-in is `admin@aria.local` / `admindemo123`. Those credentials are for this loopback demo only. Ports, resets, and the service list are in [DOCKER.md](DOCKER.md).
+
+The console loops above come from the synthetic browser demo, which loads when Supabase is unset. The Docker stack is live mode and starts without that seed. Do not run a live source from the Docker demo if you need fixture people only: live search can reach public networks.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>. With no Supabase settings, the app runs on synthetic demo
-data in the browser. Nothing is stored and nothing is sent.
+Then open <http://localhost:3000>. To record the loops again, use [scripts/record-readme-gifs.mjs](scripts/record-readme-gifs.mjs).
 
-### Full local stack with Docker
+## How it works
 
-You need Docker Desktop with about 4 GB of memory.
+A recruiter pastes a hiring need. Aria turns it into a campaign, ranks candidates it can explain, and drafts outreach. A person approves the exact text. Delivery stays inside caps, a kill switch, and an audit trail once those controls are merged. Odoo 19 Community is the system of record for the pipeline, including the hire.
 
-```bash
-# Needed to store API keys from Settings (encrypted at rest):
-echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
+On `twa-odoo` the boxes you can run are the Next.js console, exact-text approval in the demo, and the local Docker stack (the app, Postgres, GoTrue, PostgREST, and Caddy). The other boxes are the open pull requests in [Project status](#project-status).
 
-docker compose up --build
+```mermaid
+flowchart LR
+  need[Hiring need]
+  ui[Next.js console]
+  approve[Exact-text approval]
+  email[Email]
+  router[Model router]
+  core[Rust scoring core]
+  go[Go services]
+  odoo[Odoo 19 Community]
+  heyreach[HeyReach official API]
+  linkedin[LinkedIn token]
+  need --> ui
+  ui --> approve
+  approve --> email
+  ui --> router
+  router --> core
+  ui --> go
+  go --> odoo
+  approve --> heyreach
+  approve --> linkedin
 ```
 
-Open <http://localhost:3000> and sign in as `admin@aria.local` / `admindemo123`. The
-first build takes a few minutes. [`DOCKER.md`](DOCKER.md) covers ports, resets and
-troubleshooting.
+HeyReach and the LinkedIn token stay off until someone turns them on. There is no LinkedIn scraping and no LinkedIn automation in that design.
 
-### Connect the real integrations
+### Pipeline stages
 
-The stack runs without any external key. Each integration turns on once its key is set.
+The Odoo addon owns nine stages. Hired is not a button that always works. The only way in is from To Hire, and only when a contract is attached and the DNA check is `integrated` or `complete`. A CV does not count as the contract. `hired`, `rejected`, and `withdrawn` are terminal.
 
-| Capability | How to enable |
-|---|---|
-| GitHub sourcing | Works without a key (60 requests/hour). `GITHUB_TOKEN` in `.env.local` raises it to 5,000/hour. |
-| Web sourcing | Tavily key in **Settings → API keys**. |
-| LinkedIn via web search | The workspace Anthropic key, linked on the Anthropic provider in **Settings → AI & Models**. |
-| AI sourcing agent and drafting | Anthropic or OpenAI-compatible key in **Settings → API keys**, enabled under **Settings → LLM providers**. Without one, the agent runs in rule-based mode. |
-| Sending email and syncing replies | Connect a Gmail or Outlook mailbox under **Mailboxes** ([guide](docs/runbooks/connect-gmail-outlook.md)). |
-| Dust agents, MCP tools | **Settings → Dust agents** and **Settings → Tools**. |
-
-[`.env.local.example`](.env.local.example) lists every variable.
-
-## Ground rules
-
-- No message reaches a candidate without a recorded human approval of its exact text.
-- LinkedIn is never automated: no login automation, no scraping, no rate-limit bypass.
-- Provider keys stay on the server and are encrypted at rest.
-
-## For developers
-
-| Area | Technology |
-|---|---|
-| App | Next.js 16, React 19, TypeScript, Tailwind |
-| Data and auth | Self-hosted Supabase (Postgres with row-level security, GoTrue, PostgREST, Caddy gateway) |
-| AI | Server-side calls to Anthropic or OpenAI-compatible APIs |
-| Runtime | Docker Compose locally. Self-hosting is planned; the target is not chosen yet. |
-
-To work on the app with hot reload against the Docker backend, run
-`docker compose stop app`. Then put `NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321` and
-the keys from `docker-compose.yml` in `.env.local` and run `npm run dev`.
-
-Every change must keep this gate green:
-
-```bash
-npm run typecheck && npm run typecheck:tests && npm test && npm run lint
+```mermaid
+stateDiagram-v2
+  [*] --> to_rate
+  to_rate --> to_assess
+  to_assess --> to_interview
+  to_interview --> shoot
+  shoot --> qm
+  qm --> to_hire
+  to_hire --> hired: contract and DNA
+  to_rate --> rejected
+  to_assess --> rejected
+  to_interview --> rejected
+  shoot --> rejected
+  qm --> rejected
+  to_hire --> rejected
+  to_rate --> withdrawn
+  to_assess --> withdrawn
+  to_interview --> withdrawn
+  shoot --> withdrawn
+  qm --> withdrawn
+  to_hire --> withdrawn
 ```
 
-More documentation:
+One step back along the pipeline is allowed until a terminal stage. The stage list is `to_rate`, `to_assess`, `to_interview`, `shoot`, `qm`, `to_hire`, `hired`, `rejected`, and `withdrawn`.
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): code layout, data model, sourcing agent, outreach
-- [`docs/SOURCING.md`](docs/SOURCING.md): sourcing, scoring, enrichment, compliance
-- [`docs/TESTING.md`](docs/TESTING.md): test suites
-- [`SECURITY.md`](SECURITY.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md)
+## Safety and compliance
 
-The product is called ARIA; the repository is MSourcing.
+- Default outreach is manual. A person approves the exact text. The synthetic demo keeps send mode on dry-run.
+- Opt-in automatic send, after a QC gate, with caps, a kill switch, and an audit trail, is in review in [pull request 167](https://github.com/mysticalsin/aria-sourcing/pull/167). It is not the default on this branch.
+- Hired is a server-side gate. It needs a contract plus a DNA status of `integrated` or `complete`. That gate lives in [pull request 176](https://github.com/mysticalsin/aria-sourcing/pull/176), with the Go adapter and fake DNA check in [pull request 171](https://github.com/mysticalsin/aria-sourcing/pull/171).
+- Email is the channel the console drafts today. HeyReach uses the official API and ships with the flag off ([pull request 175](https://github.com/mysticalsin/aria-sourcing/pull/175)). The LinkedIn token channel is off by default ([pull request 178](https://github.com/mysticalsin/aria-sourcing/pull/178)).
+- No LinkedIn scraping. The token channel is not a scraper.
+- This branch still contains an older LinkedIn bridge and a campaign autopilot. Removing them, and removing web-search sourcing, is in review in [pull request 168](https://github.com/mysticalsin/aria-sourcing/pull/168). Do not treat that bridge as the supported channel.
+
+Provider keys stay on the server. The local Docker demo binds to loopback. [SECURITY.md](SECURITY.md) is the security note for this repository.
+
+## Testing
+
+The project gate is:
+
+```bash
+npm run typecheck && npm run typecheck:tests && npm test
+```
+
+`npm test` includes the README check in `tests/readme-docs.mts`. It fails unless every relative link resolves to a file in this repo, the README embeds three or four GIF loops under `docs/media/`, each loop is under 3 MB and at most 8 seconds, and the markdown lint in that file passes.
+
+CI also lints, builds, audits dependencies, scans for secrets, runs the database suites, and boots the local Docker demo. The layers are listed in [docs/TESTING.md](docs/TESTING.md).
+
+## Project status
+
+Checked against open pull requests into `twa-odoo` on 21 November 2026. "In review" means the pull request is open. It is not on this branch.
+
+| Piece | On `twa-odoo` today | In review |
+| --- | --- | --- |
+| Next.js console, synthetic demo, local Docker stack | Yes | |
+| Exact-text approval, dry-run by default in the demo | Yes | |
+| Command Center quick-stat design | Today's home page, shown above | [177](https://github.com/mysticalsin/aria-sourcing/pull/177) |
+| Rust scoring core | No | [170](https://github.com/mysticalsin/aria-sourcing/pull/170) |
+| Go services, Odoo adapter, DNA check | No | [171](https://github.com/mysticalsin/aria-sourcing/pull/171) |
+| Model router | No | [169](https://github.com/mysticalsin/aria-sourcing/pull/169) |
+| Odoo 19 pipeline and Hired gate | No | [176](https://github.com/mysticalsin/aria-sourcing/pull/176) |
+| Email and HeyReach adapters, HeyReach flag off | No | [175](https://github.com/mysticalsin/aria-sourcing/pull/175) |
+| LinkedIn token channel, off by default | No | [178](https://github.com/mysticalsin/aria-sourcing/pull/178) |
+| Auto-send QC gate, caps, kill switch, audit | No | [167](https://github.com/mysticalsin/aria-sourcing/pull/167) |
+| Remove the LinkedIn bridge and autopilot | Bridge still in this branch | [168](https://github.com/mysticalsin/aria-sourcing/pull/168) |
+
+Other open work on the same base includes a console split ([172](https://github.com/mysticalsin/aria-sourcing/pull/172)), a design-system gallery ([173](https://github.com/mysticalsin/aria-sourcing/pull/173)), and CV ingest ([174](https://github.com/mysticalsin/aria-sourcing/pull/174)).
+
+Code maps for what is actually merged: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SOURCING.md](docs/SOURCING.md).
+
+## Credits
+
+Michael Bernard built the ARIA recruiting console this repository continues.
+
+Tony Walteur's original quick-stat Command Center is the design being ported onto Aria's processing flow.
+
+Regenerate the loops with [scripts/record-readme-gifs.mjs](scripts/record-readme-gifs.mjs).
