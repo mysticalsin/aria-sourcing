@@ -171,7 +171,7 @@ function repoFiles(): string[] {
   for (const entry of existsSync(root) ? readdirSync(root) : []) {
     if (/^(?:next\.config\.mjs|Dockerfile.*|docker-compose.*\.ya?ml|\.env.*\.example)$/.test(entry)) files.push(entry);
   }
-  return files.filter((file) => file !== "tests/compliance-boundaries.mts" && !IMMUTABLE_MIGRATIONS.has(file));
+  return files.filter((file) => file !== "tests/compliance-boundaries.mts" && file !== "tests/compliance-followups.mts" && !IMMUTABLE_MIGRATIONS.has(file));
 }
 
 function executableFiles(): string[] {
@@ -303,12 +303,24 @@ test("test_no_agents_compose_service", () => {
   assert.doesNotMatch(compose, /\/api\/agent\/tick/);
 });
 
-const LINKEDIN_NETWORK_CALL =
-  /(?:\baxios\s*\.\s*(?:get|post|put|patch|delete|head|request|create)|\bgot(?:\.[A-Za-z]+)?\s*\(|\bhttps?\s*\.\s*(?:request|get)\s*\(|\bundici\s*\.\s*(?:request|fetch|stream)\s*\(|\bpage\s*\.\s*goto\s*\(|\bfetch\s*\()/i;
-
-/** A transport call aimed at a linkedin.com host. A stored profile path is not a call. */
-export function isLinkedInHostNetworkCall(line: string): boolean {
-  return /linkedin\.com/i.test(line) && LINKEDIN_NETWORK_CALL.test(line);
+/** A transport call aimed at a linkedin.com host, including a split, joined, env, or multi-line form. A stored profile path is not a call. The token channel may call only the host named by ARIA_LINKEDIN_TOKEN_ALLOWED_HOST. */
+export function isLinkedInHostNetworkCall(source: string): boolean {
+  const sanctioned = source.replace(/process\.env\.ARIA_LINKEDIN_TOKEN_ALLOWED_HOST/g, "SANCTIONED_HOST");
+  const call = /(?:\baxios\s*\.\s*(?:get|post|put|patch|delete|head|request|create)|\bgot(?:\.[A-Za-z]+)?|\bhttps?\s*\.\s*(?:request|get)|\bundici\s*\.\s*(?:request|fetch|stream)|\bpage\s*\.\s*goto|\bfetch)\s*\(/gi;
+  for (const match of sanctioned.matchAll(call)) {
+    const argument = sanctioned.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 500);
+    if (/linkedin\.com/i.test(argument)) return true;
+    if (/['"]linked['"]\s*\+\s*['"]in\.com['"]/i.test(argument)) return true;
+    if (/\[[^\]]*['"]linkedin['"][^\]]*['"]com['"][^\]]*\]\s*\.join\s*\(/i.test(argument)) return true;
+    if (/process\.env\.[A-Z0-9_]*(?:LINKEDIN|LICDN)[A-Z0-9_]*/i.test(argument)) return true;
+  }
+  const compact = sanctioned.replace(/\s+/g, " ");
+  for (const assigned of source.matchAll(/process\.env\.([A-Z0-9_]+)\s*=\s*['"][^'"]*linkedin\.com/gi)) {
+    const name = assigned[1];
+    if (name === "ARIA_LINKEDIN_TOKEN_ALLOWED_HOST") continue;
+    if (new RegExp(String.raw`(?:fetch|axios|got|request|goto)\s*\([^;]{0,300}process\.env\.${name}\b`, "i").test(compact)) return true;
+  }
+  return false;
 }
 
 const STORED_OR_REJECTED_PROFILE = /linkedin\.com\/(?:in|pub|company|school)\b/i;
@@ -322,7 +334,9 @@ const HOST_CHECK_FILES = new Set([
 test("test_no_linkedin_com_or_licdn_outside_stored_profiles", () => {
   const hits: string[] = [];
   for (const file of executableFiles()) {
-    const lines = read(file).split(/\n/);
+    const raw = read(file);
+    if (isLinkedInHostNetworkCall(raw)) hits.push(`${file}: network call to linkedin.com`);
+    const lines = raw.split(/\n/);
     lines.forEach((line, index) => {
       const where = `${file}:${index + 1}`;
       if (/licdn/i.test(line) && !isLinkedInTokenChannelFile(file)) hits.push(`${where}: licdn`);

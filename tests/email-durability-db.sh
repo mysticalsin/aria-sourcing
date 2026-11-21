@@ -220,6 +220,31 @@ insert into public.outreach_approvals(
   'e2000000-0000-4000-8000-000000000002', now(), 'human'
 );
 
+-- Enqueue is fail-closed without an operator-recorded lawful basis.
+insert into public.workspace_state(workspace_id, state) values (
+  '61111111-1111-4111-8111-111111111111',
+  jsonb_build_object('candidates', jsonb_build_array(
+    jsonb_build_object(
+      'id', 'cand-1',
+      'lawfulBasis', 'consent',
+      'lawfulBasisSource', 'operator_selection',
+      'lawfulBasisRecordedAt', '2026-01-01T00:00:00.000Z'
+    ),
+    jsonb_build_object(
+      'id', 'cand-2',
+      'lawfulBasis', 'consent',
+      'lawfulBasisSource', 'operator_selection',
+      'lawfulBasisRecordedAt', '2026-01-01T00:00:00.000Z'
+    ),
+    jsonb_build_object(
+      'id', 'cand-3',
+      'lawfulBasis', 'legitimate_interest',
+      'lawfulBasisSource', 'operator_selection',
+      'lawfulBasisRecordedAt', '2026-01-01T00:00:00.000Z'
+    )
+  ))
+);
+
 -- ===========================================================================
 -- 1. enqueue_email_outbound: happy path, duplicate return, validation, RBAC.
 -- ===========================================================================
@@ -241,6 +266,11 @@ select public.enqueue_email_outbound(
   'draft-2','cand-2','camp-1','6a000000-0000-4000-8000-0000000000aa',
   'not-an-email','Subject 2','Body two') result;
 
+create temporary table enqueue_no_basis as
+select public.enqueue_email_outbound(
+  'draft-nobasis','cand-missing','camp-1','6a000000-0000-4000-8000-0000000000aa',
+  'missing@target.example.test','Subject N','Body none') result;
+
 reset role;
 
 select email_durability_test.expect_scalar(
@@ -258,6 +288,11 @@ select email_durability_test.expect_scalar(
   'enqueue-invalid-recipient',
   $$select result->>'reason' from enqueue_bad_recipient$$,
   'invalid-recipient'
+);
+select email_durability_test.expect_scalar(
+  'enqueue-without-lawful-basis',
+  $$select result->>'reason' from enqueue_no_basis$$,
+  'lawful-basis-required'
 );
 select email_durability_test.expect_scalar(
   'enqueue-one-queued-row',

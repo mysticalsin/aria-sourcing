@@ -23,11 +23,11 @@ export function normalizeSuppressionValue(type: EnforcedSuppressionType, rawValu
     const id = publicIdFromProfileUrl(raw);
     return id ? linkedInProfileUrl(id).toLowerCase() : null;
   }
-  const value = raw.toLowerCase();
   if (type === "email") {
+    const value = raw.normalize("NFKC").toLowerCase();
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;
   }
-  const domain = value.replace(/^@/, "");
+  const domain = raw.normalize("NFKC").toLowerCase().replace(/^@/, "");
   return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)
     ? domain
     : null;

@@ -19,6 +19,7 @@ import { safeLog } from "@/lib/log-redact";
 import { approvalHash } from "@/lib/outreach-content";
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { recordedLawfulBasisFromUnknown } from "@/lib/candidate-lawful-basis";
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 
@@ -128,6 +129,19 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
             ? "approval-hash-mismatch"
             : "approval-not-human";
         await finish("blocked", { pass: false, reasons: [reason] });
+        continue;
+      }
+
+      const { data: workspaceState } = await supabase
+        .from("workspace_state")
+        .select("state")
+        .eq("workspace_id", msg.workspace_id)
+        .maybeSingle();
+      const workspace = record(workspaceState?.state);
+      const candidates = Array.isArray(workspace?.candidates) ? workspace.candidates as unknown[] : [];
+      const candidate = candidates.map(record).find((item) => item?.id === msg.candidate_id) ?? null;
+      if (!recordedLawfulBasisFromUnknown(candidate)) {
+        await finish("blocked", { pass: false, reasons: ["lawful-basis-required"] });
         continue;
       }
 

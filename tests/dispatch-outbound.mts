@@ -45,6 +45,28 @@ function makeFakeDb(seed: {
 
   function table(name: string): Row[] {
     if (name === "messages_outbound") return seed.outbound;
+    if (name === "workspace_state") {
+      const byWorkspace = new Map<string, Row>();
+      for (const row of seed.outbound) {
+        const workspaceId = String(row.workspace_id ?? "");
+        const current = byWorkspace.get(workspaceId) ?? {
+          workspace_id: workspaceId,
+          state: { candidates: [] as Row[] },
+        };
+        const candidates = (current.state as { candidates: Row[] }).candidates;
+        const candidateId = String(row.candidate_id ?? "");
+        if (candidateId && !candidates.some((item) => item.id === candidateId)) {
+          candidates.push({
+            id: candidateId,
+            lawfulBasis: "consent",
+            lawfulBasisSource: "operator_selection",
+            lawfulBasisRecordedAt: "2026-01-01T00:00:00.000Z",
+          });
+        }
+        byWorkspace.set(workspaceId, current);
+      }
+      return [...byWorkspace.values()];
+    }
     if (name === "outreach_approvals") return seed.approvals;
     if (name === "agent_seats") return seed.seats;
     if (name === "sourcing_loop_controls") {

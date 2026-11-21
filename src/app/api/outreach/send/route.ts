@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
   // (The durable enqueue/dispatch path — 0039 — is the autonomous WORKER's route
   // for browser-closed sending; it is NOT this request, and must not gate the
   // button on migrations that may not be applied yet.)
-  const emailLc = candidateEmail.toLowerCase();
+  const emailLc = normalizeSuppressionValue("email", candidateEmail) ?? candidateEmail.normalize("NFKC").toLowerCase();
   const domainLc = emailLc.split("@")[1] ?? "";
   const phoneValue = typeof candidate?.phone === "string" ? normalizeSuppressionValue("phone", candidate.phone) : null;
   const profileValue = typeof candidate?.linkedinUrl === "string"
@@ -258,7 +258,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "error", detail: "Suppression check failed." }, { status: 500 });
   }
   if ((suppRows ?? []).some((s) => {
-    const v = String(s.value).toLowerCase();
+    const v = normalizeSuppressionValue(
+      s.type === "phone" || s.type === "linkedin" || s.type === "email" || s.type === "domain" ? s.type : "email",
+      String(s.value),
+    ) ?? String(s.value).normalize("NFKC").toLowerCase();
     return (s.type === "email" && v === emailLc)
       || (s.type === "domain" && domainLc !== "" && v === domainLc)
       || (s.type === "phone" && phoneValue !== null && v === phoneValue)
