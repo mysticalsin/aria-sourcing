@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_aria_transition_audit_user,aria.recruitment.transition.audit.user,model_aria_recruitment_transition_audit,hr_recruitment.group_hr_recruitment_user,1,0,0,0
+access_aria_transition_audit_manager,aria.recruitment.transition.audit.manager,model_aria_recruitment_transition_audit,hr_recruitment.group_hr_recruitment_manager,1,0,0,0
+access_aria_language_user,aria.recruitment.language.user,model_aria_recruitment_language,hr_recruitment.group_hr_recruitment_user,1,1,1,1
+access_aria_language_manager,aria.recruitment.language.manager,model_aria_recruitment_language,hr_recruitment.group_hr_recruitment_manager,1,1,1,1
+access_aria_job_field_user,aria.recruitment.job.field.user,model_aria_recruitment_job_field,hr_recruitment.group_hr_recruitment_user,1,1,1,1
+access_aria_job_field_manager,aria.recruitment.job.field.manager,model_aria_recruitment_job_field,hr_recruitment.group_hr_recruitment_manager,1,1,1,1
