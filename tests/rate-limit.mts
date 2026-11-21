@@ -66,22 +66,26 @@ try {
   ok("tooManyRequests sets Retry-After (seconds)", resp.headers.get("Retry-After") === "7");
   ok("tooManyRequests Retry-After is at least 1", tooManyRequests(0).headers.get("Retry-After") === "1");
 
-  /* rateLimitKey derivation: scope + spoof-resistant client IP + user id.
-     The LEFTMOST x-forwarded-for hop is attacker-controlled on append-style
-     proxies (Vercel/CDNs), so we trust the LAST hop (closest trusted proxy). */
+  /* Caller-supplied forwarding headers are ignored unless the socket peer is trusted. */
   const fwd = new Request("http://localhost/api/x", {
-    headers: { "x-forwarded-for": "9.9.9.9, 10.0.0.1" },
+    headers: { "x-forwarded-for": "9.9.9.9, 10.0.0.1", "x-real-ip": "5.5.5.5" },
   });
-  ok("key uses the LAST x-forwarded-for hop (not the spoofable first) + scope + user", rateLimitKey(fwd, "scope", "u1") === "scope:10.0.0.1:u1");
+  ok("an untrusted connection ignores forwarding headers", rateLimitKey(fwd, "scope", "u1") === "scope:unknown:u1");
 
-  /* x-real-ip (platform-trusted, not client-appendable) wins over x-forwarded-for. */
-  const bothIp = new Request("http://localhost/api/x", {
-    headers: { "x-real-ip": "5.5.5.5", "x-forwarded-for": "9.9.9.9, 10.0.0.1" },
-  });
-  ok("key prefers x-real-ip over x-forwarded-for (anti-spoof)", rateLimitKey(bothIp, "scope", "u1") === "scope:5.5.5.5:u1");
+  const direct = new Request("http://localhost/api/x", { headers: { "x-real-ip": "5.5.5.5" } });
+  Object.defineProperty(direct, "socket", { value: { remoteAddress: "198.51.100.10" } });
+  ok("an untrusted socket uses the connection address", rateLimitKey(direct, "scope") === "scope:198.51.100.10:anon");
 
-  const realIp = new Request("http://localhost/api/x", { headers: { "x-real-ip": "5.5.5.5" } });
-  ok("key falls back to x-real-ip and 'anon' when user is absent", rateLimitKey(realIp, "scope") === "scope:5.5.5.5:anon");
+  const previousTrusted = process.env.ARIA_TRUSTED_PROXY_IPS;
+  process.env.ARIA_TRUSTED_PROXY_IPS = "198.51.100.8";
+  try {
+    const proxied = new Request("http://localhost/api/x", { headers: { "x-real-ip": "203.0.113.9" } });
+    Object.defineProperty(proxied, "socket", { value: { remoteAddress: "198.51.100.8" } });
+    ok("a trusted proxy peer uses the proxy-set address", rateLimitKey(proxied, "scope", "u1") === "scope:203.0.113.9:u1");
+  } finally {
+    if (previousTrusted === undefined) delete process.env.ARIA_TRUSTED_PROXY_IPS;
+    else process.env.ARIA_TRUSTED_PROXY_IPS = previousTrusted;
+  }
 
   const noIp = new Request("http://localhost/api/x");
   ok("key falls back to 'unknown' IP so unidentified callers share one bucket", rateLimitKey(noIp, "scope") === "scope:unknown:anon");

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import { NextResponse } from "next/server";
+import { isolateConnection } from "./helpers/connection.mts";
 import { defaultSettings } from "../src/lib/seed";
 
 const url = (path: string) => new URL(`../${path}`, import.meta.url).href;
@@ -25,7 +26,7 @@ mock.module(url("src/lib/supabase/server.ts"), { namedExports: {
 mock.module(url("src/lib/crypto-secrets.ts"), { namedExports: { secretEncryptionEnabled: () => true } });
 mock.module(url("src/lib/server/readiness.ts"), { namedExports: { readCurrentReadiness: async () => ({ ok: healthy }) } });
 const { GET } = await import("../src/app/api/setup/status/route");
-const request = () => new Request("http://localhost/api/setup/status", { headers: { "x-real-ip": crypto.randomUUID() } });
+const request = () => isolateConnection(new Request("http://localhost/api/setup/status", { headers: { "x-real-ip": crypto.randomUUID() } }));
 
 test("setup checks refuse unauthenticated callers and non-admins before workspace queries", async () => {
   for (const denied of ["anonymous", "member"]) {

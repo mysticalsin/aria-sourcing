@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import { NextRequest, NextResponse } from "next/server";
+import { isolateConnection } from "./helpers/connection.mts";
 
 const url = (path: string) => new URL(`../${path}`, import.meta.url).href;
 let role = "admin";
@@ -19,7 +20,7 @@ mock.module(url("src/lib/supabase/server.ts"), {
 });
 const { recordAiUsage, resetAiUsageForTests } = await import("../src/lib/ai/usage");
 const { GET } = await import("../src/app/api/ai/usage/route");
-const request = () => new NextRequest("http://localhost/api/ai/usage", { headers: { "x-real-ip": crypto.randomUUID() } });
+const request = () => isolateConnection(new NextRequest("http://localhost/api/ai/usage", { headers: { "x-real-ip": crypto.randomUUID() } }));
 
 test("AI usage is refused to anonymous callers and non-admins", async () => {
   for (const denied of ["anonymous", "member"]) {
