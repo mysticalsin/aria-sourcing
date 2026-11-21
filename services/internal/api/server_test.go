@@ -31,7 +31,9 @@ func newServer(t *testing.T) (*api.Server, *dna.Fake) {
 	}
 	d := dna.NewFake()
 	svc := recruit.New(fake, d, ledger.New(fixedNow), log, []string{"mina.ortega@people.example.test"}, fixedNow)
-	return api.New(svc, "test", "19"), d
+	srv := api.New(svc, "test", "19")
+	srv.UseIdentity("synthetic-token", "ria.nunes")
+	return srv, d
 }
 
 func post(t *testing.T, h http.Handler, path string, body any) *httptest.ResponseRecorder {
@@ -44,6 +46,7 @@ func post(t *testing.T, h http.Handler, path string, body any) *httptest.Respons
 	}
 	req := httptest.NewRequest(http.MethodPost, path, &buf)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer synthetic-token")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -58,7 +61,9 @@ func TestHealthCampaignCandidateApprovalAndHire(t *testing.T) {
 	}
 	for _, path := range []string{"/smart", "/arp", "/linkedin", "/odoo/approve"} {
 		rec = httptest.NewRecorder()
-		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer synthetic-token")
+		srv.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("%s -> %d", path, rec.Code)
 		}

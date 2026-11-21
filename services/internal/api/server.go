@@ -2,10 +2,13 @@
 package api
 
 import (
+	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mysticalsin/aria-sourcing/services/internal/hiregate"
@@ -21,6 +24,17 @@ type Server struct {
 	mode    string
 	version string
 	mux     *http.ServeMux
+	token   string
+	actor   string
+}
+
+type actorContextKey struct{}
+
+// UseIdentity sets the credential and the approver name taken from it.
+// An empty credential fails closed on every route except health.
+func (s *Server) UseIdentity(token, actor string) {
+	s.token = token
+	s.actor = actor
 }
 
 // New wires the routes. mode and version are non-secret enums.
@@ -46,7 +60,36 @@ func New(svc *recruit.Service, mode, version string) *Server {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Path != "/health" {
+		actor, ok := s.identity(r)
+		if !ok {
+			writeCode(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), actorContextKey{}, actor))
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) identity(r *http.Request) (string, bool) {
+	if s.token == "" || s.actor == "" {
+		return "", false
+	}
+	header := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return "", false
+	}
+	presented := header[len(prefix):]
+	if subtle.ConstantTimeCompare([]byte(presented), []byte(s.token)) != 1 {
+		return "", false
+	}
+	return s.actor, true
+}
+
+func actorFrom(r *http.Request) string {
+	actor, _ := r.Context().Value(actorContextKey{}).(string)
+	return actor
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -249,9 +292,15 @@ func (s *Server) createApproval(w http.ResponseWriter, r *http.Request) {
 		writeCode(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	actor := actorFrom(r)
+	if actor == "" {
+		writeCode(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	_ = req.Approver
 	row, err := s.svc.Approve(r.Context(), recruit.ApprovalInput{
 		Channel: req.Channel, RecipientRef: req.RecipientRef, Subject: req.Subject, Body: req.Body,
-		NoticeVersion: req.NoticeVersion, Approver: req.Approver, ApplicantAriaID: req.ApplicantAriaID,
+		NoticeVersion: req.NoticeVersion, Approver: actor, ApplicantAriaID: req.ApplicantAriaID,
 	})
 	if err != nil {
 		writeErr(w, err)

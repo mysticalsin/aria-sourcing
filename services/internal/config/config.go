@@ -19,6 +19,8 @@ const (
 	EnvOdooVersion        = "ODOO_VERSION"
 	EnvAriaMode           = "ARIA_MODE"
 	EnvRecipientAllowlist = "ARIA_RECIPIENT_ALLOWLIST"
+	EnvAPIToken           = "ARIA_API_TOKEN"
+	EnvAPIActor           = "ARIA_API_ACTOR"
 )
 
 // EnvNames is the only set of environment names this process reads.
@@ -29,6 +31,8 @@ var EnvNames = []string{
 	EnvOdooVersion,
 	EnvAriaMode,
 	EnvRecipientAllowlist,
+	EnvAPIToken,
+	EnvAPIActor,
 }
 
 var (
@@ -73,6 +77,8 @@ type Config struct {
 	AriaMode    string
 	ModeSet     bool
 	Allowlist   []string
+	APIToken    Secret
+	APIActor    string
 }
 
 // String is the set/unset summary.
@@ -101,6 +107,8 @@ func (c Config) LogSummary() string {
 		{EnvOdooVersion, c.VersionSet},
 		{EnvAriaMode, c.ModeSet},
 		{EnvRecipientAllowlist, len(c.Allowlist) > 0},
+		{EnvAPIToken, c.APIToken.IsSet()},
+		{EnvAPIActor, c.APIActor != ""},
 	}
 	var b strings.Builder
 	b.WriteString("config")
@@ -178,6 +186,8 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	if present[EnvRecipientAllowlist] {
 		cfg.Allowlist = splitList(values[EnvRecipientAllowlist])
 	}
+	cfg.APIToken = Secret{v: values[EnvAPIToken]}
+	cfg.APIActor = values[EnvAPIActor]
 	return cfg, nil
 }
 
@@ -196,6 +206,12 @@ func splitList(raw string) []string {
 		out = append(out, part)
 	}
 	return out
+}
+
+// Identity is the credential and approver name. The token leaves this package
+// only as the compared request credential.
+func (c Config) Identity() (token, actor string) {
+	return c.APIToken.Value(), c.APIActor
 }
 
 // EffectiveVersion is documented for callers that need the major version.
