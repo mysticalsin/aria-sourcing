@@ -27,11 +27,11 @@ test("HeyReach and the LinkedIn token are off by default", () => {
   assert.equal(byId["assisted-inmail"].markSent, true);
   assert.equal(byId["linkedin-token"].adminOnly, true);
   assert.equal(byId.heyreach.adminOnly, false);
-  assert.match(byId.heyreach.cap, /20 invites, 40 messages/);
-  assert.match(byId["linkedin-token"].cap, /20 invites, 40 messages/);
-  assert.match(byId.email.cap, /50/);
-  assert.match(byId["linkedin-token"].risk, /high ban risk/);
-  assert.match(byId.heyreach.risk, /medium-high ban risk/);
+  assert.match(byId.heyreach.cap, /20 invites and 40 messages per sender per day\./);
+  assert.match(byId["linkedin-token"].cap, /20 invites and 40 messages per sender per day\./);
+  assert.match(byId.email.cap, /50 per sender per day\./);
+  assert.match(byId["linkedin-token"].risk, /Off by default/);
+  assert.match(byId.heyreach.risk, /Off by default/);
   assert.equal(defaultChannelId(), "assisted-inmail");
 
   const html = renderToStaticMarkup(createElement(ChannelPicker, null));
@@ -45,7 +45,7 @@ test("HeyReach and the LinkedIn token are off by default", () => {
   assert.match(html, /data-channel="heyreach" data-flag="off"/);
   assert.match(html, /data-channel="linkedin-token" data-flag="off"/);
   assert.match(html, /Admin only/);
-  assert.match(html, /high ban risk/);
+  assert.match(html, /Off by default/);
   assert.match(html, /Mark sent/);
 });
 
@@ -123,8 +123,10 @@ test("the composer shows the exact text, its hash, and voids a dirty edit", () =
   assert.match(html, /Assisted Recruiter InMail/);
   assert.match(html, new RegExp(exactText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(digest));
-  assert.match(html, /Any edit changes the hash and voids the approval/);
+  assert.match(html, /Approving sends exactly this text\. Any edit needs a new approval/);
+  assert.match(html, /<details[\s>]/);
   assert.match(html, /Approve exact text/);
+  assert.match(html, /min-h-11/);
 
   const unavailable = renderToStaticMarkup(
     createElement(OutreachComposer, {

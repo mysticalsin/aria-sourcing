@@ -95,3 +95,14 @@ function exactSubject(value: string): string {
 export function exactTextDigest(subject: string, body: string): string {
   return sha256Hex(`${exactSubject(subject)}\n${body ?? ""}`);
 }
+
+/** Hash of the subject and body on screen. An edit voids the previous approval. */
+export function displayedExactApproval(input: {
+  subject: string;
+  body: string;
+  savedSubject: string;
+  savedBody: string;
+}): { digest: string; voided: boolean } {
+  const voided = input.subject !== input.savedSubject || input.body !== input.savedBody;
+  return { digest: exactTextDigest(input.subject, input.body), voided };
+}

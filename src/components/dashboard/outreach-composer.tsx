@@ -35,14 +35,18 @@ export function OutreachComposer({
       ) : (
         <pre className="mt-3 whitespace-pre-wrap rounded-2xl bg-canvas p-4 text-sm leading-relaxed text-ink">{exactText}</pre>
       )}
-      <p className="mt-3 text-xs text-muted">
-        SHA-256 <code className="break-all font-mono text-ink">{digest ?? "—"}</code>
+      <p className="mt-3 text-sm leading-relaxed text-ink">
+        Approving sends exactly this text. Any edit needs a new approval.
       </p>
-      {dirty && (
-        <p className="mt-2 text-sm font-semibold text-tangerine">Any edit changes the hash and voids the approval.</p>
-      )}
+      <details className="mt-2">
+        <summary className="cursor-pointer text-xs font-semibold text-ink">Approval proof</summary>
+        <p className="mt-2 text-xs text-muted">
+          SHA-256 <code className="break-all font-mono text-ink">{digest ?? "—"}</code>
+        </p>
+      </details>
+      {dirty ? <p className="sr-only">Edited draft</p> : null}
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button type="button" size="sm" onClick={() => onApprove?.()} disabled={!onApprove}>
+        <Button type="button" size="md" className="min-h-11" onClick={() => onApprove?.()} disabled={!onApprove}>
           Approve exact text
         </Button>
         {manual && (

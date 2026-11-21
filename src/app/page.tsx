@@ -42,6 +42,7 @@ import {
   useReplies,
 } from "@/lib/store";
 import { funnelForCandidates } from "@/lib/metrics";
+import { quickStatNow } from "@/lib/quick-stats";
 import { pluralize } from "@/lib/utils";
 import {
   FilePlus2,
@@ -71,7 +72,13 @@ export default function DashboardPage() {
   const bookings = useBookings();
   const activeCampaign = useActiveCampaign();
   const statSource = React.useMemo(
-    () => ({ candidates, interviews: bookings, approvals: outreach, replies, now: new Date() }),
+    () => ({
+      candidates,
+      interviews: bookings,
+      approvals: outreach,
+      replies,
+      now: quickStatNow({ synthetic: !supabaseEnabled }),
+    }),
     [candidates, bookings, outreach, replies],
   );
 

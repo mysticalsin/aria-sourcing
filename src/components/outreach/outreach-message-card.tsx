@@ -28,8 +28,9 @@ import {
 } from "@/lib/utils";
 import { ChannelPicker } from "@/components/dashboard/channel-picker";
 import { OutreachComposer } from "@/components/dashboard/outreach-composer";
-import type { ChannelId } from "@/lib/channel-catalog";
-import { exactTextDigest } from "@/lib/exact-text";
+import { outreachChannelForPicker, type ChannelId } from "@/lib/channel-catalog";
+import { approveDisplayedOutreach } from "@/lib/approve-displayed-outreach";
+import { displayedExactApproval } from "@/lib/exact-text";
 import {
   Check,
   X,
@@ -143,7 +144,15 @@ export function OutreachMessageCard({
   async function handleApprove() {
     if (approving) return;
     setApproving(true);
-    const res = await a.approveOutreach(message.id);
+    const { result: res } = await approveDisplayedOutreach({
+      messageId: message.id,
+      displayedSubject: subject,
+      displayedBody: body,
+      savedSubject: message.subject,
+      savedBody: message.body,
+      updateDraft: (patch) => a.updateOutreach(message.id, patch),
+      approve: (id) => a.approveOutreach(id),
+    });
     setApproving(false);
     if (!res.allowed) {
       toast({
@@ -358,14 +367,28 @@ export function OutreachMessageCard({
         <OutreachComposer
           toName={name}
           channelLabel={message.channel === "Email" ? "Email" : "Assisted Recruiter InMail"}
-          subject={message.subject}
-          exactText={message.body}
-          digest={exactTextDigest(message.subject, message.body)}
+          subject={subject}
+          exactText={body}
+          digest={
+            displayedExactApproval({
+              subject,
+              body,
+              savedSubject: message.subject,
+              savedBody: message.body,
+            }).digest
+          }
           dirty={dirty}
           onApprove={actionable && !approving && !rejecting ? () => void handleApprove() : undefined}
           onMarkSent={message.channel === "LinkedIn" ? handleConfirmManualSend : undefined}
         />
-        <ChannelPicker selectedId={message.channel === "Email" ? "email" : ("assisted-inmail" satisfies ChannelId)} />
+        <ChannelPicker
+          selectedId={message.channel === "Email" ? "email" : ("assisted-inmail" satisfies ChannelId)}
+          onSelect={(id) => {
+            const next = outreachChannelForPicker(id);
+            if (!next || next === message.channel || settled) return;
+            a.updateOutreach(message.id, { channel: next });
+          }}
+        />
 
         {/* LinkedIn: approved, not sent yet */}
         {pendingManual && (

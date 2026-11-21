@@ -33,7 +33,7 @@ export function MetricCard({
 }) {
   return (
     <Card className="p-5 animate-fade-in">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col items-start gap-2 max-[420px]:flex-col min-[420px]:flex-row min-[420px]:items-start min-[420px]:justify-between">
         <Eyebrow>{label}</Eyebrow>
         {icon && (
           <span

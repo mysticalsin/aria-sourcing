@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import { motion } from "framer-motion";
 import {
   Card,
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { useActions, useCandidate, useCampaign, useSettings } from "@/lib/store";
+import { approveDisplayedOutreach } from "@/lib/approve-displayed-outreach";
 import { checkOutreachApproval, type ApprovalCheck } from "@/lib/rules";
 import type { Candidate, MatchBreakdownItem, OutreachMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -213,7 +213,6 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
   const reducedMotion = usePrefersReducedMotion();
   const [approving, setApproving] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
-  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
 
   if (!candidate || !campaign) {
     return (
@@ -243,7 +242,15 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
   async function handleApprove() {
     if (approving) return;
     setApproving(true);
-    const res = await actions.approveOutreach(message.id);
+    const { result: res } = await approveDisplayedOutreach({
+      messageId: message.id,
+      displayedSubject: message.subject,
+      displayedBody: message.body,
+      savedSubject: message.subject,
+      savedBody: message.body,
+      updateDraft: (patch) => actions.updateOutreach(message.id, patch),
+      approve: (id) => actions.approveOutreach(id),
+    });
     setApproving(false);
     if (!res.allowed) {
       toast({ title: "Approval blocked", description: res.blockers.join(" "), variant: "error" });
@@ -251,11 +258,6 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
     }
     if (res.dryRun) {
       toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
-      return;
-    }
-    if (message.channel === "LinkedIn") {
-      // Approving the exact LinkedIn message is the decision to send it.
-      await deliverOnLinkedIn(message);
       return;
     }
     toast({

@@ -3,7 +3,7 @@
  * A missing collection is null. An empty collection is zero. Counts are not capped.
  */
 
-import { formatNumber } from "./utils";
+import { formatNumber, SEED_NOW } from "./utils";
 
 export const QUICK_STAT_IDS = [
   "toRate",
@@ -113,6 +113,16 @@ export function startOfUtcWeek(now: Date): number {
   const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const daysFromMonday = (now.getUTCDay() + 6) % 7;
   return midnight - daysFromMonday * 86_400_000;
+}
+
+/**
+ * Demo stats use the seed clock. A live workspace passes synthetic: false
+ * and gets the wall clock. Callers may inject `now` in tests.
+ */
+export function quickStatNow(input?: { now?: Date; synthetic?: boolean }): Date {
+  if (input?.now) return input.now;
+  if (input?.synthetic === false) return new Date();
+  return SEED_NOW;
 }
 
 export function selectInterviewsThisWeek(

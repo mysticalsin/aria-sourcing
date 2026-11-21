@@ -25,14 +25,15 @@ export function CommandCenterStats({ source }: { source: QuickStatSource }) {
   return (
     <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6" aria-label="Quick stats">
       {stats.map((stat) => (
-        <MetricCard
-          key={stat.id}
-          label={stat.label}
-          value={formatQuickStatValue(stat.value)}
-          hint={stat.hint}
-          icon={ICONS[stat.id]}
-          tone={stat.tone}
-        />
+        <div key={stat.id} data-stat={stat.id} data-unavailable={stat.value == null ? "true" : "false"}>
+          <MetricCard
+            label={stat.label}
+            value={formatQuickStatValue(stat.value)}
+            hint={stat.hint}
+            icon={ICONS[stat.id]}
+            tone={stat.tone}
+          />
+        </div>
       ))}
     </section>
   );

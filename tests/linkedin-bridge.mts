@@ -614,14 +614,12 @@ test("only a signed-in person can queue a message or an invitation; the extensio
   assert.deepEqual(usesOf("messageCandidate").sort(), senders);
   assert.deepEqual(
     all.filter((path) => readFileSync(path, "utf8").includes("useDeliverApprovedLinkedIn(")).sort(),
-    ["src/app/outreach/page.tsx", "src/components/linkedin/outreach-send.ts", "src/components/outreach/glass-box-panel.tsx", "src/components/outreach/outreach-message-card.tsx"],
-    "only the approval of an outreach message sends it on LinkedIn",
+    ["src/app/outreach/page.tsx", "src/components/linkedin/outreach-send.ts", "src/components/outreach/outreach-message-card.tsx"],
+    "only an explicit LinkedIn click uses the bridge sender",
   );
-  // The glass-box panel still sends when its own approval click succeeds.
-  assert.match(
-    readFileSync("src/components/outreach/glass-box-panel.tsx", "utf8"),
-    /const res = await (?:a|actions)\.approveOutreach\(message\.id\);[\s\S]*if \(!res\.allowed\)[\s\S]*if \(message\.channel === "LinkedIn"\) \{[\s\S]*await deliverOnLinkedIn\(message\)/,
-  );
+  for (const path of ["src/components/outreach/glass-box-panel.tsx", "src/components/outreach/outreach-message-card.tsx"]) {
+    assert.match(readFileSync(path, "utf8"), /approveDisplayedOutreach\(/, path);
+  }
   // Tony, 2026-11-20: the outreach card approves the exact text and does not
   // deliver it. Assisted Recruiter InMail is a manual Mark sent step.
   const card = readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8");
