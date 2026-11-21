@@ -24,12 +24,16 @@ if docker info >/dev/null 2>&1; then D=docker; else D="sudo env APP_PORT=3010 do
 # sudo drops the variable unless it is passed on the command.
 export APP_PORT=3010
 
-# This host's legacy filter drops forwarded bridge packets. Containers on the
-# same network cannot open TCP until that policy accepts them.
-if command -v iptables-legacy >/dev/null 2>&1; then
+# This VM's legacy filter can drop forwarded bridge packets. The rule runs
+# only in CI or a VM sandbox, and never on a developer Mac.
+BRIDGE="$(sh "$ROOT/scripts/sandbox-bridge.sh" || true)"
+echo "bridge=$BRIDGE"
+if [ "$BRIDGE" = "apply" ] && command -v iptables-legacy >/dev/null 2>&1; then
   sudo iptables-legacy -P FORWARD ACCEPT || true
   sudo iptables-legacy -C FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12 -j ACCEPT 2>/dev/null \
     || sudo iptables-legacy -I FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12 -j ACCEPT || true
+else
+  echo "bridge-skip: $BRIDGE"
 fi
 
 {
