@@ -80,6 +80,35 @@ func TestCLIDoesNotReadPastUploadCap(t *testing.T) {
 	}
 }
 
+func TestOversizedFileDoesNotEchoRawID(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/big.pdf"
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(int64(ingest.MaxUploadBytes) + 1); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"-file", path,
+		"-cv-source", "toast-upload",
+		"-folder", "holding",
+		"-id", "casey.sample@example.test",
+	}, &stdout, &stderr)
+	out := stdout.String() + stderr.String()
+	if code == 0 {
+		t.Fatal("oversized file was accepted")
+	}
+	for _, needle := range []string{"casey.sample", "@example.test", "casey.sample@example.test"} {
+		if strings.Contains(out, needle) {
+			t.Fatalf("status echoed raw id %q\n%s", needle, out)
+		}
+	}
+}
+
 func TestReadLimitedHonorsCap(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/n.bin"

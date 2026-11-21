@@ -49,6 +49,23 @@ func TestContentOperators(t *testing.T) {
 	}
 }
 
+func TestEncryptedPDFIsUnreadable(t *testing.T) {
+	// The text layer is otherwise readable. /Encrypt is the only reason
+	// this file is refused, so deleting that check turns the test red.
+	plain := BuildTextPDF([]string{"Name: Casey Example", "Email: casey.example@example.test"})
+	locked := bytes.Replace(plain, []byte("/Type /Catalog"), []byte("/Type /Catalog /Encrypt 9 0 R"), 1)
+	if !bytes.Contains(locked, []byte("/Encrypt")) {
+		t.Fatal("fixture lost /Encrypt")
+	}
+	text, err := ExtractText(locked)
+	if err != ErrUnreadable {
+		t.Fatalf("encrypted pdf returned %q err %v", text, err)
+	}
+	if _, err := ExtractText(plain); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCorruptAndEmpty(t *testing.T) {
 	if _, err := ExtractText([]byte("not a pdf")); !errorsIsUnreadable(err) {
 		t.Fatalf("random: %v", err)

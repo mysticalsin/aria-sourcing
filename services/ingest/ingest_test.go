@@ -680,6 +680,24 @@ func TestFileTooLargeDoesNotKeepBytes(t *testing.T) {
 	}
 }
 
+func TestPhoneShapedIDIsRejectedAndNotLogged(t *testing.T) {
+	w, log, _ := testWorker(t, ingest.Options{})
+	_, err := w.Ingest(context.Background(), ingest.Upload{
+		ID:     "5550100199",
+		Bytes:  extract.BuildTextPDF(syntheticCVs[0].lines),
+		Origin: holding(),
+	})
+	if err == nil {
+		t.Fatal("phone-shaped id was accepted")
+	}
+	if strings.Contains(err.Error(), "5550100199") {
+		t.Fatal("error echoed the phone id")
+	}
+	if strings.Contains(fmt.Sprintf("%#v", log.Snapshot()), "5550100199") {
+		t.Fatal("phone-shaped id was written to the log")
+	}
+}
+
 func TestNameShapedIDAndSlugAreNotLogged(t *testing.T) {
 	w, log, _ := testWorker(t, ingest.Options{})
 	_, err := w.Ingest(context.Background(), ingest.Upload{
