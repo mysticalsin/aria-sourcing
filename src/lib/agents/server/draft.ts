@@ -20,10 +20,12 @@ import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosur
 import { humanizeText } from "@/lib/humanizer";
 import { effectiveTone } from "@/lib/skills";
 import { fitInvitationNote, linkedInCopyRule } from "../autopilot";
+import { auditLivePrompt } from "@/lib/fairness/live-rank";
 
 export interface AgentDraft {
   gen: GeneratedOutreach;
   draftedBy: "ai" | "template";
+  fairness?: { verdict: "Insufficient" | "Pass" | "Warn" | "Fail"; proxies: string[] };
 }
 
 const UPSTREAM_TIMEOUT_MS = 45_000;
@@ -67,7 +69,7 @@ export async function draftLinkedInOutreach(input: {
   const template = generateOutreach(candidate, campaign, tone, "LinkedIn", 1, undefined, language);
   const fit = (gen: GeneratedOutreach): GeneratedOutreach => kind === "invitation" ? { ...gen, body: fitInvitationNote(gen.body) } : gen;
 
-  const basePrompt = buildOutreachPrompt({
+  const builtPrompt = buildOutreachPrompt({
     candidateName: candidate.name,
     candidateTitle: candidate.currentTitle,
     candidateCompany: candidate.currentCompany,
@@ -83,10 +85,12 @@ export async function draftLinkedInOutreach(input: {
     channel: "LinkedIn",
     language,
   });
+  const audited = auditLivePrompt(builtPrompt);
+  const fairness = { verdict: audited.verdict, proxies: audited.proxies };
   const guardrails = [settings.guardrails?.ariaPrompt, linkedInCopyRule(kind)].filter(Boolean).join("\n\n");
-  const text = await claudeText(input.workspaceId, settings, `${guardrails}\n\n${basePrompt}`);
+  const text = await claudeText(input.workspaceId, settings, `${guardrails}\n\n${audited.prompt}`);
   const parsed = text ? parseOutreachDraft(text, "LinkedIn", template.subject) : null;
-  if (!parsed) return { gen: fit(template), draftedBy: "template" };
+  if (!parsed) return { gen: fit(template), draftedBy: "template", fairness };
   return {
     gen: fit({
       subject: humanizeText(parsed.subject),
@@ -95,5 +99,6 @@ export async function draftLinkedInOutreach(input: {
       channel: "LinkedIn",
     }),
     draftedBy: "ai",
+    fairness,
   };
 }

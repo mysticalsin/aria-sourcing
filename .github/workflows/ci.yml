@@ -1,5 +1,8 @@
 name: CI
 
+# ubuntu-24.04: on 2026-11-21 ubuntu-latest stayed queued with no runner
+# while ubuntu-24.04 ran the demo job. These jobs use the image that runs.
+
 on:
   push:
     branches: ["**"]
@@ -12,7 +15,7 @@ permissions:
 jobs:
   quality:
     name: Quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -45,7 +48,7 @@ jobs:
 
   dependency-audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -66,7 +69,7 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -103,7 +106,7 @@ jobs:
 
   database-security:
     name: Database security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -171,7 +174,7 @@ jobs:
     name: Release gate
     if: always()
     needs: [quality, dependency-audit, secret-scan, database-security, local-demo]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
