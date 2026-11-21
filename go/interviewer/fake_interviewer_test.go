@@ -17,10 +17,10 @@ type fakeInterviewer struct {
 	apiKey string
 
 	mu           sync.Mutex
-	hits         int
-	postHits     int
-	getHits      int
-	creates      int
+	hitCount     int
+	postCount    int
+	getCount     int
+	createCount  int
 	records      map[string]*storedScreening
 	byID         map[string]*storedScreening
 	seq          int
@@ -60,25 +60,25 @@ func (f *fakeInterviewer) url() string { return f.srv.URL }
 func (f *fakeInterviewer) hits() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.hits
+	return f.hitCount
 }
 
 func (f *fakeInterviewer) creates() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.creates
+	return f.createCount
 }
 
 func (f *fakeInterviewer) postHits() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.postHits
+	return f.postCount
 }
 
 func (f *fakeInterviewer) getHits() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.getHits
+	return f.getCount
 }
 
 func (f *fakeInterviewer) lastPost() ([]byte, http.Header) {
@@ -102,12 +102,12 @@ func (f *fakeInterviewer) setStatus(id, status string, extra map[string]any) {
 
 func (f *fakeInterviewer) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
-	f.hits++
+	f.hitCount++
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/screenings":
-		f.postHits++
+		f.postCount++
 	case r.Method == http.MethodGet && len(r.URL.Path) > len("/v1/screenings/"):
-		f.getHits++
+		f.getCount++
 	}
 	hangPOST := f.hangPOST
 	hangGET := f.hangGET
@@ -136,12 +136,18 @@ func (f *fakeInterviewer) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/screenings":
 		if hangPOST {
+			// Drain the body first. Otherwise the client blocks writing it and
+			// never closes the connection, so this handler never sees cancel.
+			_, _ = io.Copy(io.Discard, r.Body)
+			_ = r.Body.Close()
 			<-r.Context().Done()
 			return
 		}
 		f.create(w, r)
 	case r.Method == http.MethodGet && len(r.URL.Path) > len("/v1/screenings/"):
 		if hangGET {
+			_, _ = io.Copy(io.Discard, r.Body)
+			_ = r.Body.Close()
 			<-r.Context().Done()
 			return
 		}
@@ -199,7 +205,7 @@ func (f *fakeInterviewer) create(w http.ResponseWriter, r *http.Request) {
 	}
 	f.records[key] = rec
 	f.byID[rec.id] = rec
-	f.creates++
+	f.createCount++
 	writeJSON(w, http.StatusAccepted, rec.public())
 }
 

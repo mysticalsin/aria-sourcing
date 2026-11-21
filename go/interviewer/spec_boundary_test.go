@@ -730,7 +730,9 @@ func TestSpecBoundary_ExpiredAndAbandonedDoNotReject(t *testing.T) {
 	fake := newFake(t, "test-interviewer-key")
 	svc := interviewer.New(enabledConfig(fake.url()))
 	for _, status := range []string{"expired", "abandoned"} {
-		h, err := svc.RequestScreening(context.Background(), validCandidate(), validNeed())
+		cand := validCandidate()
+		cand.ApprovalID = "apr-synthetic-" + status
+		h, err := svc.RequestScreening(context.Background(), cand, validNeed())
 		if err != nil {
 			t.Fatal(err)
 		}

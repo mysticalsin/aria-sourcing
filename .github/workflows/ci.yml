@@ -140,6 +140,25 @@ jobs:
       - name: Verify candidate outcome events
         run: npm run test:db-email-outcomes
 
+  go-interviewer:
+    name: Go interviewer handoff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.22.x"
+          cache: false
+
+      - name: Test
+        working-directory: go/interviewer
+        run: go test -count=1 -race ./...
+
   local-demo:
     name: Local Docker demo
     runs-on: ubuntu-24.04
@@ -170,7 +189,7 @@ jobs:
   release-gate:
     name: Release gate
     if: always()
-    needs: [quality, dependency-audit, secret-scan, database-security, local-demo]
+    needs: [quality, dependency-audit, secret-scan, database-security, go-interviewer, local-demo]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -181,9 +200,10 @@ jobs:
           AUDIT_RESULT: ${{ needs.dependency-audit.result }}
           SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
           DATABASE_SECURITY_RESULT: ${{ needs.database-security.result }}
+          GO_INTERVIEWER_RESULT: ${{ needs.go-interviewer.result }}
           LOCAL_DEMO_RESULT: ${{ needs.local-demo.result }}
         run: |
-          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$LOCAL_DEMO_RESULT" != success ]; then
-            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT local_demo=$LOCAL_DEMO_RESULT"
+          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$GO_INTERVIEWER_RESULT" != success ] || [ "$LOCAL_DEMO_RESULT" != success ]; then
+            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT go_interviewer=$GO_INTERVIEWER_RESULT local_demo=$LOCAL_DEMO_RESULT"
             exit 1
           fi

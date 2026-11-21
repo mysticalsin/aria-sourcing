@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math/rand"
+	"net/http"
 	"strings"
 	"testing"
 
