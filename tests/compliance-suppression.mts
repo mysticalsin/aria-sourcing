@@ -16,7 +16,10 @@ const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf
 ok("suppression route authorizes the compliance permission", /can\(role as Role, "compliance"\)/.test(route));
 ok("suppression route uses the service client only after session authorization", /getServiceSupabase\(\)/.test(route));
 ok("suppression route still scopes service writes to current workspace", /workspace_id: workspaceId/.test(route));
-ok("client records a visible activity when an enforcement sync fails", /Suppression not synced to enforcement list/.test(store));
+ok(
+  "client does not mark the candidate blocked before the server confirms",
+  /await confirmCandidateSuppression\(cand, "Suppressed"\)[\s\S]{0,240}if \(!persisted\.ok\) return/.test(store),
+);
 ok("negative reply persists suppression before local state advances", /await persistSuppressionToServer/.test(store));
 ok(
   "negative reply revokes every existing outreach approval through the guarded dispatch boundary",

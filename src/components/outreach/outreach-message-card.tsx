@@ -447,7 +447,7 @@ export function OutreachMessageCard({
                 loading={approving}
                 disabled={approving || rejecting}
               >
-                {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
+                {approving ? "Recording approval…" : message.channel === "LinkedIn" ? "Approve for manual send" : "Approve"}
               </Button>
               <Button
                 size="sm"

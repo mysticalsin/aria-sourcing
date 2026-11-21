@@ -1,5 +1,7 @@
 
-export type EnforcedSuppressionType = "email" | "domain" | "phone";
+import { publicIdFromProfileUrl, linkedInProfileUrl } from "./linkedin-profile-url";
+
+export type EnforcedSuppressionType = "email" | "domain" | "phone" | "linkedin";
 
 /** E.164 digits without the leading "+", or null when the input is not a phone number. */
 function normalizePhoneDigits(raw: string): string | null {
@@ -17,6 +19,10 @@ export function suppressionDeleteConfirmed(row: unknown): row is { id: string } 
 export function normalizeSuppressionValue(type: EnforcedSuppressionType, rawValue: string): string | null {
   const raw = rawValue.trim();
   if (type === "phone") return normalizePhoneDigits(raw);
+  if (type === "linkedin") {
+    const id = publicIdFromProfileUrl(raw);
+    return id ? linkedInProfileUrl(id).toLowerCase() : null;
+  }
   const value = raw.toLowerCase();
   if (type === "email") {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;

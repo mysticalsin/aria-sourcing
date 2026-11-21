@@ -16,6 +16,8 @@ import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { recordedLawfulBasisFromUnknown } from "@/lib/candidate-lawful-basis";
+import { normalizeSuppressionValue } from "@/lib/manual-suppression";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -68,7 +70,8 @@ export async function POST(req: NextRequest) {
   // official integration is implemented. Reject before any provider, approval,
   // claim, or email fallback can make this look like a deliverable send.
   const channelPolicy = getOutboundChannelPolicy(channel);
-  if (!channelPolicy.ok) {
+  const linkedInManual = !channelPolicy.ok;
+  if (linkedInManual && (!supabaseEnabled || !payload.confirmLive)) {
     return NextResponse.json(
       { status: "manual-required", detail: channelPolicy.reason },
       { status: 409 },
@@ -125,9 +128,8 @@ export async function POST(req: NextRequest) {
     .select("state")
     .eq("workspace_id", approvalWid)
     .maybeSingle();
-  const campaigns = Array.isArray(record(workspaceState?.state)?.campaigns)
-    ? record(workspaceState?.state)?.campaigns as unknown[]
-    : [];
+  const state = record(workspaceState?.state);
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns as unknown[] : [];
   const campaign = campaigns.find((item) => record(item)?.id === campaignId);
   const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
   const injection = detectInjection(body);
@@ -204,6 +206,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
+  const candidates = Array.isArray(state?.candidates) ? state.candidates as unknown[] : [];
+  const candidate = candidates.map(record).find((item) => item?.id === candidateId) ?? null;
+  if (!recordedLawfulBasisFromUnknown(candidate)) {
+    return NextResponse.json(
+      { status: "error", detail: "Operator-recorded lawful basis is required before send." },
+      { status: 422 },
+    );
+  }
+  if (linkedInManual) {
+    return NextResponse.json(
+      { status: "manual-required", detail: channelPolicy.reason },
+      { status: 409 },
+    );
+  }
+
   // Domain verification happens before the irreversible claim. A dry-run
   // decision must never leave a claimed ledger row that blocks later outreach.
   if (!seat.domain_verified) {
@@ -226,11 +243,15 @@ export async function POST(req: NextRequest) {
   // button on migrations that may not be applied yet.)
   const emailLc = candidateEmail.toLowerCase();
   const domainLc = emailLc.split("@")[1] ?? "";
+  const phoneValue = typeof candidate?.phone === "string" ? normalizeSuppressionValue("phone", candidate.phone) : null;
+  const profileValue = typeof candidate?.linkedinUrl === "string"
+    ? normalizeSuppressionValue("linkedin", candidate.linkedinUrl)
+    : null;
   const { data: suppRows, error: suppErr } = await supabase
     .from("suppression_list")
     .select("type, value, expires_at")
     .eq("workspace_id", approvalWid)
-    .in("type", ["email", "domain"])
+    .in("type", ["email", "domain", "phone", "linkedin"])
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
   if (suppErr) {
     safeLog("suppression_list check error", { message: suppErr.message, code: suppErr.code });
@@ -238,7 +259,10 @@ export async function POST(req: NextRequest) {
   }
   if ((suppRows ?? []).some((s) => {
     const v = String(s.value).toLowerCase();
-    return (s.type === "email" && v === emailLc) || (s.type === "domain" && domainLc !== "" && v === domainLc);
+    return (s.type === "email" && v === emailLc)
+      || (s.type === "domain" && domainLc !== "" && v === domainLc)
+      || (s.type === "phone" && phoneValue !== null && v === phoneValue)
+      || (s.type === "linkedin" && profileValue !== null && v === profileValue);
   })) {
     return NextResponse.json({ status: "skipped", detail: "Recipient is on the suppression / do-not-contact list." });
   }

@@ -13,7 +13,7 @@ status: compliance-boundaries-pr-open
 - Branch `twa-odoo` is `e3fa3f594a6d86aec31d42a65414a96be4c8400e`. Michael's branches were not rewritten.
 - PR 168 targets `twa-odoo` from `cursor/compliance-boundaries-8b20`. Not merged.
 - Red-first commit `17afd643c12acbd0178a843504816a67e7b44d7a` adds tests that failed before the host and migration fixes.
-- `0010_drop_linkedin_bridge.sql` and `0011_drop_agent_autopilot.sql` are forward-only, unapplied, and have no down migration. Existing databases keep `token_hash` and the autopilot rows until those files run.
+- `0010_drop_linkedin_bridge.sql` keeps bridge rows unless `aria.bridge_legal_hold_cleared=true`. Existing databases keep `token_hash` on a normal run. `0011_drop_agent_autopilot.sql` is still a forward-only drop and is unapplied.
 - `vendorApiAdapter` and `LINKEDIN_VENDOR_API_*` are gone. Dispatch refuses the LinkedIn channel. The campaign form and setup status no longer offer LinkedIn web search. There is no agents service and no sample `AGENT_RUNNER_SECRET` in Compose.
 - The secret scan follows `HEAD`. `.gitleaksignore` adds one fingerprint for the historical intake variable name.
 

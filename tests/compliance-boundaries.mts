@@ -303,8 +303,12 @@ test("test_no_agents_compose_service", () => {
   assert.doesNotMatch(compose, /\/api\/agent\/tick/);
 });
 
-export function isLinkedInHostNetworkCall(_line: string): boolean {
-  return false;
+const LINKEDIN_NETWORK_CALL =
+  /(?:\baxios\s*\.\s*(?:get|post|put|patch|delete|head|request|create)|\bgot(?:\.[A-Za-z]+)?\s*\(|\bhttps?\s*\.\s*(?:request|get)\s*\(|\bundici\s*\.\s*(?:request|fetch|stream)\s*\(|\bpage\s*\.\s*goto\s*\(|\bfetch\s*\()/i;
+
+/** A transport call aimed at a linkedin.com host. A stored profile path is not a call. */
+export function isLinkedInHostNetworkCall(line: string): boolean {
+  return /linkedin\.com/i.test(line) && LINKEDIN_NETWORK_CALL.test(line);
 }
 
 const STORED_OR_REJECTED_PROFILE = /linkedin\.com\/(?:in|pub|company|school)\b/i;
@@ -318,11 +322,15 @@ const HOST_CHECK_FILES = new Set([
 test("test_no_linkedin_com_or_licdn_outside_stored_profiles", () => {
   const hits: string[] = [];
   for (const file of executableFiles()) {
-    if (isLinkedInTokenChannelFile(file)) continue;
     const lines = read(file).split(/\n/);
     lines.forEach((line, index) => {
       const where = `${file}:${index + 1}`;
-      if (/licdn/i.test(line)) hits.push(`${where}: licdn`);
+      if (/licdn/i.test(line) && !isLinkedInTokenChannelFile(file)) hits.push(`${where}: licdn`);
+      if (isLinkedInHostNetworkCall(line)) {
+        hits.push(`${where}: network call to linkedin.com`);
+        return;
+      }
+      if (isLinkedInTokenChannelFile(file)) return;
       if (!/linkedin\.com/i.test(line) || STORED_OR_REJECTED_PROFILE.test(line)) return;
       const request = /fetch\s*\(|\bsite:|voyager|axios|img-src|host_permissions|allowed_domains/i.test(line);
       if (HOST_CHECK_FILES.has(file) && !request) return;

@@ -322,7 +322,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
               disabled={hasBlock || approving || rejecting}
               title={hasBlock ? "Blocked by a failing guardrail check above" : undefined}
             >
-              {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
+              {approving ? "Recording approval…" : message.channel === "LinkedIn" ? "Approve for manual send" : "Approve"}
             </Button>
             <Button size="sm" variant="ghost" leftIcon={<X className="h-4 w-4" />} onClick={handleReject} disabled={approving || rejecting}>
               {rejecting ? "Revoking…" : "Reject"}

@@ -332,12 +332,12 @@ export interface WorkspaceActions {
   setChatboxSubmissionStatus: (id: string, status: ChatboxSubmissionStatus) => void;
   /** Append a new chatbox submission (used by the public careers chatbox). */
   addChatboxSubmission: (sub: ChatboxSubmission) => void;
-  suppressCandidate: (id: string) => void;
-  markDoNotContact: (id: string) => void;
+  suppressCandidate: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  markDoNotContact: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Undoes suppressCandidate/markDoNotContact — clears the suppressed/doNotContact
    *  flags and restores `stage` to whatever it was right before suppression. */
-  restoreCandidateContact: (id: string) => void;
-  unsubscribeCandidate: (id: string) => void;
+  restoreCandidateContact: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  unsubscribeCandidate: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   anonymizeCandidate: (id: string) => Promise<CandidateAnonymizeResult>;
   exportCandidate: (id: string) => string;
 

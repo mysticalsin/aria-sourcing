@@ -2321,11 +2321,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   /**
    * Sync a compliance action into the real, server-enforced suppression_list
    * table (/api/compliance/suppress) so the send route actually blocks this
-   * recipient, not just the local view. Fire-and-forget: the local flag (set by
-   * complianceMutate, or the NEGATIVE-reply branch of applyReplyAction below)
-   * is the source of truth for this app's own UI regardless of whether the
-   * network sync lands; a failure just gets a follow-up activity note so it
-   * isn't silently lost.
+   * recipient. Callers wait for this result before they show the candidate
+   * as blocked. A failed sync leaves the local flags unchanged.
    *
    * `method: "DELETE"` reverses this (used by restoreCandidateContact) — same
    * endpoint, same auth/RLS posture, removes the row instead of upserting it.
@@ -2336,7 +2333,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    */
   const persistSuppressionToServer = useCallback(
     async (
-      type: "email" | "phone",
+      type: "email" | "phone" | "linkedin",
       value: string,
       reason: string,
       method: "POST" | "DELETE" = "POST",
@@ -2365,52 +2362,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [workspaceEffectAllowed, workspaceFetch],
   );
 
-  const syncSuppressionToServer = useCallback(
-    (
-      email: string,
+  const confirmCandidateSuppression = useCallback(
+    async (
+      candidate: Candidate,
       reason: string,
-      campaignId: string,
-      candidateId: string,
       method: "POST" | "DELETE" = "POST",
-      type: "email" | "phone" = "email",
-    ) => {
-      if (!email) return;
-      void persistSuppressionToServer(type, email, reason, method)
-        .then((result) => {
-          if (!result.ok) {
-            const detail = result.error ?? "The server did not confirm the enforcement update.";
-            commit((prev) =>
-              withActivity(
-                prev,
-                makeActivity({
-                  type: "compliance",
-                  title:
-                    method === "DELETE"
-                      ? "Restore not synced to enforcement list"
-                      : "Suppression not synced to enforcement list",
-                  notes: detail,
-                  outcome: "Local only",
-                  campaignId,
-                  linkedEntityType: "candidate",
-                  linkedEntityId: candidateId,
-                }),
-                campaignId,
-              ),
-            );
-          }
-        });
-    },
-    [commit, persistSuppressionToServer],
-  );
-
-  const syncCandidateSuppressionToServer = useCallback(
-    (candidate: Candidate, reason: string, method: "POST" | "DELETE" = "POST") => {
-      syncSuppressionToServer(candidate.email, reason, candidate.campaignId, candidate.id, method);
-      if (candidate.phone?.trim()) {
-        syncSuppressionToServer(candidate.phone, reason, candidate.campaignId, candidate.id, method, "phone");
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!supabaseEnabled) return { ok: true };
+      const targets: Array<{ type: "email" | "phone" | "linkedin"; value: string }> = [];
+      if (candidate.email.trim()) targets.push({ type: "email", value: candidate.email });
+      if (candidate.phone?.trim()) targets.push({ type: "phone", value: candidate.phone });
+      if (candidate.linkedinUrl.trim()) targets.push({ type: "linkedin", value: candidate.linkedinUrl });
+      for (const target of targets) {
+        const persisted = await persistSuppressionToServer(target.type, target.value, reason, method);
+        if (!persisted.ok) return persisted;
       }
+      return { ok: true };
     },
-    [syncSuppressionToServer],
+    [persistSuppressionToServer],
   );
 
   const applyReplyAction = useCallback(
@@ -2434,6 +2403,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         const targets = [
           ...(candidate0.email.trim() ? [{ type: "email" as const, value: candidate0.email }] : []),
           ...(candidate0.phone?.trim() ? [{ type: "phone" as const, value: candidate0.phone }] : []),
+          ...(candidate0.linkedinUrl.trim() ? [{ type: "linkedin" as const, value: candidate0.linkedinUrl }] : []),
         ];
         for (const target of targets) {
           const persisted = await persistSuppressionToServer(
@@ -3106,8 +3076,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   );
 
   const suppressCandidate = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const cand = current().candidates.find((c) => c.id === id);
+      if (!cand) return { ok: false as const, error: "Candidate not found." };
+      const persisted = await confirmCandidateSuppression(cand, "Suppressed");
+      if (!persisted.ok) return { ok: false as const, error: persisted.error ?? "Could not record the candidate suppression." };
       complianceMutate(
         id,
         (c) => ({
@@ -3127,14 +3100,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         "Contact suppressed",
         "Suppressed",
       );
-      if (cand) syncCandidateSuppressionToServer(cand, "Suppressed");
+      return { ok: true as const };
     },
-    [complianceMutate, current, syncCandidateSuppressionToServer],
+    [complianceMutate, confirmCandidateSuppression, current],
   );
 
   const markDoNotContact = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const cand = current().candidates.find((c) => c.id === id);
+      if (!cand) return { ok: false as const, error: "Candidate not found." };
+      const persisted = await confirmCandidateSuppression(cand, "Do-not-contact");
+      if (!persisted.ok) return { ok: false as const, error: persisted.error ?? "Could not record the candidate suppression." };
       complianceMutate(
         id,
         (c) => ({
@@ -3151,15 +3127,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         "Marked do-not-contact",
         "Do-not-contact",
       );
-      if (cand) syncCandidateSuppressionToServer(cand, "Do-not-contact");
+      return { ok: true as const };
     },
-    [complianceMutate, current, syncCandidateSuppressionToServer],
+    [complianceMutate, confirmCandidateSuppression, current],
   );
 
   const restoreCandidateContact = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const cand = current().candidates.find((c) => c.id === id);
-      if (!cand || isCandidateErasureTombstone(cand)) return;
+      if (!cand || isCandidateErasureTombstone(cand)) return { ok: false as const, error: "Candidate not found." };
+      const persisted = await confirmCandidateSuppression(cand, "Restored", "DELETE");
+      if (!persisted.ok) return { ok: false as const, error: persisted.error ?? "Could not record the candidate suppression." };
       complianceMutate(
         id,
         (c) => ({
@@ -3176,26 +3154,26 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         "Contact restored",
         "Restored",
       );
-      // Mirror suppressCandidate/markDoNotContact: also remove the candidate
-      // from the real, server-enforced suppression_list so the outreach send
-      // route stops blocking them, not just the local view.
-      syncCandidateSuppressionToServer(cand, "Restored", "DELETE");
+      return { ok: true as const };
     },
-    [complianceMutate, current, syncCandidateSuppressionToServer],
+    [complianceMutate, confirmCandidateSuppression, current],
   );
 
   const unsubscribeCandidate = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const cand = current().candidates.find((c) => c.id === id);
+      if (!cand) return { ok: false as const, error: "Candidate not found." };
+      const persisted = await confirmCandidateSuppression(cand, "Unsubscribed");
+      if (!persisted.ok) return { ok: false as const, error: persisted.error ?? "Could not record the candidate suppression." };
       complianceMutate(
         id,
         (c) => ({ ...c, complianceFlags: { ...c.complianceFlags, unsubscribed: true } }),
         "Unsubscribe honored",
         "Unsubscribed",
       );
-      if (cand) syncCandidateSuppressionToServer(cand, "Unsubscribed");
+      return { ok: true as const };
     },
-    [complianceMutate, current, syncCandidateSuppressionToServer],
+    [complianceMutate, confirmCandidateSuppression, current],
   );
 
   const anonymizeCandidate = useCallback(async (id: string) => {
@@ -3830,9 +3808,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     async (entry: { type: SuppressionEntry["type"]; value: string; reason: string; expiresAt?: string | null }) => {
       if (!workspaceEffectAllowed()) {
         return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
-      }
-      if (supabaseEnabled && entry.type === "linkedin") {
-        return { ok: false, error: "LinkedIn is assisted-manual and has no server-enforced suppression channel." };
       }
       const normalized = entry.type === "linkedin"
         ? entry.value.trim().toLowerCase()

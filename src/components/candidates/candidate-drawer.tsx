@@ -1117,7 +1117,11 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.suppressCandidate(c.id);
+    const result = await actions.suppressCandidate(c.id);
+    if (!result.ok) {
+      toast({ title: "Contact not suppressed", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Contact suppressed", description: `${c.name} moved out of active outreach.`, variant: "warning" });
   };
 
@@ -1132,7 +1136,11 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.markDoNotContact(c.id);
+    const result = await actions.markDoNotContact(c.id);
+    if (!result.ok) {
+      toast({ title: "Do-not-contact not recorded", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
   };
 
@@ -1204,7 +1212,11 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.unsubscribeCandidate(c.id);
+    const result = await actions.unsubscribeCandidate(c.id);
+    if (!result.ok) {
+      toast({ title: "Unsubscribe not recorded", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Unsubscribed", description: `${c.name} will no longer receive outreach.`, variant: "warning" });
   };
 
@@ -1218,7 +1230,11 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.restoreCandidateContact(c.id);
+    const result = await actions.restoreCandidateContact(c.id);
+    if (!result.ok) {
+      toast({ title: "Contact not restored", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Contact restored", description: `${c.name} is eligible for outreach again.`, variant: "success" });
   };
 

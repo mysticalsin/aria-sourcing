@@ -320,7 +320,7 @@ try {
       return { data: null, error: null };
     },
     from: (table: string) => {
-      if (table === "workspace_state") return chainQuery({ result: { state: {} } });
+      if (table === "workspace_state") return chainQuery({ result: { state: { candidates: [{ id: "candidate-1", email: "candidate@example.test", lawfulBasis: "consent", lawfulBasisSource: "operator_selection", lawfulBasisRecordedAt: "2026-01-01T00:00:00.000Z" }] } } });
       if (table === "outreach_approvals") {
         return chainQuery({ result: { body_hash: approvedBodyHash, approval_scope_hash: approvedScopeHash, approval_source: "human" } });
       }
