@@ -144,5 +144,14 @@ ok(
     /chatAbortControllers\.current\.get\(threadId\) === toolLoopController[\s\S]*\.delete\(threadId\)/.test(toolLoop),
 );
 
+const learning = actionBody("listPendingSourcingFeedback", "generateOutreachFor");
+const learningPage = readFileSync(new URL("../src/app/campaigns/[id]/page.tsx", import.meta.url), "utf8");
+ok(
+  "the demo does not request sourcing learning and the page stays calm",
+  /if \(!supabaseEnabled\) return \[\]/.test(learning) &&
+    learning.indexOf("if (!supabaseEnabled) return []") < learning.indexOf("/api/sourcing-learning/feedback") &&
+    /Sourcing learning is off in this demo/.test(learningPage),
+);
+
 console.log(`RESULT workspace-effectful-actions: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
