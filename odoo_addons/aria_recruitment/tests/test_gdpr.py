@@ -58,3 +58,35 @@ class TestAriaGdpr(AriaRecruitmentCommon):
         audit = self.audits(due, event_kind='gdpr')
         self.assertTrue(any('retention' in (row.reason or '') for row in audit))
         self.assertNotIn('nia.example', ' '.join(audit.mapped('reason')).lower())
+
+    def test_erase_leaves_a_partner_another_company_uses(self):
+        company_b = self.env['res.company'].create({'name': 'Synthetic Company B'})
+        partner = self.env['res.partner'].sudo().create({
+            'name': 'Synthetic Customer',
+            'email': 'customer.b@example.test',
+            'phone': '+1-555-0100',
+            'company_id': company_b.id,
+        })
+        applicant = self.applicant('to_rate', name='Ada Example', email='ada.example@example.test')
+        applicant.sudo().write({'partner_id': partner.id})
+        applicant.action_aria_erase()
+        self.assertEqual(partner.sudo().email, 'customer.b@example.test')
+        self.assertEqual(partner.sudo().phone, '+1-555-0100')
+        self.assertEqual(partner.sudo().name, 'Synthetic Customer')
+        self.assertFalse(applicant.email_from)
+        self.assertTrue(applicant.aria_erased)
+
+    def test_erase_refuses_a_shared_partner(self):
+        partner = self.env['res.partner'].sudo().create({
+            'name': 'Shared Synthetic',
+            'email': 'shared.synthetic@example.test',
+            'phone': '+1-555-0101',
+            'company_id': False,
+        })
+        applicant = self.applicant('to_rate', name='Bea Example', email='bea.example@example.test')
+        applicant.sudo().write({'partner_id': partner.id})
+        applicant.action_aria_erase()
+        self.assertEqual(partner.sudo().email, 'shared.synthetic@example.test')
+        self.assertEqual(partner.sudo().name, 'Shared Synthetic')
+        self.assertFalse(applicant.email_from)
+        self.assertTrue(applicant.aria_erased)

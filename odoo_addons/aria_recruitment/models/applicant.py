@@ -181,12 +181,27 @@ class HrApplicant(models.Model):
             'aria_erased_at': fields.Datetime.now(),
         })
         partner = self.partner_id
-        if partner and not partner.user_ids:
-            partner.sudo().write({
-                'name': 'Erased',
-                'email': False,
-                'phone': False,
-            })
+        if partner and self._aria_partner_is_private_to_company(partner):
+            try:
+                partner.write({
+                    'name': 'Erased',
+                    'email': False,
+                    'phone': False,
+                })
+            except AccessError:
+                _logger.info('Aria erasure left the linked partner unchanged')
+
+    def _aria_partner_is_private_to_company(self, partner):
+        """A partner is erasable only for this applicant's company.
+
+        A shared partner (no company) or a partner of another company is refused.
+        """
+        company = self.company_id or self.env.company
+        if not partner.company_id or partner.company_id != company:
+            return False
+        if partner.user_ids:
+            return False
+        return True
 
     def action_aria_outreach(self):
         for applicant in self:
@@ -222,7 +237,7 @@ class HrApplicant(models.Model):
         filename = vals.get('aria_contract_filename') or 'contract.pdf'
         if not isinstance(filename, str) or not filename.strip():
             filename = 'contract.pdf'
-        mimetype = 'application/pdf' if filename.lower().endswith('.pdf') else 'application/octet-stream'
+        mimetype = 'application/pdf'
         for applicant in self:
             self.env['ir.attachment'].create({
                 'name': filename,
