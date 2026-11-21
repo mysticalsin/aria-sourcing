@@ -61,7 +61,7 @@ test("test_calendar_invite_requires_send_policy", async () => {
     accountEmail: "recruiter@example.test",
     accessToken: "access-token",
     refreshToken: null,
-    expiresAt: "2026-11-21T00:00:00.000Z",
+    expiresAt: "2099-01-01T00:00:00.000Z",
     scope: "calendar.events",
     connectedAt: "",
     updatedAt: "",
