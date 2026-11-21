@@ -281,9 +281,14 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image's HEALTHCHECK probes the web server; this service has none.
+    # The image HEALTHCHECK probes the web server. This process is the runner,
+    # so Compose waits until that command is pid 1.
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", "process.exit(require('fs').readFileSync('/proc/1/cmdline','utf8').includes('agents-runner')?0:1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
     logging: *logging
 
