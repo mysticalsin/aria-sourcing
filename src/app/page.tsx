@@ -143,6 +143,9 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <HeroPanel mode={ccMode} nextStep={nextStep} />
+      <p data-testid="channel-flags" className="text-sm text-ink">
+        HeyReach Off. LinkedIn token Off.
+      </p>
 
       <HydrationGate hydrated={hydrated} fallback={<DashboardFallback />}>
         {isFirstRun ? (
