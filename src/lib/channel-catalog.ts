@@ -19,6 +19,11 @@ export interface ChannelOption {
   defaultSelected: boolean;
 }
 
+const heyReachOn =
+  process.env.ARIA_HEYREACH_ENABLED === "true" &&
+  (process.env.ARIA_HEYREACH_APPROVAL_ID ?? "").length > 0 &&
+  (process.env.ARIA_HEYREACH_BODY_HASH ?? "").length > 0;
+
 export const CHANNEL_CATALOG: readonly ChannelOption[] = [
   {
     id: "assisted-inmail",
@@ -45,7 +50,7 @@ export const CHANNEL_CATALOG: readonly ChannelOption[] = [
   {
     id: "heyreach",
     label: "HeyReach",
-    flag: "off",
+    flag: heyReachOn ? "on" : "off",
     adminOnly: false,
     cap: "20 invites, 40 messages",
     safeguard: "Admin enable, pacing, auto-pause, and a kill switch. The flag is off.",
