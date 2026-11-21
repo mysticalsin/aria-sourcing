@@ -24,6 +24,16 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		addr := os.Getenv("ARIA_INGEST_ADDR")
+		if addr == "" {
+			addr = "127.0.0.1:8091"
+		}
+		os.Exit(serve(addr, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "ready" {
+		os.Exit(ready())
+	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
