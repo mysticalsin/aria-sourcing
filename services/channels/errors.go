@@ -40,6 +40,7 @@ var (
 	ErrSender          = &Refusal{Reason: "sender"}
 	ErrSenderAllowlist = &Refusal{Reason: "sender-allowlist"}
 	ErrTokenUsed       = &Refusal{Reason: "token-used"}
+	ErrOutcomeUnknown  = &Refusal{Reason: "outcome-unknown"}
 )
 
 // SentAuditError means the transport already accepted the message and the
