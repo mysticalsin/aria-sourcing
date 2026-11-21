@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
 import { isPublicDemoSideEffectBlocked } from "../src/lib/demo-side-effect-policy";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "../src/lib/approval/hash.ts";
 import { approvalHash, approvalScopeHash } from "../src/lib/outreach-content";
 
 let pass = 0;
@@ -146,6 +147,8 @@ mock.module(moduleUrl("src/lib/dispatch-outbound.ts"), {
 });
 mock.module(moduleUrl("src/lib/calendar.ts"), {
   namedExports: {
+    calendarSendUpdates: () => "none",
+    calendarInviteHash: () => "synthetic-calendar-hash",
     createGoogleCalendarEvent: async () => { providerCalls += 1; return { ok: true, eventId: "evt-1", link: "https://calendar.example.test/evt-1" }; },
     createGraphCalendarEvent: async () => { providerCalls += 1; return { ok: true, eventId: "evt-1", link: "https://calendar.example.test/evt-1" }; },
   },
@@ -164,7 +167,19 @@ const sendPayload = {
   channel: "Email",
   confirmLive: true,
 };
-const approvedBodyHash = approvalHash(sendPayload.subject, sendPayload.body);
+const approvedAt = new Date().toISOString();
+const approverId = "user-1";
+process.env.ARIA_RECIPIENT_ALLOWLIST = sendPayload.candidateEmail;
+const approvedWireHash = approvalHash(sendPayload.subject, sendPayload.body);
+const approvedBodyHash = exactBodyHash({
+  channel: sendPayload.channel,
+  recipient: sendPayload.candidateEmail,
+  subject: sendPayload.subject,
+  body: sendPayload.body,
+  noticeVersion: OUTREACH_NOTICE_VERSION,
+  approverId,
+  approvedAt,
+});
 const approvedScopeHash = approvalScopeHash({
   candidateId: sendPayload.candidateId,
   channel: sendPayload.channel,
@@ -198,9 +213,12 @@ currentSupabase = {
   from: (table: string) => {
     if (table === "outreach_approvals") {
       return queryResult({
-        body_hash: approvedBodyHash,
+        body_hash: approvedWireHash,
+        exact_body_hash: approvedBodyHash,
         approval_scope_hash: approvedScopeHash,
         approval_source: "human",
+        approved_at: approvedAt,
+        approved_by: approverId,
       });
     }
     if (table === "agent_seats") {

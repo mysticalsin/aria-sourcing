@@ -1,7 +1,15 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as dispatchModule from "../src/lib/dispatch-outbound";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "../src/lib/approval/hash.ts";
 import type { AgentSeat } from "../src/lib/types";
+
+process.env.ARIA_RECIPIENT_ALLOWLIST = [
+  "marco.rossi@example.test",
+  "33612345678",
+  "https://www.linkedin.com/in/ada-example",
+  "https://www.linkedin.com/in/marco-rossi",
+].join(",");
 
 const { dispatchDue } = dispatchModule;
 
@@ -98,6 +106,9 @@ function makeFakeDb(seed: {
     from: (name: string) => query(name),
     rpc: (fn: string, args: Row) => {
       rpcCalls.push({ fn, args });
+      if (fn === "consume_outreach_channel_daily_cap" || fn === "outreach_channel_sent_today") {
+        return Promise.resolve({ data: { allowed: true, reason: "authorized", sent_count: 0 }, error: null });
+      }
       if (fn === "record_whatsapp_provider_acceptance") {
         const acceptance = seed.acceptance ?? { allowed: true, reason: "recorded" };
         if (acceptance.allowed === true && !seed.acceptanceError) {
@@ -172,6 +183,15 @@ function makeFakeDb(seed: {
 }
 
 const bodyHash = (body: string, subject = "") => createHash("sha256").update(`${subject}\n${body}`).digest("hex");
+const exactApproval = (body: string, subject = "") => exactBodyHash({
+  channel: "Email",
+  recipient: "marco.rossi@example.test",
+  subject,
+  body,
+  noticeVersion: OUTREACH_NOTICE_VERSION,
+  approverId: "",
+  approvedAt: "",
+});
 const GOOD_BODY = "Hi Marco, thanks for the reply! The team works in Go and Postgres. Want a quick call Thursday?";
 const ATTEMPT_ONE = "11111111-1111-4111-8111-111111111111";
 
@@ -183,8 +203,8 @@ function baseMsg(over: Row = {}): Row {
     spec_id: "spec-1",
     candidate_id: "cand-1",
     seat_id: "seat-1",
-    channel: "LinkedIn",
-    to_address: "https://www.linkedin.com/in/marco-rossi",
+    channel: "Email",
+    to_address: "marco.rossi@example.test",
     body: GOOD_BODY,
     status: "queued",
     scheduled_at: "2000-01-01T00:00:00Z",
@@ -194,6 +214,8 @@ function baseMsg(over: Row = {}): Row {
 
 function baseLinkedInMsg(over: Row = {}): Row {
   return baseMsg({
+    channel: "LinkedIn",
+    to_address: "https://www.linkedin.com/in/ada-example",
     subject: "Quick note",
     approval_message_id: "m-1",
     ...over,
@@ -286,7 +308,13 @@ for (const channel of ["WhatsApp", "SMS"]) {
 {
   const db = makeFakeDb({
     outbound: [baseMsg()],
-    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "legacy_unverified" }],
+    approvals: [{
+      workspace_id: "ws-1",
+      message_id: "m-1",
+      body_hash: bodyHash(GOOD_BODY),
+      exact_body_hash: exactApproval(GOOD_BODY),
+      approval_source: "legacy_unverified",
+    }],
     seats: [LIVE_SEAT],
     claim: { allowed: true },
   });
@@ -338,8 +366,7 @@ for (const channel of ["WhatsApp", "SMS"]) {
 }
 
 // ---------------------------------------------------------------------------
-// 11. LinkedIn assisted-manual works through the adapter and records the
-// outcome in the same durable ledger.
+// 11. LinkedIn is hard-refused. An approval does not reach a provider.
 // ---------------------------------------------------------------------------
 {
   const db = makeFakeDb({
@@ -363,9 +390,9 @@ for (const channel of ["WhatsApp", "SMS"]) {
     },
   });
   const stats = await dispatchDue(db.client, 10);
-  ok("LinkedIn assisted-manual: sent is recorded", stats.sent === 1 && stats.failed === 0 && stats.blocked === 0);
-  ok("LinkedIn assisted-manual: claim and outcome RPCs both run", db.rpcCalls.map((call) => call.fn).join("|") === "claim_linkedin_outbound_queued|record_linkedin_delivery_outcome");
-  ok("LinkedIn assisted-manual: shared ledger reaches sent", db.ledgers[0]?.status === "sent");
+  ok("LinkedIn assisted-manual: delivery is refused", stats.blocked === 1 && stats.sent === 0 && stats.failed === 0);
+  ok("LinkedIn assisted-manual: no claim or outcome RPC", db.rpcCalls.length === 0);
+  ok("LinkedIn assisted-manual: reason is the hard refusal", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-delivery-refused"));
 }
 
 // ---------------------------------------------------------------------------
@@ -404,10 +431,10 @@ for (const channel of ["WhatsApp", "SMS"]) {
       },
     });
     const stats = await dispatchDue(db.client, 10);
-    ok("LinkedIn vendor dark: counted as unconfigured failure", stats.unconfigured === 1 && stats.sent === 0);
-    ok("LinkedIn vendor dark: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
-    ok("LinkedIn vendor dark: transport never invoked", transportCalls === 0);
-    ok("LinkedIn vendor dark: reason proves no assisted-manual fallback", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-provider-unconfigured"));
+    ok("LinkedIn vendor: delivery is refused before a provider", stats.blocked === 1 && stats.sent === 0 && stats.unconfigured === 0);
+    ok("LinkedIn vendor: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
+    ok("LinkedIn vendor: transport never invoked", transportCalls === 0);
+    ok("LinkedIn vendor: reason is the hard refusal", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-delivery-refused"));
   } finally {
     globalThis.fetch = originalFetch;
     if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;

@@ -554,7 +554,7 @@ test("the bridge is isolated: only its own routes import it, and the agents only
 test("the agents queue only through agent.ts, under the owner's standing approval and delegation (ADR 0002)", () => {
   const all = sourceFiles("src").map((path) => path.replaceAll("\\", "/"));
   const inserters = all.filter((path) => /from\("linkedin_bridge_outbox"\)\s*\.insert/.test(readFileSync(path, "utf8"))).sort();
-  assert.deepEqual(inserters, ["src/app/api/linkedin/candidates/route.ts", "src/app/api/linkedin/outbox/route.ts", "src/lib/linkedin-bridge/agent.ts"]);
+  assert.deepEqual(inserters, ["src/app/api/linkedin/candidates/route.ts", "src/lib/linkedin-bridge/agent.ts"]);
   const agent = readFileSync("src/lib/linkedin-bridge/agent.ts", "utf8");
   const queue = agent.slice(agent.indexOf("export async function agentQueue"));
   // Authority first, then the candidate as the workspace holds it, then the relationship rules.
@@ -576,7 +576,7 @@ test("the agents queue only through agent.ts, under the owner's standing approva
 });
 
 test("only a signed-in person can queue a message or an invitation; the extension cannot", () => {
-  for (const route of ["src/app/api/linkedin/outbox/route.ts", "src/app/api/linkedin/candidates/route.ts"]) {
+  for (const route of ["src/app/api/linkedin/candidates/route.ts"]) {
     const source = readFileSync(route, "utf8");
     assert.match(source, /requireBridgeUser/);
     assert.doesNotMatch(source, /requireBridgeExtension/);
@@ -584,6 +584,10 @@ test("only a signed-in person can queue a message or an invitation; the extensio
     assert.match(source, /candidateRecord\(svc, workspaceId,/);
     assert.match(source, /contactBlock\(candidate\)/);
   }
+  const outbox = readFileSync("src/app/api/linkedin/outbox/route.ts", "utf8");
+  assert.match(outbox, /requireBridgeUser/);
+  assert.match(outbox, /status: 410/);
+  assert.doesNotMatch(outbox, /\.insert\(/);
   for (const route of ["src/app/api/linkedin/bridge/poll/route.ts", "src/app/api/linkedin/bridge/result/route.ts"]) {
     const source = readFileSync(route, "utf8");
     assert.match(source, /requireBridgeExtension/);

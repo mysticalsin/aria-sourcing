@@ -281,9 +281,14 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image's HEALTHCHECK probes the web server; this service has none.
+    # Temporary process probe shared with the other PRs. #168 deletes this
+    # healthcheck when it removes the agents service.
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", "process.kill(1,0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
     logging: *logging
 

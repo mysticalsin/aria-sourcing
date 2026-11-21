@@ -1046,6 +1046,9 @@ begin
   if not found then return json_build_object('allowed', false, 'reason', 'approval-required'); end if;
   if approval.revoked_at is not null then return json_build_object('allowed', false, 'reason', 'approval-revoked'); end if;
   if approval.approval_source <> 'human' then return json_build_object('allowed', false, 'reason', 'approval-not-human'); end if;
+  if approval.approved_at is null or approval.approved_at < (now() - interval '7 days') then
+    return json_build_object('allowed', false, 'reason', 'approval-expired');
+  end if;
   if approval.body_hash is distinct from p_body_hash or approval.approval_scope_hash is distinct from p_approval_scope_hash then
     return json_build_object('allowed', false, 'reason', 'approval-mismatch');
   end if;
