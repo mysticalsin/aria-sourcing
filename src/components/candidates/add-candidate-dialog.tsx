@@ -284,6 +284,7 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
                 maxLength={500}
               />
             </Field>
+            {personFields("linkedin")}
           </TabPanel>
 
           <TabPanel value="github" active={mode === "github"} idBase={idBase}>
@@ -305,8 +306,8 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
 
           <TabPanel value="manual" active={mode === "manual"} idBase={idBase}>
             <p className="text-sm text-muted">Type the person yourself. Nothing is fetched from LinkedIn.</p>
+            {personFields("manual")}
           </TabPanel>
-          {mode !== "github" && personFields(mode === "linkedin" ? "linkedin" : "manual")}
         </div>
       </Modal>
     </>

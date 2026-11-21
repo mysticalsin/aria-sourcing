@@ -81,4 +81,5 @@ Passing click plus A1–A7: `e2e-artifacts/20261121T055210Z/summary.json`. Playw
 - CV upload is still the Go CLI, not a control on the candidate screen.
 - The integration overlay still runs a sleep image for ingest, so a package-pin failure cannot take the rest of the stack down. The Dockerfile pin itself is updated.
 - On the recorded click run, `compose` exited 1 because the packaged app tried to bind `127.0.0.1:3000` while the demo was already there. `sudo` had dropped `APP_PORT`. The script now passes `APP_PORT=3010` through `sudo`. `compose config` shows the app published on 3010. Odoo, Postgres, auth, REST, the gateway, and `aria-go` did start.
+- The local demo script looks for Name inside the visible Manual tabpanel. That field was rendered outside the panel, so the packaged demo timed out. The fields now sit inside the Manual panel and the hidden LinkedIn panel.
 - #214 and #220 are not in the GitHub stack. Their base branch is still the owning pull request.
