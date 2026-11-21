@@ -617,10 +617,18 @@ test("only a signed-in person can queue a message or an invitation; the extensio
     ["src/app/outreach/page.tsx", "src/components/linkedin/outreach-send.ts", "src/components/outreach/glass-box-panel.tsx", "src/components/outreach/outreach-message-card.tsx"],
     "only the approval of an outreach message sends it on LinkedIn",
   );
-  for (const path of ["src/components/outreach/glass-box-panel.tsx", "src/components/outreach/outreach-message-card.tsx"]) {
-    // Sent right after the approval succeeded, never before or without it.
-    assert.match(readFileSync(path, "utf8"), /const res = await (?:a|actions)\.approveOutreach\(message\.id\);[\s\S]*if \(!res\.allowed\)[\s\S]*if \(message\.channel === "LinkedIn"\) \{[\s\S]*await deliverOnLinkedIn\(message\)/, path);
-  }
+  // The glass-box panel still sends when its own approval click succeeds.
+  assert.match(
+    readFileSync("src/components/outreach/glass-box-panel.tsx", "utf8"),
+    /const res = await (?:a|actions)\.approveOutreach\(message\.id\);[\s\S]*if \(!res\.allowed\)[\s\S]*if \(message\.channel === "LinkedIn"\) \{[\s\S]*await deliverOnLinkedIn\(message\)/,
+  );
+  // Tony, 2026-11-20: the outreach card approves the exact text and does not
+  // deliver it. Assisted Recruiter InMail is a manual Mark sent step.
+  const card = readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8");
+  const approval = card.slice(card.indexOf("async function handleApprove"), card.indexOf("async function handleReject"));
+  assert.match(approval, /Exact text approved/);
+  assert.doesNotMatch(approval, /deliverOnLinkedIn/);
+  assert.match(card, /Mark sent/);
 });
 
 test("every LinkedIn write from the browser must come from this app (same origin, Docker-safe)", () => {
