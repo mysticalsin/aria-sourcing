@@ -47,8 +47,8 @@ probe /rest/v1/ -H "apikey: $ANON"
 pass "REST with the anon key reaches PostgREST"
 
 probe "/rest/v1/?apikey=$ANON"
-{ [ "$code" -ge 200 ] && [ "$code" -lt 500 ] && [ "$code" != 404 ] && ! refused_by_gateway; } || fail "REST with the anon key in the query reaches PostgREST"
-pass "REST with the anon key in the query reaches PostgREST"
+{ [ "$code" = 401 ] && refused_by_gateway; } || fail "a query credential is refused"
+pass "a query credential is refused"
 
 probe /auth/v1/health -H "apikey: $ANON"
 [ "$code" = 200 ] || fail "Auth health with the anon key"
@@ -72,10 +72,23 @@ probe /auth/v1/.well-known/jwks.json
 { [ "$code" -ge 200 ] && [ "$code" -lt 500 ] && [ "$code" != 401 ]; } || fail "GoTrue JWKS is open without a key"
 pass "GoTrue JWKS is open without a key"
 
-probe /rest/v1/workspaces -X OPTIONS -H "Origin: http://localhost:3000" \
+probe /rest/v1/workspaces -X OPTIONS -H "Origin: https://evil.example" \
   -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: apikey, authorization"
-{ [ "$code" = 204 ] && grep -qi '^access-control-allow-origin: \*' "$HEADERS" \
-  && grep -qi '^access-control-allow-headers: apikey, authorization' "$HEADERS"; } || fail "CORS preflight is answered"
+{ [ "$code" = 204 ] && ! grep -qi '^access-control-allow-origin: \*' "$HEADERS" \
+  && ! grep -qi '^access-control-allow-origin: https://evil.example' "$HEADERS"; } || fail "an unlisted origin is denied"
+pass "an unlisted origin is denied"
+
+first=$(printf '%s' "${ARIA_CORS_ORIGINS:-}" | tr ',' ' ' | awk '{print $1}')
+if [ -n "$first" ]; then
+  probe /rest/v1/workspaces -X OPTIONS -H "Origin: $first" \
+    -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: apikey, authorization"
+  { [ "$code" = 204 ] && grep -qi "^access-control-allow-origin: ${first}" "$HEADERS" \
+    && grep -qi '^access-control-allow-headers: apikey, authorization' "$HEADERS"; } || fail "CORS preflight is answered"
+else
+  probe /rest/v1/workspaces -X OPTIONS -H "Origin: http://localhost:3000" \
+    -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: apikey, authorization"
+  { [ "$code" = 204 ] && ! grep -qi '^access-control-allow-origin:' "$HEADERS"; } || fail "CORS preflight is answered"
+fi
 pass "CORS preflight is answered"
 
 probe /storage/v1/ -H "apikey: $ANON"
