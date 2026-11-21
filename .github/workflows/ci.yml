@@ -163,6 +163,9 @@ jobs:
       - name: Verify approval dispatch hashes on Postgres
         run: npm run test:db-approval-dispatch
 
+      - name: Verify approval ledger acceptance
+        run: npm run test:db-approval-acceptance
+
   local-demo:
     name: Local Docker demo
     runs-on: ubuntu-24.04

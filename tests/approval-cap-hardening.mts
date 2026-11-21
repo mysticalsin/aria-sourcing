@@ -26,6 +26,23 @@ test("test_cap_table_row_security_denies_by_default", () => {
   assert.match(latest, /revoke all on table public\.outreach_channel_daily_sends from public, anon, authenticated/i);
 });
 
+test("test_ttl_assertion_reads_effective_migration", () => {
+  const source = read("tests/approval-devin-gate.mts");
+  const start = source.indexOf("test_claim_email_outbound_requires_a_current_approved_at");
+  const fn = source.slice(start, start + 700);
+  assert.doesNotMatch(fn, /0001_baseline\.sql/);
+  assert.match(fn, /0013_claim_exact_recompute\.sql/);
+});
+
+test("test_preview_reads_the_server_cap_table", () => {
+  const send = read("src/app/api/outreach/send/route.ts");
+  const dispatch = read("src/lib/dispatch-outbound.ts");
+  for (const source of [send, dispatch]) {
+    assert.match(source, /daily_cap/);
+    assert.doesNotMatch(source, /channelDailyCapFromEnv/);
+  }
+});
+
 test("test_daily_count_read_fails_closed_and_cap_is_after_the_gate", () => {
   const dispatch = read("src/lib/dispatch-outbound.ts");
   const send = read("src/app/api/outreach/send/route.ts");
