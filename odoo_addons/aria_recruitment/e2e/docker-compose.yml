@@ -1,0 +1,55 @@
+# Disposable Odoo 19 Community + Postgres 16 for the Playwright hire journey.
+# Image digests are multi-arch indexes (linux/amd64 and linux/arm64), so Docker
+# Desktop on Apple Silicon pulls the arm64 manifest. The database password is
+# the public default from the Postgres image, for this throwaway database only.
+
+services:
+  postgres:
+    image: postgres:16@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    # 768 MiB + the Odoo limit below stays within 4 GiB for the stack.
+    mem_limit: 768m
+    memswap_limit: 768m
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=20"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  odoo:
+    image: odoo:19@sha256:03a47921f9eef2c225ded1167fe7828465d2b3177883f30d173bb1c3c792949b
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOST: postgres
+      PORT: "5432"
+      USER: odoo
+      PASSWORD: odoo
+      PYTHONDONTWRITEBYTECODE: "1"
+      ARIA_E2E_DB: aria_e2e
+      ARIA_E2E_PASSWORD: ${ARIA_E2E_PASSWORD:?set ARIA_E2E_PASSWORD}
+    mem_limit: 3328m
+    memswap_limit: 3328m
+    volumes:
+      - ../..:/mnt/extra-addons:ro
+      - .:/opt/e2e:ro
+    ports:
+      - "127.0.0.1:${ODOO_PORT:-8069}:8069"
+    command: ["sh", "/opt/e2e/serve.sh"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8069/web/login', timeout=5)",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
