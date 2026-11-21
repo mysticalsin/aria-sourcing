@@ -225,8 +225,34 @@ test("odoo sync is an explicit preview machine and never sends", () => {
   const clean = reduceOdooSync(preview, { type: "preview", view: ready });
   const queued = reduceOdooSync(clean, { type: "queue" });
   assert.equal(queued.phase, "queued");
-  assert.equal(reduceOdooSync(queued, { type: "mirror" }).phase, "mirrored");
+  const recorded = reduceOdooSync(queued, { type: "mirror" });
+  assert.equal(recorded.phase, "recorded");
+  assert.notEqual(recorded.phase, "mirrored");
   assert.equal(reduceOdooSync(queued, { type: "reset" }).phase, "idle");
+});
+
+test("each sanctioned odoo source is reachable", () => {
+  const person = {
+    id: "person-1",
+    campaignId: "role-1",
+    email: "ada.example@people.example.test",
+    name: "Ada Example",
+    leadSource: "Outbound" as const,
+    sourcePlatform: "GitHub" as const,
+  };
+  const cases = [
+    { intake: "recruiter-csv", source: "LinkedIn Recruiter CSV" },
+    { intake: "rsc", source: "RSC/ATS" },
+    { intake: "job-application", source: "Job application" },
+    { intake: "candidate-supplied", source: "Candidate-supplied" },
+  ] as const;
+  for (const item of cases) {
+    const view = projectOdooSync([
+      { ...person, id: item.intake, intake: item.intake } as unknown as Parameters<typeof projectOdooSync>[0][number],
+    ]);
+    assert.equal(view.records[0]?.status, "ready", item.intake);
+    assert.equal(view.records[0]?.source, item.source, item.intake);
+  }
 });
 
 test("pipeline list machine resets the page when the filter changes and keeps selection explicit", () => {
@@ -547,6 +573,44 @@ test("command binding is a typed view of the existing actions and adds no send p
   assert.equal(commands.outreach.generateOutreachFor, actions.generateOutreachFor);
   assert.equal(commands.reports.generateReport, actions.generateReport);
   assert.equal(commands.settings.updateSettings, actions.updateSettings);
+});
+
+test("store drops imports the feature split left unused", () => {
+  const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+  const importSection = store.slice(0, store.indexOf("const ARIA_STRONG_RATINGS"));
+  for (const name of [
+    "firstInterviewElapsedHours",
+    "realFunnelFacts",
+    "computeCampaignMetrics",
+    "ChatboxSubmissionStatus",
+    "InterviewKind",
+    "InterviewRecord",
+    "LeadSource",
+    "PrequalOutcome",
+    "PrequalRecord",
+    "SkillUpdate",
+  ]) {
+    assert.equal(importSection.includes(name), false, name);
+  }
+});
+
+test("reports page shows the odoo hand-off preview", () => {
+  const page = readFileSync(new URL("../src/app/reports/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /desk\.odoo/);
+  assert.match(page, /No record is written/);
+});
+
+test("console hooks read through the workspace client", () => {
+  for (const path of [
+    "src/features/pipeline/hooks.ts",
+    "src/features/outreach/hooks.ts",
+    "src/features/approvals/hooks.ts",
+    "src/features/reports/hooks.ts",
+    "src/features/settings/hooks.ts",
+  ]) {
+    const source = readFileSync(path, "utf8");
+    assert.match(source, /createWorkspaceConsoleClient\(/, path);
+  }
 });
 
 test("feature modules do not import linkedin, autopilot, the approval ledger, or dispatch", () => {
