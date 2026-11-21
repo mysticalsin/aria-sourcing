@@ -257,8 +257,10 @@ test("test_approved_email_passes_claim_trigger_and_dispatcher", async () => {
 
   const swappedStats = await dispatchDue(db as never, 10, SWAP_ROW);
   assert.equal(swappedStats.blocked, 1);
+  assert.equal(swappedStats.sent, 0);
   const swappedGate = psql(`select gate_result::text from public.messages_outbound where id = '${SWAP_ROW}';`);
-  assert.match(swappedGate, /approval-scope-mismatch/);
+  // The recipient is inside exactBodyHash, so a swap fails the exact hash before the scope compare.
+  assert.match(swappedGate, /approval-hash-mismatch/);
 
   const okStats = await dispatchDue(db as never, 10, OK_ROW);
   assert.equal(okStats.blocked, 0);
