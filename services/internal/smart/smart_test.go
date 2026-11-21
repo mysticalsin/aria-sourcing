@@ -46,7 +46,7 @@ func TestImportRejectsLabelsURLsAndRealMail(t *testing.T) {
 		{NeedID: base.NeedID, CandidateID: base.CandidateID, Stage: "To Assess", Email: base.Email, Name: base.Name},
 		{NeedID: base.NeedID, CandidateID: base.CandidateID, Stage: base.Stage, Email: base.Email, Name: "see https://arp.mantu.com/SMARTX/"},
 		{NeedID: "http://need", CandidateID: base.CandidateID, Stage: base.Stage, Email: base.Email, Name: base.Name},
-		{NeedID: base.NeedID, CandidateID: base.CandidateID, Stage: base.Stage, Email: "mina@gmail.com", Name: base.Name},
+		{NeedID: base.NeedID, CandidateID: base.CandidateID, Stage: base.Stage, Email: "owner@example.com", Name: base.Name},
 		{NeedID: base.NeedID, CandidateID: base.CandidateID, Stage: stage.Hired, Email: base.Email, Name: "playwright export"},
 	}
 	for _, in := range cases {
