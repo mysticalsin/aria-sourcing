@@ -25,7 +25,7 @@
                             <field name="aria_erased"/>
                             <field name="aria_erased_at"/>
                             <button name="action_aria_outreach" type="object" string="Record outreach"/>
-                            <button name="action_aria_erase" type="object" string="Erase personal data"/>
+                            <button name="action_aria_erase" type="object" string="Erasure of personal data"/>
                             <button name="action_aria_apply_retention" type="object" string="Apply retention"/>
                         </group>
                         <group string="Interview">
