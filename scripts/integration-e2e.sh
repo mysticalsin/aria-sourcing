@@ -19,6 +19,10 @@ trap cleanup EXIT
 
 if docker info >/dev/null 2>&1; then D=docker; else D="sudo docker"; fi
 
+# The packaged app listens here. Port 3000 stays free for the synthetic demo
+# the click journey drives. The packaged image redirects that journey to login.
+export APP_PORT=3010
+
 # This host's legacy filter drops forwarded bridge packets. Containers on the
 # same network cannot open TCP until that policy accepts them.
 if command -v iptables-legacy >/dev/null 2>&1; then
