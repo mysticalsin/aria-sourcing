@@ -33,3 +33,5 @@ db67293906e5f29e9d8a5401ea386484a827ee87:services/channels/harness_test.go:gener
 63dcc26f52c6a0b1775d992bd9f57a9a6e3bfd67:services/internal/odoo/json2_test.go:generic-api-key:325
 63dcc26f52c6a0b1775d992bd9f57a9a6e3bfd67:services/internal/odoo/idempotency_test.go:generic-api-key:45
 63dcc26f52c6a0b1775d992bd9f57a9a6e3bfd67:services/internal/odoo/idempotency_test.go:generic-api-key:95
+# SHA-256 digest of a retired sample HMAC. The sample is not stored. Full-history scan reads this commit on another branch.
+0f2b86e1238067f7525245a7f492d90ee25737b9:scripts/jwt-secret-policy.mjs:generic-api-key:4
