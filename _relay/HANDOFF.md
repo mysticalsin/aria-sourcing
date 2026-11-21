@@ -1,14 +1,18 @@
 ---
 project: MSourcing / ARIA
-shift: 468
-agent: claude-code
-updated: 2026-11-17
-status: demo-day-checked
+shift: 469
+agent: cursor
+updated: 2026-11-21
+status: stack-shared-config
 ---
 
 # Handoff - Shift 468
 
 ## Current state
+
+- Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
+- The agents service healthcheck signals pid 1 with process.kill(1, 0), interval 5s, timeout 5s, retries 12, start_period 5s.
+- Branch cursor/aria-stack-shared-config, based on twa-odoo. Later stack branches take this version of those five files.
 
 - Branch mbe-branch, local only (not pushed). HEAD = 75f8b8bb
   (fix(intake): keep skills Claude reworded from the brief's own words).
@@ -48,6 +52,10 @@ status: demo-day-checked
    VM POC (issue 07), server config (issue 10).
 
 ## Decisions made (don't relitigate)
+
+- 2026-11-21: the five shared files above are canonical on cursor/aria-stack-shared-config. Later pull requests merge that branch with an ordinary merge and keep this version of those files.
+- 2026-11-21: the agents healthcheck is process.kill(1, 0) with interval 5s, timeout 5s, retries 12, and start_period 5s. The agents service stays in docker-compose.yml.
+- 2026-11-21: pull request 168 deletes LinkedIn bridge routes and strips LinkedIn dispatch. Pull request 167 keeps its approval hash, allowlist, and kill switch on the remaining send path and does not restore the deleted LinkedIn files.
 
 - Owner 2026-11-12 (shift 466): the presentation shows the "POC live". Pages
   that need an integration this install does not run are left out of the
@@ -133,6 +141,8 @@ status: demo-day-checked
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- Public-repo hygiene: addresses in relay notes and goal records at this tip are placeholders. `tests/public-repo-hygiene.mts` rejects a private-key block, a non-sample linkedin.com/in/ URL outside tests/, and a non-placeholder address outside `tests/`. History was not rewritten.
 
 - Remove or empty `AGENTS_LINKEDIN_ALLOWLIST` in `.env.local` (and restart
   the app) before any real autopilot use beyond the demo; set but invalid
