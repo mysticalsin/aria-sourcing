@@ -43,10 +43,10 @@ const supervisorToken = existsSync("/tmp/aria-e2e/sup_tok.clean")
   : process.env.SUPERVISOR_TOKEN?.trim() || "";
 
 const PROFILE =
-  process.env.LINKEDIN_PROFILE_URL || "https://www.linkedin.com/in/tonywalteur/";
+  process.env.LINKEDIN_PROFILE_URL || "https://www.linkedin.com/in/example-a/";
 const MESSAGING = "https://www.linkedin.com/messaging/";
 const SENT = "https://www.linkedin.com/mynetwork/invitation-manager/sent/";
-const DEMO_USER = "Twalteur@amaris.com";
+const DEMO_USER = "owner@example.com";
 
 const steps = [];
 const videoDir = mkdtempSync(path.join(os.tmpdir(), "aria-mkt-"));
