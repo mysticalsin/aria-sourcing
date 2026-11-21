@@ -262,6 +262,7 @@ services:
       start_period: 60s
       start_interval: 5s
 
+
 volumes:
   db_data:
   app_config:
