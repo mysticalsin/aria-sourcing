@@ -81,7 +81,7 @@ WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SE
 (requires a Meta WABA + approved templates). Until then adapters dry-run.
 
 ### 11. Delete (or keep) the E2E test user
-`e2e-claude@amaris.com` was created — with your approval — in prod GoTrue for the 2026-07-16 acceptance test.
+`owner@example.com` was created — with your approval — in prod GoTrue for the 2026-07-16 acceptance test.
 Delete it in Supabase/GoTrue when you want, or keep it for future acceptance runs.
 
 ## P4 — Strategic decisions (not clicks)
