@@ -32,6 +32,7 @@ export function CommandCenterStats({ source }: { source: QuickStatSource }) {
           hint={stat.hint}
           icon={ICONS[stat.id]}
           tone={stat.tone}
+          testId={`quick-stat-${stat.id}`}
         />
       ))}
     </section>
