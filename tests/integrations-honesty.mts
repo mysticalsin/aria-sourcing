@@ -250,7 +250,7 @@ ok(
   "synthetic example.com addresses cannot be sent",
   isSyntheticRecipientEmail("julien.moreau.ba@example.com") &&
     isSyntheticRecipientEmail("elena@fixture.example") &&
-    !isSyntheticRecipientEmail("maya.rivera@amaris.com"),
+    !isSyntheticRecipientEmail("owner@example.com"),
 );
 ok(
   "email send without Outlook connect is blocked even when Approved",
@@ -270,7 +270,7 @@ ok(
       {
         id: "seat_maya",
         name: "Maya",
-        operatorEmail: "maya@amaris.com",
+        operatorEmail: "owner@example.com",
         provider: "Microsoft Graph",
         status: "active",
         mode: "live",
@@ -287,7 +287,7 @@ ok(
         health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
         persona: "",
         signature: "",
-        connectedAccount: "maya@amaris.com",
+        connectedAccount: "owner@example.com",
         createdAt: "",
       },
     ],
@@ -303,7 +303,7 @@ ok(
         {
           id: "seat_maya",
           name: "Maya",
-          operatorEmail: "maya@amaris.com",
+          operatorEmail: "owner@example.com",
           provider: "Microsoft Graph",
           status: "active",
           mode: "live",
@@ -320,7 +320,7 @@ ok(
           health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
           persona: "",
           signature: "",
-          connectedAccount: "maya@amaris.com",
+          connectedAccount: "owner@example.com",
           createdAt: "",
         },
       ],
@@ -612,7 +612,7 @@ const connectedUnverified = [
   {
     id: "seat_maya",
     name: "Maya",
-    operatorEmail: "maya@amaris.com",
+    operatorEmail: "owner@example.com",
     provider: "Microsoft Graph" as const,
     status: "active" as const,
     mode: "live" as const,
@@ -629,13 +629,13 @@ const connectedUnverified = [
     health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
     persona: "",
     signature: "",
-    connectedAccount: "maya@amaris.com",
+    connectedAccount: "owner@example.com",
     createdAt: "",
   },
 ];
 ok(
   "connected Outlook without Verify domain cannot send",
-  /Verify domain/.test(liveSendBlocker("Email", "Approved", connectedUnverified, [], [], "maya.rivera@amaris.com") ?? ""),
+  /Verify domain/.test(liveSendBlocker("Email", "Approved", connectedUnverified, [], [], "owner@example.com") ?? ""),
 );
 const quickDraft = readFileSync(new URL("../src/components/outreach/quick-draft.tsx", import.meta.url), "utf8");
 ok("LinkedIn drafter surfaces HeyReach as the send account", /heyreach-sender/.test(quickDraft) && /HeyReach/.test(quickDraft));
@@ -687,7 +687,7 @@ const seed = buildSeedState();
 const livePerson = {
   ...seed.candidates[0],
   id: "cand_live_calypso",
-  email: "maya.rivera@amaris.com",
+  email: "owner@example.com",
   provenance: "live" as const,
 };
 const fixturePerson = {

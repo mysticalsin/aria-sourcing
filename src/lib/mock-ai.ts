@@ -180,7 +180,7 @@ We offer €90k–€120k, meaningful equity, and a fully remote EU setup (CET).
 
 /** A real Mantu/Amaris "need is now ACTIVE" recruitment email (structured format). */
 export const SAMPLE_MANTU_EMAIL = `From: Noreply (Mantu) <noreply@mantu.example>
-To: Amaris_RCM_PRO@amaris.com
+To: owner@example.com
 Cc: AMACAN_Managers; AMACAN_Recruitment
 Importance: High
 
@@ -208,7 +208,7 @@ Key required skills
 Skills: Murex, Finance, Pricing, Pricing Analysis`;
 
 /** Primary Mantu walk need — Calypso Application Support (AMACAN / BNPP CIB). */
-export const SAMPLE_CALYPSO_APP_SUPPORT_NEED = `From: MUNERA ALZATE Jacobo <jacobo.munera@amaris.com>
+export const SAMPLE_CALYPSO_APP_SUPPORT_NEED = `From: MUNERA ALZATE Jacobo <owner@example.com>
 Subject: Need is now ACTIVE — Calypso Application Support (AMACAN / Montreal)
 
 Summary
