@@ -229,7 +229,7 @@ func BenchmarkScoreBatch500(b *testing.B) {
 
 func TestMeasureFFIBatchP95(t *testing.T) {
 	if os.Getenv("ARIA_MEASURE_P95") == "" {
-		t.Skip()
+		t.Skip("timing probe for the CI p95 job; set ARIA_MEASURE_P95=1 to run the 500-candidate cgo batch")
 	}
 	fixture := loadScoringFixture(t)
 	candidates := make([]Candidate, len(fixture.Batch.Candidates))
