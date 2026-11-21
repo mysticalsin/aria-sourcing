@@ -45,14 +45,22 @@ COMPOSE_EXIT=$?
 set -e
 $D compose -p "$COMPOSE_PROJECT" -f "$ROOT/docker-compose.yml" -f "$ROOT/e2e/integration/compose.overlay.yml" ps >"$ART/logs/compose-ps.log" 2>&1 || true
 
-# Hosted Next on loopback for the click path when the app container is not serving yet.
+# The click path needs the synthetic demo, which answers 200 on /campaigns/new.
+# A 307 to /login is the packaged app and is not this journey.
 # ARIA_E2E opens the demo role control. The journey uses it to act as admin.
 export ARIA_E2E=1
-if ! curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3000/; then
+demo_ready() {
+  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:3000/campaigns/new || true)" = "200" ]
+}
+if ! demo_ready; then
   (cd "$ROOT" && ARIA_E2E=1 npx next dev --hostname 127.0.0.1 --port 3000 >"$ART/logs/next.log" 2>&1) &
   APP_PID=$!
-  for _ in $(seq 1 60); do
-    if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3000/; then break; fi
+  for _ in $(seq 1 90); do
+    if demo_ready; then break; fi
+    if ! kill -0 "$APP_PID" 2>/dev/null; then
+      echo "next-exited" >>"$ART/logs/next.log"
+      break
+    fi
     sleep 2
   done
 fi
