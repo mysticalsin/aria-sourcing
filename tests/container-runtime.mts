@@ -56,3 +56,8 @@ test("configured HTTPS backend and custom loopback ports drive CSP and cookie po
   assert.equal(isLoopbackHttpOrigin("http://127.0.0.1:3000"), true);
   for (const origin of [undefined, "http://example.test", "https://example.test", "http://localhost.evil.test", "http://user:secret@localhost", "http://localhost/path"]) assert.equal(isLoopbackHttpOrigin(origin), false);
 });
+
+test("the ingest image does not pin the withdrawn poppler revision", () => {
+  const docker = readFileSync(new URL("../services/ingest/Dockerfile", import.meta.url), "utf8");
+  assert.doesNotMatch(docker, /poppler-utils=22\.12\.0-2\+deb12u2/);
+});
