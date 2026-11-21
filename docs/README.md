@@ -2,6 +2,18 @@
 
 Start with the root [`README.md`](../README.md), then this map.
 
+## Aria design set
+
+Draft public design for the pipeline that ranks candidates and drafts outreach for a human to approve. Odoo 19 Community is the system of record. Pages mark work that exists only on an open pull request as in review.
+
+| File | Purpose |
+|---|---|
+| [`aria/ARCHITECTURE.md`](aria/ARCHITECTURE.md) | Components, data flow, trust boundaries |
+| [`aria/PIPELINE.md`](aria/PIPELINE.md) | Brief through report, and the gate on each step |
+| [`aria/OUTREACH-SAFETY.md`](aria/OUTREACH-SAFETY.md) | Approval ledger, modes, caps, kill switch, channel flags |
+| [`aria/TESTING.md`](aria/TESTING.md) | Red-first policy, journeys, stress, and the docs link scan |
+| [`aria/ROADMAP.md`](aria/ROADMAP.md) | Open items |
+
 ## Product and code
 
 | File | Purpose |
