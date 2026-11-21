@@ -1308,6 +1308,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const listPendingSourcingFeedback = useCallback(
     async (campaignId: string): Promise<SourcingFeedbackReceipt[] | null> => {
+      if (!supabaseEnabled) return [];
       if (
         !workspaceEffectAllowed() ||
         !sourcingMutationAllowed() ||
