@@ -32,7 +32,6 @@ import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
-import { LinkedInSettingsPanel } from "@/components/linkedin/settings-panel";
 import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationCounts, integrationStateLabel } from "@/lib/integrations";
@@ -807,15 +806,16 @@ export default function SettingsPage() {
             </Card>
           </Section>
 
-          {/* 20 — LinkedIn (personal bridge): the integration the live POC runs on, so it comes first */}
           <Section
             n="20"
-            eyebrow="Your LinkedIn"
+            eyebrow="LinkedIn"
             title="LinkedIn"
-            description="Your own LinkedIn, through the ARIA extension in your browser: invite sourced candidates and talk to them from their profile."
+            description="Aria does not connect to LinkedIn. There is no extension, token, or inbox sync."
           >
             <div id="linkedin">
-              <LinkedInSettingsPanel />
+              <p className="text-sm text-muted">
+                Send InMail yourself in Recruiter. Profile URLs you already have can be stored on the candidate. They are not fetched.
+              </p>
             </div>
           </Section>
 

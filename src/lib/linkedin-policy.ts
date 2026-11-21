@@ -4,17 +4,11 @@
    scraping, and unsolicited automated messaging. This module gives the app a
    single place to detect and block content or instructions that attempt to
    bypass those rules — the app doing its own login, session automation, or
-   scraping against linkedin.com.
+   scraping against that network.
 
-   LinkedIn sourcing reads public profiles through Claude's web search
-   (sourcing/claude-web-search.ts): no recruiter cookies, no headless browser,
-   no session reuse, no login of any kind by this app. The experimental
-   LinkedIn bridge (src/lib/linkedin-bridge, owner opt-in, off by default)
-   runs in the user's own browser session, one human click per message or
-   invitation (or, for the campaign autopilot POC of ADR 0002, under the
-   campaign owner's standing approval), and is outside the outreach pipeline
-   this module guards. The
-   guardrails below stay fully intact regardless.
+   Aria does not call that network. The Chrome extension, Voyager client,
+   and Claude web-search sourcing of LinkedIn profiles are removed. The
+   guardrails below stay fully intact.
    ========================================================================== */
 
 export interface LinkedInPolicyResult {

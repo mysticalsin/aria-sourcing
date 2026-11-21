@@ -25,8 +25,6 @@ x-keys:
   auth_db_url: &auth_db_url "postgres://supabase_auth_admin:local_auth_database_password_0000000000000000000@db:5432/postgres"
   rest_db_url: &rest_db_url "postgres://authenticator:local_rest_database_password_0000000000000000000@db:5432/postgres"
   demo_admin_pw: &demo_admin_pw "admindemo123"
-  # Shared by app and agents only (ADR 0002). Local sample; override for any non-local use.
-  agent_runner_secret: &agent_runner_secret "local_agent_runner_secret_00000000000000000000"
   anon_key: &anon_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE" # gitleaks:allow -- public Supabase local-demo JWT
   service_key: &service_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q" # gitleaks:allow -- public Supabase local-demo JWT
 
@@ -252,8 +250,6 @@ services:
       # Public /careers board reads jobs published by the seeded workspace
       # (fixed id set in docker/bootstrap/run.sh).
       CAREERS_WORKSPACE_ID: "00000000-0000-4000-8000-000000000001"
-      # Agents runner (ADR 0002): off unless AGENTS_ENABLED=true (.env.local).
-      AGENT_RUNNER_SECRET: *agent_runner_secret
     volumes:
       - app_config:/app/config
     restart: unless-stopped
@@ -265,27 +261,6 @@ services:
       retries: 3
       start_period: 60s
       start_interval: 5s
-
-  # ---- Agents runner (ADR 0002): a clock that calls the app's /api/agent/tick -------
-  # Same image as app, no database credential, no model key. Idle (one log line
-  # every 5 minutes) until the app runs with AGENTS_ENABLED=true.
-  agents:
-    image: aria-sourcing-app:local
-    pull_policy: never
-    depends_on:
-      app:
-        condition: service_healthy
-    command: ["node", "scripts/agents-runner.mjs"]
-    environment:
-      NODE_ENV: production
-      ARIA_APP_URL: http://app:3000
-      AGENT_RUNNER_SECRET: *agent_runner_secret
-      AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image's HEALTHCHECK probes the web server; this service has none.
-    healthcheck:
-      disable: true
-    restart: unless-stopped
-    logging: *logging
 
 volumes:
   db_data:

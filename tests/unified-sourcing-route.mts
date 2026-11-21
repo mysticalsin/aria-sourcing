@@ -49,13 +49,10 @@ test("the retired Apify LinkedIn source is refused before any run is created", a
   const body = { ...start(), sources: [{ source: "LinkedIn", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }] };
   assert.equal((await POST(request(body))).status, 400); assert.equal(startCalls, 0);
 });
-test("web search without the workspace's Anthropic key is refused before any run is created", async () => {
-  const saved = state.settings.llmProviders;
-  state.settings.llmProviders = saved.map((p) => ({ ...p, apiKeyId: undefined }));
+test("LinkedIn web search is refused before any run is created", async () => {
   const body = { ...start(), sources: [{ source: "WebSearch", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }] };
   const response = await POST(request(body));
-  assert.equal(response.status, 409); assert.match((await response.json()).error, /Anthropic key/); assert.equal(startCalls, 0);
-  state.settings.llmProviders = saved;
+  assert.equal(response.status, 409); assert.match((await response.json()).error, /LinkedIn web search is disabled/); assert.equal(startCalls, 0);
 });
 test("start uses server campaign and workspace; progress DTO excludes private bindings", async () => {
   const response = await POST(request(start()));

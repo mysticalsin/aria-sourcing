@@ -9,10 +9,9 @@ import {
   type MissionEvent,
   type MissionPlan,
 } from "../src/lib/agents/mission.js";
-import { campaignLaunchPlan, MAX_MISSION_DRAFTS, type DraftedPair } from "../src/lib/agents/campaign-mission.js";
 import { inboxTriagePlan, needsResponse, RESPONSE_INTENTS } from "../src/lib/agents/inbox-mission.js";
 import { followUpPlan, MAX_FOLLOW_UPS_PER_RUN } from "../src/lib/agents/follow-up-mission.js";
-import type { Candidate, ClassifiedReply, OutreachMessage, ReplyIntent } from "../src/lib/types.js";
+import type { ClassifiedReply, OutreachMessage, ReplyIntent } from "../src/lib/types.js";
 
 let pass = 0,
   fail = 0;
@@ -127,59 +126,6 @@ ok("unknown dependency rejected", throwsPlanError({ id: "v", label: "v", steps: 
 ok("duplicate id rejected", throwsPlanError({ id: "v", label: "v", steps: [{ id: "a", agent: noop }, { id: "a", agent: noop }] }));
 ok("cycle rejected", throwsPlanError({ id: "v", label: "v", steps: [{ id: "a", agent: noop, dependsOn: ["b"] }, { id: "b", agent: noop, dependsOn: ["a"] }] }));
 ok("empty fan-out completes", (await runMission({ id: "e", label: "e", steps: [{ id: "f", agent: noop, fanOut: () => [] }] })).steps.f?.status === "completed");
-
-/* ---- 7. Campaign launch mission ------------------------------------------- */
-
-const candidates = [55, 91, 72, 88, 60, 95, 70, 80].map(
-  (score, i) => ({ id: `c${i}`, name: `Cand ${i}`, matchScore: score }) as unknown as Candidate,
-);
-const message = (id: string, draftedBy: "ai" | "template") => ({ id: `m-${id}`, candidateId: id, draftedBy }) as unknown as OutreachMessage;
-
-const liveCalls: string[] = [];
-const templateCalls: string[] = [];
-const launch = await runMission(
-  campaignLaunchPlan("camp1", {
-    sourceBatch: async () => ({ ok: true, accepted: candidates }),
-    draftLive: async (id) => {
-      liveCalls.push(id);
-      if (id === "c3") throw new Error("network down");
-      if (id === "c7") return null; // e.g. no verified email
-      return message(id, "ai");
-    },
-    draftTemplate: (id) => {
-      templateCalls.push(id);
-      return message(id, "template");
-    },
-  }),
-  { concurrency: 2 },
-);
-const launchDrafts = launch.results.drafts as DraftedPair[];
-ok("drafts only the top candidates, best first", liveCalls.length === MAX_MISSION_DRAFTS && liveCalls[0] === "c5" && !liveCalls.includes("c0"));
-ok("an unexpected draft error falls back to the template", templateCalls.join() === "c3" && launchDrafts.some((p) => p.message.draftedBy === "template"));
-ok("an undraftable candidate is skipped without a template", !templateCalls.includes("c7") && !launchDrafts.some((p) => p.candidate.id === "c7"));
-ok("launch mission degrades instead of failing", launch.status === "degraded" && launchDrafts.length === MAX_MISSION_DRAFTS - 1);
-
-const timedOutTemplates: string[] = [];
-const hung = await runMission(
-  campaignLaunchPlan("camp2", {
-    sourceBatch: async () => ({ ok: true, accepted: candidates.slice(0, 1) }),
-    draftLive: () => new Promise<OutreachMessage | null>(() => {}),
-    draftTemplate: (id) => { timedOutTemplates.push(id); return message(id, "template"); },
-  }),
-  { agentTimeoutMs: 20 },
-);
-ok("a timed-out live draft never gets a duplicate template", timedOutTemplates.length === 0 && hung.steps.drafts?.failed === 1);
-
-const noSource = await runMission(
-  campaignLaunchPlan("camp3", {
-    sourceBatch: async () => ({ ok: false, error: "Campaign has no reviewed real-sourcing query." }),
-    draftLive: async () => null,
-    draftTemplate: () => null,
-  }),
-);
-ok("a sourcing failure surfaces its reason", noSource.steps.source?.error === "Campaign has no reviewed real-sourcing query.");
-ok("no drafts are attempted after a sourcing failure", noSource.steps.drafts?.status === "skipped");
-ok("maxDrafts is clamped to the cost cap", campaignLaunchPlan("x", { sourceBatch: async () => ({ ok: true, accepted: [] }), draftLive: async () => null, draftTemplate: () => null }, { maxDrafts: 50 }).steps.length === 2);
 
 /* ---- 8. Inbox triage mission ---------------------------------------------- */
 

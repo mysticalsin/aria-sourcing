@@ -4,7 +4,13 @@ import type { Campaign, WorkspaceState } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { mapGithubCandidates, mapWebSearchCandidates, type SourceResult } from "./candidate-mappers";
 import { extractLead, type SearchHit } from "./web-leads";
-import { canonicalLinkedInProfileUrl } from "./claude-web-search";
+import { linkedInProfileUrl, publicIdFromProfileUrl } from "@/lib/linkedin-profile-url";
+
+/** Stored profile URL only. This does not fetch the profile host. */
+function canonicalLinkedInProfileUrl(raw: string): string | null {
+  const id = publicIdFromProfileUrl(raw);
+  return id ? linkedInProfileUrl(id) : null;
+}
 import { effectiveWeights } from "@/lib/skills";
 import { candidateProfileIdentity } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "./campaign-lifecycle";
@@ -94,7 +100,7 @@ export async function advanceUnifiedRun(job: CampaignSourcingJob, repo: UnifiedR
   if (step.source === "LinkedIn") {
     // A step saved before Apify was retired: it ends here, nothing is called.
     step.status = "failed";
-    step.error = "LinkedIn search through Apify was removed. Start a new run with LinkedIn via web search.";
+    step.error = "LinkedIn search through Apify was removed.";
     await finish(); return;
   }
   const ws = await repo.readWorkspace();

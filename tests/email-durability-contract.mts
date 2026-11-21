@@ -209,15 +209,11 @@ ok(
     dispatch.indexOf('rpc("record_email_send_message_id"') >= 0,
 );
 ok(
-  "the dispatcher refuses every channel other than Email and LinkedIn before any claim",
-  dispatch.indexOf('msg.channel !== "Email" && msg.channel !== "LinkedIn"') >= 0 &&
-    dispatch.indexOf('msg.channel !== "Email" && msg.channel !== "LinkedIn"') < dispatch.indexOf('rpc("claim_email_outbound_queued"') &&
-    dispatch.indexOf('msg.channel !== "Email" && msg.channel !== "LinkedIn"') < dispatch.indexOf('rpc("claim_linkedin_outbound_queued"'),
-);
-ok(
-  "the dispatcher serves LinkedIn through its own claim",
-  dispatch.indexOf('if (msg.channel === "LinkedIn")') >= 0 &&
-    dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') > dispatch.indexOf('if (msg.channel === "LinkedIn")'),
+  "the dispatcher refuses LinkedIn and every non-email channel before any claim",
+  dispatch.indexOf('msg.channel === "LinkedIn"') >= 0 &&
+    dispatch.indexOf("linkedin-channel-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    dispatch.indexOf('msg.channel !== "Email"') < dispatch.indexOf('rpc("claim_email_outbound_queued"') &&
+    !dispatch.includes("claim_linkedin_outbound_queued"),
 );
 
 // ── the interactive send route sends Email synchronously and stamps the

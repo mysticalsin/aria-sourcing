@@ -68,7 +68,7 @@ test("shortlist identities obey confidentiality and the existing outreach-purpos
   assert.equal(masked.profileUrl, "");
   assert.equal(shortlistIdentity(candidate, false).profileUrl, candidate.linkedinUrl);
   assert.equal(shortlistIdentity({ ...candidate, stage: "Contacted" }, true).name, candidate.name);
-  const photo = { ...candidate, avatarUrl: "https://media.licdn.com/dms/image/v2/x/photo.jpg" };
+  const photo = { ...candidate, avatarUrl: "https://cdn.example.test/photo.jpg" };
   assert.equal(shortlistIdentity(photo, true).display.avatarUrl, undefined, "a masked candidate shows no photo");
   assert.equal(shortlistIdentity(photo, false).display.avatarUrl, photo.avatarUrl);
   assert.equal(shortlistIdentity(candidate, false).profileLabel, "LinkedIn");

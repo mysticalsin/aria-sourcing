@@ -21,7 +21,6 @@ import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
-import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -99,9 +98,14 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
     };
 
     try {
-      // Only Email and assisted LinkedIn are dispatchable. A legacy row on any
-      // other channel (e.g. legacy WhatsApp / SMS rows) never reaches a provider.
-      if (msg.channel !== "Email" && msg.channel !== "LinkedIn") {
+      // LinkedIn is not dispatched. A later channel module may send only behind
+      // its default-off flag and a recorded approval. Other non-email rows
+      // (legacy WhatsApp / SMS) never reach a provider.
+      if (msg.channel === "LinkedIn") {
+        await finish("blocked", { pass: false, reasons: ["linkedin-channel-refused"] });
+        continue;
+      }
+      if (msg.channel !== "Email") {
         await finish("blocked", { pass: false, reasons: ["channel-not-dispatchable"] });
         continue;
       }
@@ -145,97 +149,6 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       const injection = detectInjection(msg.body);
       if (!disclosure.safe || injection.flagged) {
         await finish("blocked", { pass: false, reasons: [disclosure.reason ?? "injection-suspected"] });
-        continue;
-      }
-
-      if (msg.channel === "LinkedIn") {
-        const { data: seat, error: seatErr } = await supabase
-          .from("agent_seats")
-          .select("id, provider, status, mode")
-          .eq("id", msg.seat_id ?? "")
-          .eq("workspace_id", msg.workspace_id)
-          .maybeSingle();
-        if (seatErr) {
-          safeLog("dispatch-outbound: LinkedIn seat lookup error", { message: seatErr.message });
-          await finish("blocked", { pass: false, reasons: ["linkedin-seat-store-unavailable"] });
-          continue;
-        }
-        const adapter = linkedInAdapterForProvider(seat?.provider);
-        if (!seat || seat.status !== "active" || seat.mode !== "live" || !adapter) {
-          await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
-          continue;
-        }
-        if (!adapter.configured()) {
-          await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
-          continue;
-        }
-
-        const { data: claim, error: claimErr } = await supabase.rpc("claim_linkedin_outbound_queued", {
-          p_message_id: msg.id,
-        });
-        if (claimErr) {
-          safeLog("dispatch-outbound: LinkedIn claim error", { message: claimErr.message });
-          await finish("failed");
-          continue;
-        }
-        const claimObj = claim as {
-          allowed?: boolean;
-          reason?: string;
-          ledger_id?: string;
-          delivery_attempt_id?: string;
-          profile_url?: string;
-        } | null;
-        if (claimObj?.allowed !== true) {
-          if (claimObj?.reason === "not-queued" || claimObj?.reason === "message-not-found") {
-            continue;
-          }
-          await finish("blocked", { pass: false, reasons: [`guardrail:${claimObj?.reason ?? "blocked"}`] });
-          continue;
-        }
-        deliveryAttemptId = claimObj.delivery_attempt_id ?? null;
-        if (!deliveryAttemptId || !UUID_PATTERN.test(deliveryAttemptId) || !claimObj.profile_url || !claimObj.ledger_id) {
-          safeLog("dispatch-outbound: LinkedIn claim returned no valid ownership token");
-          stats.failed++;
-          continue;
-        }
-
-        const outcome = await adapter.deliver({
-          workspaceId: msg.workspace_id,
-          messageId: msg.id,
-          candidateId: msg.candidate_id,
-          profileUrl: claimObj.profile_url,
-          subject: msg.subject ?? "",
-          body: msg.body,
-          attemptId: deliveryAttemptId,
-        });
-        const outcomeKind =
-          outcome.status === "sent" && outcome.deliveryState === "accepted"
-            ? "sent"
-            : outcome.deliveryState === "unknown"
-              ? "ambiguous"
-              : "skipped";
-        const { data: recorded, error: recordErr } = await supabase.rpc("record_linkedin_delivery_outcome", {
-          p_message_id: msg.id,
-          p_delivery_attempt_id: deliveryAttemptId,
-          p_outcome: outcomeKind,
-          p_reason: outcomeKind === "sent" ? null : outcome.detail.slice(0, 512),
-          p_provider_message_id: outcome.id ?? null,
-        });
-        const recordedObj = recorded as { allowed?: boolean; reason?: string } | null;
-        if (recordErr || recordedObj?.allowed !== true) {
-          safeLog("dispatch-outbound: LinkedIn outcome reconciliation failed", {
-            message: recordErr?.message ?? recordedObj?.reason ?? "unknown",
-          });
-          stats.failed++;
-          continue;
-        }
-        if (outcomeKind === "sent") {
-          stats.sent++;
-        } else if (outcome.status === "dry-run") {
-          stats.unconfigured++;
-        } else {
-          stats.failed++;
-        }
         continue;
       }
 

@@ -1,5 +1,5 @@
-// LinkedIn profile URLs, client-safe and dependency-free: shared by the
-// LinkedIn bridge (src/lib/linkedin-bridge) and manual candidate intake.
+// LinkedIn profile URLs, client-safe and dependency-free. Formats and parses
+// a URL the recruiter already has. Does not fetch linkedin.com.
 
 /**
  * The public id of a LinkedIn profile URL ("jane-doe" in

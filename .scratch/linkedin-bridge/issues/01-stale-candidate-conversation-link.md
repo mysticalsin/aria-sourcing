@@ -1,6 +1,6 @@
 # 01 — La conversation LinkedIn reste liée à un ancien candidat
 
-Status: ready-for-agent
+Status: wontfix (LinkedIn bridge removed, 2026-11-20; conversation sync no longer exists)
 Found: 2026-11-09 (tournage de la vidéo de démo, shift 465)
 
 ## Constat

@@ -37,7 +37,6 @@ import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
 import { CampaignSourcingPanel } from "@/components/run/campaign-sourcing-panel";
-import { CampaignAutopilotCard } from "@/components/agents/campaign-autopilot-card";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
@@ -1047,10 +1046,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         setTab("candidates");
         requestAnimationFrame(() => document.getElementById(`${idBase}-candidates`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
       }} />}
-      {supabaseEnabled && can(role, "outreach") && (
-        <CampaignAutopilotCard key={`autopilot-${c.id}`} campaignId={c.id} candidateName={(cid) => { const found = candidates.find((x) => x.id === cid); return found ? applyConfidentiality(found, { confidentialityMode: Boolean(settings.confidentialityMode), reveal: hasOutreachPurpose(found.stage) }).name : "Candidate"; }} />
-      )}
-
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 
       {/* Overview */}
