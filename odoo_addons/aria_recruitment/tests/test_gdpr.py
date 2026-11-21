@@ -1,3 +1,4 @@
+import base64
 from datetime import timedelta
 
 from odoo import fields
@@ -58,3 +59,82 @@ class TestAriaGdpr(AriaRecruitmentCommon):
         audit = self.audits(due, event_kind='gdpr')
         self.assertTrue(any('retention' in (row.reason or '') for row in audit))
         self.assertNotIn('nia.example', ' '.join(audit.mapped('reason')).lower())
+
+    def test_erasure_clears_contract_pdf_and_redacts_chatter(self):
+        applicant = self.applicant('to_rate', name='Mina Example', email='mina.example@example.test')
+        applicant.message_post(
+            body='Hello Mina Example at mina.example@example.test',
+            message_type='comment',
+            subtype_xmlid='mail.mt_note',
+        )
+        applicant.write({
+            'aria_contract_filename': 'mina-contract.pdf',
+            'aria_contract_pdf': base64.b64encode(b'%PDF-1.4\nMina Example\n%%EOF\n'),
+        })
+        self.assertTrue(applicant.aria_contract_pdf)
+        applicant.action_aria_erase()
+        self.assertFalse(applicant.aria_contract_pdf)
+        chatter = ' '.join(
+            f"{message.body or ''} {message.subject or ''} {message.email_from or ''}"
+            for message in applicant.message_ids
+        )
+        self.assertNotIn('Mina', chatter)
+        self.assertNotIn('mina.example', chatter.lower())
+        self.assertTrue(any('erased' in (message.body or '') for message in applicant.message_ids))
+        audit = self.audits(applicant, event_kind='gdpr')
+        self.assertTrue(audit)
+        self.assertNotIn('Mina', ' '.join(audit.mapped('reason')))
+
+    def test_outbound_mail_and_approval_refused_when_blocked(self):
+        opted = self.applicant('to_assess', name='Opt Mail', email='opt.mail.example@example.test')
+        opted.write({'aria_opt_out': True})
+        error = None
+        try:
+            opted.message_post(
+                body='Offer for opt.mail.example@example.test',
+                message_type='email',
+                subtype_xmlid='mail.mt_comment',
+            )
+        except UserError as exc:
+            error = exc
+        self.assertTrue(error)
+        self.assertTrue(self.audits(opted, event_kind='gdpr', result='refused'))
+        opted.message_post(
+            body='internal note stays',
+            message_type='comment',
+            subtype_xmlid='mail.mt_note',
+        )
+
+        erased = self.applicant('to_rate', name='Erased Mail', email='erased.mail.example@example.test')
+        erased.action_aria_erase()
+        error = None
+        try:
+            erased.message_post(
+                body='Hello erased.mail.example@example.test',
+                message_type='email',
+            )
+        except UserError as exc:
+            error = exc
+        self.assertTrue(error)
+
+        hired = self.applicant('to_hire', name='Hired Mail', email='hired.mail.example@example.test')
+        hired.aria_dna_integration_status = 'integrated'
+        self.contract(hired)
+        self.assertFalse(self.move(hired, 'hired'))
+        error = None
+        try:
+            hired.action_aria_approve_outreach()
+        except UserError as exc:
+            error = exc
+        self.assertTrue(error)
+        error = None
+        try:
+            hired.action_aria_outreach()
+        except UserError as exc:
+            error = exc
+        self.assertTrue(error)
+        hired.message_post(
+            body='ARIA_TRANSITION internal',
+            message_type='comment',
+            subtype_xmlid='mail.mt_note',
+        )
