@@ -140,6 +140,38 @@ test("canonical execution is shell-free and fail-fast", () => {
   assert.equal(calls[0].options.shell, false);
 });
 
+test("a command timeout is retried once and then counted as infrastructure", () => {
+  const commands = resolveTestGroup(testManifest, "candidate-erasure").slice(0, 1);
+  let calls = 0;
+  const result = executeResolvedCommands(commands, {
+    spawn: () => {
+      calls += 1;
+      return {
+        status: null,
+        signal: "SIGTERM",
+        error: Object.assign(new Error("spawn timed out"), { code: "ETIMEDOUT" }),
+      };
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.ok, false);
+  assert.equal(result.failures[0]?.infrastructure, true);
+});
+
+test("a product failure is not retried", () => {
+  const commands = resolveTestGroup(testManifest, "candidate-erasure").slice(0, 1);
+  let calls = 0;
+  const result = executeResolvedCommands(commands, {
+    spawn: () => {
+      calls += 1;
+      return { status: 1, signal: null };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.ok, false);
+  assert.equal(result.failures[0]?.infrastructure, false);
+});
+
 test("sandbox execution is shell-free, keep-going, and still fails overall", () => {
   const commands = resolveTestGroup(testManifest, "candidate-erasure");
   const calls: Array<{ options: { shell?: boolean }; argv: string[] }> = [];

@@ -61,8 +61,8 @@ ok("the gateway receives the keys it checks", gatewayBlock.includes("SUPABASE_AN
 ok("the Caddyfile is mounted read-only", gatewayBlock.includes("./docker/Caddyfile:/etc/caddy/Caddyfile:ro"));
 ok("the app server reaches Supabase through the gateway", compose.includes("SUPABASE_URL: http://gateway:8000"));
 ok("the browser and GoTrue use the same public API port", (compose.match(/http:\/\/localhost:\$\{API_PORT:-54321\}/g) ?? []).length === 3);
-// db, auth, rest, gateway, app, and the agents runner (ADR 0002).
-ok("every long-running service has bounded logs", (compose.match(/logging: \*logging/g) ?? []).length === 6);
+// db, auth, rest, gateway, and app. The agents runner is removed.
+ok("every long-running service has bounded logs", (compose.match(/logging: \*logging/g) ?? []).length === 5);
 ok(
   "an upstream failure keeps the CORS header",
   /handle_errors \{\s*header Access-Control-Allow-Origin "\*"/.test(caddyfile),

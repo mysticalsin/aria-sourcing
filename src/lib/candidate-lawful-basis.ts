@@ -27,3 +27,14 @@ export function recordedCandidateLawfulBasis(
   if (!isCanonicalIsoTimestamp(candidate.lawfulBasisRecordedAt)) return null;
   return candidate.lawfulBasis;
 }
+
+/** Server routes pass workspace JSON. Missing or partial records fail closed. */
+export function recordedLawfulBasisFromUnknown(value: unknown): CandidateLawfulBasis | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as CandidateLawfulBasisRecord;
+  return recordedCandidateLawfulBasis({
+    lawfulBasis: candidate.lawfulBasis,
+    lawfulBasisRecordedAt: candidate.lawfulBasisRecordedAt,
+    lawfulBasisSource: candidate.lawfulBasisSource,
+  });
+}

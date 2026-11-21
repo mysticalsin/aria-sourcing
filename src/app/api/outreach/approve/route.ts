@@ -9,6 +9,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { recordedLawfulBasisFromUnknown } from "@/lib/candidate-lawful-basis";
 
 /**
  * Record a human approval for a SPECIFIC outbound message.
@@ -95,6 +96,12 @@ export async function POST(req: NextRequest) {
   if (!disclosure.safe || injection.flagged) {
     return NextResponse.json(
       { ok: false, error: disclosure.reason ?? "injection-suspected" },
+      { status: 422 },
+    );
+  }
+  if (!recordedLawfulBasisFromUnknown(candidate)) {
+    return NextResponse.json(
+      { ok: false, error: "Operator-recorded lawful basis is required before approval." },
       { status: 422 },
     );
   }

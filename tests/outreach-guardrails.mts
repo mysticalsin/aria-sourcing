@@ -137,6 +137,34 @@ ok("client approval never fire-and-forgets the approval request", !/void fetch\(
 ok("client approval only commits from an actionable draft state", /Message is no longer awaiting approval\./.test(store));
 ok("client approval revokes a stale server record before returning blocked", /const revokeStaleApproval/.test(store));
 ok("approval route records through the lifecycle RPC", /rpc\("record_outreach_approval"/.test(approveRoute));
+ok(
+  "approve route reads a server lawful basis before it records approval",
+  approveRoute.indexOf("recordedLawfulBasisFromUnknown") >= 0 &&
+    approveRoute.indexOf("recordedLawfulBasisFromUnknown") < approveRoute.indexOf('rpc("record_outreach_approval"'),
+);
+ok(
+  "send route reads a server lawful basis before a live email claim",
+  sendRoute.includes("recordedLawfulBasisFromUnknown") &&
+    sendRoute.indexOf("recordedLawfulBasisFromUnknown") < sendRoute.indexOf('rpc("claim_email_outbound"'),
+);
+ok(
+  "send route checks phone and linkedin suppression with email",
+  /\["email", "domain", "phone", "linkedin"\]/.test(sendRoute),
+);
+ok(
+  "candidate suppression waits for the server before the local blocked flag",
+  !/void persistSuppressionToServer/.test(store),
+);
+ok(
+  "linkedin suppression uses the server list",
+  !/no server-enforced suppression channel/.test(store),
+);
+const outreachCard = readFileSync(new URL("../src/components/outreach/outreach-message-card.tsx", import.meta.url), "utf8");
+const glassBox = readFileSync(new URL("../src/components/outreach/glass-box-panel.tsx", import.meta.url), "utf8");
+ok(
+  "linkedin approval copy matches the manual flow",
+  !/Approve & send on LinkedIn/.test(outreachCard) && !/Approve & send on LinkedIn/.test(glassBox),
+);
 ok("revoke route calls the authoritative lifecycle RPC", /rpc\("revoke_outreach_approval"/.test(revokeRoute));
 ok("send route excludes revoked approvals", /revoked_at/.test(sendRoute));
 ok("send route claims email with the locked approval RPC", /rpc\("claim_email_outbound"/.test(sendRoute));

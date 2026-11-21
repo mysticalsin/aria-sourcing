@@ -89,12 +89,16 @@ export interface SourcingActionDependencies {
 const MAX_SOURCE_COUNT = 20;
 const SYNTHETIC_PLATFORMS = new Set<SourcePlatform>(["Referral", "Talent Pool"]);
 const DEDICATED_PLATFORMS = new Set<SourcePlatform>(["Manual"]);
-const WEB_HOSTS: Record<WebSearchPlatform, string> = {
-  LinkedIn: "linkedin.com",
+const WEB_HOSTS: Record<Exclude<WebSearchPlatform, "LinkedIn">, string> = {
   "Stack Overflow": "stackoverflow.com",
   Dribbble: "dribbble.com",
   Behance: "behance.net",
 };
+
+function webSearchHost(platform: WebSearchPlatform): string | null {
+  if (platform === "LinkedIn") return null;
+  return WEB_HOSTS[platform];
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -373,7 +377,8 @@ function sanitizeWebLeads(
     const name = optionalString(item.name, 200);
     const title = optionalString(item.title, 300);
     const company = optionalString(item.company, 200);
-    const url = safeHttpsUrl(item.url, WEB_HOSTS[platform]);
+    const host = webSearchHost(platform);
+    const url = host ? safeHttpsUrl(item.url, host) : null;
     const snippet = optionalString(item.snippet, 1_000);
     if (
       !name ||
@@ -612,6 +617,9 @@ export function createSourcingActions({
     );
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
+    }
+    if (requestedPlatform === "LinkedIn") {
+      return invalidRequest("LinkedIn web search is disabled.");
     }
     const count = opts?.count ?? 6;
     const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;

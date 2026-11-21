@@ -183,8 +183,8 @@ function baseMsg(over: Row = {}): Row {
     spec_id: "spec-1",
     candidate_id: "cand-1",
     seat_id: "seat-1",
-    channel: "LinkedIn",
-    to_address: "https://www.linkedin.com/in/marco-rossi",
+    channel: "Email",
+    to_address: "marco@example.test",
     body: GOOD_BODY,
     status: "queued",
     scheduled_at: "2000-01-01T00:00:00Z",
@@ -194,6 +194,8 @@ function baseMsg(over: Row = {}): Row {
 
 function baseLinkedInMsg(over: Row = {}): Row {
   return baseMsg({
+    channel: "LinkedIn",
+    to_address: "https://www.linkedin.com/in/marco-rossi",
     subject: "Quick note",
     approval_message_id: "m-1",
     ...over,
@@ -301,10 +303,6 @@ for (const channel of ["WhatsApp", "SMS"]) {
 // ---------------------------------------------------------------------------
 {
   const originalFetch = globalThis.fetch;
-  const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
-  const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
-  process.env.LINKEDIN_VENDOR_API_URL = "https://vendor.example.test/linkedin/send";
-  process.env.LINKEDIN_VENDOR_API_KEY = "vendor-key";
   let transportCalls = 0;
   globalThis.fetch = (async () => {
     transportCalls++;
@@ -328,12 +326,9 @@ for (const channel of ["WhatsApp", "SMS"]) {
     ok("LinkedIn no approval: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
     ok("LinkedIn no approval: transport mock never invoked", transportCalls === 0);
     ok("LinkedIn no approval: no ledger row is written by the dispatcher", db.ledgers.length === 0);
+    ok("LinkedIn no approval: channel refused", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-channel-refused"));
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
-    else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
-    if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
-    else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
   }
 }
 
@@ -363,9 +358,9 @@ for (const channel of ["WhatsApp", "SMS"]) {
     },
   });
   const stats = await dispatchDue(db.client, 10);
-  ok("LinkedIn assisted-manual: sent is recorded", stats.sent === 1 && stats.failed === 0 && stats.blocked === 0);
-  ok("LinkedIn assisted-manual: claim and outcome RPCs both run", db.rpcCalls.map((call) => call.fn).join("|") === "claim_linkedin_outbound_queued|record_linkedin_delivery_outcome");
-  ok("LinkedIn assisted-manual: shared ledger reaches sent", db.ledgers[0]?.status === "sent");
+  ok("LinkedIn assisted-manual name is still refused", stats.blocked === 1 && stats.sent === 0 && stats.failed === 0);
+  ok("LinkedIn assisted-manual name never claims", db.rpcCalls.length === 0);
+  ok("LinkedIn assisted-manual name records the refusal", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-channel-refused"));
 }
 
 // ---------------------------------------------------------------------------
@@ -374,10 +369,6 @@ for (const channel of ["WhatsApp", "SMS"]) {
 // ---------------------------------------------------------------------------
 {
   const originalFetch = globalThis.fetch;
-  const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
-  const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
-  delete process.env.LINKEDIN_VENDOR_API_URL;
-  delete process.env.LINKEDIN_VENDOR_API_KEY;
   let transportCalls = 0;
   globalThis.fetch = (async () => {
     transportCalls++;
@@ -404,16 +395,12 @@ for (const channel of ["WhatsApp", "SMS"]) {
       },
     });
     const stats = await dispatchDue(db.client, 10);
-    ok("LinkedIn vendor dark: counted as unconfigured failure", stats.unconfigured === 1 && stats.sent === 0);
-    ok("LinkedIn vendor dark: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
-    ok("LinkedIn vendor dark: transport never invoked", transportCalls === 0);
-    ok("LinkedIn vendor dark: reason proves no assisted-manual fallback", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-provider-unconfigured"));
+    ok("LinkedIn vendor name: blocked, not sent", stats.blocked === 1 && stats.sent === 0 && stats.unconfigured === 0);
+    ok("LinkedIn vendor name: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
+    ok("LinkedIn vendor name: transport never invoked", transportCalls === 0);
+    ok("LinkedIn vendor name: channel refused", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-channel-refused"));
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
-    else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
-    if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
-    else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
   }
 }
 

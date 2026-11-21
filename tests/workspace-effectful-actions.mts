@@ -58,7 +58,7 @@ ok(
     /runWorkspaceEffect\([\s\S]*createFleetSeatOnServer/.test(addSeat),
 );
 
-const suppression = actionBody("persistSuppressionToServer", "syncSuppressionToServer");
+const suppression = actionBody("persistSuppressionToServer", "confirmCandidateSuppression");
 const applyReplyAction = actionBody("applyReplyAction", "draftReplyResponse");
 ok(
   "suppression persistence and negative-reply enforcement preflight before server mutation",

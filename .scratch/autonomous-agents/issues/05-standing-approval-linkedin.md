@@ -1,6 +1,6 @@
 # 05 — Approbation permanente et file LinkedIn par l'agent (B2)
 
-Status: resolved
+Status: wontfix (LinkedIn autopilot and bridge removed, 2026-11-20; standing approval must not queue LinkedIn sends)
 Blocked by: 02
 Spec: ../spec.md
 

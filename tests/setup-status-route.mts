@@ -40,7 +40,7 @@ test("missing paid providers do not block a ready core workspace or pretend to b
   const response = await GET(request());
   const body = await response.json();
   assert.equal(body.ready, true);
-  assert.equal(body.checks.find((check: { id: string }) => check.id === "linkedin").status, "missing");
+  assert.equal(body.checks.find((check: { id: string }) => check.id === "linkedin").status, "blocked");
   assert.equal(body.checks.find((check: { id: string }) => check.id === "ai").status, "missing");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.doesNotMatch(JSON.stringify(body), /workspace-1|public-test-key|secret detail/);

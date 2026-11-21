@@ -21,7 +21,6 @@ import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { VerifyProfileFields, readVerifiedProfile } from "@/components/candidates/verify-profile-fields";
 import { inPocScope } from "@/components/app/nav";
-import { CandidateLinkedIn, LinkedInQuickAction, linkedInContactBlock } from "@/components/linkedin/candidate-linkedin";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import { candidateEnrichmentBlocker, candidateExclusionBlocker, candidateReview } from "@/lib/candidate-review";
@@ -796,7 +795,7 @@ export function CandidateDrawer({
         title: draftChannel === "LinkedIn" ? "LinkedIn message drafted" : "Email drafted",
         description:
           draftChannel === "LinkedIn"
-            ? `${c.name}: approve it in Outreach, then "Send with my LinkedIn".`
+            ? `${c.name}: approve it in Outreach, then send the InMail yourself in Recruiter.`
             : `${c.name}: review in the outreach queue.`,
         variant: "success",
       });
@@ -1118,7 +1117,11 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.suppressCandidate(c.id);
+    const result = await actions.suppressCandidate(c.id);
+    if (!result.ok) {
+      toast({ title: "Contact not suppressed", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Contact suppressed", description: `${c.name} moved out of active outreach.`, variant: "warning" });
   };
 
@@ -1133,7 +1136,11 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.markDoNotContact(c.id);
+    const result = await actions.markDoNotContact(c.id);
+    if (!result.ok) {
+      toast({ title: "Do-not-contact not recorded", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
   };
 
@@ -1205,7 +1212,11 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.unsubscribeCandidate(c.id);
+    const result = await actions.unsubscribeCandidate(c.id);
+    if (!result.ok) {
+      toast({ title: "Unsubscribe not recorded", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Unsubscribed", description: `${c.name} will no longer receive outreach.`, variant: "warning" });
   };
 
@@ -1219,18 +1230,14 @@ export function CandidateDrawer({
       }))
     )
       return;
-    actions.restoreCandidateContact(c.id);
+    const result = await actions.restoreCandidateContact(c.id);
+    if (!result.ok) {
+      toast({ title: "Contact not restored", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Contact restored", description: `${c.name} is eligible for outreach again.`, variant: "success" });
   };
 
-  const confirmLinkedInDraft = (messageId: string) => {
-    const res = actions.confirmManualSend(messageId, "bridge");
-    if (res.ok) {
-      toast({ title: "Outreach marked as sent", description: "Sent from your LinkedIn. The candidate is marked as contacted.", variant: "success" });
-    } else {
-      toast({ title: "Outreach not updated", description: res.error, variant: "warning" });
-    }
-  };
 
   const handleReveal = () => {
     if (revealed) return;
@@ -1476,13 +1483,6 @@ export function CandidateDrawer({
                 <p className="text-3xl font-bold leading-none tabular-nums text-ink">{Math.round(c.matchScore)}</p>
                 <p className="mt-1 text-xs text-muted">match / 100</p>
               </div>
-              {c.linkedinUrl && (
-                <LinkedInQuickAction
-                  candidateId={c.id}
-                  onOpen={() => setTab("linkedin")}
-                  autoCheck={!masked && !erasureTombstone && can(role, "outreach") && !linkedInContactBlock(c.complianceFlags)}
-                />
-              )}
             </div>
           </div>
             {hasFlags && (
@@ -1699,7 +1699,7 @@ export function CandidateDrawer({
           {!c.linkedinUrl ? (
             <div className="space-y-3 rounded-2xl border border-dashed border-line p-5">
               <p className="text-sm text-ink">No LinkedIn profile URL is recorded for {dc.name}.</p>
-              <p className="text-sm text-muted">Add it under Evidence &amp; contact, then invite or message them from here.</p>
+              <p className="text-sm text-muted">Add a URL you already have under Evidence &amp; contact. Aria does not look it up on LinkedIn.</p>
               <Button variant="outline" size="sm" onClick={() => setTab("evidence")}>
                 Add the LinkedIn URL
               </Button>
@@ -1715,7 +1715,7 @@ export function CandidateDrawer({
                 Confidentiality mode hides this profile.
               </p>
               <p className="text-sm text-muted">
-                Reveal it to see where you stand on LinkedIn, invite {dc.name} or write to them. The reveal is written to the audit trail.
+                Reveal it to see the stored profile URL. The reveal is written to the audit trail. Aria does not contact LinkedIn.
               </p>
               <Button variant="primary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={handleReveal}>
                 Reveal profile (logged)
@@ -1723,23 +1723,14 @@ export function CandidateDrawer({
             </div>
           ) : (
             <div className="space-y-4">
+              <p className="text-sm text-muted">
+                Aria does not contact LinkedIn. Open the profile yourself and send the InMail in Recruiter.
+              </p>
               {linkedInDraft && (
-                <p className="flex items-start gap-2 rounded-xl border border-[#0a66c2]/20 bg-[#0a66c2]/[0.06] px-3 py-2.5 text-sm text-ink" data-outreach-draft>
-                  <Send className="mt-0.5 h-4 w-4 shrink-0 text-[#0a66c2]" aria-hidden />
-                  <span>
-                    Your approved outreach message is ready below. Review it and click Send: it leaves from your LinkedIn,
-                    and the outreach is marked as sent.
-                  </span>
+                <p className="whitespace-pre-wrap rounded-xl border border-line bg-ink/[0.03] px-3 py-2.5 text-sm text-ink" data-outreach-draft>
+                  {linkedInDraft.body}
                 </p>
               )}
-              <CandidateLinkedIn
-                candidateId={c.id}
-                name={c.name}
-                linkedinUrl={c.linkedinUrl}
-                contactBlocked={linkedInContactBlock(c.complianceFlags)}
-                threadClassName="h-[min(560px,60vh)]"
-                draft={linkedInDraft ? { text: linkedInDraft.body, onSent: () => confirmLinkedInDraft(linkedInDraft.id) } : null}
-              />
             </div>
           )}
         </TabPanel>

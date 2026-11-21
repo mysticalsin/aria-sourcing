@@ -71,7 +71,7 @@ npm install && npm run dev         # http://localhost:3000
 
 **Creating a campaign does not start paid sourcing.** From the campaign page:
 
-- **Live mode (Supabase / Docker stack): Run sourcing** opens the source review. Pick LinkedIn via web search (Claude) and/or GitHub, review the queries and set an explicit profile limit per source, then start one durable run. The sources run in that order; each is a separate step. Progress shows persisted found/added/duplicate/excluded counts; refreshing resumes the same run and never repeats a paid web search. Missing provider configuration is reported, never silently replaced by another source.
+- **Live mode (Supabase / Docker stack): Run sourcing** opens the source review. LinkedIn web search is disabled. Pick GitHub, review the query and set an explicit profile limit, then start one durable run. Progress shows persisted found/added/duplicate/excluded counts; refreshing resumes the same run. Missing provider configuration is reported, never silently replaced by another source.
 - **Demo mode (no Supabase): Run Aria**, **Source next batch** and **Run sourcing agent** are shown instead. The first two produce synthetic candidates; the sourcing agent runs the Claude tool loop over real search tools, or only the reviewed GitHub queries when no model key is available (§5).
 - **Review outreach** — approve/edit every message before anything could send. Nothing sends until the live-sending conditions in §6 are all met.
 

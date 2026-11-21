@@ -1,7 +1,7 @@
 # LinkedIn Recruiter System Connect (RSC) — partnership track
 
 > Status: research + application plan. Not code MSourcing can ship unilaterally.
-> Sources (verified 2026-07-09): learn.microsoft.com/linkedin/talent/recruiter-system-connect (li-lts-2026-03); business.linkedin.com/talent-solutions/ats-partners/partner-application.
+> Sources (verified 2026-07-09): Microsoft Learn, Recruiter System Connect (li-lts-2026-03); the Talent Solutions partner application.
 
 ## 1. What RSC is — and is NOT
 RSC synchronizes candidate data **between an ATS and LinkedIn Recruiter** (a paid human-seat product). RSC 1.0 features: Rediscovered Candidates, In-ATS Indicator, One-Click Export, Enhanced Profile Widget, Retrieve InMail History, Stub Profiles after an InMail response. RSC+ adds: requisition-stage sync, application evaluations, attachment sync, Connected Projects.
