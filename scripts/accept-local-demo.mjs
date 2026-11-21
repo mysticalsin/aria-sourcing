@@ -4,6 +4,12 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright";
+import { ensureLocalJwtEnv } from "./jwt-secret-policy.mjs";
+
+ensureLocalJwtEnv();
+if (!process.env.ARIA_CORS_ORIGINS) {
+  process.env.ARIA_CORS_ORIGINS = `http://localhost:${process.env.APP_PORT || "3000"}`;
+}
 
 const project = process.env.ARIA_ACCEPTANCE_PROJECT ?? "";
 if (process.env.ARIA_LOCAL_ACCEPTANCE !== "1" || !/^aria-acceptance-[a-z0-9-]{4,80}$/.test(project)) {
@@ -113,8 +119,8 @@ try {
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
   await dialog.getByRole("tab", { name: "Manual", exact: true }).click();
-  await dialog.getByLabel("Name", { exact: true }).fill(marker + " Person");
-  await dialog.getByLabel("Lawful basis", { exact: true }).selectOption("consent");
+  await dialog.locator("[id$='-manual-name']").fill(marker + " Person");
+  await dialog.locator("[id$='-manual-lawful-basis']").selectOption("consent");
   await dialog.getByRole("button", { name: "Add candidate", exact: true }).click();
   const candidate = await until(async () => (await persisted(token))?.candidates?.find((item) => item.name === marker + " Person"), "Candidate did not persist.");
   candidateId = candidate.id;

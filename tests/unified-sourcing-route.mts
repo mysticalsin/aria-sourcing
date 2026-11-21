@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import { NextRequest } from "next/server";
+import { isolateConnection } from "./helpers/connection.mts";
 import { buildSeedState } from "../src/lib/seed";
 import { campaignSourcingBasis, orderedSteps, type CampaignSourcingJob } from "../src/lib/sourcing/unified-contract";
 const url = (p: string) => new URL(`../${p}`, import.meta.url).href;
@@ -28,9 +29,9 @@ mock.module(url("src/lib/sourcing/unified-run.ts"), { namedExports: {
 } });
 mock.module(url("src/lib/sourcing/github.ts"), { namedExports: { searchGithubUsers: () => {} } });
 const { POST } = await import("../src/app/api/source/campaign/route");
-const request = (body: object, origin = "http://localhost") => new NextRequest("http://localhost/api/source/campaign", {
+const request = (body: object, origin = "http://localhost") => isolateConnection(new NextRequest("http://localhost/api/source/campaign", {
   method: "POST", headers: { "content-type": "application/json", origin, "x-real-ip": crypto.randomUUID() }, body: JSON.stringify(body),
-});
+}));
 const start = () => ({ action: "start", campaignId: campaign.id, requestKey: crypto.randomUUID(), sources: [{ source: "GitHub", query: campaign.jobAnalysis.requiredSkills[0], limit: 3 }] });
 
 test("anonymous and viewers cannot read campaign authority or launch providers", async () => {

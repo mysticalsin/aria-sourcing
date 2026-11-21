@@ -28,6 +28,7 @@ yarn-error.log*
 # env
 .env
 .env*.local
+.local/
 
 # backups (may contain cleartext secrets / candidate PII)
 backups/

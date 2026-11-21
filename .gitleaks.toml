@@ -4,3 +4,13 @@ title = "aria-sourcing-demo gitleaks config"
 # or on the single synthetic line that triggers a rule; never allowlist a path.
 [extend]
 useDefault = true
+
+[[rules]]
+id = "aria-compose-jwt-literal"
+description = "Compose JWT HMAC material must be an environment reference"
+regex = '''(?i)jwt_secret:\s*(?:&\w+\s+)?"[^"\n$][^"\n]{7,}"'''
+keywords = ["jwt_secret"]
+
+[[rules.allowlists]]
+description = "Retired sample removed from the current tree"
+commits = ["df6fa3398f1f6ee5cd4289056fff762704a674bc"]

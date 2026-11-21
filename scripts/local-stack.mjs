@@ -1,6 +1,8 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { ensureLocalJwtEnv } from "./jwt-secret-policy.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const command = process.argv[2] ?? "status";
@@ -15,6 +17,25 @@ if (!Object.hasOwn(commands, command)) throw new Error("Use up, stop, restart, s
 const compose = (args, options = {}) => spawnSync("docker", ["compose", "-f", "docker-compose.yml", ...args], { cwd: root, encoding: "utf8", ...options });
 const appPort = process.env.APP_PORT || "3000";
 const apiPort = process.env.API_PORT || "54321";
+const jwtFile = resolve(root, ".local/jwt.env");
+try {
+  const saved = readFileSync(jwtFile, "utf8");
+  for (const line of saved.split("\n")) {
+    const match = /^([A-Z0-9_]+)=(.*)$/.exec(line);
+    if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
+  }
+} catch {
+  // First boot writes the file below.
+}
+ensureLocalJwtEnv();
+if (!process.env.ARIA_CORS_ORIGINS) process.env.ARIA_CORS_ORIGINS = `http://localhost:${appPort}`;
+mkdirSync(resolve(root, ".local"), { recursive: true });
+writeFileSync(jwtFile, [
+  `SUPABASE_JWT_SECRET=${process.env.SUPABASE_JWT_SECRET}`,
+  `SUPABASE_ANON_KEY=${process.env.SUPABASE_ANON_KEY}`,
+  `SUPABASE_SERVICE_ROLE_KEY=${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+  "",
+].join("\n"), { mode: 0o600 });
 
 /** On a running stack: the gateway contract from inside the network, then the
  *  two host ports the browser uses. Read-only; returns false on the first failure. */

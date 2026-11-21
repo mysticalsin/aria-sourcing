@@ -35,9 +35,8 @@ ok("both API trees require a key", keyCheck.includes("path /auth/v1/* /rest/v1/*
 ok("the anon and service keys are the only accepted keys", [
   "not header apikey {$SUPABASE_ANON_KEY}",
   "not header apikey {$SUPABASE_SERVICE_KEY}",
-  "not query apikey={$SUPABASE_ANON_KEY}",
-  "not query apikey={$SUPABASE_SERVICE_KEY}",
 ].every((line) => keyCheck.includes(line)));
+ok("a query credential is not accepted", !caddyfile.includes("not query apikey="));
 ok(
   "only GoTrue's browser-opened routes skip the key",
   keyCheck.includes("not path /auth/v1/verify* /auth/v1/callback* /auth/v1/authorize* /auth/v1/.well-known/jwks.json"),
@@ -58,14 +57,18 @@ ok(
 ok("the gateway image is pinned", /image: caddy:\d+\.\d+\.\d+-alpine/.test(gatewayBlock));
 ok("the gateway binds to loopback only", gatewayBlock.includes('- "127.0.0.1:${API_PORT:-54321}:8000"'));
 ok("the gateway receives the keys it checks", gatewayBlock.includes("SUPABASE_ANON_KEY: *anon_key") && gatewayBlock.includes("SUPABASE_SERVICE_KEY: *service_key"));
-ok("the Caddyfile is mounted read-only", gatewayBlock.includes("./docker/Caddyfile:/etc/caddy/Caddyfile:ro"));
+ok(
+  "the Caddyfile is mounted read-only",
+  gatewayBlock.includes("./docker/Caddyfile:/etc/caddy/Caddyfile:ro") &&
+    gatewayBlock.includes("./docker/gateway-entrypoint.sh:/etc/caddy/gateway-entrypoint.sh:ro"),
+);
 ok("the app server reaches Supabase through the gateway", compose.includes("SUPABASE_URL: http://gateway:8000"));
 ok("the browser and GoTrue use the same public API port", (compose.match(/http:\/\/localhost:\$\{API_PORT:-54321\}/g) ?? []).length === 3);
 // db, auth, rest, gateway, app, and the agents runner (ADR 0002).
 ok("every long-running service has bounded logs", (compose.match(/logging: \*logging/g) ?? []).length === 6);
 ok(
-  "an upstream failure keeps the CORS header",
-  /handle_errors \{\s*header Access-Control-Allow-Origin "\*"/.test(caddyfile),
+  "an upstream failure keeps a listed origin",
+  /handle_errors \{\s*header @cors_ok Access-Control-Allow-Origin "\{http.request.header.Origin\}"/.test(caddyfile),
 );
 
 /* ---- The contract is proven on every `up` and by demo:doctor ------------- */
@@ -83,6 +86,8 @@ ok("the gateway check covers the contract", [
   "a bare service key becomes the bearer",
   "a session bearer is kept",
   "CORS preflight is answered",
+  "an unlisted origin is denied",
+  "a query credential is refused",
   "unrouted paths answer 404",
 ].every((check) => gatewayCheck.includes(`"${check}"`)));
 ok("the gateway check prints no key", !/echo[^\n]*\$(ANON|SERVICE)\b/.test(gatewayCheck));

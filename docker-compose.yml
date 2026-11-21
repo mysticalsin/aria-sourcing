@@ -9,13 +9,13 @@
 # Log in at http://localhost:3000 with the one-click "admin / admin" shortcut, or the
 # email form: admin@aria.local / admindemo123.
 #
-# The keys below are the PUBLIC supabase sample keys — fine for a local stack only.
-# For any non-local use, regenerate JWT_SECRET + the anon/service JWTs and override them.
+# The HMAC secret and the anon and service tokens come from the environment.
+# They have no default. Generate them outside git before starting the stack.
 # =============================================================================
 name: aria-sourcing
 
 x-keys:
-  jwt_secret: &jwt_secret "your-super-secret-jwt-token-with-at-least-32-characters-long"
+  jwt_secret: &jwt_secret ${SUPABASE_JWT_SECRET:?SUPABASE_JWT_SECRET is required}
   jwt_exp: &jwt_exp "3600"
   owner_current_password: &owner_current_password "local_owner_current_password_00000000000000000"
   owner_password: &owner_password "local_owner_database_password_000000000000000000"
@@ -27,8 +27,8 @@ x-keys:
   demo_admin_pw: &demo_admin_pw "admindemo123"
   # Shared by app and agents only (ADR 0002). Local sample; override for any non-local use.
   agent_runner_secret: &agent_runner_secret "local_agent_runner_secret_00000000000000000000"
-  anon_key: &anon_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE" # gitleaks:allow -- public Supabase local-demo JWT
-  service_key: &service_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q" # gitleaks:allow -- public Supabase local-demo JWT
+  anon_key: &anon_key ${SUPABASE_ANON_KEY:?SUPABASE_ANON_KEY is required}
+  service_key: &service_key ${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}
 
 # Bounded logs for the long-running services (json-file grows forever otherwise).
 x-logging: &logging
@@ -176,8 +176,11 @@ services:
     environment:
       SUPABASE_ANON_KEY: *anon_key
       SUPABASE_SERVICE_KEY: *service_key
+      ARIA_CORS_ORIGINS: ${ARIA_CORS_ORIGINS:-}
+    entrypoint: ["/bin/sh", "/etc/caddy/gateway-entrypoint.sh"]
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker/gateway-entrypoint.sh:/etc/caddy/gateway-entrypoint.sh:ro
     logging: *logging
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8000/gateway-health"]
@@ -209,6 +212,7 @@ services:
       SERVICE_ROLE_KEY: *service_key
       SUPABASE_ANON_KEY: *anon_key
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
+      ARIA_CORS_ORIGINS: ${ARIA_CORS_ORIGINS:-}
     volumes:
       - ./supabase/migrations:/migrations:ro
     restart: "no"
@@ -281,9 +285,14 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image's HEALTHCHECK probes the web server; this service has none.
+    # The image HEALTHCHECK probes the web server. This process is only the
+    # runner, so compose --wait gets a process check instead of that probe.
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", "process.kill(1,0)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     restart: unless-stopped
     logging: *logging
 

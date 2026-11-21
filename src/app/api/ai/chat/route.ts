@@ -5,7 +5,7 @@ import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } f
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
 import { AI_ACTIVITY_IDS } from "@/lib/ai/activities";
-import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
+import { resolveServerProviderEndpoint } from "@/lib/ai/endpoint";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
   // as /api/sourcing-agent, so allow a matching request body.
   const validated = await validateBody(req, AiChatSchema, { maxBytes: 200_000 });
   if (!validated.ok) return validated.response;
-  const { task, activity, prompt: rawPrompt, model, provider, baseUrl, apiKeyId, mcpServers, webResearch, campaign, existing } =
+  const { task, activity, prompt: rawPrompt, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
     validated.data;
   // The classify task feeds candidate-authored reply text straight to the model.
   // Sanitize it and wrap it in the same untrusted-data envelope the autopilot
@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
     // The raw secret is NEVER logged or returned to the caller.
     const slug = provider as AiProviderSlug;
     let endpoint: string;
-    try { endpoint = resolveProviderEndpoint(slug, baseUrl); }
+    try { endpoint = await resolveServerProviderEndpoint(slug); }
     catch { return NextResponse.json({ ok: false, reason: "Invalid local provider URL." }, { status: 400 }); }
     if (slug === "local" && !model) {
       return NextResponse.json({ ok: false, reason: "Configure the exact local model name." }, { status: 400 });
@@ -320,7 +320,15 @@ export async function POST(req: NextRequest) {
         const result =
           slug === "anthropic"
             ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers, task, activity })
-            : await runOpenAiWithTools({ provider: slug, baseUrl, model: toolModel, system, prompt, key, servers: resolvedServers });
+            : await runOpenAiWithTools({
+                provider: slug,
+                baseUrl: process.env.ARIA_LOCAL_MODEL_BASE_URL,
+                model: toolModel,
+                system,
+                prompt,
+                key,
+                servers: resolvedServers,
+              });
         if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
         // Tool loop failed or returned empty (e.g. a provider that rejects the tools
         // param) → fall through to a normal single-shot completion so chat still answers

@@ -3,6 +3,7 @@ import { mock, test } from "node:test";
 
 import { NextRequest } from "next/server";
 
+import { isolateConnection } from "./helpers/connection.mts";
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { Campaign } from "../src/lib/types";
@@ -261,7 +262,7 @@ function request(
   contentType = "application/json",
   idempotencyKey = crypto.randomUUID(),
 ) {
-  return new NextRequest("http://localhost/api/sourcing-agent", {
+  const req = new NextRequest("http://localhost/api/sourcing-agent", {
     method: "POST",
     headers: {
       "content-type": contentType,
@@ -276,6 +277,7 @@ function request(
       ...body,
     }),
   });
+  return isolateConnection(req);
 }
 
 function reset() {
