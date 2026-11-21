@@ -1,3 +1,5 @@
+import psycopg2
+
 from odoo.exceptions import UserError, ValidationError
 from odoo.service.model import call_kw
 from odoo.tests import tagged
@@ -16,6 +18,17 @@ from .common import AriaRecruitmentCommon
 
 @tagged('post_install', '-at_install', 'aria_recruitment')
 class TestHireGate(AriaRecruitmentCommon):
+    def test_sql_update_cannot_enter_hired_without_contract_and_dna(self):
+        applicant = self.applicant('to_hire', name='Sql Example', email='sql.example@example.test')
+        hired_id = self.stage['hired'].id
+        with self.assertRaises(psycopg2.Error):
+            self.env.cr.execute(
+                "UPDATE hr_applicant SET stage_id = %s WHERE id = %s",
+                (hired_id, applicant.id),
+            )
+        self.env.invalidate_all()
+        self.assertEqual(applicant.stage_id.aria_stage_key, 'to_hire')
+
     def test_hire_without_contract_rejected(self):
         applicant = self.applicant('to_hire')
         applicant.aria_dna_integration_status = 'complete'
