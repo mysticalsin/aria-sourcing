@@ -153,7 +153,13 @@ function client() {
               if (typeof value === "object") return `${key} = ${sqlLiteral(JSON.stringify(value))}::jsonb`;
               return `${key} = ${sqlLiteral(String(value))}`;
             }).join(", ");
-            const updated = rows(`update public.${table} set ${assignments} where ${where()} returning *`);
+            const raw = psql(`
+              with updated as (
+                update public.${table} set ${assignments} where ${where()} returning *
+              )
+              select coalesce(json_agg(row_to_json(updated)), '[]'::json)::text from updated;
+            `);
+            const updated = JSON.parse(raw) as Array<Record<string, unknown>>;
             return { data: updated[0] ?? null, error: null };
           }
           const found = rows(`select * from public.${table} where ${where()}`);
