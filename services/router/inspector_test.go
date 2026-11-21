@@ -176,7 +176,7 @@ func TestAgentsHealthcheckIsReal(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	if strings.Contains(text, "process.kill") || strings.Contains(text, "process.exit(0)") || !strings.Contains(text, "/api/ready") {
+	if strings.Contains(text, "process.kill") || strings.Contains(text, "process.exit(0)") || !strings.Contains(text, "/api/ready") || !strings.Contains(text, "disable: false") {
 		t.Fatal("agents healthcheck is not a real ready probe")
 	}
 }

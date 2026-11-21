@@ -7,6 +7,7 @@
 services:
   agents:
     healthcheck:
+      disable: false
       test: ["CMD", "node", "-e", "fetch('http://app:3000/api/ready').then(r=>process.exit(r.statusCode===200?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
